@@ -12,7 +12,7 @@ import (
 )
 
 // ExtractEBNF reads a Go source file, extracts its package documentation,
-// and strictly parses out the EBNF grammar relying on the "//\t" prefix.
+// and extracts out the EBNF grammar relying on the "//\t" prefix and " ." suffix.
 func ExtractEBNF(filename string) (string, error) {
 	fset := token.NewFileSet()
 	// Parse only the package clause and comments to minimize overhead
@@ -25,32 +25,58 @@ func ExtractEBNF(filename string) (string, error) {
 		return "", fmt.Errorf("no package documentation found in %s", filename)
 	}
 
-	var ebnfBuilder strings.Builder
+	var ebnf, block []string
+
+	inBlock := false
 
 	// f.Doc.List contains the raw comments, preserving the "//" and whitespace
 	for _, comment := range f.Doc.List {
-		rawText := comment.Text
-
-		// Check for the strict preformatted prefix
-		if strings.HasPrefix(rawText, "//\t") {
-			// Strip the "//\t" prefix (length of 3)
-			payload := rawText[3:]
-
-			// Now we can safely trim spaces to check for egg-specific comments
-			trimmed := strings.TrimSpace(payload)
-
-			// Ignore empty lines or egg grammar comments (starting with '#')
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		s := comment.Text
+		hasPrefix := strings.HasPrefix(s, "//\t")
+		if hasPrefix {
+			s = s[3:]
+			s = strings.TrimRight(s, "\t ")
+			if strings.HasPrefix(s, "#") {
 				continue
 			}
+		}
 
-			// Write the extracted payload. We append a newline because
-			// the raw ast.Comment.Text does not include the trailing newline.
-			ebnfBuilder.WriteString(payload + "\n")
+		switch {
+		case inBlock:
+			switch {
+			case hasPrefix:
+				block = append(block, s)
+			default:
+				inBlock = false
+				w := 0
+				for _, v := range block {
+					if v != "" {
+						block[w] = v
+						w++
+					}
+				}
+				if w == 0 {
+					break
+				}
+
+				block = block[:w]
+				if !strings.HasSuffix(block[w-1], " .") {
+					break
+				}
+
+				ebnf = append(ebnf, block...)
+			}
+		default:
+			switch {
+			case hasPrefix:
+				block = block[:0]
+				block = append(block, s)
+				inBlock = true
+			}
 		}
 	}
 
-	return ebnfBuilder.String(), nil
+	return strings.Join(ebnf, "\n") + "\n", nil
 }
 
 func main() {

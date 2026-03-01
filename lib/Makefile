@@ -8,11 +8,12 @@ clean:
 
 edit:
 	@touch log
-	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile *.go & fi
+	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile ../doc.go *.go & fi
 
 editor: parser.go
 	gofmt -l -s -w ..
 	go test -o /dev/null -c
+	go build -o /dev/null extract_grammar.go
 	go build -o /dev/null generator.go
 	go install -v ..
 	golint

@@ -4,6 +4,8 @@
 //
 // Some other text example 1.
 //
+//	abc = def
+//
 // # OctoGo Language Specification
 //
 //	# OctoGo Expression Grammar for modernc.org/egg
