@@ -104,7 +104,7 @@ func main() {
 
 	flexccDir := filepath.Join(wd, "internal", "flexcc")
 	flexccGoSrc := filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc.go")
-	if false { //TODO-
+	if true { //TODO-
 		installDir := filepath.Join(wd, installDir)
 		os.RemoveAll(flexccDir)
 		os.RemoveAll(installDir)
