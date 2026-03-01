@@ -1,4 +1,4 @@
-package main // import "octogo.dec/octogo"
+package main // import "octogo.dev/octogo"
 
 func main() {
 }

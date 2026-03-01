@@ -1,1 +1,1 @@
-package octogo // import "octogo.dec/octogo/lib"
+package octogo // import "octogo.dev/octogo/lib"

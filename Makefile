@@ -10,7 +10,7 @@ edit:
 	@touch log
 	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile *.go & fi
 
-editor:
+editor: parser
 	gofmt -l -s -w .
 	go test -o /dev/null -c
 	go install -v .
@@ -19,6 +19,9 @@ editor:
 
 generate:
 	go generate -v -x ./...
+
+parser: lib/parser.go
+	make -C lib parser.go
 
 test:
 	go test -timeout 24h -count=1 -failfast
