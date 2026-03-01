@@ -1,0 +1,105 @@
+diff --git a/mcpp/mcpp_main.c b/mcpp/mcpp_main.c
+index c9ed87fd..0431021d 100644
+--- a/mcpp/mcpp_main.c
++++ b/mcpp/mcpp_main.c
+@@ -278,10 +278,13 @@ int     mcpp_lib_main
+     char *  out_file = NULL;
+     char *  stdin_name = "<stdin>";
+ 
+-    if (setjmp( error_exit) == -1) {
+-        errors++;
+-        goto  fatal_error_exit;
+-    }
++    /* * PATCH: Remove setjmp. We assume initialization
++     * functions will set 'errors' or we can check return values.
++     */
++    // if (setjmp( error_exit) == -1) {
++    //     errors++;
++    //     goto  fatal_error_exit;
++    // }
+ 
+     /* Initialize global and static variables.  */
+     init_main();
+@@ -303,42 +306,48 @@ int     mcpp_lib_main
+     cur_fname = cur_fullname = "(predefined)";  /* For predefined macros    */
+     init_defines();                         /* Predefine macros     */
+     mb_init();      /* Should be initialized prior to get options   */
+-    do_options( argc, argv, &in_file, &out_file);   /* Command line options */
+-
+-    /* Open input file, "-" means stdin.    */
+-    if (in_file != NULL && ! str_eq( in_file, "-")) {
+-        if ((fp_in = mcpp_fopen( in_file, "r")) == NULL) {
+-            mcpp_fprintf( ERR, "Can't open input file \"%s\".\n", in_file);
+-            errors++;
+-            goto  fatal_error_exit;
++    // We wrap the main logic. If any fatal error occurs,
++    // we set a flag or just rely on the existing 'goto'.
++    do {
++        do_options( argc, argv, &in_file, &out_file);   /* Command line options */
++
++        /* Open input file, "-" means stdin.    */
++        if (in_file != NULL && ! str_eq( in_file, "-")) {
++            if ((fp_in = mcpp_fopen( in_file, "r")) == NULL) {
++                mcpp_fprintf( ERR, "Can't open input file \"%s\".\n", in_file);
++                errors++;
++                // goto  fatal_error_exit;
++		break; // Equivalent to the old 'goto fatal_error_exit'
++            }
++        } else {
++            in_file = stdin_name;
+         }
+-    } else {
+-        in_file = stdin_name;
+-    }
+-    /* Open output file, "-" means stdout.  */
+-    if (out_file != NULL && ! str_eq( out_file, "-")) {
+-        if ((fp_out = mcpp_fopen( out_file, "w")) == NULL) {
+-            mcpp_fprintf( ERR, "Can't open output file \"%s\".\n", out_file);
+-            errors++;
+-            goto  fatal_error_exit;
++        /* Open output file, "-" means stdout.  */
++        if (out_file != NULL && ! str_eq( out_file, "-")) {
++            if ((fp_out = mcpp_fopen( out_file, "w")) == NULL) {
++                mcpp_fprintf( ERR, "Can't open output file \"%s\".\n", out_file);
++                errors++;
++                // goto  fatal_error_exit;
++		break; // Equivalent to the old 'goto fatal_error_exit'
++            }
++            fp_debug = fp_out;
+         }
+-        fp_debug = fp_out;
+-    }
+-    init_sys_macro();       /* Initialize system-specific macros    */
+-    add_file( fp_in, NULL, in_file, in_file, FALSE);
+-                                        /* "open" main input file   */
+-    infile->dirp = inc_dirp;
+-    infile->sys_header = FALSE;
+-    cur_fullname = in_file;
+-    if (mkdep && str_eq( infile->real_fname, stdin_name) == FALSE)
+-        put_depend( in_file);       /* Putout target file name      */
+-    at_start();                     /* Do the pre-main commands     */
+-
+-    mcpp_main();                    /* Process main file            */
+-
+-    if (mkdep)
+-        put_depend( NULL);      /* Append '\n' to dependency line   */
+-    at_end();                       /* Do the final commands        */
++        init_sys_macro();       /* Initialize system-specific macros    */
++        add_file( fp_in, NULL, in_file, in_file, FALSE);
++                                            /* "open" main input file   */
++        infile->dirp = inc_dirp;
++        infile->sys_header = FALSE;
++        cur_fullname = in_file;
++        if (mkdep && str_eq( infile->real_fname, stdin_name) == FALSE)
++            put_depend( in_file);       /* Putout target file name      */
++        at_start();                     /* Do the pre-main commands     */
++
++        mcpp_main();                    /* Process main file            */
++
++        if (mkdep)
++            put_depend( NULL);      /* Append '\n' to dependency line   */
++        at_end();                       /* Do the final commands        */
++    } while(0);
+ 
+ fatal_error_exit:
+     /* Free malloced memory */
