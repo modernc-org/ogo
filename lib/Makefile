@@ -8,7 +8,7 @@ clean:
 
 edit:
 	@touch log
-	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile ../doc.go *.go & fi
+	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile ../octogo.go *.go & fi
 
 editor: parser.go
 	gofmt -l -s -w ..
@@ -22,8 +22,8 @@ editor: parser.go
 generate:
 	go generate -v -x
 
-parser.go: ../doc.go
-	go run extract_grammar.go -- ../doc.go > octogo.ebnf
+parser.go: ../octogo.go
+	go run extract_grammar.go -- ../octogo.go > octogo.ebnf
 	egg -o parser.go -start SourceFile -package octogo octogo.ebnf
 
 test:

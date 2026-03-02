@@ -1,12 +1,4 @@
-// Command octogo is the compiler for the OctoGo programming language.
-//
-// OctoGo brings Native Go Concurrency for the Parallax Propeller 2.
-//
-// Some other text example 1.
-//
-//	abc = def
-//
-// # OctoGo Language Specification
+// # Language Specification
 //
 //	# OctoGo Expression Grammar for modernc.org/egg
 //	# Target: Parallax Propeller 2
@@ -14,7 +6,7 @@
 //	# Enforce imports before other top-level declarations
 //	SourceFile = { ImportDecl } { TopLevelDecl } .
 //
-//	ImportDecl = "import" string_literal .
+//	ImportDecl = "import" string_lit .
 //
 //	TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
 //
@@ -69,8 +61,8 @@
 //	Term       = Factor { MulOp Factor } .
 //
 //	Factor = identifier [ FactorSuffix ]
-//	       | number
-//	       | string_literal
+//	       | int_lit
+//	       | string_lit
 //	       | "true"
 //	       | "false"
 //	       | "<-" Expression
@@ -85,10 +77,34 @@
 //	MulOp = "*" | "/" | "<<" | ">>" | "&" .
 //
 //	# Lexical tokens
-//	identifier     = `[a-zA-Z_][a-zA-Z0-9_]*` .
-//	number         = `[0-9]+` .
-//	string_literal = `"(?:[^"\\]|\\.)*"` .
-//	white_space    = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
+//	big_u_value = "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit .
+//	binary_digit = "0" | "1" .
+//	binary_digits = binary_digit { [ "_" ] binary_digit } .
+//	binary_lit     = "0" ( "b" | "B" ) [ "_" ] binary_digits .
+//	byte_value = octal_byte_value | hex_byte_value .
+//	decimal_digit = `[0-9]` .
+//	decimal_digits = decimal_digit { [ "_" ] decimal_digit } .
+//	decimal_lit    = "0" | ( `[1-9]` ) [ [ "_" ] decimal_digits ] .
+//	escaped_char = "\\" ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | "\\" | "'" | "\"" ) .
+//	hex_byte_value = "\\" "x" hex_digit hex_digit .
+//	hex_digit = `[0-9A-Fa-f]` .
+//	hex_digits = hex_digit { [ "_" ] hex_digit } .
+//	hex_lit = "0" ( "x" | "X" ) [ "_" ] hex_digits .
+//	identifier     = letter { letter | unicode_digit } .
+//	int_lit        = decimal_lit | binary_lit | octal_lit | hex_lit .
+//	interpreted_string_lit = "\"" { unicode_value | byte_value } "\"" .
+//	letter         = unicode_letter | "_" .
+//	little_u_value = "\\" "u" hex_digit hex_digit hex_digit hex_digit .
+//	octal_byte_value = "\\" octal_digit octal_digit octal_digit .
+//	octal_digit = `[0-7]` .
+//	octal_digits = octal_digit { [ "_" ] octal_digit } .
+//	octal_lit = "0" [ "o" | "O" ] [ "_" ] octal_digits .
+//	raw_string_lit = '`' { `[^\x60]` } '`' .
+//	string_lit = raw_string_lit | interpreted_string_lit .
+//	unicode_digit  = `\p{Nd}` .
+//	unicode_letter = `\pL` .
+//	unicode_value   = little_u_value | big_u_value | escaped_char .
+//	white_space     = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
 //
 // Some other text example 2.
 package main // import "octogo.dev/octogo"
