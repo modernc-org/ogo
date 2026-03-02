@@ -104,7 +104,7 @@ func main() {
 
 	flexccDir := filepath.Join(wd, "internal", "flexcc")
 	flexccGoSrc := filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc.go")
-	if true { //TODO-
+	if false { //TODO-
 		installDir := filepath.Join(wd, installDir)
 		os.RemoveAll(flexccDir)
 		os.RemoveAll(installDir)
@@ -143,7 +143,7 @@ func main() {
 		}
 	}
 
-	flexccGoDest := filepath.Join(flexccDir, "flexcc.go")
+	flexccGoDest := filepath.Join(flexccDir, fmt.Sprintf("ccgo_%s_%s.go", goos, goarch))
 	main2lib(flexccGoDest, flexccGoSrc)
 }
 
@@ -263,6 +263,7 @@ func main2lib(destFn, srcFn string) {
 	}
 
 	w("\n\ntype CC struct{\n")
+	w("fopen map[uintptr]struct{}\n")
 	w("mallocs map[uintptr]struct{}\n")
 	w("stderr io.Writer\n")
 	w("stdin io.Reader\n")
@@ -320,7 +321,11 @@ func main2lib(destFn, srcFn string) {
 	}
 	w("}\n\n")
 	w("func newCC(pinner *runtime.Pinner) (cc *CC) {\n")
-	w("cc = &CC{mallocs: map[uintptr]struct{}{}}\n")
+	w(`cc = &CC{
+		fopen: map[uintptr]struct{}{},
+		mallocs: map[uintptr]struct{}{},
+	}
+`)
 	w("pinner.Pin(cc)\n")
 	a = a[:0]
 	for k := range initializers {
@@ -347,10 +352,18 @@ func main2lib(destFn, srcFn string) {
 
 	// libc.X__builtin_snprintf(
 	// libc.X__builtin_vsnprintf(
-	// libc.Xfprintf(              //TODO patch
-	// libc.Xprintf(               //TODO patch
+	// libc.Xexit(
+	// libc.Xfclose(
+	// libc.Xfopen(
+	// libc.Xfprintf(
+	// libc.Xfreopen(
+	// libc.Xprintf(
 	// libc.Xsprintf(
-	// libc.Xvfprintf(             //TODO patch
+	// libc.Xvfprintf(
+	// libc.calloc(
+	// libc.free(
+	// libc.malloc(
+	// libc.realloc(
 
 	if err := shell("", gsed, "-i",
 		"-e", `s/package main/package flexcc/g`,
@@ -359,6 +372,18 @@ func main2lib(destFn, srcFn string) {
 		"-e", `s/\<libc\.UintptrFromInt32$/uintptr/g`,
 		"-e", `s/\<libc\.BoolUint8$/uint8/g`,
 		"-e", `s/(\*(\*func(\*libc\.TLS/(*(*func(*libc.TLS, *CC/g`,
+
+		"-e", `s/libc.Xcalloc(tls,/calloc(tls, cc,/g`,
+		"-e", `s/libc.Xexit(tls,/exit(tls, cc,/g`,
+		"-e", `s/libc.Xfclose(tls,/fclose(tls, cc,/g`,
+		"-e", `s/libc.Xfopen(tls,/fopen(tls, cc,/g`,
+		"-e", `s/libc.Xfprintf(tls,/fprintf(tls, cc,/g`,
+		"-e", `s/libc.Xfree(tls,/free(tls, cc,/g`,
+		"-e", `s/libc.Xfreopen(tls,/freopen(tls, cc,/g`,
+		"-e", `s/libc.Xmalloc(tls,/malloc(tls, cc,/g`,
+		"-e", `s/libc.Xprintf(tls,/printf(tls, cc,/g`,
+		"-e", `s/libc.Xrealloc(tls,/realloc(tls, cc,/g`,
+		"-e", `s/libc.Xvfprintf(tls,/vfprintf(tls, cc,/g`,
 		destFn); err != nil {
 		fail(1, "%v: err=%v", gsed, err)
 	}
