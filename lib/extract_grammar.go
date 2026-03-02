@@ -30,8 +30,13 @@ func ExtractEBNF(filename string) (string, error) {
 	inBlock := false
 
 	// f.Doc.List contains the raw comments, preserving the "//" and whitespace
+	var a []string
 	for _, comment := range f.Doc.List {
-		s := comment.Text
+		a = append(a, comment.Text)
+	}
+	a = append(a, "")
+
+	for _, s := range a {
 		hasPrefix := strings.HasPrefix(s, "//\t")
 		if hasPrefix {
 			s = s[3:]
