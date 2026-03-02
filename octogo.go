@@ -105,6 +105,4 @@
 //	unicode_letter = `\pL` .
 //	unicode_value   = little_u_value | big_u_value | escaped_char .
 //	white_space     = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
-//
-// Some other text example 2.
 package main // import "octogo.dev/octogo"
