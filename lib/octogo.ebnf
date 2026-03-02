@@ -1,4 +1,4 @@
-SourceFile = PackageClause { ImportDecl } { TopLevelDecl } .
+SourceFile = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
 PackageClause = "package" identifier .
 ImportDecl = "import" string_lit .
 TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
@@ -7,7 +7,7 @@ Type = "int" | "bool" | "byte" | "chan" Type | "[" [ Expression ] "]" Type .
 VarDecl = "var" identifier Type [ "=" Expression ] .
 FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
 ParameterList = identifier Type { "," identifier Type } .
-Block = "{" { Statement } "}" .
+Block = "{" { Statement ";" } "}" .
 Statement = VarDecl
           | ConstDecl
           | "if" Expression Block [ "else" Block ]
@@ -17,18 +17,20 @@ Statement = VarDecl
           | SwitchStmt
           | SelectStmt
           | "<-" Expression
-          | identifier Postfix .
+          | identifier Postfix
+	  | EmptyStatement .
+EmptyStatement = .
 Postfix = { Selector | Index } ( "=" Expression | "<-" Expression | CallSuffix ) .
 Selector = "." identifier .
 Index = "[" Expression "]" .
 CallSuffix = "(" [ ArgumentList ] ")" .
 ArgumentList = Expression { "," Expression } .
 SwitchStmt = "switch" [ Expression ] "{" { CaseClause } "}" .
-CaseClause = CaseHead ":" { Statement } .
+CaseClause = CaseHead ":" { Statement ";" } .
 CaseHead   = "case" ExpressionList | "default" .
 ExpressionList = Expression { "," Expression } .
 SelectStmt = "select" "{" { CommClause } "}" .
-CommClause = CommHead ":" { Statement } .
+CommClause = CommHead ":" { Statement ";" } .
 CommHead   = "case" CommOp | "default" .
 CommOp = "<-" Expression
        | identifier PostfixComm .
@@ -38,8 +40,8 @@ SimpleExpr = Term { AddOp Term } .
 Term       = Factor { MulOp Factor } .
 Factor = identifier [ FactorSuffix ]
        | int_lit
-       | rune_lit
        | string_lit
+       | rune_lit
        | "true"
        | "false"
        | "<-" Expression
@@ -48,32 +50,32 @@ FactorSuffix = { Selector | Index } [ CallSuffix ] .
 RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" .
 AddOp = "+" | "-" | "|" | "^" .
 MulOp = "*" | "/" | "<<" | ">>" | "&" .
-big_u_value = "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit .
-binary_digit = "0" | "1" .
-binary_digits = binary_digit { [ "_" ] binary_digit } .
-binary_lit     = "0" ( "b" | "B" ) [ "_" ] binary_digits .
-byte_value = octal_byte_value | hex_byte_value .
-decimal_digit = `[0-9]` .
-decimal_digits = decimal_digit { [ "_" ] decimal_digit } .
-decimal_lit    = "0" | ( `[1-9]` ) [ [ "_" ] decimal_digits ] .
-escaped_char = "\\" ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | "\\" | "'" | "\"" ) .
-hex_byte_value = "\\" "x" hex_digit hex_digit .
-hex_digit = `[0-9A-Fa-f]` .
-hex_digits = hex_digit { [ "_" ] hex_digit } .
-hex_lit = "0" ( "x" | "X" ) [ "_" ] hex_digits .
-identifier     = letter { letter | unicode_digit } .
-int_lit        = decimal_lit | binary_lit | octal_lit | hex_lit .
+big_u_value            = "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit .
+binary_digit           = "0" | "1" .
+binary_digits          = binary_digit { [ "_" ] binary_digit } .
+binary_lit             = "0" ( "b" | "B" ) [ "_" ] binary_digits .
+byte_value             = octal_byte_value | hex_byte_value .
+decimal_digit          = `[0-9]` .
+decimal_digits         = decimal_digit { [ "_" ] decimal_digit } .
+decimal_lit            = "0" | ( `[1-9]` ) [ [ "_" ] decimal_digits ] .
+escaped_char           = "\\" ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | "\\" | "'" | "\"" ) .
+hex_byte_value         = "\\" "x" hex_digit hex_digit .
+hex_digit              = `[0-9A-Fa-f]` .
+hex_digits             = hex_digit { [ "_" ] hex_digit } .
+hex_lit                = "0" ( "x" | "X" ) [ "_" ] hex_digits .
+identifier             = letter { letter | unicode_digit } .
+int_lit                = decimal_lit | binary_lit | octal_lit | hex_lit .
 interpreted_string_lit = "\"" { unicode_value | byte_value } "\"" .
-letter         = unicode_letter | "_" .
-little_u_value = "\\" "u" hex_digit hex_digit hex_digit hex_digit .
-octal_byte_value = "\\" octal_digit octal_digit octal_digit .
-octal_digit = `[0-7]` .
-octal_digits = octal_digit { [ "_" ] octal_digit } .
-octal_lit = "0" [ "o" | "O" ] [ "_" ] octal_digits .
-raw_string_lit = '`' { `[^\x60]` } '`' .
-rune_lit = '\'' ( `[^'\\\n\r]` | unicode_value | byte_value ) '\'' .
-string_lit = raw_string_lit | interpreted_string_lit .
-unicode_digit  = `\p{Nd}` .
-unicode_letter = `\pL` .
-unicode_value   = little_u_value | big_u_value | escaped_char .
-white_space     = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
+letter                 = unicode_letter | "_" .
+little_u_value         = "\\" "u" hex_digit hex_digit hex_digit hex_digit .
+octal_byte_value       = "\\" octal_digit octal_digit octal_digit .
+octal_digit            = `[0-7]` .
+octal_digits           = octal_digit { [ "_" ] octal_digit } .
+octal_lit              = "0" [ "o" | "O" ] [ "_" ] octal_digits .
+raw_string_lit         = '`' { `[^\x60]` } '`' .
+rune_lit               = '\'' ( `[^'\\\n\r]` | unicode_value | byte_value ) '\'' .
+string_lit             = raw_string_lit | interpreted_string_lit .
+unicode_digit          = `\p{Nd}` .
+unicode_letter         = `\pL` .
+unicode_value          = little_u_value | big_u_value | escaped_char .
+white_space            = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .

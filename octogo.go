@@ -4,7 +4,7 @@
 //	# Target: Parallax Propeller 2
 //
 //	# Enforce imports before other top-level declarations
-//	SourceFile = PackageClause { ImportDecl } { TopLevelDecl } .
+//	SourceFile = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
 //	PackageClause = "package" identifier .
 //
 //	ImportDecl = "import" string_lit .
@@ -19,7 +19,7 @@
 //	FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
 //	ParameterList = identifier Type { "," identifier Type } .
 //
-//	Block = "{" { Statement } "}" .
+//	Block = "{" { Statement ";" } "}" .
 //	# Left-factored statements to resolve LL(1) ambiguities
 //	# between assignment, function calls, and channel sends.
 //	Statement = VarDecl
@@ -31,7 +31,9 @@
 //	          | SwitchStmt
 //	          | SelectStmt
 //	          | "<-" Expression
-//	          | identifier Postfix .
+//	          | identifier Postfix
+//		  | EmptyStatement .
+//	EmptyStatement = .
 //
 //	# Handles L-value resolution for Assignment (=), Channel Send (<-), or Call ()
 //	Postfix = { Selector | Index } ( "=" Expression | "<-" Expression | CallSuffix ) .
@@ -42,13 +44,13 @@
 //
 //	# Switch Statement
 //	SwitchStmt = "switch" [ Expression ] "{" { CaseClause } "}" .
-//	CaseClause = CaseHead ":" { Statement } .
+//	CaseClause = CaseHead ":" { Statement ";" } .
 //	CaseHead   = "case" ExpressionList | "default" .
 //	ExpressionList = Expression { "," Expression } .
 //
 //	# Select Statement
 //	SelectStmt = "select" "{" { CommClause } "}" .
-//	CommClause = CommHead ":" { Statement } .
+//	CommClause = CommHead ":" { Statement ";" } .
 //	CommHead   = "case" CommOp | "default" .
 //
 //	# Left-factored CommOp to handle `<-ch`, `v = <-ch`, and `ch <- v`
@@ -64,6 +66,7 @@
 //	Factor = identifier [ FactorSuffix ]
 //	       | int_lit
 //	       | string_lit
+//	       | rune_lit
 //	       | "true"
 //	       | "false"
 //	       | "<-" Expression
@@ -78,32 +81,33 @@
 //	MulOp = "*" | "/" | "<<" | ">>" | "&" .
 //
 //	# Lexical tokens
-//	big_u_value = "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit .
-//	binary_digit = "0" | "1" .
-//	binary_digits = binary_digit { [ "_" ] binary_digit } .
-//	binary_lit     = "0" ( "b" | "B" ) [ "_" ] binary_digits .
-//	byte_value = octal_byte_value | hex_byte_value .
-//	decimal_digit = `[0-9]` .
-//	decimal_digits = decimal_digit { [ "_" ] decimal_digit } .
-//	decimal_lit    = "0" | ( `[1-9]` ) [ [ "_" ] decimal_digits ] .
-//	escaped_char = "\\" ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | "\\" | "'" | "\"" ) .
-//	hex_byte_value = "\\" "x" hex_digit hex_digit .
-//	hex_digit = `[0-9A-Fa-f]` .
-//	hex_digits = hex_digit { [ "_" ] hex_digit } .
-//	hex_lit = "0" ( "x" | "X" ) [ "_" ] hex_digits .
-//	identifier     = letter { letter | unicode_digit } .
-//	int_lit        = decimal_lit | binary_lit | octal_lit | hex_lit .
+//	big_u_value            = "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit .
+//	binary_digit           = "0" | "1" .
+//	binary_digits          = binary_digit { [ "_" ] binary_digit } .
+//	binary_lit             = "0" ( "b" | "B" ) [ "_" ] binary_digits .
+//	byte_value             = octal_byte_value | hex_byte_value .
+//	decimal_digit          = `[0-9]` .
+//	decimal_digits         = decimal_digit { [ "_" ] decimal_digit } .
+//	decimal_lit            = "0" | ( `[1-9]` ) [ [ "_" ] decimal_digits ] .
+//	escaped_char           = "\\" ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | "\\" | "'" | "\"" ) .
+//	hex_byte_value         = "\\" "x" hex_digit hex_digit .
+//	hex_digit              = `[0-9A-Fa-f]` .
+//	hex_digits             = hex_digit { [ "_" ] hex_digit } .
+//	hex_lit                = "0" ( "x" | "X" ) [ "_" ] hex_digits .
+//	identifier             = letter { letter | unicode_digit } .
+//	int_lit                = decimal_lit | binary_lit | octal_lit | hex_lit .
 //	interpreted_string_lit = "\"" { unicode_value | byte_value } "\"" .
-//	letter         = unicode_letter | "_" .
-//	little_u_value = "\\" "u" hex_digit hex_digit hex_digit hex_digit .
-//	octal_byte_value = "\\" octal_digit octal_digit octal_digit .
-//	octal_digit = `[0-7]` .
-//	octal_digits = octal_digit { [ "_" ] octal_digit } .
-//	octal_lit = "0" [ "o" | "O" ] [ "_" ] octal_digits .
-//	raw_string_lit = '`' { `[^\x60]` } '`' .
-//	string_lit = raw_string_lit | interpreted_string_lit .
-//	unicode_digit  = `\p{Nd}` .
-//	unicode_letter = `\pL` .
-//	unicode_value   = little_u_value | big_u_value | escaped_char .
-//	white_space     = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
+//	letter                 = unicode_letter | "_" .
+//	little_u_value         = "\\" "u" hex_digit hex_digit hex_digit hex_digit .
+//	octal_byte_value       = "\\" octal_digit octal_digit octal_digit .
+//	octal_digit            = `[0-7]` .
+//	octal_digits           = octal_digit { [ "_" ] octal_digit } .
+//	octal_lit              = "0" [ "o" | "O" ] [ "_" ] octal_digits .
+//	raw_string_lit         = '`' { `[^\x60]` } '`' .
+//	rune_lit               = '\'' ( `[^'\\\n\r]` | unicode_value | byte_value ) '\'' .
+//	string_lit             = raw_string_lit | interpreted_string_lit .
+//	unicode_digit          = `\p{Nd}` .
+//	unicode_letter         = `\pL` .
+//	unicode_value          = little_u_value | big_u_value | escaped_char .
+//	white_space            = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
 package main // import "octogo.dev/octogo"

@@ -340,11 +340,43 @@ out:
 				s.AddErr(s.Position(off), "invalid token")
 				s.off += length
 			case id == s.whiteSpace:
+				if s.insertSemi {
+					// Check if this whitespace chunk contains a newline
+					if bytes.IndexByte(s.buf[s.off:s.off+length], '\n') >= 0 {
+						// Yield a synthetic semicolon token.
+						t = tok{ch: ';', sep: int32(sep), src: int32(off)}
+						s.insertSemi = false // Reset state
+						s.toks = append(s.toks, t)
+						break out
+					}
+				}
+
 				s.off += length
 				continue
 			default:
 				t = tok{ch: rune(id), sep: int32(sep), src: int32(off)}
 				s.off += length
+				switch Symbol(id) {
+				case identifier,
+					//TODO TOK++
+					//TODO TOK--
+					//TODO TOK_break
+					//TODO TOK_continue
+					//TODO TOK_fallthrough
+					//TODO float_lit,
+					//TODO? imag_lit,
+					TOK_0029, // ')'
+					TOK_005d, // ']'
+					TOK_007d, // '}'
+					TOK_return,
+					int_lit,
+					rune_lit,
+					string_lit:
+
+					s.insertSemi = true
+				default:
+					s.insertSemi = false
+				}
 				s.toks = append(s.toks, t)
 				if length == 0 {
 					s.isClosed = true
