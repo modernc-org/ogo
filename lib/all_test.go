@@ -1,6 +1,7 @@
 package octogo // import "octogo.dev/octogo/lib"
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -8,12 +9,8 @@ import (
 	_ "modernc.org/gc/v3"       // generator.go
 )
 
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
-}
-
-func TestCheck(t *testing.T) {
-	const src = `package main
+const (
+	src0 = `package main
 
 import "p2"
 import "runtime"
@@ -111,6 +108,48 @@ func main() {
     return 
 }
 `
+)
 
-	t.Log("TODO")
+func TestMain(m *testing.M) {
+	os.Exit(m.Run())
+}
+
+func TestSemicolonInjection(t *testing.T) {
+	pkg := Token{Ch: rune(TOK_package)}
+	ident := Token{Ch: rune(identifier)}
+	semi := Token{Ch: rune(TOK_003b)}
+	eof := Token{}
+	for itest, test := range []struct {
+		src  string
+		toks []Token
+	}{
+		{"", []Token{eof}},
+		{"package", []Token{pkg, eof}},
+		{"package main", []Token{pkg, ident, semi, eof}},
+		{"package main\n", []Token{pkg, ident, semi, eof}},
+		{"package main;", []Token{pkg, ident, semi, eof}},
+		{"package main;\n", []Token{pkg, ident, semi, eof}},
+	} {
+		var p Parser
+		sc := NewRecScanner(fmt.Sprintf("%v.ogo", itest), []byte(test.src), p.scan, int(white_space))
+		var toks []Token
+		for {
+			tok := sc.Scan()
+			toks = append(toks, tok)
+			if tok.Ch == 0 {
+				break
+			}
+		}
+		if g, e := len(toks), len(test.toks); g != e {
+			t.Errorf("%v: toks, got %v, expected %v", itest, g, e)
+			continue
+		}
+
+		for i, g := range toks {
+			e := test.toks[i]
+			if g, e := g.Ch, e.Ch; g != e {
+				t.Errorf("%v: toks[%v].Ch, got %#U, expected %#U", itest, i, g, e)
+			}
+		}
+	}
 }

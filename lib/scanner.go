@@ -334,7 +334,7 @@ out:
 		off := s.off
 		switch {
 		case !s.isClosed:
-			switch id, length := s.scan(s.buf[s.off:]); {
+			switch id, length := s.scan(s.buf[off:]); {
 			case id < 0: // no lexeme was recognized
 				length = max(1, length) // Ensure we do not get stuck.
 				s.AddErr(s.Position(off), "invalid token")
@@ -342,11 +342,12 @@ out:
 			case id == s.whiteSpace:
 				if s.insertSemi {
 					// Check if this whitespace chunk contains a newline
-					if bytes.IndexByte(s.buf[s.off:s.off+length], '\n') >= 0 {
+					if bytes.IndexByte(s.buf[sep:off+length], '\n') >= 0 {
 						// Yield a synthetic semicolon token.
-						t = tok{ch: ';', sep: int32(sep), src: int32(off)}
+						t = tok{ch: rune(TOK_003b), sep: int32(sep), src: int32(off)}
 						s.insertSemi = false // Reset state
 						s.toks = append(s.toks, t)
+						s.off += length
 						break out
 					}
 				}
@@ -354,10 +355,19 @@ out:
 				s.off += length
 				continue
 			default:
+				if s.insertSemi && off == len(s.buf) {
+					// Yield a synthetic semicolon token at EOF
+					t = tok{ch: rune(TOK_003b), sep: int32(sep), src: int32(off)}
+					s.insertSemi = false // Reset state
+					s.toks = append(s.toks, t)
+					s.off += length
+					break out
+				}
+
 				t = tok{ch: rune(id), sep: int32(sep), src: int32(off)}
 				s.off += length
 				switch Symbol(id) {
-				case identifier,
+				case
 					//TODO TOK++
 					//TODO TOK--
 					//TODO TOK_break
@@ -369,6 +379,7 @@ out:
 					TOK_005d, // ']'
 					TOK_007d, // '}'
 					TOK_return,
+					identifier,
 					int_lit,
 					rune_lit,
 					string_lit:
