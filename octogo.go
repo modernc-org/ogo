@@ -14,7 +14,7 @@
 //	# Simple const declaration for now
 //	ConstDecl = "const" identifier "=" Expression .
 //
-//	Type = "int" | "bool" | "byte" | "chan" Type | "[" [ Expression ] "]" Type .
+//	Type = identifier | "chan" Type | "[" [ Expression ] "]" Type .
 //	VarDecl = "var" identifier Type [ "=" Expression ] .
 //	FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
 //	ParameterList = identifier Type { "," identifier Type } .
@@ -67,8 +67,6 @@
 //	       | int_lit
 //	       | string_lit
 //	       | rune_lit
-//	       | "true"
-//	       | "false"
 //	       | "<-" Expression
 //	       | "(" Expression ")" .
 //
@@ -96,7 +94,7 @@
 //	hex_lit                = "0" ( "x" | "X" ) [ "_" ] hex_digits .
 //	identifier             = letter { letter | unicode_digit } .
 //	int_lit                = decimal_lit | binary_lit | octal_lit | hex_lit .
-//	interpreted_string_lit = "\"" { unicode_value | byte_value } "\"" .
+//	interpreted_string_lit = '"' { `[^"\\\n\r]` | unicode_value | byte_value } '"' .
 //	letter                 = unicode_letter | "_" .
 //	little_u_value         = "\\" "u" hex_digit hex_digit hex_digit hex_digit .
 //	octal_byte_value       = "\\" octal_digit octal_digit octal_digit .

@@ -5,26 +5,23 @@ import (
 	"sync"
 )
 
-type ctx struct {
-	limiter chan struct{}
-	files   []*file
-}
+type limiter chan struct{}
 
-func newCtx(limit int) (r *ctx) {
-	r = &ctx{}
+func newLimiter(limit int) limiter {
 	if limit > 0 {
-		r.limiter = make(chan struct{}, limit)
+		return make(limiter, limit)
 	}
-	return r
+
+	return nil
 }
 
-func (c *ctx) limit() func() {
-	if c.limiter == nil {
+func (n limiter) limit() func() {
+	if n == nil {
 		return func() {}
 	}
 
-	c.limiter <- struct{}{}
-	return func() { <-c.limiter }
+	n <- struct{}{}
+	return func() { <-n }
 }
 
 type file struct {
@@ -34,33 +31,72 @@ type file struct {
 	err    error
 }
 
-func newFile(fn string) (r *file, err error) {
+func newFile(fn string, overlay map[string][]byte) (r *file, err error) {
 	r = &file{fn: fn}
-	b, err := os.ReadFile(fn)
-	if err != nil {
-		r.err = err
-		return r, err
+	b, ok := overlay[fn]
+	if !ok {
+		if b, err = os.ReadFile(fn); err != nil {
+			r.err = err
+			return r, err
+		}
 	}
 
 	r.ast, r.err = r.parser.Parse(fn, b)
 	return r, r.err
 }
 
-func check(c *ctx, files []string) {
+type pkg struct {
+	files []*file
+}
+
+func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *pkg) {
+	r = &pkg{
+		files: make([]*file, len(files)),
+	}
 	var wg sync.WaitGroup
-	c.files = make([]*file, len(files))
 	for i, v := range files {
 		func() {
-			defer c.limit()
+			defer limiter.limit()
 
 			wg.Add(1)
 
 			go func(i int, fn string) {
 				defer wg.Done()
 
-				c.files[i], _ = newFile(fn)
+				r.files[i], _ = newFile(fn, overlay)
 			}(i, v)
 		}()
 	}
-	panic(todo(""))
+	wg.Wait()
+	return r
+}
+
+type node struct {
+	ast []int32 // Valid if .sym != 0
+	sym Symbol  // Valid if != 0
+	tok int32   // Valid if sym == 0
+}
+
+func iterator(ast []int32) func(yield func(node) bool) {
+	return func(yield func(node) bool) {
+		for len(ast) != 0 {
+			switch v := ast[0]; {
+			case v < 0:
+				// Non-Terminal: [-SymbolID, Size, Children...]
+				n := ast[1]
+				if !yield(node{ast: ast[2 : 2+n], sym: Symbol(-v)}) {
+					return
+				}
+
+				ast = ast[2+n:] // Advance past the node
+			default:
+				// Terminal: Token Index
+				if !yield(node{tok: v}) {
+					return
+				}
+
+				ast = ast[1:] // Advance past the token
+			}
+		}
+	}
 }

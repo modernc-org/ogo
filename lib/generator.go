@@ -104,43 +104,41 @@ func main() {
 
 	flexccDir := filepath.Join(wd, "internal", "flexcc")
 	flexccGoSrc := filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc.go")
-	if false { //TODO-
-		installDir := filepath.Join(wd, installDir)
-		os.RemoveAll(flexccDir)
-		os.RemoveAll(installDir)
-		os.Remove(flexccGoSrc)
-		if err := os.MkdirAll(flexccDir, 0755); err != nil {
-			fail(1, "os.MkdirAll(%q): err=%v", flexccDir, err)
-		}
+	installDir := filepath.Join(wd, installDir)
+	os.RemoveAll(flexccDir)
+	os.RemoveAll(installDir)
+	os.Remove(flexccGoSrc)
+	if err := os.MkdirAll(flexccDir, 0755); err != nil {
+		fail(1, "os.MkdirAll(%q): err=%v", flexccDir, err)
+	}
 
-		if ccgo.NewTask(goos, goarch, []string{
-			"ccgo",
+	if ccgo.NewTask(goos, goarch, []string{
+		"ccgo",
 
-			"--prefix-enumerator=_",
-			"--prefix-external=x__",
-			"--prefix-macro=m_",
-			"--prefix-static-internal=s__",
-			"--prefix-static-none=s__",
-			"--prefix-tagged-enum=_",
-			"--prefix-tagged-struct=_",
-			"--prefix-tagged-union=_",
-			"--prefix-typename=_",
-			"--prefix-undefined=_",
-			"-DNDEBUG",
-			"-extended-errors",
+		"--prefix-enumerator=_",
+		"--prefix-external=x__",
+		"--prefix-macro=m_",
+		"--prefix-static-internal=s__",
+		"--prefix-static-none=s__",
+		"--prefix-tagged-enum=_",
+		"--prefix-tagged-struct=_",
+		"--prefix-tagged-union=_",
+		"--prefix-typename=_",
+		"--prefix-undefined=_",
+		"-DNDEBUG",
+		"-extended-errors",
 
-			"-exec",
-			"make",
-			"-C", cloneDir,
-			"clean",
-			"install",
-			fmt.Sprintf("INSTALL=%s", installDir)},
-			os.Stdout,
-			os.Stderr,
-			nil,
-		).Main(); err != nil {
-			fail(1, "ccgo -exec: err=%v", err)
-		}
+		"-exec",
+		"make",
+		"-C", cloneDir,
+		"clean",
+		"install",
+		fmt.Sprintf("INSTALL=%s", installDir)},
+		os.Stdout,
+		os.Stderr,
+		nil,
+	).Main(); err != nil {
+		fail(1, "ccgo -exec: err=%v", err)
 	}
 
 	flexccGoDest := filepath.Join(flexccDir, fmt.Sprintf("ccgo_%s_%s.go", goos, goarch))

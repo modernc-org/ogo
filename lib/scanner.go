@@ -307,7 +307,9 @@ func (s *RecScanner) AddLineColumnInfo(offset int, filename string, line, column
 }
 
 // Scan returns the next token.
-func (s *RecScanner) Scan() Token {
+func (s *RecScanner) Scan() (r Token) {
+	// trc("[I] len(s.toks)=%v", len(s.toks))
+	// defer func() { trc("[O] len(s.toks)=%v r.Ch=%v %s", len(s.toks), Symbol(r.Ch), r.Src()) }()
 	if !s.isClosed {
 		off := s.off // Offset of the separator = starting offset
 		defer func() {

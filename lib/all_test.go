@@ -106,8 +106,7 @@ func main() {
     var isDone bool = true
     
     return 
-}
-`
+}`
 )
 
 func TestMain(m *testing.M) {
@@ -150,6 +149,15 @@ func TestSemicolonInjection(t *testing.T) {
 			if g, e := g.Ch, e.Ch; g != e {
 				t.Errorf("%v: toks[%v].Ch, got %#U, expected %#U", itest, i, g, e)
 			}
+		}
+	}
+}
+
+func TestNewPackage(t *testing.T) {
+	pkg := newPackage(newLimiter(-1), []string{"src0"}, map[string][]byte{"src0": []byte(src0)})
+	for _, v := range pkg.files {
+		if err := v.err; err != nil {
+			t.Error(err)
 		}
 	}
 }
