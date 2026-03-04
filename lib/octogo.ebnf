@@ -1,7 +1,9 @@
 SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
-ImportDecl = "import" string_lit .
+ImportDecl = "import" ( ImportSpec | "(" { ImportSpec ";" } [ ImportSpec ] ")" ) .
+ImportSpec = [ "." | identifier ] string_lit .
 TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
-ConstDecl = "const" identifier "=" Expression .
+ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
+ConstSpec = identifier [ Type ] "=" Expression .
 Type = identifier | "chan" Type | "[" [ Expression ] "]" Type .
 VarDecl = "var" identifier Type [ "=" Expression ] .
 FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .

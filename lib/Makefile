@@ -25,6 +25,7 @@ generate:
 
 parser.go: ../octogo.go
 	go run extract_grammar.go -- ../octogo.go > octogo.ebnf
+	# egg -dbg -o parser.go -start SourceFile -package octogo octogo.ebnf
 	egg -o parser.go -start SourceFile -package octogo octogo.ebnf
 	sed -i \
 		-e 's/"modernc.org\/scanner"//' \

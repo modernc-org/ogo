@@ -6,12 +6,14 @@
 //	# Enforce imports before other top-level declarations
 //	SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 //
-//	ImportDecl = "import" string_lit .
+//	ImportDecl = "import" ( ImportSpec | "(" { ImportSpec ";" } [ ImportSpec ] ")" ) .
+//	ImportSpec = [ "." | identifier ] string_lit .
 //
 //	TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
 //
 //	# Simple const declaration for now
-//	ConstDecl = "const" identifier "=" Expression .
+//	ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
+//	ConstSpec = identifier [ Type ] "=" Expression .
 //
 //	Type = identifier | "chan" Type | "[" [ Expression ] "]" Type .
 //	VarDecl = "var" identifier Type [ "=" Expression ] .

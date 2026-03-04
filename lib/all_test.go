@@ -10,12 +10,16 @@ import (
 )
 
 const (
-	src0 = `package main
+	src0 = `import . "a"
+import abc "def"
+import ("x"; "y";)
+import ("x2"; "y2")
+import (
+	"p2"
+	"runtime"
+)
 
-/// import "p2"
-/// import "runtime"
-/// 
-/// // TopLevelDecl: Constants and Variables
+// TopLevelDecl: Constants and Variables
 /// const MAX_COGS = 8
 /// const DEFAULT_FLAG = true
 /// 
@@ -106,7 +110,8 @@ const (
 ///     var isDone bool = true
 ///     
 ///     return 
-/// }`
+/// }
+`
 )
 
 func TestMain(m *testing.M) {

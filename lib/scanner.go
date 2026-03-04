@@ -173,6 +173,30 @@ func (t Token) SetSep(s string) {
 	src.sepPatches[t.index] = s
 }
 
+// SrcBytes returns t's source form, without its preceding separator. The
+// result must not be mutated.
+func (t Token) SrcBytes() []byte {
+	s := t.source
+	if s == nil {
+		return nil
+	}
+
+	if p, ok := s.srcPatches[t.index]; ok {
+		return []byte(p)
+	}
+
+	tok := s.toks[t.index]
+	if int(tok.src) >= len(s.buf) {
+		return nil
+	}
+
+	if int(t.index+1) < len(s.toks) {
+		return s.buf[tok.src:s.toks[t.index+1].sep]
+	}
+
+	return s.buf[tok.src:s.off]
+}
+
 // Src returns t's source form, without its preceding separator.
 func (t Token) Src() string {
 	s := t.source
