@@ -114,8 +114,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestSemicolonInjection(t *testing.T) {
-	pkg := Token{Ch: rune(TOK_package)}
-	ident := Token{Ch: rune(identifier)}
+	imp := Token{Ch: rune(TOK_import)}
+	str := Token{Ch: rune(string_lit)}
 	semi := Token{Ch: rune(TOK_003b)}
 	eof := Token{}
 	for itest, test := range []struct {
@@ -123,11 +123,11 @@ func TestSemicolonInjection(t *testing.T) {
 		toks []Token
 	}{
 		{"", []Token{eof}},
-		{"package", []Token{pkg, eof}},
-		{"package main", []Token{pkg, ident, semi, eof}},
-		{"package main\n", []Token{pkg, ident, semi, eof}},
-		{"package main;", []Token{pkg, ident, semi, eof}},
-		{"package main;\n", []Token{pkg, ident, semi, eof}},
+		{"import", []Token{imp, eof}},
+		{"import `main`", []Token{imp, str, semi, eof}},
+		{"import `main`\n", []Token{imp, str, semi, eof}},
+		{"import `main`;", []Token{imp, str, semi, eof}},
+		{"import `main`;\n", []Token{imp, str, semi, eof}},
 	} {
 		var p Parser
 		sc := NewRecScanner(fmt.Sprintf("%v.ogo", itest), []byte(test.src), p.scan, int(white_space))

@@ -1,5 +1,4 @@
-SourceFile = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
-PackageClause = "package" identifier .
+SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 ImportDecl = "import" string_lit .
 TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
 ConstDecl = "const" identifier "=" Expression .

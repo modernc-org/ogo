@@ -112,7 +112,7 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 		return r, r.Err
 	}
 
-	walk[Symbol](&r.parser, r.AST, 0)
+	//walk[Symbol](&r.parser, r.AST, 0)
 	for n := range iterator(r.AST) {
 		switch n.sym {
 		case SourceFile:
@@ -128,21 +128,6 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 func (f *File) sourceFile(n Node) {
 	for n := range iterator(n.ast) {
 		switch n.sym {
-		case PackageClause:
-			f.packageClause(n)
-		case 0:
-			trc("", f.parser.Token(n.tok))
-		default:
-			panic(todo("", n.sym))
-		}
-	}
-}
-
-func (f *File) packageClause(n Node) {
-	for n := range iterator(n.ast) {
-		switch n.sym {
-		case 0:
-			trc("", f.parser.Token(n.tok))
 		default:
 			panic(todo("", n.sym))
 		}

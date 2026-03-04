@@ -4,8 +4,7 @@
 //	# Target: Parallax Propeller 2
 //
 //	# Enforce imports before other top-level declarations
-//	SourceFile = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
-//	PackageClause = "package" identifier .
+//	SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 //
 //	ImportDecl = "import" string_lit .
 //
