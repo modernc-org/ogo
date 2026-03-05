@@ -1,3 +1,7 @@
+// Copyright 2026 The OctoGo Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 //go:build ignore
 
 package main
@@ -104,7 +108,8 @@ func main() {
 
 	flexccDir := filepath.Join(wd, "internal", "flexcc")
 	flexccGoSrc := filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc.go")
-	installDir := filepath.Join(wd, installDir)
+	installDir := filepath.Join(wd, filepath.Join(installDir))
+	installDir2 := filepath.Join(installDir, "flexprop")
 	os.RemoveAll(flexccDir)
 	os.RemoveAll(installDir)
 	os.Remove(flexccGoSrc)
@@ -112,7 +117,11 @@ func main() {
 		fail(1, "os.MkdirAll(%q): err=%v", flexccDir, err)
 	}
 
-	if ccgo.NewTask(goos, goarch, []string{
+	if err := os.MkdirAll(installDir2, 0755); err != nil {
+		fail(1, "os.MkdirAll(%q): err=%v", installDir2, err)
+	}
+
+	args := []string{
 		"ccgo",
 
 		"--prefix-enumerator=_",
@@ -127,17 +136,18 @@ func main() {
 		"--prefix-undefined=_",
 		"-DNDEBUG",
 		"-extended-errors",
+		"-ignore-link-errors",
 
 		"-exec",
 		"make",
 		"-C", cloneDir,
 		"clean",
 		"install",
-		fmt.Sprintf("INSTALL=%s", installDir)},
-		os.Stdout,
-		os.Stderr,
-		nil,
-	).Main(); err != nil {
+		fmt.Sprintf("INSTALL=%s", installDir),
+	}
+
+	fmt.Printf("%v\n", args)
+	if ccgo.NewTask(goos, goarch, args, os.Stdout, os.Stderr, nil).Main(); err != nil {
 		fail(1, "ccgo -exec: err=%v", err)
 	}
 

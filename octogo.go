@@ -1,3 +1,7 @@
+// Copyright 2026 The OctoGo Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 // # Language Specification
 //
 //	# OctoGo Expression Grammar for modernc.org/egg
@@ -109,4 +113,4 @@
 //	unicode_letter         = `\pL` .
 //	unicode_value          = little_u_value | big_u_value | escaped_char .
 //	white_space            = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
-package main // import "octogo.dev/octogo"
+package main // import "modernc.org/octogo"
