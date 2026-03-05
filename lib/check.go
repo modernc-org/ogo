@@ -62,6 +62,7 @@ func (n limiter) limit() func() {
 // Package represents a single OctoGo package.
 type Package struct {
 	Files []*File
+	Scope *Scope
 }
 
 func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *Package) {
@@ -114,8 +115,9 @@ type File struct {
 	AST         []int32
 	Err         error
 	Filename    string
-	parser      Parser
 	ImportSpecs []*ImportSpecNode
+	Scope       *Scope
+	parser      Parser
 }
 
 func (f *File) tok(x int32) (r Token) {
