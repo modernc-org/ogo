@@ -70,10 +70,12 @@ type Package struct {
 	Scope *Scope
 }
 
-func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *Package) {
+// Cross-package limiter may deadlock.
+func newPackage(limit int, files []string, overlay map[string][]byte) (r *Package) {
 	r = &Package{
 		Files: make([]*File, len(files)),
 	}
+	limiter := newLimiter(limit)
 	var wg sync.WaitGroup
 	for i, v := range files {
 		func() {
@@ -89,7 +91,8 @@ func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *
 		}()
 	}
 	wg.Wait()
-	//TODO check file scope collisions.
+	//TODO check file scope collisions now.
+	//TODO merge files .tld into package scope.
 	return r
 }
 
@@ -180,7 +183,7 @@ func (f *File) sourceFile(n Node) {
 			f.topLevelDecl(n)
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_003b, TOK_EOF:
+			case TOK_003b, TOK_EOF: // ';' EOF
 				// ok
 			default:
 				panic(todo("", f.parser.Token(n.tok), f.ch(n.tok)))
@@ -221,7 +224,7 @@ func (f *File) constDecl(s *Scope, n Node) {
 			}
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_const, TOK_0028, TOK_0029, TOK_003b:
+			case TOK_const, TOK_0028, TOK_0029, TOK_003b: // "const" '(' ')' ';'
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -340,7 +343,7 @@ func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 	return r
 }
 
-// Identifier describes a named factor.
+// Identifier describes a named Factor.
 type Identifier struct {
 	Scope *Scope // Appears in scope.
 	Name  Token
@@ -376,13 +379,7 @@ func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
 			r = append(r, f.importSpec(n))
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_import:
-				// ok
-			case TOK_0028: // '('
-				// ok
-			case TOK_0029: // ')'
-				// ok
-			case TOK_003b: // ';'
+			case TOK_import, TOK_0028, TOK_0029, TOK_003b: // "import" '(' ')' ';'
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -394,7 +391,7 @@ func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
 	return r
 }
 
-// ImportSpecNode decribes an import specification.
+// ImportSpecNode decribes the ImportSpec production.
 type ImportSpecNode struct {
 	ImportQualifier string
 	ImportPath      string
