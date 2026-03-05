@@ -5,6 +5,8 @@
 package octogo // import "modernc.org/octogo/lib"
 
 import (
+	"fmt"
+
 	"go/constant"
 )
 
@@ -74,6 +76,7 @@ out:
 			panic(todo("%v: internal error: %v", tok.Position(), tok))
 		}
 	}
+	// Predefines types
 	f := func(nm string, k Kind) {
 		Universe.Nodes[nm] = &PredefinedType{declaration: declaration{name: names[nm]}, kinder: kinder(k)}
 	}
@@ -86,6 +89,7 @@ out:
 	f("uint8", PredefinedUint8)
 	f("uintptr", PredefinedUintptr)
 
+	// Type aliases
 	f2 := func(nm, aliasNm string) {
 		Universe.Nodes[nm] = newAlias(names[nm], 0, Universe.Nodes[aliasNm].(Typ))
 	}
@@ -94,6 +98,7 @@ out:
 	f2("rune", "int32")
 	f2("uint", "uint32")
 
+	// Bool constants
 	f3 := func(nm string, v bool) {
 		Universe.Nodes[nm] = newConstSpecification(names[nm], 0, constant.MakeBool(v), Universe.Nodes["bool"].(Typ))
 	}
@@ -112,11 +117,11 @@ const (
 	BlockScope
 )
 
-// Scope registers name-Node bindings.
+// Scope registers declarations.
 type Scope struct {
 	Kind   ScopeKind
-	Parent *Scope
 	Nodes  map[string]Declaration
+	Parent *Scope
 }
 
 func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
@@ -128,7 +133,14 @@ func (s *Scope) child(kind ScopeKind) (r *Scope) {
 }
 
 func (s *Scope) add(d Declaration) (err error) {
-	panic(todo(""))
+	new := d.Name()
+	nm := new.Src()
+	if ex := s.Nodes[nm]; ex != nil {
+		return fmt.Errorf("%v: %s redeclared, existing declaration at %v", new.Position(), nm, ex.Name().Position())
+	}
+
+	s.Nodes[nm] = d
+	return nil
 }
 
 // Declaration represents the object a name binds to. For example a const, var,

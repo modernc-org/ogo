@@ -1,5 +1,15 @@
 **THIRD-PARTY SOFTWARE LICENSES**
 
+OctoGo derives its specification from the Go Language specification and reuses code from the Go stdlin. From https://go.dev/copyright:
+
+### ---
+
+**Copyright**
+
+Except as noted, the contents of this site are licensed under the Creative Commons Attribution 4.0 License, and code is licensed under a BSD license.
+
+### ---
+
 OctoGo utilizes the flexprop compiler toolchain and its associated dependencies to generate binaries for the Parallax Propeller 2\. The following copyright notices and licenses apply to these third-party components and are included in compliance with their respective distribution terms.
 
 ### ---

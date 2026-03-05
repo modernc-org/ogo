@@ -94,6 +94,7 @@ func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *
 		}()
 	}
 	wg.Wait()
+	//TODO check file scope collisions.
 	return r
 }
 
