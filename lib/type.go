@@ -34,6 +34,7 @@ type Typ interface {
 
 type kinder Kind
 
+// Kind describes a type category.
 func (k kinder) Kind() Kind {
 	return Kind(k)
 }
@@ -45,16 +46,12 @@ type AliasType struct {
 	U Typ
 }
 
-func newAlias(u Typ) *AliasType {
-	return &AliasType{kinder: kinder(Alias), U: u}
+func newAlias(name Token, valid int32, u Typ) *AliasType {
+	return &AliasType{declaration: declaration{name, valid}, kinder: kinder(Alias), U: u}
 }
 
 // PredefinedType represents a built-in type.
 type PredefinedType struct {
 	declaration
 	kinder
-}
-
-func newPredefinedType(k Kind) (r *PredefinedType) {
-	return &PredefinedType{kinder: kinder(k)}
 }

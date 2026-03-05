@@ -15,6 +15,6 @@ type ConstSpecification struct {
 	Typ
 }
 
-func newConstSpecification(visible int32, value constant.Value, typ Typ) *ConstSpecification {
-	return &ConstSpecification{declaration(visible), value, typ}
+func newConstSpecification(name Token, valid int32, value constant.Value, typ Typ) *ConstSpecification {
+	return &ConstSpecification{declaration{valid: valid}, value, typ}
 }

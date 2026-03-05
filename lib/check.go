@@ -13,22 +13,10 @@ import (
 	"sync"
 )
 
-var (
-	_ Declaration = (*PredefinedType)(nil)
-)
-
-// Declaration represents the object a name binds to. For example a const, var,
-// type or function declaration, but also an import qualifier.
-type Declaration interface {
-	// Valid reports the token index at which the declaration is in scope.
-	// Meaningful only in block scopes.
-	Valid() int32
-}
-
-type declaration int32
-
-func (d declaration) Valid() int32 {
-	return int32(d)
+// ImportQualifier represents 'foo' in 'foo.Bar' when 'Bar' is exported from
+// package imported as 'foo'.
+type ImportQualifier struct {
+	declaration
 }
 
 // Node represents a parse tree.
@@ -107,31 +95,6 @@ func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *
 	}
 	wg.Wait()
 	return r
-}
-
-// ScopeKind describes the type of a Scope.
-type ScopeKind int
-
-// ScopeKind values.
-const (
-	UniverseScope ScopeKind = iota
-	FileScope
-	PackageScope
-	BlockScope
-)
-
-// Scope registers name-Node bindings.
-type Scope struct {
-	Parent *Scope
-	Nodes  map[string]Declaration
-}
-
-func newScope(parent *Scope) (r *Scope) {
-	return &Scope{Parent: parent}
-}
-
-func (s *Scope) child() (r *Scope) {
-	return newScope(s)
 }
 
 // File represents a single OctoGo source file.
