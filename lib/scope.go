@@ -139,6 +139,9 @@ func (s *Scope) add(d Declaration) (err error) {
 		return fmt.Errorf("%v: %s redeclared, existing declaration at %v", new.Position(), nm, ex.Name().Position())
 	}
 
+	if s.Nodes == nil {
+		s.Nodes = map[string]Declaration{}
+	}
 	s.Nodes[nm] = d
 	return nil
 }

@@ -5,19 +5,12 @@
 package octogo // import "modernc.org/octogo/lib"
 
 import (
-	"bytes"
 	"fmt"
 	"go/token"
 	"os"
 	"strings"
 	"sync"
 )
-
-// ImportQualifier represents 'foo' in 'foo.Bar' when 'Bar' is exported from
-// package imported as 'foo'.
-type ImportQualifier struct {
-	declaration
-}
 
 // Node represents a parse tree.
 type Node struct {
@@ -98,6 +91,13 @@ func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *
 	return r
 }
 
+// ImportQualifier represents 'foo' in 'foo.Bar' when 'Bar' is exported from
+// package imported as 'foo'.
+type ImportQualifier struct {
+	declaration
+	Import *ImportSpecNode
+}
+
 // File represents a single OctoGo source file.
 type File struct {
 	AST         []int32
@@ -106,6 +106,7 @@ type File struct {
 	ImportSpecs []*ImportSpecNode
 	Scope       *Scope
 	parser      Parser
+	tld         *Scope // Later merged into package scope
 }
 
 func (f *File) tok(x int32) (r Token) {
@@ -120,23 +121,6 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 	f.parser.sc.AddErr(pos, s, args...)
 }
 
-//lint:ignore U1000 debug helper
-func (f *File) walk(ast []int32, lvl int) {
-	for len(ast) != 0 {
-		next := int32(1)
-		switch n := ast[0]; {
-		case n < 0:
-			fmt.Printf("%s%v\n", strings.Repeat("· ", lvl), Symbol(-n))
-			next = 2 + ast[1]
-			f.walk(ast[2:next], lvl+1)
-		default:
-			tok := f.parser.Token(n)
-			fmt.Printf("%s%s [%v]\n", strings.Repeat("· ", lvl), tok, Symbol(tok.Ch))
-		}
-		ast = ast[next:]
-	}
-}
-
 func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 	r = &File{Filename: fn}
 	b, ok := overlay[fn]
@@ -147,7 +131,8 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 		}
 	}
 
-	if r.AST, r.Err = r.parser.Parse(fn, b); r.Err != nil {
+	r.AST, r.Err = r.parser.Parse(fn, b)
+	if r.Err = r.parser.sc.Err(); r.Err != nil {
 		return r, r.Err
 	}
 
@@ -165,7 +150,25 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 		}
 	}
 
+	r.Err = r.parser.sc.Err()
 	return r, r.Err
+}
+
+//lint:ignore U1000 debug helper
+func (f *File) walk(ast []int32, lvl int) {
+	for len(ast) != 0 {
+		next := int32(1)
+		switch n := ast[0]; {
+		case n < 0:
+			fmt.Printf("%s%v\n", strings.Repeat("· ", lvl), Symbol(-n))
+			next = 2 + ast[1]
+			f.walk(ast[2:next], lvl+1)
+		default:
+			tok := f.parser.Token(n)
+			fmt.Printf("%s%s [%v]\n", strings.Repeat("· ", lvl), tok, Symbol(tok.Ch))
+		}
+		ast = ast[next:]
+	}
 }
 
 func (f *File) sourceFile(n Node) {
@@ -256,15 +259,15 @@ func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
 
 // ImportSpecNode decribes an import specification.
 type ImportSpecNode struct {
-	ImplicitQualifier string
-	ImportQualifier   int32 // identifier index
-	ImportPath        int32 // string_lit index
-	IsDotImport       bool
-	IsStdLib          bool
+	ImportQualifier string
+	ImportPath      string
+	IsDotImport     bool
+	IsStdLib        bool
 }
 
 func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 	r = &ImportSpecNode{}
+	var nm Token
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case 0:
@@ -272,32 +275,47 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 			case TOK_002e: // '.'
 				r.IsDotImport = true
 			case identifier:
-				r.ImportQualifier = n.tok
+				nm = f.tok(n.tok)
+				r.ImportQualifier = nm.Src()
 			case string_lit:
-				r.ImportPath = n.tok
-				ip := f.tok(n.tok).SrcBytes()
-				if r.ImportQualifier == 0 {
-					if x := bytes.LastIndexByte(ip, '/'); x > 0 {
-						if base := string(ip[x:]); token.IsIdentifier(base) {
-							r.ImplicitQualifier = base
+				nm = f.tok(n.tok)
+				r.ImportPath = nm.Src()
+				if !r.IsDotImport && r.ImportQualifier == "" {
+					if x := strings.LastIndexByte(r.ImportPath, '/'); x > 0 {
+						if base := r.ImportPath[x:]; token.IsIdentifier(base) {
+							r.ImportQualifier = base
+						} else {
+							f.err(nm.Position(), "invalid package name: %s", r.ImportPath)
 						}
 					}
 				}
-				if x := bytes.IndexByte(ip, '/'); x >= 0 {
-					ip = ip[:x]
-					if len(ip) != 0 && !bytes.ContainsRune(ip, '.') {
+
+				x := strings.IndexByte(r.ImportPath, '/')
+				if x < 0 {
+					x = len(r.ImportPath)
+				}
+				if x >= 0 {
+					first := r.ImportPath[:x]
+					if len(first) != 0 && !strings.ContainsRune(first, '.') {
+						if r.ImportQualifier == "" {
+							r.ImportQualifier = first
+						}
 						r.IsStdLib = true
 					}
-				}
-				if r.ImportQualifier == 0 && r.ImplicitQualifier == "" {
-					tok := f.tok(n.tok)
-					f.err(tok.Position(), "invalid package name: %s", tok.SrcBytes())
 				}
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
 		default:
 			panic(todo("", n.sym))
+		}
+	}
+	if r.ImportQualifier != "" {
+		if f.Scope == nil {
+			f.Scope = newScope(nil, FileScope)
+		}
+		if err := f.Scope.add(&ImportQualifier{declaration: declaration{name: nm}, Import: r}); err != nil {
+			f.err(nm.Position(), "%v", err)
 		}
 	}
 	return r
