@@ -128,9 +128,9 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 	return &Scope{Parent: parent, Kind: kind}
 }
 
-func (s *Scope) child(kind ScopeKind) (r *Scope) {
-	return newScope(s, kind)
-}
+//TODO func (s *Scope) child(kind ScopeKind) (r *Scope) {
+//TODO 	return newScope(s, kind)
+//TODO }
 
 func (s *Scope) add(d Declaration) (err error) {
 	new := d.Name()
@@ -167,4 +167,17 @@ func (d *declaration) Name() Token {
 // Meaningful only in block scopes.
 func (d *declaration) Valid() int32 {
 	return int32(d.valid)
+}
+
+// ImportQualifier represents 'foo' in 'foo.Bar' when 'Bar' is exported from
+// package imported as 'foo'.
+type ImportQualifier struct {
+	declaration
+	Import *ImportSpecNode
+}
+
+// ConstDeclaration represents a named constant compile time value.
+type ConstDeclaration struct {
+	declaration
+	ConstSpec *ConstSpecNode
 }

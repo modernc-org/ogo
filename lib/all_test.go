@@ -24,9 +24,9 @@ import (
 )
 
 // TopLevelDecl: Constants and Variables
-/// const MAX_COGS = 8
-/// const DEFAULT_FLAG = true
-/// 
+const MAX_COGS = 8
+const DEFAULT_FLAG = true
+
 /// var globalStatus bool = false
 /// var sharedBus chan byte
 /// var multiChan chan chan int

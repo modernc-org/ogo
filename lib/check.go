@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"go/constant"
 )
 
 // Node represents a parse tree.
@@ -91,20 +93,13 @@ func newPackage(limiter limiter, files []string, overlay map[string][]byte) (r *
 	return r
 }
 
-// ImportQualifier represents 'foo' in 'foo.Bar' when 'Bar' is exported from
-// package imported as 'foo'.
-type ImportQualifier struct {
-	declaration
-	Import *ImportSpecNode
-}
-
 // File represents a single OctoGo source file.
 type File struct {
 	AST         []int32
 	Err         error
 	Filename    string
 	ImportSpecs []*ImportSpecNode
-	Scope       *Scope
+	FileScope   *Scope
 	parser      Parser
 	tld         *Scope // Later merged into package scope
 }
@@ -122,7 +117,11 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 }
 
 func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
-	r = &File{Filename: fn}
+	r = &File{
+		Filename:  fn,
+		FileScope: newScope(nil, FileScope),
+		tld:       newScope(Universe, PackageScope),
+	}
 	b, ok := overlay[fn]
 	if !ok {
 		if b, err = os.ReadFile(fn); err != nil {
@@ -177,11 +176,11 @@ func (f *File) sourceFile(n Node) {
 		switch n.sym {
 		case ImportDecl:
 			f.ImportSpecs = append(f.ImportSpecs, f.importDecl(n)...)
-		//TODO case ConstDecl:
-		//TODO 	f.constDecl(n)
+		case TopLevelDecl:
+			f.topLevelDecl(n)
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_003b:
+			case TOK_003b, TOK_EOF:
 				// ok
 			default:
 				panic(todo("", f.parser.Token(n.tok), f.ch(n.tok)))
@@ -192,11 +191,34 @@ func (f *File) sourceFile(n Node) {
 	}
 }
 
-func (f *File) constDecl(n Node) {
+func (f *File) topLevelDecl(n Node) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case ConstDecl:
+			f.constDecl(f.tld, n)
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
+
+func (f *File) constDecl(s *Scope, n Node) {
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case ConstSpec:
-			f.constSpec(n)
+			cs := f.constSpec(s, n)
+			var valid int32
+			if s.Kind != PackageScope {
+				panic(todo(""))
+			}
+			if err := s.add(&ConstDeclaration{declaration: declaration{name: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
+				f.err(cs.Name.Position(), "%v", err)
+			}
 		case 0:
 			switch f.ch(n.tok) {
 			case TOK_const, TOK_0028, TOK_0029, TOK_003b:
@@ -210,19 +232,25 @@ func (f *File) constDecl(n Node) {
 	}
 }
 
-func (f *File) constSpec(n Node) {
+// ConstSpecNode describes the ConstSpec production.
+type ConstSpecNode struct {
+	Expression ExpressionNode
+	Name       Token
+	//TODO Type Typ
+}
+
+func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
+	r = &ConstSpecNode{}
 	for n := range iterator(n.ast) {
 		switch n.sym {
-		//TODO case Type:
-		//TODO 	// TODO: f.parseType(n)
-		//TODO case Expression:
-		//TODO 	// TODO: f.expression(n)
+		case Expression:
+			r.Expression = f.expression(s, n)
 		case 0:
 			switch f.ch(n.tok) {
-			// case identifier:
-			// 	// TODO: Bind the identifier to the current scope
-			// case TOK_003d: // '='
-			// 	// ok
+			case identifier:
+				r.Name = f.tok(n.tok)
+			case TOK_003d: // '='
+				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -230,6 +258,115 @@ func (f *File) constSpec(n Node) {
 			panic(todo("", n.sym))
 		}
 	}
+	return r
+}
+
+// ExpressionNode represents the Expression production.
+type ExpressionNode any
+
+// BinaryExpression represents a binary operation.
+type BinaryExpression struct {
+	LHS ExpressionNode
+	Op  Symbol
+	RHS ExpressionNode
+}
+
+func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
+	var relOp Symbol
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case SimpleExpr:
+			switch e := f.simpleExpr(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpression{LHS: r, Op: relOp, RHS: e}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
+	var addOp Symbol
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Term:
+			switch e := f.term(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpression{LHS: r, Op: addOp, RHS: e}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
+	var mulOp Symbol
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Factor:
+			switch e := f.factor(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpression{LHS: r, Op: mulOp, RHS: e}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// Identifier describes a named factor.
+type Identifier struct {
+	Scope *Scope // Appears in scope.
+	Name  Token
+	Index int32
+}
+
+func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case int_lit:
+				if r = constant.MakeFromLiteral(tok.Src(), token.INT, 0); r == constant.Unknown {
+					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
+				}
+				return r
+			case identifier:
+				r = &Identifier{Scope: s, Name: tok, Index: n.tok}
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
 }
 
 func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
@@ -311,10 +448,7 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 		}
 	}
 	if r.ImportQualifier != "" {
-		if f.Scope == nil {
-			f.Scope = newScope(nil, FileScope)
-		}
-		if err := f.Scope.add(&ImportQualifier{declaration: declaration{name: nm}, Import: r}); err != nil {
+		if err := f.FileScope.add(&ImportQualifier{declaration: declaration{name: nm}, Import: r}); err != nil {
 			f.err(nm.Position(), "%v", err)
 		}
 	}
