@@ -4,7 +4,12 @@
 
 package octogo // import "modernc.org/octogo/lib"
 
-// Kind describes a Type
+var (
+	_ Typ = (*AliasType)(nil)
+	_ Typ = (*PredefinedType)(nil)
+)
+
+// Kind describes a type category.
 type Kind int
 
 // Values of type Kind
@@ -18,4 +23,38 @@ const (
 	PredefinedUint16
 	PredefinedInt32
 	PredefinedUint32
+	PredefinedUintptr
+	Alias
 )
+
+// Typ describes an OctoGo type.
+type Typ interface {
+	Kind() Kind
+}
+
+type kinder Kind
+
+func (k kinder) Kind() Kind {
+	return Kind(k)
+}
+
+// AliasType represents T in 'type T = U'.
+type AliasType struct {
+	declaration
+	kinder
+	U Typ
+}
+
+func newAlias(u Typ) *AliasType {
+	return &AliasType{kinder: kinder(Alias), U: u}
+}
+
+// PredefinedType represents a built-in type.
+type PredefinedType struct {
+	declaration
+	kinder
+}
+
+func newPredefinedType(k Kind) (r *PredefinedType) {
+	return &PredefinedType{kinder: kinder(k)}
+}
