@@ -136,7 +136,7 @@ func (s *Scope) add(d Declaration) (err error) {
 	new := d.Name()
 	nm := new.Src()
 	if ex := s.Nodes[nm]; ex != nil {
-		return fmt.Errorf("%v: %s redeclared, existing declaration at %v", new.Position(), nm, ex.Name().Position())
+		return fmt.Errorf("%v: %s declared in the same scope before at %v", new.Position(), nm, ex.Name().Position())
 	}
 
 	if s.Nodes == nil {
@@ -180,4 +180,10 @@ type ImportQualifier struct {
 type ConstDeclaration struct {
 	declaration
 	ConstSpec *ConstSpecNode
+}
+
+// VarDeclaration represents a named run time value.
+type VarDeclaration struct {
+	declaration
+	VarSpec *VarSpecNode
 }

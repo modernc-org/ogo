@@ -216,11 +216,19 @@ func (f *File) varDecl(s *Scope, n Node) {
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case VarSpec:
-			f.varSpec(s, n)
-			panic(todo("")) //TODO declare
+			names, vs := f.varSpec(s, n)
+			for _, nm := range names {
+				var valid int32
+				if s.Kind != PackageScope {
+					panic(todo(""))
+				}
+				if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
+					f.err(vs.Name.Position(), "%v", err)
+				}
+			}
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_var: // "var"
+			case TOK_var, TOK_0028, TOK_003b, TOK_0029: // "var", '(', ';', ')'
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -234,21 +242,24 @@ func (f *File) varDecl(s *Scope, n Node) {
 // VarSpecNode describes the VarSpec production.
 type VarSpecNode struct {
 	Expression ExpressionNode
-	Names      []Token
-	//TODO Type Typ
+	Name       Token
+	TypeNode   *TypeNode
 }
 
-func (f *File) varSpec(s *Scope, n Node) (r *VarSpecNode) {
+func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 	r = &VarSpecNode{}
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case IdentifierList:
-			r.Names = f.identifierList(s, n)
+			names = f.identifierList(s, n)
 		case Type:
-			f.typ(s, n)
-			panic(todo(""))
+			r.TypeNode = f.typ(s, n)
+		case Expression:
+			r.Expression = f.expression(s, n)
 		case 0:
 			switch f.ch(n.tok) {
+			case TOK_003d: // '='
+				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -256,14 +267,38 @@ func (f *File) varSpec(s *Scope, n Node) (r *VarSpecNode) {
 			panic(todo("", n.sym))
 		}
 	}
-	return r
+	return names, r
 }
 
-func (f *File) typ(s *Scope, n Node) (r /*TDOO*/ any) {
+// TypeNode describes the Type production.
+type TypeNode struct {
+	Qualifier  Token // Valid if Qualifier.IsValid()
+	Name       Token
+	Kind       Symbol // TOK_chan, TOK_005b('['), ...
+	TypeNode   *TypeNode
+	Expression ExpressionNode // [expr]T
+}
+
+func (f *File) typ(s *Scope, n Node) (r *TypeNode) {
+	r = &TypeNode{}
 	for n := range iterator(n.ast) {
 		switch n.sym {
+		case Type:
+			r.TypeNode = f.typ(s, n)
+		case Expression:
+			r.Expression = f.expression(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case identifier:
+				switch {
+				case r.Name.IsValid():
+					r.Qualifier = r.Name
+					r.Name = tok
+				default:
+					r.Name = tok
+				}
+			case TOK_chan, TOK_005b, TOK_005d: // "chan", '[', ']'
+				r.Kind = Symbol(tok.Ch)
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -281,6 +316,8 @@ func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case identifier:
 				r = append(r, tok)
+			case TOK_002c: // ','
+				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}

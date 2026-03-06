@@ -27,13 +27,13 @@ import (
 const MAX_COGS = 8
 const DEFAULT_FLAG = true
 
-/// var globalStatus bool = false
-/// var (
-///	sharedBus, outputStream chan byte
-///	multiChan chan chan int
-///	pinBuffer [32]int
-/// )
-/// 
+var globalStatus bool = false
+var (
+	sharedBus, outputStream chan byte
+	multiChan chan chan int
+	pinBuffer [32]int
+)
+
 /// // FuncDecl with ParameterList and Return Type
 /// func worker(id int, dataChan chan byte, signal chan chan int) bool {
 ///     // Nested Types and Declarations

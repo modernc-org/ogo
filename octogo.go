@@ -47,7 +47,6 @@
 //	EmptyStatement = .
 //
 //	# Handles L-value resolution for Assignment (=), Channel Send (<-), or Call ()
-//	#TODO- Postfix = { Selector | Index } ( "=" Expression | "<-" Expression | CallSuffix ) .
 //	Postfix = { Selector | Index } PostfixOp .
 //	PostfixOp = CallSuffix
 //	          | "<-" Expression
