@@ -199,6 +199,8 @@ func (f *File) topLevelDecl(n Node) {
 		switch n.sym {
 		case ConstDecl:
 			f.constDecl(f.tld, n)
+		case VarDecl:
+			f.varDecl(f.tld, n)
 		case 0:
 			switch f.ch(n.tok) {
 			default:
@@ -208,6 +210,85 @@ func (f *File) topLevelDecl(n Node) {
 			panic(todo("", n.sym))
 		}
 	}
+}
+
+func (f *File) varDecl(s *Scope, n Node) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case VarSpec:
+			f.varSpec(s, n)
+			panic(todo("")) //TODO declare
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_var: // "var"
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
+
+// VarSpecNode describes the VarSpec production.
+type VarSpecNode struct {
+	Expression ExpressionNode
+	Names      []Token
+	//TODO Type Typ
+}
+
+func (f *File) varSpec(s *Scope, n Node) (r *VarSpecNode) {
+	r = &VarSpecNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case IdentifierList:
+			r.Names = f.identifierList(s, n)
+		case Type:
+			f.typ(s, n)
+			panic(todo(""))
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) typ(s *Scope, n Node) (r /*TDOO*/ any) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) identifierList(s *Scope, n Node) (r []Token) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case identifier:
+				r = append(r, tok)
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
 }
 
 func (f *File) constDecl(s *Scope, n Node) {

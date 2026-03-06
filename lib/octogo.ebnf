@@ -4,7 +4,7 @@ ImportSpec = [ "." | identifier ] string_lit .
 TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
 ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 ConstSpec = identifier [ Type ] "=" Expression .
-Type = identifier | "chan" Type | "[" [ Expression ] "]" Type .
+Type = [ identifier "." ] identifier | "chan" Type | "[" [ Expression ] "]" Type .
 VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
 VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
 IdentifierList = identifier { "," identifier } .
@@ -21,9 +21,13 @@ Statement = VarDecl
           | SelectStmt
           | "<-" Expression
           | identifier Postfix
-	  | EmptyStatement .
+          | EmptyStatement .
 EmptyStatement = .
-Postfix = { Selector | Index } ( "=" Expression | "<-" Expression | CallSuffix ) .
+Postfix = { Selector | Index } PostfixOp .
+PostfixOp = CallSuffix
+          | "<-" Expression
+          | { "," LhsItem } "=" Expression .
+LhsItem = identifier { Selector | Index } .
 Selector = "." identifier .
 Index = "[" Expression "]" .
 CallSuffix = "(" [ ArgumentList ] ")" .

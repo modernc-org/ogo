@@ -19,7 +19,7 @@
 //	ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 //	ConstSpec = identifier [ Type ] "=" Expression .
 //
-//	Type = identifier | "chan" Type | "[" [ Expression ] "]" Type .
+//	Type = [ identifier "." ] identifier | "chan" Type | "[" [ Expression ] "]" Type .
 //
 //	VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
 //	# If Expression is present then IdentifierList must be a single identifier.
@@ -43,11 +43,16 @@
 //	          | SelectStmt
 //	          | "<-" Expression
 //	          | identifier Postfix
-//		  | EmptyStatement .
+//	          | EmptyStatement .
 //	EmptyStatement = .
 //
 //	# Handles L-value resolution for Assignment (=), Channel Send (<-), or Call ()
-//	Postfix = { Selector | Index } ( "=" Expression | "<-" Expression | CallSuffix ) .
+//	#TODO- Postfix = { Selector | Index } ( "=" Expression | "<-" Expression | CallSuffix ) .
+//	Postfix = { Selector | Index } PostfixOp .
+//	PostfixOp = CallSuffix
+//	          | "<-" Expression
+//	          | { "," LhsItem } "=" Expression .
+//	LhsItem = identifier { Selector | Index } .
 //	Selector = "." identifier .
 //	Index = "[" Expression "]" .
 //	CallSuffix = "(" [ ArgumentList ] ")" .
