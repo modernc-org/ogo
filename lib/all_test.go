@@ -23,19 +23,19 @@ import (
 	"runtime"
 )
 
-// TopLevelDecl: Constants and Variables
-const MAX_COGS = 8
-const DEFAULT_FLAG = true
-
-var globalStatus bool = false
-var (
-	sharedBus, outputStream chan byte
-	multiChan chan chan int
-	pinBuffer [32]int
-)
+/// // TopLevelDecl: Constants and Variables
+/// const MAX_COGS = 8
+/// const DEFAULT_FLAG = true
+/// 
+/// var globalStatus bool = false
+/// var (
+/// 	sharedBus, outputStream chan byte
+/// 	multiChan chan chan int
+/// 	pinBuffer [32]int
+/// )
 
 // FuncDecl with ParameterList and Return Type
-func worker(id, n int, dataChan chan byte, signal chan chan int) bool {
+/// func worker(id, n int, dataChan chan byte, signal chan chan int) bool {
 ///     // Nested Types and Declarations
 ///     var localBuf [16]byte
 ///     var active bool = true
@@ -75,20 +75,20 @@ func worker(id, n int, dataChan chan byte, signal chan chan int) bool {
 ///     
 ///     // Return Statement
 ///     return active
-}
+/// }
 
-func compute(a int, b int) (c, d int) {
+/// func compute(a int, b int) (c, d int) {
 ///     // Deep Expression tree climbing: AddOp, MulOp, RelOp, and grouped Factors
 ///     // Precedence test: bitwise, arithmetic, and logical boundaries
 ///     return (a * b) + (a / b) - (a << 2) ^ (b >> 1) & 255, 42, 24
-}
+/// }
 
-func emptyReturnTest() {
+/// func emptyReturnTest() {
 ///     // Statements: return without expression
 ///     return
-}
+/// }
 
-func main() {
+/// func main() {
 ///     var a int = 10
 ///     var b int = 20
 ///     var c int
@@ -116,7 +116,7 @@ func main() {
 ///     var isDone bool = true
 ///     
 ///     return 
-}
+/// }
 `
 )
 
