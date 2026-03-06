@@ -4,9 +4,6 @@
 
 // # Language Specification
 //
-//	# OctoGo Expression Grammar for modernc.org/egg
-//	# Target: Parallax Propeller 2
-//
 //	# Enforce imports before other top-level declarations
 //	SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 //
@@ -27,10 +24,10 @@
 //
 //	IdentifierList = identifier { "," identifier } .
 //
-//	FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
-//	ParameterList = identifier Type { "," identifier Type } .
+//	FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+//	ParameterList = IdentifierList Type { "," [ IdentifierList Type ] } .
 //
-//	Block = "{" { Statement ";" } "}" .
+//	Block = "{" { Statement ";" } [ Statement ] "}" .
 //	# Left-factored statements to resolve LL(1) ambiguities
 //	# between assignment, function calls, and channel sends.
 //	Statement = VarDecl

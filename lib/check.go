@@ -201,6 +201,8 @@ func (f *File) topLevelDecl(n Node) {
 			f.constDecl(f.tld, n)
 		case VarDecl:
 			f.varDecl(f.tld, n)
+		case FuncDecl:
+			f.funcDecl(f.tld, n)
 		case 0:
 			switch f.ch(n.tok) {
 			default:
@@ -210,6 +212,113 @@ func (f *File) topLevelDecl(n Node) {
 			panic(todo("", n.sym))
 		}
 	}
+}
+
+// FuncDeclNode describes the FuncDecl production.
+type FuncDeclNode struct {
+	Name          Token
+	ParameterList *ParameterListNode
+	Type          *TypeNode
+	ReturnList    *ParameterListNode
+}
+
+func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
+	r = &FuncDeclNode{}
+	bs := f.tld.child(BlockScope)
+	seenRPar := false
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case ParameterList:
+			switch {
+			case seenRPar:
+				r.ReturnList = f.parameterList(bs, n)
+			default:
+				r.ParameterList = f.parameterList(bs, n)
+			}
+			//TODO declare in bs
+		case Block:
+			f.block(s, n, false)
+			//TODO use BlockNode
+		case Type:
+			r.Type = f.typ(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case identifier:
+				r.Name = tok
+				//TODO declare in s
+			case TOK_func, TOK_0028: // "func", '('
+				// ok
+			case TOK_0029: // ')'
+				seenRPar = true
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// BlockNode describes the Block production.
+type BlockNode struct {
+	//TODO
+}
+
+func (f *File) block(s *Scope, n Node, createChildScope bool) (r *BlockNode) {
+	if createChildScope {
+		s = s.child(BlockScope)
+	}
+	r = &BlockNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_007b, TOK_007d: // '{', '}'
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// ParameterListNode describes the ParameterList production.
+type ParameterListNode struct {
+	List []struct {
+		Names []Token
+		Type  *TypeNode
+	}
+}
+
+func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
+	r = &ParameterListNode{}
+	var item struct {
+		Names []Token
+		Type  *TypeNode
+	}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case IdentifierList:
+			item.Names = f.identifierList(s, n)
+		case Type:
+			item.Type = f.typ(s, n)
+			r.List = append(r.List, item)
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_002c: // ','
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
 }
 
 func (f *File) varDecl(s *Scope, n Node) {

@@ -34,8 +34,8 @@ var (
 	pinBuffer [32]int
 )
 
-/// // FuncDecl with ParameterList and Return Type
-/// func worker(id int, dataChan chan byte, signal chan chan int) bool {
+// FuncDecl with ParameterList and Return Type
+func worker(id, n int, dataChan chan byte, signal chan chan int) bool {
 ///     // Nested Types and Declarations
 ///     var localBuf [16]byte
 ///     var active bool = true
@@ -75,20 +75,20 @@ var (
 ///     
 ///     // Return Statement
 ///     return active
-/// }
-/// 
-/// func compute(a int, b int) int {
+}
+
+func compute(a int, b int) (c, d int) {
 ///     // Deep Expression tree climbing: AddOp, MulOp, RelOp, and grouped Factors
 ///     // Precedence test: bitwise, arithmetic, and logical boundaries
-///     return (a * b) + (a / b) - (a << 2) ^ (b >> 1) & 255
-/// }
-/// 
-/// func emptyReturnTest() {
+///     return (a * b) + (a / b) - (a << 2) ^ (b >> 1) & 255, 42, 24
+}
+
+func emptyReturnTest() {
 ///     // Statements: return without expression
 ///     return
-/// }
-/// 
-/// func main() {
+}
+
+func main() {
 ///     var a int = 10
 ///     var b int = 20
 ///     var c int
@@ -116,7 +116,7 @@ var (
 ///     var isDone bool = true
 ///     
 ///     return 
-/// }
+}
 `
 )
 
@@ -172,3 +172,13 @@ func TestNewPackage(t *testing.T) {
 		}
 	}
 }
+
+//TODO- func TestTmp(t *testing.T) {
+//TODO- 	const src = "func f(a T,) {}"
+//TODO- 	pkg := newPackage(-1, []string{"params.ogo"}, map[string][]byte{"params.ogo": []byte(src)})
+//TODO- 	for _, v := range pkg.Files {
+//TODO- 		if err := v.Err; err != nil {
+//TODO- 			t.Error(err)
+//TODO- 		}
+//TODO- 	}
+//TODO- }

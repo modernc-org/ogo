@@ -8,9 +8,9 @@ Type = [ identifier "." ] identifier | "chan" Type | "[" [ Expression ] "]" Type
 VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
 VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
 IdentifierList = identifier { "," identifier } .
-FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
-ParameterList = identifier Type { "," identifier Type } .
-Block = "{" { Statement ";" } "}" .
+FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+ParameterList = IdentifierList Type { "," [ IdentifierList Type ] } .
+Block = "{" { Statement ";" } [ Statement ] "}" .
 Statement = VarDecl
           | ConstDecl
           | "if" Expression Block [ "else" Block ]

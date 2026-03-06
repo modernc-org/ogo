@@ -128,9 +128,9 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 	return &Scope{Parent: parent, Kind: kind}
 }
 
-//TODO func (s *Scope) child(kind ScopeKind) (r *Scope) {
-//TODO 	return newScope(s, kind)
-//TODO }
+func (s *Scope) child(kind ScopeKind) (r *Scope) {
+	return newScope(s, kind)
+}
 
 func (s *Scope) add(d Declaration) (err error) {
 	new := d.Name()
