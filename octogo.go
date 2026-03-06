@@ -61,13 +61,14 @@
 //	          | { "," LhsItem } "=" Expression .
 //
 //	LhsItem = AssignHead { Selector | Index } .
-//	Selector = "." identifier .
+//	Selector = "." ( identifier | "(" "type" ")" ) .
 //	Index = "[" Expression "]" .
 //	CallSuffix = "(" [ ArgumentList ] ")" .
 //	ArgumentList = Expression { "," Expression } .
 //
-//	SwitchStmt = "switch" [ Expression ] "{" { CaseClause } "}" .
-//	CaseClause = CaseHead ":" { Statement ";" } .
+//	SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
+//	SwitchGuard = Expression [ ":=" Expression ] .
+//	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 //	CaseHead   = "case" ExpressionList | "default" .
 //	ExpressionList = Expression { "," Expression } .
 //

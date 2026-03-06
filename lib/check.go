@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-
 	//TODO "go/constant"
 )
 
@@ -320,7 +319,7 @@ type ParameterListNode struct {
 // 	}
 // 	return r
 // }
-// 
+//
 // func (f *File) varDecl(s *Scope, n Node) {
 // 	for n := range iterator(n.ast) {
 // 		switch n.sym {
@@ -417,7 +416,7 @@ type TypeNode struct {
 // 	}
 // 	return r
 // }
-// 
+//
 // func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 // 	for n := range iterator(n.ast) {
 // 		switch n.sym {
@@ -436,7 +435,7 @@ type TypeNode struct {
 // 	}
 // 	return r
 // }
-// 
+//
 // func (f *File) constDecl(s *Scope, n Node) {
 // 	for n := range iterator(n.ast) {
 // 		switch n.sym {
@@ -523,7 +522,7 @@ type BinaryExpression struct {
 // 	}
 // 	return r
 // }
-// 
+//
 // func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 // 	var addOp Symbol
 // 	for n := range iterator(n.ast) {
@@ -546,7 +545,7 @@ type BinaryExpression struct {
 // 	}
 // 	return r
 // }
-// 
+//
 // func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 // 	var mulOp Symbol
 // 	for n := range iterator(n.ast) {
