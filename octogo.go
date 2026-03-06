@@ -4,93 +4,100 @@
 
 // # Language Specification
 //
-//	# Enforce imports before other top-level declarations
 //	SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
-//
 //	ImportDecl = "import" ( ImportSpec | "(" { ImportSpec ";" } [ ImportSpec ] ")" ) .
 //	ImportSpec = [ "." | identifier ] string_lit .
 //
-//	TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
+//	TopLevelDecl = FuncDecl | VarDecl | ConstDecl | TypeDecl .
 //
-//	# Simple const declaration for now
+//	TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
+//	TypeSpec = identifier [ "=" ] Type .
+//
 //	ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 //	ConstSpec = identifier [ Type ] "=" Expression .
 //
-//	Type = [ identifier "." ] identifier | "chan" Type | "[" [ Expression ] "]" Type .
+//	Type = [ identifier "." ] identifier
+//	     | "chan" Type
+//	     | "[" [ Expression ] "]" Type
+//	     | "*" Type
+//	     | InterfaceType
+//	     | StructType .
+//
+//	StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
+//	FieldDecl = "*" [ identifier "." ] identifier
+//	     | identifier [ "." identifier | { "," identifier } Type ] .
+//	InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
+//	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
 //
 //	VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
-//	# If Expression is present then IdentifierList must be a single identifier.
 //	VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
-//
 //	IdentifierList = identifier { "," identifier } .
 //
-//	FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
-//	ParameterList = IdentifierList Type { "," [ IdentifierList Type ] } .
+//	FuncDecl = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+//	Receiver = "(" identifier Type ")" .
 //
+//	ParameterList = IdentifierList Type { "," [ IdentifierList Type ] } .
 //	Block = "{" { Statement ";" } [ Statement ] "}" .
-//	# Left-factored statements to resolve LL(1) ambiguities
-//	# between assignment, function calls, and channel sends.
+//
 //	Statement = VarDecl
 //	          | ConstDecl
+//	          | TypeDecl
 //	          | "if" Expression Block [ "else" Block ]
 //	          | "for" [ Expression ] Block
 //	          | "return" [ Expression ]
-//	          | "go" identifier CallSuffix
+//	          | "go" AssignHead { Selector | Index } CallSuffix
 //	          | SwitchStmt
 //	          | SelectStmt
 //	          | "<-" Expression
-//	          | identifier Postfix
+//	          | AssignHead Postfix
 //	          | EmptyStatement .
+//
 //	EmptyStatement = .
 //
-//	# Handles L-value resolution for Assignment (=), Channel Send (<-), or Call ()
+//	AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
 //	Postfix = { Selector | Index } PostfixOp .
 //	PostfixOp = CallSuffix
 //	          | "<-" Expression
 //	          | { "," LhsItem } "=" Expression .
-//	LhsItem = identifier { Selector | Index } .
+//
+//	LhsItem = AssignHead { Selector | Index } .
 //	Selector = "." identifier .
 //	Index = "[" Expression "]" .
 //	CallSuffix = "(" [ ArgumentList ] ")" .
 //	ArgumentList = Expression { "," Expression } .
 //
-//	# Switch Statement
 //	SwitchStmt = "switch" [ Expression ] "{" { CaseClause } "}" .
 //	CaseClause = CaseHead ":" { Statement ";" } .
 //	CaseHead   = "case" ExpressionList | "default" .
 //	ExpressionList = Expression { "," Expression } .
 //
-//	# Select Statement
 //	SelectStmt = "select" "{" { CommClause } "}" .
 //	CommClause = CommHead ":" { Statement ";" } .
 //	CommHead   = "case" CommOp | "default" .
-//
-//	# Left-factored CommOp to handle `<-ch`, `v = <-ch`, and `ch <- v`
 //	CommOp = "<-" Expression
-//	       | identifier PostfixComm .
+//	       | AssignHead PostfixComm .
+//
 //	PostfixComm = { Selector | Index } ( "=" "<-" Expression | "<-" Expression ) .
 //
-//	# Expressions (Standard Precedence Climbing)
 //	Expression = SimpleExpr [ RelOp SimpleExpr ] .
 //	SimpleExpr = Term { AddOp Term } .
-//	Term       = Factor { MulOp Factor } .
+//	Term       = UnaryExpr { MulOp UnaryExpr } .
+//
+//	UnaryExpr  = { UnaryOp } Factor .
+//	UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" .
 //
 //	Factor = identifier [ FactorSuffix ]
 //	       | int_lit
 //	       | string_lit
 //	       | rune_lit
-//	       | "<-" Expression
 //	       | "(" Expression ")" .
 //
-//	# FactorSuffix allows function calls and indexing inside expressions
-//	# without clashing with Statement-level assignments.
 //	FactorSuffix = { Selector | Index } [ CallSuffix ] .
 //
 //	RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" .
 //	AddOp = "+" | "-" | "|" | "^" .
 //	MulOp = "*" | "/" | "<<" | ">>" | "&" .
 //
-//	# Lexical tokens
 //	big_u_value            = "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit .
 //	binary_digit           = "0" | "1" .
 //	binary_digits          = binary_digit { [ "_" ] binary_digit } .

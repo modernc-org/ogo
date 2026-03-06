@@ -1,33 +1,48 @@
 SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 ImportDecl = "import" ( ImportSpec | "(" { ImportSpec ";" } [ ImportSpec ] ")" ) .
 ImportSpec = [ "." | identifier ] string_lit .
-TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
+TopLevelDecl = FuncDecl | VarDecl | ConstDecl | TypeDecl .
+TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
+TypeSpec = identifier [ "=" ] Type .
 ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 ConstSpec = identifier [ Type ] "=" Expression .
-Type = [ identifier "." ] identifier | "chan" Type | "[" [ Expression ] "]" Type .
+Type = [ identifier "." ] identifier
+     | "chan" Type
+     | "[" [ Expression ] "]" Type
+     | "*" Type
+     | InterfaceType
+     | StructType .
+StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
+FieldDecl = "*" [ identifier "." ] identifier
+     | identifier [ "." identifier | { "," identifier } Type ] .
+InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
+MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
 VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
 VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
 IdentifierList = identifier { "," identifier } .
-FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+FuncDecl = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+Receiver = "(" identifier Type ")" .
 ParameterList = IdentifierList Type { "," [ IdentifierList Type ] } .
 Block = "{" { Statement ";" } [ Statement ] "}" .
 Statement = VarDecl
           | ConstDecl
+          | TypeDecl
           | "if" Expression Block [ "else" Block ]
           | "for" [ Expression ] Block
           | "return" [ Expression ]
-          | "go" identifier CallSuffix
+          | "go" AssignHead { Selector | Index } CallSuffix
           | SwitchStmt
           | SelectStmt
           | "<-" Expression
-          | identifier Postfix
+          | AssignHead Postfix
           | EmptyStatement .
 EmptyStatement = .
+AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
 Postfix = { Selector | Index } PostfixOp .
 PostfixOp = CallSuffix
           | "<-" Expression
           | { "," LhsItem } "=" Expression .
-LhsItem = identifier { Selector | Index } .
+LhsItem = AssignHead { Selector | Index } .
 Selector = "." identifier .
 Index = "[" Expression "]" .
 CallSuffix = "(" [ ArgumentList ] ")" .
@@ -40,16 +55,17 @@ SelectStmt = "select" "{" { CommClause } "}" .
 CommClause = CommHead ":" { Statement ";" } .
 CommHead   = "case" CommOp | "default" .
 CommOp = "<-" Expression
-       | identifier PostfixComm .
+       | AssignHead PostfixComm .
 PostfixComm = { Selector | Index } ( "=" "<-" Expression | "<-" Expression ) .
 Expression = SimpleExpr [ RelOp SimpleExpr ] .
 SimpleExpr = Term { AddOp Term } .
-Term       = Factor { MulOp Factor } .
+Term       = UnaryExpr { MulOp UnaryExpr } .
+UnaryExpr  = { UnaryOp } Factor .
+UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" .
 Factor = identifier [ FactorSuffix ]
        | int_lit
        | string_lit
        | rune_lit
-       | "<-" Expression
        | "(" Expression ")" .
 FactorSuffix = { Selector | Index } [ CallSuffix ] .
 RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" .
