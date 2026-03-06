@@ -61,7 +61,7 @@
 //	          | { "," LhsItem } "=" Expression .
 //
 //	LhsItem = AssignHead { Selector | Index } .
-//	Selector = "." ( identifier | "(" "type" ")" ) .
+//	Selector = "." ( identifier | "(" [ "~" ] "type" ")" ) .
 //	Index = "[" Expression "]" .
 //	CallSuffix = "(" [ ArgumentList ] ")" .
 //	ArgumentList = Expression { "," Expression } .
