@@ -5,7 +5,9 @@ TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
 ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 ConstSpec = identifier [ Type ] "=" Expression .
 Type = identifier | "chan" Type | "[" [ Expression ] "]" Type .
-VarDecl = "var" identifier Type [ "=" Expression ] .
+VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
+VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+IdentifierList = identifier { "," identifier } .
 FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
 ParameterList = identifier Type { "," identifier Type } .
 Block = "{" { Statement ";" } "}" .

@@ -35,6 +35,7 @@ parser.go: ../octogo.go
 		-e 's/"modernc.org\/scanner"//' \
 		-e 's/scanner\.//g' \
 		parser.go
+	gofmt -l -s -w ..
 
 test:
 	go test -timeout 24h -count=1 -failfast

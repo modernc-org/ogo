@@ -28,7 +28,7 @@ const MAX_COGS = 8
 const DEFAULT_FLAG = true
 
 /// var globalStatus bool = false
-/// var sharedBus chan byte
+/// var sharedBus, outputStream chan byte
 /// var multiChan chan chan int
 /// var pinBuffer [32]int
 /// 
@@ -39,7 +39,7 @@ const DEFAULT_FLAG = true
 ///     var active bool = true
 ///     var count int = 0
 ///     var nestedToken chan int
-///     var val byte
+///     var val, val2 byte
 ///     
 ///     // For Loop (Expression)
 ///     for active {

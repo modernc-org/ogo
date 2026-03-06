@@ -20,7 +20,13 @@
 //	ConstSpec = identifier [ Type ] "=" Expression .
 //
 //	Type = identifier | "chan" Type | "[" [ Expression ] "]" Type .
-//	VarDecl = "var" identifier Type [ "=" Expression ] .
+//
+//	VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
+//	# If Expression is present then IdentifierList must be a single identifier.
+//	VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+//
+//	IdentifierList = identifier { "," identifier } .
+//
 //	FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
 //	ParameterList = identifier Type { "," identifier Type } .
 //
