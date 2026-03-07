@@ -61,7 +61,7 @@
 //	          | { "," LhsItem } "=" Expression .
 //
 //	LhsItem = AssignHead { Selector | Index } .
-//	Selector = "." ( identifier | "(" [ "~" ] "type" ")" ) .
+//	Selector = "." ( identifier | "(" "type" ")" ) .
 //	Index = "[" Expression "]" .
 //	CallSuffix = "(" [ ArgumentList ] ")" .
 //	ArgumentList = Expression { "," Expression } .
@@ -85,7 +85,7 @@
 //	Term       = UnaryExpr { MulOp UnaryExpr } .
 //
 //	UnaryExpr  = { UnaryOp } Factor .
-//	UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" .
+//	UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 //
 //	Factor = identifier [ FactorSuffix ]
 //	       | int_lit

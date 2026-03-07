@@ -10,7 +10,8 @@ import (
 	"os"
 	"strings"
 	"sync"
-	//TODO "go/constant"
+
+	"go/constant"
 )
 
 // Node represents a parse tree.
@@ -173,13 +174,12 @@ func (f *File) walk(ast []int32, lvl int) {
 }
 
 func (f *File) sourceFile(n Node) {
-	//TODO- f.walk(n.ast, 0)
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case ImportDecl:
 			f.ImportSpecs = append(f.ImportSpecs, f.importDecl(n)...)
-		//TODO case TopLevelDecl:
-		//TODO 	f.topLevelDecl(n)
+		case TopLevelDecl:
+			f.topLevelDecl(n)
 		case 0:
 			switch f.ch(n.tok) {
 			case TOK_003b, TOK_EOF: // ';' EOF
@@ -193,25 +193,25 @@ func (f *File) sourceFile(n Node) {
 	}
 }
 
-// func (f *File) topLevelDecl(n Node) {
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case ConstDecl:
-// 			f.constDecl(f.tld, n)
-// 		case VarDecl:
-// 			f.varDecl(f.tld, n)
-// 		case FuncDecl:
-// 			f.funcDecl(f.tld, n)
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// }
+func (f *File) topLevelDecl(n Node) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case ConstDecl:
+			f.constDecl(f.tld, n)
+		case VarDecl:
+			f.varDecl(f.tld, n)
+		case FuncDecl:
+			f.funcDecl(f.tld, n)
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
 
 // FuncDeclNode describes the FuncDecl production.
 type FuncDeclNode struct {
@@ -221,69 +221,66 @@ type FuncDeclNode struct {
 	ReturnList    *ParameterListNode
 }
 
-// func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
-// 	r = &FuncDeclNode{}
-// 	bs := f.tld.child(BlockScope)
-// 	seenRPar := false
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case ParameterList:
-// 			switch {
-// 			case seenRPar:
-// 				r.ReturnList = f.parameterList(bs, n)
-// 			default:
-// 				r.ParameterList = f.parameterList(bs, n)
-// 			}
-// 			//TODO declare in bs
-// 		case Block:
-// 			f.block(s, n, false)
-// 			//TODO use BlockNode
-// 		case Type:
-// 			r.Type = f.typ(s, n)
-// 		case 0:
-// 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-// 			case identifier:
-// 				r.Name = tok
-// 				//TODO declare in s
-// 			case TOK_func, TOK_0028: // "func", '('
-// 				// ok
-// 			case TOK_0029: // ')'
-// 				seenRPar = true
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
+func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
+	r = &FuncDeclNode{}
+	bs := f.tld.child()
+	seenRPar := false
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case ParameterList:
+			switch {
+			case seenRPar:
+				r.ReturnList = f.parameterList(bs, n)
+			default:
+				r.ParameterList = f.parameterList(bs, n)
+			}
+			//TODO declare in bs
+		case Block:
+			f.block(bs, n)
+			//TODO use BlockNode
+		case Type:
+			r.Type = f.typ(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case identifier:
+				r.Name = tok
+				//TODO declare in s
+			case TOK_func, TOK_0028: // "func", '('
+				// ok
+			case TOK_0029: // ')'
+				seenRPar = true
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
 
 // BlockNode describes the Block production.
 type BlockNode struct {
 	//TODO
 }
 
-// func (f *File) block(s *Scope, n Node, createChildScope bool) (r *BlockNode) {
-// 	if createChildScope {
-// 		s = s.child(BlockScope)
-// 	}
-// 	r = &BlockNode{}
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			case TOK_007b, TOK_007d: // '{', '}'
-// 				// ok
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
+func (f *File) block(s *Scope, n Node) (r *BlockNode) {
+	r = &BlockNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_007b, TOK_007d: // '{', '}'
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
 
 // ParameterListNode describes the ParameterList production.
 type ParameterListNode struct {
@@ -293,59 +290,59 @@ type ParameterListNode struct {
 	}
 }
 
-// func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
-// 	r = &ParameterListNode{}
-// 	var item struct {
-// 		Names []Token
-// 		Type  *TypeNode
-// 	}
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case IdentifierList:
-// 			item.Names = f.identifierList(s, n)
-// 		case Type:
-// 			item.Type = f.typ(s, n)
-// 			r.List = append(r.List, item)
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			case TOK_002c: // ','
-// 				// ok
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
-//
-// func (f *File) varDecl(s *Scope, n Node) {
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case VarSpec:
-// 			names, vs := f.varSpec(s, n)
-// 			for _, nm := range names {
-// 				var valid int32
-// 				if s.Kind != PackageScope {
-// 					panic(todo(""))
-// 				}
-// 				if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
-// 					f.err(vs.Name.Position(), "%v", err)
-// 				}
-// 			}
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			case TOK_var, TOK_0028, TOK_003b, TOK_0029: // "var", '(', ';', ')'
-// 				// ok
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// }
+func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
+	r = &ParameterListNode{}
+	var item struct {
+		Names []Token
+		Type  *TypeNode
+	}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case IdentifierList:
+			item.Names = f.identifierList(s, n)
+		case Type:
+			item.Type = f.typ(s, n)
+			r.List = append(r.List, item)
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_002c: // ','
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) varDecl(s *Scope, n Node) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case VarSpec:
+			names, vs := f.varSpec(s, n)
+			for _, nm := range names {
+				var valid int32
+				if s.Kind != PackageScope {
+					panic(todo(""))
+				}
+				if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
+					f.err(vs.Name.Position(), "%v", err)
+				}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_var, TOK_0028, TOK_003b, TOK_0029: // "var", '(', ';', ')'
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
 
 // VarSpecNode describes the VarSpec production.
 type VarSpecNode struct {
@@ -354,29 +351,29 @@ type VarSpecNode struct {
 	TypeNode   *TypeNode
 }
 
-// func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
-// 	r = &VarSpecNode{}
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case IdentifierList:
-// 			names = f.identifierList(s, n)
-// 		case Type:
-// 			r.TypeNode = f.typ(s, n)
-// 		case Expression:
-// 			r.Expression = f.expression(s, n)
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			case TOK_003d: // '='
-// 				// ok
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return names, r
-// }
+func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
+	r = &VarSpecNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case IdentifierList:
+			names = f.identifierList(s, n)
+		case Type:
+			r.TypeNode = f.typ(s, n)
+		case Expression:
+			r.Expression = f.expression(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_003d: // '='
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return names, r
+}
 
 // TypeNode describes the Type production.
 type TypeNode struct {
@@ -387,79 +384,79 @@ type TypeNode struct {
 	Expression ExpressionNode // [expr]T
 }
 
-// func (f *File) typ(s *Scope, n Node) (r *TypeNode) {
-// 	r = &TypeNode{}
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case Type:
-// 			r.TypeNode = f.typ(s, n)
-// 		case Expression:
-// 			r.Expression = f.expression(s, n)
-// 		case 0:
-// 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-// 			case identifier:
-// 				switch {
-// 				case r.Name.IsValid():
-// 					r.Qualifier = r.Name
-// 					r.Name = tok
-// 				default:
-// 					r.Name = tok
-// 				}
-// 			case TOK_chan, TOK_005b, TOK_005d: // "chan", '[', ']'
-// 				r.Kind = Symbol(tok.Ch)
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
-//
-// func (f *File) identifierList(s *Scope, n Node) (r []Token) {
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case 0:
-// 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-// 			case identifier:
-// 				r = append(r, tok)
-// 			case TOK_002c: // ','
-// 				// ok
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
-//
-// func (f *File) constDecl(s *Scope, n Node) {
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case ConstSpec:
-// 			cs := f.constSpec(s, n)
-// 			var valid int32
-// 			if s.Kind != PackageScope {
-// 				panic(todo(""))
-// 			}
-// 			if err := s.add(&ConstDeclaration{declaration: declaration{name: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
-// 				f.err(cs.Name.Position(), "%v", err)
-// 			}
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			case TOK_const, TOK_0028, TOK_0029, TOK_003b: // "const" '(' ')' ';'
-// 				// ok
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// }
+func (f *File) typ(s *Scope, n Node) (r *TypeNode) {
+	r = &TypeNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Type:
+			r.TypeNode = f.typ(s, n)
+		case Expression:
+			r.Expression = f.expression(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case identifier:
+				switch {
+				case r.Name.IsValid():
+					r.Qualifier = r.Name
+					r.Name = tok
+				default:
+					r.Name = tok
+				}
+			case TOK_chan, TOK_005b, TOK_005d: // "chan", '[', ']'
+				r.Kind = Symbol(tok.Ch)
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) identifierList(s *Scope, n Node) (r []Token) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case identifier:
+				r = append(r, tok)
+			case TOK_002c: // ','
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) constDecl(s *Scope, n Node) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case ConstSpec:
+			cs := f.constSpec(s, n)
+			var valid int32
+			if s.Kind != PackageScope {
+				panic(todo(""))
+			}
+			if err := s.add(&ConstDeclaration{declaration: declaration{name: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
+				f.err(cs.Name.Position(), "%v", err)
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			case TOK_const /* , TOK_0028, TOK_0029, TOK_003b */ : // "const" '(' ')' ';'
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
 
 // ConstSpecNode describes the ConstSpec production.
 type ConstSpecNode struct {
@@ -468,27 +465,27 @@ type ConstSpecNode struct {
 	//TODO Type Typ
 }
 
-// func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
-// 	r = &ConstSpecNode{}
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case Expression:
-// 			r.Expression = f.expression(s, n)
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			case identifier:
-// 				r.Name = f.tok(n.tok)
-// 			case TOK_003d: // '='
-// 				// ok
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
+func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
+	r = &ConstSpecNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Expression:
+			r.Expression = f.expression(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case identifier:
+				r.Name = f.tok(n.tok)
+			case TOK_003d: // '='
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
 
 // ExpressionNode represents the Expression production.
 type ExpressionNode any
@@ -500,74 +497,104 @@ type BinaryExpression struct {
 	RHS ExpressionNode
 }
 
-// func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
-// 	var relOp Symbol
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case SimpleExpr:
-// 			switch e := f.simpleExpr(s, n); {
-// 			case r == nil:
-// 				r = e
-// 			default:
-// 				r = &BinaryExpression{LHS: r, Op: relOp, RHS: e}
-// 			}
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
-//
-// func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
-// 	var addOp Symbol
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case Term:
-// 			switch e := f.term(s, n); {
-// 			case r == nil:
-// 				r = e
-// 			default:
-// 				r = &BinaryExpression{LHS: r, Op: addOp, RHS: e}
-// 			}
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
-//
-// func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
-// 	var mulOp Symbol
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case Factor:
-// 			switch e := f.factor(s, n); {
-// 			case r == nil:
-// 				r = e
-// 			default:
-// 				r = &BinaryExpression{LHS: r, Op: mulOp, RHS: e}
-// 			}
-// 		case 0:
-// 			switch f.ch(n.tok) {
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
+func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
+	var relOp Symbol
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case SimpleExpr:
+			switch e := f.simpleExpr(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpression{LHS: r, Op: relOp, RHS: e}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
+	var addOp Symbol
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Term:
+			switch e := f.term(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpression{LHS: r, Op: addOp, RHS: e}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
+	var mulOp Symbol
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case UnaryExpr:
+			switch e := f.unaryExpr(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpression{LHS: r, Op: mulOp, RHS: e}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+//TODO // UnaryExprNode describes the UnaryExpr production.
+//TODO type UnaryExprNode struct {
+//TODO 	UnaryOp Symbol
+//TODO 	UnaryOp2 []Symbol
+//TODO 	Factor ExpressionNode
+//TODO }
+
+func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Factor:
+			fa := f.factor(s, n)
+			switch {
+			case r == nil:
+				r = fa
+			default:
+				panic(todo(""))
+			}
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
 
 // Identifier describes a named Factor.
 type Identifier struct {
@@ -576,27 +603,27 @@ type Identifier struct {
 	Index int32
 }
 
-// func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case 0:
-// 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-// 			case int_lit:
-// 				if r = constant.MakeFromLiteral(tok.Src(), token.INT, 0); r == constant.Unknown {
-// 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
-// 				}
-// 				return r
-// 			case identifier:
-// 				r = &Identifier{Scope: s, Name: tok, Index: n.tok}
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
+func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case int_lit:
+				if r = constant.MakeFromLiteral(tok.Src(), token.INT, 0); r == constant.Unknown {
+					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
+				}
+				return r
+			case identifier:
+				r = &Identifier{Scope: s, Name: tok, Index: n.tok}
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
 
 func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
 	for n := range iterator(n.ast) {

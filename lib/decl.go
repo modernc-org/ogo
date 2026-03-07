@@ -47,6 +47,8 @@ uint8
 uintptr
 `
 
+//TODO what is the size of a flexcc func pointer?
+
 var (
 	_ Declaration = (*ImportQualifier)(nil)
 	_ Declaration = (*PredefinedType)(nil)
@@ -76,6 +78,11 @@ out:
 			panic(todo("%v: internal error: %v", tok.Position(), tok))
 		}
 	}
+
+	//TODO any = interface
+	//TODO min max
+	//TODO len(), cap()
+
 	// Predefines types
 	f := func(nm string, k Kind) {
 		Universe.Nodes[nm] = &PredefinedType{declaration: declaration{name: names[nm]}, kinder: kinder(k)}
@@ -128,8 +135,8 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 	return &Scope{Parent: parent, Kind: kind}
 }
 
-func (s *Scope) child(kind ScopeKind) (r *Scope) {
-	return newScope(s, kind)
+func (s *Scope) child() (r *Scope) {
+	return newScope(s, BlockScope)
 }
 
 func (s *Scope) add(d Declaration) (err error) {

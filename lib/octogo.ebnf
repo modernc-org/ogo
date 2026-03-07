@@ -43,7 +43,7 @@ PostfixOp = CallSuffix
           | "<-" Expression
           | { "," LhsItem } "=" Expression .
 LhsItem = AssignHead { Selector | Index } .
-Selector = "." ( identifier | "(" [ "~" ] "type" ")" ) .
+Selector = "." ( identifier | "(" "type" ")" ) .
 Index = "[" Expression "]" .
 CallSuffix = "(" [ ArgumentList ] ")" .
 ArgumentList = Expression { "," Expression } .
@@ -62,7 +62,7 @@ Expression = SimpleExpr [ RelOp SimpleExpr ] .
 SimpleExpr = Term { AddOp Term } .
 Term       = UnaryExpr { MulOp UnaryExpr } .
 UnaryExpr  = { UnaryOp } Factor .
-UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" .
+UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 Factor = identifier [ FactorSuffix ]
        | int_lit
        | string_lit
