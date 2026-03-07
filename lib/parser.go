@@ -70,61 +70,61 @@ const (
 	rune_lit       = Symbol(50)  // rune_lit
 	string_lit     = Symbol(51)  // string_lit
 	white_space    = Symbol(52)  // white_space
-	SourceFile     = Symbol(53)  // SourceFile
-	ImportDecl     = Symbol(54)  // ImportDecl
-	ImportSpec     = Symbol(55)  // ImportSpec
-	TopLevelDecl   = Symbol(56)  // TopLevelDecl
-	TypeDecl       = Symbol(57)  // TypeDecl
-	TypeSpec       = Symbol(58)  // TypeSpec
-	ConstDecl      = Symbol(59)  // ConstDecl
-	ConstSpec      = Symbol(60)  // ConstSpec
-	Type           = Symbol(61)  // Type
-	StructType     = Symbol(62)  // StructType
-	FieldDecl      = Symbol(63)  // FieldDecl
-	InterfaceType  = Symbol(64)  // InterfaceType
-	MethodSpec     = Symbol(65)  // MethodSpec
-	VarDecl        = Symbol(66)  // VarDecl
-	VarSpec        = Symbol(67)  // VarSpec
-	IdentifierList = Symbol(68)  // IdentifierList
-	FuncDecl       = Symbol(69)  // FuncDecl
-	Receiver       = Symbol(70)  // Receiver
-	ParameterList  = Symbol(71)  // ParameterList
-	Block          = Symbol(72)  // Block
-	Statement      = Symbol(73)  // Statement
-	EmptyStatement = Symbol(74)  // EmptyStatement
-	AssignHead     = Symbol(75)  // AssignHead
-	Postfix        = Symbol(76)  // Postfix
-	PostfixOp      = Symbol(77)  // PostfixOp
-	LhsItem        = Symbol(78)  // LhsItem
-	Selector       = Symbol(79)  // Selector
-	Index          = Symbol(80)  // Index
-	CallSuffix     = Symbol(81)  // CallSuffix
-	ArgumentList   = Symbol(82)  // ArgumentList
-	SwitchStmt     = Symbol(83)  // SwitchStmt
-	SwitchGuard    = Symbol(84)  // SwitchGuard
-	CaseClause     = Symbol(85)  // CaseClause
-	CaseHead       = Symbol(86)  // CaseHead
-	ExpressionList = Symbol(87)  // ExpressionList
-	SelectStmt     = Symbol(88)  // SelectStmt
-	CommClause     = Symbol(89)  // CommClause
-	CommHead       = Symbol(90)  // CommHead
-	CommOp         = Symbol(91)  // CommOp
-	PostfixComm    = Symbol(92)  // PostfixComm
-	Expression     = Symbol(93)  // Expression
-	SimpleExpr     = Symbol(94)  // SimpleExpr
-	Term           = Symbol(95)  // Term
-	UnaryExpr      = Symbol(96)  // UnaryExpr
-	UnaryOp        = Symbol(97)  // UnaryOp
-	Factor         = Symbol(98)  // Factor
-	FactorSuffix   = Symbol(99)  // FactorSuffix
-	RelOp          = Symbol(100) // RelOp
-	AddOp          = Symbol(101) // AddOp
-	MulOp          = Symbol(102) // MulOp
+	Type           = Symbol(53)  // Type
+	StructType     = Symbol(54)  // StructType
+	FieldDecl      = Symbol(55)  // FieldDecl
+	InterfaceType  = Symbol(56)  // InterfaceType
+	MethodSpec     = Symbol(57)  // MethodSpec
+	Block          = Symbol(58)  // Block
+	TopLevelDecl   = Symbol(59)  // TopLevelDecl
+	VarDecl        = Symbol(60)  // VarDecl
+	VarSpec        = Symbol(61)  // VarSpec
+	ConstDecl      = Symbol(62)  // ConstDecl
+	ConstSpec      = Symbol(63)  // ConstSpec
+	TypeDecl       = Symbol(64)  // TypeDecl
+	TypeSpec       = Symbol(65)  // TypeSpec
+	FuncDecl       = Symbol(66)  // FuncDecl
+	Receiver       = Symbol(67)  // Receiver
+	ParameterList  = Symbol(68)  // ParameterList
+	IdentifierList = Symbol(69)  // IdentifierList
+	ExpressionList = Symbol(70)  // ExpressionList
+	Expression     = Symbol(71)  // Expression
+	SimpleExpr     = Symbol(72)  // SimpleExpr
+	Term           = Symbol(73)  // Term
+	UnaryExpr      = Symbol(74)  // UnaryExpr
+	Factor         = Symbol(75)  // Factor
+	FactorSuffix   = Symbol(76)  // FactorSuffix
+	Selector       = Symbol(77)  // Selector
+	Index          = Symbol(78)  // Index
+	UnaryOp        = Symbol(79)  // UnaryOp
+	RelOp          = Symbol(80)  // RelOp
+	AddOp          = Symbol(81)  // AddOp
+	MulOp          = Symbol(82)  // MulOp
+	CallSuffix     = Symbol(83)  // CallSuffix
+	ArgumentList   = Symbol(84)  // ArgumentList
+	Statement      = Symbol(85)  // Statement
+	EmptyStatement = Symbol(86)  // EmptyStatement
+	AssignHead     = Symbol(87)  // AssignHead
+	Postfix        = Symbol(88)  // Postfix
+	PostfixOp      = Symbol(89)  // PostfixOp
+	LhsItem        = Symbol(90)  // LhsItem
+	SwitchStmt     = Symbol(91)  // SwitchStmt
+	SwitchGuard    = Symbol(92)  // SwitchGuard
+	CaseClause     = Symbol(93)  // CaseClause
+	CaseHead       = Symbol(94)  // CaseHead
+	SelectStmt     = Symbol(95)  // SelectStmt
+	CommClause     = Symbol(96)  // CommClause
+	CommHead       = Symbol(97)  // CommHead
+	CommOp         = Symbol(98)  // CommOp
+	PostfixComm    = Symbol(99)  // PostfixComm
+	SourceFile     = Symbol(100) // SourceFile
+	ImportDecl     = Symbol(101) // ImportDecl
+	ImportSpec     = Symbol(102) // ImportSpec
 )
 
-const SymbolNames = "EOF\"!=\"\":=\"\"<-\"\"<<\"\"<=\"\"==\"\">=\"\">>\"\"case\"\"chan\"\"const\"\"default\"\"else\"\"for\"\"func\"\"go\"\"if\"\"import\"\"interface\"\"return\"\"select\"\"struct\"\"switch\"\"type\"\"var\"'!''&''('')''*''+'',''-''.''/'':'';''<''=''>''['']''^''{''|''}''~'identifierint_litrune_litstring_litwhite_spaceSourceFileImportDeclImportSpecTopLevelDeclTypeDeclTypeSpecConstDeclConstSpecTypeStructTypeFieldDeclInterfaceTypeMethodSpecVarDeclVarSpecIdentifierListFuncDeclReceiverParameterListBlockStatementEmptyStatementAssignHeadPostfixPostfixOpLhsItemSelectorIndexCallSuffixArgumentListSwitchStmtSwitchGuardCaseClauseCaseHeadExpressionListSelectStmtCommClauseCommHeadCommOpPostfixCommExpressionSimpleExprTermUnaryExprUnaryOpFactorFactorSuffixRelOpAddOpMulOp"
+const SymbolNames = "EOF\"!=\"\":=\"\"<-\"\"<<\"\"<=\"\"==\"\">=\"\">>\"\"case\"\"chan\"\"const\"\"default\"\"else\"\"for\"\"func\"\"go\"\"if\"\"import\"\"interface\"\"return\"\"select\"\"struct\"\"switch\"\"type\"\"var\"'!''&''('')''*''+'',''-''.''/'':'';''<''=''>''['']''^''{''|''}''~'identifierint_litrune_litstring_litwhite_spaceTypeStructTypeFieldDeclInterfaceTypeMethodSpecBlockTopLevelDeclVarDeclVarSpecConstDeclConstSpecTypeDeclTypeSpecFuncDeclReceiverParameterListIdentifierListExpressionListExpressionSimpleExprTermUnaryExprFactorFactorSuffixSelectorIndexUnaryOpRelOpAddOpMulOpCallSuffixArgumentListStatementEmptyStatementAssignHeadPostfixPostfixOpLhsItemSwitchStmtSwitchGuardCaseClauseCaseHeadSelectStmtCommClauseCommHeadCommOpPostfixCommSourceFileImportDeclImportSpec"
 
-var SymbolIndex = [...]uint16{0, 3, 7, 11, 15, 19, 23, 27, 31, 35, 41, 47, 54, 63, 69, 74, 80, 84, 88, 96, 107, 115, 123, 131, 139, 145, 150, 153, 156, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 189, 192, 195, 198, 201, 204, 207, 210, 213, 216, 226, 233, 241, 251, 262, 272, 282, 292, 304, 312, 320, 329, 338, 342, 352, 361, 374, 384, 391, 398, 412, 420, 428, 441, 446, 455, 469, 479, 486, 495, 502, 510, 515, 525, 537, 547, 558, 568, 576, 590, 600, 610, 618, 624, 635, 645, 655, 659, 668, 675, 681, 693, 698, 703, 708}
+var SymbolIndex = [...]uint16{0, 3, 7, 11, 15, 19, 23, 27, 31, 35, 41, 47, 54, 63, 69, 74, 80, 84, 88, 96, 107, 115, 123, 131, 139, 145, 150, 153, 156, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 189, 192, 195, 198, 201, 204, 207, 210, 213, 216, 226, 233, 241, 251, 262, 266, 276, 285, 298, 308, 313, 325, 332, 339, 348, 357, 365, 373, 381, 389, 402, 416, 430, 440, 450, 454, 463, 469, 481, 489, 494, 501, 506, 511, 516, 526, 538, 547, 561, 571, 578, 587, 594, 604, 615, 625, 633, 643, 653, 661, 667, 678, 688, 698, 708}
 
 func (s Symbol) String() string {
 	idx := int(s) - 0
@@ -143,15 +143,15 @@ var errorSets = [...][]Symbol{
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_003d, TOK_002a, TOK_struct, TOK_interface, TOK_chan},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_chan},
 	{identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_chan},
-	{FuncDecl, VarDecl, ConstDecl, TypeDecl, TOK_var, TOK_type, TOK_import, TOK_func, TOK_const},
-	{FuncDecl, VarDecl, ConstDecl, TypeDecl, TOK_var, TOK_type, TOK_func, TOK_const},
+	{FuncDecl, TypeDecl, ConstDecl, VarDecl, TOK_var, TOK_type, TOK_import, TOK_func, TOK_const},
+	{FuncDecl, TypeDecl, ConstDecl, VarDecl, TOK_var, TOK_type, TOK_func, TOK_const},
 	{TOK_var, TOK_type, TOK_func, TOK_const},
 	{TOK_const},
 	{TOK_else},
 	{TOK_func},
 	{TOK_import},
 	{TOK_interface},
-	{CallSuffix, Index, Selector, PostfixOp, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
+	{PostfixOp, CallSuffix, Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
 	{CallSuffix, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
 	{TOK_003d, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
 	{TOK_003d, TOK_002c, TOK_003a003d},
@@ -175,18 +175,18 @@ var errorSets = [...][]Symbol{
 	{identifier, TOK_0029},
 	{TOK_0029},
 	{TOK_003a003d},
-	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, VarDecl, ConstDecl, TypeDecl, identifier, TOK_007d, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
-	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, VarDecl, ConstDecl, TypeDecl, identifier, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
+	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, identifier, TOK_007d, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
+	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, identifier, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
 	{identifier, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0029, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, Term, SimpleExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_005d, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_007b, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, Term, SimpleExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_007b, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, Term, SimpleExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, Term, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, UnaryExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
-	{Factor, UnaryOp, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0029, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_005d, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_007b, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_007b, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, Term, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, UnaryExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
+	{UnaryOp, Factor, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
 	{string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
 	{TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0026, TOK_0021, TOK_003c002d},
 	{AssignHead, identifier, TOK_002a, TOK_0028, TOK_003c002d},
@@ -4217,7 +4217,7 @@ state2:
 
 // CommClause grammar:
 //
-//	CommClause = CommHead ":" { Statement ";" } .
+//	CommClause  = CommHead ":" { Statement ";" } .
 //
 //	State 0
 //		on  "case", "default"
@@ -4278,7 +4278,7 @@ state3:
 
 // CommHead grammar:
 //
-//	CommHead   = "case" CommOp | "default" .
+//	CommHead    = "case" CommOp | "default" .
 //
 //	State 0
 //		on  "case"
@@ -4321,8 +4321,8 @@ state2:
 
 // CommOp grammar:
 //
-//	CommOp = "<-" Expression
-//	       | AssignHead PostfixComm .
+//	CommOp      = "<-" Expression
+//		| AssignHead PostfixComm .
 //
 //	State 0
 //		on  "<-"
@@ -4532,7 +4532,7 @@ func (p *Parser) EmptyStatement() (r []int32) {
 
 // Expression grammar:
 //
-//	Expression = SimpleExpr [ RelOp SimpleExpr ] .
+//	Expression     = SimpleExpr [ RelOp SimpleExpr ] .
 //
 //	State 0
 //		on  "<-", '!', '&', '(', '*', '+', '-', '^', '~', identifier, int_lit, rune_lit, string_lit
@@ -4616,11 +4616,11 @@ state1:
 
 // Factor grammar:
 //
-//	Factor = identifier [ FactorSuffix ]
-//	       | int_lit
-//	       | string_lit
-//	       | rune_lit
-//	       | "(" Expression ")" .
+//	Factor     = identifier [ FactorSuffix ]
+//		| int_lit
+//		| string_lit
+//		| rune_lit
+//		| "(" Expression ")" .
 //
 //	State 0
 //		on  '('
@@ -4752,7 +4752,7 @@ state2:
 // FieldDecl grammar:
 //
 //	FieldDecl = "*" [ identifier "." ] identifier
-//	     | identifier [ "." identifier | { "," identifier } Type ] .
+//		| identifier [ "." identifier | { "," identifier } Type ] .
 //
 //	State 0
 //		on  '*'
@@ -4867,7 +4867,7 @@ state7:
 
 // FuncDecl grammar:
 //
-//	FuncDecl = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+//	FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
 //
 //	State 0
 //		on  "func"
@@ -5167,7 +5167,7 @@ state2:
 
 // Index grammar:
 //
-//	Index = "[" Expression "]" .
+//	Index        = "[" Expression "]" .
 //
 //	State 0
 //		on  '['
@@ -5286,7 +5286,7 @@ state4:
 
 // LhsItem grammar:
 //
-//	LhsItem = AssignHead { Selector | Index } .
+//	LhsItem    = AssignHead { Selector | Index } .
 //
 //	State 0
 //		on  '(', '*', identifier
@@ -5456,7 +5456,7 @@ state1:
 
 // ParameterList grammar:
 //
-//	ParameterList = IdentifierList Type { "," [ IdentifierList Type ] } .
+//	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 //
 //	State 0
 //		on  identifier
@@ -5518,24 +5518,24 @@ state3:
 
 // Postfix grammar:
 //
-//	Postfix = { Selector | Index } PostfixOp .
+//	Postfix    = { Selector | Index } PostfixOp .
 //
 //	State 0
-//		on  ":=", "<-", '(', ',', '='
-//			call PostfixOp and goto state 1
 //		on  '.'
-//			call Selector and goto state 2
+//			call Selector and goto state 1
 //		on  '['
-//			call Index and goto state 2
+//			call Index and goto state 1
+//		on  ":=", "<-", '(', ',', '='
+//			call PostfixOp and goto state 2
 //	State 1
-//		Accept
-//	State 2
-//		on  ":=", "<-", '(', ',', '='
-//			call PostfixOp and goto state 1
 //		on  '.'
-//			call Selector and goto state 2
+//			call Selector and goto state 1
 //		on  '['
-//			call Index and goto state 2
+//			call Index and goto state 1
+//		on  ":=", "<-", '(', ',', '='
+//			call PostfixOp and goto state 2
+//	State 2
+//		Accept
 //
 // Postfix is used internally from Parse.
 func (p *Parser) Postfix() (r []int32) {
@@ -5544,33 +5544,33 @@ func (p *Parser) Postfix() (r []int32) {
 	// state0:
 	accept, errorSet = false, 17
 	switch Symbol(p.tok.Ch) {
-	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_003d:
-		r = p.add(r, p.PostfixOp())
-		goto state1
 	case TOK_002e:
 		r = p.add(r, p.Selector())
-		goto state2
+		goto state1
 	case TOK_005b:
 		r = p.add(r, p.Index())
+		goto state1
+	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_003d:
+		r = p.add(r, p.PostfixOp())
 		goto state2
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 0
-	return p.stop(r, accept, errorSet)
-state2:
 	accept, errorSet = false, 17
 	switch Symbol(p.tok.Ch) {
-	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_003d:
-		r = p.add(r, p.PostfixOp())
-		goto state1
 	case TOK_002e:
 		r = p.add(r, p.Selector())
-		goto state2
+		goto state1
 	case TOK_005b:
 		r = p.add(r, p.Index())
+		goto state1
+	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_003d:
+		r = p.add(r, p.PostfixOp())
 		goto state2
 	}
+	return p.stop(r, accept, errorSet)
+state2:
+	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 }
 
@@ -5666,9 +5666,9 @@ state4:
 
 // PostfixOp grammar:
 //
-//	PostfixOp = CallSuffix
-//	          | "<-" Expression
-//	          | { "," LhsItem } ( "=" | ":=" ) Expression .
+//	PostfixOp  = CallSuffix
+//		| "<-" Expression
+//		| { "," LhsItem } ( "=" | ":=" ) Expression .
 //
 //	State 0
 //		on  ":=", "<-", '='
@@ -5743,7 +5743,7 @@ state4:
 
 // Receiver grammar:
 //
-//	Receiver = "(" identifier Type ")" .
+//	Receiver       = "(" identifier Type ")" .
 //
 //	State 0
 //		on  '('
@@ -5830,7 +5830,7 @@ state1:
 
 // SelectStmt grammar:
 //
-//	SelectStmt = "select" "{" { CommClause } "}" .
+//	SelectStmt  = "select" "{" { CommClause } "}" .
 //
 //	State 0
 //		on  "select"
@@ -5884,7 +5884,7 @@ state3:
 
 // Selector grammar:
 //
-//	Selector = "." ( identifier | "(" "type" ")" ) .
+//	Selector     = "." ( identifier | "(" "type" ")" ) .
 //
 //	State 0
 //		on  '.'
@@ -5949,7 +5949,7 @@ state4:
 
 // SimpleExpr grammar:
 //
-//	SimpleExpr = Term { AddOp Term } .
+//	SimpleExpr     = Term { AddOp Term } .
 //
 //	State 0
 //		on  "<-", '!', '&', '(', '*', '+', '-', '^', '~', identifier, int_lit, rune_lit, string_lit
@@ -5988,25 +5988,25 @@ state1:
 //	State 0
 //		Accept
 //		on  "import"
-//			call ImportDecl and goto state 1
+//			call ImportDecl and goto state 3
 //		on  "const", "func", "type", "var"
-//			call TopLevelDecl and goto state 3
+//			call TopLevelDecl and goto state 1
 //	State 1
 //		on  ';'
 //			shift and goto state 2
 //	State 2
 //		Accept
-//		on  "import"
-//			call ImportDecl and goto state 1
 //		on  "const", "func", "type", "var"
-//			call TopLevelDecl and goto state 3
+//			call TopLevelDecl and goto state 1
 //	State 3
 //		on  ';'
 //			shift and goto state 4
 //	State 4
 //		Accept
+//		on  "import"
+//			call ImportDecl and goto state 3
 //		on  "const", "func", "type", "var"
-//			call TopLevelDecl and goto state 3
+//			call TopLevelDecl and goto state 1
 //
 // SourceFile is used internally from Parse.
 func (p *Parser) SourceFile() (r []int32) {
@@ -6017,10 +6017,10 @@ func (p *Parser) SourceFile() (r []int32) {
 	switch Symbol(p.tok.Ch) {
 	case TOK_import:
 		r = p.add(r, p.ImportDecl())
-		goto state1
+		goto state3
 	case TOK_const, TOK_func, TOK_type, TOK_var:
 		r = p.add(r, p.TopLevelDecl())
-		goto state3
+		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 state1:
@@ -6032,14 +6032,11 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 8
+	accept, errorSet = true, 9
 	switch Symbol(p.tok.Ch) {
-	case TOK_import:
-		r = p.add(r, p.ImportDecl())
-		goto state1
 	case TOK_const, TOK_func, TOK_type, TOK_var:
 		r = p.add(r, p.TopLevelDecl())
-		goto state3
+		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 state3:
@@ -6051,11 +6048,14 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = true, 9
+	accept, errorSet = true, 8
 	switch Symbol(p.tok.Ch) {
+	case TOK_import:
+		r = p.add(r, p.ImportDecl())
+		goto state3
 	case TOK_const, TOK_func, TOK_type, TOK_var:
 		r = p.add(r, p.TopLevelDecl())
-		goto state3
+		goto state1
 	}
 	if accept = accept && p.eof; accept {
 		r = append(r, p.shift())
@@ -6070,17 +6070,17 @@ state4:
 // Statement grammar:
 //
 //	Statement = VarDecl
-//	          | ConstDecl
-//	          | TypeDecl
-//	          | "if" Expression Block [ "else" Block ]
-//	          | "for" [ Expression ] Block
-//	          | "return" [ Expression ]
-//	          | "go" AssignHead { Selector | Index } CallSuffix
-//	          | SwitchStmt
-//	          | SelectStmt
-//	          | "<-" Expression
-//	          | AssignHead Postfix
-//	          | EmptyStatement .
+//		| ConstDecl
+//		| TypeDecl
+//		| "if" Expression Block [ "else" Block ]
+//		| "for" [ Expression ] Block
+//		| "return" [ Expression ]
+//		| "go" AssignHead { Selector | Index } CallSuffix
+//		| SwitchStmt
+//		| SelectStmt
+//		| "<-" Expression
+//		| AssignHead Postfix
+//		| EmptyStatement .
 //
 //	State 0
 //		Accept
@@ -6094,12 +6094,12 @@ state4:
 //			shift and goto state 5
 //		on  "if"
 //			shift and goto state 7
-//		on  "type"
-//			call TypeDecl and goto state 2
-//		on  "const"
-//			call ConstDecl and goto state 2
 //		on  "var"
 //			call VarDecl and goto state 2
+//		on  "const"
+//			call ConstDecl and goto state 2
+//		on  "type"
+//			call TypeDecl and goto state 2
 //		on  '(', '*', identifier
 //			call AssignHead and goto state 11
 //		on  "switch"
@@ -6169,14 +6169,14 @@ func (p *Parser) Statement() (r []int32) {
 	case TOK_if:
 		r = append(r, p.shift())
 		goto state7
-	case TOK_type:
-		r = p.add(r, p.TypeDecl())
+	case TOK_var:
+		r = p.add(r, p.VarDecl())
 		goto state2
 	case TOK_const:
 		r = p.add(r, p.ConstDecl())
 		goto state2
-	case TOK_var:
-		r = p.add(r, p.VarDecl())
+	case TOK_type:
+		r = p.add(r, p.TypeDecl())
 		goto state2
 	case TOK_0028, TOK_002a, identifier:
 		r = p.add(r, p.AssignHead())
@@ -6475,7 +6475,7 @@ state4:
 
 // Term grammar:
 //
-//	Term       = UnaryExpr { MulOp UnaryExpr } .
+//	Term           = UnaryExpr { MulOp UnaryExpr } .
 //
 //	State 0
 //		on  "<-", '!', '&', '(', '*', '+', '-', '^', '~', identifier, int_lit, rune_lit, string_lit
@@ -6512,12 +6512,12 @@ state1:
 //	TopLevelDecl = FuncDecl | VarDecl | ConstDecl | TypeDecl .
 //
 //	State 0
-//		on  "type"
-//			call TypeDecl and goto state 1
-//		on  "const"
-//			call ConstDecl and goto state 1
 //		on  "var"
 //			call VarDecl and goto state 1
+//		on  "const"
+//			call ConstDecl and goto state 1
+//		on  "type"
+//			call TypeDecl and goto state 1
 //		on  "func"
 //			call FuncDecl and goto state 1
 //	State 1
@@ -6530,14 +6530,14 @@ func (p *Parser) TopLevelDecl() (r []int32) {
 	// state0:
 	accept, errorSet = false, 10
 	switch Symbol(p.tok.Ch) {
-	case TOK_type:
-		r = p.add(r, p.TypeDecl())
+	case TOK_var:
+		r = p.add(r, p.VarDecl())
 		goto state1
 	case TOK_const:
 		r = p.add(r, p.ConstDecl())
 		goto state1
-	case TOK_var:
-		r = p.add(r, p.VarDecl())
+	case TOK_type:
+		r = p.add(r, p.TypeDecl())
 		goto state1
 	case TOK_func:
 		r = p.add(r, p.FuncDecl())
@@ -6552,11 +6552,11 @@ state1:
 // Type grammar:
 //
 //	Type = [ identifier "." ] identifier
-//	     | "chan" Type
-//	     | "[" [ Expression ] "]" Type
-//	     | "*" Type
-//	     | InterfaceType
-//	     | StructType .
+//		| "chan" Type
+//		| "[" [ Expression ] "]" Type
+//		| "*" Type
+//		| InterfaceType
+//		| StructType .
 //
 //	State 0
 //		on  "chan", '*'
@@ -6796,17 +6796,17 @@ state3:
 //	UnaryExpr  = { UnaryOp } Factor .
 //
 //	State 0
-//		on  "<-", '!', '&', '*', '+', '-', '^', '~'
-//			call UnaryOp and goto state 1
 //		on  '(', identifier, int_lit, rune_lit, string_lit
-//			call Factor and goto state 2
+//			call Factor and goto state 1
+//		on  "<-", '!', '&', '*', '+', '-', '^', '~'
+//			call UnaryOp and goto state 2
 //	State 1
-//		on  "<-", '!', '&', '*', '+', '-', '^', '~'
-//			call UnaryOp and goto state 1
-//		on  '(', identifier, int_lit, rune_lit, string_lit
-//			call Factor and goto state 2
-//	State 2
 //		Accept
+//	State 2
+//		on  '(', identifier, int_lit, rune_lit, string_lit
+//			call Factor and goto state 1
+//		on  "<-", '!', '&', '*', '+', '-', '^', '~'
+//			call UnaryOp and goto state 2
 //
 // UnaryExpr is used internally from Parse.
 func (p *Parser) UnaryExpr() (r []int32) {
@@ -6815,27 +6815,27 @@ func (p *Parser) UnaryExpr() (r []int32) {
 	// state0:
 	accept, errorSet = false, 52
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
-		r = p.add(r, p.UnaryOp())
-		goto state1
 	case TOK_0028, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Factor())
+		goto state1
+	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
+		r = p.add(r, p.UnaryOp())
 		goto state2
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 52
-	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
-		r = p.add(r, p.UnaryOp())
-		goto state1
-	case TOK_0028, identifier, int_lit, rune_lit, string_lit:
-		r = p.add(r, p.Factor())
-		goto state2
-	}
+	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 0
+	accept, errorSet = false, 52
+	switch Symbol(p.tok.Ch) {
+	case TOK_0028, identifier, int_lit, rune_lit, string_lit:
+		r = p.add(r, p.Factor())
+		goto state1
+	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
+		r = p.add(r, p.UnaryOp())
+		goto state2
+	}
 	return p.stop(r, accept, errorSet)
 }
 

@@ -659,8 +659,8 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 // ExpressionNode represents any Expression production.
 type ExpressionNode any
 
-// BinaryExpression represents a binary operation.
-type BinaryExpression struct {
+// BinaryExpressionNode represents a binary operation.
+type BinaryExpressionNode struct {
 	LHS ExpressionNode
 	Op  Symbol
 	RHS ExpressionNode
@@ -675,7 +675,7 @@ func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = &BinaryExpression{LHS: r, Op: relOp, RHS: e}
+				r = &BinaryExpressionNode{LHS: r, Op: relOp, RHS: e}
 			}
 		case 0:
 			switch f.ch(n.tok) {
@@ -698,7 +698,7 @@ func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = &BinaryExpression{LHS: r, Op: addOp, RHS: e}
+				r = &BinaryExpressionNode{LHS: r, Op: addOp, RHS: e}
 			}
 		case 0:
 			switch f.ch(n.tok) {
@@ -721,7 +721,7 @@ func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = &BinaryExpression{LHS: r, Op: mulOp, RHS: e}
+				r = &BinaryExpressionNode{LHS: r, Op: mulOp, RHS: e}
 			}
 		case 0:
 			switch f.ch(n.tok) {
