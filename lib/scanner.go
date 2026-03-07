@@ -18,6 +18,113 @@ var (
 	_ error = ErrList{}
 )
 
+// Renamed Symbols
+const (
+	// TOK_EOF        // EOF
+	// TOK_0021003d   // "!="
+	DEFINE = TOK_003a003d // ":="
+	// TOK_003c002d   // "<-"
+	// TOK_003c003c   // "<<"
+	// TOK_003c003d   // "<="
+	// TOK_003d003d   // "=="
+	// TOK_003e003d   // ">="
+	// TOK_003e003e   // ">>"
+	// TOK_case       // "case"
+	// TOK_chan       // "chan"
+	// TOK_const      // "const"
+	// TOK_default    // "default"
+	// TOK_else       // "else"
+	// TOK_for        // "for"
+	// TOK_func       // "func"
+	// TOK_go         // "go"
+	// TOK_if         // "if"
+	// TOK_import     // "import"
+	// TOK_interface  // "interface"
+	// TOK_return     // "return"
+	// TOK_select     // "select"
+	// TOK_struct     // "struct"
+	// TOK_switch     // "switch"
+	// TOK_type       // "type"
+	// TOK_var        // "var"
+	// TOK_0021       // '!'
+	// TOK_0026       // '&'
+	// TOK_0028       // '('
+	// TOK_0029       // ')'
+	// TOK_002a       // '*'
+	// TOK_002b       // '+'
+	// TOK_002c       // ','
+	// TOK_002d       // '-'
+	// TOK_002e       // '.'
+	// TOK_002f       // '/'
+	// TOK_003a       // ':'
+	// TOK_003b       // ';'
+	// TOK_003c       // '<'
+	// TOK_003d       // '='
+	// TOK_003e       // '>'
+	// TOK_005b       // '['
+	// TOK_005d       // ']'
+	// TOK_005e       // '^'
+	// TOK_007b       // '{'
+	// TOK_007c       // '|'
+	// TOK_007d       // '}'
+	// TOK_007e       // '~'
+	// identifier     // identifier
+	// int_lit        // int_lit
+	// rune_lit       // rune_lit
+	// string_lit     // string_lit
+	// white_space    // white_space
+	// SourceFile     // SourceFile
+	// ImportDecl     // ImportDecl
+	// ImportSpec     // ImportSpec
+	// TopLevelDecl   // TopLevelDecl
+	// TypeDecl       // TypeDecl
+	// TypeSpec       // TypeSpec
+	// ConstDecl      // ConstDecl
+	// ConstSpec      // ConstSpec
+	// Type           // Type
+	// StructType     // StructType
+	// FieldDecl      // FieldDecl
+	// InterfaceType  // InterfaceType
+	// MethodSpec     // MethodSpec
+	// VarDecl        // VarDecl
+	// VarSpec        // VarSpec
+	// IdentifierList // IdentifierList
+	// FuncDecl       // FuncDecl
+	// Receiver       // Receiver
+	// ParameterList  // ParameterList
+	// Block          // Block
+	// Statement      // Statement
+	// EmptyStatement // EmptyStatement
+	// AssignHead     // AssignHead
+	// Postfix        // Postfix
+	// PostfixOp      // PostfixOp
+	// LhsItem        // LhsItem
+	// Selector       // Selector
+	// Index          // Index
+	// CallSuffix     // CallSuffix
+	// ArgumentList   // ArgumentList
+	// SwitchStmt     // SwitchStmt
+	// SwitchGuard    // SwitchGuard
+	// CaseClause     // CaseClause
+	// CaseHead       // CaseHead
+	// ExpressionList // ExpressionList
+	// SelectStmt     // SelectStmt
+	// CommClause     // CommClause
+	// CommHead       // CommHead
+	// CommOp         // CommOp
+	// PostfixComm    // PostfixComm
+	// Expression     // Expression
+	// SimpleExpr     // SimpleExpr
+	// Term           // Term
+	// UnaryExpr      // UnaryExpr
+	// UnaryOp        // UnaryOp
+	// Factor         // Factor
+	// FactorSuffix   // FactorSuffix
+	// RelOp          // RelOp
+	// AddOp          // AddOp
+	// MulOp          // MulOp
+)
+
 // ErrWithPosition augments an error with optional position information.
 type ErrWithPosition struct {
 	Pos token.Position

@@ -42,7 +42,7 @@ func worker(id, n int, dataChan chan byte, signal chan chan int) bool {
 	var count int = 0
 	var nestedToken chan int
 	var val, val2 byte
-///	i := 42
+	i := 42
 ///     
 ///	// For Loop (Expression)
 ///	for active {

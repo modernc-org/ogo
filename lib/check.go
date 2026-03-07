@@ -307,13 +307,96 @@ func (f *File) block(s *Scope, n Node) (r *BlockNode) {
 // StatementNode describes any Statement production.
 type StatementNode any
 
+// AssignmenStatementNode describes an assignment Statement production.
+type AssignmenStatementNode struct {
+	AssignHead *AssignHeadNode
+	Postfix    *PostfixNode
+}
+
 func (f *File) statement(s *Scope, n Node) (r StatementNode) {
+	var ah *AssignHeadNode
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case VarDecl:
 			f.varDecl(s, n)
+		case AssignHead:
+			ah = f.assignHead(s, n)
+		case Postfix:
+			r = &AssignmenStatementNode{ah, f.postfix(s, n)}
 		case 0:
 			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// PostfixNode describes the Postfix production.
+type PostfixNode struct {
+	PostfixOp *PostfixOpNode
+}
+
+func (f *File) postfix(s *Scope, n Node) (r *PostfixNode) {
+	r = &PostfixNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case PostfixOp:
+			r.PostfixOp = f.postfixOp(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// PostfixOpNode describes the PostfixOp production.
+type PostfixOpNode struct {
+	Symbol     Symbol // Zero for CallSuffix or one of "<-", "=", ":=".
+	Expression ExpressionNode
+}
+
+func (f *File) postfixOp(s *Scope, n Node) (r *PostfixOpNode) {
+	r = &PostfixOpNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Expression:
+			r.Expression = f.expression(s, n)
+		case 0:
+			switch sym := f.ch(n.tok); sym {
+			case DEFINE:
+				r.Symbol = sym
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// AssignHeadNode describes the AssignHead production.
+type AssignHeadNode struct {
+	Identifier Token
+}
+
+func (f *File) assignHead(s *Scope, n Node) (r *AssignHeadNode) {
+	r = &AssignHeadNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case identifier:
+				r.Identifier = tok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
