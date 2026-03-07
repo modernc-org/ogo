@@ -58,7 +58,7 @@
 //	Postfix = { Selector | Index } PostfixOp .
 //	PostfixOp = CallSuffix
 //	          | "<-" Expression
-//	          | { "," LhsItem } "=" Expression .
+//	          | { "," LhsItem } ( "=" | ":=" ) Expression .
 //
 //	LhsItem = AssignHead { Selector | Index } .
 //	Selector = "." ( identifier | "(" "type" ")" ) .

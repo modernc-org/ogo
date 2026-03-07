@@ -45,6 +45,26 @@ func iterator(ast []int32) func(yield func(Node) bool) {
 	}
 }
 
+// lastIndex recursively traverses the flat AST slice to find the last token index.
+// It returns -1 if no token is found.
+func lastIndex(ast []int32) (last int32) {
+	last = -1
+
+	for child := range iterator(ast) {
+		if child.sym == 0 {
+			// It's a terminal; update our last seen token index
+			last = child.tok
+		} else {
+			// It's a non-terminal; recursively search its children
+			if l := lastIndex(child.ast); l != -1 {
+				last = l
+			}
+		}
+	}
+
+	return last
+}
+
 type limiter chan struct{}
 
 func newLimiter(limit int) limiter {
@@ -261,17 +281,39 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 
 // BlockNode describes the Block production.
 type BlockNode struct {
-	//TODO
+	List []StatementNode
 }
 
 func (f *File) block(s *Scope, n Node) (r *BlockNode) {
 	r = &BlockNode{}
 	for n := range iterator(n.ast) {
 		switch n.sym {
+		case Statement:
+			r.List = append(r.List, f.statement(s, n))
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_007b, TOK_007d: // '{', '}'
+			case TOK_007b, TOK_007d, TOK_003b: // '{', '}', ';'
 				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// StatementNode describes any Statement production.
+type StatementNode any
+
+func (f *File) statement(s *Scope, n Node) (r StatementNode) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case VarDecl:
+			f.varDecl(s, n)
+		case 0:
+			switch f.ch(n.tok) {
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -322,11 +364,11 @@ func (f *File) varDecl(s *Scope, n Node) {
 		switch n.sym {
 		case VarSpec:
 			names, vs := f.varSpec(s, n)
+			var valid int32
+			if s.Kind != PackageScope {
+				valid = lastIndex(n.ast) + 1
+			}
 			for _, nm := range names {
-				var valid int32
-				if s.Kind != PackageScope {
-					panic(todo(""))
-				}
 				if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
 					f.err(vs.Name.Position(), "%v", err)
 				}
@@ -487,7 +529,7 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 	return r
 }
 
-// ExpressionNode represents the Expression production.
+// ExpressionNode represents any Expression production.
 type ExpressionNode any
 
 // BinaryExpression represents a binary operation.
