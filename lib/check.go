@@ -65,6 +65,24 @@ func lastIndex(ast []int32) (last int32) {
 	return last
 }
 
+// firstIndex recursively traverses the flat AST slice to find the first token index.
+// It returns -1 if no token is found.
+func firstIndex(ast []int32) int32 {
+	for child := range iterator(ast) {
+		if child.sym == 0 {
+			// Found the first terminal (token)
+			return child.tok
+		}
+
+		// It's a non-terminal; search its children recursively
+		if f := firstIndex(child.ast); f != -1 {
+			return f
+		}
+	}
+
+	return -1
+}
+
 type limiter chan struct{}
 
 func newLimiter(limit int) limiter {
@@ -127,6 +145,13 @@ type File struct {
 	tld         *Scope // Later merged into package scope
 }
 
+func (f *File) pos(tokIndex int32) (r token.Position) {
+	if tokIndex >= 0 {
+		r = f.tok(tokIndex).Position()
+	}
+	return r
+}
+
 func (f *File) tok(x int32) (r Token) {
 	return f.parser.Token(x)
 }
@@ -158,7 +183,7 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 		return r, r.Err
 	}
 
-	if tok := r.parser.tok; tok.Ch != rune(TOK_EOF) {
+	if tok := r.parser.tok; tok.Ch != rune(EOF) {
 		r.Err = fmt.Errorf("%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
 		return r, r.Err
 	}
@@ -202,7 +227,7 @@ func (f *File) sourceFile(n Node) {
 			f.topLevelDecl(n)
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_003b, TOK_EOF: // ';' EOF
+			case SEMICOLON, EOF:
 				// ok
 			default:
 				panic(todo("", f.parser.Token(n.tok), f.ch(n.tok)))
@@ -265,9 +290,9 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 			case identifier:
 				r.Name = tok
 				//TODO declare in s
-			case TOK_func, TOK_0028: // "func", '('
+			case FUNC, LPAREN:
 				// ok
-			case TOK_0029: // ')'
+			case RPAREN:
 				seenRPar = true
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -292,7 +317,7 @@ func (f *File) block(s *Scope, n Node) (r *BlockNode) {
 			r.List = append(r.List, f.statement(s, n))
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_007b, TOK_007d, TOK_003b: // '{', '}', ';'
+			case LBRACE, RBRACE, SEMICOLON:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -315,14 +340,32 @@ type AssignmenStatementNode struct {
 
 func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 	var ah *AssignHeadNode
+	var ahAST []int32
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case VarDecl:
 			f.varDecl(s, n)
 		case AssignHead:
+			ahAST = n.ast
 			ah = f.assignHead(s, n)
 		case Postfix:
-			r = &AssignmenStatementNode{ah, f.postfix(s, n)}
+			p := f.postfix(s, n)
+			r = &AssignmenStatementNode{ah, p}
+			if p.PostfixOp.Symbol == DEFINE {
+				//TODO var names []Token
+				if ah.IsNotIdentifier {
+					f.err(f.pos(firstIndex(ahAST)), "invalid LHS in short variable declaration")
+					break
+				}
+				//TODO check p.LHSItemList
+				//TODO declare
+				// valid := lastIndex(n.ast) + 1
+				// for _, nm := range names {
+				// 	if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
+				// 		f.err(vs.Name.Position(), "%v", err)
+				// 	}
+				// }
+			}
 		case 0:
 			switch f.ch(n.tok) {
 			default:
@@ -386,7 +429,8 @@ func (f *File) postfixOp(s *Scope, n Node) (r *PostfixOpNode) {
 
 // AssignHeadNode describes the AssignHead production.
 type AssignHeadNode struct {
-	Identifier Token
+	Identifier      Token
+	IsNotIdentifier bool // Also true when the identifier is not alone: `*ident`.
 }
 
 func (f *File) assignHead(s *Scope, n Node) (r *AssignHeadNode) {
@@ -430,7 +474,7 @@ func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
 			r.List = append(r.List, item)
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_002c: // ','
+			case COMMA:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -458,7 +502,7 @@ func (f *File) varDecl(s *Scope, n Node) {
 			}
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_var, TOK_0028, TOK_003b, TOK_0029: // "var", '(', ';', ')'
+			case VAR, LPAREN, SEMICOLON, RPAREN:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -488,7 +532,7 @@ func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 			r.Expression = f.expression(s, n)
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_003d: // '='
+			case ASSIGN:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -504,7 +548,7 @@ func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 type TypeNode struct {
 	Qualifier  Token // Valid if Qualifier.IsValid()
 	Name       Token
-	Kind       Symbol // TOK_chan, TOK_005b('['), ...
+	Kind       Symbol // ARROW, LBRACK, ...
 	TypeNode   *TypeNode
 	Expression ExpressionNode // [expr]T
 }
@@ -527,7 +571,7 @@ func (f *File) typ(s *Scope, n Node) (r *TypeNode) {
 				default:
 					r.Name = tok
 				}
-			case TOK_chan, TOK_005b, TOK_005d: // "chan", '[', ']'
+			case ARROW, LBRACK, RBRACK:
 				r.Kind = Symbol(tok.Ch)
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -546,7 +590,7 @@ func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case identifier:
 				r = append(r, tok)
-			case TOK_002c: // ','
+			case COMMA:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -572,7 +616,7 @@ func (f *File) constDecl(s *Scope, n Node) {
 			}
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_const /* , TOK_0028, TOK_0029, TOK_003b */ : // "const" '(' ')' ';'
+			case CONST /* , LPAREN, RPAREN, SEMICOLON */ :
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -600,7 +644,7 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 			switch f.ch(n.tok) {
 			case identifier:
 				r.Name = f.tok(n.tok)
-			case TOK_003d: // '='
+			case ASSIGN:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -757,7 +801,7 @@ func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
 			r = append(r, f.importSpec(n))
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_import, TOK_0028, TOK_0029, TOK_003b: // "import" '(' ')' ';'
+			case IMPORT, LPAREN, RPAREN, SEMICOLON:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
@@ -784,7 +828,7 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 		switch n.sym {
 		case 0:
 			switch f.ch(n.tok) {
-			case TOK_002e: // '.'
+			case PERIOD:
 				r.IsDotImport = true
 			case identifier:
 				nm = f.tok(n.tok)
