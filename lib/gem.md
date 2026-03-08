@@ -214,3 +214,77 @@ while(1) {
 * **Simplicity:** The OctoGo compiler frontend doesn't need to know the binary encoding for WRPIN or RDPIN. It just emits the corresponding flexprop C function calls.  
 * **Performance:** flexprop directly inlines these C functions into native single-cycle P2 instructions. There is absolutely no software translation layer at runtime.  
 * **Extensibility:** Because Smart Pins handle everything from basic PWM to USB natively in hardware, OctoGo gets access to a massive library of hardware capabilities just by exposing a few basic p2.WritePin\* functions.
+
+## Technical Note: "OctoSmith" – A Deterministic Fuzzer for OctoGo
+
+## **1\. Core Philosophy and Feasibility**
+
+Creating a CSmith-like fuzzer for OctoGo is highly feasible, and arguably easier than CSmith itself, for three primary reasons:
+
+1. **Memory Safety:** OctoGo utilizes a strict zero-allocation model without Garbage Collection and no dynamic heap allocation. This completely eliminates the need for the fuzzer to track malloc/free lifetimes, use-after-free scenarios, or complex pointer arithmetic.  
+2. **No Undefined Behavior (UB):** Unlike C, where random operations easily trigger UB (which CSmith spends 80% of its codebase avoiding), OctoGo's Go-inspired semantics are deterministic.  
+3. **LL(1) Simplicity:** The grammar is aggressively left-factored and strictly LL(1). This makes generating syntactically valid code straightforward.
+
+The absolute golden rule for OctoSmith is **No False Positives**. If the fuzzer outputs a program, that program *must* be semantically valid OctoGo code that compiles via your pipeline and executes deterministically on the Propeller 2\.
+
+## **2\. Architecture: Separating Structure from Semantics**
+
+To handle the evolving nature of the language, OctoSmith should not just randomly pick rules from the EBNF. It must be a **Type-Directed Generator**.
+
+Instead of saying "generate an expression," the fuzzer says "generate an expression of type int."
+
+### **Phase A: The Environment (Scope Tracking)**
+
+OctoSmith needs to maintain a runtime Env struct during generation. This environment tracks:
+
+* Currently declared variables and their types in the active Block.  
+* Available functions and their signatures.  
+* Available constants.  
+* The current depth of loops/blocks to ensure bounded generation.
+
+### **Phase B: Type-Directed Generation Rules**
+
+When the fuzzer needs to generate a Statement, it rolls a weighted random number (seeded via the CLI argument) to pick an action:
+
+1. **Declare a Variable:** Generate a VarDecl. Pick a random type (e.g., int), generate an identifier, and recursively request an initializer expression of that exact type. Add it to Env.  
+2. **Assign to a Variable:** Pick an existing variable from Env. Generate an AssignHead and request an expression matching its type.  
+3. **Control Flow:** Generate an if or for statement. Request an expression of type bool for the condition. Push a new Env scope, generate a few inner statements, and pop the scope.
+
+### **Phase C: Expression Generation**
+
+To fulfill a request for an int expression, the fuzzer rolls the dice:
+
+* **Base Case (30%):** Return an int\_lit.  
+* **Variable (40%):** Return an identifier from Env that has type int.  
+* **Computation (30%):** Generate an AddOp or MulOp. Recursively request two new int expressions to act as the left and right operands.
+
+*To prevent infinite AST growth, you pass a depth integer down the recursive calls. Once depth hits a threshold, the probabilities shift to 100% Base Case/Variable.*
+
+## **3\. Ensuring Determinism (The Oracle)**
+
+For the fuzzer to be useful, we need to know if the compiler messed up the execution. We use a **Checksum Accumulator**.
+
+1. OctoSmith generates a global variable: var checksum int \= 0  
+2. Throughout the generated blocks, OctoSmith randomly inserts assignment statements that mutate this checksum using local variables. Example: checksum \= checksum ^ (local\_var\_a \+ 3\)  
+3. At the end of the main function, the program simply prints or transmits the final checksum value via standard out (or a specific P2 serial pin).
+
+Because the program contains no undefined behavior, no uninitialized variables (they default to zero values), and predictable control flow, the generated source code intrinsically defines the "correct" checksum. You compile it, run it on the P2, and verify the output matches your reference interpreter or standard Go implementation.
+
+## **4\. Tackling the Hardware Quirks (Concurrency)**
+
+OctoGo maps go routines strictly 1:1 to the 8 physical P2 Cogs. This is where a naive fuzzer would fail by causing a runtime panic.
+
+**Initial Fuzzer Scope:** Leave concurrency out. Start by fuzzing the sequential language features (for, if, arithmetic, structs).
+
+**V2 Fuzzer Scope:** \* OctoSmith must track a global cog\_count.
+
+* It can generate a FuncDecl and invoke it via a go statement, incrementing the cog\_count.  
+* If cog\_count \== 8, the fuzzer temporarily disables the go statement generation path.  
+* For chan types, generate global channels. To prevent deadlocks, the fuzzer must guarantee that every \<-chan (receive) is paired with a guaranteed chan\<- (send) in a separate cog, or utilize select statements with a default case.
+
+## **5\. Handling Language Evolution**
+
+Because the language features are not yet complete, OctoSmith should be modular.
+
+* Write the generator functions to directly map to your EBNF Non-Terminals (e.g., func (f \*Fuzzer) genSimpleExpr(targetType Type)).  
+* When you add a new feature (like floating-point numbers, currently omitted), you simply update the Type enum in the fuzzer and add a case to the expression generator.
