@@ -30,7 +30,7 @@ const (
 	// TOK_003e003d   // ">="
 	// TOK_003e003e   // ">>"
 	// TOK_case       // "case"
-	ARROW = TOK_chan  // "chan"
+	CHAN  = TOK_chan  // "chan"
 	CONST = TOK_const // "const"
 	// TOK_default    // "default"
 	// TOK_else       // "else"
@@ -50,7 +50,7 @@ const (
 	// TOK_0026       // '&'
 	LPAREN = TOK_0028 // '('
 	RPAREN = TOK_0029 // ')'
-	// TOK_002a       // '*'
+	MUL    = TOK_002a // '*'
 	// TOK_002b       // '+'
 	COMMA = TOK_002c // ','
 	// TOK_002d       // '-'

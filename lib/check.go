@@ -14,7 +14,7 @@ import (
 	"go/constant"
 )
 
-// Node represents a parse tree.
+// Node represents a parse tree within the flat []int32 raw AST.
 type Node struct {
 	ast []int32 // Valid if .sym != 0
 	sym Symbol  // Valid if != 0
@@ -259,10 +259,13 @@ func (f *File) topLevelDecl(n Node) {
 }
 
 // FuncDeclNode describes the FuncDecl production.
+//
+//	FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
 type FuncDeclNode struct {
-	Name          Token
+	Name Token
+	//TODO Receiver *Receiver Node
 	ParameterList *ParameterListNode
-	Type          *TypeNode
+	Type          TypeNode
 	ReturnList    *ParameterListNode
 }
 
@@ -305,6 +308,8 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 }
 
 // BlockNode describes the Block production.
+//
+//	Block = "{" { Statement ";" } [ Statement ] "}" .
 type BlockNode struct {
 	List []StatementNode
 }
@@ -329,11 +334,26 @@ func (f *File) block(s *Scope, n Node) (r *BlockNode) {
 	return r
 }
 
-// StatementNode describes any Statement production.
+// StatementNode describes the Statement production.
+//
+//	Statement = VarDecl
+//		| ConstDecl
+//		| TypeDecl
+//		| "if" Expression Block [ "else" Block ]
+//		| "for" [ Expression ] Block
+//		| "return" [ Expression ]
+//		| "go" AssignHead { Selector | Index } CallSuffix
+//		| SwitchStmt
+//		| SelectStmt
+//		| "<-" Expression
+//		| AssignHead Postfix
+//		| EmptyStatement .
 type StatementNode any
 
-// AssignmenStatementNode describes an assignment Statement production.
-type AssignmenStatementNode struct {
+// StatementNodeAssignment describes the Statement production case
+//
+//	| AssignHead Postfix
+type StatementNodeAssignment struct {
 	AssignHead *AssignHeadNode
 	Postfix    *PostfixNode
 }
@@ -350,21 +370,32 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 			ah = f.assignHead(s, n)
 		case Postfix:
 			p := f.postfix(s, n)
-			r = &AssignmenStatementNode{ah, p}
-			if p.PostfixOp.Symbol == DEFINE {
-				//TODO var names []Token
-				if ah.IsNotIdentifier {
-					f.err(f.pos(firstIndex(ahAST)), "invalid LHS in short variable declaration")
-					break
+			r = &StatementNodeAssignment{ah, p}
+			switch x := p.PostfixOp.(type) {
+			case *PostfixOpNodeExpression:
+				switch x.AssignOp {
+				case ASSIGN:
+					panic(todo(""))
+				case DEFINE:
+					//TODO var names []Token
+					if !ah.isIdentifierOnly() {
+						f.err(f.pos(firstIndex(ahAST)), "invalid LHS in short variable declaration")
+						break
+					}
+					//TODO check p.LHSItemList
+					//TODO declare
+					//TODO valid := lastIndex(n.ast) + 1
+					//TODO for _, nm := range names {
+					//TODO 	if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
+					//TODO 		f.err(vs.Name.Position(), "%v", err)
+					//TODO 	}
+					//TODO }
+				default:
+					panic(todo(""))
 				}
-				//TODO check p.LHSItemList
-				//TODO declare
-				// valid := lastIndex(n.ast) + 1
-				// for _, nm := range names {
-				// 	if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
-				// 		f.err(vs.Name.Position(), "%v", err)
-				// 	}
-				// }
+			default:
+				_ = ahAST
+				panic(todo("%T", x))
 			}
 		case 0:
 			switch f.ch(n.tok) {
@@ -379,8 +410,11 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 }
 
 // PostfixNode describes the Postfix production.
+//
+//	Postfix    = { Selector | Index } PostfixOp .
 type PostfixNode struct {
-	PostfixOp *PostfixOpNode
+	// List []any // *SelectorNode or *IndexNode
+	PostfixOp PostfixOpNode
 }
 
 func (f *File) postfix(s *Scope, n Node) (r *PostfixNode) {
@@ -402,21 +436,32 @@ func (f *File) postfix(s *Scope, n Node) (r *PostfixNode) {
 }
 
 // PostfixOpNode describes the PostfixOp production.
-type PostfixOpNode struct {
-	Symbol     Symbol // Zero for CallSuffix or one of "<-", "=", ":=".
+//
+//	PostfixOp  = CallSuffix
+//		| "<-" Expression
+//		| { "," LhsItem } ( "=" | ":=" ) Expression .
+type PostfixOpNode any
+
+// PostfixOpNodeExpression describes the PostfixOp production case
+//
+//	| { "," LhsItem } ( "=" | ":=" ) Expression .
+type PostfixOpNodeExpression struct {
+	//TODO List []*LhsItem
+	AssignOp   Symbol
 	Expression ExpressionNode
 }
 
-func (f *File) postfixOp(s *Scope, n Node) (r *PostfixOpNode) {
-	r = &PostfixOpNode{}
+func (f *File) postfixOp(s *Scope, n Node) (r PostfixOpNode) {
+	//TODO var list []*LhsItem
+	var assignOp Symbol
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case Expression:
-			r.Expression = f.expression(s, n)
+			r = &PostfixOpNodeExpression{ /*TODO List: list, */ AssignOp: assignOp, Expression: f.expression(s, n)}
 		case 0:
 			switch sym := f.ch(n.tok); sym {
-			case DEFINE:
-				r.Symbol = sym
+			case ASSIGN, DEFINE:
+				assignOp = sym
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -428,19 +473,32 @@ func (f *File) postfixOp(s *Scope, n Node) (r *PostfixOpNode) {
 }
 
 // AssignHeadNode describes the AssignHead production.
+//
+//	AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
 type AssignHeadNode struct {
-	Identifier      Token
-	IsNotIdentifier bool // Also true when the identifier is not alone: `*ident`.
+	Stars      []Token
+	Identifier Token
+	Expression ExpressionNode
+}
+
+func (n *AssignHeadNode) isIdentifierOnly() bool {
+	return len(n.Stars) == 0 || n.Identifier.IsValid()
 }
 
 func (f *File) assignHead(s *Scope, n Node) (r *AssignHeadNode) {
 	r = &AssignHeadNode{}
 	for n := range iterator(n.ast) {
 		switch n.sym {
+		case Expression:
+			r.Expression = f.expression(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case identifier:
 				r.Identifier = tok
+			case MUL:
+				r.Stars = append(r.Stars, tok)
+			case LPAREN, RPAREN:
+				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -452,10 +510,12 @@ func (f *File) assignHead(s *Scope, n Node) (r *AssignHeadNode) {
 }
 
 // ParameterListNode describes the ParameterList production.
+//
+//	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 type ParameterListNode struct {
 	List []struct {
 		Names []Token
-		Type  *TypeNode
+		Type  TypeNode
 	}
 }
 
@@ -463,7 +523,7 @@ func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
 	r = &ParameterListNode{}
 	var item struct {
 		Names []Token
-		Type  *TypeNode
+		Type  TypeNode
 	}
 	for n := range iterator(n.ast) {
 		switch n.sym {
@@ -514,10 +574,12 @@ func (f *File) varDecl(s *Scope, n Node) {
 }
 
 // VarSpecNode describes the VarSpec production.
+//
+//	VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
 type VarSpecNode struct {
 	Expression ExpressionNode
 	Name       Token
-	TypeNode   *TypeNode
+	TypeNode   TypeNode
 }
 
 func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
@@ -545,34 +607,79 @@ func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 }
 
 // TypeNode describes the Type production.
-type TypeNode struct {
-	Qualifier  Token // Valid if Qualifier.IsValid()
-	Name       Token
-	Kind       Symbol // ARROW, LBRACK, ...
-	TypeNode   *TypeNode
-	Expression ExpressionNode // [expr]T
+//
+//	Type = [ identifier "." ] identifier
+//		| "chan" Type
+//		| "[" [ Expression ] "]" Type
+//		| "*" Type
+//		| InterfaceType
+//		| StructType .
+type TypeNode any
+
+//TODO	Qualifier  Token // Valid if Qualifier.IsValid()
+//TODO	Name       Token
+//TODO	Kind       Symbol // CHAN, LBRACK, ...
+//TODO	TypeNode   TypeNode
+//TODO	Expression ExpressionNode // [expr]T
+//TODO}
+
+// TypeNodeChan describes the Type production case
+//
+//	| "chan" Type
+type TypeNodeChan struct {
+	Type TypeNode
 }
 
-func (f *File) typ(s *Scope, n Node) (r *TypeNode) {
-	r = &TypeNode{}
+// TypeNodeArray describes the Type production.
+//
+//	| "[" Expression "]" Type
+type TypeNodeArray struct {
+	Expression ExpressionNode
+	Type       TypeNode
+}
+
+// TypeNodeSlice describes the Type production.
+//
+//		| "[" "]" Type
+type TypeNodeSlice struct {
+	Type TypeNode
+}
+
+func (f *File) typ(s *Scope, n Node) (r TypeNode) {
+	var ident Identifier
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case Type:
-			r.TypeNode = f.typ(s, n)
+			switch x := r.(type) {
+			case *TypeNodeChan:
+				x.Type = f.typ(s, n)
+			case *TypeNodeArray:
+				x.Type = f.typ(s, n)
+			case *TypeNodeSlice:
+				x.Type = f.typ(s, n)
+			default:
+				panic(todo("%T", x))
+			}
 		case Expression:
-			r.Expression = f.expression(s, n)
+			r = &TypeNodeArray{Expression: f.expression(s, n)}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case identifier:
 				switch {
-				case r.Name.IsValid():
-					r.Qualifier = r.Name
-					r.Name = tok
+				case ident.Name.IsValid():
+					panic(todo(""))
 				default:
-					r.Name = tok
+					ident = Identifier{ResolutionScope: s, Name: tok, Index: n.tok}
+					r = &ident
 				}
-			case ARROW, LBRACK, RBRACK:
-				r.Kind = Symbol(tok.Ch)
+			case CHAN:
+				r = &TypeNodeChan{}
+			case LBRACK:
+				// ok
+			case RBRACK:
+				if r == nil {
+					r = &TypeNodeSlice{}
+				}
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -628,10 +735,12 @@ func (f *File) constDecl(s *Scope, n Node) {
 }
 
 // ConstSpecNode describes the ConstSpec production.
+//
+//	ConstSpec = identifier [ Type ] "=" Expression .
 type ConstSpecNode struct {
 	Expression ExpressionNode
 	Name       Token
-	//TODO Type Typ
+	Type       TypeNode
 }
 
 func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
@@ -640,6 +749,8 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 		switch n.sym {
 		case Expression:
 			r.Expression = f.expression(s, n)
+		case Type:
+			r.Type = f.typ(s, n)
 		case 0:
 			switch f.ch(n.tok) {
 			case identifier:
@@ -656,10 +767,16 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 	return r
 }
 
-// ExpressionNode represents any Expression production.
+// ExpressionNode represents the Expression production or any of its
+// constituents.
 type ExpressionNode any
 
-// BinaryExpressionNode represents a binary operation.
+// BinaryExpressionNode represents a binary operation, ie. an operator and its
+// two operands, ie. one of
+//
+//	Expression     = SimpleExpr [ RelOp SimpleExpr ] .
+//	SimpleExpr     = Term { AddOp Term } .
+//	Term           = UnaryExpr { MulOp UnaryExpr } .
 type BinaryExpressionNode struct {
 	LHS ExpressionNode
 	Op  Symbol
@@ -765,11 +882,11 @@ func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
 	return r
 }
 
-// Identifier describes a named Factor.
+// Identifier describes an identifier and its resolution scope.
 type Identifier struct {
-	Scope *Scope // Appears in scope.
-	Name  Token
-	Index int32
+	ResolutionScope *Scope // Identifier appears in ResolutionScope.
+	Name            Token
+	Index           int32 // Index into the flat []int32 AST.
 }
 
 func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
@@ -783,7 +900,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				}
 				return r
 			case identifier:
-				r = &Identifier{Scope: s, Name: tok, Index: n.tok}
+				r = &Identifier{ResolutionScope: s, Name: tok, Index: n.tok}
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -814,6 +931,8 @@ func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
 }
 
 // ImportSpecNode decribes the ImportSpec production.
+//
+//	ImportSpec = [ "." | identifier ] string_lit .
 type ImportSpecNode struct {
 	ImportQualifier string
 	ImportPath      string
