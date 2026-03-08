@@ -8,6 +8,7 @@
 // TODO 20260307 Operators: +||/&&
 // TODO 20260307 For statements: extend
 // TODO 20260307 Return statements: ? disable naked returns
+// TODO 20260307 Return statements: Expression -> ExpressionList
 
 // # OctoGo Language Specification (Draft Mar 7, 2026)
 //

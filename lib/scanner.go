@@ -20,55 +20,55 @@ var (
 
 // Renamed Symbols
 const (
-	EOF = TOK_EOF // EOF
-	// TOK_0021003d   // "!="
-	DEFINE = TOK_003a003d // ":="
-	// TOK_003c002d   // "<-"
-	// TOK_003c003c   // "<<"
-	// TOK_003c003d   // "<="
-	// TOK_003d003d   // "=="
-	// TOK_003e003d   // ">="
-	// TOK_003e003e   // ">>"
-	// TOK_case       // "case"
-	CHAN  = TOK_chan  // "chan"
-	CONST = TOK_const // "const"
-	// TOK_default    // "default"
-	// TOK_else       // "else"
-	// TOK_for        // "for"
-	FUNC = TOK_func // "func"
-	// TOK_go         // "go"
-	// TOK_if         // "if"
-	IMPORT = TOK_import // "import"
-	// TOK_interface  // "interface"
-	// TOK_return     // "return"
-	// TOK_select     // "select"
-	// TOK_struct     // "struct"
-	// TOK_switch     // "switch"
-	// TOK_type       // "type"
-	VAR = TOK_var // "var"
-	// TOK_0021       // '!'
-	// TOK_0026       // '&'
-	LPAREN = TOK_0028 // '('
-	RPAREN = TOK_0029 // ')'
-	MUL    = TOK_002a // '*'
-	// TOK_002b       // '+'
-	COMMA = TOK_002c // ','
-	// TOK_002d       // '-'
-	PERIOD = TOK_002e // '.'
-	// TOK_002f       // '/'
-	// TOK_003a       // ':'
-	SEMICOLON = TOK_003b // ';'
-	// TOK_003c       // '<'
-	ASSIGN = TOK_003d // '='
-	// TOK_003e       // '>'
-	LBRACK = TOK_005b // '['
-	RBRACK = TOK_005d // ']'
-	// TOK_005e       // '^'
-	LBRACE = TOK_007b // '{'
-	// TOK_007c       // '|'
-	RBRACE = TOK_007d // '}'
-	// TOK_007e       // '~'
-	// identifier     // identifier
+	EOF       = TOK_EOF       // EOF
+	NEQ       = TOK_0021003d  // "!="
+	DEFINE    = TOK_003a003d  // ":="
+	ARROW     = TOK_003c002d  // "<-"
+	SHL       = TOK_003c003c  // "<<"
+	LEQ       = TOK_003c003d  // "<="
+	EQL       = TOK_003d003d  // "=="
+	GEQ       = TOK_003e003d  // ">="
+	SHR       = TOK_003e003e  // ">>"
+	CASE      = TOK_case      // "case"
+	CHAN      = TOK_chan      // "chan"
+	CONST     = TOK_const     // "const"
+	DEFAULT   = TOK_default   // "default"
+	ELSE      = TOK_else      // "else"
+	FOR       = TOK_for       // "for"
+	FUNC      = TOK_func      // "func"
+	GO        = TOK_go        // "go"
+	IF        = TOK_if        // "if"
+	IMPORT    = TOK_import    // "import"
+	INTERFACE = TOK_interface // "interface"
+	RETURN    = TOK_return    // "return"
+	SELECT    = TOK_select    // "select"
+	STRUCT    = TOK_struct    // "struct"
+	SWITCH    = TOK_switch    // "switch"
+	TYPE      = TOK_type      // "type"
+	VAR       = TOK_var       // "var"
+	NOT       = TOK_0021      // '!'
+	AND       = TOK_0026      // '&'
+	LPAREN    = TOK_0028      // '('
+	RPAREN    = TOK_0029      // ')'
+	MUL       = TOK_002a      // '*'
+	ADD       = TOK_002b      // '+'
+	COMMA     = TOK_002c      // ','
+	SUB       = TOK_002d      // '-'
+	PERIOD    = TOK_002e      // '.'
+	QUO       = TOK_002f      // '/'
+	COLON     = TOK_003a      // ':'
+	SEMICOLON = TOK_003b      // ';'
+	LSS       = TOK_003c      // '<'
+	ASSIGN    = TOK_003d      // '='
+	GTR       = TOK_003e      // '>'
+	LBRACK    = TOK_005b      // '['
+	RBRACK    = TOK_005d      // ']'
+	XOR       = TOK_005e      // '^'
+	LBRACE    = TOK_007b      // '{'
+	OR        = TOK_007c      // '|'
+	RBRACE    = TOK_007d      // '}'
+	TILDE     = TOK_007e      // '~'
+	IDENT     = identifier    // identifier
 	// int_lit        // int_lit
 	// rune_lit       // rune_lit
 	// string_lit     // string_lit

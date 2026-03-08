@@ -352,15 +352,79 @@ type StatementNode any
 
 // StatementNodeAssignment describes the Statement production case
 //
-//	| AssignHead Postfix
+//	AssignHead Postfix
+//
+// when the PostfixOpNodeExpression.Symbol is ASSIGN.
 type StatementNodeAssignment struct {
 	AssignHead *AssignHeadNode
 	Postfix    *PostfixNode
 }
 
+// StatementNodeShortVarDecl describes the Statement production case
+//
+//	AssignHead Postfix
+//
+// when the PostfixOpNodeExpression.Symbol is DEFINE.
+type StatementNodeShortVarDecl struct {
+	AssignHead *AssignHeadNode
+	Postfix    *PostfixNode
+}
+
+// StatementNodeSend describes the Statement production case
+//
+//	AssignHead Postfix
+//
+// when the PostfixOpNodeExpression.Symbol is ARROW
+type StatementNodeSend struct {
+	AssignHead *AssignHeadNode
+	Postfix    *PostfixNode
+}
+
+// StatementNodeIf describes the Statement production case
+//
+//	"if" Expression Block [ "else" Block ]
+type StatementNodeIf struct {
+	Expression ExpressionNode
+	Block      *BlockNode
+	ElseBlock  *BlockNode
+}
+
+// StatementNodeFor describes the Statement production case
+//
+//	"for" [ Expression ] Block
+type StatementNodeFor struct {
+	Expression ExpressionNode
+	Block      *BlockNode
+}
+
+// StatementNodeReturn describes the Statement production case
+//
+//	"return" [ Expression ]
+type StatementNodeReturn struct {
+	Expression ExpressionNode
+}
+
+// StatementNodeReceive describes the Statement production case
+//
+//	"<-" Expression
+type StatementNodeReceive struct {
+	Expression ExpressionNode
+}
+
+// StatementNodeGo describes the Statement production case
+//
+//	"go" AssignHead { Selector | Index } CallSuffix
+type StatementNodeGo struct {
+	AssignHead *AssignHeadNode
+	List       SelectorOrIndexList
+	CallSuffix []ExpressionNode
+}
+
 func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 	var ah *AssignHeadNode
 	var ahAST []int32
+	var ifImplicitBlock *Scope
+	var goStatement *StatementNodeGo
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case VarDecl:
@@ -370,18 +434,19 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 			ah = f.assignHead(s, n)
 		case Postfix:
 			p := f.postfix(s, n)
-			r = &StatementNodeAssignment{ah, p}
 			switch x := p.PostfixOp.(type) {
 			case *PostfixOpNodeExpression:
 				switch x.AssignOp {
 				case ASSIGN:
-					panic(todo(""))
+					r = &StatementNodeAssignment{AssignHead: ah, Postfix: p}
 				case DEFINE:
 					//TODO var names []Token
 					if !ah.isIdentifierOnly() {
 						f.err(f.pos(firstIndex(ahAST)), "invalid LHS in short variable declaration")
 						break
 					}
+
+					r = &StatementNodeShortVarDecl{AssignHead: ah, Postfix: p}
 					//TODO check p.LHSItemList
 					//TODO declare
 					//TODO valid := lastIndex(n.ast) + 1
@@ -393,9 +458,364 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 				default:
 					panic(todo(""))
 				}
+			case *PostfixOpNodeSend:
+				r = &StatementNodeSend{AssignHead: ah, Postfix: p}
 			default:
-				_ = ahAST
 				panic(todo("%T", x))
+			}
+		case Expression:
+			expr := f.expression(s, n)
+			switch x := r.(type) {
+			case *StatementNodeIf:
+				x.Expression = expr
+			case *StatementNodeFor:
+				x.Expression = expr
+			case *StatementNodeReturn:
+				x.Expression = expr
+			case *StatementNodeReceive:
+				x.Expression = expr
+			default:
+				panic(todo("%T", x))
+			}
+		case Block:
+			b := f.block(s.child(), n)
+			switch x := r.(type) {
+			case *StatementNodeIf:
+				switch {
+				case x.Block == nil:
+					x.Block = b
+				default:
+					x.ElseBlock = b
+				}
+				s = s.Parent
+			case *StatementNodeFor:
+				x.Block = b
+				s = s.Parent
+			default:
+				panic(todo("%T", x))
+			}
+		case SwitchStmt:
+			r = f.switchStmt(s.child(), n)
+		case SelectStmt:
+			r = f.selectStmt(s.child(), n)
+		case CallSuffix:
+			goStatement.CallSuffix = f.callSuffix(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case FOR:
+				s = s.child()
+				r = &StatementNodeFor{}
+			case IF:
+				s = s.child()
+				ifImplicitBlock = s
+				r = &StatementNodeIf{}
+			case ELSE:
+				s = ifImplicitBlock
+			case RETURN:
+				r = &StatementNodeReturn{}
+			case GO:
+				goStatement = &StatementNodeGo{}
+				r = goStatement
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// SelectStmtNode describes the SelectStmt production.
+//
+//	SelectStmt  = "select" "{" { CommClause } "}" .
+type SelectStmtNode struct {
+	List []*CommClauseNode
+}
+
+func (f *File) selectStmt(s *Scope, n Node) (r *SelectStmtNode) {
+	r = &SelectStmtNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case CommClause:
+			r.List = append(r.List, f.commClause(s, n))
+		case 0:
+			switch f.ch(n.tok) {
+			case SELECT, LBRACE, RBRACE:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// CommClauseNode describes the CommClause production.
+//
+//	CommClause  = CommHead ":" { Statement ";" } .
+type CommClauseNode struct {
+	CommHead *CommHeadNode
+	List     []StatementNode
+}
+
+func (f *File) commClause(s *Scope, n Node) (r *CommClauseNode) {
+	r = &CommClauseNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case CommHead:
+			r.CommHead = f.commHead(s, n)
+		case Statement:
+			r.List = append(r.List, f.statement(s, n))
+		case 0:
+			switch f.ch(n.tok) {
+			case COLON, SEMICOLON:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// CommHeadNode describes the CommHead production.
+//
+//	CommHead    = "case" CommOp | "default" .
+type CommHeadNode struct {
+	CommOp  CommOpNode
+	Default bool
+}
+
+func (f *File) commHead(s *Scope, n Node) (r *CommHeadNode) {
+	r = &CommHeadNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case CommOp:
+			r.CommOp = f.commOp(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case CASE:
+				// ok
+			case DEFAULT:
+				r.Default = true
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// CommOpNode describes the CommOp production.
+//
+//	CommOp      = "<-" Expression
+//		| AssignHead PostfixComm .
+type CommOpNode any
+
+// CommOpNodeReceive describes the CommOp production case
+//
+//	"<-" Expression
+type CommOpNodeReceive struct {
+	Expression ExpressionNode
+}
+
+// CommOpNodeAssign describes the CommOp production case
+//
+//	| AssignHead PostfixComm .
+type CommOpNodeAssign struct {
+	AssignHead  *AssignHeadNode
+	PostfixComm *PostfixCommNode
+}
+
+func (f *File) commOp(s *Scope, n Node) (r CommOpNode) {
+	var comm *CommOpNodeAssign
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Expression:
+			r = &CommOpNodeReceive{Expression: f.expression(s, n)}
+		case AssignHead:
+			comm = &CommOpNodeAssign{AssignHead: f.assignHead(s, n)}
+			r = comm
+		case PostfixComm:
+			comm.PostfixComm = f.postfixCom(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case ARROW:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// PostfixCommNode describes the PostfixComm production.
+//
+//	PostfixComm = { Selector | Index } ( "=" "<-" Expression | "<-" Expression ) .
+type PostfixCommNode struct {
+	Assign     Symbol
+	Expression ExpressionNode
+}
+
+func (f *File) postfixCom(s *Scope, n Node) (r *PostfixCommNode) {
+	r = &PostfixCommNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Expression:
+			r.Expression = f.expression(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case ASSIGN:
+				r.Assign = ASSIGN
+			case ARROW:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// SwitchStmtNode describes the SwitchStmt production.
+//
+//	SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
+type SwitchStmtNode struct {
+	SwitchGuard *SwitchGuardNode
+	List        []*CaseClauseNode
+}
+
+func (f *File) switchStmt(s *Scope, n Node) (r *SwitchStmtNode) {
+	r = &SwitchStmtNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case SwitchGuard:
+			r.SwitchGuard = f.switchGuard(s, n)
+		case CaseClause:
+			r.List = append(r.List, f.caseClause(s, n))
+		case 0:
+			switch f.ch(n.tok) {
+			case SWITCH, LBRACE, RBRACE:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// CaseClauseNode describes the CaseClause production.
+//
+//	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
+type CaseClauseNode struct {
+	CaseHead *CaseHeadNode
+	List     []StatementNode
+}
+
+func (f *File) caseClause(s *Scope, n Node) (r *CaseClauseNode) {
+	r = &CaseClauseNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case CaseHead:
+			r.CaseHead = f.caseHead(s, n)
+		case Statement:
+			r.List = append(r.List, f.statement(s, n))
+		case 0:
+			switch f.ch(n.tok) {
+			case COLON, SEMICOLON:
+				//  ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// CaseHeadNode describes the CaseHead production.
+//
+//	CaseHead   = "case" ExpressionList | "default" .
+type CaseHeadNode struct {
+	List    []ExpressionNode
+	Default bool
+}
+
+func (f *File) caseHead(s *Scope, n Node) (r *CaseHeadNode) {
+	r = &CaseHeadNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case ExpressionList:
+			r.List = f.expressionList(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case CASE:
+				// ok
+			case DEFAULT:
+				r.Default = true
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) expressionList(s *Scope, n Node) (r []ExpressionNode) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Expression:
+			r = append(r, f.expression(s, n))
+		case 0:
+			switch f.ch(n.tok) {
+			case COMMA:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// SwitchGuardNode describes the SwitchGuard production.
+//
+//	SwitchGuard = Expression [ ":=" Expression ] .
+type SwitchGuardNode struct {
+	Expression    ExpressionNode
+	RHSExpression ExpressionNode
+}
+
+func (f *File) switchGuard(s *Scope, n Node) (r *SwitchGuardNode) {
+	r = &SwitchGuardNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Expression:
+			switch expr := f.expression(s, n); {
+			case r.Expression == nil:
+				r.Expression = expr
+			default:
+				r.RHSExpression = expr
 			}
 		case 0:
 			switch f.ch(n.tok) {
@@ -409,11 +829,14 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 	return r
 }
 
+// SelectorOrIndexList represents a []elem where elem is *SelectorNode or *IndexNode.
+type SelectorOrIndexList []any
+
 // PostfixNode describes the Postfix production.
 //
 //	Postfix    = { Selector | Index } PostfixOp .
 type PostfixNode struct {
-	// List []any // *SelectorNode or *IndexNode
+	List      SelectorOrIndexList
 	PostfixOp PostfixOpNode
 }
 
@@ -423,8 +846,37 @@ func (f *File) postfix(s *Scope, n Node) (r *PostfixNode) {
 		switch n.sym {
 		case PostfixOp:
 			r.PostfixOp = f.postfixOp(s, n)
+		case Index:
+			r.List = append(r.List, f.index(s, n))
 		case 0:
 			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// IndexNode describes the Index production.
+//
+//	Index        = "[" Expression "]" .
+type IndexNode struct {
+	Expression ExpressionNode
+}
+
+func (f *File) index(s *Scope, n Node) (r *IndexNode) {
+	r = &IndexNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Expression:
+			r.Expression = f.expression(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case LBRACK, RBRACK:
+				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -444,24 +896,41 @@ type PostfixOpNode any
 
 // PostfixOpNodeExpression describes the PostfixOp production case
 //
-//	| { "," LhsItem } ( "=" | ":=" ) Expression .
+//	{ "," LhsItem } ( "=" | ":=" ) Expression .
 type PostfixOpNodeExpression struct {
 	//TODO List []*LhsItem
 	AssignOp   Symbol
 	Expression ExpressionNode
 }
 
+// PostfixOpNodeSend describes the PostfixOp production case
+//
+//	"<-" Expression
+type PostfixOpNodeSend struct {
+	Expression ExpressionNode
+}
+
 func (f *File) postfixOp(s *Scope, n Node) (r PostfixOpNode) {
 	//TODO var list []*LhsItem
 	var assignOp Symbol
+	var send *PostfixOpNodeSend
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case Expression:
-			r = &PostfixOpNodeExpression{ /*TODO List: list, */ AssignOp: assignOp, Expression: f.expression(s, n)}
+			expr := f.expression(s, n)
+			switch {
+			case send != nil:
+				send.Expression = expr
+			default:
+				r = &PostfixOpNodeExpression{ /*TODO List: list, */ AssignOp: assignOp, Expression: expr}
+			}
 		case 0:
 			switch sym := f.ch(n.tok); sym {
 			case ASSIGN, DEFINE:
 				assignOp = sym
+			case ARROW:
+				send = &PostfixOpNodeSend{}
+				r = send
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -616,12 +1085,15 @@ func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 //		| StructType .
 type TypeNode any
 
-//TODO	Qualifier  Token // Valid if Qualifier.IsValid()
-//TODO	Name       Token
-//TODO	Kind       Symbol // CHAN, LBRACK, ...
-//TODO	TypeNode   TypeNode
-//TODO	Expression ExpressionNode // [expr]T
-//TODO}
+// TypeNodeIdent describes the Type production case
+//
+//	[ identifier "." ] identifier
+type TypeNodeIdent struct {
+	Qualifier       Token  // foo in fmt.Print
+	ResolutionScope *Scope // Identifier appears in ResolutionScope.
+	Name            Token  // Print in fmt.Print
+	Index           int32  // Index into the flat []int32 AST of the containing file.
+}
 
 // TypeNodeChan describes the Type production case
 //
@@ -630,7 +1102,7 @@ type TypeNodeChan struct {
 	Type TypeNode
 }
 
-// TypeNodeArray describes the Type production.
+// TypeNodeArray describes the Type production case
 //
 //	| "[" Expression "]" Type
 type TypeNodeArray struct {
@@ -638,15 +1110,15 @@ type TypeNodeArray struct {
 	Type       TypeNode
 }
 
-// TypeNodeSlice describes the Type production.
+// TypeNodeSlice describes the Type production case
 //
-//		| "[" "]" Type
+//	| "[" "]" Type
 type TypeNodeSlice struct {
 	Type TypeNode
 }
 
 func (f *File) typ(s *Scope, n Node) (r TypeNode) {
-	var ident Identifier
+	var ident TypeNodeIdent
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case Type:
@@ -667,9 +1139,10 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			case identifier:
 				switch {
 				case ident.Name.IsValid():
-					panic(todo(""))
+					ident.Qualifier = ident.Name
+					ident.Name = tok
 				default:
-					ident = Identifier{ResolutionScope: s, Name: tok, Index: n.tok}
+					ident = TypeNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
 					r = &ident
 				}
 			case CHAN:
@@ -784,7 +1257,7 @@ type BinaryExpressionNode struct {
 }
 
 func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
-	var relOp Symbol
+	var op Symbol
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case SimpleExpr:
@@ -792,10 +1265,29 @@ func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = &BinaryExpressionNode{LHS: r, Op: relOp, RHS: e}
+				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
 			}
+		case RelOp:
+			op = f.relOp(s, n)
 		case 0:
 			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) relOp(s *Scope, n Node) (r Symbol) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch sym := f.ch(n.tok); sym {
+			case EQL, NEQ, LSS, LEQ, GTR, GEQ:
+				r = sym
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -807,7 +1299,7 @@ func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
 }
 
 func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
-	var addOp Symbol
+	var op Symbol
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case Term:
@@ -815,10 +1307,29 @@ func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = &BinaryExpressionNode{LHS: r, Op: addOp, RHS: e}
+				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
 			}
+		case AddOp:
+			op = f.addOp(s, n)
 		case 0:
 			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) addOp(s *Scope, n Node) (r Symbol) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch sym := f.ch(n.tok); sym {
+			case ADD, SUB, OR, XOR:
+				r = sym
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -830,7 +1341,7 @@ func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 }
 
 func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
-	var mulOp Symbol
+	var op Symbol
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case UnaryExpr:
@@ -838,8 +1349,10 @@ func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = &BinaryExpressionNode{LHS: r, Op: mulOp, RHS: e}
+				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
 			}
+		case MulOp:
+			op = f.mulOp(s, n)
 		case 0:
 			switch f.ch(n.tok) {
 			default:
@@ -852,24 +1365,49 @@ func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 	return r
 }
 
-//TODO // UnaryExprNode describes the UnaryExpr production.
-//TODO type UnaryExprNode struct {
-//TODO 	UnaryOp Symbol
-//TODO 	UnaryOp2 []Symbol
-//TODO 	Factor ExpressionNode
-//TODO }
+func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch sym := f.ch(n.tok); sym {
+			case MUL, QUO, SHL, SHR, AND:
+				r = sym
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// UnaryExprNode describes the UnaryExpr production.
+//
+//	UnaryExpr  = { UnaryOp } Factor .
+type UnaryExprNode struct {
+	List   []Symbol
+	Factor ExpressionNode
+}
 
 func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
+	var ue *UnaryExprNode
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case Factor:
 			fa := f.factor(s, n)
 			switch {
-			case r == nil:
-				r = fa
+			case ue != nil:
+				ue.Factor = fa
 			default:
-				panic(todo(""))
+				r = fa
 			}
+		case UnaryOp:
+			if ue == nil {
+				ue = &UnaryExprNode{}
+				r = ue
+			}
+			ue.List = append(ue.List, f.unaryOp(s, n))
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			default:
@@ -882,25 +1420,145 @@ func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
 	return r
 }
 
-// Identifier describes an identifier and its resolution scope.
-type Identifier struct {
-	ResolutionScope *Scope // Identifier appears in ResolutionScope.
+func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch sym := f.ch(n.tok); sym {
+			case ADD, SUB, NOT, XOR, MUL, AND, ARROW, TILDE:
+				r = sym
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// FactorNode describes the Factor production.
+//
+//	Factor     = identifier [ FactorSuffix ]
+//		| int_lit
+//		| string_lit
+//		| rune_lit
+//		| "(" Expression ")" .
+type FactorNode any
+
+// FactorNodeIdent describes the Factor production case
+//
+//	identifier [ FactorSuffix ]
+type FactorNodeIdent struct {
+	ResolutionScope *Scope // The identifier appears in ResolutionScope.
 	Name            Token
-	Index           int32 // Index into the flat []int32 AST.
+	Index           int32 // Index into the flat []int32 AST of the containing file.
+	FactorSuffix    *FactorSuffixNode
+}
+
+// FactorNodeParen describes the Factor production case
+//
+//	"(" Expression ")"
+type FactorNodeParen struct {
+	Expression ExpressionNode
 }
 
 func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
+	var ident *FactorNodeIdent
 	for n := range iterator(n.ast) {
 		switch n.sym {
+		case Expression:
+			r = &FactorNodeParen{Expression: f.expression(s, n)}
+		case FactorSuffix:
+			ident.FactorSuffix = f.factorSuffix(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case int_lit:
 				if r = constant.MakeFromLiteral(tok.Src(), token.INT, 0); r == constant.Unknown {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
 				}
-				return r
 			case identifier:
-				r = &Identifier{ResolutionScope: s, Name: tok, Index: n.tok}
+				ident = &FactorNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
+				r = ident
+			case LPAREN, RPAREN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// FactorSuffixNode describes the FactorSuffix production.
+//
+//	FactorSuffix = { Selector | Index } [ CallSuffix ] .
+type FactorSuffixNode struct {
+	List       SelectorOrIndexList
+	CallSuffix []ExpressionNode
+}
+
+func (f *File) factorSuffix(s *Scope, n Node) (r *FactorSuffixNode) {
+	r = &FactorSuffixNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case CallSuffix:
+			r.CallSuffix = f.callSuffix(s, n)
+		case Selector:
+			r.List = append(r.List, f.selector(s, n))
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// SelectorNode describes the Selector production.
+//
+//	Selector     = "." ( identifier | "(" "type" ")" ) .
+type SelectorNode struct {
+	Name       Token
+	TypeSwitch bool
+}
+
+func (f *File) selector(s *Scope, n Node) (r *SelectorNode) {
+	r = &SelectorNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case PERIOD, LPAREN, RPAREN:
+				// ok
+			case IDENT:
+				r.Name = tok
+			case TYPE:
+				r.TypeSwitch = true
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) callSuffix(s *Scope, n Node) (r []ExpressionNode) {
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case ArgumentList:
+			r = f.expressionList(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case LPAREN, RPAREN:
+				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -986,7 +1644,7 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 		}
 	}
 	if r.ImportQualifier != "" {
-		if err := f.FileScope.add(&ImportQualifier{declaration: declaration{name: nm}, Import: r}); err != nil {
+		if err := f.FileScope.add(&ImportDeclaration{declaration: declaration{name: nm}, Import: r}); err != nil {
 			f.err(nm.Position(), "%v", err)
 		}
 	}

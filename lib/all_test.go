@@ -43,81 +43,82 @@ func worker(id, n int, dataChan chan byte, signal chan chan int) bool {
 	var nestedToken chan int
 	var val, val2 byte
 	i := 42
-///     
-///	// For Loop (Expression)
-///	for active {
-///		i = 24
-///		// If / Else Statement
-///		if count == MAX_COGS {
-///			active = false
-///		} else {
-///			count = count + 1
-///		}
-///		
-///		// SwitchStmt with ExpressionList
-///		switch count {
-///		case 1, 2, 3:
-///			localBuf[0] = 255
-///		case 4:
-///			localBuf[1] = 127
-///		default:
-///			localBuf[2] = 0
-///		}
-///		
-///		// SelectStmt with diverse CommClauses
-///		select {
-///		case <- dataChan:             // Bare receive (CommOp -> "<-" Expression)
-///		case val = <- dataChan:       // Receive assignment (PostfixComm)
-///		case dataChan <- 255:         // Send literal (PostfixComm)
-///		case signal <- nestedToken:   // Send channel down a channel
-///		default:
-///			count = count | 1         // Bitwise fallback
-///		}
-///	}
-///	
-///	// Return Statement
-///	return active
+     
+	// For Loop (Expression)
+	for active {
+		i = 24
+		// If / Else Statement
+		if count == MAX_COGS {
+			active = false
+		} else {
+			count = count + 1
+		}
+		
+		// SwitchStmt with ExpressionList
+		switch count {
+		case 1, 2, 3:
+			localBuf[0] = 255
+		case 4:
+			localBuf[1] = 127
+		default:
+			localBuf[2] = 0
+		}
+		
+		// SelectStmt with diverse CommClauses
+		select {
+		case <- dataChan:             // Bare receive (CommOp -> "<-" Expression)
+		case val = <- dataChan:       // Receive assignment (PostfixComm)
+		case dataChan <- 255:         // Send literal (PostfixComm)
+		case signal <- nestedToken:   // Send channel down a channel
+		default:
+			count = count | 1         // Bitwise fallback
+		}
+	}
+	
+	// Return Statement
+	return active
 }
 
 func compute(a int, b int) (c, d int) {
-///	// Deep Expression tree climbing: AddOp, MulOp, RelOp, and grouped Factors
-///	// Precedence test: bitwise, arithmetic, and logical boundaries
-///	return (a * b) + (a / b) - (a << 2) ^ (b >> 1) & 255, 42, 24
+	// Deep Expression tree climbing: AddOp, MulOp, RelOp, and grouped Factors
+	// Precedence test: bitwise, arithmetic, and logical boundaries
+	return (a * b) + (a / b) - (a << 2) ^ (b >> 1) & 255
 }
 
 func emptyReturnTest() {
-///	// Statements: return without expression
-///	return
+	// Statements: return without expression
+	return
 }
 
 func main() {
-///	var a int = 10
-///	var b int = 20
-///	var c int
-///	
-///	// Identifier Postfix (Assignment & CallSuffix)
-///	c = compute(a, b)
-///	
-///	// Goroutine invocation (CallSuffix)
-///	go worker(c, sharedBus, multiChan)
-///	
-///	// Statement: Channel Send
-///	sharedBus <- 255
-///	
-///	// Factor -> "<-" Expression. 
-///	// NOTE: Because "<-" Expression is a Factor, '<- sharedBus + 10' 
-///	// would parse as '<- (sharedBus + 10)'. The parens are required here 
-///	// to avoid a type-check error (adding 10 to a channel).
-///	c = (<- sharedBus) + 10
-///	
-///	// Complex L-value resolution (Index and Selector in Postfix)
-///	// Assumes p2 package has a function ReadPin that returns int
-///	pinBuffer[c] = p2.ReadPin(a)
-///	
-///	// Boolean literal Factor
-///	var isDone bool = true
-///	
-///	return 
+	var a int = 10
+	var b int = 20
+	var c int
+	var d = 42
+	
+	// Identifier Postfix (Assignment & CallSuffix)
+	c = compute(a, b)
+	
+	// Goroutine invocation (CallSuffix)
+	go worker(c, sharedBus, multiChan)
+	
+	// Statement: Channel Send
+	sharedBus <- 255
+	
+	// Factor -> "<-" Expression. 
+	// NOTE: Because "<-" Expression is a Factor, '<- sharedBus + 10' 
+	// would parse as '<- (sharedBus + 10)'. The parens are required here 
+	// to avoid a type-check error (adding 10 to a channel).
+	c = (<- sharedBus) + 10
+	
+	// Complex L-value resolution (Index and Selector in Postfix)
+	// Assumes p2 package has a function ReadPin that returns int
+	pinBuffer[c] = p2.ReadPin(a)
+	
+	// Boolean literal Factor
+	var isDone bool = true
+	
+	return 
 }
 `
 )

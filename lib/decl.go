@@ -50,8 +50,10 @@ uintptr
 //TODO what is the size of a flexcc func pointer?
 
 var (
-	_ Declaration = (*ImportQualifier)(nil)
+	_ Declaration = (*ConstDeclaration)(nil)
+	_ Declaration = (*ImportDeclaration)(nil)
 	_ Declaration = (*PredefinedType)(nil)
+	_ Declaration = (*VarDeclaration)(nil)
 )
 
 // Universe binds predefined declarations.
@@ -176,9 +178,9 @@ func (d *declaration) Valid() int32 {
 	return int32(d.valid)
 }
 
-// ImportQualifier represents 'foo' in 'foo.Bar' when 'Bar' is exported from
+// ImportDeclaration represents 'foo' in 'foo.Bar' when 'Bar' is exported from
 // package imported as 'foo'.
-type ImportQualifier struct {
+type ImportDeclaration struct {
 	declaration
 	Import *ImportSpecNode
 }
