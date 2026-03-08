@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"iter"
 
 	"go/constant"
 )
@@ -21,7 +22,29 @@ type Node struct {
 	tok int32   // Valid if sym == 0
 }
 
-func iterator(ast []int32) func(yield func(Node) bool) {
+// Pos returns the index of the first token within the node.
+// It returns -1 if no token is found.
+func (n Node) Pos() int32 {
+	if n.sym == 0 {
+		// Terminal node: the position is simply the token index
+		return n.tok
+	}
+	// Non-terminal node: recursively find the first token in the AST slice
+	return firstIndex(n.ast)
+}
+
+// End returns the index of the last token within the node.
+// It returns -1 if no token is found.
+func (n Node) End() int32 {
+	if n.sym == 0 {
+		// Terminal node: the end position is the token index itself
+		return n.tok
+	}
+	// Non-terminal node: recursively find the last token in the AST slice
+	return lastIndex(n.ast)
+}
+
+func iterator(ast []int32) iter.Seq[Node] {
 	return func(yield func(Node) bool) {
 		for len(ast) != 0 {
 			switch v := ast[0]; {
@@ -263,10 +286,11 @@ func (f *File) topLevelDecl(n Node) {
 //	FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
 type FuncDeclNode struct {
 	Name Token
-	//TODO Receiver *Receiver Node
+	Receiver      *ReceiverNode
 	ParameterList *ParameterListNode
 	Type          TypeNode
 	ReturnList    *ParameterListNode
+	Block         *BlockNode
 }
 
 func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
@@ -275,6 +299,8 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 	seenRPar := false
 	for n := range iterator(n.ast) {
 		switch n.sym {
+		case Receiver:
+			r.Receiver = f.receiver(s, n) //TODO declare receiver name in bs
 		case ParameterList:
 			switch {
 			case seenRPar:
@@ -284,8 +310,7 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 			}
 			//TODO declare in bs
 		case Block:
-			f.block(bs, n)
-			//TODO use BlockNode
+			r.Block = f.block(bs, n)
 		case Type:
 			r.Type = f.typ(s, n)
 		case 0:
@@ -297,6 +322,35 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 				// ok
 			case RPAREN:
 				seenRPar = true
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+
+// ReceiverNode describes the Receiver production.
+//
+//	Receiver       = "(" identifier Type ")" .
+type ReceiverNode struct {
+	Name Token
+	Type TypeNode
+}
+
+func (f *File) receiver(s *Scope, n Node) (r *ReceiverNode) {
+	r = &ReceiverNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case Type:
+			r.Type = f.typ(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); f.ch(n.tok) {
+			case IDENT:
+				r.Name = tok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -416,13 +470,12 @@ type StatementNodeReceive struct {
 //	"go" AssignHead { Selector | Index } CallSuffix
 type StatementNodeGo struct {
 	AssignHead *AssignHeadNode
-	List       SelectorOrIndexList
+	List       []SelectorOrIndex
 	CallSuffix []ExpressionNode
 }
 
 func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 	var ah *AssignHeadNode
-	var ahAST []int32
 	var ifImplicitBlock *Scope
 	var goStatement *StatementNodeGo
 	for n := range iterator(n.ast) {
@@ -430,7 +483,6 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 		case VarDecl:
 			f.varDecl(s, n)
 		case AssignHead:
-			ahAST = n.ast
 			ah = f.assignHead(s, n)
 		case Postfix:
 			p := f.postfix(s, n)
@@ -442,14 +494,14 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 				case DEFINE:
 					//TODO var names []Token
 					if !ah.isIdentifierOnly() {
-						f.err(f.pos(firstIndex(ahAST)), "invalid LHS in short variable declaration")
+						f.err(f.pos(n.Pos()), "invalid LHS in short variable declaration")
 						break
 					}
 
 					r = &StatementNodeShortVarDecl{AssignHead: ah, Postfix: p}
 					//TODO check p.LHSItemList
 					//TODO declare
-					//TODO valid := lastIndex(n.ast) + 1
+					//TODO valid := n.End() + 1
 					//TODO for _, nm := range names {
 					//TODO 	if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
 					//TODO 		f.err(vs.Name.Position(), "%v", err)
@@ -829,14 +881,14 @@ func (f *File) switchGuard(s *Scope, n Node) (r *SwitchGuardNode) {
 	return r
 }
 
-// SelectorOrIndexList represents a []elem where elem is *SelectorNode or *IndexNode.
-type SelectorOrIndexList []any
+// SelectorOrIndex represents a *SelectorNode or *IndexNode.
+type SelectorOrIndex any
 
 // PostfixNode describes the Postfix production.
 //
 //	Postfix    = { Selector | Index } PostfixOp .
 type PostfixNode struct {
-	List      SelectorOrIndexList
+	List      []SelectorOrIndex
 	PostfixOp PostfixOpNode
 }
 
@@ -898,7 +950,7 @@ type PostfixOpNode any
 //
 //	{ "," LhsItem } ( "=" | ":=" ) Expression .
 type PostfixOpNodeExpression struct {
-	//TODO List []*LhsItem
+	List       []*LHSItemNode
 	AssignOp   Symbol
 	Expression ExpressionNode
 }
@@ -911,18 +963,20 @@ type PostfixOpNodeSend struct {
 }
 
 func (f *File) postfixOp(s *Scope, n Node) (r PostfixOpNode) {
-	//TODO var list []*LhsItem
+	var list []*LHSItemNode
 	var assignOp Symbol
 	var send *PostfixOpNodeSend
 	for n := range iterator(n.ast) {
 		switch n.sym {
+		case LhsItem:
+			list = append(list, f.lhsItem(s, n))
 		case Expression:
 			expr := f.expression(s, n)
 			switch {
 			case send != nil:
 				send.Expression = expr
 			default:
-				r = &PostfixOpNodeExpression{ /*TODO List: list, */ AssignOp: assignOp, Expression: expr}
+				r = &PostfixOpNodeExpression{List: list, AssignOp: assignOp, Expression: expr}
 			}
 		case 0:
 			switch sym := f.ch(n.tok); sym {
@@ -931,6 +985,36 @@ func (f *File) postfixOp(s *Scope, n Node) (r PostfixOpNode) {
 			case ARROW:
 				send = &PostfixOpNodeSend{}
 				r = send
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
+
+// LHSItemNode describes the LhsItem production.
+//
+//	LhsItem    = AssignHead { Selector | Index } .
+type LHSItemNode struct {
+	AssignHead *AssignHeadNode
+	List       []SelectorOrIndex
+}
+
+func (f *File) lhsItem(s *Scope, n Node) (r *LHSItemNode) {
+	r = &LHSItemNode{}
+	for n := range iterator(n.ast) {
+		switch n.sym {
+		case AssignHead:
+			r.AssignHead = f.assignHead(s, n)
+		case Selector:
+			r.List = append(r.List, f.selector(s, n))
+		case Index:
+			r.List = append(r.List, f.index(s, n))
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -1022,7 +1106,7 @@ func (f *File) varDecl(s *Scope, n Node) {
 			names, vs := f.varSpec(s, n)
 			var valid int32
 			if s.Kind != PackageScope {
-				valid = lastIndex(n.ast) + 1
+				valid = n.End() + 1
 			}
 			for _, nm := range names {
 				if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
@@ -1189,7 +1273,7 @@ func (f *File) constDecl(s *Scope, n Node) {
 			cs := f.constSpec(s, n)
 			var valid int32
 			if s.Kind != PackageScope {
-				panic(todo(""))
+				valid = n.End() + 1
 			}
 			if err := s.add(&ConstDeclaration{declaration: declaration{name: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
 				f.err(cs.Name.Position(), "%v", err)
@@ -1496,7 +1580,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 //
 //	FactorSuffix = { Selector | Index } [ CallSuffix ] .
 type FactorSuffixNode struct {
-	List       SelectorOrIndexList
+	List       []SelectorOrIndex
 	CallSuffix []ExpressionNode
 }
 
