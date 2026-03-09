@@ -11,6 +11,7 @@ import (
 
 var (
 	_ Value = (Int32)(0)
+	_ Value = (Bool)(false)
 )
 
 type storage map[string]Value
@@ -32,6 +33,19 @@ func (m *memory) PopScope() {
 }
 
 func (m *memory) Store(name string, val Value) {
+	// Look through scopes from top to bottom
+	for i := len(m.scopes) - 1; i >= 0; i-- {
+		if _, ok := m.scopes[i][name]; ok {
+			m.scopes[i][name] = val
+			return
+		}
+	}
+	// Also check current local scope
+	if _, ok := m.m[name]; ok {
+		m.m[name] = val
+		return
+	}
+	// If it doesn't exist anywhere, declare it locally
 	m.m[name] = val
 }
 
@@ -67,7 +81,7 @@ func (m *machine) Eval(op string, operands ...any /* Value but also "0" etc. */)
 		}
 
 		return Int32(n), nil
-	case "-", "^", "+":
+	case "!=", "+", "-", "<", "<=", "==", ">", ">=", "^":
 		switch len(operands) {
 		case 2:
 			return operands[0].(Value).binOp(op, operands[1].(Value))
@@ -104,10 +118,39 @@ func (n Int32) binOp(op string, rhs Value) (Value, error) {
 	case "+":
 		return Int32(a + b), nil
 	case "-":
-		return Int32(a + b), nil
+		return Int32(a - b), nil
 	case "^":
 		return Int32(a ^ b), nil
+	case "==":
+		return Bool(a == b), nil
+	case "!=":
+		return Bool(a != b), nil
+	case "<":
+		return Bool(a < b), nil
+	case "<=":
+		return Bool(a <= b), nil
+	case ">":
+		return Bool(a > b), nil
+	case ">=":
+		return Bool(a >= b), nil
 	default:
 		panic(todo("%q %v", op, b))
 	}
+}
+
+type Bool bool
+
+func (b Bool) Literal() string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+func (b Bool) Type() Type { return BasicType{Kind: KindBool} }
+
+func (b Bool) Value() any { return bool(b) }
+
+func (b Bool) binOp(op string, rhs Value) (Value, error) {
+	panic(todo("bool binOp %q", op))
 }

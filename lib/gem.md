@@ -2,12 +2,13 @@
 
 We are designing the OctoGo programming language and implementing the OctoGo compuler. OctoGo ia s special puprose, Go-inspired language targetting the Parallax Propeller 2 microcontroller.
 
-* The compiler is developer in Go.
+* The compiler is developed in Go.
 * OctoGo grammar is strictly LL(1) and is available in the octogo.ebnf file attached to the Gem knowledge for your reference. The grammar accepts more that what the language specification allows. We defer the narrowing later to the semantic checks.
 * We generate the lexer and parser for OctoGo using modernc.org/egg  - a EBNF Expression Generator. It takes  octogo.ebnf and outputs parser.go.
 * OctoGo language specification is written as a package level Go documentation comment and is available in the octogo.go file attached to the Gem knowledge for your reference.
+* OctoSmith is a fuzzer we are developing. Its design document as attached to the Gem knowledge for your reference.
 
-## modernc.org/egg  EBNF grammar
+# modernc.org/egg  EBNF grammar
 
 Expression grammars are a slightly modified version of the EBNF used by the Go language specification:
 
@@ -40,7 +41,7 @@ Productions are expressions constructed from terms and the following operators, 
 
 
 
-## OctoGo Compiler Architecture & Design Decisions
+# OctoGo Compiler Architecture & Design Decisions
 
 **Target Hardware:** Parallax Propeller 2 (P2). 8 Cogs, 512KB shared Hub RAM, 512 longs (2KB) local Cog RAM per cog.
 
@@ -78,8 +79,7 @@ Productions are expressions constructed from terms and the following operators, 
 * **Channels (\<-)**: Translates into synchronous, lock-step C function calls (e.g., \_\_octogo\_chan\_send, \_\_octogo\_chan\_recv) backed by P2 hardware locks inside octogo\_rt.  
 * **Select Statements (select)**: Translates into an infinite while(1) polling loop checking non-blocking C runtime functions (\_\_octogo\_chan\_try\_recv), utilizing flexprop's \_waitx or similar yield instructions to prevent bus starvation.
 
-
-## AST Nodes and Iterators
+# AST Nodes and Iterators
 
 We defined a simple node type and an iterator:
 
@@ -147,7 +147,7 @@ Just an approach example. Note: Lookahead within the AST is possible via `iter.P
 
 The transpiler remains remarkably simple. It does not need to understand P2 instruction timing or register allocation. It simply translates the LL(1) AST into semantically equivalent C loops, variable assignments, and runtime function calls, leaving the heavy lifting of P2 binary generation entirely to flexprop.
 
-## Compiler Architecture & Design Decisions (Package Topology & Simplification)
+# Compiler Architecture & Design Decisions (Package Topology & Simplification)
 
 **The Ideal MVP Shape:**
 
@@ -164,7 +164,7 @@ The transpiler remains remarkably simple. It does not need to understand P2 inst
 * **Unified Translation Units:** Because there is no package declaration to logically separate scopes within a folder, all .octo files within a single directory are merged into a single AST. This cleanly maps to emitting one cohesive C translation unit per directory. Note: Probably no more possible with WPO.
 * **Testing:** Testing code is in `*_test.ogo` files.
 
-## Compiler Architecture & Design Decisions (Smart Pin Abstraction)
+# Compiler Architecture & Design Decisions (Smart Pin Abstraction)
 
 **Concept:** Leveraging the existing, highly optimized C built-ins provided by the flexprop (flexcc) compiler to expose the Parallax Propeller 2 (P2) Smart Pins in OctoGo. By wrapping these existing macros, OctoGo achieves zero-overhead hardware control without requiring custom assembly generation in the backend.
 
@@ -215,7 +215,7 @@ while(1) {
 * **Performance:** flexprop directly inlines these C functions into native single-cycle P2 instructions. There is absolutely no software translation layer at runtime.  
 * **Extensibility:** Because Smart Pins handle everything from basic PWM to USB natively in hardware, OctoGo gets access to a massive library of hardware capabilities just by exposing a few basic p2.WritePin\* functions.
 
-## Technical Note: "OctoSmith" – A Deterministic Fuzzer for OctoGo
+# Technical Note: "OctoSmith" – A Deterministic Fuzzer for OctoGo
 
 ## **1\. Core Philosophy and Feasibility**
 
@@ -288,3 +288,68 @@ Because the language features are not yet complete, OctoSmith should be modular.
 
 * Write the generator functions to directly map to your EBNF Non-Terminals (e.g., func (f \*Fuzzer) genSimpleExpr(targetType Type)).  
 * When you add a new feature (like floating-point numbers, currently omitted), you simply update the Type enum in the fuzzer and add a case to the expression generator.
+
+# Architecture Note: OctoGo Code Formatter (octogo format)
+
+## **1\. Motivation and Philosophy**
+
+Standard formatting tools often struggle with comment alignment and whitespace preservation because they treat the Abstract Syntax Tree (AST) and the source text as loosely coupled entities. For example, go/parser detaches comments into a separate CommentMap, requiring complex positional arithmetic to reconstruct the source code.
+
+octogo format takes a **Full-Fidelity Token** approach. The parser generates a contiguous stream of Token objects where every lexeme inherently "owns" its preceding whitespace and comments.
+
+## **2\. The Token API**
+
+The foundation of the formatter is the Token API, which guarantees that no source text is lost during parsing.
+
+* **Src() / SrcBytes()**: Returns the exact semantic source form of the token (e.g., func, foo, {).  
+* **Sep()**: Returns the "Separator"—the exact, unmodified string of whitespace, line breaks, and comments that immediately *precedes* the token.  
+* **Next() / Prev()**: Allows linear traversal of the token stream independently of the AST.
+
+By definition, printing the sequence of Token.Sep() \+ Token.Src() from the start of the file to the final EOF token will perfectly reconstruct the original source file, byte-for-byte.
+
+## **3\. Formatting Pipeline: The "Mutate-in-Place" Strategy**
+
+Because of the flat \[\]int32 AST and Go 1.23+ iterator design, octogo format does not need to allocate a completely new AST or string buffer during the formatting phase. Instead, it operates via an in-place mutation pipeline:
+
+### **Phase 1: AST-Directed Structural Formatting**
+
+The formatter walks the AST using the standard iterator (func(yield func(node) bool)). When it encounters structural nodes (e.g., Block, FuncDecl, VarDecl), it tracks the current indentation level.
+
+As the iterator yields terminal nodes (Token indices), the formatter looks up the corresponding Token and updates its separator using Token.SetSep().
+
+* *Example:* If a } token closes a block, the formatter updates its Sep() to ensure it ends with \\n followed by exactly (indent \- 1\) tabs.
+
+### **Phase 2: Token-Stream Micro-Formatting**
+
+Certain formatting rules do not require full AST context and can be applied by sliding a window over the linear token stream using Token.Next():
+
+* **Operator Spacing:** Ensuring spaces around binary operators (e.g., changing a+b to a \+ b). The formatter finds the \+ token and calls SetSep(" ").  
+* **Punctuation:** Ensuring no space before a comma, and exactly one space after.  
+* **Blank Line Normalization:** Collapsing multiple consecutive blank lines inside a Token.Sep() into a single blank line.
+
+### **Phase 3: Linear Emission**
+
+Once the AST walk and token stream adjustments are complete, the actual code generation is trivial. The formatter simply iterates from the first token to the EOF token:
+
+```
+for t := firstToken; t.IsValid(); t \= t.Next() {  
+    out.WriteString(t.Sep())  
+    out.WriteString(t.Src())  
+}
+```
+
+## **4\. Handling Comments (Sep Parsing)**
+
+Because Token.Sep() contains both whitespace *and* comments, SetSep() must be context-aware so it doesn't accidentally erase a user's documentation.
+
+When formatting a token that contains comments in its Sep():
+
+1. The formatter parses the Sep() string to isolate the comment blocks (// ... or /\* ... \*/).  
+2. It strips out the user's arbitrary spaces/tabs.  
+3. It rebuilds the Sep() string by injecting the standardized structural indentation, followed by the preserved comment text, followed by the standardized spacing before the Src().
+
+## **5\. Advantages for OctoGo**
+
+* **Cache Locality & Speed:** Since tokens are just structs modified in place, and the AST is a flat \[\]int32 slice, the entire formatting pass is highly cache-local and runs with zero-to-minimal allocations.  
+* **Ease of Refactoring:** Future AST rewriting tools (like an octogo fix or a language server) can simply move sub-trees in the \[\]int32 array. The attached comments will automatically travel with the tokens.
+

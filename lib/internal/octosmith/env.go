@@ -10,6 +10,7 @@ type Symbol struct {
 	Type Type
 	// We can expand this to differentiate between Var, Const, and Func
 	IsConst bool
+	Used    bool // Track if the symbol has been referenced in an expression
 }
 
 // Scope tracks variables and types available at a given block level.
