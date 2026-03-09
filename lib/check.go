@@ -434,6 +434,16 @@ type StatementNodeSend struct {
 	Postfix    *PostfixNode
 }
 
+// StatementNodeCall describes the Statement production case
+//
+//	AssignHead Postfix
+//
+// when the PostfixOpNode has CallSuffix
+type StatementNodeCall struct {
+	AssignHead *AssignHeadNode
+	Postfix    *PostfixNode
+}
+
 // StatementNodeIf describes the Statement production case
 //
 //	"if" Expression Block [ "else" Block ]
@@ -471,7 +481,7 @@ type StatementNodeReceive struct {
 type StatementNodeGo struct {
 	AssignHead *AssignHeadNode
 	List       []SelectorOrIndex
-	CallSuffix []ExpressionNode
+	CallSuffix *CallSuffixNode
 }
 
 func (f *File) statement(s *Scope, n Node) (r StatementNode) {
@@ -512,6 +522,8 @@ func (f *File) statement(s *Scope, n Node) (r StatementNode) {
 				}
 			case *PostfixOpNodeSend:
 				r = &StatementNodeSend{AssignHead: ah, Postfix: p}
+			case *PostfixOpNodeCall:
+				r = &StatementNodeCall{AssignHead: ah, Postfix: p}
 			default:
 				panic(todo("%T", x))
 			}
@@ -871,6 +883,8 @@ func (f *File) switchGuard(s *Scope, n Node) (r *SwitchGuardNode) {
 			}
 		case 0:
 			switch f.ch(n.tok) {
+			case DEFINE:
+				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -948,6 +962,13 @@ func (f *File) index(s *Scope, n Node) (r *IndexNode) {
 //		| { "," LhsItem } ( "=" | ":=" ) Expression .
 type PostfixOpNode any
 
+// PostfixOpNodeCall describes the PostfixOp production case
+//
+//	CallSuffix
+type PostfixOpNodeCall struct {
+	CallSuffix *CallSuffixNode
+}
+
 // PostfixOpNodeExpression describes the PostfixOp production case
 //
 //	{ "," LhsItem } ( "=" | ":=" ) Expression .
@@ -971,7 +992,7 @@ func (f *File) postfixOp(s *Scope, n Node) (r PostfixOpNode) {
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case CallSuffix:
-			r = f.callSuffix(s, n)
+			r = &PostfixOpNodeCall{CallSuffix: f.callSuffix(s, n)}
 		case LhsItem:
 			list = append(list, f.lhsItem(s, n))
 		case Expression:
@@ -1570,6 +1591,10 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				r = ident
 			case LPAREN, RPAREN:
 				// ok
+			case STRING:
+				if r = constant.MakeFromLiteral(tok.Src(), token.STRING, 0); r == constant.Unknown {
+					f.err(tok.Position(), "invalid string literal: %s", tok.Src())
+				}
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
@@ -1585,7 +1610,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 //	FactorSuffix = { Selector | Index } [ CallSuffix ] .
 type FactorSuffixNode struct {
 	List       []SelectorOrIndex
-	CallSuffix []ExpressionNode
+	CallSuffix *CallSuffixNode
 }
 
 func (f *File) factorSuffix(s *Scope, n Node) (r *FactorSuffixNode) {
@@ -1638,11 +1663,19 @@ func (f *File) selector(s *Scope, n Node) (r *SelectorNode) {
 	return r
 }
 
-func (f *File) callSuffix(s *Scope, n Node) (r []ExpressionNode) {
+// CallSuffixNode describes the CallSuffix production.
+//
+//	CallSuffix = "(" [ ArgumentList ] ")" .
+type CallSuffixNode struct {
+	List []ExpressionNode
+}
+
+func (f *File) callSuffix(s *Scope, n Node) (r *CallSuffixNode) {
+	r = &CallSuffixNode{}
 	for n := range iterator(n.ast) {
 		switch n.sym {
 		case ArgumentList:
-			r = f.expressionList(s, n)
+			r.List = append(r.List, f.expressionList(s, n))
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case LPAREN, RPAREN:

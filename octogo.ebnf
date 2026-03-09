@@ -1,81 +1,103 @@
-# OctoGo Expression Grammar for modernc.org/egg
-# Target: Parallax Propeller 2
-
-# Enforce imports before other top-level declarations
-SourceFile = { ImportDecl } { TopLevelDecl } .
-
-ImportDecl = "import" string .
-
-TopLevelDecl = FuncDecl | VarDecl | ConstDecl .
-
-# Simple const declaration for now
-ConstDecl = "const" identifier "=" Expression .
-
-Type = "int" | "bool" | "byte" | "chan" Type | "[" [ Expression ] "]" Type .
-VarDecl = "var" identifier Type [ "=" Expression ] .
-FuncDecl = "func" identifier "(" [ ParameterList ] ")" [ Type ] Block .
-ParameterList = identifier Type { "," identifier Type } .
-
-Block = "{" { Statement } "}" .
-# Left-factored statements to resolve LL(1) ambiguities 
-# between assignment, function calls, and channel sends.
-Statement = VarDecl 
-          | ConstDecl
-          | "if" Expression Block [ "else" Block ]
-          | "for" [ Expression ] Block
-          | "return" [ Expression ]
-          | "go" identifier CallSuffix
-          | SwitchStmt
-          | SelectStmt
-          | "<-" Expression
-          | identifier Postfix .
-
-# Handles L-value resolution for Assignment (=), Channel Send (<-), or Call ()
-Postfix = { Selector | Index } ( "=" Expression | "<-" Expression | CallSuffix ) .
-Selector = "." identifier .
-Index = "[" Expression "]" .
-CallSuffix = "(" [ ArgumentList ] ")" .
-ArgumentList = Expression { "," Expression } .
-
-# Switch Statement
-SwitchStmt = "switch" [ Expression ] "{" { CaseClause } "}" .
-CaseClause = CaseHead ":" { Statement } .
-CaseHead   = "case" ExpressionList | "default" .
+unicode_digit  = `\p{Nd}` .
+unicode_letter = `\pL` .
+letter        = unicode_letter | "_" .
+decimal_digit = `[0-9]` .
+binary_digit  = "0" | "1" .
+octal_digit   = `[0-7]` .
+hex_digit     = `[0-9A-Fa-f]` .
+white_space            = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
+identifier = letter { letter | unicode_digit } .
+int_lit        = decimal_lit | binary_lit | octal_lit | hex_lit .
+decimal_lit    = "0" | ( `[1-9]` ) [ [ "_" ] decimal_digits ] .
+binary_lit     = "0" ( "b" | "B" ) [ "_" ] binary_digits .
+octal_lit      = "0" [ "o" | "O" ] [ "_" ] octal_digits .
+hex_lit        = "0" ( "x" | "X" ) [ "_" ] hex_digits .
+decimal_digits = decimal_digit { [ "_" ] decimal_digit } .
+binary_digits  = binary_digit { [ "_" ] binary_digit } .
+octal_digits   = octal_digit { [ "_" ] octal_digit } .
+hex_digits     = hex_digit { [ "_" ] hex_digit } .
+rune_lit         = '\'' ( `[^'\\\n\r]` | unicode_value | byte_value ) '\'' .
+unicode_value    = little_u_value | big_u_value | escaped_char .
+byte_value       = octal_byte_value | hex_byte_value .
+octal_byte_value = "\\" octal_digit octal_digit octal_digit .
+hex_byte_value   = "\\" "x" hex_digit hex_digit .
+little_u_value   = "\\" "u" hex_digit hex_digit hex_digit hex_digit .
+big_u_value      = "\\" "U" hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit hex_digit .
+escaped_char     = "\\" ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | "\\" | "'" | "\"" ) .
+string_lit             = raw_string_lit | interpreted_string_lit .
+raw_string_lit         = '`' { `[^\x60]` } '`' .
+interpreted_string_lit = '"' { `[^"\\\n\r]` | unicode_value | byte_value } '"' .
+Type = [ identifier "." ] identifier
+	| "chan" Type
+	| "[" [ Expression ] "]" Type
+	| "*" Type
+	| InterfaceType
+	| StructType .
+StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
+FieldDecl = "*" [ identifier "." ] identifier
+	| identifier [ "." identifier | { "," identifier } Type ] .
+InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
+MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+Block = "{" { Statement ";" } [ Statement ] "}" .
+TopLevelDecl = FuncDecl | VarDecl | ConstDecl | TypeDecl .
+VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
+VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
+ConstSpec = identifier [ Type ] "=" Expression .
+TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
+TypeSpec = identifier [ "=" ] Type .
+FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+Receiver       = "(" identifier Type ")" .
+ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
+IdentifierList = identifier { "," identifier } .
 ExpressionList = Expression { "," Expression } .
-
-# Select Statement
-SelectStmt = "select" "{" { CommClause } "}" .
-CommClause = CommHead ":" { Statement } .
-CommHead   = "case" CommOp | "default" .
-
-# Left-factored CommOp to handle `<-ch`, `v = <-ch`, and `ch <- v`
-CommOp = "<-" Expression
-       | identifier PostfixComm .
-PostfixComm = { Selector | Index } ( "=" "<-" Expression | "<-" Expression ) .
-
-# Expressions (Standard Precedence Climbing)
-Expression = SimpleExpr [ RelOp SimpleExpr ] .
-SimpleExpr = Term { AddOp Term } .
-Term       = Factor { MulOp Factor } .
-
-Factor = identifier [ FactorSuffix ]
-       | number
-       | string
-       | "true"
-       | "false"
-       | "<-" Expression
-       | "(" Expression ")" .
-
-# FactorSuffix allows function calls and indexing inside expressions 
-# without clashing with Statement-level assignments.
+Expression     = SimpleExpr [ RelOp SimpleExpr ] .
+SimpleExpr     = Term { AddOp Term } .
+Term           = UnaryExpr { MulOp UnaryExpr } .
+UnaryExpr  = { UnaryOp } Factor .
+Factor     = identifier [ FactorSuffix ]
+	| int_lit
+	| string_lit
+	| rune_lit
+	| "(" Expression ")" .
 FactorSuffix = { Selector | Index } [ CallSuffix ] .
-
+Selector     = "." ( identifier | "(" "type" ")" ) .
+Index        = "[" Expression "]" .
+UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" .
 AddOp = "+" | "-" | "|" | "^" .
 MulOp = "*" | "/" | "<<" | ">>" | "&" .
-
-# Lexical tokens
-identifier = `[a-zA-Z_][a-zA-Z0-9_]*` .
-number     = `[0-9]+` .
-string     = `"(?:[^"\\]|\\.)*"` .
-white_space = `/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r` .
+CallSuffix = "(" [ ArgumentList ] ")" .
+ArgumentList = Expression { "," Expression } .
+Statement = VarDecl
+	| ConstDecl
+	| TypeDecl
+	| "if" Expression Block [ "else" Block ]
+	| "for" [ Expression ] Block
+	| "return" [ Expression ]
+	| "go" AssignHead { Selector | Index } CallSuffix
+	| SwitchStmt
+	| SelectStmt
+	| "<-" Expression
+	| AssignHead Postfix
+	| EmptyStatement .
+EmptyStatement = .
+AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
+Postfix    = { Selector | Index } PostfixOp .
+PostfixOp  = CallSuffix
+	| "<-" Expression
+	| { "," LhsItem } ( "=" | ":=" ) Expression .
+LhsItem    = AssignHead { Selector | Index } .
+SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
+SwitchGuard = Expression [ ":=" Expression ] .
+CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
+CaseHead   = "case" ExpressionList | "default" .
+SelectStmt  = "select" "{" { CommClause } "}" .
+CommClause  = CommHead ":" { Statement ";" } .
+CommHead    = "case" CommOp | "default" .
+CommOp      = "<-" Expression
+	| AssignHead PostfixComm .
+PostfixComm = { Selector | Index } ( "=" "<-" Expression | "<-" Expression ) .
+SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
+ImportDecl = "import" ( ImportSpec | "(" { ImportSpec ";" } [ ImportSpec ] ")" ) .
+ImportSpec = [ "." | identifier ] string_lit .
