@@ -38,7 +38,7 @@ func Main(args []string, stdout, stderr io.Writer) error {
 
 	// This function will be defined in gemini.go
 	// It drives the TopLevelDecl generation.
-	err := f.GenerateProgram()
+	err := f.GenerateProgram(NewMachine(), NewMemory())
 	if err != nil {
 		return fmt.Errorf("generation failed: %w", err)
 	}

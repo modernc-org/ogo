@@ -16,10 +16,10 @@ edit:
 	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile *.go & fi
 
 editor:
-	gofmt -l -s -w ..
+	gofmt -l -s -w .
 	go test -o /dev/null -c
-	go install -v ..
-	golint
+	go install -v
+	# golint
 	staticcheck
 
 test:
