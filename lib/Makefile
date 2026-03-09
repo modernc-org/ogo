@@ -13,7 +13,7 @@ clean:
 
 edit:
 	@touch log
-	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile ../octogo.go *.go & fi
+	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile *.go & fi
 
 editor: parser.go
 	# gofmt -l -s -w ..

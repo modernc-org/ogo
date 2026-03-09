@@ -5,12 +5,19 @@
 package octogo // import "modernc.org/octogo/lib"
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	_ "modernc.org/ccgo/v4/lib" // generator.go
 	_ "modernc.org/gc/v3"       // generator.go
+)
+
+var (
+	reString = flag.String("re", "", "regexp filter")
+	re       *regexp.Regexp
 )
 
 const (
@@ -124,6 +131,10 @@ func main() {
 )
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if s := *reString; s != "" {
+		re = regexp.MustCompile(s)
+	}
 	os.Exit(m.Run())
 }
 

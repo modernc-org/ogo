@@ -7,10 +7,10 @@ package octogo // import "modernc.org/octogo/lib"
 import (
 	"fmt"
 	"go/token"
+	"iter"
 	"os"
 	"strings"
 	"sync"
-	"iter"
 
 	"go/constant"
 )
@@ -207,7 +207,8 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 	}
 
 	if tok := r.parser.tok; tok.Ch != rune(EOF) {
-		r.Err = fmt.Errorf("%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
+		r.parser.sc.AddErr(tok.Position(), "%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
+		r.Err = r.parser.sc.Err()
 		return r, r.Err
 	}
 
@@ -285,7 +286,7 @@ func (f *File) topLevelDecl(n Node) {
 //
 //	FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
 type FuncDeclNode struct {
-	Name Token
+	Name          Token
 	Receiver      *ReceiverNode
 	ParameterList *ParameterListNode
 	Type          TypeNode
@@ -315,7 +316,7 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 			r.Type = f.typ(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case identifier:
+			case IDENT:
 				r.Name = tok
 				//TODO declare in s
 			case FUNC, LPAREN:
@@ -331,7 +332,6 @@ func (f *File) funcDecl(s *Scope, n Node) (r *FuncDeclNode) {
 	}
 	return r
 }
-
 
 // ReceiverNode describes the Receiver production.
 //
@@ -898,6 +898,8 @@ func (f *File) postfix(s *Scope, n Node) (r *PostfixNode) {
 		switch n.sym {
 		case PostfixOp:
 			r.PostfixOp = f.postfixOp(s, n)
+		case Selector:
+			r.List = append(r.List, f.selector(s, n))
 		case Index:
 			r.List = append(r.List, f.index(s, n))
 		case 0:
@@ -968,6 +970,8 @@ func (f *File) postfixOp(s *Scope, n Node) (r PostfixOpNode) {
 	var send *PostfixOpNodeSend
 	for n := range iterator(n.ast) {
 		switch n.sym {
+		case CallSuffix:
+			r = f.callSuffix(s, n)
 		case LhsItem:
 			list = append(list, f.lhsItem(s, n))
 		case Expression:
@@ -1046,7 +1050,7 @@ func (f *File) assignHead(s *Scope, n Node) (r *AssignHeadNode) {
 			r.Expression = f.expression(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case identifier:
+			case IDENT:
 				r.Identifier = tok
 			case MUL:
 				r.Stars = append(r.Stars, tok)
@@ -1220,7 +1224,7 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			r = &TypeNodeArray{Expression: f.expression(s, n)}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case identifier:
+			case IDENT:
 				switch {
 				case ident.Name.IsValid():
 					ident.Qualifier = ident.Name
@@ -1252,7 +1256,7 @@ func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 		switch n.sym {
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case identifier:
+			case IDENT:
 				r = append(r, tok)
 			case COMMA:
 				// ok
@@ -1310,7 +1314,7 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 			r.Type = f.typ(s, n)
 		case 0:
 			switch f.ch(n.tok) {
-			case identifier:
+			case IDENT:
 				r.Name = f.tok(n.tok)
 			case ASSIGN:
 				// ok
@@ -1557,11 +1561,11 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 			ident.FactorSuffix = f.factorSuffix(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case int_lit:
+			case INT:
 				if r = constant.MakeFromLiteral(tok.Src(), token.INT, 0); r == constant.Unknown {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
 				}
-			case identifier:
+			case IDENT:
 				ident = &FactorNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
 				r = ident
 			case LPAREN, RPAREN:
@@ -1691,10 +1695,10 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 			switch f.ch(n.tok) {
 			case PERIOD:
 				r.IsDotImport = true
-			case identifier:
+			case IDENT:
 				nm = f.tok(n.tok)
 				r.ImportQualifier = nm.Src()
-			case string_lit:
+			case STRING:
 				nm = f.tok(n.tok)
 				r.ImportPath = nm.Src()
 				if !r.IsDotImport && r.ImportQualifier == "" {

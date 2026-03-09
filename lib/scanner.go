@@ -69,60 +69,10 @@ const (
 	RBRACE    = TOK_007d      // '}'
 	TILDE     = TOK_007e      // '~'
 	IDENT     = identifier    // identifier
-	// int_lit        // int_lit
-	// rune_lit       // rune_lit
-	// string_lit     // string_lit
+	INT       = int_lit       // int_lit
+	CHAR      = rune_lit      // rune_lit
+	STRING    = string_lit    // string_lit
 	// white_space    // white_space
-	// SourceFile     // SourceFile
-	// ImportDecl     // ImportDecl
-	// ImportSpec     // ImportSpec
-	// TopLevelDecl   // TopLevelDecl
-	// TypeDecl       // TypeDecl
-	// TypeSpec       // TypeSpec
-	// ConstDecl      // ConstDecl
-	// ConstSpec      // ConstSpec
-	// Type           // Type
-	// StructType     // StructType
-	// FieldDecl      // FieldDecl
-	// InterfaceType  // InterfaceType
-	// MethodSpec     // MethodSpec
-	// VarDecl        // VarDecl
-	// VarSpec        // VarSpec
-	// IdentifierList // IdentifierList
-	// FuncDecl       // FuncDecl
-	// Receiver       // Receiver
-	// ParameterList  // ParameterList
-	// Block          // Block
-	// Statement      // Statement
-	// EmptyStatement // EmptyStatement
-	// AssignHead     // AssignHead
-	// Postfix        // Postfix
-	// PostfixOp      // PostfixOp
-	// LhsItem        // LhsItem
-	// Selector       // Selector
-	// Index          // Index
-	// CallSuffix     // CallSuffix
-	// ArgumentList   // ArgumentList
-	// SwitchStmt     // SwitchStmt
-	// SwitchGuard    // SwitchGuard
-	// CaseClause     // CaseClause
-	// CaseHead       // CaseHead
-	// ExpressionList // ExpressionList
-	// SelectStmt     // SelectStmt
-	// CommClause     // CommClause
-	// CommHead       // CommHead
-	// CommOp         // CommOp
-	// PostfixComm    // PostfixComm
-	// Expression     // Expression
-	// SimpleExpr     // SimpleExpr
-	// Term           // Term
-	// UnaryExpr      // UnaryExpr
-	// UnaryOp        // UnaryOp
-	// Factor         // Factor
-	// FactorSuffix   // FactorSuffix
-	// RelOp          // RelOp
-	// AddOp          // AddOp
-	// MulOp          // MulOp
 )
 
 // ErrWithPosition augments an error with optional position information.

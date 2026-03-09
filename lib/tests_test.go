@@ -41,6 +41,9 @@ func TestOctoGoSpecs(t *testing.T) {
 		if d.IsDir() || filepath.Ext(path) != ".ogo" {
 			return nil
 		}
+		if re != nil && !re.MatchString(path) {
+			return nil
+		}
 
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			runSingleTest(t, path)
@@ -64,14 +67,6 @@ func runSingleTest(t *testing.T, path string) {
 		t.Fatalf("Failed to read %s: %v", path, err)
 	}
 
-	// =========================================================================
-	// TODO: Replace this with your actual modernc.org/egg parser and AST walk.
-	// Example:
-	// ast, errs := parseOctoGo(src)
-	// if len(errs) == 0 {
-	//     errs = runSemanticPass(ast)
-	// }
-	// =========================================================================
 	actualErrs := runCompiler(path, src)
 
 	if expectedCompile {
@@ -85,7 +80,7 @@ func runSingleTest(t *testing.T, path string) {
 	}
 
 	// Match actual errors against expected errors
-	checkErrors(t, expectedErrs, actualErrs)
+	checkErrors(t, expectedErrs, actualErrs, path)
 }
 
 // parseAnnotations reads the test file and extracts // COMPILE and // ERROR directives.
@@ -109,12 +104,13 @@ func parseAnnotations(path string) (bool, []expectedError, error) {
 		}
 
 		if match := errorCommentRx.FindStringSubmatch(line); match != nil {
-			rx, err := regexp.Compile(match[1])
+			re := strings.ReplaceAll(match[1], "@", `"`)
+			rx, err := regexp.Compile(re)
 			if err != nil {
 				return false, nil, fmt.Errorf("invalid regexp on line %d: %v", lineNum, err)
 			}
 			// We usually expect the error to be triggered on the line immediately following the comment,
-			// or on the same line if placed at the end. For this implementation, we associate it with 
+			// or on the same line if placed at the end. For this implementation, we associate it with
 			// the line following the comment.
 			errs = append(errs, expectedError{line: lineNum + 1, rx: rx})
 		}
@@ -125,7 +121,7 @@ func parseAnnotations(path string) (bool, []expectedError, error) {
 }
 
 // checkErrors verifies that every expected error occurred, and no unexpected errors occurred.
-func checkErrors(t *testing.T, expected []expectedError, actual []compilerError) {
+func checkErrors(t *testing.T, expected []expectedError, actual []compilerError, path string) {
 	matchedActual := make(map[int]bool)
 
 	// 1. Verify all expected errors were found
@@ -139,7 +135,7 @@ func checkErrors(t *testing.T, expected []expectedError, actual []compilerError)
 			}
 		}
 		if !found {
-			t.Errorf("Missing expected error on line %d matching: %s", exp.line, exp.rx.String())
+			t.Errorf("%v:%d: Missing expected error on line %[2]d matching: %s", path, exp.line, exp.rx.String())
 		}
 	}
 
@@ -152,11 +148,15 @@ func checkErrors(t *testing.T, expected []expectedError, actual []compilerError)
 }
 
 func runCompiler(path string, src []byte) (r []compilerError) {
-	pkg := newPackage(-1, []string{path}, map[string][]byte{path: []byte(src0)})
+	pkg := newPackage(-1, []string{path}, map[string][]byte{path: []byte(src)})
 	for _, v := range pkg.Files {
 		switch x := v.Err.(type) {
 		case nil:
 			// ok
+		case ErrList:
+			for _, v := range x {
+				r = append(r, compilerError{v.Pos.Line, v.Err.Error()})
+			}
 		default:
 			panic(todo("%v: %T", path, x))
 		}

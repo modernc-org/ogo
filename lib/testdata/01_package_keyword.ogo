@@ -1,4 +1,4 @@
-// ERROR "unexpected keyword 'package'"
+// ERROR "unexpected identifier @package@"
 package main
 
 import "p2"
