@@ -58,18 +58,18 @@ func TestOctoGoSpecs(t *testing.T) {
 
 func runSingleTest(t *testing.T, path string) {
 	switch {
-	case 
-	strings.Contains(path, "02_"), //TODO
-	strings.Contains(path, "03_"), //TODO
-	strings.Contains(path, "05_"), //TODO
-	strings.Contains(path, "06_"), //TODO
-	strings.Contains(path, "07_"), //TODO
-	strings.Contains(path, "09_"), //TODO
-	strings.Contains(path, "11_"), //TODO
-	strings.Contains(path, "14_"), //TODO
-	strings.Contains(path, "18_"), //TODO
-	strings.Contains(path, "19_"), //TODO
-	strings.Contains(path, "23_"): //TODO
+	case
+		strings.Contains(path, "02_"), //TODO
+		strings.Contains(path, "03_"), //TODO
+		strings.Contains(path, "05_"), //TODO
+		strings.Contains(path, "06_"), //TODO
+		strings.Contains(path, "07_"), //TODO
+		strings.Contains(path, "09_"), //TODO
+		strings.Contains(path, "11_"), //TODO
+		strings.Contains(path, "14_"), //TODO
+		strings.Contains(path, "18_"), //TODO
+		strings.Contains(path, "19_"), //TODO
+		strings.Contains(path, "23_"): //TODO
 		return
 	}
 	expectedCompile, expectedErrs, err := parseAnnotations(path)

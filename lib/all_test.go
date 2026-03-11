@@ -196,3 +196,95 @@ func TestNewPackage(t *testing.T) {
 //TODO- 		}
 //TODO- 	}
 //TODO- }
+
+// testInput contains deliberately mangled OctoGo code.
+// It features:
+// - Inconsistent structural indentation.
+// - Missing and excessive spaces around binary operators.
+// - Spaces incorrectly inserted after unary operators.
+// - Trailing spaces on comments and excessive blank lines.
+// - Misaligned case/default clauses.
+const testInput = `import "p2"
+
+var   globalCount int= 1+2
+
+//   This is a worker function   
+func blinkWorker( rateChan chan int){
+delay:=<- rateChan
+  for {
+p2.PinHigh( 5 )
+    _waitms(delay )
+p2.PinLow(5)
+
+
+	// Wait for a rate change or loop   
+select {
+    case delay =<-rateChan:
+    default :
+  // Do nothing
+}
+    }
+}
+
+func main(  ) {
+	var rateChan chan int
+	go blinkWorker( rateChan )
+  rateChan<- 100
+}`
+
+// testExpected contains the canonical, correctly formatted output.
+const testExpected = `import "p2"
+
+var globalCount int = 1 + 2
+
+//   This is a worker function
+func blinkWorker(rateChan chan int) {
+	delay := <-rateChan
+	for {
+		p2.PinHigh(5)
+		_waitms(delay)
+		p2.PinLow(5)
+
+		// Wait for a rate change or loop
+		select {
+		case delay = <-rateChan:
+		default:
+			// Do nothing
+		}
+	}
+}
+
+func main() {
+	var rateChan chan int
+	go blinkWorker(rateChan)
+	rateChan <- 100
+}`
+
+//TODO func TestFormat_E2E(t *testing.T) {
+//TODO 
+//TODO 	// 1. Set up a temporary workspace
+//TODO 	tempDir := t.TempDir()
+//TODO 	testFilePath := filepath.Join(tempDir, "test.ogo")
+//TODO 
+//TODO 	// 2. Write the deliberately mangled input to the temp file
+//TODO 	err := os.WriteFile(testFilePath, []byte(testInput), 0644)
+//TODO 	if err != nil {
+//TODO 		t.Fatalf("failed to write temp file: %v", err)
+//TODO 	}
+//TODO 
+//TODO 	// 3. Prepare our output buffers to act as stdout and stderr
+//TODO 	var stdout bytes.Buffer
+//TODO 	var stderr bytes.Buffer
+//TODO 
+//TODO 	// 4. Invoke the formatter's Main entry point
+//TODO 	err = Main([]string{testFilePath}, &stdout, &stderr)
+//TODO 	if err != nil {
+//TODO 		t.Fatalf("Main returned an error: %v\nStderr: %s", err, stderr.String())
+//TODO 	}
+//TODO 
+//TODO 	// 5. Compare the results
+//TODO 	got := stdout.String()
+//TODO 	if got != testExpected {
+//TODO 		t.Errorf("Formatting output did not match expected.\n\n=== EXPECTED ===\n%s\n\n=== GOT ===\n%s\n", testExpected, got)
+//TODO 	}
+//TODO }
