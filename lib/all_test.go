@@ -5,6 +5,7 @@
 package octogo // import "modernc.org/octogo/lib"
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -260,31 +261,17 @@ func main() {
 	rateChan <- 100
 }`
 
-//TODO func TestFormat_E2E(t *testing.T) {
-//TODO 
-//TODO 	// 1. Set up a temporary workspace
-//TODO 	tempDir := t.TempDir()
-//TODO 	testFilePath := filepath.Join(tempDir, "test.ogo")
-//TODO 
-//TODO 	// 2. Write the deliberately mangled input to the temp file
-//TODO 	err := os.WriteFile(testFilePath, []byte(testInput), 0644)
-//TODO 	if err != nil {
-//TODO 		t.Fatalf("failed to write temp file: %v", err)
-//TODO 	}
-//TODO 
-//TODO 	// 3. Prepare our output buffers to act as stdout and stderr
-//TODO 	var stdout bytes.Buffer
-//TODO 	var stderr bytes.Buffer
-//TODO 
-//TODO 	// 4. Invoke the formatter's Main entry point
-//TODO 	err = Main([]string{testFilePath}, &stdout, &stderr)
-//TODO 	if err != nil {
-//TODO 		t.Fatalf("Main returned an error: %v\nStderr: %s", err, stderr.String())
-//TODO 	}
-//TODO 
-//TODO 	// 5. Compare the results
-//TODO 	got := stdout.String()
-//TODO 	if got != testExpected {
-//TODO 		t.Errorf("Formatting output did not match expected.\n\n=== EXPECTED ===\n%s\n\n=== GOT ===\n%s\n", testExpected, got)
-//TODO 	}
-//TODO }
+func TestFormat_E2E(t *testing.T) {
+	t.Skip("TODO")
+	var out bytes.Buffer
+	if err := formatFile("test.go", []byte(testInput), &out); err != nil {
+		t.Fatalf("err=%v", err)
+	}
+
+	if g, e := out.String(), testExpected; g != e {
+		t.Errorf("Formatting output did not match expected.\n\n=== GOT ===\n%s\n\n=== EXPECTED ===\n%s\n", g, e)
+	}
+
+	os.WriteFile("/tmp/a", []byte(out.String()), 0660)
+	os.WriteFile("/tmp/b", []byte(testExpected), 0660)
+}

@@ -221,6 +221,21 @@ func (t Token) Sep() string {
 	return string(s.buf[s.toks[t.index].sep:s.toks[t.index].src])
 }
 
+// SepBytes returns the separator preceding t. The
+// result must not be mutated.
+func (t Token) SepBytes() []byte {
+	s := t.source
+	if s == nil {
+		return nil
+	}
+
+	if p, ok := s.sepPatches[t.index]; ok {
+		return []byte(p)
+	}
+
+	return s.buf[s.toks[t.index].sep:s.toks[t.index].src]
+}
+
 // SetSep sets t's separator.
 func (t Token) SetSep(s string) {
 	src := t.source
