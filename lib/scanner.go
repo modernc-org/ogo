@@ -446,7 +446,7 @@ out:
 					// Check if this whitespace chunk contains a newline
 					if bytes.IndexByte(s.buf[sep:off+length], '\n') >= 0 {
 						// Yield a synthetic semicolon token.
-						t = tok{ch: rune(SEMICOLON), sep: int32(sep), src: int32(off+length)}
+						t = tok{ch: rune(SEMICOLON), sep: int32(sep), src: int32(off + length)}
 						s.insertSemi = false // Reset state
 						s.toks = append(s.toks, t)
 						s.off += length
@@ -459,7 +459,7 @@ out:
 			default:
 				if s.insertSemi && off == len(s.buf) {
 					// Yield a synthetic semicolon token at EOF
-					t = tok{ch: rune(SEMICOLON), sep: int32(sep), src: int32(off+length)}
+					t = tok{ch: rune(SEMICOLON), sep: int32(sep), src: int32(off + length)}
 					s.insertSemi = false // Reset state
 					s.toks = append(s.toks, t)
 					s.off += length

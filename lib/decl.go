@@ -51,6 +51,7 @@ uintptr
 
 var (
 	_ Declaration = (*ConstDeclaration)(nil)
+	_ Declaration = (*ConstSpecification)(nil)
 	_ Declaration = (*ImportDeclaration)(nil)
 	_ Declaration = (*PredefinedType)(nil)
 	_ Declaration = (*VarDeclaration)(nil)
@@ -109,6 +110,7 @@ out:
 
 	// Bool constants
 	f3 := func(nm string, v bool) {
+		//TODO use ConstDeclaration
 		Universe.Nodes[nm] = newConstSpecification(names[nm], 0, constant.MakeBool(v), Universe.Nodes["bool"].(Typ))
 	}
 	f3("false", false)
@@ -183,6 +185,17 @@ func (d *declaration) Valid() int32 {
 type ImportDeclaration struct {
 	declaration
 	Import *ImportSpecNode
+}
+
+// ConstSpecification represents compile-time named value.
+type ConstSpecification struct {
+	declaration //TODO does not need to be a declaration.
+	constant.Value
+	Typ
+}
+
+func newConstSpecification(name Token, valid int32, value constant.Value, typ Typ) *ConstSpecification {
+	return &ConstSpecification{declaration{name: name, valid: valid}, value, typ}
 }
 
 // ConstDeclaration represents a named constant compile time value.

@@ -8,13 +8,24 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
+)
+
+var (
+	generalCommentPrefix = []byte("/*")
+	generalCommentSuffix = []byte("*/")
+	lineCommentPrefix    = []byte("//")
+	nl                   = []byte("\n")
+	nl2                  = []byte("\n\n")
+	sp                   = []byte(" ")
 )
 
 type formatter struct {
 	ast []int32
-	p   *Parser
 	err error
+	nl  bool // Last byte written to out was a '\n'.
 	out io.Writer
+	p   *Parser
 }
 
 func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) {
@@ -35,17 +46,21 @@ func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) 
 	return r, nil
 }
 
-type whiteSpace int        // `[ \t\n\r]+`, value == number of newlines
-type lineComment []byte    // The line comment `//.*`
-type generalComment []byte // The /* ... */ delimited comment.
+// `[ \t\n\r]+`, value == number of newlines, only the number of newlines is
+// preserved.
+type whiteSpace int
 
-var (
-	lineCommentPrefix    = []byte("//")
-	generalCommentPrefix = []byte("/*")
-	generalCommentSuffix = []byte("*/")
-)
+// The line comment `//.*`, preserved exactly, never includes a newline.
+type lineComment []byte
 
-func (f *formatter) parseSep(b []byte) (r []any) {
+// The /* ... */ delimited comment. Everything between the delimiters is
+// preserved, including newlines, if any.
+type generalComment []byte
+
+// Split 'b' to a sequence of whiteSpace, lineComment and generalComment
+// elements.
+func (f *formatter) parseSep(b []byte, reuse []any) (r []any) {
+	r = reuse[:0]
 outer:
 	for len(b) != 0 {
 		switch {
@@ -69,7 +84,7 @@ outer:
 				case '\n':
 					n++
 				case ' ', '\t', '\r':
-					// ok
+					// ignore
 				default:
 					r = append(r, n)
 					b = b[i:]
@@ -84,19 +99,10 @@ outer:
 	return r
 }
 
-var (
-	nl = []byte{'\n'}
-	nl2 = []byte{'\n', '\n'}
-	semi = []byte{';'}
-	sp = []byte{' '}
-)
-
-func (f *formatter) formatSep(sep []any) {
-	// var prev any
+func (f *formatter) formatSep(sep []any, indentLevel int32) {
 	for _, v := range sep {
 		switch x := v.(type) {
 		case whiteSpace:
-			// f.w("<ws>")
 			switch x {
 			case 0:
 				f.b(sp)
@@ -105,9 +111,10 @@ func (f *formatter) formatSep(sep []any) {
 			default:
 				f.b(nl2)
 			}
-			// f.w("</ws>")
 		case lineComment:
-			// f.w("<line>")
+			if f.nl && indentLevel != 0 {
+				f.w("%s", strings.Repeat("\t", int(indentLevel)))
+			}
 			b := []byte(x)
 			switch {
 			case bytes.HasSuffix(b, nl):
@@ -116,9 +123,10 @@ func (f *formatter) formatSep(sep []any) {
 			default:
 				f.b(bytes.TrimRight(b, " \t\r"))
 			}
-			// f.w("</line>")
 		case generalComment:
-			// f.w("<general>")
+			if f.nl && indentLevel != 0 {
+				f.w("%s", strings.Repeat("\t", int(indentLevel)))
+			}
 			b := []byte(x)
 			a := bytes.Split(b, nl)
 			for i, v := range a {
@@ -127,14 +135,13 @@ func (f *formatter) formatSep(sep []any) {
 				}
 				f.b(bytes.TrimRight(v, " \t\r"))
 			}
-			// f.w("</general>")
 		default:
 			panic(todo("%T", x))
 		}
-		// prev = v
 	}
 }
 
+//lint:ignore U1000 debug helper
 func (f *formatter) w(s string, args ...any) {
 	if f.err != nil {
 		return
@@ -144,6 +151,7 @@ func (f *formatter) w(s string, args ...any) {
 }
 
 func (f *formatter) b(b []byte) {
+	f.nl = bytes.HasSuffix(b, nl)
 	if f.err != nil {
 		return
 	}
@@ -157,42 +165,64 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 		return err
 	}
 
-	var walk func(ast []int32, lvl int)
-	var injected []byte
-	walk = func(ast []int32, lvl int) {
+	type ctx struct {
+		indentLevel int32
+		undentRBraceIndex int32
+	}
+	var walk func(ast []int32, c ctx)
+	var syntheticSep []byte
+	var seps []any
+	walk = func(ast []int32, c ctx) {
 		for len(ast) != 0 && f.err == nil {
 			next := int32(1)
+		outer:
 			switch n := ast[0]; {
 			case n < 0:
+				next = 2 + ast[1]
 				switch Symbol(-n) {
 				case Block:
-					lvl++
+					c.indentLevel++
+					c.undentRBraceIndex = lastIndex(ast[:next])
+				case CaseHead, CommHead:
+					c.indentLevel++
 				}
-				next = 2 + ast[1]
-				walk(ast[2:next], lvl)
+				walk(ast[2:next], c)
 			default:
 				tok := f.p.Token(n)
-				sepBytes := tok.SepBytes()
-				srcBytes := tok.SrcBytes()
-				if Symbol(tok.Ch) == SEMICOLON && len(srcBytes) == 0 {
-					trc("%v: sep=%q src=%q", tok.Position(), tok.Sep(), tok.Src())
-					injected = append(injected[:0], sepBytes...)
-					break
+				sep := tok.SepBytes()
+				src := tok.SrcBytes()
+				var indentDelta int32
+				switch Symbol(tok.Ch) {
+				case SEMICOLON:
+					// Synthetic tokens from semicolon injection have empty src.
+					if len(src) == 0 {
+						// Keep the sep for later prepending it to the sep of the next token.
+						syntheticSep = append(syntheticSep[:0], sep...)
+						break outer
+					}
+				case RBRACE:
+					if n == c.undentRBraceIndex {
+						indentDelta = -1
+					}
+				case CASE, DEFAULT:
+					indentDelta = -1
 				}
-
-				if len(injected) != 0 {
-					sepBytes = append(injected, sepBytes...)
-					injected = injected[:0]
+				// Prepend the previous synthetic token sep, if any.
+				if len(syntheticSep) != 0 {
+					sep = append(syntheticSep, sep...)
+					syntheticSep = syntheticSep[:0]
 				}
-				sep := f.parseSep(sepBytes)
-				f.formatSep(sep)
-				f.b(srcBytes)
-				// f.w("%q", srcBytes)
+				seps = f.parseSep(sep, seps)
+				f.formatSep(seps, c.indentLevel)
+				if tabs := c.indentLevel + indentDelta; f.nl && tabs != 0 {
+					f.w("%s", strings.Repeat("\t", int(tabs)))
+				}
+				f.b(src)
 			}
 			ast = ast[next:]
 		}
 	}
 
-	walk(f.ast, 0)
+	walk(f.ast, ctx{undentRBraceIndex: -1})
 	return err
 }
