@@ -262,7 +262,7 @@ func blinkWorker(rateChan chan int) {
 			a = b
 		default:
 			// Do nothing
-			c = d
+			c, d = e(f)
 		}
 	}
 }

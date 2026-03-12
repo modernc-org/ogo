@@ -21,11 +21,12 @@ var (
 )
 
 type formatter struct {
-	ast []int32
-	err error
-	nl  bool // Last byte written to out was a '\n'.
-	out io.Writer
-	p   *Parser
+	ast     []int32
+	err     error
+	nl      bool // Last byte written to out was a '\n'.
+	out     io.Writer
+	p       *Parser
+	prevTok Symbol // Last emitted token.
 }
 
 func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) {
@@ -46,7 +47,7 @@ func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) 
 	return r, nil
 }
 
-// `[ \t\n\r]+`, value == number of newlines, only the number of newlines is
+// `[ \t\n\r]+`, value == number of newlines. Only the number of newlines is
 // preserved.
 type whiteSpace int
 
@@ -54,7 +55,7 @@ type whiteSpace int
 type lineComment []byte
 
 // The /* ... */ delimited comment. Everything between the delimiters is
-// preserved, including newlines, if any.
+// preserved exactly, including newlines, if any.
 type generalComment []byte
 
 // Split 'b' to a sequence of whiteSpace, lineComment and generalComment
@@ -99,16 +100,20 @@ outer:
 	return r
 }
 
-func (f *formatter) formatSep(sep []any, indentLevel int32) {
+func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c formatterCtx) {
 	for _, v := range sep {
 		switch x := v.(type) {
 		case whiteSpace:
 			switch x {
 			case 0:
-				f.b(sp)
+				// The Magic: Ask the rules engine!
+				if !f.nl && f.prevTok != 0 && f.needsSpace(f.prevTok, currTok, c) {
+					f.b(sp)
+				}
 			case 1:
 				f.b(nl)
 			default:
+				// Limit the number of empty lines between adjacent code lines to one.
 				f.b(nl2)
 			}
 		case lineComment:
@@ -141,6 +146,75 @@ func (f *formatter) formatSep(sep []any, indentLevel int32) {
 	}
 }
 
+func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
+	switch {
+
+	// 1. Punctuation stripping
+	// No space before opening parenthesis if it follows an identifier (function calls/decls)
+	case curr == LPAREN && prev == IDENT:
+		return false
+	// No space after opening brackets, no space before closing brackets
+	case prev == LPAREN || prev == LBRACK || curr == RPAREN || curr == RBRACK:
+		return false
+	// No space before comma or semicolon, but space after
+	case curr == COMMA || curr == SEMICOLON || curr == COLON:
+		return false
+	// Selectors: no space around dot (e.g., p2.PinHigh)
+	case prev == PERIOD || curr == PERIOD:
+		return false
+
+	// 2. Operator Spacing
+	// Assigns and RelOps always get spaces
+	case isAssignOp(curr) || isRelOp(curr):
+		return true
+	// AddOp always gets a space
+	case isAddOp(curr) || isAddOp(prev):
+		return true
+	// MulOp ONLY gets a space if it's NOT sharing an expression with an AddOp
+	case isMulOp(curr) || isMulOp(prev):
+		return !c.hasAddOp
+	}
+
+	// 3. Fallback: Default to true for separating keywords and identifiers
+	return true
+}
+
+func isAssignOp(s Symbol) bool {
+	switch s {
+	case ASSIGN, DEFINE:
+		return true
+	}
+
+	return false
+}
+
+func isRelOp(s Symbol) bool {
+	switch s {
+	case EQL, NEQ, LSS, LEQ, GTR, GEQ:
+		return true
+	}
+
+	return false
+}
+
+func isAddOp(s Symbol) bool {
+	switch s {
+	case ADD, SUB, OR, XOR:
+		return true
+	}
+
+	return false
+}
+
+func isMulOp(s Symbol) bool {
+	switch s {
+	case MUL, QUO, SHL, SHR, AND:
+		return true
+	}
+
+	return false
+}
+
 //lint:ignore U1000 debug helper
 func (f *formatter) w(s string, args ...any) {
 	if f.err != nil {
@@ -159,20 +233,24 @@ func (f *formatter) b(b []byte) {
 	_, f.err = f.out.Write(b)
 }
 
+type formatterCtx struct {
+	indentLevel       int32
+	undentRBraceIndex int32
+	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
+	inParams          bool // True if we are inside a ParameterList or CallSuffix
+}
+
 func formatFile(fn string, b []byte, w io.Writer) (err error) {
 	f, err := newFormatter(fn, b, w)
 	if err != nil {
 		return err
 	}
 
-	type ctx struct {
-		indentLevel int32
-		undentRBraceIndex int32
-	}
-	var walk func(ast []int32, c ctx)
-	var syntheticSep []byte
 	var seps []any
-	walk = func(ast []int32, c ctx) {
+	var syntheticSep []byte
+
+	var walk func(ast []int32, c formatterCtx)
+	walk = func(ast []int32, c formatterCtx) {
 		for len(ast) != 0 && f.err == nil {
 			next := int32(1)
 		outer:
@@ -185,6 +263,13 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.undentRBraceIndex = lastIndex(ast[:next])
 				case CaseHead, CommHead:
 					c.indentLevel++
+				case SimpleExpr:
+				// 	// Lookahead: If the child nodes contain an AddOp, set the flag.
+				// 	if containsNode(ast[2:next], AddOp) {
+				// 		c.hasAddOp = true
+				// 	}
+				case ParameterList, CallSuffix:
+					c.inParams = true
 				}
 				walk(ast[2:next], c)
 			default:
@@ -212,17 +297,27 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 					sep = append(syntheticSep, sep...)
 					syntheticSep = syntheticSep[:0]
 				}
+
 				seps = f.parseSep(sep, seps)
-				f.formatSep(seps, c.indentLevel)
+				// Ensure we always evaluate spacing if there's no explicit whitespace token
+				if len(seps) == 0 {
+					seps = append(seps, whiteSpace(0))
+				} else if _, isWS := seps[len(seps)-1].(whiteSpace); !isWS {
+					seps = append(seps, whiteSpace(0))
+				}
+				f.formatSep(seps, c.indentLevel, Symbol(tok.Ch), c)
 				if tabs := c.indentLevel + indentDelta; f.nl && tabs != 0 {
 					f.w("%s", strings.Repeat("\t", int(tabs)))
 				}
+
+				// Finally emit the token text.
 				f.b(src)
+				f.prevTok = Symbol(tok.Ch)
 			}
 			ast = ast[next:]
 		}
 	}
 
-	walk(f.ast, ctx{undentRBraceIndex: -1})
+	walk(f.ast, formatterCtx{undentRBraceIndex: -1})
 	return err
 }
