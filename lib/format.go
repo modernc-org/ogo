@@ -21,12 +21,13 @@ var (
 )
 
 type formatter struct {
-	ast     []int32
-	err     error
-	nl      bool // Last byte written to out was a '\n'.
-	out     io.Writer
-	p       *Parser
-	prevTok Symbol // Last emitted token.
+	ast         []int32
+	err         error
+	nl          bool // Last byte written to out was a '\n'.
+	out         io.Writer
+	p           *Parser
+	prevTok     Symbol // Last emitted token.
+	prevPrevTok Symbol // The token before the last emitted token.
 }
 
 func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) {
@@ -150,6 +151,14 @@ func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
 	switch {
 
 	// 1. Punctuation stripping
+	case prev == ARROW:
+		// Distinguish between send (`rateChan <- 100`) and receive (`= <-rateChan`)
+		// If the token before the arrow was an identifier or a closing bracket, it's a send operation.
+		if f.prevPrevTok == IDENT || f.prevPrevTok == RBRACK || f.prevPrevTok == RPAREN {
+			return true // Send needs space after
+		}
+
+		return false // Receive does not need space after
 	// No space before opening parenthesis if it follows an identifier (function calls/decls)
 	case curr == LPAREN && prev == IDENT:
 		return false
@@ -233,6 +242,27 @@ func (f *formatter) b(b []byte) {
 	_, f.err = f.out.Write(b)
 }
 
+// containsNode does a shallow search of the immediate child nodes
+// to see if they match the target symbol.
+func containsNode(ast []int32, target Symbol) bool {
+	for len(ast) > 0 {
+		n := ast[0]
+		if n < 0 {
+			// It's a Non-Terminal
+			if Symbol(-n) == target {
+				return true
+			}
+
+			// Skip over this node's children to get to the next sibling
+			ast = ast[2+ast[1]:]
+		} else {
+			// It's a Terminal (Token Index)
+			ast = ast[1:]
+		}
+	}
+	return false
+}
+
 type formatterCtx struct {
 	indentLevel       int32
 	undentRBraceIndex int32
@@ -264,10 +294,10 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 				case CaseHead, CommHead:
 					c.indentLevel++
 				case SimpleExpr:
-				// 	// Lookahead: If the child nodes contain an AddOp, set the flag.
-				// 	if containsNode(ast[2:next], AddOp) {
-				// 		c.hasAddOp = true
-				// 	}
+					// Lookahead: If the child nodes contain an AddOp, set the flag.
+					if containsNode(ast[2:next], AddOp) {
+						c.hasAddOp = true
+					}
 				case ParameterList, CallSuffix:
 					c.inParams = true
 				}
@@ -312,6 +342,7 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 
 				// Finally emit the token text.
 				f.b(src)
+				f.prevPrevTok = f.prevTok
 				f.prevTok = Symbol(tok.Ch)
 			}
 			ast = ast[next:]

@@ -224,7 +224,7 @@ p2.PinLow(5)
 
 	// Wait for a rate change or loop   
 select {
-    case delay =<-rateChan:
+    case delay =<- rateChan:
 a=b	    
     default :
   // Do nothing
@@ -274,7 +274,6 @@ func main() {
 }`
 
 func TestFormat(t *testing.T) {
-	// t.Skip()
 	var out bytes.Buffer
 	if err := formatFile("test.go", []byte(testInput), &out); err != nil {
 		t.Fatalf("err=%v", err)
@@ -283,8 +282,4 @@ func TestFormat(t *testing.T) {
 	if g, e := out.String(), testExpected; g != e {
 		t.Errorf("Formatting output did not match expected.\n\n=== GOT ===\n%s\n\n=== EXPECTED ===\n%s\n", g, e)
 	}
-
-	//TODO- Debug only assistance
-	os.WriteFile("/tmp/a", out.Bytes(), 0660)
-	os.WriteFile("/tmp/b", []byte(testExpected), 0660)
 }
