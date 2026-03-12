@@ -215,6 +215,10 @@ delay:=<- rateChan
   for {
 p2.PinHigh( 5 )
     _waitms(delay )
+ i=1+2*3+4
+  i=1*3+3*4
+ i = 1 + 2 * 3 + 4
+  i = 1 * 3 + 3 * 4
 p2.PinLow(5)
 
 
@@ -244,6 +248,10 @@ func blinkWorker(rateChan chan int) {
 	for {
 		p2.PinHigh(5)
 		_waitms(delay)
+		i = 1 + 2*3 + 4
+		i = 1*3 + 3*4
+		i = 1 + 2*3 + 4
+		i = 1*3 + 3*4
 		p2.PinLow(5)
 
 		// Wait for a rate change or loop
@@ -262,7 +270,7 @@ func main() {
 }`
 
 func TestFormat_E2E(t *testing.T) {
-	t.Skip("TODO")
+	// t.Skip()
 	var out bytes.Buffer
 	if err := formatFile("test.go", []byte(testInput), &out); err != nil {
 		t.Fatalf("err=%v", err)
@@ -272,6 +280,6 @@ func TestFormat_E2E(t *testing.T) {
 		t.Errorf("Formatting output did not match expected.\n\n=== GOT ===\n%s\n\n=== EXPECTED ===\n%s\n", g, e)
 	}
 
-	os.WriteFile("/tmp/a", []byte(out.String()), 0660)
+	os.WriteFile("/tmp/a", out.Bytes(), 0660)
 	os.WriteFile("/tmp/b", []byte(testExpected), 0660)
 }

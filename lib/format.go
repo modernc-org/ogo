@@ -6,6 +6,7 @@ package octogo // import "modernc.org/octogo/lib"
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 )
 
@@ -49,12 +50,17 @@ outer:
 	for len(b) != 0 {
 		switch {
 		case bytes.HasPrefix(b, lineCommentPrefix):
-			x := max(bytes.IndexByte(b, '\n'), len(b))
-			r = append(r, lineComment(b))
-			b = b[x:]
+			switch x := max(bytes.IndexByte(b, '\n')); {
+			case x < 0:
+				r = append(r, lineComment(b))
+				b = nil
+			default:
+				r = append(r, lineComment(b[:x]))
+				b = b[x:]
+			}
 		case bytes.HasPrefix(b, generalCommentPrefix):
 			x := max(bytes.Index(b, generalCommentSuffix), len(b))
-			r = append(r, lineComment(b))
+			r = append(r, generalComment(b[:x]))
 			b = b[x:]
 		default:
 			var n whiteSpace
@@ -78,37 +84,50 @@ outer:
 	return r
 }
 
-var nl = []byte{'\n'}
+var (
+	nl = []byte{'\n'}
+	nl2 = []byte{'\n', '\n'}
+	semi = []byte{';'}
+	sp = []byte{' '}
+)
 
 func (f *formatter) formatSep(sep []any) {
 	// var prev any
 	for _, v := range sep {
 		switch x := v.(type) {
 		case whiteSpace:
+			// f.w("<ws>")
 			switch x {
 			case 0:
-				// ok
+				f.b(sp)
+			case 1:
+				f.b(nl)
 			default:
-				f.w(nl)
+				f.b(nl2)
 			}
+			// f.w("</ws>")
 		case lineComment:
+			// f.w("<line>")
 			b := []byte(x)
 			switch {
 			case bytes.HasSuffix(b, nl):
-				f.w(bytes.TrimRight(b[:len(b)-1], " \t\r"))
-				f.w(nl)
+				f.b(bytes.TrimRight(b[:len(b)-1], " \t\r"))
+				f.b(nl)
 			default:
-				f.w(bytes.TrimRight(b, " \t\r"))
+				f.b(bytes.TrimRight(b, " \t\r"))
 			}
+			// f.w("</line>")
 		case generalComment:
+			// f.w("<general>")
 			b := []byte(x)
 			a := bytes.Split(b, nl)
 			for i, v := range a {
 				if i != 0 {
-					f.w(nl)
+					f.b(nl)
 				}
-				f.w(bytes.TrimRight(v, " \t\r"))
+				f.b(bytes.TrimRight(v, " \t\r"))
 			}
+			// f.w("</general>")
 		default:
 			panic(todo("%T", x))
 		}
@@ -116,7 +135,15 @@ func (f *formatter) formatSep(sep []any) {
 	}
 }
 
-func (f *formatter) w(b []byte) {
+func (f *formatter) w(s string, args ...any) {
+	if f.err != nil {
+		return
+	}
+
+	_, f.err = fmt.Fprintf(f.out, s, args...)
+}
+
+func (f *formatter) b(b []byte) {
 	if f.err != nil {
 		return
 	}
@@ -131,6 +158,7 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 	}
 
 	var walk func(ast []int32, lvl int)
+	var injected []byte
 	walk = func(ast []int32, lvl int) {
 		for len(ast) != 0 && f.err == nil {
 			next := int32(1)
@@ -144,9 +172,22 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 				walk(ast[2:next], lvl)
 			default:
 				tok := f.p.Token(n)
-				sep := f.parseSep(tok.SepBytes())
+				sepBytes := tok.SepBytes()
+				srcBytes := tok.SrcBytes()
+				if Symbol(tok.Ch) == SEMICOLON && len(srcBytes) == 0 {
+					trc("%v: sep=%q src=%q", tok.Position(), tok.Sep(), tok.Src())
+					injected = append(injected[:0], sepBytes...)
+					break
+				}
+
+				if len(injected) != 0 {
+					sepBytes = append(injected, sepBytes...)
+					injected = injected[:0]
+				}
+				sep := f.parseSep(sepBytes)
 				f.formatSep(sep)
-				f.w(tok.SrcBytes())
+				f.b(srcBytes)
+				// f.w("%q", srcBytes)
 			}
 			ast = ast[next:]
 		}
