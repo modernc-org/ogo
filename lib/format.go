@@ -6,9 +6,7 @@ package octogo // import "modernc.org/octogo/lib"
 
 import (
 	"bytes"
-	"fmt"
 	"io"
-	"strings"
 )
 
 var (
@@ -18,6 +16,7 @@ var (
 	nl                   = []byte("\n")
 	nl2                  = []byte("\n\n")
 	sp                   = []byte(" ")
+	tab                  = []byte("\t")
 )
 
 type formatter struct {
@@ -118,9 +117,7 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				f.b(nl2)
 			}
 		case lineComment:
-			if f.nl && indentLevel != 0 {
-				f.w("%s", strings.Repeat("\t", int(indentLevel)))
-			}
+			f.tabs(f.nl, indentLevel)
 			b := []byte(x)
 			switch {
 			case bytes.HasSuffix(b, nl):
@@ -130,9 +127,7 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				f.b(bytes.TrimRight(b, " \t\r"))
 			}
 		case generalComment:
-			if f.nl && indentLevel != 0 {
-				f.w("%s", strings.Repeat("\t", int(indentLevel)))
-			}
+			f.tabs(f.nl, indentLevel)
 			b := []byte(x)
 			a := bytes.Split(b, nl)
 			for i, v := range a {
@@ -224,13 +219,10 @@ func isMulOp(s Symbol) bool {
 	return false
 }
 
-//lint:ignore U1000 debug helper
-func (f *formatter) w(s string, args ...any) {
-	if f.err != nil {
-		return
+func (f *formatter) tabs(enable bool, n int32) {
+	for ; enable && n > 0; n-- {
+		f.b(tab)
 	}
-
-	_, f.err = fmt.Fprintf(f.out, s, args...)
 }
 
 func (f *formatter) b(b []byte) {
@@ -322,6 +314,7 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 				case CASE, DEFAULT:
 					indentDelta = -1
 				}
+
 				// Prepend the previous synthetic token sep, if any.
 				if len(syntheticSep) != 0 {
 					sep = append(syntheticSep, sep...)
@@ -329,16 +322,14 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 				}
 
 				seps = f.parseSep(sep, seps)
-				// Ensure we always evaluate spacing if there's no explicit whitespace token
+				// Ensure we always evaluate spacing if there's no explicit white space token
 				if len(seps) == 0 {
 					seps = append(seps, whiteSpace(0))
 				} else if _, isWS := seps[len(seps)-1].(whiteSpace); !isWS {
 					seps = append(seps, whiteSpace(0))
 				}
 				f.formatSep(seps, c.indentLevel, Symbol(tok.Ch), c)
-				if tabs := c.indentLevel + indentDelta; f.nl && tabs != 0 {
-					f.w("%s", strings.Repeat("\t", int(tabs)))
-				}
+				f.tabs(f.nl, c.indentLevel + indentDelta)
 
 				// Finally emit the token text.
 				f.b(src)
