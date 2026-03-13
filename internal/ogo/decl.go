@@ -139,9 +139,9 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 	return &Scope{Parent: parent, Kind: kind}
 }
 
-func (s *Scope) child() (r *Scope) {
-	return newScope(s, BlockScope)
-}
+//TODO func (s *Scope) child() (r *Scope) {
+//TODO 	return newScope(s, BlockScope)
+//TODO }
 
 func (s *Scope) add(d Declaration) (err error) {
 	new := d.Name()
@@ -208,4 +208,10 @@ type ConstDeclaration struct {
 type VarDeclaration struct {
 	declaration
 	VarSpec *VarSpecNode
+}
+
+// FuncDeclaration represents a named function.
+type FuncDeclaration struct {
+	declaration
+	FuncDecl *FuncDeclNode
 }

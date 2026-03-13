@@ -275,7 +275,7 @@ func main() {
 
 func TestFormat(t *testing.T) {
 	var out bytes.Buffer
-	if err := formatFile("test.go", []byte(testInput), &out); err != nil {
+	if err := FormatFile("test.go", []byte(testInput), &out); err != nil {
 		t.Fatalf("err=%v", err)
 	}
 
