@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+//TODO given the same seed, the results are not reproducible.
+
 // Main is the entry point for the octosmith fuzzer.
 // It parses arguments, initializes the deterministic RNG, and drives generation.
 func Main(args []string, stdout, stderr io.Writer) error {

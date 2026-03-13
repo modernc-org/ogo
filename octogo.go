@@ -553,6 +553,7 @@
 //		| SelectStmt
 //		| "<-" Expression
 //		| AssignHead Postfix
+//		| Block
 //		| EmptyStatement .
 //
 // # Empty Statements

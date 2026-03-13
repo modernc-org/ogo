@@ -262,7 +262,9 @@ type formatterCtx struct {
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
 }
 
-func formatFile(fn string, b []byte, w io.Writer) (err error) {
+// FormatFile writes the formatted version of 'b' to 'w', assuming it comes
+// from file named 'fn' and returns an error, if any.
+func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	f, err := newFormatter(fn, b, w)
 	if err != nil {
 		return err

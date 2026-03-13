@@ -176,9 +176,9 @@ var errorSets = [...][]Symbol{
 	{identifier, TOK_0029},
 	{TOK_0029},
 	{TOK_003a003d},
-	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, identifier, TOK_007d, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
-	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, identifier, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
-	{identifier, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
+	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, Block, identifier, TOK_007d, TOK_007b, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
+	{SelectStmt, SwitchStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, Block, identifier, TOK_007b, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
+	{identifier, TOK_007b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_const, TOK_003c002d},
 	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0029, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
 	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_005e, TOK_005d, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
 	{UnaryOp, Factor, UnaryExpr, Term, SimpleExpr, Expression, string_lit, rune_lit, int_lit, identifier, TOK_007e, TOK_007b, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_003c002d},
@@ -4005,7 +4005,7 @@ state4:
 //			shift and goto state 1
 //		on  '}'
 //			shift and goto state 2
-//		on  "<-", "const", "for", "go", "if", "return", "select", "switch", "type", "var", '(', '*', identifier
+//		on  "<-", "const", "for", "go", "if", "return", "select", "switch", "type", "var", '(', '*', '{', identifier
 //			call Statement and goto state 3
 //	State 2
 //		Accept
@@ -4036,7 +4036,7 @@ state1:
 	case TOK_007d:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_const, TOK_for, TOK_go, TOK_if, TOK_return, TOK_select, TOK_switch, TOK_type, TOK_var, TOK_0028, TOK_002a, identifier:
+	case TOK_003c002d, TOK_const, TOK_for, TOK_go, TOK_if, TOK_return, TOK_select, TOK_switch, TOK_type, TOK_var, TOK_0028, TOK_002a, TOK_007b, identifier:
 		r = p.add(r, p.Statement())
 		goto state3
 	}
@@ -4125,7 +4125,7 @@ state3:
 //		Accept
 //		on  ';'
 //			shift and goto state 2
-//		on  "<-", "const", "for", "go", "if", "return", "select", "switch", "type", "var", '(', '*', identifier
+//		on  "<-", "const", "for", "go", "if", "return", "select", "switch", "type", "var", '(', '*', '{', identifier
 //			call Statement and goto state 3
 //	State 3
 //		Accept
@@ -4158,7 +4158,7 @@ state2:
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_const, TOK_for, TOK_go, TOK_if, TOK_return, TOK_select, TOK_switch, TOK_type, TOK_var, TOK_0028, TOK_002a, identifier:
+	case TOK_003c002d, TOK_const, TOK_for, TOK_go, TOK_if, TOK_return, TOK_select, TOK_switch, TOK_type, TOK_var, TOK_0028, TOK_002a, TOK_007b, identifier:
 		r = p.add(r, p.Statement())
 		goto state3
 	}
@@ -4230,7 +4230,7 @@ state2:
 //		Accept
 //		on  ';'
 //			shift and goto state 2
-//		on  "<-", "const", "for", "go", "if", "return", "select", "switch", "type", "var", '(', '*', identifier
+//		on  "<-", "const", "for", "go", "if", "return", "select", "switch", "type", "var", '(', '*', '{', identifier
 //			call Statement and goto state 3
 //	State 3
 //		on  ';'
@@ -4262,7 +4262,7 @@ state2:
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_const, TOK_for, TOK_go, TOK_if, TOK_return, TOK_select, TOK_switch, TOK_type, TOK_var, TOK_0028, TOK_002a, identifier:
+	case TOK_003c002d, TOK_const, TOK_for, TOK_go, TOK_if, TOK_return, TOK_select, TOK_switch, TOK_type, TOK_var, TOK_0028, TOK_002a, TOK_007b, identifier:
 		r = p.add(r, p.Statement())
 		goto state3
 	}
@@ -6081,6 +6081,7 @@ state4:
 //		| SelectStmt
 //		| "<-" Expression
 //		| AssignHead Postfix
+//		| Block
 //		| EmptyStatement .
 //
 //	State 0
@@ -6095,6 +6096,8 @@ state4:
 //			shift and goto state 5
 //		on  "if"
 //			shift and goto state 7
+//		on  '{'
+//			call Block and goto state 2
 //		on  "var"
 //			call VarDecl and goto state 2
 //		on  "const"
@@ -6170,6 +6173,9 @@ func (p *Parser) Statement() (r []int32) {
 	case TOK_if:
 		r = append(r, p.shift())
 		goto state7
+	case TOK_007b:
+		r = p.add(r, p.Block())
+		goto state2
 	case TOK_var:
 		r = p.add(r, p.VarDecl())
 		goto state2

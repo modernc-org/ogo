@@ -80,6 +80,7 @@ Statement = VarDecl
 	| SelectStmt
 	| "<-" Expression
 	| AssignHead Postfix
+	| Block
 	| EmptyStatement .
 EmptyStatement = .
 AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
