@@ -329,7 +329,7 @@ func formatFile(fn string, b []byte, w io.Writer) (err error) {
 					seps = append(seps, whiteSpace(0))
 				}
 				f.formatSep(seps, c.indentLevel, Symbol(tok.Ch), c)
-				f.tabs(f.nl, c.indentLevel + indentDelta)
+				f.tabs(f.nl, c.indentLevel+indentDelta)
 
 				// Finally emit the token text.
 				f.b(src)

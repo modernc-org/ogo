@@ -236,7 +236,7 @@ a=b
 func main(  ) {
 	var rateChan chan int
 	go blinkWorker( rateChan )
-  rateChan<- 100
+  rateChan<-100
 }`
 
 // testExpected contains the canonical, correctly formatted output.
