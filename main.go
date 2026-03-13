@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"modernc.org/ogo/internal/smith"
 	"modernc.org/opt"
 )
 
@@ -27,7 +28,7 @@ func main() {
 	if err := set.Parse(os.Args[1:], func(arg string) error {
 		switch {
 		case strings.HasPrefix(arg, "-"):
-			fail(2, "unexpected flag: %s", arg)
+			args = append(args, arg)
 		default:
 			switch {
 			case subCommand == "":
@@ -42,11 +43,12 @@ func main() {
 	}
 
 	switch subCommand {
+	case "smith":
+		smith(args)
 	case
 		"build",
 		"fmt",
 		"help",
-		"smith",
 		"test",
 		"version":
 
@@ -68,4 +70,9 @@ The commands are:
 
 Use "%s help <command>" for more information about a command.`, os.Args[0])
 	}
+}
+
+func smith(args []string) {
+	_ = octosmith.Main
+	trc("", args)
 }

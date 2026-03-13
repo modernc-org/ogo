@@ -1,9 +1,0 @@
-import "p2"
-
-func hardwareInit() {
-    // Valid: PinHigh starts with an uppercase letter
-    p2.PinHigh(1)
-    
-    // ERROR "cannot refer to unexported name|undefined: p2.pinLow"
-    p2.pinLow(2) 
-}

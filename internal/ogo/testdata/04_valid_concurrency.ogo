@@ -1,0 +1,28 @@
+// COMPILE
+
+var rateChan chan int
+
+func blinkWorker() {
+    for {
+        delay := <- rateChan
+        p2.PinHigh(1)
+        // Assume p2.WaitMs exists as a wrapper
+        p2.WaitMs(delay)
+        p2.PinLow(1)
+        p2.WaitMs(delay)
+    }
+}
+
+func main() {
+    // The go statement should successfully parse and map to _cogstart_C
+    go blinkWorker()
+
+    for {
+        select {
+        case rateChan <- 500:
+            // successfully sent new delay
+        default:
+            // non-blocking fallback
+        }
+    }
+}

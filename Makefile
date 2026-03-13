@@ -24,8 +24,8 @@ editor: parser
 generate:
 	go generate -v -x ./...
 
-parser: lib/internal/ogo/parser.go
-	make -C lib/internal/ogo parser.go
+parser: internal/ogo/parser.go
+	make -C internal/ogo parser.go
 
 test:
 	go test -timeout 24h -count=1 -failfast
