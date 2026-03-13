@@ -1,0 +1,24 @@
+// COMPILE
+
+type ValidStruct struct {
+    x int
+    y int
+    _ int // Blank identifiers can be repeated
+    _ int
+}
+
+type InvalidStruct struct {
+    a int
+    b string
+    // ERROR "duplicate field a|a redeclared"
+    a bool
+}
+
+func testStructs() {
+    // ERROR "duplicate field id|id redeclared"
+    var inlineStruct struct {
+        id int
+        name string
+        id int 
+    }
+}

@@ -17,15 +17,15 @@ edit:
 editor: parser
 	gofmt -l -s -w .
 	go test -o /dev/null -c
-	go install -v .
+	go install -v
 	golint
 	staticcheck
 
 generate:
 	go generate -v -x ./...
 
-parser: lib/parser.go
-	make -C lib parser.go
+parser: lib/internal/ogo/parser.go
+	make -C lib/internal/ogo parser.go
 
 test:
 	go test -timeout 24h -count=1 -failfast

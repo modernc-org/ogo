@@ -1,0 +1,21 @@
+// ERROR "non-declaration statement outside function body|expected declaration"
+topLevel := 100 
+
+func testShortDecl() {
+    x := 1
+    
+    // ERROR "no new variables on left side of :="
+    x := 2 
+    
+    // Valid: at least one new variable (y)
+    x, y := 3, 4 
+    
+    // ERROR "cannot redeclare x as different type|type mismatch"
+    // (Assuming "hello" evaluates to a string type)
+    x, z := "hello", 5 
+    
+    {
+        // Valid: This is shadowing, NOT redeclaration, because it's in a new block
+        x := 10
+    }
+}

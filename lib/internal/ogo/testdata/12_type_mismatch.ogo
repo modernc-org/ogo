@@ -1,0 +1,21 @@
+// COMPILE
+
+func testTypes() {
+    var a int = 10
+    var b bool = true
+    var c string = "octo"
+
+    // ERROR "cannot use.*type bool.*as type int|type mismatch"
+    a = b
+
+    // ERROR "cannot use.*type string.*as type bool|type mismatch"
+    b = c
+
+    // ERROR "invalid operation|mismatched types int and bool"
+    if a == b { 
+        a = 1
+    }
+
+    // ERROR "invalid operation|mismatched types int and string"
+    var d int = a + c
+}

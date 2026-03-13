@@ -110,7 +110,6 @@ func main() {
 	flexccGoSrc := filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc.go")
 	installDir := filepath.Join(wd, filepath.Join(installDir))
 	installDir2 := filepath.Join(installDir, "flexprop")
-	os.RemoveAll(flexccDir)
 	os.RemoveAll(installDir)
 	os.Remove(flexccGoSrc)
 	if err := os.MkdirAll(flexccDir, 0755); err != nil {

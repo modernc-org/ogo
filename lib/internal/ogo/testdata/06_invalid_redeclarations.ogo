@@ -1,0 +1,15 @@
+var a int = 1
+// ERROR "a redeclared in this block|already declared"
+var a int = 2
+
+func a() {
+    // ERROR "a redeclared in this block" (Note: package block collision)
+}
+
+func process(x int, y int) {
+    // ERROR "x redeclared in this block" (Parameter scope is the function body)
+    var x int = 5 
+    
+    // ERROR "y redeclared in this block"
+    y := 10 
+}

@@ -1,8 +1,0 @@
-// ERROR "unexpected identifier @package@"
-package main
-
-import "p2"
-
-func main() {
-	p2.PinHigh(1)
-}

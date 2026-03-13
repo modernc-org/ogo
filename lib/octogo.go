@@ -4,6 +4,6 @@
 
 //go:generate go run generator.go
 //go:generate gofmt -l -s -w .
-//go:generate build -o ./internal/flexcc/
+//go:generate go build -o /dev/null ./internal/flexcc/
 
 package octogo // import "modernc.org/octogo/lib"

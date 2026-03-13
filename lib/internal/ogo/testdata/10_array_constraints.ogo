@@ -1,0 +1,18 @@
+// COMPILE
+
+const size = 10
+var validArray [size]int
+var literalArray [5]bool
+
+func testArrays() {
+    var a int = 5
+    // ERROR "non-constant array bound|array length must be constant"
+    var dynArray [a]int
+
+    // ERROR "array bound must be non-negative|negative array bound"
+    var negArray [-1]int
+
+    // ERROR "invalid array bound|cannot convert"
+    // (Assuming string literals cannot be array bounds)
+    var strArray ["hello"]int 
+}

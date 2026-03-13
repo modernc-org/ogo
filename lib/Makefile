@@ -15,27 +15,15 @@ edit:
 	@touch log
 	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile *.go & fi
 
-editor: parser.go
-	# gofmt -l -s -w ..
+editor:
+	gofmt -l -s -w ..
 	go test -o /dev/null -c
-	go build -o /dev/null extract_grammar.go
 	go build -o /dev/null generator.go
-	go install -v ..
 	golint
 	staticcheck
 
 generate:
 	go generate -v -x
-
-parser.go: ../octogo.go
-	go run extract_grammar.go -- ../octogo.go > ../octogo.ebnf
-	# egg -dbg -o parser.go -start SourceFile -package octogo ../octogo.ebnf
-	egg -o parser.go -start SourceFile -package octogo ../octogo.ebnf
-	sed -i \
-		-e 's/"modernc.org\/scanner"//' \
-		-e 's/scanner\.//g' \
-		parser.go
-	gofmt -l -s -w ..
 
 test:
 	go test -timeout 24h -count=1 -failfast

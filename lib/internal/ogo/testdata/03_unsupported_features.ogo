@@ -1,0 +1,14 @@
+func mathOps() {
+    // ERROR "undeclared type: float32|floating-point types not supported"
+    var pi float32 = 3.14 
+
+    a := 1
+    b := 2
+    // ERROR "unexpected token '&&'"
+    if a < 2 && b > 1 { 
+        a = 3
+    }
+
+    // ERROR "unexpected keyword 'defer'"
+    defer p2.PinLow(1)
+}

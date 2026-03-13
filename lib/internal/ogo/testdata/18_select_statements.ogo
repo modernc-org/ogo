@@ -1,0 +1,28 @@
+// COMPILE
+
+var ch chan int
+
+func testSelect() {
+    var x int = 0
+
+    for {
+        select {
+        case x = <-ch:
+            // Valid receive
+        case ch <- 10:
+            // Valid send
+        default:
+            // Valid fallback
+        }
+    }
+}
+
+func testInvalidSelect() {
+    var ready bool = true
+
+    select {
+    // ERROR "expected send or receive operation|invalid case in select"
+    case ready == true: 
+        ready = false
+    }
+}

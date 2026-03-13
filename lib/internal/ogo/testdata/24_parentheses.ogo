@@ -1,0 +1,20 @@
+// COMPILE
+
+func testParens() {
+    var a int = 1
+    var b int = 2
+    var c int = 3
+
+    // Valid complex expression
+    // The parser handles the tree; the semantic checker just verifies types.
+    var result int = (a + (b * c)) << (1 | (a ^ b))
+
+    var flag1 bool = true
+    var flag2 bool = false
+
+    // Valid nested boolean comparison
+    var resBool bool = !((flag1 != flag2) == (a < b))
+
+    // ERROR "mismatched types int and bool|invalid operation"
+    var inv1 int = (a + b) * (flag1 == flag2)
+}

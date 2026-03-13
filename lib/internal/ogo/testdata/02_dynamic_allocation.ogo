@@ -1,0 +1,9 @@
+import "p2"
+
+func process() {
+    // ERROR "undeclared name: make|dynamic allocation not supported"
+    buffer := make([]int, 10) 
+    
+    // ERROR "undeclared name: new|dynamic allocation not supported"
+    ptr := new(int)
+}
