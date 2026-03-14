@@ -180,7 +180,7 @@ func TestSemicolonInjection(t *testing.T) {
 }
 
 func TestNewPackage(t *testing.T) {
-	pkg := newPackage(-1, []string{"src0"}, map[string][]byte{"src0": []byte(src0)})
+	pkg := NewBuildContext(-1).NewPackage([]string{"src0"}, map[string][]byte{"src0": []byte(src0)})
 	for _, v := range pkg.Files {
 		if err := v.Err; err != nil {
 			t.Error(err)

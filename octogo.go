@@ -774,4 +774,95 @@
 //	SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 //	ImportDecl = "import" ( ImportSpec | "(" { ImportSpec ";" } [ ImportSpec ] ")" ) .
 //	ImportSpec = [ "." | identifier ] string_lit .
+//
+// # The zero value
+//
+// When storage is allocated for a variable, either through a declaration or
+// as a struct field, and no explicit initialization is provided, the variable
+// or value is given a default value. Each element of such a variable or value
+// is set to the zero value for its type: false for booleans, 0 for numeric
+// types, "" for strings, and nil for pointers, functions, interfaces, slices,
+// and channels.
+//
+// (OctoGo Specific): Because OctoGo maps memory directly to Hub RAM or Cog
+// RAM, the mechanism for zero-initialization depends on scope:
+//   - Package-level variables (Hub RAM) are statically allocated into the
+//     BSS segment and automatically zero-initialized by the runtime prior
+//     to program execution.
+//   - Local variables allocated on the Cog stack are explicitly
+//     zero-initialized by the compiler via emitted assignment statements
+//     if no initializer expression is provided in the source.
+//
+// # Program initialization and execution
+//
+// # Package initialization
+//
+// Within a package (which in OctoGo maps strictly to a single directory),
+// package-level variable initialization proceeds sequentially.
+//
+// Because OctoGo intentionally omits the package clause and merges all source
+// files within a directory into a single Abstract Syntax Tree,
+// global variables are initialized in a deterministic topological order based
+// on their dependencies.
+//
+// Variables may also be initialized using functions named init declared in
+// the package block, with no arguments and no result parameters:
+//
+//	func init() { … }
+//
+// Multiple such functions may be defined per package, even within a single
+// source file. In the package block, the init identifier can be used only to
+// declare init functions, yet the identifier itself is not declared. Thus
+// init functions cannot be referred to from anywhere in a program.
+//
+// All init functions across all files in the directory are gathered and
+// executed sequentially by the transpiled runtime before the package is
+// considered fully initialized.
+//
+// # Program initialization
+//
+// A complete OctoGo program is created by compiling an unimported main package
+// along with all the packages it imports, transitively. The ogo tool builds
+// packages using standard OS file paths (e.g., ogo build <import-path>).
+//
+// Import paths must be slash-separated, entirely lower-case ASCII letters and
+// digits, and must not begin with a "." or "/" or end with a "/". Import
+// paths without dots in their first segment are reserved for the standard
+// library.
+//
+// The main package must declare a function main that takes no arguments and
+// returns no value:
+//
+//	func main() { … }
+//
+// Program initialization begins by initializing the imported packages. If
+// multiple packages import the same package, the imported package will be
+// initialized only once.
+//
+// After all imported packages are initialized, the package-level variables of
+// the main package are initialized, followed by the execution of all init
+// functions within the main package.
+//
+// # Program execution
+//
+// Execution begins by invoking the function main on the first available
+// physical Propeller 2 Cog (the Boot Cog).
+//
+// When main returns, or execution falls through the end of the main block,
+// the program terminates.
+//
+// (OctoGo Specific): Standard Go semantics dictate that when main terminates,
+// the program exits and all other goroutines are immediately stopped. Because
+// OctoGo maps goroutines directly to physical Propeller 2 Cogs,
+// the transpiled main function is guaranteed to emit a hardware-level reset
+// or shutdown signal (e.g., _clkset(0, 0)) immediately prior to returning.
+// This prevents orphaned worker Cogs from continuing hardware I/O
+// indefinitely.
+//
+// If an OctoGo program is intended to run indefinitely (e.g., as a daemon
+// handling hardware interrupts or channels on worker Cogs), the main function
+// must intentionally block before terminating, typically via an empty select
+// statement:
+//
+//	select {}
 package main // import "modernc.org/octogo"

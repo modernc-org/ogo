@@ -168,7 +168,7 @@ func checkErrors(t *testing.T, expected []expectedError, actual []compilerError,
 }
 
 func runCompiler(path string, src []byte) (r []compilerError) {
-	pkg := newPackage(-1, []string{path}, map[string][]byte{path: []byte(src)})
+	pkg := NewBuildContext(-1).NewPackage([]string{path}, map[string][]byte{path: []byte(src)})
 	for _, v := range pkg.Files {
 		switch x := v.Err.(type) {
 		case nil:

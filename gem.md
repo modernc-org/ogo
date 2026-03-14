@@ -404,3 +404,23 @@ The compiler accepts that interface values *do* exist at runtime. It transpiles 
 | **Memory Overhead** | High (Padding waste) | Zero | Low (Just pointers) |
 | **Performance (CPU)** | Fast (switch statement) | Fastest (Direct call) | Slower (Pointer indirection) |
 | **Compiler Complexity** | High | Low | Medium |
+
+# Technical Note: Zero Value Initialization
+
+Because OctoGo utilizes a zero-allocation model without dynamic heap allocation, memory is strictly mapped to Hub RAM (globals) or Cog RAM/Stacks (locals). Standard Go guarantees that uninitialized variables receive the zero value for their type.
+
+* **Global Variables:** Package-level variables map to the C BSS segment, which is automatically zero-initialized by the flexprop runtime before main() execution.  
+* **Local Variables:** Local variables allocated on the Cog stack are *not* automatically zeroed by C. The OctoGo transpiler must explicitly emit C initializations for any local variable declared without an explicit assignment (e.g., var count int transpiles to int32\_t count \= 0;).
+
+# Technical Note: Program Initialization & init()
+
+OctoGo supports init() functions to facilitate hardware state setup prior to execution. Because OctoGo omits the package clause and merges all .ogo files within a directory into a single translation unit, initialization is handled during the Whole Program Optimization (WPO) pass.
+
+The WPO iterator topological-sorts global variable initializations and sequentially harvests all init() blocks, stitching them together into a single, internal C function (e.g., \_\_octogo\_init()). This function is injected at the very beginning of the transpiled C main() function.
+
+# Technical Note: main() Termination Semantics
+
+In standard Go, the termination of the main() function results in the immediate termination of the program and all running goroutines. Because OctoGo maps goroutines directly to physical Propeller 2 Cogs, the underlying flexcc runtime does not automatically halt worker Cogs when the boot Cog (running main) returns.
+
+To enforce standard Go semantics and prevent zombie Cogs from continuing hardware I/O, the OctoGo transpiler explicitly injects a hardware reset instruction (e.g., \_clkset(0, 0);) at the end of the main() function's generated C block. If developers intend for a program to run indefinitely, they must explicitly prevent main() from returning (e.g., via a select {} statement).
+

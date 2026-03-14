@@ -14,6 +14,14 @@ import (
 	//TODO "go/constant"
 )
 
+// type gate byte
+//
+// const (
+// 	none gate = iota
+// 	open
+// 	closed
+// )
+
 // Node represents a parse tree within the flat []int32 raw AST.
 type Node struct {
 	ast []int32 // Valid if .sym != 0
@@ -124,18 +132,33 @@ func (n limiter) limit() func() {
 	return func() { <-n }
 }
 
+// BuildContext coordinates creating a package tree.
+type BuildContext struct {
+	packageLimiterValue int
+}
+
+// NewBuildContext returns a newly created BuildContext.
+func NewBuildContext(packageLimiterValue int) (r *BuildContext) {
+	return &BuildContext{
+		packageLimiterValue: packageLimiterValue,
+	}
+}
+
 // Package represents a single OctoGo package.
 type Package struct {
 	Files []*File
 	Scope *Scope
+	ctx   *BuildContext
 }
 
-// Cross-package limiter may deadlock.
-func newPackage(limit int, files []string, overlay map[string][]byte) (r *Package) {
+// NewPackage returns a newly created Package consisting of files in 'files',
+// optionally overlaid by 'overlay'.
+func (c *BuildContext) NewPackage(files []string, overlay map[string][]byte) (r *Package) {
 	r = &Package{
 		Files: make([]*File, len(files)),
+		ctx:   c,
 	}
-	limiter := newLimiter(limit)
+	limiter := newLimiter(c.packageLimiterValue)
 	var wg sync.WaitGroup
 	for i, v := range files {
 		func() {
@@ -214,7 +237,7 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 	for n := range it(r.AST) {
 		switch n.sym {
 		case SourceFile:
-			r.sourceFile(n)
+			r.declareSourceFile(n)
 		default:
 			panic(todo("", n.sym, n.tok))
 		}
@@ -241,11 +264,11 @@ func (f *File) walk(ast []int32, lvl int) {
 	}
 }
 
-func (f *File) sourceFile(n Node) {
+func (f *File) declareSourceFile(n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ImportDecl:
-			f.ImportSpecs = append(f.ImportSpecs, f.importDecl(n)...)
+			f.ImportSpecs = append(f.ImportSpecs, f.declareImportDecl(n)...)
 		case TopLevelDecl:
 			f.declareTopLevel(n)
 		case 0:
@@ -1777,7 +1800,7 @@ type CallSuffixNode struct {
 //TODO 	return r
 //TODO }
 
-func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
+func (f *File) declareImportDecl(n Node) (r []*ImportSpecNode) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ImportSpec:
