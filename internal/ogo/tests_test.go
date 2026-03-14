@@ -41,8 +41,21 @@ func TestOctoGoSpecs(t *testing.T) {
 		if d.IsDir() || filepath.Ext(path) != ".ogo" {
 			return nil
 		}
-		if re != nil && !re.MatchString(path) {
-			return nil
+		switch {
+		case re != nil:
+			if re.MatchString(path) {
+				return nil
+			}
+		default:
+			switch {
+			case
+				strings.Contains(path, "02_"), //TODO name resolving
+				strings.Contains(path, "03_"), //TODO name resolving
+				strings.Contains(path, "06_"), //TODO name resolving
+				strings.Contains(path, "09_"): //TODO name resolving
+
+				return nil
+			}
 		}
 
 		t.Log(path)
@@ -58,15 +71,6 @@ func TestOctoGoSpecs(t *testing.T) {
 }
 
 func runSingleTest(t *testing.T, path string) {
-	switch {
-	case
-		strings.Contains(path, "02_"), //TODO name resolving
-		strings.Contains(path, "03_"), //TODO name resolving
-		strings.Contains(path, "06_"), //TODO name resolving
-		strings.Contains(path, "09_"): //TODO name resolving
-
-		return
-	}
 	expectedCompile, expectedErrs, err := parseAnnotations(path)
 	if err != nil {
 		t.Fatalf("Failed to parse annotations in %s: %v", path, err)
