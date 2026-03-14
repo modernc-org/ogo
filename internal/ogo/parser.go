@@ -6189,7 +6189,7 @@ state4:
 //		| TypeDecl
 //		| "if" Expression Block [ "else" Block ]
 //		| "for" [ Expression ] Block
-//		| "return" [ Expression ]
+//		| "return" [ ExpressionList ]
 //		| "go" AssignHead { Selector | Index } CallSuffix
 //		| SwitchStmt
 //		| SelectStmt
@@ -6261,7 +6261,7 @@ state4:
 //	State 10
 //		Accept
 //		on  "<-", "func", '!', '&', '(', '*', '+', '-', '^', '~', identifier, int_lit, rune_lit, string_lit
-//			call Expression and goto state 2
+//			call ExpressionList and goto state 2
 //	State 11
 //		on  ":=", "<-", '(', ',', '.', '=', '['
 //			call Postfix and goto state 2
@@ -6388,10 +6388,10 @@ state9:
 	}
 	return p.stop(r, accept, errorSet)
 state10:
-	accept, errorSet = true, 43
+	accept, errorSet = true, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e, identifier, int_lit, rune_lit, string_lit:
-		r = p.add(r, p.Expression())
+		r = p.add(r, p.ExpressionList())
 		goto state2
 	}
 	return p.stop(r, accept, errorSet)

@@ -562,7 +562,7 @@
 //		| TypeDecl
 //		| "if" Expression Block [ "else" Block ]
 //		| "for" [ Expression ] Block
-//		| "return" [ Expression ]
+//		| "return" [ ExpressionList ]
 //		| "go" AssignHead { Selector | Index } CallSuffix
 //		| SwitchStmt
 //		| SelectStmt

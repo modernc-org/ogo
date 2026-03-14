@@ -20,11 +20,11 @@ func invalidReturnB() int {
 
 // Assuming the EBNF supports tuple types for multiple returns like Go,
 // but looking at `Type | "(" ParameterList ")"`, let's verify multiple returns:
-func multiReturn() (int, bool) {
+func multiReturn() (i int, b bool) {
     return 1, true
 }
 
-func invalidMultiReturn() (int, bool) {
+func invalidMultiReturn() (i int, b bool) {
     // ERROR "too many arguments to return|wrong number of return values"
     return 1, true, "extra"
 }
