@@ -51,7 +51,6 @@ uintptr
 
 var (
 	_ Declaration = (*ConstDeclaration)(nil)
-	_ Declaration = (*ConstSpecification)(nil)
 	_ Declaration = (*ImportDeclaration)(nil)
 	_ Declaration = (*PredefinedType)(nil)
 	_ Declaration = (*VarDeclaration)(nil)
@@ -109,9 +108,17 @@ out:
 	f2("uint", "uint32")
 
 	// Bool constants
+	boolType := Universe.Nodes["bool"].(Typ)
 	f3 := func(nm string, v bool) {
-		//TODO use ConstDeclaration
-		Universe.Nodes[nm] = newConstSpecification(names[nm], 0, constant.MakeBool(v), Universe.Nodes["bool"].(Typ))
+		tok := names[nm]
+		Universe.Nodes[nm] = &ConstDeclaration{
+			declaration: declaration{name: tok},
+			ConstSpec: &ConstSpecNode{
+				Name:  tok,
+				Value: constant.MakeBool(v),
+				Type:  boolType,
+			},
+		}
 	}
 	f3("false", false)
 	f3("true", true)
@@ -187,33 +194,22 @@ type ImportDeclaration struct {
 	Import *ImportSpecNode
 }
 
-// ConstSpecification represents compile-time named value.
-type ConstSpecification struct {
-	declaration //TODO does not need to be a declaration.
-	constant.Value
-	Typ
-}
-
-func newConstSpecification(name Token, valid int32, value constant.Value, typ Typ) *ConstSpecification {
-	return &ConstSpecification{declaration{name: name, valid: valid}, value, typ}
-}
-
 // ConstDeclaration represents a named constant compile time value.
 type ConstDeclaration struct {
 	declaration
 	ConstSpec *ConstSpecNode
 }
 
-// VarDeclaration represents a named run time value.
-type VarDeclaration struct {
-	declaration
-	VarSpec *VarSpecNode
-}
-
 // TypeDeclaration represents a named type.
 type TypeDeclaration struct {
 	declaration
 	TypeSpec *TypeSpecNode
+}
+
+// VarDeclaration represents a named run time value.
+type VarDeclaration struct {
+	declaration
+	VarSpec *VarSpecNode
 }
 
 // FuncDeclaration represents a named function.

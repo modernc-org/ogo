@@ -1394,6 +1394,7 @@ func (f *File) declareConst(s *Scope, n Node) {
 type ConstSpecNode struct {
 	Expression ExpressionNode
 	Name       Token
+	Value      Value
 	Type       TypeNode
 }
 
