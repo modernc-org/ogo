@@ -1384,15 +1384,6 @@ func (f *File) declareConst(s *Scope, n Node) {
 			if err := s.add(&ConstDeclaration{declaration: declaration{name: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
 				f.err(cs.Name.Position(), "%v", err)
 			}
-		case 0:
-			switch f.ch(n.tok) {
-			case CONST /* , LPAREN, RPAREN, SEMICOLON */ :
-				// ok
-			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-			}
-		default:
-			panic(todo("", n.sym))
 		}
 	}
 }

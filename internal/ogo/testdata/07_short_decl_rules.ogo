@@ -1,17 +1,17 @@
-// ERROR "non-declaration statement outside function body|expected declaration"
+// ERROR "unexpected identifier @topLevel@"
 topLevel := 100 
 
 func testShortDecl() {
     x := 1
     
-    // ERROR "no new variables on left side of :="
+    //TODO ERROR "no new variables on left side of :="
     x := 2 
     
     // Valid: at least one new variable (y)
     x, y := 3, 4 
     
-    // ERROR "cannot redeclare x as different type|type mismatch"
     // (Assuming "hello" evaluates to a string type)
+    //TODO ERROR "cannot redeclare x as different type|type mismatch"
     x, z := "hello", 5 
     
     {

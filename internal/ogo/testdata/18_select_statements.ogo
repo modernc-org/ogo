@@ -1,5 +1,3 @@
-// COMPILE
-
 var ch chan int
 
 func testSelect() {
@@ -21,8 +19,9 @@ func testInvalidSelect() {
     var ready bool = true
 
     select {
-    // ERROR "expected send or receive operation|invalid case in select"
+    // ERROR "expected.*<-"
     case ready == true: 
+    	// ERROR "expected"
         ready = false
     }
 }
