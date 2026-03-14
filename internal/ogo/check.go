@@ -270,6 +270,8 @@ func (f *File) declareTopLevel(n Node) {
 			f.declareVar(f.tld, n)
 		case FuncDecl:
 			f.declareFunc(f.tld, n)
+		case TypeDecl:
+			f.declareType(f.tld, n)
 		case 0:
 			switch f.ch(n.tok) {
 			default:
@@ -1162,6 +1164,53 @@ func (f *File) declareVar(s *Scope, n Node) {
 		case 0:
 			switch f.ch(n.tok) {
 			case VAR, LPAREN, SEMICOLON, RPAREN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
+
+// TypeSpecNode describes the TypeSpec production.
+//
+//	TypeSpec = identifier [ "=" ] Type .
+type TypeSpecNode struct {
+	Name Token
+	Type TypeNode
+}
+
+func (f *File) typeSpec(s *Scope, n Node) (r *TypeSpecNode) {
+	r = &TypeSpecNode{}
+	for n := range it(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case IDENT:
+				r.Name = tok
+			}
+		}
+	}
+	return r
+}
+
+func (f *File) declareType(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case TypeSpec:
+			ts := f.typeSpec(s, n)
+			var valid int32
+			if s.Kind != PackageScope {
+				valid = n.End() + 1
+			}
+			if err := s.add(&TypeDeclaration{declaration: declaration{name: ts.Name, valid: valid}, TypeSpec: ts}); err != nil {
+				f.err(ts.Name.Position(), "%v", err)
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			case TYPE, LPAREN, SEMICOLON, RPAREN:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))

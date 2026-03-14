@@ -210,6 +210,12 @@ type VarDeclaration struct {
 	VarSpec *VarSpecNode
 }
 
+// TypeDeclaration represents a named type.
+type TypeDeclaration struct {
+	declaration
+	TypeSpec *TypeSpecNode
+}
+
 // FuncDeclaration represents a named function.
 type FuncDeclaration struct {
 	declaration

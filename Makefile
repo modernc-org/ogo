@@ -28,5 +28,5 @@ parser: internal/ogo/parser.go
 	make -C internal/ogo parser.go
 
 test:
-	go test -timeout 24h -count=1 -failfast
+	go test -timeout 24h -count=1 -failfast ./...
 	go build -v -o /dev/null

@@ -64,7 +64,6 @@ func runSingleTest(t *testing.T, path string) {
 		strings.Contains(path, "06_"), //TODO name resolving
 		strings.Contains(path, "07_"), //TODO other
 		strings.Contains(path, "09_"), //TODO name resolving
-		strings.Contains(path, "11_"), //TODO TypeDecl
 		strings.Contains(path, "14_"), //TODO const (
 		strings.Contains(path, "18_"): //TODO `case ready == true:`, == rejected
 
