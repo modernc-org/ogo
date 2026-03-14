@@ -353,3 +353,54 @@ When formatting a token that contains comments in its Sep():
 * **Cache Locality & Speed:** Since tokens are just structs modified in place, and the AST is a flat \[\]int32 slice, the entire formatting pass is highly cache-local and runs with zero-to-minimal allocations.  
 * **Ease of Refactoring:** Future AST rewriting tools (like an octogo fix or a language server) can simply move sub-trees in the \[\]int32 array. The attached comments will automatically travel with the tokens.
 
+# Technical Note: Handling Runtime-Conditional Interface Types in OctoGo WPO
+
+## **1\. The Core Problem**
+
+OctoGo is designed with a strict zero-allocation model and no Garbage Collection, targeting the 512KB Hub RAM and 2KB Cog RAM of the Parallax Propeller 2\. To achieve this, the Whole Program Optimization (WPO) pass currently aims to devirtualize and completely remove interface types at compile time.
+
+However, WPO relies on static analysis. If an interface variable is assigned different concrete types across dynamic control flow branches (e.g., an if/else block dependent on a sensor reading or randomness), the compiler cannot predict the dynamic type at compile time. Consequently, the concrete type must be resolved at runtime to execute method calls or type assertions.
+
+## **2\. Architectural Options**
+
+To handle this within OctoGo's hardware constraints, the compiler must adopt one of the following three strategies.
+
+## **Option A: Bounded Tagged Unions (The Smart WPO Approach)**
+
+Because WPO observes the entire program, it can compute the exact, closed set of concrete types that a specific interface variable could possibly hold during its lifetime. The transpiler converts the interface into a statically allocated C struct containing an integer type tag and a union of the possible underlying data structures.
+
+* **Pros:** \* Keeps memory completely static and stack-allocated, strictly adhering to the zero-allocation rule.  
+  * Preserves Go-like polymorphism and developer expressiveness.  
+  * Fast dispatch at runtime via a simple C switch statement on the integer tag.  
+* **Cons:** \* Can lead to wasted memory (padding) if the union combines one very large struct and one very small primitive type (e.g., a 64-byte struct vs. a 1-byte bool).  
+  * Increases the complexity of the WPO pass and the transpiler.
+
+## **Option B: Strict Static Monomorphization (The Semantic Rejection Approach)**
+
+The compiler enforces a rule where an interface variable can only ever hold a single concrete type during its scope/lifetime. If the semantic checker detects that a variable of type any or a custom interface is assigned different underlying types across different control flow branches, it throws a compile-time error.
+
+* **Pros:** \* Incredibly simple to implement in the compiler frontend.  
+  * Guarantees 100% compile-time devirtualization, ensuring interface values truly never exist at runtime.  
+  * Yields a perfectly predictable memory footprint with zero overhead.  
+* **Cons:** \* Heavily restricts developer expressiveness.  
+  * Deviates significantly from standard Go semantics, which may frustrate users expecting normal interface behavior.
+
+## **Option C: Static VTables (The Traditional Approach)**
+
+The compiler accepts that interface values *do* exist at runtime. It transpiles interface variables into "fat pointers" (a C struct containing a pointer to the data and a pointer to a statically generated Virtual Method Table, or VTable).
+
+* **Pros:** \* Provides the closest experience to standard Go interface semantics.  
+  * Does not waste RAM on large padded unions (unlike Option A).  
+* **Cons:** \* Fundamentally breaks the current compiler design goal that "interface values do not exist at run-time."  
+  * Introduces pointer indirection at runtime, which is slower due to Propeller 2 Hub RAM access bottlenecks.  
+  * Requires the data to be carefully tracked by the WPO to ensure it remains in scope (since OctoGo has no heap or GC).
+
+## **3\. Summary Comparison**
+
+| Feature | Option A (Tagged Unions) | Option B (Strict Monomorphization) | Option C (Static VTables) |
+| :---- | :---- | :---- | :---- |
+| **Interfaces at Runtime?** | Yes (as Unions) | No (Fully Erased) | Yes (as Fat Pointers) |
+| **Go Compatibility** | High | Low | High |
+| **Memory Overhead** | High (Padding waste) | Zero | Low (Just pointers) |
+| **Performance (CPU)** | Fast (switch statement) | Fastest (Direct call) | Slower (Pointer indirection) |
+| **Compiler Complexity** | High | Low | Medium |

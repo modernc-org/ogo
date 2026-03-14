@@ -43,7 +43,7 @@ func (n Node) End() int32 {
 	return lastIndex(n.ast)
 }
 
-func iterator(ast []int32) iter.Seq[Node] {
+func it(ast []int32) iter.Seq[Node] {
 	return func(yield func(Node) bool) {
 		for len(ast) != 0 {
 			switch v := ast[0]; {
@@ -72,7 +72,7 @@ func iterator(ast []int32) iter.Seq[Node] {
 func lastIndex(ast []int32) (last int32) {
 	last = -1
 
-	for child := range iterator(ast) {
+	for child := range it(ast) {
 		if child.sym == 0 {
 			// It's a terminal; update our last seen token index
 			last = child.tok
@@ -90,7 +90,7 @@ func lastIndex(ast []int32) (last int32) {
 // firstIndex recursively traverses the flat AST slice to find the first token index.
 // It returns -1 if no token is found.
 func firstIndex(ast []int32) int32 {
-	for child := range iterator(ast) {
+	for child := range it(ast) {
 		if child.sym == 0 {
 			// Found the first terminal (token)
 			return child.tok
@@ -211,7 +211,7 @@ func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
 		return r, r.Err
 	}
 
-	for n := range iterator(r.AST) {
+	for n := range it(r.AST) {
 		switch n.sym {
 		case SourceFile:
 			r.sourceFile(n)
@@ -242,7 +242,7 @@ func (f *File) walk(ast []int32, lvl int) {
 }
 
 func (f *File) sourceFile(n Node) {
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case ImportDecl:
 			f.ImportSpecs = append(f.ImportSpecs, f.importDecl(n)...)
@@ -262,7 +262,7 @@ func (f *File) sourceFile(n Node) {
 }
 
 func (f *File) declareTopLevel(n Node) {
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case ConstDecl:
 			f.declareConst(f.tld, n)
@@ -296,7 +296,7 @@ type FuncDeclNode struct {
 func (f *File) declareFunc(s *Scope, n Node) (r *FuncDeclNode) {
 	r = &FuncDeclNode{}
 	isMethod := false
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case Receiver:
 			isMethod = true
@@ -1146,7 +1146,7 @@ type ParameterListNode struct {
 //TODO }
 
 func (f *File) declareVar(s *Scope, n Node) {
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case VarSpec:
 			names, vs := f.varSpec(s, n)
@@ -1183,7 +1183,7 @@ type VarSpecNode struct {
 
 func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 	r = &VarSpecNode{}
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case IdentifierList:
 			names = f.identifierList(s, n)
@@ -1305,7 +1305,7 @@ type TypeNodeSlice struct {
 //TODO }
 
 func (f *File) identifierList(s *Scope, n Node) (r []Token) {
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
@@ -1324,7 +1324,7 @@ func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 }
 
 func (f *File) declareConst(s *Scope, n Node) {
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case ConstSpec:
 			cs := f.constSpec(s, n)
@@ -1359,7 +1359,7 @@ type ConstSpecNode struct {
 
 func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 	r = &ConstSpecNode{}
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case 0:
 			switch f.ch(n.tok) {
@@ -1737,7 +1737,7 @@ type CallSuffixNode struct {
 //TODO }
 
 func (f *File) importDecl(n Node) (r []*ImportSpecNode) {
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case ImportSpec:
 			r = append(r, f.importSpec(n))
@@ -1768,7 +1768,7 @@ type ImportSpecNode struct {
 func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 	r = &ImportSpecNode{}
 	var nm Token
-	for n := range iterator(n.ast) {
+	for n := range it(n.ast) {
 		switch n.sym {
 		case 0:
 			switch f.ch(n.tok) {

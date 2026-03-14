@@ -32,7 +32,8 @@ Type = [ identifier "." ] identifier
 	| "[" [ Expression ] "]" Type
 	| "*" Type
 	| InterfaceType
-	| StructType .
+	| StructType
+	| "func" Signature .
 StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
 FieldDecl = "*" [ identifier "." ] identifier
 	| identifier [ "." identifier | { "," identifier } Type ] .
@@ -46,7 +47,8 @@ ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 ConstSpec = identifier [ Type ] "=" Expression .
 TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 TypeSpec = identifier [ "=" ] Type .
-FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
+Signature      = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
 Receiver       = "(" identifier Type ")" .
 ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 IdentifierList = identifier { "," identifier } .
@@ -59,10 +61,12 @@ Factor     = identifier [ FactorSuffix ]
 	| int_lit
 	| string_lit
 	| rune_lit
-	| "(" Expression ")" .
+	| "(" Expression ")"
+	| FuncLiteral .
 FactorSuffix = { Selector | Index } [ CallSuffix ] .
 Selector     = "." ( identifier | "(" "type" ")" ) .
 Index        = "[" Expression "]" .
+FuncLiteral = "func" Signature Block .
 UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" .
 AddOp = "+" | "-" | "|" | "^" .
@@ -80,6 +84,7 @@ Statement = VarDecl
 	| SelectStmt
 	| "<-" Expression
 	| AssignHead Postfix
+	| "defer" AssignHead { Selector | Index } CallSuffix
 	| Block
 	| EmptyStatement .
 EmptyStatement = .

@@ -7,12 +7,10 @@
 package main // import "modernc.org/octogo"
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"strings"
 
-	"modernc.org/ogo/internal/ogo"
 	"modernc.org/ogo/internal/smith"
 	"modernc.org/opt"
 )
@@ -74,28 +72,8 @@ Use "%s help <command>" for more information about a command.`, os.Args[0])
 	}
 }
 
-func smith(argsIn []string) {
-	set := opt.NewSet()
-	var args []string
-	set.Arg("seed", false, func(opt, arg string) error { args = append(args, "-seed", arg); return nil })
-	if err := set.Parse(argsIn, func(arg string) error {
-		switch {
-		case strings.HasPrefix(arg, "-"):
-			fail(2, "unexpected flagd: %v", arg)
-		default:
-			fail(2, "no non-flag arguments expected: %v", arg)
-		}
-		return nil
-	}); err != nil {
-		fail(2, "%v", err)
-	}
-
-	b := bytes.NewBuffer(nil)
-	if err := octosmith.Main(args, b, os.Stderr); err != nil {
-		fail(1, "octosmith err=%v", err)
-	}
-
-	if err := octogo.FormatFile("octosmith.ogo", b.Bytes(), os.Stdout); err != nil {
-		fail(1, "%s\noctofmt err=%v", b.Bytes(), err)
+func smith(args []string) {
+	if rc, err := octosmith.SubCommand(args, os.Stdout, os.Stderr); rc != 0 || err != nil {
+		fail(rc, "err=%v", err)
 	}
 }

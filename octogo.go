@@ -251,7 +251,8 @@
 //		| "[" [ Expression ] "]" Type
 //		| "*" Type
 //		| InterfaceType
-//		| StructType .
+//		| StructType
+//		| "func" Signature .
 //
 // # Boolean types
 //
@@ -470,7 +471,8 @@
 // provided, it acts as a method declaration binding the function to the
 // receiver's base type.
 //
-//	FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+//	FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
+//	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
 //	Receiver       = "(" identifier Type ")" .
 //	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 //	IdentifierList = identifier { "," identifier } .
@@ -499,11 +501,24 @@
 //		| int_lit
 //		| string_lit
 //		| rune_lit
-//		| "(" Expression ")" .
+//		| "(" Expression ")"
+//		| FuncLiteral .
 //
 //	FactorSuffix = { Selector | Index } [ CallSuffix ] .
 //	Selector     = "." ( identifier | "(" "type" ")" ) .
 //	Index        = "[" Expression "]" .
+//
+// # Function Literals
+//
+// A function literal represents an anonymous function.
+//
+//	FuncLiteral = "func" Signature Block .
+//
+// (OctoGo Specific): Because OctoGo strictly enforces a zero-allocation memory
+// model without a Garbage Collector, function literals cannot act as dynamic
+// closures. They may not capture or reference variables from their surrounding
+// lexical scope. In the transpiled C code, function literals are treated
+// strictly as statically allocated, pure function pointers.
 //
 // # Operators
 //
@@ -553,8 +568,32 @@
 //		| SelectStmt
 //		| "<-" Expression
 //		| AssignHead Postfix
+//		| "defer" AssignHead { Selector | Index } CallSuffix
 //		| Block
 //		| EmptyStatement .
+//
+// # Defer Statements
+//
+// A "defer" statement invokes a function whose execution is deferred to the
+// moment the surrounding function returns, either because it executed a return
+// statement or reached the end of its function body.
+//
+//	"defer" AssignHead { Selector | Index } CallSuffix
+//
+// Deferred functions are executed in LIFO (last-in, first-out) order
+// immediately before the surrounding function returns.
+//
+// (OctoGo Specific): To maintain deterministic memory usage and comply with
+// the language's zero-allocation model, defer statements are resolved
+// statically at compile time and transpiled into direct C "goto" cleanup
+// blocks.
+//
+// Strict Restriction: "defer" statements are forbidden inside "for" loops or
+// any dynamically unbounded control flow blocks. In a zero-allocation
+// environment, accumulating an unknown number of deferred calls would require
+// dynamic heap allocation or an infinitely growing Hub RAM stack. Bounding
+// "defer" to the static block scope guarantees safe, predictable execution on
+// the Propeller 2 hardware.
 //
 // # Empty Statements
 //

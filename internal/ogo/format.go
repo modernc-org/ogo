@@ -9,6 +9,35 @@ import (
 	"io"
 )
 
+// TODO
+//
+// 	octosmith_checksum = (octosmith_checksum ^ v_6220)
+// 		{
+// 		var i_8170 int = 0
+// 		for (i_8170 < 1) {
+// 			octosmith_checksum = (octosmith_checksum ^ (28 - v_6220))
+// 			octosmith_checksum = (octosmith_checksum ^ v_104)
+// 			i_8170 = (i_8170 + 1)
+// 		}
+// 	}
+// 		{ // <--- misalligned
+// 		var i_3391 int = 0
+// 		for (i_3391 < 1) {
+// 			if (87 != ((95 ^ (51 ^ (11 - 46))) - (14 - ((octosmith_checksum - i_8170) + octosmith_checksum)))) {
+// 					{
+// 					var i_4679 int = 0
+// 					for (i_4679 < 1) {
+// 						octosmith_checksum = (octosmith_checksum ^ i_8170)
+// 						octosmith_checksum = (octosmith_checksum ^ ((67 ^ (i_4679 - 1)) - v_6220))
+// 						i_4679 = (i_4679 + 1)
+// 					}
+// 				}
+// 			}
+// 			octosmith_checksum = (octosmith_checksum ^ (53 ^ i_8170))
+// 			i_3391 = (i_3391 + 1)
+// 		}
+// 	}
+
 var (
 	generalCommentPrefix = []byte("/*")
 	generalCommentSuffix = []byte("*/")

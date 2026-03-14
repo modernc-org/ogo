@@ -29,7 +29,7 @@ func ExampleMain_help() {
 	fmt.Printf("%s", stdout.Bytes())
 	// Output:
 	// FlexC compiler (c) 2011-2026 Total Spectrum Software Inc. and contributors
-	// Version 7.6.2-HEAD-v7.6.1-11-g71ce9b99 Compiled on: Mar  2 2026
+	// Version 7.6.2-HEAD-v7.6.1-11-g71ce9b99 Compiled on: Mar 13 2026
 	// usage: flexcc [options] file1.c file2.c ...
 	//   [ --help ]         display this help
 	//   [ -1bc ]           compile for Prop1 ROM bytecode
