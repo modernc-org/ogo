@@ -190,7 +190,12 @@ func mapFS(files map[string][]byte) fs.FS {
 }
 
 func TestNewPackage(t *testing.T) {
-	pkg := NewBuildContext(-1).NewPackage([]string{"src0"}, mapFS(map[string][]byte{"src0": []byte(src0)}))
+	fsys := mapFS(
+		map[string][]byte{
+			"src0": []byte(src0),
+		},
+	)
+	pkg := NewBuildContext(fsys, -1).NewPackage([]string{"src0"}, fsys)
 	for _, v := range pkg.Files {
 		if err := v.Err; err != nil {
 			t.Error(err)

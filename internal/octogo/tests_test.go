@@ -7,6 +7,7 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 import (
 	"bufio"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,6 +33,7 @@ type compilerError struct {
 func TestOctoGoSpecs(t *testing.T) {
 	// Adjust this path to wherever you store the .ogo test files.
 	testDir := "testdata"
+	fsys := os.DirFS(testDir)
 
 	err := filepath.WalkDir(testDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -43,7 +45,7 @@ func TestOctoGoSpecs(t *testing.T) {
 		}
 		switch {
 		case re != nil:
-			if re.MatchString(path) {
+			if !re.MatchString(path) {
 				return nil
 			}
 		default:
@@ -60,7 +62,7 @@ func TestOctoGoSpecs(t *testing.T) {
 
 		t.Log(path)
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			runSingleTest(t, path)
+			runSingleTest(t, fsys, path)
 		})
 		return nil
 	})
@@ -70,18 +72,13 @@ func TestOctoGoSpecs(t *testing.T) {
 	}
 }
 
-func runSingleTest(t *testing.T, path string) {
+func runSingleTest(t *testing.T, fsys fs.FS, path string) {
 	expectedCompile, expectedErrs, err := parseAnnotations(path)
 	if err != nil {
 		t.Fatalf("Failed to parse annotations in %s: %v", path, err)
 	}
 
-	src, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("Failed to read %s: %v", path, err)
-	}
-
-	actualErrs := runCompiler(path, src)
+	actualErrs := runCompiler(t, filepath.Base(path), fsys)
 	t.Logf("len(actualErrs)=%v", len(actualErrs))
 	for _, v := range actualErrs {
 		t.Log(v)
@@ -167,8 +164,8 @@ func checkErrors(t *testing.T, expected []expectedError, actual []compilerError,
 	}
 }
 
-func runCompiler(path string, src []byte) (r []compilerError) {
-	pkg := NewBuildContext(-1).NewPackage([]string{path}, mapFS(map[string][]byte{path: []byte(src)}))
+func runCompiler(t *testing.T, path string, fsys fs.FS) (r []compilerError) {
+	pkg := NewBuildContext(fsys, -1).NewPackage([]string{path}, fsys)
 	for _, v := range pkg.Files {
 		switch x := v.Err.(type) {
 		case nil:
@@ -178,7 +175,7 @@ func runCompiler(path string, src []byte) (r []compilerError) {
 				r = append(r, compilerError{v.Pos.Line, v.Err.Error()})
 			}
 		default:
-			panic(todo("%v: %T", path, x))
+			t.Errorf("%s: %v", path, x)
 		}
 	}
 	return r

@@ -135,9 +135,10 @@ func (n limiter) limit() func() {
 type File struct {
 	AST         []int32
 	Err         error
+	FileScope   *Scope
 	Filename    string
 	ImportSpecs []*ImportSpecNode
-	FileScope   *Scope
+	Package     *Package
 	parser      Parser
 	tld         *Scope // Later merged into package scope
 
@@ -163,10 +164,11 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 	f.parser.sc.AddErr(pos, s, args...)
 }
 
-func newFile(fn string, fsys fs.FS) (r *File) {
+func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
 	r = &File{
 		Filename:  fn,
 		FileScope: newScope(nil, FileScope),
+		Package:   p,
 		tld:       newScope(Universe, PackageScope),
 	}
 	b, err := fs.ReadFile(fsys, fn)
@@ -1760,7 +1762,14 @@ func (f *File) declareImportDecl(n Node) (r []*ImportSpecNode) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ImportSpec:
-			r = append(r, f.importSpec(n))
+			is := f.importSpec(n)
+			r = append(r, is)
+			if is.IsDotImport {
+				p := f.Package.importPkg(is.ImportPath)
+				for k, v := range p.Scope.Nodes {
+					panic(todo("%q: %T", k, v))
+				}
+			}
 		case 0:
 			switch f.ch(n.tok) {
 			case IMPORT, LPAREN, RPAREN, SEMICOLON:
