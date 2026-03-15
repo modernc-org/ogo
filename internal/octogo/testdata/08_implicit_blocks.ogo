@@ -1,23 +1,23 @@
 // COMPILE
 
 func testImplicitBlocks() {
-    var trigger bool = true
-    
-    if trigger {
-        var scopedVal int = 1
-    }
-    
-    // ERROR "undeclared name|undefined: scopedVal"
-    trigger = (scopedVal == 1)
-    
-    switch val := 5 { // SwitchGuard parses as Expression ":=" Expression
-    case 5:
-        var caseScoped int = 10
-    case 6:
-        // ERROR "undeclared name|undefined: caseScoped"
-        var b int = caseScoped 
-    }
-    
-    // ERROR "undeclared name|undefined: val"
-    trigger = (val == 5)
+	var trigger bool = true
+
+	if trigger {
+		var scopedVal int = 1
+	}
+
+	// ERROR "undeclared name|undefined: scopedVal"
+	trigger = (scopedVal == 1)
+
+	switch val := 5 { // SwitchGuard parses as Expression ":=" Expression
+	case 5:
+		var caseScoped int = 10
+	case 6:
+		// ERROR "undeclared name|undefined: caseScoped"
+		var b int = caseScoped
+	}
+
+	// ERROR "undeclared name|undefined: val"
+	trigger = (val == 5)
 }

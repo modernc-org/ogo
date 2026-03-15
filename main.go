@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"modernc.org/ogo/internal/format"
 	"modernc.org/ogo/internal/smith"
 	"modernc.org/opt"
 )
@@ -43,11 +44,16 @@ func main() {
 	}
 
 	switch subCommand {
+	case "fmt":
+		if rc, err := format.SubCommand(args, os.Stdin, os.Stdout, os.Stderr); rc != 0 || err != nil {
+			fail(rc, "err=%v", err)
+		}
 	case "smith":
-		smith(args)
+		if rc, err := octosmith.SubCommand(args, os.Stdin, os.Stdout, os.Stderr); rc != 0 || err != nil {
+			fail(rc, "err=%v", err)
+		}
 	case
 		"build",
-		"fmt",
 		"help",
 		"test",
 		"version":
@@ -69,11 +75,5 @@ The commands are:
 	version     print Go version
 
 Use "%s help <command>" for more information about a command.`, os.Args[0])
-	}
-}
-
-func smith(args []string) {
-	if rc, err := octosmith.SubCommand(args, os.Stdout, os.Stderr); rc != 0 || err != nil {
-		fail(rc, "err=%v", err)
 	}
 }

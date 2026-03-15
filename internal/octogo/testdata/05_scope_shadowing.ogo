@@ -2,24 +2,24 @@
 var globalVar int = 10
 
 func shadowTest() {
-    // Valid: shadows the package-level globalVar
-    var globalVar int = 20
-    
-    if globalVar == 20 {
-        // Valid: shadows the function-level globalVar
-        var globalVar int = 30
-        globalVar = 31
-    }
-    
-    // globalVar should be 20 here
-    globalVar = 21
+	// Valid: shadows the package-level globalVar
+	var globalVar int = 20
+
+	if globalVar == 20 {
+		// Valid: shadows the function-level globalVar
+		var globalVar int = 30
+		globalVar = 31
+	}
+
+	// globalVar should be 20 here
+	globalVar = 21
 }
 
 func scopeCheck() {
-    var a int = 1
-    {
-        var b int = 2
-    }
-    // ERROR "undeclared name|undefined: b"
-    a = b 
+	var a int = 1
+	{
+		var b int = 2
+	}
+	// ERROR "undeclared name|undefined: b"
+	a = b
 }

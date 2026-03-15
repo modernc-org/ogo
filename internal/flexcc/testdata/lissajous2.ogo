@@ -7,7 +7,7 @@ var sineLut [4096]uint16
 func main() {
     var pinX int = 26
     var pinY int = 20
-    var freqX float32 = 150.0
+    var freqX float32 = 150.0 //TODO support float
     var freqY float32 = 200.0
     var phaseOffsetDeg float32 = 90.0
     var sampleRateHz float32 = 100000.0

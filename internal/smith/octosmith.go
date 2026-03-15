@@ -18,7 +18,7 @@ import (
 )
 
 // SubCommand implements "ogo smith".
-func SubCommand(args []string, stdout, stderr io.Writer) (rc int, err error) {
+func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc int, err error) {
 	set := opt.NewSet()
 	var args2 []string
 	set.Arg("seed", false, func(opt, arg string) error { args2 = append(args2, "-seed", arg); return nil })

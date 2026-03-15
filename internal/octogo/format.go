@@ -289,13 +289,17 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.undentRBraceIndex = lastIndex(ast[:next])
 				case CaseHead, CommHead:
 					c.indentLevel++
+				case ParameterList, CallSuffix:
+					c.inParams = true
 				case SimpleExpr:
 					// Lookahead: If the child nodes contain an AddOp, set the flag.
 					if containsNode(ast[2:next], AddOp) {
 						c.hasAddOp = true
 					}
-				case ParameterList, CallSuffix:
-					c.inParams = true
+				case StructType:
+					c.indentLevel++
+					c.undentLBraceIndex = firstIndex(ast[:next])
+					c.undentRBraceIndex = lastIndex(ast[:next])
 				}
 				walk(ast[2:next], c)
 			default:
