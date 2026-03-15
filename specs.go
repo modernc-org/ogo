@@ -10,7 +10,7 @@
 // TODO 20260307 Return statements: ? disable naked returns
 // TODO 20260307 Return statements: Expression -> ExpressionList
 
-// # OctoGo Language Specification (Draft Mar 7, 2026)
+// # OctoGo Language Specification (Draft Mar 15, 2026)
 //
 // # Introduction
 //

@@ -24,8 +24,8 @@ editor: parser
 generate:
 	go generate -v -x ./...
 
-parser: internal/ogo/parser.go
-	make -C internal/ogo parser.go
+parser: internal/octogo/parser.go
+	make -C internal/octogo parser.go
 
 test:
 	gofmt -l -s -w .

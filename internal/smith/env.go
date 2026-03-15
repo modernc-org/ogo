@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package octosmith // import "modernc.org/ogo/lib/internal/smith"
+package octosmith // import "modernc.org/octogo/lib/internal/smith"
 
 // Symbol represents a declared entity (variable, constant, func).
 type Symbol struct {

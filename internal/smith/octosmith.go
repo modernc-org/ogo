@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package octosmith // import "modernc.org/ogo/lib/internal/smith"
+package octosmith // import "modernc.org/octogo/lib/internal/smith"
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"modernc.org/ogo/internal/ogo"
+	"modernc.org/ogo/internal/octogo"
 	"modernc.org/opt"
 )
 

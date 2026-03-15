@@ -28,8 +28,8 @@ generate:
 # Prerequisites:
 #
 # $ go install modernc.org/egg@latest
-parser.go: ../../octogo.go
-	go run extract_grammar.go -- ../../octogo.go > octogo.ebnf
+parser.go: ../../specs.go
+	go run extract_grammar.go -- ../../specs.go > octogo.ebnf
 	egg -o parser.go -start SourceFile -package octogo octogo.ebnf
 	sed -i \
 		-e 's/"modernc.org\/scanner"//' \
@@ -38,7 +38,7 @@ parser.go: ../../octogo.go
 	gofmt -l -s -w ..
 
 debug-parser:
-	go run extract_grammar.go -- ../../octogo.go > octogo.ebnf
+	go run extract_grammar.go -- ../../specs.go > octogo.ebnf
 	egg -dbg -o parser.go -start SourceFile -package octogo octogo.ebnf
 	sed -i \
 		-e 's/"modernc.org\/scanner"//' \
