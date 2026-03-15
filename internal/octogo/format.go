@@ -9,35 +9,6 @@ import (
 	"io"
 )
 
-// TODO
-//
-// 	octosmith_checksum = (octosmith_checksum ^ v_6220)
-// 		{
-// 		var i_8170 int = 0
-// 		for (i_8170 < 1) {
-// 			octosmith_checksum = (octosmith_checksum ^ (28 - v_6220))
-// 			octosmith_checksum = (octosmith_checksum ^ v_104)
-// 			i_8170 = (i_8170 + 1)
-// 		}
-// 	}
-// 		{ // <--- misalligned
-// 		var i_3391 int = 0
-// 		for (i_3391 < 1) {
-// 			if (87 != ((95 ^ (51 ^ (11 - 46))) - (14 - ((octosmith_checksum - i_8170) + octosmith_checksum)))) {
-// 					{
-// 					var i_4679 int = 0
-// 					for (i_4679 < 1) {
-// 						octosmith_checksum = (octosmith_checksum ^ i_8170)
-// 						octosmith_checksum = (octosmith_checksum ^ ((67 ^ (i_4679 - 1)) - v_6220))
-// 						i_4679 = (i_4679 + 1)
-// 					}
-// 				}
-// 			}
-// 			octosmith_checksum = (octosmith_checksum ^ (53 ^ i_8170))
-// 			i_3391 = (i_3391 + 1)
-// 		}
-// 	}
-
 var (
 	generalCommentPrefix = []byte("/*")
 	generalCommentSuffix = []byte("*/")
@@ -286,6 +257,7 @@ func containsNode(ast []int32, target Symbol) bool {
 
 type formatterCtx struct {
 	indentLevel       int32
+	undentLBraceIndex int32
 	undentRBraceIndex int32
 	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
@@ -313,6 +285,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				switch Symbol(-n) {
 				case Block:
 					c.indentLevel++
+					c.undentLBraceIndex = firstIndex(ast[:next])
 					c.undentRBraceIndex = lastIndex(ast[:next])
 				case CaseHead, CommHead:
 					c.indentLevel++
@@ -337,6 +310,10 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 						// Keep the sep for later prepending it to the sep of the next token.
 						syntheticSep = append(syntheticSep[:0], sep...)
 						break outer
+					}
+				case LBRACE:
+					if n == c.undentLBraceIndex {
+						indentDelta = -1
 					}
 				case RBRACE:
 					if n == c.undentRBraceIndex {

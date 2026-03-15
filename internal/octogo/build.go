@@ -22,6 +22,8 @@ type BuildContext struct {
 	fsys    fs.FS
 	imports map[string]*Package // import path: package
 	limit   int
+
+	noDeclarationChecks bool
 }
 
 // NewBuildContext returns a newly created BuildContext. 'limit' is the maximum
@@ -72,6 +74,24 @@ func consolidateErrors(use ErrList, errors ...error) (r ErrList) {
 	return r
 }
 
+// Build builds the main pacakge consisting of files in 'files' within 'fsys'.
+// 'limit' is the maximum desired concurrency for individual package building
+// when > 0.
+//
+// 'files' must be base names within fsys. Build resolves and import paths
+// a/b/c as paths a/b/c within fsys.
+func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
+	for _, v := range files {
+		if path.Base(v) != v {
+			return noPkg, fmt.Errorf("not a base name: %s", v)
+		}
+	}
+
+	bc := NewBuildContext(fsys, limit)
+	main = bc.NewPackage(files, fsys)
+	return main, nil
+}
+
 // Package represents a single OctoGo package.
 type Package struct {
 	Err        error
@@ -112,6 +132,10 @@ func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 		return r
 	}
 
+	if bc.noDeclarationChecks { // Testing support
+		return r
+	}
+
 	//TODO check file scope collisions now.
 	//TODO merge files .tld into package scope.
 	return r
@@ -123,22 +147,4 @@ func (p *Package) importPkg(importPath string) (r *Package) {
 	}
 
 	return noPkg
-}
-
-// Build builds the main pacakge consisting of files in 'files' within 'fsys'.
-// 'limit' is the maximum desired concurrency for individual package building
-// when > 0.
-//
-// 'files' must be base names within fsys. Build resolves and import paths
-// a/b/c as paths a/b/c within fsys.
-func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
-	for _, v := range files {
-		if path.Base(v) != v {
-			return noPkg, fmt.Errorf("not a base name: %s", v)
-		}
-	}
-
-	bc := NewBuildContext(fsys, limit)
-	main = bc.NewPackage(files, fsys)
-	return main, nil
 }

@@ -195,7 +195,9 @@ func TestNewPackage(t *testing.T) {
 			"src0": []byte(src0),
 		},
 	)
-	pkg := NewBuildContext(fsys, -1).NewPackage([]string{"src0"}, fsys)
+	bc := NewBuildContext(fsys, -1)
+	bc.noDeclarationChecks = true
+	pkg := bc.NewPackage([]string{"src0"}, fsys)
 	for _, v := range pkg.Files {
 		if err := v.Err; err != nil {
 			t.Error(err)

@@ -19,6 +19,7 @@ editor: parser.go
 	gofmt -l -s -w ..
 	go test -o /dev/null -c
 	go build -o /dev/null extract_grammar.go
+	go install -v ../..
 	golint
 	staticcheck
 

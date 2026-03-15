@@ -41,6 +41,10 @@ func SubCommand(args []string, stdout, stderr io.Writer) (rc int, err error) {
 		return 1, fmt.Errorf("octosmith err=%v", err)
 	}
 
+	if _, err = io.Copy(stdout, b); err != nil {
+		return 1, fmt.Errorf("octosmith err=%v", err)
+	}
+
 	return rc, nil
 }
 
