@@ -9,6 +9,9 @@ import (
 	"io"
 )
 
+//TODO emit final nl
+//TODO testdata/15_if_statements.ogo: else block misaligned closing lbrace
+
 var (
 	generalCommentPrefix = []byte("/*")
 	generalCommentSuffix = []byte("*/")

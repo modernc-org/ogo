@@ -4,23 +4,23 @@ var intChan chan int
 var boolChan chan bool
 
 func testChannels() {
-    var x int = 5
-    var y bool = false
+	var x int = 5
+	var y bool = false
 
-    // Valid sends and receives
-    intChan <- x
-    y = <- boolChan
+	// Valid sends and receives
+	intChan <- x
+	y = <-boolChan
 
-    // ERROR "cannot use.*type bool.*as type int in send|cannot send bool to chan int"
-    intChan <- y
+	// ERROR "cannot use.*type bool.*as type int in send|cannot send bool to chan int"
+	intChan <- y
 
-    // ERROR "cannot assign.*chan int.*to type bool|cannot receive"
-    y = <- intChan
+	// ERROR "cannot assign.*chan int.*to type bool|cannot receive"
+	y = <-intChan
 
-    var notAChan int = 42
-    // ERROR "invalid operation|cannot send to non-channel"
-    notAChan <- 1 
-    
-    // ERROR "invalid operation|cannot receive from non-channel"
-    var z int = <- notAChan
+	var notAChan int = 42
+	// ERROR "invalid operation|cannot send to non-channel"
+	notAChan <- 1
+
+	// ERROR "invalid operation|cannot receive from non-channel"
+	var z int = <-notAChan
 }

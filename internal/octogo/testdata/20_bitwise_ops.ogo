@@ -1,23 +1,23 @@
 // COMPILE
 
 func testBitwise() {
-    var a int = 0b1010
-    var b int = 0x0F
+	var a int = 0b1010
+	var b int = 0x0F
 
-    // Valid integer bitwise operations
-    var c int = a | b
-    var d int = a & b
-    var e int = a ^ b
-    var f int = a << 2
-    var g int = b >> 1
-    var h int = ~a
+	// Valid integer bitwise operations
+	var c int = a | b
+	var d int = a & b
+	var e int = a ^ b
+	var f int = a << 2
+	var g int = b >> 1
+	var h int = ~ a
 
-    var flag bool = true
-    var text string = "hello"
+	var flag bool = true
+	var text string = "hello"
 
-    // ERROR "invalid operation|operator \| not defined for bool"
-    var inv1 bool = flag | true 
+	// ERROR "invalid operation|operator \| not defined for bool"
+	var inv1 bool = flag | true
 
-    // ERROR "invalid operation|operator << not defined for string"
-    var inv2 string = text << 1 
+	// ERROR "invalid operation|operator << not defined for string"
+	var inv2 string = text << 1
 }

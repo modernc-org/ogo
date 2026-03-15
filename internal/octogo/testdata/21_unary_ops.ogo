@@ -1,21 +1,21 @@
 // COMPILE
 
 func testUnary() {
-    var x int = 5
-    var b bool = false
+	var x int = 5
+	var b bool = false
 
-    // Valid unary operations
-    var negX int = -x
-    var posX int = +x
-    var notB bool = !b
-    var bitNotX int = ^x
+	// Valid unary operations
+	var negX int = - x
+	var posX int = + x
+	var notB bool = ! b
+	var bitNotX int = ^ x
 
-    // ERROR "invalid operation|operator ! not defined for int"
-    var inv1 bool = !x
+	// ERROR "invalid operation|operator ! not defined for int"
+	var inv1 bool = ! x
 
-    // ERROR "invalid operation|operator - not defined for bool"
-    var inv2 bool = -b
+	// ERROR "invalid operation|operator - not defined for bool"
+	var inv2 bool = - b
 
-    // ERROR "invalid operation|operator \^ not defined for string"
-    var inv3 string = ^"test"
+	// ERROR "invalid operation|operator \^ not defined for string"
+	var inv3 string = ^ "test"
 }

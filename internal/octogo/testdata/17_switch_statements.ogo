@@ -1,23 +1,23 @@
 // COMPILE
 
 func testSwitch() {
-    // Valid switch with assignment guard
-    switch val := 5 {
-    case 1, 2, 3:
-        var x int = val
-    case 5:
-        var y int = val
-    default:
-        var z int = 0
-    }
+	// Valid switch with assignment guard
+	switch val := 5 {
+	case 1, 2, 3:
+		var x int = val
+	case 5:
+		var y int = val
+	default:
+		var z int = 0
+	}
 
-    var state string = "idle"
-    
-    switch state {
-    case "active":
-        state = "done"
-    // ERROR "cannot use.*type int.*as type string|type mismatch in case"
-    case 404: 
-        state = "error"
-    }
+	var state string = "idle"
+
+	switch state {
+	case "active":
+		state = "done"
+		// ERROR "cannot use.*type int.*as type string|type mismatch in case"
+	case 404:
+		state = "error"
+	}
 }

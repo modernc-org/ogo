@@ -1,16 +1,16 @@
 // COMPILE
 
 const (
-    a = 1
-    b = a + 2
-    c = b * 3
+a = 1
+b = a + 2
+c = b * 3
 )
 
 func testConstants() {
-    // ERROR "undefined: d|undeclared name"
-    const x = d + 1
+	// ERROR "undefined: d|undeclared name"
+	const x = d + 1
 
-    var runtimeVal int = 10
-    // ERROR "is not a constant|initializer must be constant"
-    const y = runtimeVal
+	var runtimeVal int = 10
+	// ERROR "is not a constant|initializer must be constant"
+	const y = runtimeVal
 }
