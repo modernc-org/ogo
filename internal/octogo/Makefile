@@ -47,5 +47,6 @@ debug-parser:
 	gofmt -l -s -w ..
 
 test:
-	go test -timeout 24h -count=1 -failfast
-	go build -v -o /dev/null
+	# go test -timeout 24h -count=1 -failfast
+	# go build -v -o /dev/null
+	make -C ../../ test

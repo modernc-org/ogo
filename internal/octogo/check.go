@@ -9,8 +9,8 @@ import (
 	"go/token"
 	"io/fs"
 	"iter"
+	"strconv"
 	"strings"
-	"sync"
 )
 
 // type gate byte
@@ -131,53 +131,6 @@ func (n limiter) limit() func() {
 	return func() { <-n }
 }
 
-// BuildContext coordinates creating a package tree.
-type BuildContext struct {
-	packageLimiterValue int
-}
-
-// NewBuildContext returns a newly created BuildContext.
-func NewBuildContext(packageLimiterValue int) (r *BuildContext) {
-	return &BuildContext{
-		packageLimiterValue: packageLimiterValue,
-	}
-}
-
-// Package represents a single OctoGo package.
-type Package struct {
-	Files []*File
-	Scope *Scope
-	ctx   *BuildContext
-}
-
-// NewPackage returns a newly created Package consisting of files in 'files'
-// within 'fsys'.
-func (c *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
-	r = &Package{
-		Files: make([]*File, len(files)),
-		ctx:   c,
-	}
-	limiter := newLimiter(c.packageLimiterValue)
-	var wg sync.WaitGroup
-	for i, v := range files {
-		func() {
-			defer limiter.limit()
-
-			wg.Add(1)
-
-			go func(i int, fn string) {
-				defer wg.Done()
-
-				r.Files[i], _ = newFile(fn, fsys)
-			}(i, v)
-		}()
-	}
-	wg.Wait()
-	//TODO check file scope collisions now.
-	//TODO merge files .tld into package scope.
-	return r
-}
-
 // File represents a single OctoGo source file.
 type File struct {
 	AST         []int32
@@ -187,6 +140,8 @@ type File struct {
 	FileScope   *Scope
 	parser      Parser
 	tld         *Scope // Later merged into package scope
+
+	hasInvalidImports bool
 }
 
 //TODO func (f *File) pos(tokIndex int32) (r token.Position) {
@@ -208,7 +163,7 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 	f.parser.sc.AddErr(pos, s, args...)
 }
 
-func newFile(fn string, fsys fs.FS) (r *File, err error) {
+func newFile(fn string, fsys fs.FS) (r *File) {
 	r = &File{
 		Filename:  fn,
 		FileScope: newScope(nil, FileScope),
@@ -217,18 +172,18 @@ func newFile(fn string, fsys fs.FS) (r *File, err error) {
 	b, err := fs.ReadFile(fsys, fn)
 	if err != nil {
 		r.Err = err
-		return r, err
+		return r
 	}
 
 	r.AST, r.Err = r.parser.Parse(fn, b)
 	if r.Err = r.parser.sc.Err(); r.Err != nil {
-		return r, r.Err
+		return r
 	}
 
 	if tok := r.parser.tok; tok.Ch != rune(EOF) {
 		r.parser.sc.AddErr(tok.Position(), "%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
 		r.Err = r.parser.sc.Err()
-		return r, r.Err
+		return r
 	}
 
 	for n := range it(r.AST) {
@@ -241,7 +196,7 @@ func newFile(fn string, fsys fs.FS) (r *File, err error) {
 	}
 
 	r.Err = r.parser.sc.Err()
-	return r, r.Err
+	return r
 }
 
 //lint:ignore U1000 debug helper
@@ -267,6 +222,10 @@ func (f *File) declareSourceFile(n Node) {
 		case ImportDecl:
 			f.ImportSpecs = append(f.ImportSpecs, f.declareImportDecl(n)...)
 		case TopLevelDecl:
+			if f.hasInvalidImports {
+				return
+			}
+
 			f.declareTopLevel(n)
 		case 0:
 			switch f.ch(n.tok) {
@@ -1840,13 +1799,22 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 				r.ImportQualifier = nm.Src()
 			case STRING:
 				nm = f.tok(n.tok)
-				r.ImportPath = nm.Src()
+				var err error
+				r.ImportPath, err = strconv.Unquote(nm.Src())
+				if err != nil || !isValidImportPath(r.ImportPath) {
+					f.err(nm.Position(), "invalid import path: %s", r.ImportPath)
+					f.hasInvalidImports = true
+					break
+				}
+
 				if !r.IsDotImport && r.ImportQualifier == "" {
 					if x := strings.LastIndexByte(r.ImportPath, '/'); x > 0 {
 						if base := r.ImportPath[x:]; token.IsIdentifier(base) {
 							r.ImportQualifier = base
 						} else {
 							f.err(nm.Position(), "invalid package name: %s", r.ImportPath)
+							f.hasInvalidImports = true
+							break
 						}
 					}
 				}
@@ -1877,4 +1845,27 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 		}
 	}
 	return r
+}
+
+// Import paths must be slash-separated, entirely lower-case ASCII letters, the
+// '_' character c and digits, and must not begin with a "." or "/" or end with
+// a "/". Import paths without dots in their first segment are reserved for the
+// standard library.
+func isValidImportPath(s string) bool {
+	if strings.HasPrefix(s, ".") || strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") {
+		return false
+	}
+
+	for _, v := range strings.Split(s, "/") {
+		for _, c := range v {
+			switch {
+			case c >= 'a' && c <= 'z' || c == '_' || c >= '0' && c <= '9':
+				// ok
+			default:
+				trc("%q %q", s, string(rune(c)))
+				return false
+			}
+		}
+	}
+	return true
 }

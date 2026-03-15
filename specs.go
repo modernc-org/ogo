@@ -825,10 +825,10 @@
 // along with all the packages it imports, transitively. The ogo tool builds
 // packages using standard OS file paths (e.g., ogo build <import-path>).
 //
-// Import paths must be slash-separated, entirely lower-case ASCII letters and
-// digits, and must not begin with a "." or "/" or end with a "/". Import
-// paths without dots in their first segment are reserved for the standard
-// library.
+// Import paths must be slash-separated, entirely lower-case ASCII letters, the
+// '_' character c and digits, and must not begin with a "." or "/" or end with
+// a "/". Import paths without dots in their first segment are reserved for the
+// standard library.
 //
 // The main package must declare a function main that takes no arguments and
 // returns no value:
