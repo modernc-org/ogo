@@ -7,11 +7,10 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 import (
 	"fmt"
 	"go/token"
+	"io/fs"
 	"iter"
-	"os"
 	"strings"
 	"sync"
-	//TODO "go/constant"
 )
 
 // type gate byte
@@ -151,9 +150,9 @@ type Package struct {
 	ctx   *BuildContext
 }
 
-// NewPackage returns a newly created Package consisting of files in 'files',
-// optionally overlaid by 'overlay'.
-func (c *BuildContext) NewPackage(files []string, overlay map[string][]byte) (r *Package) {
+// NewPackage returns a newly created Package consisting of files in 'files'
+// within 'fsys'.
+func (c *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 	r = &Package{
 		Files: make([]*File, len(files)),
 		ctx:   c,
@@ -169,7 +168,7 @@ func (c *BuildContext) NewPackage(files []string, overlay map[string][]byte) (r 
 			go func(i int, fn string) {
 				defer wg.Done()
 
-				r.Files[i], _ = newFile(fn, overlay)
+				r.Files[i], _ = newFile(fn, fsys)
 			}(i, v)
 		}()
 	}
@@ -209,18 +208,16 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 	f.parser.sc.AddErr(pos, s, args...)
 }
 
-func newFile(fn string, overlay map[string][]byte) (r *File, err error) {
+func newFile(fn string, fsys fs.FS) (r *File, err error) {
 	r = &File{
 		Filename:  fn,
 		FileScope: newScope(nil, FileScope),
 		tld:       newScope(Universe, PackageScope),
 	}
-	b, ok := overlay[fn]
-	if !ok {
-		if b, err = os.ReadFile(fn); err != nil {
-			r.Err = err
-			return r, err
-		}
+	b, err := fs.ReadFile(fsys, fn)
+	if err != nil {
+		r.Err = err
+		return r, err
 	}
 
 	r.AST, r.Err = r.parser.Parse(fn, b)

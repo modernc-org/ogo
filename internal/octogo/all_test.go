@@ -8,9 +8,11 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"regexp"
 	"testing"
+	"testing/fstest"
 
 	_ "modernc.org/ccgo/v4/lib" // generator.go
 	_ "modernc.org/gc/v3"       // generator.go
@@ -179,8 +181,16 @@ func TestSemicolonInjection(t *testing.T) {
 	}
 }
 
+func mapFS(files map[string][]byte) fs.FS {
+	mfs := make(fstest.MapFS)
+	for name, data := range files {
+		mfs[name] = &fstest.MapFile{Data: data}
+	}
+	return mfs
+}
+
 func TestNewPackage(t *testing.T) {
-	pkg := NewBuildContext(-1).NewPackage([]string{"src0"}, map[string][]byte{"src0": []byte(src0)})
+	pkg := NewBuildContext(-1).NewPackage([]string{"src0"}, mapFS(map[string][]byte{"src0": []byte(src0)}))
 	for _, v := range pkg.Files {
 		if err := v.Err; err != nil {
 			t.Error(err)
