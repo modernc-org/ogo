@@ -131,14 +131,14 @@ func (p *Package) importPkg(importPath string) (r *Package) {
 //
 // 'files' must be base names within fsys. Build resolves and import paths
 // a/b/c as paths a/b/c within fsys.
-func Build(limit int, files []string, fsys fs.FS) (err error) {
+func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 	for _, v := range files {
 		if path.Base(v) != v {
-			return fmt.Errorf("not a base name: %s", v)
+			return noPkg, fmt.Errorf("not a base name: %s", v)
 		}
 	}
 
 	bc := NewBuildContext(fsys, limit)
-	main := bc.NewPackage(files, fsys)
-	panic(todo("", main != nil))
+	main = bc.NewPackage(files, fsys)
+	return main, nil
 }

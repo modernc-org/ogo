@@ -165,7 +165,12 @@ func checkErrors(t *testing.T, expected []expectedError, actual []compilerError,
 }
 
 func runCompiler(t *testing.T, path string, fsys fs.FS) (r []compilerError) {
-	pkg := NewBuildContext(fsys, -1).NewPackage([]string{path}, fsys)
+	pkg, err := Build(-1, []string{path}, fsys)
+	if err != nil {
+		t.Errorf("%s: %v", path, err)
+		return
+	}
+
 	for _, v := range pkg.Files {
 		switch x := v.Err.(type) {
 		case nil:
