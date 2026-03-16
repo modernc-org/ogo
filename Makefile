@@ -30,4 +30,5 @@ parser: internal/octogo/parser.go
 test:
 	gofmt -l -s -w .
 	go test -timeout 24h -count=1 -failfast ./...
-	go build -v -o /dev/null
+	go install
+	ogo fmt -l -w --exclude='\/testdata\/' .
