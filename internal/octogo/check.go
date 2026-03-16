@@ -199,7 +199,6 @@ func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
 			panic(todo("", n.sym, n.tok))
 		}
 	}
-
 	return r
 }
 
@@ -226,7 +225,7 @@ func (f *File) declareSourceFile(n Node) {
 		case ImportDecl:
 			f.ImportSpecs = append(f.ImportSpecs, f.declareImportDecl(n)...)
 		case TopLevelDecl:
-			if f.hasInvalidImports {
+			if f.hasInvalidImports { //TODO-?
 				return
 			}
 
@@ -240,6 +239,15 @@ func (f *File) declareSourceFile(n Node) {
 			}
 		default:
 			panic(todo("", n.sym))
+		}
+	}
+}
+
+func (f *File) sourceFile(n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case TopLevelDecl:
+			//TODO f.topLevel(n)
 		}
 	}
 }
@@ -260,6 +268,23 @@ func (f *File) declareTopLevel(n Node) {
 			default:
 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
 			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
+
+func (f *File) topLevel(n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		// case ConstDecl:
+		// 	f.constDecl(f.tld, n)
+		// case VarDecl:
+		// 	f.varDecl(f.tld, n)
+		// case FuncDecl:
+		// 	f.funcDecl(f.tld, n)
+		// case TypeDecl:
+		// 	f.typeDecl(f.tld, n)
 		default:
 			panic(todo("", n.sym))
 		}

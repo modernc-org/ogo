@@ -153,7 +153,14 @@ func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 			}
 		}
 	}
-	//TODO type check pkg scope
+	for _, v := range r.Files {
+		for n := range it(v.AST) {
+			switch n.sym {
+			case SourceFile:
+				v.sourceFile(n)
+			}
+		}
+	}
 	//TODO type check functions and methods
 	return r
 }
