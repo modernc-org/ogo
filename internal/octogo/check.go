@@ -13,6 +13,10 @@ import (
 	"strings"
 )
 
+var (
+	noPos token.Position
+)
+
 // type gate byte
 //
 // const (
@@ -134,11 +138,11 @@ func (n limiter) limit() func() {
 // File represents a single OctoGo source file.
 type File struct {
 	AST         []int32
-	Err         error
-	FileScope   *Scope
 	Filename    string
 	ImportSpecs []*ImportSpecNode
 	Package     *Package
+	Scope       *Scope
+	errList     ErrList
 	parser      Parser
 	tld         *Scope // Later merged into package scope
 
@@ -161,30 +165,29 @@ func (f *File) ch(x int32) (r Symbol) {
 }
 
 func (f *File) err(pos token.Position, s string, args ...any) {
-	f.parser.sc.AddErr(pos, s, args...)
+	f.errList.AddErr(pos, s, args...)
 }
 
 func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
 	r = &File{
-		Filename:  fn,
-		FileScope: newScope(nil, FileScope),
-		Package:   p,
-		tld:       newScope(Universe, PackageScope),
+		Filename: fn,
+		Scope:    newScope(nil, FileScope),
+		Package:  p,
+		tld:      newScope(Universe, PackageScope),
 	}
 	b, err := fs.ReadFile(fsys, fn)
 	if err != nil {
-		r.Err = err
+		r.errList.AddErr(noPos, "%v", err)
 		return r
 	}
 
-	r.AST, r.Err = r.parser.Parse(fn, b)
-	if r.Err = r.parser.sc.Err(); r.Err != nil {
+	r.AST, _ = r.parser.Parse(fn, b)
+	if r.errList = r.parser.sc.errList; r.errList.Err() != nil {
 		return r
 	}
 
 	if tok := r.parser.tok; tok.Ch != rune(EOF) {
-		r.parser.sc.AddErr(tok.Position(), "%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
-		r.Err = r.parser.sc.Err()
+		r.errList.AddErr(tok.Position(), "%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
 		return r
 	}
 
@@ -197,7 +200,6 @@ func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
 		}
 	}
 
-	r.Err = r.parser.sc.Err()
 	return r
 }
 
@@ -1849,7 +1851,7 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 		}
 	}
 	if r.ImportQualifier != "" {
-		if err := f.FileScope.add(&ImportDeclaration{declaration: declaration{name: nm}, Import: r}); err != nil {
+		if err := f.Scope.add(&ImportDeclaration{declaration: declaration{name: nm}, Import: r}); err != nil {
 			f.err(nm.Position(), "%v", err)
 		}
 	}

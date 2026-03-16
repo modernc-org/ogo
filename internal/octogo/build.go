@@ -7,7 +7,9 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
+	"slices"
 	"sync"
 )
 
@@ -19,6 +21,7 @@ var (
 type BuildContext struct {
 	importsMu sync.Mutex
 
+	errList ErrList
 	fsys    fs.FS
 	imports map[string]*Package // import path: package
 	limit   int
@@ -94,7 +97,6 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 
 // Package represents a single OctoGo package.
 type Package struct {
-	Err        error
 	Files      []*File
 	ImportPath string
 	Scope      *Scope
@@ -106,8 +108,13 @@ type Package struct {
 func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 	r = &Package{
 		Files: make([]*File, len(files)),
+		Scope: newScope(Universe, PackageScope),
 		ctx:   bc,
 	}
+
+	defer func() {
+	}()
+
 	limiter := newLimiter(bc.limit)
 	var wg sync.WaitGroup
 	for i, v := range files {
@@ -124,20 +131,30 @@ func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 		}()
 	}
 	wg.Wait()
-	var errList ErrList
 	for _, v := range r.Files {
-		consolidateErrors(errList, v.Err)
+		consolidateErrors(bc.errList, v.errList)
 	}
-	if r.Err = errList.Err(); r.Err != nil {
-		return r
-	}
-
 	if bc.noDeclarationChecks { // Testing support
 		return r
 	}
 
-	//TODO check file scope collisions now.
-	//TODO merge files .tld into package scope.
+	for _, v := range r.Files {
+		for _, v := range v.ImportSpecs {
+			bc.importPkg(v.ImportPath)
+		}
+		for _, nm := range slices.Sorted(maps.Keys(v.tld.Nodes)) {
+			r.Scope.add(v.tld.Nodes[nm])
+		}
+	}
+	for _, v := range r.Files {
+		for _, nm := range slices.Sorted(maps.Keys(v.Scope.Nodes)) {
+			if ex := r.Scope.Nodes[nm]; ex != nil {
+				panic(todo(""))
+			}
+		}
+	}
+	//TODO type check pkg scope
+	//TODO type check functions and methods
 	return r
 }
 

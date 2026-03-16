@@ -172,7 +172,7 @@ func runCompiler(t *testing.T, path string, fsys fs.FS) (r []compilerError) {
 	}
 
 	for _, v := range pkg.Files {
-		switch x := v.Err.(type) {
+		switch x := v.errList.Err().(type) {
 		case nil:
 			// ok
 		case ErrList:

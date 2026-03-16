@@ -325,8 +325,8 @@ func (t Token) String() string {
 // [modernc.org/rec compiler]: https://pkg.go.dev/modernc.org/rec
 type RecScanner struct {
 	*source
-	errs ErrList
-	scan func([]byte) (id, length int)
+	errList ErrList
+	scan    func([]byte) (id, length int)
 
 	errBudget  int
 	whiteSpace int
@@ -375,9 +375,9 @@ func NewRecScanner(name string, buf []byte, scan func(s []byte) (id, length int)
 func (s *RecScanner) AddErr(pos token.Position, msg string, args ...interface{}) {
 	switch {
 	case s.errBudget > 0:
-		s.errs.AddErr(pos, msg, args...)
+		s.errList.AddErr(pos, msg, args...)
 	case s.errBudget == 0:
-		s.errs.AddErr(token.Position{}, "too many errors")
+		s.errList.AddErr(token.Position{}, "too many errors")
 	}
 	s.errBudget--
 }
@@ -388,7 +388,7 @@ func (s *RecScanner) Position(offset int) (r token.Position) {
 }
 
 // Err reports any errors from reported by AddErr()
-func (s *RecScanner) Err() error { return s.errs.Err() }
+func (s *RecScanner) Err() error { return s.errList.Err() }
 
 // AddLine adds the line offset for a new line.  The line offset must be larger
 // than the offset for the previous line and smaller than the scanner buffer

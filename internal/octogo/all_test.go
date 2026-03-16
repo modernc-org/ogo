@@ -199,7 +199,7 @@ func TestNewPackage(t *testing.T) {
 	bc.noDeclarationChecks = true
 	pkg := bc.NewPackage([]string{"src0"}, fsys)
 	for _, v := range pkg.Files {
-		if err := v.Err; err != nil {
+		if err := v.errList.Err(); err != nil {
 			t.Error(err)
 		}
 	}
