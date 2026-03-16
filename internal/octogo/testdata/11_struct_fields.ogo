@@ -14,11 +14,18 @@ type InvalidStruct struct {
 	a bool
 }
 
+type InvalidInterface interface {
+	a(i int, b int) int
+	b() string
+	// ERROR "duplicate field a|a redeclared"
+	a() bool
+}
+
 func testStructs() {
 	// ERROR "duplicate field id|id redeclared"
 	var inlineStruct struct {
-		id int
+		id   int
 		name string
-		id int
+		id   int
 	}
 }

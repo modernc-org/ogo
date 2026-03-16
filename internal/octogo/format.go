@@ -23,17 +23,26 @@ type formatter struct {
 	ast         []int32
 	err         error
 	nl          bool // Last byte written to out was a '\n'.
+	col         int  // Current absolute column
 	out         io.Writer
 	p           *Parser
 	prevTok     Symbol // Last emitted token.
 	prevPrevTok Symbol // The token before the last emitted token.
+
+	// Elastic Tabstops maps
+	targetCol2          map[int32]int // token index -> absolute target column for Col2 (Types)
+	targetComment       map[int32]int // token index -> absolute target column for inline comments
+	activeCommentTarget int           // Handed down to formatSep to align lineComment
 }
 
 func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) {
 	var p Parser
 	r = &formatter{
-		p:   &p,
-		out: out,
+		p:             &p,
+		out:           out,
+		targetCol2:    make(map[int32]int),
+		targetComment: make(map[int32]int),
+		nl:            true,
 	}
 	if r.ast, err = p.Parse(fn, b); err != nil {
 		return nil, err
@@ -117,7 +126,19 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				f.b(nl2)
 			}
 		case lineComment:
-			f.tabs(f.nl, indentLevel)
+			if !f.nl {
+				// Inline comment padding
+				if f.activeCommentTarget > 0 {
+					for f.col < f.activeCommentTarget {
+						f.b(sp)
+					}
+					f.activeCommentTarget = 0
+				} else {
+					f.b(sp) // Ensure at least one space before unaligned inline comments
+				}
+			} else {
+				f.tabs(true, indentLevel)
+			}
 			b := []byte(x)
 			switch {
 			case bytes.HasSuffix(b, nl):
@@ -127,7 +148,18 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				f.b(bytes.TrimRight(b, " \t\r"))
 			}
 		case generalComment:
-			f.tabs(f.nl, indentLevel)
+			if !f.nl {
+				if f.activeCommentTarget > 0 {
+					for f.col < f.activeCommentTarget {
+						f.b(sp)
+					}
+					f.activeCommentTarget = 0
+				} else {
+					f.b(sp)
+				}
+			} else {
+				f.tabs(true, indentLevel)
+			}
 			b := []byte(x)
 			a := bytes.Split(b, nl)
 			for i, v := range a {
@@ -142,45 +174,33 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 	}
 }
 
-func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
+func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	switch {
-
-	// 1. Punctuation stripping
 	case prev == ARROW:
-		// Distinguish between send (`rateChan <- 100`) and receive (`= <-rateChan`)
-		// If the token before the arrow was an identifier or a closing bracket, it's a send operation.
-		if f.prevPrevTok == IDENT || f.prevPrevTok == RBRACK || f.prevPrevTok == RPAREN {
-			return true // Send needs space after
+		if prevPrev == IDENT || prevPrev == RBRACK || prevPrev == RPAREN {
+			return true
 		}
-
-		return false // Receive does not need space after
-	// No space before opening parenthesis if it follows an identifier (function calls/decls)
+		return false
 	case curr == LPAREN && prev == IDENT:
 		return false
-	// No space after opening brackets, no space before closing brackets
 	case prev == LPAREN || prev == LBRACK || curr == RPAREN || curr == RBRACK:
 		return false
-	// No space before comma or semicolon, but space after
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false
-	// Selectors: no space around dot (e.g., p2.PinHigh)
 	case prev == PERIOD || curr == PERIOD:
 		return false
-
-	// 2. Operator Spacing
-	// Assigns and RelOps always get spaces
 	case isAssignOp(curr) || isRelOp(curr):
 		return true
-	// AddOp always gets a space
 	case isAddOp(curr) || isAddOp(prev):
 		return true
-	// MulOp ONLY gets a space if it's NOT sharing an expression with an AddOp
 	case isMulOp(curr) || isMulOp(prev):
 		return !c.hasAddOp
 	}
-
-	// 3. Fallback: Default to true for separating keywords and identifiers
 	return true
+}
+
+func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
+	return needsSpace(f.prevPrevTok, prev, curr, c)
 }
 
 func isAssignOp(s Symbol) bool {
@@ -188,7 +208,6 @@ func isAssignOp(s Symbol) bool {
 	case ASSIGN, DEFINE:
 		return true
 	}
-
 	return false
 }
 
@@ -197,7 +216,6 @@ func isRelOp(s Symbol) bool {
 	case EQL, NEQ, LSS, LEQ, GTR, GEQ:
 		return true
 	}
-
 	return false
 }
 
@@ -206,7 +224,6 @@ func isAddOp(s Symbol) bool {
 	case ADD, SUB, OR, XOR:
 		return true
 	}
-
 	return false
 }
 
@@ -215,7 +232,6 @@ func isMulOp(s Symbol) bool {
 	case MUL, QUO, SHL, SHR, AND:
 		return true
 	}
-
 	return false
 }
 
@@ -225,35 +241,77 @@ func (f *formatter) tabs(enable bool, n int32) {
 	}
 }
 
+// b emits bytes and tightly tracks the absolute column for Elastic Tabstops
 func (f *formatter) b(b []byte) {
-	f.nl = bytes.HasSuffix(b, nl)
 	if f.err != nil {
 		return
 	}
-
+	for _, c := range b {
+		if c == '\n' {
+			f.col = 0
+			f.nl = true
+		} else if c == '\t' {
+			// standard 8-space tab expansion mapping
+			f.col += 8 - (f.col % 8)
+			f.nl = false
+		} else {
+			f.col++
+			f.nl = false
+		}
+	}
 	_, f.err = f.out.Write(b)
 }
 
 // containsNode does a shallow search of the immediate child nodes
-// to see if they match the target symbol.
 func containsNode(ast []int32, target Symbol) bool {
 	for len(ast) > 0 {
 		n := ast[0]
 		if n < 0 {
-			// It's a Non-Terminal
 			if Symbol(-n) == target {
 				return true
 			}
-
-			// Skip over this node's children to get to the next sibling
 			ast = ast[2+ast[1]:]
 		} else {
-			// It's a Terminal (Token Index)
 			ast = ast[1:]
 		}
 	}
 	return false
 }
+
+// func firstIndex(ast []int32) int32 {
+// 	var walk func([]int32) int32
+// 	walk = func(a []int32) int32 {
+// 		for len(a) > 0 {
+// 			if a[0] >= 0 {
+// 				return a[0]
+// 			}
+// 			if res := walk(a[2 : 2+a[1]]); res != -1 {
+// 				return res
+// 			}
+// 			a = a[2+a[1]:]
+// 		}
+// 		return -1
+// 	}
+// 	return walk(ast)
+// }
+//
+// func lastIndex(ast []int32) int32 {
+// 	var last int32 = -1
+// 	var walk func([]int32)
+// 	walk = func(a []int32) {
+// 		for len(a) > 0 {
+// 			if a[0] >= 0 {
+// 				last = a[0]
+// 				a = a[1:]
+// 			} else {
+// 				walk(a[2 : 2+a[1]])
+// 				a = a[2+a[1]:]
+// 			}
+// 		}
+// 	}
+// 	walk(ast)
+// 	return last
+// }
 
 type formatterCtx struct {
 	indentLevel       int32
@@ -261,6 +319,87 @@ type formatterCtx struct {
 	undentRBraceIndex int32
 	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
+}
+
+// fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
+type fieldMeasurement struct {
+	startTokIdx  int32
+	col2StartIdx int32 // The token index where Col2 (Type) starts
+	col1Width    int
+	col2Width    int
+	lastTokIdx   int32 // Used to attach inline comment alignment
+}
+
+// alignmentBlock represents a contiguous block of fields without blank lines
+type alignmentBlock struct {
+	fields  []fieldMeasurement
+	maxCol1 int
+	maxCol2 int
+}
+
+func (f *formatter) measureField(ast []int32, sym Symbol, c formatterCtx) fieldMeasurement {
+	m := fieldMeasurement{startTokIdx: -1, col2StartIdx: -1, lastTokIdx: -1}
+	inCol2 := false
+	first := true
+
+	var prevPrev Symbol
+	var prev Symbol
+
+	var walk func([]int32)
+	walk = func(a []int32) {
+		for len(a) > 0 {
+			n := a[0]
+			if n < 0 {
+				s := Symbol(-n)
+				if sym == FieldDecl && s == Type {
+					inCol2 = true
+				}
+				walk(a[2 : 2+a[1]])
+				a = a[2+a[1]:]
+			} else {
+				tokIdx := n
+				tok := f.p.Token(tokIdx)
+				curr := Symbol(tok.Ch)
+
+				if inCol2 && m.col2StartIdx == -1 {
+					m.col2StartIdx = tokIdx
+				}
+				if m.startTokIdx == -1 {
+					m.startTokIdx = tokIdx
+				}
+				m.lastTokIdx = tokIdx
+
+				src := tok.SrcBytes()
+				if len(src) > 0 {
+					w := len(src)
+					space := 0
+					if !first {
+						if needsSpace(prevPrev, prev, curr, c) {
+							space = 1
+						}
+					}
+					first = false
+
+					if inCol2 {
+						// The space before the FIRST token of Col2 belongs to the
+						// structural gap, NOT the token's width.
+						if m.col2StartIdx == tokIdx {
+							m.col2Width += w
+						} else {
+							m.col2Width += w + space
+						}
+					} else {
+						m.col1Width += w + space
+					}
+				}
+				prevPrev = prev
+				prev = curr
+				a = a[1:]
+			}
+		}
+	}
+	walk(ast)
+	return m
 }
 
 // FormatFile writes the formatted version of 'b' to 'w', assuming it comes
@@ -299,26 +438,102 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				case ParameterList, CallSuffix:
 					c.inParams = true
 				case SimpleExpr:
-					// Lookahead: If the child nodes contain an AddOp, set the flag.
 					if containsNode(ast[2:next], AddOp) {
 						c.hasAddOp = true
 					}
-				case StructType:
+				case StructType, InterfaceType:
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])
 					c.undentRBraceIndex = lastIndex(ast[:next])
+
+					childSym := FieldDecl
+					if Symbol(-n) == InterfaceType {
+						childSym = MethodSpec
+					}
+
+					var blocks []alignmentBlock
+					var current alignmentBlock
+					isFirst := true
+
+					childAst := ast[2:next]
+					for len(childAst) > 0 {
+						cn := childAst[0]
+						if cn < 0 {
+							csym := Symbol(-cn)
+							csize := childAst[1]
+							cnext := 2 + csize
+
+							if csym == childSym {
+								m := f.measureField(childAst[2:cnext], csym, c)
+								if m.startTokIdx != -1 {
+									startTok := f.p.Token(m.startTokIdx)
+
+									// Safely detect true blank lines to break the block
+									hasBlankLine := false
+									if !isFirst {
+										seps := f.parseSep(startTok.SepBytes(), nil)
+										for _, sep := range seps {
+											if ws, ok := sep.(whiteSpace); ok && ws >= 2 {
+												hasBlankLine = true
+												break
+											}
+										}
+									}
+									isFirst = false
+
+									if hasBlankLine {
+										if len(current.fields) > 0 {
+											blocks = append(blocks, current)
+										}
+										current = alignmentBlock{}
+									}
+
+									if m.col1Width > current.maxCol1 {
+										current.maxCol1 = m.col1Width
+									}
+									if m.col2Width > current.maxCol2 {
+										current.maxCol2 = m.col2Width
+									}
+
+									current.fields = append(current.fields, m)
+								}
+							}
+							childAst = childAst[cnext:]
+						} else {
+							childAst = childAst[1:]
+						}
+					}
+					if len(current.fields) > 0 {
+						blocks = append(blocks, current)
+					}
+
+					// Map the measured blocks to Absolute Column Targets
+					baseCol := int(c.indentLevel) * 8
+					for _, b := range blocks {
+						for _, m := range b.fields {
+							if m.col2StartIdx != -1 {
+								f.targetCol2[m.col2StartIdx] = baseCol + b.maxCol1 + 1
+							}
+
+							commentTarget := baseCol + b.maxCol1 + 1
+							if b.maxCol2 > 0 {
+								commentTarget += b.maxCol2 + 1
+							}
+							f.targetComment[m.lastTokIdx] = commentTarget
+						}
+					}
 				}
 				walk(ast[2:next], c)
 			default:
-				tok := f.p.Token(n)
+				tokIdx := n
+				tok := f.p.Token(tokIdx)
 				sep := tok.SepBytes()
 				src := tok.SrcBytes()
 				var indentDelta int32
+
 				switch Symbol(tok.Ch) {
 				case SEMICOLON:
-					// Synthetic tokens from semicolon injection have empty src.
 					if len(src) == 0 {
-						// Keep the sep for later prepending it to the sep of the next token.
 						syntheticSep = append(syntheticSep[:0], sep...)
 						break outer
 					}
@@ -334,24 +549,37 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					indentDelta = -1
 				}
 
-				// Prepend the previous synthetic token sep, if any.
 				if len(syntheticSep) != 0 {
 					sep = append(syntheticSep, sep...)
 					syntheticSep = syntheticSep[:0]
 				}
 
 				seps = f.parseSep(sep, seps)
-				// Ensure we always evaluate spacing if there's no explicit white space token
 				if len(seps) == 0 {
 					seps = append(seps, whiteSpace(0))
 				} else if _, isWS := seps[len(seps)-1].(whiteSpace); !isWS {
 					seps = append(seps, whiteSpace(0))
 				}
+
 				f.formatSep(seps, c.indentLevel, Symbol(tok.Ch), c)
 				f.tabs(f.nl, c.indentLevel+indentDelta)
 
-				// Finally emit the token text.
+				// Inject Elastic Col2 Padding
+				if target, ok := f.targetCol2[tokIdx]; ok {
+					for f.col < target {
+						f.b(sp)
+					}
+				}
+
 				f.b(src)
+
+				// Save inline comment targets for the formatSep run of the next token
+				if target, ok := f.targetComment[tokIdx]; ok {
+					f.activeCommentTarget = target
+				} else if Symbol(tok.Ch) != SEMICOLON {
+					f.activeCommentTarget = 0
+				}
+
 				f.prevPrevTok = f.prevTok
 				f.prevTok = Symbol(tok.Ch)
 			}
