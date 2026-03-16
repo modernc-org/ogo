@@ -9,9 +9,6 @@ import (
 	"io"
 )
 
-//TODO emit final nl
-//TODO testdata/15_if_statements.ogo: else block misaligned closing lbrace
-
 var (
 	generalCommentPrefix = []byte("/*")
 	generalCommentSuffix = []byte("*/")
@@ -274,6 +271,12 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		return err
 	}
 
+	defer func() {
+		if err == nil && !f.nl {
+			_, err = w.Write(nl)
+		}
+	}()
+
 	var seps []any
 	var syntheticSep []byte
 
@@ -284,13 +287,14 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		outer:
 			switch n := ast[0]; {
 			case n < 0:
+				c := c
 				next = 2 + ast[1]
 				switch Symbol(-n) {
 				case Block:
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])
 					c.undentRBraceIndex = lastIndex(ast[:next])
-				case CaseHead, CommHead:
+				case CaseClause, CommClause:
 					c.indentLevel++
 				case ParameterList, CallSuffix:
 					c.inParams = true

@@ -288,7 +288,8 @@ func main() {
 	var rateChan chan int
 	go blinkWorker(rateChan)
 	rateChan <- 100
-}`
+}
+`
 
 func TestFormat(t *testing.T) {
 	var out bytes.Buffer
