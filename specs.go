@@ -9,6 +9,7 @@
 // TODO 20260307 For statements: extend
 // TODO 20260307 Return statements: ? disable naked returns
 // TODO 20260307 Return statements: Expression -> ExpressionList
+// TODO 20260317 labels and gotos
 
 // # OctoGo Language Specification (Draft Mar 15, 2026)
 //
@@ -372,10 +373,11 @@
 //
 // # Declarations and Scope
 //
-//   - A declaration binds a non-blank identifier to a constant, type, variable,
-//     or function.
+//   - A declaration binds a non-blank identifier to a constant, type,
+//     variable, function or package.
 //   - Every identifier in a program must be declared.
-//   - No identifier may be declared twice in the same block.
+//   - No identifier may be declared twice in the same block and and no
+//     identifier may be declared in both the file and package block.
 //
 // The grammar:
 //

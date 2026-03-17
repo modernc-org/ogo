@@ -4,14 +4,14 @@ func testPointers() {
 	var val int = 42
 
 	// Valid: taking the address
-	var ptr * int = & val
+	var ptr *int = &val
 
 	// Valid: dereferencing
-	var deref int = * ptr
+	var deref int = *ptr
 
 	// ERROR "invalid operation|cannot indirect|invalid indirect"
-	var invalidDeref int = * val
+	var invalidDeref int = *val
 
 	// ERROR "invalid operation|operator \+ not defined for pointer"
-	var badMath * int = ptr + 1
+	var badMath *int = ptr + 1
 }

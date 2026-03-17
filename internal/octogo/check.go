@@ -1166,7 +1166,7 @@ func (f *File) declareVar(s *Scope, n Node) {
 			}
 			for _, nm := range names {
 				if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
-					f.err(vs.Name.Position(), "%v", err)
+					f.err(nm.Position(), "%v", err)
 				}
 			}
 		case 0:

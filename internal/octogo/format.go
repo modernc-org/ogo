@@ -185,10 +185,43 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		return false
 	case prev == LPAREN || prev == LBRACK || curr == RPAREN || curr == RBRACK:
 		return false
+		// No space after ']' in array/slice type signatures
+		// Handles []int, [-1]int, and multi-dimensional [][5]int
+	case prev == RBRACK && c.inType:
+		return false
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false
 	case prev == PERIOD || curr == PERIOD:
 		return false
+	// Unambiguous unary operators never need a space after them
+	case prev == NOT || prev == TILDE:
+		return false
+	case prev == ADD || prev == SUB || prev == MUL || prev == AND || prev == XOR:
+		// Check the token BEFORE the operator to determine its context
+		switch prevPrev {
+
+		// If preceded by a literal, closing punctuation, or an identifier:
+		case INT, STRING, CHAR, RPAREN, RBRACK, IDENT:
+			// The IDENT Ambiguity: If we are inside a parameter list or type declaration,
+			// and preceded by an identifier, '*' is a pointer! (e.g., var a *int)
+			if prev == MUL && prevPrev == IDENT && (c.inParams || c.inType) {
+				return false
+			}
+
+			// Otherwise, it's a binary operator!
+			// Respect the hasAddOp precedence for MulOps to group multiplication:
+			if isMulOp(prev) {
+				return !c.hasAddOp
+			}
+			return true
+
+		// For all other preceding tokens (keywords, operators, opening punctuation),
+		// this must be a unary operator.
+		// Examples: a = *b, return &x, ch <- -y
+		default:
+			return false
+		}
+
 	case isAssignOp(curr) || isRelOp(curr):
 		return true
 	case isAddOp(curr) || isAddOp(prev):
@@ -319,6 +352,7 @@ type formatterCtx struct {
 	undentRBraceIndex int32
 	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
+	inType            bool
 }
 
 // fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
@@ -438,9 +472,16 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				case ParameterList, CallSuffix:
 					c.inParams = true
 				case SimpleExpr:
+					c.inType = false
+					c.inParams = false
 					if containsNode(ast[2:next], AddOp) {
 						c.hasAddOp = true
 					}
+				case Expression:
+					c.inType = false
+					c.inParams = false
+				case Type, FieldDecl:
+					c.inType = true
 				case StructType, InterfaceType:
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])
@@ -588,5 +629,21 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	}
 
 	walk(f.ast, formatterCtx{undentRBraceIndex: -1})
+	// Flush leftover synthetic separators AND the EOF separator ---
+	if f.err == nil {
+		var finalSep []byte
+		if len(syntheticSep) != 0 {
+			finalSep = append(finalSep, syntheticSep...)
+		}
+		if eofSep := f.p.tok.SepBytes(); len(eofSep) > 0 {
+			finalSep = append(finalSep, eofSep...)
+		}
+
+		if len(finalSep) > 0 {
+			seps = f.parseSep(finalSep, seps[:0])
+			// Flush using a 0 indent and a dummy current token (0) since we are at EOF
+			f.formatSep(seps, 0, 0, formatterCtx{})
+		}
+	}
 	return err
 }

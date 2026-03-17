@@ -143,7 +143,10 @@ func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 			bc.importPkg(v.ImportPath)
 		}
 		for _, nm := range slices.Sorted(maps.Keys(v.tld.Nodes)) {
-			r.Scope.add(v.tld.Nodes[nm])
+			d := v.tld.Nodes[nm]
+			if err := r.Scope.add(d); err != nil {
+				bc.errList.AddErr(d.Name().Position(), "%v", err)
+			}
 		}
 	}
 	for _, v := range r.Files {

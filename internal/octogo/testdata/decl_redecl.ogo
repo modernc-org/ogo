@@ -1,0 +1,2 @@
+// ERROR "a declared.*before"
+var a, a int  // Non blank ('_') identifiers can appear only once in a scope, `init()` functions aside.

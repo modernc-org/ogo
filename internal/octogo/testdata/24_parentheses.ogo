@@ -13,7 +13,7 @@ func testParens() {
 	var flag2 bool = false
 
 	// Valid nested boolean comparison
-	var resBool bool = ! ((flag1 != flag2) == (a < b))
+	var resBool bool = !((flag1 != flag2) == (a < b))
 
 	// ERROR "mismatched types int and bool|invalid operation"
 	var inv1 int = (a + b) * (flag1 == flag2)

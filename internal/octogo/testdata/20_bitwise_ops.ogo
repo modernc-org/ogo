@@ -10,7 +10,7 @@ func testBitwise() {
 	var e int = a ^ b
 	var f int = a << 2
 	var g int = b >> 1
-	var h int = ~ a
+	var h int = ~a
 
 	var flag bool = true
 	var text string = "hello"

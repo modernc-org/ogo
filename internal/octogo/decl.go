@@ -153,8 +153,13 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 func (s *Scope) add(d Declaration) (err error) {
 	new := d.Name()
 	nm := new.Src()
+	// non-blank identifiers do not bind
+	if nm == "_" {
+		return nil
+	}
+
 	if ex := s.Nodes[nm]; ex != nil {
-		return fmt.Errorf("%v: %s declared in the same scope before at %v", new.Position(), nm, ex.Name().Position())
+		return fmt.Errorf("%s declared in the same scope before at %v", nm, ex.Name().Position())
 	}
 
 	if s.Nodes == nil {
