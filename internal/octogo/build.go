@@ -10,6 +10,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -17,14 +18,22 @@ var (
 	noPkg = &Package{Scope: newScope(Universe, PackageScope)}
 )
 
+type importTask struct {
+	sync.Mutex
+	p     *Package
+	ready chan struct{}
+}
+
 // BuildContext coordinates creating a package tree.
 type BuildContext struct {
+	errMu     sync.Mutex
 	importsMu sync.Mutex
 
-	errList ErrList
-	fsys    fs.FS
-	imports map[string]*Package // import path: package
-	limit   int
+	errList     ErrList
+	fsys        fs.FS
+	importTasks map[string]*importTask // import path: importTask
+	importGraph map[string]map[string]bool
+	limit       int
 
 	noDeclarationChecks bool
 }
@@ -33,33 +42,100 @@ type BuildContext struct {
 // desired concurrency for individual package building when > 0.
 func NewBuildContext(fsys fs.FS, limit int) (r *BuildContext) {
 	return &BuildContext{
-		fsys:    fsys,
-		imports: map[string]*Package{},
-		limit:   limit,
+		fsys:        fsys,
+		importTasks: map[string]*importTask{},
+		importGraph: map[string]map[string]bool{},
+		limit:       limit,
 	}
 }
 
-func (bc *BuildContext) importPkg(importPath string) (r *Package) {
+// findCycle performs a DFS to see if 'target' is reachable from 'current'.
+// It returns the path of the cycle if one exists.
+func (bc *BuildContext) findCycle(current, target string, visited map[string]bool) []string {
+	if current == target {
+		return []string{current}
+	}
+	visited[current] = true
+
+	for next := range bc.importGraph[current] {
+		if !visited[next] {
+			if cycle := bc.findCycle(next, target, visited); cycle != nil {
+				return append([]string{current}, cycle...)
+			}
+		}
+	}
+	return nil
+}
+
+func (bc *BuildContext) importPkg(fromPath, importPath string) (r *Package) {
+	//TODO cycle detect
 	if bc == nil {
 		return noPkg
 	}
 
 	bc.importsMu.Lock()
 
-	defer bc.importsMu.Unlock()
+	if bc.importGraph[fromPath] == nil {
+		bc.importGraph[fromPath] = make(map[string]bool)
+	}
+	bc.importGraph[fromPath][importPath] = true
 
-	if r, ok := bc.imports[importPath]; ok {
-		return r
+	if cycle := bc.findCycle(importPath, fromPath, make(map[string]bool)); cycle != nil {
+		bc.importsMu.Unlock()
+
+		// To complete the visual circle for the error message, put 'fromPath' at the front.
+		fullCycle := append([]string{fromPath}, cycle...)
+
+		bc.errMu.Lock()
+		panic(todo("", fullCycle))
+		//TODO bc.errList = append(bc.errList, fmt.Errorf("import cycle not allowed: %s", strings.Join(fullCycle, " -> ")))
+		bc.errMu.Unlock()
+
+		return noPkg
 	}
 
-	des, err := fs.ReadDir(bc.fsys, importPath)
-	if err != nil {
-		r = noPkg
-		bc.imports[importPath] = r
-		return
+	task := bc.importTasks[importPath]
+	if task == nil {
+		task = &importTask{}
+		bc.importTasks[importPath] = task
 	}
 
-	panic(todo("", importPath, des))
+	bc.importsMu.Unlock()
+
+	task.Lock()
+
+	if task.ready == nil {
+		task.ready = make(chan struct{})
+		go func() {
+			defer close(task.ready)
+
+			dirEntries, err := fs.ReadDir(bc.fsys, importPath)
+			if err != nil {
+				task.p = noPkg
+				return
+			}
+
+			var files []string
+			for _, v := range dirEntries {
+				if v.IsDir() {
+					continue
+				}
+
+				switch nm := v.Name(); path.Ext(nm) {
+				case ".ogo":
+					if !strings.HasSuffix(nm, "_test.ogo") {
+						files = append(files, path.Join(importPath, nm))
+					}
+				}
+			}
+
+			task.p = bc.NewPackage(importPath, files, bc.fsys)
+		}()
+	}
+
+	task.Unlock()
+	<-task.ready
+	return task.p
 }
 
 func consolidateErrors(use ErrList, errors ...error) (r ErrList) {
@@ -91,8 +167,27 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 	}
 
 	bc := NewBuildContext(fsys, limit)
-	main = bc.NewPackage(files, fsys)
+	main = bc.NewPackage("", files, fsys) // main package has no import path
 	return main, nil
+}
+
+type limiter chan struct{}
+
+func newLimiter(limit int) limiter {
+	if limit > 0 {
+		return make(limiter, limit)
+	}
+
+	return nil
+}
+
+func (n limiter) limit() func() {
+	if n == nil {
+		return func() {}
+	}
+
+	n <- struct{}{}
+	return func() { <-n }
 }
 
 // Package represents a single OctoGo package.
@@ -105,11 +200,12 @@ type Package struct {
 
 // NewPackage returns a newly created Package consisting of files in 'files'
 // within 'fsys'.
-func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
+func (bc *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (r *Package) {
 	r = &Package{
-		Files: make([]*File, len(files)),
-		Scope: newScope(Universe, PackageScope),
-		ctx:   bc,
+		Files:      make([]*File, len(files)),
+		ImportPath: importPath,
+		Scope:      newScope(Universe, PackageScope),
+		ctx:        bc,
 	}
 
 	defer func() {
@@ -118,44 +214,52 @@ func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 	limiter := newLimiter(bc.limit)
 	var wg sync.WaitGroup
 	for i, v := range files {
-		func() {
-			defer limiter.limit()
+		release := limiter.limit()
 
-			wg.Add(1)
+		wg.Add(1)
+		go func(i int, fn string) {
+			defer release()
+			defer wg.Done()
 
-			go func(i int, fn string) {
-				defer wg.Done()
-
-				r.Files[i] = r.newFile(fn, fsys)
-			}(i, v)
-		}()
+			r.Files[i] = r.newFile(fn, fsys)
+		}(i, v)
 	}
 	wg.Wait()
 	for _, v := range r.Files {
-		consolidateErrors(bc.errList, v.errList)
+		bc.errMu.Lock()
+		bc.errList = consolidateErrors(bc.errList, v.errList)
+		bc.errMu.Unlock()
 	}
 	if bc.noDeclarationChecks { // Testing support
 		return r
 	}
 
 	for _, v := range r.Files {
-		for _, v := range v.ImportSpecs {
-			bc.importPkg(v.ImportPath)
+		for _, spec := range v.ImportSpecs {
+			bc.importPkg(r.ImportPath, spec.ImportPath)
 		}
+		// Merge file top level declarations into package scope.
 		for _, nm := range slices.Sorted(maps.Keys(v.tld.Nodes)) {
 			d := v.tld.Nodes[nm]
 			if err := r.Scope.add(d); err != nil {
+				bc.errMu.Lock()
 				bc.errList.AddErr(d.Name().Position(), "%v", err)
+				bc.errMu.Unlock()
 			}
 		}
 	}
+	// Check for ... no identifier may be declared in both the file and package block
 	for _, v := range r.Files {
 		for _, nm := range slices.Sorted(maps.Keys(v.Scope.Nodes)) {
 			if ex := r.Scope.Nodes[nm]; ex != nil {
-				panic(todo(""))
+				bc.errMu.Lock()
+				d := v.Scope.Nodes[nm]
+				bc.errList.AddErr(ex.Name().Position(), "cannot declare %v both in package and file scope (%v:)", nm, d.Name().Position())
+				bc.errMu.Unlock()
 			}
 		}
 	}
+	// Type check top level declarations.
 	for _, v := range r.Files {
 		for n := range it(v.AST) {
 			switch n.sym {
@@ -164,13 +268,13 @@ func (bc *BuildContext) NewPackage(files []string, fsys fs.FS) (r *Package) {
 			}
 		}
 	}
-	//TODO type check functions and methods
+	//TODO Type check function and method bodies
 	return r
 }
 
 func (p *Package) importPkg(importPath string) (r *Package) {
 	if p != nil && p.ctx != nil {
-		return p.ctx.importPkg(importPath)
+		return p.ctx.importPkg(p.ImportPath, importPath)
 	}
 
 	return noPkg

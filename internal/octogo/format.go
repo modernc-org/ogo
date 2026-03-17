@@ -311,41 +311,6 @@ func containsNode(ast []int32, target Symbol) bool {
 	return false
 }
 
-// func firstIndex(ast []int32) int32 {
-// 	var walk func([]int32) int32
-// 	walk = func(a []int32) int32 {
-// 		for len(a) > 0 {
-// 			if a[0] >= 0 {
-// 				return a[0]
-// 			}
-// 			if res := walk(a[2 : 2+a[1]]); res != -1 {
-// 				return res
-// 			}
-// 			a = a[2+a[1]:]
-// 		}
-// 		return -1
-// 	}
-// 	return walk(ast)
-// }
-//
-// func lastIndex(ast []int32) int32 {
-// 	var last int32 = -1
-// 	var walk func([]int32)
-// 	walk = func(a []int32) {
-// 		for len(a) > 0 {
-// 			if a[0] >= 0 {
-// 				last = a[0]
-// 				a = a[1:]
-// 			} else {
-// 				walk(a[2 : 2+a[1]])
-// 				a = a[2+a[1]:]
-// 			}
-// 		}
-// 	}
-// 	walk(ast)
-// 	return last
-// }
-
 type formatterCtx struct {
 	indentLevel       int32
 	undentLBraceIndex int32

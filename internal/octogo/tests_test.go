@@ -6,6 +6,7 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
@@ -31,22 +32,19 @@ type compilerError struct {
 }
 
 func TestOctoGoSpecs(t *testing.T) {
-	// Adjust this path to wherever you store the .ogo test files.
 	testDir := "testdata"
 	fsys := os.DirFS(testDir)
 
-	err := filepath.WalkDir(testDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		// Only test .ogo files
-		if d.IsDir() || filepath.Ext(path) != ".ogo" {
-			return nil
-		}
+	m, err := fs.Glob(fsys, "*.ogo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range m {
 		switch {
 		case re != nil:
 			if !re.MatchString(path) {
-				return nil
+				continue
 			}
 		default:
 			switch {
@@ -56,7 +54,7 @@ func TestOctoGoSpecs(t *testing.T) {
 				strings.Contains(path, "06_"), //TODO name resolving
 				strings.Contains(path, "09_"): //TODO name resolving
 
-				return nil
+				continue
 			}
 		}
 
@@ -64,8 +62,7 @@ func TestOctoGoSpecs(t *testing.T) {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			runSingleTest(t, fsys, path)
 		})
-		return nil
-	})
+	}
 
 	if err != nil {
 		t.Fatalf("Failed walking test directory: %v", err)
@@ -73,7 +70,7 @@ func TestOctoGoSpecs(t *testing.T) {
 }
 
 func runSingleTest(t *testing.T, fsys fs.FS, path string) {
-	expectedCompile, expectedErrs, err := parseAnnotations(path)
+	expectedCompile, expectedErrs, err := parseAnnotations(fsys, path)
 	if err != nil {
 		t.Fatalf("Failed to parse annotations in %s: %v", path, err)
 	}
@@ -99,17 +96,16 @@ func runSingleTest(t *testing.T, fsys fs.FS, path string) {
 }
 
 // parseAnnotations reads the test file and extracts // COMPILE and // ERROR directives.
-func parseAnnotations(path string) (bool, []expectedError, error) {
-	f, err := os.Open(path)
+func parseAnnotations(fsys fs.FS, path string) (bool, []expectedError, error) {
+	b, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		return false, nil, err
 	}
-	defer f.Close()
 
 	var errs []expectedError
 	expectCompile := false
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(b))
 	lineNum := 1
 	for scanner.Scan() {
 		line := scanner.Text()

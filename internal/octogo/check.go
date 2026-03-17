@@ -116,25 +116,6 @@ func firstIndex(ast []int32) int32 {
 	return -1
 }
 
-type limiter chan struct{}
-
-func newLimiter(limit int) limiter {
-	if limit > 0 {
-		return make(limiter, limit)
-	}
-
-	return nil
-}
-
-func (n limiter) limit() func() {
-	if n == nil {
-		return func() {}
-	}
-
-	n <- struct{}{}
-	return func() { <-n }
-}
-
 // File represents a single OctoGo source file.
 type File struct {
 	AST         []int32
