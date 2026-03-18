@@ -1,0 +1,4 @@
+import "p"
+
+// ERROR "declare.*both"
+const p = 42

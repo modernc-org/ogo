@@ -87,7 +87,7 @@ out:
 
 	// Predefines types
 	f := func(nm string, k Kind) {
-		Universe.Nodes[nm] = &PredefinedType{declaration: declaration{name: names[nm]}, kinder: kinder(k)}
+		Universe.Nodes[nm] = &PredefinedType{declaration: declaration{token: names[nm]}, kinder: kinder(k)}
 	}
 	f("bool", PredefinedBool)
 	f("int16", PredefinedInt16)
@@ -112,7 +112,7 @@ out:
 	f3 := func(nm string, v bool) {
 		tok := names[nm]
 		Universe.Nodes[nm] = &ConstDeclaration{
-			declaration: declaration{name: tok},
+			declaration: declaration{token: tok},
 			ConstSpec: &ConstSpecNode{
 				Name:  tok,
 				Value: constant.MakeBool(v),
@@ -151,15 +151,14 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 //TODO }
 
 func (s *Scope) add(d Declaration) (err error) {
-	new := d.Name()
-	nm := new.Src()
+	nm := d.Name()
 	// non-blank identifiers do not bind
 	if nm == "_" {
 		return nil
 	}
 
 	if ex := s.Nodes[nm]; ex != nil {
-		return fmt.Errorf("%s declared in the same scope before at %v", nm, ex.Name().Position())
+		return fmt.Errorf("%s declared in the same scope before at %v", nm, ex.Token().Position())
 	}
 
 	if s.Nodes == nil {
@@ -172,18 +171,30 @@ func (s *Scope) add(d Declaration) (err error) {
 // Declaration represents the object a name binds to. For example a const, var,
 // type or function declaration, but also an import qualifier.
 type Declaration interface {
-	Name() Token
+	Name() string
+	Token() Token
 	Valid() int32
 }
 
 type declaration struct {
-	name  Token
+	name  string
+	token Token
 	valid int32
 }
 
-// Name reports the name token of this declaration.
-func (d *declaration) Name() Token {
-	return d.name
+// Name returns the identifir of this declaration.
+func (d *declaration) Name() (r string) {
+	if d.name != "" {
+		return d.name
+	}
+
+	return d.token.Src()
+}
+
+// Token returns the name token of this declaration. The token can be IDENT or
+// STRING. To get the name the token represents, use Name().
+func (d *declaration) Token() Token {
+	return d.token
 }
 
 // Valid reports the token index at which the declaration is in scope.

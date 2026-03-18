@@ -207,10 +207,6 @@ func (f *File) declareSourceFile(n Node) {
 		case ImportDecl:
 			f.ImportSpecs = append(f.ImportSpecs, f.declareImportDecl(n)...)
 		case TopLevelDecl:
-			if f.hasInvalidImports { //TODO-?
-				return
-			}
-
 			f.declareTopLevel(n)
 		case 0:
 			switch f.ch(n.tok) {
@@ -229,7 +225,7 @@ func (f *File) sourceFile(n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case TopLevelDecl:
-			//TODO f.topLevel(n)
+			f.topLevel(n)
 		}
 	}
 }
@@ -256,22 +252,22 @@ func (f *File) declareTopLevel(n Node) {
 	}
 }
 
-// func (f *File) topLevel(n Node) {
-// 	for n := range it(n.ast) {
-// 		switch n.sym {
-// 		// case ConstDecl:
-// 		// 	f.constDecl(f.tld, n)
-// 		// case VarDecl:
-// 		// 	f.varDecl(f.tld, n)
-// 		// case FuncDecl:
-// 		// 	f.funcDecl(f.tld, n)
-// 		// case TypeDecl:
-// 		// 	f.typeDecl(f.tld, n)
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// }
+func (f *File) topLevel(n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		// case ConstDecl:
+		// 	f.constDecl(f.tld, n)
+		case VarDecl:
+			f.varDecl(f.tld, n)
+		// case FuncDecl:
+		// 	f.funcDecl(f.tld, n)
+		// case TypeDecl:
+		// 	f.typeDecl(f.tld, n)
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
 
 // FuncDeclNode describes the FuncDecl production.
 //
@@ -297,7 +293,7 @@ func (f *File) declareFunc(s *Scope, n Node) (r *FuncDeclNode) {
 			case IDENT:
 				r.Name = tok
 				if !isMethod {
-					if err := s.add(&FuncDeclaration{declaration: declaration{name: r.Name}, FuncDecl: r}); err != nil {
+					if err := s.add(&FuncDeclaration{declaration: declaration{token: r.Name}, FuncDecl: r}); err != nil {
 						f.err(r.Name.Position(), "%v", err)
 					}
 				}
@@ -1141,13 +1137,13 @@ func (f *File) declareVar(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case VarSpec:
-			names, vs := f.varSpec(s, n)
+			names, vs := f.declareVarSpec(s, n)
 			var valid int32
 			if s.Kind != PackageScope {
 				valid = n.End() + 1
 			}
 			for _, nm := range names {
-				if err := s.add(&VarDeclaration{declaration: declaration{name: nm, valid: valid}, VarSpec: vs}); err != nil {
+				if err := s.add(&VarDeclaration{declaration: declaration{token: nm, valid: valid}, VarSpec: vs}); err != nil {
 					f.err(nm.Position(), "%v", err)
 				}
 			}
@@ -1160,6 +1156,15 @@ func (f *File) declareVar(s *Scope, n Node) {
 			}
 		default:
 			panic(todo("", n.sym))
+		}
+	}
+}
+
+func (f *File) varDecl(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case VarSpec:
+			f.varSpec(s, n)
 		}
 	}
 }
@@ -1195,7 +1200,7 @@ func (f *File) declareType(s *Scope, n Node) {
 			if s.Kind != PackageScope {
 				valid = n.End() + 1
 			}
-			if err := s.add(&TypeDeclaration{declaration: declaration{name: ts.Name, valid: valid}, TypeSpec: ts}); err != nil {
+			if err := s.add(&TypeDeclaration{declaration: declaration{token: ts.Name, valid: valid}, TypeSpec: ts}); err != nil {
 				f.err(ts.Name.Position(), "%v", err)
 			}
 		case 0:
@@ -1220,7 +1225,7 @@ type VarSpecNode struct {
 	TypeNode   TypeNode
 }
 
-func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
+func (f *File) declareVarSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 	r = &VarSpecNode{}
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -1231,29 +1236,31 @@ func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
 	return names, r
 }
 
-//TODO func (f *File) varSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
-//TODO 	r = &VarSpecNode{}
-//TODO 	for n := range iterator(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case IdentifierList:
-//TODO 			names = f.identifierList(s, n)
-//TODO 		case Type:
-//TODO 			r.TypeNode = f.typ(s, n)
-//TODO 		case Expression:
-//TODO 			r.Expression = f.expression(s, n)
-//TODO 		case 0:
-//TODO 			switch f.ch(n.tok) {
-//TODO 			case ASSIGN:
-//TODO 				// ok
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return names, r
-//TODO }
+func (f *File) varSpec(s *Scope, n Node) {
+	var names []Token
+	_ = names //TODO-
+	var typ TypeNode
+	_ = typ //TODO-
+	for n := range it(n.ast) {
+		switch n.sym {
+		case IdentifierList:
+			names = f.identifierList(s, n)
+		// case Type:
+		// 	typ = f.typ(s, n)
+		// case Expression:
+		// 	r.Expression = f.expression(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case ASSIGN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+}
 
 // TypeNode describes the Type production.
 //
@@ -1371,7 +1378,7 @@ func (f *File) declareConst(s *Scope, n Node) {
 			if s.Kind != PackageScope {
 				valid = n.End() + 1
 			}
-			if err := s.add(&ConstDeclaration{declaration: declaration{name: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
+			if err := s.add(&ConstDeclaration{declaration: declaration{token: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
 				f.err(cs.Name.Position(), "%v", err)
 			}
 		}
@@ -1805,7 +1812,7 @@ type ImportSpecNode struct {
 
 func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 	r = &ImportSpecNode{}
-	var nm Token
+	var tok Token
 	for n := range it(n.ast) {
 		switch n.sym {
 		case 0:
@@ -1813,14 +1820,14 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 			case PERIOD:
 				r.IsDotImport = true
 			case IDENT:
-				nm = f.tok(n.tok)
-				r.ImportQualifier = nm.Src()
+				tok = f.tok(n.tok)
+				r.ImportQualifier = tok.Src()
 			case STRING:
-				nm = f.tok(n.tok)
+				tok = f.tok(n.tok)
 				var err error
-				r.ImportPath, err = strconv.Unquote(nm.Src())
+				r.ImportPath, err = strconv.Unquote(tok.Src())
 				if err != nil || !isValidImportPath(r.ImportPath) {
-					f.err(nm.Position(), "invalid import path: %s", r.ImportPath)
+					f.err(tok.Position(), "invalid import path: %s", r.ImportPath)
 					f.hasInvalidImports = true
 					break
 				}
@@ -1830,7 +1837,7 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 						if base := r.ImportPath[x:]; token.IsIdentifier(base) {
 							r.ImportQualifier = base
 						} else {
-							f.err(nm.Position(), "invalid package name: %s", r.ImportPath)
+							f.err(tok.Position(), "invalid package name: %s", r.ImportPath)
 							f.hasInvalidImports = true
 							break
 						}
@@ -1858,8 +1865,8 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 		}
 	}
 	if r.ImportQualifier != "" {
-		if err := f.Scope.add(&ImportDeclaration{declaration: declaration{name: nm}, Import: r}); err != nil {
-			f.err(nm.Position(), "%v", err)
+		if err := f.Scope.add(&ImportDeclaration{declaration: declaration{token: tok, name: r.ImportQualifier}, Import: r}); err != nil {
+			f.err(tok.Position(), "%v", err)
 		}
 	}
 	return r

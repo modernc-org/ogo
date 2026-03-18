@@ -46,8 +46,8 @@ type AliasType struct {
 	U Typ
 }
 
-func newAlias(name Token, valid int32, u Typ) *AliasType {
-	return &AliasType{declaration: declaration{name, valid}, kinder: kinder(Alias), U: u}
+func newAlias(nmTok Token, valid int32, u Typ) *AliasType {
+	return &AliasType{declaration: declaration{token: nmTok, valid: valid}, kinder: kinder(Alias), U: u}
 }
 
 // PredefinedType represents a built-in type.

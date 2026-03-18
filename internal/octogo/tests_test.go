@@ -161,23 +161,34 @@ func checkErrors(t *testing.T, expected []expectedError, actual []compilerError,
 }
 
 func runCompiler(t *testing.T, path string, fsys fs.FS) (r []compilerError) {
-	pkg, err := Build(-1, []string{path}, fsys)
-	if err != nil {
-		t.Errorf("%s: %v", path, err)
-		return
-	}
+	//TODO- pkg, err := Build(-1, []string{path}, fsys)
+	//TODO- if err != nil {
+	//TODO- 	t.Errorf("%s: %v", path, err)
+	//TODO- 	return
+	//TODO- }
 
-	for _, v := range pkg.Files {
-		switch x := v.errList.Err().(type) {
-		case nil:
-			// ok
-		case ErrList:
-			for _, v := range x {
-				r = append(r, compilerError{v.Pos.Line, v.Err.Error()})
-			}
-		default:
-			t.Errorf("%s: %v", path, x)
+	//TODO- for _, v := range pkg.Files {
+	//TODO- 	switch x := v.errList.Err().(type) {
+	//TODO- 	case nil:
+	//TODO- 		// ok
+	//TODO- 	case ErrList:
+	//TODO- 		for _, v := range x {
+	//TODO- 			r = append(r, compilerError{v.Pos.Line, v.Err.Error()})
+	//TODO- 		}
+	//TODO- 	default:
+	//TODO- 		t.Errorf("%s: %v", path, x)
+	//TODO- 	}
+	//TODO- }
+	//TODO- return r
+	switch _, err := Build(-1, []string{path}, fsys); x := err.(type) {
+	case nil:
+		// ok
+	case ErrList:
+		for _, v := range x {
+			r = append(r, compilerError{v.Pos.Line, v.Err.Error()})
 		}
+	default:
+		t.Errorf("%s: %v", path, x)
 	}
 	return r
 }

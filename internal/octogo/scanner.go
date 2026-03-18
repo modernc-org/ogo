@@ -124,6 +124,7 @@ func (e ErrList) Error() string {
 
 // AddErr adds an error message associated with an optional position.
 func (e *ErrList) AddErr(pos token.Position, msg string, args ...interface{}) {
+	// trc("%v: %s", pos, fmt.Sprintf(msg, args...))
 	switch {
 	case len(args) == 0:
 		*e = append(*e, ErrWithPosition{pos, fmt.Errorf("%s", msg)})

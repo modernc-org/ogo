@@ -51,15 +51,15 @@ func NewBuildContext(fsys fs.FS, limit int) (r *BuildContext) {
 
 // findCycle performs a DFS to see if 'target' is reachable from 'current'.
 // It returns the path of the cycle if one exists.
-func (bc *BuildContext) findCycle(current, target string, visited map[string]bool) []string {
+func (c *BuildContext) findCycle(current, target string, visited map[string]bool) []string {
 	if current == target {
 		return []string{current}
 	}
 	visited[current] = true
 
-	for next := range bc.importGraph[current] {
+	for next := range c.importGraph[current] {
 		if !visited[next] {
-			if cycle := bc.findCycle(next, target, visited); cycle != nil {
+			if cycle := c.findCycle(next, target, visited); cycle != nil {
 				return append([]string{current}, cycle...)
 			}
 		}
@@ -67,40 +67,40 @@ func (bc *BuildContext) findCycle(current, target string, visited map[string]boo
 	return nil
 }
 
-func (bc *BuildContext) importPkg(fromPath, importPath string) (r *Package) {
+func (c *BuildContext) importPkg(fromPath, importPath string) (r *Package) {
 	//TODO cycle detect
-	if bc == nil {
+	if c == nil {
 		return noPkg
 	}
 
-	bc.importsMu.Lock()
+	c.importsMu.Lock()
 
-	if bc.importGraph[fromPath] == nil {
-		bc.importGraph[fromPath] = make(map[string]bool)
+	if c.importGraph[fromPath] == nil {
+		c.importGraph[fromPath] = make(map[string]bool)
 	}
-	bc.importGraph[fromPath][importPath] = true
+	c.importGraph[fromPath][importPath] = true
 
-	if cycle := bc.findCycle(importPath, fromPath, make(map[string]bool)); cycle != nil {
-		bc.importsMu.Unlock()
+	if cycle := c.findCycle(importPath, fromPath, make(map[string]bool)); cycle != nil {
+		c.importsMu.Unlock()
 
 		// To complete the visual circle for the error message, put 'fromPath' at the front.
 		fullCycle := append([]string{fromPath}, cycle...)
 
-		bc.errMu.Lock()
+		c.errMu.Lock()
 		panic(todo("", fullCycle))
-		//TODO bc.errList = append(bc.errList, fmt.Errorf("import cycle not allowed: %s", strings.Join(fullCycle, " -> ")))
-		bc.errMu.Unlock()
+		//TODO c.errList = append(c.errList, fmt.Errorf("import cycle not allowed: %s", strings.Join(fullCycle, " -> ")))
+		c.errMu.Unlock()
 
 		return noPkg
 	}
 
-	task := bc.importTasks[importPath]
+	task := c.importTasks[importPath]
 	if task == nil {
 		task = &importTask{}
-		bc.importTasks[importPath] = task
+		c.importTasks[importPath] = task
 	}
 
-	bc.importsMu.Unlock()
+	c.importsMu.Unlock()
 
 	task.Lock()
 
@@ -109,7 +109,7 @@ func (bc *BuildContext) importPkg(fromPath, importPath string) (r *Package) {
 		go func() {
 			defer close(task.ready)
 
-			dirEntries, err := fs.ReadDir(bc.fsys, importPath)
+			dirEntries, err := fs.ReadDir(c.fsys, importPath)
 			if err != nil {
 				task.p = noPkg
 				return
@@ -129,7 +129,7 @@ func (bc *BuildContext) importPkg(fromPath, importPath string) (r *Package) {
 				}
 			}
 
-			task.p = bc.NewPackage(importPath, files, bc.fsys)
+			task.p = c.NewPackage(importPath, files, c.fsys)
 		}()
 	}
 
@@ -153,7 +153,7 @@ func consolidateErrors(use ErrList, errors ...error) (r ErrList) {
 	return r
 }
 
-// Build builds the main pacakge consisting of files in 'files' within 'fsys'.
+// Build builds the main package consisting of files in 'files' within 'fsys'.
 // 'limit' is the maximum desired concurrency for individual package building
 // when > 0.
 //
@@ -166,9 +166,9 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 		}
 	}
 
-	bc := NewBuildContext(fsys, limit)
-	main = bc.NewPackage("", files, fsys) // main package has no import path
-	return main, nil
+	c := NewBuildContext(fsys, limit)
+	main = c.NewPackage("", files, fsys) // main package has no import path
+	return main, c.errList.Err()
 }
 
 type limiter chan struct{}
@@ -200,18 +200,15 @@ type Package struct {
 
 // NewPackage returns a newly created Package consisting of files in 'files'
 // within 'fsys'.
-func (bc *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (r *Package) {
+func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (r *Package) {
 	r = &Package{
 		Files:      make([]*File, len(files)),
 		ImportPath: importPath,
 		Scope:      newScope(Universe, PackageScope),
-		ctx:        bc,
+		ctx:        c,
 	}
 
-	defer func() {
-	}()
-
-	limiter := newLimiter(bc.limit)
+	limiter := newLimiter(c.limit)
 	var wg sync.WaitGroup
 	for i, v := range files {
 		release := limiter.limit()
@@ -226,25 +223,25 @@ func (bc *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS
 	}
 	wg.Wait()
 	for _, v := range r.Files {
-		bc.errMu.Lock()
-		bc.errList = consolidateErrors(bc.errList, v.errList)
-		bc.errMu.Unlock()
+		c.errMu.Lock()
+		c.errList = consolidateErrors(c.errList, v.errList)
+		c.errMu.Unlock()
 	}
-	if bc.noDeclarationChecks { // Testing support
+	if c.noDeclarationChecks { // Testing support
 		return r
 	}
 
 	for _, v := range r.Files {
 		for _, spec := range v.ImportSpecs {
-			bc.importPkg(r.ImportPath, spec.ImportPath)
+			c.importPkg(r.ImportPath, spec.ImportPath)
 		}
 		// Merge file top level declarations into package scope.
 		for _, nm := range slices.Sorted(maps.Keys(v.tld.Nodes)) {
 			d := v.tld.Nodes[nm]
 			if err := r.Scope.add(d); err != nil {
-				bc.errMu.Lock()
-				bc.errList.AddErr(d.Name().Position(), "%v", err)
-				bc.errMu.Unlock()
+				c.errMu.Lock()
+				c.errList.AddErr(d.Token().Position(), "%v", err)
+				c.errMu.Unlock()
 			}
 		}
 		v.tld.Nodes = nil
@@ -253,10 +250,10 @@ func (bc *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS
 	for _, v := range r.Files {
 		for _, nm := range slices.Sorted(maps.Keys(v.Scope.Nodes)) {
 			if ex := r.Scope.Nodes[nm]; ex != nil {
-				bc.errMu.Lock()
+				c.errMu.Lock()
 				d := v.Scope.Nodes[nm]
-				bc.errList.AddErr(ex.Name().Position(), "cannot declare %v both in package and file scope (%v:)", nm, d.Name().Position())
-				bc.errMu.Unlock()
+				c.errList.AddErr(ex.Token().Position(), "cannot declare %v both in package and file scope (%v:)", nm, d.Token().Position())
+				c.errMu.Unlock()
 			}
 		}
 	}
@@ -265,7 +262,7 @@ func (bc *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS
 		for n := range it(v.AST) {
 			switch n.sym {
 			case SourceFile:
-				v.sourceFile(n)
+				//TODO v.sourceFile(n)
 			}
 		}
 	}
