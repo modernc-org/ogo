@@ -1375,8 +1375,6 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				default:
 					nm := tok.Src()
 					switch d := s.find(nm); x := d.(type) {
-					case *AliasType:
-						panic(todo("%q %T", nm, x))
 					default:
 						panic(todo("%q %T", nm, x))
 					}

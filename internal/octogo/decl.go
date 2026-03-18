@@ -97,19 +97,15 @@ out:
 	f("uint32", PredefinedUint32)
 	f("uint8", PredefinedUint8)
 	f("uintptr", PredefinedUintptr)
-
 	// Type aliases
-	f2 := func(nm, aliasNm string) {
-		Universe.Declarations[nm] = newAlias(names[nm], 0, Universe.Declarations[aliasNm].(Typ))
-	}
-	f2("byte", "uint8")
-	f2("int", "int32")
-	f2("rune", "int32")
-	f2("uint", "uint32")
+	f("byte", PredefinedUint8)
+	f("int", PredefinedInt32)
+	f("rune", PredefinedInt32)
+	f("uint", PredefinedUint32)
 
 	// Bool constants
 	boolType := Universe.Declarations["bool"].(Typ)
-	f3 := func(nm string, v bool) {
+	f2 := func(nm string, v bool) {
 		tok := names[nm]
 		Universe.Declarations[nm] = &ConstDeclaration{
 			declaration: declaration{token: tok},
@@ -120,8 +116,8 @@ out:
 			},
 		}
 	}
-	f3("false", false)
-	f3("true", true)
+	f2("false", false)
+	f2("true", true)
 }
 
 // ScopeKind describes the type of a Scope.
