@@ -6,8 +6,9 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 
 import (
 	"fmt"
-
 	"go/constant"
+	"maps"
+	"slices"
 )
 
 // Name definitions for predefined identifiers.
@@ -57,10 +58,7 @@ var (
 )
 
 // Universe binds predefined declarations.
-var Universe = &Scope{
-	Kind:  UniverseScope,
-	Nodes: map[string]Declaration{},
-}
+var Universe = newScope(nil, UniverseScope)
 
 func init() {
 	var p Parser
@@ -85,9 +83,11 @@ out:
 	//TODO min max
 	//TODO len(), cap()
 
+	Universe.Declarations = map[string]Declaration{}
+
 	// Predefines types
 	f := func(nm string, k Kind) {
-		Universe.Nodes[nm] = &PredefinedType{declaration: declaration{token: names[nm]}, kinder: kinder(k)}
+		Universe.Declarations[nm] = &PredefinedType{declaration: declaration{token: names[nm]}, kinder: kinder(k)}
 	}
 	f("bool", PredefinedBool)
 	f("int16", PredefinedInt16)
@@ -100,7 +100,7 @@ out:
 
 	// Type aliases
 	f2 := func(nm, aliasNm string) {
-		Universe.Nodes[nm] = newAlias(names[nm], 0, Universe.Nodes[aliasNm].(Typ))
+		Universe.Declarations[nm] = newAlias(names[nm], 0, Universe.Declarations[aliasNm].(Typ))
 	}
 	f2("byte", "uint8")
 	f2("int", "int32")
@@ -108,10 +108,10 @@ out:
 	f2("uint", "uint32")
 
 	// Bool constants
-	boolType := Universe.Nodes["bool"].(Typ)
+	boolType := Universe.Declarations["bool"].(Typ)
 	f3 := func(nm string, v bool) {
 		tok := names[nm]
-		Universe.Nodes[nm] = &ConstDeclaration{
+		Universe.Declarations[nm] = &ConstDeclaration{
 			declaration: declaration{token: tok},
 			ConstSpec: &ConstSpecNode{
 				Name:  tok,
@@ -137,13 +137,18 @@ const (
 
 // Scope registers declarations.
 type Scope struct {
-	Kind   ScopeKind
-	Nodes  map[string]Declaration
-	Parent *Scope
+	Kind         ScopeKind
+	Declarations map[string]Declaration
+	Parent       *Scope
 }
 
 func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
-	return &Scope{Parent: parent, Kind: kind}
+	r = &Scope{Parent: parent, Kind: kind}
+	return r
+}
+
+func (s *Scope) String() string {
+	return fmt.Sprintf("%p.%v=%v", s, s.Kind, slices.Collect(maps.Keys(s.Declarations)))
 }
 
 //TODO func (s *Scope) child() (r *Scope) {
@@ -157,14 +162,14 @@ func (s *Scope) add(d Declaration) (err error) {
 		return nil
 	}
 
-	if ex := s.Nodes[nm]; ex != nil {
+	if ex := s.Declarations[nm]; ex != nil {
 		return fmt.Errorf("%s declared in the same scope before at %v", nm, ex.Token().Position())
 	}
 
-	if s.Nodes == nil {
-		s.Nodes = map[string]Declaration{}
+	if s.Declarations == nil {
+		s.Declarations = map[string]Declaration{}
 	}
-	s.Nodes[nm] = d
+	s.Declarations[nm] = d
 	return nil
 }
 
@@ -177,11 +182,13 @@ type Declaration interface {
 }
 
 type declaration struct {
-	name     string
-	token    Token
-	valid    int32
-	typeGate gate
-	//TODO? valueGate gate
+	name  string
+	token Token
+	valid int32
+}
+
+func (d *declaration) declaration() *declaration {
+	return d
 }
 
 // Name returns the identifir of this declaration.

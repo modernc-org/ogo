@@ -1,0 +1,2 @@
+// ERROR "not allowed" at import_cycle/b/b.ogo:2
+import "import_cycle"

@@ -17,11 +17,12 @@ edit:
 
 editor: parser.go
 	gofmt -l -s -w ../..
+	stringer -output stringer.go -type ScopeKind,gate
 	go test -o /dev/null -c
 	go build -o /dev/null extract_grammar.go
 	go install -v ../..
-	golint
-	staticcheck
+	# golint
+	# staticcheck
 
 generate:
 	go generate -v -x
@@ -51,3 +52,5 @@ test:
 	# go test -timeout 24h -count=1 -failfast
 	# go build -v -o /dev/null
 	make -C ../../ test
+	golint
+	staticcheck

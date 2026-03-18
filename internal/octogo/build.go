@@ -6,6 +6,7 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 
 import (
 	"fmt"
+	"go/token"
 	"io/fs"
 	"maps"
 	"path"
@@ -67,8 +68,7 @@ func (c *BuildContext) findCycle(current, target string, visited map[string]bool
 	return nil
 }
 
-func (c *BuildContext) importPkg(fromPath, importPath string) (r *Package) {
-	//TODO cycle detect
+func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken Token) (r *Package) {
 	if c == nil {
 		return noPkg
 	}
@@ -87,8 +87,7 @@ func (c *BuildContext) importPkg(fromPath, importPath string) (r *Package) {
 		fullCycle := append([]string{fromPath}, cycle...)
 
 		c.errMu.Lock()
-		panic(todo("", fullCycle))
-		//TODO c.errList = append(c.errList, fmt.Errorf("import cycle not allowed: %s", strings.Join(fullCycle, " -> ")))
+		c.errList.AddErr(importPathToken.Position(), "import cycle not allowed: %s", strings.Join(fullCycle, " -> "))
 		c.errMu.Unlock()
 
 		return noPkg
@@ -233,25 +232,25 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 
 	for _, v := range r.Files {
 		for _, spec := range v.ImportSpecs {
-			c.importPkg(r.ImportPath, spec.ImportPath)
+			c.importPkg(r.ImportPath, spec.ImportPath, spec.ImportPathToken)
 		}
 		// Merge file top level declarations into package scope.
-		for _, nm := range slices.Sorted(maps.Keys(v.tld.Nodes)) {
-			d := v.tld.Nodes[nm]
+		for _, nm := range slices.Sorted(maps.Keys(v.tld.Declarations)) {
+			d := v.tld.Declarations[nm]
 			if err := r.Scope.add(d); err != nil {
 				c.errMu.Lock()
 				c.errList.AddErr(d.Token().Position(), "%v", err)
 				c.errMu.Unlock()
 			}
 		}
-		v.tld.Nodes = nil
+		v.tld.Declarations = nil
 	}
 	// Check for ... no identifier may be declared in both the file and package block
 	for _, v := range r.Files {
-		for _, nm := range slices.Sorted(maps.Keys(v.Scope.Nodes)) {
-			if ex := r.Scope.Nodes[nm]; ex != nil {
+		for _, nm := range slices.Sorted(maps.Keys(v.Scope.Declarations)) {
+			if ex := r.Scope.Declarations[nm]; ex != nil {
 				c.errMu.Lock()
-				d := v.Scope.Nodes[nm]
+				d := v.Scope.Declarations[nm]
 				c.errList.AddErr(ex.Token().Position(), "cannot declare %v both in package and file scope (%v:)", nm, d.Token().Position())
 				c.errMu.Unlock()
 			}
@@ -262,7 +261,7 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		for n := range it(v.AST) {
 			switch n.sym {
 			case SourceFile:
-				// v.sourceFile(n)
+				// v.sourceFile(r.Scope, n)
 			}
 		}
 	}
@@ -270,9 +269,17 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	return r
 }
 
-func (p *Package) importPkg(importPath string) (r *Package) {
+func (c *BuildContext) err(pos token.Position, s string, args ...any) {
+	c.errMu.Lock()
+
+	defer c.errMu.Unlock()
+
+	c.errList.AddErr(pos, s, args...)
+}
+
+func (p *Package) importPkg(importPathToken Token, importPath string) (r *Package) {
 	if p != nil && p.ctx != nil {
-		return p.ctx.importPkg(p.ImportPath, importPath)
+		return p.ctx.importPkg(p.ImportPath, importPath, importPathToken)
 	}
 
 	return noPkg

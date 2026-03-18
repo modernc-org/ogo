@@ -25,7 +25,7 @@ const (
 	closed
 )
 
-type gate byte
+type gate int8
 
 func (g gate) gate() gate {
 	return g
@@ -165,12 +165,20 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 }
 
 func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
-	Scope := newScope(Universe, FileScope)
+	//TODO- Scope := newScope(Universe, FileScope)
+	//TODO- r = &File{
+	//TODO- 	Filename: fn,
+	//TODO- 	Scope:    Scope,
+	//TODO- 	Package:  p,
+	//TODO- 	tld:      newScope(Scope, PackageScope),
+	//TODO- }
+	tldScope := newScope(Universe, PackageScope)
+	fileScope := newScope(tldScope, FileScope)
 	r = &File{
 		Filename: fn,
-		Scope:    Scope,
+		Scope:    fileScope,
 		Package:  p,
-		tld:      newScope(Scope, PackageScope),
+		tld:      tldScope,
 	}
 	b, err := fs.ReadFile(fsys, fn)
 	if err != nil {
@@ -236,11 +244,11 @@ func (f *File) declareSourceFile(n Node) {
 	}
 }
 
-func (f *File) sourceFile(n Node) {
+func (f *File) sourceFile(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case TopLevelDecl:
-			f.topLevel(n)
+			f.topLevel(s, n)
 		}
 	}
 }
@@ -253,7 +261,7 @@ func (f *File) declareTopLevel(n Node) {
 		case VarDecl:
 			f.declareVar(f.tld, n)
 		case FuncDecl:
-			f.declareFunc(f.tld, n)
+			f.declareFunc(n)
 		case TypeDecl:
 			f.declareType(f.tld, n)
 		case 0:
@@ -267,17 +275,17 @@ func (f *File) declareTopLevel(n Node) {
 	}
 }
 
-func (f *File) topLevel(n Node) {
+func (f *File) topLevel(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		// case ConstDecl:
-		// 	f.constDecl(f.tld, n)
+		// 	f.constDecl(s, n)
 		case VarDecl:
-			f.varDecl(f.tld, n)
+			f.varDecl(s, n)
 		// case FuncDecl:
-		// 	f.funcDecl(f.tld, n)
+		// 	f.funcDecl(s, n)
 		// case TypeDecl:
-		// 	f.typeDecl(f.tld, n)
+		// 	f.typeDecl(s, n)
 		default:
 			panic(todo("", n.sym))
 		}
@@ -296,7 +304,7 @@ type FuncDeclNode struct {
 	Block         *BlockNode
 }
 
-func (f *File) declareFunc(s *Scope, n Node) (r *FuncDeclNode) {
+func (f *File) declareFunc(n Node) (r *FuncDeclNode) {
 	r = &FuncDeclNode{}
 	isMethod := false
 	for n := range it(n.ast) {
@@ -312,7 +320,7 @@ func (f *File) declareFunc(s *Scope, n Node) (r *FuncDeclNode) {
 					case bytes.Equal(r.Name.SrcBytes(), initName):
 						f.InitFuncs = append(f.InitFuncs, r)
 					default:
-						if err := s.add(&FuncDeclaration{declaration: declaration{token: r.Name}, FuncDecl: r}); err != nil {
+						if err := f.tld.add(&FuncDeclaration{declaration: declaration{token: r.Name}, FuncDecl: r}); err != nil {
 							f.err(r.Name.Position(), "%v", err)
 						}
 					}
@@ -1240,6 +1248,7 @@ func (f *File) declareType(s *Scope, n Node) {
 //
 //	VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
 type VarSpecNode struct {
+	gate
 	Expression ExpressionNode
 	Name       Token
 	TypeNode   TypeNode
@@ -1258,13 +1267,25 @@ func (f *File) declareVarSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) 
 
 func (f *File) varSpec(s *Scope, n Node) {
 	var names []Token
-	_ = names //TODO-
-	var typ TypeNode
-	_ = typ //TODO-
 	for n := range it(n.ast) {
 		switch n.sym {
 		case IdentifierList:
 			names = f.identifierList(s, n)
+			for _, nmTok := range names {
+				nm := nmTok.Src()
+				switch x := s.Declarations[nm].(type) {
+				case *VarDeclaration:
+					switch vs := x.VarSpec; vs.gate {
+					case none:
+						vs.gate.open()
+					case opened:
+					default:
+						panic(todo("", vs.gate))
+					}
+				default:
+					panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
+				}
+			}
 		// case Type:
 		// 	typ = f.typ(s, n)
 		// case Expression:
@@ -1798,11 +1819,11 @@ func (f *File) declareImportDecl(n Node) (r []*ImportSpecNode) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ImportSpec:
-			is := f.importSpec(n)
+			is := f.declareImportSpec(n)
 			r = append(r, is)
 			if is.IsDotImport {
-				p := f.Package.importPkg(is.ImportPath)
-				for k, v := range p.Scope.Nodes {
+				p := f.Package.importPkg(is.ImportPathToken, is.ImportPath)
+				for k, v := range p.Scope.Declarations {
 					panic(todo("%q: %T", k, v))
 				}
 			}
@@ -1824,13 +1845,14 @@ func (f *File) declareImportDecl(n Node) (r []*ImportSpecNode) {
 //
 //	ImportSpec = [ "." | identifier ] string_lit .
 type ImportSpecNode struct {
-	ImportQualifier string
 	ImportPath      string
+	ImportPathToken Token
+	ImportQualifier string
 	IsDotImport     bool
 	IsStdLib        bool
 }
 
-func (f *File) importSpec(n Node) (r *ImportSpecNode) {
+func (f *File) declareImportSpec(n Node) (r *ImportSpecNode) {
 	r = &ImportSpecNode{}
 	var tok Token
 	for n := range it(n.ast) {
@@ -1844,6 +1866,7 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 				r.ImportQualifier = tok.Src()
 			case STRING:
 				tok = f.tok(n.tok)
+				r.ImportPathToken = tok
 				var err error
 				r.ImportPath, err = strconv.Unquote(tok.Src())
 				if err != nil || !isValidImportPath(r.ImportPath) {
@@ -1854,7 +1877,7 @@ func (f *File) importSpec(n Node) (r *ImportSpecNode) {
 
 				if !r.IsDotImport && r.ImportQualifier == "" {
 					if x := strings.LastIndexByte(r.ImportPath, '/'); x > 0 {
-						if base := r.ImportPath[x:]; token.IsIdentifier(base) {
+						if base := r.ImportPath[x+1:]; token.IsIdentifier(base) {
 							r.ImportQualifier = base
 						} else {
 							f.err(tok.Position(), "invalid package name: %s", r.ImportPath)
@@ -1907,7 +1930,6 @@ func isValidImportPath(s string) bool {
 			case c >= 'a' && c <= 'z' || c == '_' || c >= '0' && c <= '9':
 				// ok
 			default:
-				trc("%q %q", s, string(rune(c)))
 				return false
 			}
 		}
