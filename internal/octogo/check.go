@@ -164,7 +164,7 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 	f.errList.AddErr(pos, s, args...)
 }
 
-func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
+func (p *Package) newFile(fn string, fsys fs.FS) (f *File) {
 	//TODO- Scope := newScope(Universe, FileScope)
 	//TODO- r = &File{
 	//TODO- 	Filename: fn,
@@ -174,7 +174,7 @@ func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
 	//TODO- }
 	tldScope := newScope(Universe, PackageScope)
 	fileScope := newScope(tldScope, FileScope)
-	r = &File{
+	f = &File{
 		Filename: fn,
 		Scope:    fileScope,
 		Package:  p,
@@ -182,29 +182,29 @@ func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
 	}
 	b, err := fs.ReadFile(fsys, fn)
 	if err != nil {
-		r.errList.AddErr(noPos, "%v", err)
-		return r
+		f.errList.AddErr(noPos, "%v", err)
+		return f
 	}
 
-	r.AST, _ = r.parser.Parse(fn, b)
-	if r.errList = r.parser.sc.errList; r.errList.Err() != nil {
-		return r
+	f.AST, _ = f.parser.Parse(fn, b)
+	if f.errList = f.parser.sc.errList; f.errList.Err() != nil {
+		return f
 	}
 
-	if tok := r.parser.tok; tok.Ch != rune(EOF) {
-		r.errList.AddErr(tok.Position(), "%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
-		return r
+	if tok := f.parser.tok; tok.Ch != rune(EOF) {
+		f.errList.AddErr(tok.Position(), "%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
+		return f
 	}
 
-	for n := range it(r.AST) {
+	for n := range it(f.AST) {
 		switch n.sym {
 		case SourceFile:
-			r.declareSourceFile(n)
+			f.declareSourceFile(n)
 		default:
 			panic(todo("", n.sym, n.tok))
 		}
 	}
-	return r
+	return f
 }
 
 //lint:ignore U1000 debug helper

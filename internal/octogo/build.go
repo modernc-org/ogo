@@ -41,13 +41,25 @@ type BuildContext struct {
 
 // NewBuildContext returns a newly created BuildContext. 'limit' is the maximum
 // desired concurrency for individual package building when > 0.
-func NewBuildContext(fsys fs.FS, limit int) (r *BuildContext) {
+func NewBuildContext(fsys fs.FS, limit int) (c *BuildContext) {
 	return &BuildContext{
 		fsys:        fsys,
 		importTasks: map[string]*importTask{},
 		importGraph: map[string]map[string]bool{},
 		limit:       limit,
 	}
+}
+
+func (c *BuildContext) syncErr(pos token.Position, s string, args ...any) {
+	c.errMu.Lock()
+
+	defer c.errMu.Unlock()
+
+	c.err(pos, s, args...)
+}
+
+func (c *BuildContext) err(pos token.Position, s string, args ...any) {
+	c.errList.AddErr(pos, s, args...)
 }
 
 // findCycle performs a DFS to see if 'target' is reachable from 'current'.
@@ -68,7 +80,7 @@ func (c *BuildContext) findCycle(current, target string, visited map[string]bool
 	return nil
 }
 
-func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken Token) (r *Package) {
+func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken Token) (p *Package) {
 	if c == nil {
 		return noPkg
 	}
@@ -85,11 +97,7 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 
 		// To complete the visual circle for the error message, put 'fromPath' at the front.
 		fullCycle := append([]string{fromPath}, cycle...)
-
-		c.errMu.Lock()
-		c.errList.AddErr(importPathToken.Position(), "import cycle not allowed: %s", strings.Join(fullCycle, " -> "))
-		c.errMu.Unlock()
-
+		c.syncErr(importPathToken.Position(), "import cycle not allowed: %s", strings.Join(fullCycle, " -> "))
 		return noPkg
 	}
 
@@ -137,19 +145,19 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 	return task.p
 }
 
-func consolidateErrors(use ErrList, errors ...error) (r ErrList) {
-	r = use
+func consolidateErrors(use ErrList, errors ...error) (e ErrList) {
+	e = use
 	for _, v := range errors {
 		switch x := v.(type) {
 		case nil:
 			// nop
 		case ErrList:
-			r = append(r, x...)
+			e = append(e, x...)
 		default:
-			r = append(r, ErrWithPosition{Err: x})
+			e = append(e, ErrWithPosition{Err: x})
 		}
 	}
-	return r
+	return e
 }
 
 // Build builds the main package consisting of files in 'files' within 'fsys'.
@@ -199,8 +207,8 @@ type Package struct {
 
 // NewPackage returns a newly created Package consisting of files in 'files'
 // within 'fsys'.
-func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (r *Package) {
-	r = &Package{
+func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (p *Package) {
+	p = &Package{
 		Files:      make([]*File, len(files)),
 		ImportPath: importPath,
 		Scope:      newScope(Universe, PackageScope),
@@ -217,47 +225,43 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 			defer release()
 			defer wg.Done()
 
-			r.Files[i] = r.newFile(fn, fsys)
+			p.Files[i] = p.newFile(fn, fsys)
 		}(i, v)
 	}
 	wg.Wait()
-	for _, v := range r.Files {
+	for _, v := range p.Files {
 		c.errMu.Lock()
 		c.errList = consolidateErrors(c.errList, v.errList)
 		c.errMu.Unlock()
 	}
 	if c.noDeclarationChecks { // Testing support
-		return r
+		return p
 	}
 
-	for _, v := range r.Files {
+	for _, v := range p.Files {
 		for _, spec := range v.ImportSpecs {
-			c.importPkg(r.ImportPath, spec.ImportPath, spec.ImportPathToken)
+			c.importPkg(p.ImportPath, spec.ImportPath, spec.ImportPathToken)
 		}
 		// Merge file top level declarations into package scope.
 		for _, nm := range slices.Sorted(maps.Keys(v.tld.Declarations)) {
 			d := v.tld.Declarations[nm]
-			if err := r.Scope.add(d); err != nil {
-				c.errMu.Lock()
-				c.errList.AddErr(d.Token().Position(), "%v", err)
-				c.errMu.Unlock()
+			if err := p.Scope.add(d); err != nil {
+				c.syncErr(d.Token().Position(), "%v", err)
 			}
 		}
 		v.tld.Declarations = nil
 	}
 	// Check for ... no identifier may be declared in both the file and package block
-	for _, v := range r.Files {
+	for _, v := range p.Files {
 		for _, nm := range slices.Sorted(maps.Keys(v.Scope.Declarations)) {
-			if ex := r.Scope.Declarations[nm]; ex != nil {
-				c.errMu.Lock()
+			if ex := p.Scope.Declarations[nm]; ex != nil {
 				d := v.Scope.Declarations[nm]
-				c.errList.AddErr(ex.Token().Position(), "cannot declare %v both in package and file scope (%v:)", nm, d.Token().Position())
-				c.errMu.Unlock()
+				c.err(ex.Token().Position(), "cannot declare %v both in package and file scope (%v:)", nm, d.Token().Position())
 			}
 		}
 	}
 	// Type check top level declarations.
-	for _, v := range r.Files {
+	for _, v := range p.Files {
 		for n := range it(v.AST) {
 			switch n.sym {
 			case SourceFile:
@@ -266,15 +270,7 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		}
 	}
 	//TODO Type check function and method bodies
-	return r
-}
-
-func (c *BuildContext) err(pos token.Position, s string, args ...any) {
-	c.errMu.Lock()
-
-	defer c.errMu.Unlock()
-
-	c.errList.AddErr(pos, s, args...)
+	return p
 }
 
 func (p *Package) importPkg(importPathToken Token, importPath string) (r *Package) {
