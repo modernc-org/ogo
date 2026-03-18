@@ -1,0 +1,4 @@
+// COMPILE
+
+func init() {}
+func init() {} // Not a redeclaration.

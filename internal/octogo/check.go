@@ -5,6 +5,7 @@
 package octogo // import "modernc.org/ogo/internal/ogo"
 
 import (
+	"bytes"
 	"fmt"
 	"go/token"
 	"io/fs"
@@ -14,16 +15,29 @@ import (
 )
 
 var (
-	noPos token.Position
+	noPos    token.Position
+	initName = []byte("init")
 )
 
-// type gate byte
-//
-// const (
-// 	none gate = iota
-// 	open
-// 	closed
-// )
+const (
+	none gate = iota
+	opened
+	closed
+)
+
+type gate byte
+
+func (g gate) gate() gate {
+	return g
+}
+
+func (g *gate) open() {
+	*g = opened
+}
+
+func (g *gate) close() {
+	*g = closed
+}
 
 // Node represents a parse tree within the flat []int32 raw AST.
 type Node struct {
@@ -121,6 +135,7 @@ type File struct {
 	AST         []int32
 	Filename    string
 	ImportSpecs []*ImportSpecNode
+	InitFuncs   []*FuncDeclNode
 	Package     *Package
 	Scope       *Scope // Kind: FileScope, Parent: Universe
 	errList     ErrList
@@ -293,8 +308,13 @@ func (f *File) declareFunc(s *Scope, n Node) (r *FuncDeclNode) {
 			case IDENT:
 				r.Name = tok
 				if !isMethod {
-					if err := s.add(&FuncDeclaration{declaration: declaration{token: r.Name}, FuncDecl: r}); err != nil {
-						f.err(r.Name.Position(), "%v", err)
+					switch {
+					case bytes.Equal(r.Name.SrcBytes(), initName):
+						f.InitFuncs = append(f.InitFuncs, r)
+					default:
+						if err := s.add(&FuncDeclaration{declaration: declaration{token: r.Name}, FuncDecl: r}); err != nil {
+							f.err(r.Name.Position(), "%v", err)
+						}
 					}
 				}
 			}
@@ -1286,7 +1306,7 @@ type TypeNodeIdent struct {
 //
 //	| "chan" Type
 type TypeNodeChan struct {
-	Type TypeNode
+	Type TypeNode // T in chan T
 }
 
 // TypeNodeArray describes the Type production case
@@ -1294,14 +1314,14 @@ type TypeNodeChan struct {
 //	| "[" Expression "]" Type
 type TypeNodeArray struct {
 	Expression ExpressionNode
-	Type       TypeNode
+	Type       TypeNode // T in [expr]T
 }
 
 // TypeNodeSlice describes the Type production case
 //
 //	| "[" "]" Type
 type TypeNodeSlice struct {
-	Type TypeNode
+	Type TypeNode // T in []T
 }
 
 //TODO func (f *File) typ(s *Scope, n Node) (r TypeNode) {

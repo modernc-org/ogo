@@ -177,9 +177,11 @@ type Declaration interface {
 }
 
 type declaration struct {
-	name  string
-	token Token
-	valid int32
+	name     string
+	token    Token
+	valid    int32
+	typeGate gate
+	//TODO? valueGate gate
 }
 
 // Name returns the identifir of this declaration.

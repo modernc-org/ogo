@@ -262,7 +262,7 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		for n := range it(v.AST) {
 			switch n.sym {
 			case SourceFile:
-				//TODO v.sourceFile(n)
+				// v.sourceFile(n)
 			}
 		}
 	}
