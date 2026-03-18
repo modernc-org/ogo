@@ -40,7 +40,7 @@ func (k kinder) Kind() Kind {
 }
 
 // AliasType represents T in 'type T = U'.
-type AliasType struct {
+type AliasType struct { //TODO-
 	declaration
 	kinder
 	U Typ

@@ -238,18 +238,19 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		return p
 	}
 
-	for _, v := range p.Files {
-		for _, spec := range v.ImportSpecs {
+	for _, f := range p.Files {
+		for _, spec := range f.ImportSpecs {
 			c.importPkg(p.ImportPath, spec.ImportPath, spec.ImportPathToken)
 		}
 		// Merge file top level declarations into package scope.
-		for _, nm := range slices.Sorted(maps.Keys(v.tld.Declarations)) {
-			d := v.tld.Declarations[nm]
+		for _, nm := range slices.Sorted(maps.Keys(f.tld.Declarations)) {
+			d := f.tld.Declarations[nm]
 			if err := p.Scope.add(d); err != nil {
 				c.syncErr(d.Token().Position(), "%v", err)
 			}
 		}
-		v.tld.Declarations = nil
+		f.tld.Declarations = nil
+		f.Scope.Parent = p.Scope // Rewire/repair the scope hierarchy (Block->File->Package->Universe)
 	}
 	// Check for ... no identifier may be declared in both the file and package block
 	for _, v := range p.Files {
