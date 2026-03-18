@@ -1267,27 +1267,13 @@ func (f *File) declareVarSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) 
 
 func (f *File) varSpec(s *Scope, n Node) {
 	var names []Token
+	var typ TypeNode
 	for n := range it(n.ast) {
 		switch n.sym {
 		case IdentifierList:
 			names = f.identifierList(s, n)
-			for _, nmTok := range names {
-				nm := nmTok.Src()
-				switch x := s.Declarations[nm].(type) {
-				case *VarDeclaration:
-					switch vs := x.VarSpec; vs.gate {
-					case none:
-						vs.gate.open()
-					case opened:
-					default:
-						panic(todo("", vs.gate))
-					}
-				default:
-					panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
-				}
-			}
-		// case Type:
-		// 	typ = f.typ(s, n)
+		case Type:
+			typ = f.typ(s, n)
 		// case Expression:
 		// 	r.Expression = f.expression(s, n)
 		case 0:
@@ -1301,6 +1287,22 @@ func (f *File) varSpec(s *Scope, n Node) {
 			panic(todo("", n.sym))
 		}
 	}
+	for _, nmTok := range names {
+		nm := nmTok.Src()
+		switch x := s.Declarations[nm].(type) {
+		case *VarDeclaration:
+			switch vs := x.VarSpec; vs.gate {
+			case none:
+				vs.gate.open()
+				panic(todo(""))
+			default:
+				panic(todo("", vs.gate))
+			}
+		default:
+			panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
+		}
+	}
+	_ = typ //TODO-
 }
 
 // TypeNode describes the Type production.
@@ -1317,10 +1319,10 @@ type TypeNode any
 //
 //	[ identifier "." ] identifier
 type TypeNodeIdent struct {
-	Qualifier       Token  // foo in fmt.Print
-	ResolutionScope *Scope // Identifier appears in ResolutionScope.
-	Name            Token  // Print in fmt.Print
-	Index           int32  // Index into the flat []int32 AST of the containing file.
+	Qualifier Token // fmt in fmt.Print
+	//TODO-? ResolutionScope *Scope // Identifier appears in ResolutionScope.
+	Name  Token // Print in fmt.Print
+	Index int32 // Index into the flat []int32 AST of the containing file.
 }
 
 // TypeNodeChan describes the Type production case
@@ -1345,51 +1347,59 @@ type TypeNodeSlice struct {
 	Type TypeNode // T in []T
 }
 
-//TODO func (f *File) typ(s *Scope, n Node) (r TypeNode) {
-//TODO 	var ident TypeNodeIdent
-//TODO 	for n := range iterator(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case Type:
-//TODO 			switch x := r.(type) {
-//TODO 			case *TypeNodeChan:
-//TODO 				x.Type = f.typ(s, n)
-//TODO 			case *TypeNodeArray:
-//TODO 				x.Type = f.typ(s, n)
-//TODO 			case *TypeNodeSlice:
-//TODO 				x.Type = f.typ(s, n)
-//TODO 			default:
-//TODO 				panic(todo("%T", x))
-//TODO 			}
-//TODO 		case Expression:
-//TODO 			r = &TypeNodeArray{Expression: f.expression(s, n)}
-//TODO 		case 0:
-//TODO 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-//TODO 			case IDENT:
-//TODO 				switch {
-//TODO 				case ident.Name.IsValid():
-//TODO 					ident.Qualifier = ident.Name
-//TODO 					ident.Name = tok
-//TODO 				default:
-//TODO 					ident = TypeNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
-//TODO 					r = &ident
-//TODO 				}
-//TODO 			case CHAN:
-//TODO 				r = &TypeNodeChan{}
-//TODO 			case LBRACK:
-//TODO 				// ok
-//TODO 			case RBRACK:
-//TODO 				if r == nil {
-//TODO 					r = &TypeNodeSlice{}
-//TODO 				}
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) typ(s *Scope, n Node) (r TypeNode) {
+	var ident TypeNodeIdent
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Type:
+			switch x := r.(type) {
+			case *TypeNodeChan:
+				x.Type = f.typ(s, n)
+			//TODO 			case *TypeNodeArray:
+			//TODO 				x.Type = f.typ(s, n)
+			//TODO 			case *TypeNodeSlice:
+			//TODO 				x.Type = f.typ(s, n)
+			default:
+				panic(todo("%T", x))
+			}
+		//TODO 		case Expression:
+		//TODO 			r = &TypeNodeArray{Expression: f.expression(s, n)}
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case IDENT:
+				switch {
+				case ident.Name.IsValid():
+					panic(todo(""))
+					// ident.Qualifier = ident.Name
+					// ident.Name = tok
+				default:
+					nm := tok.Src()
+					switch d := s.find(nm); x := d.(type) {
+					case *AliasType:
+						panic(todo("%q %T", nm, x))
+					default:
+						panic(todo("%q %T", nm, x))
+					}
+					// ident = TypeNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
+					// r = &ident
+				}
+			case CHAN:
+				r = &TypeNodeChan{}
+			//TODO 			case LBRACK:
+			//TODO 				// ok
+			//TODO 			case RBRACK:
+			//TODO 				if r == nil {
+			//TODO 					r = &TypeNodeSlice{}
+			//TODO 				}
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
 
 func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 	for n := range it(n.ast) {

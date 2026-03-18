@@ -147,6 +147,17 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 	return r
 }
 
+func (s *Scope) find(nm string) (d Declaration) {
+	for s != nil {
+		if d = s.Declarations[nm]; d != nil {
+			return d
+		}
+
+		s = s.Parent
+	}
+	return nil
+}
+
 func (s *Scope) String() string {
 	return fmt.Sprintf("%p.%v=%v", s, s.Kind, slices.Collect(maps.Keys(s.Declarations)))
 }
