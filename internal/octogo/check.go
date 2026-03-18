@@ -122,11 +122,11 @@ type File struct {
 	Filename    string
 	ImportSpecs []*ImportSpecNode
 	Package     *Package
-	Scope       *Scope
+	Scope       *Scope // Kind: FileScope, Parent: Universe
 	errList     ErrList
 	parser      Parser
-	tld         *Scope // Later merged into package scope
-
+	// tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
+	tld               *Scope
 	hasInvalidImports bool
 }
 
@@ -150,11 +150,12 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 }
 
 func (p *Package) newFile(fn string, fsys fs.FS) (r *File) {
+	Scope := newScope(Universe, FileScope)
 	r = &File{
 		Filename: fn,
-		Scope:    newScope(nil, FileScope),
+		Scope:    Scope,
 		Package:  p,
-		tld:      newScope(Universe, PackageScope),
+		tld:      newScope(Scope, PackageScope),
 	}
 	b, err := fs.ReadFile(fsys, fn)
 	if err != nil {
@@ -255,22 +256,22 @@ func (f *File) declareTopLevel(n Node) {
 	}
 }
 
-func (f *File) topLevel(n Node) {
-	for n := range it(n.ast) {
-		switch n.sym {
-		// case ConstDecl:
-		// 	f.constDecl(f.tld, n)
-		// case VarDecl:
-		// 	f.varDecl(f.tld, n)
-		// case FuncDecl:
-		// 	f.funcDecl(f.tld, n)
-		// case TypeDecl:
-		// 	f.typeDecl(f.tld, n)
-		default:
-			panic(todo("", n.sym))
-		}
-	}
-}
+// func (f *File) topLevel(n Node) {
+// 	for n := range it(n.ast) {
+// 		switch n.sym {
+// 		// case ConstDecl:
+// 		// 	f.constDecl(f.tld, n)
+// 		// case VarDecl:
+// 		// 	f.varDecl(f.tld, n)
+// 		// case FuncDecl:
+// 		// 	f.funcDecl(f.tld, n)
+// 		// case TypeDecl:
+// 		// 	f.typeDecl(f.tld, n)
+// 		default:
+// 			panic(todo("", n.sym))
+// 		}
+// 	}
+// }
 
 // FuncDeclNode describes the FuncDecl production.
 //

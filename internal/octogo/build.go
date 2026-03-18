@@ -247,6 +247,7 @@ func (bc *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS
 				bc.errMu.Unlock()
 			}
 		}
+		v.tld.Nodes = nil
 	}
 	// Check for ... no identifier may be declared in both the file and package block
 	for _, v := range r.Files {
