@@ -144,14 +144,19 @@ func newScope(parent *Scope, kind ScopeKind) (r *Scope) {
 }
 
 func (s *Scope) find(nm string) (d Declaration) {
+	_, d = s.find2(nm)
+	return d
+}
+
+func (s *Scope) find2(nm string) (resolvedIn *Scope, d Declaration) {
 	for s != nil {
 		if d = s.Declarations[nm]; d != nil {
-			return d
+			return s, d
 		}
 
 		s = s.Parent
 	}
-	return nil
+	return nil, nil
 }
 
 func (s *Scope) String() string {

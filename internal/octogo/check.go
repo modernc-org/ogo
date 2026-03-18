@@ -1274,6 +1274,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			names = f.identifierList(s, n)
 		case Type:
 			typ = f.typ(s, n)
+			panic(todo("", typ))
 		// case Expression:
 		// 	r.Expression = f.expression(s, n)
 		case 0:
@@ -1302,7 +1303,6 @@ func (f *File) varSpec(s *Scope, n Node) {
 			panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
 		}
 	}
-	_ = typ //TODO-
 }
 
 // TypeNode describes the Type production.
