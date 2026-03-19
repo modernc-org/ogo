@@ -53,7 +53,7 @@ uintptr
 var (
 	_ Declaration = (*ConstDeclaration)(nil)
 	_ Declaration = (*ImportDeclaration)(nil)
-	_ Declaration = (*PredefinedType)(nil)
+	_ Declaration = (*PredeclaredType)(nil)
 	_ Declaration = (*VarDeclaration)(nil)
 )
 
@@ -87,32 +87,32 @@ out:
 
 	// Predefines types
 	f := func(nm string, k Kind) {
-		Universe.Declarations[nm] = &PredefinedType{declaration: declaration{token: names[nm]}, kinder: kinder(k)}
+		Universe.Declarations[nm] = &PredeclaredType{declaration: declaration{token: names[nm]}, kinder: kinder(k)}
 	}
-	f("bool", PredefinedBool)
-	f("int16", PredefinedInt16)
-	f("int32", PredefinedInt32)
-	f("int8", PredefinedInt8)
-	f("uint16", PredefinedUint16)
-	f("uint32", PredefinedUint32)
-	f("uint8", PredefinedUint8)
-	f("uintptr", PredefinedUintptr)
+	f("bool", PredeclaredBool)
+	f("int16", PredeclaredInt16)
+	f("int32", PredeclaredInt32)
+	f("int8", PredeclaredInt8)
+	f("uint16", PredeclaredUint16)
+	f("uint32", PredeclaredUint32)
+	f("uint8", PredeclaredUint8)
+	f("uintptr", PredeclaredUintptr)
 	// Type aliases
-	f("byte", PredefinedUint8)
-	f("int", PredefinedInt32)
-	f("rune", PredefinedInt32)
-	f("uint", PredefinedUint32)
+	f("byte", PredeclaredUint8)
+	f("int", PredeclaredInt32)
+	f("rune", PredeclaredInt32)
+	f("uint", PredeclaredUint32)
 
 	// Bool constants
-	boolType := Universe.Declarations["bool"].(Typ)
+	boolType := Universe.Declarations["bool"].(*PredeclaredType)
 	f2 := func(nm string, v bool) {
 		tok := names[nm]
 		Universe.Declarations[nm] = &ConstDeclaration{
 			declaration: declaration{token: tok},
 			ConstSpec: &ConstSpecNode{
-				Name:  tok,
-				Value: constant.MakeBool(v),
-				Type:  boolType,
+				Name:     tok,
+				Value:    constant.MakeBool(v),
+				TypeNode: boolType,
 			},
 		}
 	}
@@ -163,9 +163,9 @@ func (s *Scope) String() string {
 	return fmt.Sprintf("%p.%v=%v", s, s.Kind, slices.Collect(maps.Keys(s.Declarations)))
 }
 
-//TODO func (s *Scope) child() (r *Scope) {
-//TODO 	return newScope(s, BlockScope)
-//TODO }
+func (s *Scope) child() (r *Scope) {
+	return newScope(s, BlockScope)
+}
 
 func (s *Scope) add(d Declaration) (err error) {
 	nm := d.Name()
@@ -199,9 +199,9 @@ type declaration struct {
 	valid int32
 }
 
-func (d *declaration) declaration() *declaration {
-	return d
-}
+//TODO- func (d *declaration) declaration() *declaration {
+//TODO- 	return d
+//TODO- }
 
 // Name returns the identifir of this declaration.
 func (d *declaration) Name() (r string) {

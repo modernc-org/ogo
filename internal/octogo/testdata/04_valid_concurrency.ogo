@@ -22,7 +22,7 @@ func main() {
 		case rateChan <- 500:
 			// successfully sent new delay
 		default:
-		// non-blocking fallback
+			// non-blocking fallback
 		}
 	}
 }

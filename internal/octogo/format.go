@@ -176,6 +176,10 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 
 func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	switch {
+	case curr == 0:
+		return false // No artificial space needed before the EOF dummy token
+	case prev == LBRACE && curr == RBRACE:
+		return false // Keep empty blocks, structs, and interfaces as {}
 	case prev == ARROW:
 		if prevPrev == IDENT || prevPrev == RBRACK || prevPrev == RPAREN {
 			return true
@@ -315,6 +319,7 @@ type formatterCtx struct {
 	indentLevel       int32
 	undentLBraceIndex int32
 	undentRBraceIndex int32
+	indentSepForIndex int32
 	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
 	inType            bool
@@ -434,6 +439,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.undentRBraceIndex = lastIndex(ast[:next])
 				case CaseClause, CommClause:
 					c.indentLevel++
+				case SwitchStmt, SelectStmt:
+					// Flag the closing '}' for an extra separator indent
+					c.indentSepForIndex = lastIndex(ast[:next])
 				case ParameterList, CallSuffix:
 					c.inParams = true
 				case SimpleExpr:
@@ -567,7 +575,12 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					seps = append(seps, whiteSpace(0))
 				}
 
-				f.formatSep(seps, c.indentLevel, Symbol(tok.Ch), c)
+				sepIndent := c.indentLevel
+				if n == c.indentSepForIndex {
+					sepIndent++
+				}
+
+				f.formatSep(seps, sepIndent, Symbol(tok.Ch), c)
 				f.tabs(f.nl, c.indentLevel+indentDelta)
 
 				// Inject Elastic Col2 Padding
@@ -593,7 +606,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		}
 	}
 
-	walk(f.ast, formatterCtx{undentRBraceIndex: -1})
+	walk(f.ast, formatterCtx{undentRBraceIndex: -1, indentSepForIndex: -1})
 	// Flush leftover synthetic separators AND the EOF separator ---
 	if f.err == nil {
 		var finalSep []byte

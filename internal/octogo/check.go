@@ -15,6 +15,14 @@ import (
 )
 
 var (
+	_ TypeNode = (*FunctionType)(nil)
+	_ TypeNode = (*TypeNodeArray)(nil)
+	_ TypeNode = (*TypeNodeChan)(nil)
+	_ TypeNode = (*TypeNodeIdent)(nil)
+	_ TypeNode = (*TypeNodeSlice)(nil)
+)
+
+var (
 	noPos    token.Position
 	initName = []byte("init")
 )
@@ -27,9 +35,9 @@ const (
 
 type gate int8
 
-func (g gate) gate() gate {
-	return g
-}
+//TODO- func (g gate) gate() gate {
+//TODO- 	return g
+//TODO- }
 
 func (g *gate) open() {
 	*g = opened
@@ -282,8 +290,8 @@ func (f *File) topLevel(s *Scope, n Node) {
 		// 	f.constDecl(s, n)
 		case VarDecl:
 			f.varDecl(s, n)
-		// case FuncDecl:
-		// 	f.funcDecl(s, n)
+		case FuncDecl:
+			f.funcDecl(s, n)
 		// case TypeDecl:
 		// 	f.typeDecl(s, n)
 		default:
@@ -292,16 +300,27 @@ func (f *File) topLevel(s *Scope, n Node) {
 	}
 }
 
+// FunctionType describes the type of a function/method.
+type FunctionType struct {
+	Receiver  *ReceiverNode
+	Signature *SignatureNode
+}
+
+// Type implements TypeNode.
+func (t *FunctionType) Type() Typ {
+	panic(todo(""))
+}
+
 // FuncDeclNode describes the FuncDecl production.
 //
-//	FuncDecl       = "func" [ Receiver ] identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] [ Block ] .
+//	FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
 type FuncDeclNode struct {
-	Name          Token
-	Receiver      *ReceiverNode
-	ParameterList *ParameterListNode
-	Type          TypeNode
-	ReturnList    *ParameterListNode
-	Block         *BlockNode
+	gate
+	Name Token
+	//TODO- ParameterList *ParameterListNode
+	Type *FunctionType
+	//TODO- ReturnList    *ParameterListNode
+	Block *BlockNode
 }
 
 func (f *File) declareFunc(n Node) (r *FuncDeclNode) {
@@ -331,56 +350,103 @@ func (f *File) declareFunc(n Node) (r *FuncDeclNode) {
 	return r
 }
 
-// func (f *File) funcDecl2(s *Scope, n Node) (r *FuncDeclNode) {
-// 	r = &FuncDeclNode{}
-// 	bs := f.tld.child()
-// 	seenRPar := false
-// 	for n := range iterator(n.ast) {
-// 		switch n.sym {
-// 		case Receiver:
-// 			r.Receiver = f.receiver(s, n) //TODO declare receiver name in bs
-// 		case ParameterList:
-// 			switch {
-// 			case seenRPar:
-// 				r.ReturnList = f.parameterList(bs, n)
-// 			default:
-// 				r.ParameterList = f.parameterList(bs, n)
-// 			}
-// 			//TODO declare in bs
-// 		case Block:
-// 			r.Block = f.block(bs, n)
-// 		case Type:
-// 			r.Type = f.typ(s, n)
-// 		case 0:
-// 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-// 			case IDENT:
-// 				r.Name = tok
-// 				//TODO declare in s
-// 			case FUNC, LPAREN:
-// 				// ok
-// 			case RPAREN:
-// 				seenRPar = true
-// 			default:
-// 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-// 			}
-// 		default:
-// 			panic(todo("", n.sym))
-// 		}
-// 	}
-// 	return r
-// }
+func (f *File) funcDecl(s *Scope, n Node) {
+	block := f.tld.child()
+	// seenRPar := false
+
+	var fd *FuncDeclNode
+
+	defer func() {
+		if fd == nil {
+			return
+		}
+
+		switch fd.gate {
+		case opened:
+			fd.gate.close()
+		default:
+			panic(todo("", fd.gate))
+		}
+	}()
+
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Signature:
+			fd.Type.Signature = f.signature(block, n)
+		//		case Receiver:
+		//			r.Receiver = f.receiver(s, n) //TODO declare receiver name in bs
+		//		case ParameterList:
+		//			switch {
+		//			case seenRPar:
+		//				r.ReturnList = f.parameterList(bs, n)
+		//			default:
+		//				r.ParameterList = f.parameterList(bs, n)
+		//			}
+		//			//TODO declare in bs
+		//		case Block:
+		//			r.Block = f.block(bs, n)
+		//		case Type:
+		//			r.Type = f.typ(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case IDENT:
+				switch x := s.Declarations[tok.Src()].(type) {
+				case nil:
+					return
+				case *FuncDeclaration:
+					if fd = x.FuncDecl; fd == nil {
+						return
+					}
+
+					switch fd.gate {
+					case none:
+						fd.Type = &FunctionType{}
+						fd.gate.open()
+					default:
+						panic(todo("", fd.gate))
+					}
+				default:
+					panic(todo("%T", x))
+				}
+			}
+		}
+	}
+}
+
+// SignatureNode describes the Signature production.
+//
+//	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+type SignatureNode struct{}
+
+func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
+	r = &SignatureNode{}
+	for n := range it(n.ast) {
+		switch n.sym {
+		case 0:
+			switch tok := f.tok(n.tok); f.ch(n.tok) {
+			case LPAREN, RPAREN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok), f.ch(n.tok), tok))
+			}
+		default:
+			panic(todo("", n.sym))
+		}
+	}
+	return r
+}
 
 // ReceiverNode describes the Receiver production.
 //
 //	Receiver       = "(" identifier Type ")" .
 type ReceiverNode struct {
-	Name Token
-	Type TypeNode
+	Name     Token
+	TypeNode TypeNode
 }
 
 //TODO func (f *File) receiver(s *Scope, n Node) (r *ReceiverNode) {
 //TODO 	r = &ReceiverNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Type:
 //TODO 			r.Type = f.typ(s, n)
@@ -407,7 +473,7 @@ type BlockNode struct {
 
 //TODO func (f *File) block(s *Scope, n Node) (r *BlockNode) {
 //TODO 	r = &BlockNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Statement:
 //TODO 			r.List = append(r.List, f.statement(s, n))
@@ -525,7 +591,7 @@ type StatementNodeGo struct {
 //TODO 	var ah *AssignHeadNode
 //TODO 	var ifImplicitBlock *Scope
 //TODO 	var goStatement *StatementNodeGo
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case VarDecl:
 //TODO 			f.varDecl(s, n)
@@ -636,7 +702,7 @@ type SelectStmtNode struct {
 
 //TODO func (f *File) selectStmt(s *Scope, n Node) (r *SelectStmtNode) {
 //TODO 	r = &SelectStmtNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case CommClause:
 //TODO 			r.List = append(r.List, f.commClause(s, n))
@@ -664,7 +730,7 @@ type CommClauseNode struct {
 
 //TODO func (f *File) commClause(s *Scope, n Node) (r *CommClauseNode) {
 //TODO 	r = &CommClauseNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case CommHead:
 //TODO 			r.CommHead = f.commHead(s, n)
@@ -694,7 +760,7 @@ type CommHeadNode struct {
 
 //TODO func (f *File) commHead(s *Scope, n Node) (r *CommHeadNode) {
 //TODO 	r = &CommHeadNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case CommOp:
 //TODO 			r.CommOp = f.commOp(s, n)
@@ -737,7 +803,7 @@ type CommOpNodeAssign struct {
 
 //TODO func (f *File) commOp(s *Scope, n Node) (r CommOpNode) {
 //TODO 	var comm *CommOpNodeAssign
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			r = &CommOpNodeReceive{Expression: f.expression(s, n)}
@@ -770,7 +836,7 @@ type PostfixCommNode struct {
 
 //TODO func (f *File) postfixCom(s *Scope, n Node) (r *PostfixCommNode) {
 //TODO 	r = &PostfixCommNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			r.Expression = f.expression(s, n)
@@ -800,7 +866,7 @@ type SwitchStmtNode struct {
 
 //TODO func (f *File) switchStmt(s *Scope, n Node) (r *SwitchStmtNode) {
 //TODO 	r = &SwitchStmtNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case SwitchGuard:
 //TODO 			r.SwitchGuard = f.switchGuard(s, n)
@@ -830,7 +896,7 @@ type CaseClauseNode struct {
 
 //TODO func (f *File) caseClause(s *Scope, n Node) (r *CaseClauseNode) {
 //TODO 	r = &CaseClauseNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case CaseHead:
 //TODO 			r.CaseHead = f.caseHead(s, n)
@@ -860,7 +926,7 @@ type CaseHeadNode struct {
 
 //TODO func (f *File) caseHead(s *Scope, n Node) (r *CaseHeadNode) {
 //TODO 	r = &CaseHeadNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case ExpressionList:
 //TODO 			r.List = f.expressionList(s, n)
@@ -881,7 +947,7 @@ type CaseHeadNode struct {
 //TODO }
 
 //TODO func (f *File) expressionList(s *Scope, n Node) (r []ExpressionNode) {
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			r = append(r, f.expression(s, n))
@@ -909,7 +975,7 @@ type SwitchGuardNode struct {
 
 //TODO func (f *File) switchGuard(s *Scope, n Node) (r *SwitchGuardNode) {
 //TODO 	r = &SwitchGuardNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			switch expr := f.expression(s, n); {
@@ -945,7 +1011,7 @@ type PostfixNode struct {
 
 //TODO func (f *File) postfix(s *Scope, n Node) (r *PostfixNode) {
 //TODO 	r = &PostfixNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case PostfixOp:
 //TODO 			r.PostfixOp = f.postfixOp(s, n)
@@ -974,7 +1040,7 @@ type IndexNode struct {
 
 //TODO func (f *File) index(s *Scope, n Node) (r *IndexNode) {
 //TODO 	r = &IndexNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			r.Expression = f.expression(s, n)
@@ -1026,7 +1092,7 @@ type PostfixOpNodeSend struct {
 //TODO 	var list []*LHSItemNode
 //TODO 	var assignOp Symbol
 //TODO 	var send *PostfixOpNodeSend
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case CallSuffix:
 //TODO 			r = &PostfixOpNodeCall{CallSuffix: f.callSuffix(s, n)}
@@ -1067,7 +1133,7 @@ type LHSItemNode struct {
 
 //TODO func (f *File) lhsItem(s *Scope, n Node) (r *LHSItemNode) {
 //TODO 	r = &LHSItemNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case AssignHead:
 //TODO 			r.AssignHead = f.assignHead(s, n)
@@ -1102,7 +1168,7 @@ type AssignHeadNode struct {
 
 //TODO func (f *File) assignHead(s *Scope, n Node) (r *AssignHeadNode) {
 //TODO 	r = &AssignHeadNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			r.Expression = f.expression(s, n)
@@ -1129,8 +1195,8 @@ type AssignHeadNode struct {
 //	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 type ParameterListNode struct {
 	List []struct {
-		Names []Token
-		Type  TypeNode
+		Names    []Token
+		TypeNode TypeNode
 	}
 }
 
@@ -1138,9 +1204,9 @@ type ParameterListNode struct {
 //TODO 	r = &ParameterListNode{}
 //TODO 	var item struct {
 //TODO 		Names []Token
-//TODO 		Type  TypeNode
+//TODO 		TypeNode  TypeNode
 //TODO 	}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case IdentifierList:
 //TODO 			item.Names = f.identifierList(s, n)
@@ -1201,8 +1267,8 @@ func (f *File) varDecl(s *Scope, n Node) {
 //
 //	TypeSpec = identifier [ "=" ] Type .
 type TypeSpecNode struct {
-	Name Token
-	Type TypeNode
+	Name     Token
+	TypeNode TypeNode
 }
 
 func (f *File) typeSpec(s *Scope, n Node) (r *TypeSpecNode) {
@@ -1267,14 +1333,48 @@ func (f *File) declareVarSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) 
 
 func (f *File) varSpec(s *Scope, n Node) {
 	var names []Token
+	var varDecls []*VarDeclaration
 	var typ TypeNode
+
+	defer func() {
+		for _, vd := range varDecls {
+			if vd == nil {
+				continue
+			}
+			switch vs := vd.VarSpec; vs.gate {
+			case opened:
+				vs.TypeNode = typ
+				vs.gate.close()
+			default:
+				panic(todo("", vs.gate))
+			}
+		}
+	}()
+
 	for n := range it(n.ast) {
 		switch n.sym {
 		case IdentifierList:
 			names = f.identifierList(s, n)
+			for _, nmTok := range names {
+				nm := nmTok.Src()
+				switch x := s.Declarations[nm].(type) {
+				case nil:
+					varDecls = append(varDecls, nil)
+					continue
+				case *VarDeclaration:
+					varDecls = append(varDecls, x)
+					switch vs := x.VarSpec; vs.gate {
+					case none:
+						vs.gate.open()
+					default:
+						panic(todo("", vs.gate))
+					}
+				default:
+					panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
+				}
+			}
 		case Type:
 			typ = f.typ(s, n)
-			panic(todo("", typ))
 		// case Expression:
 		// 	r.Expression = f.expression(s, n)
 		case 0:
@@ -1288,21 +1388,6 @@ func (f *File) varSpec(s *Scope, n Node) {
 			panic(todo("", n.sym))
 		}
 	}
-	for _, nmTok := range names {
-		nm := nmTok.Src()
-		switch x := s.Declarations[nm].(type) {
-		case *VarDeclaration:
-			switch vs := x.VarSpec; vs.gate {
-			case none:
-				vs.gate.open()
-				panic(todo(""))
-			default:
-				panic(todo("", vs.gate))
-			}
-		default:
-			panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
-		}
-	}
 }
 
 // TypeNode describes the Type production.
@@ -1313,7 +1398,9 @@ func (f *File) varSpec(s *Scope, n Node) {
 //		| "*" Type
 //		| InterfaceType
 //		| StructType .
-type TypeNode any
+type TypeNode interface {
+	Type() Typ
+}
 
 // TypeNodeIdent describes the Type production case
 //
@@ -1325,11 +1412,21 @@ type TypeNodeIdent struct {
 	Index int32 // Index into the flat []int32 AST of the containing file.
 }
 
+// Type implements TypeNode.
+func (t *TypeNodeIdent) Type() Typ {
+	panic(todo(""))
+}
+
 // TypeNodeChan describes the Type production case
 //
 //	| "chan" Type
 type TypeNodeChan struct {
-	Type TypeNode // T in chan T
+	TypeNode TypeNode // T in chan T
+}
+
+// Type implements TypeNode.
+func (t *TypeNodeChan) Type() Typ {
+	panic(todo(""))
 }
 
 // TypeNodeArray describes the Type production case
@@ -1337,14 +1434,24 @@ type TypeNodeChan struct {
 //	| "[" Expression "]" Type
 type TypeNodeArray struct {
 	Expression ExpressionNode
-	Type       TypeNode // T in [expr]T
+	TypeNode   TypeNode // T in [expr]T
+}
+
+// Type implements TypeNode.
+func (t *TypeNodeArray) Type() Typ {
+	panic(todo(""))
 }
 
 // TypeNodeSlice describes the Type production case
 //
 //	| "[" "]" Type
 type TypeNodeSlice struct {
-	Type TypeNode // T in []T
+	TypeNode TypeNode // T in []T
+}
+
+// Type implements TypeNode.
+func (t *TypeNodeSlice) Type() Typ {
+	panic(todo(""))
 }
 
 func (f *File) typ(s *Scope, n Node) (r TypeNode) {
@@ -1354,7 +1461,7 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 		case Type:
 			switch x := r.(type) {
 			case *TypeNodeChan:
-				x.Type = f.typ(s, n)
+				x.TypeNode = f.typ(s, n)
 			//TODO 			case *TypeNodeArray:
 			//TODO 				x.Type = f.typ(s, n)
 			//TODO 			case *TypeNodeSlice:
@@ -1375,6 +1482,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				default:
 					nm := tok.Src()
 					switch d := s.find(nm); x := d.(type) {
+					case *PredeclaredType:
+						// ok
 					default:
 						panic(todo("%q %T", nm, x))
 					}
@@ -1441,7 +1550,7 @@ type ConstSpecNode struct {
 	Expression ExpressionNode
 	Name       Token
 	Value      Value
-	Type       TypeNode
+	TypeNode   TypeNode
 }
 
 func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
@@ -1460,7 +1569,7 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 
 //TODO func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 //TODO 	r = &ConstSpecNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			r.Expression = f.expression(s, n)
@@ -1500,7 +1609,7 @@ type BinaryExpressionNode struct {
 
 //TODO func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
 //TODO 	var op Symbol
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case SimpleExpr:
 //TODO 			switch e := f.simpleExpr(s, n); {
@@ -1524,7 +1633,7 @@ type BinaryExpressionNode struct {
 //TODO }
 
 //TODO func (f *File) relOp(s *Scope, n Node) (r Symbol) {
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case 0:
 //TODO 			switch sym := f.ch(n.tok); sym {
@@ -1542,7 +1651,7 @@ type BinaryExpressionNode struct {
 
 //TODO func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 //TODO 	var op Symbol
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Term:
 //TODO 			switch e := f.term(s, n); {
@@ -1566,7 +1675,7 @@ type BinaryExpressionNode struct {
 //TODO }
 
 //TODO func (f *File) addOp(s *Scope, n Node) (r Symbol) {
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case 0:
 //TODO 			switch sym := f.ch(n.tok); sym {
@@ -1584,7 +1693,7 @@ type BinaryExpressionNode struct {
 
 //TODO func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 //TODO 	var op Symbol
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case UnaryExpr:
 //TODO 			switch e := f.unaryExpr(s, n); {
@@ -1608,7 +1717,7 @@ type BinaryExpressionNode struct {
 //TODO }
 
 //TODO func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case 0:
 //TODO 			switch sym := f.ch(n.tok); sym {
@@ -1634,7 +1743,7 @@ type UnaryExprNode struct {
 
 //TODO func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
 //TODO 	var ue *UnaryExprNode
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Factor:
 //TODO 			fa := f.factor(s, n)
@@ -1663,7 +1772,7 @@ type UnaryExprNode struct {
 //TODO }
 
 //TODO func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case 0:
 //TODO 			switch sym := f.ch(n.tok); sym {
@@ -1707,7 +1816,7 @@ type FactorNodeParen struct {
 
 //TODO func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 //TODO 	var ident *FactorNodeIdent
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case Expression:
 //TODO 			r = &FactorNodeParen{Expression: f.expression(s, n)}
@@ -1748,7 +1857,7 @@ type FactorSuffixNode struct {
 
 //TODO func (f *File) factorSuffix(s *Scope, n Node) (r *FactorSuffixNode) {
 //TODO 	r = &FactorSuffixNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case CallSuffix:
 //TODO 			r.CallSuffix = f.callSuffix(s, n)
@@ -1776,7 +1885,7 @@ type SelectorNode struct {
 
 //TODO func (f *File) selector(s *Scope, n Node) (r *SelectorNode) {
 //TODO 	r = &SelectorNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case 0:
 //TODO 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
@@ -1805,7 +1914,7 @@ type CallSuffixNode struct {
 
 //TODO func (f *File) callSuffix(s *Scope, n Node) (r *CallSuffixNode) {
 //TODO 	r = &CallSuffixNode{}
-//TODO 	for n := range iterator(n.ast) {
+//TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
 //TODO 		case ArgumentList:
 //TODO 			r.List = append(r.List, f.expressionList(s, n))

@@ -5,7 +5,7 @@
 package octogo // import "modernc.org/ogo/internal/ogo"
 
 var (
-	_ Typ = (*PredefinedType)(nil)
+	_ Typ = (*PredeclaredType)(nil)
 )
 
 // Kind describes a type category.
@@ -13,14 +13,14 @@ type Kind int
 
 // Values of type Kind
 const (
-	PredefinedBool = iota
-	PredefinedInt8
-	PredefinedUint8
-	PredefinedInt16
-	PredefinedUint16
-	PredefinedInt32
-	PredefinedUint32
-	PredefinedUintptr
+	PredeclaredBool = iota
+	PredeclaredInt8
+	PredeclaredUint8
+	PredeclaredInt16
+	PredeclaredUint16
+	PredeclaredInt32
+	PredeclaredUint32
+	PredeclaredUintptr
 	Alias
 )
 
@@ -36,8 +36,13 @@ func (k kinder) Kind() Kind {
 	return Kind(k)
 }
 
-// PredefinedType represents a built-in type.
-type PredefinedType struct {
+// PredeclaredType represents a built-in type.
+type PredeclaredType struct {
 	declaration
 	kinder
+}
+
+// Type implements TypeNode.
+func (t *PredeclaredType) Type() Typ {
+	return t
 }
