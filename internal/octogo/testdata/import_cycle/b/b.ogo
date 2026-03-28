@@ -1,2 +1,3 @@
-// Enforce line 2
+// Enforce line 3
+//
 import "import_cycle"

@@ -295,7 +295,7 @@ func (f *File) topLevel(s *Scope, n Node) {
 		// case TypeDecl:
 		// 	f.typeDecl(s, n)
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.Filename, n.sym))
 		}
 	}
 }

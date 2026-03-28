@@ -16,8 +16,9 @@ import (
 	"testing"
 )
 
-// errorCommentRx matches: // ERROR "some regexp"
-var errorCommentRx = regexp.MustCompile(`//\s*ERROR\s+"([^"]+)"`)
+// errorCommentRx matches: // ERROR some regexp
+// White space between ERROR and the regexp and trailing white space is ignored.
+var errorCommentRx = regexp.MustCompile(`//\s*ERROR\s+([^ \t].*)`)
 
 // expectedError represents an error we expect the compiler to throw on a specific line.
 type expectedError struct {
@@ -85,8 +86,8 @@ func runSingleTest(t *testing.T, fsys fs.FS, path string) {
 
 	actualErrs := runCompiler(t, filepath.Base(path), fsys)
 	t.Logf("len(actualErrs)=%v", len(actualErrs))
-	for _, v := range actualErrs {
-		t.Log(v)
+	for i, v := range actualErrs {
+		t.Logf("%v/%v actual err=%v", i+1, len(actualErrs), v)
 	}
 
 	if expectedCompile {
@@ -123,7 +124,7 @@ func parseAnnotations(fsys fs.FS, path string) (bool, []expectedError, error) {
 		}
 
 		if match := errorCommentRx.FindStringSubmatch(line); match != nil {
-			re := strings.ReplaceAll(match[1], "@", `"`)
+			re := strings.TrimSpace(match[1])
 			rx, err := regexp.Compile(re)
 			if err != nil {
 				return false, nil, fmt.Errorf("invalid regexp on line %d: %v", lineNum, err)

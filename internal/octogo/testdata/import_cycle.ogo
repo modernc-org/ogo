@@ -1,2 +1,3 @@
-// ERROR "not allowed" at import_cycle/b/b.ogo:2
+// Actual error is reported at import_cycle/b/b.ogo:3
+// ERROR not allowed
 import "import_cycle"
