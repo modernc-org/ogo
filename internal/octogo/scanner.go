@@ -91,6 +91,57 @@ func (e ErrWithPosition) Error() string {
 	}
 }
 
+func (e ErrWithPosition) less(f ErrWithPosition) bool {
+	switch {
+	case !e.Pos.IsValid():
+		switch {
+		case !f.Pos.IsValid():
+			return e.Err.Error() < f.Err.Error()
+		default:
+			return true
+		}
+	default:
+		switch {
+		case !f.Pos.IsValid():
+			return false
+		}
+	}
+
+	if e.Pos.Filename < f.Pos.Filename {
+		return true
+	}
+
+	if e.Pos.Filename > f.Pos.Filename {
+		return false
+	}
+
+	if e.Pos.Line < f.Pos.Line {
+		return true
+	}
+
+	if e.Pos.Line > f.Pos.Line {
+		return false
+	}
+
+	if e.Pos.Column < f.Pos.Column {
+		return true
+	}
+
+	if e.Pos.Column > f.Pos.Column {
+		return false
+	}
+
+	return e.Err.Error() < f.Err.Error()
+}
+
+func (e ErrWithPosition) sameFileAndLine(f ErrWithPosition) bool {
+	if !e.Pos.IsValid() && !f.Pos.IsValid() {
+		return e.Error() == f.Error()
+	}
+
+	return e.Pos.Filename == f.Pos.Filename && e.Pos.Line == f.Pos.Line
+}
+
 // ErrList is a list of errors.
 type ErrList []ErrWithPosition
 

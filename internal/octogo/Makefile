@@ -49,7 +49,7 @@ debug-parser:
 	gofmt -l -s -w ..
 
 race:
-	go test -v -timeout 24h -race -count=1 -failfast
+	go test -timeout 24h -race -count=1 -failfast
 	golint
 	staticcheck
 

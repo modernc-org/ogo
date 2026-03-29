@@ -11,6 +11,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -175,9 +176,8 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 
 	c := NewBuildContext(fsys, limit)
 
-	var errs ErrList
-
 	defer func() {
+		var errs ErrList
 		for _, v := range c.importTasks {
 			errs = v.p.consolidateErrors(errs)
 		}
@@ -185,7 +185,23 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 			errs = main.consolidateErrors(errs)
 		}
 		errs = consolidateErrors(errs, c.errList)
-		//TODO sort and dedup errors with same file & line, lower column wins
+		// Establish stable order
+		sort.Slice(errs, func(i, j int) bool { return errs[i].less(errs[j]) })
+		// Remove multiple errors for the same line
+		w := 0
+		for _, v := range errs {
+			if w == 0 {
+				errs[w] = v
+				w++
+				continue
+			}
+
+			if !v.sameFileAndLine(errs[w-1]) {
+				errs[w] = v
+				w++
+			}
+		}
+		errs = errs[:w]
 		err = errs.Err()
 	}()
 
@@ -214,21 +230,22 @@ func (n limiter) limit() func() {
 
 // Package represents a single OctoGo package.
 type Package struct {
-	Files      []*File
-	ImportPath string
-	Scope      *Scope
-	ctx        *BuildContext
-	//TODO typeLiterals map[some-id]TypeNode
+	Files        []*File
+	ImportPath   string
+	Scope        *Scope
+	ctx          *BuildContext
+	typeLiterals map[*tok]TypeNode
 }
 
 // NewPackage returns a newly created Package consisting of files in 'files'
 // within 'fsys'.
 func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (p *Package) {
 	p = &Package{
-		Files:      make([]*File, len(files)),
-		ImportPath: importPath,
-		Scope:      newScope(Universe, PackageScope),
-		ctx:        c,
+		Files:        make([]*File, len(files)),
+		ImportPath:   importPath,
+		Scope:        newScope(Universe, PackageScope),
+		ctx:          c,
+		typeLiterals: map[*tok]TypeNode{},
 	}
 
 	// Phase 1: Local Scope Population (Parallel)

@@ -1524,6 +1524,29 @@ func (t *TypeNodeSlice) Type() Typ {
 }
 
 func (f *File) typ(s *Scope, n Node) (r TypeNode) {
+	// It is not expected to ever revisit the node for the Type production. Below
+	// is defense against that if that expectation turns out to be false.
+	// ----
+	ix := n.Pos()
+	id := &f.parser.sc.toks[ix]
+	tn, ok := f.Package.typeLiterals[id]
+	if ok {
+		switch tn.state() {
+		default:
+			panic(todo("", f.tok(ix).Position(), tn.state()))
+		}
+
+		return tn
+	}
+
+	defer func() {
+		f.Package.typeLiterals[id] = r
+		if r != nil {
+			r.setResolved()
+		}
+	}()
+	// ----
+
 	var ident TypeNodeIdent
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -1538,8 +1561,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			default:
 				panic(todo("%T", x))
 			}
-		//TODO 		case Expression:
-		//TODO 			r = &TypeNodeArray{Expression: f.expression(s, n)}
+		case Expression:
+			r = &TypeNodeArray{Expression: f.expression(s, n)}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
@@ -1559,10 +1582,10 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 					// ident = TypeNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
 					// r = &ident
 				}
-			//TODO case CHAN:
-			//TODO 	r = &TypeNodeChan{}
-			//TODO 			case LBRACK:
-			//TODO 				// ok
+			case CHAN:
+				r = &TypeNodeChan{}
+			case LBRACK:
+				// ok
 			//TODO 			case RBRACK:
 			//TODO 				if r == nil {
 			//TODO 					r = &TypeNodeSlice{}
@@ -1702,7 +1725,7 @@ func (f *File) constSpec(s *Scope, n Node) {
 
 // ExpressionNode represents the Expression production or any of its
 // constituents.
-type ExpressionNode any
+type ExpressionNode any //TODO add Type method
 
 // BinaryExpressionNode represents a binary operation, ie. an operator and its
 // two operands, ie. one of
