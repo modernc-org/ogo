@@ -36,12 +36,22 @@ const (
 
 type gate int8
 
+func (g *gate) state() (r gate) {
+	return *g
+}
+
 func (g *gate) setResolving() {
 	*g = resolving
 }
 
 func (g *gate) setResolved() {
 	*g = resolved
+}
+
+type gater interface {
+	state() (r gate)
+	setResolving()
+	setResolved()
 }
 
 // Node represents a parse tree within the flat []int32 raw AST.
@@ -156,6 +166,10 @@ type File struct {
 //TODO 	}
 //TODO 	return r
 //TODO }
+
+func (f *File) consolidateErrors(use ErrList) (e ErrList) {
+	return consolidateErrors(use, f.errList)
+}
 
 func (f *File) tok(x int32) (r Token) {
 	return f.parser.Token(x)
@@ -295,22 +309,28 @@ func (f *File) declareTopLevel(n Node) {
 func (f *File) topLevel(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
-		// case ConstDecl:
-		// 	f.constDecl(s, n)
+		case ConstDecl:
+			f.constDecl(s, n)
 		case VarDecl:
 			f.varDecl(s, n)
 		case FuncDecl:
 			f.funcDecl(s, n)
 		// case TypeDecl:
 		// 	f.typeDecl(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
 		default:
-			panic(todo("", f.Filename, n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
 
 // FunctionType describes the type of a function/method.
 type FunctionType struct {
+	gate
 	Receiver  *ReceiverNode
 	Signature *SignatureNode
 }
@@ -1443,6 +1463,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 //		| InterfaceType
 //		| StructType .
 type TypeNode interface {
+	gater
 	Type() Typ
 }
 
@@ -1450,6 +1471,7 @@ type TypeNode interface {
 //
 //	[ identifier "." ] identifier
 type TypeNodeIdent struct {
+	gate
 	Qualifier Token // fmt in fmt.Print
 	//TODO-? ResolutionScope *Scope // Identifier appears in ResolutionScope.
 	Name  Token // Print in fmt.Print
@@ -1465,6 +1487,7 @@ func (t *TypeNodeIdent) Type() Typ {
 //
 //	| "chan" Type
 type TypeNodeChan struct {
+	gate
 	TypeNode TypeNode // T in chan T
 }
 
@@ -1477,6 +1500,7 @@ func (t *TypeNodeChan) Type() Typ {
 //
 //	| "[" Expression "]" Type
 type TypeNodeArray struct {
+	gate
 	Expression ExpressionNode
 	TypeNode   TypeNode // T in [expr]T
 }
@@ -1490,6 +1514,7 @@ func (t *TypeNodeArray) Type() Typ {
 //
 //	| "[" "]" Type
 type TypeNodeSlice struct {
+	gate
 	TypeNode TypeNode // T in []T
 }
 
@@ -1534,8 +1559,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 					// ident = TypeNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
 					// r = &ident
 				}
-			case CHAN:
-				r = &TypeNodeChan{}
+			//TODO case CHAN:
+			//TODO 	r = &TypeNodeChan{}
 			//TODO 			case LBRACK:
 			//TODO 				// ok
 			//TODO 			case RBRACK:
@@ -1571,6 +1596,7 @@ func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 	return r
 }
 
+// ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 func (f *File) declareConst(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -1583,6 +1609,24 @@ func (f *File) declareConst(s *Scope, n Node) {
 			if err := s.add(&ConstDeclaration{declaration: declaration{token: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
 				f.err(cs.Name.Position(), "%v", err)
 			}
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case CONST:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+}
+
+func (f *File) constDecl(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case ConstSpec:
+			f.constSpec(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case CONST:
@@ -1628,29 +1672,33 @@ func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
 	return r
 }
 
-//TODO func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
-//TODO 	r = &ConstSpecNode{}
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case Expression:
-//TODO 			r.Expression = f.expression(s, n)
-//TODO 		case Type:
-//TODO 			r.Type = f.typ(s, n)
-//TODO 		case 0:
-//TODO 			switch f.ch(n.tok) {
-//TODO 			case IDENT:
-//TODO 				r.Name = f.tok(n.tok)
-//TODO 			case ASSIGN:
-//TODO 				// ok
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) constSpec(s *Scope, n Node) {
+	var constSpec *ConstSpecNode
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Expression:
+			constSpec.Expression = f.expression(s, n)
+		//TODO 		case Type:
+		//TODO 			r.Type = f.typ(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case IDENT:
+				name := f.tok(n.tok)
+				d := s.find(name.Src())
+				if cd, ok := d.(*ConstDeclaration); ok {
+					constSpec = cd.ConstSpec
+					_ = constSpec //TODO-
+				}
+			case ASSIGN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+}
 
 // ExpressionNode represents the Expression production or any of its
 // constituents.

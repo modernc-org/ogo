@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all clean edit editor test generate debug-parser
+.PHONY:	all clean edit editor race test generate debug-parser
 
 all:
 	gofmt -l -s -w ..
@@ -48,9 +48,12 @@ debug-parser:
 		parser.go
 	gofmt -l -s -w ..
 
+race:
+	go test -v -timeout 24h -race -count=1 -failfast
+	golint
+	staticcheck
+
 test:
-	# go test -timeout 24h -count=1 -failfast
-	# go build -v -o /dev/null
 	make -C ../../ test
 	golint
 	staticcheck

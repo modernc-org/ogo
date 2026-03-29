@@ -46,3 +46,11 @@ type PredeclaredType struct {
 func (t *PredeclaredType) Type() Typ {
 	return t
 }
+
+func (t *PredeclaredType) state() (r gate) {
+	return resolved
+}
+
+func (t *PredeclaredType) setResolving() {}
+
+func (t *PredeclaredType) setResolved() {}

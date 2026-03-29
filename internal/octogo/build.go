@@ -174,8 +174,23 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 	}
 
 	c := NewBuildContext(fsys, limit)
+
+	var errs ErrList
+
+	defer func() {
+		for _, v := range c.importTasks {
+			errs = v.p.consolidateErrors(errs)
+		}
+		if main != nil {
+			errs = main.consolidateErrors(errs)
+		}
+		errs = consolidateErrors(errs, c.errList)
+		//TODO sort and dedup errors with same file & line, lower column wins
+		err = errs.Err()
+	}()
+
 	main = c.NewPackage("", files, fsys) // main package has no import path
-	return main, c.errList.Err()
+	return main, nil
 }
 
 type limiter chan struct{}
@@ -203,6 +218,7 @@ type Package struct {
 	ImportPath string
 	Scope      *Scope
 	ctx        *BuildContext
+	//TODO typeLiterals map[some-id]TypeNode
 }
 
 // NewPackage returns a newly created Package consisting of files in 'files'
@@ -230,11 +246,6 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		}(i, v)
 	}
 	wg.Wait()
-	for _, v := range p.Files {
-		c.errMu.Lock()
-		c.errList = consolidateErrors(c.errList, v.errList)
-		c.errMu.Unlock()
-	}
 	if c.noDeclarationChecks { // Testing support
 		return p
 	}
@@ -280,6 +291,14 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	// Phase 5: Deep Initialization Cycle Detection (Serial)
 	//TODO
 	return p
+}
+
+func (p *Package) consolidateErrors(use ErrList) (e ErrList) {
+	e = use
+	for _, v := range p.Files {
+		e = v.consolidateErrors(e)
+	}
+	return e
 }
 
 func (p *Package) importPkg(importPathToken Token, importPath string) (r *Package) {
