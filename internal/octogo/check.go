@@ -28,23 +28,19 @@ var (
 )
 
 const (
-	none gate = iota
-	opened
-	closed
+	unvisited gate = iota
+	resolving
+	resolved
 )
 
 type gate int8
 
-//TODO- func (g gate) gate() gate {
-//TODO- 	return g
-//TODO- }
-
-func (g *gate) open() {
-	*g = opened
+func (g *gate) setResolving() {
+	*g = resolving
 }
 
-func (g *gate) close() {
-	*g = closed
+func (g *gate) setResolved() {
+	*g = resolved
 }
 
 // Node represents a parse tree within the flat []int32 raw AST.
@@ -362,8 +358,8 @@ func (f *File) funcDecl(s *Scope, n Node) {
 		}
 
 		switch fd.gate {
-		case opened:
-			fd.gate.close()
+		case resolving:
+			fd.gate.setResolved()
 		default:
 			panic(todo("", fd.gate))
 		}
@@ -399,9 +395,9 @@ func (f *File) funcDecl(s *Scope, n Node) {
 					}
 
 					switch fd.gate {
-					case none:
+					case unvisited:
 						fd.Type = &FunctionType{}
-						fd.gate.open()
+						fd.gate.setResolving()
 					default:
 						panic(todo("", fd.gate))
 					}
@@ -1342,9 +1338,9 @@ func (f *File) varSpec(s *Scope, n Node) {
 				continue
 			}
 			switch vs := vd.VarSpec; vs.gate {
-			case opened:
+			case resolving:
 				vs.TypeNode = typ
-				vs.gate.close()
+				vs.gate.setResolved()
 			default:
 				panic(todo("", vs.gate))
 			}
@@ -1364,8 +1360,8 @@ func (f *File) varSpec(s *Scope, n Node) {
 				case *VarDeclaration:
 					varDecls = append(varDecls, x)
 					switch vs := x.VarSpec; vs.gate {
-					case none:
-						vs.gate.open()
+					case unvisited:
+						vs.gate.setResolving()
 					default:
 						panic(todo("", vs.gate))
 					}

@@ -29,14 +29,14 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[none-0]
-	_ = x[opened-1]
-	_ = x[closed-2]
+	_ = x[unvisited-0]
+	_ = x[resolving-1]
+	_ = x[resolved-2]
 }
 
-const _gate_name = "noneopenedclosed"
+const _gate_name = "unvisitedresolvingresolved"
 
-var _gate_index = [...]uint8{0, 4, 10, 16}
+var _gate_index = [...]uint8{0, 9, 18, 26}
 
 func (i gate) String() string {
 	idx := int(i) - 0
