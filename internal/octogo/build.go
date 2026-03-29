@@ -215,6 +215,7 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		ctx:        c,
 	}
 
+	// Phase 1: Local Scope Population (Parallel)
 	limiter := newLimiter(c.limit)
 	var wg sync.WaitGroup
 	for i, v := range files {
@@ -238,6 +239,7 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		return p
 	}
 
+	// Phase 2: Package Scope Merging (Serial)
 	for _, f := range p.Files {
 		for _, spec := range f.ImportSpecs {
 			c.importPkg(p.ImportPath, spec.ImportPath, spec.ImportPathToken)
@@ -252,7 +254,7 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		f.tld.Declarations = nil
 		f.Scope.Parent = p.Scope // Rewire/repair the scope hierarchy (Block->File->Package->Universe)
 	}
-	// Check for ... no identifier may be declared in both the file and package block
+	// Ensure "no identifier may be declared in both the file and package block".
 	for _, v := range p.Files {
 		for _, nm := range slices.Sorted(maps.Keys(v.Scope.Declarations)) {
 			if ex := p.Scope.Declarations[nm]; ex != nil {
@@ -261,7 +263,8 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 			}
 		}
 	}
-	// Type check top level declarations.
+
+	// Phase 3: Top-Level Type & Constant Evaluation (Serial)
 	for _, v := range p.Files {
 		for n := range it(v.AST) {
 			switch n.sym {
@@ -270,7 +273,12 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 			}
 		}
 	}
-	//TODO Type check function and method bodies
+
+	// Phase 4: Body Checking & Hardware Constraints (Parallel)
+	//TODO
+
+	// Phase 5: Deep Initialization Cycle Detection (Serial)
+	//TODO
 	return p
 }
 

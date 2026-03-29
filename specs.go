@@ -412,8 +412,9 @@
 // A variable declaration creates one or more variables, binds corresponding
 // identifiers to them, and gives each a type and an initial value.
 //
-// If an expression is given, the variables are initialized with that
-// expression. Otherwise, each variable is initialized to its zero value.
+// If an expression is given, only one variable is permitted and the variables
+// is initialized with that expression. Otherwise, each variable is initialized
+// to its zero value.
 //
 // Grammar:
 //

@@ -7,6 +7,7 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 import (
 	"bytes"
 	"fmt"
+	"go/constant"
 	"go/token"
 	"io/fs"
 	"iter"
@@ -28,9 +29,9 @@ var (
 )
 
 const (
-	unvisited gate = iota
-	resolving
-	resolved
+	unvisited gate = iota // Call setResolving and enter
+	resolving             // Cycle detected, report and return
+	resolved              // All is said and done, return
 )
 
 type gate int8
@@ -205,7 +206,7 @@ func (p *Package) newFile(fn string, fsys fs.FS) (f *File) {
 		case SourceFile:
 			f.declareSourceFile(n)
 		default:
-			panic(todo("", n.sym, n.tok))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return f
@@ -228,6 +229,7 @@ func (f *File) walk(ast []int32, lvl int) {
 	}
 }
 
+// SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 func (f *File) declareSourceFile(n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -243,7 +245,7 @@ func (f *File) declareSourceFile(n Node) {
 				panic(todo("", f.parser.Token(n.tok), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
@@ -253,6 +255,17 @@ func (f *File) sourceFile(s *Scope, n Node) {
 		switch n.sym {
 		case TopLevelDecl:
 			f.topLevel(s, n)
+		case ImportDecl:
+			// ok
+		case 0:
+			switch f.ch(n.tok) {
+			case SEMICOLON, EOF:
+				// ok
+			default:
+				panic(todo("", f.parser.Token(n.tok), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
@@ -271,10 +284,10 @@ func (f *File) declareTopLevel(n Node) {
 		case 0:
 			switch f.ch(n.tok) {
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
@@ -326,6 +339,8 @@ func (f *File) declareFunc(n Node) (r *FuncDeclNode) {
 		switch n.sym {
 		case Receiver:
 			isMethod = true
+		case Signature, Block:
+			// ok
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
@@ -341,6 +356,8 @@ func (f *File) declareFunc(n Node) (r *FuncDeclNode) {
 					}
 				}
 			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return r
@@ -369,20 +386,22 @@ func (f *File) funcDecl(s *Scope, n Node) {
 		switch n.sym {
 		case Signature:
 			fd.Type.Signature = f.signature(block, n)
-		//		case Receiver:
-		//			r.Receiver = f.receiver(s, n) //TODO declare receiver name in bs
-		//		case ParameterList:
-		//			switch {
-		//			case seenRPar:
-		//				r.ReturnList = f.parameterList(bs, n)
-		//			default:
-		//				r.ParameterList = f.parameterList(bs, n)
-		//			}
-		//			//TODO declare in bs
-		//		case Block:
-		//			r.Block = f.block(bs, n)
-		//		case Type:
-		//			r.Type = f.typ(s, n)
+			//		case Receiver:
+			//			r.Receiver = f.receiver(s, n) //TODO declare receiver name in bs
+			//		case ParameterList:
+			//			switch {
+			//			case seenRPar:
+			//				r.ReturnList = f.parameterList(bs, n)
+			//			default:
+			//				r.ParameterList = f.parameterList(bs, n)
+			//			}
+			//			//TODO declare in bs
+			//		case Block:
+			//			r.Block = f.block(bs, n)
+			//		case Type:
+			//			r.Type = f.typ(s, n)
+		case Block:
+			// ok
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
@@ -405,6 +424,8 @@ func (f *File) funcDecl(s *Scope, n Node) {
 					panic(todo("%T", x))
 				}
 			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
@@ -426,7 +447,7 @@ func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 				panic(todo("", f.tok(n.tok), f.ch(n.tok), tok))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return r
@@ -451,10 +472,10 @@ type ReceiverNode struct {
 //TODO 			case IDENT:
 //TODO 				r.Name = tok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -478,10 +499,10 @@ type BlockNode struct {
 //TODO 			case LBRACE, RBRACE, SEMICOLON:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -680,10 +701,10 @@ type StatementNodeGo struct {
 //TODO 				goStatement = &StatementNodeGo{}
 //TODO 				r = goStatement
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -707,10 +728,10 @@ type SelectStmtNode struct {
 //TODO 			case SELECT, LBRACE, RBRACE:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -737,10 +758,10 @@ type CommClauseNode struct {
 //TODO 			case COLON, SEMICOLON:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -767,10 +788,10 @@ type CommHeadNode struct {
 //TODO 			case DEFAULT:
 //TODO 				r.Default = true
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -813,10 +834,10 @@ type CommOpNodeAssign struct {
 //TODO 			case ARROW:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -843,10 +864,10 @@ type PostfixCommNode struct {
 //TODO 			case ARROW:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -873,10 +894,10 @@ type SwitchStmtNode struct {
 //TODO 			case SWITCH, LBRACE, RBRACE:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -903,10 +924,10 @@ type CaseClauseNode struct {
 //TODO 			case COLON, SEMICOLON:
 //TODO 				//  ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -933,10 +954,10 @@ type CaseHeadNode struct {
 //TODO 			case DEFAULT:
 //TODO 				r.Default = true
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -952,10 +973,10 @@ type CaseHeadNode struct {
 //TODO 			case COMMA:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -985,10 +1006,10 @@ type SwitchGuardNode struct {
 //TODO 			case DEFINE:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1018,10 +1039,10 @@ type PostfixNode struct {
 //TODO 		case 0:
 //TODO 			switch f.ch(n.tok) {
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1045,10 +1066,10 @@ type IndexNode struct {
 //TODO 			case LBRACK, RBRACK:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1110,10 +1131,10 @@ type PostfixOpNodeSend struct {
 //TODO 				send = &PostfixOpNodeSend{}
 //TODO 				r = send
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1140,10 +1161,10 @@ type LHSItemNode struct {
 //TODO 		case 0:
 //TODO 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1177,10 +1198,10 @@ type AssignHeadNode struct {
 //TODO 			case LPAREN, RPAREN:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1214,50 +1235,14 @@ type ParameterListNode struct {
 //TODO 			case COMMA:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
 //TODO }
-
-func (f *File) declareVar(s *Scope, n Node) {
-	for n := range it(n.ast) {
-		switch n.sym {
-		case VarSpec:
-			names, vs := f.declareVarSpec(s, n)
-			var valid int32
-			if s.Kind != PackageScope {
-				valid = n.End() + 1
-			}
-			for _, nm := range names {
-				if err := s.add(&VarDeclaration{declaration: declaration{token: nm, valid: valid}, VarSpec: vs}); err != nil {
-					f.err(nm.Position(), "%v", err)
-				}
-			}
-		case 0:
-			switch f.ch(n.tok) {
-			case VAR, LPAREN, SEMICOLON, RPAREN:
-				// ok
-			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-			}
-		default:
-			panic(todo("", n.sym))
-		}
-	}
-}
-
-func (f *File) varDecl(s *Scope, n Node) {
-	for n := range it(n.ast) {
-		switch n.sym {
-		case VarSpec:
-			f.varSpec(s, n)
-		}
-	}
-}
 
 // TypeSpecNode describes the TypeSpec production.
 //
@@ -1276,6 +1261,8 @@ func (f *File) typeSpec(s *Scope, n Node) (r *TypeSpecNode) {
 			case IDENT:
 				r.Name = tok
 			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return r
@@ -1298,10 +1285,56 @@ func (f *File) declareType(s *Scope, n Node) {
 			case TYPE, LPAREN, SEMICOLON, RPAREN:
 				// ok
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+}
+
+// VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
+func (f *File) declareVar(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case VarSpec:
+			names, vs := f.declareVarSpec(s, n)
+			var valid int32
+			if s.Kind != PackageScope {
+				valid = n.End() + 1
+			}
+			for _, nm := range names {
+				if err := s.add(&VarDeclaration{declaration: declaration{token: nm, valid: valid}, VarSpec: vs}); err != nil {
+					f.err(nm.Position(), "%v", err)
+				}
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			case VAR, LPAREN, SEMICOLON, RPAREN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+}
+
+func (f *File) varDecl(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case VarSpec:
+			f.varSpec(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			case VAR:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
@@ -1322,6 +1355,21 @@ func (f *File) declareVarSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) 
 		switch n.sym {
 		case IdentifierList:
 			names = f.identifierList(s, n)
+		case Expression:
+			if len(names) > 1 {
+				f.err(names[1].Position(), "only one variable can be initialized")
+			}
+		case Type:
+			// ok
+		case 0:
+			switch f.ch(n.tok) {
+			case ASSIGN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return names, r
@@ -1371,17 +1419,17 @@ func (f *File) varSpec(s *Scope, n Node) {
 			}
 		case Type:
 			typ = f.typ(s, n)
-		// case Expression:
-		// 	r.Expression = f.expression(s, n)
+		case Expression:
+			varDecls[0].VarSpec.Expression = f.expression(s, n)
 		case 0:
 			switch f.ch(n.tok) {
 			case ASSIGN:
 				// ok
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
@@ -1495,10 +1543,10 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			//TODO 					r = &TypeNodeSlice{}
 			//TODO 				}
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return r
@@ -1514,10 +1562,10 @@ func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 			case COMMA:
 				// ok
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return r
@@ -1527,7 +1575,7 @@ func (f *File) declareConst(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ConstSpec:
-			cs := f.constSpec(s, n)
+			cs := f.declareConstSpec(s, n)
 			var valid int32
 			if s.Kind != PackageScope {
 				valid = n.End() + 1
@@ -1535,6 +1583,15 @@ func (f *File) declareConst(s *Scope, n Node) {
 			if err := s.add(&ConstDeclaration{declaration: declaration{token: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
 				f.err(cs.Name.Position(), "%v", err)
 			}
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case CONST:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 }
@@ -1549,7 +1606,7 @@ type ConstSpecNode struct {
 	TypeNode   TypeNode
 }
 
-func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
+func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
 	r = &ConstSpecNode{}
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -1557,7 +1614,15 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 			switch f.ch(n.tok) {
 			case IDENT:
 				r.Name = f.tok(n.tok)
+			case ASSIGN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
+		case Expression:
+			// ok
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return r
@@ -1578,10 +1643,10 @@ func (f *File) constSpec(s *Scope, n Node) (r *ConstSpecNode) {
 //TODO 			case ASSIGN:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1603,30 +1668,30 @@ type BinaryExpressionNode struct {
 	RHS ExpressionNode
 }
 
-//TODO func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
-//TODO 	var op Symbol
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case SimpleExpr:
-//TODO 			switch e := f.simpleExpr(s, n); {
-//TODO 			case r == nil:
-//TODO 				r = e
-//TODO 			default:
-//TODO 				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
-//TODO 			}
-//TODO 		case RelOp:
-//TODO 			op = f.relOp(s, n)
-//TODO 		case 0:
-//TODO 			switch f.ch(n.tok) {
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
+	var op Symbol
+	for n := range it(n.ast) {
+		switch n.sym {
+		case SimpleExpr:
+			switch e := f.simpleExpr(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
+			}
+		//TODO 		case RelOp:
+		//TODO 			op = f.relOp(s, n)
+		//TODO 		case 0:
+		//TODO 			switch f.ch(n.tok) {
+		//TODO 			default:
+		//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+		//TODO 			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+	return r
+}
 
 //TODO func (f *File) relOp(s *Scope, n Node) (r Symbol) {
 //TODO 	for n := range it(n.ast) {
@@ -1636,39 +1701,39 @@ type BinaryExpressionNode struct {
 //TODO 			case EQL, NEQ, LSS, LEQ, GTR, GEQ:
 //TODO 				r = sym
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
 //TODO }
 
-//TODO func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
-//TODO 	var op Symbol
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case Term:
-//TODO 			switch e := f.term(s, n); {
-//TODO 			case r == nil:
-//TODO 				r = e
-//TODO 			default:
-//TODO 				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
-//TODO 			}
-//TODO 		case AddOp:
-//TODO 			op = f.addOp(s, n)
-//TODO 		case 0:
-//TODO 			switch f.ch(n.tok) {
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
+	var op Symbol
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Term:
+			switch e := f.term(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
+			}
+		// TODO 		case AddOp:
+		// TODO 			op = f.addOp(s, n)
+		// TODO 		case 0:
+		// TODO 			switch f.ch(n.tok) {
+		// TODO 			default:
+		// TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+		// TODO 			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+	return r
+}
 
 //TODO func (f *File) addOp(s *Scope, n Node) (r Symbol) {
 //TODO 	for n := range it(n.ast) {
@@ -1678,39 +1743,39 @@ type BinaryExpressionNode struct {
 //TODO 			case ADD, SUB, OR, XOR:
 //TODO 				r = sym
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
 //TODO }
 
-//TODO func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
-//TODO 	var op Symbol
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case UnaryExpr:
-//TODO 			switch e := f.unaryExpr(s, n); {
-//TODO 			case r == nil:
-//TODO 				r = e
-//TODO 			default:
-//TODO 				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
-//TODO 			}
-//TODO 		case MulOp:
-//TODO 			op = f.mulOp(s, n)
-//TODO 		case 0:
-//TODO 			switch f.ch(n.tok) {
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
+	var op Symbol
+	for n := range it(n.ast) {
+		switch n.sym {
+		case UnaryExpr:
+			switch e := f.unaryExpr(s, n); {
+			case r == nil:
+				r = e
+			default:
+				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
+			}
+		// TODO 		case MulOp:
+		// TODO 			op = f.mulOp(s, n)
+		case 0:
+			switch f.ch(n.tok) {
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+	return r
+}
 
 //TODO func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
 //TODO 	for n := range it(n.ast) {
@@ -1720,10 +1785,10 @@ type BinaryExpressionNode struct {
 //TODO 			case MUL, QUO, SHL, SHR, AND:
 //TODO 				r = sym
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1737,35 +1802,35 @@ type UnaryExprNode struct {
 	Factor ExpressionNode
 }
 
-//TODO func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
-//TODO 	var ue *UnaryExprNode
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case Factor:
-//TODO 			fa := f.factor(s, n)
-//TODO 			switch {
-//TODO 			case ue != nil:
-//TODO 				ue.Factor = fa
-//TODO 			default:
-//TODO 				r = fa
-//TODO 			}
-//TODO 		case UnaryOp:
-//TODO 			if ue == nil {
-//TODO 				ue = &UnaryExprNode{}
-//TODO 				r = ue
-//TODO 			}
-//TODO 			ue.List = append(ue.List, f.unaryOp(s, n))
-//TODO 		case 0:
-//TODO 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
+	var ue *UnaryExprNode
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Factor:
+			fa := f.factor(s, n)
+			switch {
+			case ue != nil:
+				ue.Factor = fa
+			default:
+				r = fa
+			}
+		//TODO 		case UnaryOp:
+		//TODO 			if ue == nil {
+		//TODO 				ue = &UnaryExprNode{}
+		//TODO 				r = ue
+		//TODO 			}
+		//TODO 			ue.List = append(ue.List, f.unaryOp(s, n))
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+	return r
+}
 
 //TODO func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
 //TODO 	for n := range it(n.ast) {
@@ -1775,10 +1840,10 @@ type UnaryExprNode struct {
 //TODO 			case ADD, SUB, NOT, XOR, MUL, AND, ARROW, TILDE:
 //TODO 				r = sym
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1810,38 +1875,38 @@ type FactorNodeParen struct {
 	Expression ExpressionNode
 }
 
-//TODO func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
-//TODO 	var ident *FactorNodeIdent
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case Expression:
-//TODO 			r = &FactorNodeParen{Expression: f.expression(s, n)}
-//TODO 		case FactorSuffix:
-//TODO 			ident.FactorSuffix = f.factorSuffix(s, n)
-//TODO 		case 0:
-//TODO 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-//TODO 			case INT:
-//TODO 				if r = constant.MakeFromLiteral(tok.Src(), token.INT, 0); r == constant.Unknown {
-//TODO 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
-//TODO 				}
-//TODO 			case IDENT:
-//TODO 				ident = &FactorNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
-//TODO 				r = ident
-//TODO 			case LPAREN, RPAREN:
-//TODO 				// ok
-//TODO 			case STRING:
-//TODO 				if r = constant.MakeFromLiteral(tok.Src(), token.STRING, 0); r == constant.Unknown {
-//TODO 					f.err(tok.Position(), "invalid string literal: %s", tok.Src())
-//TODO 				}
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
+	//TODO 	var ident *FactorNodeIdent
+	for n := range it(n.ast) {
+		switch n.sym {
+		//TODO 		case Expression:
+		//TODO 			r = &FactorNodeParen{Expression: f.expression(s, n)}
+		//TODO 		case FactorSuffix:
+		//TODO 			ident.FactorSuffix = f.factorSuffix(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case INT:
+				if r = constant.MakeFromLiteral(tok.Src(), token.INT, 0); r == constant.Unknown {
+					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
+				}
+			//TODO 			case IDENT:
+			//TODO 				ident = &FactorNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
+			//TODO 				r = ident
+			//TODO 			case LPAREN, RPAREN:
+			//TODO 				// ok
+			//TODO 			case STRING:
+			//TODO 				if r = constant.MakeFromLiteral(tok.Src(), token.STRING, 0); r == constant.Unknown {
+			//TODO 					f.err(tok.Position(), "invalid string literal: %s", tok.Src())
+			//TODO 				}
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
+		}
+	}
+	return r
+}
 
 // FactorSuffixNode describes the FactorSuffix production.
 //
@@ -1862,10 +1927,10 @@ type FactorSuffixNode struct {
 //TODO 		case 0:
 //TODO 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1892,10 +1957,10 @@ type SelectorNode struct {
 //TODO 			case TYPE:
 //TODO 				r.TypeSwitch = true
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1919,10 +1984,10 @@ type CallSuffixNode struct {
 //TODO 			case LPAREN, RPAREN:
 //TODO 				// ok
 //TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 //TODO 			}
 //TODO 		default:
-//TODO 			panic(todo("", n.sym))
+//TODO 			panic(todo("", f.tok(n.tok).Position(), n.sym))
 //TODO 		}
 //TODO 	}
 //TODO 	return r
@@ -1945,10 +2010,10 @@ func (f *File) declareImportDecl(n Node) (r []*ImportSpecNode) {
 			case IMPORT, LPAREN, RPAREN, SEMICOLON:
 				// ok
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	return r
@@ -2014,10 +2079,10 @@ func (f *File) declareImportSpec(n Node) (r *ImportSpecNode) {
 					}
 				}
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok)))
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
-			panic(todo("", n.sym))
+			panic(todo("", f.tok(n.tok).Position(), n.sym))
 		}
 	}
 	if r.ImportQualifier != "" {
