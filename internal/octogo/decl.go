@@ -11,8 +11,8 @@ import (
 	"slices"
 )
 
-// Name definitions for predefined identifiers.
-const predefinedNames = `// bool is the set of boolean values, true and false.
+// Name definitions for predeclared identifiers.
+const preclaredNames = `// bool is the set of boolean values, true and false.
 bool
 // byte is an alias for uint8 and is equivalent to uint8 in all ways. It is
 // used, by convention, to distinguish byte values from 8-bit unsigned integer
@@ -29,6 +29,8 @@ int16
 int32
 // int8 is the set of all signed 8-bit integers. Range: -128 through 127.
 int8
+// nil is an untyped nil constant
+nil
 // rune is an alias for int32 and is equivalent to int32 in all ways. It is
 // used, by convention, to distinguish character values from integer values.
 rune
@@ -62,7 +64,7 @@ var Universe = newScope(nil, UniverseScope)
 
 func init() {
 	var p Parser
-	sc := NewRecScanner("builtin.ogo", []byte(predefinedNames), p.scan, int(white_space))
+	sc := NewRecScanner("builtin.ogo", []byte(preclaredNames), p.scan, int(white_space))
 	names := map[string]Token{}
 out:
 	for {
@@ -80,7 +82,6 @@ out:
 	}
 
 	//TODO any = interface
-	//TODO min max
 	//TODO len(), cap()
 
 	Universe.Declarations = map[string]Declaration{}
@@ -103,8 +104,7 @@ out:
 	f("rune", PredeclaredInt32)
 	f("uint", PredeclaredUint32)
 
-	// Bool constants
-	boolType := Universe.Declarations["bool"].(*PredeclaredType)
+	// Untyped bool constants
 	f2 := func(nm string, v bool) {
 		tok := names[nm]
 		Universe.Declarations[nm] = &ConstDeclaration{
@@ -112,12 +112,23 @@ out:
 			ConstSpec: &ConstSpecNode{
 				Name:     tok,
 				Value:    constant.MakeBool(v),
-				TypeNode: boolType,
+				TypeNode: UntypedBool,
 			},
 		}
 	}
 	f2("false", false)
 	f2("true", true)
+
+	// Untyped nil
+	nm := "nil"
+	tok := names[nm]
+	Universe.Declarations[nm] = &ConstDeclaration{
+		declaration: declaration{token: tok},
+		ConstSpec: &ConstSpecNode{
+			Name:     tok,
+			TypeNode: UntypedNil,
+		},
+	}
 }
 
 // ScopeKind describes the type of a Scope.

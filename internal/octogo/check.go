@@ -1725,7 +1725,7 @@ func (f *File) constSpec(s *Scope, n Node) {
 
 // ExpressionNode represents the Expression production or any of its
 // constituents.
-type ExpressionNode any //TODO add Type method
+type ExpressionNode any //TODO add Type and Value method
 
 // BinaryExpressionNode represents a binary operation, ie. an operator and its
 // two operands, ie. one of
@@ -1823,6 +1823,7 @@ func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 //TODO 	return r
 //TODO }
 
+// Term        = Factor { Factor } ․
 func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 	var op Symbol
 	for n := range it(n.ast) {
@@ -1920,24 +1921,15 @@ func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
 //TODO 	return r
 //TODO }
 
-// FactorNode describes the Factor production.
-//
-//	Factor     = identifier [ FactorSuffix ]
-//		| int_lit
-//		| string_lit
-//		| rune_lit
-//		| "(" Expression ")" .
-type FactorNode any
-
-// FactorNodeIdent describes the Factor production case
-//
-//	identifier [ FactorSuffix ]
-type FactorNodeIdent struct {
-	ResolutionScope *Scope // The identifier appears in ResolutionScope.
-	Name            Token
-	Index           int32 // Index into the flat []int32 AST of the containing file.
-	FactorSuffix    *FactorSuffixNode
-}
+//TODO- // FactorNodeIdent describes the Factor production case
+//TODO- //
+//TODO- //	identifier [ FactorSuffix ]
+//TODO- type FactorNodeIdent struct {
+//TODO- 	ResolutionScope *Scope // The identifier appears in ResolutionScope.
+//TODO- 	Name            Token
+//TODO- 	Index           int32 // Index into the flat []int32 AST of the containing file.
+//TODO- 	FactorSuffix    *FactorSuffixNode
+//TODO- }
 
 // FactorNodeParen describes the Factor production case
 //
@@ -1946,6 +1938,13 @@ type FactorNodeParen struct {
 	Expression ExpressionNode
 }
 
+// FactorNode describes the Factor production.
+//
+//	Factor     = identifier [ FactorSuffix ]
+//		| int_lit
+//		| string_lit
+//		| rune_lit
+//		| "(" Expression ")" .
 func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	//TODO 	var ident *FactorNodeIdent
 	for n := range it(n.ast) {
