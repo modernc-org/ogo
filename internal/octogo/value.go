@@ -5,4 +5,6 @@
 package octogo // import "modernc.org/ogo/internal/ogo"
 
 // Value represents a value known at compile time.
-type Value any //TODO
+type Value interface {
+	//TODO TypeNode
+}

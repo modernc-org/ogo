@@ -6,6 +6,7 @@ package octogo // import "modernc.org/ogo/internal/ogo"
 
 var (
 	_ Typ = (*PredeclaredType)(nil)
+	_ Typ = Kind(0)
 )
 
 // Kind describes a type category.

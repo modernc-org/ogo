@@ -112,7 +112,7 @@ out:
 			ConstSpec: &ConstSpecNode{
 				Name:     tok,
 				Value:    constant.MakeBool(v),
-				TypeNode: UntypedBool,
+				TypeNode: UntypedBool, //TODO- When Value implements TypeNode
 			},
 		}
 	}

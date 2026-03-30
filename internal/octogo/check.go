@@ -1670,7 +1670,7 @@ type ConstSpecNode struct {
 	Expression ExpressionNode
 	Name       Token
 	Value      Value
-	TypeNode   TypeNode
+	TypeNode   TypeNode //TODO- When Value implements TypeNode
 }
 
 func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
@@ -1725,7 +1725,9 @@ func (f *File) constSpec(s *Scope, n Node) {
 
 // ExpressionNode represents the Expression production or any of its
 // constituents.
-type ExpressionNode any //TODO add Type and Value method
+type ExpressionNode interface {
+	Value
+}
 
 // BinaryExpressionNode represents a binary operation, ie. an operator and its
 // two operands, ie. one of
@@ -1734,6 +1736,7 @@ type ExpressionNode any //TODO add Type and Value method
 //	SimpleExpr     = Term { AddOp Term } .
 //	Term           = UnaryExpr { MulOp UnaryExpr } .
 type BinaryExpressionNode struct {
+	TypeNode
 	LHS ExpressionNode
 	Op  Symbol
 	RHS ExpressionNode
