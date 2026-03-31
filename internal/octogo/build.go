@@ -230,22 +230,20 @@ func (n limiter) limit() func() {
 
 // Package represents a single OctoGo package.
 type Package struct {
-	Files        []*File
-	ImportPath   string
-	Scope        *Scope
-	ctx          *BuildContext
-	typeLiterals map[*tok]TypeNode
+	Files      []*File
+	ImportPath string
+	Scope      *Scope
+	ctx        *BuildContext
 }
 
 // NewPackage returns a newly created Package consisting of files in 'files'
 // within 'fsys'.
 func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (p *Package) {
 	p = &Package{
-		Files:        make([]*File, len(files)),
-		ImportPath:   importPath,
-		Scope:        newScope(Universe, PackageScope),
-		ctx:          c,
-		typeLiterals: map[*tok]TypeNode{},
+		Files:      make([]*File, len(files)),
+		ImportPath: importPath,
+		Scope:      newScope(Universe, PackageScope),
+		ctx:        c,
 	}
 
 	// Phase 1: Local Scope Population (Parallel)

@@ -111,7 +111,7 @@ out:
 			declaration: declaration{token: tok},
 			ConstSpec: &ConstSpecNode{
 				Name:     tok,
-				Value:    constant.MakeBool(v),
+				Value:    literal{constant.MakeBool(v)},
 				TypeNode: UntypedBool, //TODO- When Value implements TypeNode
 			},
 		}

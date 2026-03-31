@@ -17,7 +17,7 @@ edit:
 
 editor: parser.go
 	gofmt -l -s -w ../..
-	stringer -output stringer.go -type ScopeKind,gate
+	stringer -output stringer.go -type Kind,ScopeKind,gate
 	go test -o /dev/null -c
 	go build -o /dev/null extract_grammar.go
 	go install -v ../..

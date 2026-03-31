@@ -53,6 +53,14 @@ type Typ interface {
 	Kind() Kind
 }
 
+type typer struct {
+	typ Typ
+}
+
+func (t typer) Type() Typ {
+	return t.typ
+}
+
 type kinder Kind
 
 // Kind describes a type category.
