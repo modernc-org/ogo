@@ -14,6 +14,7 @@ var (
 
 // Value represents a value known at compile time.
 type Value interface {
+	Expr() ExpressionNode
 	Type() Typ
 }
 
@@ -27,6 +28,10 @@ func (v valuer) Value() Value {
 
 type untypedConst struct {
 	cv constant.Value
+}
+
+func (l untypedConst) Expr() ExpressionNode {
+	return l
 }
 
 func (l untypedConst) Type() Typ {

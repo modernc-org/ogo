@@ -1997,7 +1997,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				nm := tok.Src()
 				switch d := s.find(nm); x := d.(type) {
 				case *ConstDeclaration:
-					r = value2expr(x.ConstSpec.Value)
+					r = x.ConstSpec.Value.Expr()
 				default:
 					panic(todo("%q %T", nm, x))
 				}
@@ -2015,14 +2015,6 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 		}
 	}
 	return r
-}
-
-func value2expr(v Value) ExpressionNode {
-	if v == nil {
-		return nil
-	}
-
-	return &expression{typer{v.Type()}, valuer{v}}
 }
 
 // FactorSuffixNode describes the FactorSuffix production.
