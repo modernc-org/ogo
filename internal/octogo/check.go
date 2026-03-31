@@ -29,7 +29,7 @@ var (
 )
 
 const (
-	unvisited gate = iota // Call setResolving and enter
+	unvisited gate = iota // Call open and enter
 	resolving             // Cycle detected, report and return
 	resolved              // All is said and done, return
 )
@@ -40,18 +40,18 @@ func (g *gate) state() (r gate) {
 	return *g
 }
 
-func (g *gate) setResolving() {
+func (g *gate) open() {
 	*g = resolving
 }
 
-func (g *gate) setResolved() {
+func (g *gate) close() {
 	*g = resolved
 }
 
 type gater interface {
 	state() (r gate)
-	setResolving()
-	setResolved()
+	open()
+	close()
 }
 
 // // bitVector is a dynamically growing slice of bits.
@@ -377,7 +377,7 @@ type FunctionType struct {
 
 // Type implements TypeNode.
 func (t *FunctionType) Type() Typ {
-	panic(todo(""))
+	panic(todo("", origin(1)))
 }
 
 // FuncDeclNode describes the FuncDecl production.
@@ -436,7 +436,7 @@ func (f *File) funcDecl(s *Scope, n Node) {
 
 		switch fd.gate {
 		case resolving:
-			fd.gate.setResolved()
+			fd.gate.close()
 		default:
 			panic(todo("", fd.gate))
 		}
@@ -476,7 +476,7 @@ func (f *File) funcDecl(s *Scope, n Node) {
 					switch fd.gate {
 					case unvisited:
 						fd.Type = &FunctionType{}
-						fd.gate.setResolving()
+						fd.gate.open()
 					default:
 						panic(todo("", fd.gate))
 					}
@@ -698,7 +698,7 @@ type StatementNodeGo struct {
 //TODO 					//TODO 	}
 //TODO 					//TODO }
 //TODO 				default:
-//TODO 					panic(todo(""))
+//TODO 					panic(todo("", origin(1)))
 //TODO 				}
 //TODO 			case *PostfixOpNodeSend:
 //TODO 				r = &StatementNodeSend{AssignHead: ah, Postfix: p}
@@ -1448,7 +1448,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:
 				vs.TypeNode = typ
-				vs.gate.setResolved()
+				vs.gate.close()
 			default:
 				panic(todo("", vs.gate))
 			}
@@ -1469,7 +1469,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 					varDecls = append(varDecls, x)
 					switch vs := x.VarSpec; vs.gate {
 					case unvisited:
-						vs.gate.setResolving()
+						vs.gate.open()
 					default:
 						panic(todo("", vs.gate))
 					}
@@ -1520,7 +1520,7 @@ type TypeNodeIdent struct {
 
 // Type implements TypeNode.
 func (t *TypeNodeIdent) Type() Typ {
-	panic(todo(""))
+	panic(todo("", origin(1)))
 }
 
 // TypeNodeChan describes the Type production case
@@ -1533,7 +1533,7 @@ type TypeNodeChan struct {
 
 // Type implements TypeNode.
 func (t *TypeNodeChan) Type() Typ {
-	panic(todo(""))
+	panic(todo("", origin(1)))
 }
 
 // TypeNodeArray describes the Type production case
@@ -1547,7 +1547,7 @@ type TypeNodeArray struct {
 
 // Type implements TypeNode.
 func (t *TypeNodeArray) Type() Typ {
-	panic(todo(""))
+	panic(todo("", origin(1)))
 }
 
 // TypeNodeSlice describes the Type production case
@@ -1560,7 +1560,7 @@ type TypeNodeSlice struct {
 
 // Type implements TypeNode.
 func (t *TypeNodeSlice) Type() Typ {
-	panic(todo(""))
+	panic(todo("", origin(1)))
 }
 
 func (f *File) typ(s *Scope, n Node) (r TypeNode) {
@@ -1571,8 +1571,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			switch x := r.(type) {
 			case *TypeNodeChan:
 				x.TypeNode = f.typ(s, n)
-			//TODO 			case *TypeNodeArray:
-			//TODO 				x.Type = f.typ(s, n)
+			case *TypeNodeArray:
+				x.TypeNode = f.typ(s, n)
 			//TODO 			case *TypeNodeSlice:
 			//TODO 				x.Type = f.typ(s, n)
 			default:
@@ -1585,7 +1585,7 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			case IDENT:
 				switch {
 				case ident.Name.IsValid():
-					panic(todo(""))
+					panic(todo("", origin(1)))
 					// ident.Qualifier = ident.Name
 					// ident.Name = tok
 				default:
@@ -1603,10 +1603,10 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				r = &TypeNodeChan{}
 			case LBRACK:
 				// ok
-			//TODO 			case RBRACK:
-			//TODO 				if r == nil {
-			//TODO 					r = &TypeNodeSlice{}
-			//TODO 				}
+			case RBRACK:
+				if r == nil {
+					r = &TypeNodeSlice{}
+				}
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
@@ -1691,7 +1691,6 @@ type ConstSpecNode struct {
 }
 
 func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
-	panic(todo(""))
 	r = &ConstSpecNode{}
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -1714,11 +1713,17 @@ func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
 }
 
 func (f *File) constSpec(s *Scope, n Node) {
-	var constSpec *ConstSpecNode
+	var cs *ConstSpecNode
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Expression:
-			constSpec.Expression = f.expression(s, n)
+			cs.Expression = f.expression(s, n)
+			switch {
+			case cs.TypeNode != nil:
+				panic(todo("", origin(1)))
+			default:
+				cs.Value = f.evalConstExpr(cs.Expression)
+			}
 		//TODO 		case Type:
 		//TODO 			r.Type = f.typ(s, n)
 		case 0:
@@ -1727,7 +1732,7 @@ func (f *File) constSpec(s *Scope, n Node) {
 				name := f.tok(n.tok)
 				d := s.find(name.Src())
 				if cd, ok := d.(*ConstDeclaration); ok {
-					constSpec = cd.ConstSpec
+					cs = cd.ConstSpec
 				}
 			case ASSIGN:
 				// ok
@@ -1985,7 +1990,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case INT:
-				if r = (literal{constant.MakeFromLiteral(tok.Src(), token.INT, 0)}); r.Type() == nil {
+				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.INT, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
 				}
 			case IDENT:
@@ -1993,8 +1998,8 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				switch d := s.find(nm); x := d.(type) {
 				case *ConstDeclaration:
 					cs := x.ConstSpec
-					trc("expr=%T %v", cs.Expression.Value(), cs.Expression.Type())
-					panic(todo(""))
+					v := cs.Value
+					r = &expression{typer{v.Type()}, valuer{v}}
 				default:
 					panic(todo("%q %T", nm, x))
 				}

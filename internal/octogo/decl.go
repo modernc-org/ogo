@@ -110,9 +110,8 @@ out:
 		Universe.Declarations[nm] = &ConstDeclaration{
 			declaration: declaration{token: tok},
 			ConstSpec: &ConstSpecNode{
-				Name:     tok,
-				Value:    literal{constant.MakeBool(v)},
-				TypeNode: UntypedBool, //TODO- When Value implements TypeNode
+				Name:  tok,
+				Value: untypedConst{constant.MakeBool(v)},
 			},
 		}
 	}
@@ -125,8 +124,7 @@ out:
 	Universe.Declarations[nm] = &ConstDeclaration{
 		declaration: declaration{token: tok},
 		ConstSpec: &ConstSpecNode{
-			Name:     tok,
-			TypeNode: UntypedNil,
+			Name: tok,
 		},
 	}
 }

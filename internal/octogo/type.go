@@ -5,8 +5,10 @@
 package octogo // import "modernc.org/ogo/internal/ogo"
 
 var (
-	_ Typ = (*PredeclaredType)(nil)
-	_ Typ = Kind(0)
+	_ Typ   = (*PredeclaredType)(nil)
+	_ Typ   = Kind(0)
+	_ gater = (*PredeclaredType)(nil)
+	_ gater = Kind(0)
 )
 
 // Kind describes a type category.
@@ -44,9 +46,9 @@ func (k Kind) state() (r gate) {
 	return resolved
 }
 
-func (k Kind) setResolving() {}
+func (k Kind) open() {}
 
-func (k Kind) setResolved() {}
+func (k Kind) close() {}
 
 // Typ describes an OctoGo type.
 type Typ interface {
@@ -83,6 +85,6 @@ func (t *PredeclaredType) state() (r gate) {
 	return resolved
 }
 
-func (t *PredeclaredType) setResolving() {}
+func (t *PredeclaredType) open() {}
 
-func (t *PredeclaredType) setResolved() {}
+func (t *PredeclaredType) close() {}

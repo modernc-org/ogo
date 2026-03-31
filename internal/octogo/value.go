@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	_ = Value(literal{})
+	_ = Value(untypedConst{})
 )
 
 // Value represents a value known at compile time.
@@ -25,11 +25,11 @@ func (v valuer) Value() Value {
 	return v.val
 }
 
-type literal struct {
+type untypedConst struct {
 	cv constant.Value
 }
 
-func (l literal) Type() Typ {
+func (l untypedConst) Type() Typ {
 	switch l.cv.Kind() {
 	case constant.Bool:
 		return UntypedBool
@@ -44,6 +44,19 @@ func (l literal) Type() Typ {
 	}
 }
 
-func (l literal) Value() Value {
+func (l untypedConst) Value() Value {
 	return l
+}
+
+func (f *File) evalConstExpr(e ExpressionNode) (r Value) {
+	if e == nil {
+		return nil
+	}
+
+	switch x := e.Value().(type) {
+	case untypedConst:
+		return x
+	default:
+		panic(todo("%T", x))
+	}
 }
