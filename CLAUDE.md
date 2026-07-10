@@ -156,6 +156,75 @@ helpers (guarded with `//lint:ignore U1000`); prefer them for temporary tracing.
 
 - `specs.go`'s doc comment is the authoritative **language spec + grammar**;
   `internal/octogo/octogo.go`'s doc comment is the authoritative **compiler-internals
-  design** (check phases + WPO). `gem.md` and `web/` are informal AI-assisted design
-  scratch and marketing copy — not authoritative.
+  design** (check phases + WPO). `web/` is informal marketing copy — not
+  authoritative. (`gem.md`, the original Gemini design corpus, was deleted
+  2026-07-10; its unique, still-unreconciled bits are salvaged in the appendix below.)
 - Requires Go 1.25+ (uses iterators, `maps`/`slices`, range-over-func).
+
+## Appendix: salvaged design notes from gem.md (unreconciled — process later)
+
+> **Status: historical design intent, NOT current authority.** Extracted from
+> `gem.md` (a Google Gemini "Gem" design corpus) before it was deleted on
+> 2026-07-10. It predates the `octogo → ogo` / `.octo → .ogo` rename. Most of
+> gem.md already migrated into `specs.go` (language spec) and
+> `internal/octogo/octogo.go` (checker/WPO design); the items below are the ones
+> that lived *nowhere else*. Reconcile against those two files before acting on
+> any of this, and delete each item from here once it has been folded into the
+> real spec or implemented.
+
+### 1. Open decision — WPO interface handling (leaning B, never finalized)
+
+The zero-runtime-interface goal was an unsettled choice among three strategies.
+`octogo.go` currently describes **Option B** ("Monomorphization Rule", Type-Vector
+specialization, "no VTables exist at runtime") but hedges ("*If* using the
+Monomorphization WPO strategy…"). The alternatives and their rationale survive only here:
+
+| Strategy | Interfaces at runtime? | Go compat | Memory | Dispatch | Compiler complexity |
+| --- | --- | --- | --- | --- | --- |
+| **A. Bounded tagged unions** — WPO computes the closed set of concrete types a given interface var can hold → static C `struct { int tag; union{…} }` | Yes (unions) | High | High (union padding waste) | Fast (`switch` on tag) | High |
+| **B. Strict monomorphization** — an interface var may hold only ONE concrete type per lifetime; otherwise a compile-time error | No (fully erased) | Low | Zero | Fastest (direct call) | Low |
+| **C. Static VTables** — interface = fat pointer (data ptr + static vtable ptr) | Yes (fat ptrs) | High | Low (pointers) | Slower (indirection; bad for P2 Hub RAM) | Medium |
+
+Option C's catch: with no heap/GC, WPO must prove the pointed-to data stays in scope.
+
+### 2. Unbuilt `p2` standard library — intended 1:1 mapping to flexprop C intrinsics
+
+The `p2` package (resolved from the dotless import `"p2"`) is meant to be a thin,
+strongly-typed wrapper over flexcc's built-in P2 intrinsics — zero runtime overhead,
+no custom PASM. Intended surface:
+
+| OctoGo | flexprop C intrinsic |
+| --- | --- |
+| `p2.WritePinMode(pin, mode)` | `_wrpin(pin, mode)` |
+| `p2.WritePinX(pin, xVal)` | `_wxpin(pin, xVal)` |
+| `p2.WritePinY(pin, yVal)` | `_wypin(pin, yVal)` |
+| `p2.ReadPin(pin)` | `_rdpin(pin)` |
+| `p2.AckPin(pin)` | `_akpin(pin)` |
+| `p2.PinHigh(pin)` / `p2.PinLow(pin)` | `_pinh(pin)` / `_pinl(pin)` |
+| `p2.PinIn(pin)` | `_pinr(pin)` |
+| `p2.WaitMs(ms)` | `_waitms(ms)` |
+
+A `select` waiting on a Smart Pin transpiles to a `while(1)` poll of `_pinr(pin)`,
+calling `_akpin(pin)` to clear the IN flag and `_waitx(1)` to yield and avoid Hub-bus
+starvation (the same loop can multiplex channels and pins).
+
+### 3. Dropped CLI split: `compile` vs `build`
+
+gem.md intended two backend commands: `ogo compile` (emit intermediate C + headers
+only) and `ogo build` (wrap flexprop to produce the P2 binary). Current `main.go` has
+only `build`. gem.md itself flagged the doubt — *"with WPO `compile` might be no
+[longer] possible"* — because whole-program optimization fights per-package separate
+compilation. Decide `compile`'s fate deliberately when wiring the backend.
+
+### 4. Misc hardware / codegen intent
+
+- **P2 budget:** 8 Cogs; 512 KB shared Hub RAM; 512 longs (2 KB) local Cog RAM per Cog.
+- **Local zero-init:** Cog-stack locals are NOT auto-zeroed by C, so the emitter must
+  emit an explicit `= 0` for every `var x T` without initializer (globals rely on the
+  BSS segment — already covered in `specs.go`).
+- **`init()` stitching:** WPO should topologically sort global-var initializers and
+  concatenate all `init()` bodies into one synthesized `__octogo_init()`, injected at
+  the top of the C `main()`. (This mechanism name appears only in gem.md.)
+- **Translation-unit tension:** the "one directory = one package = one C translation
+  unit" model may not survive WPO, whose passes cross the per-directory boundary.
+  gem.md flagged this as unresolved.
