@@ -50,16 +50,16 @@ func TestOctoGoSpecs(t *testing.T) {
 		default:
 			switch {
 			case
-				strings.Contains(path, "02_"),         //TODO name resolving
-				strings.Contains(path, "03_"),         //TODO name resolving
-				strings.Contains(path, "06_"),         //TODO name resolving
-				strings.Contains(path, "09_"),         //TODO name resolving
-				strings.Contains(path, "11_"),         //TODO type decl
-				strings.Contains(path, "14_"),         //TODO const decl
-				strings.Contains(path, "18_"),         //TODO other
-				strings.Contains(path, "19_"),         //TODO Type
-				strings.Contains(path, "decl_import"), //TODO const decl
-				strings.Contains(path, "decl_redecl"): //TODO other
+				strings.Contains(path, "02_"),          //TODO name resolving
+				strings.Contains(path, "03_"),          //TODO name resolving
+				strings.Contains(path, "06_"),          //TODO name resolving
+				strings.Contains(path, "09_"),          //TODO name resolving
+				strings.Contains(path, "11_"),          //TODO type decl
+				strings.Contains(path, "14_"),          //TODO const decl
+				strings.Contains(path, "18_"),          //TODO other
+				strings.Contains(path, "19_"),          //TODO Type
+				strings.Contains(path, "decl_import2"), //TODO harness // ERROR quote handling
+				strings.Contains(path, "decl_redecl"):  //TODO other
 
 				continue
 			}

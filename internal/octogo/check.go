@@ -2003,6 +2003,10 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.INT, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
 				}
+			case CHAR:
+				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {
+					f.err(tok.Position(), "invalid rune literal: %s", tok.Src())
+				}
 			case IDENT:
 				nm := tok.Src()
 				switch d := s.find(nm); x := d.(type) {
