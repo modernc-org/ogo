@@ -87,11 +87,13 @@ inputs, and never hand-edit the outputs.
    heavy, network-dependent, and **linux/amd64 only**; to adopt a changed
    `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is re-cloned.
 
-   > **Pending regen:** the committed `ccgo_linux_amd64.go` was generated from an
-   > older flexprop commit (`v7.6.1-11-g71ce9b99`, ~2026-03-13), so it does **not**
-   > yet match the `v7.6.11` pin. Regenerate and retest against the pin before
-   > relying on the backend — and note `mcpp_main.c.diff` may need updating if it no
-   > longer applies cleanly to `v7.6.11`.
+   > **Backend regenerated 2026-07-10** against the `v7.6.11` pin (the flexprop repo
+   > and the `spin2cpp` submodule both resolve to `v7.6.11`); `mcpp_main.c.diff`
+   > applied cleanly. Post-regen chores worth remembering: `rm -rf internal/flexprop
+   > internal/flexprop_install` (git-ignored build clones that otherwise break
+   > `go build ./...` / `go test ./...`), and refresh the flexcc `--help` golden in
+   > `internal/flexcc/all_test.go` — its `Version …` line embeds the pinned build's
+   > version string and C `__DATE__`, so it changes on every regen.
 
 ## Architecture
 

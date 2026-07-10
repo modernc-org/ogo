@@ -31,10 +31,11 @@ const (
 	// released 2026-06-15) is the latest flexprop release as of 2026-07-10;
 	// upstream cuts releases roughly every 1-2 months.
 	//
-	// WARNING: the committed ccgo_<goos>_<goarch>.go was generated from an OLDER
-	// commit (v7.6.1-11-g71ce9b99, ~2026-03-13) and does not yet match this pin.
-	// Regenerate (rm -rf flexprop first) and retest before relying on the
-	// backend; mcpp_main.c.diff may need updating for v7.6.11. See CLAUDE.md.
+	// The committed ccgo_<goos>_<goarch>.go was regenerated against this pin on
+	// 2026-07-10 (flexprop repo and spin2cpp submodule both at v7.6.11);
+	// mcpp_main.c.diff applied cleanly. To adopt a new flexpropRef: bump it,
+	// `rm -rf flexprop flexprop_install`, rerun `go generate` (linux/amd64 only),
+	// then update the flexcc --help golden in internal/flexcc/all_test.go.
 	flexpropRef = "v7.6.11"
 	installDir  = "flexprop_install"
 )
