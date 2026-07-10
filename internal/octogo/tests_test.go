@@ -50,16 +50,14 @@ func TestOctoGoSpecs(t *testing.T) {
 		default:
 			switch {
 			case
-				strings.Contains(path, "02_"),          //TODO name resolving
-				strings.Contains(path, "03_"),          //TODO name resolving
-				strings.Contains(path, "06_"),          //TODO name resolving
-				strings.Contains(path, "09_"),          //TODO name resolving
-				strings.Contains(path, "11_"),          //TODO type decl
-				strings.Contains(path, "14_"),          //TODO const decl
-				strings.Contains(path, "18_"),          //TODO other
-				strings.Contains(path, "19_"),          //TODO Type
-				strings.Contains(path, "decl_import2"), //TODO harness // ERROR quote handling
-				strings.Contains(path, "decl_redecl"):  //TODO other
+				strings.Contains(path, "02_"), //TODO name resolving
+				strings.Contains(path, "03_"), //TODO name resolving
+				strings.Contains(path, "06_"), //TODO name resolving
+				strings.Contains(path, "09_"), //TODO name resolving
+				strings.Contains(path, "11_"), //TODO type decl
+				strings.Contains(path, "14_"), //TODO const decl
+				strings.Contains(path, "18_"), //TODO other
+				strings.Contains(path, "19_"): //TODO Type
 
 				continue
 			}
@@ -123,6 +121,18 @@ func parseAnnotations(fsys fs.FS, path string) (bool, []expectedError, error) {
 
 		if match := errorCommentRx.FindStringSubmatch(line); match != nil {
 			re := strings.TrimSpace(match[1])
+			// // ERROR patterns are conventionally quote-delimited, e.g.
+			//   // ERROR "undefined: d|undeclared name"
+			// and may carry trailing prose after the closing quote, e.g.
+			//   // ERROR "x redeclared in this block" (Parameter scope ...)
+			// When the pattern is quoted, use only the text between the quotes
+			// as the regexp; unquoted patterns (// ERROR not allowed) are used
+			// verbatim.
+			if strings.HasPrefix(re, `"`) {
+				if end := strings.IndexByte(re[1:], '"'); end >= 0 {
+					re = re[1 : 1+end]
+				}
+			}
 			rx, err := regexp.Compile(re)
 			if err != nil {
 				return false, nil, fmt.Errorf("invalid regexp on line %d: %v", lineNum, err)
