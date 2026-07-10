@@ -481,7 +481,10 @@ func (f *File) funcDecl(s *Scope, n Node) {
 						panic(todo("", fd.gate))
 					}
 				default:
-					panic(todo("%T", x))
+					// The name is already declared in this scope as a
+					// non-function: a redeclaration. Report it and skip.
+					f.err(tok.Position(), "%s redeclared in this block", tok.Src())
+					return
 				}
 			}
 		default:
@@ -1466,12 +1469,16 @@ func (f *File) varSpec(s *Scope, n Node) {
 					varDecls = append(varDecls, nil)
 					continue
 				case *VarDeclaration:
-					varDecls = append(varDecls, x)
 					switch vs := x.VarSpec; vs.gate {
 					case unvisited:
+						varDecls = append(varDecls, x)
 						vs.gate.open()
 					default:
-						panic(todo("", vs.gate))
+						// The name is already declared in this scope: a
+						// redeclaration. Report it and skip re-resolving, which
+						// would otherwise hit the gate in a non-unvisited state.
+						f.err(nmTok.Position(), "%s redeclared in this block", nm)
+						varDecls = append(varDecls, nil)
 					}
 				default:
 					panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
@@ -1480,7 +1487,10 @@ func (f *File) varSpec(s *Scope, n Node) {
 		case Type:
 			typ = f.typ(s, n)
 		case Expression:
-			varDecls[0].VarSpec.Expression = f.expression(s, n)
+			e := f.expression(s, n)
+			if len(varDecls) != 0 && varDecls[0] != nil {
+				varDecls[0].VarSpec.Expression = e
+			}
 		case 0:
 			switch f.ch(n.tok) {
 			case ASSIGN:
