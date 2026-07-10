@@ -80,10 +80,18 @@ inputs, and never hand-edit the outputs.
 3. **flexcc backend.** `internal/flexcc/ccgo_linux_amd64.go` (~12 MB, ~455k lines)
    is the flexspin/flexcc C compiler transpiled to Go by `modernc.org/ccgo`.
    `internal/generator.go` (build-tagged `//go:build ignore`) drives it: it clones
-   `totalspectrum/flexprop`, applies `internal/mcpp_main.c.diff`, transpiles, and
-   rewrites the emitted `main` package into a reusable `flexcc` library (threading
-   a `*CC` state struct through the C globals). Regeneration is `cd internal && go generate`
-   — heavy, network-dependent, and **linux/amd64 only**.
+   `totalspectrum/flexprop` (pinned to tag **`v7.6.11`** via the `flexpropRef`
+   constant), applies `internal/mcpp_main.c.diff`, transpiles, and rewrites the
+   emitted `main` package into a reusable `flexcc` library (threading a `*CC` state
+   struct through the C globals). Regeneration is `cd internal && go generate` —
+   heavy, network-dependent, and **linux/amd64 only**; to adopt a changed
+   `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is re-cloned.
+
+   > **Pending regen:** the committed `ccgo_linux_amd64.go` was generated from an
+   > older flexprop commit (`v7.6.1-11-g71ce9b99`, ~2026-03-13), so it does **not**
+   > yet match the `v7.6.11` pin. Regenerate and retest against the pin before
+   > relying on the backend — and note `mcpp_main.c.diff` may need updating if it no
+   > longer applies cleanly to `v7.6.11`.
 
 ## Architecture
 

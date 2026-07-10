@@ -26,6 +26,16 @@ import (
 const (
 	cloneDir    = "flexprop"
 	flexpropURL = "https://github.com/totalspectrum/flexprop.git"
+	// flexpropRef pins the flexprop source so backend regeneration is
+	// reproducible. v7.6.11 (commit 858f51c4a24e7ae0f6cbc78f625c731083ad304f,
+	// released 2026-06-15) is the latest flexprop release as of 2026-07-10;
+	// upstream cuts releases roughly every 1-2 months.
+	//
+	// WARNING: the committed ccgo_<goos>_<goarch>.go was generated from an OLDER
+	// commit (v7.6.1-11-g71ce9b99, ~2026-03-13) and does not yet match this pin.
+	// Regenerate (rm -rf flexprop first) and retest before relying on the
+	// backend; mcpp_main.c.diff may need updating for v7.6.11. See CLAUDE.md.
+	flexpropRef = "v7.6.11"
 	installDir  = "flexprop_install"
 )
 
@@ -99,6 +109,14 @@ func main() {
 	if err != nil { // cloneDir does not exist
 		if err := shell("", "git", "clone", "--recursive", flexpropURL); err != nil {
 			fail(1, "git clone: err=%v", err)
+		}
+
+		if err := shell(cloneDir, "git", "checkout", flexpropRef); err != nil {
+			fail(1, "git checkout %s: err=%v", flexpropRef, err)
+		}
+
+		if err := shell(cloneDir, "git", "submodule", "update", "--init", "--recursive"); err != nil {
+			fail(1, "git submodule update: err=%v", err)
 		}
 
 		if err := shell(filepath.Join(cloneDir, "spin2cpp"), "git", "apply", filepath.Join(wd, "mcpp_main.c.diff")); err != nil {
