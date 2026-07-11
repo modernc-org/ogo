@@ -513,19 +513,62 @@ func (f *File) checkBodies(pkg *Scope, n Node) {
 // "func f(x int) { var x int }" is a redeclaration.
 func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	fs := newScope(pkg, BlockScope)
+	var results []retResult
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Signature:
-			f.declareParams(fs, n)
+			sig := f.signature(fs, n)
+			f.declareParams(fs, sig)
+			results = f.flattenResults(fs, sig)
 		case Block:
-			f.checkBlock(fs, n)
+			f.checkBlock(fs, results, n)
 		}
 	}
 }
 
+// retResult describes one of a function's result values for return checking.
+type retResult struct {
+	name  string // source type name, for messages (e.g. "int")
+	kind  Kind
+	known bool // kind is a predeclared type we can check literals against
+}
+
+// flattenResults expands a signature's result list into one retResult per
+// result value ("(x, y int)" yields two).
+func (f *File) flattenResults(s *Scope, sig *SignatureNode) (r []retResult) {
+	if sig.Results == nil {
+		return nil
+	}
+	for _, p := range sig.Results.List {
+		rt := f.resultType(s, p.TypeNode)
+		n := len(p.Names)
+		if n == 0 {
+			n = 1 // an unnamed result contributes one value
+		}
+		for range n {
+			r = append(r, rt)
+		}
+	}
+	return r
+}
+
+// resultType classifies a result's type for return checking. Only predeclared
+// types are resolved to a Kind; anything else is left unchecked (known=false).
+func (f *File) resultType(s *Scope, tn TypeNode) (r retResult) {
+	id, ok := tn.(*TypeNodeIdent)
+	if !ok {
+		return r
+	}
+	r.name = id.Name.Src()
+	if pt, ok := s.find(r.name).(*PredeclaredType); ok {
+		r.kind = pt.Kind()
+		r.known = true
+	}
+	return r
+}
+
 // declareParams declares a signature's parameter names in scope s.
-func (f *File) declareParams(s *Scope, n Node) {
-	sig := f.signature(s, n)
+func (f *File) declareParams(s *Scope, sig *SignatureNode) {
 	if sig.Params == nil {
 		return
 	}
@@ -540,70 +583,182 @@ func (f *File) declareParams(s *Scope, n Node) {
 
 // checkBlock walks the statements of a block. The caller provides the scope: a
 // function body shares its parameter scope; a nested block gets a child scope.
-func (f *File) checkBlock(s *Scope, n Node) {
+// results carries the enclosing function's result types for return checking.
+func (f *File) checkBlock(s *Scope, results []retResult, n Node) {
 	for n := range it(n.ast) {
 		if n.sym == Statement {
-			f.checkStatement(s, n)
+			f.checkStatement(s, results, n)
 		}
 	}
 }
 
 // checkStatement handles the statement forms Phase 4 currently understands:
-// local variable declarations (reporting redeclarations) and nested blocks
-// (if/for bodies, in a child scope). Other statement forms are not yet checked.
-func (f *File) checkStatement(s *Scope, n Node) {
+// local variable/constant declarations (reporting redeclarations), return
+// statements (operand arity and, for literal operands, result type), and nested
+// blocks (if/for bodies, in a child scope). Other forms are not yet checked.
+func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	var head Node
-	for n := range it(n.ast) {
-		switch n.sym {
+	isReturn := false
+	for c := range it(stmt.ast) {
+		switch c.sym {
 		case VarDecl:
-			f.declareLocalVar(s, n)
+			f.declareLocalVar(s, c)
 		case ConstDecl:
 			// Declare the local constant's name, then evaluate its initializer,
 			// mirroring the two top-level passes (declareConst + constDecl).
-			f.declareConst(s, n)
-			f.constDecl(s, n)
+			f.declareConst(s, c)
+			f.constDecl(s, c)
 		case Block:
-			f.checkBlock(s.child(), n)
+			f.checkBlock(s.child(), results, c)
 		case Statement:
-			f.checkStatement(s, n)
+			f.checkStatement(s, results, c)
 		case AssignHead:
-			head = n
+			head = c
 		case Postfix:
-			f.checkAssignment(s, head, n)
+			f.checkAssignment(s, head, c)
 		case SwitchStmt:
-			f.checkSwitch(s, n)
+			f.checkSwitch(s, results, c)
 		case SelectStmt:
-			f.checkSelect(s, n)
+			f.checkSelect(s, results, c)
+		case 0:
+			if f.ch(c.tok) == RETURN {
+				isReturn = true
+			}
 		}
 	}
+	if isReturn {
+		f.checkReturn(results, stmt)
+	}
+}
+
+// checkReturn verifies a return statement's operand count against the enclosing
+// function's results and, for literal operands returned to a predeclared result
+// type, that the literal is assignable.
+func (f *File) checkReturn(results []retResult, stmt Node) {
+	var retTok Token
+	var exprs []Node
+	for c := range it(stmt.ast) {
+		switch c.sym {
+		case ExpressionList:
+			for e := range it(c.ast) {
+				if e.sym == Expression {
+					exprs = append(exprs, e)
+				}
+			}
+		case 0:
+			if f.ch(c.tok) == RETURN {
+				retTok = f.tok(c.tok)
+			}
+		}
+	}
+
+	switch {
+	case len(exprs) < len(results):
+		f.err(retTok.Position(), "not enough arguments to return")
+		return
+	case len(exprs) > len(results):
+		f.err(retTok.Position(), "too many arguments to return")
+		return
+	}
+	for i, e := range exprs {
+		f.checkReturnValue(results[i], e)
+	}
+}
+
+// checkReturnValue reports a type mismatch when a literal return operand is not
+// assignable to its (predeclared) result type. Non-literal operands and
+// non-predeclared results are left unchecked pending typed expression support.
+func (f *File) checkReturnValue(rt retResult, e Node) {
+	tok, ok := f.bareLiteral(e)
+	if !ok || !rt.known {
+		return
+	}
+	var valName string
+	var assignable bool
+	switch Symbol(tok.Ch) {
+	case INT, CHAR:
+		valName, assignable = "int", isNumericKind(rt.kind)
+	case STRING:
+		valName, assignable = "string", rt.kind == PredeclaredString
+	default:
+		return
+	}
+	if !assignable {
+		f.err(tok.Position(), "cannot use %s of type %s as type %s in return statement", tok.Src(), valName, rt.name)
+	}
+}
+
+// bareLiteral reports whether an expression node is a single int, string or rune
+// literal -- no operators, call/index/selector suffix or parentheses -- and
+// returns that literal token.
+func (f *File) bareLiteral(n Node) (Token, bool) {
+	var lit Token
+	found, extra := false, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case SimpleExpr, Term, UnaryExpr, Factor:
+			switch t, ok := f.bareLiteral(c); {
+			case !ok, found:
+				extra = true
+			default:
+				lit, found = t, true
+			}
+		case 0:
+			switch Symbol(f.tok(c.tok).Ch) {
+			case INT, STRING, CHAR:
+				if found {
+					extra = true
+				}
+				lit, found = f.tok(c.tok), true
+			default:
+				extra = true
+			}
+		default:
+			extra = true
+		}
+	}
+	if found && !extra {
+		return lit, true
+	}
+	return Token{}, false
+}
+
+// isNumericKind reports whether k is one of the predeclared integer types.
+func isNumericKind(k Kind) bool {
+	switch k {
+	case PredeclaredInt8, PredeclaredInt16, PredeclaredInt32,
+		PredeclaredUint8, PredeclaredUint16, PredeclaredUint32, PredeclaredUintptr:
+		return true
+	}
+	return false
 }
 
 // checkSwitch walks the case clauses of a switch statement, each in its own
 // block scope. The switch guard's ":=" variable and the case expressions are
 // not checked yet.
-func (f *File) checkSwitch(s *Scope, n Node) {
+func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	for n := range it(n.ast) {
 		if n.sym == CaseClause {
-			f.checkClauseBody(s.child(), n)
+			f.checkClauseBody(s.child(), results, n)
 		}
 	}
 }
 
 // checkSelect walks the communication clauses of a select statement, each in its
 // own block scope. The communication operations are not checked yet.
-func (f *File) checkSelect(s *Scope, n Node) {
+func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 	for n := range it(n.ast) {
 		if n.sym == CommClause {
-			f.checkClauseBody(s.child(), n)
+			f.checkClauseBody(s.child(), results, n)
 		}
 	}
 }
 
 // checkClauseBody walks the statement body of a case or comm clause in scope s.
-func (f *File) checkClauseBody(s *Scope, n Node) {
+func (f *File) checkClauseBody(s *Scope, results []retResult, n Node) {
 	for n := range it(n.ast) {
 		if n.sym == Statement {
-			f.checkStatement(s, n)
+			f.checkStatement(s, results, n)
 		}
 	}
 }
