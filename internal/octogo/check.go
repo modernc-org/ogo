@@ -620,16 +620,30 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 					}
 				}
 			case Type:
-				// Resolve plain named types and pointers-to-named, reporting
-				// undefined types. Composite types (arrays, channels, struct and
-				// interface literals) are left unresolved for now: their element
-				// and bound expressions are not yet fully checked.
-				if f.simpleNamedType(n) {
+				// Resolve plain named types and pointers-to-named, plus struct and
+				// interface type literals (so their field/method names are checked
+				// for duplicates), reporting undefined types. Arrays, slices and
+				// channels are left unresolved for now: their bound and element
+				// expressions are not yet fully checked.
+				if f.simpleNamedType(n) || f.structOrInterfaceType(n) {
 					f.typ(s, n)
 				}
 			}
 		}
 	}
+}
+
+// structOrInterfaceType reports whether a Type node is a struct or interface
+// type literal, whose field/method names can be checked without evaluating any
+// bound or element expression.
+func (f *File) structOrInterfaceType(n Node) bool {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case StructType, InterfaceType:
+			return true
+		}
+	}
+	return false
 }
 
 // simpleNamedType reports whether a Type node denotes a plain named type or a
@@ -1965,6 +1979,22 @@ func (f *File) structType(s *Scope, n Node) (r *TypeNodeStruct) {
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
 	}
+
+	// A struct's field names must be unique; the blank identifier may repeat.
+	seen := map[string]bool{}
+	for _, fld := range r.Fields {
+		for _, nm := range fld.Names {
+			name := nm.Src()
+			if name == "_" {
+				continue
+			}
+			if seen[name] {
+				f.err(nm.Position(), "field %s redeclared", name)
+				continue
+			}
+			seen[name] = true
+		}
+	}
 	return r
 }
 
@@ -2009,6 +2039,23 @@ func (f *File) interfaceType(s *Scope, n Node) (r *TypeNodeInterface) {
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
+	}
+
+	// An interface's method names must be unique.
+	seen := map[string]bool{}
+	for _, m := range r.Methods {
+		if !m.Name.IsValid() {
+			continue
+		}
+		name := m.Name.Src()
+		if name == "_" {
+			continue
+		}
+		if seen[name] {
+			f.err(m.Name.Position(), "method %s redeclared", name)
+			continue
+		}
+		seen[name] = true
 	}
 	return r
 }
