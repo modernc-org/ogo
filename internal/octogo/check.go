@@ -557,6 +557,11 @@ func (f *File) checkStatement(s *Scope, n Node) {
 		switch n.sym {
 		case VarDecl:
 			f.declareLocalVar(s, n)
+		case ConstDecl:
+			// Declare the local constant's name, then evaluate its initializer,
+			// mirroring the two top-level passes (declareConst + constDecl).
+			f.declareConst(s, n)
+			f.constDecl(s, n)
 		case Block:
 			f.checkBlock(s.child(), n)
 		case Statement:
@@ -2535,8 +2540,14 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				switch d := s.find(nm); x := d.(type) {
 				case *ConstDeclaration:
 					r = x.ConstSpec.Value.Expr()
+				case nil:
+					f.err(tok.Position(), "undefined: %s", nm)
+					r = untypedConst{constant.MakeUnknown()}
 				default:
-					panic(todo("%q %T", nm, x))
+					// A non-constant name (var, func, type, ...) used where a
+					// constant expression is required.
+					f.err(tok.Position(), "%s is not a constant", nm)
+					r = untypedConst{constant.MakeUnknown()}
 				}
 			//TODO 			case LPAREN, RPAREN:
 			//TODO 				// ok
