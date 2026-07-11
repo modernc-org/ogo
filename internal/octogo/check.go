@@ -758,6 +758,34 @@ func isBoolKind(k Kind) bool {
 	return k == PredeclaredBool || k == UntypedBool
 }
 
+// kindCategory groups Kinds into broad comparability classes: boolean, string
+// and numeric. It returns 0 for a Kind that fits none (so it never compares as
+// equal to a known category).
+func kindCategory(k Kind) int {
+	switch {
+	case isBoolKind(k):
+		return 1
+	case k == PredeclaredString || k == UntypedString:
+		return 2
+	case isNumericKind(k) || k == UntypedInt || k == UntypedFloat:
+		return 3
+	}
+	return 0
+}
+
+// kindName returns a source-like name for k, for use in diagnostics.
+func kindName(k Kind) string {
+	switch kindCategory(k) {
+	case 1:
+		return "bool"
+	case 2:
+		return "string"
+	case 3:
+		return "int"
+	}
+	return "?"
+}
+
 // checkCondition reports when an "if" or "for" condition has a known, non-boolean
 // type. It is intentionally conservative: an expression whose type cannot yet be
 // determined (a call, selector, or unresolved name) is left unreported.
@@ -880,14 +908,81 @@ func (f *File) identKind(s *Scope, tok Token) (Kind, bool) {
 	return 0, false
 }
 
-// checkSwitch walks the case clauses of a switch statement, each in its own
-// block scope. The switch guard's ":=" variable and the case expressions are
-// not checked yet.
+// checkSwitch walks a switch statement: it determines the guard's type and, for
+// an expression switch, checks each case expression is comparable to it, then
+// walks each case clause body in its own block scope. The guard's ":=" variable
+// is not declared yet.
 func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
-	for n := range it(n.ast) {
-		if n.sym == CaseClause {
-			f.checkClauseBody(s.child(), results, n)
+	var guardKind Kind
+	guardOK := false
+	// SwitchGuard precedes the CaseClauses, so the guard type is known by the
+	// time the first clause is reached.
+	for c := range it(n.ast) {
+		switch c.sym {
+		case SwitchGuard:
+			guardKind, guardOK = f.switchGuardType(s, c)
+		case CaseClause:
+			if guardOK {
+				f.checkCaseExprs(s, guardKind, c)
+			}
+			f.checkClauseBody(s.child(), results, c)
 		}
+	}
+}
+
+// switchGuardType resolves the type a switch compares against: the right-hand
+// side of a "v := expr" guard, or the sole guard expression otherwise.
+func (f *File) switchGuardType(s *Scope, n Node) (Kind, bool) {
+	var exprs []Node
+	hasDefine := false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Expression:
+			exprs = append(exprs, c)
+		case 0:
+			if f.ch(c.tok) == DEFINE {
+				hasDefine = true
+			}
+		}
+	}
+	switch {
+	case hasDefine && len(exprs) >= 2:
+		return f.exprType(s, exprs[1])
+	case len(exprs) >= 1:
+		return f.exprType(s, exprs[0])
+	}
+	return 0, false
+}
+
+// checkCaseExprs checks every expression of a case clause's CaseHead against the
+// switch guard's type. A "default" clause has no expression list and is skipped.
+func (f *File) checkCaseExprs(s *Scope, guardKind Kind, n Node) {
+	for head := range it(n.ast) {
+		if head.sym != CaseHead {
+			continue
+		}
+		for list := range it(head.ast) {
+			if list.sym != ExpressionList {
+				continue
+			}
+			for e := range it(list.ast) {
+				if e.sym == Expression {
+					f.checkCaseExpr(s, guardKind, e)
+				}
+			}
+		}
+	}
+}
+
+// checkCaseExpr reports a case expression whose type is known and in a different
+// comparability class than the switch guard.
+func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
+	k, ok := f.exprType(s, e)
+	if !ok {
+		return
+	}
+	if gc, cc := kindCategory(guardKind), kindCategory(k); gc != 0 && cc != 0 && gc != cc {
+		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in case", f.tok(e.Pos()).Src(), kindName(k), kindName(guardKind))
 	}
 }
 
