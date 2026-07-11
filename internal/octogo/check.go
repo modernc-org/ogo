@@ -355,8 +355,9 @@ func (f *File) topLevel(s *Scope, n Node) {
 			f.varDecl(s, n)
 		case FuncDecl:
 			f.funcDecl(s, n)
-		// case TypeDecl:
-		// 	f.typeDecl(s, n)
+		case TypeDecl:
+			// Type names and bodies are handled in declareTopLevel/declareType;
+			// deep type resolution (Typ, recursion checks) is not implemented yet.
 		case 0:
 			switch f.ch(n.tok) {
 			default:
@@ -1339,6 +1340,8 @@ func (f *File) typeSpec(s *Scope, n Node) (r *TypeSpecNode) {
 	r = &TypeSpecNode{}
 	for n := range it(n.ast) {
 		switch n.sym {
+		case Type:
+			r.TypeNode = f.typ(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
@@ -1593,6 +1596,41 @@ func (t *TypeNodeSlice) Type() Typ {
 	panic(todo("", origin(1)))
 }
 
+// TypeNodeStruct describes the StructType production.
+//
+//	StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
+type TypeNodeStruct struct {
+	gate
+	Fields []ParameterDeclNode // each FieldDecl's names and type
+}
+
+// Type implements TypeNode.
+func (t *TypeNodeStruct) Type() Typ {
+	panic(todo("", origin(1)))
+}
+
+// MethodSpecNode describes the MethodSpec production.
+//
+//	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+type MethodSpecNode struct {
+	Name    Token
+	Params  *ParameterListNode
+	Results *ParameterListNode
+}
+
+// TypeNodeInterface describes the InterfaceType production.
+//
+//	InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
+type TypeNodeInterface struct {
+	gate
+	Methods []MethodSpecNode
+}
+
+// Type implements TypeNode.
+func (t *TypeNodeInterface) Type() Typ {
+	panic(todo("", origin(1)))
+}
+
 func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 	var ident TypeNodeIdent
 	for n := range it(n.ast) {
@@ -1608,6 +1646,10 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			default:
 				panic(todo("%T", x))
 			}
+		case StructType:
+			r = f.structType(s, n)
+		case InterfaceType:
+			r = f.interfaceType(s, n)
 		case Expression:
 			r = &TypeNodeArray{Expression: f.expression(s, n)}
 		case 0:
@@ -1637,6 +1679,107 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				if r == nil {
 					r = &TypeNodeSlice{}
 				}
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	return r
+}
+
+// StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
+func (f *File) structType(s *Scope, n Node) (r *TypeNodeStruct) {
+	r = &TypeNodeStruct{}
+	for n := range it(n.ast) {
+		switch n.sym {
+		case FieldDecl:
+			r.Fields = append(r.Fields, f.fieldDecl(s, n))
+		case 0:
+			switch f.ch(n.tok) {
+			case STRUCT, LBRACE, RBRACE, SEMICOLON:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	return r
+}
+
+// FieldDecl = "*" [ identifier "." ] identifier
+//
+//	| identifier [ "." identifier | { "," identifier } Type ] .
+func (f *File) fieldDecl(s *Scope, n Node) (r ParameterDeclNode) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Type:
+			r.TypeNode = f.typ(s, n)
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case IDENT:
+				r.Names = append(r.Names, tok)
+			case COMMA, PERIOD, MUL:
+				// ok: multiple names, or an embedded/qualified field
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	return r
+}
+
+// InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
+func (f *File) interfaceType(s *Scope, n Node) (r *TypeNodeInterface) {
+	r = &TypeNodeInterface{}
+	for n := range it(n.ast) {
+		switch n.sym {
+		case MethodSpec:
+			r.Methods = append(r.Methods, f.methodSpec(s, n))
+		case 0:
+			switch f.ch(n.tok) {
+			case INTERFACE, LBRACE, RBRACE, SEMICOLON:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	return r
+}
+
+// MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+//
+// The signature part mirrors Signature: the first ")" separates parameters from
+// results.
+func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
+	seenRPar := false
+	for n := range it(n.ast) {
+		switch n.sym {
+		case ParameterList:
+			switch {
+			case seenRPar:
+				r.Results = f.parameterList(s, n)
+			default:
+				r.Params = f.parameterList(s, n)
+			}
+		case Type:
+			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
+		case 0:
+			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			case IDENT:
+				r.Name = tok
+			case LPAREN:
+				// ok
+			case RPAREN:
+				seenRPar = true
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
