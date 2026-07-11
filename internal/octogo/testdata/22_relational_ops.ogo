@@ -1,6 +1,3 @@
-//TODO-
-// COMPILE
-
 func testRelational() {
 	var s1 string = "octo"
 	var s2 string = "go"

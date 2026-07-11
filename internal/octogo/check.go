@@ -794,10 +794,12 @@ func kindName(k Kind) string {
 	return "?"
 }
 
-// checkCondition reports when an "if" or "for" condition has a known, non-boolean
-// type. It is intentionally conservative: an expression whose type cannot yet be
-// determined (a call, selector, or unresolved name) is left unreported.
+// checkCondition resolves the names and operator operands of an "if"/"for"
+// condition and reports when its type is known and non-boolean. Both checks are
+// conservative: an expression whose type cannot yet be determined (a call,
+// selector, or unresolved name) yields no "non-bool" report.
 func (f *File) checkCondition(s *Scope, kw string, n Node) {
+	f.checkNames(s, n)
 	if k, ok := f.exprType(s, n); ok && !isBoolKind(k) {
 		f.err(f.tok(n.Pos()).Position(), "non-bool used as %s condition", kw)
 	}
@@ -1189,6 +1191,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			f.checkNames(s, e)
 		}
 	}
+	// A plain "=" also checks each operand is assignable to its target.
+	if op == ASSIGN {
+		for i, e := range rhs {
+			if i < len(lhs) {
+				f.checkAssignType(s, lhs[i], e)
+			}
+		}
+	}
 
 	if op != DEFINE {
 		return
@@ -1222,14 +1232,126 @@ func (f *File) checkNames(s *Scope, n Node) {
 		f.checkFactorNames(s, n)
 	case UnaryExpr:
 		f.checkUnaryExpr(s, n)
-	case Expression, SimpleExpr, Term:
-		for c := range it(n.ast) {
-			switch c.sym {
-			case Expression, SimpleExpr, Term, UnaryExpr, Factor:
-				f.checkNames(s, c)
-			}
+	case Expression:
+		f.checkComparison(s, n)
+	case SimpleExpr:
+		f.checkBinary(s, n, Term, AddOp)
+	case Term:
+		f.checkBinary(s, n, UnaryExpr, MulOp)
+	}
+}
+
+// checkComparison recurses into an Expression's operands and, for each
+// relational operator, checks the two operands are comparable: operands of
+// different classes are "mismatched types", and an ordering operator ("<" etc.)
+// is not defined on bool. A comparison's own result type is bool.
+func (f *File) checkComparison(s *Scope, n Node) {
+	var operands, relOps []Node
+	for c := range it(n.ast) {
+		switch c.sym {
+		case SimpleExpr:
+			f.checkNames(s, c)
+			operands = append(operands, c)
+		case RelOp:
+			relOps = append(relOps, c)
 		}
 	}
+	for i, op := range relOps {
+		if i+1 < len(operands) {
+			f.checkRelOp(s, op, operands[i], operands[i+1])
+		}
+	}
+}
+
+// checkRelOp reports an incompatible pair of operands of a relational operator.
+func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
+	lk, lok := f.exprType(s, lNode)
+	rk, rok := f.exprType(s, rNode)
+	lc, rc := kindCategory(lk), kindCategory(rk)
+	if !lok || !rok || lc == catUnknown || rc == catUnknown {
+		return
+	}
+	pos := f.tok(opNode.Pos()).Position()
+	if lc != rc {
+		f.err(pos, "mismatched types %s and %s", kindName(lk), kindName(rk))
+		return
+	}
+	// Same class: ordering operators are undefined on bool.
+	switch Symbol(f.tok(opNode.Pos()).Ch) {
+	case EQL, NEQ:
+		// equality is defined on every class
+	default:
+		if lc == catBool {
+			f.err(pos, "invalid operation: operator %s not defined on %s", f.tok(opNode.Pos()).Src(), kindName(lk))
+		}
+	}
+}
+
+// checkBinary recurses into a SimpleExpr's or Term's operands and checks each
+// binary operator (operandSym is Term/UnaryExpr, opSym is AddOp/MulOp).
+func (f *File) checkBinary(s *Scope, n Node, operandSym, opSym Symbol) {
+	var operands, ops []Node
+	for c := range it(n.ast) {
+		switch c.sym {
+		case operandSym:
+			f.checkNames(s, c)
+			operands = append(operands, c)
+		case opSym:
+			ops = append(ops, c)
+		}
+	}
+	for i, op := range ops {
+		if i+1 < len(operands) {
+			f.checkBinOp(s, op, operands[i], operands[i+1])
+		}
+	}
+}
+
+// checkBinOp reports operands an arithmetic or bitwise operator is not defined
+// for: "+" wants two numeric or two string operands, the rest want numeric.
+func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
+	lk, lok := f.exprType(s, lNode)
+	rk, rok := f.exprType(s, rNode)
+	lc, rc := kindCategory(lk), kindCategory(rk)
+	if !lok || !rok || lc == catUnknown || rc == catUnknown {
+		return
+	}
+	var op Symbol
+	switch opNode.sym {
+	case AddOp:
+		op = f.addOp(s, opNode)
+	case MulOp:
+		op = f.mulOp(s, opNode)
+	}
+	pos := f.tok(opNode.Pos()).Position()
+	sym := f.tok(opNode.Pos()).Src()
+	switch {
+	case lc != rc:
+		f.err(pos, "invalid operation: operator %s not defined on %s and %s", sym, kindName(lk), kindName(rk))
+	case !binaryAllowed(op, lc):
+		f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(lk))
+	}
+}
+
+// binaryAllowed reports whether a binary operator is defined on operand class c.
+// Only "+" accepts strings (concatenation); every other operator wants numbers.
+func binaryAllowed(op Symbol, c int) bool {
+	if op == ADD {
+		return c == catNumeric || c == catString
+	}
+	return c == catNumeric
+}
+
+// checkAssignType reports when the right-hand side of an assignment is of a
+// different type class than the target variable. Both must be known.
+func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
+	lk, lok := f.identKind(s, lhsTok)
+	rk, rok := f.exprType(s, rhsNode)
+	lc, rc := kindCategory(lk), kindCategory(rk)
+	if !lok || !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+		return
+	}
+	f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
 }
 
 // checkUnaryExpr resolves the names in a UnaryExpr's factor and checks that each
