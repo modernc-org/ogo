@@ -1768,6 +1768,19 @@ func (t *TypeNodeSlice) Type() Typ {
 	panic(todo("", origin(1)))
 }
 
+// TypeNodePointer describes the Type production case
+//
+//	| "*" Type
+type TypeNodePointer struct {
+	gate
+	TypeNode TypeNode // T in *T
+}
+
+// Type implements TypeNode.
+func (t *TypeNodePointer) Type() Typ {
+	panic(todo("", origin(1)))
+}
+
 // TypeNodeStruct describes the StructType production.
 //
 //	StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
@@ -1811,6 +1824,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			switch x := r.(type) {
 			case *TypeNodeChan:
 				x.TypeNode = f.typ(s, n)
+			case *TypeNodePointer:
+				x.TypeNode = f.typ(s, n)
 			case *TypeNodeArray:
 				x.TypeNode = f.typ(s, n)
 			//TODO 			case *TypeNodeSlice:
@@ -1834,17 +1849,21 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 					// ident.Name = tok
 				default:
 					nm := tok.Src()
-					switch d := s.find(nm); x := d.(type) {
-					case *PredeclaredType:
-						// ok
+					switch s.find(nm).(type) {
+					case *PredeclaredType, *TypeDeclaration:
+						ident.Name = tok
+						ident.Index = n.tok
+						r = &ident
+					case nil:
+						f.err(tok.Position(), "undefined: %s", nm)
 					default:
-						panic(todo("%q %T", nm, x))
+						f.err(tok.Position(), "%s is not a type", nm)
 					}
-					// ident = TypeNodeIdent{ResolutionScope: s, Name: tok, Index: n.tok}
-					// r = &ident
 				}
 			case CHAN:
 				r = &TypeNodeChan{}
+			case MUL:
+				r = &TypeNodePointer{}
 			case LBRACK:
 				// ok
 			case RBRACK:
