@@ -565,6 +565,40 @@ func (f *File) checkStatement(s *Scope, n Node) {
 			head = n
 		case Postfix:
 			f.checkAssignment(s, head, n)
+		case SwitchStmt:
+			f.checkSwitch(s, n)
+		case SelectStmt:
+			f.checkSelect(s, n)
+		}
+	}
+}
+
+// checkSwitch walks the case clauses of a switch statement, each in its own
+// block scope. The switch guard's ":=" variable and the case expressions are
+// not checked yet.
+func (f *File) checkSwitch(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym == CaseClause {
+			f.checkClauseBody(s.child(), n)
+		}
+	}
+}
+
+// checkSelect walks the communication clauses of a select statement, each in its
+// own block scope. The communication operations are not checked yet.
+func (f *File) checkSelect(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym == CommClause {
+			f.checkClauseBody(s.child(), n)
+		}
+	}
+}
+
+// checkClauseBody walks the statement body of a case or comm clause in scope s.
+func (f *File) checkClauseBody(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym == Statement {
+			f.checkStatement(s, n)
 		}
 	}
 }
