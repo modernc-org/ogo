@@ -257,6 +257,8 @@ type TypeDeclaration struct {
 type VarDeclaration struct {
 	declaration
 	VarSpec *VarSpecNode
+	kind    Kind // the variable's type, when it resolves to a predeclared type
+	hasKind bool // kind is meaningful
 }
 
 // FuncDeclaration represents a named function.

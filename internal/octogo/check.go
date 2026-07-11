@@ -560,11 +560,19 @@ func (f *File) resultType(s *Scope, tn TypeNode) (r retResult) {
 		return r
 	}
 	r.name = id.Name.Src()
-	if pt, ok := s.find(r.name).(*PredeclaredType); ok {
-		r.kind = pt.Kind()
-		r.known = true
-	}
+	r.kind, r.known = f.typeKind(s, tn)
 	return r
+}
+
+// typeKind resolves a TypeNode to a predeclared Kind. It reports false for
+// composite, named (non-predeclared) or unresolved types.
+func (f *File) typeKind(s *Scope, tn TypeNode) (Kind, bool) {
+	if id, ok := tn.(*TypeNodeIdent); ok {
+		if pt, ok := s.find(id.Name.Src()).(*PredeclaredType); ok {
+			return pt.Kind(), true
+		}
+	}
+	return 0, false
 }
 
 // declareParams declares a signature's parameter names in scope s.
@@ -599,6 +607,7 @@ func (f *File) checkBlock(s *Scope, results []retResult, n Node) {
 func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	var head Node
 	isReturn := false
+	condKw := "" // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
 		switch c.sym {
 		case VarDecl:
@@ -620,9 +629,20 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			f.checkSwitch(s, results, c)
 		case SelectStmt:
 			f.checkSelect(s, results, c)
+		case Expression:
+			// The only bare Expression child of a statement that is a boolean
+			// condition is an "if"/"for" guard; a "<-" receive statement's
+			// Expression is not.
+			if condKw != "" {
+				f.checkCondition(s, condKw, c)
+				condKw = ""
+			}
 		case 0:
-			if f.ch(c.tok) == RETURN {
+			switch f.ch(c.tok) {
+			case RETURN:
 				isReturn = true
+			case IF, FOR:
+				condKw = f.tok(c.tok).Src()
 			}
 		}
 	}
@@ -733,6 +753,133 @@ func isNumericKind(k Kind) bool {
 	return false
 }
 
+// isBoolKind reports whether k is a boolean type (predeclared or untyped).
+func isBoolKind(k Kind) bool {
+	return k == PredeclaredBool || k == UntypedBool
+}
+
+// checkCondition reports when an "if" or "for" condition has a known, non-boolean
+// type. It is intentionally conservative: an expression whose type cannot yet be
+// determined (a call, selector, or unresolved name) is left unreported.
+func (f *File) checkCondition(s *Scope, kw string, n Node) {
+	if k, ok := f.exprType(s, n); ok && !isBoolKind(k) {
+		f.err(f.tok(n.Pos()).Position(), "non-bool used as %s condition", kw)
+	}
+}
+
+// exprType conservatively determines the type Kind of an expression, reporting
+// ok=false when it cannot (a call/selector result, channel receive, or a name
+// that is not a typed variable/constant). It does not itself report errors.
+func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
+	switch n.sym {
+	case Expression:
+		// SimpleExpr { RelOp SimpleExpr }: a relational operator yields bool.
+		var first Node
+		firstSet, hasRel := false, false
+		for c := range it(n.ast) {
+			switch c.sym {
+			case RelOp:
+				hasRel = true
+			case SimpleExpr:
+				if !firstSet {
+					first, firstSet = c, true
+				}
+			}
+		}
+		switch {
+		case hasRel:
+			return UntypedBool, true
+		case firstSet:
+			return f.exprType(s, first)
+		}
+	case SimpleExpr, Term:
+		// Add/mul operators keep the operand's (numeric) kind; use the first.
+		for c := range it(n.ast) {
+			switch c.sym {
+			case Term, UnaryExpr:
+				return f.exprType(s, c)
+			}
+		}
+	case UnaryExpr:
+		// "!" yields bool; "<-" (receive) has an element type we can't resolve
+		// here; the arithmetic unary operators keep the operand's kind.
+		var fac Node
+		facSet := false
+		for c := range it(n.ast) {
+			switch c.sym {
+			case Factor:
+				fac, facSet = c, true
+			case UnaryOp:
+				switch f.unaryOp(s, c) {
+				case NOT:
+					return UntypedBool, true
+				case ARROW:
+					return 0, false
+				}
+			}
+		}
+		if facSet {
+			return f.exprType(s, fac)
+		}
+	case Factor:
+		return f.factorType(s, n)
+	}
+	return 0, false
+}
+
+// factorType determines the Kind of a Factor: a literal, a parenthesized
+// expression, or a bare identifier bound to a typed variable or constant. A
+// call/index/selector suffix makes the result type unknown.
+func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
+	var lit Token
+	var paren Node
+	var hasLit, hasParen, hasSuffix bool
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Expression:
+			paren, hasParen = c, true
+		case FactorSuffix:
+			hasSuffix = true
+		case 0:
+			lit, hasLit = f.tok(c.tok), true
+		}
+	}
+	switch {
+	case hasSuffix:
+		return 0, false // call/index/selector result
+	case hasParen:
+		return f.exprType(s, paren)
+	case hasLit:
+		switch Symbol(lit.Ch) {
+		case INT, CHAR:
+			return UntypedInt, true
+		case STRING:
+			return UntypedString, true
+		case IDENT:
+			return f.identKind(s, lit)
+		}
+	}
+	return 0, false
+}
+
+// identKind returns the type Kind bound to a name when it is a variable with a
+// resolved predeclared type or a constant with a known value type.
+func (f *File) identKind(s *Scope, tok Token) (Kind, bool) {
+	switch d := s.find(tok.Src()).(type) {
+	case *VarDeclaration:
+		if d.hasKind {
+			return d.kind, true
+		}
+	case *ConstDeclaration:
+		if d.ConstSpec != nil && d.ConstSpec.Value != nil {
+			if t := d.ConstSpec.Value.Type(); t != nil {
+				return t.Kind(), true
+			}
+		}
+	}
+	return 0, false
+}
+
 // checkSwitch walks the case clauses of a switch statement, each in its own
 // block scope. The switch guard's ":=" variable and the case expressions are
 // not checked yet.
@@ -764,30 +911,40 @@ func (f *File) checkClauseBody(s *Scope, results []retResult, n Node) {
 }
 
 // declareLocalVar declares the names of a local var declaration in scope s,
-// reporting redeclarations. It does not resolve the declared type or the
-// initializer expression yet.
+// reporting redeclarations. It resolves the declared type enough to record a
+// predeclared Kind on each variable (for later type checking) but does not
+// evaluate the initializer expression yet.
 func (f *File) declareLocalVar(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		if n.sym != VarSpec {
 			continue
 		}
-		for n := range it(n.ast) {
-			switch n.sym {
+		// VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+		// The IdentifierList precedes the Type, so collect the names and resolve
+		// the type's Kind first, then bind the names carrying that Kind.
+		var names []Token
+		var kind Kind
+		var hasKind bool
+		for c := range it(n.ast) {
+			switch c.sym {
 			case IdentifierList:
-				for _, nm := range f.identifierList(s, n) {
-					if err := s.add(&VarDeclaration{declaration: declaration{token: nm}}); err != nil {
-						f.err(nm.Position(), "%v", err)
-					}
-				}
+				names = f.identifierList(s, c)
 			case Type:
 				// Resolve plain named types and pointers-to-named, plus struct and
 				// interface type literals (so their field/method names are checked
 				// for duplicates), reporting undefined types. Arrays, slices and
 				// channels are left unresolved for now: their bound and element
 				// expressions are not yet fully checked.
-				if f.simpleNamedType(n) || f.structOrInterfaceType(n) {
-					f.typ(s, n)
+				if f.simpleNamedType(c) || f.structOrInterfaceType(c) {
+					if tn := f.typ(s, c); tn != nil {
+						kind, hasKind = f.typeKind(s, tn)
+					}
 				}
+			}
+		}
+		for _, nm := range names {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind}); err != nil {
+				f.err(nm.Position(), "%v", err)
 			}
 		}
 	}
