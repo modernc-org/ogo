@@ -578,15 +578,48 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			continue
 		}
 		for n := range it(n.ast) {
-			if n.sym == IdentifierList {
+			switch n.sym {
+			case IdentifierList:
 				for _, nm := range f.identifierList(s, n) {
 					if err := s.add(&VarDeclaration{declaration: declaration{token: nm}}); err != nil {
 						f.err(nm.Position(), "%v", err)
 					}
 				}
+			case Type:
+				// Resolve plain named types and pointers-to-named, reporting
+				// undefined types. Composite types (arrays, channels, struct and
+				// interface literals) are left unresolved for now: their element
+				// and bound expressions are not yet fully checked.
+				if f.simpleNamedType(n) {
+					f.typ(s, n)
+				}
 			}
 		}
 	}
+}
+
+// simpleNamedType reports whether a Type node denotes a plain named type or a
+// pointer to one -- only identifiers, "*" and "." -- so that resolving it will
+// not recurse into an array bound or other expression.
+func (f *File) simpleNamedType(n Node) bool {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Type:
+			if !f.simpleNamedType(n) {
+				return false
+			}
+		case 0:
+			switch f.ch(n.tok) {
+			case IDENT, MUL, PERIOD:
+				// ok
+			default:
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // assignHeadIdent returns the single identifier of an AssignHead when the head
