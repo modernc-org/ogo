@@ -758,29 +758,37 @@ func isBoolKind(k Kind) bool {
 	return k == PredeclaredBool || k == UntypedBool
 }
 
-// kindCategory groups Kinds into broad comparability classes: boolean, string
-// and numeric. It returns 0 for a Kind that fits none (so it never compares as
-// equal to a known category).
+// Broad comparability classes returned by kindCategory.
+const (
+	catUnknown = iota
+	catBool
+	catString
+	catNumeric
+)
+
+// kindCategory groups Kinds into broad comparability classes. It returns
+// catUnknown for a Kind that fits none (so it never compares as equal to a known
+// category).
 func kindCategory(k Kind) int {
 	switch {
 	case isBoolKind(k):
-		return 1
+		return catBool
 	case k == PredeclaredString || k == UntypedString:
-		return 2
+		return catString
 	case isNumericKind(k) || k == UntypedInt || k == UntypedFloat:
-		return 3
+		return catNumeric
 	}
-	return 0
+	return catUnknown
 }
 
 // kindName returns a source-like name for k, for use in diagnostics.
 func kindName(k Kind) string {
 	switch kindCategory(k) {
-	case 1:
+	case catBool:
 		return "bool"
-	case 2:
+	case catString:
 		return "string"
-	case 3:
+	case catNumeric:
 		return "int"
 	}
 	return "?"
@@ -1212,13 +1220,66 @@ func (f *File) checkNames(s *Scope, n Node) {
 	switch n.sym {
 	case Factor:
 		f.checkFactorNames(s, n)
-	case Expression, SimpleExpr, Term, UnaryExpr:
+	case UnaryExpr:
+		f.checkUnaryExpr(s, n)
+	case Expression, SimpleExpr, Term:
 		for c := range it(n.ast) {
 			switch c.sym {
 			case Expression, SimpleExpr, Term, UnaryExpr, Factor:
 				f.checkNames(s, c)
 			}
 		}
+	}
+}
+
+// checkUnaryExpr resolves the names in a UnaryExpr's factor and checks that each
+// unary operator is defined for its operand's type. Operators are applied
+// nearest-factor-first (right to left). The pointer and channel operators
+// ("*", "&", "<-") are not modelled and stop the type check.
+func (f *File) checkUnaryExpr(s *Scope, n Node) {
+	var ops []Node
+	var fac Node
+	facSet := false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+			f.checkNames(s, c)
+		case UnaryOp:
+			ops = append(ops, c)
+		}
+	}
+	if !facSet || len(ops) == 0 {
+		return
+	}
+	k, ok := f.exprType(s, fac)
+	for i := len(ops) - 1; i >= 0 && ok; i-- {
+		k, ok = f.checkUnaryOp(s, ops[i], k)
+	}
+}
+
+// checkUnaryOp reports when a unary operator is not defined for operand kind k
+// and returns the result kind (ok=false stops further checking).
+func (f *File) checkUnaryOp(s *Scope, opNode Node, k Kind) (Kind, bool) {
+	op := f.unaryOp(s, opNode)
+	pos := f.tok(opNode.Pos()).Position()
+	sym := f.tok(opNode.Pos()).Src()
+	switch op {
+	case NOT:
+		if !isBoolKind(k) {
+			f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(k))
+			return 0, false
+		}
+		return PredeclaredBool, true
+	case ADD, SUB, XOR, TILDE:
+		if kindCategory(k) != catNumeric {
+			f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(k))
+			return 0, false
+		}
+		return k, true
+	default:
+		// "*", "&" and "<-" involve pointer and channel types not modelled yet.
+		return 0, false
 	}
 }
 

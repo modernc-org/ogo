@@ -1,6 +1,3 @@
-//TODO-
-// COMPILE
-
 func testUnary() {
 	var x int = 5
 	var b bool = false
