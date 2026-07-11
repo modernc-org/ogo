@@ -908,25 +908,51 @@ func (f *File) identKind(s *Scope, tok Token) (Kind, bool) {
 	return 0, false
 }
 
-// checkSwitch walks a switch statement: it determines the guard's type and, for
-// an expression switch, checks each case expression is comparable to it, then
-// walks each case clause body in its own block scope. The guard's ":=" variable
-// is not declared yet.
+// checkSwitch walks a switch statement in its own implicit block scope: it
+// determines the guard's type, declares a "v := expr" guard variable (visible in
+// the clauses but not after the switch), checks each case expression is
+// comparable to the guard, and walks each clause body in a nested scope.
 func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
+	ss := s.child()
 	var guardKind Kind
 	guardOK := false
-	// SwitchGuard precedes the CaseClauses, so the guard type is known by the
-	// time the first clause is reached.
+	// SwitchGuard precedes the CaseClauses, so the guard is processed first.
 	for c := range it(n.ast) {
 		switch c.sym {
 		case SwitchGuard:
 			guardKind, guardOK = f.switchGuardType(s, c)
+			f.declareSwitchGuardVar(ss, guardKind, guardOK, c)
 		case CaseClause:
 			if guardOK {
-				f.checkCaseExprs(s, guardKind, c)
+				f.checkCaseExprs(ss, guardKind, c)
 			}
-			f.checkClauseBody(s.child(), results, c)
+			f.checkClauseBody(ss.child(), results, c)
 		}
+	}
+}
+
+// declareSwitchGuardVar declares the variable introduced by a "v := expr" switch
+// guard in scope s. Guards without ":=" introduce nothing.
+func (f *File) declareSwitchGuardVar(s *Scope, kind Kind, hasKind bool, n Node) {
+	var lhs Node
+	hasDefine, hasLHS := false, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Expression:
+			if !hasLHS {
+				lhs, hasLHS = c, true
+			}
+		case 0:
+			if f.ch(c.tok) == DEFINE {
+				hasDefine = true
+			}
+		}
+	}
+	if !hasDefine || !hasLHS {
+		return
+	}
+	if id, ok := f.exprIdent(lhs); ok {
+		_ = s.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
 	}
 }
 
@@ -1019,7 +1045,8 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		// the type's Kind first, then bind the names carrying that Kind.
 		var names []Token
 		var kind Kind
-		var hasKind bool
+		var hasKind, hasInit bool
+		var initExpr Node
 		for c := range it(n.ast) {
 			switch c.sym {
 			case IdentifierList:
@@ -1035,7 +1062,14 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						kind, hasKind = f.typeKind(s, tn)
 					}
 				}
+			case Expression:
+				initExpr, hasInit = c, true
 			}
+		}
+		// Resolve the names used in the initializer before binding the new names,
+		// so a variable is not visible within its own initializer.
+		if hasInit {
+			f.checkNames(s, initExpr)
 		}
 		for _, nm := range names {
 			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind}); err != nil {
@@ -1114,6 +1148,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	}
 
 	var op Symbol
+	var rhs []Node
 	for n := range it(postfix.ast) {
 		if n.sym != PostfixOp {
 			continue
@@ -1128,12 +1163,22 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 						}
 					}
 				}
+			case Expression:
+				rhs = append(rhs, n)
 			case 0:
 				switch sym := f.ch(n.tok); sym {
 				case ASSIGN, DEFINE, ARROW:
 					op = sym
 				}
 			}
+		}
+	}
+
+	// Resolve names used on the right-hand side of "=" and ":=", reporting
+	// undefined ones. A send ("ch <- v") is left to channel checking.
+	if op == ASSIGN || op == DEFINE {
+		for _, e := range rhs {
+			f.checkNames(s, e)
 		}
 	}
 
@@ -1157,6 +1202,80 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if nonBlank != 0 && newCount == 0 {
 		f.err(f.tok(head.Pos()).Position(), "no new variables on left side of :=")
 	}
+}
+
+// checkNames walks an expression and reports every bare identifier that does not
+// resolve to a declaration ("undefined: X"). It descends through operators and
+// parentheses but skips a Factor bearing a call/index/selector suffix, whose
+// operands and members are not modelled yet.
+func (f *File) checkNames(s *Scope, n Node) {
+	switch n.sym {
+	case Factor:
+		f.checkFactorNames(s, n)
+	case Expression, SimpleExpr, Term, UnaryExpr:
+		for c := range it(n.ast) {
+			switch c.sym {
+			case Expression, SimpleExpr, Term, UnaryExpr, Factor:
+				f.checkNames(s, c)
+			}
+		}
+	}
+}
+
+// checkFactorNames resolves a Factor's identifier. A parenthesized expression is
+// recursed into; a bare identifier is resolved and reported when undefined; a
+// literal or a suffixed identifier (call/index/selector) is left alone.
+func (f *File) checkFactorNames(s *Scope, n Node) {
+	var id Token
+	hasID, hasSuffix := false, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Expression:
+			f.checkNames(s, c)
+		case FactorSuffix:
+			hasSuffix = true
+		case 0:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+				id, hasID = tok, true
+			}
+		}
+	}
+	if hasID && !hasSuffix && s.find(id.Src()) == nil {
+		f.err(id.Position(), "undefined: %s", id.Src())
+	}
+}
+
+// exprIdent returns the single identifier of an expression that is exactly a
+// bare name, e.g. the "v" of a "v := expr" switch guard.
+func (f *File) exprIdent(n Node) (Token, bool) {
+	var id Token
+	found, extra := false, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Expression, SimpleExpr, Term, UnaryExpr, Factor:
+			switch t, ok := f.exprIdent(c); {
+			case !ok, found:
+				extra = true
+			default:
+				id, found = t, true
+			}
+		case 0:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+				if found {
+					extra = true
+				}
+				id, found = tok, true
+			} else {
+				extra = true
+			}
+		default:
+			extra = true
+		}
+	}
+	if found && !extra {
+		return id, true
+	}
+	return Token{}, false
 }
 
 // SignatureNode describes the Signature production.

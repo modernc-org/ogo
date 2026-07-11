@@ -1,5 +1,3 @@
-// COMPILE
-
 var globalVar int = 10
 
 func shadowTest() {
