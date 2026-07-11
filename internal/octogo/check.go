@@ -552,6 +552,7 @@ func (f *File) checkBlock(s *Scope, n Node) {
 // local variable declarations (reporting redeclarations) and nested blocks
 // (if/for bodies, in a child scope). Other statement forms are not yet checked.
 func (f *File) checkStatement(s *Scope, n Node) {
+	var head Node
 	for n := range it(n.ast) {
 		switch n.sym {
 		case VarDecl:
@@ -560,6 +561,10 @@ func (f *File) checkStatement(s *Scope, n Node) {
 			f.checkBlock(s.child(), n)
 		case Statement:
 			f.checkStatement(s, n)
+		case AssignHead:
+			head = n
+		case Postfix:
+			f.checkAssignment(s, head, n)
 		}
 	}
 }
@@ -581,6 +586,83 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 				}
 			}
 		}
+	}
+}
+
+// assignHeadIdent returns the single identifier of an AssignHead when the head
+// is a plain name (no "*" and no parenthesized expression) -- the only form that
+// can introduce a variable in a short variable declaration.
+func (f *File) assignHeadIdent(n Node) (id Token, ok bool) {
+	plain := true
+	for n := range it(n.ast) {
+		switch n.sym {
+		case 0:
+			if tok := f.tok(n.tok); Symbol(tok.Ch) == IDENT {
+				id = tok
+			} else {
+				plain = false
+			}
+		default:
+			plain = false
+		}
+	}
+	return id, plain && id.IsValid()
+}
+
+// checkAssignment handles a "AssignHead Postfix" statement. Only ":=" introduces
+// variables: its plainly-named left-hand operands that are not already declared
+// in the current scope are declared here, and it is an error if none of them is
+// new (Go short variable declaration semantics). Plain assignments, sends and
+// calls declare nothing.
+func (f *File) checkAssignment(s *Scope, head, postfix Node) {
+	var lhs []Token
+	if id, ok := f.assignHeadIdent(head); ok {
+		lhs = append(lhs, id)
+	}
+
+	var op Symbol
+	for n := range it(postfix.ast) {
+		if n.sym != PostfixOp {
+			continue
+		}
+		for n := range it(n.ast) {
+			switch n.sym {
+			case LhsItem:
+				for n := range it(n.ast) {
+					if n.sym == AssignHead {
+						if id, ok := f.assignHeadIdent(n); ok {
+							lhs = append(lhs, id)
+						}
+					}
+				}
+			case 0:
+				switch sym := f.ch(n.tok); sym {
+				case ASSIGN, DEFINE, ARROW:
+					op = sym
+				}
+			}
+		}
+	}
+
+	if op != DEFINE {
+		return
+	}
+
+	newCount, nonBlank := 0, 0
+	for _, id := range lhs {
+		nm := id.Src()
+		if nm == "_" {
+			continue
+		}
+		nonBlank++
+		if s.Declarations[nm] != nil {
+			continue // already declared in this scope: an assignment, not new
+		}
+		_ = s.add(&VarDeclaration{declaration: declaration{token: id}})
+		newCount++
+	}
+	if nonBlank != 0 && newCount == 0 {
+		f.err(f.tok(head.Pos()).Position(), "no new variables on left side of :=")
 	}
 }
 
