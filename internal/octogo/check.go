@@ -2338,30 +2338,38 @@ func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
 //
 //	UnaryExpr  = { UnaryOp } Factor .
 type UnaryExprNode struct {
+	expression
 	List   []Symbol
 	Factor ExpressionNode
 }
 
 func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
-	var ue *UnaryExprNode
+	var ops []Symbol
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Factor:
-			fa := f.factor(s, n)
-			switch {
-			case ue != nil:
-				ue.Factor = fa
-			default:
-				r = fa
-			}
-		//TODO 		case UnaryOp:
-		//TODO 			if ue == nil {
-		//TODO 				ue = &UnaryExprNode{}
-		//TODO 				r = ue
-		//TODO 			}
-		//TODO 			ue.List = append(ue.List, f.unaryOp(s, n))
+			r = f.factor(s, n)
+		case UnaryOp:
+			ops = append(ops, f.unaryOp(s, n))
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	// A UnaryOp binds tighter the closer it is to the Factor, so apply the
+	// operators right to left.
+	for i := len(ops) - 1; i >= 0; i-- {
+		r = f.foldUnary(ops[i], r)
+	}
+	return r
+}
+
+func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
+	for n := range it(n.ast) {
+		switch n.sym {
 		case 0:
-			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
+			switch sym := f.ch(n.tok); sym {
+			case ADD, SUB, NOT, XOR, MUL, AND, ARROW, TILDE:
+				r = sym
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
@@ -2372,22 +2380,28 @@ func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
 	return r
 }
 
-//TODO func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case 0:
-//TODO 			switch sym := f.ch(n.tok); sym {
-//TODO 			case ADD, SUB, NOT, XOR, MUL, AND, ARROW, TILDE:
-//TODO 				r = sym
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+// foldUnary evaluates a constant unary operation ("+x", "-x", "^x", "!x"). Other
+// unary operators (pointer "*"/"&", receive "<-", "~") and non-constant operands
+// yield a UnaryExprNode for later (Phase 4) checking.
+func (f *File) foldUnary(op Symbol, e ExpressionNode) ExpressionNode {
+	if c, ok := e.Value().(untypedConst); ok && c.cv != nil {
+		var t token.Token
+		switch op {
+		case ADD:
+			t = token.ADD
+		case SUB:
+			t = token.SUB
+		case XOR:
+			t = token.XOR
+		case NOT:
+			t = token.NOT
+		}
+		if t != token.ILLEGAL {
+			return untypedConst{constant.UnaryOp(t, c.cv, 0)}
+		}
+	}
+	return &UnaryExprNode{List: []Symbol{op}, Factor: e}
+}
 
 //TODO- // FactorNodeIdent describes the Factor production case
 //TODO- //
@@ -2430,6 +2444,10 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 			case CHAR:
 				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid rune literal: %s", tok.Src())
+				}
+			case STRING:
+				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.STRING, 0)}); r.Type() == nil {
+					f.err(tok.Position(), "invalid string literal: %s", tok.Src())
 				}
 			case IDENT:
 				nm := tok.Src()
