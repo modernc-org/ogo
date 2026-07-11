@@ -1681,7 +1681,7 @@ func (f *File) declareConst(s *Scope, n Node) {
 			}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case CONST:
+			case CONST, LPAREN, RPAREN, SEMICOLON:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
@@ -1699,7 +1699,7 @@ func (f *File) constDecl(s *Scope, n Node) {
 			f.constSpec(s, n)
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case CONST:
+			case CONST, LPAREN, RPAREN, SEMICOLON:
 				// ok
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
@@ -1826,6 +1826,55 @@ func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
 	return r
 }
 
+// binaryOpTok maps an OctoGo binary operator symbol to the go/token operator
+// that go/constant uses for constant folding. It returns token.ILLEGAL for a
+// symbol it does not handle.
+func binaryOpTok(op Symbol) token.Token {
+	switch op {
+	case ADD:
+		return token.ADD
+	case SUB:
+		return token.SUB
+	case MUL:
+		return token.MUL
+	case QUO:
+		return token.QUO
+	case AND:
+		return token.AND
+	case OR:
+		return token.OR
+	case XOR:
+		return token.XOR
+	case SHL:
+		return token.SHL
+	case SHR:
+		return token.SHR
+	default:
+		return token.ILLEGAL
+	}
+}
+
+// foldBinary evaluates "lhs op rhs". When both operands are untyped constants
+// the result is folded to a constant; otherwise a BinaryExpressionNode is
+// returned for later (Phase 4) checking.
+func (f *File) foldBinary(lhs ExpressionNode, op Symbol, rhs ExpressionNode) ExpressionNode {
+	lc, lok := lhs.Value().(untypedConst)
+	rc, rok := rhs.Value().(untypedConst)
+	if lok && rok && lc.cv != nil && rc.cv != nil {
+		switch op {
+		case SHL, SHR:
+			if n, ok := constant.Uint64Val(rc.cv); ok {
+				return untypedConst{constant.Shift(lc.cv, binaryOpTok(op), uint(n))}
+			}
+		default:
+			if t := binaryOpTok(op); t != token.ILLEGAL {
+				return untypedConst{constant.BinaryOp(lc.cv, t, rc.cv)}
+			}
+		}
+	}
+	return &BinaryExpressionNode{LHS: lhs, Op: op, RHS: rhs}
+}
+
 //TODO func (f *File) relOp(s *Scope, n Node) (r Symbol) {
 //TODO 	for n := range it(n.ast) {
 //TODO 		switch n.sym {
@@ -1852,16 +1901,10 @@ func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
+				r = f.foldBinary(r, op, e)
 			}
-		// TODO 		case AddOp:
-		// TODO 			op = f.addOp(s, n)
-		// TODO 		case 0:
-		// TODO 			switch f.ch(n.tok) {
-		// TODO 			default:
-		// TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-		// TODO 			}
+		case AddOp:
+			op = f.addOp(s, n)
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
@@ -1869,22 +1912,22 @@ func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 	return r
 }
 
-//TODO func (f *File) addOp(s *Scope, n Node) (r Symbol) {
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case 0:
-//TODO 			switch sym := f.ch(n.tok); sym {
-//TODO 			case ADD, SUB, OR, XOR:
-//TODO 				r = sym
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) addOp(s *Scope, n Node) (r Symbol) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case 0:
+			switch sym := f.ch(n.tok); sym {
+			case ADD, SUB, OR, XOR:
+				r = sym
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	return r
+}
 
 // Term        = Factor { Factor } ․
 func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
@@ -1896,13 +1939,24 @@ func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
+				r = f.foldBinary(r, op, e)
 			}
-		// TODO 		case MulOp:
-		// TODO 			op = f.mulOp(s, n)
+		case MulOp:
+			op = f.mulOp(s, n)
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	return r
+}
+
+func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
+	for n := range it(n.ast) {
+		switch n.sym {
 		case 0:
-			switch f.ch(n.tok) {
+			switch sym := f.ch(n.tok); sym {
+			case MUL, QUO, SHL, SHR, AND:
+				r = sym
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
@@ -1912,23 +1966,6 @@ func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 	}
 	return r
 }
-
-//TODO func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case 0:
-//TODO 			switch sym := f.ch(n.tok); sym {
-//TODO 			case MUL, QUO, SHL, SHR, AND:
-//TODO 				r = sym
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
 
 // UnaryExprNode describes the UnaryExpr production.
 //
