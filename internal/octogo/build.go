@@ -301,7 +301,18 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	}
 
 	// Phase 4: Body Checking & Hardware Constraints (Parallel)
-	//TODO
+	//
+	// Partial: bodies are walked to declare parameters and local variables
+	// (reporting redeclarations) and to descend into nested blocks. Statement
+	// type checking and the hardware-constraint checks are not implemented yet.
+	for _, v := range p.Files {
+		for n := range it(v.AST) {
+			switch n.sym {
+			case SourceFile:
+				v.checkBodies(p.Scope, n)
+			}
+		}
+	}
 
 	// Phase 5: Deep Initialization Cycle Detection (Serial)
 	//TODO

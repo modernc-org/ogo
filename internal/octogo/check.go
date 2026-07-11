@@ -494,6 +494,96 @@ func (f *File) funcDecl(s *Scope, n Node) {
 	}
 }
 
+// checkBodies walks a source file's function and method bodies (Phase 4).
+func (f *File) checkBodies(pkg *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym != TopLevelDecl {
+			continue
+		}
+		for n := range it(n.ast) {
+			if n.sym == FuncDecl {
+				f.checkFuncBody(pkg, n)
+			}
+		}
+	}
+}
+
+// checkFuncBody establishes the function scope and checks the body block.
+// Parameters share the scope of the top-level body locals, so
+// "func f(x int) { var x int }" is a redeclaration.
+func (f *File) checkFuncBody(pkg *Scope, n Node) {
+	fs := newScope(pkg, BlockScope)
+	for n := range it(n.ast) {
+		switch n.sym {
+		case Signature:
+			f.declareParams(fs, n)
+		case Block:
+			f.checkBlock(fs, n)
+		}
+	}
+}
+
+// declareParams declares a signature's parameter names in scope s.
+func (f *File) declareParams(s *Scope, n Node) {
+	sig := f.signature(s, n)
+	if sig.Params == nil {
+		return
+	}
+	for _, p := range sig.Params.List {
+		for _, nm := range p.Names {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}}); err != nil {
+				f.err(nm.Position(), "%v", err)
+			}
+		}
+	}
+}
+
+// checkBlock walks the statements of a block. The caller provides the scope: a
+// function body shares its parameter scope; a nested block gets a child scope.
+func (f *File) checkBlock(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym == Statement {
+			f.checkStatement(s, n)
+		}
+	}
+}
+
+// checkStatement handles the statement forms Phase 4 currently understands:
+// local variable declarations (reporting redeclarations) and nested blocks
+// (if/for bodies, in a child scope). Other statement forms are not yet checked.
+func (f *File) checkStatement(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case VarDecl:
+			f.declareLocalVar(s, n)
+		case Block:
+			f.checkBlock(s.child(), n)
+		case Statement:
+			f.checkStatement(s, n)
+		}
+	}
+}
+
+// declareLocalVar declares the names of a local var declaration in scope s,
+// reporting redeclarations. It does not resolve the declared type or the
+// initializer expression yet.
+func (f *File) declareLocalVar(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym != VarSpec {
+			continue
+		}
+		for n := range it(n.ast) {
+			if n.sym == IdentifierList {
+				for _, nm := range f.identifierList(s, n) {
+					if err := s.add(&VarDeclaration{declaration: declaration{token: nm}}); err != nil {
+						f.err(nm.Position(), "%v", err)
+					}
+				}
+			}
+		}
+	}
+}
+
 // SignatureNode describes the Signature production.
 //
 //	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
