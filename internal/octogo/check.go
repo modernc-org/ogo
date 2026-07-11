@@ -496,18 +496,37 @@ func (f *File) funcDecl(s *Scope, n Node) {
 // SignatureNode describes the Signature production.
 //
 //	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
-type SignatureNode struct{}
+type SignatureNode struct {
+	Params  *ParameterListNode
+	Results *ParameterListNode
+}
 
 func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 	r = &SignatureNode{}
+	// Signature = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+	// The first ")" separates parameters from results, so a ParameterList seen
+	// after it is the result list.
+	seenRPar := false
 	for n := range it(n.ast) {
 		switch n.sym {
-		case 0:
-			switch tok := f.tok(n.tok); f.ch(n.tok) {
-			case LPAREN, RPAREN:
-				// ok
+		case ParameterList:
+			switch {
+			case seenRPar:
+				r.Results = f.parameterList(s, n)
 			default:
-				panic(todo("", f.tok(n.tok), f.ch(n.tok), tok))
+				r.Params = f.parameterList(s, n)
+			}
+		case Type:
+			// A single unnamed result: Signature = "(" [...] ")" Type .
+			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
+		case 0:
+			switch f.ch(n.tok) {
+			case LPAREN:
+				// ok
+			case RPAREN:
+				seenRPar = true
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
@@ -1270,42 +1289,43 @@ type AssignHeadNode struct {
 //TODO 	return r
 //TODO }
 
+// ParameterDeclNode is one "IdentifierList Type" group of a ParameterList.
+type ParameterDeclNode struct {
+	Names    []Token
+	TypeNode TypeNode
+}
+
 // ParameterListNode describes the ParameterList production.
 //
 //	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 type ParameterListNode struct {
-	List []struct {
-		Names    []Token
-		TypeNode TypeNode
-	}
+	List []ParameterDeclNode
 }
 
-//TODO func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
-//TODO 	r = &ParameterListNode{}
-//TODO 	var item struct {
-//TODO 		Names []Token
-//TODO 		TypeNode  TypeNode
-//TODO 	}
-//TODO 	for n := range it(n.ast) {
-//TODO 		switch n.sym {
-//TODO 		case IdentifierList:
-//TODO 			item.Names = f.identifierList(s, n)
-//TODO 		case Type:
-//TODO 			item.Type = f.typ(s, n)
-//TODO 			r.List = append(r.List, item)
-//TODO 		case 0:
-//TODO 			switch f.ch(n.tok) {
-//TODO 			case COMMA:
-//TODO 				// ok
-//TODO 			default:
-//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-//TODO 			}
-//TODO 		default:
-//TODO 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-//TODO 		}
-//TODO 	}
-//TODO 	return r
-//TODO }
+func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
+	r = &ParameterListNode{}
+	var item ParameterDeclNode
+	for n := range it(n.ast) {
+		switch n.sym {
+		case IdentifierList:
+			item.Names = f.identifierList(s, n)
+		case Type:
+			item.TypeNode = f.typ(s, n)
+			r.List = append(r.List, item)
+			item = ParameterDeclNode{}
+		case 0:
+			switch f.ch(n.tok) {
+			case COMMA:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+	return r
+}
 
 // TypeSpecNode describes the TypeSpec production.
 //

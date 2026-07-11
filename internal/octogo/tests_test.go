@@ -56,8 +56,7 @@ func TestOctoGoSpecs(t *testing.T) {
 				strings.Contains(path, "09_"), //TODO name resolving
 				strings.Contains(path, "11_"), //TODO type decl
 				strings.Contains(path, "14_"), //TODO const decl
-				strings.Contains(path, "18_"), //TODO other
-				strings.Contains(path, "19_"): //TODO Type
+				strings.Contains(path, "18_"): //TODO other
 
 				continue
 			}
