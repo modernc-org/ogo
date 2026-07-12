@@ -1166,6 +1166,8 @@ func (f *File) assignHeadIdent(n Node) (id Token, ok bool) {
 // new (Go short variable declaration semantics). Plain assignments, sends and
 // calls declare nothing.
 func (f *File) checkAssignment(s *Scope, head, postfix Node) {
+	f.checkSelectors(s, head, postfix)
+
 	var lhs []Token
 	if id, ok := f.assignHeadIdent(head); ok {
 		lhs = append(lhs, id)
@@ -1283,6 +1285,51 @@ func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
 	if tok && kindCategory(tk) != kindCategory(elem) {
 		f.err(f.tok(rhs.Pos()).Position(), "cannot assign value received from chan %s to type %s", kindName(elem), kindName(tk))
 	}
+}
+
+// checkSelectors reports a reference to an unexported member of an imported
+// package. For "pkg.member" where pkg is an import qualifier, member must be
+// exported (begin with an upper-case letter): "p2.pinLow" is rejected while
+// "p2.PinHigh" is allowed. Only the first selector qualifies the package; a
+// deeper selector operates on its result, which is not modelled.
+func (f *File) checkSelectors(s *Scope, head, postfix Node) {
+	id, ok := f.assignHeadIdent(head)
+	if !ok || !f.isImportQualifier(s, id.Src()) {
+		return
+	}
+	for c := range it(postfix.ast) {
+		if c.sym != Selector {
+			continue
+		}
+		if m, ok := f.selectorMember(c); ok && !token.IsExported(m.Src()) {
+			f.err(m.Position(), "cannot refer to unexported name %s.%s", id.Src(), m.Src())
+		}
+		return
+	}
+}
+
+// isImportQualifier reports whether name denotes a package imported by this
+// file. Imports live in the file scope, which is not on a body's block/package
+// resolution chain, so a name reachable via s is a shadowing local or package
+// declaration -- not an import qualifier.
+func (f *File) isImportQualifier(s *Scope, name string) bool {
+	if s.find(name) != nil {
+		return false
+	}
+	_, ok := f.Scope.Declarations[name].(*ImportDeclaration)
+	return ok
+}
+
+// selectorMember returns the member identifier of a Selector node ".name".
+func (f *File) selectorMember(n Node) (Token, bool) {
+	for c := range it(n.ast) {
+		if c.sym == 0 {
+			if t := f.tok(c.tok); Symbol(t.Ch) == IDENT {
+				return t, true
+			}
+		}
+	}
+	return Token{}, false
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
