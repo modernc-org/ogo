@@ -1,0 +1,22 @@
+// COMPILE
+
+// Regression: typed constants, grouped var declarations, and method receivers
+// (value and pointer) must type-check without crashing the checker.
+
+const limit int = 8
+
+var (
+	ready bool = true
+	total int  = 0
+)
+
+type Counter int
+
+func (c Counter) Get() int {
+	_ = c
+	return 0
+}
+
+func (c *Counter) Reset() {
+	_ = c
+}

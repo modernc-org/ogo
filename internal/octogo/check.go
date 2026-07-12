@@ -448,20 +448,11 @@ func (f *File) funcDecl(s *Scope, n Node) {
 		switch n.sym {
 		case Signature:
 			fd.Type.Signature = f.signature(block, n)
-			//		case Receiver:
-			//			r.Receiver = f.receiver(s, n) //TODO declare receiver name in bs
-			//		case ParameterList:
-			//			switch {
-			//			case seenRPar:
-			//				r.ReturnList = f.parameterList(bs, n)
-			//			default:
-			//				r.ParameterList = f.parameterList(bs, n)
-			//			}
-			//			//TODO declare in bs
-			//		case Block:
-			//			r.Block = f.block(bs, n)
-			//		case Type:
-			//			r.Type = f.typ(s, n)
+		case Receiver:
+			// A method receiver. Methods are not entered into the package scope
+			// (declareFunc skips them), so this funcDecl pass returns at the
+			// method name below without resolving a signature; the receiver only
+			// needs to not crash here. Body checking declares the receiver name.
 		case Block:
 			// ok
 		case 0:
@@ -523,12 +514,30 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	var results []retResult
 	for n := range it(n.ast) {
 		switch n.sym {
+		case Receiver:
+			f.declareReceiver(fs, n)
 		case Signature:
 			sig := f.signature(fs, n)
 			f.declareParams(fs, sig)
 			results = f.flattenResults(fs, sig)
 		case Block:
 			f.checkBlock(fs, results, n)
+		}
+	}
+}
+
+// declareReceiver declares a method receiver's name in the function body scope
+// so the body may reference it. Receiver = "(" identifier Type ")", so the
+// first identifier is the receiver name.
+func (f *File) declareReceiver(s *Scope, n Node) {
+	for c := range it(n.ast) {
+		if c.sym == 0 {
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+				if err := s.add(&VarDeclaration{declaration: declaration{token: tok}}); err != nil {
+					f.err(tok.Position(), "%v", err)
+				}
+				return
+			}
 		}
 	}
 }
@@ -2643,8 +2652,8 @@ func (f *File) varDecl(s *Scope, n Node) {
 			f.varSpec(s, n)
 		case 0:
 			switch f.ch(n.tok) {
-			case VAR:
-				// ok
+			case VAR, LPAREN, RPAREN, SEMICOLON:
+				// ok (the "(" ... ")" of a grouped "var ( ... )" declaration)
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
@@ -3200,6 +3209,9 @@ func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
+		case Type:
+			// A typed const's declared type is resolved later, in constSpec;
+			// the declaration pass only binds the name (like declareVarSpec).
 		case Expression:
 			// ok
 		default:
@@ -3221,14 +3233,13 @@ func (f *File) constSpec(s *Scope, n Node) {
 				continue
 			}
 			cs.Expression = f.expression(s, n)
-			switch {
-			case cs.TypeNode != nil:
-				panic(todo("", origin(1)))
-			default:
-				cs.Value = f.evalConstExpr(cs.Expression)
+			cs.Value = f.evalConstExpr(cs.Expression)
+		case Type:
+			// A typed const's declared type is resolved but not yet checked
+			// against the value; recording it must not crash the checker.
+			if cs != nil {
+				cs.TypeNode = f.typ(s, n)
 			}
-		//TODO 		case Type:
-		//TODO 			r.Type = f.typ(s, n)
 		case 0:
 			switch f.ch(n.tok) {
 			case IDENT:
