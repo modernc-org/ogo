@@ -196,6 +196,7 @@ type File struct {
 	Scope             *Scope // Kind: FileScope, Parent: Universe
 	errList           ErrList
 	hasInvalidImports bool
+	inArrayBound      bool // evaluating an array length: suppress "is not a constant"
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -1062,12 +1063,12 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			case IdentifierList:
 				names = f.identifierList(s, c)
 			case Type:
-				// Resolve plain named types and pointers-to-named, plus struct and
+				// Resolve plain named types and pointers-to-named, struct and
 				// interface type literals (so their field/method names are checked
-				// for duplicates), reporting undefined types. Arrays, slices and
-				// channels are left unresolved for now: their bound and element
-				// expressions are not yet fully checked.
-				if f.simpleNamedType(c) || f.structOrInterfaceType(c) {
+				// for duplicates), and array types (so their length is checked),
+				// reporting undefined types. Slices and channels are left
+				// unresolved for now: their element expressions are not yet checked.
+				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) {
 					if tn := f.typ(s, c); tn != nil {
 						kind, hasKind = f.typeKind(s, tn)
 					}
@@ -1096,6 +1097,18 @@ func (f *File) structOrInterfaceType(n Node) bool {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case StructType, InterfaceType:
+			return true
+		}
+	}
+	return false
+}
+
+// arrayType reports whether a Type node denotes an array "[Expression]T" -- it
+// carries a bracketed length expression -- as opposed to a slice "[]T". The
+// length is checked (constant, non-negative integer) when the type is resolved.
+func (f *File) arrayType(n Node) bool {
+	for c := range it(n.ast) {
+		if c.sym == Expression {
 			return true
 		}
 	}
@@ -2611,6 +2624,37 @@ func (t *TypeNodeInterface) Type() Typ {
 	panic(todo("", origin(1)))
 }
 
+// arrayBound evaluates an array length expression n and enforces the P2 array
+// constraints: the length must be a compile-time constant ("non-constant array
+// bound"), an integer ("invalid array bound", e.g. a string), and non-negative
+// ("array bound must be non-negative"). It returns the evaluated expression so
+// the caller can record it on the TypeNodeArray. A zero-allocation target has no
+// dynamic arrays, so every one of these is a hard error.
+func (f *File) arrayBound(s *Scope, n Node) ExpressionNode {
+	save := f.inArrayBound
+	f.inArrayBound = true
+	n0 := len(f.errList)
+	e := f.expression(s, n)
+	f.inArrayBound = save
+	reported := len(f.errList) > n0
+
+	pos := f.tok(n.Pos()).Position()
+	cv, _ := e.Value().(untypedConst)
+	switch {
+	case cv.cv == nil || cv.cv.Kind() == constant.Unknown:
+		// A non-constant bound. When factor already reported a more specific
+		// cause (an undefined name), do not pile on.
+		if !reported {
+			f.err(pos, "non-constant array bound")
+		}
+	case cv.cv.Kind() != constant.Int:
+		f.err(pos, "invalid array bound")
+	case constant.Sign(cv.cv) < 0:
+		f.err(pos, "array bound must be non-negative")
+	}
+	return e
+}
+
 func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 	var ident TypeNodeIdent
 	for n := range it(n.ast) {
@@ -2633,7 +2677,7 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 		case InterfaceType:
 			r = f.interfaceType(s, n)
 		case Expression:
-			r = &TypeNodeArray{Expression: f.expression(s, n)}
+			r = &TypeNodeArray{Expression: f.arrayBound(s, n)}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
@@ -3254,8 +3298,12 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 					r = untypedConst{constant.MakeUnknown()}
 				default:
 					// A non-constant name (var, func, type, ...) used where a
-					// constant expression is required.
-					f.err(tok.Position(), "%s is not a constant", nm)
+					// constant expression is required. In an array bound the
+					// contextual "non-constant array bound" diagnostic is emitted
+					// by arrayBound instead, so stay silent here.
+					if !f.inArrayBound {
+						f.err(tok.Position(), "%s is not a constant", nm)
+					}
 					r = untypedConst{constant.MakeUnknown()}
 				}
 			//TODO 			case LPAREN, RPAREN:

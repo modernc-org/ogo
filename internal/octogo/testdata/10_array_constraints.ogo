@@ -1,6 +1,3 @@
-//TODO-
-// COMPILE
-
 const size = 10
 var validArray [size]int
 var literalArray [5]bool
@@ -13,7 +10,7 @@ func testArrays() {
 	// ERROR "array bound must be non-negative|negative array bound"
 	var negArray [-1]int
 
-	// ERROR "invalid array bound|cannot convert"
 	// (Assuming string literals cannot be array bounds)
+	// ERROR "invalid array bound|cannot convert"
 	var strArray ["hello"]int
 }
