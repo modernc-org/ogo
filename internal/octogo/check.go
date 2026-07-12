@@ -3741,8 +3741,12 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 			// A parenthesized "( Expression )": its constant value is the value
 			// of the inner expression.
 			r = f.expression(s, n)
-		//TODO 		case FactorSuffix:
-		//TODO 			ident.FactorSuffix = f.factorSuffix(s, n)
+		case FactorSuffix:
+			// A call, selector or index applied to the operand: its result is
+			// not a compile-time constant. A problematic operand identifier has
+			// already been reported above; in an array bound the "non-constant
+			// array bound" diagnostic is emitted by arrayBound.
+			r = untypedConst{constant.MakeUnknown()}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case INT:

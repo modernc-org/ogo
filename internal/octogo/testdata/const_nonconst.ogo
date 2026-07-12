@@ -1,0 +1,12 @@
+// Regression: a call, selector or index in a constant expression or an array
+// bound is reported as non-constant rather than crashing the const evaluator.
+
+func size() int {
+	return 4
+}
+
+// ERROR "not a constant"
+const n = size()
+
+// ERROR "non-constant array bound"
+var buf [size()]int
