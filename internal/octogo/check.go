@@ -357,8 +357,9 @@ func (f *File) topLevel(s *Scope, n Node) {
 		case FuncDecl:
 			f.funcDecl(s, n)
 		case TypeDecl:
-			// Type names and bodies are handled in declareTopLevel/declareType;
-			// deep type resolution (Typ, recursion checks) is not implemented yet.
+			// Names were bound in phase 1 (declareType); resolve the bodies now
+			// that every top-level type name is visible.
+			f.typeDecl(s, n)
 		case 0:
 			switch f.ch(n.tok) {
 			default:
@@ -2608,6 +2609,9 @@ func (f *File) declareType(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case TypeSpec:
+			// Declare the type name only. Bodies are resolved in a later pass
+			// (typeDecl), after every top-level type name is in scope, so that a
+			// type may reference any other -- forward, mutual or self.
 			ts := &TypeSpecNode{Name: f.typeSpecName(n)}
 			var valid int32
 			if s.Kind != PackageScope {
@@ -2616,9 +2620,30 @@ func (f *File) declareType(s *Scope, n Node) {
 			if err := s.add(&TypeDeclaration{declaration: declaration{token: ts.Name, valid: valid}, TypeSpec: ts}); err != nil {
 				f.err(ts.Name.Position(), "%v", err)
 			}
-			// Resolve the body only now that the name is in scope, so a
-			// self-referential type may name itself.
-			f.typeSpecBody(s, n, ts)
+		case 0:
+			switch f.ch(n.tok) {
+			case TYPE, LPAREN, SEMICOLON, RPAREN:
+				// ok
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		default:
+			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+		}
+	}
+}
+
+// typeDecl resolves the underlying types of a top-level type declaration's
+// specs (the second pass of type checking). Every top-level type name is in
+// scope by now, so a body may reference any type -- including types declared
+// later or the type itself.
+func (f *File) typeDecl(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		switch n.sym {
+		case TypeSpec:
+			if td, ok := s.find(f.typeSpecName(n).Src()).(*TypeDeclaration); ok {
+				f.typeSpecBody(s, n, td.TypeSpec)
+			}
 		case 0:
 			switch f.ch(n.tok) {
 			case TYPE, LPAREN, SEMICOLON, RPAREN:

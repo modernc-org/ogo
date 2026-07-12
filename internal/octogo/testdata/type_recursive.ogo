@@ -1,7 +1,9 @@
 // COMPILE
 
-// Regression: a type may reference itself in its own body -- the shapes needed
-// for linked lists and trees -- without being reported undefined.
+// Regression: a type may reference any other type in its body -- itself
+// (linked lists, trees), a type declared later (forward reference), or another
+// type that references it back (mutual reference) -- resolved by the two-pass
+// type checker (names first, bodies second).
 
 type Node struct {
 	val  int
@@ -16,4 +18,14 @@ type Tree struct {
 
 type List struct {
 	items []List
+}
+
+// Forward and mutual references: Edge names Vertex before it is declared, and
+// Vertex names Edge back.
+type Edge struct {
+	to *Vertex
+}
+
+type Vertex struct {
+	edges []Edge
 }
