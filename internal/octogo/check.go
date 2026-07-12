@@ -2579,6 +2579,7 @@ func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
 type TypeSpecNode struct {
 	Name     Token
 	TypeNode TypeNode
+	gate     gate // cycle-detection state (phase 5)
 }
 
 // typeSpecName returns the declared name of a TypeSpec ("identifier [ "=" ]
@@ -2636,6 +2637,70 @@ func (f *File) declareType(s *Scope, n Node) {
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
+	}
+}
+
+// checkTypeCycles reports every top-level type in this source file whose value
+// representation contains itself, directly or through other types, and would
+// therefore have infinite size -- forbidden on a target with no heap. It runs
+// after all type bodies are resolved (phase 5).
+func (f *File) checkTypeCycles(s *Scope, n Node) {
+	for tld := range it(n.ast) {
+		if tld.sym != TopLevelDecl {
+			continue
+		}
+		for td := range it(tld.ast) {
+			if td.sym != TypeDecl {
+				continue
+			}
+			for spec := range it(td.ast) {
+				if spec.sym != TypeSpec {
+					continue
+				}
+				if cd, ok := s.find(f.typeSpecName(spec).Src()).(*TypeDeclaration); ok {
+					f.checkTypeCycle(s, cd)
+				}
+			}
+		}
+	}
+}
+
+// checkTypeCycle walks the value-containment edges of a named type. Re-entering
+// a type still being walked (gate == resolving) is an invalid recursive type.
+func (f *File) checkTypeCycle(s *Scope, cd *TypeDeclaration) {
+	ts := cd.TypeSpec
+	if ts == nil {
+		return
+	}
+	switch ts.gate.state() {
+	case resolved:
+		return
+	case resolving:
+		f.err(ts.Name.Position(), "invalid recursive type %s", ts.Name.Src())
+		ts.gate.close()
+		return
+	}
+	ts.gate.open()
+	f.walkTypeCycle(s, ts.TypeNode)
+	ts.gate.close()
+}
+
+// walkTypeCycle follows the edges of tn that contribute to a value's size: a
+// named type's underlying type, a struct's fields, and an array's element. A
+// pointer, slice, channel or interface is a reference of fixed size and breaks
+// the chain, so those are not followed.
+func (f *File) walkTypeCycle(s *Scope, tn TypeNode) {
+	switch x := tn.(type) {
+	case *TypeNodeIdent:
+		if cd, ok := s.find(x.Name.Src()).(*TypeDeclaration); ok {
+			f.checkTypeCycle(s, cd)
+		}
+	case *TypeNodeStruct:
+		for _, field := range x.Fields {
+			f.walkTypeCycle(s, field.TypeNode)
+		}
+	case *TypeNodeArray:
+		f.walkTypeCycle(s, x.TypeNode)
 	}
 }
 

@@ -315,7 +315,17 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	}
 
 	// Phase 5: Deep Initialization Cycle Detection (Serial)
-	//TODO
+	//
+	// Partial: value-recursive types (infinite size) are reported. Global
+	// initialization-order cycles are not implemented yet.
+	for _, v := range p.Files {
+		for n := range it(v.AST) {
+			switch n.sym {
+			case SourceFile:
+				v.checkTypeCycles(p.Scope, n)
+			}
+		}
+	}
 	return p
 }
 

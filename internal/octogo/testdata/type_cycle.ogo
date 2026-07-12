@@ -1,0 +1,8 @@
+// A value-recursive type has infinite size and is rejected: a heap-free target
+// cannot store it. A pointer, slice or channel field would break the cycle
+// (see type_recursive.ogo), but a struct field held by value does not.
+
+// ERROR "invalid recursive type"
+type Ring struct {
+	next Ring
+}
