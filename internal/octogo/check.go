@@ -759,6 +759,16 @@ func isBoolKind(k Kind) bool {
 	return k == PredeclaredBool || k == UntypedBool
 }
 
+// isFloatTypeName reports whether nm names one of Go's floating-point types,
+// which OctoGo reserves but does not support.
+func isFloatTypeName(nm string) bool {
+	switch nm {
+	case "float32", "float64":
+		return true
+	}
+	return false
+}
+
 // Broad comparability classes returned by kindCategory.
 const (
 	catUnknown = iota
@@ -2901,15 +2911,22 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 					// ident.Name = tok
 				default:
 					nm := tok.Src()
-					switch s.find(nm).(type) {
-					case *PredeclaredType, *TypeDeclaration:
-						ident.Name = tok
-						ident.Index = n.tok
-						r = &ident
-					case nil:
-						f.err(tok.Position(), "undefined: %s", nm)
+					switch {
+					case isFloatTypeName(nm):
+						// Reserved but unsupported: OctoGo's zero-allocation
+						// hardware target has no floating-point types.
+						f.err(tok.Position(), "floating-point types not supported")
 					default:
-						f.err(tok.Position(), "%s is not a type", nm)
+						switch s.find(nm).(type) {
+						case *PredeclaredType, *TypeDeclaration:
+							ident.Name = tok
+							ident.Index = n.tok
+							r = &ident
+						case nil:
+							f.err(tok.Position(), "undefined: %s", nm)
+						default:
+							f.err(tok.Position(), "%s is not a type", nm)
+						}
 					}
 				}
 			case CHAN:
