@@ -1,0 +1,40 @@
+// A method call "x.M(...)" resolves against the set of methods declared with the
+// receiver's named type -- for value and pointer receivers alike, and for struct
+// and non-struct receiver types, in both statement and expression position.
+// Calling a name that is not a method of the type is an error.
+
+type Point struct {
+	x int
+	y int
+}
+
+func (p Point) Sum() int     { return p.x + p.y }
+func (p *Point) Scale(f int) {}
+
+type Celsius int
+
+func (c Celsius) Freezing() bool { return c <= 0 }
+
+func run() {
+	var pt Point
+
+	a := pt.Sum()
+	_ = a
+
+	pt.Scale(2)
+
+	var c Celsius
+	if c.Freezing() {
+	}
+
+	// ERROR "type Point has no method Area"
+	b := pt.Area()
+	_ = b
+
+	// ERROR "type Point has no method reset"
+	pt.reset()
+
+	// ERROR "type Celsius has no method Boiling"
+	d := c.Boiling()
+	_ = d
+}

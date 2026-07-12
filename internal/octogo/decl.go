@@ -251,6 +251,7 @@ type ConstDeclaration struct {
 type TypeDeclaration struct {
 	declaration
 	TypeSpec *TypeSpecNode
+	methods  map[string]bool // names of methods declared with this type as receiver
 }
 
 // VarDeclaration represents a named run time value.

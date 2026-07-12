@@ -356,6 +356,7 @@ func (f *File) topLevel(s *Scope, n Node) {
 			f.varDecl(s, n)
 		case FuncDecl:
 			f.funcDecl(s, n)
+			f.registerMethod(s, n)
 		case TypeDecl:
 			// Names were bound in phase 1 (declareType); resolve the bodies now
 			// that every top-level type name is visible.
@@ -1234,6 +1235,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if argList, direct, isCall := f.callInfo(postfix); isCall {
 		id, ok := f.assignHeadIdent(head)
 		f.checkCall(s, id, direct && ok, argList)
+		if !direct && ok {
+			if m, has := f.methodCallMember(postfix); has {
+				f.checkMethodExists(s, id, m)
+			}
+		}
 	}
 
 	var lhs []Token
@@ -1504,6 +1510,97 @@ func (f *File) fieldKind(s *Scope, head, field Token) (Kind, bool) {
 		}
 	}
 	return 0, false
+}
+
+// receiverTypeName returns the base type name of a method Receiver
+// "( identifier Type )". Because the grammar is "identifier Type", the receiver
+// name is the first identifier and the base type name is the last one in
+// traversal order (the Type is a nested node), so "(r *T)" and "(r T)" both
+// yield T.
+func (f *File) receiverTypeName(recv Node) (name Token) {
+	for c := range it(recv.ast) {
+		if c.sym == 0 {
+			if t := f.tok(c.tok); Symbol(t.Ch) == IDENT {
+				name = t
+			}
+			continue
+		}
+		if n := f.receiverTypeName(c); n.IsValid() {
+			name = n
+		}
+	}
+	return name
+}
+
+// registerMethod records a method with its receiver type, so a method call can
+// be resolved. A non-method declaration is ignored. It runs in phase 3, when
+// every type is in the package scope.
+func (f *File) registerMethod(s *Scope, n Node) {
+	var recvType, method Token
+	hasRecv := false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Receiver:
+			recvType, hasRecv = f.receiverTypeName(c), true
+		case 0:
+			if t := f.tok(c.tok); Symbol(t.Ch) == IDENT {
+				method = t
+			}
+		}
+	}
+	if !hasRecv || !method.IsValid() {
+		return
+	}
+	if td, ok := s.find(recvType.Src()).(*TypeDeclaration); ok {
+		if td.methods == nil {
+			td.methods = map[string]bool{}
+		}
+		td.methods[method.Src()] = true
+	}
+}
+
+// methodCallMember reports whether a FactorSuffix or Postfix is a method call
+// "x.member(...)" -- exactly one selector, a call, and no index -- and returns
+// the member.
+func (f *File) methodCallMember(n Node) (member Token, ok bool) {
+	selectors, hasCall, disqualify := 0, false, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Selector:
+			if m, has := f.selectorMember(c); has {
+				member, selectors = m, selectors+1
+			}
+		case Index:
+			disqualify = true
+		case CallSuffix:
+			hasCall = true
+		case PostfixOp:
+			for pc := range it(c.ast) {
+				if pc.sym == CallSuffix {
+					hasCall = true
+				}
+			}
+		}
+	}
+	return member, selectors == 1 && hasCall && !disqualify
+}
+
+// checkMethodExists reports a call "head.member(...)" when head is a variable of
+// a named type that has no such method (and, for a struct, no such field either
+// -- a field of function type is not modelled, so it is accepted).
+func (f *File) checkMethodExists(s *Scope, head, member Token) {
+	d, ok := s.find(head.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() {
+		return
+	}
+	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !ok || td.methods[member.Src()] {
+		return
+	}
+	if fields, isStruct := f.structFields(s, d.typeName); isStruct && fields[member.Src()] {
+		return
+	}
+	f.err(member.Position(), "type %s has no method %s", d.typeName.Src(), member.Src())
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
@@ -1831,6 +1928,11 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if hasSuffix {
 		if argList, direct, isCall := f.callInfo(suffix); isCall {
 			f.checkCall(s, id, direct && hasID, argList)
+			if !direct && hasID {
+				if m, ok := f.methodCallMember(suffix); ok {
+					f.checkMethodExists(s, id, m)
+				}
+			}
 		} else if field, ok := f.fieldSelector(suffix); ok && hasID {
 			f.checkFieldAccess(s, id, field)
 		}
