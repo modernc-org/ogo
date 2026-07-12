@@ -1,10 +1,13 @@
-// Regression: a direct call to a named function checks its argument count, and
-// call arguments are name-resolved. A correct call, including nested calls, is
-// accepted; method and package calls are not counted.
+// Regression: a direct call to a named function checks its argument count and,
+// when the count matches, each argument's type against its parameter. A correct
+// call, including nested calls, is accepted; method and package calls are not
+// counted.
 
 func add(a int, b int) int {
 	return a + b
 }
+
+func flag(on bool) {}
 
 func noArgs() {}
 
@@ -13,6 +16,7 @@ func use() {
 	_ = x
 
 	noArgs()
+	flag(true)
 
 	w := add(add(1, 2), 3)
 	_ = w
@@ -27,4 +31,7 @@ func use() {
 
 	// ERROR "too many arguments in call to noArgs"
 	noArgs(1)
+
+	// ERROR "cannot use 1 of type int as type bool in argument to flag"
+	flag(1)
 }

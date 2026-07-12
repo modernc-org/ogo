@@ -1772,24 +1772,43 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
 		return
 	}
-	n := paramCount(fd.FuncDecl.Type.Signature)
+	params := f.flattenParams(s, fd.FuncDecl.Type.Signature)
 	switch {
-	case len(args) < n:
+	case len(args) < len(params):
 		f.err(callee.Position(), "not enough arguments in call to %s", callee.Src())
-	case len(args) > n:
+	case len(args) > len(params):
 		f.err(callee.Position(), "too many arguments in call to %s", callee.Src())
+	default:
+		// The count matches: check each argument against its parameter's type.
+		// Conservative: an argument whose type is not yet determined (a call,
+		// selector, or unresolved name) or a parameter of a non-predeclared type
+		// is left unchecked.
+		for i, arg := range args {
+			p := params[i]
+			if !p.known {
+				continue
+			}
+			if ak, aok := f.exprType(s, arg); aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(p.kind) {
+				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.tok(arg.Pos()).Src(), kindName(ak), p.name, callee.Src())
+			}
+		}
 	}
 }
 
-// paramCount returns the number of parameters declared by a signature.
-func paramCount(sig *SignatureNode) (n int) {
+// flattenParams expands a signature's parameters into one retResult per
+// parameter (each name in an "IdentifierList Type" group is one parameter),
+// mirroring flattenResults.
+func (f *File) flattenParams(s *Scope, sig *SignatureNode) (r []retResult) {
 	if sig == nil || sig.Params == nil {
-		return 0
+		return nil
 	}
 	for _, p := range sig.Params.List {
-		n += len(p.Names)
+		pt := f.resultType(s, p.TypeNode)
+		for range len(p.Names) {
+			r = append(r, pt)
+		}
 	}
-	return n
+	return r
 }
 
 // exprIdent returns the single identifier of an expression that is exactly a
