@@ -1296,6 +1296,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A plain "=" also checks each operand is assignable to its target; a receive
 	// "y = <-ch" additionally checks the channel's element type against y.
 	if op == ASSIGN {
+		// A field-target assignment "head.field = e" -- the head ident holds the
+		// base variable and the selector is in the postfix, so the plain-target
+		// loop below sees only the (struct) head and skips it; check the field here.
+		if field, ok := f.fieldSelector(postfix); ok && len(rhs) == 1 {
+			if id, idok := f.assignHeadIdent(head); idok {
+				f.checkFieldAssign(s, id, field, rhs[0])
+			}
+		}
 		for i, e := range rhs {
 			if i < len(lhs) {
 				f.checkRecvAssign(s, lhs[i], e)
@@ -1825,6 +1833,19 @@ func binaryAllowed(op Symbol, c int) bool {
 // different type class than the target variable. Both must be known.
 func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 	lk, lok := f.identKind(s, lhsTok)
+	rk, rok := f.exprType(s, rhsNode)
+	lc, rc := kindCategory(lk), kindCategory(rk)
+	if !lok || !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+		return
+	}
+	f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+}
+
+// checkFieldAssign reports a type mismatch in a field assignment "head.field =
+// rhs": the right-hand side's type category must match the struct field's. It is
+// the struct-field analogue of checkAssignType.
+func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
+	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)
 	if !lok || !rok || lc == catUnknown || rc == catUnknown || lc == rc {

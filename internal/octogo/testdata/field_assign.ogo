@@ -1,0 +1,33 @@
+// A field assignment "v.field = e" checks the assigned value's type against the
+// field's -- the struct-field analogue of a plain assignment's type check -- for
+// value and pointer receivers, and however the right-hand side is formed.
+
+type Config struct {
+	max     int
+	enabled bool
+}
+
+func level() int { return 0 }
+
+func run() {
+	var c Config
+
+	c.max = 10
+	c.enabled = true
+	c.max = level()
+
+	var p *Config
+	p.max = 20
+
+	// ERROR "cannot use true of type bool as type int in assignment"
+	c.max = true
+
+	// ERROR "cannot use 1 of type int as type bool in assignment"
+	c.enabled = 1
+
+	// ERROR "cannot use c of type bool as type int in assignment"
+	c.max = c.enabled
+
+	// ERROR "cannot use true of type bool as type int in assignment"
+	p.max = true
+}
