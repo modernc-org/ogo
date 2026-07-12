@@ -1,0 +1,23 @@
+// Regression: a package-level variable carries its type, so a struct field
+// selection on it and its use in a typed context are checked -- completing the
+// coverage across local variables, parameters, and package-level variables.
+
+type Config struct {
+	max int
+}
+
+var cfg Config
+var count int
+
+func run() {
+	a := cfg.max
+	_ = a
+
+	// ERROR "type Config has no field min"
+	b := cfg.min
+	_ = b
+
+	// ERROR "non-bool used as if condition"
+	if count {
+	}
+}

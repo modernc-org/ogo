@@ -3068,10 +3068,18 @@ func (f *File) varSpec(s *Scope, n Node) {
 	var typ TypeNode
 
 	defer func() {
+		// Record the resolved type on each declared variable (like a local
+		// variable or a parameter) so package-level variables are type-checked:
+		// a predeclared Kind, whether it is a pointer, and its named type for
+		// field access. typ is nil for an inferred type ("var x = expr").
+		kind, hasKind := f.typeKind(s, typ)
+		_, isPtr := typ.(*TypeNodePointer)
+		typeName, _ := namedTypeToken(typ)
 		for _, vd := range varDecls {
 			if vd == nil {
 				continue
 			}
+			vd.kind, vd.hasKind, vd.isPtr, vd.typeName = kind, hasKind, isPtr, typeName
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:
 				vs.TypeNode = typ
