@@ -485,7 +485,7 @@ func (f *File) funcDecl(s *Scope, n Node) {
 				default:
 					// The name is already declared in this scope as a
 					// non-function: a redeclaration. Report it and skip.
-					f.err(tok.Position(), "%s redeclared in this block", tok.Src())
+					f.err(tok.Position(), "%s redeclared in this block, previous declaration at %v", tok.Src(), x.Token().Position())
 					return
 				}
 			}
@@ -2691,7 +2691,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 						// The name is already declared in this scope: a
 						// redeclaration. Report it and skip re-resolving, which
 						// would otherwise hit the gate in a non-unvisited state.
-						f.err(nmTok.Position(), "%s redeclared in this block", nm)
+						f.err(nmTok.Position(), "%s redeclared in this block, previous declaration at %v", nm, x.Token().Position())
 						varDecls = append(varDecls, nil)
 					}
 				default:

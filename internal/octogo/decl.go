@@ -185,7 +185,7 @@ func (s *Scope) add(d Declaration) (err error) {
 	}
 
 	if ex := s.Declarations[nm]; ex != nil {
-		return fmt.Errorf("%s declared in the same scope before at %v", nm, ex.Token().Position())
+		return fmt.Errorf("%s redeclared in this block, previous declaration at %v", nm, ex.Token().Position())
 	}
 
 	if s.Declarations == nil {
