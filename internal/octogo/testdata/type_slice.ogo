@@ -1,0 +1,18 @@
+// COMPILE
+
+// Regression: slice types -- including nested slices, slices of pointers, and
+// slice-typed struct fields -- must resolve without crashing the checker.
+
+type Ints []int
+type Grid [][]bool
+type Refs []*int
+
+type Buffer struct {
+	data  []int
+	count int
+}
+
+func consume(xs []int, out chan bool) {
+	_ = xs
+	_ = out
+}

@@ -2930,8 +2930,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				x.TypeNode = f.typ(s, n)
 			case *TypeNodeArray:
 				x.TypeNode = f.typ(s, n)
-			//TODO 			case *TypeNodeSlice:
-			//TODO 				x.Type = f.typ(s, n)
+			case *TypeNodeSlice:
+				x.TypeNode = f.typ(s, n)
 			default:
 				panic(todo("%T", x))
 			}
