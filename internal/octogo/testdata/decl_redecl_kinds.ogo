@@ -1,0 +1,22 @@
+// Regression: a duplicate function, and a name redeclared across declaration
+// kinds, must be reported as a redeclaration rather than panicking the checker.
+
+func h() {}
+
+// ERROR "h redeclared in this block"
+func h() {}
+
+var v int = 1
+
+// ERROR "v redeclared in this block"
+func v() {}
+
+func z() {}
+
+// ERROR "z redeclared in this block"
+var z int = 2
+
+func c() {}
+
+// ERROR "c redeclared in this block"
+const c = 3

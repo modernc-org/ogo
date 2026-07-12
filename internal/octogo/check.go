@@ -480,7 +480,13 @@ func (f *File) funcDecl(s *Scope, n Node) {
 						fd.Type = &FunctionType{}
 						fd.gate.open()
 					default:
-						panic(todo("", fd.gate))
+						// The shared FuncDeclaration for this name was already
+						// visited: this is a second (duplicate) declaration of
+						// the same function, already reported as a redeclaration
+						// when it was added to the package scope. Clear fd so the
+						// deferred gate-close leaves the first declaration alone.
+						fd = nil
+						return
 					}
 				default:
 					// The name is already declared in this scope as a
@@ -2727,7 +2733,12 @@ func (f *File) varSpec(s *Scope, n Node) {
 						varDecls = append(varDecls, nil)
 					}
 				default:
-					panic(todo("%p.%v[%q]==%T", s, s.Kind, nm, x))
+					// The name is already declared in this scope as something
+					// other than a variable (a function or type): a
+					// redeclaration. Report it and skip, mirroring the
+					// *VarDeclaration branch.
+					f.err(nmTok.Position(), "%s redeclared in this block, previous declaration at %v", nm, x.Token().Position())
+					varDecls = append(varDecls, nil)
 				}
 			}
 		case Type:
@@ -3203,6 +3214,12 @@ func (f *File) constSpec(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Expression:
+			if cs == nil {
+				// The name did not resolve to this constant: it is a
+				// redeclaration of a name already bound to something else,
+				// already reported when the const was added to the scope.
+				continue
+			}
 			cs.Expression = f.expression(s, n)
 			switch {
 			case cs.TypeNode != nil:
