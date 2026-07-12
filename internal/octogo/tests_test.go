@@ -50,8 +50,7 @@ func TestOctoGoSpecs(t *testing.T) {
 		default:
 			switch {
 			case
-				strings.Contains(path, "02_"), //TODO name resolving
-				strings.Contains(path, "03_"): //TODO name resolving
+				strings.Contains(path, "02_"): //TODO name resolving
 
 				continue
 			}

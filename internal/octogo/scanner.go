@@ -35,6 +35,7 @@ const (
 	CHAN      = TOK_chan      // "chan"
 	CONST     = TOK_const     // "const"
 	DEFAULT   = TOK_default   // "default"
+	DEFER     = TOK_defer     // "defer"
 	ELSE      = TOK_else      // "else"
 	FOR       = TOK_for       // "for"
 	FUNC      = TOK_func      // "func"

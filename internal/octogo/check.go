@@ -644,6 +644,10 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				isReturn = true
 			case IF, FOR:
 				condKw = f.tok(c.tok).Src()
+			case DEFER:
+				// The grammar still admits "defer" for LL(1) simplicity, but the
+				// zero-allocation target cannot accumulate deferred calls.
+				f.err(f.tok(c.tok).Position(), "unexpected keyword 'defer'")
 			}
 		}
 	}

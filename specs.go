@@ -125,14 +125,14 @@
 // # Keywords
 //
 // The following keywords are reserved and may not be used as identifiers.
-// (Note: Keywords like package, defer, goto, map, and range have been
-// intentionally omitted from OctoGo to simplify the grammar and runtime):
+// (Note: Keywords like package, goto, map, and range have been intentionally
+// omitted from OctoGo to simplify the grammar and runtime. "defer" is reserved
+// and parsed for LL(1) simplicity but rejected by the semantic checker, as the
+// zero-allocation target cannot accumulate deferred calls):
 //
-//	case        else        interface   switch
-//	chan        for         return      type
-//	const       func        select      var
-//	default     go          struct      import
-//	if
+//	case        default     func        interface   select      type
+//	chan        defer       go          import      struct      var
+//	const       else        if          return      switch
 //
 // # Operators and punctuation
 //
