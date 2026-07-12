@@ -3240,10 +3240,12 @@ type ConstSpecNode struct {
 	Name       Token
 	Value      Value
 	TypeNode   TypeNode
+	node       Node // the ConstSpec AST node, for on-demand evaluation
+	gate       gate // evaluation state: order-independence and cycle detection
 }
 
 func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
-	r = &ConstSpecNode{}
+	r = &ConstSpecNode{node: n}
 	for n := range it(n.ast) {
 		switch n.sym {
 		case 0:
@@ -3267,42 +3269,61 @@ func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
 	return r
 }
 
+// constSpec drives evaluation of the constant named by a ConstSpec. The actual
+// work is on demand (resolveConst) so a constant may reference another declared
+// later in source; a name that resolved to something else is a redeclaration,
+// already reported.
 func (f *File) constSpec(s *Scope, n Node) {
-	var cs *ConstSpecNode
-	for n := range it(n.ast) {
-		switch n.sym {
-		case Expression:
-			if cs == nil {
-				// The name did not resolve to this constant: it is a
-				// redeclaration of a name already bound to something else,
-				// already reported when the const was added to the scope.
-				continue
+	if cd, ok := s.find(f.constSpecName(n).Src()).(*ConstDeclaration); ok {
+		f.resolveConst(s, cd)
+	}
+}
+
+// constSpecName returns the identifier a ConstSpec declares.
+func (f *File) constSpecName(n Node) (name Token) {
+	for c := range it(n.ast) {
+		if c.sym == 0 {
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+				return tok
 			}
-			cs.Expression = f.expression(s, n)
-			cs.Value = f.evalConstExpr(cs.Expression)
-		case Type:
-			// A typed const's declared type is resolved but not yet checked
-			// against the value; recording it must not crash the checker.
-			if cs != nil {
-				cs.TypeNode = f.typ(s, n)
-			}
-		case 0:
-			switch f.ch(n.tok) {
-			case IDENT:
-				name := f.tok(n.tok)
-				d := s.find(name.Src())
-				if cd, ok := d.(*ConstDeclaration); ok {
-					cs = cd.ConstSpec
-				}
-			case ASSIGN:
-				// ok
-			default:
-				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-			}
-		default:
-			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
 	}
+	return name
+}
+
+// resolveConst evaluates a constant's value on demand. It is idempotent (a
+// second call returns immediately once resolved) and order-independent: a
+// reference to a constant declared later triggers that constant's evaluation.
+// The gate turns a definition cycle into a reported error and an unknown value
+// rather than unbounded recursion.
+func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
+	cs := cd.ConstSpec
+	if cs == nil {
+		return
+	}
+	switch cs.gate.state() {
+	case resolved:
+		return
+	case resolving:
+		f.err(cs.Name.Position(), "constant definition cycle for %s", cs.Name.Src())
+		cs.Value = untypedConst{constant.MakeUnknown()}
+		cs.gate.close()
+		return
+	}
+	cs.gate.open()
+	for c := range it(cs.node.ast) {
+		switch c.sym {
+		case Expression:
+			cs.Expression = f.expression(s, c)
+			cs.Value = f.evalConstExpr(cs.Expression)
+		case Type:
+			cs.TypeNode = f.typ(s, c)
+		}
+	}
+	if cs.Value == nil {
+		cs.Value = untypedConst{constant.MakeUnknown()}
+	}
+	cs.gate.close()
 }
 
 // ExpressionNode represents the Expression production or any of its
@@ -3677,10 +3698,9 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				nm := tok.Src()
 				switch d := s.find(nm); x := d.(type) {
 				case *ConstDeclaration:
-					// The value is nil when it has not been evaluated yet -- a
-					// forward or cyclic reference within a constant expression
-					// (constants are resolved in source order). Treat it as an
-					// unknown constant rather than dereferencing nil.
+					// Evaluate on demand so a forward reference resolves; a cycle
+					// is reported there and yields an unknown value.
+					f.resolveConst(s, x)
 					if x.ConstSpec != nil && x.ConstSpec.Value != nil {
 						r = x.ConstSpec.Value.Expr()
 					} else {

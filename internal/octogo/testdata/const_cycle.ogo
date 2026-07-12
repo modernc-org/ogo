@@ -1,0 +1,7 @@
+// A constant definition cycle is reported once, rather than silently yielding
+// an unknown value or recursing forever.
+
+// ERROR "constant definition cycle"
+const a = b
+const b = c
+const c = a
