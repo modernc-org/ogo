@@ -1306,8 +1306,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		return
 	}
 
+	// ":=" introduces its plainly-named, not-already-declared left operands. When
+	// the operands and initializers pair up one-to-one, infer each new variable's
+	// predeclared kind from its initializer, so its later uses are type-checked
+	// just like an explicitly-typed variable's. A multi-result initializer (fewer
+	// initializers than operands) is not modelled, so those kinds stay unknown.
+	inferKinds := len(lhs) == len(rhs)
 	newCount, nonBlank := 0, 0
-	for _, id := range lhs {
+	for i, id := range lhs {
 		nm := id.Src()
 		if nm == "_" {
 			continue
@@ -1316,7 +1322,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if s.Declarations[nm] != nil {
 			continue // already declared in this scope: an assignment, not new
 		}
-		_ = s.add(&VarDeclaration{declaration: declaration{token: id}})
+		vd := &VarDeclaration{declaration: declaration{token: id}}
+		if inferKinds {
+			if k, ok := f.exprType(s, rhs[i]); ok {
+				vd.kind, vd.hasKind = k, true
+			}
+		}
+		_ = s.add(vd)
 		newCount++
 	}
 	if nonBlank != 0 && newCount == 0 {

@@ -1,0 +1,38 @@
+// A short variable declaration "x := expr" infers x's predeclared type from its
+// initializer, so later uses of x are type-checked like an explicitly-typed
+// variable's. The initializer may be a literal, an operator expression, a call,
+// a method result or a field selection. A multi-result ":=" is not modelled.
+
+type Sensor struct {
+	level int
+}
+
+func (s Sensor) Reading() int { return s.level }
+
+func use(n int) {}
+func want(b bool) {}
+
+func run() {
+	n := 5
+	use(n)
+
+	ok := 1 < 2
+	if ok {
+	}
+
+	var sr Sensor
+	r := sr.Reading()
+	use(r)
+
+	// ERROR "non-bool used as if condition"
+	if n {
+	}
+
+	b := true
+
+	// ERROR "cannot use b of type bool as type int in argument to use"
+	use(b)
+
+	// ERROR "cannot use n of type int as type bool in argument to want"
+	want(n)
+}
