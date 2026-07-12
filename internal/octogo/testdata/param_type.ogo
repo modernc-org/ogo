@@ -1,0 +1,25 @@
+// Regression: a function parameter carries its type, so its uses are checked --
+// a struct parameter's field access (by value or through a pointer) and a scalar
+// parameter used where a typed value is expected. A package-level named type in
+// a signature resolves (it was previously reported undefined).
+
+type Reading struct {
+	value int
+	valid bool
+}
+
+func consume(r Reading, p *Reading, n int) {
+	a := r.value + p.value
+	_ = a
+
+	if r.valid {
+	}
+
+	// ERROR "type Reading has no field missing"
+	b := r.missing
+	_ = b
+
+	// ERROR "non-bool used as if condition"
+	if n {
+	}
+}

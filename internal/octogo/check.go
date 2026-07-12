@@ -427,7 +427,11 @@ func (f *File) declareFunc(n Node) (r *FuncDeclNode) {
 }
 
 func (f *File) funcDecl(s *Scope, n Node) {
-	block := f.tld.child()
+	// Resolve the signature in a child of the package scope: f.tld is emptied
+	// once its declarations are merged (and its parent is the universe, not the
+	// package), so a parameter or result of a package-level named type would
+	// otherwise be reported undefined.
+	block := s.child()
 	// seenRPar := false
 
 	var fd *FuncDeclNode
@@ -598,8 +602,14 @@ func (f *File) declareParams(s *Scope, sig *SignatureNode) {
 		return
 	}
 	for _, p := range sig.Params.List {
+		// Record each parameter's type so its uses are checked like a local
+		// variable's: a predeclared Kind, whether it is a pointer, and its
+		// named (possibly pointed-to) type for field access.
+		kind, hasKind := f.typeKind(s, p.TypeNode)
+		_, isPtr := p.TypeNode.(*TypeNodePointer)
+		typeName, _ := namedTypeToken(p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
