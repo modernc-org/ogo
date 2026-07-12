@@ -2574,29 +2574,41 @@ type TypeSpecNode struct {
 	TypeNode TypeNode
 }
 
-func (f *File) typeSpec(s *Scope, n Node) (r *TypeSpecNode) {
-	r = &TypeSpecNode{}
-	for n := range it(n.ast) {
-		switch n.sym {
-		case Type:
-			r.TypeNode = f.typ(s, n)
-		case 0:
-			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
-			case IDENT:
-				r.Name = tok
+// typeSpecName returns the declared name of a TypeSpec ("identifier [ "=" ]
+// Type"), without resolving its body.
+func (f *File) typeSpecName(n Node) (name Token) {
+	for c := range it(n.ast) {
+		if c.sym == 0 {
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+				return tok
 			}
-		default:
-			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
 	}
-	return r
+	return name
+}
+
+// typeSpecBody resolves a TypeSpec's underlying type into r.TypeNode. It must be
+// called after the type name is in scope so that a self-referential body (e.g.
+// "type T struct { next *T }") resolves the name rather than reporting it
+// undefined.
+func (f *File) typeSpecBody(s *Scope, n Node, r *TypeSpecNode) {
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Type:
+			r.TypeNode = f.typ(s, c)
+		case 0:
+			// the identifier and an optional "=" (alias); already handled
+		default:
+			panic(todo("", f.tok(c.Pos()).Position(), c.sym))
+		}
+	}
 }
 
 func (f *File) declareType(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case TypeSpec:
-			ts := f.typeSpec(s, n)
+			ts := &TypeSpecNode{Name: f.typeSpecName(n)}
 			var valid int32
 			if s.Kind != PackageScope {
 				valid = n.End() + 1
@@ -2604,6 +2616,9 @@ func (f *File) declareType(s *Scope, n Node) {
 			if err := s.add(&TypeDeclaration{declaration: declaration{token: ts.Name, valid: valid}, TypeSpec: ts}); err != nil {
 				f.err(ts.Name.Position(), "%v", err)
 			}
+			// Resolve the body only now that the name is in scope, so a
+			// self-referential type may name itself.
+			f.typeSpecBody(s, n, ts)
 		case 0:
 			switch f.ch(n.tok) {
 			case TYPE, LPAREN, SEMICOLON, RPAREN:

@@ -1,0 +1,19 @@
+// COMPILE
+
+// Regression: a type may reference itself in its own body -- the shapes needed
+// for linked lists and trees -- without being reported undefined.
+
+type Node struct {
+	val  int
+	next *Node
+}
+
+type Tree struct {
+	value int
+	left  *Tree
+	right *Tree
+}
+
+type List struct {
+	items []List
+}
