@@ -2864,10 +2864,12 @@ func (f *File) varSpec(s *Scope, n Node) {
 		case Type:
 			typ = f.typ(s, n)
 		case Expression:
-			e := f.expression(s, n)
-			if len(varDecls) != 0 && varDecls[0] != nil {
-				varDecls[0].VarSpec.Expression = e
-			}
+			// A global var's initializer is a run-time value evaluated at
+			// startup, not necessarily a constant: it may reference another var
+			// or call a function. Resolve the names it uses (like a local var's
+			// initializer) rather than folding it as a constant, which would
+			// wrongly report a non-constant initializer or panic on a call.
+			f.checkNames(s, n)
 		case 0:
 			switch f.ch(n.tok) {
 			case ASSIGN:

@@ -1,0 +1,22 @@
+// COMPILE
+
+// Regression: a global variable's initializer is a run-time value evaluated at
+// startup, so it may reference another variable, a constant, an expression, or
+// a function call, and may name a variable declared later -- it need not be a
+// constant, and a call must not crash the checker.
+
+const limit = 100
+
+var base int = 10
+var scaled = base * 2
+var copied = base
+var bounded = base < limit
+
+var forward = later
+var later int = 5
+
+func compute() int {
+	return 42
+}
+
+var computed = compute()
