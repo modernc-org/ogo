@@ -1056,7 +1056,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		// the type's Kind first, then bind the names carrying that Kind.
 		var names []Token
 		var kind Kind
-		var hasKind, hasInit bool
+		var hasKind, hasInit, isPtr bool
 		var initExpr Node
 		for c := range it(n.ast) {
 			switch c.sym {
@@ -1071,6 +1071,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) {
 					if tn := f.typ(s, c); tn != nil {
 						kind, hasKind = f.typeKind(s, tn)
+						_, isPtr = tn.(*TypeNodePointer)
 					}
 				}
 			case Expression:
@@ -1083,7 +1084,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkNames(s, initExpr)
 		}
 		for _, nm := range names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -1322,7 +1323,12 @@ func (f *File) checkBinary(s *Scope, n Node, operandSym, opSym Symbol) {
 
 // checkBinOp reports operands an arithmetic or bitwise operator is not defined
 // for: "+" wants two numeric or two string operands, the rest want numeric.
+// Pointer arithmetic ("ptr + 1") is never defined.
 func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
+	if f.exprIsPointer(s, lNode) || f.exprIsPointer(s, rNode) {
+		f.err(f.tok(opNode.Pos()).Position(), "invalid operation: operator %s not defined on pointer", f.tok(opNode.Pos()).Src())
+		return
+	}
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)
@@ -1369,8 +1375,8 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 
 // checkUnaryExpr resolves the names in a UnaryExpr's factor and checks that each
 // unary operator is defined for its operand's type. Operators are applied
-// nearest-factor-first (right to left). The pointer and channel operators
-// ("*", "&", "<-") are not modelled and stop the type check.
+// nearest-factor-first (right to left). The address-of and channel operators
+// ("&", "<-") are not modelled and stop the type check.
 func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	var ops []Node
 	var fac Node
@@ -1387,10 +1393,38 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	if !facSet || len(ops) == 0 {
 		return
 	}
+	// The innermost operator (nearest the factor) applies first. A "*" there is
+	// a pointer dereference: valid only when the factor is a pointer, an error
+	// ("cannot indirect") when the factor is a known non-pointer value, and left
+	// alone when the factor's type is not yet determined. Its result type is not
+	// modelled, so the check stops here either way.
+	if inner := ops[len(ops)-1]; f.unaryOp(s, inner) == MUL {
+		if _, known := f.exprType(s, fac); known && !f.exprIsPointer(s, fac) {
+			name := "operand"
+			if id, ok := f.exprIdent(fac); ok {
+				name = id.Src()
+			}
+			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s", name)
+		}
+		return
+	}
 	k, ok := f.exprType(s, fac)
 	for i := len(ops) - 1; i >= 0 && ok; i-- {
 		k, ok = f.checkUnaryOp(s, ops[i], k)
 	}
+}
+
+// exprIsPointer reports whether expression n has pointer type. It is
+// deliberately shallow: it recognizes a bare variable declared "*T" (the form
+// that occurs where a pointer operand must be diagnosed) and leaves every
+// other shape to the conservative default of "not known to be a pointer".
+func (f *File) exprIsPointer(s *Scope, n Node) bool {
+	if id, ok := f.exprIdent(n); ok {
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			return d.isPtr
+		}
+	}
+	return false
 }
 
 // checkUnaryOp reports when a unary operator is not defined for operand kind k

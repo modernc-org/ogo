@@ -259,6 +259,7 @@ type VarDeclaration struct {
 	VarSpec *VarSpecNode
 	kind    Kind // the variable's type, when it resolves to a predeclared type
 	hasKind bool // kind is meaningful
+	isPtr   bool // the variable's type is a pointer "*T"
 }
 
 // FuncDeclaration represents a named function.
