@@ -1,0 +1,43 @@
+// A method call with a single predeclared result carries that result's type, so
+// it is checked wherever a value of that type is expected -- a condition, an
+// operand, a call argument, an assignment -- exactly as a direct function call's
+// result is. A multi-result method is not modelled.
+
+type Counter struct {
+	n int
+}
+
+func (c Counter) Value() int { return c.n }
+func (c Counter) Done() bool { return c.n == 0 }
+
+func use(n int) {}
+
+func run() {
+	var c Counter
+	var i int
+
+	if c.Done() {
+	}
+
+	x := c.Value() + 1
+	_ = x
+
+	use(c.Value())
+
+	i = c.Value()
+	_ = i
+
+	// ERROR "non-bool used as if condition"
+	if c.Value() {
+	}
+
+	// ERROR "cannot use c of type bool as type int in argument to use"
+	use(c.Done())
+
+	// ERROR "mismatched types int and bool"
+	if c.Value() < c.Done() {
+	}
+
+	// ERROR "cannot use c of type bool as type int in assignment"
+	i = c.Done()
+}

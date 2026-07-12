@@ -932,11 +932,14 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 	}
 	switch {
 	case hasSuffix:
-		// A direct call to a named function with a single predeclared result has
-		// that result's type, and a field selection "v.field" has the field's
-		// type. Other suffixes -- an index, a multi-result call, a method call --
-		// are not modelled.
+		// A call to a named function or a method with a single predeclared result
+		// has that result's type, and a field selection "v.field" has the field's
+		// type. Other suffixes -- an index, a multi-result call -- are not
+		// modelled.
 		if k, ok := f.callResultKind(s, lit, hasLit, suffix); ok {
+			return k, true
+		}
+		if k, ok := f.methodResultKind(s, lit, hasLit, suffix); ok {
 			return k, true
 		}
 		if field, ok := f.fieldSelector(suffix); ok && hasLit {
@@ -1628,6 +1631,35 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 		}
 	}
 	f.checkArgs(s, member, fd.Type.Signature, args)
+}
+
+// methodResultKind returns the predeclared Kind of a method call
+// "head.member(...)" when head is a variable of a named type whose method has a
+// single known predeclared result -- the method analogue of callResultKind.
+func (f *File) methodResultKind(s *Scope, head Token, hasHead bool, suffix Node) (Kind, bool) {
+	if !hasHead {
+		return 0, false
+	}
+	member, ok := f.methodCallMember(suffix)
+	if !ok {
+		return 0, false
+	}
+	d, ok := s.find(head.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() {
+		return 0, false
+	}
+	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !ok {
+		return 0, false
+	}
+	fd := td.methods[member.Src()]
+	if fd == nil || fd.Type == nil {
+		return 0, false
+	}
+	if results := f.flattenResults(s, fd.Type.Signature); len(results) == 1 && results[0].known {
+		return results[0].kind, true
+	}
+	return 0, false
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
