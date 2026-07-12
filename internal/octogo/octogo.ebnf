@@ -16,6 +16,7 @@ decimal_digits = decimal_digit { [ "_" ] decimal_digit } .
 binary_digits  = binary_digit { [ "_" ] binary_digit } .
 octal_digits   = octal_digit { [ "_" ] octal_digit } .
 hex_digits     = hex_digit { [ "_" ] hex_digit } .
+float_lit = decimal_digits "." decimal_digits .
 rune_lit         = '\'' ( `[^'\\\n\r]` | unicode_value | byte_value ) '\'' .
 unicode_value    = little_u_value | big_u_value | escaped_char .
 byte_value       = octal_byte_value | hex_byte_value .
@@ -59,6 +60,7 @@ Term           = UnaryExpr { MulOp UnaryExpr } .
 UnaryExpr  = { UnaryOp } Factor .
 Factor     = identifier [ FactorSuffix ]
 	| int_lit
+	| float_lit
 	| string_lit
 	| rune_lit
 	| "(" Expression ")"

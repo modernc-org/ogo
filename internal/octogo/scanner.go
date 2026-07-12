@@ -70,6 +70,7 @@ const (
 	TILDE     = TOK_007e      // '~'
 	IDENT     = identifier    // identifier
 	INT       = int_lit       // int_lit
+	FLOAT     = float_lit     // float_lit
 	CHAR      = rune_lit      // rune_lit
 	STRING    = string_lit    // string_lit
 	// white_space    // white_space
@@ -527,7 +528,6 @@ out:
 					//TODO TOK_break
 					//TODO TOK_continue
 					//TODO TOK_fallthrough
-					//TODO float_lit,
 					//TODO? imag_lit,
 					RPAREN, // ')'
 					RBRACK, // ']'
@@ -535,6 +535,7 @@ out:
 					RETURN,
 					identifier,
 					int_lit,
+					float_lit,
 					rune_lit,
 					string_lit:
 

@@ -892,6 +892,8 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		switch Symbol(lit.Ch) {
 		case INT, CHAR:
 			return UntypedInt, true
+		case FLOAT:
+			return UntypedFloat, true
 		case STRING:
 			return UntypedString, true
 		case IDENT:
@@ -3490,6 +3492,10 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 			case INT:
 				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.INT, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
+				}
+			case FLOAT:
+				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.FLOAT, 0)}); r.Type() == nil {
+					f.err(tok.Position(), "invalid floating-point literal: %s", tok.Src())
 				}
 			case CHAR:
 				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {

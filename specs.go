@@ -165,6 +165,16 @@
 //	octal_digits   = octal_digit { [ "_" ] octal_digit } .
 //	hex_digits     = hex_digit { [ "_" ] hex_digit } .
 //
+// # Floating-point literals
+//
+// OctoGo does not support floating-point types (see Types). A floating-point
+// literal is nonetheless recognized by the grammar and folds to an untyped
+// floating-point constant, so that an unsupported use -- such as a
+// float-typed declaration -- is reported with a clear semantic diagnostic
+// instead of a confusing parse error on the literal.
+//
+//	float_lit = decimal_digits "." decimal_digits .
+//
 // # Rune literals
 //
 // A rune literal represents a rune constant, an integer value identifying a
@@ -502,6 +512,7 @@
 //	UnaryExpr  = { UnaryOp } Factor .
 //	Factor     = identifier [ FactorSuffix ]
 //		| int_lit
+//		| float_lit
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")"
