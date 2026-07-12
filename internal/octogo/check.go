@@ -685,14 +685,14 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 		}
 	}
 	if isReturn {
-		f.checkReturn(results, stmt)
+		f.checkReturn(s, results, stmt)
 	}
 }
 
 // checkReturn verifies a return statement's operand count against the enclosing
-// function's results and, for literal operands returned to a predeclared result
-// type, that the literal is assignable.
-func (f *File) checkReturn(results []retResult, stmt Node) {
+// function's results, resolves the names in each operand, and checks each operand
+// is assignable to its corresponding result type.
+func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 	var retTok Token
 	var exprs []Node
 	for c := range it(stmt.ast) {
@@ -719,30 +719,39 @@ func (f *File) checkReturn(results []retResult, stmt Node) {
 		return
 	}
 	for i, e := range exprs {
-		f.checkReturnValue(results[i], e)
+		f.checkNames(s, e)
+		f.checkReturnValue(s, results[i], e)
 	}
 }
 
-// checkReturnValue reports a type mismatch when a literal return operand is not
-// assignable to its (predeclared) result type. Non-literal operands and
-// non-predeclared results are left unchecked pending typed expression support.
-func (f *File) checkReturnValue(rt retResult, e Node) {
-	tok, ok := f.bareLiteral(e)
-	if !ok || !rt.known {
+// checkReturnValue reports a type mismatch when a return operand is not
+// assignable to its (predeclared) result type: a literal by the untyped-constant
+// rules, and a typed operand (variable, call, method result, field or operator
+// expression) by type category. A non-predeclared result, or an operand of
+// undetermined type, is left unchecked.
+func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
+	if !rt.known {
 		return
 	}
-	var valName string
-	var assignable bool
-	switch Symbol(tok.Ch) {
-	case INT, CHAR:
-		valName, assignable = "int", isNumericKind(rt.kind)
-	case STRING:
-		valName, assignable = "string", rt.kind == PredeclaredString
-	default:
+	if tok, ok := f.bareLiteral(e); ok {
+		var valName string
+		var assignable bool
+		switch Symbol(tok.Ch) {
+		case INT, CHAR:
+			valName, assignable = "int", isNumericKind(rt.kind)
+		case STRING:
+			valName, assignable = "string", rt.kind == PredeclaredString
+		default:
+			return
+		}
+		if !assignable {
+			f.err(tok.Position(), "cannot use %s of type %s as type %s in return statement", tok.Src(), valName, rt.name)
+		}
 		return
 	}
-	if !assignable {
-		f.err(tok.Position(), "cannot use %s of type %s as type %s in return statement", tok.Src(), valName, rt.name)
+	if k, ok := f.exprType(s, e); ok && kindCategory(k) != catUnknown && kindCategory(k) != kindCategory(rt.kind) {
+		tok := f.tok(e.Pos())
+		f.err(tok.Position(), "cannot use %s of type %s as type %s in return statement", tok.Src(), kindName(k), rt.name)
 	}
 }
 

@@ -1,0 +1,47 @@
+// A return operand is checked for undefined names and for type: a literal by the
+// untyped-constant rules, and a typed operand (variable, call, method result,
+// field or operator expression) against the result's type category.
+
+type Box struct {
+	on bool
+}
+
+func (b Box) Level() int { return 0 }
+
+func ok() int {
+	var i int
+	return i
+}
+
+func okLiteral() int {
+	return 5
+}
+
+func fromMethod() int {
+	var b Box
+	return b.Level()
+}
+
+func badVar() int {
+	var flag bool
+	// ERROR "cannot use flag of type bool as type int in return statement"
+	return flag
+}
+
+func badLiteral() bool {
+	// ERROR "cannot use 5 of type int as type bool in return statement"
+	return 5
+}
+
+func badField() int {
+	var b Box
+	// ERROR "cannot use b of type bool as type int in return statement"
+	return b.on
+}
+
+func badName() int {
+	// ERROR "undefined: missing"
+	return missing
+}
+
+func run() {}
