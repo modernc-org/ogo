@@ -3293,21 +3293,76 @@ func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-				r = &BinaryExpressionNode{LHS: r, Op: op, RHS: e}
+				r = f.foldCompare(r, op, e)
 			}
-		//TODO 		case RelOp:
-		//TODO 			op = f.relOp(s, n)
-		//TODO 		case 0:
-		//TODO 			switch f.ch(n.tok) {
-		//TODO 			default:
-		//TODO 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-		//TODO 			}
+		case RelOp:
+			op = f.relOp(s, n)
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
 	}
 	return r
+}
+
+// relOp returns the operator symbol of a RelOp node.
+func (f *File) relOp(s *Scope, n Node) (r Symbol) {
+	for n := range it(n.ast) {
+		if n.sym == 0 {
+			switch sym := f.ch(n.tok); sym {
+			case EQL, NEQ, LSS, LEQ, GTR, GEQ, LAND, LOR:
+				r = sym
+			default:
+				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+			}
+		}
+	}
+	return r
+}
+
+// relOpTok maps a relational operator symbol to the go/token operator that
+// go/constant uses. It returns token.ILLEGAL for the unsupported logical
+// operators && and ||, which have no constant meaning.
+func relOpTok(op Symbol) token.Token {
+	switch op {
+	case EQL:
+		return token.EQL
+	case NEQ:
+		return token.NEQ
+	case LSS:
+		return token.LSS
+	case LEQ:
+		return token.LEQ
+	case GTR:
+		return token.GTR
+	case GEQ:
+		return token.GEQ
+	}
+	return token.ILLEGAL
+}
+
+// canCompareConst reports whether go/constant can evaluate "x op y" for
+// operands of kind k: equality is defined for every kind, ordering only for
+// numbers and strings (never bool).
+func canCompareConst(k constant.Kind, op token.Token) bool {
+	if op == token.EQL || op == token.NEQ {
+		return true
+	}
+	return k == constant.Int || k == constant.Float || k == constant.String
+}
+
+// foldCompare folds a constant comparison "lhs op rhs" to an untyped boolean
+// constant. Non-constant operands, the unsupported && / || operators, operands
+// of differing kinds, or an ordering comparison of a kind that does not support
+// it all yield an unknown constant, so that constant evaluation never panics.
+func (f *File) foldCompare(lhs ExpressionNode, op Symbol, rhs ExpressionNode) ExpressionNode {
+	lc, lok := lhs.Value().(untypedConst)
+	rc, rok := rhs.Value().(untypedConst)
+	if t := relOpTok(op); t != token.ILLEGAL && lok && rok &&
+		lc.cv != nil && rc.cv != nil && lc.cv.Kind() == rc.cv.Kind() &&
+		lc.cv.Kind() != constant.Unknown && canCompareConst(lc.cv.Kind(), t) {
+		return untypedConst{constant.MakeBool(constant.Compare(lc.cv, t, rc.cv))}
+	}
+	return untypedConst{constant.MakeUnknown()}
 }
 
 // binaryOpTok maps an OctoGo binary operator symbol to the go/token operator
@@ -3548,8 +3603,10 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	//TODO 	var ident *FactorNodeIdent
 	for n := range it(n.ast) {
 		switch n.sym {
-		//TODO 		case Expression:
-		//TODO 			r = &FactorNodeParen{Expression: f.expression(s, n)}
+		case Expression:
+			// A parenthesized "( Expression )": its constant value is the value
+			// of the inner expression.
+			r = f.expression(s, n)
 		//TODO 		case FactorSuffix:
 		//TODO 			ident.FactorSuffix = f.factorSuffix(s, n)
 		case 0:
@@ -3588,12 +3645,8 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 					}
 					r = untypedConst{constant.MakeUnknown()}
 				}
-			//TODO 			case LPAREN, RPAREN:
-			//TODO 				// ok
-			//TODO 			case STRING:
-			//TODO 				if r = constant.MakeFromLiteral(tok.Src(), token.STRING, 0); r == constant.Unknown {
-			//TODO 					f.err(tok.Position(), "invalid string literal: %s", tok.Src())
-			//TODO 				}
+			case LPAREN, RPAREN:
+				// The delimiters of a parenthesized expression.
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
