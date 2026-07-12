@@ -1,0 +1,34 @@
+// Function types resolve in every position they may appear -- parameter, result,
+// variable, struct field, and named type declaration -- including nested and
+// self-referential forms. Their values are not yet type-modelled; this checks
+// that the type resolver accepts them rather than crashing. (The grammar
+// requires named parameters in a function type's signature.)
+
+type Handler func(code int) bool
+
+type Node struct {
+	step func() Node
+}
+
+func apply(cb func(x int) int, n int) int {
+	return n
+}
+
+func make2() func() int {
+	var f func() int
+	return f
+}
+
+func run() {
+	var h Handler
+	_ = h
+
+	var f func(a int, b bool) int
+	_ = f
+
+	var g func(cb func())
+	_ = g
+
+	var v Node
+	_ = v
+}

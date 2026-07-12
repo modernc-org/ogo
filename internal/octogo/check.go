@@ -3527,6 +3527,12 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 			r = f.structType(s, n)
 		case InterfaceType:
 			r = f.interfaceType(s, n)
+		case Signature:
+			// A function type "func" Signature: resolve the signature's parameter
+			// and result types (reported here if undefined).
+			if ft, ok := r.(*FunctionType); ok {
+				ft.Signature = f.signature(s, n)
+			}
 		case Expression:
 			r = &TypeNodeArray{Expression: f.arrayBound(s, n)}
 		case 0:
@@ -3559,6 +3565,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				}
 			case CHAN:
 				r = &TypeNodeChan{}
+			case FUNC:
+				r = &FunctionType{}
 			case MUL:
 				r = &TypeNodePointer{}
 			case LBRACK:
@@ -4009,18 +4017,39 @@ func (f *File) foldBinary(lhs ExpressionNode, op Symbol, rhs ExpressionNode) Exp
 	lc, lok := lhs.Value().(untypedConst)
 	rc, rok := rhs.Value().(untypedConst)
 	if lok && rok && lc.cv != nil && rc.cv != nil {
-		switch op {
-		case SHL, SHR:
-			if n, ok := constant.Uint64Val(rc.cv); ok {
-				return untypedConst{constant.Shift(lc.cv, binaryOpTok(op), uint(n))}
-			}
-		default:
-			if t := binaryOpTok(op); t != token.ILLEGAL {
-				return untypedConst{constant.BinaryOp(lc.cv, t, rc.cv)}
-			}
+		if v, ok := foldConstBinaryOp(lc.cv, op, rc.cv); ok {
+			return untypedConst{v}
 		}
 	}
 	return &BinaryExpressionNode{LHS: lhs, Op: op, RHS: rhs}
+}
+
+// foldConstBinaryOp folds "lhs op rhs" over two constants. go/constant panics on
+// several operand combinations -- division or remainder by zero, a shift count
+// that is negative or too large, an operator not defined for the operands' kinds
+// (e.g. subtracting strings) -- so it recovers from any such panic and yields an
+// unknown constant, which keeps evaluation going without crashing. (Reporting a
+// diagnostic for these, rather than silently accepting them, is future work.) ok
+// is false only when op does not fold to a constant at all.
+func foldConstBinaryOp(lhs constant.Value, op Symbol, rhs constant.Value) (v constant.Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			v, ok = constant.MakeUnknown(), true
+		}
+	}()
+	switch op {
+	case SHL, SHR:
+		n, uok := constant.Uint64Val(rhs)
+		if !uok {
+			return constant.MakeUnknown(), true
+		}
+		return constant.Shift(lhs, binaryOpTok(op), uint(n)), true
+	default:
+		if t := binaryOpTok(op); t != token.ILLEGAL {
+			return constant.BinaryOp(lhs, t, rhs), true
+		}
+	}
+	return nil, false
 }
 
 //TODO func (f *File) relOp(s *Scope, n Node) (r Symbol) {
