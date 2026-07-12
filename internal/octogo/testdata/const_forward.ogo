@@ -1,0 +1,12 @@
+// COMPILE
+
+// Regression: a constant expression that references a constant declared later
+// in source (a forward reference) must not crash the checker. Constants are
+// resolved in source order, so such a reference currently yields an unknown
+// value rather than being fully evaluated -- but it must never panic.
+
+const width = 16
+const area = width * width
+
+const first = second
+const second = 42

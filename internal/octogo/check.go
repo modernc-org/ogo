@@ -3677,7 +3677,15 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				nm := tok.Src()
 				switch d := s.find(nm); x := d.(type) {
 				case *ConstDeclaration:
-					r = x.ConstSpec.Value.Expr()
+					// The value is nil when it has not been evaluated yet -- a
+					// forward or cyclic reference within a constant expression
+					// (constants are resolved in source order). Treat it as an
+					// unknown constant rather than dereferencing nil.
+					if x.ConstSpec != nil && x.ConstSpec.Value != nil {
+						r = x.ConstSpec.Value.Expr()
+					} else {
+						r = untypedConst{constant.MakeUnknown()}
+					}
 				case nil:
 					f.err(tok.Position(), "undefined: %s", nm)
 					r = untypedConst{constant.MakeUnknown()}
