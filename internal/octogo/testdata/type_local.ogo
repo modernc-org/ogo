@@ -1,0 +1,24 @@
+// COMPILE
+
+// Regression: type declarations inside a function body -- named types, structs,
+// and self-referential types -- are declared and usable within the function.
+
+func measure() {
+	type Celsius int
+	var t Celsius
+	_ = t
+
+	type Point struct {
+		x int
+		y int
+	}
+	var p Point
+	_ = p
+
+	type Node struct {
+		val  int
+		next *Node
+	}
+	var n Node
+	_ = n
+}

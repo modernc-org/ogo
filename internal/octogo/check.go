@@ -634,6 +634,12 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			// mirroring the two top-level passes (declareConst + constDecl).
 			f.declareConst(s, c)
 			f.constDecl(s, c)
+		case TypeDecl:
+			// Declare the local type name, then resolve its body, mirroring the
+			// two top-level passes (declareType + typeDecl). A local type is
+			// visible from its declaration onward (Go block scoping).
+			f.declareType(s, c)
+			f.typeDecl(s, c)
 		case Block:
 			f.checkBlock(s.child(), results, c)
 		case Statement:
