@@ -1563,12 +1563,19 @@ func (f *File) registerMethod(s *Scope, n Node) {
 	if !ok {
 		return
 	}
+	if td.methods == nil {
+		td.methods = map[string]*FuncDeclNode{}
+	}
+	if prev := td.methods[method.Src()]; prev != nil {
+		// A second method of the same name on the same receiver type (a value and
+		// a pointer receiver share the base type, so they collide too). Report it
+		// and keep the first, so the collision does not silently shadow.
+		f.err(method.Position(), "method %s.%s redeclared, previous declaration at %v", recvType.Src(), method.Src(), prev.Name.Position())
+		return
+	}
 	fd := &FuncDeclNode{Name: method, Type: &FunctionType{}}
 	if hasSig {
 		fd.Type.Signature = f.signature(s.child(), sig)
-	}
-	if td.methods == nil {
-		td.methods = map[string]*FuncDeclNode{}
 	}
 	td.methods[method.Src()] = fd
 }

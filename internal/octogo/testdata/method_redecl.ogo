@@ -1,0 +1,24 @@
+// A method redeclared on the same receiver type is an error -- including a value
+// and a pointer receiver, which share the base type and so collide. A method of
+// the same name on a different type, and different methods on one type, are fine.
+
+type T struct {
+	x int
+}
+
+func (t T) A() {}
+func (t T) B() {}
+
+// ERROR "method T.A redeclared, previous declaration at"
+func (t *T) A() {}
+
+type U struct {
+	y int
+}
+
+func (u U) A() {}
+
+func run() {
+	var t T
+	t.B()
+}
