@@ -1,0 +1,29 @@
+// Regression: a struct field selection carries the field's type, so it is
+// type-checked wherever a value of that type is expected -- a condition, an
+// operand, or a call argument.
+
+type Sensor struct {
+	value   int
+	enabled bool
+}
+
+func use(n int) {}
+
+func run() {
+	var sr Sensor
+
+	if sr.enabled {
+	}
+
+	y := sr.value + 1
+	_ = y
+
+	use(sr.value)
+
+	// ERROR "non-bool used as if condition"
+	if sr.value {
+	}
+
+	// ERROR "of type bool as type int in argument to use"
+	use(sr.enabled)
+}

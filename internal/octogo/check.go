@@ -922,9 +922,16 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 	switch {
 	case hasSuffix:
 		// A direct call to a named function with a single predeclared result has
-		// that result's type; other suffixes -- a selector, an index, or a
-		// multi-result call -- are not modelled.
-		return f.callResultKind(s, lit, hasLit, suffix)
+		// that result's type, and a field selection "v.field" has the field's
+		// type. Other suffixes -- an index, a multi-result call, a method call --
+		// are not modelled.
+		if k, ok := f.callResultKind(s, lit, hasLit, suffix); ok {
+			return k, true
+		}
+		if field, ok := f.fieldSelector(suffix); ok && hasLit {
+			return f.fieldKind(s, lit, field)
+		}
+		return 0, false
 	case hasParen:
 		return f.exprType(s, paren)
 	case hasLit:
@@ -1461,6 +1468,32 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token) {
 	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 	}
+}
+
+// fieldKind returns the predeclared Kind of "head.field" when head is a variable
+// of a struct type whose field has such a type; ok is false otherwise (an
+// unknown head, non-struct type, missing field, or non-predeclared field type).
+func (f *File) fieldKind(s *Scope, head, field Token) (Kind, bool) {
+	d, ok := s.find(head.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() {
+		return 0, false
+	}
+	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return 0, false
+	}
+	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	if !ok {
+		return 0, false
+	}
+	for _, fld := range st.Fields {
+		for _, nm := range fld.Names {
+			if nm.Src() == field.Src() {
+				return f.typeKind(s, fld.TypeNode)
+			}
+		}
+	}
+	return 0, false
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
