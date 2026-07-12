@@ -47,13 +47,6 @@ func TestOctoGoSpecs(t *testing.T) {
 			if !re.MatchString(path) {
 				continue
 			}
-		default:
-			switch {
-			case
-				strings.Contains(path, "02_"): //TODO name resolving
-
-				continue
-			}
 		}
 
 		t.Log(path)

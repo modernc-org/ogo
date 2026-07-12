@@ -516,7 +516,12 @@
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")"
+//		| "[" [ Expression ] "]" Type
 //		| FuncLiteral .
+//
+// A slice or array type may appear as a Factor only so that a type argument
+// such as the "[]int" in "make([]int, 10)" parses; a type is not a value, and
+// the semantic checker rejects such a use (as it rejects make and new).
 //
 //	FactorSuffix = { Selector | Index } [ CallSuffix ] .
 //	Selector     = "." ( identifier | "(" "type" ")" ) .

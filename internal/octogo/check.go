@@ -1669,8 +1669,18 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		}
 	}
-	if hasID && !hasSuffix && s.find(id.Src()) == nil {
-		f.err(id.Position(), "undefined: %s", id.Src())
+	if hasID && s.find(id.Src()) == nil {
+		switch id.Src() {
+		case "make", "new":
+			// The Go dynamic-allocation builtins have no place on a
+			// zero-allocation, no-GC target; reported even in call position,
+			// where an ordinary undefined name would be left to the callee check.
+			f.err(id.Position(), "dynamic allocation not supported")
+		default:
+			if !hasSuffix {
+				f.err(id.Position(), "undefined: %s", id.Src())
+			}
+		}
 	}
 }
 
