@@ -1,0 +1,30 @@
+// Regression: a direct call to a named function with a single predeclared
+// result carries that result's type, so the result is usable and type-checked
+// where a value of that type is expected.
+
+func ticks() int {
+	return 100
+}
+
+func ready() bool {
+	return true
+}
+
+func use(n int) {}
+
+func run() {
+	use(ticks())
+
+	x := ticks() + 1
+	_ = x
+
+	if ready() {
+	}
+
+	// ERROR "non-bool used as if condition"
+	if ticks() {
+	}
+
+	// ERROR "cannot use ready of type bool as type int in argument to use"
+	use(ready())
+}

@@ -907,21 +907,24 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 // call/index/selector suffix makes the result type unknown.
 func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 	var lit Token
-	var paren Node
+	var paren, suffix Node
 	var hasLit, hasParen, hasSuffix bool
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Expression:
 			paren, hasParen = c, true
 		case FactorSuffix:
-			hasSuffix = true
+			suffix, hasSuffix = c, true
 		case 0:
 			lit, hasLit = f.tok(c.tok), true
 		}
 	}
 	switch {
 	case hasSuffix:
-		return 0, false // call/index/selector result
+		// A direct call to a named function with a single predeclared result has
+		// that result's type; other suffixes -- a selector, an index, or a
+		// multi-result call -- are not modelled.
+		return f.callResultKind(s, lit, hasLit, suffix)
 	case hasParen:
 		return f.exprType(s, paren)
 	case hasLit:
@@ -1718,6 +1721,23 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		}
 	}
+}
+
+// callResultKind returns the type of a suffixed factor when it is a direct call
+// to a named function whose sole result is a predeclared type. A selector,
+// index, or a call with zero or several results yields an unknown type.
+func (f *File) callResultKind(s *Scope, callee Token, hasCallee bool, suffix Node) (Kind, bool) {
+	if _, direct, isCall := f.callInfo(suffix); !hasCallee || !direct || !isCall {
+		return 0, false
+	}
+	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
+	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
+		return 0, false
+	}
+	if results := f.flattenResults(s, fd.FuncDecl.Type.Signature); len(results) == 1 && results[0].known {
+		return results[0].kind, true
+	}
+	return 0, false
 }
 
 // callInfo inspects a FactorSuffix or a Postfix for a call. isCall is true when
