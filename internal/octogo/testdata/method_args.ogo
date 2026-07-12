@@ -1,0 +1,40 @@
+// A call "x.M(...)" to a real method checks the argument count and types against
+// the method's resolved signature, exactly as a direct function call does -- for
+// value and pointer receivers alike, and in statement and expression position.
+
+type Vec struct {
+	x int
+	y int
+}
+
+func (v Vec) Add(dx, dy int) Vec {
+	return v
+}
+
+func (v *Vec) Scale(f int) {}
+
+func run() {
+	var v Vec
+
+	a := v.Add(1, 2)
+	_ = a
+
+	v.Scale(3)
+
+	// ERROR "not enough arguments in call to Add"
+	b := v.Add(1)
+	_ = b
+
+	// ERROR "too many arguments in call to Scale"
+	v.Scale(1, 2)
+
+	var flag bool
+
+	// ERROR "cannot use flag of type bool as type int in argument to Add"
+	c := v.Add(flag, 0)
+	_ = c
+
+	// ERROR "not enough arguments in call to Add"
+	d := v.Add(1)
+	_ = d
+}

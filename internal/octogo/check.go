@@ -1237,7 +1237,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		f.checkCall(s, id, direct && ok, argList)
 		if !direct && ok {
 			if m, has := f.methodCallMember(postfix); has {
-				f.checkMethodExists(s, id, m)
+				f.checkMethodCall(s, id, m, argList)
 			}
 		}
 	}
@@ -1532,16 +1532,21 @@ func (f *File) receiverTypeName(recv Node) (name Token) {
 	return name
 }
 
-// registerMethod records a method with its receiver type, so a method call can
-// be resolved. A non-method declaration is ignored. It runs in phase 3, when
-// every type is in the package scope.
+// registerMethod records a method against its receiver type, with its signature
+// resolved so a method call can be checked. A non-method declaration is ignored.
+// It runs in phase 3, when every type is in the package scope. The signature is
+// resolved in a child of the package scope (like funcDecl), where package-level
+// named types used in parameters/results are visible.
 func (f *File) registerMethod(s *Scope, n Node) {
 	var recvType, method Token
-	hasRecv := false
+	var sig Node
+	hasRecv, hasSig := false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Receiver:
 			recvType, hasRecv = f.receiverTypeName(c), true
+		case Signature:
+			sig, hasSig = c, true
 		case 0:
 			if t := f.tok(c.tok); Symbol(t.Ch) == IDENT {
 				method = t
@@ -1551,12 +1556,18 @@ func (f *File) registerMethod(s *Scope, n Node) {
 	if !hasRecv || !method.IsValid() {
 		return
 	}
-	if td, ok := s.find(recvType.Src()).(*TypeDeclaration); ok {
-		if td.methods == nil {
-			td.methods = map[string]bool{}
-		}
-		td.methods[method.Src()] = true
+	td, ok := s.find(recvType.Src()).(*TypeDeclaration)
+	if !ok {
+		return
 	}
+	fd := &FuncDeclNode{Name: method, Type: &FunctionType{}}
+	if hasSig {
+		fd.Type.Signature = f.signature(s.child(), sig)
+	}
+	if td.methods == nil {
+		td.methods = map[string]*FuncDeclNode{}
+	}
+	td.methods[method.Src()] = fd
 }
 
 // methodCallMember reports whether a FactorSuffix or Postfix is a method call
@@ -1585,22 +1596,38 @@ func (f *File) methodCallMember(n Node) (member Token, ok bool) {
 	return member, selectors == 1 && hasCall && !disqualify
 }
 
-// checkMethodExists reports a call "head.member(...)" when head is a variable of
-// a named type that has no such method (and, for a struct, no such field either
-// -- a field of function type is not modelled, so it is accepted).
-func (f *File) checkMethodExists(s *Scope, head, member Token) {
+// checkMethodCall checks a call "head.member(...)" when head is a variable of a
+// named type. It reports a member that is no method of the type (and, for a
+// struct, no field either -- a field of function type is not modelled, so it is
+// accepted); for a real method it checks the argument count and types against
+// the method's signature.
+func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok || !d.typeName.IsValid() {
 		return
 	}
 	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
-	if !ok || td.methods[member.Src()] {
+	if !ok {
 		return
 	}
-	if fields, isStruct := f.structFields(s, d.typeName); isStruct && fields[member.Src()] {
+	fd := td.methods[member.Src()]
+	if fd == nil {
+		if fields, isStruct := f.structFields(s, d.typeName); isStruct && fields[member.Src()] {
+			return
+		}
+		f.err(member.Position(), "type %s has no method %s", d.typeName.Src(), member.Src())
 		return
 	}
-	f.err(member.Position(), "type %s has no method %s", d.typeName.Src(), member.Src())
+	if fd.Type == nil {
+		return
+	}
+	var args []Node
+	for a := range it(argList.ast) {
+		if a.sym == Expression {
+			args = append(args, a)
+		}
+	}
+	f.checkArgs(s, member, fd.Type.Signature, args)
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
@@ -1930,7 +1957,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			f.checkCall(s, id, direct && hasID, argList)
 			if !direct && hasID {
 				if m, ok := f.methodCallMember(suffix); ok {
-					f.checkMethodExists(s, id, m)
+					f.checkMethodCall(s, id, m, argList)
 				}
 			}
 		} else if field, ok := f.fieldSelector(suffix); ok && hasID {
@@ -2021,24 +2048,29 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
 		return
 	}
-	params := f.flattenParams(s, fd.FuncDecl.Type.Signature)
+	f.checkArgs(s, callee, fd.FuncDecl.Type.Signature, args)
+}
+
+// checkArgs checks already name-resolved arguments against a signature: first
+// arity, then -- when the count matches -- each argument's type against its
+// parameter's. name is the callee/method name used in messages. Conservative:
+// an argument whose type is not yet determined (a call, selector, or unresolved
+// name) or a parameter of a non-predeclared type is left unchecked.
+func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) {
+	params := f.flattenParams(s, sig)
 	switch {
 	case len(args) < len(params):
-		f.err(callee.Position(), "not enough arguments in call to %s", callee.Src())
+		f.err(name.Position(), "not enough arguments in call to %s", name.Src())
 	case len(args) > len(params):
-		f.err(callee.Position(), "too many arguments in call to %s", callee.Src())
+		f.err(name.Position(), "too many arguments in call to %s", name.Src())
 	default:
-		// The count matches: check each argument against its parameter's type.
-		// Conservative: an argument whose type is not yet determined (a call,
-		// selector, or unresolved name) or a parameter of a non-predeclared type
-		// is left unchecked.
 		for i, arg := range args {
 			p := params[i]
 			if !p.known {
 				continue
 			}
 			if ak, aok := f.exprType(s, arg); aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(p.kind) {
-				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.tok(arg.Pos()).Src(), kindName(ak), p.name, callee.Src())
+				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.tok(arg.Pos()).Src(), kindName(ak), p.name, name.Src())
 			}
 		}
 	}
