@@ -1,0 +1,26 @@
+// Regression: a field selection "p.field" of a struct-typed variable is checked
+// against the struct's fields, for both a value and a pointer receiver, and in
+// read and write position.
+
+type Point struct {
+	x int
+	y int
+}
+
+func use() {
+	var p Point
+	p.x = 1
+	a := p.x + p.y
+	_ = a
+
+	var q *Point
+	b := q.y
+	_ = b
+
+	// ERROR "type Point has no field z"
+	c := p.z
+	_ = c
+
+	// ERROR "type Point has no field w"
+	q.w = 5
+}

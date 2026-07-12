@@ -1098,6 +1098,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var names []Token
 		var kind Kind
 		var hasKind, hasInit, isPtr bool
+		var typeName Token
 		var initExpr Node
 		for c := range it(n.ast) {
 			switch c.sym {
@@ -1113,6 +1114,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 					if tn := f.typ(s, c); tn != nil {
 						kind, hasKind = f.typeKind(s, tn)
 						_, isPtr = tn.(*TypeNodePointer)
+						typeName, _ = namedTypeToken(tn)
 					}
 				}
 			case Expression:
@@ -1125,7 +1127,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkNames(s, initExpr)
 		}
 		for _, nm := range names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -1343,17 +1345,25 @@ func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
 // deeper selector operates on its result, which is not modelled.
 func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 	id, ok := f.assignHeadIdent(head)
-	if !ok || !f.isImportQualifier(s, id.Src()) {
+	if !ok {
 		return
 	}
-	for c := range it(postfix.ast) {
-		if c.sym != Selector {
-			continue
-		}
-		if m, ok := f.selectorMember(c); ok && !token.IsExported(m.Src()) {
-			f.err(m.Position(), "cannot refer to unexported name %s.%s", id.Src(), m.Src())
+	if f.isImportQualifier(s, id.Src()) {
+		for c := range it(postfix.ast) {
+			if c.sym != Selector {
+				continue
+			}
+			if m, ok := f.selectorMember(c); ok && !token.IsExported(m.Src()) {
+				f.err(m.Position(), "cannot refer to unexported name %s.%s", id.Src(), m.Src())
+			}
+			return
 		}
 		return
+	}
+	// Not an import qualifier: a "head.field" selection of a struct variable
+	// (e.g. a field assignment "p.x = 1").
+	if field, ok := f.fieldSelector(postfix); ok {
+		f.checkFieldAccess(s, id, field)
 	}
 }
 
@@ -1379,6 +1389,78 @@ func (f *File) selectorMember(n Node) (Token, bool) {
 		}
 	}
 	return Token{}, false
+}
+
+// namedTypeToken returns the name of a named type, following pointers ("*T" and
+// "**T" both yield T); ok is false for an anonymous or composite type.
+func namedTypeToken(tn TypeNode) (Token, bool) {
+	for {
+		switch x := tn.(type) {
+		case *TypeNodeIdent:
+			return x.Name, true
+		case *TypeNodePointer:
+			tn = x.TypeNode
+		default:
+			return Token{}, false
+		}
+	}
+}
+
+// structFields returns the set of field names of a named struct type; ok is
+// false when the name is not a struct (a predeclared type, an interface, or an
+// undefined name), in which case field access is left unchecked.
+func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
+	td, ok := s.find(typeName.Src()).(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return nil, false
+	}
+	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	if !ok {
+		return nil, false
+	}
+	fields := map[string]bool{}
+	for _, fld := range st.Fields {
+		for _, nm := range fld.Names {
+			fields[nm.Src()] = true
+		}
+	}
+	return fields, true
+}
+
+// fieldSelector reports whether a FactorSuffix or Postfix is a single field
+// selection "x.field" -- exactly one selector, no index and no call -- and
+// returns the selected field.
+func (f *File) fieldSelector(n Node) (field Token, ok bool) {
+	selectors, disqualify := 0, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Selector:
+			if m, has := f.selectorMember(c); has {
+				field, selectors = m, selectors+1
+			}
+		case Index, CallSuffix:
+			disqualify = true
+		case PostfixOp:
+			for pc := range it(c.ast) {
+				if pc.sym == CallSuffix {
+					disqualify = true
+				}
+			}
+		}
+	}
+	return field, selectors == 1 && !disqualify
+}
+
+// checkFieldAccess reports a selection "head.field" when head is a variable of a
+// struct type that has no such field.
+func (f *File) checkFieldAccess(s *Scope, head, field Token) {
+	d, ok := s.find(head.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() {
+		return
+	}
+	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {
+		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
+	}
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
@@ -1706,6 +1788,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if hasSuffix {
 		if argList, direct, isCall := f.callInfo(suffix); isCall {
 			f.checkCall(s, id, direct && hasID, argList)
+		} else if field, ok := f.fieldSelector(suffix); ok && hasID {
+			f.checkFieldAccess(s, id, field)
 		}
 	}
 	if hasID && s.find(id.Src()) == nil {
