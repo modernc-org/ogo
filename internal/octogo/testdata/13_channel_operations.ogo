@@ -1,6 +1,3 @@
-//TODO-
-// COMPILE
-
 var intChan chan int
 var boolChan chan bool
 

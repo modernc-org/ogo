@@ -1198,20 +1198,29 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 	}
 
-	// Resolve names used on the right-hand side of "=" and ":=", reporting
-	// undefined ones. A send ("ch <- v") is left to channel checking.
-	if op == ASSIGN || op == DEFINE {
+	// Resolve names used on the right-hand side of "=", ":=" and a send "<-",
+	// reporting undefined ones.
+	if op == ASSIGN || op == DEFINE || op == ARROW {
 		for _, e := range rhs {
 			f.checkNames(s, e)
 		}
 	}
-	// A plain "=" also checks each operand is assignable to its target.
+	// A plain "=" also checks each operand is assignable to its target; a receive
+	// "y = <-ch" additionally checks the channel's element type against y.
 	if op == ASSIGN {
 		for i, e := range rhs {
 			if i < len(lhs) {
+				f.checkRecvAssign(s, lhs[i], e)
 				f.checkAssignType(s, lhs[i], e)
 			}
 		}
+	}
+	// A send "ch <- v" checks that ch is a channel and v matches its element type.
+	if op == ARROW {
+		if len(lhs) == 1 && len(rhs) == 1 {
+			f.checkSend(s, lhs[0], rhs[0])
+		}
+		return
 	}
 
 	if op != DEFINE {
@@ -1233,6 +1242,46 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	}
 	if nonBlank != 0 && newCount == 0 {
 		f.err(f.tok(head.Pos()).Position(), "no new variables on left side of :=")
+	}
+}
+
+// checkSend checks a send statement "ch <- v": ch must be a channel and the
+// value v must match the channel's element type.
+func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
+	d, ok := s.find(chTok.Src()).(*VarDeclaration)
+	if !ok {
+		return // undefined or non-variable operand: not diagnosed here
+	}
+	elem, hasElem, isChan := f.chanElemOf(s, d)
+	if !isChan {
+		f.err(chTok.Position(), "invalid operation: cannot send to non-channel")
+		return
+	}
+	vk, vok := f.exprType(s, valNode)
+	if !hasElem || !vok {
+		return
+	}
+	if kindCategory(vk) != kindCategory(elem) {
+		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.tok(valNode.Pos()).Src(), kindName(vk), kindName(elem))
+	}
+}
+
+// checkRecvAssign checks a receive assignment "target = <-ch": when the right-
+// hand side is a receive from a channel of known element type, that element
+// type must match target's. A receive from a non-channel is reported by
+// checkUnaryExpr, so it is skipped here.
+func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
+	fac, ok := f.receiveFactor(s, rhs)
+	if !ok {
+		return
+	}
+	elem, hasElem, isChan := f.exprChan(s, fac)
+	if !isChan || !hasElem {
+		return
+	}
+	tk, tok := f.identKind(s, target)
+	if tok && kindCategory(tk) != kindCategory(elem) {
+		f.err(f.tok(rhs.Pos()).Position(), "cannot assign value received from chan %s to type %s", kindName(elem), kindName(tk))
 	}
 }
 
@@ -1393,18 +1442,26 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	if !facSet || len(ops) == 0 {
 		return
 	}
-	// The innermost operator (nearest the factor) applies first. A "*" there is
-	// a pointer dereference: valid only when the factor is a pointer, an error
-	// ("cannot indirect") when the factor is a known non-pointer value, and left
-	// alone when the factor's type is not yet determined. Its result type is not
-	// modelled, so the check stops here either way.
-	if inner := ops[len(ops)-1]; f.unaryOp(s, inner) == MUL {
+	// The innermost operator (nearest the factor) applies first. "*" (pointer
+	// dereference) and "<-" (channel receive) require the factor to be a pointer
+	// or channel respectively; a known value of any other type is an error, and
+	// an as-yet-undetermined type is left alone. Their result types are not
+	// modelled, so the check stops here in either case.
+	switch inner := ops[len(ops)-1]; f.unaryOp(s, inner) {
+	case MUL:
 		if _, known := f.exprType(s, fac); known && !f.exprIsPointer(s, fac) {
 			name := "operand"
 			if id, ok := f.exprIdent(fac); ok {
 				name = id.Src()
 			}
 			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s", name)
+		}
+		return
+	case ARROW:
+		if _, _, isChan := f.exprChan(s, fac); !isChan {
+			if _, known := f.exprType(s, fac); known {
+				f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot receive from non-channel")
+			}
 		}
 		return
 	}
@@ -1425,6 +1482,79 @@ func (f *File) exprIsPointer(s *Scope, n Node) bool {
 		}
 	}
 	return false
+}
+
+// chanElemOf reports whether variable d has channel type "chan T" and, if so,
+// T's predeclared Kind. It reads the declared type resolved during Phase 3,
+// which is where every channel in the language's current use is declared (all
+// at package scope).
+func (f *File) chanElemOf(s *Scope, d *VarDeclaration) (elem Kind, hasElem, isChan bool) {
+	if d == nil || d.VarSpec == nil {
+		return 0, false, false
+	}
+	ct, ok := d.VarSpec.TypeNode.(*TypeNodeChan)
+	if !ok {
+		return 0, false, false
+	}
+	elem, hasElem = f.typeKind(s, ct.TypeNode)
+	return elem, hasElem, true
+}
+
+// exprChan reports whether expression n is a bare channel variable and, if so,
+// its element Kind. Like exprIsPointer it is deliberately shallow.
+func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
+	if id, ok := f.exprIdent(n); ok {
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			return f.chanElemOf(s, d)
+		}
+	}
+	return 0, false, false
+}
+
+// receiveFactor reports whether expression n is exactly a receive "<-ch" and,
+// if so, returns the channel operand's Factor node. It unwraps the single-
+// operand expression layers down to the UnaryExpr and requires its sole unary
+// operator to be "<-".
+func (f *File) receiveFactor(s *Scope, n Node) (Node, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+		var next Node
+		found, multi := false, false
+		for c := range it(n.ast) {
+			switch c.sym {
+			case SimpleExpr, Term, UnaryExpr:
+				if found {
+					multi = true
+				}
+				next, found = c, true
+			case RelOp, AddOp, MulOp:
+				multi = true
+			}
+		}
+		if !found || multi {
+			return Node{}, false
+		}
+		n = next
+	}
+	if n.sym != UnaryExpr {
+		return Node{}, false
+	}
+	var fac Node
+	facSet, arrow, ops := false, false, 0
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+		case UnaryOp:
+			ops++
+			if f.unaryOp(s, c) == ARROW {
+				arrow = true
+			}
+		}
+	}
+	if facSet && arrow && ops == 1 {
+		return fac, true
+	}
+	return Node{}, false
 }
 
 // checkUnaryOp reports when a unary operator is not defined for operand kind k
