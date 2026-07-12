@@ -1206,6 +1206,14 @@ func (f *File) assignHeadIdent(n Node) (id Token, ok bool) {
 func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	f.checkSelectors(s, head, postfix)
 
+	// A statement that is a bare call ("h(1, 2)") has its CallSuffix directly in
+	// the Postfix; an assignment/send carries its call inside a right-hand
+	// Expression, which is name-checked (and so call-checked) separately below.
+	if argList, direct, isCall := f.callInfo(postfix); isCall {
+		id, ok := f.assignHeadIdent(head)
+		f.checkCall(s, id, direct && ok, argList)
+	}
+
 	var lhs []Token
 	if id, ok := f.assignHeadIdent(head); ok {
 		lhs = append(lhs, id)
@@ -1678,17 +1686,23 @@ func (f *File) checkUnaryOp(s *Scope, opNode Node, k Kind) (Kind, bool) {
 // literal or a suffixed identifier (call/index/selector) is left alone.
 func (f *File) checkFactorNames(s *Scope, n Node) {
 	var id Token
+	var suffix Node
 	hasID, hasSuffix := false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Expression:
 			f.checkNames(s, c)
 		case FactorSuffix:
-			hasSuffix = true
+			suffix, hasSuffix = c, true
 		case 0:
 			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
 				id, hasID = tok, true
 			}
+		}
+	}
+	if hasSuffix {
+		if argList, direct, isCall := f.callInfo(suffix); isCall {
+			f.checkCall(s, id, direct && hasID, argList)
 		}
 	}
 	if hasID && s.find(id.Src()) == nil {
@@ -1704,6 +1718,78 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		}
 	}
+}
+
+// callInfo inspects a FactorSuffix or a Postfix for a call. isCall is true when
+// a CallSuffix is present; direct is true when no selector or index precedes it
+// (so the operand is itself the callee); argList is the call's ArgumentList
+// node (a zero Node for an empty argument list).
+func (f *File) callInfo(n Node) (argList Node, direct, isCall bool) {
+	direct = true
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Selector, Index:
+			direct = false
+		case CallSuffix:
+			isCall, argList = true, f.callArgList(c)
+		case PostfixOp:
+			for pc := range it(c.ast) {
+				if pc.sym == CallSuffix {
+					isCall, argList = true, f.callArgList(pc)
+				}
+			}
+		}
+	}
+	return argList, direct, isCall
+}
+
+// callArgList returns the ArgumentList of a CallSuffix, or a zero Node when the
+// call has no arguments.
+func (f *File) callArgList(callSuffix Node) (r Node) {
+	for c := range it(callSuffix.ast) {
+		if c.sym == ArgumentList {
+			return c
+		}
+	}
+	return r
+}
+
+// checkCall resolves the names in a call's arguments and, for a direct call to
+// a named function, checks that the number of arguments matches the function's
+// parameters.
+func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
+	var args []Node
+	for a := range it(argList.ast) {
+		if a.sym == Expression {
+			args = append(args, a)
+			f.checkNames(s, a)
+		}
+	}
+	if !direct {
+		return
+	}
+	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
+	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
+		return
+	}
+	n := paramCount(fd.FuncDecl.Type.Signature)
+	switch {
+	case len(args) < n:
+		f.err(callee.Position(), "not enough arguments in call to %s", callee.Src())
+	case len(args) > n:
+		f.err(callee.Position(), "too many arguments in call to %s", callee.Src())
+	}
+}
+
+// paramCount returns the number of parameters declared by a signature.
+func paramCount(sig *SignatureNode) (n int) {
+	if sig == nil || sig.Params == nil {
+		return 0
+	}
+	for _, p := range sig.Params.List {
+		n += len(p.Names)
+	}
+	return n
 }
 
 // exprIdent returns the single identifier of an expression that is exactly a

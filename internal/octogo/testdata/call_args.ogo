@@ -1,0 +1,30 @@
+// Regression: a direct call to a named function checks its argument count, and
+// call arguments are name-resolved. A correct call, including nested calls, is
+// accepted; method and package calls are not counted.
+
+func add(a int, b int) int {
+	return a + b
+}
+
+func noArgs() {}
+
+func use() {
+	x := add(1, 2)
+	_ = x
+
+	noArgs()
+
+	w := add(add(1, 2), 3)
+	_ = w
+
+	// ERROR "not enough arguments in call to add"
+	y := add(1)
+	_ = y
+
+	// ERROR "too many arguments in call to add"
+	z := add(1, 2, 3)
+	_ = z
+
+	// ERROR "too many arguments in call to noArgs"
+	noArgs(1)
+}
