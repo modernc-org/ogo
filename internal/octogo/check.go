@@ -1386,7 +1386,13 @@ func (f *File) checkComparison(s *Scope, n Node) {
 }
 
 // checkRelOp reports an incompatible pair of operands of a relational operator.
+// The logical operators "&&" and "||" are recognized by the grammar but not
+// supported, so any use is rejected here regardless of its operands.
 func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
+	if op := Symbol(f.tok(opNode.Pos()).Ch); op == LAND || op == LOR {
+		f.err(f.tok(opNode.Pos()).Position(), "unexpected token '%s'", f.tok(opNode.Pos()).Src())
+		return
+	}
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)

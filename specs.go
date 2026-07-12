@@ -499,7 +499,7 @@
 // functions to operands.
 //
 //	ExpressionList = Expression { "," Expression } .
-//	Expression     = SimpleExpr [ RelOp SimpleExpr ] .
+//	Expression     = SimpleExpr { RelOp SimpleExpr } .
 //	SimpleExpr     = Term { AddOp Term } .
 //	Term           = UnaryExpr { MulOp UnaryExpr } .
 //
@@ -549,11 +549,12 @@
 //     |, ^).
 //   - Expression (RelOp): Comparison operators (==, !=, <, <=, >, >=).
 //
-// (Note: OctoGo omits the logical && and || operators from the binary operator
-// chain to simplify short-circuit evaluation in the transpiler).
+// (Note: OctoGo does not support the logical && and || operators. They are
+// recognized by the grammar so that a use is rejected with a clear semantic
+// diagnostic rather than a confusing parse error, but they carry no meaning).
 //
 //	UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
-//	RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+//	RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
 //	AddOp = "+" | "-" | "|" | "^" .
 //	MulOp = "*" | "/" | "<<" | ">>" | "&" .
 //

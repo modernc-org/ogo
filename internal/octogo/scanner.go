@@ -22,6 +22,8 @@ var (
 const (
 	EOF       = TOK_EOF       // EOF
 	NEQ       = TOK_0021003d  // "!="
+	LAND      = TOK_00260026  // "&&"
+	LOR       = TOK_007c007c  // "||"
 	DEFINE    = TOK_003a003d  // ":="
 	ARROW     = TOK_003c002d  // "<-"
 	SHL       = TOK_003c003c  // "<<"

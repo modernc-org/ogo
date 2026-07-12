@@ -54,7 +54,7 @@ Receiver       = "(" identifier Type ")" .
 ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 IdentifierList = identifier { "," identifier } .
 ExpressionList = Expression { "," Expression } .
-Expression     = SimpleExpr [ RelOp SimpleExpr ] .
+Expression     = SimpleExpr { RelOp SimpleExpr } .
 SimpleExpr     = Term { AddOp Term } .
 Term           = UnaryExpr { MulOp UnaryExpr } .
 UnaryExpr  = { UnaryOp } Factor .
@@ -70,7 +70,7 @@ Selector     = "." ( identifier | "(" "type" ")" ) .
 Index        = "[" Expression "]" .
 FuncLiteral = "func" Signature Block .
 UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
-RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
 AddOp = "+" | "-" | "|" | "^" .
 MulOp = "*" | "/" | "<<" | ">>" | "&" .
 CallSuffix = "(" [ ArgumentList ] ")" .
