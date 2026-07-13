@@ -1233,6 +1233,19 @@ func (f *File) assignHeadIdent(n Node) (id Token, ok bool) {
 	return id, plain && id.IsValid()
 }
 
+// hasSelectorOrIndex reports whether a node has a direct Selector or Index child:
+// for a Postfix it detects a suffix on the assignment head, for an LhsItem a
+// suffix on that item -- i.e. a "base.field" or "base[i]" target whose base is not
+// itself the assigned value.
+func hasSelectorOrIndex(n Node) bool {
+	for c := range it(n.ast) {
+		if c.sym == Selector || c.sym == Index {
+			return true
+		}
+	}
+	return false
+}
+
 // checkAssignment handles a "AssignHead Postfix" statement. Only ":=" introduces
 // variables: its plainly-named left-hand operands that are not already declared
 // in the current scope are declared here, and it is an error if none of them is
@@ -1254,9 +1267,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 	}
 
+	// lhs holds each target's base identifier; lhsSuffixed[i] reports whether that
+	// target carries a "base.field"/"base[i]" selector or index (so the base is not
+	// itself the assigned value). The head's suffixes are direct children of the
+	// postfix; an LhsItem's are children of the item.
 	var lhs []Token
+	var lhsSuffixed []bool
 	if id, ok := f.assignHeadIdent(head); ok {
 		lhs = append(lhs, id)
+		lhsSuffixed = append(lhsSuffixed, hasSelectorOrIndex(postfix))
 	}
 
 	var op Symbol
@@ -1268,10 +1287,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for n := range it(n.ast) {
 			switch n.sym {
 			case LhsItem:
-				for n := range it(n.ast) {
-					if n.sym == AssignHead {
-						if id, ok := f.assignHeadIdent(n); ok {
+				suffixed := hasSelectorOrIndex(n)
+				for c := range it(n.ast) {
+					if c.sym == AssignHead {
+						if id, ok := f.assignHeadIdent(c); ok {
 							lhs = append(lhs, id)
+							lhsSuffixed = append(lhsSuffixed, suffixed)
 						}
 					}
 				}
@@ -1296,14 +1317,28 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A plain "=" also checks each operand is assignable to its target; a receive
 	// "y = <-ch" additionally checks the channel's element type against y.
 	if op == ASSIGN {
-		// Every target must resolve to something, just as the right-hand side is
-		// name-checked above: report an undefined one (the base variable of a
-		// "base.field"/"base[i]" target included). The blank identifier is always
-		// assignable, and a package qualifier resolves through the file scope, not
-		// s, so both are exempt.
-		for _, tok := range lhs {
-			if nm := tok.Src(); nm != "_" && s.find(nm) == nil && !f.isImportQualifier(s, nm) {
-				f.err(tok.Position(), "undefined: %s", nm)
+		// Every target must resolve to an assignable variable, just as the
+		// right-hand side is name-checked above. A name resolving to nothing is
+		// undefined; one resolving to a constant, function or type is not
+		// assignable. Both apply to the base variable of a "base.field"/"base[i]"
+		// target too -- except that a non-variable base is left to the field/index
+		// check, since "cannot assign to base" would misdescribe "base.field = e".
+		// The blank identifier is always assignable, and a package qualifier
+		// resolves through the file scope, not s, so both are exempt.
+		for i, tok := range lhs {
+			nm := tok.Src()
+			if nm == "_" {
+				continue
+			}
+			switch s.find(nm).(type) {
+			case nil:
+				if !f.isImportQualifier(s, nm) {
+					f.err(tok.Position(), "undefined: %s", nm)
+				}
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+				if !lhsSuffixed[i] {
+					f.err(tok.Position(), "cannot assign to %s", nm)
+				}
 			}
 		}
 		// A field-target assignment "head.field = e" -- the head ident holds the

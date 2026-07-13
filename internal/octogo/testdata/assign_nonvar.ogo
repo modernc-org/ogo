@@ -1,0 +1,31 @@
+// A plain assignment target that resolves to a constant, function or type -- none
+// of which is assignable -- is reported "cannot assign to". A variable target and
+// a blank are fine, as is a local name that shadows an outer constant.
+
+const c = 1
+
+type T int
+
+func fn() {}
+
+func run() {
+	var x int
+	x = 1
+	_ = x
+
+	// ERROR "cannot assign to c"
+	c = 2
+
+	// ERROR "cannot assign to fn"
+	fn = 3
+
+	// ERROR "cannot assign to T"
+	T = 4
+}
+
+// A local variable shadowing the package constant is an assignable target.
+func run2() {
+	var c int
+	c = 5
+	_ = c
+}
