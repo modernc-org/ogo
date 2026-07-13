@@ -1,0 +1,76 @@
+// A statement that follows a terminating statement in the same list is
+// unreachable. Only the first is reported -- the rest of the list is unreachable
+// too, but not repeated. Code after a non-terminating statement (an "if" without
+// "else", a conditional "for") stays reachable.
+
+func afterReturn() {
+	return
+	// ERROR "unreachable code"
+	_ = 0
+}
+
+func afterPanic() {
+	panic("boom")
+	// ERROR "unreachable code"
+	_ = 0
+}
+
+func afterInfiniteFor() {
+	for {
+	}
+	// ERROR "unreachable code"
+	_ = 0
+}
+
+func afterIfElse(c bool) {
+	if c {
+		return
+	} else {
+		return
+	}
+	// ERROR "unreachable code"
+	_ = 0
+}
+
+// Only the first unreachable statement is reported, not every one.
+func onlyFirst() {
+	return
+	// ERROR "unreachable code"
+	_ = 1
+	_ = 2
+}
+
+// Unreachable code nested in a reachable block is reported inside that block.
+func nested() {
+	{
+		return
+		// ERROR "unreachable code"
+		_ = 0
+	}
+}
+
+// A case clause body reports its own unreachable code.
+func inSwitch(x int) {
+	switch x {
+	case 1:
+		return
+		// ERROR "unreachable code"
+		_ = 0
+	}
+}
+
+// Reachable: an "if" without "else" does not terminate the enclosing block.
+func ifNoElse(c bool) {
+	if c {
+		return
+	}
+	_ = 0
+}
+
+// Reachable: a conditional "for" may exit and fall through.
+func conditionalFor(c bool) {
+	for c {
+		return
+	}
+	_ = 0
+}

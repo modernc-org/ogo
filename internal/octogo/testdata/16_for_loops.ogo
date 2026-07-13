@@ -10,15 +10,16 @@ func testForLoops() {
 		}
 	}
 
-	// Valid: Infinite loop (absent condition evaluates to true)
-	for {
-		// Break isn't explicitly in the current EBNF snippet,
-		// but assuming returning works to escape.
-		return
-	}
-
 	// ERROR "non-bool used as for condition|mismatched types"
 	for i {
 		i = i - 1
+	}
+
+	// Valid: Infinite loop (absent condition evaluates to true). A conditionless
+	// "for" is a terminating statement -- there is no break, so "return" escapes
+	// the whole function -- hence it must come last, or the code after it would be
+	// unreachable.
+	for {
+		return
 	}
 }

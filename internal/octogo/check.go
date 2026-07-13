@@ -788,13 +788,28 @@ func (f *File) isPanicCall(head, postfix Node) bool {
 	return ok && id.Src() == "panic"
 }
 
-// checkBlock walks the statements of a block. The caller provides the scope: a
-// function body shares its parameter scope; a nested block gets a child scope.
-// results carries the enclosing function's result types for return checking.
+// checkBlock walks the statements of a block, or of a case or comm clause body,
+// type-checking each and reporting the first statement made unreachable by a
+// preceding terminating statement in the same list. The caller provides the
+// scope: a function body shares its parameter scope; a nested block gets a child
+// scope. results carries the enclosing function's result types for return
+// checking.
 func (f *File) checkBlock(s *Scope, results []retResult, n Node) {
-	for n := range it(n.ast) {
-		if n.sym == Statement {
-			f.checkStatement(s, results, n)
+	terminated, reported := false, false
+	for c := range it(n.ast) {
+		if c.sym != Statement || isEmptyStatement(c) {
+			continue
+		}
+		// A statement following a terminating one cannot be reached. Report only
+		// the first -- the rest of the list is unreachable too -- but keep checking
+		// each, as unreachable code must still be well-formed.
+		if terminated && !reported {
+			f.err(f.tok(c.Pos()).Position(), "unreachable code")
+			reported = true
+		}
+		f.checkStatement(s, results, c)
+		if !terminated {
+			terminated = f.stmtIsTerminating(c)
 		}
 	}
 }
@@ -1276,12 +1291,10 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 }
 
 // checkClauseBody walks the statement body of a case or comm clause in scope s.
+// It is the same statement-list walk as a block, so unreachable code within a
+// clause is reported too.
 func (f *File) checkClauseBody(s *Scope, results []retResult, n Node) {
-	for n := range it(n.ast) {
-		if n.sym == Statement {
-			f.checkStatement(s, results, n)
-		}
-	}
+	f.checkBlock(s, results, n)
 }
 
 // declareLocalVar declares the names of a local var declaration in scope s,
