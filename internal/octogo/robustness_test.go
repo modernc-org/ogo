@@ -31,6 +31,56 @@ func TestCheckerRobustness(t *testing.T) {
 		"type H func(h int)\nfunc run() { var f H; _ = f }\n",
 		"type Node struct{ next func() Node }\nfunc run() { var n Node; _ = n }\n",
 	}
+	buildEach(t, progs)
+}
+
+// TestControlFlowRobustness exercises the statement-level analyses -- terminating
+// statement / missing return, unreachable code, and the unused-variable report --
+// over degenerate and deeply nested bodies, requiring each to be analysed without
+// panicking. These walk the flat statement AST directly (locating blocks, clause
+// bodies, the closing brace, and every identifier), so an unexpected shape must
+// yield a diagnostic or nothing, never a crash.
+func TestControlFlowRobustness(t *testing.T) {
+	progs := []string{
+		// Terminating statement / missing return.
+		"func f() int {}\n",
+		"func f() int { {} }\n",
+		"func f() int { { return 1 } }\n",
+		"func f() int { if a {} }\n",
+		"func f() int { if a { return 1 } else { return 2 } }\n",
+		"func f() int { for {} }\n",
+		"func f() int { for a {} }\n",
+		"func f() int { switch {} }\n",
+		"func f() int { switch a { case 1: return 1 } }\n",
+		"func f() int { switch a { case 1: return 1; default: return 2 } }\n",
+		"func f() int { select {} }\n",
+		"func f() int { panic(0) }\n",
+		"func f() int { panic() }\n",
+		"func f() (a, b int) {}\n",
+		"func f() int {\n\tif a {\n\t\tif b { return 1 } else { return 2 }\n\t} else {\n\t\treturn 3\n\t}\n}\n",
+		"type T struct{ v int }\nfunc (t T) m() int {}\n",
+		"func f() int { go g() }\nfunc g() {}\n",
+		"func f() int { <-ch }\nvar ch chan int\n",
+		// Unreachable code.
+		"func f() { return\n\treturn }\n",
+		"func f() { for {}\n\tx := 1\n\t_ = x }\n",
+		"func f() { { return }\n\tx := 1\n\t_ = x }\n",
+		"func f(a int) { switch a { case 1: return\n\t\tx := 1\n\t\t_ = x } }\n",
+		// Unused variable.
+		"func f() { var x int }\n",
+		"func f() { x := 1 }\n",
+		"func f() { var x, y int\n\t_ = x }\n",
+		"func f() { var x int = x }\n",
+		"func f() { { var x int } }\n",
+		"func f() {\n\tswitch v := 1 {\n\tcase 1:\n\t\tvar x int\n\t}\n}\n",
+		"func f() {\n\tx := 1\n\tx = 2\n}\n",
+	}
+	buildEach(t, progs)
+}
+
+// buildEach runs Build on each program under a recover, failing on any panic.
+func buildEach(t *testing.T, progs []string) {
+	t.Helper()
 	for _, src := range progs {
 		func() {
 			defer func() {
