@@ -1,0 +1,40 @@
+// A degenerate constant operation -- division by zero, a bad shift count, or an
+// operator not defined for the operand kinds -- is reported rather than silently
+// accepted (foldBinary) or crashing the checker (foldUnary). In an array bound
+// the specific cause is reported in place of the generic "non-constant" message.
+
+// ERROR "division by zero"
+const divZeroInt = 1 / 0
+
+// ERROR "division by zero"
+const divZeroFloat = 1.0 / 0.0
+
+// ERROR "negative shift count"
+const negShift = 1 << -1
+
+// ERROR "operator - not defined"
+const strSub = "a" - "b"
+
+// ERROR "operator & not defined"
+const floatBitAnd = 1.5 & 1
+
+// ERROR "operator / not defined"
+const strDiv = "a" / 2
+
+// ERROR "operator << not defined"
+const strShift = "a" << 1
+
+// ERROR "operator - not defined"
+const negString = -"a"
+
+// ERROR "operator \^ not defined"
+const xorFloat = ^1.5
+
+// ERROR "operator ! not defined"
+const notInt = !1
+
+// ERROR "division by zero"
+var divArray [6 / 0]int
+
+// ERROR "operator \^ not defined"
+var xorArray [^1.5]int

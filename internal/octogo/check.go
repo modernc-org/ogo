@@ -4011,45 +4011,122 @@ func binaryOpTok(op Symbol) token.Token {
 }
 
 // foldBinary evaluates "lhs op rhs". When both operands are untyped constants
-// the result is folded to a constant; otherwise a BinaryExpressionNode is
-// returned for later (Phase 4) checking.
-func (f *File) foldBinary(lhs ExpressionNode, op Symbol, rhs ExpressionNode) ExpressionNode {
+// the result is folded to a constant (opTok locates the operator for any
+// diagnostic); otherwise a BinaryExpressionNode is returned for later (Phase 4)
+// checking.
+func (f *File) foldBinary(lhs ExpressionNode, op Symbol, opTok Token, rhs ExpressionNode) ExpressionNode {
 	lc, lok := lhs.Value().(untypedConst)
 	rc, rok := rhs.Value().(untypedConst)
 	if lok && rok && lc.cv != nil && rc.cv != nil {
-		if v, ok := foldConstBinaryOp(lc.cv, op, rc.cv); ok {
+		if v, ok := f.foldConstBinaryOp(opTok, lc.cv, op, rc.cv); ok {
 			return untypedConst{v}
 		}
 	}
 	return &BinaryExpressionNode{LHS: lhs, Op: op, RHS: rhs}
 }
 
-// foldConstBinaryOp folds "lhs op rhs" over two constants. go/constant panics on
-// several operand combinations -- division or remainder by zero, a shift count
-// that is negative or too large, an operator not defined for the operands' kinds
-// (e.g. subtracting strings) -- so it recovers from any such panic and yields an
-// unknown constant, which keeps evaluation going without crashing. (Reporting a
-// diagnostic for these, rather than silently accepting them, is future work.) ok
-// is false only when op does not fold to a constant at all.
-func foldConstBinaryOp(lhs constant.Value, op Symbol, rhs constant.Value) (v constant.Value, ok bool) {
-	defer func() {
-		if recover() != nil {
-			v, ok = constant.MakeUnknown(), true
-		}
-	}()
+// foldConstBinaryOp folds "lhs op rhs" over two constants, reporting a diagnostic
+// for a degenerate operation rather than accepting it or crashing: division by
+// zero, a negative or too-large shift count, and an operator not defined for the
+// operands' kinds (e.g. subtracting strings). A reported operation yields an
+// unknown constant so evaluation continues; a subsequent array-bound or const
+// check that sees the unknown will not pile on a second, vaguer error. An unknown
+// operand -- a value propagating a prior error -- never triggers a report. ok is
+// false only when op does not fold to a constant at all, so the caller builds an
+// expression node instead.
+func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs constant.Value) (v constant.Value, ok bool) {
 	switch op {
+	case QUO:
+		// Division of two numbers by a zero divisor. Requiring both operands
+		// numeric keeps a non-numeric operand (e.g. "s" / 0) on the general
+		// "operator not defined" path below, and skips the report when either is
+		// unknown -- an unknown propagates a prior error.
+		if isNumericConst(lhs) && isNumericConst(rhs) && constant.Sign(rhs) == 0 {
+			f.err(opTok.Position(), "invalid operation: division by zero")
+			return constant.MakeUnknown(), true
+		}
 	case SHL, SHR:
-		n, uok := constant.Uint64Val(rhs)
-		if !uok {
+		// constant.Shift requires an integer value and count. An unknown operand
+		// propagates a prior error, so leave it unmodelled without a report.
+		if lhs.Kind() == constant.Unknown || rhs.Kind() == constant.Unknown {
+			return constant.MakeUnknown(), true
+		}
+		if lhs.Kind() != constant.Int {
+			f.reportBadConstOp(opTok, lhs, nil)
+			return constant.MakeUnknown(), true
+		}
+		if rhs.Kind() != constant.Int {
+			// A non-integer shift count (e.g. a float): leave the result
+			// unmodelled rather than fold.
+			return constant.MakeUnknown(), true
+		}
+		if constant.Sign(rhs) < 0 {
+			f.err(opTok.Position(), "invalid operation: negative shift count %s", rhs)
+			return constant.MakeUnknown(), true
+		}
+		n, exact := constant.Uint64Val(rhs)
+		if !exact {
+			f.err(opTok.Position(), "invalid operation: shift count too large")
 			return constant.MakeUnknown(), true
 		}
 		return constant.Shift(lhs, binaryOpTok(op), uint(n)), true
-	default:
-		if t := binaryOpTok(op); t != token.ILLEGAL {
-			return constant.BinaryOp(lhs, t, rhs), true
-		}
 	}
-	return nil, false
+	t := binaryOpTok(op)
+	if t == token.ILLEGAL {
+		return nil, false
+	}
+	return f.constBinaryOp(opTok, lhs, rhs, t), true
+}
+
+// constBinaryOp evaluates a non-shift constant binary operation. go/constant
+// panics when the operator is not defined for the operands' kinds (subtracting
+// strings, a bitwise operator on floats, arithmetic on bools); recover from that
+// and report it as a diagnostic, yielding an unknown constant. An unknown operand
+// never panics, so a prior error does not produce a spurious report here.
+func (f *File) constBinaryOp(opTok Token, lhs, rhs constant.Value, t token.Token) (v constant.Value) {
+	defer func() {
+		if recover() != nil {
+			f.reportBadConstOp(opTok, lhs, rhs)
+			v = constant.MakeUnknown()
+		}
+	}()
+	return constant.BinaryOp(lhs, t, rhs)
+}
+
+// reportBadConstOp reports that opTok's operator is not defined on the given
+// constant operands' kinds. rhs is nil for a unary operator.
+func (f *File) reportBadConstOp(opTok Token, lhs, rhs constant.Value) {
+	switch {
+	case rhs == nil || lhs.Kind() == rhs.Kind():
+		f.err(opTok.Position(), "invalid operation: operator %s not defined on %s", opTok.Src(), constDesc(lhs))
+	default:
+		f.err(opTok.Position(), "invalid operation: operator %s not defined on %s and %s", opTok.Src(), constDesc(lhs), constDesc(rhs))
+	}
+}
+
+// isNumericConst reports whether cv is an integer or floating-point constant.
+func isNumericConst(cv constant.Value) bool {
+	switch cv.Kind() {
+	case constant.Int, constant.Float:
+		return true
+	}
+	return false
+}
+
+// constDesc names an untyped constant's kind for an operator diagnostic.
+func constDesc(cv constant.Value) string {
+	switch cv.Kind() {
+	case constant.Bool:
+		return "bool"
+	case constant.String:
+		return "string"
+	case constant.Int:
+		return "int"
+	case constant.Float:
+		return "float"
+	default:
+		return "untyped constant"
+	}
 }
 
 //TODO func (f *File) relOp(s *Scope, n Node) (r Symbol) {
@@ -4071,6 +4148,7 @@ func foldConstBinaryOp(lhs constant.Value, op Symbol, rhs constant.Value) (v con
 
 func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 	var op Symbol
+	var opTok Token
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Term:
@@ -4078,10 +4156,11 @@ func (f *File) simpleExpr(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = f.foldBinary(r, op, e)
+				r = f.foldBinary(r, op, opTok, e)
 			}
 		case AddOp:
 			op = f.addOp(s, n)
+			opTok = f.tok(n.Pos())
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
@@ -4109,6 +4188,7 @@ func (f *File) addOp(s *Scope, n Node) (r Symbol) {
 // Term        = Factor { Factor } ․
 func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 	var op Symbol
+	var opTok Token
 	for n := range it(n.ast) {
 		switch n.sym {
 		case UnaryExpr:
@@ -4116,10 +4196,11 @@ func (f *File) term(s *Scope, n Node) (r ExpressionNode) {
 			case r == nil:
 				r = e
 			default:
-				r = f.foldBinary(r, op, e)
+				r = f.foldBinary(r, op, opTok, e)
 			}
 		case MulOp:
 			op = f.mulOp(s, n)
+			opTok = f.tok(n.Pos())
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
@@ -4155,12 +4236,14 @@ type UnaryExprNode struct {
 
 func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
 	var ops []Symbol
+	var opToks []Token
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Factor:
 			r = f.factor(s, n)
 		case UnaryOp:
 			ops = append(ops, f.unaryOp(s, n))
+			opToks = append(opToks, f.tok(n.Pos()))
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
@@ -4168,7 +4251,7 @@ func (f *File) unaryExpr(s *Scope, n Node) (r ExpressionNode) {
 	// A UnaryOp binds tighter the closer it is to the Factor, so apply the
 	// operators right to left.
 	for i := len(ops) - 1; i >= 0; i-- {
-		r = f.foldUnary(ops[i], r)
+		r = f.foldUnary(ops[i], opToks[i], r)
 	}
 	return r
 }
@@ -4193,7 +4276,7 @@ func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
 // foldUnary evaluates a constant unary operation ("+x", "-x", "^x", "!x"). Other
 // unary operators (pointer "*"/"&", receive "<-", "~") and non-constant operands
 // yield a UnaryExprNode for later (Phase 4) checking.
-func (f *File) foldUnary(op Symbol, e ExpressionNode) ExpressionNode {
+func (f *File) foldUnary(op Symbol, opTok Token, e ExpressionNode) ExpressionNode {
 	if c, ok := e.Value().(untypedConst); ok && c.cv != nil {
 		var t token.Token
 		switch op {
@@ -4207,10 +4290,25 @@ func (f *File) foldUnary(op Symbol, e ExpressionNode) ExpressionNode {
 			t = token.NOT
 		}
 		if t != token.ILLEGAL {
-			return untypedConst{constant.UnaryOp(t, c.cv, 0)}
+			return untypedConst{f.constUnaryOp(opTok, t, c.cv)}
 		}
 	}
 	return &UnaryExprNode{List: []Symbol{op}, Factor: e}
+}
+
+// constUnaryOp evaluates a constant unary operation. go/constant panics when the
+// operator is not defined for the operand's kind (negating a string,
+// complementing a float, "!" on a number); recover from that and report it as a
+// diagnostic, yielding an unknown constant. An unknown operand never panics, so a
+// prior error does not produce a spurious report here.
+func (f *File) constUnaryOp(opTok Token, t token.Token, cv constant.Value) (v constant.Value) {
+	defer func() {
+		if recover() != nil {
+			f.reportBadConstOp(opTok, cv, nil)
+			v = constant.MakeUnknown()
+		}
+	}()
+	return constant.UnaryOp(t, cv, 0)
 }
 
 //TODO- // FactorNodeIdent describes the Factor production case
