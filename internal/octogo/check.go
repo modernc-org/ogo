@@ -2163,9 +2163,10 @@ func (f *File) callArgList(callSuffix Node) (r Node) {
 
 // checkCall resolves the names in a call's arguments and, for a direct call
 // (the callee is a bare name, not a selector or index), checks the callee: an
-// unresolved name is reported "undefined", and a resolved function's parameters
-// are checked against the arguments. A call through a selector or index -- a
-// package-qualified call or a method call -- is left to its own checks.
+// unresolved name is reported "undefined", a name resolving to a variable or
+// constant is reported "cannot call non-function", and a resolved function's
+// parameters are checked against the arguments. A call through a selector or
+// index -- a package-qualified call or a method call -- is left to its own checks.
 func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	var args []Node
 	for a := range it(argList.ast) {
@@ -2182,13 +2183,17 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		if d.FuncDecl != nil && d.FuncDecl.Type != nil {
 			f.checkArgs(s, callee, d.FuncDecl.Type.Signature, args)
 		}
+	case *VarDeclaration, *ConstDeclaration:
+		// The callee is a value, not a function: "x()" where x is a variable or a
+		// constant. (A type callee -- "T(x)" -- is an explicit conversion, which
+		// the language requires for mixed numeric types and which is left to its
+		// own, separate check.)
+		f.err(callee.Position(), "cannot call non-function %s", callee.Src())
 	case nil:
 		// A direct call to a name that resolves to nothing. The predeclared
 		// functions (len, cap, append, ...) are not modelled yet -- see the
 		// Universe init TODO -- so exempt their names rather than misreport a
-		// legitimate builtin call as undefined. A name that resolves to a
-		// non-function (a variable, constant or type) is a "cannot call"/conversion
-		// case not diagnosed here yet.
+		// legitimate builtin call as undefined.
 		if !isBuiltinFuncName(callee.Src()) {
 			f.err(callee.Position(), "undefined: %s", callee.Src())
 		}

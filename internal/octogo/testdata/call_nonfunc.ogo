@@ -1,0 +1,24 @@
+// A call whose callee resolves to a variable or a constant -- neither of which is
+// a function -- is reported "cannot call non-function". Calling an actual function
+// is fine. (A type callee is an explicit conversion, checked elsewhere.)
+
+const c = 1
+
+var v int
+
+func fn() {}
+
+func run() {
+	fn()
+
+	// ERROR "cannot call non-function v"
+	v()
+
+	// ERROR "cannot call non-function c"
+	c()
+
+	var w int
+
+	// ERROR "cannot call non-function w"
+	w()
+}
