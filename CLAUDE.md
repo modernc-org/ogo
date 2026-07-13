@@ -145,9 +145,12 @@ runs as far as parse + partial checking.
 
 - `Build()` runs phases 1–3; phases 4 (body/hardware checks) and 5 (deep init
   cycles) are `//TODO` stubs in `build.go`. WPO and C emission are design-only.
-- `TestOctoGoSpecs` (`internal/octogo/tests_test.go`) skips a hardcoded list of
-  testdata files (02, 03, 06, 09, 11, 13, 14, 18, 19, `decl_import`, `decl_redecl`)
-  pending checker work — consult that skip list before assuming a feature is done.
+- `TestOctoGoSpecs` (`internal/octogo/tests_test.go`) runs every `*.ogo` file in
+  `internal/octogo/testdata` — there is no skip list (the historical one was
+  retired as the checker caught up). Each file is annotated `// COMPILE` or
+  `// ERROR <regexp>`; all currently pass, but the checker is still partial, so a
+  green spec is not proof a whole feature is finished — the testdata covers only
+  what has been wired up.
 - `ogo build`/`test`/`version` are unimplemented CLI stubs.
 - `smith` is not yet seed-reproducible (known TODO in `octosmith.go`).
 
