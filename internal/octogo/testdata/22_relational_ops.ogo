@@ -19,4 +19,11 @@ func testRelational() {
 	var num int = 10
 	// ERROR "mismatched types string and int|cannot compare"
 	var inv2 bool = (s1 == num)
+
+	_ = s3
+	_ = isEqual
+	_ = isLess
+	_ = bEq
+	_ = inv1
+	_ = inv2
 }

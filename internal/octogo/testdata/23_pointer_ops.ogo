@@ -12,4 +12,8 @@ func testPointers() {
 
 	// ERROR "invalid operation|operator \+ not defined for pointer"
 	var badMath *int = ptr + 1
+
+	_ = deref
+	_ = invalidDeref
+	_ = badMath
 }

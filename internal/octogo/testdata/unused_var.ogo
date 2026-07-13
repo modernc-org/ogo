@@ -1,0 +1,41 @@
+// A local variable that is never referenced is reported "declared and not used".
+// A variable is used when its name appears anywhere other than at its declaration
+// -- read into another value, passed to a call, or tested in a condition.
+// Parameters, named results and the blank identifier are exempt.
+
+func unused() {
+	// ERROR "declared and not used: a"
+	var a int
+
+	// ERROR "declared and not used: b"
+	b := 5
+}
+
+// Every form of reference counts as a use.
+func used() {
+	var a int
+	_ = a
+
+	b := 5
+	c := b + 1
+	_ = c
+
+	var d int
+	if d == 0 {
+	}
+
+	var e int
+	use(e)
+}
+
+func use(x int) {}
+
+// A parameter and a named result are not local declarations and are exempt.
+func params(p int) (r int) {
+	return p
+}
+
+// The blank identifier is always exempt.
+func blank() {
+	_ = 1
+}

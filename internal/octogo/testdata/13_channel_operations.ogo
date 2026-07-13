@@ -21,4 +21,6 @@ func testChannels() {
 
 	// ERROR "invalid operation|cannot receive from non-channel"
 	var z int = <-notAChan
+
+	_ = z
 }

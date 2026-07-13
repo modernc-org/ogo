@@ -26,4 +26,6 @@ func testStructs() {
 		// ERROR "duplicate field id|id redeclared"
 		id int
 	}
+
+	_ = inlineStruct
 }

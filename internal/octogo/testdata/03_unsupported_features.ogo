@@ -11,4 +11,6 @@ func mathOps() {
 
     // ERROR "unexpected keyword 'defer'"
     defer p2.PinLow(1)
+
+    _ = pi
 }

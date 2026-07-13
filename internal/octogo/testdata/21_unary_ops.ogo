@@ -16,4 +16,12 @@ func testUnary() {
 
 	// ERROR "invalid operation|operator \^ not defined for string"
 	var inv3 string = ^"test"
+
+	_ = negX
+	_ = posX
+	_ = notB
+	_ = bitNotX
+	_ = inv1
+	_ = inv2
+	_ = inv3
 }

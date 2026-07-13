@@ -15,4 +15,8 @@ func testParens() {
 
 	// ERROR "mismatched types int and bool|invalid operation"
 	var inv1 int = (a + b) * (flag1 == flag2)
+
+	_ = result
+	_ = resBool
+	_ = inv1
 }

@@ -6,4 +6,7 @@ func process() {
     
     // ERROR "undeclared name: new|dynamic allocation not supported"
     ptr := new(int)
+
+    _ = buffer
+    _ = ptr
 }

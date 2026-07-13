@@ -3,10 +3,13 @@ func testSwitch() {
 	switch val := 5 {
 	case 1, 2, 3:
 		var x int = val
+		_ = x
 	case 5:
 		var y int = val
+		_ = y
 	default:
 		var z int = 0
+		_ = z
 	}
 
 	var state string = "idle"

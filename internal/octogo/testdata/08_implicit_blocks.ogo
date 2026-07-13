@@ -13,7 +13,7 @@ func testImplicitBlocks() {
 		var caseScoped int = 10
 	case 6:
 		// ERROR "undeclared name|undefined: caseScoped"
-		var b int = caseScoped
+		_ = caseScoped
 	}
 
 	// ERROR "undeclared name|undefined: val"

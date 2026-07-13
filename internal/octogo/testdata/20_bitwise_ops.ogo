@@ -18,4 +18,13 @@ func testBitwise() {
 
 	// ERROR "invalid operation|operator << not defined for string"
 	var inv2 string = text << 1
+
+	_ = c
+	_ = d
+	_ = e
+	_ = f
+	_ = g
+	_ = h
+	_ = inv1
+	_ = inv2
 }

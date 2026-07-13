@@ -196,7 +196,8 @@ type File struct {
 	Scope             *Scope // Kind: FileScope, Parent: Universe
 	errList           ErrList
 	hasInvalidImports bool
-	inArrayBound      bool // evaluating an array length: suppress "is not a constant"
+	inArrayBound      bool              // evaluating an array length: suppress "is not a constant"
+	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -517,6 +518,7 @@ func (f *File) checkBodies(pkg *Scope, n Node) {
 // "func f(x int) { var x int }" is a redeclaration.
 func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	fs := newScope(pkg, BlockScope)
+	f.localVars = nil
 	var results []retResult
 	var body Node
 	hasBody := false
@@ -534,12 +536,57 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 			body, hasBody = n, true
 		}
 	}
+	if !hasBody {
+		return
+	}
 	// A function that declares one or more results must not be able to reach the
 	// end of its body without returning a value: the body must end in a
 	// terminating statement, otherwise control falls off the end -- "missing
 	// return", reported at the closing brace.
-	if hasBody && len(results) != 0 && !f.blockIsTerminating(body) {
+	if len(results) != 0 && !f.blockIsTerminating(body) {
 		f.err(f.tok(body.End()).Position(), "missing return")
+	}
+	f.reportUnusedLocals(body)
+}
+
+// reportUnusedLocals reports each local variable of the function body that is
+// never used. Usage is decided syntactically: a variable is used when its name
+// appears as an identifier somewhere in the body other than at a variable
+// declaration. This is deliberately generous -- any textual reference counts, so a
+// used variable is never falsely reported -- at the cost of not yet catching a
+// variable that is only ever assigned (never read) or one shadowed by an inner
+// declaration of the same name.
+func (f *File) reportUnusedLocals(body Node) {
+	if len(f.localVars) == 0 {
+		return
+	}
+	// The positions of the local declarations themselves, so an occurrence at one
+	// is not counted as a use of the variable it declares.
+	declared := map[string]bool{}
+	for _, vd := range f.localVars {
+		declared[vd.token.Position().String()] = true
+	}
+	used := map[string]bool{}
+	f.collectIdentUses(body, declared, used)
+	for _, vd := range f.localVars {
+		if nm := vd.token.Src(); nm != "_" && !used[nm] {
+			f.err(vd.token.Position(), "declared and not used: %s", nm)
+		}
+	}
+}
+
+// collectIdentUses records, in used, the source text of every identifier token in
+// n's subtree whose position is not a variable declaration (per declared) -- i.e.
+// every referencing occurrence of a name.
+func (f *File) collectIdentUses(n Node, declared, used map[string]bool) {
+	for c := range it(n.ast) {
+		if c.sym != 0 {
+			f.collectIdentUses(c, declared, used)
+			continue
+		}
+		if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !declared[tok.Position().String()] {
+			used[tok.Src()] = true
+		}
 	}
 }
 
@@ -1341,9 +1388,12 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkNames(s, initExpr)
 		}
 		for _, nm := range names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName}); err != nil {
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName}
+			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
+				continue
 			}
+			f.localVars = append(f.localVars, vd)
 		}
 	}
 }
@@ -1575,6 +1625,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			}
 		}
 		_ = s.add(vd)
+		f.localVars = append(f.localVars, vd)
 		newCount++
 	}
 	if nonBlank != 0 && newCount == 0 {

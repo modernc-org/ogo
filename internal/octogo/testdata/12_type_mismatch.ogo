@@ -16,4 +16,6 @@ func testTypes() {
 
 	// ERROR "invalid operation|mismatched types int and string"
 	var d int = a + c
+
+	_ = d
 }

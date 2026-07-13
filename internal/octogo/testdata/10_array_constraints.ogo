@@ -13,4 +13,8 @@ func testArrays() {
 	// (Assuming string literals cannot be array bounds)
 	// ERROR "invalid array bound|cannot convert"
 	var strArray ["hello"]int
+
+	_ = dynArray
+	_ = negArray
+	_ = strArray
 }
