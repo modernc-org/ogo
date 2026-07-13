@@ -1,0 +1,101 @@
+// A function that declares a result must end in a terminating statement; otherwise
+// control can fall off the end without returning a value ("missing return",
+// reported at the closing brace). Because OctoGo has no break, continue,
+// fallthrough or goto, a conditionless "for" loops forever, a switch terminates
+// only with a default whose every clause terminates, and a select terminates when
+// its every clause does.
+
+type T struct{ v int }
+
+// Terminating -- these compile.
+
+func returns() int {
+	return 1
+}
+
+func infiniteFor() int {
+	for {
+	}
+}
+
+func ifElse(c bool) int {
+	if c {
+		return 1
+	} else {
+		return 2
+	}
+}
+
+func switchDefault(x int) int {
+	switch x {
+	case 1:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func emptySelect() int {
+	select {}
+}
+
+func bareBlock() int {
+	{
+		return 1
+	}
+}
+
+func panics() int {
+	panic("boom")
+}
+
+func (t T) value() int {
+	return t.v
+}
+
+func noResult() {
+}
+
+// Non-terminating -- control reaches the closing brace.
+
+func emptyBody() int {
+	// ERROR "missing return"
+}
+
+func ifNoElse(c bool) int {
+	if c {
+		return 1
+	}
+	// ERROR "missing return"
+}
+
+func conditionalFor(c bool) int {
+	for c {
+		return 1
+	}
+	// ERROR "missing return"
+}
+
+func switchNoDefault(x int) int {
+	switch x {
+	case 1:
+		return 1
+	}
+	// ERROR "missing return"
+}
+
+func plainStatement() int {
+	var x int
+	_ = x
+	// ERROR "missing return"
+}
+
+// A named result does not exempt a function: an explicit return is still required.
+func named() (x int) {
+	x = 1
+	// ERROR "missing return"
+}
+
+func (t T) missing() int {
+	// ERROR "missing return"
+}

@@ -518,6 +518,8 @@ func (f *File) checkBodies(pkg *Scope, n Node) {
 func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	fs := newScope(pkg, BlockScope)
 	var results []retResult
+	var body Node
+	hasBody := false
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Receiver:
@@ -529,7 +531,15 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 			results = f.flattenResults(fs, sig)
 		case Block:
 			f.checkBlock(fs, results, n)
+			body, hasBody = n, true
 		}
+	}
+	// A function that declares one or more results must not be able to reach the
+	// end of its body without returning a value: the body must end in a
+	// terminating statement, otherwise control falls off the end -- "missing
+	// return", reported at the closing brace.
+	if hasBody && len(results) != 0 && !f.blockIsTerminating(body) {
+		f.err(f.tok(body.End()).Position(), "missing return")
 	}
 }
 
@@ -620,6 +630,162 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 			}
 		}
 	}
+}
+
+// blockIsTerminating reports whether a block's statement list ends in a
+// terminating statement, following Go's terminating-statement rules. The analysis
+// is simpler than Go's because OctoGo has no break, continue, fallthrough or goto:
+// nothing can jump out of an enclosing loop, switch or select, so a conditionless
+// "for" loops forever and a switch or select terminates exactly when all of its
+// clause bodies do -- no break-target bookkeeping is required.
+func (f *File) blockIsTerminating(block Node) bool {
+	last, ok := f.lastStatement(block)
+	return ok && f.stmtIsTerminating(last)
+}
+
+// lastStatement returns the final non-empty statement among a node's direct
+// children -- the statements of a block, or of a case or comm clause body. The
+// automatic-semicolon and closing-brace tokens are not statements and are
+// ignored; a body with no statement returns ok == false.
+func (f *File) lastStatement(n Node) (last Node, ok bool) {
+	for c := range it(n.ast) {
+		if c.sym == Statement && !isEmptyStatement(c) {
+			last, ok = c, true
+		}
+	}
+	return last, ok
+}
+
+// isEmptyStatement reports whether a statement is the empty statement (a bare
+// ";"), which wraps an EmptyStatement child. Skipping it keeps a trailing ";"
+// from masking a preceding terminating statement.
+func isEmptyStatement(stmt Node) bool {
+	for c := range it(stmt.ast) {
+		if c.sym == EmptyStatement {
+			return true
+		}
+	}
+	return false
+}
+
+// stmtIsTerminating reports whether a single statement is terminating: a return;
+// a call to the built-in panic; a conditionless "for"; an "if" whose "if" and
+// "else" branches both terminate; a switch with a default whose every clause
+// terminates; a select whose every clause terminates; or a bare block that
+// terminates. Any other statement can be followed by more code and so does not
+// terminate.
+func (f *File) stmtIsTerminating(stmt Node) bool {
+	var blocks []Node
+	var switchStmt, selectStmt, head, postfix Node
+	var isReturn, isFor, isIf, hasSwitch, hasSelect, hasHead, hasPostfix bool
+	exprCount := 0
+	for c := range it(stmt.ast) {
+		switch c.sym {
+		case Block:
+			blocks = append(blocks, c)
+		case SwitchStmt:
+			switchStmt, hasSwitch = c, true
+		case SelectStmt:
+			selectStmt, hasSelect = c, true
+		case AssignHead:
+			head, hasHead = c, true
+		case Postfix:
+			postfix, hasPostfix = c, true
+		case Expression:
+			exprCount++
+		case 0:
+			switch f.ch(c.tok) {
+			case RETURN:
+				isReturn = true
+			case FOR:
+				isFor = true
+			case IF:
+				isIf = true
+			}
+		}
+	}
+	switch {
+	case isReturn:
+		return true
+	case isFor:
+		// A conditionless "for" loops forever; a conditional one falls through
+		// when its condition is false. No break exists to exit either.
+		return exprCount == 0
+	case isIf:
+		// Terminating only with both an "if" and an "else" branch (two blocks),
+		// each terminating. Without "else" there is one block, which control skips
+		// when the condition is false.
+		return len(blocks) == 2 && f.blockIsTerminating(blocks[0]) && f.blockIsTerminating(blocks[1])
+	case hasSwitch:
+		return f.switchIsTerminating(switchStmt)
+	case hasSelect:
+		return f.selectIsTerminating(selectStmt)
+	case len(blocks) == 1 && !hasHead:
+		return f.blockIsTerminating(blocks[0]) // a bare block statement
+	case hasHead && hasPostfix:
+		return f.isPanicCall(head, postfix) // an expression statement
+	}
+	return false
+}
+
+// switchIsTerminating reports whether an expression switch terminates: it must
+// have a default clause and every clause body -- the default included -- must end
+// in a terminating statement. OctoGo has no break, so none can escape the switch.
+func (f *File) switchIsTerminating(n Node) bool {
+	hasDefault := false
+	for c := range it(n.ast) {
+		if c.sym != CaseClause {
+			continue
+		}
+		if f.caseIsDefault(c) {
+			hasDefault = true
+		}
+		if !f.blockIsTerminating(c) {
+			return false
+		}
+	}
+	return hasDefault
+}
+
+// selectIsTerminating reports whether a select terminates: every communication
+// clause body must end in a terminating statement. A select blocks until one
+// clause can proceed, so -- unlike a switch -- it needs no default; an empty
+// select blocks forever and so terminates vacuously.
+func (f *File) selectIsTerminating(n Node) bool {
+	for c := range it(n.ast) {
+		if c.sym == CommClause && !f.blockIsTerminating(c) {
+			return false
+		}
+	}
+	return true
+}
+
+// caseIsDefault reports whether a case clause is the "default" clause: its
+// CaseHead is the keyword "default", with no expression list.
+func (f *File) caseIsDefault(caseClause Node) bool {
+	for head := range it(caseClause.ast) {
+		if head.sym != CaseHead {
+			continue
+		}
+		for c := range it(head.ast) {
+			if c.sym == 0 && f.ch(c.tok) == DEFAULT {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isPanicCall reports whether an expression statement is a direct call to the
+// built-in function panic, which does not return. head is the statement's
+// AssignHead and postfix its Postfix; a selector, index or method call (an
+// indirect call) is not the built-in.
+func (f *File) isPanicCall(head, postfix Node) bool {
+	if _, direct, isCall := f.callInfo(postfix); !isCall || !direct {
+		return false
+	}
+	id, ok := f.assignHeadIdent(head)
+	return ok && id.Src() == "panic"
 }
 
 // checkBlock walks the statements of a block. The caller provides the scope: a
