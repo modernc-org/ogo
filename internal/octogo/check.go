@@ -1296,6 +1296,16 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A plain "=" also checks each operand is assignable to its target; a receive
 	// "y = <-ch" additionally checks the channel's element type against y.
 	if op == ASSIGN {
+		// Every target must resolve to something, just as the right-hand side is
+		// name-checked above: report an undefined one (the base variable of a
+		// "base.field"/"base[i]" target included). The blank identifier is always
+		// assignable, and a package qualifier resolves through the file scope, not
+		// s, so both are exempt.
+		for _, tok := range lhs {
+			if nm := tok.Src(); nm != "_" && s.find(nm) == nil && !f.isImportQualifier(s, nm) {
+				f.err(tok.Position(), "undefined: %s", nm)
+			}
+		}
 		// A field-target assignment "head.field = e" -- the head ident holds the
 		// base variable and the selector is in the postfix, so the plain-target
 		// loop below sees only the (struct) head and skips it; check the field here.

@@ -1,0 +1,32 @@
+// An assignment target must resolve to something, just as the right-hand side is
+// name-checked: an undefined target is reported, including the base variable of a
+// "base.field" or "base[i]" target. A blank target, a defined variable (local or
+// package-level), and the base of a valid field/element assignment are fine.
+
+var g int
+
+type T struct{ v int }
+
+func run() {
+	var x int
+	var t T
+	var a [3]int
+
+	x = 1
+	g = 2
+	t.v = 3
+	a[0] = 4
+	_ = 5
+	_ = x
+	_ = t
+	_ = a
+
+	// ERROR "undefined: zzz"
+	zzz = 6
+
+	// ERROR "undefined: base"
+	base.v = 7
+
+	// ERROR "undefined: arr"
+	arr[0] = 8
+}
