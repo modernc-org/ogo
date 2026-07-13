@@ -1,0 +1,30 @@
+// A direct call to an undefined name is reported "undefined", finishing the
+// callee check that a suffixed identifier is deferred to. A predeclared function
+// name (len, cap, append, ...) is exempt until such builtins are modelled, and a
+// call to a function declared anywhere in the package -- including later than the
+// call -- resolves. A package-qualified or method call goes through a selector,
+// so it is not a direct call and is unaffected.
+
+func defined() {}
+
+func later() {}
+
+func run() {
+	defined()
+	later()
+
+	var s []int
+	_ = len(s)
+	_ = cap(s)
+	s = append(s, 1)
+	_ = s
+
+	// ERROR "undefined: nope"
+	nope()
+
+	// ERROR "undefined: prynt"
+	prynt("x")
+
+	// ERROR "undefined: gone"
+	_ = gone()
+}

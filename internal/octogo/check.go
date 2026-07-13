@@ -2111,9 +2111,11 @@ func (f *File) callArgList(callSuffix Node) (r Node) {
 	return r
 }
 
-// checkCall resolves the names in a call's arguments and, for a direct call to
-// a named function, checks that the number of arguments matches the function's
-// parameters.
+// checkCall resolves the names in a call's arguments and, for a direct call
+// (the callee is a bare name, not a selector or index), checks the callee: an
+// unresolved name is reported "undefined", and a resolved function's parameters
+// are checked against the arguments. A call through a selector or index -- a
+// package-qualified call or a method call -- is left to its own checks.
 func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	var args []Node
 	for a := range it(argList.ast) {
@@ -2125,11 +2127,36 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	if !direct {
 		return
 	}
-	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
-	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
-		return
+	switch d := s.find(callee.Src()).(type) {
+	case *FuncDeclaration:
+		if d.FuncDecl != nil && d.FuncDecl.Type != nil {
+			f.checkArgs(s, callee, d.FuncDecl.Type.Signature, args)
+		}
+	case nil:
+		// A direct call to a name that resolves to nothing. The predeclared
+		// functions (len, cap, append, ...) are not modelled yet -- see the
+		// Universe init TODO -- so exempt their names rather than misreport a
+		// legitimate builtin call as undefined. A name that resolves to a
+		// non-function (a variable, constant or type) is a "cannot call"/conversion
+		// case not diagnosed here yet.
+		if !isBuiltinFuncName(callee.Src()) {
+			f.err(callee.Position(), "undefined: %s", callee.Src())
+		}
 	}
-	f.checkArgs(s, callee, fd.FuncDecl.Type.Signature, args)
+}
+
+// isBuiltinFuncName reports whether name is one of Go's predeclared function
+// names. OctoGo does not register these in the Universe yet, so a direct call to
+// one must not be reported as undefined; registering them, with signatures for
+// argument checking, is separate work.
+func isBuiltinFuncName(name string) bool {
+	switch name {
+	case "append", "cap", "clear", "close", "complex", "copy", "delete",
+		"imag", "len", "make", "max", "min", "new", "panic", "print",
+		"println", "real", "recover":
+		return true
+	}
+	return false
 }
 
 // checkArgs checks already name-resolved arguments against a signature: first
