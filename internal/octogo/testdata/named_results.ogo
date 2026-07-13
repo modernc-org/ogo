@@ -1,0 +1,24 @@
+// COMPILE
+
+// A named result parameter shares the function body scope with the parameters and
+// locals, so it can be referenced and assigned in the body just like a local
+// variable -- in a plain function, a multi-result function, and a method alike.
+
+func explicitReturn() (x int) {
+	x = 1
+	return x
+}
+
+func multiResult(p int) (a, b int) {
+	a = p
+	b = p
+	return a, b
+}
+
+type T struct{ v int }
+
+func (t T) accumulate(d int) (r int) {
+	r = t.v
+	r = r + d
+	return r
+}

@@ -524,7 +524,8 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 			f.declareReceiver(fs, n)
 		case Signature:
 			sig := f.signature(fs, n)
-			f.declareParams(fs, sig)
+			f.declareParamList(fs, sig.Params)
+			f.declareParamList(fs, sig.Results)
 			results = f.flattenResults(fs, sig)
 		case Block:
 			f.checkBlock(fs, results, n)
@@ -597,15 +598,19 @@ func (f *File) typeKind(s *Scope, tn TypeNode) (Kind, bool) {
 	return 0, false
 }
 
-// declareParams declares a signature's parameter names in scope s.
-func (f *File) declareParams(s *Scope, sig *SignatureNode) {
-	if sig.Params == nil {
+// declareParamList declares the named parameters or results in list into scope s.
+// A named result shares the body scope with the parameters and locals, so it may
+// be referenced and assigned in the body; an unnamed entry (an unnamed result)
+// declares nothing, and a name shared by a parameter and a result is a
+// redeclaration.
+func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
+	if list == nil {
 		return
 	}
-	for _, p := range sig.Params.List {
-		// Record each parameter's type so its uses are checked like a local
-		// variable's: a predeclared Kind, whether it is a pointer, and its
-		// named (possibly pointed-to) type for field access.
+	for _, p := range list.List {
+		// Record each name's type so its uses are checked like a local variable's:
+		// a predeclared Kind, whether it is a pointer, and its named (possibly
+		// pointed-to) type for field access.
 		kind, hasKind := f.typeKind(s, p.TypeNode)
 		_, isPtr := p.TypeNode.(*TypeNodePointer)
 		typeName, _ := namedTypeToken(p.TypeNode)
