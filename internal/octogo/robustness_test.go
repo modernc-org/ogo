@@ -35,12 +35,12 @@ func TestCheckerRobustness(t *testing.T) {
 }
 
 // TestControlFlowRobustness exercises the statement-level analyses -- terminating
-// statement / missing return, unreachable code, the unused-variable report, and
-// the multiple-defaults report -- over degenerate and deeply nested bodies,
-// requiring each to be analysed without panicking. These walk the flat statement
-// AST directly (locating blocks, clause bodies, clause heads, the closing brace,
-// and every identifier), so an unexpected shape must yield a diagnostic or
-// nothing, never a crash.
+// statement / missing return, unreachable code, the unused-variable report, the
+// multiple-defaults report, and "go"-statement call checking -- over degenerate
+// and deeply nested bodies, requiring each to be analysed without panicking. These
+// walk the flat statement AST directly (locating blocks, clause bodies, clause
+// heads, the callee and CallSuffix, the closing brace, and every identifier), so
+// an unexpected shape must yield a diagnostic or nothing, never a crash.
 func TestControlFlowRobustness(t *testing.T) {
 	progs := []string{
 		// Terminating statement / missing return.
@@ -82,6 +82,14 @@ func TestControlFlowRobustness(t *testing.T) {
 		"func f() { select { default:\n\tdefault: } }\n",
 		"func f() { select { case <-ch:\n\tdefault:\n\tdefault: } }\nvar ch chan int\n",
 		"func f() { switch { default: switch { default:\n\t\tdefault: } } }\n",
+		// "go" statement calls: an undefined or non-function callee, an undefined
+		// argument, a package/method-style call, and a parenthesized (non-plain)
+		// callee, each resolved and checked without crashing.
+		"func f() { go nope() }\n",
+		"func f() { go nope(bad) }\n",
+		"func f() { go p.q() }\n",
+		"func f(x int) { go x() }\n",
+		"func f() { go (g)() }\nfunc g() {}\n",
 	}
 	buildEach(t, progs)
 }

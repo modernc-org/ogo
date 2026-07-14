@@ -873,11 +873,13 @@ func (f *File) checkBlock(s *Scope, results []retResult, n Node) {
 
 // checkStatement handles the statement forms Phase 4 currently understands:
 // local variable/constant declarations (reporting redeclarations), return
-// statements (operand arity and, for literal operands, result type), and nested
-// blocks (if/for bodies, in a child scope). Other forms are not yet checked.
+// statements (operand arity and, for literal operands, result type), "go"
+// statements (the launched call's callee and arguments), and nested blocks (if/for
+// bodies, in a child scope). Other forms are not yet checked.
 func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	var head Node
 	isReturn := false
+	isGo := false
 	condKw := "" // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
 		switch c.sym {
@@ -918,6 +920,8 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			switch f.ch(c.tok) {
 			case RETURN:
 				isReturn = true
+			case GO:
+				isGo = true
 			case IF, FOR:
 				condKw = f.tok(c.tok).Src()
 			case DEFER:
@@ -929,6 +933,31 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	}
 	if isReturn {
 		f.checkReturn(s, results, stmt)
+	}
+	if isGo {
+		f.checkGoStmt(s, head, stmt)
+	}
+}
+
+// checkGoStmt checks a "go" statement's launched call. A go statement is
+// "go" AssignHead { Selector | Index } CallSuffix: it starts the call on another
+// Cog but is otherwise an ordinary call, so its callee is resolved (an undefined
+// or non-function callee reported) and its arguments name- and type-checked
+// exactly as a call statement's are. The call is not wrapped in a Postfix as a
+// call statement's is, so the statement node itself carries the selectors and the
+// CallSuffix the call helpers scan for.
+func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
+	f.checkSelectors(s, head, stmt)
+	argList, direct, isCall := f.callInfo(stmt)
+	if !isCall {
+		return
+	}
+	id, ok := f.assignHeadIdent(head)
+	f.checkCall(s, id, direct && ok, argList)
+	if !direct && ok {
+		if m, has := f.methodCallMember(stmt); has {
+			f.checkMethodCall(s, id, m, argList)
+		}
 	}
 }
 

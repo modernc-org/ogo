@@ -1,0 +1,47 @@
+// A "go" statement launches a function call on another Cog. Its callee and
+// arguments are checked exactly as an ordinary call's: an undefined or
+// non-function callee, and undefined or mismatched arguments, are reported. A
+// defined function, a matching argument and a real method are accepted.
+
+type T struct{ v int }
+
+func (t T) M() {}
+
+func worker() {}
+
+func take(x int) {}
+
+func valid() {
+	go worker()
+	var n int = 3
+	go take(n)
+	var t T
+	go t.M()
+}
+
+func undefinedCallee() {
+	// ERROR "undefined: nope"
+	go nope()
+}
+
+func undefinedArgument() {
+	// ERROR "undefined: bad"
+	go take(bad)
+}
+
+func nonFunctionCallee() {
+	var x int = 0
+	// ERROR "cannot call non-function x"
+	go x()
+}
+
+func tooFewArguments() {
+	// ERROR "not enough arguments in call to take"
+	go take()
+}
+
+func badMethod() {
+	var t T
+	// ERROR "type T has no method Absent"
+	go t.Absent()
+}
