@@ -35,11 +35,12 @@ func TestCheckerRobustness(t *testing.T) {
 }
 
 // TestControlFlowRobustness exercises the statement-level analyses -- terminating
-// statement / missing return, unreachable code, and the unused-variable report --
-// over degenerate and deeply nested bodies, requiring each to be analysed without
-// panicking. These walk the flat statement AST directly (locating blocks, clause
-// bodies, the closing brace, and every identifier), so an unexpected shape must
-// yield a diagnostic or nothing, never a crash.
+// statement / missing return, unreachable code, the unused-variable report, and
+// the multiple-defaults report -- over degenerate and deeply nested bodies,
+// requiring each to be analysed without panicking. These walk the flat statement
+// AST directly (locating blocks, clause bodies, clause heads, the closing brace,
+// and every identifier), so an unexpected shape must yield a diagnostic or
+// nothing, never a crash.
 func TestControlFlowRobustness(t *testing.T) {
 	progs := []string{
 		// Terminating statement / missing return.
@@ -74,6 +75,13 @@ func TestControlFlowRobustness(t *testing.T) {
 		"func f() { { var x int } }\n",
 		"func f() {\n\tswitch v := 1 {\n\tcase 1:\n\t\tvar x int\n\t}\n}\n",
 		"func f() {\n\tx := 1\n\tx = 2\n}\n",
+		// Multiple defaults in a switch or select, including a select comm clause
+		// (a CommHead default, distinct from a switch's CaseHead) and nesting.
+		"func f() { switch { default:\n\tdefault: } }\n",
+		"func f(a int) { switch a { case 1:\n\tdefault:\n\tdefault: } }\n",
+		"func f() { select { default:\n\tdefault: } }\n",
+		"func f() { select { case <-ch:\n\tdefault:\n\tdefault: } }\nvar ch chan int\n",
+		"func f() { switch { default: switch { default:\n\t\tdefault: } } }\n",
 	}
 	buildEach(t, progs)
 }

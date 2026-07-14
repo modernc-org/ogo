@@ -1,0 +1,21 @@
+// A switch or a select may have at most one default clause. A second (or later)
+// default is a compile error, reported at that clause and pointing at the first;
+// the first default is accepted.
+
+func switchDefaults() {
+	switch {
+	default:
+		// ERROR "multiple defaults in switch"
+	default:
+		// ERROR "multiple defaults in switch"
+	default:
+	}
+}
+
+func selectDefaults() {
+	select {
+	default:
+		// ERROR "multiple defaults in select"
+	default:
+	}
+}

@@ -807,20 +807,30 @@ func (f *File) selectIsTerminating(n Node) bool {
 	return true
 }
 
-// caseIsDefault reports whether a case clause is the "default" clause: its
-// CaseHead is the keyword "default", with no expression list.
+// caseIsDefault reports whether a case clause is the "default" clause.
 func (f *File) caseIsDefault(caseClause Node) bool {
-	for head := range it(caseClause.ast) {
-		if head.sym != CaseHead {
+	_, ok := f.clauseDefaultToken(caseClause)
+	return ok
+}
+
+// clauseDefaultToken returns the "default" keyword token of a switch case clause
+// or a select comm clause when the clause is the default clause -- its head is the
+// keyword "default", with no expression or communication operation. The keyword
+// lives in the clause's head: a CaseHead for a switch (CaseHead = "case"
+// ExpressionList | "default") or a CommHead for a select (CommHead = "case"
+// CommOp | "default"). A non-default clause returns ok == false.
+func (f *File) clauseDefaultToken(clause Node) (tok Token, ok bool) {
+	for head := range it(clause.ast) {
+		if head.sym != CaseHead && head.sym != CommHead {
 			continue
 		}
 		for c := range it(head.ast) {
 			if c.sym == 0 && f.ch(c.tok) == DEFAULT {
-				return true
+				return f.tok(c.tok), true
 			}
 		}
 	}
-	return false
+	return tok, false
 }
 
 // isPanicCall reports whether an expression statement is a direct call to the
@@ -1223,11 +1233,37 @@ func (f *File) identKind(s *Scope, tok Token) (Kind, bool) {
 	return 0, false
 }
 
+// reportMultipleDefaults reports each default clause after the first among a
+// switch's case clauses or a select's comm clauses. A switch or select may have at
+// most one default; a second (or later) one is a compile error, reported at that
+// clause and pointing at the first. clauseSym selects the clause production
+// (CaseClause for a switch, CommClause for a select) and kind names the statement
+// in the message.
+func (f *File) reportMultipleDefaults(n Node, clauseSym Symbol, kind string) {
+	var first Token
+	haveFirst := false
+	for c := range it(n.ast) {
+		if c.sym != clauseSym {
+			continue
+		}
+		tok, ok := f.clauseDefaultToken(c)
+		if !ok {
+			continue
+		}
+		if !haveFirst {
+			first, haveFirst = tok, true
+			continue
+		}
+		f.err(tok.Position(), "multiple defaults in %s (first at %v)", kind, first.Position())
+	}
+}
+
 // checkSwitch walks a switch statement in its own implicit block scope: it
 // determines the guard's type, declares a "v := expr" guard variable (visible in
 // the clauses but not after the switch), checks each case expression is
 // comparable to the guard, and walks each clause body in a nested scope.
 func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
+	f.reportMultipleDefaults(n, CaseClause, "switch")
 	ss := s.child()
 	var guardKind Kind
 	guardOK := false
@@ -1330,6 +1366,7 @@ func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
 // checkSelect walks the communication clauses of a select statement, each in its
 // own block scope. The communication operations are not checked yet.
 func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
+	f.reportMultipleDefaults(n, CommClause, "select")
 	for n := range it(n.ast) {
 		if n.sym == CommClause {
 			f.checkClauseBody(s.child(), results, n)
