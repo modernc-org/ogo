@@ -49,7 +49,8 @@ func TestCheckerRobustness(t *testing.T) {
 // TestControlFlowRobustness exercises the statement-level analyses -- terminating
 // statement / missing return, unreachable code, the unused-variable report, the
 // multiple-defaults report, "go"-statement call checking, duplicate-case detection
-// with case-expression folding, and the assignment count mismatch -- over
+// with case-expression folding, the assignment count mismatch, and constant-
+// overflow folding at a var initializer, an assignment and a call argument -- over
 // degenerate and deeply nested bodies, requiring each to be analysed without
 // panicking. These walk the flat statement AST directly (locating blocks, clause
 // bodies, clause heads and their case expressions, assignment targets and right-
@@ -123,6 +124,18 @@ func TestControlFlowRobustness(t *testing.T) {
 		"func f(g int) {\n\tvar a, b int\n\ta, b = g()\n\t_ = a\n\t_ = b\n}\n",
 		"func f() {\n\tvar ch chan int\n\tvar a, b int\n\ta, b = <-ch\n\t_ = a\n\t_ = b\n\t_ = ch\n}\n",
 		"func f() {\n\tvar a, b, c, d, e int\n\ta, b = (c + d) * e\n\t_ = a\n\t_ = b\n}\n",
+		// Constant-overflow folding at a var initializer, an assignment and a call
+		// argument: the value is folded only to range-check it, over an overflowing
+		// literal, a non-constant operand (a parameter, a call, a receive), an
+		// undefined name, a division by zero and a conversion -- none panicking.
+		"func f() {\n\tvar x uint8 = 300\n\t_ = x\n}\n",
+		"func f() {\n\tvar x uint8\n\tx = 300\n\t_ = x\n}\n",
+		"func g(v uint8) {}\nfunc f() { g(300) }\n",
+		"func f(y int) {\n\tvar x uint8 = y\n\t_ = x\n}\n",
+		"func f() {\n\tvar ch chan int\n\tvar x uint8 = <-ch\n\t_ = x\n\t_ = ch\n}\n",
+		"func f() {\n\tvar x uint8 = nope\n\t_ = x\n}\n",
+		"func f() {\n\tvar x uint8 = 1 / 0\n\t_ = x\n}\n",
+		"func f(y int) {\n\tvar x uint8 = uint8(y)\n\t_ = x\n}\n",
 	}
 	buildEach(t, progs)
 }

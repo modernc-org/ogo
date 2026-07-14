@@ -1,0 +1,88 @@
+// A constant value that does not fit a sized integer type is reported ("constant
+// N overflows T") wherever the value meets the type: a variable initializer, a
+// plain assignment, and a call argument -- not only in a typed constant
+// declaration. A run-time value (another variable, a call, a channel receive) is
+// not constant and is never range-checked, and the target's own type name is used
+// (canonicalised only for a ":="-inferred variable, which records none).
+
+func take8(v uint8) {}
+func takeTwo(a int8, b uint16) {}
+func giveU8() uint8 { return 0 }
+
+func varInitializers() {
+	// ERROR "constant 300 overflows uint8"
+	var a uint8 = 300
+	// ERROR "constant 128 overflows int8"
+	var b int8 = 127 + 1
+	// ERROR "constant -1 overflows uint16"
+	var c uint16 = -1
+	// ERROR "constant 3000000000 overflows int"
+	var d int = 3000000000
+
+	// In range: no report.
+	var e uint8 = 255
+	var f int8 = -128
+	var g uint16 = 65535
+
+	_ = a
+	_ = b
+	_ = c
+	_ = d
+	_ = e
+	_ = f
+	_ = g
+}
+
+func assignments() {
+	var x uint8
+	var y int16
+
+	// ERROR "constant 300 overflows uint8"
+	x = 300
+	// ERROR "constant 40000 overflows int16"
+	y = 40000
+
+	// In range.
+	x = 200
+	y = -100
+
+	_ = x
+	_ = y
+}
+
+func arguments() {
+	// ERROR "constant 300 overflows uint8"
+	take8(300)
+	// ERROR "constant 70000 overflows uint16"
+	takeTwo(1, 70000)
+
+	// In range.
+	take8(255)
+	takeTwo(-5, 65535)
+}
+
+// A ":="-inferred variable carries the width of its initializer, so an
+// overflowing assignment to it is reported under the type's canonical name.
+func inferred() {
+	var seed uint8 = 1
+	count := seed
+	// ERROR "constant 300 overflows uint8"
+	count = 300
+	_ = count
+	_ = seed
+}
+
+// A run-time value is not folded: another variable, a call and a channel receive
+// each pass without a range check whatever the target width.
+func runtimeValues(ch chan int) {
+	var from int = 300
+	var a uint8 = giveU8()
+	var b uint8 = <-ch
+	var c uint8 = 5
+	c = uint8(from)
+
+	_ = a
+	_ = b
+	_ = c
+	_ = from
+}

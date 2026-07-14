@@ -1097,6 +1097,29 @@ func intKindRange(k Kind) (lo, hi constant.Value, ok bool) {
 	return constant.MakeInt64(lo64), constant.MakeInt64(hi64), true
 }
 
+// sizedKindName returns the canonical source name of a predeclared integer type,
+// used in an overflow message when the target's own type token is not recorded (a
+// ":="-inferred variable); an explicitly typed target keeps its written name.
+func sizedKindName(k Kind) string {
+	switch k {
+	case PredeclaredInt8:
+		return "int8"
+	case PredeclaredInt16:
+		return "int16"
+	case PredeclaredInt32:
+		return "int32"
+	case PredeclaredUint8:
+		return "uint8"
+	case PredeclaredUint16:
+		return "uint16"
+	case PredeclaredUint32:
+		return "uint32"
+	case PredeclaredUintptr:
+		return "uintptr"
+	}
+	return "?"
+}
+
 // isBoolKind reports whether k is a boolean type (predeclared or untyped).
 func isBoolKind(k Kind) bool {
 	return k == PredeclaredBool || k == UntypedBool
@@ -1544,6 +1567,9 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		// so a variable is not visible within its own initializer.
 		if hasInit {
 			f.checkNames(s, initExpr)
+			if hasKind {
+				f.checkValueOverflow(s, sizedTarget(kind, typeName), initExpr)
+			}
 		}
 		for _, nm := range names {
 			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName}
@@ -2417,10 +2443,18 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 	lk, lok := f.identKind(s, lhsTok)
 	rk, rok := f.exprType(s, rhsNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)
-	if !lok || !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+	if !lok || !rok || lc == catUnknown || rc == catUnknown {
 		return
 	}
-	f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+	if lc != rc {
+		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+		return
+	}
+	// Same type class: a constant assigned to a sized integer variable may still
+	// overflow it, e.g. "x = 300" where x is uint8.
+	if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok && d.hasKind {
+		f.checkValueOverflow(s, sizedTarget(d.kind, d.typeName), rhsNode)
+	}
 }
 
 // checkFieldAssign reports a type mismatch in a field assignment "head.field =
@@ -2764,9 +2798,14 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 			if !p.known {
 				continue
 			}
-			if ak, aok := f.exprType(s, arg); aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(p.kind) {
+			ak, aok := f.exprType(s, arg)
+			if aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(p.kind) {
 				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.tok(arg.Pos()).Src(), kindName(ak), p.name, name.Src())
+				continue
 			}
+			// Same type class: a constant argument may still overflow a sized
+			// integer parameter, e.g. passing 300 for a uint8 parameter.
+			f.checkValueOverflow(s, p, arg)
 		}
 	}
 }
@@ -4508,20 +4547,77 @@ func (f *File) checkConstOverflow(s *Scope, cs *ConstSpecNode, pos token.Positio
 	if !ok {
 		return
 	}
-	lo, hi, ok := intKindRange(k)
+	uc, ok := cs.Value.(untypedConst)
 	if !ok {
 		return
 	}
-	uc, ok := cs.Value.(untypedConst)
-	if !ok || uc.cv == nil || uc.cv.Kind() != constant.Int {
+	if !pos.IsValid() {
+		pos = cs.Name.Position()
+	}
+	f.reportOverflow(pos, uc.cv, k, id.Name.Src())
+}
+
+// checkValueOverflow reports a constant value used where the sized integer type
+// dst is required -- a var initializer, an assignment right-hand side, or a call
+// argument -- whose value does not fit dst, e.g. "var x int8 = 200" -> "constant
+// 200 overflows int8". n is the source value, already name-checked by its caller;
+// constValue folds it only to read the value. A non-integer target, a
+// non-constant n, or a non-integer constant is left alone.
+func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
+	if _, _, ok := intKindRange(dst.kind); !ok {
 		return
 	}
-	if constant.Compare(uc.cv, token.LSS, lo) || constant.Compare(uc.cv, token.GTR, hi) {
-		if !pos.IsValid() {
-			pos = cs.Name.Position()
-		}
-		f.err(pos, "constant %s overflows %s", uc.cv, id.Name.Src())
+	if cv, ok := f.constValue(s, n); ok {
+		f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
 	}
+}
+
+// reportOverflow reports "constant CV overflows NAME" when cv is an integer
+// constant outside the inclusive range of the sized integer type kind. A
+// non-integer kind, or a nil or non-integer cv, is ignored. name is the type as
+// written in source.
+func (f *File) reportOverflow(pos token.Position, cv constant.Value, kind Kind, name string) {
+	lo, hi, ok := intKindRange(kind)
+	if !ok || cv == nil || cv.Kind() != constant.Int {
+		return
+	}
+	if constant.Compare(cv, token.LSS, lo) || constant.Compare(cv, token.GTR, hi) {
+		f.err(pos, "constant %s overflows %s", cv, name)
+	}
+}
+
+// constValue folds an already name-checked expression to its integer constant
+// value for a range check, returning ok == false when it is not a known integer
+// constant (a variable, a call, a receive, or a non-integer or ill-formed
+// constant). The fold serves only to read the value: n is analysed by its caller,
+// so any diagnostic the fold would add here -- including the "is not a constant"
+// the folder emits for a run-time operand, which is legal in these positions --
+// is discarded. A file's bodies are checked serially, so trimming its error list
+// back is safe.
+func (f *File) constValue(s *Scope, n Node) (constant.Value, bool) {
+	n0 := len(f.errList)
+	e := f.expression(s, n)
+	f.errList = f.errList[:n0]
+	if e == nil {
+		return nil, false
+	}
+	uc, ok := e.Value().(untypedConst)
+	if !ok || uc.cv == nil || uc.cv.Kind() != constant.Int {
+		return nil, false
+	}
+	return uc.cv, true
+}
+
+// sizedTarget builds the overflow-report descriptor for a var or assignment
+// target of predeclared type kind: its type as written in source (typeName), or,
+// for a ":="-inferred variable that records no type token, the type's canonical
+// name.
+func sizedTarget(kind Kind, typeName Token) retResult {
+	name := typeName.Src()
+	if name == "" {
+		name = sizedKindName(kind)
+	}
+	return retResult{name: name, kind: kind}
 }
 
 // ExpressionNode represents the Expression production or any of its
