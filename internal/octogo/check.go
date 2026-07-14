@@ -1646,6 +1646,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 
 	var op Symbol
 	var rhs []Node
+	lhsItems := 0 // targets after the head: the LhsItems of "a, b = ...", counted structurally so a non-plain "*p" or "(e)" target counts too
 	for n := range it(postfix.ast) {
 		if n.sym != PostfixOp {
 			continue
@@ -1653,6 +1654,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for n := range it(n.ast) {
 			switch n.sym {
 			case LhsItem:
+				lhsItems++
 				suffixed := hasSelectorOrIndex(n)
 				for c := range it(n.ast) {
 					if c.sym == AssignHead {
@@ -1670,6 +1672,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 					op = sym
 				}
 			}
+		}
+	}
+
+	// An "=" or ":=" pairs the left-hand targets with the values produced by the
+	// single right-hand expression (the grammar admits no value list); their counts
+	// must match. The targets are the head plus each LhsItem.
+	if op == ASSIGN || op == DEFINE {
+		if v, ok := f.rhsValueCount(s, rhs); ok && v != 1+lhsItems {
+			f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but %s", countUnits(1+lhsItems, "variable"), countUnits(v, "value"))
 		}
 	}
 
@@ -1763,6 +1774,139 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if nonBlank != 0 && newCount == 0 {
 		f.err(f.tok(head.Pos()).Position(), "no new variables on left side of :=")
 	}
+}
+
+// rhsValueCount returns the number of values the right-hand side of an assignment
+// produces, when that number is known. The grammar admits a single right-hand
+// expression, which yields one value unless it is a call or a channel receive: a
+// direct call to a known function yields its result count, and an expression with
+// neither a call nor a receive yields exactly one (the language has no map-index or
+// type-assertion comma-ok forms). A method or package call, a receive, an indirect
+// call, or a compound expression that merely contains a call is left unknown, so a
+// count mismatch there is not reported rather than risk a false one.
+func (f *File) rhsValueCount(s *Scope, rhs []Node) (int, bool) {
+	if len(rhs) != 1 {
+		return 0, false
+	}
+	e := rhs[0]
+	if r, ok := f.directCallResultCount(s, e); ok {
+		return r, true
+	}
+	if !f.exprHasCallOrReceive(e) {
+		return 1, true
+	}
+	return 0, false
+}
+
+// directCallResultCount returns the result count of the function called by an
+// expression that is exactly a direct call to a named function -- "f(...)" with no
+// operator, selector or index around it. Any other expression (an operator
+// expression, a method or package call, a call through a variable, a name or a
+// literal) returns ok == false, leaving its value count to rhsValueCount.
+func (f *File) directCallResultCount(s *Scope, e Node) (int, bool) {
+	fac, ok := f.soleFactor(e)
+	if !ok {
+		return 0, false
+	}
+	var callee Token
+	var suffix Node
+	hasCallee, hasSuffix := false, false
+	for c := range it(fac.ast) {
+		switch c.sym {
+		case FactorSuffix:
+			suffix, hasSuffix = c, true
+		case 0:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+				callee, hasCallee = tok, true
+			}
+		}
+	}
+	if !hasCallee || !hasSuffix {
+		return 0, false
+	}
+	// The suffix must be exactly a call with no leading selector or index, so the
+	// callee is the named function itself (not a method or package call).
+	if _, direct, isCall := f.callInfo(suffix); !direct || !isCall {
+		return 0, false
+	}
+	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
+	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
+		return 0, false
+	}
+	return len(f.flattenResults(s, fd.FuncDecl.Type.Signature)), true
+}
+
+// soleFactor returns the single Factor of an expression that applies no operator --
+// an Expression with no relational operator, a SimpleExpr with no additive one, a
+// Term with no multiplicative one and a UnaryExpr with no unary one -- i.e. a bare
+// operand such as a literal, a name or a call. Any operator (including a unary "-",
+// "*" or "<-") yields ok == false.
+func (f *File) soleFactor(n Node) (Node, bool) {
+	switch n.sym {
+	case Expression, SimpleExpr, Term:
+		var operand Node
+		count := 0
+		for c := range it(n.ast) {
+			switch c.sym {
+			case RelOp, AddOp, MulOp:
+				return Node{}, false
+			case SimpleExpr, Term, UnaryExpr:
+				operand, count = c, count+1
+			}
+		}
+		if count != 1 {
+			return Node{}, false
+		}
+		return f.soleFactor(operand)
+	case UnaryExpr:
+		var fac Node
+		count := 0
+		for c := range it(n.ast) {
+			switch c.sym {
+			case UnaryOp:
+				return Node{}, false
+			case Factor:
+				fac, count = c, count+1
+			}
+		}
+		if count != 1 {
+			return Node{}, false
+		}
+		return fac, true
+	case Factor:
+		return n, true
+	}
+	return Node{}, false
+}
+
+// exprHasCallOrReceive reports whether an expression contains a call (a CallSuffix)
+// or a channel receive (a "<-" operator) anywhere -- the only expression forms that
+// can yield more than one value, so an expression with neither yields exactly one.
+func (f *File) exprHasCallOrReceive(n Node) bool {
+	for c := range it(n.ast) {
+		switch c.sym {
+		case CallSuffix:
+			return true
+		case 0:
+			if f.ch(c.tok) == ARROW {
+				return true
+			}
+		default:
+			if f.exprHasCallOrReceive(c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// countUnits renders a count with its unit noun, pluralised: "1 variable",
+// "2 variables", "1 value", "3 values".
+func countUnits(n int, unit string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, unit)
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }
 
 // checkSend checks a send statement "ch <- v": ch must be a channel and the

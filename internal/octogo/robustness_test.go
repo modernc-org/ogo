@@ -36,12 +36,13 @@ func TestCheckerRobustness(t *testing.T) {
 
 // TestControlFlowRobustness exercises the statement-level analyses -- terminating
 // statement / missing return, unreachable code, the unused-variable report, the
-// multiple-defaults report, "go"-statement call checking, and duplicate-case
-// detection -- over degenerate and deeply nested bodies, requiring each to be
-// analysed without panicking. These walk the flat statement AST directly (locating
-// blocks, clause bodies, clause heads and their case expressions, the callee and
-// CallSuffix, the closing brace, and every identifier), so an unexpected shape must
-// yield a diagnostic or nothing, never a crash.
+// multiple-defaults report, "go"-statement call checking, duplicate-case detection
+// and the assignment count mismatch -- over degenerate and deeply nested bodies,
+// requiring each to be analysed without panicking. These walk the flat statement
+// AST directly (locating blocks, clause bodies, clause heads and their case
+// expressions, assignment targets and right-hand sides, the callee and CallSuffix,
+// the closing brace, and every identifier), so an unexpected shape must yield a
+// diagnostic or nothing, never a crash.
 func TestControlFlowRobustness(t *testing.T) {
 	progs := []string{
 		// Terminating statement / missing return.
@@ -100,6 +101,14 @@ func TestControlFlowRobustness(t *testing.T) {
 		"func f() {\n\tvar x int = 0\n\tswitch x {\n\tcase nope:\n\t}\n}\n",
 		"func f() {\n\tvar x int = 0\n\tswitch x {\n\tcase 1 / 0:\n\t}\n}\n",
 		"func f() { switch { case true: case true: } }\n",
+		// Assignment count mismatch: the single right-hand side's value count against
+		// the left-hand targets, over a literal, an undefined and a non-function
+		// call, a receive, and a nested operator expression.
+		"func f() {\n\tvar a, b int\n\ta, b = 1\n\t_ = a\n\t_ = b\n}\n",
+		"func f() {\n\ta, b := nope()\n\t_ = a\n\t_ = b\n}\n",
+		"func f(g int) {\n\tvar a, b int\n\ta, b = g()\n\t_ = a\n\t_ = b\n}\n",
+		"func f() {\n\tvar ch chan int\n\tvar a, b int\n\ta, b = <-ch\n\t_ = a\n\t_ = b\n\t_ = ch\n}\n",
+		"func f() {\n\tvar a, b, c, d, e int\n\ta, b = (c + d) * e\n\t_ = a\n\t_ = b\n}\n",
 	}
 	buildEach(t, progs)
 }

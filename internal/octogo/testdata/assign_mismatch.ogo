@@ -1,0 +1,51 @@
+// An "=" or ":=" must supply one right-hand value per left-hand target. The right-
+// hand side is a single expression, so it yields one value unless it is a call: a
+// call to a function returning a different number of values is a mismatch too,
+// while a call whose result count matches -- and a receive or a method/package
+// call, whose count is not modelled -- is accepted.
+
+func one() int {
+	return 1
+}
+
+func two() (a, b int) {
+	return 1, 2
+}
+
+func tooFewLiterals() {
+	var a, b int
+	// ERROR "assignment mismatch: 2 variables but 1 value"
+	a, b = 1
+}
+
+func tooFewDefine() {
+	// ERROR "assignment mismatch: 2 variables but 1 value"
+	a, b := 1
+	_ = a
+	_ = b
+}
+
+func callReturnsFewer() {
+	// ERROR "assignment mismatch: 2 variables but 1 value"
+	a, b := one()
+	_ = a
+	_ = b
+}
+
+func callReturnsMore() {
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	x := two()
+	_ = x
+}
+
+func matchingMultiResult() {
+	a, b := two()
+	_ = a
+	_ = b
+}
+
+func matchingSingle() {
+	var a int
+	a = one()
+	_ = a
+}
