@@ -257,11 +257,13 @@ type TypeDeclaration struct {
 // VarDeclaration represents a named run time value.
 type VarDeclaration struct {
 	declaration
-	VarSpec  *VarSpecNode
-	kind     Kind  // the variable's type, when it resolves to a predeclared type
-	hasKind  bool  // kind is meaningful
-	isPtr    bool  // the variable's type is a pointer "*T"
-	typeName Token // the variable's named (possibly pointed-to) type, for field access
+	VarSpec     *VarSpecNode
+	kind        Kind  // the variable's type, when it resolves to a predeclared type
+	hasKind     bool  // kind is meaningful
+	isPtr       bool  // the variable's type is a pointer "*T"
+	typeName    Token // the variable's named (possibly pointed-to) type, for field access
+	elemKind    Kind  // the predeclared element/pointed-to type of a pointer, array or slice variable, for deref/index assignment
+	hasElemKind bool  // elemKind is meaningful
 }
 
 // FuncDeclaration represents a named function.

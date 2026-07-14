@@ -711,6 +711,23 @@ func (f *File) typeKind(s *Scope, tn TypeNode) (Kind, bool) {
 	return 0, false
 }
 
+// elemTypeKind returns the predeclared Kind of the element type of a pointer,
+// array or slice type ("*T", "[N]T", "[]T") -- the type reached by a dereference
+// "*p" or an index "a[i]". ok is false for any other type, or when the element
+// type is not predeclared (e.g. a struct), so an unmodelled element leaves the
+// assignment unchecked rather than misreported.
+func (f *File) elemTypeKind(s *Scope, tn TypeNode) (Kind, bool) {
+	switch x := tn.(type) {
+	case *TypeNodePointer:
+		return f.typeKind(s, x.TypeNode)
+	case *TypeNodeArray:
+		return f.typeKind(s, x.TypeNode)
+	case *TypeNodeSlice:
+		return f.typeKind(s, x.TypeNode)
+	}
+	return 0, false
+}
+
 // declareParamList declares the named parameters or results in list into scope s.
 // A named result shares the body scope with the parameters and locals, so it may
 // be referenced and assigned in the body; an unnamed entry (an unnamed result)
@@ -727,8 +744,9 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		kind, hasKind := f.typeKind(s, p.TypeNode)
 		_, isPtr := p.TypeNode.(*TypeNodePointer)
 		typeName, _ := namedTypeToken(p.TypeNode)
+		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -1593,8 +1611,8 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		// The IdentifierList precedes the Type, so collect the names and resolve
 		// the type's Kind first, then bind the names carrying that Kind.
 		var names []Token
-		var kind Kind
-		var hasKind, hasInit, isPtr bool
+		var kind, elemKind Kind
+		var hasKind, hasInit, isPtr, hasElemKind bool
 		var typeName Token
 		var initExpr Node
 		for c := range it(n.ast) {
@@ -1612,6 +1630,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						kind, hasKind = f.typeKind(s, tn)
 						_, isPtr = tn.(*TypeNodePointer)
 						typeName, _ = namedTypeToken(tn)
+						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 					}
 				}
 			case Expression:
@@ -1627,7 +1646,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			}
 		}
 		for _, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind}
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue
@@ -1831,6 +1850,16 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if field, ok := f.fieldSelector(postfix); ok && len(rhs) == 1 {
 			if id, idok := f.assignHeadIdent(head); idok {
 				f.checkFieldAssign(s, id, field, rhs[0])
+			}
+		}
+		// A dereference "*p = e" or an element "a[i] = e" target -- a single target
+		// with a single value. The pointed-to/element type must accept the value,
+		// and the base must actually be a pointer/array.
+		if lhsItems == 0 && len(rhs) == 1 {
+			if base, ok := f.derefAssignTarget(head, postfix); ok {
+				f.checkDerefAssign(s, base, rhs[0])
+			} else if base, ok := f.indexAssignTarget(head, postfix); ok {
+				f.checkIndexAssign(s, base, rhs[0])
 			}
 		}
 		for i, e := range rhs {
@@ -2523,6 +2552,113 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 		return
 	}
 	f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+}
+
+// derefAssignTarget reports the base identifier of a dereference assignment target
+// "*base = e". The head must be exactly one "*" applied to a plain identifier (a
+// multi-star "**p" or a parenthesized operand is not modelled) and the postfix must
+// carry no further selector or index, so the whole target is the single dereference.
+func (f *File) derefAssignTarget(head, postfix Node) (base Token, ok bool) {
+	if hasSelectorOrIndex(postfix) {
+		return Token{}, false
+	}
+	stars := 0
+	for c := range it(head.ast) {
+		if c.sym != 0 {
+			return Token{}, false
+		}
+		switch tok := f.tok(c.tok); Symbol(tok.Ch) {
+		case MUL:
+			stars++
+		case IDENT:
+			base = tok
+		default:
+			return Token{}, false
+		}
+	}
+	return base, stars == 1 && base.IsValid()
+}
+
+// indexAssignTarget reports the base identifier of an element assignment target
+// "base[i] = e": the head is a plain identifier and the postfix carries exactly one
+// index and no selector or call, so the target is a single element of base.
+func (f *File) indexAssignTarget(head, postfix Node) (base Token, ok bool) {
+	id, ok := f.assignHeadIdent(head)
+	if !ok {
+		return Token{}, false
+	}
+	indexes, disqualify := 0, false
+	for c := range it(postfix.ast) {
+		switch c.sym {
+		case Index:
+			indexes++
+		case Selector:
+			disqualify = true
+		case PostfixOp:
+			for pc := range it(c.ast) {
+				if pc.sym == CallSuffix {
+					disqualify = true
+				}
+			}
+		}
+	}
+	return id, indexes == 1 && !disqualify
+}
+
+// checkDerefAssign checks a dereference assignment target "*base = rhs". The base
+// must be a pointer variable; a known scalar cannot be dereferenced ("cannot
+// indirect"). When it is a pointer to a predeclared type, the right-hand side must
+// be assignable to that pointed-to type. An undefined base is reported here because
+// a dereference head carries no plain identifier for the general target loop to see.
+func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
+	d, ok := s.find(base.Src()).(*VarDeclaration)
+	if !ok {
+		if s.find(base.Src()) == nil && !f.isImportQualifier(s, base.Src()) {
+			f.err(base.Position(), "undefined: %s", base.Src())
+		}
+		return
+	}
+	if !d.isPtr {
+		if _, known := f.identKind(s, base); known { // a known scalar is not a pointer
+			f.err(base.Position(), "invalid operation: cannot indirect %s", base.Src())
+		}
+		return
+	}
+	if d.hasElemKind {
+		f.checkElemAssignType(s, d.elemKind, rhsNode)
+	}
+}
+
+// checkIndexAssign checks an element assignment target "base[i] = rhs". A scalar
+// variable cannot be indexed ("cannot index"). When base is an array or slice of a
+// predeclared element type, the right-hand side must be assignable to that element
+// type. The base identifier's definedness is already checked by the general target
+// loop, since an index head is a plain identifier.
+func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
+	d, ok := s.find(base.Src()).(*VarDeclaration)
+	if !ok {
+		return
+	}
+	if _, known := f.identKind(s, base); known { // a scalar variable cannot be indexed
+		f.err(base.Position(), "invalid operation: cannot index %s", base.Src())
+		return
+	}
+	if d.hasElemKind && !d.isPtr {
+		f.checkElemAssignType(s, d.elemKind, rhsNode)
+	}
+}
+
+// checkElemAssignType reports a type-category mismatch between the element or
+// pointed-to kind of a "*p"/"a[i]" assignment target and the right-hand side. It is
+// the analogue of checkAssignType and checkFieldAssign for a kind that is carried by
+// no single left-hand variable token.
+func (f *File) checkElemAssignType(s *Scope, elem Kind, rhsNode Node) {
+	rk, rok := f.exprType(s, rhsNode)
+	lc, rc := kindCategory(elem), kindCategory(rk)
+	if !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+		return
+	}
+	f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(elem))
 }
 
 // checkUnaryExpr resolves the names in a UnaryExpr's factor and checks that each
@@ -3998,11 +4134,13 @@ func (f *File) varSpec(s *Scope, n Node) {
 		kind, hasKind := f.typeKind(s, typ)
 		_, isPtr := typ.(*TypeNodePointer)
 		typeName, _ := namedTypeToken(typ)
+		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		for _, vd := range varDecls {
 			if vd == nil {
 				continue
 			}
 			vd.kind, vd.hasKind, vd.isPtr, vd.typeName = kind, hasKind, isPtr, typeName
+			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:
 				vs.TypeNode = typ

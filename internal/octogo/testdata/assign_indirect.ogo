@@ -1,0 +1,40 @@
+// Assignment to a dereference "*p" or an element "a[i]" target is type-checked:
+// the right-hand side must be assignable to the pointed-to or element type, and
+// the base must actually be a pointer or an array.
+
+func ptrs() {
+	var val int
+	var p *int = &val
+
+	// A value of the pointed-to type is fine.
+	*p = 5
+
+	// ERROR "cannot use true of type bool as type int in assignment"
+	*p = true
+
+	// A dereference of a non-pointer is invalid.
+	var x int
+	// ERROR "invalid operation: cannot indirect x"
+	*x = 1
+	_ = x
+
+	// The base of a dereference target must be defined.
+	// ERROR "undefined: q"
+	*q = 1
+}
+
+func arrays() {
+	var a [3]int
+
+	// A value of the element type is fine.
+	a[0] = 4
+
+	// ERROR "cannot use true of type bool as type int in assignment"
+	a[1] = true
+
+	// Indexing a non-array is invalid.
+	var n int
+	// ERROR "invalid operation: cannot index n"
+	n[0] = 1
+	_ = n
+}
