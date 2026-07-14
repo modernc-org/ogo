@@ -1292,18 +1292,32 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 		// "!" yields bool; "<-" (receive) has an element type we can't resolve
 		// here; the arithmetic unary operators keep the operand's kind.
 		var fac Node
+		var ops []Node
 		facSet := false
 		for c := range it(n.ast) {
 			switch c.sym {
 			case Factor:
 				fac, facSet = c, true
 			case UnaryOp:
-				switch f.unaryOp(s, c) {
-				case NOT:
-					return UntypedBool, true
-				case ARROW:
-					return 0, false
+				ops = append(ops, c)
+			}
+		}
+		// A single dereference "*p" of a pointer to a predeclared type has that
+		// pointed-to type. Anything more complex falls through to the general
+		// handling below, unchanged.
+		if facSet && len(ops) == 1 && f.unaryOp(s, ops[0]) == MUL {
+			if id, ok := f.exprIdent(fac); ok {
+				if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.isPtr && d.hasElemKind {
+					return d.elemKind, true
 				}
+			}
+		}
+		for _, c := range ops {
+			switch f.unaryOp(s, c) {
+			case NOT:
+				return UntypedBool, true
+			case ARROW:
+				return 0, false
 			}
 		}
 		if facSet {
@@ -1335,9 +1349,9 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 	switch {
 	case hasSuffix:
 		// A call to a named function or a method with a single predeclared result
-		// has that result's type, and a field selection "v.field" has the field's
-		// type. Other suffixes -- an index, a multi-result call -- are not
-		// modelled.
+		// has that result's type; a field selection "v.field" has the field's type;
+		// and an index "a[i]" of an array or slice has the element type. A
+		// multi-result call is not modelled.
 		if k, ok := f.callResultKind(s, lit, hasLit, suffix); ok {
 			return k, true
 		}
@@ -1346,6 +1360,11 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		}
 		if field, ok := f.fieldSelector(suffix); ok && hasLit {
 			return f.fieldKind(s, lit, field)
+		}
+		if hasLit && f.indexSuffix(suffix) {
+			if d, ok := s.find(lit.Src()).(*VarDeclaration); ok && d.hasElemKind && !d.isPtr {
+				return d.elemKind, true
+			}
 		}
 		return 0, false
 	case hasParen:
@@ -2196,6 +2215,22 @@ func (f *File) fieldSelector(n Node) (field Token, ok bool) {
 		}
 	}
 	return field, selectors == 1 && !disqualify
+}
+
+// indexSuffix reports whether a factor suffix is exactly one index "[i]" with no
+// selector or call, so "base[i]" reads a single element of base. It is the read
+// analogue of fieldSelector.
+func (f *File) indexSuffix(n Node) bool {
+	indexes, disqualify := 0, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Index:
+			indexes++
+		case Selector, CallSuffix:
+			disqualify = true
+		}
+	}
+	return indexes == 1 && !disqualify
 }
 
 // checkFieldAccess reports a selection "head.field" when head is a variable of a

@@ -1,0 +1,53 @@
+// A dereference "*p" and an index "a[i]" read have the pointed-to and element
+// type, so they are type-checked like any other operand: as a condition, a call
+// argument, an assignment right-hand side, and a ":="-inferred variable's kind.
+// An unmodelled element (a struct pointee, an inferred pointer) is left unchecked.
+
+func use(b bool) {}
+
+func indexReads() {
+	var ai [3]int
+	var ab [3]bool
+
+	// A bool element is a valid condition; an int element is not.
+	if ab[0] {
+	}
+	// ERROR "non-bool used as if condition"
+	if ai[0] {
+	}
+
+	// ERROR "cannot use ai of type int as type bool in argument to use"
+	use(ai[0])
+	use(ab[0])
+
+	var flag bool
+	// ERROR "cannot use ai of type int as type bool in assignment"
+	flag = ai[0]
+
+	// The inferred kind flows through: x is int.
+	x := ai[0]
+	// ERROR "non-bool used as if condition"
+	if x {
+	}
+
+	_ = ai
+	_ = ab
+	_ = flag
+}
+
+func derefReads() {
+	var vi int
+	var vb bool
+	var pi *int = &vi
+	var pb *bool = &vb
+
+	if *pb {
+	}
+	// ERROR "non-bool used as if condition"
+	if *pi {
+	}
+
+	// ERROR "of type int as type bool in argument to use"
+	use(*pi)
+	use(*pb)
+}
