@@ -16,6 +16,8 @@ func tooFewLiterals() {
 	var a, b int
 	// ERROR "assignment mismatch: 2 variables but 1 value"
 	a, b = 1
+	_ = a
+	_ = b
 }
 
 func tooFewDefine() {

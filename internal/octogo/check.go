@@ -199,6 +199,7 @@ type File struct {
 	inArrayBound      bool              // evaluating an array length: suppress "is not a constant"
 	inCaseExpr        bool              // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
+	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -520,6 +521,7 @@ func (f *File) checkBodies(pkg *Scope, n Node) {
 func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	fs := newScope(pkg, BlockScope)
 	f.localVars = nil
+	f.writeTargets = map[string]bool{}
 	var results []retResult
 	var body Node
 	hasBody := false
@@ -552,23 +554,27 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 
 // reportUnusedLocals reports each local variable of the function body that is
 // never used. Usage is decided syntactically: a variable is used when its name
-// appears as an identifier somewhere in the body other than at a variable
-// declaration. This is deliberately generous -- any textual reference counts, so a
-// used variable is never falsely reported -- at the cost of not yet catching a
-// variable that is only ever assigned (never read) or one shadowed by an inner
-// declaration of the same name.
+// appears as an identifier in a read position -- anywhere other than at its own
+// declaration or as a bare assignment target ("x = e", which writes x; "x.f = e",
+// "x[i] = e" and "*x = e" read x and so count). A variable only ever assigned,
+// never read, is thus reported. The rule remains name-based, so a used variable is
+// never falsely reported, at the cost of not distinguishing an unused variable from
+// a used one of the same name in a different scope (shadowing).
 func (f *File) reportUnusedLocals(body Node) {
 	if len(f.localVars) == 0 {
 		return
 	}
-	// The positions of the local declarations themselves, so an occurrence at one
-	// is not counted as a use of the variable it declares.
-	declared := map[string]bool{}
+	// Positions that do not count as a use of a variable: its own declaration, and
+	// every bare assignment target (a write).
+	excluded := map[string]bool{}
 	for _, vd := range f.localVars {
-		declared[vd.token.Position().String()] = true
+		excluded[vd.token.Position().String()] = true
+	}
+	for pos := range f.writeTargets {
+		excluded[pos] = true
 	}
 	used := map[string]bool{}
-	f.collectIdentUses(body, declared, used)
+	f.collectIdentUses(body, excluded, used)
 	for _, vd := range f.localVars {
 		if nm := vd.token.Src(); nm != "_" && !used[nm] {
 			f.err(vd.token.Position(), "declared and not used: %s", nm)
@@ -1816,6 +1822,17 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				case ASSIGN, DEFINE, ARROW:
 					op = sym
 				}
+			}
+		}
+	}
+
+	// A bare "="/":=" target ("x", not "x.f"/"x[i]"/"*x", which read x) is a write,
+	// not a use; record it so the unused-variable report does not count assigning to
+	// a variable as using it. A suffixed target reads its base, so it is left out.
+	if op == ASSIGN || op == DEFINE {
+		for i, tok := range lhs {
+			if !lhsSuffixed[i] {
+				f.writeTargets[tok.Position().String()] = true
 			}
 		}
 	}

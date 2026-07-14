@@ -1,6 +1,8 @@
-// A local variable that is never referenced is reported "declared and not used".
-// A variable is used when its name appears anywhere other than at its declaration
-// -- read into another value, passed to a call, or tested in a condition.
+// A local variable that is never used is reported "declared and not used". A
+// variable is used when its name appears in a read position: read into another
+// value, passed to a call, tested in a condition, or used as the base or index of
+// a "base.field"/"base[i]"/"*base" target. A bare assignment "x = e" writes x
+// without using it, so a variable that is only ever assigned is reported.
 // Parameters, named results and the blank identifier are exempt.
 
 func unused() {
@@ -9,6 +11,17 @@ func unused() {
 
 	// ERROR "declared and not used: b"
 	b := 5
+}
+
+// A variable that is only ever assigned, never read, is reported.
+func writeOnly() {
+	// ERROR "declared and not used: a"
+	a := 1
+	a = 2
+
+	// ERROR "declared and not used: b"
+	var b int
+	b = 3
 }
 
 // Every form of reference counts as a use.
@@ -27,6 +40,23 @@ func used() {
 	var e int
 	use(e)
 }
+
+// Using a variable as the base or index of a compound target reads it.
+func targetBaseReads() {
+	var p pt
+	p.f = 1
+
+	var a [3]int
+	var i int
+	i = 0
+	a[i] = 2
+
+	var v int
+	var q *int = &v
+	*q = 3
+}
+
+type pt struct{ f int }
 
 func use(x int) {}
 

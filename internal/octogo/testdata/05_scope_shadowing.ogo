@@ -21,4 +21,5 @@ func scopeCheck() {
 	}
 	// ERROR "undeclared name|undefined: b"
 	a = b
+	_ = a
 }
