@@ -1,0 +1,4 @@
+// ERROR "imported and not used"
+import "p"
+
+const q = 'q'

@@ -591,6 +591,47 @@ func (f *File) collectIdentUses(n Node, declared, used map[string]bool) {
 	}
 }
 
+// reportUnusedImports reports each import of the file that resolved to a package
+// but whose qualifier is never referenced ("imported and not used"). Usage is
+// decided syntactically and deliberately generously, mirroring the unused-variable
+// report: a qualifier counts as used when its name appears as an identifier
+// anywhere in the top-level declarations, so a used import is never falsely
+// reported. The trade-off is a false negative when a same-named local, constant or
+// type shadows the qualifier (the shadowing occurrence marks the import used). Dot
+// and blank imports carry no qualifier and are exempt; an import that failed to
+// resolve (missing directory, cycle) is reported at import time, not here.
+func (f *File) reportUnusedImports() {
+	var candidates []*ImportSpecNode
+	for _, is := range f.ImportSpecs {
+		if is.resolved && !is.IsDotImport && is.ImportQualifier != "" && is.ImportQualifier != "_" {
+			candidates = append(candidates, is)
+		}
+	}
+	if len(candidates) == 0 {
+		return
+	}
+	// Collect every identifier used in the top-level declarations. Import
+	// declarations are skipped, so an explicit qualifier ("import x \"path\"")
+	// never counts as a use of itself.
+	used := map[string]bool{}
+	declared := map[string]bool{}
+	for n := range it(f.AST) {
+		if n.sym != SourceFile {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym == TopLevelDecl {
+				f.collectIdentUses(c, declared, used)
+			}
+		}
+	}
+	for _, is := range candidates {
+		if !used[is.ImportQualifier] {
+			f.err(is.ImportPathToken.Position(), "imported and not used: %q", is.ImportPath)
+		}
+	}
+}
+
 // declareReceiver declares a method receiver's name in the function body scope
 // so the body may reference it. Receiver = "(" identifier Type ")", so the
 // first identifier is the receiver name.
@@ -5270,6 +5311,7 @@ type ImportSpecNode struct {
 	ImportQualifier string
 	IsDotImport     bool
 	IsStdLib        bool
+	resolved        bool // the import path named a package that loaded without error, so an unused-import report is warranted
 }
 
 func (f *File) declareImportSpec(n Node) (r *ImportSpecNode) {

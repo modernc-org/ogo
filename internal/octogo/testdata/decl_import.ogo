@@ -3,3 +3,7 @@
 import "p"
 
 const q = 'q'
+
+func f() {
+	p.Use()
+}

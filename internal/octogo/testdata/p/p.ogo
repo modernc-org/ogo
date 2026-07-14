@@ -1,1 +1,5 @@
 const p = 'p'
+
+// Use is an exported, referenceable member so that importers can satisfy the
+// unused-import check.
+func Use() {}

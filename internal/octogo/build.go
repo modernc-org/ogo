@@ -268,7 +268,10 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	// Phase 2: Package Scope Merging (Serial)
 	for _, f := range p.Files {
 		for _, spec := range f.ImportSpecs {
-			c.importPkg(p.ImportPath, spec.ImportPath, spec.ImportPathToken)
+			// An import that resolves to a real package is eligible for the
+			// later unused-import report; a failed import (missing directory,
+			// cycle) resolves to noPkg and is reported at import time instead.
+			spec.resolved = c.importPkg(p.ImportPath, spec.ImportPath, spec.ImportPathToken) != noPkg
 		}
 		// Merge file top level declarations into package scope.
 		for _, nm := range slices.Sorted(maps.Keys(f.tld.Declarations)) {
@@ -324,6 +327,17 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 			case SourceFile:
 				v.checkTypeCycles(p.Scope, n)
 			}
+		}
+	}
+
+	// Report imports that resolved to a package but are never referenced. This is
+	// a diagnostic on the package under compilation only (import path ""); a
+	// recursively-built dependency's own unused imports are reported when that
+	// dependency is compiled directly, not here. Run after body checking so usage
+	// in function bodies has been seen.
+	if p.ImportPath == "" {
+		for _, v := range p.Files {
+			v.reportUnusedImports()
 		}
 	}
 	return p
