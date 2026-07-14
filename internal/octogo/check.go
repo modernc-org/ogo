@@ -1073,6 +1073,30 @@ func isNumericKind(k Kind) bool {
 	return false
 }
 
+// intKindRange returns the inclusive minimum and maximum value of a predeclared
+// integer type k, as constants, and ok == false for any other Kind. Uintptr uses
+// the 32-bit range: a P2 pointer is a 32-bit Hub RAM address.
+func intKindRange(k Kind) (lo, hi constant.Value, ok bool) {
+	var lo64, hi64 int64
+	switch k {
+	case PredeclaredInt8:
+		lo64, hi64 = -128, 127
+	case PredeclaredInt16:
+		lo64, hi64 = -32768, 32767
+	case PredeclaredInt32:
+		lo64, hi64 = -2147483648, 2147483647
+	case PredeclaredUint8:
+		lo64, hi64 = 0, 255
+	case PredeclaredUint16:
+		lo64, hi64 = 0, 65535
+	case PredeclaredUint32, PredeclaredUintptr:
+		lo64, hi64 = 0, 4294967295
+	default:
+		return nil, nil, false
+	}
+	return constant.MakeInt64(lo64), constant.MakeInt64(hi64), true
+}
+
 // isBoolKind reports whether k is a boolean type (predeclared or untyped).
 func isBoolKind(k Kind) bool {
 	return k == PredeclaredBool || k == UntypedBool
@@ -4451,9 +4475,11 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 		return
 	}
 	cs.gate.open()
+	var exprPos token.Position
 	for c := range it(cs.node.ast) {
 		switch c.sym {
 		case Expression:
+			exprPos = f.tok(c.Pos()).Position()
 			cs.Expression = f.expression(s, c)
 			cs.Value = f.evalConstExpr(cs.Expression)
 		case Type:
@@ -4463,7 +4489,39 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 	if cs.Value == nil {
 		cs.Value = untypedConst{constant.MakeUnknown()}
 	}
+	f.checkConstOverflow(s, cs, exprPos)
 	cs.gate.close()
+}
+
+// checkConstOverflow reports a typed integer constant whose value does not fit in
+// its declared type, e.g. "const x int8 = 200" -> "constant 200 overflows int8".
+// The declared type supplies the target range and the source name used in the
+// message (so an alias reads "overflows int", not "overflows int32"); a constant
+// with no declared type (an untyped constant), a non-integer value, or a
+// non-integer target type is not range-checked. pos points at the initializer.
+func (f *File) checkConstOverflow(s *Scope, cs *ConstSpecNode, pos token.Position) {
+	id, ok := cs.TypeNode.(*TypeNodeIdent)
+	if !ok {
+		return
+	}
+	k, ok := f.typeKind(s, cs.TypeNode)
+	if !ok {
+		return
+	}
+	lo, hi, ok := intKindRange(k)
+	if !ok {
+		return
+	}
+	uc, ok := cs.Value.(untypedConst)
+	if !ok || uc.cv == nil || uc.cv.Kind() != constant.Int {
+		return
+	}
+	if constant.Compare(uc.cv, token.LSS, lo) || constant.Compare(uc.cv, token.GTR, hi) {
+		if !pos.IsValid() {
+			pos = cs.Name.Position()
+		}
+		f.err(pos, "constant %s overflows %s", uc.cv, id.Name.Src())
+	}
 }
 
 // ExpressionNode represents the Expression production or any of its

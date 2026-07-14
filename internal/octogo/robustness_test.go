@@ -8,8 +8,9 @@ import (
 // TestCheckerRobustness feeds parseable programs that once crashed the type
 // checker -- degenerate constant folding (division by zero, an out-of-range or
 // non-integer shift, and a binary or unary operator not defined for its operands,
-// e.g. subtracting strings or complementing a float) and a function type -- and
-// requires that Build handles each without panicking.
+// e.g. subtracting strings or complementing a float), a function type, and typed
+// constant overflow over degenerate, arbitrary-precision and non-integer values --
+// and requires that Build handles each without panicking.
 func TestCheckerRobustness(t *testing.T) {
 	progs := []string{
 		"const x = 1 / 0\nfunc run() {}\n",
@@ -30,6 +31,17 @@ func TestCheckerRobustness(t *testing.T) {
 		"func g(cb func()) {}\nfunc run() {}\n",
 		"type H func(h int)\nfunc run() { var f H; _ = f }\n",
 		"type Node struct{ next func() Node }\nfunc run() { var n Node; _ = n }\n",
+		// A typed integer constant is range-checked against its declared type. The
+		// folded value may overflow, even by an arbitrary-precision amount, or be
+		// degenerate (division by zero, an unknown value) or non-integer (a string
+		// or a float) -- the last three simply skip the range check -- at package
+		// or function scope, none panicking.
+		"const x int8 = 200\nfunc run() {}\n",
+		"const x int8 = 1 << 100\nfunc run() {}\n",
+		"const x uint8 = 1 / 0\nfunc run() {}\n",
+		"const x int8 = \"a\"\nfunc run() {}\n",
+		"const x uint16 = 1.5\nfunc run() {}\n",
+		"func run() { const x uint8 = 300; _ = x }\n",
 	}
 	buildEach(t, progs)
 }

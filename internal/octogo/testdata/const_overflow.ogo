@@ -1,0 +1,62 @@
+// A typed integer constant whose value does not fit in its declared type is
+// reported ("constant N overflows T"), for each signed and unsigned width, at
+// package and at function scope, whether the value is a literal or a folded
+// constant expression. A value within range, an untyped (typeless) constant, and
+// a non-integer typed constant compile without complaint. The declared type's
+// source name is used, so an alias reads "overflows int", not "overflows int32".
+
+// ERROR "constant 200 overflows int8"
+const tooBigInt8 int8 = 200
+
+// ERROR "constant -129 overflows int8"
+const tooSmallInt8 int8 = -129
+
+// ERROR "constant 256 overflows uint8"
+const tooBigUint8 uint8 = 256
+
+// ERROR "constant -1 overflows uint8"
+const negUint8 uint8 = -1
+
+// ERROR "constant 40000 overflows int16"
+const tooBigInt16 int16 = 40000
+
+// ERROR "constant 70000 overflows uint16"
+const tooBigUint16 uint16 = 70000
+
+// ERROR "constant 5000000000 overflows uint32"
+const tooBigUint32 uint32 = 5000000000
+
+// A constant expression is folded before the range check.
+// ERROR "constant 128 overflows int8"
+const folded int8 = 127 + 1
+
+// An alias carries the range of its target type but reads under its own name.
+// ERROR "constant 3000000000 overflows int"
+const tooBigInt int = 3000000000
+
+// In-range constants of every width compile.
+const okInt8 int8 = 127
+const okNegInt8 int8 = -128
+const okUint8 uint8 = 255
+const okInt16 int16 = -32768
+const okUint16 uint16 = 65535
+const okInt32 int32 = 2147483647
+const okUint32 uint32 = 4294967295
+
+// A character literal within range is an ordinary integer constant.
+const okRune int8 = 'A'
+
+// An untyped constant is not range-checked against a target type here.
+const untyped = 100000
+
+// A non-integer typed constant is not an integer overflow.
+const okString string = "hello"
+const okBool bool = true
+
+func local() {
+	// ERROR "constant 300 overflows uint8"
+	const bad uint8 = 300
+
+	const ok int16 = 1000
+	_ = ok
+}
