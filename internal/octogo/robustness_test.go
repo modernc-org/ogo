@@ -140,6 +140,68 @@ func TestControlFlowRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestPointerArrayRobustness exercises the pointer, array and element checks --
+// dereference and index assignment targets ("*p = e", "a[i] = e", including "cannot
+// indirect"/"cannot index", an undefined deref base, and multi-star, nested and
+// mixed shapes), dereference and index reads flowing through conditions, arguments,
+// operators and ":=" inference, the constant-overflow range check at a struct-field,
+// dereference and element target, and the write-only local-variable report -- over
+// degenerate bodies, requiring each to be analysed without panicking. These walk the
+// flat AST for assignment heads and postfixes, factor suffixes and unary operators,
+// so an unexpected shape must yield a diagnostic or nothing, never a crash.
+func TestPointerArrayRobustness(t *testing.T) {
+	bodies := []string{
+		// Dereference and index assignment targets.
+		"var a [3]int; a[0] = 1; _ = a",
+		"var a [3]int; a[0] = true; _ = a",
+		"var n int; n[0] = 1; _ = n",
+		"var v int; var p *int = &v; *p = 1",
+		"var v int; var p *int = &v; *p = true",
+		"var x int; *x = 1; _ = x",
+		"*q = 1",
+		"var a [2][3]int; a[0][1] = 4",
+		"var p **int; **p = 3",
+		"var a [3]int; a[i] = 1; _ = a",
+		"var s []int; s[0] = 1",
+		"var m map[int]int; m[0] = 1",
+		"a[0] := 1",
+		"*p += 1",
+		// Dereference and index reads.
+		"var a [3]int; if a[0] {\n}\n_ = a",
+		"var p *int; if *p {\n}",
+		"var a [3]bool; use(a[0]); _ = a",
+		"var p *bool; use(*p)",
+		"var a [3]int; x := a[0]; _ = x; _ = a",
+		"var p *int; x := *p; _ = x",
+		"var a [3]int; _ = a[0] + a[1]",
+		"var p *int; _ = *p + 1",
+		"var a [3]int; _ = *a[0]",
+		"var p **int; _ = **p",
+		"var a [3]int; var p *int; _ = a[0] < *p",
+		"var a [3]int; _ = a[a[0]]",
+		// Constant overflow at a struct-field, dereference and element target.
+		"var a [3]uint8; a[0] = 300; _ = a",
+		"var v uint8; var p *uint8 = &v; *p = 300",
+		"var a [2]int16; a[0] = 40000; _ = a",
+		// Struct field targets and reads.
+		"var s pt; s.x = 1; _ = s",
+		"var s pt; s.x = true; _ = s",
+		"var s pt; if s.x {\n}\n_ = s",
+		"var p *pt; p.x = 300; _ = p",
+		"var s pt; s.x = s.x + 1; _ = s",
+		// Write-only local variables.
+		"x := 1; x = 2",
+		"var x int; x = 5",
+		"var x, y int; x = 1; y = 2",
+		"x := 1; x = x + 1",
+	}
+	progs := make([]string, len(bodies))
+	for i, b := range bodies {
+		progs[i] = "type pt struct{ x int }\nfunc use(b bool) {}\nfunc g() {\n\t" + b + "\n}\n"
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()
