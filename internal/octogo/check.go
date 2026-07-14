@@ -197,6 +197,7 @@ type File struct {
 	errList           ErrList
 	hasInvalidImports bool
 	inArrayBound      bool              // evaluating an array length: suppress "is not a constant"
+	inCaseExpr        bool              // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
@@ -1330,17 +1331,18 @@ func (f *File) reportDuplicateCases(s *Scope, n Node) {
 	}
 }
 
-// caseConstValue evaluates a switch case expression to its constant value for
-// duplicate detection, returning ok == false when it is not a known constant: a
-// variable, a call, or an ill-formed constant -- all valid in a case position and
-// simply not deduplicated. The fold serves only to obtain the value; any diagnostic
-// it would emit (for example "x is not a constant" for a variable case, which the
-// language allows) is discarded, so this helper reports nothing itself. A file's
-// bodies are checked serially, so trimming the file error list back is safe here.
+// caseConstValue folds a switch case expression, reporting the errors the fold
+// finds -- an undefined name, a division by zero, an operator not defined on its
+// operands -- and returns its constant value for duplicate detection. A
+// non-constant operand (a variable, a call) is legal in a case, so inCaseExpr
+// suppresses the "is not a constant" the folder would otherwise emit; such a case
+// folds to an unknown value and, like an ill-formed constant, is reported as
+// ok == false and left out of the duplicate comparison.
 func (f *File) caseConstValue(s *Scope, e Node) (constant.Value, bool) {
-	n0 := len(f.errList)
+	save := f.inCaseExpr
+	f.inCaseExpr = true
 	en := f.expression(s, e)
-	f.errList = f.errList[:n0]
+	f.inCaseExpr = save
 	if en == nil {
 		return nil, false
 	}
@@ -4973,9 +4975,11 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				default:
 					// A non-constant name (var, func, type, ...) used where a
 					// constant expression is required. In an array bound the
-					// contextual "non-constant array bound" diagnostic is emitted
-					// by arrayBound instead, so stay silent here.
-					if !f.inArrayBound {
+					// contextual "non-constant array bound" diagnostic is emitted by
+					// arrayBound instead; in a switch case a non-constant operand is
+					// legal (the guard is compared to it at run time), so stay silent
+					// in both.
+					if !f.inArrayBound && !f.inCaseExpr {
 						f.err(tok.Position(), "%s is not a constant", nm)
 					}
 					r = untypedConst{constant.MakeUnknown()}

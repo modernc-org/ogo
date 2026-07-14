@@ -1,0 +1,51 @@
+// A switch case expression is folded and its own errors are reported: an undefined
+// name, a constant division by zero, and an operator not defined on its operands. A
+// non-constant case (a variable, a variable expression, a call) is legal in a case
+// and folds without complaint.
+
+func add(v int) int {
+	return v + 1
+}
+
+func divByZero() {
+	var x int = 0
+	switch x {
+		// ERROR "division by zero"
+	case 1 / 0:
+	}
+}
+
+func undefinedName() {
+	var x int = 0
+	switch x {
+		// ERROR "undefined: nope"
+	case nope:
+	}
+}
+
+func undefinedInList() {
+	var x int = 0
+	switch x {
+		// ERROR "undefined: gone"
+	case 1, gone:
+	}
+}
+
+func badOperator() {
+	var s string = ""
+	switch s {
+		// ERROR "operator - not defined"
+	case "a" - "b":
+	}
+}
+
+func nonConstantCasesAccepted() {
+	var x int = 0
+	var y int = 5
+	switch x {
+	case y:
+	case y + 1:
+	case add(y):
+	}
+	_ = y
+}
