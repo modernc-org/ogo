@@ -1,0 +1,4 @@
+// ERROR "dot imports not supported"
+import . "p"
+
+const q = 'q'

@@ -330,13 +330,16 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		}
 	}
 
-	// Report imports that resolved to a package but are never referenced. This is
-	// a diagnostic on the package under compilation only (import path ""); a
-	// recursively-built dependency's own unused imports are reported when that
-	// dependency is compiled directly, not here. Run after body checking so usage
-	// in function bodies has been seen.
-	if p.ImportPath == "" {
-		for _, v := range p.Files {
+	// Semantic import diagnostics. Dot imports are unsupported and rejected in
+	// every package. Unused imports are reported only for the package under
+	// compilation (import path ""); a recursively-built dependency's own unused
+	// imports are reported when that dependency is compiled directly, not here.
+	// This runs after body checking, so usage in function bodies has been seen,
+	// and below the noDeclarationChecks early return, so a parse-only pass does
+	// not see these semantic diagnostics.
+	for _, v := range p.Files {
+		v.rejectDotImports()
+		if p.ImportPath == "" {
 			v.reportUnusedImports()
 		}
 	}

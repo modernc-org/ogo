@@ -591,6 +591,20 @@ func (f *File) collectIdentUses(n Node, declared, used map[string]bool) {
 	}
 }
 
+// rejectDotImports reports each dot import ("import . \"path\"") in the file. The
+// grammar admits the "." form, but OctoGo has no semantics for merging a package's
+// exported names into the file scope (which is not even on a body's resolution
+// chain), so a dot import is rejected rather than implemented. This is a semantic
+// check, not a syntactic one, so it runs in a check phase like the other
+// unsupported-feature rejections.
+func (f *File) rejectDotImports() {
+	for _, is := range f.ImportSpecs {
+		if is.IsDotImport {
+			f.err(is.ImportPathToken.Position(), "dot imports not supported")
+		}
+	}
+}
+
 // reportUnusedImports reports each import of the file that resolved to a package
 // but whose qualifier is never referenced ("imported and not used"). Usage is
 // decided syntactically and deliberately generously, mirroring the unused-variable
@@ -5282,12 +5296,10 @@ func (f *File) declareImportDecl(n Node) (r []*ImportSpecNode) {
 		case ImportSpec:
 			is := f.declareImportSpec(n)
 			r = append(r, is)
-			if is.IsDotImport {
-				p := f.Package.importPkg(is.ImportPathToken, is.ImportPath)
-				for k, v := range p.Scope.Declarations {
-					panic(todo("%q: %T", k, v))
-				}
-			}
+			// A dot import is only recorded here (is.IsDotImport); it is rejected
+			// later by the semantic import checks (rejectDotImports), so that a
+			// parse-only pass (noDeclarationChecks) does not see the diagnostic,
+			// consistent with the other unsupported-feature rejections.
 		case 0:
 			switch f.ch(n.tok) {
 			case IMPORT, LPAREN, RPAREN, SEMICOLON:
