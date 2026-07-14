@@ -1,0 +1,45 @@
+// A switch case value must not repeat an earlier one in the same switch.
+// Duplicates are compared by constant value, so "case 1", "case 0x1" and a
+// "case C" for "const C = 1" are all the same case; each repeat is reported at its
+// expression, pointing at the first. A non-constant case (a variable) is not a
+// duplicate and is accepted.
+
+const two = 2
+
+func intCases() {
+	var x int = 0
+	switch x {
+	case 1:
+	case 2:
+		// ERROR "duplicate case 1 in switch"
+	case 0x1:
+		// ERROR "duplicate case 2 in switch"
+	case two:
+	}
+}
+
+func inlineList() {
+	var x int = 0
+	switch x {
+		// ERROR "duplicate case 3 in switch"
+	case 3, 3:
+	}
+}
+
+func stringCases() {
+	var s string = ""
+	switch s {
+	case "a":
+		// ERROR "duplicate case .a. in switch"
+	case "a":
+	}
+}
+
+func variableCasesAccepted() {
+	var x int = 0
+	var y int = 7
+	switch x {
+	case y:
+	case y:
+	}
+}

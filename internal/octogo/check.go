@@ -1287,10 +1287,75 @@ func (f *File) reportMultipleDefaults(n Node, clauseSym Symbol, kind string) {
 	}
 }
 
-// checkSwitch walks a switch statement in its own implicit block scope: it
-// determines the guard's type, declares a "v := expr" guard variable (visible in
-// the clauses but not after the switch), checks each case expression is
-// comparable to the guard, and walks each clause body in a nested scope.
+// reportDuplicateCases reports a switch case value that repeats an earlier case in
+// the same switch. Each case expression that is a known constant is compared by
+// value -- so "case 1" and "case 0x1" collide, as do "case 1" and a "case C" for a
+// "const C = 1" -- while a non-constant case (a variable or a call, both allowed in
+// a case position) or an ill-formed one is skipped. Only constants of the same
+// go/constant kind are compared, so an int/float or int/string pair is never
+// misreported as a duplicate. The repeat is reported at its expression, pointing at
+// the first occurrence.
+func (f *File) reportDuplicateCases(s *Scope, n Node) {
+	seen := map[string]token.Position{}
+	for clause := range it(n.ast) {
+		if clause.sym != CaseClause {
+			continue
+		}
+		for head := range it(clause.ast) {
+			if head.sym != CaseHead {
+				continue
+			}
+			for list := range it(head.ast) {
+				if list.sym != ExpressionList {
+					continue
+				}
+				for e := range it(list.ast) {
+					if e.sym != Expression {
+						continue
+					}
+					cv, ok := f.caseConstValue(s, e)
+					if !ok {
+						continue
+					}
+					key := cv.Kind().String() + " " + cv.ExactString()
+					pos := f.tok(e.Pos()).Position()
+					if first, dup := seen[key]; dup {
+						f.err(pos, "duplicate case %s in switch (previous at %v)", cv.String(), first)
+						continue
+					}
+					seen[key] = pos
+				}
+			}
+		}
+	}
+}
+
+// caseConstValue evaluates a switch case expression to its constant value for
+// duplicate detection, returning ok == false when it is not a known constant: a
+// variable, a call, or an ill-formed constant -- all valid in a case position and
+// simply not deduplicated. The fold serves only to obtain the value; any diagnostic
+// it would emit (for example "x is not a constant" for a variable case, which the
+// language allows) is discarded, so this helper reports nothing itself. A file's
+// bodies are checked serially, so trimming the file error list back is safe here.
+func (f *File) caseConstValue(s *Scope, e Node) (constant.Value, bool) {
+	n0 := len(f.errList)
+	en := f.expression(s, e)
+	f.errList = f.errList[:n0]
+	if en == nil {
+		return nil, false
+	}
+	cv, ok := en.Value().(untypedConst)
+	if !ok || cv.cv == nil || cv.cv.Kind() == constant.Unknown {
+		return nil, false
+	}
+	return cv.cv, true
+}
+
+// checkSwitch walks a switch statement in its own implicit block scope: it reports
+// a repeated default clause or case value, determines the guard's type, declares a
+// "v := expr" guard variable (visible in the clauses but not after the switch),
+// checks each case expression is comparable to the guard, and walks each clause
+// body in a nested scope.
 func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	f.reportMultipleDefaults(n, CaseClause, "switch")
 	ss := s.child()
@@ -1309,6 +1374,7 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 			f.checkClauseBody(ss.child(), results, c)
 		}
 	}
+	f.reportDuplicateCases(ss, n)
 }
 
 // declareSwitchGuardVar declares the variable introduced by a "v := expr" switch
