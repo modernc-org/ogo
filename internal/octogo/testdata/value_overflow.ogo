@@ -1,9 +1,10 @@
 // A constant value that does not fit a sized integer type is reported ("constant
 // N overflows T") wherever the value meets the type: a variable initializer, a
-// plain assignment, and a call argument -- not only in a typed constant
-// declaration. A run-time value (another variable, a call, a channel receive) is
-// not constant and is never range-checked, and the target's own type name is used
-// (canonicalised only for a ":="-inferred variable, which records none).
+// plain assignment, a call argument, and a struct-field, dereference or array-
+// element assignment -- not only in a typed constant declaration. A run-time value
+// (another variable, a call, a channel receive) is not constant and is never
+// range-checked, and the target's own type name is used (canonicalised for a
+// ":="-inferred variable and for a field or element target, which record none).
 
 func take8(v uint8) {}
 func takeTwo(a int8, b uint16) {}
@@ -85,4 +86,32 @@ func runtimeValues(ch chan int) {
 	_ = b
 	_ = c
 	_ = from
+}
+
+type sizedField struct{ b uint8 }
+
+// The same range check applies to a struct field, a dereferenced pointer and an
+// array element; a run-time value assigned to any of them is still not folded.
+func indirectTargets(ch chan int) {
+	var s sizedField
+	// ERROR "constant 300 overflows uint8"
+	s.b = 300
+	s.b = 200 // in range
+
+	var v uint8
+	var p *uint8 = &v
+	// ERROR "constant 300 overflows uint8"
+	*p = 300
+	*p = 200 // in range
+
+	var a [3]uint8
+	// ERROR "constant 300 overflows uint8"
+	a[0] = 300
+	a[1] = 200 // in range
+
+	// A run-time value is not range-checked at any of these targets.
+	a[2] = <-ch
+
+	_ = s
+	_ = a
 }

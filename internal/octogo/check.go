@@ -2548,10 +2548,17 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)
-	if !lok || !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+	if !lok || !rok || lc == catUnknown || rc == catUnknown {
 		return
 	}
-	f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+	if lc != rc {
+		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+		return
+	}
+	// Same category: a constant may still overflow a sized integer field. The
+	// field records no type token at the assignment site, so its canonical name
+	// is used, as for a ":="-inferred variable.
+	f.checkValueOverflow(s, sizedTarget(lk, Token{}), rhsNode)
 }
 
 // derefAssignTarget reports the base identifier of a dereference assignment target
@@ -2655,10 +2662,17 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 func (f *File) checkElemAssignType(s *Scope, elem Kind, rhsNode Node) {
 	rk, rok := f.exprType(s, rhsNode)
 	lc, rc := kindCategory(elem), kindCategory(rk)
-	if !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+	if !rok || lc == catUnknown || rc == catUnknown {
 		return
 	}
-	f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(elem))
+	if lc != rc {
+		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(elem))
+		return
+	}
+	// Same category: a constant may still overflow a sized integer element. The
+	// element type is not written at the assignment site, so its canonical name
+	// is used, as for a ":="-inferred variable.
+	f.checkValueOverflow(s, sizedTarget(elem, Token{}), rhsNode)
 }
 
 // checkUnaryExpr resolves the names in a UnaryExpr's factor and checks that each
