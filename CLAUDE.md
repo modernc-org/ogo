@@ -94,8 +94,8 @@ inputs, and never hand-edit the outputs.
    re-cloned.
 
    > **Backend regenerated 2026-07-15** against the `v7.6.11` pin (flexprop repo and
-   > `spin2cpp` submodule both at `v7.6.11`) using **ccgo v4.34.0**; `mcpp_main.c.diff`
-   > applied cleanly. This regen replaced the 2026-07-10 build to adopt ccgo v4.34.0's
+   > `spin2cpp` submodule both at `v7.6.11`) using **ccgo v4.34.6**; `mcpp_main.c.diff`
+   > applied cleanly. This regen replaced the 2026-07-10 build to adopt ccgo v4.34.6's
    > newer pointer-deref codegen (`**(**T)(__ccgo_up(x))` in place of
    > `*(*T)(unsafe.Pointer(x))`). Post-regen chore: `rm -rf internal/flexprop
    > internal/flexprop_install` (git-ignored build clones that otherwise break
