@@ -523,7 +523,7 @@
 // such as the "[]int" in "make([]int, 10)" parses; a type is not a value, and
 // the semantic checker rejects such a use (as it rejects make and new).
 //
-//	FactorSuffix = { Selector | Index } [ CallSuffix ] .
+//	FactorSuffix = { Selector | Index | CallSuffix } .
 //	Selector     = "." ( identifier | "(" "type" ")" ) .
 //	Index        = "[" Expression "]" .
 //

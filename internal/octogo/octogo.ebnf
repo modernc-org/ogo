@@ -66,7 +66,7 @@ Factor     = identifier [ FactorSuffix ]
 	| "(" Expression ")"
 	| "[" [ Expression ] "]" Type
 	| FuncLiteral .
-FactorSuffix = { Selector | Index } [ CallSuffix ] .
+FactorSuffix = { Selector | Index | CallSuffix } .
 Selector     = "." ( identifier | "(" "type" ")" ) .
 Index        = "[" Expression "]" .
 FuncLiteral = "func" Signature Block .

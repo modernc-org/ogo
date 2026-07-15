@@ -1,0 +1,37 @@
+// COMPILE
+
+// The postfix suffix chain "FactorSuffix = { Selector | Index | CallSuffix }"
+// permits a call anywhere in the chain, not only at its end, so a call result may
+// itself be selected, indexed or called again. These read-position forms parse and
+// check without error. (The statement-level "Postfix" production is a separate
+// grammar rule and still requires the call last.)
+
+type Point struct {
+	x int
+	y int
+}
+
+func (p Point) self() Point { return p }
+
+func origin() Point { var p Point; return p }
+
+var grid [3]Point
+
+func chains() {
+	var p Point
+
+	// Select a field of a call result.
+	_ = origin().x
+
+	// Call a method on a call result, then select a field of that result.
+	_ = origin().self().y
+
+	// Index an array element, call its method, then select a field.
+	_ = grid[0].self().x
+
+	// A method call whose result is selected, and one selected then re-selected.
+	_ = p.self().x
+	_ = p.self().self().y
+
+	_ = p
+}

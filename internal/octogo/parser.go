@@ -4942,7 +4942,7 @@ state7:
 
 // FactorSuffix grammar:
 //
-//	FactorSuffix = { Selector | Index } [ CallSuffix ] .
+//	FactorSuffix = { Selector | Index | CallSuffix } .
 //
 //	State 0
 //		Accept
@@ -4951,7 +4951,7 @@ state7:
 //		on  '['
 //			call Index and goto state 1
 //		on  '('
-//			call CallSuffix and goto state 2
+//			call CallSuffix and goto state 1
 //	State 1
 //		Accept
 //		on  '.'
@@ -4959,9 +4959,7 @@ state7:
 //		on  '['
 //			call Index and goto state 1
 //		on  '('
-//			call CallSuffix and goto state 2
-//	State 2
-//		Accept
+//			call CallSuffix and goto state 1
 //
 // FactorSuffix is used internally from Parse.
 func (p *Parser) FactorSuffix() (r []int32) {
@@ -4978,7 +4976,7 @@ func (p *Parser) FactorSuffix() (r []int32) {
 		goto state1
 	case TOK_0028:
 		r = p.add(r, p.CallSuffix())
-		goto state2
+		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 state1:
@@ -4992,11 +4990,8 @@ state1:
 		goto state1
 	case TOK_0028:
 		r = p.add(r, p.CallSuffix())
-		goto state2
+		goto state1
 	}
-	return p.stop(r, accept, errorSet)
-state2:
-	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 }
 
