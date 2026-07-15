@@ -1,5 +1,7 @@
 // COMPILE
 
+import "p2"
+
 var rateChan chan int
 
 func blinkWorker() {

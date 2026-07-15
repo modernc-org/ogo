@@ -523,9 +523,8 @@ func TestCommOperandRobustness(t *testing.T) {
 // base, wherever a read flows (operand, argument, condition, index, unary operand).
 // The base resolution runs in checkFactorNames, which distinguishes a direct call
 // and a package qualifier from a plain undefined base, so an unexpected shape must
-// yield a diagnostic or nothing, never a crash. The statement-position call bases
-// ("nope.m()", "nope[i]()") flow through checkAssignment instead and are included to
-// confirm they too do not crash.
+// yield a diagnostic or nothing, never a crash. (Statement- and "go"-position call
+// bases flow through checkAssignment/checkGoStmt; see TestCallBaseRobustness.)
 func TestReadBaseRobustness(t *testing.T) {
 	bodies := []string{
 		// Index base: undefined, blank, defined, nested, chained.
@@ -541,10 +540,8 @@ func TestReadBaseRobustness(t *testing.T) {
 		"var s pt; _ = s.x; _ = s",
 		"_ = nope.a.b",
 		"var s pt; _ = s.x.y; _ = s",
-		// Method-call base: undefined (expression and statement), blank, defined,
-		// chained, index-then-call.
+		// Method-call base: undefined, blank, defined, chained, index-then-call.
 		"_ = nope.m()",
-		"nope.m()",
 		"_ = _.m()",
 		"var s pt; _ = s.get(); _ = s",
 		"_ = nope.a.m()",
@@ -570,6 +567,51 @@ func TestReadBaseRobustness(t *testing.T) {
 		"import \"p\"\nfunc g() { _ = p.Value }\n",
 		"import \"p\"\nfunc g() { p.Use() }\n",
 		"import \"p\"\nfunc g() { _ = p.Get() + 1 }\n",
+	)
+	buildEach(t, progs)
+}
+
+// TestCallBaseRobustness exercises name-checking of the base of a call made through
+// a selector or index in statement and "go"-statement position -- the "x" in "x.m()"
+// or "x[i]()" -- over degenerate shapes: an undefined, blank, defined, chained or
+// index-then-call base, a package-qualified call, and a direct call. The base
+// resolution runs in checkCallBase (from checkAssignment and checkGoStmt), which
+// leaves a direct callee to checkCall and a package qualifier to the import, so an
+// unexpected shape must yield a diagnostic or nothing, never a crash.
+func TestCallBaseRobustness(t *testing.T) {
+	bodies := []string{
+		// Statement call base: undefined, blank, defined, chained, index-then-call.
+		"nope.m()",
+		"nope[0]()",
+		"nope.a.m()",
+		"_.m()",
+		"_[0]()",
+		"var s pt; s.get(); _ = s",
+		"nope[0].m()",
+		"nope()",    // a direct call -- left to checkCall
+		"nope(bad)", // direct call, undefined argument
+		// "go" statement call base: the same shapes.
+		"go nope.m()",
+		"go nope[0]()",
+		"go nope.a.m()",
+		"go _.m()",
+		"go _[0]()",
+		"var s pt; go s.get(); _ = s",
+		"go nope()",
+		// A parenthesized or pointer base is not a plain name, so no base is resolved.
+		"(g)()",
+		"go (g)()",
+	}
+	progs := make([]string, 0, len(bodies)+4)
+	for _, b := range bodies {
+		progs = append(progs, "type pt struct{ x int }\nfunc (p pt) get() int { return p.x }\nfunc g() {\n\t"+b+"\n}\n")
+	}
+	// A package-qualified call in statement and "go" position is legal.
+	progs = append(progs,
+		"import \"p\"\nfunc g() { p.Use() }\n",
+		"import \"p\"\nfunc g() { go p.Do() }\n",
+		"import \"p\"\nfunc g() { p.a.Use() }\n",
+		"import \"p\"\nfunc g() { go p[0]() }\n",
 	)
 	buildEach(t, progs)
 }

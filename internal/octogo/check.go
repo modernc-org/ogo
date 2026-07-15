@@ -1071,6 +1071,7 @@ func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
 	id, ok := f.assignHeadIdent(head)
 	f.checkCall(s, id, direct && ok, argList)
 	if !direct && ok {
+		f.checkCallBase(s, id, hasSelectorChild(stmt))
 		if m, has := f.methodCallMember(stmt); has {
 			f.checkMethodCall(s, id, m, argList)
 		}
@@ -2017,6 +2018,19 @@ func hasSelectorOrIndex(n Node) bool {
 	return false
 }
 
+// hasSelectorChild reports whether a node has a direct Selector child -- a
+// "base.member" selection, as opposed to an index. It distinguishes a package-
+// qualified read or call ("pkg.X", "pkg.F()") from an index expression, whose base
+// can never be a package.
+func hasSelectorChild(n Node) bool {
+	for c := range it(n.ast) {
+		if c.sym == Selector {
+			return true
+		}
+	}
+	return false
+}
+
 // checkAssignment handles a "AssignHead Postfix" statement. Only ":=" introduces
 // variables: its plainly-named left-hand operands that are not already declared
 // in the current scope are declared here, and it is an error if none of them is
@@ -2033,6 +2047,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		id, ok := f.assignHeadIdent(head)
 		f.checkCall(s, id, direct && ok, argList)
 		if !direct && ok {
+			f.checkCallBase(s, id, hasSelectorChild(postfix))
 			if m, has := f.methodCallMember(postfix); has {
 				f.checkMethodCall(s, id, m, argList)
 			}
@@ -2699,6 +2714,23 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 	f.checkArgs(s, member, fd.Type.Signature, args)
 }
 
+// checkCallBase resolves the base of a call made through a selector or index -- the
+// "x" in a call or "go" statement "x.m()" or "x[i]()" -- which checkCall does not
+// own (checkCall resolves only a direct callee). Reading the blank identifier as the
+// base ("_.m()") is an illegal read; an undefined base is reported unless it is a
+// package qualifier ("pkg.F()", whose qualifier is an import resolved through the
+// file scope). hasSelector distinguishes a package-qualified call from an index
+// call, whose base can never be a package. A resolved base is left to the method or
+// field check.
+func (f *File) checkCallBase(s *Scope, id Token, hasSelector bool) {
+	if f.blankRead(id) {
+		return
+	}
+	if s.find(id.Src()) == nil && !(hasSelector && f.isImportQualifier(s, id.Src())) {
+		f.err(id.Position(), "undefined: %s", id.Src())
+	}
+}
+
 // methodResultKind returns the predeclared Kind of a method call
 // "head.member(...)" when head is a variable of a named type whose method has a
 // single known predeclared result -- the method analogue of callResultKind.
@@ -3236,11 +3268,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	directCall, hasSelector := false, false
 	if hasSuffix {
 		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
-		for c := range it(suffix.ast) {
-			if c.sym == Selector {
-				hasSelector = true
-			}
-		}
+		hasSelector = hasSelectorChild(suffix)
 		if argList, direct, isCall := f.callInfo(suffix); isCall {
 			directCall = direct
 			f.checkCall(s, id, direct && hasID, argList)

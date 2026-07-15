@@ -1,0 +1,53 @@
+// The base of a call made through a selector or index in statement or "go"-statement
+// position -- the "x" in "x.method()" or "x[i]()" -- is name-checked, the same
+// resolution a suffixed read receives (see read_base.ogo): an undefined base is
+// reported, reading the blank identifier as the base is illegal, and a defined
+// variable or a package qualifier ("pkg.F()") is accepted. A direct call "f()" is
+// left to the callee check.
+
+import "p"
+
+// A method-call or index-call statement whose base is undefined is reported.
+func stmtCall() {
+	// ERROR "undefined: a"
+	a.m()
+	// ERROR "undefined: b"
+	b[0]()
+	// ERROR "undefined: c"
+	c.d.m()
+	// ERROR "cannot use _ as value or type"
+	_.m()
+	// ERROR "cannot use _ as value or type"
+	_[0]()
+}
+
+// The same holds for a call launched by a "go" statement.
+func goCall() {
+	// ERROR "undefined: a"
+	go a.m()
+	// ERROR "undefined: b"
+	go b[0]()
+	// ERROR "cannot use _ as value or type"
+	go _.m()
+}
+
+// A defined base with a suffix, a package-qualified call, and a direct call are all
+// legal.
+type Point struct{ x int }
+
+func (pt Point) move() {}
+
+func run() {}
+
+func legalCall() {
+	var pt Point
+
+	pt.move()
+	go pt.move()
+	p.Use()
+	go p.Do()
+	run()
+	go run()
+
+	_ = pt
+}
