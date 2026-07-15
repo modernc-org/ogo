@@ -372,6 +372,33 @@ func main2lib(destFn, srcFn string) {
 	w("return cc")
 	w("}\n")
 
+	// Fix qsort comparators. The per-function rewrite above gives every function
+	// an extra cc *CC parameter, but libc.Xqsort invokes its comparator through
+	// the C ABI func(*libc.TLS, uintptr, uintptr) int32 and cannot pass cc. For
+	// each comparator F registered via __ccgo_fp inside a libc.Xqsort call, emit a
+	// top-level trampoline F__ccb with that exact signature which recovers the
+	// active *CC from ccCurrent (a package global set at Main entry, see
+	// flexcc.go) and forwards to F, and point the call site at F__ccb. Assumes the
+	// comparator is written inline as __ccgo_fp(F) on the Xqsort call line, which
+	// holds for every qsort in the pinned flexprop source.
+	gen := buf.String()
+	var cbs []string
+	seen := map[string]struct{}{}
+	gen = qsortCbRE.ReplaceAllStringFunc(gen, func(m string) string {
+		fn := qsortCbRE.FindStringSubmatch(m)[1]
+		if _, ok := seen[fn]; !ok {
+			seen[fn] = struct{}{}
+			cbs = append(cbs, fn)
+		}
+		return strings.Replace(m, "__ccgo_fp("+fn+")", "__ccgo_fp("+fn+"__ccb)", 1)
+	})
+	buf.Reset()
+	buf.WriteString(gen)
+	slices.Sort(cbs)
+	for _, fn := range cbs {
+		w("\nfunc %s__ccb(tls *libc.TLS, a uintptr, b uintptr) int32 {\n\treturn %s(tls, ccCurrent, a, b)\n}\n", fn, fn)
+	}
+
 	if err := os.WriteFile(destFn, buf.Bytes(), 0660); err != nil {
 		fail(1, "%v", err)
 	}
@@ -419,6 +446,12 @@ var (
 	re  = regexp.MustCompile(`\b[sx]__[a-zA-Z0-9_]+\b`)
 	re2 = regexp.MustCompile(`\b[sx]__[a-zA-Z0-9_]+\b\(tls`)
 	re3 = regexp.MustCompile(`}\)\)\)\(tls\b`)
+	// qsortCbRE matches a libc.Xqsort call whose comparator is registered inline
+	// as __ccgo_fp(F), capturing F. Used to trampoline C-ABI qsort comparators
+	// (see main2lib). [^\n]* keeps the match on one line; the anchoring on
+	// __ccgo_fp( makes it capture the comparator, not any s__ identifier that
+	// appears earlier in the Xqsort arguments (e.g. cc.s__globalBytecodes).
+	qsortCbRE = regexp.MustCompile(`libc\.Xqsort\([^\n]*__ccgo_fp\(([sx]__[A-Za-z0-9_]+)\)\)`)
 )
 
 func rename(s string, funcs map[string]struct{}) string {

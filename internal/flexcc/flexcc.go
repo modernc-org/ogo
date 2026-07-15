@@ -13,6 +13,13 @@ import (
 	"modernc.org/libc"
 )
 
+// ccCurrent holds the *CC of the in-flight Main call so C-ABI callbacks (qsort
+// comparators registered via __ccgo_fp) can recover it. The *CC-threading rewrite
+// in internal/generator.go adds a cc parameter to every function, but libc's
+// callback dispatch uses the original C signature and cannot pass cc through.
+// Safe because Main is documented as not concurrent and pins its OS thread.
+var ccCurrent *CC
+
 // Main executes the equivalent of the original flexcc C main function.
 //
 // # Note
@@ -46,6 +53,7 @@ func Main(stdin io.Reader, stdout, stderr io.Writer, args []string) (err error) 
 
 	var pinner runtime.Pinner
 	cc := newCC(&pinner)
+	ccCurrent = cc // let __ccgo_fp qsort-comparator trampolines recover cc
 	cc.stdin = stdin
 	cc.stdout = stdout
 	cc.stderr = stderr
