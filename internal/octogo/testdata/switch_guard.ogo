@@ -1,0 +1,66 @@
+// A switch guard's value expression -- the operand a plain "switch expr" switches
+// on, or the right-hand side of a "switch v := expr" guard -- is name- and
+// type-checked like any other expression: an undefined name, a read of the blank
+// identifier, and an operator not defined on its operands are all reported. This
+// mirrors the checking of a case expression. The left-hand side of a ":=" guard
+// names the guard variable being declared and is not a read, and a conditionless
+// "switch" has no guard to check.
+
+// An undefined name in the guard is reported.
+func undefinedGuard() {
+	// ERROR "undefined: nope"
+	switch nope {
+	case 1:
+	}
+}
+
+// The blank identifier names no value; reading it in the guard is illegal.
+func blankGuard() {
+	// ERROR "cannot use _ as value or type"
+	switch _ {
+	case 1:
+	}
+}
+
+// An operator not defined on its operands is reported in the guard, e.g. pointer
+// arithmetic.
+func badOperatorGuard() {
+	var p *int
+	// ERROR "not defined on pointer"
+	switch p + 1 {
+	case 1:
+	}
+	_ = p
+}
+
+// In a "v := expr" guard the right-hand side is a value that is checked; an
+// undefined name there is reported. The left-hand side declares v and is not read.
+func defineGuardRHS() {
+	// ERROR "undefined: gone"
+	switch v := gone {
+	case 1:
+		_ = v
+	}
+}
+
+// Legal guards: a defined variable, a "v := expr" guard binding a fresh variable, a
+// comparison, and a conditionless switch all check without complaint.
+func legalGuards(x int) {
+	switch x {
+	case 1:
+	}
+
+	switch v := x + 1 {
+	case 2:
+		_ = v
+	}
+
+	var a, b int
+	switch a < b {
+	case true:
+	}
+
+	switch {
+	case true:
+	}
+}

@@ -1512,6 +1512,13 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	for c := range it(n.ast) {
 		switch c.sym {
 		case SwitchGuard:
+			// Resolve the names in the guard's value expression, reporting an
+			// undefined name, a blank read or an ill-typed operator there, just as
+			// a case expression's are checked. The guard is evaluated in the outer
+			// scope s, before any "v := expr" guard variable is declared.
+			if e, ok := f.guardValueExpr(c); ok {
+				f.checkNames(s, e)
+			}
 			guardKind, guardOK = f.switchGuardType(s, c)
 			f.declareSwitchGuardVar(ss, guardKind, guardOK, c)
 		case CaseClause:
@@ -1549,9 +1556,21 @@ func (f *File) declareSwitchGuardVar(s *Scope, kind Kind, hasKind bool, n Node) 
 	}
 }
 
-// switchGuardType resolves the type a switch compares against: the right-hand
-// side of a "v := expr" guard, or the sole guard expression otherwise.
+// switchGuardType resolves the type a switch compares against: the type of the
+// guard's value expression (see guardValueExpr).
 func (f *File) switchGuardType(s *Scope, n Node) (Kind, bool) {
+	if e, ok := f.guardValueExpr(n); ok {
+		return f.exprType(s, e)
+	}
+	return 0, false
+}
+
+// guardValueExpr returns a switch guard's value expression -- the operand a plain
+// "switch expr" guard switches on, or the right-hand side of a "switch v := expr"
+// guard. The left-hand side of a ":=" guard names the guard variable being
+// declared, not a value that is read, so it is never returned. A degenerate guard
+// with no value expression returns ok == false.
+func (f *File) guardValueExpr(n Node) (Node, bool) {
 	var exprs []Node
 	hasDefine := false
 	for c := range it(n.ast) {
@@ -1565,12 +1584,14 @@ func (f *File) switchGuardType(s *Scope, n Node) (Kind, bool) {
 		}
 	}
 	switch {
-	case hasDefine && len(exprs) >= 2:
-		return f.exprType(s, exprs[1])
+	case hasDefine:
+		if len(exprs) >= 2 {
+			return exprs[1], true
+		}
 	case len(exprs) >= 1:
-		return f.exprType(s, exprs[0])
+		return exprs[0], true
 	}
-	return 0, false
+	return Node{}, false
 }
 
 // checkCaseExprs checks every expression of a case clause's CaseHead against the

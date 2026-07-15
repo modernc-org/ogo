@@ -265,6 +265,43 @@ func TestBlankIdentifierRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestSwitchGuardRobustness exercises name- and type-checking of a switch guard's
+// value expression -- the operand of a plain "switch expr" guard or the right-hand
+// side of a "switch v := expr" guard -- reporting an undefined name, a blank read or
+// an ill-typed operator there, while the ":=" left-hand side declares the guard
+// variable rather than reading it. These run over degenerate and nested guard shapes
+// (a bare name, a parenthesized, unary, operator, call, index, selector or receive
+// guard, an undefined or blank guard, a nested switch, a guard var bound from an
+// undefined or blank value), requiring each to be analysed without panicking.
+func TestSwitchGuardRobustness(t *testing.T) {
+	progs := []string{
+		// Plain guard: undefined, blank, ill-typed, and legal.
+		"func f() { switch nope {\ncase 1:\n} }\n",
+		"func f() { switch _ {\ncase 1:\n} }\n",
+		"func f(x int) { switch x {\ncase 1:\n} }\n",
+		"func f() { switch {\ncase true:\n} }\n",
+		"func f() { var p *int; switch p + 1 {\ncase 1:\n}\n_ = p }\n",
+		"func f() { switch \"a\" - \"b\" {\ncase 1:\n} }\n",
+		// Nested and shaped guards.
+		"func f() { switch (nope) {\ncase 1:\n} }\n",
+		"func f(x int) { switch -x {\ncase 1:\n} }\n",
+		"func f() { switch nope + _ {\ncase 1:\n} }\n",
+		"func f() { switch a + b + c {\ncase 1:\n} }\n",
+		"func g() int { return 0 }\nfunc f() { switch g() {\ncase 1:\n} }\n",
+		"func f() { switch nope() {\ncase 1:\n} }\n",
+		"func f() { var a [3]int; switch a[0] {\ncase 1:\n}\n_ = a }\n",
+		"type pt struct{ x int }\nfunc f() { var s pt; switch s.x {\ncase 1:\n}\n_ = s }\n",
+		"func f() { var ch chan int; switch <-ch {\ncase 1:\n}\n_ = ch }\n",
+		"func f(x int) { switch x {\ncase 1:\n\tswitch nope {\ncase 2:\n\t}\n} }\n",
+		// "v := expr" guard: the right-hand side is checked, the left-hand side declares.
+		"func f() { switch v := nope {\ncase 1:\n\t_ = v\n} }\n",
+		"func f() { switch v := _ {\ncase 1:\n\t_ = v\n} }\n",
+		"func f() { switch v := 5 {\ncase 1:\n\t_ = v\n} }\n",
+		"func f() { switch _ := 5 {\ncase 1:\n} }\n",
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()
