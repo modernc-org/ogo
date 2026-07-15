@@ -987,7 +987,8 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	var head Node
 	isReturn := false
 	isGo := false
-	condKw := "" // "if"/"for" while the next Expression child is that condition
+	isRecv := false // a bare receive statement "<-ch", pending its Expression operand
+	condKw := ""    // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
 		switch c.sym {
 		case VarDecl:
@@ -1016,12 +1017,24 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 		case SelectStmt:
 			f.checkSelect(s, results, c)
 		case Expression:
-			// The only bare Expression child of a statement that is a boolean
-			// condition is an "if"/"for" guard; a "<-" receive statement's
-			// Expression is not.
-			if condKw != "" {
+			// A statement's bare Expression child is either an "if"/"for" guard
+			// (a boolean condition) or the operand of a "<-ch" receive statement,
+			// distinguished by which keyword/operator token preceded it.
+			switch {
+			case condKw != "":
 				f.checkCondition(s, condKw, c)
 				condKw = ""
+			case isRecv:
+				// A bare receive statement discards the value; resolve the names in
+				// the channel operand (reporting an undefined channel) and, as
+				// "x = <-ch" does via checkUnaryExpr, require a known operand to be a
+				// channel.
+				f.checkNames(s, c)
+				if _, _, isChan := f.exprChan(s, c); !isChan {
+					if _, known := f.exprType(s, c); known {
+						f.err(f.tok(c.Pos()).Position(), "invalid operation: cannot receive from non-channel")
+					}
+				}
 			}
 		case 0:
 			switch f.ch(c.tok) {
@@ -1029,6 +1042,8 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				isReturn = true
 			case GO:
 				isGo = true
+			case ARROW:
+				isRecv = true
 			case IF, FOR:
 				condKw = f.tok(c.tok).Src()
 			case DEFER:
@@ -2194,11 +2209,19 @@ func countUnits(n int, unit string) string {
 }
 
 // checkSend checks a send statement "ch <- v": ch must be a channel and the
-// value v must match the channel's element type.
+// value v must match the channel's element type. The channel operand is resolved
+// here -- unlike an "=" target it is not seen by checkAssignment's target loop --
+// so an undefined or blank channel is reported, mirroring checkDerefAssign.
 func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
+	if f.blankRead(chTok) { // "_ <- v" reads "_" as a channel
+		return
+	}
 	d, ok := s.find(chTok.Src()).(*VarDeclaration)
 	if !ok {
-		return // undefined or non-variable operand: not diagnosed here
+		if s.find(chTok.Src()) == nil && !f.isImportQualifier(s, chTok.Src()) {
+			f.err(chTok.Position(), "undefined: %s", chTok.Src())
+		}
+		return // a defined non-variable is left to its own check, as in checkDerefAssign
 	}
 	elem, hasElem, isChan := f.chanElemOf(d)
 	if !isChan {

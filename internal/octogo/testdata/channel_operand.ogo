@@ -1,0 +1,47 @@
+// The channel operand of a send statement "ch <- v" and of a bare receive statement
+// "<-ch" is name-checked: an undefined or blank channel is reported, and a bare
+// receive from a known non-channel is rejected just as "x = <-ch" is. (The sent
+// value and a receive-assignment target are checked separately; see
+// 13_channel_operations.ogo and channel_local.ogo.)
+
+// A send's channel operand is resolved: undefined, blank and non-channel operands
+// are each reported, a channel is accepted.
+func sendOperand() {
+	var ch chan int
+	var n int
+
+	ch <- 1
+
+	// ERROR "undefined: missing"
+	missing <- 1
+
+	// ERROR "cannot use _ as value or type"
+	_ <- 1
+
+	// ERROR "cannot send to non-channel"
+	n <- 1
+
+	_ = ch
+	_ = n
+}
+
+// A bare receive statement's channel operand is resolved and required to be a
+// channel, mirroring a receive assignment.
+func recvOperand() {
+	var ch chan int
+	var n int
+
+	<-ch
+
+	// ERROR "undefined: missing"
+	<-missing
+
+	// ERROR "cannot use _ as value or type"
+	<-_
+
+	// ERROR "cannot receive from non-channel"
+	<-n
+
+	_ = ch
+	_ = n
+}

@@ -418,6 +418,40 @@ func TestIndexNameRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestChannelOperandRobustness exercises name- and channel-checking of the channel
+// operand of a send statement "ch <- v" and a bare receive statement "<-ch" -- an
+// undefined, blank, non-channel, indexed, selector, pointer or compound operand, at
+// package, local and parameter scope -- requiring each to be analysed without
+// panicking.
+func TestChannelOperandRobustness(t *testing.T) {
+	progs := []string{
+		// Send operand: valid, undefined, blank, non-channel.
+		"func f() { var ch chan int; ch <- 1; _ = ch }\n",
+		"var ch chan int\nfunc f() { ch <- 1 }\n",
+		"func f(ch chan int) { ch <- 1 }\n",
+		"func f() { nope <- 1 }\n",
+		"func f() { _ <- 1 }\n",
+		"func f() { var n int; n <- 1; _ = n }\n",
+		// Send with a suffixed or pointer channel operand.
+		"func f() { var chs [3]chan int; var i int; chs[i] <- 1; _ = chs; _ = i }\n",
+		"func f() { var chs [3]chan int; chs[nope] <- 1; _ = chs }\n",
+		"func f() { var p pt; p.ch <- 1; _ = p }\ntype pt struct{ ch int }\n",
+		"func f() { var p *int; *p <- 1; _ = p }\n",
+		// Bare receive operand: valid, undefined, blank, non-channel, compound.
+		"func f() { var ch chan int; <-ch; _ = ch }\n",
+		"var ch chan int\nfunc f() { <-ch }\n",
+		"func f(ch chan int) { <-ch }\n",
+		"func f() { <-nope }\n",
+		"func f() { <-_ }\n",
+		"func f() { var n int; <-n; _ = n }\n",
+		"func f() { var ch chan int; <-ch + 1; _ = ch }\n",
+		"func f() { var a, b chan int; <-a; <-b; _ = a; _ = b }\n",
+		"func nope() int { return 0 }\nfunc f() { <-nope() }\n",
+		"func f() { var ch chan int; <-<-ch; _ = ch }\n",
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()
