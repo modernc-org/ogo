@@ -2567,11 +2567,17 @@ func firstSuffixIsIndex(n Node) bool {
 	return false
 }
 
-// checkFieldAccess reports a selection "head.field" when head is a variable of a
-// struct type that has no such field.
+// checkFieldAccess reports a selection "head.field" when head is a variable whose
+// type has no such field: a predeclared scalar (int, bool, string, ...) has no
+// fields at all, and a named struct type is checked field by field. A pointer,
+// array, slice or other named type carries no scalar kind and is left alone.
 func (f *File) checkFieldAccess(s *Scope, head, field Token) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok || !d.typeName.IsValid() {
+		return
+	}
+	if d.hasKind {
+		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 		return
 	}
 	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {
@@ -2708,6 +2714,12 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 	}
 	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
 	if !ok {
+		// The base is not a named type. A predeclared scalar (int, bool, string, ...)
+		// has no methods, so any method call on it is invalid; a pointer, array or
+		// slice carries no scalar kind and is left alone.
+		if d.hasKind {
+			f.err(member.Position(), "type %s has no method %s", d.typeName.Src(), member.Src())
+		}
 		return
 	}
 	fd := td.methods[member.Src()]

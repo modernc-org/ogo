@@ -1,0 +1,63 @@
+// A selection or method call on a scalar -- "x.field" or "x.method()" where x is a
+// numeric, bool or string variable, not a struct -- is invalid: a predeclared scalar
+// has no fields or methods. This is the selector analogue of the index check in
+// read_index_scalar.ogo. The base's own definedness (read_base.ogo) and a struct's
+// field/method set (field_access.ogo, method_call.ogo) are checked separately; a
+// named type may have methods and a pointer to a struct auto-dereferences, so both
+// are left to their own resolution.
+
+type Point struct{ x int }
+
+func (pt Point) move() {}
+
+// A field selection on a scalar, read or written, has no field to resolve.
+func scalarFields() {
+	var n int
+	var b bool
+	var s string
+
+	// ERROR "type int has no field f"
+	_ = n.f
+	// ERROR "type bool has no field g"
+	_ = b.g
+	// ERROR "type string has no field h"
+	_ = s.h
+	// ERROR "type int has no field k"
+	n.k = 1
+
+	_ = n
+	_ = b
+	_ = s
+}
+
+// A method call on a scalar, in statement, "go" and expression position, has no
+// method to resolve.
+func scalarMethods() {
+	var n int
+
+	// ERROR "type int has no method m"
+	n.m()
+	// ERROR "type int has no method run"
+	go n.run()
+	// ERROR "type int has no method get"
+	_ = n.get()
+
+	_ = n
+}
+
+// A struct field and method, a pointer-to-struct field, and -- to confirm the check
+// still fires -- a scalar parameter field are each resolved correctly.
+func legalSelections(k int) {
+	var pt Point
+	var pp *Point
+
+	pt.move()
+	_ = pt.x
+	_ = pp.x
+
+	// ERROR "type int has no field field"
+	_ = k.field
+
+	_ = pt
+	_ = pp
+}

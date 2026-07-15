@@ -659,6 +659,53 @@ func TestScalarIndexRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestScalarSelectorRobustness exercises the "type ... has no field/method" check for
+// a selection or method call on a scalar -- "x.f", "x.m()" where x is a numeric, bool
+// or string variable, not a struct -- in read, write, statement and "go" position,
+// over degenerate shapes: each scalar kind, a chained selector, a selector nested in
+// an operator, argument or condition, and array, slice, pointer, struct, named-type
+// and undefined bases that the check must leave to their own handling. The checks run
+// in checkFieldAccess and checkMethodCall only when the base's type is a predeclared
+// scalar, so any other base must be left alone, never crash.
+func TestScalarSelectorRobustness(t *testing.T) {
+	bodies := []string{
+		// Scalar field selection -- reported.
+		"var n int; _ = n.f; _ = n",
+		"var b bool; _ = b.f; _ = b",
+		"var s string; _ = s.f; _ = s",
+		"var n int; n.f = 1; _ = n",
+		"var n int; _ = n.a.b; _ = n",
+		"var n int; use(n.f); _ = n",
+		"var n int; if n.f {\n}\n_ = n",
+		"var n int; _ = n.f + 1; _ = n",
+		// Scalar method call -- reported in statement, go and expression position.
+		"var n int; n.m(); _ = n",
+		"var n int; go n.m(); _ = n",
+		"var n int; _ = n.m(); _ = n",
+		"var n int; n.m(bad); _ = n",
+		// Indexable, composite, named and undefined bases -- left alone.
+		"var t pt; _ = t.x; _ = t",
+		"var t pt; _ = t.nope; _ = t",
+		"var p *pt; _ = p.x; _ = p",
+		"var a [3]int; _ = a.f; _ = a",
+		"var s []int; _ = s.f; _ = s",
+		"var p *int; _ = p.f; _ = p",
+		"var c C; _ = c.Hot(); _ = c",
+		"_ = nope.f",
+		"_ = _.f",
+	}
+	progs := make([]string, 0, len(bodies)+2)
+	for _, b := range bodies {
+		progs = append(progs, "type pt struct{ x int }\ntype C int\nfunc (c C) Hot() bool { return true }\nfunc use(i int) {}\nfunc g() {\n\t"+b+"\n}\n")
+	}
+	// A constant and a parameter scalar base.
+	progs = append(progs,
+		"const k = 5\nfunc g() { _ = k.f }\n",
+		"func g(p int) { _ = p.f }\n",
+	)
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()
