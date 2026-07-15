@@ -747,6 +747,40 @@ func TestOperandNamingRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestStatementPostfixRobustness exercises the widened statement Postfix chain
+// "{ Selector | Index | CallSuffix }" and the "ends in a call" / "bare value"
+// distinction it introduces: a chained call statement, a bare name/selection/index
+// (rejected "evaluated but not used"), a selection or index of a call result, an
+// assignment or send reached through a call, and the "go"/"defer" forms, over
+// degenerate and undefined-operand shapes. checkStatement (bare AssignHead),
+// checkAssignment (endsInCall) and checkGoStmt each classify the statement, so an
+// unexpected shape must yield a diagnostic or nothing, never a crash.
+func TestStatementPostfixRobustness(t *testing.T) {
+	bodies := []string{
+		// Chained call statements -- legal (end in a call).
+		"p.m()", "p.m().m()", "o().m()", "arr[0].m()", "p.m().m().m()",
+		// Bare values -- rejected, over name, deref, selection, index and call-result.
+		"p", "*p", "p.x", "arr[0]", "p.m().x", "o()[0]", "arr[0].m().x", "p.m()[0]",
+		// Assignments and sends reached through a call result.
+		"p.m().x = 1", "o()[0] = 1", "o().x = 1", "p.x = 1", "arr[0].x = 1",
+		"ch <- 1", "arr[nope] <- 1", "p.m() <- 1",
+		// "go" statements: chained calls, non-calls (rejected), undefined operands.
+		"go p.m()", "go p.m().m()", "go o().m()", "go p", "go p.x", "go p.m().x",
+		"go nope()", "go nope.m().n()",
+		// "defer" statements: wholesale rejected, chained or bare.
+		"defer p.m()", "defer p.m().m()", "defer p", "defer p.x",
+		// Degenerate: undefined base, parenthesized head, multi-star, index of call.
+		"nope.m().n()", "(p).m()", "*p.m()", "p()[nope].m()",
+		// ":=" and "var" inferring from a chained call.
+		"y := p.m(); _ = y", "var z P = p.m(); _ = z",
+	}
+	progs := make([]string, len(bodies))
+	for i, b := range bodies {
+		progs[i] = "type P struct{ x int }\nfunc (p P) m() P { return p }\nfunc o() P { var q P; return q }\nvar arr [3]P\nvar ch chan int\nfunc g() {\n\tvar p P\n\t" + b + "\n\t_ = p\n}\n"
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

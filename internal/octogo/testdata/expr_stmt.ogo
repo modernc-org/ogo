@@ -1,0 +1,52 @@
+// A statement expression must have an effect -- a function or method call. A bare
+// value, even one produced through a call, computes something and discards it, so
+// it is rejected: "evaluated but not used". A "go" statement likewise must launch a
+// call, not a bare value.
+
+type Point struct{ x int }
+
+func (p Point) self() Point { return p }
+
+var grid [3]Point
+
+// A bare name, selection or index -- and a selection or index of a call result --
+// is a value with no effect.
+func bareValues() {
+	var p Point
+
+	// ERROR "p evaluated but not used"
+	p
+	// ERROR "p\.x evaluated but not used"
+	p.x
+	// ERROR "grid\[0\] evaluated but not used"
+	grid[0]
+	// ERROR "p\.self\(\)\.x evaluated but not used"
+	p.self().x
+	// ERROR "p\.self\(\)\[0\] evaluated but not used"
+	p.self()[0]
+
+	_ = p
+}
+
+// A method call statement discards its result legally, since the call has an
+// effect; only the trailing selection or index makes the two above illegal.
+func callStmts() {
+	var p Point
+
+	p.self()
+	p.self().self()
+
+	_ = p
+}
+
+// A "go" statement must launch a call, not a bare value.
+func goValues() {
+	var p Point
+
+	// ERROR "go statement must be a function call"
+	go p
+	// ERROR "go statement must be a function call"
+	go p.self().x
+
+	_ = p
+}

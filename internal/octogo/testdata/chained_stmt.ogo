@@ -1,0 +1,32 @@
+// COMPILE
+
+// The statement-level "Postfix" chain "{ Selector | Index | CallSuffix }" mirrors
+// FactorSuffix: a call may appear anywhere in the chain, so a call result may be
+// selected, indexed or called again. A chain that ends in a call is a valid call
+// statement, and a "go" statement may launch such a chained call.
+
+type Point struct{ x int }
+
+func (p Point) self() Point { return p }
+
+func origin() Point { var p Point; return p }
+
+var grid [3]Point
+
+func chainedStmts() {
+	var p Point
+
+	// Chained method-call statements: the result of each call is itself called.
+	p.self().self()
+	origin().self()
+	grid[0].self().self()
+
+	// An assignment whose target is reached through a call result.
+	p.self().x = 1
+
+	// A "go" statement launching a chained call.
+	go p.self().self()
+	go origin().self()
+
+	_ = p
+}

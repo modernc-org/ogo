@@ -987,8 +987,10 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	var head Node
 	isReturn := false
 	isGo := false
-	isRecv := false // a bare receive statement "<-ch", pending its Expression operand
-	condKw := ""    // "if"/"for" while the next Expression child is that condition
+	isRecv := false  // a bare receive statement "<-ch", pending its Expression operand
+	isDefer := false // a "defer" statement, already reported and carrying its own AssignHead
+	sawPostfix := false
+	condKw := "" // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
 		switch c.sym {
 		case VarDecl:
@@ -1011,6 +1013,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 		case AssignHead:
 			head = c
 		case Postfix:
+			sawPostfix = true
 			f.checkAssignment(s, head, c)
 		case SwitchStmt:
 			f.checkSwitch(s, results, c)
@@ -1042,6 +1045,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			case DEFER:
 				// The grammar still admits "defer" for LL(1) simplicity, but the
 				// zero-allocation target cannot accumulate deferred calls.
+				isDefer = true
 				f.err(f.tok(c.tok).Position(), "unexpected keyword 'defer'")
 			}
 		}
@@ -1052,16 +1056,29 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	if isGo {
 		f.checkGoStmt(s, head, stmt)
 	}
+	// A statement that is a bare name ("x", "*p") carries an AssignHead but no
+	// Postfix -- a value with no effect, rejected like the suffixed bare values
+	// checkAssignment reports. A "go"/"defer" statement also carries a lone
+	// AssignHead (its call is unwrapped), so both are excluded; every other
+	// keyword-led form has no AssignHead.
+	if head.sym == AssignHead && !sawPostfix && !isGo && !isDefer && !isReturn && !isRecv && condKw == "" {
+		f.err(f.tok(head.Pos()).Position(), "%s evaluated but not used", f.sourceSpan(head.Pos(), head.End()))
+	}
 }
 
 // checkGoStmt checks a "go" statement's launched call. A go statement is
-// "go" AssignHead { Selector | Index } CallSuffix: it starts the call on another
+// "go" AssignHead { Selector | Index | CallSuffix }: it starts the call on another
 // Cog but is otherwise an ordinary call, so its callee is resolved (an undefined
 // or non-function callee reported) and its arguments name- and type-checked
 // exactly as a call statement's are. The call is not wrapped in a Postfix as a
 // call statement's is, so the statement node itself carries the selectors and the
-// CallSuffix the call helpers scan for.
+// CallSuffix the call helpers scan for. The suffix chain must end in a call, since
+// a goroutine launches a call, not a bare value ("go x", "go p.f").
 func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
+	if !endsInCall(stmt) {
+		f.err(f.tok(head.Pos()).Position(), "go statement must be a function call")
+		return
+	}
 	f.checkSelectors(s, head, stmt)
 	f.checkIndexExprs(s, stmt) // the "i" in a "go a[i].m()" callee
 	argList, direct, isCall := f.callInfo(stmt)
@@ -2042,7 +2059,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A statement that is a bare call ("h(1, 2)") has its CallSuffix directly in
 	// the Postfix; an assignment/send carries its call inside a right-hand
 	// Expression, which is name-checked (and so call-checked) separately below.
-	if argList, direct, isCall := f.callInfo(postfix); isCall {
+	argList, direct, isCall := f.callInfo(postfix)
+	if isCall {
 		id, ok := f.assignHeadIdent(head)
 		f.checkCall(s, id, direct && ok, argList)
 		if !direct && ok {
@@ -2094,6 +2112,22 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				}
 			}
 		}
+	}
+
+	// An expression statement must have an effect: a function or method call. A
+	// postfix with no "="/":="/"<-" that does not end in a call is a bare value
+	// ("x.f", "a[i]", "p.m().x" -- a selection or index of a value, even of a call
+	// result) whose result is discarded, so it is rejected. A chain ending in a
+	// call ("p.m()", "a[i].m()", "p.m().n()") is a legal call statement. (A bare
+	// name "x" carries no Postfix node and is handled in checkStatement; a bare
+	// receive "<-ch" is a distinct statement form.)
+	if op == 0 && !endsInCall(postfix) {
+		last := postfix.End()
+		if last < head.Pos() {
+			last = head.End()
+		}
+		f.err(f.tok(head.Pos()).Position(), "%s evaluated but not used", f.sourceSpan(head.Pos(), last))
+		return
 	}
 
 	// A bare "="/":=" target ("x", not "x.f"/"x[i]"/"*x", which read x) is a write,
@@ -2564,6 +2598,22 @@ func firstSuffixIsIndex(n Node) bool {
 		}
 	}
 	return false
+}
+
+// endsInCall reports whether the last operation of a statement postfix's suffix
+// chain is a call, so "p.m()" and "a[i].m()" are calls -- valid expression
+// statements -- while "p.f", "a[i]" and "p.m().f" end in a selection or index and
+// are bare values with no effect. Only a chain with no trailing PostfixOp (no
+// "="/":="/"<-") is examined; the chain elements are direct children in source order.
+func endsInCall(postfix Node) bool {
+	last := Symbol(0)
+	for c := range it(postfix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			last = c.sym
+		}
+	}
+	return last == CallSuffix
 }
 
 // checkFieldAccess reports a selection "head.field" when head is a variable whose
@@ -3507,7 +3557,14 @@ func (f *File) flattenParams(s *Scope, sig *SignatureNode) (r []retResult) {
 // leading token of "a[i]" as "a" misdescribes it, since a is the array, not the
 // int element. Whitespace between tokens is preserved as written.
 func (f *File) exprSource(n Node) string {
-	first, last := n.Pos(), n.End()
+	return f.sourceSpan(n.Pos(), n.End())
+}
+
+// sourceSpan reconstructs the source text spanning the token index range
+// [first, last], preserving the separators written between tokens. It underlies
+// exprSource and lets a diagnostic name a construct that spans two adjacent nodes
+// (a statement's head and postfix) rather than a single expression node.
+func (f *File) sourceSpan(first, last int32) string {
 	if first < 0 {
 		return ""
 	}

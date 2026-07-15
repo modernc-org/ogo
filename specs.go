@@ -583,12 +583,12 @@
 //		| "if" Expression Block [ "else" Block ]
 //		| "for" [ Expression ] Block
 //		| "return" [ ExpressionList ]
-//		| "go" AssignHead { Selector | Index } CallSuffix
+//		| "go" AssignHead { Selector | Index | CallSuffix }
 //		| SwitchStmt
 //		| SelectStmt
 //		| "<-" Expression
 //		| AssignHead Postfix
-//		| "defer" AssignHead { Selector | Index } CallSuffix
+//		| "defer" AssignHead { Selector | Index | CallSuffix }
 //		| Block
 //		| EmptyStatement .
 //
@@ -598,7 +598,7 @@
 // moment the surrounding function returns, either because it executed a return
 // statement or reached the end of its function body.
 //
-//	"defer" AssignHead { Selector | Index } CallSuffix
+//	"defer" AssignHead { Selector | Index | CallSuffix }
 //
 // Deferred functions are executed in LIFO (last-in, first-out) order
 // immediately before the surrounding function returns.
@@ -629,9 +629,8 @@
 // handles both single assignments (=) and short variable declarations (:=).
 //
 //	AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
-//	Postfix    = { Selector | Index } PostfixOp .
-//	PostfixOp  = CallSuffix
-//		| "<-" Expression
+//	Postfix    = { Selector | Index | CallSuffix } [ PostfixOp ] .
+//	PostfixOp  = "<-" Expression
 //		| { "," LhsItem } ( "=" | ":=" ) Expression .
 //	LhsItem    = AssignHead { Selector | Index } .
 //

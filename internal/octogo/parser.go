@@ -168,8 +168,8 @@ var errorSets = [...][]Symbol{
 	{TOK_var},
 	{TOK_003d, TOK_002c, TOK_003a003d},
 	{PostfixOp, CallSuffix, Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
-	{CallSuffix, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
-	{TOK_003d, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
+	{TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
+	{TOK_003d, TOK_002c, TOK_003c002d, TOK_003a003d},
 	{Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_003c002d, TOK_003a003d},
 	{TOK_005b, TOK_003d, TOK_002e, TOK_003c002d, TOK_003a003d},
 	{AssignHead, identifier, TOK_002a, TOK_0028},
@@ -5742,21 +5742,27 @@ state3:
 
 // Postfix grammar:
 //
-//	Postfix    = { Selector | Index } PostfixOp .
+//	Postfix    = { Selector | Index | CallSuffix } [ PostfixOp ] .
 //
 //	State 0
+//		Accept
 //		on  '.'
 //			call Selector and goto state 1
 //		on  '['
 //			call Index and goto state 1
-//		on  ":=", "<-", '(', ',', '='
+//		on  '('
+//			call CallSuffix and goto state 1
+//		on  ":=", "<-", ',', '='
 //			call PostfixOp and goto state 2
 //	State 1
+//		Accept
 //		on  '.'
 //			call Selector and goto state 1
 //		on  '['
 //			call Index and goto state 1
-//		on  ":=", "<-", '(', ',', '='
+//		on  '('
+//			call CallSuffix and goto state 1
+//		on  ":=", "<-", ',', '='
 //			call PostfixOp and goto state 2
 //	State 2
 //		Accept
@@ -5766,7 +5772,7 @@ func (p *Parser) Postfix() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Postfix), 0)
 	// state0:
-	accept, errorSet = false, 27
+	accept, errorSet = true, 27
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = p.add(r, p.Selector())
@@ -5774,13 +5780,16 @@ func (p *Parser) Postfix() (r []int32) {
 	case TOK_005b:
 		r = p.add(r, p.Index())
 		goto state1
-	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_003d:
+	case TOK_0028:
+		r = p.add(r, p.CallSuffix())
+		goto state1
+	case TOK_003a003d, TOK_003c002d, TOK_002c, TOK_003d:
 		r = p.add(r, p.PostfixOp())
 		goto state2
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 27
+	accept, errorSet = true, 27
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = p.add(r, p.Selector())
@@ -5788,7 +5797,10 @@ state1:
 	case TOK_005b:
 		r = p.add(r, p.Index())
 		goto state1
-	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_003d:
+	case TOK_0028:
+		r = p.add(r, p.CallSuffix())
+		goto state1
+	case TOK_003a003d, TOK_003c002d, TOK_002c, TOK_003d:
 		r = p.add(r, p.PostfixOp())
 		goto state2
 	}
@@ -5890,8 +5902,7 @@ state4:
 
 // PostfixOp grammar:
 //
-//	PostfixOp  = CallSuffix
-//		| "<-" Expression
+//	PostfixOp  = "<-" Expression
 //		| { "," LhsItem } ( "=" | ":=" ) Expression .
 //
 //	State 0
@@ -5899,8 +5910,6 @@ state4:
 //			shift and goto state 1
 //		on  ','
 //			shift and goto state 3
-//		on  '('
-//			call CallSuffix and goto state 2
 //	State 1
 //		on  "<-", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 2
@@ -5928,9 +5937,6 @@ func (p *Parser) PostfixOp() (r []int32) {
 	case TOK_002c:
 		r = append(r, p.shift())
 		goto state3
-	case TOK_0028:
-		r = p.add(r, p.CallSuffix())
-		goto state2
 	}
 	return p.stop(r, accept, errorSet)
 state1:
@@ -6392,12 +6398,12 @@ state4:
 //		| "if" Expression Block [ "else" Block ]
 //		| "for" [ Expression ] Block
 //		| "return" [ ExpressionList ]
-//		| "go" AssignHead { Selector | Index } CallSuffix
+//		| "go" AssignHead { Selector | Index | CallSuffix }
 //		| SwitchStmt
 //		| SelectStmt
 //		| "<-" Expression
 //		| AssignHead Postfix
-//		| "defer" AssignHead { Selector | Index } CallSuffix
+//		| "defer" AssignHead { Selector | Index | CallSuffix }
 //		| Block
 //		| EmptyStatement .
 //
@@ -6436,12 +6442,13 @@ state4:
 //		on  '(', '*', identifier
 //			call AssignHead and goto state 4
 //	State 4
+//		Accept
 //		on  '.'
 //			call Selector and goto state 4
 //		on  '['
 //			call Index and goto state 4
 //		on  '('
-//			call CallSuffix and goto state 2
+//			call CallSuffix and goto state 4
 //	State 5
 //		on  '{'
 //			call Block and goto state 2
@@ -6465,6 +6472,7 @@ state4:
 //		on  "<-", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ExpressionList and goto state 2
 //	State 11
+//		Accept
 //		on  ":=", "<-", '(', ',', '.', '=', '['
 //			call Postfix and goto state 2
 //
@@ -6533,7 +6541,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 34
+	accept, errorSet = true, 34
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = p.add(r, p.Selector())
@@ -6543,7 +6551,7 @@ state4:
 		goto state4
 	case TOK_0028:
 		r = p.add(r, p.CallSuffix())
-		goto state2
+		goto state4
 	}
 	return p.stop(r, accept, errorSet)
 state5:
@@ -6598,7 +6606,7 @@ state10:
 	}
 	return p.stop(r, accept, errorSet)
 state11:
-	accept, errorSet = false, 26
+	accept, errorSet = true, 26
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_002e, TOK_003d, TOK_005b:
 		r = p.add(r, p.Postfix())
