@@ -2819,6 +2819,13 @@ func (f *File) methodResultKind(s *Scope, head Token, hasHead bool, suffix Node)
 	if !ok {
 		return 0, false
 	}
+	return f.methodSingleResultKind(s, head, member)
+}
+
+// methodSingleResultKind returns the predeclared Kind of the sole result of the
+// method member of variable head's named type, when it has exactly one and it is
+// predeclared -- the method analogue of funcSingleResultKind.
+func (f *File) methodSingleResultKind(s *Scope, head, member Token) (Kind, bool) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok || !d.typeName.IsValid() {
 		return 0, false
@@ -3393,6 +3400,66 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		}
 	}
+	// An index, selection or call applied to a call or method result whose type is a
+	// predeclared scalar ("g()[i]", "g().field", "p.m().field") is illegal there.
+	if hasID && hasSuffix {
+		f.checkResultSuffix(s, id, n.Pos(), suffix)
+	}
+}
+
+// checkResultSuffix reports an operation applied to a call or method-call result
+// whose type is a predeclared scalar: "g()[i]" and "p.m()[i]" ("cannot index"),
+// "g().f" and "p.m().f" ("type T has no field/method f"), and "g()()" ("cannot call
+// non-function"). A scalar has no elements, fields or methods and is not callable.
+// Only the operation directly following the leading call is examined, and only a
+// directly-predeclared result kind (funcSingleResultKind / methodSingleResultKind
+// report nothing for a composite or named result), so an array, slice, struct or
+// named-type result is left unchecked -- indexing or selecting those may be legal.
+func (f *File) checkResultSuffix(s *Scope, id Token, start int32, suffix Node) {
+	var ops []Node
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			ops = append(ops, c)
+		}
+	}
+	var resultKind Kind
+	var have bool
+	var callEnd int32
+	nextIdx := -1
+	switch {
+	case len(ops) >= 2 && ops[0].sym == CallSuffix:
+		// A direct call "g() <op>".
+		resultKind, have = f.funcSingleResultKind(s, id)
+		callEnd, nextIdx = ops[0].End(), 1
+	case len(ops) >= 3 && ops[0].sym == Selector && ops[1].sym == CallSuffix:
+		// A method call "p.m() <op>".
+		if m, ok := f.selectorMember(ops[0]); ok {
+			resultKind, have = f.methodSingleResultKind(s, id, m)
+		}
+		callEnd, nextIdx = ops[1].End(), 2
+	}
+	if !have {
+		return
+	}
+	name := f.sourceSpan(start, callEnd) // "g()" / "p.m()"
+	next := ops[nextIdx]
+	switch next.sym {
+	case Index:
+		if c := kindCategory(resultKind); c == catNumeric || c == catBool {
+			f.err(f.tok(next.Pos()).Position(), "invalid operation: cannot index %s", name)
+		}
+	case Selector:
+		if m, ok := f.selectorMember(next); ok {
+			member := "field"
+			if nextIdx+1 < len(ops) && ops[nextIdx+1].sym == CallSuffix {
+				member = "method" // "g().m()" selects a method, not a field
+			}
+			f.err(m.Position(), "type %s has no %s %s", kindName(resultKind), member, m.Src())
+		}
+	case CallSuffix:
+		f.err(f.tok(next.Pos()).Position(), "cannot call non-function %s", name)
+	}
 }
 
 // callResultKind returns the type of a suffixed factor when it is a direct call
@@ -3402,6 +3469,13 @@ func (f *File) callResultKind(s *Scope, callee Token, hasCallee bool, suffix Nod
 	if _, direct, isCall := f.callInfo(suffix); !hasCallee || !direct || !isCall {
 		return 0, false
 	}
+	return f.funcSingleResultKind(s, callee)
+}
+
+// funcSingleResultKind returns the predeclared Kind of the sole result of a named
+// function, when it has exactly one and it is predeclared. A function returning a
+// composite or named (non-predeclared) type, or several results, yields not-known.
+func (f *File) funcSingleResultKind(s *Scope, callee Token) (Kind, bool) {
 	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
 	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
 		return 0, false

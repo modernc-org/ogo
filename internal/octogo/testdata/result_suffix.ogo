@@ -1,0 +1,49 @@
+// An index, selection or call applied to a call or method result whose type is a
+// predeclared scalar is illegal, since a scalar has no elements, fields or methods
+// and is not callable. A result of composite or named type is left unchecked (its
+// element/field/method set is not modelled), and a string result is byte-indexable.
+
+type Point struct{ x int }
+
+func (p Point) sum() int { return p.x }
+
+func scalarResult() int { return 0 }
+
+func strResult() string { return "" }
+
+func pointResult() Point { var p Point; return p }
+
+// Operations on a scalar function result.
+func onCallResult() {
+	// ERROR "cannot index scalarResult\(\)"
+	_ = scalarResult()[0]
+	// ERROR "type int has no field field"
+	_ = scalarResult().field
+	// ERROR "type int has no method m"
+	_ = scalarResult().m()
+	// ERROR "cannot call non-function scalarResult\(\)"
+	_ = scalarResult()()
+
+	// A string result is byte-indexable, so only the field selection is illegal.
+	_ = strResult()[0]
+	// ERROR "type string has no field field"
+	_ = strResult().field
+
+	// A struct result's field and method are not modelled, so no error is reported.
+	_ = pointResult().x
+	_ = pointResult().sum()
+}
+
+// Operations on a scalar method result.
+func onMethodResult() {
+	var p Point
+
+	// ERROR "cannot index p\.sum\(\)"
+	_ = p.sum()[0]
+	// ERROR "type int has no field field"
+	_ = p.sum().field
+	// ERROR "type int has no method m"
+	_ = p.sum().m()
+
+	_ = p
+}

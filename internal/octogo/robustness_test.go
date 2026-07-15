@@ -781,6 +781,42 @@ func TestStatementPostfixRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestResultSuffixRobustness exercises checkResultSuffix -- an index, selection or
+// call applied to a call or method result whose type is a predeclared scalar -- over
+// degenerate shapes: a direct- and method-call result, a scalar, string, struct,
+// array and named-type result, a deep chain, an undefined callee, and an operation
+// with an undefined index. The walker classifies the leading call and the operation
+// following it, so an unexpected shape must yield a diagnostic or nothing, never a
+// crash.
+func TestResultSuffixRobustness(t *testing.T) {
+	bodies := []string{
+		// Scalar direct-call results operated on.
+		"_ = gi()[0]", "_ = gi().f", "_ = gi().m()", "_ = gi()()",
+		"_ = gi()[nope]", "_ = gi()[0][1]", "_ = gi().a.b",
+		"use(gi()[0])", "if gi().f {\n}",
+		// Scalar method-call results operated on.
+		"var p P; _ = p.vi()[0]; _ = p", "var p P; _ = p.vi().f; _ = p",
+		"var p P; _ = p.vi().m(); _ = p", "var p P; _ = p.vi()(); _ = p",
+		// String result: byte-indexable, field illegal.
+		"_ = gs()[0]", "_ = gs().f",
+		// Composite / named results: left unchecked, must not crash.
+		"_ = gp().x", "_ = gp().self()", "_ = garr()[0]",
+		"var p P; _ = p.self().x; _ = p", "var p P; _ = p.self().self(); _ = p",
+		// Plain calls and undefined callees.
+		"_ = gi()", "var p P; _ = p.vi(); _ = p", "_ = nope()[0]", "_ = nope().f",
+		// The leading operation is not a call (handled by the base checks instead).
+		"var n int; _ = n[0]; _ = n", "var n int; _ = n.f; _ = n",
+	}
+	progs := make([]string, len(bodies))
+	W := "type P struct{ x int }\nfunc (p P) vi() int { return 0 }\nfunc (p P) self() P { return p }\n" +
+		"func gi() int { return 0 }\nfunc gs() string { return \"\" }\nfunc gp() P { var q P; return q }\n" +
+		"func garr() [3]int { var a [3]int; return a }\nfunc use(b bool) {}\n"
+	for i, b := range bodies {
+		progs[i] = W + "func g() {\n\t" + b + "\n}\n"
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()
