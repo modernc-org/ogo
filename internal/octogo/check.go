@@ -1867,6 +1867,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for i, tok := range lhs {
 			nm := tok.Src()
 			if nm == "_" {
+				// A whole "_" target is a legal discard, but a suffixed base
+				// ("_.f = e", "_[i] = e") reads "_" and is illegal.
+				if lhsSuffixed[i] {
+					f.blankRead(tok)
+				}
 				continue
 			}
 			switch s.find(nm).(type) {
@@ -2670,6 +2675,9 @@ func (f *File) indexAssignTarget(head, postfix Node) (base Token, ok bool) {
 // be assignable to that pointed-to type. An undefined base is reported here because
 // a dereference head carries no plain identifier for the general target loop to see.
 func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
+	if f.blankRead(base) { // "*_ = e" reads "_" as the dereferenced pointer
+		return
+	}
 	d, ok := s.find(base.Src()).(*VarDeclaration)
 	if !ok {
 		if s.find(base.Src()) == nil && !f.isImportQualifier(s, base.Src()) {
@@ -2887,6 +2895,20 @@ func (f *File) checkUnaryOp(s *Scope, opNode Node, k Kind) (Kind, bool) {
 	}
 }
 
+// blankRead reports, and returns true for, a use of the blank identifier as a
+// value. "_" binds no variable, so reading it is illegal wherever a name is
+// resolved as a value: an expression operand, a call or "go" callee, or the base
+// of a "_.f"/"_[i]"/"*_" target. Its legal positions -- a whole "="/":=" target
+// (a discard), a declaration name, a blank import -- resolve no value and never
+// call this. Go reports the same, distinct from "undefined".
+func (f *File) blankRead(tok Token) bool {
+	if tok.Src() != "_" {
+		return false
+	}
+	f.err(tok.Position(), "cannot use _ as value or type")
+	return true
+}
+
 // checkFactorNames resolves a Factor's identifier. A parenthesized expression is
 // recursed into; a bare identifier is resolved and reported when undefined; a
 // literal or a suffixed identifier (call/index/selector) is left alone.
@@ -2905,6 +2927,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 				id, hasID = tok, true
 			}
 		}
+	}
+	// Reading the blank identifier -- as an operand, argument, initializer,
+	// condition or return value, whether bare or with a call, selector or index
+	// suffix ("_()", "_.f", "_[i]") -- is illegal.
+	if hasID && f.blankRead(id) {
+		return
 	}
 	if hasSuffix {
 		if argList, direct, isCall := f.callInfo(suffix); isCall {
@@ -2999,6 +3027,12 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		}
 	}
 	if !direct {
+		return
+	}
+	// A call or "go" statement whose callee is the blank identifier ("_()") reads
+	// "_" as a value; report that rather than "undefined: _". (An expression-form
+	// call is caught earlier, in checkFactorNames.)
+	if f.blankRead(callee) {
 		return
 	}
 	switch d := s.find(callee.Src()).(type) {

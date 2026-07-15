@@ -1,0 +1,72 @@
+// The blank identifier "_" binds no value, so reading it is illegal: the error is
+// "cannot use _ as value or type", distinct from an undefined name. "_" is legal
+// only where it names no value -- a whole "="/":=" target (a discard), a variable,
+// parameter or struct-field declaration name, a blank import -- and illegal in
+// every read position: an operand, a call argument, an initializer, a condition, a
+// return value, a call or "go" callee, and the base of a "_.f"/"_[i]"/"*_" target.
+
+func use(v int) {}
+
+// Legal: "_" as a discard target and as a declaration name binds nothing and reads
+// nothing.
+func discards() {
+	_ = 5
+	var _ int
+
+	x := 1
+	_ = x
+}
+
+// Legal: "_" as a parameter or struct-field name declares no readable value.
+func blankParam(_ int) {}
+
+type padded struct {
+	_ int
+	v int
+}
+
+// Illegal: "_" read as an operand, a call argument, an initializer or a condition.
+func operandReads() {
+	// ERROR "cannot use _ as value or type"
+	use(_)
+
+	// ERROR "cannot use _ as value or type"
+	y := _ + 1
+	_ = y
+
+	// ERROR "cannot use _ as value or type"
+	var z int = _
+	_ = z
+
+	// ERROR "cannot use _ as value or type"
+	if _ {
+	}
+}
+
+// Illegal: "_" read as a return value.
+func returnRead() int {
+	// ERROR "cannot use _ as value or type"
+	return _
+}
+
+// Illegal: "_" as a call or "go" callee reads it as a function value.
+func callees() {
+	// ERROR "cannot use _ as value or type"
+	_()
+
+	// ERROR "cannot use _ as value or type"
+	go _()
+}
+
+// Illegal: "_" as the base of a "_.f"/"_[i]"/"*_" target reads it, unlike a whole
+// "_" target, which discards.
+func targetBases() {
+	// ERROR "cannot use _ as value or type"
+	_.f = 1
+
+	// ERROR "cannot use _ as value or type"
+	_[0] = 1
+
+	// ERROR "cannot use _ as value or type"
+	*_ = 1
+}

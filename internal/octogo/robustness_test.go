@@ -202,6 +202,69 @@ func TestPointerArrayRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestBlankIdentifierRobustness exercises the blank-identifier-as-value check --
+// reading "_" as an operand, a call argument, an initializer, a condition, a return
+// value, a call or "go" callee, or the base of a "_.f"/"_[i]"/"*_" target, all of
+// which are illegal ("cannot use _ as value or type"), against its legal positions:
+// a whole "="/":=" target, a variable, parameter or field name -- over degenerate,
+// deeply nested and multiply-suffixed shapes. These walk the flat AST for factors,
+// call callees, unary operators and assignment target bases, so an unexpected shape
+// (a blank with several suffixes, a multi-star deref, a blank on both sides, a blank
+// nested in an operator or argument tree) must yield a diagnostic or nothing, never
+// a crash.
+func TestBlankIdentifierRobustness(t *testing.T) {
+	progs := []string{
+		// Legal positions: a whole target, a discard, a declaration name.
+		"func f() { _ = 1 }\n",
+		"func f() { var _ int }\n",
+		"func f(_ int) {}\n",
+		"type T struct{ _ int }\nfunc f() { var t T; _ = t }\n",
+		"var _ = 1\n",
+		// Blank read as an operand, nested arbitrarily deep in an expression tree.
+		"func f() { x := _; _ = x }\n",
+		"func f() { x := _ + 1; _ = x }\n",
+		"func f() { x := (_); _ = x }\n",
+		"func f() { x := _ + _ * _; _ = x }\n",
+		"func f() { x := -_; _ = x }\n",
+		"func f() { x := ^_; _ = x }\n",
+		"func f() { x := !_; _ = x }\n",
+		"func f() { x := *_; _ = x }\n",
+		"func f() { x := &_; _ = x }\n",
+		"func f() { x := <-_; _ = x }\n",
+		"func f() { x := ((_ + 1) * (_ - 1)); _ = x }\n",
+		// Blank read through a condition and a return value.
+		"func f() { if _ {\n} }\n",
+		"func f() { for _ {\n} }\n",
+		"func f() int { return _ }\n",
+		"func f() int { return _ + 1 }\n",
+		// Blank read as a call argument, including nested and multiple.
+		"func g(v int) {}\nfunc f() { g(_) }\n",
+		"func g(v int) {}\nfunc f() { g(_ + 1) }\n",
+		"func g(a, b int) {}\nfunc f() { g(_, _) }\n",
+		"func g(v int) int { return 0 }\nfunc f() { x := g(g(_)); _ = x }\n",
+		// Blank as a call or "go" callee, bare and suffixed.
+		"func f() { _() }\n",
+		"func f() { go _() }\n",
+		"func f() { _(1, 2) }\n",
+		"func f() { _.m() }\n",
+		"func f() { _[0]() }\n",
+		// Blank as the base of a target, bare, multi-suffixed and multi-star.
+		"func f() { _.a = 1 }\n",
+		"func f() { _.a.b = 1 }\n",
+		"func f() { _[0] = 1 }\n",
+		"func f() { _[0][1] = 1 }\n",
+		"func f() { *_ = 1 }\n",
+		"func f() { **_ = 1 }\n",
+		"func f() { _.a[0] = 1 }\n",
+		// Blank on both sides and in a switch guard (guards are not name-checked, so
+		// this is silent -- it must still not crash).
+		"func f() { _ = _ }\n",
+		"func f() { switch _ {\ncase 1:\n} }\n",
+		"func f() { _ = *_ }\n",
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()
