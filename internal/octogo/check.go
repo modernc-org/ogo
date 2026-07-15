@@ -3205,8 +3205,12 @@ func (f *File) checkIndexExprs(s *Scope, n Node) {
 }
 
 // checkFactorNames resolves a Factor's identifier. A parenthesized expression is
-// recursed into; a bare identifier is resolved and reported when undefined; a
-// literal or a suffixed identifier (call/index/selector) is left alone.
+// recursed into, and the identifier -- whether bare or the base of an index,
+// selector or method-call read ("x[i]", "x.f", "x.m()") -- is resolved and
+// reported when undefined. Two suffixed forms are left to their own resolution: a
+// direct call "f()", whose callee checkCall reports (exempting the builtins), and
+// a package-qualified read or call "pkg.X"/"pkg.F()", whose qualifier resolves
+// through the file scope; a literal is left alone.
 func (f *File) checkFactorNames(s *Scope, n Node) {
 	var id Token
 	var suffix Node
@@ -3229,9 +3233,16 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if hasID && f.blankRead(id) {
 		return
 	}
+	directCall, hasSelector := false, false
 	if hasSuffix {
 		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
+		for c := range it(suffix.ast) {
+			if c.sym == Selector {
+				hasSelector = true
+			}
+		}
 		if argList, direct, isCall := f.callInfo(suffix); isCall {
+			directCall = direct
 			f.checkCall(s, id, direct && hasID, argList)
 			if !direct && hasID {
 				if m, ok := f.methodCallMember(suffix); ok {
@@ -3250,7 +3261,16 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			// where an ordinary undefined name would be left to the callee check.
 			f.err(id.Position(), "dynamic allocation not supported")
 		default:
-			if !hasSuffix {
+			// An undefined base -- bare or read through an index, selector or method
+			// suffix ("nope[i]", "nope.field", "nope.m()") -- is reported here, with
+			// two exceptions left to their own resolution: a direct call "nope()",
+			// whose callee checkCall reports (and whose builtins it exempts), and a
+			// package-qualified read or call "pkg.X"/"pkg.F()", whose qualifier
+			// resolves through the file scope rather than s.
+			switch {
+			case directCall:
+			case hasSelector && f.isImportQualifier(s, id.Src()):
+			default:
 				f.err(id.Position(), "undefined: %s", id.Src())
 			}
 		}

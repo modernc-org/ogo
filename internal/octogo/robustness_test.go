@@ -517,6 +517,63 @@ func TestCommOperandRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestReadBaseRobustness exercises name-checking of the base of a suffixed read
+// expression -- the "x" in "x[i]", "x.field" or "x.method()" -- over degenerate
+// shapes: an undefined, blank, defined, chained, index-then-call or operator-nested
+// base, wherever a read flows (operand, argument, condition, index, unary operand).
+// The base resolution runs in checkFactorNames, which distinguishes a direct call
+// and a package qualifier from a plain undefined base, so an unexpected shape must
+// yield a diagnostic or nothing, never a crash. The statement-position call bases
+// ("nope.m()", "nope[i]()") flow through checkAssignment instead and are included to
+// confirm they too do not crash.
+func TestReadBaseRobustness(t *testing.T) {
+	bodies := []string{
+		// Index base: undefined, blank, defined, nested, chained.
+		"_ = nope[0]",
+		"_ = _[0]",
+		"var a [3]int; _ = a[0]; _ = a",
+		"_ = nope[bad]",
+		"_ = nope[0][1]",
+		"var a [3][3]int; _ = a[nope][bad]; _ = a",
+		// Selector base: undefined, blank, defined struct, chained.
+		"_ = nope.x",
+		"_ = _.x",
+		"var s pt; _ = s.x; _ = s",
+		"_ = nope.a.b",
+		"var s pt; _ = s.x.y; _ = s",
+		// Method-call base: undefined (expression and statement), blank, defined,
+		// chained, index-then-call.
+		"_ = nope.m()",
+		"nope.m()",
+		"_ = _.m()",
+		"var s pt; _ = s.get(); _ = s",
+		"_ = nope.a.m()",
+		"_ = nope[0]()",
+		"_ = nope[0].m()",
+		// Base nested in operators, arguments, conditions, unary operands, indexes.
+		"_ = nope[0] + 1",
+		"use(nope.x)",
+		"if nope[0] == 0 {\n}",
+		"var a [3]int; _ = a[nope.x]; _ = a",
+		"_ = -nope.x",
+		"_ = *nope.x",
+		"_ = &nope[0]",
+		"_ = nope.x < nope.y",
+	}
+	progs := make([]string, 0, len(bodies)+3)
+	for _, b := range bodies {
+		progs = append(progs, "type pt struct{ x int }\nfunc (p pt) get() int { return p.x }\nfunc use(i int) {}\nfunc g() {\n\t"+b+"\n}\n")
+	}
+	// A package-qualified read or call resolves through the import, not the local
+	// scope, so its qualifier is not a "undefined" base.
+	progs = append(progs,
+		"import \"p\"\nfunc g() { _ = p.Value }\n",
+		"import \"p\"\nfunc g() { p.Use() }\n",
+		"import \"p\"\nfunc g() { _ = p.Get() + 1 }\n",
+	)
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

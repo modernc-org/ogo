@@ -1,0 +1,67 @@
+// The base of a suffixed read expression -- the "x" in an "x[i]", "x.field" or
+// "x.method()" read, in operand, argument, initializer, condition, return or index
+// position -- is name-checked: an undefined base is reported, just as a bare
+// undefined name is. A direct call "f()" is left to the callee check, and a
+// package-qualified read or call "pkg.X"/"pkg.F()" resolves through the imported
+// package rather than the local scope. (Reading the blank identifier as a base is
+// covered by blank_value.ogo, and an undefined index expression by index_names.ogo.)
+
+import "p"
+
+// An undefined base is reported through an index, selector or method-call suffix,
+// including chained and index-then-call shapes.
+func undefinedBase() {
+	// ERROR "undefined: a"
+	_ = a[0]
+	// ERROR "undefined: b"
+	_ = b.x
+	// ERROR "undefined: c"
+	_ = c.m()
+	// ERROR "undefined: d"
+	_ = d.e.f
+	// ERROR "undefined: g"
+	_ = g[0][1]
+	// ERROR "undefined: h"
+	_ = h[0]()
+}
+
+// The base is checked wherever a read flows: an argument, a condition, an
+// initializer, a return value and a nested index.
+func readPositions() int {
+	var v [3]int
+
+	// ERROR "undefined: missing"
+	use(missing[0])
+	// ERROR "undefined: gone"
+	if gone.x == 0 {
+	}
+	// ERROR "undefined: absent"
+	var x int = absent[0]
+	// ERROR "undefined: lost"
+	_ = v[lost[0]]
+
+	_ = x
+	_ = v
+	// ERROR "undefined: nowhere"
+	return nowhere.n
+}
+
+func use(i int) {}
+
+// A defined base with a suffix, and a package-qualified read or call, are legal.
+type Point struct{ x int }
+
+func (pt Point) sum() int { return pt.x }
+
+func legalBases() {
+	var pt Point
+	var a [3]int
+
+	_ = a[0]
+	_ = pt.x
+	_ = pt.sum()
+	_ = p.Value
+	p.Use()
+
+	_ = a
+}
