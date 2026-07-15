@@ -7,6 +7,7 @@ package flexcc // import "modernc.org/ogo/lib/internal/flexcc"
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -86,4 +87,48 @@ func TestMainHelp(t *testing.T) {
 	if strings.TrimSpace(got) != strings.TrimSpace(wantHelp) {
 		t.Errorf("flexcc -h mismatch (version line normalized):\n--- got ---\n%s\n--- want ---\n%s", got, wantHelp)
 	}
+}
+
+// TestMainCompile drives the in-repo Go flexcc through a full compile+link of a
+// tiny P2 program that pulls in <stdio.h> and <propeller2.h>, proving the
+// backend compiles end to end with NO external flexprop install: the include
+// path comes entirely from the embedded p2include.tar.gz (see p2include.go).
+//
+// The test forces the embedded path by clearing FLEXPROP_INCLUDE and points the
+// extraction cache at a temp dir so it stays hermetic and self-cleaning.
+func TestMainCompile(t *testing.T) {
+	t.Setenv("FLEXPROP_INCLUDE", "") // ignore any ambient external tree
+	t.Setenv("OGO_FLEXCC_CACHE", t.TempDir())
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "hello.c")
+	out := filepath.Join(dir, "hello.binary")
+	const prog = `#include <stdio.h>
+#include <propeller2.h>
+int main(void){ printf("hi %u\n", _clkfreq); _pinh(56); return 0; }
+`
+	if err := os.WriteFile(src, []byte(prog), 0666); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := Main(nil, &stdout, &stderr, []string{"-2", "-o", out, src})
+	if s := stdout.String(); s != "" {
+		t.Logf("flexcc stdout:\n%s", s)
+	}
+	if s := stderr.String(); s != "" {
+		t.Logf("flexcc stderr:\n%s", s)
+	}
+	if err != nil {
+		t.Fatalf("Main compile = %v, want nil", err)
+	}
+
+	fi, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("output binary %q missing: %v", out, err)
+	}
+	if fi.Size() == 0 {
+		t.Fatalf("output binary %q is empty", out)
+	}
+	t.Logf("Go flexcc produced %s (%d bytes)", out, fi.Size())
 }

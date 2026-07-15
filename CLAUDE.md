@@ -83,9 +83,15 @@ inputs, and never hand-edit the outputs.
    `totalspectrum/flexprop` (pinned to tag **`v7.6.11`** via the `flexpropRef`
    constant), applies `internal/mcpp_main.c.diff`, transpiles, and rewrites the
    emitted `main` package into a reusable `flexcc` library (threading a `*CC` state
-   struct through the C globals). Regeneration is `cd internal && go generate` —
-   heavy, network-dependent, and **linux/amd64 only**; to adopt a changed
-   `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is re-cloned.
+   struct through the C globals). The same run also emits two sibling artifacts that
+   keep the in-repo compiler self-contained: `internal/flexcc/p2include.tar.gz` — the
+   installed flexprop P2 include/lib tree (headers, libc sources, `libc.a`) packed as
+   a deterministic gzip'd tar, `go:embed`ed by `flexcc/p2include.go` and extracted at
+   runtime so `flexcc.Main` needs no external flexprop install — and
+   `internal/flexcc/LICENSE-flexprop` for attribution. Regeneration is `cd internal &&
+   go generate` — heavy, network-dependent, and **linux/amd64 only**; to adopt a
+   changed `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is
+   re-cloned.
 
    > **Backend regenerated 2026-07-10** against the `v7.6.11` pin (the flexprop repo
    > and the `spin2cpp` submodule both resolve to `v7.6.11`); `mcpp_main.c.diff`

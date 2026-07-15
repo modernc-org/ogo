@@ -7,15 +7,19 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -171,6 +175,93 @@ func main() {
 
 	flexccGoDest := filepath.Join(flexccDir, fmt.Sprintf("ccgo_%s_%s.go", goos, goarch))
 	main2lib(flexccGoDest, flexccGoSrc)
+
+	// Bundle the installed flexprop P2 include/lib tree next to the transpiled
+	// compiler so the in-repo flexcc is self-contained (see flexcc/p2include.go),
+	// and carry flexprop's license for attribution.
+	if err := writeP2Include(filepath.Join(installDir2, "include"), filepath.Join(flexccDir, "p2include.tar.gz")); err != nil {
+		fail(1, "writeP2Include: err=%v", err)
+	}
+	if err := copyFile(filepath.Join(wd, cloneDir, "License.txt"), filepath.Join(flexccDir, "LICENSE-flexprop")); err != nil {
+		fail(1, "copy flexprop license: err=%v", err)
+	}
+}
+
+// writeP2Include packs every regular file under srcDir into a deterministic
+// gzip-compressed tar at destFile: entries sorted by slash-path, fixed mode and
+// mtime, no uid/gid, so identical input yields identical bytes (no spurious
+// regen diffs). The result is embedded by internal/flexcc/p2include.go and
+// extracted at runtime to give flexcc its include path. Symlinks/specials are
+// rejected because p2include.go's untar only materializes dirs and regular files.
+func writeP2Include(srcDir, destFile string) error {
+	var files []string
+	err := filepath.WalkDir(srcDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("symlink not supported in P2 include tree: %s", p)
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("non-regular file in P2 include tree: %s", p)
+		}
+		files = append(files, p)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	sort.Strings(files)
+
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return err
+	}
+	tw := tar.NewWriter(gw)
+	epoch := time.Unix(0, 0).UTC()
+	for _, p := range files {
+		rel, err := filepath.Rel(srcDir, p)
+		if err != nil {
+			return err
+		}
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		hdr := &tar.Header{
+			Typeflag: tar.TypeReg,
+			Name:     filepath.ToSlash(rel),
+			Mode:     0o644,
+			Size:     int64(len(body)),
+			ModTime:  epoch,
+			Format:   tar.FormatGNU,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if _, err := tw.Write(body); err != nil {
+			return err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	if err := gw.Close(); err != nil {
+		return err
+	}
+	return os.WriteFile(destFile, buf.Bytes(), 0o644)
+}
+
+func copyFile(src, dst string) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o644)
 }
 
 func main2lib(destFn, srcFn string) {

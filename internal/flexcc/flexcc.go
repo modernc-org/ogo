@@ -69,6 +69,16 @@ func Main(stdin io.Reader, stdout, stderr io.Writer, args []string) (err error) 
 
 	}()
 
+	// Make the in-repo flexcc self-contained: unless the caller opted out, add
+	// the embedded flexprop P2 include/lib tree to the front of the argument
+	// list (options before the source files, matching flexcc's parser). Without
+	// this the compiler cannot resolve <stdio.h>/<propeller2.h> or link libc.a.
+	stdlib, err := stdlibIncludeArgs(args)
+	if err != nil {
+		return err
+	}
+	args = append(stdlib, args...)
+
 	argv := allocArgs(tls, cc, append([]string{"flexcc"}, args...))
 	if argv == 0 {
 		return fmt.Errorf("failed to allocate 'args'")
