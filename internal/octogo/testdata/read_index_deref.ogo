@@ -16,12 +16,12 @@ func indexReads() {
 	if ai[0] {
 	}
 
-	// ERROR "cannot use ai of type int as type bool in argument to use"
+	// ERROR "cannot use ai\[0\] of type int as type bool in argument to use"
 	use(ai[0])
 	use(ab[0])
 
 	var flag bool
-	// ERROR "cannot use ai of type int as type bool in assignment"
+	// ERROR "cannot use ai\[0\] of type int as type bool in assignment"
 	flag = ai[0]
 
 	// The inferred kind flows through: x is int.

@@ -1139,8 +1139,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 		return
 	}
 	if k, ok := f.exprType(s, e); ok && kindCategory(k) != catUnknown && kindCategory(k) != kindCategory(rt.kind) {
-		tok := f.tok(e.Pos())
-		f.err(tok.Position(), "cannot use %s of type %s as type %s in return statement", tok.Src(), kindName(k), rt.name)
+		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in return statement", f.exprSource(e), kindName(k), rt.name)
 	}
 }
 
@@ -1659,7 +1658,7 @@ func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
 		return
 	}
 	if gc, cc := kindCategory(guardKind), kindCategory(k); gc != 0 && cc != 0 && gc != cc {
-		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in case", f.tok(e.Pos()).Src(), kindName(k), kindName(guardKind))
+		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in case", f.exprSource(e), kindName(k), kindName(guardKind))
 	}
 }
 
@@ -2382,7 +2381,7 @@ func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
 		return
 	}
 	if kindCategory(vk) != kindCategory(elem) {
-		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.tok(valNode.Pos()).Src(), kindName(vk), kindName(elem))
+		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.exprSource(valNode), kindName(vk), kindName(elem))
 	}
 }
 
@@ -2929,7 +2928,7 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 		return
 	}
 	if lc != rc {
-		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), kindName(lk))
 		return
 	}
 	// Same type class: a constant assigned to a sized integer variable may still
@@ -2950,7 +2949,7 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 		return
 	}
 	if lc != rc {
-		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(lk))
+		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), kindName(lk))
 		return
 	}
 	// Same category: a constant may still overflow a sized integer field. The
@@ -3067,7 +3066,7 @@ func (f *File) checkElemAssignType(s *Scope, elem Kind, rhsNode Node) {
 		return
 	}
 	if lc != rc {
-		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.tok(rhsNode.Pos()).Src(), kindName(rk), kindName(elem))
+		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), kindName(elem))
 		return
 	}
 	// Same category: a constant may still overflow a sized integer element. The
@@ -3476,7 +3475,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 			}
 			ak, aok := f.exprType(s, arg)
 			if aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(p.kind) {
-				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.tok(arg.Pos()).Src(), kindName(ak), p.name, name.Src())
+				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.exprSource(arg), kindName(ak), p.name, name.Src())
 				continue
 			}
 			// Same type class: a constant argument may still overflow a sized
@@ -3500,6 +3499,30 @@ func (f *File) flattenParams(s *Scope, sig *SignatureNode) (r []retResult) {
 		}
 	}
 	return r
+}
+
+// exprSource returns the source text of expression node n, from its first token
+// through its last, so a multi-token operand ("p.x", "a[i]", "c.M()") is named in
+// full in a diagnostic rather than by its leading token alone -- naming just the
+// leading token of "a[i]" as "a" misdescribes it, since a is the array, not the
+// int element. Whitespace between tokens is preserved as written.
+func (f *File) exprSource(n Node) string {
+	first, last := n.Pos(), n.End()
+	if first < 0 {
+		return ""
+	}
+	if last < first {
+		return f.tok(first).Src()
+	}
+	var b strings.Builder
+	for i := first; i <= last; i++ {
+		tok := f.tok(i)
+		if i != first {
+			b.WriteString(tok.Sep())
+		}
+		b.WriteString(tok.Src())
+	}
+	return b.String()
 }
 
 // exprIdent returns the single identifier of an expression that is exactly a

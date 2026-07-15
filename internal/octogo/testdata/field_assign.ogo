@@ -25,7 +25,7 @@ func run() {
 	// ERROR "cannot use 1 of type int as type bool in assignment"
 	c.enabled = 1
 
-	// ERROR "cannot use c of type bool as type int in assignment"
+	// ERROR "cannot use c\.enabled of type bool as type int in assignment"
 	c.max = c.enabled
 
 	// ERROR "cannot use true of type bool as type int in assignment"

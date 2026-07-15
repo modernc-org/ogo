@@ -31,13 +31,13 @@ func run() {
 	if c.Value() {
 	}
 
-	// ERROR "cannot use c of type bool as type int in argument to use"
+	// ERROR "cannot use c\.Done\(\) of type bool as type int in argument to use"
 	use(c.Done())
 
 	// ERROR "mismatched types int and bool"
 	if c.Value() < c.Done() {
 	}
 
-	// ERROR "cannot use c of type bool as type int in assignment"
+	// ERROR "cannot use c\.Done\(\) of type bool as type int in assignment"
 	i = c.Done()
 }

@@ -706,6 +706,47 @@ func TestScalarSelectorRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestOperandNamingRobustness exercises exprSource, which reconstructs an operand's
+// full source text for a type-mismatch diagnostic, over degenerate operand shapes: a
+// bare name, a field, an index, a method call, a parenthesized, deref, unary and
+// deeply nested operator expression, each in a position (argument, assignment, send,
+// case, return) that triggers the mismatch. Reconstructing the token span of an
+// unexpected shape must not crash.
+func TestOperandNamingRobustness(t *testing.T) {
+	bodies := []string{
+		// Argument-position mismatches (use wants bool) over varied operand shapes.
+		"var n int; use(n); _ = n",
+		"var p pt; use(p.x); _ = p",
+		"var a [3]int; use(a[0]); _ = a",
+		"var a [3]int; use(a[1] + a[2]); _ = a",
+		"var vi int; var pi *int = &vi; use(*pi)",
+		"var n int; use((n)); _ = n",
+		"var n int; use(-n); _ = n",
+		"var a [3][3]int; use(a[0][1]); _ = a",
+		"use(g())",
+		"var p pt; use((p.x + 1) * 2); _ = p",
+		// Assignment-position mismatches (b is bool).
+		"var b bool; var n int; b = n; _ = b; _ = n",
+		"var b bool; var p pt; b = p.x; _ = b; _ = p",
+		"var b bool; var a [3]int; b = a[0]; _ = b; _ = a",
+		// Send-position mismatches (ch is chan int).
+		"var ch chan int; var bb bool; ch <- bb; _ = ch; _ = bb",
+		"var ch chan int; var p pbool; ch <- p.on; _ = ch; _ = p",
+		// Case-position mismatch.
+		"var p pbool; switch 1 {\ncase p.on:\n}\n_ = p",
+	}
+	progs := make([]string, 0, len(bodies)+2)
+	for _, b := range bodies {
+		progs = append(progs, "type pt struct{ x int }\ntype pbool struct{ on bool }\nfunc use(b bool) {}\nfunc g() int { return 0 }\nfunc gg() {\n\t"+b+"\n}\n")
+	}
+	// Return-position mismatches.
+	progs = append(progs,
+		"type pt struct{ x int }\nfunc gg() bool { var p pt; return p.x }\n",
+		"func gg() bool { var a [3]int; return a[0]; }\n",
+	)
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

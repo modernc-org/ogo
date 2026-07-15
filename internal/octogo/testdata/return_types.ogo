@@ -35,7 +35,7 @@ func badLiteral() bool {
 
 func badField() int {
 	var b Box
-	// ERROR "cannot use b of type bool as type int in return statement"
+	// ERROR "cannot use b\.on of type bool as type int in return statement"
 	return b.on
 }
 

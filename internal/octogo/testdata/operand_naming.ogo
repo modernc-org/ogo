@@ -1,0 +1,44 @@
+// A type-mismatch diagnostic names the offending operand in full -- "s.f", "a[i]",
+// "m()" -- rather than by its leading token alone, which would misdescribe it: the
+// leading token of "a[i]" is the array a, not the mismatched element. The argument,
+// assignment and return positions are exercised by call_result.ogo, field_assign.ogo,
+// method_result.ogo, read_index_deref.ogo and return_types.ogo; this file covers the
+// send and case positions.
+
+type Box struct{ on bool }
+
+func (b Box) flag() bool { return b.on }
+
+// A send of a struct field and of an array element names the field and element.
+func sendOperands() {
+	var ch chan int
+	var b Box
+	var a [3]bool
+
+	// ERROR "cannot use b\.on of type bool as type int in send"
+	ch <- b.on
+	// ERROR "cannot use a\[0\] of type bool as type int in send"
+	ch <- a[0]
+
+	_ = ch
+	_ = b
+	_ = a
+}
+
+// A case expression that is a field, an index or a method call names it in full.
+func caseOperands() {
+	var b Box
+	var a [3]bool
+
+	switch 1 {
+	// ERROR "cannot use b\.on of type bool as type int in case"
+	case b.on:
+	// ERROR "cannot use a\[0\] of type bool as type int in case"
+	case a[0]:
+	// ERROR "cannot use b\.flag\(\) of type bool as type int in case"
+	case b.flag():
+	}
+
+	_ = b
+	_ = a
+}
