@@ -55,6 +55,11 @@ func Load(o Options) int {
 // TODO: exact flag ordering (notably -t/-e/-a relative to the filespec) should
 // be validated against real hardware when `ogo run`/`ogo test` are wired; the
 // current order follows loadp2's documented usage.
+//
+// Baud note (verified on P2 hardware 2026-07-15): flexcc-emitted programs print
+// at 230400, but loadp2's default user baud is 115200 — reading at the default
+// yields garbage. `ogo run`/`ogo test` should set UserBaud=230400 (or the
+// emitter must configure the program's serial to match the load baud).
 func buildArgs(o Options) []string {
 	args := []string{"loadp2"}
 	if o.Port != "" {
