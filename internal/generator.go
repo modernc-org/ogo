@@ -169,7 +169,7 @@ func main() {
 	}
 
 	fmt.Printf("%v\n", args)
-	if ccgo.NewTask(goos, goarch, args, os.Stdout, os.Stderr, nil).Main(); err != nil {
+	if err := ccgo.NewTask(goos, goarch, args, os.Stdout, os.Stderr, nil).Main(); err != nil {
 		fail(1, "ccgo -exec: err=%v", err)
 	}
 
@@ -179,7 +179,7 @@ func main() {
 	// Bundle the installed flexprop P2 include/lib tree next to the transpiled
 	// compiler so the in-repo flexcc is self-contained (see flexcc/p2include.go),
 	// and carry flexprop's license for attribution.
-	if err := writeP2Include(filepath.Join(installDir2, "include"), filepath.Join(flexccDir, "p2include.tar.gz")); err != nil {
+	if err := writeP2Include(filepath.Join(installDir, "include"), filepath.Join(flexccDir, "p2include.tar.gz")); err != nil {
 		fail(1, "writeP2Include: err=%v", err)
 	}
 	if err := copyFile(filepath.Join(wd, cloneDir, "License.txt"), filepath.Join(flexccDir, "LICENSE-flexprop")); err != nil {
