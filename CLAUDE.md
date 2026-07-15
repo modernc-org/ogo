@@ -93,13 +93,16 @@ inputs, and never hand-edit the outputs.
    changed `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is
    re-cloned.
 
-   > **Backend regenerated 2026-07-10** against the `v7.6.11` pin (the flexprop repo
-   > and the `spin2cpp` submodule both resolve to `v7.6.11`); `mcpp_main.c.diff`
-   > applied cleanly. Post-regen chores worth remembering: `rm -rf internal/flexprop
+   > **Backend regenerated 2026-07-15** against the `v7.6.11` pin (flexprop repo and
+   > `spin2cpp` submodule both at `v7.6.11`) using **ccgo v4.34.0**; `mcpp_main.c.diff`
+   > applied cleanly. This regen replaced the 2026-07-10 build to adopt ccgo v4.34.0's
+   > newer pointer-deref codegen (`**(**T)(__ccgo_up(x))` in place of
+   > `*(*T)(unsafe.Pointer(x))`). Post-regen chore: `rm -rf internal/flexprop
    > internal/flexprop_install` (git-ignored build clones that otherwise break
-   > `go build ./...` / `go test ./...`), and refresh the flexcc `--help` golden in
-   > `internal/flexcc/all_test.go` — its `Version …` line embeds the pinned build's
-   > version string and C `__DATE__`, so it changes on every regen.
+   > `go build ./...` / `go test ./...`). The flexcc `--help` golden in
+   > `internal/flexcc/all_test.go` no longer needs a manual refresh — its volatile
+   > `Version … Compiled on: …` line is normalized (`versionLineRE`), so a same-pin
+   > regen doesn't force a golden edit.
 
 ## Architecture
 

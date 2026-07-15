@@ -36,8 +36,8 @@ const (
 	// upstream cuts releases roughly every 1-2 months.
 	//
 	// The committed ccgo_<goos>_<goarch>.go was regenerated against this pin on
-	// 2026-07-10 (flexprop repo and spin2cpp submodule both at v7.6.11);
-	// mcpp_main.c.diff applied cleanly. To adopt a new flexpropRef: bump it,
+	// 2026-07-15 with ccgo v4.34.0 (flexprop repo and spin2cpp submodule both at
+	// v7.6.11); mcpp_main.c.diff applied cleanly. To adopt a new flexpropRef: bump it,
 	// `rm -rf flexprop flexprop_install`, rerun `go generate` (linux/amd64 only),
 	// then update the flexcc --help golden in internal/flexcc/all_test.go.
 	flexpropRef = "v7.6.11"
