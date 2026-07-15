@@ -1,0 +1,103 @@
+// The communication operation of a select comm clause -- the channel and value
+// operands of a "case <-ch", "case ch <- v", "case v = <-ch" or "case v := <-ch" --
+// is name- and type-checked exactly as the equivalent send or receive statement is:
+// an undefined or blank operand is reported, a send to or receive from a non-channel
+// is rejected, a mismatched send value or received element type is reported, and a
+// receive-assignment target is resolved. (The bare send and receive statement forms
+// are covered by channel_operand.ogo and channel_local.ogo.)
+
+const answer = 42
+
+// A comm-clause send "case ch <- v": the channel and the value are both resolved,
+// and the value's type is checked against the channel's element.
+func commSend() {
+	var ch chan int
+	var n int
+
+	select {
+	case ch <- 1:
+	// ERROR "undefined: missing"
+	case missing <- 1:
+	// ERROR "cannot use _ as value or type"
+	case _ <- 1:
+	// ERROR "cannot send to non-channel"
+	case n <- 1:
+	// ERROR "undefined: bad"
+	case ch <- bad:
+	// ERROR "cannot use _ as value or type"
+	case ch <- _:
+	// ERROR "cannot use true of type bool as type int in send"
+	case ch <- true:
+	}
+
+	_ = ch
+	_ = n
+}
+
+// A comm-clause bare receive "case <-ch": the channel operand is resolved and
+// required to be a channel.
+func commRecv() {
+	var ch chan int
+	var n int
+
+	select {
+	case <-ch:
+	// ERROR "undefined: missing"
+	case <-missing:
+	// ERROR "cannot use _ as value or type"
+	case <-_:
+	// ERROR "cannot receive from non-channel"
+	case <-n:
+	}
+
+	_ = ch
+	_ = n
+}
+
+// A comm-clause receive assignment "case v = <-ch": the channel operand is resolved
+// and required to be a channel, the target is resolved for assignability, and the
+// channel's element type is checked against the target.
+func commRecvAssign() {
+	var ch chan int
+	var i int
+	var b bool
+
+	select {
+	case i = <-ch:
+	// ERROR "undefined: missing"
+	case i = <-missing:
+	// ERROR "cannot receive from non-channel"
+	case i = <-i:
+	// ERROR "cannot assign value received from chan int to type bool"
+	case b = <-ch:
+	// ERROR "undefined: nope"
+	case nope = <-ch:
+	// ERROR "cannot assign to answer"
+	case answer = <-ch:
+	}
+
+	_ = ch
+	_ = i
+	_ = b
+}
+
+// A comm-clause short-declaration receive "case v := <-ch": the channel operand is
+// resolved and required to be a channel; the new variable v is scoped to its clause.
+func commRecvDecl() {
+	var ch chan int
+	var n int
+
+	select {
+	case v := <-ch:
+		_ = v
+	// ERROR "undefined: missing"
+	case w := <-missing:
+		_ = w
+	// ERROR "cannot receive from non-channel"
+	case y := <-n:
+		_ = y
+	}
+
+	_ = ch
+	_ = n
+}

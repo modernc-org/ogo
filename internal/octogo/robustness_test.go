@@ -452,6 +452,71 @@ func TestChannelOperandRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestCommOperandRobustness exercises name- and type-checking of a select comm
+// clause's communication operation -- the channel and value operands of a send
+// "case ch <- v", a bare receive "case <-ch", a receive assignment "case v = <-ch"
+// and a short-declaration receive "case v := <-ch" -- over degenerate operand
+// shapes: an undefined, blank, non-channel, indexed, selector, pointer or compound
+// operand, a mismatched or undefined value, and an undefined, blank, suffixed or
+// non-assignable target. The comm-op walker locates a CommHead's CommOp and, for the
+// "AssignHead PostfixComm" forms, its operator, operand and any index, so an
+// unexpected shape (a multi-star or parenthesized channel/target, a nested or empty
+// select, a receive of a receive) must yield a diagnostic or nothing, never a crash.
+func TestCommOperandRobustness(t *testing.T) {
+	bodies := []string{
+		// Send comm op: valid, undefined, blank, non-channel channel/value.
+		"var ch chan int; select {\ncase ch <- 1:\n}\n_ = ch",
+		"select {\ncase nope <- 1:\n}",
+		"select {\ncase _ <- 1:\n}",
+		"var n int; select {\ncase n <- 1:\n}\n_ = n",
+		"var ch chan int; select {\ncase ch <- nope:\n}\n_ = ch",
+		"var ch chan int; select {\ncase ch <- _:\n}\n_ = ch",
+		"var ch chan int; select {\ncase ch <- true:\n}\n_ = ch",
+		// Send with a suffixed, pointer or compound operand.
+		"var chs [3]chan int; var i int; select {\ncase chs[i] <- 1:\n}\n_ = chs; _ = i",
+		"var chs [3]chan int; select {\ncase chs[nope] <- 1:\n}\n_ = chs",
+		"var p pt; select {\ncase p.ch <- 1:\n}\n_ = p",
+		"var p *int; select {\ncase *p <- 1:\n}\n_ = p",
+		"var ch chan int; var a, b int; select {\ncase ch <- a + b:\n}\n_ = ch; _ = a; _ = b",
+		"var a chan int; var b chan int; select {\ncase a <- <-b:\n}\n_ = a; _ = b",
+		// Bare receive comm op: valid, undefined, blank, non-channel, compound.
+		"var ch chan int; select {\ncase <-ch:\n}\n_ = ch",
+		"select {\ncase <-nope:\n}",
+		"select {\ncase <-_:\n}",
+		"var n int; select {\ncase <-n:\n}\n_ = n",
+		"var ch chan int; select {\ncase <-ch + 1:\n}\n_ = ch",
+		"var ch chan int; select {\ncase <-<-ch:\n}\n_ = ch",
+		// Receive-assignment comm op: valid, undefined channel/target, non-channel,
+		// mismatched element, non-assignable and suffixed targets.
+		"var ch chan int; var i int; select {\ncase i = <-ch:\n}\n_ = ch; _ = i",
+		"var i int; select {\ncase i = <-nope:\n}\n_ = i",
+		"var i int; select {\ncase i = <-i:\n}\n_ = i",
+		"var ch chan int; var b bool; select {\ncase b = <-ch:\n}\n_ = ch; _ = b",
+		"var ch chan int; select {\ncase nope = <-ch:\n}\n_ = ch",
+		"var ch chan int; select {\ncase _ = <-ch:\n}\n_ = ch",
+		"var ch chan int; var s pt; select {\ncase s.x = <-ch:\n}\n_ = ch; _ = s",
+		"var ch chan int; var a [3]int; select {\ncase a[0] = <-ch:\n}\n_ = ch; _ = a",
+		"var ch chan int; var v int; var p *int = &v; select {\ncase *p = <-ch:\n}\n_ = ch",
+		"var ch chan int; var p *int; select {\ncase _.f = <-ch:\n}\n_ = ch; _ = p",
+		// Short-declaration receive comm op: valid, undefined channel, non-channel,
+		// blank, degenerate ":=" targets, nested select.
+		"var ch chan int; select {\ncase v := <-ch:\n\t_ = v\n}\n_ = ch",
+		"select {\ncase v := <-nope:\n\t_ = v\n}",
+		"var n int; select {\ncase v := <-n:\n\t_ = v\n}\n_ = n",
+		"var ch chan int; select {\ncase _ := <-ch:\n}\n_ = ch",
+		"var ch chan int; select {\ncase *p := <-ch:\n}\n_ = ch",
+		"var a chan int; var b chan int; select {\ncase v := <-a:\n\tselect {\ncase w := <-b:\n\t\t_ = w\n\t}\n\t_ = v\n}\n_ = a; _ = b",
+		// A default and an empty select carry no comm op.
+		"select {\ndefault:\n}",
+		"select {\n}",
+	}
+	progs := make([]string, len(bodies))
+	for i, b := range bodies {
+		progs[i] = "type pt struct{ x int }\nfunc g() {\n\t" + b + "\n}\n"
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

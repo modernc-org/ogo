@@ -1025,16 +1025,9 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				f.checkCondition(s, condKw, c)
 				condKw = ""
 			case isRecv:
-				// A bare receive statement discards the value; resolve the names in
-				// the channel operand (reporting an undefined channel) and, as
-				// "x = <-ch" does via checkUnaryExpr, require a known operand to be a
-				// channel.
-				f.checkNames(s, c)
-				if _, _, isChan := f.exprChan(s, c); !isChan {
-					if _, known := f.exprType(s, c); known {
-						f.err(f.tok(c.Pos()).Position(), "invalid operation: cannot receive from non-channel")
-					}
-				}
+				// A bare receive statement discards the value; resolve and channel-
+				// check the operand exactly as a select comm clause's "case <-ch" does.
+				f.checkReceiveOperand(s, c)
 			}
 		case 0:
 			switch f.ch(c.tok) {
@@ -1679,6 +1672,10 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 		if c.sym != CommClause {
 			continue
 		}
+		// The communication operation itself -- the channel and value operands of
+		// the "case <-ch"/"ch <- v"/"v = <-ch"/"v := <-ch" -- is checked in the
+		// enclosing scope, before a short receive binds its variable.
+		f.checkCommOp(s, c)
 		// Each comm clause is its own block scope. A "case v := <-ch" receive
 		// introduces v there, visible in the clause body, before the body is
 		// walked. The received value's type is not modelled, so v carries no kind,
@@ -1732,6 +1729,143 @@ func (f *File) commRecvVar(commClause Node) (Token, bool) {
 		}
 	}
 	return Token{}, false
+}
+
+// checkCommOp name- and type-checks the communication operation of a select comm
+// clause -- the channel and value operands its CommHead carries -- mirroring the
+// checks a bare send or receive statement receives. A "default" clause carries no
+// CommOp and is skipped. The operation is evaluated in the enclosing scope s,
+// before a "case v := <-ch" short receive binds v, so s is used, not the clause
+// scope. The four operations, per the CommOp/PostfixComm grammar, are:
+//
+//	case <-ch:      a bare receive -- the channel operand is resolved and required
+//	                to be a channel;
+//	case ch <- v:   a send -- the value is resolved and, via checkSend, the channel
+//	                is resolved and the value's type checked against the element;
+//	case v = <-ch:  a receive assignment -- the channel operand is checked as a
+//	                receive, the target resolved for assignability, and the channel's
+//	                element type checked against the target;
+//	case v := <-ch: a short-declaration receive -- the channel operand is checked as
+//	                a receive (the target v is declared by checkSelect).
+func (f *File) checkCommOp(s *Scope, commClause Node) {
+	for head := range it(commClause.ast) {
+		if head.sym != CommHead {
+			continue
+		}
+		for op := range it(head.ast) {
+			if op.sym == CommOp {
+				f.commOp(s, op)
+			}
+		}
+	}
+}
+
+// commOp checks a single CommOp node, dispatching on its shape. A bare receive is
+// "<-" Expression with no AssignHead; the "AssignHead PostfixComm" forms are a send
+// when no "="/":=" precedes the "<-" and a receive assignment or declaration when
+// one does.
+func (f *File) commOp(s *Scope, op Node) {
+	var assignHead, bareExpr, postfixComm Node
+	hasHead, hasBareArrow, hasBareExpr, hasPostfix := false, false, false, false
+	for c := range it(op.ast) {
+		switch c.sym {
+		case AssignHead:
+			assignHead, hasHead = c, true
+		case PostfixComm:
+			postfixComm, hasPostfix = c, true
+		case Expression:
+			bareExpr, hasBareExpr = c, true
+		case 0:
+			if f.ch(c.tok) == ARROW {
+				hasBareArrow = true
+			}
+		}
+	}
+	// "case <-ch": a bare receive, "<-" Expression, with no AssignHead.
+	if !hasHead && hasBareArrow && hasBareExpr {
+		f.checkReceiveOperand(s, bareExpr)
+		return
+	}
+	if !hasHead || !hasPostfix {
+		return
+	}
+	// "AssignHead PostfixComm": name-check any index in a suffixed operand ("chs[i]
+	// <- v", "v[i] = <-ch"), then locate the "<-" operand and the "="/":=" that, when
+	// present, marks a receive rather than a send.
+	f.checkIndexExprs(s, postfixComm)
+	var operand Node
+	hasOperand := false
+	var assignOp Symbol
+	for c := range it(postfixComm.ast) {
+		switch c.sym {
+		case Expression:
+			operand, hasOperand = c, true
+		case 0:
+			switch f.ch(c.tok) {
+			case ASSIGN, DEFINE:
+				assignOp = f.ch(c.tok)
+			}
+		}
+	}
+	if !hasOperand {
+		return
+	}
+	switch assignOp {
+	case ASSIGN, DEFINE:
+		// "case v = <-ch" or "case v := <-ch": the Expression is the channel.
+		f.checkReceiveOperand(s, operand)
+		if assignOp == ASSIGN {
+			f.commRecvAssignTarget(s, assignHead, postfixComm, operand)
+		}
+	default:
+		// "case ch <- v": the AssignHead is the channel, the Expression the value.
+		f.checkNames(s, operand)
+		if id, ok := f.assignHeadIdent(assignHead); ok {
+			f.checkSend(s, id, operand)
+		}
+	}
+}
+
+// commRecvAssignTarget resolves the target of a "case v = <-ch" receive
+// assignment, mirroring the "=" target checks of an ordinary assignment: an
+// undefined target is reported, a constant/function/type target is not
+// assignable, and a plain variable target's type is checked against the channel's
+// element type. A suffixed target ("v.f = <-ch", "v[i] = <-ch") reads its base, so
+// a non-variable base is left to its own check and a blank base is an illegal read;
+// a whole blank target ("_ = <-ch") is a legal discard.
+func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr Node) {
+	id, ok := f.assignHeadIdent(assignHead)
+	if !ok {
+		return
+	}
+	suffixed := hasSelectorOrIndex(postfixComm)
+	nm := id.Src()
+	if nm == "_" {
+		if suffixed {
+			f.blankRead(id)
+		}
+		return
+	}
+	switch s.find(nm).(type) {
+	case nil:
+		if !f.isImportQualifier(s, nm) {
+			f.err(id.Position(), "undefined: %s", nm)
+		}
+	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+		if !suffixed {
+			f.err(id.Position(), "cannot assign to %s", nm)
+		}
+	}
+	if suffixed {
+		return
+	}
+	elem, hasElem, isChan := f.exprChan(s, chanExpr)
+	if !isChan || !hasElem {
+		return
+	}
+	if tk, tok := f.identKind(s, id); tok && kindCategory(tk) != kindCategory(elem) {
+		f.err(f.tok(chanExpr.Pos()).Position(), "cannot assign value received from chan %s to type %s", kindName(elem), kindName(tk))
+	}
 }
 
 // checkClauseBody walks the statement body of a case or comm clause in scope s.
@@ -2253,6 +2387,23 @@ func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
 	tk, tok := f.identKind(s, target)
 	if tok && kindCategory(tk) != kindCategory(elem) {
 		f.err(f.tok(rhs.Pos()).Position(), "cannot assign value received from chan %s to type %s", kindName(elem), kindName(tk))
+	}
+}
+
+// checkReceiveOperand resolves the names in the channel operand of a receive --
+// the "ch" in a bare receive statement "<-ch" or in a select comm clause's
+// "case <-ch", "case v = <-ch" or "case v := <-ch" -- reporting an undefined or
+// blank channel, and, as a receive assignment does via checkUnaryExpr, requires
+// a known operand to be a channel, rejecting "<-n" for a scalar n. Unlike a
+// receive statement or assignment, a comm clause stores the channel operand bare
+// (the "<-" is a sibling, not a unary operator over it), so the channel check
+// that checkUnaryExpr would otherwise apply is made here explicitly.
+func (f *File) checkReceiveOperand(s *Scope, chanExpr Node) {
+	f.checkNames(s, chanExpr)
+	if _, _, isChan := f.exprChan(s, chanExpr); !isChan {
+		if _, known := f.exprType(s, chanExpr); known {
+			f.err(f.tok(chanExpr.Pos()).Position(), "invalid operation: cannot receive from non-channel")
+		}
 	}
 }
 

@@ -1,6 +1,5 @@
-var ch chan int
-
 func testSelect() {
+    var ch chan int
     var x int = 0
 
     for {
