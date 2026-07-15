@@ -381,6 +381,43 @@ func TestChannelRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestIndexNameRobustness exercises name-checking of index expressions -- the "i" in
+// "a[i]" -- wherever an index appears: a read, a call argument, a condition, a nested
+// or chained index, an assignment target, an LhsItem, and a "go" callee. Each index
+// is resolved through checkNames, so an undefined name, a blank read, a defined
+// variable, a literal, and a compound or itself-indexed index expression must each be
+// analysed without panicking.
+func TestIndexNameRobustness(t *testing.T) {
+	progs := []string{
+		// Read positions.
+		"func f() { var a [3]int; _ = a[nope]; _ = a }\n",
+		"func f() { var a [3]int; var i int; _ = a[i]; _ = a; _ = i }\n",
+		"func f() { var a [3]int; _ = a[0]; _ = a }\n",
+		"func g(v int) {}\nfunc f() { var a [3]int; g(a[nope]); _ = a }\n",
+		"func f() { var a [3]int; if a[nope] == 0 {\n}\n_ = a }\n",
+		"func f() { var a [3]int; _ = a[_]; _ = a }\n",
+		// Nested, chained, and compound indexes.
+		"func f() { var a [3]int; var b [3]int; _ = a[b[nope]]; _ = a; _ = b }\n",
+		"func f() { var a [3][3]int; _ = a[nope][bad]; _ = a }\n",
+		"func f() { var a [3]int; var b, c int; _ = a[b+c]; _ = a; _ = b; _ = c }\n",
+		"func f() { var a [3]int; _ = a[nope]() ; _ = a }\n",
+		"func f() { var a [3]int; _ = a[nope].m(); _ = a }\n",
+		// Assignment targets and LhsItems.
+		"func f() { var a [3]int; a[nope] = 1; _ = a }\n",
+		"func f() { var a [3]int; var i int; a[i] = 1; _ = a; _ = i }\n",
+		"func f() { var a [2][2]int; a[nope][bad] = 1; _ = a }\n",
+		"func two() (a, b int) { return 1, 2 }\nfunc f() { var x int; var a [3]int; x, a[nope] = two(); _ = x; _ = a }\n",
+		// An indexed send/receive target and an undefined indexed base.
+		"func f() { var a [3]int; a[nope] = <-ch; _ = a }\nvar ch chan int\n",
+		"func f() { nope[bad] = 1 }\n",
+		"func f() { _ = nope[bad] }\n",
+		// "go" callee index.
+		"func f() { var a [3]int; go a[nope](); _ = a }\n",
+		"func f() { var a [3]int; var i int; go a[i].m(); _ = a; _ = i }\n",
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

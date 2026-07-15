@@ -1055,6 +1055,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 // CallSuffix the call helpers scan for.
 func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
 	f.checkSelectors(s, head, stmt)
+	f.checkIndexExprs(s, stmt) // the "i" in a "go a[i].m()" callee
 	argList, direct, isCall := f.callInfo(stmt)
 	if !isCall {
 		return
@@ -1874,6 +1875,7 @@ func hasSelectorOrIndex(n Node) bool {
 // calls declare nothing.
 func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	f.checkSelectors(s, head, postfix)
+	f.checkIndexExprs(s, postfix) // the "i" in a "a[i] = e" target (LhsItems below)
 
 	// A statement that is a bare call ("h(1, 2)") has its CallSuffix directly in
 	// the Postfix; an assignment/send carries its call inside a right-hand
@@ -1910,6 +1912,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			switch n.sym {
 			case LhsItem:
 				lhsItems++
+				f.checkIndexExprs(s, n) // the "k" in a "a, b[k] = ..." target
 				suffixed := hasSelectorOrIndex(n)
 				for c := range it(n.ast) {
 					if c.sym == AssignHead {
@@ -3008,6 +3011,25 @@ func (f *File) blankRead(tok Token) bool {
 	return true
 }
 
+// checkIndexExprs resolves the names in every index expression that is a direct
+// child of a factor suffix, an assignment postfix, or an LhsItem -- the "i" in
+// "a[i]", each index of "a[i][j]", the index of a "b[k] = e" target -- so an
+// undefined name or a blank read used as an index is reported. Each index is
+// name-checked with checkNames, which itself descends into any further index nested
+// within it ("a[b[k]]"), so this walk need not recurse.
+func (f *File) checkIndexExprs(s *Scope, n Node) {
+	for c := range it(n.ast) {
+		if c.sym != Index {
+			continue
+		}
+		for e := range it(c.ast) {
+			if e.sym == Expression {
+				f.checkNames(s, e)
+			}
+		}
+	}
+}
+
 // checkFactorNames resolves a Factor's identifier. A parenthesized expression is
 // recursed into; a bare identifier is resolved and reported when undefined; a
 // literal or a suffixed identifier (call/index/selector) is left alone.
@@ -3034,6 +3056,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		return
 	}
 	if hasSuffix {
+		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
 		if argList, direct, isCall := f.callInfo(suffix); isCall {
 			f.checkCall(s, id, direct && hasID, argList)
 			if !direct && hasID {

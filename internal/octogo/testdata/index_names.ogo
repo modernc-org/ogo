@@ -1,0 +1,67 @@
+// An index expression is name-checked like any other expression: an undefined name
+// or a read of the blank identifier used as an index "a[i]" is reported, wherever
+// the index appears -- a read, a call argument, a condition, a nested index, an
+// assignment target, or a "go" callee. A defined variable or a literal index is
+// accepted.
+
+func use(v int) {}
+
+// Undefined index name in read positions: a bare read, a call argument, a condition
+// and a nested index.
+func reads() {
+	var a [3]int
+	var b [3]int
+
+	// ERROR "undefined: i"
+	_ = a[i]
+
+	// ERROR "undefined: j"
+	use(a[j])
+
+	// ERROR "undefined: k"
+	if a[k] == 0 {
+	}
+
+	// ERROR "undefined: n"
+	_ = a[b[n]]
+
+	_ = a
+	_ = b
+}
+
+// The blank identifier is not a value, so it cannot be an index.
+func blankIndex() {
+	var a [3]int
+	// ERROR "cannot use _ as value or type"
+	_ = a[_]
+	_ = a
+}
+
+// Undefined index name in an assignment target.
+func target() {
+	var a [3]int
+	// ERROR "undefined: i"
+	a[i] = 1
+	_ = a
+}
+
+// Undefined index name in a "go" statement callee.
+func goCallee() {
+	var a [3]int
+	// ERROR "undefined: i"
+	go a[i]()
+	_ = a
+}
+
+// A defined variable or a literal index is accepted.
+func valid() {
+	var a [3]int
+	var i int
+
+	_ = a[i]
+	_ = a[0]
+	a[i] = 1
+
+	_ = a
+	_ = i
+}
