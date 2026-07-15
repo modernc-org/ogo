@@ -250,6 +250,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitVarDecl(first.ast)
 	case first.sym == 0 && e.f.ch(first.tok) == FOR:
 		e.emitFor(nodes)
+	case first.sym == 0 && e.f.ch(first.tok) == IF:
+		e.emitIf(nodes)
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == 0:
@@ -326,16 +328,18 @@ func (e *emitter) cType(ast []int32) string {
 	return ct
 }
 
-// emitFor handles `for { ... }` (infinite loop). Loop conditions and clauses
-// are not supported yet.
+// emitFor handles `for {}` (infinite -> for(;;)) and `for cond {}` (conditional
+// -> while(cond)). Init/post clauses and range are not supported yet.
 func (e *emitter) emitFor(nodes []Node) {
-	var body []int32
+	var cond, body []int32
 	for _, n := range nodes[1:] {
 		switch n.sym {
+		case Expression:
+			cond = n.ast
 		case Block:
 			body = n.ast
 		default:
-			e.fail("for-loop conditions are not supported yet")
+			e.fail("for-loop clause %v is not supported yet", n.sym)
 			return
 		}
 	}
@@ -344,12 +348,75 @@ func (e *emitter) emitFor(nodes []Node) {
 		return
 	}
 	e.ind()
-	e.emit("for (;;) {\n")
+	if cond == nil {
+		e.emit("for (;;) {\n")
+	} else {
+		e.emit("while ")
+		e.emitCondition(cond)
+		e.emit(" {\n")
+	}
 	e.indent++
 	e.emitBlockStmts(body)
 	e.indent--
 	e.ind()
 	e.emit("}\n")
+}
+
+// emitIf handles `if cond { ... }` with an optional `else { ... }`. `else if`
+// chains and if-init clauses are not supported yet.
+func (e *emitter) emitIf(nodes []Node) {
+	var cond, thenBody, elseBody []int32
+	for _, n := range nodes[1:] {
+		switch n.sym {
+		case Expression:
+			cond = n.ast
+		case Block:
+			if thenBody == nil {
+				thenBody = n.ast
+			} else {
+				elseBody = n.ast
+			}
+		case 0:
+			// ELSE terminal.
+		default:
+			e.fail("if clause %v is not supported yet", n.sym)
+			return
+		}
+	}
+	if cond == nil || thenBody == nil {
+		e.fail("malformed if statement")
+		return
+	}
+	e.ind()
+	e.emit("if ")
+	e.emitCondition(cond)
+	e.emit(" {\n")
+	e.indent++
+	e.emitBlockStmts(thenBody)
+	e.indent--
+	e.ind()
+	e.emit("}")
+	if elseBody != nil {
+		e.emit(" else {\n")
+		e.indent++
+		e.emitBlockStmts(elseBody)
+		e.indent--
+		e.ind()
+		e.emit("}")
+	}
+	e.emit("\n")
+}
+
+// emitCondition emits an if/for condition wrapped in exactly one set of
+// parentheses. It emits the Expression's children directly (rather than the
+// Expression node, which would add its own binary-operator parens) so a simple
+// `i < 20` becomes `(i < 20)`, not `((i < 20))`.
+func (e *emitter) emitCondition(exprChildren []int32) {
+	e.emit("(")
+	for n := range it(exprChildren) {
+		e.emitExprNode(n)
+	}
+	e.emit(")")
 }
 
 // emitAssignHeadStmt handles the `AssignHead Postfix` statement family: a call
