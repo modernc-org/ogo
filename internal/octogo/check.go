@@ -734,6 +734,32 @@ func (f *File) elemTypeKind(s *Scope, tn TypeNode) (Kind, bool) {
 	return 0, false
 }
 
+// chanType reports whether a Type node denotes a channel "chan T" at its top level
+// (a direct "chan" token), as opposed to a pointer, array, slice or named type. It
+// mirrors arrayType: a shallow shape test used to decide whether declareLocalVar
+// resolves the type, whose element is then read by chanElem.
+func (f *File) chanType(n Node) bool {
+	for c := range it(n.ast) {
+		if c.sym == 0 && f.ch(c.tok) == CHAN {
+			return true
+		}
+	}
+	return false
+}
+
+// chanElem reports whether a resolved type is a channel "chan T" and, if so, T's
+// predeclared Kind (unknown for an unmodelled element such as a struct). It is the
+// channel analogue of elemTypeKind, recorded on a variable so send and receive
+// operations on package, local and parameter channels alike are checked uniformly.
+func (f *File) chanElem(s *Scope, tn TypeNode) (elem Kind, hasElem, isChan bool) {
+	ct, ok := tn.(*TypeNodeChan)
+	if !ok {
+		return 0, false, false
+	}
+	elem, hasElem = f.typeKind(s, ct.TypeNode)
+	return elem, hasElem, true
+}
+
 // declareParamList declares the named parameters or results in list into scope s.
 // A named result shares the body scope with the parameters and locals, so it may
 // be referenced and assigned in the body; an unnamed entry (an unnamed result)
@@ -751,8 +777,9 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		_, isPtr := p.TypeNode.(*TypeNodePointer)
 		typeName, _ := namedTypeToken(p.TypeNode)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
+		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -1711,8 +1738,8 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		// The IdentifierList precedes the Type, so collect the names and resolve
 		// the type's Kind first, then bind the names carrying that Kind.
 		var names []Token
-		var kind, elemKind Kind
-		var hasKind, hasInit, isPtr, hasElemKind bool
+		var kind, elemKind, chanElemKind Kind
+		var hasKind, hasInit, isPtr, hasElemKind, isChan, hasChanElemKind bool
 		var typeName Token
 		var initExpr Node
 		for c := range it(n.ast) {
@@ -1722,15 +1749,17 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			case Type:
 				// Resolve plain named types and pointers-to-named, struct and
 				// interface type literals (so their field/method names are checked
-				// for duplicates), and array types (so their length is checked),
-				// reporting undefined types. Slices and channels are left
-				// unresolved for now: their element expressions are not yet checked.
-				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) {
+				// for duplicates), array types (so their length is checked), and
+				// channel types (so a send/receive on the variable is checked),
+				// reporting undefined types. Slices are left unresolved for now:
+				// their element expressions are not yet checked.
+				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) {
 					if tn := f.typ(s, c); tn != nil {
 						kind, hasKind = f.typeKind(s, tn)
 						_, isPtr = tn.(*TypeNodePointer)
 						typeName, _ = namedTypeToken(tn)
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
+						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
 					}
 				}
 			case Expression:
@@ -1746,7 +1775,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			}
 		}
 		for _, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue
@@ -2168,7 +2197,7 @@ func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
 	if !ok {
 		return // undefined or non-variable operand: not diagnosed here
 	}
-	elem, hasElem, isChan := f.chanElemOf(s, d)
+	elem, hasElem, isChan := f.chanElemOf(d)
 	if !isChan {
 		f.err(chTok.Position(), "invalid operation: cannot send to non-channel")
 		return
@@ -2873,19 +2902,14 @@ func (f *File) exprIsPointer(s *Scope, n Node) bool {
 }
 
 // chanElemOf reports whether variable d has channel type "chan T" and, if so,
-// T's predeclared Kind. It reads the declared type resolved during Phase 3,
-// which is where every channel in the language's current use is declared (all
-// at package scope).
-func (f *File) chanElemOf(s *Scope, d *VarDeclaration) (elem Kind, hasElem, isChan bool) {
-	if d == nil || d.VarSpec == nil {
+// T's predeclared Kind. The channel shape and element are recorded on the
+// declaration (by declareLocalVar, declareParamList and varSpec), so a package,
+// local or parameter channel is recognized uniformly.
+func (f *File) chanElemOf(d *VarDeclaration) (elem Kind, hasElem, isChan bool) {
+	if d == nil {
 		return 0, false, false
 	}
-	ct, ok := d.VarSpec.TypeNode.(*TypeNodeChan)
-	if !ok {
-		return 0, false, false
-	}
-	elem, hasElem = f.typeKind(s, ct.TypeNode)
-	return elem, hasElem, true
+	return d.chanElemKind, d.hasChanElemKind, d.isChan
 }
 
 // exprChan reports whether expression n is a bare channel variable and, if so,
@@ -2893,7 +2917,7 @@ func (f *File) chanElemOf(s *Scope, d *VarDeclaration) (elem Kind, hasElem, isCh
 func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 	if id, ok := f.exprIdent(n); ok {
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
-			return f.chanElemOf(s, d)
+			return f.chanElemOf(d)
 		}
 	}
 	return 0, false, false
@@ -4310,12 +4334,14 @@ func (f *File) varSpec(s *Scope, n Node) {
 		_, isPtr := typ.(*TypeNodePointer)
 		typeName, _ := namedTypeToken(typ)
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
+		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
 		for _, vd := range varDecls {
 			if vd == nil {
 				continue
 			}
 			vd.kind, vd.hasKind, vd.isPtr, vd.typeName = kind, hasKind, isPtr, typeName
 			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
+			vd.isChan, vd.chanElemKind, vd.hasChanElemKind = isChan, chanElemKind, hasChanElemKind
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:
 				vs.TypeNode = typ

@@ -339,6 +339,48 @@ func TestSelectRecvRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestChannelRobustness exercises send and receive checking on channels declared at
+// package, local and parameter scope -- the channel shape and element type are now
+// recorded on every variable declaration, so a send to or receive from a non-channel,
+// a value/target type mismatch, an unmodelled element (a struct or nested channel),
+// an undefined element type, and degenerate operand shapes must each be analysed
+// without panicking.
+func TestChannelRobustness(t *testing.T) {
+	progs := []string{
+		// Valid send/receive at each scope.
+		"var ch chan int\nfunc f() { ch <- 1 }\n",
+		"func f() { var ch chan int; ch <- 1; _ = ch }\n",
+		"func f(ch chan int) { ch <- 1 }\n",
+		"func f() { var ch chan int; var i int; i = <-ch; _ = ch; _ = i }\n",
+		"func f(ch chan bool) { var b bool; b = <-ch; _ = b }\n",
+		// Element-type mismatches on local and parameter channels.
+		"func f() { var ch chan int; ch <- true; _ = ch }\n",
+		"func f(ch chan bool) { ch <- 1 }\n",
+		"func f() { var ch chan int; var b bool; b = <-ch; _ = ch; _ = b }\n",
+		// Non-channel operands still rejected.
+		"func f() { var n int; n <- 1; _ = n }\n",
+		"func f() { var n int; x := <-n; _ = x; _ = n }\n",
+		// Unmodelled element types: a struct, a nested channel -- recognized as a
+		// channel (no false non-channel error) but the value type is not checked.
+		"type pt struct{ x int }\nfunc f() { var ch chan pt; var p pt; ch <- p; _ = ch; _ = p }\n",
+		"func f() { var ch chan chan int; var d chan int; ch <- d; _ = ch; _ = d }\n",
+		"func f(ch chan chan bool) { x := <-ch; _ = x }\n",
+		// An undefined channel element type is reported, not crashed on.
+		"func f() { var ch chan Nope; _ = ch }\n",
+		"func f(ch chan Nope) { _ = ch }\n",
+		// Degenerate operands: undefined channel/value, a complex sent expression, a
+		// send of a receive, a receive into a field/index/deref target.
+		"func f() { nope <- 1 }\n",
+		"func f() { var ch chan int; ch <- undef; _ = ch }\n",
+		"func f() { var ch chan int; var a, b int; ch <- a + b; _ = ch; _ = a; _ = b }\n",
+		"func f() { var a chan int; var b chan int; a <- <-b; _ = a; _ = b }\n",
+		"type pt struct{ x int }\nfunc f() { var ch chan int; var s pt; s.x = <-ch; _ = ch; _ = s }\n",
+		"func f() { var ch chan int; var a [3]int; a[0] = <-ch; _ = ch; _ = a }\n",
+		"func f() { var ch chan int; var v int; var p *int = &v; *p = <-ch; _ = ch }\n",
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

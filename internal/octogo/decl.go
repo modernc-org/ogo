@@ -264,6 +264,10 @@ type VarDeclaration struct {
 	typeName    Token // the variable's named (possibly pointed-to) type, for field access
 	elemKind    Kind  // the predeclared element/pointed-to type of a pointer, array or slice variable, for deref/index assignment
 	hasElemKind bool  // elemKind is meaningful
+
+	isChan          bool // the variable's type is a channel "chan T"
+	chanElemKind    Kind // the predeclared element type of a channel variable, for send/receive type checks
+	hasChanElemKind bool // chanElemKind is meaningful
 }
 
 // FuncDeclaration represents a named function.

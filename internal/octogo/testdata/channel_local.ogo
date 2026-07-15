@@ -1,0 +1,52 @@
+// Send and receive are checked on a channel wherever it is declared -- a local
+// variable or a function parameter, not only a package-level variable (those are
+// covered by 13_channel_operations.ogo). The channel's element type constrains both
+// the value sent and the target a received value is assigned to.
+
+// A local channel supports valid sends and receives, and its element type is
+// enforced on both.
+func localChan() {
+	var ch chan int
+	var i int
+
+	ch <- 1
+	i = <-ch
+
+	// ERROR "cannot use true of type bool as type int in send"
+	ch <- true
+
+	var b bool
+	// ERROR "cannot assign value received from chan int to type bool"
+	b = <-ch
+
+	_ = i
+	_ = b
+	_ = ch
+}
+
+// A channel parameter is checked the same way as a local or package channel.
+func paramChan(ch chan bool) {
+	var b bool
+
+	ch <- true
+	b = <-ch
+
+	// ERROR "cannot use 1 of type int as type bool in send"
+	ch <- 1
+
+	_ = b
+}
+
+// Recognizing local and parameter channels does not over-recognize a non-channel:
+// a send to or receive from a plain variable is still rejected.
+func notChannels() {
+	var n int
+	// ERROR "cannot send to non-channel"
+	n <- 1
+
+	// ERROR "cannot receive from non-channel"
+	var x int = <-n
+
+	_ = n
+	_ = x
+}
