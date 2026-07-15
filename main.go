@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"modernc.org/ogo/internal/build"
 	"modernc.org/ogo/internal/format"
 	"modernc.org/ogo/internal/loadp2"
 	"modernc.org/ogo/internal/smith"
@@ -61,10 +62,20 @@ func main() {
 		if rc, err := octosmith.SubCommand(args, os.Stdin, os.Stdout, os.Stderr); rc != 0 || err != nil {
 			fail(rc, "err=%v", err)
 		}
+	case "build":
+		rc, err := build.Build(args, os.Stdin, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(rc)
+	case "run":
+		rc, err := build.Run(args, os.Stdin, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(rc)
 	case
-		"build",
 		"help",
-		"run",
 		"test",
 		"version":
 
