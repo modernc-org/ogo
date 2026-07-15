@@ -302,6 +302,43 @@ func TestSwitchGuardRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestSelectRecvRobustness exercises the select comm-clause analysis -- declaring
+// the variable a "case v := <-ch" short receive introduces, scoped to its clause,
+// alongside the bare-receive, assign-receive, send and default forms -- over
+// degenerate and nested comm shapes. The recv-variable extractor walks the flat AST
+// for a CommHead, its CommOp, an AssignHead and a PostfixComm carrying a ":=", so an
+// unexpected shape (a multi-star, selector, index or parenthesized ":=" target, a
+// blank target, an undefined channel, an empty or nested select) must declare
+// nothing or a single name, never crash.
+func TestSelectRecvRobustness(t *testing.T) {
+	progs := []string{
+		// The four pre-existing forms and default.
+		"func f() { var ch chan int; select {\ncase <-ch:\n}\n_ = ch }\n",
+		"func f() { var ch chan int; var v int; select {\ncase v = <-ch:\n}\n_ = ch; _ = v }\n",
+		"func f() { var ch chan int; select {\ncase ch <- 1:\n}\n_ = ch }\n",
+		"func f() { select {\ndefault:\n} }\n",
+		"func f() { select {\n} }\n",
+		// The short-receive declaration, used and unused, blank, and scoped.
+		"func f() { var ch chan int; select {\ncase v := <-ch:\n\t_ = v\n}\n_ = ch }\n",
+		"func f() { var ch chan int; select {\ncase v := <-ch:\n}\n_ = ch }\n",
+		"func f() { var ch chan int; select {\ncase _ := <-ch:\n}\n_ = ch }\n",
+		"func f() { var a chan int; var b chan int; select {\ncase x := <-a:\n\t_ = x\ncase y := <-b:\n\t_ = y\n}\n_ = a; _ = b }\n",
+		// Degenerate ":=" targets: multi-star, selector, index, parenthesized -- none
+		// is a plain short declaration, so none introduces a (shadowing) variable.
+		"func f() { var ch chan int; select {\ncase *p := <-ch:\n}\n_ = ch }\n",
+		"func f() { var ch chan int; select {\ncase **p := <-ch:\n}\n_ = ch }\n",
+		"func f() { var ch chan int; select {\ncase v.f := <-ch:\n}\n_ = ch }\n",
+		"func f() { var ch chan int; select {\ncase v[0] := <-ch:\n}\n_ = ch }\n",
+		"func f() { var ch chan int; select {\ncase (v) := <-ch:\n}\n_ = ch }\n",
+		// An undefined channel in the receive is not modelled, so it is silent, but
+		// must not crash. A nested select and a receive of a complex expression too.
+		"func f() { select {\ncase v := <-nope:\n\t_ = v\n} }\n",
+		"func f() { var ch chan int; var d chan int; select {\ncase v := <-ch:\n\tselect {\ncase w := <-d:\n\t\t_ = w\n\t}\n\t_ = v\n}\n_ = ch; _ = d }\n",
+		"func f() { var chs [3]chan int; select {\ncase v := <-chs[0]:\n\t_ = v\n}\n_ = chs }\n",
+	}
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

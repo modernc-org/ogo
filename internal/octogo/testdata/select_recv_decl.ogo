@@ -1,0 +1,51 @@
+// A select comm clause may introduce a variable with a short receive
+// "case v := <-ch", mirroring Go's "v := <-ch". The variable is bound to the
+// received value and scoped to its own clause body, alongside the pre-existing
+// forms: a bare receive "case <-ch", an assign-to-existing receive "case v = <-ch",
+// a send "case ch <- v", and "default". A blank "case _ := <-ch" receives and
+// discards, binding no name.
+
+var ch chan int
+var other chan int
+
+// A short-receive variable is bound and usable within its clause body.
+func recvDecl() {
+	select {
+	case v := <-ch:
+		_ = v
+	}
+}
+
+// The blank identifier receives and discards, binding no name.
+func blankRecv() {
+	select {
+	case _ := <-ch:
+	}
+}
+
+// Every comm form parses and checks: a bare receive, an assign-to-existing receive,
+// a send, a short-receive declaration, and a default.
+func allForms() {
+	var x int
+	select {
+	case <-ch:
+	case x = <-ch:
+	case ch <- 1:
+	case y := <-other:
+		_ = y
+	default:
+	}
+	_ = x
+}
+
+// A short-receive variable is scoped to its own clause; a sibling clause cannot see
+// it.
+func perClauseScope() {
+	select {
+	case a := <-ch:
+		_ = a
+	case <-other:
+		// ERROR "undefined: a"
+		_ = a
+	}
+}

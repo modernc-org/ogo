@@ -106,7 +106,7 @@ CommClause  = CommHead ":" { Statement ";" } .
 CommHead    = "case" CommOp | "default" .
 CommOp      = "<-" Expression
 	| AssignHead PostfixComm .
-PostfixComm = { Selector | Index } ( "=" "<-" Expression | "<-" Expression ) .
+PostfixComm = { Selector | Index } ( ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
 ImportDecl = "import" ( ImportSpec | "(" { ImportSpec ";" } [ ImportSpec ] ")" ) .
 ImportSpec = [ "." | identifier ] string_lit .

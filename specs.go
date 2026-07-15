@@ -678,7 +678,7 @@
 //	CommHead    = "case" CommOp | "default" .
 //	CommOp      = "<-" Expression
 //		| AssignHead PostfixComm .
-//	PostfixComm = { Selector | Index } ( "=" "<-" Expression | "<-" Expression ) .
+//	PostfixComm = { Selector | Index } ( ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 //
 // (OctoGo Specific): The select statement transpiles into an infinite while(1)
 // polling loop in C. It continuously checks non-blocking runtime functions

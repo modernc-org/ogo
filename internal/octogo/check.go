@@ -1627,14 +1627,68 @@ func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
 }
 
 // checkSelect walks the communication clauses of a select statement, each in its
-// own block scope. The communication operations are not checked yet.
+// own block scope, declaring the variable a "case v := <-ch" short receive
+// introduces. The communication operations themselves -- the channel and the sent
+// or received value's type -- are not checked yet.
 func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 	f.reportMultipleDefaults(n, CommClause, "select")
-	for n := range it(n.ast) {
-		if n.sym == CommClause {
-			f.checkClauseBody(s.child(), results, n)
+	for c := range it(n.ast) {
+		if c.sym != CommClause {
+			continue
+		}
+		// Each comm clause is its own block scope. A "case v := <-ch" receive
+		// introduces v there, visible in the clause body, before the body is
+		// walked. The received value's type is not modelled, so v carries no kind,
+		// exactly as "v := <-ch" would outside a select.
+		cs := s.child()
+		if id, ok := f.commRecvVar(c); ok {
+			_ = cs.add(&VarDeclaration{declaration: declaration{token: id}})
+		}
+		f.checkClauseBody(cs, results, c)
+	}
+}
+
+// commRecvVar returns the variable a "case v := <-ch" comm clause introduces, when
+// the clause is that short-declaration receive. A bare receive "case <-ch", a send
+// "case ch <- v", or an "=" receive to an existing variable "case v = <-ch" declares
+// nothing and returns ok == false, as does a blank "case _ := <-ch", whose target
+// binds no name.
+func (f *File) commRecvVar(commClause Node) (Token, bool) {
+	for head := range it(commClause.ast) {
+		if head.sym != CommHead {
+			continue
+		}
+		for op := range it(head.ast) {
+			if op.sym != CommOp {
+				continue
+			}
+			var assignHead Node
+			hasHead, hasDefine, hasSuffix := false, false, false
+			for c := range it(op.ast) {
+				switch c.sym {
+				case AssignHead:
+					assignHead, hasHead = c, true
+				case PostfixComm:
+					for pc := range it(c.ast) {
+						switch pc.sym {
+						case Selector, Index:
+							hasSuffix = true // "v.f := <-ch": not a plain short decl
+						case 0:
+							if f.ch(pc.tok) == DEFINE {
+								hasDefine = true
+							}
+						}
+					}
+				}
+			}
+			if hasHead && hasDefine && !hasSuffix {
+				if id, ok := f.assignHeadIdent(assignHead); ok && id.Src() != "_" {
+					return id, true
+				}
+			}
 		}
 	}
+	return Token{}, false
 }
 
 // checkClauseBody walks the statement body of a case or comm clause in scope s.
