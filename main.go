@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"modernc.org/ogo/internal/format"
+	"modernc.org/ogo/internal/loadp2"
 	"modernc.org/ogo/internal/smith"
 	"modernc.org/opt"
 )
@@ -23,6 +24,14 @@ func fail(rc int, s string, args ...any) {
 }
 
 func main() {
+	// loadp2 is a verbatim passthrough to the transpiled P2 loader. Its flag
+	// grammar (-a/-9/-e, @ADDR=file load specs) is not ogo's, so dispatch it
+	// before ogo's option parser can touch it, handing over the raw arg tail and
+	// exiting with loadp2's own status.
+	if len(os.Args) >= 2 && os.Args[1] == "loadp2" {
+		os.Exit(loadp2.SubCommand(os.Args[2:]))
+	}
+
 	set := opt.NewSet()
 	var subCommand string
 	var args []string
@@ -55,6 +64,7 @@ func main() {
 	case
 		"build",
 		"help",
+		"run",
 		"test",
 		"version":
 
@@ -70,6 +80,8 @@ The commands are:
 
 	build       compile packages and dependencies
 	fmt         reformat source files
+	loadp2      load a program onto a Propeller 2 board (loadp2 passthrough)
+	run         compile and run a program on a connected board
 	smith       output a random program for compiler testing
 	test        test packages
 	version     print Go version
