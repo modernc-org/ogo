@@ -616,6 +616,49 @@ func TestCallBaseRobustness(t *testing.T) {
 	buildEach(t, progs)
 }
 
+// TestScalarIndexRobustness exercises the read-side "cannot index" check -- reading
+// an index of a scalar variable or constant, "x[i]" where x is not an array or
+// slice -- over degenerate shapes: a numeric, bool, string, const, parameter, array,
+// slice, pointer or undefined base, a leading index followed by a further index,
+// selector or call, and an index nested in an operator, argument or condition. The
+// check runs in checkFactorNames only when the base's kind is a numeric or bool
+// scalar, so an array, slice, string or unresolved base must be left alone, never
+// crash.
+func TestScalarIndexRobustness(t *testing.T) {
+	bodies := []string{
+		// Scalar bases -- reported "cannot index".
+		"var n int; _ = n[0]; _ = n",
+		"var b bool; _ = b[0]; _ = b",
+		"var n int; _ = n[0][1]; _ = n",
+		"var n int; _ = n[0].f; _ = n",
+		"var n int; _ = n[0](); _ = n",
+		"var n int; _ = n[nope]; _ = n",
+		"var n int; use(n[0]); _ = n",
+		"var n int; if n[0] == 0 {\n}\n_ = n",
+		"var n int; _ = n[0] + 1; _ = n",
+		// Indexable or unmodelled bases -- left alone.
+		"var s string; _ = s[0]; _ = s",
+		"var a [3]int; _ = a[0]; _ = a",
+		"var a [3][3]int; _ = a[0][1]; _ = a",
+		"var s []int; _ = s[0]; _ = s",
+		"var p *int; _ = p[0]; _ = p",
+		"var t pt; _ = t.x; _ = t",
+		// Undefined and blank bases -- reported by their own checks, not "cannot index".
+		"_ = nope[0]",
+		"_ = _[0]",
+	}
+	progs := make([]string, 0, len(bodies)+2)
+	for _, b := range bodies {
+		progs = append(progs, "type pt struct{ x int }\nfunc use(i int) {}\nfunc g() {\n\t"+b+"\n}\n")
+	}
+	// A constant and a parameter base at package/parameter scope.
+	progs = append(progs,
+		"const c = 5\nfunc g() { _ = c[0] }\n",
+		"func g(p int) { _ = p[0] }\n",
+	)
+	buildEach(t, progs)
+}
+
 // buildEach runs Build on each program under a recover, failing on any panic.
 func buildEach(t *testing.T, progs []string) {
 	t.Helper()

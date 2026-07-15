@@ -1,0 +1,45 @@
+// Reading an index of a scalar -- "x[i]" where x is a numeric or bool variable or
+// constant, not an array or slice -- is invalid ("cannot index x"), the read-side
+// analogue of the "x[i] = e" target check in assign_indirect.ogo. A string is
+// byte-indexable, so "s[i]" is left alone, and an array or slice carries its element
+// type and is handled by read_index_deref.ogo. The base's own definedness is checked
+// separately (read_base.ogo).
+
+const answer = 42
+
+func scalarIndex() {
+	var n int
+	var b bool
+	var s string
+	var a [3]int
+
+	// ERROR "invalid operation: cannot index n"
+	_ = n[0]
+	// ERROR "invalid operation: cannot index b"
+	_ = b[0]
+	// ERROR "invalid operation: cannot index answer"
+	_ = answer[0]
+
+	// A string is byte-indexable, and an array is indexable: both are fine.
+	_ = s[0]
+	_ = a[0]
+
+	_ = n
+	_ = b
+	_ = s
+	_ = a
+}
+
+// The check fires wherever the scalar index is read: an argument, a condition, and
+// through a leading index that precedes a further selector or call.
+func scalarIndexPositions(p int) {
+	// ERROR "invalid operation: cannot index p"
+	use(p[0])
+	// ERROR "invalid operation: cannot index p"
+	if p[0] == 0 {
+	}
+	// ERROR "invalid operation: cannot index p"
+	_ = p[0].field
+}
+
+func use(i int) {}

@@ -2551,6 +2551,22 @@ func (f *File) indexSuffix(n Node) bool {
 	return indexes == 1 && !disqualify
 }
 
+// firstSuffixIsIndex reports whether the first operation of a factor suffix is an
+// index -- "base[i]...", so the index applies directly to base, as opposed to
+// "base.field[i]" (a selector first) or "base()[i]" (a call first), where it applies
+// to the selection or call result instead. The suffix children are in source order.
+func firstSuffixIsIndex(n Node) bool {
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Index:
+			return true
+		case Selector, CallSuffix, PostfixOp:
+			return false
+		}
+	}
+	return false
+}
+
 // checkFieldAccess reports a selection "head.field" when head is a variable of a
 // struct type that has no such field.
 func (f *File) checkFieldAccess(s *Scope, head, field Token) {
@@ -3300,6 +3316,19 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			case hasSelector && f.isImportQualifier(s, id.Src()):
 			default:
 				f.err(id.Position(), "undefined: %s", id.Src())
+			}
+		}
+	}
+	// Indexing a scalar (numeric or bool) variable or constant read is illegal:
+	// "x[i]" where x is not an array or slice. This is the read-side analogue of
+	// checkIndexAssign. A string is byte-indexable, and a pointer, array or slice
+	// carries its element kind rather than a scalar kind, so identKind reports those
+	// not-known and they are left to their own handling.
+	if hasID && hasSuffix && firstSuffixIsIndex(suffix) {
+		if k, known := f.identKind(s, id); known {
+			switch kindCategory(k) {
+			case catNumeric, catBool:
+				f.err(id.Position(), "invalid operation: cannot index %s", id.Src())
 			}
 		}
 	}
