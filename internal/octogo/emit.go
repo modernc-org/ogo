@@ -54,14 +54,22 @@ var cTypes = map[string]string{
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}}
+
+	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
+	// environment (for typing `var p T` and field accesses). Emitted first so a
+	// later signature, result struct, or variable of struct type resolves.
+	var typedefs bytes.Buffer
+	e.w = &typedefs
+	for _, f := range pkg.Files {
+		e.f = f
+		e.collectStructs(f.AST)
+	}
 
 	// Pass 0: record each function's C result types in funcRet (for typing calls
 	// in `x := f()` and destructuring `a, b := f()`), and emit a result-struct
 	// typedef for each multi-result function (C has no multiple return, so a
 	// function returning N>1 values returns a struct of N fields).
-	var typedefs bytes.Buffer
-	e.w = &typedefs
 	for _, f := range pkg.Files {
 		e.f = f
 		e.collectResults(f.AST)
@@ -138,13 +146,14 @@ type emitter struct {
 	f         *File     // file currently being emitted, for token access
 	indent    int
 	includes  map[string]bool
-	funcRet   map[string][]string // user function name -> C result types (empty=void), for typing calls
-	globals   map[string]string   // package-level constant name -> C type, for typing `x := CONST`
-	locals    map[string]string   // current function's parameter/local name -> C type, for typing `x := y`
-	curFunc   string              // name of the function whose body is being emitted (for its result-struct type)
-	tmp       int                 // per-function counter for generated temporaries (destructuring)
-	wroteDecl bool                // a top-level definition has been emitted (drives blank-line separators)
-	mainRet   bool                // currently emitting main's body: a bare `return` yields `return 0;`
+	funcRet   map[string][]string      // user function name -> C result types (empty=void), for typing calls
+	globals   map[string]string        // package-level constant name -> C type, for typing `x := CONST`
+	structs   map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
+	locals    map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
+	curFunc   string                   // name of the function whose body is being emitted (for its result-struct type)
+	tmp       int                      // per-function counter for generated temporaries (destructuring)
+	wroteDecl bool                     // a top-level definition has been emitted (drives blank-line separators)
+	mainRet   bool                     // currently emitting main's body: a bare `return` yields `return 0;`
 	err       error
 }
 
@@ -223,10 +232,112 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 		case ConstDecl:
 			// Package-level constants are emitted in an earlier pass
 			// (emitPackageConsts), before the functions that reference them.
+		case TypeDecl:
+			// Struct typedefs are emitted in an earlier pass (collectStructs).
 		default:
 			e.fail("unsupported top-level declaration %v", n.sym)
 		}
 	}
+}
+
+// structField is one field of a struct type: its name and C type, in declaration
+// order.
+type structField struct{ name, ctype string }
+
+// collectStructs records each package-level struct type's fields in the struct
+// environment and emits a C typedef -- `typedef struct { <t0> f0; ... } T;`.
+// Only structs with explicitly-typed, non-embedded fields are modelled.
+func (e *emitter) collectStructs(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != SourceFile {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym != TopLevelDecl {
+				continue
+			}
+			for d := range it(c.ast) {
+				if d.sym == TypeDecl {
+					e.collectTypeDecl(d.ast)
+				}
+			}
+		}
+	}
+}
+
+// collectTypeDecl records a `type Name struct { ... }` declaration (single or
+// grouped) and emits its typedef. A non-struct type alias fails honestly.
+func (e *emitter) collectTypeDecl(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != TypeSpec {
+			continue
+		}
+		var name string
+		var structAST []int32
+		for s := range it(n.ast) {
+			switch s.sym {
+			case 0:
+				if e.f.ch(s.tok) == IDENT && name == "" {
+					name = e.src(s.tok)
+				}
+			case Type:
+				structAST = e.structTypeAST(s.ast)
+			}
+		}
+		if name == "" || structAST == nil {
+			e.fail("only `type Name struct { ... }` declarations are supported yet")
+			return
+		}
+		fields := e.structFieldsOf(structAST)
+		e.structs[name] = fields
+		e.emit("typedef struct {")
+		for _, fld := range fields {
+			e.emit(" " + fld.ctype + " " + fld.name + ";")
+		}
+		e.emit(" } " + name + ";\n")
+	}
+}
+
+// structTypeAST returns the StructType node's children within a Type subtree, or
+// nil if the type is not a struct.
+func (e *emitter) structTypeAST(typeAST []int32) []int32 {
+	for n := range it(typeAST) {
+		if n.sym == StructType {
+			return n.ast
+		}
+	}
+	return nil
+}
+
+// structFieldsOf reads a StructType's FieldDecls into ordered fields. A field
+// group `x, y int` yields one field per name. An embedded or untyped field fails.
+func (e *emitter) structFieldsOf(structAST []int32) []structField {
+	var out []structField
+	for n := range it(structAST) {
+		if n.sym != FieldDecl {
+			continue
+		}
+		var names []string
+		ctype := ""
+		for c := range it(n.ast) {
+			switch c.sym {
+			case Type:
+				ctype = e.cType(c.ast)
+			case 0:
+				if e.f.ch(c.tok) == IDENT {
+					names = append(names, e.src(c.tok))
+				}
+			}
+		}
+		if ctype == "" || len(names) == 0 {
+			e.fail("embedded or untyped struct fields are not supported yet")
+			return out
+		}
+		for _, nm := range names {
+			out = append(out, structField{name: nm, ctype: ctype})
+		}
+	}
+	return out
 }
 
 // emitPackageConsts emits the file's package-level constant declarations as C
@@ -684,9 +795,12 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			e.locals[nm] = ctype
 			e.ind()
 			e.emit(ctype + " " + nm + " = ")
-			if initExpr != nil {
+			switch {
+			case initExpr != nil:
 				e.emitExpr(initExpr)
-			} else {
+			case e.isStruct(ctype):
+				e.emit("{0}") // zero every field of a struct
+			default:
 				e.emit("0")
 			}
 			e.emit(";\n")
@@ -694,24 +808,47 @@ func (e *emitter) emitVarDecl(ast []int32) {
 	}
 }
 
-// cType maps a Type subtree that names a single predeclared type to its C type,
-// recording any needed <stdint.h> include.
+// cType maps a Type subtree that names a single predeclared or struct type to its
+// C type, recording any needed <stdint.h> include. A struct type's C name is the
+// type name itself (its typedef). A composite type (pointer, array, slice, ...)
+// carries extra tokens and so leaves name empty, failing honestly.
 func (e *emitter) cType(ast []int32) string {
-	name := ""
+	var toks []int32
+	nonTerminal := false
 	for n := range it(ast) {
-		if n.sym == 0 && e.f.ch(n.tok) == IDENT {
-			name = e.src(n.tok)
+		if n.sym != 0 {
+			nonTerminal = true // a StructType body, etc.
+			continue
 		}
+		toks = append(toks, n.tok)
 	}
-	ct, ok := cTypes[name]
-	if !ok {
+	// A simple named type is exactly one IDENT token; anything else -- a pointer
+	// "*T", an array "[N]T", a slice, a channel, a qualified name -- carries extra
+	// tokens or nodes and is not modelled yet.
+	name := ""
+	if len(toks) == 1 && e.f.ch(toks[0]) == IDENT {
+		name = e.src(toks[0])
+	}
+	if nonTerminal || name == "" {
+		for _, t := range toks {
+			if e.f.ch(t) == IDENT {
+				name = e.src(t)
+			}
+		}
 		e.fail("unsupported type %q", name)
 		return ""
 	}
-	if strings.HasSuffix(ct, "_t") {
-		e.includes["stdint.h"] = true
+	if ct, ok := cTypes[name]; ok {
+		if strings.HasSuffix(ct, "_t") {
+			e.includes["stdint.h"] = true
+		}
+		return ct
 	}
-	return ct
+	if _, ok := e.structs[name]; ok {
+		return name
+	}
+	e.fail("unsupported type %q", name)
+	return ""
 }
 
 // emitFor handles `for {}` (infinite -> for(;;)) and `for cond {}` (conditional
@@ -962,25 +1099,43 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	}
 }
 
-// emitAssignment handles a single-target `lhs = expr` and a short declaration
-// `lhs := expr`. The `:=` form declares a C variable, its type inferred from the
-// initializer (see inferCType); the `=` form assigns an existing one. Multiple
-// targets and compound operators are not modelled.
+// emitAssignment handles a single-target assignment `lhs = expr`, a field
+// assignment `base.f = expr`, a short declaration `lhs := expr`, and increment /
+// decrement. The PostfixOp is the postfix's last element; any Selectors before it
+// form a field-access target. Indexed targets are not modelled.
 func (e *emitter) emitAssignment(head Node, postfix []Node) {
-	if len(postfix) != 1 {
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
 		e.fail("unsupported assignment target")
 		return
 	}
-	lhs := e.soleIdent(head.ast)
-	if lhs == "" {
+	base := e.soleIdent(head.ast)
+	if base == "" {
 		e.fail("only assignment to a simple variable is supported yet")
 		return
 	}
-	op := slices.Collect(it(postfix[0].ast))
+	sel := ""
+	for _, n := range postfix[:len(postfix)-1] {
+		fld := ""
+		if n.sym == Selector {
+			fld = e.soleIdent(n.ast)
+		}
+		if fld == "" {
+			e.fail("only simple and field assignment targets are supported yet")
+			return
+		}
+		sel += "." + fld
+	}
+	lhs := base + sel
+	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
 	// extra targets as LhsItems ahead of the operator.
 	if containsSym(op, LhsItem) {
-		e.emitMultiAssign(lhs, op)
+		if sel != "" {
+			e.fail("a field target in a multiple assignment is not supported yet")
+			return
+		}
+		e.emitMultiAssign(base, op)
 		return
 	}
 	// Increment/decrement: PostfixOp = "++" | "--" (no operand of its own).
@@ -1016,14 +1171,18 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.emitExpr(op[1].ast)
 		e.emit(";\n")
 	case DEFINE:
-		ct, ok := e.inferCType(op[1].ast)
-		if !ok {
-			e.fail("cannot infer a type for the short declaration of %q", lhs)
+		if sel != "" {
+			e.fail("a short declaration cannot have a field target")
 			return
 		}
-		e.locals[lhs] = ct
+		ct, ok := e.inferCType(op[1].ast)
+		if !ok {
+			e.fail("cannot infer a type for the short declaration of %q", base)
+			return
+		}
+		e.locals[base] = ct
 		e.ind()
-		e.emit(ct + " " + lhs + " = ")
+		e.emit(ct + " " + base + " = ")
 		e.emitExpr(op[1].ast)
 		e.emit(";\n")
 	default:
@@ -1203,6 +1362,59 @@ func (e *emitter) factorCall(kids []Node) (recv string, suffix []Node, ok bool) 
 	return e.src(kids[0].tok), suffix, true
 }
 
+// isStruct reports whether a C type name denotes a modelled struct type.
+func (e *emitter) isStruct(ctype string) bool { _, ok := e.structs[ctype]; return ok }
+
+// factorFieldAccess recognises a Factor that is a field access `base.f` (or a
+// chain `base.f.g`) -- an identifier followed by a FactorSuffix of selectors only,
+// no index or call -- returning the base name and the selected field names.
+func (e *emitter) factorFieldAccess(kids []Node) (base string, fields []string, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	for _, n := range slices.Collect(it(kids[1].ast)) {
+		if n.sym != Selector {
+			return "", nil, false
+		}
+		fld := e.soleIdent(n.ast)
+		if fld == "" {
+			return "", nil, false
+		}
+		fields = append(fields, fld)
+	}
+	if len(fields) == 0 {
+		return "", nil, false
+	}
+	return e.src(kids[0].tok), fields, true
+}
+
+// fieldType resolves the C type of a field access chain `base.f.g...` from the
+// local type environment: base's struct type, then each field's type in turn. It
+// requires each intermediate field to itself be a struct.
+func (e *emitter) fieldType(base string, fields []string) (string, bool) {
+	ctype, ok := e.locals[base]
+	if !ok {
+		return "", false
+	}
+	for _, f := range fields {
+		fs, ok := e.structs[ctype]
+		if !ok {
+			return "", false
+		}
+		found := false
+		for _, fld := range fs {
+			if fld.name == f {
+				ctype, found = fld.ctype, true
+				break
+			}
+		}
+		if !found {
+			return "", false
+		}
+	}
+	return ctype, true
+}
+
 // inferCType determines the C type of an expression for a `x := expr` short
 // declaration, from the current type environment (locals and funcRet). ok is
 // false when the type is outside the modelled subset, so the caller fails
@@ -1251,6 +1463,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		if n.sym == Factor {
 			if recv, suffix, ok := e.factorCall(kids); ok {
 				return e.callResultCType(recv, suffix)
+			}
+			if base, fields, ok := e.factorFieldAccess(kids); ok {
+				return e.fieldType(base, fields)
 			}
 		}
 		return e.inferNodes(kids)
@@ -1332,6 +1547,10 @@ func (e *emitter) emitExprNode(n Node) {
 				if !e.emitCallExpr(recv, suffix) {
 					e.fail("unsupported call in expression")
 				}
+				return
+			}
+			if base, fields, ok := e.factorFieldAccess(kids); ok {
+				e.emit(base + "." + strings.Join(fields, "."))
 				return
 			}
 		}
