@@ -55,8 +55,22 @@ var cTypes = map[string]string{
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
 	e := &emitter{includes: map[string]bool{}}
+
+	// Pass 1: forward prototypes for user functions. C requires a declaration
+	// before use, but OctoGo (like Go) does not order top-level declarations, so
+	// a call may precede its definition; the prototypes make emission order
+	// independent of source order.
+	var protos bytes.Buffer
+	e.w = &protos
+	for _, f := range pkg.Files {
+		e.f = f
+		e.emitPrototypes(f.AST)
+	}
+
+	// Pass 2: the function definitions themselves.
 	var body bytes.Buffer
 	e.w = &body
+	e.wroteDecl = false
 	for _, f := range pkg.Files {
 		e.f = f
 		e.emitFileDecls(f.AST)
@@ -65,7 +79,7 @@ func EmitC(pkg *Package, w io.Writer) error {
 		return e.err
 	}
 
-	// Assemble: header, sorted #includes, then the emitted declarations.
+	// Assemble: header, sorted #includes, prototypes, then the definitions.
 	incs := make([]string, 0, len(e.includes))
 	for inc := range e.includes {
 		incs = append(incs, inc)
@@ -80,17 +94,23 @@ func EmitC(pkg *Package, w io.Writer) error {
 	if len(incs) != 0 {
 		out.WriteByte('\n')
 	}
+	if protos.Len() != 0 {
+		out.Write(protos.Bytes())
+		out.WriteByte('\n')
+	}
 	out.Write(body.Bytes())
 	_, err := w.Write(out.Bytes())
 	return err
 }
 
 type emitter struct {
-	w        io.Writer // body buffer during the walk
-	f        *File     // file currently being emitted, for token access
-	indent   int
-	includes map[string]bool
-	err      error
+	w         io.Writer // body buffer during the walk
+	f         *File     // file currently being emitted, for token access
+	indent    int
+	includes  map[string]bool
+	wroteDecl bool // a top-level definition has been emitted (drives blank-line separators)
+	mainRet   bool // currently emitting main's body: a bare `return` yields `return 0;`
+	err       error
 }
 
 // emit writes verbatim C text, latching the first write error. All C is written
@@ -171,10 +191,71 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 	}
 }
 
+// emitPrototypes emits a forward prototype for every user function in a file
+// (all but main, which C declares implicitly). Run before the definitions so a
+// call need not follow its callee's definition.
+func (e *emitter) emitPrototypes(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != SourceFile {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym != TopLevelDecl {
+				continue
+			}
+			for d := range it(c.ast) {
+				if d.sym != FuncDecl {
+					continue
+				}
+				if name, sig, _, isMethod, ok := e.funcParts(d.ast); ok && !isMethod && name != "main" {
+					if proto := e.funcSignatureC(name, sig); proto != "" {
+						e.emit(proto + ";\n")
+					}
+				}
+			}
+		}
+	}
+}
+
 func (e *emitter) emitFuncDecl(ast []int32) {
-	var name string
-	var body []int32
-	hasBody := false
+	name, sig, body, isMethod, ok := e.funcParts(ast)
+	if !ok {
+		return
+	}
+	if isMethod {
+		e.fail("methods are not supported yet")
+		return
+	}
+	if body == nil {
+		e.fail("func %q must have a body", name)
+		return
+	}
+
+	if e.wroteDecl {
+		e.emit("\n")
+	}
+	e.wroteDecl = true
+
+	if name == "main" {
+		e.emitMain(sig, body)
+		return
+	}
+	proto := e.funcSignatureC(name, sig)
+	if proto == "" {
+		return
+	}
+	e.emit(proto + " {\n")
+	e.indent++
+	e.emitBlockStmts(body)
+	e.indent--
+	e.emit("}\n")
+}
+
+// funcParts pulls the name, signature subtree and body subtree from a FuncDecl
+// AST. isMethod is set when a Receiver is present; body is nil for a bodyless
+// declaration. ok is false only if the walk hit an unexpected element.
+func (e *emitter) funcParts(ast []int32) (name string, sig, body []int32, isMethod, ok bool) {
+	ok = true
 	for n := range it(ast) {
 		switch n.sym {
 		case 0:
@@ -182,48 +263,101 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 				name = e.src(n.tok)
 			}
 		case Receiver:
-			e.fail("methods are not supported yet")
+			isMethod = true
 		case Signature:
-			e.emitSignatureIsEmpty(n.ast)
+			sig = n.ast
 		case Block:
-			hasBody = true
 			body = n.ast
 		default:
 			e.fail("unsupported in function declaration: %v", n.sym)
+			ok = false
 		}
 	}
+	return name, sig, body, isMethod, ok
+}
 
-	// Walking skeleton: only `func main()` with an empty signature.
-	if name != "main" {
-		e.fail("only func main is supported yet, got func %q", name)
-		return
-	}
-	if !hasBody {
-		e.fail("func main must have a body")
+// emitMain emits `func main()` as `int main(void)`; main takes no parameters or
+// results.
+func (e *emitter) emitMain(sig, body []int32) {
+	if params, hasResult := e.cParams(sig); params != "" || hasResult {
+		e.fail("func main must have no parameters or results")
 		return
 	}
 	e.emit("int main(void) {\n")
 	e.indent++
+	e.mainRet = true
 	e.emitBlockStmts(body)
+	e.mainRet = false
 	e.ind()
 	e.emit("return 0;\n")
 	e.indent--
 	e.emit("}\n")
 }
 
-// emitSignatureIsEmpty asserts the signature has no parameters or results, the
-// only shape supported by the skeleton (i.e. `func main()`).
-func (e *emitter) emitSignatureIsEmpty(ast []int32) {
-	for n := range it(ast) {
+// funcSignatureC builds the C signature `void name(params)` for a user function.
+// Results are not modelled yet, so a function with a result list fails honestly.
+func (e *emitter) funcSignatureC(name string, sig []int32) string {
+	params, hasResult := e.cParams(sig)
+	if hasResult {
+		e.fail("function results are not supported yet")
+		return ""
+	}
+	if params == "" {
+		params = "void"
+	}
+	return "void " + name + "(" + params + ")"
+}
+
+// cParams renders a Signature's parameters as a C parameter list ("int a, int b")
+// and reports whether the signature declares any results. Parameters are always
+// named (the grammar requires it), so each maps to a `<ctype> <name>` C parameter.
+func (e *emitter) cParams(sig []int32) (params string, hasResult bool) {
+	var parts []string
+	seenRPar := false
+	for n := range it(sig) {
 		switch n.sym {
-		case 0:
-			// LPAREN / RPAREN.
 		case ParameterList:
-			e.fail("function parameters are not supported yet")
+			if seenRPar {
+				hasResult = true // a result list: "(" ParameterList ")"
+				continue
+			}
+			parts = e.cParamList(n.ast)
+		case Type:
+			hasResult = true // a single unnamed result appears as a bare Type
+		case 0:
+			if e.f.ch(n.tok) == RPAREN {
+				seenRPar = true
+			}
 		default:
-			e.fail("function results are not supported yet (%v)", n.sym)
+			e.fail("unsupported signature element %v", n.sym)
 		}
 	}
+	return strings.Join(parts, ", "), hasResult
+}
+
+// cParamList renders one ParameterList's `IdentifierList Type` groups to C
+// parameters, expanding a shared type ("a, b int" -> "int a, int b").
+func (e *emitter) cParamList(ast []int32) []string {
+	var out []string
+	var names []string
+	for n := range it(ast) {
+		switch n.sym {
+		case IdentifierList:
+			names = names[:0]
+			for id := range it(n.ast) {
+				if id.sym == 0 && e.f.ch(id.tok) == IDENT {
+					names = append(names, e.src(id.tok))
+				}
+			}
+		case Type:
+			ct := e.cType(n.ast)
+			for _, nm := range names {
+				out = append(out, ct+" "+nm)
+			}
+			names = names[:0]
+		}
+	}
+	return out
 }
 
 // emitBlockStmts emits the statements of a Block (skipping its braces).
@@ -252,6 +386,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitFor(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == IF:
 		e.emitIf(nodes)
+	case first.sym == 0 && e.f.ch(first.tok) == RETURN:
+		e.emitReturn(nodes)
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == 0:
@@ -419,6 +555,24 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 	e.emit(")")
 }
 
+// emitReturn handles `return` and (only in a value-returning function that is
+// not yet supported) `return expr`. A bare return in main yields `return 0;` to
+// satisfy C's int main; in a void function it yields `return;`.
+func (e *emitter) emitReturn(nodes []Node) {
+	for _, n := range nodes[1:] {
+		if n.sym == ExpressionList {
+			e.fail("return with a value is not supported yet")
+			return
+		}
+	}
+	e.ind()
+	if e.mainRet {
+		e.emit("return 0;\n")
+	} else {
+		e.emit("return;\n")
+	}
+}
+
 // emitAssignHeadStmt handles the `AssignHead Postfix` statement family: a call
 // (Postfix ends in CallSuffix) or an assignment (Postfix carries a PostfixOp).
 func (e *emitter) emitAssignHeadStmt(nodes []Node) {
@@ -461,7 +615,12 @@ func (e *emitter) emitDirectCall(name string, callSuffix []int32) {
 	case "println", "print":
 		e.emitPrint(name == "println", callSuffix)
 	default:
-		e.fail("calls to %q are not supported yet", name)
+		// A user-defined function call as a statement; the checker has already
+		// verified the name resolves to a function and the arguments match.
+		e.ind()
+		e.emit(name + "(")
+		e.emitCallArgs(callSuffix)
+		e.emit(");\n")
 	}
 }
 
