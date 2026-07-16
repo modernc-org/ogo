@@ -474,6 +474,15 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			return
 		}
 		for _, nm := range names {
+			if nm == "_" {
+				// A blank var declares nothing. With an initializer, its side
+				// effects still run and the value is discarded; without one, it
+				// emits nothing at all.
+				if initExpr != nil {
+					e.emitDiscard(initExpr)
+				}
+				continue
+			}
 			e.locals[nm] = ctype
 			e.ind()
 			e.emit(ctype + " " + nm + " = ")
@@ -781,6 +790,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	switch e.f.ch(op[0].tok) {
 	case ASSIGN:
+		if lhs == "_" {
+			// A blank-identifier assignment discards the value: evaluate the
+			// right-hand side for its side effects and drop the result. The
+			// `(void)` cast makes the discard explicit and valid C even when the
+			// expression is a plain value. (`_ := expr` is rejected by the checker.)
+			e.emitDiscard(op[1].ast)
+			return
+		}
 		e.ind()
 		e.emit(lhs + " = ")
 		e.emitExpr(op[1].ast)
@@ -799,6 +816,17 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	default:
 		e.fail("only `name = expr` and `name := expr` are supported yet")
 	}
+}
+
+// emitDiscard emits `(void)<expr>;` — an expression evaluated for its side effects
+// with its value dropped, the C rendering of a blank-identifier discard. emitExpr
+// already parenthesizes binary operands, so no extra parentheses are needed for
+// the cast to bind correctly.
+func (e *emitter) emitDiscard(expr []int32) {
+	e.ind()
+	e.emit("(void)")
+	e.emitExpr(expr)
+	e.emit(";\n")
 }
 
 func (e *emitter) emitCallArgs(callSuffix []int32) {
