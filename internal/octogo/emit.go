@@ -54,7 +54,7 @@ var cTypes = map[string]string{
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}}
 
 	// Pass 0: record each function's C result types in funcRet (for typing calls
 	// in `x := f()` and destructuring `a, b := f()`), and emit a result-struct
@@ -65,6 +65,16 @@ func EmitC(pkg *Package, w io.Writer) error {
 	for _, f := range pkg.Files {
 		e.f = f
 		e.collectResults(f.AST)
+	}
+
+	// Pass 0.5: package-level constant declarations, emitted (in source order)
+	// before the functions that use them and recorded in the global type
+	// environment so a `x := CONST` short declaration can be typed.
+	var globals bytes.Buffer
+	e.w = &globals
+	for _, f := range pkg.Files {
+		e.f = f
+		e.emitPackageConsts(f.AST)
 	}
 
 	// Pass 1: forward prototypes for user functions. C requires a declaration
@@ -110,6 +120,10 @@ func EmitC(pkg *Package, w io.Writer) error {
 		out.Write(typedefs.Bytes())
 		out.WriteByte('\n')
 	}
+	if globals.Len() != 0 {
+		out.Write(globals.Bytes())
+		out.WriteByte('\n')
+	}
 	if protos.Len() != 0 {
 		out.Write(protos.Bytes())
 		out.WriteByte('\n')
@@ -125,6 +139,7 @@ type emitter struct {
 	indent    int
 	includes  map[string]bool
 	funcRet   map[string][]string // user function name -> C result types (empty=void), for typing calls
+	globals   map[string]string   // package-level constant name -> C type, for typing `x := CONST`
 	locals    map[string]string   // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc   string              // name of the function whose body is being emitted (for its result-struct type)
 	tmp       int                 // per-function counter for generated temporaries (destructuring)
@@ -205,9 +220,84 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 		switch n.sym {
 		case FuncDecl:
 			e.emitFuncDecl(n.ast)
+		case ConstDecl:
+			// Package-level constants are emitted in an earlier pass
+			// (emitPackageConsts), before the functions that reference them.
 		default:
 			e.fail("unsupported top-level declaration %v", n.sym)
 		}
+	}
+}
+
+// emitPackageConsts emits the file's package-level constant declarations as C
+// file-scope `static const` definitions and records each in the global type
+// environment.
+func (e *emitter) emitPackageConsts(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != SourceFile {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym != TopLevelDecl {
+				continue
+			}
+			for d := range it(c.ast) {
+				if d.sym == ConstDecl {
+					e.emitConstDecl(d.ast, true)
+				}
+			}
+		}
+	}
+}
+
+// emitConstDecl emits a constant declaration -- one ConstSpec or a parenthesized
+// group -- as C const definitions. A package-level constant becomes a file-scope
+// `static const`; a local one a block-scope `const`. An untyped constant's C type
+// is inferred from its initializer, defaulting to int. The name is recorded in the
+// global or local type environment so its later uses can be typed.
+func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
+	for n := range it(ast) {
+		if n.sym != ConstSpec {
+			continue
+		}
+		var name, ctype string
+		var initExpr []int32
+		for s := range it(n.ast) {
+			switch s.sym {
+			case Type:
+				ctype = e.cType(s.ast)
+			case Expression:
+				initExpr = s.ast
+			case 0:
+				if e.f.ch(s.tok) == IDENT {
+					name = e.src(s.tok)
+				}
+			}
+		}
+		if name == "" || initExpr == nil {
+			e.fail("malformed const declaration")
+			return
+		}
+		if ctype == "" {
+			ct, ok := e.inferCType(initExpr)
+			if !ok {
+				ct = "int" // an untyped constant defaults to int
+			}
+			ctype = ct
+		}
+		if pkg {
+			e.globals[name] = ctype
+		} else {
+			e.locals[name] = ctype
+		}
+		e.ind()
+		if pkg {
+			e.emit("static const " + ctype + " " + name + " = ")
+		} else {
+			e.emit("const " + ctype + " " + name + " = ")
+		}
+		e.emitExpr(initExpr)
+		e.emit(";\n")
 	}
 }
 
@@ -528,6 +618,8 @@ func (e *emitter) emitStatement(ast []int32) {
 	switch first := nodes[0]; {
 	case first.sym == VarDecl:
 		e.emitVarDecl(first.ast)
+	case first.sym == ConstDecl:
+		e.emitConstDecl(first.ast, false)
 	case first.sym == 0 && e.f.ch(first.tok) == FOR:
 		e.emitFor(nodes)
 	case first.sym == IfStmt:
@@ -1167,7 +1259,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		case INT:
 			return "int", true
 		case IDENT:
-			ct, ok := e.locals[e.src(n.tok)]
+			nm := e.src(n.tok)
+			if ct, ok := e.locals[nm]; ok {
+				return ct, true
+			}
+			ct, ok := e.globals[nm]
 			return ct, ok
 		}
 	}
@@ -1267,7 +1363,16 @@ func (e *emitter) emitOperandToken(tok int32) {
 	case INT:
 		e.emit(normalizeIntLit(e.src(tok)))
 	case IDENT:
-		e.emit(e.src(tok))
+		// The predeclared bool constants have no C keyword here (bool is int); emit
+		// their integer values. Any other identifier is a name reference.
+		switch s := e.src(tok); s {
+		case "true":
+			e.emit("1")
+		case "false":
+			e.emit("0")
+		default:
+			e.emit(s)
+		}
 	case SUB, ADD, NOT:
 		e.emit(e.src(tok)) // unary -, +, ! (prefix)
 	case XOR:
