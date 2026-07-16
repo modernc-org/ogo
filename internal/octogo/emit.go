@@ -68,7 +68,7 @@ const stringHelpers = "static void ogo_print_str(ogo_string s) { printf(\"%.*s\"
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]string{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]string{}, globalArrays: map[string]string{}}
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
@@ -97,6 +97,13 @@ func EmitC(pkg *Package, w io.Writer) error {
 	for _, f := range pkg.Files {
 		e.f = f
 		e.emitPackageConsts(f.AST)
+	}
+	// Package-level variables follow the constants (so a variable's initializer may
+	// fold a constant), each a file-scope `static` recorded in the global type
+	// environment.
+	for _, f := range pkg.Files {
+		e.f = f
+		e.emitPackageVars(f.AST)
 	}
 
 	// Pass 1: forward prototypes for user functions. C requires a declaration
@@ -170,10 +177,11 @@ type emitter struct {
 	indent          int
 	includes        map[string]bool
 	funcRet         map[string][]string      // user function name -> C result types (empty=void), for typing calls
-	globals         map[string]string        // package-level constant name -> C type, for typing `x := CONST`
+	globals         map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs         map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
-	arrays          map[string]string        // array variable name -> element C type, for typing `x := a[i]`
+	arrays          map[string]string        // local array name -> element C type, for typing `x := a[i]` (reset per function)
+	globalArrays    map[string]string        // package-level array name -> element C type (persists across functions)
 	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
 	tmp             int                      // per-function counter for generated temporaries (destructuring)
@@ -260,6 +268,9 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 		case ConstDecl:
 			// Package-level constants are emitted in an earlier pass
 			// (emitPackageConsts), before the functions that reference them.
+		case VarDecl:
+			// Package-level variables are emitted in an earlier pass
+			// (emitPackageVars).
 		case TypeDecl:
 			// Struct typedefs are emitted in an earlier pass (collectStructs).
 		default:
@@ -387,6 +398,113 @@ func (e *emitter) emitPackageConsts(ast []int32) {
 			}
 		}
 	}
+}
+
+// emitPackageVars emits the file's package-level variable declarations as C
+// file-scope `static` definitions and records each in the global type environment.
+func (e *emitter) emitPackageVars(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != SourceFile {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym != TopLevelDecl {
+				continue
+			}
+			for d := range it(c.ast) {
+				if d.sym == VarDecl {
+					e.emitPackageVarDecl(d.ast)
+				}
+			}
+		}
+	}
+}
+
+// emitPackageVarDecl emits a package-level variable declaration (one VarSpec or a
+// parenthesized group). Each variable is a file-scope `static`, so an uninitialized
+// one is zeroed by C and needs no initializer; an array is a plain C array; an
+// initializer must be a constant expression (emitGlobalInit). A blank name and an
+// inferred (typeless) variable are not modelled.
+func (e *emitter) emitPackageVarDecl(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != VarSpec {
+			continue
+		}
+		var names []string
+		var typeAST, initExpr []int32
+		for s := range it(n.ast) {
+			switch s.sym {
+			case IdentifierList:
+				for id := range it(s.ast) {
+					if id.sym == 0 && e.f.ch(id.tok) == IDENT {
+						names = append(names, e.src(id.tok))
+					}
+				}
+			case Type:
+				typeAST = s.ast
+			case Expression:
+				initExpr = s.ast
+			case 0:
+				// The "=" separator.
+			default:
+				e.fail("unsupported var-spec element %v", s.sym)
+			}
+		}
+		if typeAST == nil {
+			e.fail("a package variable needs an explicit type (inference not supported yet)")
+			return
+		}
+		if len(names) != 1 && initExpr != nil {
+			e.fail("multi-name package variable with an initializer is not supported yet")
+			return
+		}
+		// A package-level fixed array `var a [N]T` -> `static T a[N];`.
+		if elem, bound, ok := e.arrayType(typeAST); ok {
+			if initExpr != nil {
+				e.fail("array variable initializers are not supported yet")
+				return
+			}
+			for _, nm := range names {
+				if nm != "_" {
+					e.globalArrays[nm] = elem
+					e.emit("static " + elem + " " + nm + "[" + bound + "];\n")
+				}
+			}
+			continue
+		}
+		ctype := e.cType(typeAST)
+		if ctype == "" {
+			return
+		}
+		for _, nm := range names {
+			if nm == "_" {
+				continue // a blank package variable declares nothing
+			}
+			e.globals[nm] = ctype
+			e.emit("static " + ctype + " " + nm)
+			if initExpr != nil {
+				e.emit(" = ")
+				e.emitGlobalInit(initExpr)
+			}
+			e.emit(";\n")
+		}
+	}
+}
+
+// emitGlobalInit emits a package variable's initializer, which C requires to be a
+// constant expression. A bare integer-constant reference is folded to its value
+// (flexcc rejects a `static const` in a global initializer); a string or struct
+// literal uses the brace form (declInit).
+func (e *emitter) emitGlobalInit(initExpr []int32) {
+	if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == IDENT {
+		if v, ok := e.constInt[e.src(tok)]; ok {
+			e.emit(v)
+			return
+		}
+	}
+	e.declInit = true
+	e.emitExpr(initExpr)
+	e.declInit = false
 }
 
 // emitConstDecl emits a constant declaration -- one ConstSpec or a parenthesized
@@ -1988,7 +2106,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				return e.fieldType(base, fields)
 			}
 			if base, _, ok := e.factorIndex(kids); ok {
-				elem, ok := e.arrays[base]
+				if elem, ok := e.arrays[base]; ok {
+					return elem, true
+				}
+				elem, ok := e.globalArrays[base]
 				return elem, ok
 			}
 		}
