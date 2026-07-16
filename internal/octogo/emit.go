@@ -810,12 +810,20 @@ func (e *emitter) emitVarDecl(ast []int32) {
 
 // cType maps a Type subtree that names a single predeclared or struct type to its
 // C type, recording any needed <stdint.h> include. A struct type's C name is the
-// type name itself (its typedef). A composite type (pointer, array, slice, ...)
-// carries extra tokens and so leaves name empty, failing honestly.
+// type name itself (its typedef); a pointer type "*T" maps to "<T>*". Other
+// composite types (array, slice, channel, ...) are not modelled and fail honestly.
 func (e *emitter) cType(ast []int32) string {
+	nodes := slices.Collect(it(ast))
+	// Pointer type: "*" Type -> "<elem>*".
+	if len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == MUL && nodes[1].sym == Type {
+		if elem := e.cType(nodes[1].ast); elem != "" {
+			return elem + "*"
+		}
+		return ""
+	}
 	var toks []int32
 	nonTerminal := false
-	for n := range it(ast) {
+	for _, n := range nodes {
 		if n.sym != 0 {
 			nonTerminal = true // a StructType body, etc.
 			continue
@@ -1113,7 +1121,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.fail("only assignment to a simple variable is supported yet")
 		return
 	}
-	sel := ""
+	var fields []string
 	for _, n := range postfix[:len(postfix)-1] {
 		fld := ""
 		if n.sym == Selector {
@@ -1123,15 +1131,18 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("only simple and field assignment targets are supported yet")
 			return
 		}
-		sel += "." + fld
+		fields = append(fields, fld)
 	}
-	lhs := base + sel
+	lhs := base
+	if len(fields) != 0 {
+		lhs = e.fieldAccessC(base, fields) // a field target, "->" through pointers
+	}
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
 
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
 	// extra targets as LhsItems ahead of the operator.
 	if containsSym(op, LhsItem) {
-		if sel != "" {
+		if len(fields) != 0 {
 			e.fail("a field target in a multiple assignment is not supported yet")
 			return
 		}
@@ -1171,7 +1182,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.emitExpr(op[1].ast)
 		e.emit(";\n")
 	case DEFINE:
-		if sel != "" {
+		if len(fields) != 0 {
 			e.fail("a short declaration cannot have a field target")
 			return
 		}
@@ -1388,31 +1399,54 @@ func (e *emitter) factorFieldAccess(kids []Node) (base string, fields []string, 
 	return e.src(kids[0].tok), fields, true
 }
 
+// isPointer reports whether a C type is a pointer (spelled "T*").
+func (e *emitter) isPointer(ctype string) bool { return strings.HasSuffix(ctype, "*") }
+
+// elemType strips one pointer level from a C type ("T*" -> "T").
+func (e *emitter) elemType(ctype string) string { return strings.TrimSuffix(ctype, "*") }
+
+// structFieldType returns the C type of a struct's field. ctype may be a struct
+// value or a pointer to one (a field access auto-dereferences, like Go's).
+func (e *emitter) structFieldType(ctype, field string) (string, bool) {
+	for _, fld := range e.structs[e.elemType(ctype)] {
+		if fld.name == field {
+			return fld.ctype, true
+		}
+	}
+	return "", false
+}
+
 // fieldType resolves the C type of a field access chain `base.f.g...` from the
-// local type environment: base's struct type, then each field's type in turn. It
-// requires each intermediate field to itself be a struct.
+// local type environment: base's (possibly pointer) struct type, then each field's
+// type in turn.
 func (e *emitter) fieldType(base string, fields []string) (string, bool) {
 	ctype, ok := e.locals[base]
 	if !ok {
 		return "", false
 	}
 	for _, f := range fields {
-		fs, ok := e.structs[ctype]
-		if !ok {
-			return "", false
-		}
-		found := false
-		for _, fld := range fs {
-			if fld.name == f {
-				ctype, found = fld.ctype, true
-				break
-			}
-		}
-		if !found {
+		if ctype, ok = e.structFieldType(ctype, f); !ok {
 			return "", false
 		}
 	}
 	return ctype, true
+}
+
+// fieldAccessC renders a field access chain `base.f.g...` in C, choosing "->" for
+// each pointer step (an auto-dereferenced Go field access) and "." otherwise.
+func (e *emitter) fieldAccessC(base string, fields []string) string {
+	ctype := e.locals[base]
+	s := base
+	for _, f := range fields {
+		if e.isPointer(ctype) {
+			s += "->"
+		} else {
+			s += "."
+		}
+		s += f
+		ctype, _ = e.structFieldType(ctype, f)
+	}
+	return s
 }
 
 // inferCType determines the C type of an expression for a `x := expr` short
@@ -1435,12 +1469,12 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 	}
 	for _, n := range nodes {
 		switch n.sym {
-		case AddOp, MulOp:
-			continue // an operator; the type comes from the operands
+		case AddOp, MulOp, UnaryOp:
+			continue // an operator; the type comes from the operand(s)
 		case 0:
 			switch e.f.ch(n.tok) {
 			case SUB, ADD, NOT, XOR, MUL, AND:
-				continue // a prefix operator; skip to its operand
+				continue // a prefix operator token; skip to its operand
 			}
 		}
 		return e.inferNode(n)
@@ -1459,6 +1493,23 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		kids := slices.Collect(it(n.ast))
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.inferNode(kids[1])
+		}
+		// Address-of `&x` adds a pointer level; deref `*p` removes one.
+		if n.sym == UnaryExpr && len(kids) >= 2 && kids[0].sym == UnaryOp {
+			if tok, ok := e.unaryOpTok(kids[0].ast); ok {
+				switch e.f.ch(tok) {
+				case AND:
+					if t, ok := e.inferNode(kids[len(kids)-1]); ok {
+						return t + "*", true
+					}
+					return "", false
+				case MUL:
+					if t, ok := e.inferNode(kids[len(kids)-1]); ok && e.isPointer(t) {
+						return e.elemType(t), true
+					}
+					return "", false
+				}
+			}
 		}
 		if n.sym == Factor {
 			if recv, suffix, ok := e.factorCall(kids); ok {
@@ -1550,7 +1601,7 @@ func (e *emitter) emitExprNode(n Node) {
 				return
 			}
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
-				e.emit(base + "." + strings.Join(fields, "."))
+				e.emit(e.fieldAccessC(base, fields))
 				return
 			}
 		}
@@ -1559,11 +1610,26 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 	case AddOp, MulOp, RelOp:
 		e.emit(" " + e.opText(n.ast) + " ")
+	case UnaryOp:
+		// A prefix operator: `-`, `!`, `&` (address-of), `*` (deref), `^` -> `~`.
+		if tok, ok := e.unaryOpTok(n.ast); ok {
+			e.emitOperandToken(tok)
+		}
 	case 0:
 		e.emitOperandToken(n.tok)
 	default:
 		e.fail("unsupported expression node %v", n.sym)
 	}
+}
+
+// unaryOpTok returns the operator token of a UnaryOp node.
+func (e *emitter) unaryOpTok(ast []int32) (int32, bool) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			return n.tok, true
+		}
+	}
+	return 0, false
 }
 
 // opText returns the operator terminal's text from an AddOp/MulOp/RelOp node.
@@ -1592,8 +1658,8 @@ func (e *emitter) emitOperandToken(tok int32) {
 		default:
 			e.emit(s)
 		}
-	case SUB, ADD, NOT:
-		e.emit(e.src(tok)) // unary -, +, ! (prefix)
+	case SUB, ADD, NOT, AND, MUL:
+		e.emit(e.src(tok)) // unary -, +, !, & (address-of), * (deref) prefix
 	case XOR:
 		e.emit("~") // Go unary ^ is bitwise complement
 	default:
