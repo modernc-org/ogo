@@ -791,6 +791,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitFor(nodes)
 	case first.sym == IfStmt:
 		e.emitIf(first.ast)
+	case first.sym == SwitchStmt:
+		e.emitSwitch(first.ast)
 	case first.sym == 0 && e.f.ch(first.tok) == RETURN:
 		e.emitReturn(nodes)
 	case first.sym == AssignHead:
@@ -1057,6 +1059,208 @@ func (e *emitter) emitFor(nodes []Node) {
 	e.indent--
 	e.ind()
 	e.emit("}\n")
+}
+
+// emitSwitch emits a switch statement as an if / else-if chain. OctoGo has no
+// fallthrough, so each clause is independent; and Go case expressions may be
+// non-constant, which a C switch could not express. Three shapes are handled:
+//
+//	switch x { case a, b: ... }        // value switch:      _t = x;  (_t == a || _t == b)
+//	switch { case cond: ... }          // expression switch: (cond)
+//	switch v := expr { case a: ... }   // guard-var switch:  v = expr; (v == a)
+//
+// The guard is evaluated once (into the guard variable, or a temporary for a
+// non-trivial value), so it is not re-run per case. The default clause, wherever
+// it appears in source, becomes the trailing else.
+func (e *emitter) emitSwitch(ast []int32) {
+	var guardAST []int32
+	var cases []Node
+	for n := range it(ast) {
+		switch n.sym {
+		case SwitchGuard:
+			guardAST = n.ast
+		case CaseClause:
+			cases = append(cases, n)
+		}
+	}
+
+	// Resolve the guard variable to compare against ("" for an expression switch),
+	// emitting an enclosing block + declaration when it needs a scoped name.
+	guardVar, block := "", false
+	if guardAST != nil {
+		var ok bool
+		guardVar, block, ok = e.emitSwitchGuard(guardAST)
+		if !ok {
+			return
+		}
+	}
+
+	var defaultClause Node
+	hasDefault, wrote := false, false
+	for _, cc := range cases {
+		exprs, isDefault := e.caseHead(cc.ast)
+		if isDefault {
+			defaultClause, hasDefault = cc, true
+			continue
+		}
+		if !wrote {
+			e.ind()
+			e.emit("if ")
+			wrote = true
+		} else {
+			e.emit(" else if ")
+		}
+		e.emitCaseCond(guardVar, exprs)
+		e.emit(" {\n")
+		e.indent++
+		e.emitCaseBody(cc.ast)
+		e.indent--
+		e.ind()
+		e.emit("}")
+	}
+	switch {
+	case hasDefault && wrote:
+		e.emit(" else {\n")
+		e.indent++
+		e.emitCaseBody(defaultClause.ast)
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	case hasDefault: // a switch of only a default clause
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		e.emitCaseBody(defaultClause.ast)
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	case wrote:
+		e.emit("\n")
+	}
+
+	if block {
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	}
+}
+
+// emitSwitchGuard emits the guard of a value or guard-var switch, returning the C
+// name to compare cases against, whether an enclosing block was opened (to close
+// after the chain), and ok. A plain variable guard is compared directly; a
+// non-trivial value or a `v := expr` guard is bound to a scoped name first.
+func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok bool) {
+	var exprs []Node
+	hasDefine := false
+	for n := range it(guardAST) {
+		switch n.sym {
+		case Expression:
+			exprs = append(exprs, n)
+		case 0:
+			if e.f.ch(n.tok) == DEFINE {
+				hasDefine = true
+			}
+		}
+	}
+	if hasDefine { // switch v := expr
+		if len(exprs) < 2 {
+			e.fail("malformed switch guard")
+			return "", false, false
+		}
+		vtok, isID := e.soleToken(exprs[0].ast)
+		if !isID || e.f.ch(vtok) != IDENT {
+			e.fail("unsupported switch guard variable")
+			return "", false, false
+		}
+		vtype, tok := e.inferCType(exprs[1].ast)
+		if !tok {
+			e.fail("cannot infer the type of the switch guard variable")
+			return "", false, false
+		}
+		name := e.src(vtok)
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		e.locals[name] = vtype
+		e.ind()
+		e.emit(vtype + " " + name + " = ")
+		e.emitExpr(exprs[1].ast)
+		e.emit(";\n")
+		return name, true, true
+	}
+	if len(exprs) < 1 {
+		e.fail("malformed switch guard")
+		return "", false, false
+	}
+	// A plain variable can be compared directly; a richer value is bound to a
+	// temporary so it is evaluated once.
+	if tok, single := e.soleToken(exprs[0].ast); single && e.f.ch(tok) == IDENT {
+		return e.src(tok), false, true
+	}
+	gtype, tok := e.inferCType(exprs[0].ast)
+	if !tok {
+		e.fail("cannot infer the type of the switch value")
+		return "", false, false
+	}
+	tmp := e.newTmp()
+	e.ind()
+	e.emit("{\n")
+	e.indent++
+	e.ind()
+	e.emit(gtype + " " + tmp + " = ")
+	e.emitExpr(exprs[0].ast)
+	e.emit(";\n")
+	return tmp, true, true
+}
+
+// caseHead returns a case clause's case expressions and whether it is the default.
+func (e *emitter) caseHead(cc []int32) (exprs []Node, isDefault bool) {
+	for n := range it(cc) {
+		if n.sym != CaseHead {
+			continue
+		}
+		for h := range it(n.ast) {
+			switch h.sym {
+			case ExpressionList:
+				for ex := range it(h.ast) {
+					if ex.sym == Expression {
+						exprs = append(exprs, ex)
+					}
+				}
+			case 0:
+				if e.f.ch(h.tok) == DEFAULT {
+					isDefault = true
+				}
+			}
+		}
+	}
+	return exprs, isDefault
+}
+
+// emitCaseCond emits a case's condition: for a value switch, the guard equals any
+// of the case expressions (`guard == a || guard == b`); for an expression switch
+// (guardVar ""), the case expressions are themselves the conditions (`a || b`).
+func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
+	e.emit("(")
+	for i, ex := range exprs {
+		if i != 0 {
+			e.emit(" || ")
+		}
+		if guardVar != "" {
+			e.emit(guardVar + " == ")
+		}
+		e.emitExpr(ex.ast)
+	}
+	e.emit(")")
+}
+
+// emitCaseBody emits the statements of a case clause (those following its ":").
+func (e *emitter) emitCaseBody(cc []int32) {
+	for n := range it(cc) {
+		if n.sym == Statement {
+			e.emitStatement(n.ast)
+		}
+	}
 }
 
 // emitIf emits an if statement (the IfStmt node):
