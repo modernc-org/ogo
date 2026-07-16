@@ -1,0 +1,23 @@
+// COMPILE
+
+// A slice expression creates a new view over a string's bytes: s[low:high],
+// s[low:], s[:high] and s[:] (an omitted low is 0, an omitted high is len(s)).
+// Slicing a string yields a string; len reports the view's length.
+
+func sub(s string) string {
+	return s[1:]
+}
+
+func main() {
+	var s string = "hello"
+	a := s[1:3]
+	b := s[2:]
+	c := s[:3]
+	d := s[:]
+	println(a)
+	println(b)
+	println(c)
+	println(d)
+	println(len(s[1:4]))
+	println(sub(s))
+}

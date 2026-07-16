@@ -526,7 +526,12 @@
 //
 //	FactorSuffix = { Selector | Index | CallSuffix } .
 //	Selector     = "." ( identifier | "(" "type" ")" ) .
-//	Index        = "[" Expression "]" .
+//	Index        = "[" ( Expression [ ":" [ Expression ] ] | ":" [ Expression ] ) "]" .
+//
+// A single-expression Index "a[i]" indexes an element. The colon forms are slice
+// expressions "a[low:high]", "a[low:]", "a[:high]" and "a[:]", which create a new
+// view (pointer, length) over the operand's storage; an omitted low bound is 0 and
+// an omitted high bound is the operand's length. Slicing a string yields a string.
 //
 // # Function Literals
 //

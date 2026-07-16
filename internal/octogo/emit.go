@@ -1164,7 +1164,7 @@ func (e *emitter) soleToken(ast []int32) (int32, bool) {
 // factorIndex recognises a Factor that is a single index `base[i]` -- an
 // identifier followed by a FactorSuffix of exactly one Index -- returning the base
 // name and the index expression.
-func (e *emitter) factorIndex(kids []Node) (base string, idx []int32, ok bool) {
+func (e *emitter) factorIndex(kids []Node) (base string, indexAST []int32, ok bool) {
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return "", nil, false
 	}
@@ -1172,15 +1172,70 @@ func (e *emitter) factorIndex(kids []Node) (base string, idx []int32, ok bool) {
 	if len(suffix) != 1 || suffix[0].sym != Index {
 		return "", nil, false
 	}
-	for n := range it(suffix[0].ast) {
-		if n.sym == Expression {
-			idx = n.ast
+	return e.src(kids[0].tok), suffix[0].ast, true
+}
+
+// sliceParts inspects an Index node. isSlice reports a colon -- a slice expression;
+// low and high are the bound expressions, nil when omitted. For a plain index (no
+// colon), isSlice is false and low is the index expression.
+func (e *emitter) sliceParts(indexAST []int32) (low, high []int32, isSlice bool) {
+	beforeColon := true
+	for n := range it(indexAST) {
+		switch n.sym {
+		case Expression:
+			if beforeColon {
+				low = n.ast
+			} else {
+				high = n.ast
+			}
+		case 0:
+			if e.f.ch(n.tok) == COLON {
+				isSlice, beforeColon = true, false
+			}
 		}
 	}
-	if idx == nil {
-		return "", nil, false
+	return low, high, isSlice
+}
+
+// varType returns a variable's C type from the local then the package environment.
+func (e *emitter) varType(name string) (string, bool) {
+	if ct, ok := e.locals[name]; ok {
+		return ct, true
 	}
-	return e.src(kids[0].tok), idx, true
+	ct, ok := e.globals[name]
+	return ct, ok
+}
+
+// emitStringSlice emits a string slice `s[low:high]` as a new header
+// (ogo_string){ s.str + low, high - low }: an omitted low is 0, an omitted high is
+// s.len. Only string slicing is modelled.
+func (e *emitter) emitStringSlice(base string, low, high []int32) {
+	if ct, ok := e.varType(base); !ok || ct != cString {
+		e.fail("only string slicing is supported yet")
+		return
+	}
+	e.usesString = true
+	if e.declInit {
+		e.emit("{")
+	} else {
+		e.emit("(" + cString + "){")
+	}
+	e.emit(base + ".str")
+	if low != nil {
+		e.emit(" + ")
+		e.emitExpr(low)
+	}
+	e.emit(", ")
+	if high != nil {
+		e.emitExpr(high)
+	} else {
+		e.emit(base + ".len")
+	}
+	if low != nil {
+		e.emit(" - ")
+		e.emitExpr(low)
+	}
+	e.emit("}")
 }
 
 // emitFor handles `for {}` (infinite -> for(;;)) and `for cond {}` (conditional
@@ -2146,7 +2201,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				return e.fieldType(base, fields)
 			}
-			if base, _, ok := e.factorIndex(kids); ok {
+			if base, indexAST, ok := e.factorIndex(kids); ok {
+				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
+					// A string slice is a string; array slicing is not modelled.
+					if ct, ok := e.varType(base); ok && ct == cString {
+						return cString, true
+					}
+					return "", false
+				}
 				if a, ok := e.arrays[base]; ok {
 					return a.elem, true
 				}
@@ -2244,9 +2306,14 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emit(e.fieldAccessC(base, fields))
 				return
 			}
-			if base, idx, ok := e.factorIndex(kids); ok {
+			if base, indexAST, ok := e.factorIndex(kids); ok {
+				low, high, isSlice := e.sliceParts(indexAST)
+				if isSlice {
+					e.emitStringSlice(base, low, high)
+					return
+				}
 				e.emit(base + "[")
-				e.emitExpr(idx)
+				e.emitExpr(low)
 				e.emit("]")
 				return
 			}
