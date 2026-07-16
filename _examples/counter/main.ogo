@@ -1,0 +1,13 @@
+import "p2"
+
+// Count up over the serial terminal: print an incrementing integer once every
+// 500 ms, forever. Unlike blink, this example produces serial output, so it is
+// the natural companion for `ogo run`'s interactive terminal.
+func main() {
+	var i int
+	for {
+		println(i)
+		i = i + 1
+		p2.WaitMs(500)
+	}
+}
