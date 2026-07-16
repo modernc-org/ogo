@@ -54,12 +54,13 @@ var cTypes = map[string]string{
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string]string{}}
 
 	// Pass 1: forward prototypes for user functions. C requires a declaration
 	// before use, but OctoGo (like Go) does not order top-level declarations, so
 	// a call may precede its definition; the prototypes make emission order
-	// independent of source order.
+	// independent of source order. The same pass records each function's C result
+	// type in funcRet, so a `x := f()` short declaration can be typed.
 	var protos bytes.Buffer
 	e.w = &protos
 	for _, f := range pkg.Files {
@@ -108,8 +109,10 @@ type emitter struct {
 	f         *File     // file currently being emitted, for token access
 	indent    int
 	includes  map[string]bool
-	wroteDecl bool // a top-level definition has been emitted (drives blank-line separators)
-	mainRet   bool // currently emitting main's body: a bare `return` yields `return 0;`
+	funcRet   map[string]string // user function name -> C result type ("void" if none), for typing `x := f()`
+	locals    map[string]string // current function's parameter/local name -> C type, for typing `x := y`
+	wroteDecl bool              // a top-level definition has been emitted (drives blank-line separators)
+	mainRet   bool              // currently emitting main's body: a bare `return` yields `return 0;`
 	err       error
 }
 
@@ -207,9 +210,13 @@ func (e *emitter) emitPrototypes(ast []int32) {
 				if d.sym != FuncDecl {
 					continue
 				}
-				if name, sig, _, isMethod, ok := e.funcParts(d.ast); ok && !isMethod && name != "main" {
-					if proto := e.funcSignatureC(name, sig); proto != "" {
-						e.emit(proto + ";\n")
+				if name, sig, _, isMethod, ok := e.funcParts(d.ast); ok && !isMethod && name != "" {
+					_, ret := e.cParams(sig)
+					e.funcRet[name] = ret
+					if name != "main" {
+						if proto := e.funcSignatureC(name, sig); proto != "" {
+							e.emit(proto + ";\n")
+						}
 					}
 				}
 			}
@@ -244,6 +251,8 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	if proto == "" {
 		return
 	}
+	e.locals = map[string]string{}
+	e.bindParams(sig)
 	e.emit(proto + " {\n")
 	e.indent++
 	e.emitBlockStmts(body)
@@ -283,6 +292,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 		e.fail("func main must have no parameters or results")
 		return
 	}
+	e.locals = map[string]string{}
 	e.emit("int main(void) {\n")
 	e.indent++
 	e.mainRet = true
@@ -339,6 +349,17 @@ func (e *emitter) cParams(sig []int32) (params, ret string) {
 // parameters, expanding a shared type ("a, b int" -> "int a, int b").
 func (e *emitter) cParamList(ast []int32) []string {
 	var out []string
+	e.forEachParam(ast, func(name, ct string) {
+		out = append(out, ct+" "+name)
+	})
+	return out
+}
+
+// forEachParam walks a ParameterList's `IdentifierList Type` groups, calling fn
+// with each parameter's name and C type (a shared type "a, b int" yields two
+// calls). It underlies both the C parameter rendering (cParamList) and the local
+// type environment (bindParams).
+func (e *emitter) forEachParam(ast []int32, fn func(name, ctype string)) {
 	var names []string
 	for n := range it(ast) {
 		switch n.sym {
@@ -352,12 +373,31 @@ func (e *emitter) cParamList(ast []int32) []string {
 		case Type:
 			ct := e.cType(n.ast)
 			for _, nm := range names {
-				out = append(out, ct+" "+nm)
+				fn(nm, ct)
 			}
 			names = names[:0]
 		}
 	}
-	return out
+}
+
+// bindParams records the current function's parameters in the local type
+// environment, so a `x := p` short declaration can be typed from a parameter p.
+// It reads only the parameter list (before the signature's closing ")"), not the
+// results.
+func (e *emitter) bindParams(sig []int32) {
+	seenRPar := false
+	for n := range it(sig) {
+		switch n.sym {
+		case ParameterList:
+			if !seenRPar {
+				e.forEachParam(n.ast, func(name, ct string) { e.locals[name] = ct })
+			}
+		case 0:
+			if e.f.ch(n.tok) == RPAREN {
+				seenRPar = true
+			}
+		}
+	}
 }
 
 // emitBlockStmts emits the statements of a Block (skipping its braces).
@@ -419,6 +459,8 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				ctype = e.cType(s.ast)
 			case Expression:
 				initExpr = s.ast
+			case 0:
+				// The "=" separator between the type and the initializer.
 			default:
 				e.fail("unsupported var-spec element %v", s.sym)
 			}
@@ -432,6 +474,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			return
 		}
 		for _, nm := range names {
+			e.locals[nm] = ctype
 			e.ind()
 			e.emit(ctype + " " + nm + " = ")
 			if initExpr != nil {
@@ -684,7 +727,10 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	}
 }
 
-// emitAssignment handles `lhs = expr` (single target, `=` only).
+// emitAssignment handles a single-target `lhs = expr` and a short declaration
+// `lhs := expr`. The `:=` form declares a C variable, its type inferred from the
+// initializer (see inferCType); the `=` form assigns an existing one. Multiple
+// targets and compound operators are not modelled.
 func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(postfix) != 1 {
 		e.fail("unsupported assignment target")
@@ -695,15 +741,32 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.fail("only assignment to a simple variable is supported yet")
 		return
 	}
-	op := slices.Collect(it(postfix[0].ast)) // PostfixOp = "=" Expression
-	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN || op[1].sym != Expression {
-		e.fail("only `name = expr` assignments are supported yet")
+	// PostfixOp = ( "=" | ":=" ) Expression, for the single-target forms.
+	op := slices.Collect(it(postfix[0].ast))
+	if len(op) != 2 || op[0].sym != 0 || op[1].sym != Expression {
+		e.fail("only `name = expr` and `name := expr` are supported yet")
 		return
 	}
-	e.ind()
-	e.emit(lhs + " = ")
-	e.emitExpr(op[1].ast)
-	e.emit(";\n")
+	switch e.f.ch(op[0].tok) {
+	case ASSIGN:
+		e.ind()
+		e.emit(lhs + " = ")
+		e.emitExpr(op[1].ast)
+		e.emit(";\n")
+	case DEFINE:
+		ct, ok := e.inferCType(op[1].ast)
+		if !ok {
+			e.fail("cannot infer a type for the short declaration of %q", lhs)
+			return
+		}
+		e.locals[lhs] = ct
+		e.ind()
+		e.emit(ct + " " + lhs + " = ")
+		e.emitExpr(op[1].ast)
+		e.emit(";\n")
+	default:
+		e.fail("only `name = expr` and `name := expr` are supported yet")
+	}
 }
 
 func (e *emitter) emitCallArgs(callSuffix []int32) {
@@ -763,6 +826,85 @@ func (e *emitter) factorCall(kids []Node) (recv string, suffix []Node, ok bool) 
 		return "", nil, false
 	}
 	return e.src(kids[0].tok), suffix, true
+}
+
+// inferCType determines the C type of an expression for a `x := expr` short
+// declaration, from the current type environment (locals and funcRet). ok is
+// false when the type is outside the modelled subset, so the caller fails
+// honestly rather than emitting a wrongly-typed variable.
+func (e *emitter) inferCType(ast []int32) (string, bool) {
+	return e.inferNodes(slices.Collect(it(ast)))
+}
+
+// inferNodes types one expression level (the children of an Expression/SimpleExpr/
+// Term/UnaryExpr). A relational operator makes the value a bool (C int); an
+// arithmetic operator makes the type that of the first operand; a unary operator
+// is transparent. Otherwise the level is a single operand, typed by inferNode.
+func (e *emitter) inferNodes(nodes []Node) (string, bool) {
+	for _, n := range nodes {
+		if n.sym == RelOp {
+			return "int", true // a comparison yields bool, which is C int
+		}
+	}
+	for _, n := range nodes {
+		switch n.sym {
+		case AddOp, MulOp:
+			continue // an operator; the type comes from the operands
+		case 0:
+			switch e.f.ch(n.tok) {
+			case SUB, ADD, NOT, XOR, MUL, AND:
+				continue // a prefix operator; skip to its operand
+			}
+		}
+		return e.inferNode(n)
+	}
+	return "", false
+}
+
+// inferNode types a single expression node: a wrapper level recurses, a
+// parenthesised expression unwraps, a call takes its result type, an identifier
+// its declared type, and an integer literal is int.
+func (e *emitter) inferNode(n Node) (string, bool) {
+	switch n.sym {
+	case Expression, SimpleExpr, Term:
+		return e.inferNodes(slices.Collect(it(n.ast)))
+	case UnaryExpr, Factor:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+			return e.inferNode(kids[1])
+		}
+		if n.sym == Factor {
+			if recv, suffix, ok := e.factorCall(kids); ok {
+				return e.callResultCType(recv, suffix)
+			}
+		}
+		return e.inferNodes(kids)
+	case 0:
+		switch e.f.ch(n.tok) {
+		case INT:
+			return "int", true
+		case IDENT:
+			ct, ok := e.locals[e.src(n.tok)]
+			return ct, ok
+		}
+	}
+	return "", false
+}
+
+// callResultCType returns the C result type of a call in expression position: a
+// user function's recorded result type, or int for a p2 intrinsic (propeller2.h
+// intrinsics all return int).
+func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
+	switch {
+	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		ct, ok := e.funcRet[recv]
+		return ct, ok && ct != "void"
+	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		if recv == "p2" {
+			return "int", true
+		}
+	}
+	return "", false
 }
 
 // emitExpr emits a value expression. Binary operators (Expression/SimpleExpr/
