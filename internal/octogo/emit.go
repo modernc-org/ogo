@@ -41,13 +41,21 @@ var cTypes = map[string]string{
 	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t",
 	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t",
 	"byte": "uint8_t", "rune": "int32_t", "uintptr": "uintptr_t",
-	// A Go string is immutable; the modelled subset uses it for literals passed
-	// to print and stored in variables, so it maps to a pointer to const char.
-	"string": "const char*",
+	// A Go string is an immutable { pointer, length } header -- a value type that
+	// will later support slicing -- so it maps to the ogo_string struct.
+	"string": cString,
 }
 
-// cString is the C type of an OctoGo string.
-const cString = "const char*"
+// cString is the C type of an OctoGo string: a { const char* str; int len; }
+// header emitted as stringTypedef, printed via the stringHelpers.
+const cString = "ogo_string"
+
+const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\n"
+
+// stringHelpers print a string header's exact bytes (a slice need not be
+// null-terminated, so %.*s, not %s).
+const stringHelpers = "static void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
+	"static void ogo_println_str(ogo_string s) { printf(\"%.*s\\n\", s.len, s.str); }\n"
 
 // EmitC writes C source for the built package pkg to w. It is the walking
 // skeleton of the OctoGo C backend, grown to a first computational subset: a
@@ -130,8 +138,17 @@ func EmitC(pkg *Package, w io.Writer) error {
 	if len(incs) != 0 {
 		out.WriteByte('\n')
 	}
-	if typedefs.Len() != 0 {
+	// The ogo_string typedef leads the typedef section (a struct, array, or result
+	// field may be a string); the string print helpers follow the typedefs.
+	if e.usesString || typedefs.Len() != 0 {
+		if e.usesString {
+			out.WriteString(stringTypedef)
+		}
 		out.Write(typedefs.Bytes())
+		out.WriteByte('\n')
+	}
+	if e.usesStringPrint {
+		out.WriteString(stringHelpers)
 		out.WriteByte('\n')
 	}
 	if globals.Len() != 0 {
@@ -148,21 +165,24 @@ func EmitC(pkg *Package, w io.Writer) error {
 }
 
 type emitter struct {
-	w         io.Writer // body buffer during the walk
-	f         *File     // file currently being emitted, for token access
-	indent    int
-	includes  map[string]bool
-	funcRet   map[string][]string      // user function name -> C result types (empty=void), for typing calls
-	globals   map[string]string        // package-level constant name -> C type, for typing `x := CONST`
-	structs   map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
-	constInt  map[string]string        // integer-constant name -> its C literal value, for array bounds
-	arrays    map[string]string        // array variable name -> element C type, for typing `x := a[i]`
-	locals    map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
-	curFunc   string                   // name of the function whose body is being emitted (for its result-struct type)
-	tmp       int                      // per-function counter for generated temporaries (destructuring)
-	wroteDecl bool                     // a top-level definition has been emitted (drives blank-line separators)
-	mainRet   bool                     // currently emitting main's body: a bare `return` yields `return 0;`
-	err       error
+	w               io.Writer // body buffer during the walk
+	f               *File     // file currently being emitted, for token access
+	indent          int
+	includes        map[string]bool
+	funcRet         map[string][]string      // user function name -> C result types (empty=void), for typing calls
+	globals         map[string]string        // package-level constant name -> C type, for typing `x := CONST`
+	structs         map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
+	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
+	arrays          map[string]string        // array variable name -> element C type, for typing `x := a[i]`
+	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
+	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
+	tmp             int                      // per-function counter for generated temporaries (destructuring)
+	wroteDecl       bool                     // a top-level definition has been emitted (drives blank-line separators)
+	mainRet         bool                     // currently emitting main's body: a bare `return` yields `return 0;`
+	declInit        bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
+	usesString      bool                     // an ogo_string type/literal appears: emit stringTypedef
+	usesStringPrint bool                     // a string is printed: emit stringHelpers
+	err             error
 }
 
 // emit writes verbatim C text, latching the first write error. All C is written
@@ -414,21 +434,18 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == INT {
 			e.constInt[name] = normalizeIntLit(e.src(tok))
 		}
-		// C const prefix: file scope adds `static`. A string's C type already
-		// carries `const`, so the qualifier is not repeated.
-		prefix := "const "
-		if pkg {
-			prefix = "static const "
-		}
-		if strings.HasPrefix(ctype, "const ") {
-			prefix = ""
-			if pkg {
-				prefix = "static "
-			}
-		}
 		e.ind()
-		e.emit(prefix + ctype + " " + name + " = ")
-		e.emitExpr(initExpr)
+		if pkg {
+			// A file-scope constant has static storage, so a string initializer
+			// must be a brace, not a compound literal (see emitStringLit).
+			e.emit("static const " + ctype + " " + name + " = ")
+			e.declInit = true
+			e.emitExpr(initExpr)
+			e.declInit = false
+		} else {
+			e.emit("const " + ctype + " " + name + " = ")
+			e.emitExpr(initExpr)
+		}
 		e.emit(";\n")
 	}
 }
@@ -891,10 +908,8 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			switch {
 			case initExpr != nil:
 				e.emitExpr(initExpr)
-			case e.isStruct(ctype):
-				e.emit("{0}") // zero every field of a struct
-			case ctype == cString:
-				e.emit("\"\"") // the zero string is empty, not a null pointer
+			case e.isStruct(ctype) || ctype == cString:
+				e.emit("{0}") // zero every field (a string's zero is {NULL, 0})
 			default:
 				e.emit("0")
 			}
@@ -944,6 +959,9 @@ func (e *emitter) cType(ast []int32) string {
 	if ct, ok := cTypes[name]; ok {
 		if strings.HasSuffix(ct, "_t") {
 			e.includes["stdint.h"] = true
+		}
+		if ct == cString {
+			e.usesString = true
 		}
 		return ct
 	}
@@ -1467,8 +1485,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	return false
 }
 
-// emitPrint maps print/println of a single integer to printf over the P2 serial
-// line. println appends a newline.
+// emitPrint maps print/println of a single argument to serial output: an integer
+// via printf, a string via the ogo_string print helper (which handles its exact
+// byte length). println appends a newline.
 func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	e.includes["stdio.h"] = true
@@ -1481,15 +1500,22 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 			e.emit("(void)0;\n")
 		}
 	case 1:
-		verb := "%d"
 		if ct, ok := e.inferCType(args[0].ast); ok && ct == cString {
-			verb = "%s"
+			e.usesStringPrint = true
+			helper := "ogo_print_str("
+			if newline {
+				helper = "ogo_println_str("
+			}
+			e.emit(helper)
+			e.emitExpr(args[0].ast)
+			e.emit(");\n")
+			return
 		}
-		nl := ""
+		verb := "\"%d\""
 		if newline {
-			nl = "\\n"
+			verb = "\"%d\\n\""
 		}
-		e.emit("printf(\"" + verb + nl + "\", ")
+		e.emit("printf(" + verb + ", ")
 		e.emitExpr(args[0].ast)
 		e.emit(");\n")
 	default:
@@ -2114,20 +2140,38 @@ func (e *emitter) emitOperandToken(tok int32) {
 			e.emit(s)
 		}
 	case STRING:
-		// An interpreted "..." string literal: Go and C share the common escapes
-		// (\n, \t, \\, \", ...), so it emits verbatim. A raw `...` literal has no C
-		// spelling and is not modelled.
-		if s := e.src(tok); len(s) != 0 && s[0] == '`' {
-			e.fail("raw string literals are not supported yet")
-		} else {
-			e.emit(s)
-		}
+		e.emitStringLit(tok)
 	case SUB, ADD, NOT, AND, MUL:
 		e.emit(e.src(tok)) // unary -, +, !, & (address-of), * (deref) prefix
 	case XOR:
 		e.emit("~") // Go unary ^ is bitwise complement
 	default:
 		e.fail("unsupported operand %v", ch)
+	}
+}
+
+// emitStringLit emits a string literal as an ogo_string { pointer, length }
+// header. In a static initializer a brace `{"s", n}` is required (a compound
+// literal is not a constant expression there); elsewhere the compound literal
+// `(ogo_string){"s", n}` is used. n is the decoded byte length (escapes counted as
+// one byte). The literal text emits verbatim -- Go and C share the common escapes.
+func (e *emitter) emitStringLit(tok int32) {
+	src := e.src(tok)
+	if len(src) != 0 && src[0] == '`' {
+		e.fail("raw string literals are not supported yet")
+		return
+	}
+	decoded, err := strconv.Unquote(src)
+	if err != nil {
+		e.fail("invalid string literal %s", src)
+		return
+	}
+	e.usesString = true
+	body := src + ", " + strconv.Itoa(len(decoded))
+	if e.declInit {
+		e.emit("{" + body + "}")
+	} else {
+		e.emit("(" + cString + "){" + body + "}")
 	}
 }
 
