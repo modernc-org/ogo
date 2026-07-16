@@ -942,10 +942,7 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 // emitExpr emits a value expression. Binary operators (Expression/SimpleExpr/
 // Term) are parenthesized so the OctoGo parse grouping is preserved even where C
 // operator precedence differs (notably Go binds << tighter than C does).
-//
-// TODO: normalize Go literal syntax that C rejects (digit separators `1_000`,
-// `0b`/`0o` prefixes) — currently INT text is emitted verbatim, correct only for
-// plain decimal integers.
+// Integer-literal text is normalized for C by normalizeIntLit.
 func (e *emitter) emitExpr(ast []int32) {
 	for n := range it(ast) {
 		e.emitExprNode(n)
@@ -1006,7 +1003,9 @@ func (e *emitter) opText(ast []int32) string {
 
 func (e *emitter) emitOperandToken(tok int32) {
 	switch ch := e.f.ch(tok); ch {
-	case INT, IDENT:
+	case INT:
+		e.emit(normalizeIntLit(e.src(tok)))
+	case IDENT:
 		e.emit(e.src(tok))
 	case SUB, ADD, NOT:
 		e.emit(e.src(tok)) // unary -, +, ! (prefix)
@@ -1015,6 +1014,22 @@ func (e *emitter) emitOperandToken(tok int32) {
 	default:
 		e.fail("unsupported operand %v", ch)
 	}
+}
+
+// normalizeIntLit rewrites an OctoGo integer literal to a form the C backend
+// accepts. Go's explicit-octal prefix "0o"/"0O" is not valid C — C spells octal
+// with a bare leading "0" (0o17 -> 017) — so it is converted. Underscores (digit
+// separators) are stripped as well: the flexcc backend happens to accept them,
+// but removing them keeps the emitted C independent of that leniency. Decimal,
+// hex ("0x"/"0X"), binary ("0b"/"0B", accepted by flexcc) and Go's legacy
+// leading-zero octal are already valid C and pass through, so a hex or binary
+// literal keeps its base (readability matters for pin masks).
+func normalizeIntLit(src string) string {
+	s := strings.ReplaceAll(src, "_", "")
+	if len(s) >= 2 && s[0] == '0' && (s[1] == 'o' || s[1] == 'O') {
+		s = "0" + s[2:]
+	}
+	return s
 }
 
 func containsSym(nodes []Node, sym Symbol) bool {
