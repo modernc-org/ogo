@@ -68,7 +68,7 @@ const stringHelpers = "static void ogo_print_str(ogo_string s) { printf(\"%.*s\"
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]string{}, globalArrays: map[string]string{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}}
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
@@ -180,8 +180,8 @@ type emitter struct {
 	globals         map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs         map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
-	arrays          map[string]string        // local array name -> element C type, for typing `x := a[i]` (reset per function)
-	globalArrays    map[string]string        // package-level array name -> element C type (persists across functions)
+	arrays          map[string]arrDim        // local array name -> element type and bound (reset per function)
+	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
 	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
 	tmp             int                      // per-function counter for generated temporaries (destructuring)
@@ -282,6 +282,10 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 // structField is one field of a struct type: its name and C type, in declaration
 // order.
 type structField struct{ name, ctype string }
+
+// arrDim describes an array variable: its element C type and its C bound (for
+// element typing and len).
+type arrDim struct{ elem, bound string }
 
 // collectStructs records each package-level struct type's fields in the struct
 // environment and emits a C typedef -- `typedef struct { <t0> f0; ... } T;`.
@@ -466,7 +470,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			for _, nm := range names {
 				if nm != "_" {
-					e.globalArrays[nm] = elem
+					e.globalArrays[nm] = arrDim{elem, bound}
 					e.emit("static " + elem + " " + nm + "[" + bound + "];\n")
 				}
 			}
@@ -653,7 +657,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		return
 	}
 	e.locals = map[string]string{}
-	e.arrays = map[string]string{}
+	e.arrays = map[string]arrDim{}
 	e.tmp = 0
 	e.curFunc = name
 	e.bindParams(sig)
@@ -716,7 +720,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 		return
 	}
 	e.locals = map[string]string{}
-	e.arrays = map[string]string{}
+	e.arrays = map[string]arrDim{}
 	e.tmp = 0
 	e.curFunc = "main"
 	e.emit("int main(void) {\n")
@@ -869,8 +873,8 @@ func (e *emitter) bindParams(sig []int32) {
 		case ParameterList:
 			if !seenRPar {
 				e.forEachParam(n.ast, func(name string, ta []int32) {
-					if elem, _, ok := e.arrayType(ta); ok {
-						e.arrays[name] = elem
+					if elem, bound, ok := e.arrayType(ta); ok {
+						e.arrays[name] = arrDim{elem, bound}
 						return
 					}
 					e.locals[name] = e.cType(ta)
@@ -996,7 +1000,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				if nm == "_" {
 					continue
 				}
-				e.arrays[nm] = elem
+				e.arrays[nm] = arrDim{elem, bound}
 				e.ind()
 				e.emit(elem + " " + nm + "[" + bound + "] = {0};\n")
 			}
@@ -1580,6 +1584,10 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		if recv == "len" {
+			e.emitLen(suffix[0].ast)
+			return true
+		}
 		e.emit(recv + "(")
 		e.emitCallArgs(suffix[0].ast)
 		e.emit(")")
@@ -1601,6 +1609,39 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		return true
 	}
 	return false
+}
+
+// emitLen emits the builtin `len(x)`: an array's length is its compile-time bound;
+// a string's is its header's `len` field.
+func (e *emitter) emitLen(callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) != 1 {
+		e.fail("len takes exactly one argument")
+		return
+	}
+	arg := args[0].ast
+	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
+		if a, ok := e.arrayVar(e.src(tok)); ok {
+			e.emit(a.bound)
+			return
+		}
+	}
+	if ct, ok := e.inferCType(arg); ok && ct == cString {
+		e.emit("(")
+		e.emitExpr(arg)
+		e.emit(").len")
+		return
+	}
+	e.fail("len is only supported for strings and arrays yet")
+}
+
+// arrayVar looks a name up in the local then the package array environment.
+func (e *emitter) arrayVar(name string) (arrDim, bool) {
+	if a, ok := e.arrays[name]; ok {
+		return a, true
+	}
+	a, ok := e.globalArrays[name]
+	return a, ok
 }
 
 // emitPrint maps print/println of a single argument to serial output: an integer
@@ -2106,11 +2147,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				return e.fieldType(base, fields)
 			}
 			if base, _, ok := e.factorIndex(kids); ok {
-				if elem, ok := e.arrays[base]; ok {
-					return elem, true
+				if a, ok := e.arrays[base]; ok {
+					return a.elem, true
 				}
-				elem, ok := e.globalArrays[base]
-				return elem, ok
+				a, ok := e.globalArrays[base]
+				return a.elem, ok
 			}
 		}
 		return e.inferNodes(kids)
@@ -2138,6 +2179,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		if recv == "len" {
+			return "int", true // the builtin len returns int
+		}
 		// Only a single-result call is a usable single value; a multi-result call
 		// belongs in a destructuring assignment (emitMultiAssign), not here.
 		if rts, ok := e.funcRet[recv]; ok && len(rts) == 1 {
