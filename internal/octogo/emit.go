@@ -54,7 +54,7 @@ var cTypes = map[string]string{
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]string{}}
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
@@ -149,6 +149,8 @@ type emitter struct {
 	funcRet   map[string][]string      // user function name -> C result types (empty=void), for typing calls
 	globals   map[string]string        // package-level constant name -> C type, for typing `x := CONST`
 	structs   map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
+	constInt  map[string]string        // integer-constant name -> its C literal value, for array bounds
+	arrays    map[string]string        // array variable name -> element C type, for typing `x := a[i]`
 	locals    map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc   string                   // name of the function whose body is being emitted (for its result-struct type)
 	tmp       int                      // per-function counter for generated temporaries (destructuring)
@@ -400,6 +402,11 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 			e.globals[name] = ctype
 		} else {
 			e.locals[name] = ctype
+		}
+		// A constant that is a single integer literal can serve as an array bound
+		// (flexcc rejects a `static const` there); record its value.
+		if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == INT {
+			e.constInt[name] = normalizeIntLit(e.src(tok))
 		}
 		e.ind()
 		if pkg {
@@ -747,15 +754,15 @@ func (e *emitter) emitStatement(ast []int32) {
 }
 
 // emitVarDecl handles `var name Type` (zero-initialized; P2 stack locals are not
-// auto-zeroed, so the `= 0` is required) and `var name Type = expr`.
+// auto-zeroed, so the initializer is required), `var name Type = expr`, and fixed
+// arrays `var a [N]T`.
 func (e *emitter) emitVarDecl(ast []int32) {
 	for n := range it(ast) {
 		if n.sym != VarSpec {
 			continue
 		}
 		var names []string
-		ctype := ""
-		var initExpr []int32
+		var typeAST, initExpr []int32
 		for s := range it(n.ast) {
 			switch s.sym {
 			case IdentifierList:
@@ -765,7 +772,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 					}
 				}
 			case Type:
-				ctype = e.cType(s.ast)
+				typeAST = s.ast
 			case Expression:
 				initExpr = s.ast
 			case 0:
@@ -774,8 +781,29 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.fail("unsupported var-spec element %v", s.sym)
 			}
 		}
-		if ctype == "" {
+		if typeAST == nil {
 			e.fail("var declaration needs an explicit type (inference not supported yet)")
+			return
+		}
+		// A fixed array `var a [N]T` -> `T a[N] = {0};`. Its name maps to the
+		// element type for `x := a[i]` typing.
+		if elem, bound, ok := e.arrayType(typeAST); ok {
+			if initExpr != nil {
+				e.fail("array initializers are not supported yet")
+				return
+			}
+			for _, nm := range names {
+				if nm == "_" {
+					continue
+				}
+				e.arrays[nm] = elem
+				e.ind()
+				e.emit(elem + " " + nm + "[" + bound + "] = {0};\n")
+			}
+			continue
+		}
+		ctype := e.cType(typeAST)
+		if ctype == "" {
 			return
 		}
 		if len(names) != 1 && initExpr != nil {
@@ -857,6 +885,95 @@ func (e *emitter) cType(ast []int32) string {
 	}
 	e.fail("unsupported type %q", name)
 	return ""
+}
+
+// arrayType recognises a fixed-array type `[N]T`, returning the element C type and
+// the C bound. A slice `[]T` (no bound) or a non-constant bound is not modelled.
+func (e *emitter) arrayType(typeAST []int32) (elem, bound string, ok bool) {
+	nodes := slices.Collect(it(typeAST))
+	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK {
+		return "", "", false
+	}
+	var sizeAST, elemAST []int32
+	for _, n := range nodes {
+		switch n.sym {
+		case Expression:
+			sizeAST = n.ast
+		case Type:
+			elemAST = n.ast
+		}
+	}
+	if sizeAST == nil || elemAST == nil {
+		return "", "", false // a slice, or a malformed array
+	}
+	bound, ok = e.arrayBoundC(sizeAST)
+	if !ok {
+		return "", "", false
+	}
+	if elem = e.cType(elemAST); elem == "" {
+		return "", "", false
+	}
+	return elem, bound, true
+}
+
+// arrayBoundC renders a fixed-array bound as a C integer constant: a single
+// integer literal directly, or a single integer-constant name folded to its value
+// (flexcc rejects a `static const` as an array bound). Anything else is unmodelled.
+func (e *emitter) arrayBoundC(sizeAST []int32) (string, bool) {
+	tok, ok := e.soleToken(sizeAST)
+	if !ok {
+		return "", false
+	}
+	switch e.f.ch(tok) {
+	case INT:
+		return normalizeIntLit(e.src(tok)), true
+	case IDENT:
+		if v, ok := e.constInt[e.src(tok)]; ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// soleToken returns the single terminal token of an expression subtree, if it has
+// exactly one (a bare literal or identifier), descending non-terminal wrappers.
+func (e *emitter) soleToken(ast []int32) (int32, bool) {
+	var tok int32
+	count := 0
+	var walk func([]int32)
+	walk = func(a []int32) {
+		for n := range it(a) {
+			if n.sym == 0 {
+				tok, count = n.tok, count+1
+			} else {
+				walk(n.ast)
+			}
+		}
+	}
+	walk(ast)
+	return tok, count == 1
+}
+
+// factorIndex recognises a Factor that is a single index `base[i]` -- an
+// identifier followed by a FactorSuffix of exactly one Index -- returning the base
+// name and the index expression.
+func (e *emitter) factorIndex(kids []Node) (base string, idx []int32, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	suffix := slices.Collect(it(kids[1].ast))
+	if len(suffix) != 1 || suffix[0].sym != Index {
+		return "", nil, false
+	}
+	for n := range it(suffix[0].ast) {
+		if n.sym == Expression {
+			idx = n.ast
+		}
+	}
+	if idx == nil {
+		return "", nil, false
+	}
+	return e.src(kids[0].tok), idx, true
 }
 
 // emitFor handles `for {}` (infinite -> for(;;)) and `for cond {}` (conditional
@@ -1121,6 +1238,13 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.fail("only assignment to a simple variable is supported yet")
 		return
 	}
+	// Index target `a[i] = v` (single index; mixing indexes and fields is not
+	// modelled). The index is an expression, so it is emitted directly rather than
+	// built into the string lhs the field path uses.
+	if len(postfix) == 2 && postfix[0].sym == Index {
+		e.emitIndexAssign(base, postfix[0], postfix[1])
+		return
+	}
 	var fields []string
 	for _, n := range postfix[:len(postfix)-1] {
 		fld := ""
@@ -1199,6 +1323,52 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	default:
 		e.fail("only `name = expr` and `name := expr` are supported yet")
 	}
+}
+
+// emitIndexAssign emits an indexed assignment `a[i] = v` or an indexed increment/
+// decrement `a[i]++` / `a[i]--`. index is the Index node, opNode the PostfixOp.
+func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
+	if opNode.sym != PostfixOp {
+		e.fail("unsupported assignment target")
+		return
+	}
+	var idx []int32
+	for n := range it(index.ast) {
+		if n.sym == Expression {
+			idx = n.ast
+		}
+	}
+	if idx == nil {
+		e.fail("unsupported index target")
+		return
+	}
+	op := slices.Collect(it(opNode.ast))
+	if len(op) == 1 && op[0].sym == 0 {
+		switch e.f.ch(op[0].tok) {
+		case INC:
+			e.ind()
+			e.emit(base + "[")
+			e.emitExpr(idx)
+			e.emit("]++;\n")
+			return
+		case DEC:
+			e.ind()
+			e.emit(base + "[")
+			e.emitExpr(idx)
+			e.emit("]--;\n")
+			return
+		}
+	}
+	if len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN && op[1].sym == Expression {
+		e.ind()
+		e.emit(base + "[")
+		e.emitExpr(idx)
+		e.emit("] = ")
+		e.emitExpr(op[1].ast)
+		e.emit(";\n")
+		return
+	}
+	e.fail("only `a[i] = expr`, `a[i]++` and `a[i]--` are supported yet")
 }
 
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
@@ -1518,6 +1688,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				return e.fieldType(base, fields)
 			}
+			if base, _, ok := e.factorIndex(kids); ok {
+				elem, ok := e.arrays[base]
+				return elem, ok
+			}
 		}
 		return e.inferNodes(kids)
 	case 0:
@@ -1602,6 +1776,12 @@ func (e *emitter) emitExprNode(n Node) {
 			}
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				e.emit(e.fieldAccessC(base, fields))
+				return
+			}
+			if base, idx, ok := e.factorIndex(kids); ok {
+				e.emit(base + "[")
+				e.emitExpr(idx)
+				e.emit("]")
 				return
 			}
 		}
