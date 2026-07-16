@@ -1,0 +1,27 @@
+// An "else" may be followed by another "if", forming an else-if chain. Each
+// condition is a boolean guard (checked like a plain if's) and each branch is
+// its own block scope.
+
+func classify(n int) int {
+	var r int
+	if n < 0 {
+		r = -1
+	} else if n == 0 {
+		r = 0
+	} else if n < 10 {
+		r = 1
+	} else {
+		r = 2
+	}
+	return r
+}
+
+// The condition of an "else if" is checked exactly like a plain if's, so a
+// non-bool guard is rejected.
+func cond() {
+	var n int
+	if n < 0 {
+		// ERROR "non-bool used as if condition|mismatched types"
+	} else if n {
+	}
+}

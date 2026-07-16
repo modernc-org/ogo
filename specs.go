@@ -137,13 +137,14 @@
 // # Operators and punctuation
 //
 // The following character sequences represent operators and punctuation.
-// (Note: OctoGo omits operators like %, &^, ++, and --)
+// (Note: OctoGo omits operators like % and &^)
 //
 //	&    +     ==    !=    (    )
 //	-    |     <     <=    [    ]
 //	*    ^     >     >=    {    }
 //	/    <<    =     :=    ,    ;
 //	~    >>    !     <-    .    :
+//	++   --
 //
 // # Integer literals
 //
@@ -580,7 +581,7 @@
 //	Statement = VarDecl
 //		| ConstDecl
 //		| TypeDecl
-//		| "if" Expression Block [ "else" Block ]
+//		| IfStmt
 //		| "for" [ Expression ] Block
 //		| "return" [ ExpressionList ]
 //		| "go" AssignHead { Selector | Index | CallSuffix }
@@ -631,15 +632,24 @@
 //	AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
 //	Postfix    = { Selector | Index | CallSuffix } [ PostfixOp ] .
 //	PostfixOp  = "<-" Expression
+//		| "++"
+//		| "--"
 //		| { "," LhsItem } ( "=" | ":=" ) Expression .
 //	LhsItem    = AssignHead { Selector | Index } .
+//
+// The "++" and "--" forms are the increment and decrement statements "x++" and
+// "x--"; they take no operand of their own (the target is the AssignHead) and,
+// unlike Go's, are statements only -- never expressions.
 //
 // # If Statements
 //
 // "If" statements specify the conditional execution of two branches according
 // to the value of a boolean expression. If the expression evaluates to true,
 // the "if" branch is executed, otherwise, if present, the "else" branch is
-// executed.
+// executed. An "else" may be followed by another "if" statement, forming an
+// "else if" chain, or by a block.
+//
+//	IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
 //
 // # For Statements
 //

@@ -424,8 +424,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitVarDecl(first.ast)
 	case first.sym == 0 && e.f.ch(first.tok) == FOR:
 		e.emitFor(nodes)
-	case first.sym == 0 && e.f.ch(first.tok) == IF:
-		e.emitIf(nodes)
+	case first.sym == IfStmt:
+		e.emitIf(first.ast)
 	case first.sym == 0 && e.f.ch(first.tok) == RETURN:
 		e.emitReturn(nodes)
 	case first.sym == AssignHead:
@@ -541,11 +541,24 @@ func (e *emitter) emitFor(nodes []Node) {
 	e.emit("}\n")
 }
 
-// emitIf handles `if cond { ... }` with an optional `else { ... }`. `else if`
-// chains and if-init clauses are not supported yet.
-func (e *emitter) emitIf(nodes []Node) {
-	var cond, thenBody, elseBody []int32
-	for _, n := range nodes[1:] {
+// emitIf emits an if statement (the IfStmt node):
+//
+//	IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
+//
+// It indents the leading `if`, then defers to emitIfBody, which handles the
+// condition, the branch, and any `else`/`else if` continuation.
+func (e *emitter) emitIf(ast []int32) {
+	e.ind()
+	e.emitIfBody(ast)
+}
+
+// emitIfBody emits `if (cond) { ... }` and its optional else branch, assuming the
+// cursor is already positioned — an initial indent for a top-level if, or the
+// `} else ` written by an enclosing call for an `else if`. It recurses on an
+// `else if` continuation so the C reads `} else if (c) {` on one line.
+func (e *emitter) emitIfBody(ast []int32) {
+	var cond, thenBody, elseBody, elseIf []int32
+	for n := range it(ast) {
 		switch n.sym {
 		case Expression:
 			cond = n.ast
@@ -555,8 +568,10 @@ func (e *emitter) emitIf(nodes []Node) {
 			} else {
 				elseBody = n.ast
 			}
+		case IfStmt:
+			elseIf = n.ast
 		case 0:
-			// ELSE terminal.
+			// IF / ELSE terminals.
 		default:
 			e.fail("if clause %v is not supported yet", n.sym)
 			return
@@ -566,7 +581,6 @@ func (e *emitter) emitIf(nodes []Node) {
 		e.fail("malformed if statement")
 		return
 	}
-	e.ind()
 	e.emit("if ")
 	e.emitCondition(cond)
 	e.emit(" {\n")
@@ -575,15 +589,20 @@ func (e *emitter) emitIf(nodes []Node) {
 	e.indent--
 	e.ind()
 	e.emit("}")
-	if elseBody != nil {
+	switch {
+	case elseIf != nil:
+		e.emit(" else ")
+		e.emitIfBody(elseIf)
+	case elseBody != nil:
 		e.emit(" else {\n")
 		e.indent++
 		e.emitBlockStmts(elseBody)
 		e.indent--
 		e.ind()
-		e.emit("}")
+		e.emit("}\n")
+	default:
+		e.emit("\n")
 	}
-	e.emit("\n")
 }
 
 // emitCondition emits an if/for condition wrapped in exactly one set of
@@ -741,10 +760,23 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.fail("only assignment to a simple variable is supported yet")
 		return
 	}
-	// PostfixOp = ( "=" | ":=" ) Expression, for the single-target forms.
 	op := slices.Collect(it(postfix[0].ast))
+	// Increment/decrement: PostfixOp = "++" | "--" (no operand of its own).
+	if len(op) == 1 && op[0].sym == 0 {
+		switch e.f.ch(op[0].tok) {
+		case INC:
+			e.ind()
+			e.emit(lhs + "++;\n")
+			return
+		case DEC:
+			e.ind()
+			e.emit(lhs + "--;\n")
+			return
+		}
+	}
+	// PostfixOp = ( "=" | ":=" ) Expression, for the single-target forms.
 	if len(op) != 2 || op[0].sym != 0 || op[1].sym != Expression {
-		e.fail("only `name = expr` and `name := expr` are supported yet")
+		e.fail("only `name = expr`, `name := expr`, `name++` and `name--` are supported yet")
 		return
 	}
 	switch e.f.ch(op[0].tok) {

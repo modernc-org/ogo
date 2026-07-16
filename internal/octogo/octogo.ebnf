@@ -79,7 +79,7 @@ ArgumentList = Expression { "," Expression } .
 Statement = VarDecl
 	| ConstDecl
 	| TypeDecl
-	| "if" Expression Block [ "else" Block ]
+	| IfStmt
 	| "for" [ Expression ] Block
 	| "return" [ ExpressionList ]
 	| "go" AssignHead { Selector | Index | CallSuffix }
@@ -94,8 +94,11 @@ EmptyStatement = .
 AssignHead = { "*" } ( identifier | "(" Expression ")" ) .
 Postfix    = { Selector | Index | CallSuffix } [ PostfixOp ] .
 PostfixOp  = "<-" Expression
+	| "++"
+	| "--"
 	| { "," LhsItem } ( "=" | ":=" ) Expression .
 LhsItem    = AssignHead { Selector | Index } .
+IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
 SwitchGuard = Expression [ ":=" Expression ] .
 CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .

@@ -1,0 +1,26 @@
+// Increment "x++" and decrement "x--" are statements that read and write an
+// assignable variable, so the operand counts as used. They apply only to a
+// variable: incrementing a constant, a function, or an undefined name is
+// rejected. Unlike Go's, they are statements only, never expressions.
+
+const limit = 3
+
+func step(n int) int { return n }
+
+func run() {
+	var i int
+	i++
+	i--
+	if i < limit {
+		i++
+	}
+
+	// ERROR "cannot assign to limit"
+	limit++
+
+	// ERROR "cannot assign to step"
+	step--
+
+	// ERROR "undefined: missing"
+	missing++
+}

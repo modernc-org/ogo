@@ -24,6 +24,8 @@ const (
 	NEQ       = TOK_0021003d  // "!="
 	LAND      = TOK_00260026  // "&&"
 	LOR       = TOK_007c007c  // "||"
+	INC       = TOK_002b002b  // "++"
+	DEC       = TOK_002d002d  // "--"
 	DEFINE    = TOK_003a003d  // ":="
 	ARROW     = TOK_003c002d  // "<-"
 	SHL       = TOK_003c003c  // "<<"
@@ -526,8 +528,8 @@ out:
 				s.off += length
 				switch Symbol(id) {
 				case
-					//TODO TOK++
-					//TODO TOK--
+					INC, // "++"
+					DEC, // "--"
 					//TODO TOK_break
 					//TODO TOK_continue
 					//TODO TOK_fallthrough

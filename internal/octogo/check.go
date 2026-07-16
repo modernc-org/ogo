@@ -830,13 +830,15 @@ func isEmptyStatement(stmt Node) bool {
 // terminate.
 func (f *File) stmtIsTerminating(stmt Node) bool {
 	var blocks []Node
-	var switchStmt, selectStmt, head, postfix Node
-	var isReturn, isFor, isIf, hasSwitch, hasSelect, hasHead, hasPostfix bool
+	var switchStmt, selectStmt, ifStmt, head, postfix Node
+	var isReturn, isFor, hasIf, hasSwitch, hasSelect, hasHead, hasPostfix bool
 	exprCount := 0
 	for c := range it(stmt.ast) {
 		switch c.sym {
 		case Block:
 			blocks = append(blocks, c)
+		case IfStmt:
+			ifStmt, hasIf = c, true
 		case SwitchStmt:
 			switchStmt, hasSwitch = c, true
 		case SelectStmt:
@@ -853,8 +855,6 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 				isReturn = true
 			case FOR:
 				isFor = true
-			case IF:
-				isIf = true
 			}
 		}
 	}
@@ -865,11 +865,8 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 		// A conditionless "for" loops forever; a conditional one falls through
 		// when its condition is false. No break exists to exit either.
 		return exprCount == 0
-	case isIf:
-		// Terminating only with both an "if" and an "else" branch (two blocks),
-		// each terminating. Without "else" there is one block, which control skips
-		// when the condition is false.
-		return len(blocks) == 2 && f.blockIsTerminating(blocks[0]) && f.blockIsTerminating(blocks[1])
+	case hasIf:
+		return f.ifStmtIsTerminating(ifStmt)
 	case hasSwitch:
 		return f.switchIsTerminating(switchStmt)
 	case hasSelect:
@@ -880,6 +877,39 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 		return f.isPanicCall(head, postfix) // an expression statement
 	}
 	return false
+}
+
+// ifStmtIsTerminating reports whether an if statement terminates. It does so only
+// when its "then" branch terminates and it has an "else" whose branch also
+// terminates -- an "else if" continuation recursively, or a plain else block.
+// Without an "else", control skips the "then" branch when the condition is false,
+// so the statement does not terminate.
+func (f *File) ifStmtIsTerminating(n Node) bool {
+	var thenBlock, elseBlock, elseIf Node
+	var hasThen, hasElseBlock, hasElseIf bool
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Block:
+			if !hasThen {
+				thenBlock, hasThen = c, true
+			} else {
+				elseBlock, hasElseBlock = c, true
+			}
+		case IfStmt:
+			elseIf, hasElseIf = c, true
+		}
+	}
+	if !hasThen || !f.blockIsTerminating(thenBlock) {
+		return false
+	}
+	switch {
+	case hasElseIf:
+		return f.ifStmtIsTerminating(elseIf)
+	case hasElseBlock:
+		return f.blockIsTerminating(elseBlock)
+	default:
+		return false
+	}
 }
 
 // switchIsTerminating reports whether an expression switch terminates: it must
@@ -1015,6 +1045,8 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 		case Postfix:
 			sawPostfix = true
 			f.checkAssignment(s, head, c)
+		case IfStmt:
+			f.checkIf(s, results, c)
 		case SwitchStmt:
 			f.checkSwitch(s, results, c)
 		case SelectStmt:
@@ -1040,7 +1072,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				isGo = true
 			case ARROW:
 				isRecv = true
-			case IF, FOR:
+			case FOR:
 				condKw = f.tok(c.tok).Src()
 			case DEFER:
 				// The grammar still admits "defer" for LL(1) simplicity, but the
@@ -1091,6 +1123,26 @@ func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
 		f.checkCallBase(s, id, hasSelectorChild(stmt))
 		if m, has := f.methodCallMember(stmt); has {
 			f.checkMethodCall(s, id, m, argList)
+		}
+	}
+}
+
+// checkIf checks an if statement, including any "else if" chain:
+//
+//	IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
+//
+// The condition is a boolean guard, each branch block is checked in its own child
+// scope (OctoGo has no if-init clause, so the condition needs no shared scope),
+// and an "else if" continuation is checked recursively.
+func (f *File) checkIf(s *Scope, results []retResult, n Node) {
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Expression:
+			f.checkCondition(s, "if", c)
+		case Block:
+			f.checkBlock(s.child(), results, c)
+		case IfStmt:
+			f.checkIf(s, results, c)
 		}
 	}
 }
@@ -2107,11 +2159,36 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				rhs = append(rhs, n)
 			case 0:
 				switch sym := f.ch(n.tok); sym {
-				case ASSIGN, DEFINE, ARROW:
+				case ASSIGN, DEFINE, ARROW, INC, DEC:
 					op = sym
 				}
 			}
 		}
+	}
+
+	// An increment "x++" or decrement "x--" statement: the operand must be an
+	// assignable variable (checked like a plain "=" target). It is both read and
+	// written, so -- unlike a "=" target -- it is not recorded as a write, and thus
+	// counts as a use for the unused-variable report.
+	if op == INC || op == DEC {
+		for i, tok := range lhs {
+			nm := tok.Src()
+			if nm == "_" {
+				f.blankRead(tok) // "_++" reads the blank identifier: illegal
+				continue
+			}
+			switch s.find(nm).(type) {
+			case nil:
+				if !f.isImportQualifier(s, nm) {
+					f.err(tok.Position(), "undefined: %s", nm)
+				}
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+				if !lhsSuffixed[i] {
+					f.err(tok.Position(), "cannot assign to %s", nm)
+				}
+			}
+		}
+		return
 	}
 
 	// An expression statement must have an effect: a function or method call. A
