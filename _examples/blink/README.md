@@ -24,6 +24,9 @@ Compile, load onto a connected board, and open an interactive terminal:
 ogo run main.ogo
 ```
 
+Press `Ctrl-]` or `Ctrl-Z` to exit the terminal. (This example prints nothing
+over serial — it just blinks — so the terminal stays blank.)
+
 Or build first and load explicitly (no terminal — the LED just blinks):
 
 ```sh
