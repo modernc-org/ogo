@@ -279,7 +279,7 @@ func (e *emitter) funcParts(ast []int32) (name string, sig, body []int32, isMeth
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
 // results.
 func (e *emitter) emitMain(sig, body []int32) {
-	if params, hasResult := e.cParams(sig); params != "" || hasResult {
+	if params, ret := e.cParams(sig); params != "" || ret != "void" {
 		e.fail("func main must have no parameters or results")
 		return
 	}
@@ -294,36 +294,36 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.emit("}\n")
 }
 
-// funcSignatureC builds the C signature `void name(params)` for a user function.
-// Results are not modelled yet, so a function with a result list fails honestly.
+// funcSignatureC builds the C signature `<ret> name(params)` for a user function,
+// e.g. `int add(int a, int b)` or `void run(void)`.
 func (e *emitter) funcSignatureC(name string, sig []int32) string {
-	params, hasResult := e.cParams(sig)
-	if hasResult {
-		e.fail("function results are not supported yet")
-		return ""
-	}
+	params, ret := e.cParams(sig)
 	if params == "" {
 		params = "void"
 	}
-	return "void " + name + "(" + params + ")"
+	return ret + " " + name + "(" + params + ")"
 }
 
 // cParams renders a Signature's parameters as a C parameter list ("int a, int b")
-// and reports whether the signature declares any results. Parameters are always
-// named (the grammar requires it), so each maps to a `<ctype> <name>` C parameter.
-func (e *emitter) cParams(sig []int32) (params string, hasResult bool) {
+// and returns the C result type ("void" when there is none). Parameters are
+// always named (the grammar requires it), so each maps to a `<ctype> <name>` C
+// parameter. Only a single unnamed result is modelled; named or multiple results
+// fail honestly.
+func (e *emitter) cParams(sig []int32) (params, ret string) {
+	ret = "void"
 	var parts []string
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
 		case ParameterList:
 			if seenRPar {
-				hasResult = true // a result list: "(" ParameterList ")"
+				e.fail("multiple or named results are not supported yet")
 				continue
 			}
 			parts = e.cParamList(n.ast)
 		case Type:
-			hasResult = true // a single unnamed result appears as a bare Type
+			// A single unnamed result: Signature = "(" [...] ")" Type .
+			ret = e.cType(n.ast)
 		case 0:
 			if e.f.ch(n.tok) == RPAREN {
 				seenRPar = true
@@ -332,7 +332,7 @@ func (e *emitter) cParams(sig []int32) (params string, hasResult bool) {
 			e.fail("unsupported signature element %v", n.sym)
 		}
 	}
-	return strings.Join(parts, ", "), hasResult
+	return strings.Join(parts, ", "), ret
 }
 
 // cParamList renders one ParameterList's `IdentifierList Type` groups to C
@@ -555,21 +555,34 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 	e.emit(")")
 }
 
-// emitReturn handles `return` and (only in a value-returning function that is
-// not yet supported) `return expr`. A bare return in main yields `return 0;` to
-// satisfy C's int main; in a void function it yields `return;`.
+// emitReturn handles `return` and `return expr`. A bare return in main yields
+// `return 0;` to satisfy C's int main; in a void function it yields `return;`.
+// A single return value emits `return <expr>;`; multiple values are not modelled.
 func (e *emitter) emitReturn(nodes []Node) {
+	var exprs []Node
 	for _, n := range nodes[1:] {
 		if n.sym == ExpressionList {
-			e.fail("return with a value is not supported yet")
-			return
+			for c := range it(n.ast) {
+				if c.sym == Expression {
+					exprs = append(exprs, c)
+				}
+			}
 		}
 	}
 	e.ind()
-	if e.mainRet {
-		e.emit("return 0;\n")
-	} else {
-		e.emit("return;\n")
+	switch len(exprs) {
+	case 0:
+		if e.mainRet {
+			e.emit("return 0;\n")
+		} else {
+			e.emit("return;\n")
+		}
+	case 1:
+		e.emit("return ")
+		e.emitExpr(exprs[0].ast)
+		e.emit(";\n")
+	default:
+		e.fail("multiple return values are not supported yet")
 	}
 }
 
@@ -592,52 +605,57 @@ func (e *emitter) emitAssignHeadStmt(nodes []Node) {
 	}
 }
 
-// emitCall handles a direct builtin call (`println(x)`) or a qualified
-// package-function call (`p2.PinHigh(56)`).
+// emitCall emits a call statement: builtin print/println (mapped to printf) or,
+// via emitCallExpr, a user-function or p2-intrinsic call, indented and closed
+// with `;`.
 func (e *emitter) emitCall(head Node, postfix []Node) {
 	recv := e.soleIdent(head.ast)
 	if recv == "" {
 		e.fail("unsupported call target")
 		return
 	}
-	switch {
-	case len(postfix) == 1 && postfix[0].sym == CallSuffix:
-		e.emitDirectCall(recv, postfix[0].ast)
-	case len(postfix) == 2 && postfix[0].sym == Selector && postfix[1].sym == CallSuffix:
-		e.emitQualifiedCall(recv, e.soleIdent(postfix[0].ast), postfix[1].ast)
-	default:
-		e.fail("only <pkg>.<Func>(args) or builtin(args) call statements are supported yet")
-	}
-}
-
-func (e *emitter) emitDirectCall(name string, callSuffix []int32) {
-	switch name {
-	case "println", "print":
-		e.emitPrint(name == "println", callSuffix)
-	default:
-		// A user-defined function call as a statement; the checker has already
-		// verified the name resolves to a function and the arguments match.
-		e.ind()
-		e.emit(name + "(")
-		e.emitCallArgs(callSuffix)
-		e.emit(");\n")
-	}
-}
-
-func (e *emitter) emitQualifiedCall(pkg, method string, callSuffix []int32) {
-	if pkg != "p2" {
-		e.fail("unknown package %q (only p2 is supported yet)", pkg)
-		return
-	}
-	intr, ok := p2Intrinsics[method]
-	if !ok {
-		e.fail("unsupported p2 function %q", method)
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && (recv == "println" || recv == "print") {
+		e.emitPrint(recv == "println", postfix[0].ast)
 		return
 	}
 	e.ind()
-	e.emit(intr + "(")
-	e.emitCallArgs(callSuffix)
-	e.emit(");\n")
+	if !e.emitCallExpr(recv, postfix) {
+		e.fail("only <pkg>.<Func>(args) or builtin(args) call statements are supported yet")
+		return
+	}
+	e.emit(";\n")
+}
+
+// emitCallExpr emits a call in value position (no indent, no trailing `;`): a
+// direct user-function call `name(args)` or a p2-qualified call mapped to its
+// intrinsic `_intr(args)`. It reports false when the head/suffix is not a
+// supported call shape, latching a specific error for a bad p2 call; it is shared
+// by the statement call path (emitCall) and the expression Factor path. The
+// checker has already verified the callee resolves and the arguments match.
+func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
+	switch {
+	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		e.emit(recv + "(")
+		e.emitCallArgs(suffix[0].ast)
+		e.emit(")")
+		return true
+	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		if recv != "p2" {
+			e.fail("unknown package %q (only p2 is supported yet)", recv)
+			return false
+		}
+		method := e.soleIdent(suffix[0].ast)
+		intr, ok := p2Intrinsics[method]
+		if !ok {
+			e.fail("unsupported p2 function %q", method)
+			return false
+		}
+		e.emit(intr + "(")
+		e.emitCallArgs(suffix[1].ast)
+		e.emit(")")
+		return true
+	}
+	return false
 }
 
 // emitPrint maps print/println of a single integer to printf over the P2 serial
@@ -731,6 +749,22 @@ func (e *emitter) soleIdent(ast []int32) string {
 	return name
 }
 
+// factorCall recognises a Factor of the form `identifier FactorSuffix` whose
+// suffix is a call (a direct call `f(args)` or a qualified call `pkg.F(args)`),
+// returning the head identifier and the suffix's child nodes. ok is false for a
+// bare identifier, a literal, or a non-call suffix (field selection or index),
+// which are handled elsewhere or not yet supported.
+func (e *emitter) factorCall(kids []Node) (recv string, suffix []Node, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	suffix = slices.Collect(it(kids[1].ast))
+	if !containsSym(suffix, CallSuffix) {
+		return "", nil, false
+	}
+	return e.src(kids[0].tok), suffix, true
+}
+
 // emitExpr emits a value expression. Binary operators (Expression/SimpleExpr/
 // Term) are parenthesized so the OctoGo parse grouping is preserved even where C
 // operator precedence differs (notably Go binds << tighter than C does).
@@ -764,6 +798,14 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[1])
 			e.emit(")")
 			return
+		}
+		if n.sym == Factor {
+			if recv, suffix, ok := e.factorCall(kids); ok {
+				if !e.emitCallExpr(recv, suffix) {
+					e.fail("unsupported call in expression")
+				}
+				return
+			}
 		}
 		for _, c := range kids {
 			e.emitExprNode(c)
