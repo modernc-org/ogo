@@ -41,7 +41,13 @@ var cTypes = map[string]string{
 	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t",
 	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t",
 	"byte": "uint8_t", "rune": "int32_t", "uintptr": "uintptr_t",
+	// A Go string is immutable; the modelled subset uses it for literals passed
+	// to print and stored in variables, so it maps to a pointer to const char.
+	"string": "const char*",
 }
+
+// cString is the C type of an OctoGo string.
+const cString = "const char*"
 
 // EmitC writes C source for the built package pkg to w. It is the walking
 // skeleton of the OctoGo C backend, grown to a first computational subset: a
@@ -408,12 +414,20 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == INT {
 			e.constInt[name] = normalizeIntLit(e.src(tok))
 		}
-		e.ind()
+		// C const prefix: file scope adds `static`. A string's C type already
+		// carries `const`, so the qualifier is not repeated.
+		prefix := "const "
 		if pkg {
-			e.emit("static const " + ctype + " " + name + " = ")
-		} else {
-			e.emit("const " + ctype + " " + name + " = ")
+			prefix = "static const "
 		}
+		if strings.HasPrefix(ctype, "const ") {
+			prefix = ""
+			if pkg {
+				prefix = "static "
+			}
+		}
+		e.ind()
+		e.emit(prefix + ctype + " " + name + " = ")
 		e.emitExpr(initExpr)
 		e.emit(";\n")
 	}
@@ -879,6 +893,8 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.emitExpr(initExpr)
 			case e.isStruct(ctype):
 				e.emit("{0}") // zero every field of a struct
+			case ctype == cString:
+				e.emit("\"\"") // the zero string is empty, not a null pointer
 			default:
 				e.emit("0")
 			}
@@ -1465,11 +1481,15 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 			e.emit("(void)0;\n")
 		}
 	case 1:
-		if newline {
-			e.emit("printf(\"%d\\n\", ")
-		} else {
-			e.emit("printf(\"%d\", ")
+		verb := "%d"
+		if ct, ok := e.inferCType(args[0].ast); ok && ct == cString {
+			verb = "%s"
 		}
+		nl := ""
+		if newline {
+			nl = "\\n"
+		}
+		e.emit("printf(\"" + verb + nl + "\", ")
 		e.emitExpr(args[0].ast)
 		e.emit(");\n")
 	default:
@@ -1951,6 +1971,8 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		switch e.f.ch(n.tok) {
 		case INT:
 			return "int", true
+		case STRING:
+			return cString, true
 		case IDENT:
 			nm := e.src(n.tok)
 			if ct, ok := e.locals[nm]; ok {
@@ -2089,6 +2111,15 @@ func (e *emitter) emitOperandToken(tok int32) {
 		case "false":
 			e.emit("0")
 		default:
+			e.emit(s)
+		}
+	case STRING:
+		// An interpreted "..." string literal: Go and C share the common escapes
+		// (\n, \t, \\, \", ...), so it emits verbatim. A raw `...` literal has no C
+		// spelling and is not modelled.
+		if s := e.src(tok); len(s) != 0 && s[0] == '`' {
+			e.fail("raw string literals are not supported yet")
+		} else {
 			e.emit(s)
 		}
 	case SUB, ADD, NOT, AND, MUL:
