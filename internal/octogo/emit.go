@@ -504,11 +504,13 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.arrays = map[string]string{}
 	e.tmp = 0
 	e.curFunc = name
 	e.bindParams(sig)
 	e.emit(proto + " {\n")
 	e.indent++
+	e.emitParamCopies(sig)
 	e.declareNamedResults(sig)
 	e.emitBlockStmts(body)
 	e.indent--
@@ -565,6 +567,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.arrays = map[string]string{}
 	e.tmp = 0
 	e.curFunc = "main"
 	e.emit("int main(void) {\n")
@@ -613,7 +616,7 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 		switch n.sym {
 		case ParameterList:
 			if seenRPar {
-				e.forEachParam(n.ast, func(_, ct string) { resTypes = append(resTypes, ct) })
+				e.forEachParam(n.ast, func(_ string, ta []int32) { resTypes = append(resTypes, e.cType(ta)) })
 			} else {
 				parts = e.cParamList(n.ast)
 			}
@@ -640,9 +643,9 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 		switch n.sym {
 		case ParameterList:
 			if seenRPar {
-				e.forEachParam(n.ast, func(nm, ct string) {
+				e.forEachParam(n.ast, func(nm string, ta []int32) {
 					names = append(names, nm)
-					types = append(types, ct)
+					types = append(types, e.cType(ta))
 				})
 			}
 		case Type:
@@ -660,11 +663,19 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 }
 
 // cParamList renders one ParameterList's `IdentifierList Type` groups to C
-// parameters, expanding a shared type ("a, b int" -> "int a, int b").
+// parameters, expanding a shared type ("a, b int" -> "int a, int b"). A fixed-
+// array parameter is received by pointer (Go passes arrays by value, but C cannot,
+// and flexcc cannot wrap them in a struct either): the C parameter is
+// `<elem>* _ogo_<name>`, and the function copies it into a same-named local on
+// entry (see emitParamCopies) to restore the value semantics.
 func (e *emitter) cParamList(ast []int32) []string {
 	var out []string
-	e.forEachParam(ast, func(name, ct string) {
-		out = append(out, ct+" "+name)
+	e.forEachParam(ast, func(name string, ta []int32) {
+		if elem, _, ok := e.arrayType(ta); ok {
+			out = append(out, elem+"* "+paramArgName(name))
+			return
+		}
+		out = append(out, e.cType(ta)+" "+name)
 	})
 	return out
 }
@@ -673,7 +684,7 @@ func (e *emitter) cParamList(ast []int32) []string {
 // with each parameter's name and C type (a shared type "a, b int" yields two
 // calls). It underlies both the C parameter rendering (cParamList) and the local
 // type environment (bindParams).
-func (e *emitter) forEachParam(ast []int32, fn func(name, ctype string)) {
+func (e *emitter) forEachParam(ast []int32, fn func(name string, typeAST []int32)) {
 	var names []string
 	for n := range it(ast) {
 		switch n.sym {
@@ -685,26 +696,64 @@ func (e *emitter) forEachParam(ast []int32, fn func(name, ctype string)) {
 				}
 			}
 		case Type:
-			ct := e.cType(n.ast)
 			for _, nm := range names {
-				fn(nm, ct)
+				fn(nm, n.ast)
 			}
 			names = names[:0]
 		}
 	}
 }
 
+// paramArgName is the C name of a value-array parameter as it is received (a
+// pointer), distinct from the local copy the body sees under the source name.
+func paramArgName(name string) string { return "_ogo_" + name }
+
 // bindParams records the current function's parameters in the local type
-// environment, so a `x := p` short declaration can be typed from a parameter p.
-// It reads only the parameter list (before the signature's closing ")"), not the
-// results.
+// environment, so a `x := p` short declaration can be typed from a parameter p. A
+// fixed-array parameter is recorded as an array (its body sees a same-named local
+// copy). It reads only the parameter list (before the signature's closing ")"),
+// not the results.
 func (e *emitter) bindParams(sig []int32) {
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
-				e.forEachParam(n.ast, func(name, ct string) { e.locals[name] = ct })
+				e.forEachParam(n.ast, func(name string, ta []int32) {
+					if elem, _, ok := e.arrayType(ta); ok {
+						e.arrays[name] = elem
+						return
+					}
+					e.locals[name] = e.cType(ta)
+				})
+			}
+		case 0:
+			if e.f.ch(n.tok) == RPAREN {
+				seenRPar = true
+			}
+		}
+	}
+}
+
+// emitParamCopies emits, at a function's entry, a local copy of each fixed-array
+// parameter — `<elem> <name>[<N>]; memcpy(<name>, _ogo_<name>, sizeof(<name>));` —
+// so the body mutates a copy and the caller's array is untouched (Go's array
+// value semantics). The parameter itself arrives by pointer (see cParamList).
+func (e *emitter) emitParamCopies(sig []int32) {
+	seenRPar := false
+	for n := range it(sig) {
+		switch n.sym {
+		case ParameterList:
+			if !seenRPar {
+				e.forEachParam(n.ast, func(name string, ta []int32) {
+					if elem, bound, ok := e.arrayType(ta); ok {
+						e.includes["string.h"] = true
+						e.ind()
+						e.emit(elem + " " + name + "[" + bound + "];\n")
+						e.ind()
+						e.emit("memcpy(" + name + ", " + paramArgName(name) + ", sizeof(" + name + "));\n")
+					}
+				})
 			}
 		case 0:
 			if e.f.ch(n.tok) == RPAREN {
