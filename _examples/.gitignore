@@ -1,0 +1,3 @@
+# ogo build artifacts
+*.binary
+*.p2asm

@@ -1,0 +1,12 @@
+import "p2"
+
+// Blink the LED on P2 smart pin 56 (an on-board LED on the P2-EDGE module):
+// 200 ms on, 200 ms off, forever.
+func main() {
+	for {
+		p2.PinHigh(56)
+		p2.WaitMs(200)
+		p2.PinLow(56)
+		p2.WaitMs(200)
+	}
+}
