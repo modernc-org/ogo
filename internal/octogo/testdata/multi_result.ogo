@@ -1,0 +1,30 @@
+// COMPILE
+
+// A function may return more than one value by listing named results in its
+// signature and returning a matching expression list. Such a call is consumed by
+// a multiple assignment or short declaration whose target count matches the result
+// count; either target may be the blank identifier.
+
+func divmod(a, b int) (q, r int) {
+	q = a / b
+	r = a - q*b
+	return q, r
+}
+
+func main() {
+	// Short declaration destructuring.
+	q, r := divmod(17, 5)
+	println(q)
+	println(r)
+
+	// Assignment into existing variables.
+	var x, y int
+	x, y = divmod(20, 6)
+	println(x + y)
+
+	// A blank target discards one result.
+	_, rem := divmod(9, 4)
+	println(rem)
+	quot, _ := divmod(9, 4)
+	println(quot)
+}

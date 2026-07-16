@@ -54,13 +54,23 @@ var cTypes = map[string]string{
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string]string{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}}
+
+	// Pass 0: record each function's C result types in funcRet (for typing calls
+	// in `x := f()` and destructuring `a, b := f()`), and emit a result-struct
+	// typedef for each multi-result function (C has no multiple return, so a
+	// function returning N>1 values returns a struct of N fields).
+	var typedefs bytes.Buffer
+	e.w = &typedefs
+	for _, f := range pkg.Files {
+		e.f = f
+		e.collectResults(f.AST)
+	}
 
 	// Pass 1: forward prototypes for user functions. C requires a declaration
 	// before use, but OctoGo (like Go) does not order top-level declarations, so
 	// a call may precede its definition; the prototypes make emission order
-	// independent of source order. The same pass records each function's C result
-	// type in funcRet, so a `x := f()` short declaration can be typed.
+	// independent of source order.
 	var protos bytes.Buffer
 	e.w = &protos
 	for _, f := range pkg.Files {
@@ -80,7 +90,8 @@ func EmitC(pkg *Package, w io.Writer) error {
 		return e.err
 	}
 
-	// Assemble: header, sorted #includes, prototypes, then the definitions.
+	// Assemble: header, sorted #includes, result-struct typedefs, prototypes,
+	// then the definitions.
 	incs := make([]string, 0, len(e.includes))
 	for inc := range e.includes {
 		incs = append(incs, inc)
@@ -93,6 +104,10 @@ func EmitC(pkg *Package, w io.Writer) error {
 		fmt.Fprintf(&out, "#include <%s>\n", inc)
 	}
 	if len(incs) != 0 {
+		out.WriteByte('\n')
+	}
+	if typedefs.Len() != 0 {
+		out.Write(typedefs.Bytes())
 		out.WriteByte('\n')
 	}
 	if protos.Len() != 0 {
@@ -109,10 +124,12 @@ type emitter struct {
 	f         *File     // file currently being emitted, for token access
 	indent    int
 	includes  map[string]bool
-	funcRet   map[string]string // user function name -> C result type ("void" if none), for typing `x := f()`
-	locals    map[string]string // current function's parameter/local name -> C type, for typing `x := y`
-	wroteDecl bool              // a top-level definition has been emitted (drives blank-line separators)
-	mainRet   bool              // currently emitting main's body: a bare `return` yields `return 0;`
+	funcRet   map[string][]string // user function name -> C result types (empty=void), for typing calls
+	locals    map[string]string   // current function's parameter/local name -> C type, for typing `x := y`
+	curFunc   string              // name of the function whose body is being emitted (for its result-struct type)
+	tmp       int                 // per-function counter for generated temporaries (destructuring)
+	wroteDecl bool                // a top-level definition has been emitted (drives blank-line separators)
+	mainRet   bool                // currently emitting main's body: a bare `return` yields `return 0;`
 	err       error
 }
 
@@ -194,10 +211,27 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 	}
 }
 
-// emitPrototypes emits a forward prototype for every user function in a file
-// (all but main, which C declares implicitly). Run before the definitions so a
-// call need not follow its callee's definition.
-func (e *emitter) emitPrototypes(ast []int32) {
+// collectResults records every user function's C result types in funcRet and,
+// for a function with more than one result, emits a result-struct typedef —
+// `typedef struct { <t0> _0; <t1> _1; ... } ogo_ret_<name>;` — that its C
+// signature returns in place of C's absent multiple-return.
+func (e *emitter) collectResults(ast []int32) {
+	e.eachFuncDecl(ast, func(name string, sig []int32) {
+		_, resTypes := e.resultInfo(sig)
+		e.funcRet[name] = resTypes
+		if len(resTypes) > 1 {
+			e.emit("typedef struct { ")
+			for i, ct := range resTypes {
+				fmt.Fprintf(e.w, "%s _%d; ", ct, i)
+			}
+			e.emit("} " + e.retStructName(name) + ";\n")
+		}
+	})
+}
+
+// eachFuncDecl calls fn(name, signature) for each non-method, named user function
+// in a file's AST.
+func (e *emitter) eachFuncDecl(ast []int32, fn func(name string, sig []int32)) {
 	for n := range it(ast) {
 		if n.sym != SourceFile {
 			continue
@@ -211,17 +245,27 @@ func (e *emitter) emitPrototypes(ast []int32) {
 					continue
 				}
 				if name, sig, _, isMethod, ok := e.funcParts(d.ast); ok && !isMethod && name != "" {
-					_, ret := e.cParams(sig)
-					e.funcRet[name] = ret
-					if name != "main" {
-						if proto := e.funcSignatureC(name, sig); proto != "" {
-							e.emit(proto + ";\n")
-						}
-					}
+					fn(name, sig)
 				}
 			}
 		}
 	}
+}
+
+// retStructName is the C typedef name of a multi-result function's result struct.
+func (e *emitter) retStructName(fn string) string { return "ogo_ret_" + fn }
+
+// emitPrototypes emits a forward prototype for every user function in a file
+// (all but main, which C declares implicitly). Run before the definitions so a
+// call need not follow its callee's definition.
+func (e *emitter) emitPrototypes(ast []int32) {
+	e.eachFuncDecl(ast, func(name string, sig []int32) {
+		if name != "main" {
+			if proto := e.funcSignatureC(name, sig); proto != "" {
+				e.emit(proto + ";\n")
+			}
+		}
+	})
 }
 
 func (e *emitter) emitFuncDecl(ast []int32) {
@@ -252,12 +296,31 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.tmp = 0
+	e.curFunc = name
 	e.bindParams(sig)
 	e.emit(proto + " {\n")
 	e.indent++
+	e.declareNamedResults(sig)
 	e.emitBlockStmts(body)
 	e.indent--
 	e.emit("}\n")
+}
+
+// declareNamedResults declares a function's named result parameters as zero-
+// initialized locals (P2 stack locals are not auto-zeroed) and binds them in the
+// local type environment, so the body may assign and read them like Go's named
+// results. Unnamed and blank results declare nothing.
+func (e *emitter) declareNamedResults(sig []int32) {
+	names, types := e.resultInfo(sig)
+	for i, nm := range names {
+		if nm == "" || nm == "_" {
+			continue
+		}
+		e.locals[nm] = types[i]
+		e.ind()
+		e.emit(types[i] + " " + nm + " = 0;\n")
+	}
 }
 
 // funcParts pulls the name, signature subtree and body subtree from a FuncDecl
@@ -288,11 +351,14 @@ func (e *emitter) funcParts(ast []int32) (name string, sig, body []int32, isMeth
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
 // results.
 func (e *emitter) emitMain(sig, body []int32) {
-	if params, ret := e.cParams(sig); params != "" || ret != "void" {
+	params, resTypes := e.cSig(sig)
+	if params != "" || len(resTypes) != 0 {
 		e.fail("func main must have no parameters or results")
 		return
 	}
 	e.locals = map[string]string{}
+	e.tmp = 0
+	e.curFunc = "main"
 	e.emit("int main(void) {\n")
 	e.indent++
 	e.mainRet = true
@@ -305,35 +371,47 @@ func (e *emitter) emitMain(sig, body []int32) {
 }
 
 // funcSignatureC builds the C signature `<ret> name(params)` for a user function,
-// e.g. `int add(int a, int b)` or `void run(void)`.
+// e.g. `int add(int a, int b)`, `void run(void)`, or -- for more than one result
+// -- `ogo_ret_divmod divmod(int a, int b)`.
 func (e *emitter) funcSignatureC(name string, sig []int32) string {
-	params, ret := e.cParams(sig)
+	params, resTypes := e.cSig(sig)
 	if params == "" {
 		params = "void"
 	}
-	return ret + " " + name + "(" + params + ")"
+	return e.cReturnType(name, resTypes) + " " + name + "(" + params + ")"
 }
 
-// cParams renders a Signature's parameters as a C parameter list ("int a, int b")
-// and returns the C result type ("void" when there is none). Parameters are
-// always named (the grammar requires it), so each maps to a `<ctype> <name>` C
-// parameter. Only a single unnamed result is modelled; named or multiple results
-// fail honestly.
-func (e *emitter) cParams(sig []int32) (params, ret string) {
-	ret = "void"
+// cReturnType is a function's C return type: void for no results, the type itself
+// for one, and the result struct for more than one (C has no multiple return).
+func (e *emitter) cReturnType(name string, resTypes []string) string {
+	switch len(resTypes) {
+	case 0:
+		return "void"
+	case 1:
+		return resTypes[0]
+	default:
+		return e.retStructName(name)
+	}
+}
+
+// cSig renders a Signature's parameters as a C parameter list ("int a, int b")
+// and returns its result C types (empty for none). Parameters are always named
+// (the grammar requires it); results are a single unnamed type or, for one or
+// more, a named parameter list.
+func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 	var parts []string
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
 		case ParameterList:
 			if seenRPar {
-				e.fail("multiple or named results are not supported yet")
-				continue
+				e.forEachParam(n.ast, func(_, ct string) { resTypes = append(resTypes, ct) })
+			} else {
+				parts = e.cParamList(n.ast)
 			}
-			parts = e.cParamList(n.ast)
 		case Type:
 			// A single unnamed result: Signature = "(" [...] ")" Type .
-			ret = e.cType(n.ast)
+			resTypes = append(resTypes, e.cType(n.ast))
 		case 0:
 			if e.f.ch(n.tok) == RPAREN {
 				seenRPar = true
@@ -342,7 +420,35 @@ func (e *emitter) cParams(sig []int32) (params, ret string) {
 			e.fail("unsupported signature element %v", n.sym)
 		}
 	}
-	return strings.Join(parts, ", "), ret
+	return strings.Join(parts, ", "), resTypes
+}
+
+// resultInfo returns a function's result names and C types (one entry per result
+// value). An unnamed single result has an empty name; a multi-result signature is
+// always named (the grammar requires it).
+func (e *emitter) resultInfo(sig []int32) (names, types []string) {
+	seenRPar := false
+	for n := range it(sig) {
+		switch n.sym {
+		case ParameterList:
+			if seenRPar {
+				e.forEachParam(n.ast, func(nm, ct string) {
+					names = append(names, nm)
+					types = append(types, ct)
+				})
+			}
+		case Type:
+			if seenRPar {
+				names = append(names, "")
+				types = append(types, e.cType(n.ast))
+			}
+		case 0:
+			if e.f.ch(n.tok) == RPAREN {
+				seenRPar = true
+			}
+		}
+	}
+	return names, types
 }
 
 // cParamList renders one ParameterList's `IdentifierList Type` groups to C
@@ -626,9 +732,11 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 	e.emit(")")
 }
 
-// emitReturn handles `return` and `return expr`. A bare return in main yields
-// `return 0;` to satisfy C's int main; in a void function it yields `return;`.
-// A single return value emits `return <expr>;`; multiple values are not modelled.
+// emitReturn handles `return`, `return expr`, and `return e0, e1, ...`. A bare
+// return in main yields `return 0;` to satisfy C's int main; in a void function
+// it yields `return;`. A single value emits `return <expr>;`. Multiple values are
+// returned as the function's result struct via a compound literal,
+// `return (ogo_ret_<fn>){ e0, e1, ... };`.
 func (e *emitter) emitReturn(nodes []Node) {
 	var exprs []Node
 	for _, n := range nodes[1:] {
@@ -653,7 +761,14 @@ func (e *emitter) emitReturn(nodes []Node) {
 		e.emitExpr(exprs[0].ast)
 		e.emit(";\n")
 	default:
-		e.fail("multiple return values are not supported yet")
+		e.emit("return (" + e.retStructName(e.curFunc) + "){")
+		for i, ex := range exprs {
+			if i != 0 {
+				e.emit(", ")
+			}
+			e.emitExpr(ex.ast)
+		}
+		e.emit("};\n")
 	}
 }
 
@@ -770,6 +885,12 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		return
 	}
 	op := slices.Collect(it(postfix[0].ast))
+	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
+	// extra targets as LhsItems ahead of the operator.
+	if containsSym(op, LhsItem) {
+		e.emitMultiAssign(lhs, op)
+		return
+	}
 	// Increment/decrement: PostfixOp = "++" | "--" (no operand of its own).
 	if len(op) == 1 && op[0].sym == 0 {
 		switch e.f.ch(op[0].tok) {
@@ -816,6 +937,108 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	default:
 		e.fail("only `name = expr` and `name := expr` are supported yet")
 	}
+}
+
+// emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
+// (any target may be the blank identifier). C has no multiple assignment, so the
+// multi-result call's struct is bound to a temporary and each target reads its
+// field: a `:=` target is declared with its result type, a `=` target is assigned,
+// and a blank target is skipped. first is the head identifier; op holds the
+// PostfixOp children (the remaining LhsItem targets, the operator, and the call).
+func (e *emitter) emitMultiAssign(first string, op []Node) {
+	targets := []string{first}
+	var opTok Symbol
+	var rhs []int32
+	for _, n := range op {
+		switch n.sym {
+		case LhsItem:
+			id := e.lhsItemIdent(n.ast)
+			if id == "" {
+				e.fail("only simple variable targets are supported in multiple assignment")
+				return
+			}
+			targets = append(targets, id)
+		case Expression:
+			rhs = n.ast
+		case 0:
+			if ch := e.f.ch(n.tok); ch == ASSIGN || ch == DEFINE {
+				opTok = ch
+			}
+		}
+	}
+	callee, suffix, ok := e.directCall(rhs)
+	if !ok {
+		e.fail("multiple assignment requires a single function call on the right-hand side")
+		return
+	}
+	resTypes, ok := e.funcRet[callee]
+	if !ok || len(resTypes) != len(targets) {
+		e.fail("multiple-assignment target/result count mismatch")
+		return
+	}
+	tmp := e.newTmp()
+	e.ind()
+	e.emit(e.retStructName(callee) + " " + tmp + " = ")
+	if !e.emitCallExpr(callee, suffix) {
+		e.fail("unsupported call on the right-hand side of a multiple assignment")
+		return
+	}
+	e.emit(";\n")
+	for i, tgt := range targets {
+		if tgt == "_" {
+			continue
+		}
+		e.ind()
+		field := fmt.Sprintf("%s._%d", tmp, i)
+		if opTok == DEFINE {
+			e.locals[tgt] = resTypes[i]
+			e.emit(resTypes[i] + " " + tgt + " = " + field + ";\n")
+		} else {
+			e.emit(tgt + " = " + field + ";\n")
+		}
+	}
+}
+
+// lhsItemIdent returns the single bare identifier of an LhsItem
+// (LhsItem = AssignHead { Selector | Index }), or "" when the item carries a
+// selector or index — an unsupported multiple-assignment target.
+func (e *emitter) lhsItemIdent(ast []int32) string {
+	nodes := slices.Collect(it(ast))
+	if len(nodes) != 1 || nodes[0].sym != AssignHead {
+		return ""
+	}
+	return e.soleIdent(nodes[0].ast)
+}
+
+// directCall reports the callee name and call suffix of an expression that is
+// exactly a direct call `f(args)`, descending the single-child Expression/
+// SimpleExpr/Term/UnaryExpr wrappers to a Factor whose only suffix is a CallSuffix.
+// The suffix lets the caller re-emit the call through emitCallExpr, which — unlike
+// emitExpr — does not reject a multi-result callee.
+func (e *emitter) directCall(ast []int32) (recv string, suffix []Node, ok bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 {
+		switch nodes[0].sym {
+		case Expression, SimpleExpr, Term, UnaryExpr:
+			nodes = slices.Collect(it(nodes[0].ast))
+		case Factor:
+			kids := slices.Collect(it(nodes[0].ast))
+			if r, s, ok := e.factorCall(kids); ok && len(s) == 1 && s[0].sym == CallSuffix {
+				return r, s, true
+			}
+			return "", nil, false
+		default:
+			return "", nil, false
+		}
+	}
+	return "", nil, false
+}
+
+// newTmp returns a fresh generated temporary name, unique within the function.
+func (e *emitter) newTmp() string {
+	s := "_ogo_t" + strconv.Itoa(e.tmp)
+	e.tmp++
+	return s
 }
 
 // emitDiscard emits `(void)<expr>;` — an expression evaluated for its side effects
@@ -957,8 +1180,12 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
-		ct, ok := e.funcRet[recv]
-		return ct, ok && ct != "void"
+		// Only a single-result call is a usable single value; a multi-result call
+		// belongs in a destructuring assignment (emitMultiAssign), not here.
+		if rts, ok := e.funcRet[recv]; ok && len(rts) == 1 {
+			return rts[0], true
+		}
+		return "", false
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		if recv == "p2" {
 			return "int", true
@@ -1000,6 +1227,12 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		if n.sym == Factor {
 			if recv, suffix, ok := e.factorCall(kids); ok {
+				// A multi-result call yields no single value; it is only valid in a
+				// destructuring assignment (emitMultiAssign), not as an operand.
+				if len(suffix) == 1 && suffix[0].sym == CallSuffix && len(e.funcRet[recv]) > 1 {
+					e.fail("a multi-value call cannot be used as a single value")
+					return
+				}
 				if !e.emitCallExpr(recv, suffix) {
 					e.fail("unsupported call in expression")
 				}
