@@ -31,7 +31,6 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 			rc = 2
 			return fmt.Errorf("no non-flag arguments expected: %v", arg)
 		}
-		return nil
 	}); err != nil {
 		return 2, fmt.Errorf("%v", err)
 	}
