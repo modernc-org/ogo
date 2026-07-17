@@ -249,9 +249,11 @@
 // reside either in the limited Cog RAM (registers) for single-cycle access or
 // as a reserved block in Hub RAM for the specific Cog's stack.
 //
-// Heap Allocation: There is no new or make built-in function for dynamic heap
-// allocation in OctoGo. All memory must be deterministically bounded at
-// compile time.
+// Heap Allocation: There is no dynamic heap allocation in OctoGo. The new
+// built-in is rejected outright; the make built-in is admitted only for a slice
+// with a constant capacity, "make([]T, len, cap)", which reserves a fixed,
+// compile-time-sized backing array rather than allocating on a heap. All memory
+// thus stays deterministically bounded at compile time.
 //
 // # Types
 //
@@ -314,10 +316,20 @@
 //   - A slice therefore shares storage with its array and with other slices of
 //     the same array.
 //
-// (OctoGo Specific): In OctoGo, slices are strictly non-escaping stack views
-// over fixed arrays. Because there is no GC or dynamic allocator, you cannot
-// dynamically grow a slice. Slicing operations merely create a new view
-// (pointer, length, capacity) pointing to pre-allocated Hub or Cog RAM.
+// (OctoGo Specific): In OctoGo, slices are strictly non-escaping views over a
+// fixed array's storage in pre-allocated Hub or Cog RAM -- a { pointer, length,
+// capacity } header. Because there is no GC or dynamic allocator, a slice never
+// acquires new backing memory. It may still grow or be re-sliced up to its
+// capacity (the length of the backing from its pointer to the end); a slice's
+// upper index bound reaches cap, not just length. Growing past cap has nowhere to
+// go and is a runtime error, not a reallocation.
+//
+// A slice's backing comes either from slicing an existing array ("var a [N]T"
+// then "a[i:j]") or from "make([]T, len, cap)", which reserves a fixed, compile-
+// time-sized backing array. "append(s, x)" grows the length in place: the form
+// "s = append(s, x)" panics when the slice is already at capacity, while
+// "s, ok = append(s, x)" instead reports a full slice through ok and leaves s
+// unchanged. len(s) and cap(s) report the header's length and capacity.
 //
 // # Struct types
 //
@@ -520,9 +532,10 @@
 //		| "[" [ Expression ] "]" Type
 //		| FuncLiteral .
 //
-// A slice or array type may appear as a Factor only so that a type argument
-// such as the "[]int" in "make([]int, 10)" parses; a type is not a value, and
-// the semantic checker rejects such a use (as it rejects make and new).
+// A slice or array type may appear as a Factor so that the type argument such as
+// the "[]int" in "make([]int, 0, cap)" parses. A bare type used as a value is
+// rejected by the semantic checker, as is new; make is accepted only for a slice
+// with a constant capacity (see Slice types).
 //
 //	FactorSuffix = { Selector | Index | CallSuffix } .
 //	Selector     = "." ( identifier | "(" "type" ")" ) .
@@ -530,8 +543,11 @@
 //
 // A single-expression Index "a[i]" indexes an element. The colon forms are slice
 // expressions "a[low:high]", "a[low:]", "a[:high]" and "a[:]", which create a new
-// view (pointer, length) over the operand's storage; an omitted low bound is 0 and
-// an omitted high bound is the operand's length. Slicing a string yields a string.
+// { pointer, length, capacity } view over the operand's storage; an omitted low
+// bound is 0 and an omitted high bound is the operand's length. For a slice operand
+// the high bound may reach its capacity rather than only its length, and the
+// result's capacity is the operand's capacity less low. Slicing a string yields a
+// string (a string has no capacity).
 //
 // # Function Literals
 //
@@ -755,8 +771,8 @@
 //   - Hardware Representation: In the transpiled C runtime, a channel maps to
 //     an octogo_chan_t structure. This structure is backed by shared Hub RAM
 //     buffers and synchronized using the P2's native hardware locks (locks 0-15).
-//   - Zero-Allocation: Because OctoGo has no dynamic memory allocator (no make
-//     or new built-ins), channels are statically allocated and tracked by the
+//   - Zero-Allocation: OctoGo has no dynamic memory allocator and channels are
+//     not created with make, so they are statically allocated and tracked by the
 //     octogo_rt runtime during compilation.
 //
 // # Channel Operations (Send and Receive)
