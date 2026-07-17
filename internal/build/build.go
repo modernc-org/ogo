@@ -43,7 +43,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 // compile checks and emits C for the source file in args, then compiles it to a
 // P2 binary with the embedded flexcc, returning the binary's absolute path.
 func compile(args []string, stdout, stderr io.Writer) (binary string, code int, err error) {
-	src, out, err := parseArgs(args)
+	src, out, release, unchecked, err := parseArgs(args)
 	if err != nil {
 		return "", 2, err
 	}
@@ -57,8 +57,17 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 1, err // checker diagnostics
 	}
 
+	// Runtime bounds / divide-by-zero checks are on by default (a debug build):
+	// --unchecked omits them, --release reboots on a panic instead of halting.
+	var emitOpts []octogo.EmitOption
+	if !unchecked {
+		emitOpts = append(emitOpts, octogo.Checked())
+	}
+	if release {
+		emitOpts = append(emitOpts, octogo.Release())
+	}
 	var cbuf bytes.Buffer
-	if err := octogo.EmitC(pkg, &cbuf); err != nil {
+	if err := octogo.EmitC(pkg, &cbuf, emitOpts...); err != nil {
 		return "", 1, err
 	}
 
@@ -87,27 +96,32 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	return out, 0, nil
 }
 
-// parseArgs pulls the single source file and optional -o output from args.
-func parseArgs(args []string) (src, out string, err error) {
+// parseArgs pulls the single source file, the optional -o output, and the
+// --release / --unchecked build-mode flags from args.
+func parseArgs(args []string) (src, out string, release, unchecked bool, err error) {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "-o":
 			i++
 			if i >= len(args) {
-				return "", "", fmt.Errorf("build: -o requires an argument")
+				return "", "", false, false, fmt.Errorf("build: -o requires an argument")
 			}
 			out = args[i]
+		case a == "--release" || a == "-release":
+			release = true
+		case a == "--unchecked" || a == "-unchecked":
+			unchecked = true
 		case strings.HasPrefix(a, "-"):
-			return "", "", fmt.Errorf("build: unknown flag %q", a)
+			return "", "", false, false, fmt.Errorf("build: unknown flag %q", a)
 		default:
 			if src != "" {
-				return "", "", fmt.Errorf("build: multiple source files are not supported yet")
+				return "", "", false, false, fmt.Errorf("build: multiple source files are not supported yet")
 			}
 			src = a
 		}
 	}
 	if src == "" {
-		return "", "", fmt.Errorf("build: no source file specified")
+		return "", "", false, false, fmt.Errorf("build: no source file specified")
 	}
-	return src, out, nil
+	return src, out, release, unchecked, nil
 }

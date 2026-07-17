@@ -90,13 +90,33 @@ func appendCName(elem string) string    { return "ogo_append_" + sanitizeElem(el
 func tryappendCName(elem string) string { return "ogo_tryappend_" + sanitizeElem(elem) }
 func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(elem) }
 
-// ogoPanic is the minimal runtime panic: a best-effort diagnostic to the serial
-// line, a short drain so it flushes, then a halt (abort -> _Exit -> _cogstop). It
-// is the seed of the wider panic subsystem (index-out-of-range, divide-by-zero, ...).
-const ogoPanic = "static void ogo_panic(const char* msg) {\n" +
-	"\tprintf(\"panic: %s\\n\", msg);\n" +
-	"\t_waitms(10); // let the message flush over the serial line before halting\n" +
-	"\tabort();\n" +
+// ogoPanicDef is the runtime panic: a best-effort diagnostic to the serial line, a
+// short drain so it flushes, then a halt or -- in a release build -- a reboot. A
+// debug halt (abort -> _Exit -> _cogstop) stops the offending cog for inspection; a
+// release _reboot() restarts the board so an unattended device self-heals.
+func ogoPanicDef(release bool) string {
+	tail := "\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n"
+	if release {
+		tail = "\t_reboot(); // restart the board (release: self-heal)\n"
+	}
+	return "static void ogo_panic(const char* msg) {\n" +
+		"\tprintf(\"panic: %s\\n\", msg);\n" +
+		"\t_waitms(10); // let the message flush over the serial line first\n" +
+		tail +
+		"}\n"
+}
+
+// ogoBound bounds-checks an index: it returns i when 0 <= i < n, else panics. The
+// unsigned compare folds the low and high checks (a negative i wraps to >= n).
+const ogoBound = "static int ogo_bound(int i, int n) {\n" +
+	"\tif ((unsigned)i >= (unsigned)n) ogo_panic(\"index out of range\");\n" +
+	"\treturn i;\n" +
+	"}\n"
+
+// ogoNonzero guards a divisor: it returns b when non-zero, else panics.
+const ogoNonzero = "static int ogo_nonzero(int b) {\n" +
+	"\tif (b == 0) ogo_panic(\"integer divide by zero\");\n" +
+	"\treturn b;\n" +
 	"}\n"
 
 // sortedKeys returns the keys of a set in deterministic (sorted) order, for stable
@@ -120,8 +140,27 @@ func sortedKeys(m map[string]bool) []string {
 //
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
-func EmitC(pkg *Package, w io.Writer) error {
+// EmitOption configures a build. The zero configuration emits no automatic runtime
+// checks and halts the offending cog on a panic (abort -> _cogstop). The `ogo build`
+// CLI enables checks by default (see internal/build); its --unchecked omits them and
+// its --release reboots instead of halting.
+type EmitOption func(*emitter)
+
+// Checked emits automatic runtime bounds and divide-by-zero checks: an out-of-range
+// index or a divide-by-zero calls ogo_panic rather than silently corrupting memory
+// or yielding a garbage quotient. append's own capacity trap is always present,
+// independent of this option (choose the s, ok = append form to avoid it).
+func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
+
+// Release makes a panic reboot the board (_reboot) instead of halting the cog, so
+// an unattended device self-heals. Diagnostics and checks are unaffected.
+func Release() EmitOption { return func(e *emitter) { e.release = true } }
+
+func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}}
+	for _, opt := range opts {
+		opt(e)
+	}
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
@@ -229,7 +268,13 @@ func EmitC(pkg *Package, w io.Writer) error {
 	// trapping form and the ok form), after the typedefs they reference.
 	var helperDefs bytes.Buffer
 	if e.usesPanic {
-		helperDefs.WriteString(ogoPanic)
+		helperDefs.WriteString(ogoPanicDef(e.release))
+	}
+	if e.usesBound {
+		helperDefs.WriteString(ogoBound)
+	}
+	if e.usesNonzero {
+		helperDefs.WriteString(ogoNonzero)
 	}
 	for _, el := range sortedKeys(e.appendElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n"+
@@ -277,6 +322,10 @@ type emitter struct {
 	appendElems     map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	usesPanic       bool                     // ogo_panic is called: emit its definition and pull in its includes
+	usesBound       bool                     // ogo_bound is called: emit the index bounds-check helper
+	usesNonzero     bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
+	release         bool                     // release build: a panic reboots (_reboot) instead of halting the cog
+	checks          bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
 	tmp             int                      // per-function counter for generated temporaries (destructuring)
@@ -1494,6 +1543,52 @@ func (e *emitter) hasArrayVar(base string) bool { _, ok := e.arrayVar(base); ret
 // hasSliceVar reports whether base names a slice variable.
 func (e *emitter) hasSliceVar(base string) bool { _, ok := e.sliceElem(base); return ok }
 
+// needPanic records that ogo_panic is reachable and pulls in its includes (printf,
+// abort, and _waitms / _reboot from propeller2.h).
+func (e *emitter) needPanic() {
+	e.usesPanic = true
+	e.includes["stdio.h"] = true
+	e.includes["stdlib.h"] = true
+	e.includes["propeller2.h"] = true
+}
+
+// emitIndex emits an index expression, wrapping it in a bounds check ogo_bound(i,
+// len) unless checks are disabled, the container's length is unknown (lenExpr ""),
+// or the index is a constant provably in range. lenExpr is the container's length:
+// a slice's ".len", or an array's compile-time bound.
+func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
+	if !e.checks || lenExpr == "" || e.constIndexInRange(idxAST, lenExpr) {
+		e.emitExpr(idxAST)
+		return
+	}
+	e.needPanic()
+	e.usesBound = true
+	e.emit("ogo_bound(")
+	e.emitExpr(idxAST)
+	e.emit(", " + lenExpr + ")")
+}
+
+// constIndexInRange reports whether idxAST is an integer literal provably within
+// [0, lenExpr) -- both decimal constants and the index in range -- so its bounds
+// check can be skipped. A runtime length (a slice's ".len") never parses as an int.
+func (e *emitter) constIndexInRange(idxAST []int32, lenExpr string) bool {
+	tok, ok := e.soleToken(idxAST)
+	if !ok || e.f.ch(tok) != INT {
+		return false
+	}
+	i, err1 := strconv.Atoi(normalizeIntLit(e.src(tok)))
+	n, err2 := strconv.Atoi(lenExpr)
+	return err1 == nil && err2 == nil && i >= 0 && i < n
+}
+
+// isIntLiteral reports whether an operand is a bare integer literal (a non-zero
+// constant divisor needs no divide-by-zero check; a constant zero is a compile
+// error the C backend rejects).
+func (e *emitter) isIntLiteral(n Node) bool {
+	tok, ok := e.soleToken(n.ast)
+	return ok && e.f.ch(tok) == INT
+}
+
 // newBacking returns a fresh, translation-unit-unique name for a make() backing
 // array.
 func (e *emitter) newBacking() string {
@@ -2113,10 +2208,7 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 		return
 	}
 	e.appendElems[elem] = true
-	e.usesPanic = true
-	e.includes["stdio.h"] = true
-	e.includes["stdlib.h"] = true
-	e.includes["propeller2.h"] = true
+	e.needPanic()
 	e.emit(appendCName(elem) + "(")
 	e.emitExpr(args[0].ast)
 	e.emit(", ")
@@ -2353,9 +2445,14 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		return
 	}
 	// A slice element is addressed through its backing pointer; an array directly.
+	// The index is bounds-checked against the container length.
 	lhs := base
+	lenExpr := ""
 	if e.hasSliceVar(base) {
 		lhs = base + ".ptr"
+		lenExpr = base + ".len"
+	} else if a, ok := e.arrayVar(base); ok {
+		lenExpr = a.bound
 	}
 	op := slices.Collect(it(opNode.ast))
 	if len(op) == 1 && op[0].sym == 0 {
@@ -2363,13 +2460,13 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		case INC:
 			e.ind()
 			e.emit(lhs + "[")
-			e.emitExpr(idx)
+			e.emitIndex(idx, lenExpr)
 			e.emit("]++;\n")
 			return
 		case DEC:
 			e.ind()
 			e.emit(lhs + "[")
-			e.emitExpr(idx)
+			e.emitIndex(idx, lenExpr)
 			e.emit("]--;\n")
 			return
 		}
@@ -2377,7 +2474,7 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	if len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN && op[1].sym == Expression {
 		e.ind()
 		e.emit(lhs + "[")
-		e.emitExpr(idx)
+		e.emitIndex(idx, lenExpr)
 		e.emit("] = ")
 		e.emitExpr(op[1].ast)
 		e.emit(";\n")
@@ -2815,7 +2912,7 @@ func (e *emitter) emitExpr(ast []int32) {
 
 func (e *emitter) emitExprNode(n Node) {
 	switch n.sym {
-	case Expression, SimpleExpr, Term:
+	case Expression, SimpleExpr:
 		kids := slices.Collect(it(n.ast))
 		if len(kids) == 1 {
 			e.emitExprNode(kids[0])
@@ -2824,6 +2921,35 @@ func (e *emitter) emitExprNode(n Node) {
 		e.emit("(")
 		for _, c := range kids {
 			e.emitExprNode(c)
+		}
+		e.emit(")")
+	case Term:
+		// Like SimpleExpr, but a "/" or "%" divisor is guarded against zero:
+		// `a / b` -> `(a / ogo_nonzero(b))`. A constant divisor needs no guard.
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 1 {
+			e.emitExprNode(kids[0])
+			return
+		}
+		e.emit("(")
+		guardNext := false
+		for _, c := range kids {
+			switch {
+			case c.sym == MulOp:
+				op := e.opText(c.ast)
+				e.emit(" " + op + " ")
+				guardNext = e.checks && (op == "/" || op == "%")
+			case guardNext && !e.isIntLiteral(c):
+				e.needPanic()
+				e.usesNonzero = true
+				e.emit("ogo_nonzero(")
+				e.emitExprNode(c)
+				e.emit(")")
+				guardNext = false
+			default:
+				e.emitExprNode(c)
+				guardNext = false
+			}
 		}
 		e.emit(")")
 	case UnaryExpr, Factor:
@@ -2858,13 +2984,18 @@ func (e *emitter) emitExprNode(n Node) {
 					return
 				}
 				// A slice is indexed through its backing pointer; an array (or string)
-				// directly.
+				// directly. The index is bounds-checked against the container length.
+				lenExpr := ""
 				if e.hasSliceVar(base) {
 					e.emit(base + ".ptr[")
+					lenExpr = base + ".len"
 				} else {
 					e.emit(base + "[")
+					if a, ok := e.arrayVar(base); ok {
+						lenExpr = a.bound
+					}
 				}
-				e.emitExpr(low)
+				e.emitIndex(low, lenExpr)
 				e.emit("]")
 				return
 			}
