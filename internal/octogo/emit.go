@@ -76,6 +76,13 @@ func sliceCName(elem string) string {
 // becomes "_ptr", so []*Point -> ogo_slice_Point_ptr stays a valid C identifier.
 func sanitizeElem(elem string) string { return strings.ReplaceAll(elem, "*", "_ptr") }
 
+// sliceElemFromCName recovers the element C type from a slice type name -- the
+// inverse of sliceCName ("ogo_slice_int" -> "int", "ogo_slice_Point_ptr" ->
+// "Point*").
+func sliceElemFromCName(ct string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(ct, sliceTypePrefix), "_ptr", "*")
+}
+
 // appendCName, tryappendCName and appendokCName name the per-element append
 // helpers: the trapping ogo_append_<T>, the ok-form ogo_tryappend_<T>, and the
 // { slice, ok } result struct ogo_appendok_<T> the ok form returns.
@@ -2299,12 +2306,26 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("a short declaration cannot have a field target")
 			return
 		}
+		// A make initializer synthesises a backing array + header (as in a var decl).
+		if elem, lenAST, capAST, ok := e.makeSliceInit(op[1].ast); ok {
+			cname := sliceCName(elem)
+			e.needSlice(elem)
+			e.sliceVars[base] = elem
+			e.locals[base] = cname
+			e.emitMakeSliceVar(base, cname, elem, lenAST, capAST, false)
+			return
+		}
 		ct, ok := e.inferCType(op[1].ast)
 		if !ok {
 			e.fail("cannot infer a type for the short declaration of %q", base)
 			return
 		}
 		e.locals[base] = ct
+		// A slice-typed short declaration (from a slice expression or append) records
+		// its element type, so later indexing / len / cap / append on it resolve.
+		if e.isSliceCType(ct) {
+			e.sliceVars[base] = sliceElemFromCName(ct)
+		}
 		e.ind()
 		e.emit(ct + " " + base + " = ")
 		e.emitExpr(op[1].ast)

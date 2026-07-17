@@ -1,0 +1,24 @@
+// COMPILE
+
+// A short declaration infers a slice type from its initializer: "s := a[i:j]"
+// (slicing an array or a slice), "s := make([]T, len, cap)", and "s := append(s0,
+// x)" all give s a slice type. Indexing, re-slicing, len, cap and append on such an
+// s type-check exactly like an explicitly-typed []T variable -- previously the
+// checker mis-typed "s := a[i:j]" as its scalar element and rejected s[i].
+
+func main() {
+	var a [5]int
+	s := a[1:4]  // slice expression -> a slice
+	s2 := s[1:]  // re-slice an inferred slice
+	println(len(s))
+	println(cap(s2))
+	println(s[1])
+	s[0] = 42 // index-assign through an inferred slice
+	println(s[0])
+
+	t := make([]int, 0, 3) // make -> a slice
+	t = append(t, 7)
+	u := append(t, 8) // append -> a slice
+	println(len(u))
+	println(u[0])
+}

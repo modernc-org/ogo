@@ -2645,20 +2645,37 @@ func (f *File) fieldSelector(n Node) (field Token, ok bool) {
 	return field, selectors == 1 && !disqualify
 }
 
-// indexSuffix reports whether a factor suffix is exactly one index "[i]" with no
-// selector or call, so "base[i]" reads a single element of base. It is the read
-// analogue of fieldSelector.
+// indexSuffix reports whether a factor suffix is exactly one plain index "[i]"
+// with no selector or call, so "base[i]" reads a single element of base. A slice
+// expression "base[i:j]" is disqualified: it yields a slice, not a scalar element,
+// so it must not be typed as base's element kind. It is the read analogue of
+// fieldSelector.
 func (f *File) indexSuffix(n Node) bool {
 	indexes, disqualify := 0, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Index:
 			indexes++
+			if f.indexIsSlice(c) {
+				disqualify = true
+			}
 		case Selector, CallSuffix:
 			disqualify = true
 		}
 	}
 	return indexes == 1 && !disqualify
+}
+
+// indexIsSlice reports whether an Index node is a slice expression -- it contains a
+// colon ("a[i:j]", "a[i:]", "a[:j]", "a[:]") -- as opposed to a plain element index
+// "a[i]".
+func (f *File) indexIsSlice(index Node) bool {
+	for c := range it(index.ast) {
+		if c.sym == 0 && f.ch(c.tok) == COLON {
+			return true
+		}
+	}
+	return false
 }
 
 // firstSuffixIsIndex reports whether the first operation of a factor suffix is an
