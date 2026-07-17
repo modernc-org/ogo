@@ -1,9 +1,10 @@
 import "p2"
 
 func process() {
-    // ERROR "undeclared name: make|dynamic allocation not supported"
-    buffer := make([]int, 10) 
-    
+    // A fixed-capacity slice make is a compile-time-sized backing array, not a
+    // heap allocation, so it is allowed on the P2.
+    var buffer []int = make([]int, 0, 10)
+
     // ERROR "undeclared name: new|dynamic allocation not supported"
     ptr := new(int)
 

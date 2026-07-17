@@ -3443,8 +3443,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		}
 	}
 	if hasID && s.find(id.Src()) == nil {
-		switch id.Src() {
-		case "make", "new":
+		switch {
+		case id.Src() == "make" && hasSuffix && f.isSliceMake(suffix):
+			// make([]T, len[, cap]) builds a slice header over a statically-sized
+			// backing array -- no heap allocation -- so it is allowed. Every other
+			// make form and all of new remain rejected below.
+		case id.Src() == "make" || id.Src() == "new":
 			// The Go dynamic-allocation builtins have no place on a
 			// zero-allocation, no-GC target; reported even in call position,
 			// where an ordinary undefined name would be left to the callee check.
@@ -3595,6 +3599,52 @@ func (f *File) callArgList(callSuffix Node) (r Node) {
 		}
 	}
 	return r
+}
+
+// isSliceMake reports whether a call suffix is make([]T, ...): its first argument
+// is a slice-type factor "[]T". It gates the make carve-out in checkFactorNames --
+// a slice make allocates only a fixed-size backing array, no heap.
+func (f *File) isSliceMake(suffix Node) bool {
+	argList, _, isCall := f.callInfo(suffix)
+	if !isCall {
+		return false
+	}
+	for a := range it(argList.ast) {
+		if a.sym == Expression {
+			return f.isSliceTypeFactor(a)
+		}
+	}
+	return false
+}
+
+// isSliceTypeFactor reports whether an argument expression is a slice type used as
+// a factor -- its leading tokens are "[" "]" -- as opposed to an array "[N]T"
+// (whose "[" is followed by a length expression), a value, or new's type argument.
+// It descends single-child wrappers (Expression/SimpleExpr/Term/UnaryExpr) to the
+// Factor and inspects its first two children.
+func (f *File) isSliceTypeFactor(n Node) bool {
+	cur := n
+	for {
+		var k0, k1 Node
+		count := 0
+		for c := range it(cur.ast) {
+			switch count {
+			case 0:
+				k0 = c
+			case 1:
+				k1 = c
+			}
+			if count++; count >= 2 {
+				break
+			}
+		}
+		if count == 1 {
+			cur = k0 // a single-child wrapper: descend toward the Factor
+			continue
+		}
+		return count >= 2 && k0.sym == 0 && f.ch(k0.tok) == LBRACK &&
+			k1.sym == 0 && f.ch(k1.tok) == RBRACK
+	}
 }
 
 // checkCall resolves the names in a call's arguments and, for a direct call

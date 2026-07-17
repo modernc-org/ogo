@@ -57,6 +57,21 @@ const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\
 const stringHelpers = "static void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
 	"static void ogo_println_str(ogo_string s) { printf(\"%.*s\\n\", s.len, s.str); }\n"
 
+// sliceTypePrefix leads the C typedef name of an OctoGo slice `[]T`: a { pointer,
+// length, capacity } header (`T* ptr; int len; int cap`) named per element type,
+// e.g. []int -> ogo_slice_int, []*Point -> ogo_slice_Point_ptr. Like ogo_string it
+// is a value type -- copied by value, a non-owning view over an array or another
+// slice's backing storage. cap tracks that storage's remaining length (from ptr to
+// its end), so a slice may be re-sliced or grown up to cap; it never acquires new
+// backing memory (the P2 has no heap).
+const sliceTypePrefix = "ogo_slice_"
+
+// sliceCName is the C type name of a slice with C element type elem. A pointer
+// element's "*" is spelled "_ptr" so the name stays a valid C identifier.
+func sliceCName(elem string) string {
+	return sliceTypePrefix + strings.ReplaceAll(elem, "*", "_ptr")
+}
+
 // EmitC writes C source for the built package pkg to w. It is the walking
 // skeleton of the OctoGo C backend, grown to a first computational subset: a
 // `func main()` with local int variables, `for {}` loops, assignments and
@@ -68,7 +83,7 @@ const stringHelpers = "static void ogo_print_str(ogo_string s) { printf(\"%.*s\"
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}}
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
@@ -145,13 +160,27 @@ func EmitC(pkg *Package, w io.Writer) error {
 	if len(incs) != 0 {
 		out.WriteByte('\n')
 	}
+	// Slice header typedefs follow the struct typedefs (a slice's element may be a
+	// struct, so the struct must be declared first), one per distinct element type.
+	var sliceDefs bytes.Buffer
+	if len(e.sliceElems) != 0 {
+		elems := make([]string, 0, len(e.sliceElems))
+		for el := range e.sliceElems {
+			elems = append(elems, el)
+		}
+		slices.Sort(elems)
+		for _, el := range elems {
+			fmt.Fprintf(&sliceDefs, "typedef struct { %s* ptr; int len; int cap; } %s;\n", el, sliceCName(el))
+		}
+	}
 	// The ogo_string typedef leads the typedef section (a struct, array, or result
 	// field may be a string); the string print helpers follow the typedefs.
-	if e.usesString || typedefs.Len() != 0 {
+	if e.usesString || typedefs.Len() != 0 || sliceDefs.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
 		}
 		out.Write(typedefs.Bytes())
+		out.Write(sliceDefs.Bytes())
 		out.WriteByte('\n')
 	}
 	if e.usesStringPrint {
@@ -182,9 +211,13 @@ type emitter struct {
 	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
 	arrays          map[string]arrDim        // local array name -> element type and bound (reset per function)
 	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
+	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
+	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
+	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
 	tmp             int                      // per-function counter for generated temporaries (destructuring)
+	makeN           int                      // translation-unit counter for make() backing arrays
 	wroteDecl       bool                     // a top-level definition has been emitted (drives blank-line separators)
 	mainRet         bool                     // currently emitting main's body: a bare `return` yields `return 0;`
 	declInit        bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
@@ -365,6 +398,12 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 		for c := range it(n.ast) {
 			switch c.sym {
 			case Type:
+				// A slice field would force the slice typedef before this struct's,
+				// inverting the emission order; leave it for a later commit.
+				if _, ok := e.sliceType(c.ast); ok {
+					e.fail("slice-typed struct fields are not supported yet")
+					return out
+				}
 				ctype = e.cType(c.ast)
 			case 0:
 				if e.f.ch(c.tok) == IDENT {
@@ -472,6 +511,39 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				if nm != "_" {
 					e.globalArrays[nm] = arrDim{elem, bound}
 					e.emit("static " + elem + " " + nm + "[" + bound + "];\n")
+				}
+			}
+			continue
+		}
+		// A package-level slice `var xs []T` -> `static ogo_slice_T xs;` (BSS-zeroed
+		// to {NULL, 0}); its element type is recorded for `xs[i]` / len(xs) in bodies.
+		if elem, ok := e.sliceType(typeAST); ok {
+			e.needSlice(elem)
+			cname := sliceCName(elem)
+			if initExpr != nil {
+				me, lenAST, capAST, ok := e.makeSliceInit(initExpr)
+				if !ok {
+					e.fail("a package slice initializer must be make([]T, ...)")
+					return
+				}
+				if me != elem {
+					e.fail("make element type %q does not match the declared slice element type %q", me, elem)
+					return
+				}
+				if len(names) != 1 || names[0] == "_" {
+					e.fail("a make slice initializer needs a single named variable")
+					return
+				}
+				e.globalSliceVars[names[0]] = elem
+				e.globals[names[0]] = cname
+				e.emitMakeSliceVar(names[0], cname, elem, lenAST, capAST, true)
+				continue
+			}
+			for _, nm := range names {
+				if nm != "_" {
+					e.globalSliceVars[nm] = elem
+					e.globals[nm] = cname
+					e.emit("static " + cname + " " + nm + ";\n")
 				}
 			}
 			continue
@@ -658,6 +730,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.locals = map[string]string{}
 	e.arrays = map[string]arrDim{}
+	e.sliceVars = map[string]string{}
 	e.tmp = 0
 	e.curFunc = name
 	e.bindParams(sig)
@@ -721,6 +794,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	}
 	e.locals = map[string]string{}
 	e.arrays = map[string]arrDim{}
+	e.sliceVars = map[string]string{}
 	e.tmp = 0
 	e.curFunc = "main"
 	e.emit("int main(void) {\n")
@@ -877,6 +951,9 @@ func (e *emitter) bindParams(sig []int32) {
 						e.arrays[name] = arrDim{elem, bound}
 						return
 					}
+					if elem, ok := e.sliceType(ta); ok {
+						e.sliceVars[name] = elem
+					}
 					e.locals[name] = e.cType(ta)
 				})
 			}
@@ -1006,6 +1083,49 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			}
 			continue
 		}
+		// A slice `var xs []T` -> `ogo_slice_T xs = {0};` (a { pointer, length }
+		// header, zero value {NULL, 0}); its name maps to the element type for `xs[i]`
+		// and len(xs). An initializer is a plain slice-header value copy.
+		if elem, ok := e.sliceType(typeAST); ok {
+			if len(names) != 1 && initExpr != nil {
+				e.fail("multi-name var with initializer is not supported yet")
+				return
+			}
+			cname := sliceCName(elem)
+			e.needSlice(elem)
+			// A make([]T, ...) initializer synthesises a backing array + header.
+			if initExpr != nil && len(names) == 1 && names[0] != "_" {
+				if me, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
+					if me != elem {
+						e.fail("make element type %q does not match the declared slice element type %q", me, elem)
+						return
+					}
+					e.sliceVars[names[0]] = elem
+					e.locals[names[0]] = cname
+					e.emitMakeSliceVar(names[0], cname, elem, lenAST, capAST, false)
+					continue
+				}
+			}
+			for _, nm := range names {
+				if nm == "_" {
+					if initExpr != nil {
+						e.emitDiscard(initExpr)
+					}
+					continue
+				}
+				e.sliceVars[nm] = elem
+				e.locals[nm] = cname
+				e.ind()
+				e.emit(cname + " " + nm + " = ")
+				if initExpr != nil {
+					e.emitExpr(initExpr)
+				} else {
+					e.emit("{0}")
+				}
+				e.emit(";\n")
+			}
+			continue
+		}
 		ctype := e.cType(typeAST)
 		if ctype == "" {
 			return
@@ -1052,6 +1172,11 @@ func (e *emitter) cType(ast []int32) string {
 			return elem + "*"
 		}
 		return ""
+	}
+	// Slice type: "[" "]" Type -> the ogo_slice_<elem> header.
+	if elem, ok := e.sliceType(ast); ok {
+		e.needSlice(elem)
+		return sliceCName(elem)
 	}
 	var toks []int32
 	nonTerminal := false
@@ -1121,6 +1246,32 @@ func (e *emitter) arrayType(typeAST []int32) (elem, bound string, ok bool) {
 		return "", "", false
 	}
 	return elem, bound, true
+}
+
+// sliceType recognises a slice type `[]T`, returning its element C type. It is a
+// bracketed type with no length -- as opposed to a fixed array `[N]T`, which
+// carries a size expression (handled by arrayType).
+func (e *emitter) sliceType(typeAST []int32) (elem string, ok bool) {
+	nodes := slices.Collect(it(typeAST))
+	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK {
+		return "", false
+	}
+	var elemAST []int32
+	for _, n := range nodes {
+		switch n.sym {
+		case Expression:
+			return "", false // a sized array, not a slice
+		case Type:
+			elemAST = n.ast
+		}
+	}
+	if elemAST == nil {
+		return "", false
+	}
+	if elem = e.cType(elemAST); elem == "" {
+		return "", false
+	}
+	return elem, true
 }
 
 // arrayBoundC renders a fixed-array bound as a C integer constant: a single
@@ -1206,36 +1357,162 @@ func (e *emitter) varType(name string) (string, bool) {
 	return ct, ok
 }
 
-// emitStringSlice emits a string slice `s[low:high]` as a new header
-// (ogo_string){ s.str + low, high - low }: an omitted low is 0, an omitted high is
-// s.len. Only string slicing is modelled.
-func (e *emitter) emitStringSlice(base string, low, high []int32) {
-	if ct, ok := e.varType(base); !ok || ct != cString {
-		e.fail("only string slicing is supported yet")
+// emitSliceExpr emits a slice expression `base[low:high]` as a new { pointer,
+// length } header aliasing base's storage -- a non-owning view, no copy. An
+// omitted low is 0; an omitted high is base's length. Three bases are modelled: a
+// string (-> ogo_string over .str/.len), a fixed array (-> ogo_slice_<elem> over
+// the decayed array and its compile-time bound), and a slice (-> the same header
+// over .ptr/.len). In a static initializer a brace is used, not a compound literal
+// (not a constant expression there; see declInit).
+func (e *emitter) emitSliceExpr(base string, low, high []int32) {
+	// baseLen is base's length (the default when high is omitted); baseCap is its
+	// capacity, emitted as the slice header's third field. A string has no
+	// capacity, so it slices to a 2-field ogo_string (baseCap "").
+	var cname, ptr, baseLen, baseCap string
+	switch {
+	case e.isStringVarName(base):
+		e.usesString = true
+		cname, ptr, baseLen, baseCap = cString, base+".str", base+".len", ""
+	case e.hasArrayVar(base):
+		a, _ := e.arrayVar(base)
+		e.needSlice(a.elem)
+		cname, ptr, baseLen, baseCap = sliceCName(a.elem), base, a.bound, a.bound
+	case e.hasSliceVar(base):
+		elem, _ := e.sliceElem(base)
+		e.needSlice(elem)
+		cname, ptr, baseLen, baseCap = sliceCName(elem), base+".ptr", base+".len", base+".cap"
+	default:
+		e.fail("only string, array and slice slicing is supported yet")
 		return
 	}
-	e.usesString = true
 	if e.declInit {
 		e.emit("{")
 	} else {
-		e.emit("(" + cString + "){")
+		e.emit("(" + cname + "){")
 	}
-	e.emit(base + ".str")
+	// ptr: base's data, offset by low.
+	e.emit(ptr)
 	if low != nil {
 		e.emit(" + ")
 		e.emitExpr(low)
 	}
+	// len: (high, or base's length when omitted) - low.
 	e.emit(", ")
 	if high != nil {
 		e.emitExpr(high)
 	} else {
-		e.emit(base + ".len")
+		e.emit(baseLen)
 	}
 	if low != nil {
 		e.emit(" - ")
 		e.emitExpr(low)
 	}
+	// cap (slices only): cap(base) - low, so the result can still be re-sliced up
+	// to the end of the backing storage (Go: the slice upper bound reaches cap).
+	if baseCap != "" {
+		e.emit(", " + baseCap)
+		if low != nil {
+			e.emit(" - ")
+			e.emitExpr(low)
+		}
+	}
 	e.emit("}")
+}
+
+// isStringVarName reports whether base names a string-typed variable.
+func (e *emitter) isStringVarName(base string) bool {
+	ct, ok := e.varType(base)
+	return ok && ct == cString
+}
+
+// hasArrayVar reports whether base names a fixed-array variable.
+func (e *emitter) hasArrayVar(base string) bool { _, ok := e.arrayVar(base); return ok }
+
+// hasSliceVar reports whether base names a slice variable.
+func (e *emitter) hasSliceVar(base string) bool { _, ok := e.sliceElem(base); return ok }
+
+// newBacking returns a fresh, translation-unit-unique name for a make() backing
+// array.
+func (e *emitter) newBacking() string {
+	s := "ogo_backing_" + strconv.Itoa(e.makeN)
+	e.makeN++
+	return s
+}
+
+// peelToFactorAST descends single-child expression wrappers (Expression/SimpleExpr/
+// Term/UnaryExpr) and returns the innermost node's child AST -- the Factor level.
+func (e *emitter) peelToFactorAST(ast []int32) []int32 {
+	cur := ast
+	for {
+		kids := slices.Collect(it(cur))
+		if len(kids) == 1 && kids[0].sym != 0 {
+			cur = kids[0].ast
+			continue
+		}
+		return cur
+	}
+}
+
+// makeSliceInit recognises a `make([]T, len [, cap])` initializer, returning the
+// element C type and the length/capacity expression ASTs (capAST nil for the
+// two-argument form, where cap == len). ok is false for any other expression.
+func (e *emitter) makeSliceInit(initExpr []int32) (elem string, lenAST, capAST []int32, ok bool) {
+	recv, suffix, isCall := e.directCall(initExpr)
+	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return "", nil, nil, false
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	if len(args) < 2 || len(args) > 3 {
+		return "", nil, nil, false
+	}
+	// The first argument is the slice type "[]T" as a factor; read its element type.
+	if elem, ok = e.sliceType(e.peelToFactorAST(args[0].ast)); !ok {
+		return "", nil, nil, false
+	}
+	lenAST = args[1].ast
+	if len(args) == 3 {
+		capAST = args[2].ast
+	}
+	return elem, lenAST, capAST, true
+}
+
+// emitMakeSliceVar emits a slice variable initialized by make: a fixed backing
+// array sized by the capacity (a compile-time constant, since the P2 has no heap)
+// plus a { ptr, len, cap } header over it. static drives file-scope emission -- a
+// `static` backing that C zero-inits vs a stack backing zeroed explicitly (P2 stack
+// locals are not auto-zeroed).
+func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []int32, static bool) {
+	sizeAST := capAST
+	if sizeAST == nil {
+		sizeAST = lenAST // the two-argument form: cap == len
+	}
+	size, ok := e.arrayBoundC(sizeAST)
+	if !ok {
+		e.fail("make needs a constant capacity")
+		return
+	}
+	backing := e.newBacking()
+	// Backing array.
+	if static {
+		e.emit("static " + elem + " " + backing + "[" + size + "];\n")
+	} else {
+		e.ind()
+		e.emit(elem + " " + backing + "[" + size + "] = {0};\n")
+	}
+	// Header { backing, len, cap }. cap == the backing size; len is the initial
+	// length (the size for the two-argument form).
+	if static {
+		e.emit("static ")
+	} else {
+		e.ind()
+	}
+	e.emit(cname + " " + name + " = {" + backing + ", ")
+	if capAST != nil {
+		e.emitExpr(lenAST)
+	} else {
+		e.emit(size)
+	}
+	e.emit(", " + size + "};\n")
 }
 
 // emitFor handles `for {}` (infinite -> for(;;)) and `for cond {}` (conditional
@@ -1643,6 +1920,17 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitLen(suffix[0].ast)
 			return true
 		}
+		if recv == "cap" {
+			e.emitCap(suffix[0].ast)
+			return true
+		}
+		if recv == "make" {
+			// make needs a hoisted backing array, so it is only handled as a
+			// `var s []T = make(...)` initializer (see emitMakeSliceVar), not as a
+			// general expression.
+			e.fail("make is only supported as a `var s []T = make(...)` initializer yet")
+			return true
+		}
 		e.emit(recv + "(")
 		e.emitCallArgs(suffix[0].ast)
 		e.emit(")")
@@ -1667,7 +1955,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 }
 
 // emitLen emits the builtin `len(x)`: an array's length is its compile-time bound;
-// a string's is its header's `len` field.
+// a string's and a slice's is its header's `len` field.
 func (e *emitter) emitLen(callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {
@@ -1681,13 +1969,38 @@ func (e *emitter) emitLen(callSuffix []int32) {
 			return
 		}
 	}
-	if ct, ok := e.inferCType(arg); ok && ct == cString {
+	// A string and a slice both carry their length in a `.len` header field.
+	if ct, ok := e.inferCType(arg); ok && (ct == cString || e.isSliceCType(ct)) {
 		e.emit("(")
 		e.emitExpr(arg)
 		e.emit(").len")
 		return
 	}
-	e.fail("len is only supported for strings and arrays yet")
+	e.fail("len is only supported for strings, arrays and slices yet")
+}
+
+// emitCap emits the builtin `cap(x)`: an array's capacity is its compile-time
+// bound; a slice's is its header's `cap` field. Strings have no capacity.
+func (e *emitter) emitCap(callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) != 1 {
+		e.fail("cap takes exactly one argument")
+		return
+	}
+	arg := args[0].ast
+	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
+		if a, ok := e.arrayVar(e.src(tok)); ok {
+			e.emit(a.bound)
+			return
+		}
+	}
+	if ct, ok := e.inferCType(arg); ok && e.isSliceCType(ct) {
+		e.emit("(")
+		e.emitExpr(arg)
+		e.emit(").cap")
+		return
+	}
+	e.fail("cap is only supported for arrays and slices yet")
 }
 
 // arrayVar looks a name up in the local then the package array environment.
@@ -1714,16 +2027,22 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 			e.emit("(void)0;\n")
 		}
 	case 1:
-		if ct, ok := e.inferCType(args[0].ast); ok && ct == cString {
-			e.usesStringPrint = true
-			helper := "ogo_print_str("
-			if newline {
-				helper = "ogo_println_str("
+		if ct, ok := e.inferCType(args[0].ast); ok {
+			if ct == cString {
+				e.usesStringPrint = true
+				helper := "ogo_print_str("
+				if newline {
+					helper = "ogo_println_str("
+				}
+				e.emit(helper)
+				e.emitExpr(args[0].ast)
+				e.emit(");\n")
+				return
 			}
-			e.emit(helper)
-			e.emitExpr(args[0].ast)
-			e.emit(");\n")
-			return
+			if e.isSliceCType(ct) {
+				e.fail("printing a slice is not supported yet")
+				return
+			}
 		}
 		verb := "\"%d\""
 		if newline {
@@ -1855,18 +2174,23 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		e.fail("unsupported index target")
 		return
 	}
+	// A slice element is addressed through its backing pointer; an array directly.
+	lhs := base
+	if e.hasSliceVar(base) {
+		lhs = base + ".ptr"
+	}
 	op := slices.Collect(it(opNode.ast))
 	if len(op) == 1 && op[0].sym == 0 {
 		switch e.f.ch(op[0].tok) {
 		case INC:
 			e.ind()
-			e.emit(base + "[")
+			e.emit(lhs + "[")
 			e.emitExpr(idx)
 			e.emit("]++;\n")
 			return
 		case DEC:
 			e.ind()
-			e.emit(base + "[")
+			e.emit(lhs + "[")
 			e.emitExpr(idx)
 			e.emit("]--;\n")
 			return
@@ -1874,7 +2198,7 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	}
 	if len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN && op[1].sym == Expression {
 		e.ind()
-		e.emit(base + "[")
+		e.emit(lhs + "[")
 		e.emitExpr(idx)
 		e.emit("] = ")
 		e.emitExpr(op[1].ast)
@@ -2059,6 +2383,22 @@ func (e *emitter) factorCall(kids []Node) (recv string, suffix []Node, ok bool) 
 // isStruct reports whether a C type name denotes a modelled struct type.
 func (e *emitter) isStruct(ctype string) bool { _, ok := e.structs[ctype]; return ok }
 
+// isSliceCType reports whether a C type name is a slice header type (ogo_slice_<T>).
+func (e *emitter) isSliceCType(ctype string) bool { return strings.HasPrefix(ctype, sliceTypePrefix) }
+
+// needSlice records that a slice `[]elem` is used, so its header typedef is emitted.
+func (e *emitter) needSlice(elem string) { e.sliceElems[elem] = true }
+
+// sliceElem returns a slice variable's element C type, from the local then the
+// package slice environment.
+func (e *emitter) sliceElem(name string) (string, bool) {
+	if el, ok := e.sliceVars[name]; ok {
+		return el, true
+	}
+	el, ok := e.globalSliceVars[name]
+	return el, ok
+}
+
 // factorFieldAccess recognises a Factor that is a field access `base.f` (or a
 // chain `base.f.g`) -- an identifier followed by a FactorSuffix of selectors only,
 // no index or call -- returning the base name and the selected field names.
@@ -2203,17 +2543,27 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 			if base, indexAST, ok := e.factorIndex(kids); ok {
 				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
-					// A string slice is a string; array slicing is not modelled.
-					if ct, ok := e.varType(base); ok && ct == cString {
+					// Slicing a string yields a string; slicing an array or a slice
+					// yields the corresponding slice header type.
+					if e.isStringVarName(base) {
 						return cString, true
+					}
+					if a, ok := e.arrayVar(base); ok {
+						return sliceCName(a.elem), true
+					}
+					if elem, ok := e.sliceElem(base); ok {
+						return sliceCName(elem), true
 					}
 					return "", false
 				}
-				if a, ok := e.arrays[base]; ok {
+				// A plain index yields the element type of an array or a slice.
+				if a, ok := e.arrayVar(base); ok {
 					return a.elem, true
 				}
-				a, ok := e.globalArrays[base]
-				return a.elem, ok
+				if elem, ok := e.sliceElem(base); ok {
+					return elem, true
+				}
+				return "", false
 			}
 		}
 		return e.inferNodes(kids)
@@ -2241,8 +2591,8 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
-		if recv == "len" {
-			return "int", true // the builtin len returns int
+		if recv == "len" || recv == "cap" {
+			return "int", true // the builtins len and cap return int
 		}
 		// Only a single-result call is a usable single value; a multi-result call
 		// belongs in a destructuring assignment (emitMultiAssign), not here.
@@ -2309,10 +2659,16 @@ func (e *emitter) emitExprNode(n Node) {
 			if base, indexAST, ok := e.factorIndex(kids); ok {
 				low, high, isSlice := e.sliceParts(indexAST)
 				if isSlice {
-					e.emitStringSlice(base, low, high)
+					e.emitSliceExpr(base, low, high)
 					return
 				}
-				e.emit(base + "[")
+				// A slice is indexed through its backing pointer; an array (or string)
+				// directly.
+				if e.hasSliceVar(base) {
+					e.emit(base + ".ptr[")
+				} else {
+					e.emit(base + "[")
+				}
 				e.emitExpr(low)
 				e.emit("]")
 				return

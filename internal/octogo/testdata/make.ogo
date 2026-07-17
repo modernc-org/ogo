@@ -1,0 +1,31 @@
+// COMPILE
+
+// make([]T, len [, cap]) builds a slice over a fixed, compile-time-sized backing
+// array -- the only "allocation" the P2 allows, since it has no heap. The capacity
+// is a constant (it sizes the backing array); the slice then grows in place by
+// re-slicing up to cap, never acquiring new memory. A slice variable needs an
+// explicit []T type for now (short-declaring one, s := make(...), is not yet
+// emitted). Two-argument make([]T, n) sets len == cap == n.
+
+var buf []int = make([]int, 0, 4)
+
+func push(xs []int, v int) []int {
+	n := len(xs)
+	xs = xs[:n+1] // extend the length within cap
+	xs[n] = v
+	return xs
+}
+
+func main() {
+	var a []int = make([]int, 2, 8)
+	println(len(a)) // 2
+	println(cap(a)) // 8
+
+	var b []int = make([]int, 3)
+	println(cap(b)) // 3
+
+	buf = push(buf, 11)
+	buf = push(buf, 22)
+	println(len(buf)) // 2
+	println(buf[1])   // 22
+}
