@@ -1,0 +1,31 @@
+// COMPILE
+
+// append(s, x) grows a slice in place, up to its capacity -- the P2 has no heap, so
+// it never reallocates. Two forms: s = append(s, x) traps (panics) if the slice is
+// already at cap, while s, ok = append(s, x) reports a full slice via ok == 0 and
+// leaves s unchanged rather than trapping. Only append(s, x) over a slice variable
+// is modelled; short-declaring the result (s := append(...)) is not yet emitted.
+
+func collect(xs []int, n int) []int {
+	i := 0
+	for i < n {
+		xs = append(xs, i*i) // traps if xs is already full
+		i++
+	}
+	return xs
+}
+
+func main() {
+	var s []int = make([]int, 0, 4)
+	s = collect(s, 4)
+	println(len(s)) // 4
+	println(s[3])   // 9
+
+	var t []int = make([]int, 0, 1)
+	var ok int
+	t, ok = append(t, 1)
+	println(ok) // 1
+	t, ok = append(t, 2) // full -> ok 0, t unchanged
+	println(ok)          // 0
+	println(len(t))      // 1
+}

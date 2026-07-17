@@ -69,7 +69,38 @@ const sliceTypePrefix = "ogo_slice_"
 // sliceCName is the C type name of a slice with C element type elem. A pointer
 // element's "*" is spelled "_ptr" so the name stays a valid C identifier.
 func sliceCName(elem string) string {
-	return sliceTypePrefix + strings.ReplaceAll(elem, "*", "_ptr")
+	return sliceTypePrefix + sanitizeElem(elem)
+}
+
+// sanitizeElem turns a C element type into an identifier fragment: a pointer's "*"
+// becomes "_ptr", so []*Point -> ogo_slice_Point_ptr stays a valid C identifier.
+func sanitizeElem(elem string) string { return strings.ReplaceAll(elem, "*", "_ptr") }
+
+// appendCName, tryappendCName and appendokCName name the per-element append
+// helpers: the trapping ogo_append_<T>, the ok-form ogo_tryappend_<T>, and the
+// { slice, ok } result struct ogo_appendok_<T> the ok form returns.
+func appendCName(elem string) string    { return "ogo_append_" + sanitizeElem(elem) }
+func tryappendCName(elem string) string { return "ogo_tryappend_" + sanitizeElem(elem) }
+func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(elem) }
+
+// ogoPanic is the minimal runtime panic: a best-effort diagnostic to the serial
+// line, a short drain so it flushes, then a halt (abort -> _Exit -> _cogstop). It
+// is the seed of the wider panic subsystem (index-out-of-range, divide-by-zero, ...).
+const ogoPanic = "static void ogo_panic(const char* msg) {\n" +
+	"\tprintf(\"panic: %s\\n\", msg);\n" +
+	"\t_waitms(10); // let the message flush over the serial line before halting\n" +
+	"\tabort();\n" +
+	"}\n"
+
+// sortedKeys returns the keys of a set in deterministic (sorted) order, for stable
+// emission of per-element-type typedefs and helpers.
+func sortedKeys(m map[string]bool) []string {
+	r := make([]string, 0, len(m))
+	for k := range m {
+		r = append(r, k)
+	}
+	slices.Sort(r)
+	return r
 }
 
 // EmitC writes C source for the built package pkg to w. It is the walking
@@ -83,7 +114,7 @@ func sliceCName(elem string) string {
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 func EmitC(pkg *Package, w io.Writer) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}}
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
@@ -163,28 +194,50 @@ func EmitC(pkg *Package, w io.Writer) error {
 	// Slice header typedefs follow the struct typedefs (a slice's element may be a
 	// struct, so the struct must be declared first), one per distinct element type.
 	var sliceDefs bytes.Buffer
-	if len(e.sliceElems) != 0 {
-		elems := make([]string, 0, len(e.sliceElems))
-		for el := range e.sliceElems {
-			elems = append(elems, el)
-		}
-		slices.Sort(elems)
-		for _, el := range elems {
-			fmt.Fprintf(&sliceDefs, "typedef struct { %s* ptr; int len; int cap; } %s;\n", el, sliceCName(el))
-		}
+	for _, el := range sortedKeys(e.sliceElems) {
+		fmt.Fprintf(&sliceDefs, "typedef struct { %s* ptr; int len; int cap; } %s;\n", el, sliceCName(el))
+	}
+	// append's ok-form result struct { slice, ok }, per element type; it references
+	// the slice typedef emitted just above.
+	var appendokDefs bytes.Buffer
+	for _, el := range sortedKeys(e.tryappendElems) {
+		fmt.Fprintf(&appendokDefs, "typedef struct { %s slice; int ok; } %s;\n", sliceCName(el), appendokCName(el))
 	}
 	// The ogo_string typedef leads the typedef section (a struct, array, or result
 	// field may be a string); the string print helpers follow the typedefs.
-	if e.usesString || typedefs.Len() != 0 || sliceDefs.Len() != 0 {
+	if e.usesString || typedefs.Len() != 0 || sliceDefs.Len() != 0 || appendokDefs.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
 		}
 		out.Write(typedefs.Bytes())
 		out.Write(sliceDefs.Bytes())
+		out.Write(appendokDefs.Bytes())
 		out.WriteByte('\n')
 	}
 	if e.usesStringPrint {
 		out.WriteString(stringHelpers)
+		out.WriteByte('\n')
+	}
+	// Runtime helpers: the panic routine, then the per-element append helpers (the
+	// trapping form and the ok form), after the typedefs they reference.
+	var helperDefs bytes.Buffer
+	if e.usesPanic {
+		helperDefs.WriteString(ogoPanic)
+	}
+	for _, el := range sortedKeys(e.appendElems) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n"+
+			"\tif (s.len >= s.cap) {\n\t\togo_panic(\"append: out of capacity\");\n\t} else {\n"+
+			"\t\ts.ptr[s.len] = v;\n\t\ts.len++;\n\t}\n\treturn s;\n}\n",
+			sliceCName(el), appendCName(el), sliceCName(el), el)
+	}
+	for _, el := range sortedKeys(e.tryappendElems) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
+			"\tif (s.len >= s.cap) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
+			"\t\ts.ptr[s.len] = v;\n\t\ts.len++;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
+			appendokCName(el), tryappendCName(el), sliceCName(el), el, appendokCName(el))
+	}
+	if helperDefs.Len() != 0 {
+		out.Write(helperDefs.Bytes())
 		out.WriteByte('\n')
 	}
 	if globals.Len() != 0 {
@@ -214,6 +267,9 @@ type emitter struct {
 	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
 	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
+	appendElems     map[string]bool          // element C types needing the trapping ogo_append_<T> helper
+	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	usesPanic       bool                     // ogo_panic is called: emit its definition and pull in its includes
 	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
 	tmp             int                      // per-function counter for generated temporaries (destructuring)
@@ -1924,6 +1980,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitCap(suffix[0].ast)
 			return true
 		}
+		if recv == "append" {
+			// Single-result append: s = append(s, x). The two-result form
+			// s, ok = append(s, x) is handled in emitMultiAssign.
+			e.emitAppend(suffix[0].ast)
+			return true
+		}
 		if recv == "make" {
 			// make needs a hoisted backing array, so it is only handled as a
 			// `var s []T = make(...)` initializer (see emitMakeSliceVar), not as a
@@ -2001,6 +2063,101 @@ func (e *emitter) emitCap(callSuffix []int32) {
 		return
 	}
 	e.fail("cap is only supported for arrays and slices yet")
+}
+
+// appendParts validates an append call suffix -- exactly two arguments whose first
+// is a slice variable -- returning that slice's element C type and the argument
+// nodes, and recording needSlice(elem). ok is false (with a latched error) for any
+// other shape; only append(s, x) over a slice variable is modelled yet.
+func (e *emitter) appendParts(callSuffix []int32) (elem string, args []Node, ok bool) {
+	args = e.callArgExprs(callSuffix)
+	if len(args) != 2 {
+		e.fail("append takes exactly two arguments yet -- append(s, x)")
+		return "", nil, false
+	}
+	base, ok := e.exprIdent(args[0].ast)
+	if !ok {
+		e.fail("append's first argument must be a slice variable yet")
+		return "", nil, false
+	}
+	if elem, ok = e.sliceElem(base); !ok {
+		e.fail("append's first argument must be a slice variable yet")
+		return "", nil, false
+	}
+	e.needSlice(elem)
+	return elem, args, true
+}
+
+// exprIdent returns the sole identifier an expression reduces to (peeling wrapper
+// levels), e.g. the "s" in an argument that is just s. ok is false if the
+// expression is not exactly one identifier.
+func (e *emitter) exprIdent(ast []int32) (string, bool) {
+	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT {
+		return e.src(tok), true
+	}
+	return "", false
+}
+
+// emitAppend emits the single-result append `append(s, x)` as a call to the
+// trapping ogo_append_<T> helper (which panics if the slice is already at cap).
+func (e *emitter) emitAppend(callSuffix []int32) {
+	elem, args, ok := e.appendParts(callSuffix)
+	if !ok {
+		return
+	}
+	e.appendElems[elem] = true
+	e.usesPanic = true
+	e.includes["stdio.h"] = true
+	e.includes["stdlib.h"] = true
+	e.includes["propeller2.h"] = true
+	e.emit(appendCName(elem) + "(")
+	e.emitExpr(args[0].ast)
+	e.emit(", ")
+	e.emitExpr(args[1].ast)
+	e.emit(")")
+}
+
+// emitTryAppend emits the two-result append `s, ok = append(s, x)` (or `:=`): it
+// binds the ok-form helper's { slice, ok } result to a temporary, then assigns (or,
+// for `:=`, declares) the slice and ok targets. A blank target is skipped. This
+// form never traps -- an overflow leaves the slice unchanged and reports ok == 0.
+func (e *emitter) emitTryAppend(targets []string, define bool, callSuffix []int32) {
+	if len(targets) != 2 {
+		e.fail("the two-result append form is `s, ok = append(s, x)`")
+		return
+	}
+	elem, args, ok := e.appendParts(callSuffix)
+	if !ok {
+		return
+	}
+	e.tryappendElems[elem] = true
+	tmp := e.newTmp()
+	e.ind()
+	e.emit(appendokCName(elem) + " " + tmp + " = " + tryappendCName(elem) + "(")
+	e.emitExpr(args[0].ast)
+	e.emit(", ")
+	e.emitExpr(args[1].ast)
+	e.emit(");\n")
+	// The slice target, then the ok target (int).
+	if targets[0] != "_" {
+		e.ind()
+		if define {
+			e.sliceVars[targets[0]] = elem
+			e.locals[targets[0]] = sliceCName(elem)
+			e.emit(sliceCName(elem) + " " + targets[0] + " = " + tmp + ".slice;\n")
+		} else {
+			e.emit(targets[0] + " = " + tmp + ".slice;\n")
+		}
+	}
+	if targets[1] != "_" {
+		e.ind()
+		if define {
+			e.locals[targets[1]] = "int"
+			e.emit("int " + targets[1] + " = " + tmp + ".ok;\n")
+		} else {
+			e.emit(targets[1] + " = " + tmp + ".ok;\n")
+		}
+	}
 }
 
 // arrayVar looks a name up in the local then the package array environment.
@@ -2238,6 +2395,11 @@ func (e *emitter) emitMultiAssign(first string, op []Node) {
 	callee, suffix, ok := e.directCall(rhs)
 	if !ok {
 		e.fail("multiple assignment requires a single function call on the right-hand side")
+		return
+	}
+	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix {
+		// Two-result append: s, ok = append(s, x) -- the ok form, no trap.
+		e.emitTryAppend(targets, opTok == DEFINE, suffix[0].ast)
 		return
 	}
 	resTypes, ok := e.funcRet[callee]
@@ -2593,6 +2755,18 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		if recv == "len" || recv == "cap" {
 			return "int", true // the builtins len and cap return int
+		}
+		if recv == "append" {
+			// append returns a slice of its first argument's element type.
+			args := e.callArgExprs(suffix[0].ast)
+			if len(args) >= 1 {
+				if base, ok := e.exprIdent(args[0].ast); ok {
+					if elem, ok := e.sliceElem(base); ok {
+						return sliceCName(elem), true
+					}
+				}
+			}
+			return "", false
 		}
 		// Only a single-result call is a usable single value; a multi-result call
 		// belongs in a destructuring assignment (emitMultiAssign), not here.
