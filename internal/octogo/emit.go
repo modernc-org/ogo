@@ -1801,6 +1801,54 @@ func (e *emitter) varType(name string) (string, bool) {
 	return ct, ok
 }
 
+// sliceSource describes what a slice expression slices: the C type of the result
+// header, the base pointer, and the base's length and capacity. baseLen is the
+// default when high is omitted; baseCap becomes the header's third field and is
+// empty for a string, which has no capacity and slices to a 2-field ogo_string.
+type sliceSource struct{ cname, ptr, baseLen, baseCap string }
+
+// sliceableVar resolves a variable base to slice: a string, a fixed array, or a
+// slice.
+func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
+	switch {
+	case e.isStringVarName(base):
+		e.usesString = true
+		return sliceSource{cString, base + ".str", base + ".len", ""}, true
+	case e.hasArrayVar(base):
+		a, _ := e.arrayVar(base)
+		e.needSlice(a.elem)
+		return sliceSource{sliceCName(a.elem), base, a.bound, a.bound}, true
+	case e.hasSliceVar(base):
+		elem, _ := e.sliceElem(base)
+		e.needSlice(elem)
+		return sliceSource{sliceCName(elem), base + ".ptr", base + ".len", base + ".cap"}, true
+	}
+	return sliceSource{}, false
+}
+
+// sliceableField resolves a struct field base to slice -- `b.data[1:3]` over a
+// slice field, `b.arr[1:3]` over an array field. A slice field is re-sliced
+// through its own header (its cap still bounds how far the result may grow); an
+// array field decays to its inline storage, bounded both ways by the extent.
+func (e *emitter) sliceableField(base string, fields []string) (sliceSource, bool) {
+	if len(fields) == 0 {
+		return sliceSource{}, false
+	}
+	lv := e.fieldAccessC(base, fields)
+	if a, ok := e.fieldArray(base, fields); ok {
+		e.needSlice(a.elem)
+		return sliceSource{sliceCName(a.elem), lv, a.bound, a.bound}, true
+	}
+	ct, ok := e.fieldType(base, fields)
+	if !ok || !e.isSliceCType(ct) {
+		return sliceSource{}, false
+	}
+	if elem, ok := e.sliceElemByName[ct]; ok {
+		e.needSlice(elem)
+	}
+	return sliceSource{ct, lv + ".ptr", lv + ".len", lv + ".cap"}, true
+}
+
 // emitSliceExpr emits a slice expression `base[low:high]` as a new { pointer,
 // length } header aliasing base's storage -- a non-owning view, no copy. An
 // omitted low is 0; an omitted high is base's length. Three bases are modelled: a
@@ -1808,27 +1856,8 @@ func (e *emitter) varType(name string) (string, bool) {
 // the decayed array and its compile-time bound), and a slice (-> the same header
 // over .ptr/.len). In a static initializer a brace is used, not a compound literal
 // (not a constant expression there; see declInit).
-func (e *emitter) emitSliceExpr(base string, low, high []int32) {
-	// baseLen is base's length (the default when high is omitted); baseCap is its
-	// capacity, emitted as the slice header's third field. A string has no
-	// capacity, so it slices to a 2-field ogo_string (baseCap "").
-	var cname, ptr, baseLen, baseCap string
-	switch {
-	case e.isStringVarName(base):
-		e.usesString = true
-		cname, ptr, baseLen, baseCap = cString, base+".str", base+".len", ""
-	case e.hasArrayVar(base):
-		a, _ := e.arrayVar(base)
-		e.needSlice(a.elem)
-		cname, ptr, baseLen, baseCap = sliceCName(a.elem), base, a.bound, a.bound
-	case e.hasSliceVar(base):
-		elem, _ := e.sliceElem(base)
-		e.needSlice(elem)
-		cname, ptr, baseLen, baseCap = sliceCName(elem), base+".ptr", base+".len", base+".cap"
-	default:
-		e.fail("only string, array and slice slicing is supported yet")
-		return
-	}
+func (e *emitter) emitSliceExpr(src sliceSource, low, high []int32) {
+	cname, ptr, baseLen, baseCap := src.cname, src.ptr, src.baseLen, src.baseCap
 	if e.declInit {
 		e.emit("{")
 	} else {
@@ -3652,10 +3681,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// `b.data[0]`, not `int`) -- invalid C at the declaration it feeds.
 			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
 				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
-					// Re-slicing a slice field yields the same header type. An array
-					// field has no header, so it has nothing to yield here.
-					if ft, ok := e.fieldType(base, fields); ok && e.isSliceCType(ft) {
-						return ft, true
+					// Re-slicing a field yields a slice header: the field's own type
+					// for a slice field, one over the element type for an array field.
+					if src, ok := e.sliceableField(base, fields); ok {
+						return src.cname, true
 					}
 					return "", false
 				}
@@ -3846,7 +3875,14 @@ func (e *emitter) emitExprNode(n Node) {
 				// through its header's backing pointer bounded by len, an array field
 				// its inline storage bounded by the declared extent. indexedContainer
 				// resolves which, so both read the same way here.
-				if low, _, isSlice := e.sliceParts(indexAST); !isSlice {
+				low, high, isSlice := e.sliceParts(indexAST)
+				if isSlice {
+					// Re-slicing a struct field, `b.data[1:3]`.
+					if src, ok := e.sliceableField(base, fields); ok {
+						e.emitSliceExpr(src, low, high)
+						return
+					}
+				} else {
 					if expr, elem, lenExpr, ok := e.indexedContainer(base, fields); ok {
 						e.emitIndexSelect(expr, lenExpr, low, elem, nil)
 						return
@@ -3860,7 +3896,12 @@ func (e *emitter) emitExprNode(n Node) {
 			if base, indexAST, ok := e.factorIndex(kids); ok {
 				low, high, isSlice := e.sliceParts(indexAST)
 				if isSlice {
-					e.emitSliceExpr(base, low, high)
+					src, ok := e.sliceableVar(base)
+					if !ok {
+						e.fail("only string, array and slice slicing is supported yet")
+						return
+					}
+					e.emitSliceExpr(src, low, high)
 					return
 				}
 				// A slice is indexed through its backing pointer; an array (or string)
