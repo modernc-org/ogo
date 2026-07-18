@@ -178,9 +178,12 @@ helpers (guarded with `//lint:ignore U1000`); prefer them for temporary tracing.
 
 - `specs.go`'s doc comment is the authoritative **language spec + grammar**;
   `internal/octogo/octogo.go`'s doc comment is the authoritative **compiler-internals
-  design** (check phases + WPO). `web/` is informal marketing copy — not
-  authoritative. (`gem.md`, the original Gemini design corpus, was deleted
-  2026-07-10; its unique, still-unreconciled bits are salvaged in the appendix below.)
+  design** (check phases + WPO). `web/` holds logo assets only — the landing-page
+  outline that used to live there was deleted 2026-07-18 (it was a raw LLM chat
+  transcript pitching a paid-license model that the BSD LICENSE and the README's
+  GitHub Sponsors tiers had already superseded). (`gem.md`, the original Gemini
+  design corpus, was deleted 2026-07-10; its unique, still-unreconciled bits are
+  salvaged in the appendix below.)
 - Requires Go 1.25+ (uses iterators, `maps`/`slices`, range-over-func).
 
 ## Appendix: salvaged design notes from gem.md (unreconciled — process later)
