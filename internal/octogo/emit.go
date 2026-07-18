@@ -3106,6 +3106,44 @@ func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string
 	}
 }
 
+// assignTail classifies the PostfixOp closing an assignment statement: `++`, `--`,
+// or `= expr`. For the first two suffix is the C operator and rhs is nil; for an
+// assignment suffix is empty and rhs is the right-hand Expression. ok is false for
+// any other PostfixOp -- a channel send, or a multi-target assignment -- which has
+// its own path.
+//
+// It classifies without emitting, so a caller can reject an unsupported form
+// before writing a partial statement.
+func (e *emitter) assignTail(opNode Node) (suffix string, rhs []int32, ok bool) {
+	if opNode.sym != PostfixOp {
+		return "", nil, false
+	}
+	op := slices.Collect(it(opNode.ast))
+	if len(op) == 1 && op[0].sym == 0 {
+		switch e.f.ch(op[0].tok) {
+		case INC:
+			return "++", nil, true
+		case DEC:
+			return "--", nil, true
+		}
+	}
+	if len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN && op[1].sym == Expression {
+		return "", op[1].ast, true
+	}
+	return "", nil, false
+}
+
+// emitAssignTail writes the classified tail after a target has been emitted.
+func (e *emitter) emitAssignTail(suffix string, rhs []int32) {
+	if rhs != nil {
+		e.emit(" = ")
+		e.emitExpr(rhs)
+	} else {
+		e.emit(suffix)
+	}
+	e.emit(";\n")
+}
+
 // emitIndexSelectAssign emits a write to a field of an indexed element,
 // `s[i].x = v` or `p.pts[i].x = v`: the bounds-checked element access followed by
 // the field chain. Only plain assignment is modelled -- no slice colon in the
@@ -3125,9 +3163,9 @@ func (e *emitter) emitIndexSelectAssign(base, stars string, pre []string, indexA
 		e.fail("slicing an assignment target is not supported yet")
 		return
 	}
-	op := slices.Collect(it(opNode.ast))
-	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN || op[1].sym != Expression {
-		e.fail("only `x[i].f = expr` is supported for an indexed element's field yet")
+	suffix, rhs, ok := e.assignTail(opNode)
+	if !ok {
+		e.fail("only `x[i].f = expr`, `x[i].f++` and `x[i].f--` are supported for an indexed element's field yet")
 		return
 	}
 	expr, elem, lenExpr, ok := e.indexedContainer(base, pre)
@@ -3142,9 +3180,7 @@ func (e *emitter) emitIndexSelectAssign(base, stars string, pre []string, indexA
 	low, _, _ := e.sliceParts(indexAST)
 	e.ind()
 	e.emitIndexSelect(expr, lenExpr, low, elem, post)
-	e.emit(" = ")
-	e.emitExpr(op[1].ast)
-	e.emit(";\n")
+	e.emitAssignTail(suffix, rhs)
 }
 
 // emitFieldIndexAssign emits a write to a slice-field element `b.data[i] = v`,
@@ -3156,9 +3192,9 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 		e.fail("slicing a slice-field target is not supported yet")
 		return
 	}
-	op := slices.Collect(it(opNode.ast))
-	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN || op[1].sym != Expression {
-		e.fail("only `b.f[i] = expr` is supported for a slice-field element yet")
+	suffix, rhs, ok := e.assignTail(opNode)
+	if !ok {
+		e.fail("only `b.f[i] = expr`, `b.f[i]++` and `b.f[i]--` are supported for an indexed field element yet")
 		return
 	}
 	expr, elem, lenExpr, ok := e.indexedContainer(base, fields)
@@ -3168,9 +3204,7 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 	}
 	e.ind()
 	e.emitIndexSelect(expr, lenExpr, low, elem, nil)
-	e.emit(" = ")
-	e.emitExpr(op[1].ast)
-	e.emit(";\n")
+	e.emitAssignTail(suffix, rhs)
 }
 
 // emitIndexAssign emits an indexed assignment `a[i] = v` or an indexed increment/
@@ -3200,33 +3234,16 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	} else if a, ok := e.arrayVar(base); ok {
 		lenExpr = a.bound
 	}
-	op := slices.Collect(it(opNode.ast))
-	if len(op) == 1 && op[0].sym == 0 {
-		switch e.f.ch(op[0].tok) {
-		case INC:
-			e.ind()
-			e.emit(lhs + "[")
-			e.emitIndex(idx, lenExpr)
-			e.emit("]++;\n")
-			return
-		case DEC:
-			e.ind()
-			e.emit(lhs + "[")
-			e.emitIndex(idx, lenExpr)
-			e.emit("]--;\n")
-			return
-		}
-	}
-	if len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN && op[1].sym == Expression {
-		e.ind()
-		e.emit(lhs + "[")
-		e.emitIndex(idx, lenExpr)
-		e.emit("] = ")
-		e.emitExpr(op[1].ast)
-		e.emit(";\n")
+	suffix, rhs, ok := e.assignTail(opNode)
+	if !ok {
+		e.fail("only `a[i] = expr`, `a[i]++` and `a[i]--` are supported yet")
 		return
 	}
-	e.fail("only `a[i] = expr`, `a[i]++` and `a[i]--` are supported yet")
+	e.ind()
+	e.emit(lhs + "[")
+	e.emitIndex(idx, lenExpr)
+	e.emit("]")
+	e.emitAssignTail(suffix, rhs)
 }
 
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
