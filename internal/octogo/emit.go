@@ -357,6 +357,8 @@ type emitter struct {
 	appendElems     map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	printSliceElems map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
+	defers          []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
+	deferBlockDepth int                      // nesting inside if/for/switch bodies; a defer at depth > 0 is not modelled yet
 	usesPanic       bool                     // ogo_panic is called: emit its definition and pull in its includes
 	usesBound       bool                     // ogo_bound is called: emit the index bounds-check helper
 	usesNonzero     bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
@@ -467,6 +469,14 @@ type structField struct{ name, ctype string }
 // arrDim describes an array variable: its element C type and its C bound (for
 // element typing and len).
 type arrDim struct{ elem, bound string }
+
+// deferredCall is a recorded `defer` statement: the call's head (AssignHead) and
+// its suffix (Selector / Index / CallSuffix), replayed through emitCall before the
+// function returns.
+type deferredCall struct {
+	head   Node
+	suffix []Node
+}
 
 // collectStructs records each package-level struct type's fields in the struct
 // environment and emits a C typedef -- `typedef struct { <t0> f0; ... } T;`.
@@ -935,6 +945,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.tmp = 0
+	e.defers = nil
 	// A method is a function with a mangled name and its receiver as the first
 	// parameter, bound in the local environment so the body reads it like any local
 	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
@@ -958,8 +969,26 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.emitParamCopies(sig)
 	e.declareNamedResults(sig)
 	e.emitBlockStmts(body)
+	// A body that falls off the end (no trailing return) runs its deferred calls
+	// here; one ending in a return already replayed them at that return.
+	if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
+		e.emitDeferred()
+	}
 	e.indent--
 	e.emit("}\n")
+}
+
+// bodyEndsInReturn reports whether a function body's last top-level statement is a
+// return, so deferred calls need not be replayed again at the closing brace.
+func (e *emitter) bodyEndsInReturn(body []int32) bool {
+	var lastAST []int32
+	for n := range it(body) {
+		if n.sym == Statement {
+			lastAST = n.ast
+		}
+	}
+	nodes := slices.Collect(it(lastAST))
+	return len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN
 }
 
 // declareNamedResults declares a function's named result parameters as zero-
@@ -1038,12 +1067,16 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.tmp = 0
+	e.defers = nil
 	e.curFunc = "main"
 	e.emit("int main(void) {\n")
 	e.indent++
 	e.mainRet = true
 	e.emitBlockStmts(body)
 	e.mainRet = false
+	if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
+		e.emitDeferred()
+	}
 	e.ind()
 	e.emit("return 0;\n")
 	e.indent--
@@ -1280,6 +1313,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitSwitch(first.ast)
 	case first.sym == 0 && e.f.ch(first.tok) == RETURN:
 		e.emitReturn(nodes)
+	case first.sym == 0 && e.f.ch(first.tok) == DEFER:
+		e.emitDefer(nodes)
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == 0:
@@ -1936,7 +1971,9 @@ func (e *emitter) emitFor(nodes []Node) {
 		e.emit(" {\n")
 	}
 	e.indent++
+	e.deferBlockDepth++
 	e.emitBlockStmts(body)
+	e.deferBlockDepth--
 	e.indent--
 	e.ind()
 	e.emit("}\n")
@@ -2137,6 +2174,8 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 
 // emitCaseBody emits the statements of a case clause (those following its ":").
 func (e *emitter) emitCaseBody(cc []int32) {
+	e.deferBlockDepth++
+	defer func() { e.deferBlockDepth-- }()
 	for n := range it(cc) {
 		if n.sym == Statement {
 			e.emitStatement(n.ast)
@@ -2188,7 +2227,9 @@ func (e *emitter) emitIfBody(ast []int32) {
 	e.emitCondition(cond)
 	e.emit(" {\n")
 	e.indent++
+	e.deferBlockDepth++
 	e.emitBlockStmts(thenBody)
+	e.deferBlockDepth--
 	e.indent--
 	e.ind()
 	e.emit("}")
@@ -2199,7 +2240,9 @@ func (e *emitter) emitIfBody(ast []int32) {
 	case elseBody != nil:
 		e.emit(" else {\n")
 		e.indent++
+		e.deferBlockDepth++
 		e.emitBlockStmts(elseBody)
+		e.deferBlockDepth--
 		e.indent--
 		e.ind()
 		e.emit("}\n")
@@ -2225,6 +2268,43 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 // it yields `return;`. A single value emits `return <expr>;`. Multiple values are
 // returned as the function's result struct via a compound literal,
 // `return (ogo_ret_<fn>){ e0, e1, ... };`.
+// emitDefer records a top-level `defer` statement to be replayed before the
+// function returns. The call is not emitted here; emitDeferred replays it in LIFO
+// order at each return and at a fall-through function end. A defer inside a nested
+// block (an if/switch body) is conditionally registered at runtime, which needs a
+// per-defer flag not modelled yet, so it fails honestly.
+func (e *emitter) emitDefer(nodes []Node) {
+	if e.deferBlockDepth > 0 {
+		e.fail("defer inside a nested block is not supported yet")
+		return
+	}
+	var head Node
+	var suffix []Node
+	for _, n := range nodes {
+		switch n.sym {
+		case AssignHead:
+			head = n
+		case Selector, Index, CallSuffix:
+			suffix = append(suffix, n)
+		}
+	}
+	if head.sym != AssignHead || len(suffix) == 0 {
+		e.fail("a defer statement must be a function call")
+		return
+	}
+	e.defers = append(e.defers, deferredCall{head, suffix})
+}
+
+// emitDeferred replays the recorded defers in LIFO order, each as a statement call.
+// Deferred arguments are evaluated where the call runs (at the return), not where
+// the defer was written -- a simplification from Go that is identical for the
+// constant / cleanup arguments that dominate here.
+func (e *emitter) emitDeferred() {
+	for i := len(e.defers) - 1; i >= 0; i-- {
+		e.emitCall(e.defers[i].head, e.defers[i].suffix)
+	}
+}
+
 func (e *emitter) emitReturn(nodes []Node) {
 	var exprs []Node
 	for _, n := range nodes[1:] {
@@ -2236,6 +2316,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 			}
 		}
 	}
+	e.emitDeferred()
 	e.ind()
 	switch len(exprs) {
 	case 0:

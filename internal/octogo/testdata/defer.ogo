@@ -1,0 +1,66 @@
+// A "defer" statement schedules a call to run just before the enclosing function
+// returns. It is resolved statically (no runtime defer stack), so it is supported
+// except inside a "for" loop, where the number of deferred calls is not statically
+// bounded. Its callee and arguments are checked exactly as an ordinary call's.
+
+type T struct{ v int }
+
+func (t T) M() {}
+
+func cleanup() {}
+
+func take(x int) {}
+
+func valid() {
+	defer cleanup()
+	var n int = 3
+	defer take(n)
+	var t T
+	defer t.M()
+}
+
+// A "defer" in a non-loop block (an if body) is fine -- it is still statically
+// bounded.
+func inIfBlock() {
+	var x int = 0
+	if x == 0 {
+		defer cleanup()
+	}
+}
+
+func undefinedCallee() {
+	// ERROR "undefined: nope"
+	defer nope()
+}
+
+func nonFunctionCallee() {
+	var x int = 0
+	// ERROR "cannot call non-function x"
+	defer x()
+}
+
+func tooFewArguments() {
+	// ERROR "not enough arguments in call to take"
+	defer take()
+}
+
+// A "defer" directly inside a for loop is rejected.
+func inForLoop() {
+	for {
+		// ERROR "defer is not allowed inside a for loop"
+		defer cleanup()
+	}
+}
+
+// A "defer" nested in an if inside a for loop is still inside the loop, so it is
+// rejected too.
+func inNestedForLoop() {
+	var x int = 0
+	for x < 3 {
+		if x == 1 {
+			// ERROR "defer is not allowed inside a for loop"
+			defer cleanup()
+		}
+		x = x + 1
+	}
+}

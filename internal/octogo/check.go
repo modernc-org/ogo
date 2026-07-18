@@ -198,6 +198,7 @@ type File struct {
 	hasInvalidImports bool
 	inArrayBound      bool              // evaluating an array length: suppress "is not a constant"
 	inCaseExpr        bool              // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
+	loopDepth         int               // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	parser            Parser
@@ -1018,7 +1019,8 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	isReturn := false
 	isGo := false
 	isRecv := false  // a bare receive statement "<-ch", pending its Expression operand
-	isDefer := false // a "defer" statement, already reported and carrying its own AssignHead
+	isDefer := false // a "defer" statement, carrying its own AssignHead
+	isFor := false   // a "for" statement, so its body block is checked one loop level deeper
 	sawPostfix := false
 	condKw := "" // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
@@ -1037,7 +1039,17 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			f.declareType(s, c)
 			f.typeDecl(s, c)
 		case Block:
-			f.checkBlock(s.child(), results, c)
+			// A "for" loop's body is checked one loop level deeper, so a "defer"
+			// anywhere within it is rejected (the zero-allocation model cannot bound
+			// an unknown number of deferred calls). Other blocks (a bare block, or an
+			// if/switch body reached via their own checkers) do not change the depth.
+			if isFor {
+				f.loopDepth++
+				f.checkBlock(s.child(), results, c)
+				f.loopDepth--
+			} else {
+				f.checkBlock(s.child(), results, c)
+			}
 		case Statement:
 			f.checkStatement(s, results, c)
 		case AssignHead:
@@ -1074,11 +1086,15 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				isRecv = true
 			case FOR:
 				condKw = f.tok(c.tok).Src()
+				isFor = true
 			case DEFER:
-				// The grammar still admits "defer" for LL(1) simplicity, but the
-				// zero-allocation target cannot accumulate deferred calls.
+				// "defer" is resolved statically at compile time (no runtime defer
+				// stack), so it is supported -- except inside a "for" loop, where the
+				// number of deferred calls is not statically bounded.
 				isDefer = true
-				f.err(f.tok(c.tok).Position(), "unexpected keyword 'defer'")
+				if f.loopDepth > 0 {
+					f.err(f.tok(c.tok).Position(), "defer is not allowed inside a for loop")
+				}
 			}
 		}
 	}
@@ -1087,6 +1103,9 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	}
 	if isGo {
 		f.checkGoStmt(s, head, stmt)
+	}
+	if isDefer {
+		f.checkDeferStmt(s, head, stmt)
 	}
 	// A statement that is a bare name ("x", "*p") carries an AssignHead but no
 	// Postfix -- a value with no effect, rejected like the suffixed bare values
@@ -1107,8 +1126,22 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 // CallSuffix the call helpers scan for. The suffix chain must end in a call, since
 // a goroutine launches a call, not a bare value ("go x", "go p.f").
 func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
+	f.checkCallStmt(s, head, stmt, "go")
+}
+
+// checkDeferStmt checks a "defer" statement's call, exactly as checkGoStmt does for
+// "go" (identical grammar: a keyword followed by a call). The for-loop restriction
+// is reported separately at the "defer" keyword (see checkStatement).
+func (f *File) checkDeferStmt(s *Scope, head, stmt Node) {
+	f.checkCallStmt(s, head, stmt, "defer")
+}
+
+// checkCallStmt checks the call carried by a "go" or "defer" statement (kw names it
+// in diagnostics): the statement must be a function or method call, whose callee and
+// arguments are then checked like any call.
+func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string) {
 	if !endsInCall(stmt) {
-		f.err(f.tok(head.Pos()).Position(), "go statement must be a function call")
+		f.err(f.tok(head.Pos()).Position(), "%s statement must be a function call", kw)
 		return
 	}
 	f.checkSelectors(s, head, stmt)

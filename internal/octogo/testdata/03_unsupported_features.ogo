@@ -5,12 +5,9 @@ func mathOps() {
     a := 1
     b := 2
     // ERROR "unexpected token '&&'"
-    if a < 2 && b > 1 { 
+    if a < 2 && b > 1 {
         a = 3
     }
-
-    // ERROR "unexpected keyword 'defer'"
-    defer p2.PinLow(1)
 
     _ = pi
 }
