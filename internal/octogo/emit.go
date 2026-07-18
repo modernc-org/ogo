@@ -477,7 +477,11 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 
 // structField is one field of a struct type: its name and C type, in declaration
 // order.
-type structField struct{ name, ctype string }
+// structField is one field of a struct typedef. bound is empty for a plain field;
+// when set the field is a fixed-size array, declared `ctype name[bound]` -- C puts
+// the extent on the declarator, not the type, so the two cannot simply be
+// concatenated the way every other field is.
+type structField struct{ name, ctype, bound string }
 
 // arrDim describes an array variable: its element C type and its C bound (for
 // element typing and len).
@@ -543,6 +547,10 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			e.structs[name] = fields
 			e.emit("typedef struct {")
 			for _, fld := range fields {
+				if fld.bound != "" {
+					e.emit(" " + fld.ctype + " " + fld.name + "[" + fld.bound + "];")
+					continue
+				}
 				e.emit(" " + fld.ctype + " " + fld.name + ";")
 			}
 			e.emit(" } " + name + ";\n")
@@ -580,6 +588,7 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 		}
 		var names []string
 		ctype := ""
+		bound := "" // non-empty for a fixed-size array field
 		for c := range it(n.ast) {
 			switch c.sym {
 			case Type:
@@ -606,6 +615,14 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 					ctype = sliceCName(elem)
 					break
 				}
+				// A fixed-size array field (`data [3]int`, `pts [3]Point`). Unlike a
+				// slice it needs no header typedef -- the storage is inline -- but C
+				// puts the extent on the declarator, so the bound travels beside the
+				// element type and is applied when the typedef is written.
+				if el, bnd, ok := e.arrayType(c.ast); ok {
+					ctype, bound = el, bnd
+					break
+				}
 				ctype = e.cType(c.ast)
 			case 0:
 				if e.f.ch(c.tok) == IDENT {
@@ -618,7 +635,7 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 			return out
 		}
 		for _, nm := range names {
-			out = append(out, structField{name: nm, ctype: ctype})
+			out = append(out, structField{name: nm, ctype: ctype, bound: bound})
 		}
 	}
 	return out
@@ -2887,7 +2904,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// trailing index, then the assignment (postfix = { Selector } Index PostfixOp).
 	if len(postfix) >= 3 && postfix[len(postfix)-2].sym == Index {
 		if flds, ok := e.selectorFields(postfix[:len(postfix)-2]); ok {
-			if ct, ok := e.fieldType(base, flds); ok && e.isSliceCType(ct) {
+			if _, _, _, ok := e.indexedContainer(base, flds); ok {
 				e.emitFieldIndexAssign(base, flds, postfix[len(postfix)-2], postfix[len(postfix)-1])
 				return
 			}
@@ -3052,9 +3069,15 @@ func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenEx
 		}
 		return "", "", "", false
 	}
+	// An array-typed field indexes its inline storage directly, bounded by the
+	// declared extent; a slice-typed one goes through its header's backing pointer,
+	// bounded by the runtime length.
+	if a, ok := e.fieldArray(base, pre); ok {
+		return e.fieldAccessC(base, pre), a.elem, a.bound, true
+	}
 	ct, ok := e.fieldType(base, pre)
 	if !ok || !e.isSliceCType(ct) {
-		return "", "", "", false // an array-typed struct field is not modelled
+		return "", "", "", false
 	}
 	el, ok := e.sliceElemByName[ct]
 	if !ok {
@@ -3138,11 +3161,14 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 		e.fail("only `b.f[i] = expr` is supported for a slice-field element yet")
 		return
 	}
-	lv := e.fieldAccessC(base, fields)
+	expr, elem, lenExpr, ok := e.indexedContainer(base, fields)
+	if !ok {
+		e.fail("unsupported indexed field assignment target")
+		return
+	}
 	e.ind()
-	e.emit(lv + ".ptr[")
-	e.emitIndex(low, lv+".len")
-	e.emit("] = ")
+	e.emitIndexSelect(expr, lenExpr, low, elem, nil)
+	e.emit(" = ")
 	e.emitExpr(op[1].ast)
 	e.emit(";\n")
 }
@@ -3446,10 +3472,48 @@ func (e *emitter) elemType(ctype string) string { return strings.TrimSuffix(ctyp
 func (e *emitter) structFieldType(ctype, field string) (string, bool) {
 	for _, fld := range e.structs[e.elemType(ctype)] {
 		if fld.name == field {
+			if fld.bound != "" {
+				// An array field has no single C value type -- C cannot assign or
+				// pass one by value -- so it is not reportable here. Indexing reaches
+				// it through structFieldArray instead, and any path that wanted a
+				// plain value fails honestly rather than emitting an array where a
+				// scalar was expected.
+				return "", false
+			}
 			return fld.ctype, true
 		}
 	}
 	return "", false
+}
+
+// structFieldArray returns a struct field's array dimension, for a field declared
+// with a fixed extent (`data [3]int`). It is the array counterpart of
+// structFieldType, which deliberately refuses such a field.
+func (e *emitter) structFieldArray(ctype, field string) (arrDim, bool) {
+	for _, fld := range e.structs[e.elemType(ctype)] {
+		if fld.name == field && fld.bound != "" {
+			return arrDim{elem: fld.ctype, bound: fld.bound}, true
+		}
+	}
+	return arrDim{}, false
+}
+
+// fieldArray resolves an array-typed field at the end of an access chain
+// `base.f.g...`, returning its element type and bound.
+func (e *emitter) fieldArray(base string, fields []string) (arrDim, bool) {
+	if len(fields) == 0 {
+		return arrDim{}, false
+	}
+	ctype, ok := e.locals[base]
+	if !ok {
+		return arrDim{}, false
+	}
+	for _, f := range fields[:len(fields)-1] {
+		if ctype, ok = e.structFieldType(ctype, f); !ok {
+			return arrDim{}, false
+		}
+	}
+	return e.structFieldArray(ctype, fields[len(fields)-1])
 }
 
 // fieldType resolves the C type of a field access chain `base.f.g...` from the
@@ -3570,18 +3634,18 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// first identifier and so yielded the *base struct's* type (`Buf` for
 			// `b.data[0]`, not `int`) -- invalid C at the declaration it feeds.
 			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
-				ft, ok := e.fieldType(base, fields)
-				if !ok {
+				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
+					// Re-slicing a slice field yields the same header type. An array
+					// field has no header, so it has nothing to yield here.
+					if ft, ok := e.fieldType(base, fields); ok && e.isSliceCType(ft) {
+						return ft, true
+					}
 					return "", false
 				}
-				elem, ok := e.sliceElemByName[ft]
-				if !ok {
-					return "", false // not a slice-typed field
+				if _, elem, _, ok := e.indexedContainer(base, fields); ok {
+					return elem, true
 				}
-				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
-					return ft, true // re-slicing a slice field yields the same header type
-				}
-				return elem, true
+				return "", false
 			}
 			if base, indexAST, ok := e.factorIndex(kids); ok {
 				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
@@ -3761,14 +3825,13 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 			}
 			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
-				// A slice struct field indexed directly, `b.data[i]` -> read through
-				// the field header's backing pointer, bounds-checked against its len.
+				// A struct field indexed directly, `b.data[i]`: a slice field reads
+				// through its header's backing pointer bounded by len, an array field
+				// its inline storage bounded by the declared extent. indexedContainer
+				// resolves which, so both read the same way here.
 				if low, _, isSlice := e.sliceParts(indexAST); !isSlice {
-					if ct, ok := e.fieldType(base, fields); ok && e.isSliceCType(ct) {
-						lv := e.fieldAccessC(base, fields)
-						e.emit(lv + ".ptr[")
-						e.emitIndex(low, lv+".len")
-						e.emit("]")
+					if expr, elem, lenExpr, ok := e.indexedContainer(base, fields); ok {
+						e.emitIndexSelect(expr, lenExpr, low, elem, nil)
 						return
 					}
 				}
