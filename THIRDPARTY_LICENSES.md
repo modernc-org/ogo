@@ -10,6 +10,12 @@ Except as noted, the contents of this site are licensed under the Creative Commo
 
 ### ---
 
+**Go Gopher Mascot (CC BY 4.0)**
+
+The OctoGo logo (`logo.png`, `web/logo-full.png`) depicts a mascot based on the Go gopher, designed by Renée French. The gopher images are licensed under the Creative Commons Attribution 4.0 License. See https://go.dev/blog/gopher.
+
+### ---
+
 OctoGo utilizes the flexprop compiler toolchain and its associated dependencies to generate binaries for the Parallax Propeller 2\. The following copyright notices and licenses apply to these third-party components and are included in compliance with their respective distribution terms.
 
 ### ---
