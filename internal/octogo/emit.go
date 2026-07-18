@@ -96,6 +96,9 @@ func chanSendCName(elem string) string { return "ogo_chan_send_" + sanitizeElem(
 
 func chanRecvCName(elem string) string { return "ogo_chan_recv_" + sanitizeElem(elem) }
 
+// chanTryRecvCName names the non-blocking receive a select polls with.
+func chanTryRecvCName(elem string) string { return "ogo_chan_tryrecv_" + sanitizeElem(elem) }
+
 // recvOperand recognises a receive expression `<-ch`, returning the channel's
 // element C type and the C name of the channel. Shared by emission and inference so
 // the two cannot disagree about what a receive yields.
@@ -268,6 +271,205 @@ func (e *emitter) goDefs() string {
 	return fmt.Sprintf("#define OGO_ARG_LONGS %d\n", widest) + ogoCogPool + b.String()
 }
 
+// selectCase is one CommClause of a select: the channel polled, where its value
+// lands, and the statements to run. def marks the default clause, which has no
+// channel.
+type selectCase struct {
+	def     bool
+	ch      string // channel variable
+	elem    string // its element C type
+	target  string // variable receiving the value, empty for a bare `case <-ch:`
+	declare bool   // ":=", so the target is introduced in the clause
+	body    []Node
+}
+
+// emitSelect emits a select as a poll over each channel's non-blocking receive, in
+// clause order, which is the lowering the spec prescribes.
+//
+// With a default clause the poll runs once and falls through to the default, so it
+// never blocks. Without one it repeats, yielding with _waitx(1) between rounds: a
+// cog cannot sleep, and spinning on the Hub bus without yielding would starve the
+// cogs doing real work.
+//
+// Send clauses are not modelled. An unbuffered send completes only once a receiver
+// has taken the value, so a non-blocking send would have to report a rendezvous
+// that has not happened yet; that needs a two-phase handshake the cell does not
+// carry. Receive and default are what the spec's own example uses.
+func (e *emitter) emitSelect(ast []int32) {
+	var cases []selectCase
+	for n := range it(ast) {
+		if n.sym != CommClause {
+			continue
+		}
+		c, ok := e.selectClause(n)
+		if !ok {
+			return // selectClause has latched the failure
+		}
+		cases = append(cases, c)
+	}
+	if len(cases) == 0 {
+		e.fail("an empty select blocks forever and is not supported yet")
+		return
+	}
+	hasDefault := false
+	for _, c := range cases {
+		if c.def {
+			hasDefault = true
+		}
+	}
+	done := e.newTmp()
+	e.ind()
+	e.emit("{\n")
+	e.indent++
+	if hasDefault {
+		// One pass, so no loop and no flag to test: a default clause makes the
+		// select non-blocking, and the clauses are a plain if/else chain.
+		e.ind()
+		e.emit("do {\n")
+	} else {
+		e.ind()
+		e.emit("int " + done + " = 0;\n")
+		e.ind()
+		e.emit("while (!" + done + ") {\n")
+	}
+	e.indent++
+	first := true
+	for _, c := range cases {
+		if c.def {
+			continue // emitted last, as the else
+		}
+		tmp := e.newTmp()
+		e.ind()
+		e.emit(c.elem + " " + tmp + ";\n")
+		e.ind()
+		if !first {
+			e.emit("else ")
+		}
+		first = false
+		e.emit("if (" + chanTryRecvCName(c.elem) + "(" + c.ch + ", &" + tmp + ")) {\n")
+		e.indent++
+		if !hasDefault {
+			e.ind()
+			e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
+		}
+		switch {
+		case c.declare:
+			e.locals[c.target] = c.elem
+			e.ind()
+			e.emit(c.elem + " " + c.target + " = " + tmp + ";\n")
+		case c.target != "":
+			e.ind()
+			e.emit(c.target + " = " + tmp + ";\n")
+		}
+		for _, st := range c.body {
+			e.emitStatement(st.ast)
+		}
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	}
+	for _, c := range cases {
+		if !c.def {
+			continue
+		}
+		e.ind()
+		if !first {
+			e.emit("else ")
+		}
+		e.emit("{\n")
+		e.indent++
+		for _, st := range c.body {
+			e.emitStatement(st.ast)
+		}
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	}
+	if !hasDefault {
+		e.ind()
+		e.emit("if (!" + done + ") { _waitx(1); }\n")
+	}
+	e.indent--
+	e.ind()
+	if hasDefault {
+		e.emit("} while (0);\n")
+	} else {
+		e.emit("}\n")
+	}
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+}
+
+// selectClause reads one CommClause into a selectCase.
+func (e *emitter) selectClause(n Node) (selectCase, bool) {
+	var c selectCase
+	for k := range it(n.ast) {
+		switch k.sym {
+		case CommHead:
+			for h := range it(k.ast) {
+				switch {
+				case h.sym == 0 && e.f.ch(h.tok) == DEFAULT:
+					c.def = true
+				case h.sym == CommOp:
+					if !e.selectCommOp(h, &c) {
+						return c, false
+					}
+				}
+			}
+		case Statement:
+			c.body = append(c.body, k)
+		}
+	}
+	return c, true
+}
+
+// selectCommOp reads a CommOp: a bare `<-ch`, or `x = <-ch` / `x := <-ch`.
+func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
+	for k := range it(n.ast) {
+		switch k.sym {
+		case AssignHead:
+			c.target = e.soleIdent(k.ast)
+		case PostfixComm:
+			for q := range it(k.ast) {
+				switch {
+				case q.sym == 0 && e.f.ch(q.tok) == DEFINE:
+					c.declare = true
+				case q.sym == Expression:
+					if !e.selectChan(q, c) {
+						return false
+					}
+				}
+			}
+		case Expression:
+			if !e.selectChan(k, c) {
+				return false
+			}
+		}
+	}
+	if c.ch == "" {
+		e.fail("only a receive or default clause is supported in select yet")
+		return false
+	}
+	return true
+}
+
+// selectChan resolves the channel a clause polls.
+func (e *emitter) selectChan(n Node, c *selectCase) bool {
+	base, ok := e.exprIdent(n.ast)
+	if !ok {
+		e.fail("a select clause needs a plain channel operand")
+		return false
+	}
+	ct, ok := e.varType(base)
+	if !ok || !e.isChanCType(ct) {
+		e.fail("a select clause needs a channel operand")
+		return false
+	}
+	c.ch, c.elem = base, e.chanElemByName[ct]
+	return true
+}
+
 // chanType recognises a channel type `chan T`, returning its element C type.
 func (e *emitter) chanType(typeAST []int32) (elem string, ok bool) {
 	nodes := slices.Collect(it(typeAST))
@@ -339,6 +541,19 @@ static inline void %[3]s(%[1]s ch, %[2]s v) {
 		_waitx(1);
 	}
 }
+static inline int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[2]s* out) {
+	if (_locktry(ch->lock)) {
+		if (ch->full) {
+			*out = ch->val;
+			ch->full = 0;
+			ch->taken++;
+			_lockrel(ch->lock);
+			return 1;
+		}
+		_lockrel(ch->lock);
+	}
+	return 0;
+}
 static inline %[2]s %[4]s(%[1]s ch) {
 	while (1) {
 		if (_locktry(ch->lock)) {
@@ -354,7 +569,7 @@ static inline %[2]s %[4]s(%[1]s ch) {
 		_waitx(1);
 	}
 }
-`, c, elem, snd, rcv, ini, chanCellCName(elem))
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 }
 
 // sliceTypedefDef returns the C typedef declaring the slice header for element
@@ -1735,6 +1950,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitIf(first.ast)
 	case first.sym == SwitchStmt:
 		e.emitSwitch(first.ast)
+	case first.sym == SelectStmt:
+		e.emitSelect(first.ast)
 	case first.sym == 0 && e.f.ch(first.tok) == RETURN:
 		e.emitReturn(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == DEFER:

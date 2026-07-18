@@ -3772,3 +3772,59 @@ func main() {
 		}
 	}
 }
+
+// TestEmitCSelect pins the select lowering: a poll over each channel's
+// non-blocking receive, in clause order, as the spec prescribes.
+//
+// A default clause makes the select non-blocking, so the clauses become a plain
+// if/else chain run once. Without one the poll repeats, yielding with _waitx(1)
+// between rounds -- a cog cannot sleep, and spinning on the Hub bus without
+// yielding starves the cogs doing real work.
+//
+// The done flag is set before the clause body, not after, so a `break` written in
+// the body belongs to the user's own loop rather than escaping the poll.
+func TestEmitCSelect(t *testing.T) {
+	src := `func worker(ch chan int) {
+	ch <- 7
+}
+
+func main() {
+	var ch chan int
+	x := 0
+	select {
+	case x = <-ch:
+		println(x)
+	default:
+		println(99)
+	}
+	go worker(ch)
+	select {
+	case x = <-ch:
+		println(x)
+	}
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"static inline int ogo_chan_tryrecv_int(ogo_chan_int ch, int* out) {\n",
+		"\t\tdo {\n", // default: one pass
+		"\t\t\tif (ogo_chan_tryrecv_int(ch, &_ogo_t1)) {\n",
+		"\t\t} while (0);\n",
+		"\t\twhile (!_ogo_t4) {\n", // no default: poll
+		"\t\t\tif (!_ogo_t4) { _waitx(1); }\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC select: missing %q in\n%s", want, got)
+		}
+	}
+}
