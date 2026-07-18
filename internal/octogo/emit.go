@@ -83,6 +83,11 @@ const chanTypePrefix = "ogo_chan_"
 // chanCName is the C type name of `chan elem`.
 func chanCName(elem string) string { return chanTypePrefix + sanitizeElem(elem) }
 
+// chanCellCName is the cell a channel points at. A channel is a reference type in
+// Go, and must be one here: passing a by-value cell to a goroutine would hand it a
+// copy, and the two would rendezvous with themselves.
+func chanCellCName(elem string) string { return chanTypePrefix + sanitizeElem(elem) + "_cell" }
+
 // chanInitCName, chanSendCName and chanRecvCName name the per-element runtime
 // helpers.
 func chanInitCName(elem string) string { return "ogo_chan_init_" + sanitizeElem(elem) }
@@ -111,6 +116,156 @@ func (e *emitter) recvOperand(n Node, kids []Node) (elem, base string, ok bool) 
 		return "", "", false
 	}
 	return e.chanElemByName[ct], base, true
+}
+
+// goSite is one `go` statement: the callee's C name and the C types of its
+// arguments. Each gets a struct to marshal the arguments through and a trampoline
+// matching _cogstart's `void (*)(void *)` signature.
+type goSite struct {
+	callee string
+	args   []string
+	id     int
+}
+
+// goArgsCName and goTrampolineCName name a site's generated struct and trampoline.
+func goArgsCName(id int) string { return fmt.Sprintf("ogo_go_args%d", id) }
+
+func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
+
+// ogoCogPool is the goroutine slot pool. A goroutine needs a stack and somewhere
+// to marshal its arguments, both of which must outlive the `go` statement -- the
+// launched cog reads them asynchronously -- so neither can be a local of the
+// launching function.
+//
+// The pool is sized to the hardware: 8 cogs less the one running main. That makes
+// "out of slots" and "out of cogs" the same condition, and bounds the whole thing
+// statically, with no allocator. It also makes `go` inside a loop safe, which is
+// why it need not be rejected the way `defer` in a loop is: defer's problem was
+// unbounded storage in the current frame, while this is bounded by the silicon.
+const ogoCogPool = `#define OGO_COGS 8
+#define OGO_STACK_LONGS 256
+typedef struct { int used; long args[OGO_ARG_LONGS]; long stack[OGO_STACK_LONGS]; } ogo_cog_slot;
+static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
+static int ogo_cog_lock = -1;
+static int ogo_cog_claim(void) {
+	if (ogo_cog_lock < 0) {
+		ogo_cog_lock = _locknew();
+	}
+	for (int i = 0; i < OGO_COGS - 1; i++) {
+		if (!ogo_cog_pool[i].used) {
+			ogo_cog_pool[i].used = 1;
+			return i;
+		}
+	}
+	return -1;
+}
+static void ogo_cog_release(int slot) { ogo_cog_pool[slot].used = 0; }
+`
+
+// emitGo emits a `go` statement: claim a pool slot, marshal the arguments into it,
+// and hand the trampoline, the argument block and the slot's stack to _cogstart.
+// Exceeding the cogs panics at runtime, which is what the spec prescribes.
+func (e *emitter) emitGo(nodes []Node) {
+	var head Node
+	var suffix []Node
+	for _, n := range nodes {
+		switch n.sym {
+		case AssignHead:
+			head = n
+		case Selector, Index, CallSuffix:
+			suffix = append(suffix, n)
+		}
+	}
+	callee := e.soleIdent(head.ast)
+	if callee == "" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		e.fail("only `go f(args)` on a plain function is supported yet")
+		return
+	}
+	if _, ok := e.funcRet[callee]; !ok {
+		e.fail("only `go f(args)` on a package function is supported yet")
+		return
+	}
+	site := goSite{callee: callee, id: len(e.goSites)}
+	args := e.callArgExprs(suffix[0].ast)
+	for _, a := range args {
+		ct, ok := e.inferCType(a.ast)
+		if !ok {
+			e.fail("cannot infer the type of a go argument")
+			return
+		}
+		site.args = append(site.args, ct)
+	}
+	e.goSites = append(e.goSites, site)
+	e.needPanic()
+	e.includes["propeller2.h"] = true
+
+	slot := e.newTmp()
+	ap := e.newTmp()
+	e.ind()
+	e.emit("{\n")
+	e.indent++
+	e.ind()
+	e.emit("int " + slot + " = ogo_cog_claim();\n")
+	e.ind()
+	e.emit("if (" + slot + " < 0) { ogo_panic(\"out of cogs\"); }\n")
+	e.ind()
+	e.emit(goArgsCName(site.id) + "* " + ap + " = (void*)ogo_cog_pool[" + slot + "].args;\n")
+	e.ind()
+	e.emit(ap + "->slot = " + slot + ";\n")
+	for i, a := range args {
+		e.ind()
+		e.emit(fmt.Sprintf("%s->a%d = ", ap, i))
+		e.emitExpr(a.ast)
+		e.emit(";\n")
+	}
+	e.ind()
+	e.emit("if (_cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
+		", ogo_cog_pool[" + slot + "].stack, sizeof ogo_cog_pool[" + slot + "].stack) < 0) {\n")
+	e.indent++
+	e.ind()
+	e.emit("ogo_cog_release(" + slot + ");\n")
+	e.ind()
+	e.emit("ogo_panic(\"out of cogs\");\n")
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+}
+
+// goDefs renders the argument struct and trampoline for every launched goroutine,
+// plus the pool sized to the widest argument block. The trampoline releases the
+// slot when the goroutine returns, which is where the cog is freed too.
+func (e *emitter) goDefs() string {
+	if len(e.goSites) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	widest := 1 // the slot field alone
+	for _, s := range e.goSites {
+		fmt.Fprintf(&b, "typedef struct { int slot;")
+		for i, a := range s.args {
+			fmt.Fprintf(&b, " %s a%d;", a, i)
+		}
+		fmt.Fprintf(&b, " } %s;\n", goArgsCName(s.id))
+		if n := 1 + len(s.args); n > widest {
+			widest = n
+		}
+	}
+	for _, s := range e.goSites {
+		fmt.Fprintf(&b, "static void %s(void* p) {\n\t%s* a = p;\n\t%s(",
+			goTrampolineCName(s.id), goArgsCName(s.id), s.callee)
+		for i := range s.args {
+			if i != 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "a->a%d", i)
+		}
+		b.WriteString(");\n\togo_cog_release(a->slot);\n}\n")
+	}
+	// The argument block is sized in longs to keep it aligned for any member.
+	return fmt.Sprintf("#define OGO_ARG_LONGS %d\n", widest) + ogoCogPool + b.String()
 }
 
 // chanType recognises a channel type `chan T`, returning its element C type.
@@ -147,8 +302,9 @@ func (e *emitter) isChanCType(ctype string) bool { return strings.HasPrefix(ctyp
 // bus without yielding would starve the cogs doing real work.
 func chanRuntimeDefs(elem string) string {
 	c, snd, rcv, ini := chanCName(elem), chanSendCName(elem), chanRecvCName(elem), chanInitCName(elem)
-	return fmt.Sprintf(`typedef struct { int lock; int full; int taken; %[2]s val; } %[1]s;
-static inline void %[5]s(%[1]s* ch) {
+	return fmt.Sprintf(`typedef struct { int lock; int full; int taken; %[2]s val; } %[6]s;
+typedef %[6]s* %[1]s;
+static inline void %[5]s(%[1]s ch) {
 	ch->lock = _locknew();
 	if (ch->lock < 0) {
 		ogo_panic("out of hardware locks");
@@ -156,7 +312,7 @@ static inline void %[5]s(%[1]s* ch) {
 	ch->full = 0;
 	ch->taken = 0;
 }
-static inline void %[3]s(%[1]s* ch, %[2]s v) {
+static inline void %[3]s(%[1]s ch, %[2]s v) {
 	int mine;
 	while (1) { // wait for the cell to be free, then deposit
 		if (_locktry(ch->lock)) {
@@ -183,7 +339,7 @@ static inline void %[3]s(%[1]s* ch, %[2]s v) {
 		_waitx(1);
 	}
 }
-static inline %[2]s %[4]s(%[1]s* ch) {
+static inline %[2]s %[4]s(%[1]s ch) {
 	while (1) {
 		if (_locktry(ch->lock)) {
 			if (ch->full) {
@@ -198,7 +354,7 @@ static inline %[2]s %[4]s(%[1]s* ch) {
 		_waitx(1);
 	}
 }
-`, c, elem, snd, rcv, ini)
+`, c, elem, snd, rcv, ini, chanCellCName(elem))
 }
 
 // sliceTypedefDef returns the C typedef declaring the slice header for element
@@ -484,6 +640,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.Write(protos.Bytes())
 		out.WriteByte('\n')
 	}
+	// The goroutine pool and trampolines go after the prototypes -- a trampoline
+	// calls a user function -- and before the bodies, whose `go` statements name
+	// the argument structs declared here.
+	if gd := e.goDefs(); gd != "" {
+		out.WriteString(gd)
+		out.WriteByte('\n')
+	}
 	out.Write(body.Bytes())
 	_, err := w.Write(out.Bytes())
 	return err
@@ -504,6 +667,7 @@ type emitter struct {
 	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
 	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
+	goSites         []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
 	chanElems       map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
 	chanElemByName  map[string]string        // ogo_chan_<T> C type name -> its element C type
 	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
@@ -1575,6 +1739,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitReturn(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == DEFER:
 		e.emitDefer(nodes)
+	case first.sym == 0 && e.f.ch(first.tok) == GO:
+		e.emitGo(nodes)
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == 0:
@@ -1733,7 +1899,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			switch {
 			case initExpr != nil:
 				e.emitExpr(initExpr)
-			case e.isStruct(ctype) || ctype == cString || e.isChanCType(ctype):
+			case e.isStruct(ctype) || ctype == cString:
 				e.emit("{0}") // zero every field (a string's zero is {NULL, 0})
 			default:
 				e.emit("0")
@@ -1744,8 +1910,15 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			// creates it. Acquiring the hardware lock here is what makes the cell
 			// usable, and ties the lock's lifetime to the variable's.
 			if e.isChanCType(ctype) {
+				// The declaration owns the cell; the variable is a reference to it.
+				elem := e.chanElemByName[ctype]
+				cell := nm + "_cell"
 				e.ind()
-				e.emit(chanInitCName(e.chanElemByName[ctype]) + "(&" + nm + ");\n")
+				e.emit(chanCellCName(elem) + " " + cell + " = {0};\n")
+				e.ind()
+				e.emit(nm + " = &" + cell + ";\n")
+				e.ind()
+				e.emit(chanInitCName(elem) + "(" + nm + ");\n")
 			}
 		}
 	}
@@ -3505,7 +3678,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			return
 		}
 		e.ind()
-		e.emit(chanSendCName(e.chanElemByName[ct]) + "(&" + lhs + ", ")
+		e.emit(chanSendCName(e.chanElemByName[ct]) + "(" + lhs + ", ")
 		e.emitExpr(op[1].ast)
 		e.emit(");\n")
 		return
@@ -4395,7 +4568,7 @@ func (e *emitter) emitExprNode(n Node) {
 		// A receive `<-ch` wraps its operand in the channel's recv helper, so it
 		// cannot be emitted as the operator token followed by the operand.
 		if elem, base, ok := e.recvOperand(n, kids); ok {
-			e.emit(chanRecvCName(elem) + "(&" + base + ")")
+			e.emit(chanRecvCName(elem) + "(" + base + ")")
 			return
 		}
 		if n.sym == Factor {

@@ -3652,6 +3652,10 @@ func main() {
 // and waits for a receiver to take it, so the two meet in lock step and no buffer
 // is needed, matching the spec's "synchronous, lock-step" description.
 //
+// The C type is a *pointer* to the cell. A channel is a reference type in Go and
+// must be one here: handing a by-value cell to a goroutine would give it a copy,
+// and the two would rendezvous with themselves rather than each other.
+//
 // The declaration is what creates a channel, not make(): the checker rejects
 // `ch = make(chan int)` as "dynamic allocation not supported", which is the spec's
 // position ("channels are not created with make ... statically allocated"). The
@@ -3682,11 +3686,13 @@ func TestEmitCChannel(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"typedef struct { int lock; int full; int taken; int val; } ogo_chan_int;\n",
-		"\togo_chan_int ch = {0};\n",
-		"\togo_chan_init_int(&ch);\n",
-		"\togo_chan_send_int(&ch, 2);\n",
-		"\tprintf(\"%d\\n\", ogo_chan_recv_int(&ch));\n",
+		"typedef struct { int lock; int full; int taken; int val; } ogo_chan_int_cell;\n",
+		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
+		"\togo_chan_int_cell ch_cell = {0};\n",
+		"\tch = &ch_cell;\n",
+		"\togo_chan_init_int(ch);\n",
+		"\togo_chan_send_int(ch, 2);\n",
+		"\tprintf(\"%d\\n\", ogo_chan_recv_int(ch));\n",
 		"#include <propeller2.h>\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
@@ -3714,5 +3720,55 @@ func main() {
 	var buf bytes.Buffer
 	if err := EmitC(pkg, &buf); err == nil {
 		t.Errorf("EmitC accepted a package-level channel:\n%s", buf.String())
+	}
+}
+
+// TestEmitCGo pins the `go` statement. _cogstart takes one void* and a stack, and
+// both the arguments and the stack must outlive the statement -- the launched cog
+// reads them asynchronously -- so neither can be a local of the launching function.
+//
+// They live in a slot pool sized to the hardware: 8 cogs less the one running
+// main. That makes "out of slots" and "out of cogs" one condition, bounds
+// everything statically with no allocator, and is why `go` inside a loop need not
+// be rejected the way `defer` in a loop is: defer's problem was unbounded storage
+// in the current frame, while this is bounded by the silicon.
+//
+// Each site gets an argument struct and a trampoline matching _cogstart's
+// signature; the trampoline releases the slot when the goroutine returns, which is
+// also when the cog is freed.
+func TestEmitCGo(t *testing.T) {
+	src := `func worker(ch chan int, n int) {
+	ch <- n
+}
+
+func main() {
+	var ch chan int
+	go worker(ch, 42)
+	println(<-ch)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];\n",
+		"typedef struct { int slot; ogo_chan_int a0; int a1; } ogo_go_args0;\n",
+		"\tworker(a->a0, a->a1);\n",
+		"\togo_cog_release(a->slot);\n",
+		"\t\tif (_ogo_t0 < 0) { ogo_panic(\"out of cogs\"); }\n",
+		"\t\t_ogo_t1->a1 = 42;\n",
+		"\t\tif (_cogstart_C(ogo_go0, _ogo_t1, ogo_cog_pool[_ogo_t0].stack, sizeof ogo_cog_pool[_ogo_t0].stack) < 0) {\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC go: missing %q in\n%s", want, got)
+		}
 	}
 }
