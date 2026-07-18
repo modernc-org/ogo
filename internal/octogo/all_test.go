@@ -301,3 +301,56 @@ func TestFormat(t *testing.T) {
 		t.Errorf("Formatting output did not match expected.\n\n=== GOT ===\n%s\n\n=== EXPECTED ===\n%s\n", g, e)
 	}
 }
+
+// TestFormatAssignOps pins the compound assignment operators being spaced like the
+// plain "=" -- they reach the same isAssignOp spacing rule -- and the result being
+// a fixed point, which catches an operator that round-trips to different text.
+func TestFormatAssignOps(t *testing.T) {
+	const in = `func main() {
+x:=1
+x+=2
+x-=1
+x*=3
+x/=2
+x%=3
+x&=6
+x|=1
+x^=2
+x&^=4
+x<<=2
+x>>=1
+println(x)
+}
+`
+	const want = `func main() {
+	x := 1
+	x += 2
+	x -= 1
+	x *= 3
+	x /= 2
+	x %= 3
+	x &= 6
+	x |= 1
+	x ^= 2
+	x &^= 4
+	x <<= 2
+	x >>= 1
+	println(x)
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("compound assignment formatting:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}

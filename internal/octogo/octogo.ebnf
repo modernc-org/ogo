@@ -96,7 +96,11 @@ Postfix    = { Selector | Index | CallSuffix } [ PostfixOp ] .
 PostfixOp  = "<-" Expression
 	| "++"
 	| "--"
+	| AssignOp Expression
 	| { "," LhsItem } ( "=" | ":=" ) Expression .
+AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
+	| "&=" | "|=" | "^=" | "&^="
+	| "<<=" | ">>=" .
 LhsItem    = AssignHead { Selector | Index } .
 IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .

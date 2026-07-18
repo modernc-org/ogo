@@ -2190,6 +2190,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				}
 			case Expression:
 				rhs = append(rhs, n)
+			case AssignOp:
+				// A compound operator is wrapped in an AssignOp node, where "="
+				// and ":=" are direct children of the PostfixOp.
+				for c := range it(n.ast) {
+					if c.sym == 0 && isCompoundAssign(f.ch(c.tok)) {
+						op = f.ch(c.tok)
+					}
+				}
 			case 0:
 				switch sym := f.ch(n.tok); sym {
 				case ASSIGN, DEFINE, ARROW, INC, DEC:
@@ -2220,6 +2228,39 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 					f.err(tok.Position(), "cannot assign to %s", nm)
 				}
 			}
+		}
+		return
+	}
+
+	// A compound assignment "x op= y". Like "++"/"--" the target is read as well as
+	// written, so it is not recorded as a write and does count as a use. Unlike
+	// them it carries an operand, which is name-checked and then checked against
+	// the target -- except for the shifts, whose right operand is a count rather
+	// than a value of the target's type. The grammar admits no LhsItem here, so
+	// there is exactly one target.
+	if isCompoundAssign(op) {
+		for i, tok := range lhs {
+			nm := tok.Src()
+			if nm == "_" {
+				f.blankRead(tok) // "_ += 1" reads the blank identifier: illegal
+				continue
+			}
+			switch s.find(nm).(type) {
+			case nil:
+				if !f.isImportQualifier(s, nm) {
+					f.err(tok.Position(), "undefined: %s", nm)
+				}
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+				if !lhsSuffixed[i] {
+					f.err(tok.Position(), "cannot assign to %s", nm)
+				}
+			}
+		}
+		for _, e := range rhs {
+			f.checkNames(s, e)
+		}
+		if !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 {
+			f.checkAssignType(s, lhs[0], rhs[0])
 		}
 		return
 	}

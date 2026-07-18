@@ -18,14 +18,45 @@ var (
 	_ error = ErrList{}
 )
 
+// isCompoundAssign reports whether sym is one of the compound assignment
+// operators produced by the AssignOp production ("+=", "&^=", "<<=", ...).
+func isCompoundAssign(sym Symbol) bool {
+	switch sym {
+	case ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, QUO_ASSIGN, REM_ASSIGN,
+		AND_ASSIGN, OR_ASSIGN, XOR_ASSIGN, ANDNOT_ASSIGN, SHL_ASSIGN, SHR_ASSIGN:
+		return true
+	}
+	return false
+}
+
+// isShiftAssign reports whether sym is a shift-assignment ("<<=", ">>="). Their
+// right operand is a shift count rather than a value of the target's type, so it
+// is not checked for assignability to the target the way the others are.
+func isShiftAssign(sym Symbol) bool { return sym == SHL_ASSIGN || sym == SHR_ASSIGN }
+
 // Renamed Symbols
 const (
-	EOF       = TOK_EOF       // EOF
-	NEQ       = TOK_0021003d  // "!="
-	LAND      = TOK_00260026  // "&&"
-	LOR       = TOK_007c007c  // "||"
-	INC       = TOK_002b002b  // "++"
-	DEC       = TOK_002d002d  // "--"
+	EOF  = TOK_EOF      // EOF
+	NEQ  = TOK_0021003d // "!="
+	LAND = TOK_00260026 // "&&"
+	LOR  = TOK_007c007c // "||"
+	INC  = TOK_002b002b // "++"
+	DEC  = TOK_002d002d // "--"
+
+	// The compound assignment operators. Each pairs with the binary operator of
+	// the same name: "x op= y" is "x = x op y" with the target evaluated once.
+	ADD_ASSIGN    = TOK_002b003d     // "+="
+	SUB_ASSIGN    = TOK_002d003d     // "-="
+	MUL_ASSIGN    = TOK_002a003d     // "*="
+	QUO_ASSIGN    = TOK_002f003d     // "/="
+	REM_ASSIGN    = TOK_0025003d     // "%="
+	AND_ASSIGN    = TOK_0026003d     // "&="
+	OR_ASSIGN     = TOK_007c003d     // "|="
+	XOR_ASSIGN    = TOK_005e003d     // "^="
+	ANDNOT_ASSIGN = TOK_0026005e003d // "&^="
+	SHL_ASSIGN    = TOK_003c003c003d // "<<="
+	SHR_ASSIGN    = TOK_003e003e003d // ">>="
+
 	DEFINE    = TOK_003a003d  // ":="
 	ARROW     = TOK_003c002d  // "<-"
 	SHL       = TOK_003c003c  // "<<"

@@ -240,12 +240,14 @@ func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
 	return needsSpace(f.prevPrevTok, prev, curr, c)
 }
 
+// isAssignOp reports whether s is an assignment operator, for spacing: the plain
+// and short forms, and the compound ones, which are spaced identically ("x += 1").
 func isAssignOp(s Symbol) bool {
 	switch s {
 	case ASSIGN, DEFINE:
 		return true
 	}
-	return false
+	return isCompoundAssign(s)
 }
 
 func isRelOp(s Symbol) bool {

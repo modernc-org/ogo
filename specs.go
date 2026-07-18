@@ -655,12 +655,30 @@
 //	PostfixOp  = "<-" Expression
 //		| "++"
 //		| "--"
+//		| AssignOp Expression
 //		| { "," LhsItem } ( "=" | ":=" ) Expression .
+//	AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
+//		| "&=" | "|=" | "^=" | "&^="
+//		| "<<=" | ">>=" .
 //	LhsItem    = AssignHead { Selector | Index } .
 //
 // The "++" and "--" forms are the increment and decrement statements "x++" and
 // "x--"; they take no operand of their own (the target is the AssignHead) and,
 // unlike Go's, are statements only -- never expressions.
+//
+// The AssignOp forms are the compound assignments. "x op= y" is equivalent to
+// "x = x op y", except that the target is evaluated only once -- which is
+// observable when the target contains an index expression, as in "a[i()] += 1".
+// The operators mirror the binary ones and carry their operand rules: the
+// arithmetic forms ("+=", "-=", "*=", "/=", "%=") require numeric operands of
+// the same type, "+=" additionally concatenating strings; the bitwise forms
+// ("&=", "|=", "^=", "&^=") require integers of the same type; and the shifts
+// ("<<=", ">>=") take an unsigned or untyped-constant shift count that need not
+// match the target's type. "&^=" is the AND NOT form, clearing in the target
+// every bit set in the operand.
+//
+// Unlike "=", a compound assignment takes exactly one target: "a, b += 1" is
+// not a valid statement.
 //
 // # If Statements
 //

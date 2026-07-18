@@ -2981,6 +2981,20 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			return
 		}
 	}
+	// PostfixOp = AssignOp Expression -- a compound assignment `x += e`. The target
+	// is emitted once, which is the language semantics: it is evaluated once, not
+	// twice as the `x = x + e` expansion would suggest.
+	if len(op) == 2 && op[0].sym == AssignOp {
+		t, ok := e.assignTailOf(postfix[len(postfix)-1])
+		if !ok {
+			e.fail("unsupported compound assignment operator")
+			return
+		}
+		e.ind()
+		e.emit(lhs)
+		e.emitAssignTail(t)
+		return
+	}
 	// PostfixOp = ( "=" | ":=" ) Expression, for the single-target forms.
 	if len(op) != 2 || op[0].sym != 0 || op[1].sym != Expression {
 		e.fail("only `name = expr`, `name := expr`, `name++` and `name--` are supported yet")
@@ -3143,32 +3157,76 @@ func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string
 //
 // It classifies without emitting, so a caller can reject an unsupported form
 // before writing a partial statement.
-func (e *emitter) assignTail(opNode Node) (suffix string, rhs []int32, ok bool) {
+func (e *emitter) assignTailOf(opNode Node) (assignTail, bool) {
 	if opNode.sym != PostfixOp {
-		return "", nil, false
+		return assignTail{}, false
 	}
 	op := slices.Collect(it(opNode.ast))
 	if len(op) == 1 && op[0].sym == 0 {
 		switch e.f.ch(op[0].tok) {
 		case INC:
-			return "++", nil, true
+			return assignTail{op: "++"}, true
 		case DEC:
-			return "--", nil, true
+			return assignTail{op: "--"}, true
 		}
 	}
-	if len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN && op[1].sym == Expression {
-		return "", op[1].ast, true
+	if len(op) != 2 || op[1].sym != Expression {
+		return assignTail{}, false
 	}
-	return "", nil, false
+	if op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+		return assignTail{op: "=", rhs: op[1].ast}, true
+	}
+	if op[0].sym == AssignOp {
+		if tok, ok := e.soleToken(op[0].ast); ok {
+			sym := e.f.ch(tok)
+			if c, ok := cAssignOps[sym]; ok {
+				return assignTail{op: c, rhs: op[1].ast, complement: sym == ANDNOT_ASSIGN}, true
+			}
+		}
+	}
+	return assignTail{}, false
 }
 
-// emitAssignTail writes the classified tail after a target has been emitted.
-func (e *emitter) emitAssignTail(suffix string, rhs []int32) {
-	if rhs != nil {
-		e.emit(" = ")
-		e.emitExpr(rhs)
+// assignTail describes what follows an assignment target: the C operator, the
+// right operand (nil for ++/--), and whether that operand must be complemented.
+type assignTail struct {
+	op         string
+	rhs        []int32
+	complement bool
+}
+
+// cAssignOps maps each compound assignment token to the C operator that applies
+// it. C has no "&^=": Go's `x &^= y` clears in x every bit set in y, which is
+// `x &= ~(y)`, so ANDNOT_ASSIGN maps to "&=" and complements its operand.
+var cAssignOps = map[Symbol]string{
+	ADD_ASSIGN:    "+=",
+	SUB_ASSIGN:    "-=",
+	MUL_ASSIGN:    "*=",
+	QUO_ASSIGN:    "/=",
+	REM_ASSIGN:    "%=",
+	AND_ASSIGN:    "&=",
+	OR_ASSIGN:     "|=",
+	XOR_ASSIGN:    "^=",
+	SHL_ASSIGN:    "<<=",
+	SHR_ASSIGN:    ">>=",
+	ANDNOT_ASSIGN: "&=",
+}
+
+// emitAssignTail writes the classified tail after a target has been emitted. The
+// complemented operand is parenthesised, so `x &^= a | b` clears both bits rather
+// than complementing only a.
+func (e *emitter) emitAssignTail(t assignTail) {
+	if t.rhs == nil {
+		e.emit(t.op + ";\n") // "++" or "--"
+		return
+	}
+	e.emit(" " + t.op + " ")
+	if t.complement {
+		e.emit("~(")
+		e.emitExpr(t.rhs)
+		e.emit(")")
 	} else {
-		e.emit(suffix)
+		e.emitExpr(t.rhs)
 	}
 	e.emit(";\n")
 }
@@ -3192,9 +3250,9 @@ func (e *emitter) emitIndexSelectAssign(base, stars string, pre []string, indexA
 		e.fail("slicing an assignment target is not supported yet")
 		return
 	}
-	suffix, rhs, ok := e.assignTail(opNode)
+	t, ok := e.assignTailOf(opNode)
 	if !ok {
-		e.fail("only `x[i].f = expr`, `x[i].f++` and `x[i].f--` are supported for an indexed element's field yet")
+		e.fail("unsupported assignment form for an indexed element's field")
 		return
 	}
 	expr, elem, lenExpr, ok := e.indexedContainer(base, pre)
@@ -3209,7 +3267,7 @@ func (e *emitter) emitIndexSelectAssign(base, stars string, pre []string, indexA
 	low, _, _ := e.sliceParts(indexAST)
 	e.ind()
 	e.emitIndexSelect(expr, lenExpr, low, elem, post)
-	e.emitAssignTail(suffix, rhs)
+	e.emitAssignTail(t)
 }
 
 // emitFieldIndexAssign emits a write to a slice-field element `b.data[i] = v`,
@@ -3221,9 +3279,9 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 		e.fail("slicing a slice-field target is not supported yet")
 		return
 	}
-	suffix, rhs, ok := e.assignTail(opNode)
+	t, ok := e.assignTailOf(opNode)
 	if !ok {
-		e.fail("only `b.f[i] = expr`, `b.f[i]++` and `b.f[i]--` are supported for an indexed field element yet")
+		e.fail("unsupported assignment form for an indexed field element")
 		return
 	}
 	expr, elem, lenExpr, ok := e.indexedContainer(base, fields)
@@ -3233,7 +3291,7 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 	}
 	e.ind()
 	e.emitIndexSelect(expr, lenExpr, low, elem, nil)
-	e.emitAssignTail(suffix, rhs)
+	e.emitAssignTail(t)
 }
 
 // emitIndexAssign emits an indexed assignment `a[i] = v` or an indexed increment/
@@ -3263,16 +3321,16 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	} else if a, ok := e.arrayVar(base); ok {
 		lenExpr = a.bound
 	}
-	suffix, rhs, ok := e.assignTail(opNode)
+	t, ok := e.assignTailOf(opNode)
 	if !ok {
-		e.fail("only `a[i] = expr`, `a[i]++` and `a[i]--` are supported yet")
+		e.fail("unsupported assignment form for an indexed target")
 		return
 	}
 	e.ind()
 	e.emit(lhs + "[")
 	e.emitIndex(idx, lenExpr)
 	e.emit("]")
-	e.emitAssignTail(suffix, rhs)
+	e.emitAssignTail(t)
 }
 
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
