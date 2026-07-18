@@ -72,6 +72,135 @@ func sliceCName(elem string) string {
 	return sliceTypePrefix + sanitizeElem(elem)
 }
 
+// chanTypePrefix leads the C typedef name of an OctoGo channel `chan T`. A channel
+// is a rendezvous cell in Hub RAM guarded by one P2 hardware lock: a sender
+// deposits into the cell and waits for a receiver to take it, so the two meet in
+// lock step and no buffer is needed. `taken` counts consumed values, which is how a
+// sender identifies its own handoff when several senders share the channel --
+// watching `full` alone would let another sender's deposit be mistaken for its own.
+const chanTypePrefix = "ogo_chan_"
+
+// chanCName is the C type name of `chan elem`.
+func chanCName(elem string) string { return chanTypePrefix + sanitizeElem(elem) }
+
+// chanInitCName, chanSendCName and chanRecvCName name the per-element runtime
+// helpers.
+func chanInitCName(elem string) string { return "ogo_chan_init_" + sanitizeElem(elem) }
+
+func chanSendCName(elem string) string { return "ogo_chan_send_" + sanitizeElem(elem) }
+
+func chanRecvCName(elem string) string { return "ogo_chan_recv_" + sanitizeElem(elem) }
+
+// recvOperand recognises a receive expression `<-ch`, returning the channel's
+// element C type and the C name of the channel. Shared by emission and inference so
+// the two cannot disagree about what a receive yields.
+func (e *emitter) recvOperand(n Node, kids []Node) (elem, base string, ok bool) {
+	if n.sym != UnaryExpr || len(kids) != 2 || kids[0].sym != UnaryOp {
+		return "", "", false
+	}
+	tok, ok := e.unaryOpTok(kids[0].ast)
+	if !ok || e.f.ch(tok) != ARROW {
+		return "", "", false
+	}
+	base, ok = e.exprIdent(kids[1].ast)
+	if !ok {
+		return "", "", false
+	}
+	ct, ok := e.varType(base)
+	if !ok || !e.isChanCType(ct) {
+		return "", "", false
+	}
+	return e.chanElemByName[ct], base, true
+}
+
+// chanType recognises a channel type `chan T`, returning its element C type.
+func (e *emitter) chanType(typeAST []int32) (elem string, ok bool) {
+	nodes := slices.Collect(it(typeAST))
+	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != CHAN {
+		return "", false
+	}
+	for _, n := range nodes {
+		if n.sym == Type {
+			if elem = e.cType(n.ast); elem == "" {
+				return "", false
+			}
+			return elem, true
+		}
+	}
+	return "", false
+}
+
+// needChan records that `chan elem` is used, so its typedef and helpers are
+// emitted.
+func (e *emitter) needChan(elem string) {
+	e.chanElems[elem] = true
+	e.chanElemByName[chanCName(elem)] = elem
+}
+
+// isChanCType reports whether a C type is a channel cell.
+func (e *emitter) isChanCType(ctype string) bool { return strings.HasPrefix(ctype, chanTypePrefix) }
+
+// chanRuntimeDefs returns the typedef and the three helpers for `chan elem`.
+//
+// Blocking is a poll over _locktry with a _waitx(1) yield between attempts: a
+// blocked cog cannot sleep, since there is no scheduler, and spinning on the Hub
+// bus without yielding would starve the cogs doing real work.
+func chanRuntimeDefs(elem string) string {
+	c, snd, rcv, ini := chanCName(elem), chanSendCName(elem), chanRecvCName(elem), chanInitCName(elem)
+	return fmt.Sprintf(`typedef struct { int lock; int full; int taken; %[2]s val; } %[1]s;
+static inline void %[5]s(%[1]s* ch) {
+	ch->lock = _locknew();
+	if (ch->lock < 0) {
+		ogo_panic("out of hardware locks");
+	}
+	ch->full = 0;
+	ch->taken = 0;
+}
+static inline void %[3]s(%[1]s* ch, %[2]s v) {
+	int mine;
+	while (1) { // wait for the cell to be free, then deposit
+		if (_locktry(ch->lock)) {
+			if (!ch->full) {
+				mine = ch->taken;
+				ch->val = v;
+				ch->full = 1;
+				_lockrel(ch->lock);
+				break;
+			}
+			_lockrel(ch->lock);
+		}
+		_waitx(1);
+	}
+	while (1) { // rendezvous: wait until a receiver has taken *this* value
+		int done = 0;
+		if (_locktry(ch->lock)) {
+			done = ch->taken != mine;
+			_lockrel(ch->lock);
+		}
+		if (done) {
+			return;
+		}
+		_waitx(1);
+	}
+}
+static inline %[2]s %[4]s(%[1]s* ch) {
+	while (1) {
+		if (_locktry(ch->lock)) {
+			if (ch->full) {
+				%[2]s v = ch->val;
+				ch->full = 0;
+				ch->taken++;
+				_lockrel(ch->lock);
+				return v;
+			}
+			_lockrel(ch->lock);
+		}
+		_waitx(1);
+	}
+}
+`, c, elem, snd, rcv, ini)
+}
+
 // sliceTypedefDef returns the C typedef declaring the slice header for element
 // type elem. It has two emission sites -- the typedef section in EmitC, and
 // inline in structFieldsOf for a struct-element slice field -- so the shape is
@@ -172,7 +301,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -236,6 +365,12 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		return e.err
 	}
 
+	// A channel's helpers call ogo_panic and the P2 lock/wait intrinsics, so both
+	// must be requested before the include list is taken.
+	if len(e.chanElems) != 0 {
+		e.needPanic()
+		e.includes["propeller2.h"] = true
+	}
 	// Assemble: header, sorted #includes, result-struct typedefs, prototypes,
 	// then the definitions.
 	incs := make([]string, 0, len(e.includes))
@@ -305,6 +440,11 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if e.usesNonzero {
 		helperDefs.WriteString(ogoNonzero)
 	}
+	// A channel's helpers call ogo_panic (out of locks) and the P2 lock and wait
+	// intrinsics, so they follow the panic definition and pull in propeller2.h.
+	for _, el := range sortedKeys(e.chanElems) {
+		helperDefs.WriteString(chanRuntimeDefs(el))
+	}
 	for _, el := range sortedKeys(e.appendElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n"+
 			"\tif (s.len >= s.cap) {\n\t\togo_panic(\"append: out of capacity\");\n\t} else {\n"+
@@ -364,6 +504,8 @@ type emitter struct {
 	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
 	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
+	chanElems       map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
+	chanElemByName  map[string]string        // ogo_chan_<T> C type name -> its element C type
 	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
 	inlineSliceDefs map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
@@ -864,6 +1006,12 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				e.emitGlobalInit(initExpr)
 			}
 			e.emit(";\n")
+			if e.isChanCType(ctype) {
+				// A package-level channel would need its lock acquired before main
+				// runs, which is the synthesized-init pass that does not exist yet.
+				e.fail("a package-level channel is not supported yet")
+				return
+			}
 		}
 	}
 }
@@ -1585,12 +1733,20 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			switch {
 			case initExpr != nil:
 				e.emitExpr(initExpr)
-			case e.isStruct(ctype) || ctype == cString:
+			case e.isStruct(ctype) || ctype == cString || e.isChanCType(ctype):
 				e.emit("{0}") // zero every field (a string's zero is {NULL, 0})
 			default:
 				e.emit("0")
 			}
 			e.emit(";\n")
+			// A channel is storage, not a handle: the checker rejects make() for one
+			// ("dynamic allocation not supported"), so the declaration is what
+			// creates it. Acquiring the hardware lock here is what makes the cell
+			// usable, and ties the lock's lifetime to the variable's.
+			if e.isChanCType(ctype) {
+				e.ind()
+				e.emit(chanInitCName(e.chanElemByName[ctype]) + "(&" + nm + ");\n")
+			}
 		}
 	}
 }
@@ -1612,6 +1768,11 @@ func (e *emitter) cType(ast []int32) string {
 	if elem, ok := e.sliceType(ast); ok {
 		e.needSlice(elem)
 		return sliceCName(elem)
+	}
+	// Channel type: "chan" Type -> the ogo_chan_<elem> rendezvous cell.
+	if elem, ok := e.chanType(ast); ok {
+		e.needChan(elem)
+		return chanCName(elem)
 	}
 	var toks []int32
 	nonTerminal := false
@@ -3335,6 +3496,19 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		return
 	}
 	switch e.f.ch(op[0].tok) {
+	case ARROW:
+		// A send `ch <- v`. The receive form `x = <-ch` is an ordinary assignment
+		// whose right-hand side is a receive expression, so it does not come here.
+		ct, ok := e.varType(lhs)
+		if !ok || !e.isChanCType(ct) {
+			e.fail("a send statement needs a channel on the left")
+			return
+		}
+		e.ind()
+		e.emit(chanSendCName(e.chanElemByName[ct]) + "(&" + lhs + ", ")
+		e.emitExpr(op[1].ast)
+		e.emit(");\n")
+		return
 	case ASSIGN:
 		if lhs == "_" {
 			// A blank-identifier assignment discards the value: evaluate the
@@ -4005,6 +4179,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.inferNode(kids[1])
 		}
+		if elem, _, ok := e.recvOperand(n, kids); ok {
+			return elem, true
+		}
 		// Address-of `&x` adds a pointer level; deref `*p` removes one.
 		if n.sym == UnaryExpr && len(kids) >= 2 && kids[0].sym == UnaryOp {
 			if tok, ok := e.unaryOpTok(kids[0].ast); ok {
@@ -4213,6 +4390,12 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit("(")
 			e.emitExprNode(kids[1])
 			e.emit(")")
+			return
+		}
+		// A receive `<-ch` wraps its operand in the channel's recv helper, so it
+		// cannot be emitted as the operator token followed by the operand.
+		if elem, base, ok := e.recvOperand(n, kids); ok {
+			e.emit(chanRecvCName(elem) + "(&" + base + ")")
 			return
 		}
 		if n.sym == Factor {

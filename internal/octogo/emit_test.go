@@ -3646,3 +3646,73 @@ func main() {
 		t.Errorf("EmitC defer:\n got %q\nwant %q", got, want)
 	}
 }
+
+// TestEmitCChannel pins the channel type and its runtime. A channel is a
+// rendezvous cell in Hub RAM guarded by one P2 hardware lock: a sender deposits
+// and waits for a receiver to take it, so the two meet in lock step and no buffer
+// is needed, matching the spec's "synchronous, lock-step" description.
+//
+// The declaration is what creates a channel, not make(): the checker rejects
+// `ch = make(chan int)` as "dynamic allocation not supported", which is the spec's
+// position ("channels are not created with make ... statically allocated"). The
+// README's blinky example disagrees and is wrong.
+//
+// `taken` counts consumed values. A sender watching `full` alone could mistake
+// another sender's deposit for its own handoff, so it records `taken` before
+// depositing and waits for that count to move.
+//
+// Blocking is a poll over _locktry with a _waitx(1) yield: a blocked cog cannot
+// sleep, and spinning on the Hub bus without yielding starves the cogs doing work.
+func TestEmitCChannel(t *testing.T) {
+	src := `func main() {
+	var ch chan int
+	ch <- 2
+	println(<-ch)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"typedef struct { int lock; int full; int taken; int val; } ogo_chan_int;\n",
+		"\togo_chan_int ch = {0};\n",
+		"\togo_chan_init_int(&ch);\n",
+		"\togo_chan_send_int(&ch, 2);\n",
+		"\tprintf(\"%d\\n\", ogo_chan_recv_int(&ch));\n",
+		"#include <propeller2.h>\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC channel: missing %q in\n%s", want, got)
+		}
+	}
+}
+
+// TestEmitCChannelPackageLevel pins a package-level channel failing honestly: its
+// lock would have to be acquired before main runs, which is the synthesized-init
+// pass that does not exist yet.
+func TestEmitCChannelPackageLevel(t *testing.T) {
+	src := `var ch chan int
+
+func main() {
+	ch <- 1
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err == nil {
+		t.Errorf("EmitC accepted a package-level channel:\n%s", buf.String())
+	}
+}
