@@ -164,7 +164,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -336,6 +336,7 @@ type emitter struct {
 	methodPtr       map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals         map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs         map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
+	namedTypes      map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
 	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
 	arrays          map[string]arrDim        // local array name -> element type and bound (reset per function)
 	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
@@ -477,15 +478,18 @@ func (e *emitter) collectStructs(ast []int32) {
 	}
 }
 
-// collectTypeDecl records a `type Name struct { ... }` declaration (single or
-// grouped) and emits its typedef. A non-struct type alias fails honestly.
+// collectTypeDecl records a type declaration (single or grouped) and emits its
+// typedef: a `type Name struct { ... }` as `typedef struct { ... } Name;`, and a
+// non-struct named type `type Name <underlying>` (e.g. `type Celsius int`) as
+// `typedef <underlying> Name;`. The named type may then back variables and carry
+// methods. An underlying type outside the modelled subset fails honestly.
 func (e *emitter) collectTypeDecl(ast []int32) {
 	for n := range it(ast) {
 		if n.sym != TypeSpec {
 			continue
 		}
 		var name string
-		var structAST []int32
+		var typeAST []int32
 		for s := range it(n.ast) {
 			switch s.sym {
 			case 0:
@@ -493,20 +497,31 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 					name = e.src(s.tok)
 				}
 			case Type:
-				structAST = e.structTypeAST(s.ast)
+				typeAST = s.ast
 			}
 		}
-		if name == "" || structAST == nil {
-			e.fail("only `type Name struct { ... }` declarations are supported yet")
+		if name == "" || typeAST == nil {
+			e.fail("malformed type declaration")
 			return
 		}
-		fields := e.structFieldsOf(structAST)
-		e.structs[name] = fields
-		e.emit("typedef struct {")
-		for _, fld := range fields {
-			e.emit(" " + fld.ctype + " " + fld.name + ";")
+		if structAST := e.structTypeAST(typeAST); structAST != nil {
+			fields := e.structFieldsOf(structAST)
+			e.structs[name] = fields
+			e.emit("typedef struct {")
+			for _, fld := range fields {
+				e.emit(" " + fld.ctype + " " + fld.name + ";")
+			}
+			e.emit(" } " + name + ";\n")
+			continue
 		}
-		e.emit(" } " + name + ";\n")
+		// A non-struct named type: `type Celsius int` -> `typedef int Celsius;`. The
+		// underlying must be a modelled scalar (or other cType-resolvable) type.
+		underlying := e.cType(typeAST)
+		if underlying == "" {
+			return // cType has latched the failure
+		}
+		e.namedTypes[name] = true
+		e.emit("typedef " + underlying + " " + name + ";\n")
 	}
 }
 
@@ -1432,9 +1447,17 @@ func (e *emitter) cType(ast []int32) string {
 	if _, ok := e.structs[name]; ok {
 		return name
 	}
+	if e.namedTypes[name] {
+		return name
+	}
 	e.fail("unsupported type %q", name)
 	return ""
 }
+
+// isUserType reports whether a C type name denotes a user-defined type that may
+// carry methods -- a struct or a non-struct named type -- as opposed to a
+// predeclared type or an imported package qualifier.
+func (e *emitter) isUserType(ctype string) bool { return e.isStruct(ctype) || e.namedTypes[ctype] }
 
 // arrayType recognises a fixed-array type `[N]T`, returning the element C type and
 // the C bound. A slice `[]T` (no bound) or a non-constant bound is not modelled.
@@ -2206,11 +2229,11 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		return true
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		method := e.soleIdent(suffix[0].ast)
-		// A method call `x.M(args)` on a variable of struct (or pointer-to-struct)
-		// type lowers to `<T>_M(recv, args)`, with the receiver adjusted to match the
-		// method's value or pointer receiver. Distinguished from a package call
-		// (`p2.F(...)`) by recv naming a struct-typed variable rather than an import.
-		if rct, ok := e.varType(recv); ok && e.isStruct(methodBaseType(rct)) {
+		// A method call `x.M(args)` on a variable of a user-defined type (struct or
+		// named, value or pointer) lowers to `<T>_M(recv, args)`, with the receiver
+		// adjusted to match the method's value or pointer receiver. Distinguished from
+		// a package call (`p2.F(...)`) by recv naming a typed variable, not an import.
+		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
 			cname := methodCName(methodBaseType(rct), method)
 			e.emit(cname + "(")
 			e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
@@ -3149,7 +3172,7 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		// A single-result method call `x.M()` carries its recorded result type,
 		// keyed by the receiver type's mangled method name.
-		if rct, ok := e.varType(recv); ok && e.isStruct(methodBaseType(rct)) {
+		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
 			method := e.soleIdent(suffix[0].ast)
 			if rts, ok := e.funcRet[methodCName(methodBaseType(rct), method)]; ok && len(rts) == 1 {
 				return rts[0], true
