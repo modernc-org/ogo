@@ -481,11 +481,42 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 // when set the field is a fixed-size array, declared `ctype name[bound]` -- C puts
 // the extent on the declarator, not the type, so the two cannot simply be
 // concatenated the way every other field is.
-type structField struct{ name, ctype, bound string }
+type structField struct {
+	name, ctype string
+	dim         arrDim // dim.bound != "" for a fixed-array field; ctype is then its element type
+}
 
 // arrDim describes an array variable: its element C type and its C bound (for
 // element typing and len).
-type arrDim struct{ elem, bound string }
+// arrDim describes a fixed array: the innermost element C type, the outermost
+// extent, and any further extents for a multi-dimensional one. `[2][3]int` is
+// {elem: "int", bound: "2", inner: ["3"]} and declares as `int m[2][3]`.
+//
+// bound stays the outermost extent, which is what len/cap and slicing want (Go's
+// len of a [2][3]int is 2), so the one-dimensional callers need no change. elem,
+// by contrast, is only the type of an *indexed element* when inner is empty: one
+// index into a [2][3]int yields a [3]int, not an int. Callers that type an element
+// must check dims() == 1.
+type arrDim struct {
+	elem  string
+	bound string
+	inner []string
+}
+
+// dims reports the number of dimensions.
+func (a arrDim) dims() int { return 1 + len(a.inner) }
+
+// bounds returns every extent, outermost first.
+func (a arrDim) bounds() []string { return append([]string{a.bound}, a.inner...) }
+
+// declSuffix renders the C declarator brackets, `[2][3]`.
+func (a arrDim) declSuffix() string {
+	s := ""
+	for _, b := range a.bounds() {
+		s += "[" + b + "]"
+	}
+	return s
+}
 
 // deferredCall is a recorded `defer` statement: the call's head (AssignHead) and
 // its suffix (Selector / Index / CallSuffix), replayed through emitCall before the
@@ -547,8 +578,8 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			e.structs[name] = fields
 			e.emit("typedef struct {")
 			for _, fld := range fields {
-				if fld.bound != "" {
-					e.emit(" " + fld.ctype + " " + fld.name + "[" + fld.bound + "];")
+				if fld.dim.bound != "" {
+					e.emit(" " + fld.ctype + " " + fld.name + fld.dim.declSuffix() + ";")
 					continue
 				}
 				e.emit(" " + fld.ctype + " " + fld.name + ";")
@@ -588,7 +619,7 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 		}
 		var names []string
 		ctype := ""
-		bound := "" // non-empty for a fixed-size array field
+		var dim arrDim // dim.bound non-empty for a fixed-size array field
 		for c := range it(n.ast) {
 			switch c.sym {
 			case Type:
@@ -619,8 +650,8 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 				// slice it needs no header typedef -- the storage is inline -- but C
 				// puts the extent on the declarator, so the bound travels beside the
 				// element type and is applied when the typedef is written.
-				if el, bnd, ok := e.arrayType(c.ast); ok {
-					ctype, bound = el, bnd
+				if a, ok := e.arrayDim(c.ast); ok {
+					ctype, dim = a.elem, a
 					break
 				}
 				ctype = e.cType(c.ast)
@@ -635,7 +666,7 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 			return out
 		}
 		for _, nm := range names {
-			out = append(out, structField{name: nm, ctype: ctype, bound: bound})
+			out = append(out, structField{name: nm, ctype: ctype, dim: dim})
 		}
 	}
 	return out
@@ -750,7 +781,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			for _, nm := range names {
 				if nm != "_" {
-					e.globalArrays[nm] = arrDim{elem, bound}
+					e.globalArrays[nm] = arrDim{elem: elem, bound: bound}
 					e.emit("static " + elem + " " + nm + "[" + bound + "];\n")
 				}
 			}
@@ -1276,7 +1307,7 @@ func (e *emitter) bindParams(sig []int32) {
 			if !seenRPar {
 				e.forEachParam(n.ast, func(name string, ta []int32) {
 					if elem, bound, ok := e.arrayType(ta); ok {
-						e.arrays[name] = arrDim{elem, bound}
+						e.arrays[name] = arrDim{elem: elem, bound: bound}
 						return
 					}
 					if elem, ok := e.sliceType(ta); ok {
@@ -1415,7 +1446,8 @@ func (e *emitter) emitVarDecl(ast []int32) {
 		// element type for `x := a[i]` typing. An initializer copies another array of
 		// the same type by value (`var b [N]T = a`); C cannot assign arrays, so the
 		// array is declared uninitialized and filled with memcpy.
-		if elem, bound, ok := e.arrayType(typeAST); ok {
+		if a, ok := e.arrayDim(typeAST); ok {
+			elem := a.elem
 			if len(names) != 1 && initExpr != nil {
 				e.fail("multi-name var with initializer is not supported yet")
 				return
@@ -1427,15 +1459,15 @@ func (e *emitter) emitVarDecl(ast []int32) {
 					}
 					continue
 				}
-				e.arrays[nm] = arrDim{elem, bound}
+				e.arrays[nm] = a
 				if initExpr == nil {
 					e.ind()
-					e.emit(elem + " " + nm + "[" + bound + "] = {0};\n")
+					e.emit(elem + " " + nm + a.declSuffix() + " = {0};\n")
 					continue
 				}
 				e.includes["string.h"] = true
 				e.ind()
-				e.emit(elem + " " + nm + "[" + bound + "];\n")
+				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
 				e.ind()
 				e.emit("memcpy(" + nm + ", ")
 				e.emitExpr(initExpr)
@@ -1592,9 +1624,21 @@ func (e *emitter) isUserType(ctype string) bool { return e.isStruct(ctype) || e.
 // arrayType recognises a fixed-array type `[N]T`, returning the element C type and
 // the C bound. A slice `[]T` (no bound) or a non-constant bound is not modelled.
 func (e *emitter) arrayType(typeAST []int32) (elem, bound string, ok bool) {
+	a, ok := e.arrayDim(typeAST)
+	if !ok || a.dims() != 1 {
+		return "", "", false // a multi-dimensional array has no single bound
+	}
+	return a.elem, a.bound, true
+}
+
+// arrayDim recognises a fixed array type `[N]T`, including a multi-dimensional
+// `[N][M]T`, returning its element type and every extent. cType models no array
+// type, so a nested element is resolved by recursing here rather than through it
+// -- which is why `[2][3]int` used to fail as `unsupported type ""`.
+func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 	nodes := slices.Collect(it(typeAST))
 	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK {
-		return "", "", false
+		return arrDim{}, false
 	}
 	var sizeAST, elemAST []int32
 	for _, n := range nodes {
@@ -1606,16 +1650,20 @@ func (e *emitter) arrayType(typeAST []int32) (elem, bound string, ok bool) {
 		}
 	}
 	if sizeAST == nil || elemAST == nil {
-		return "", "", false // a slice, or a malformed array
+		return arrDim{}, false // a slice, or a malformed array
 	}
-	bound, ok = e.arrayBoundC(sizeAST)
+	bound, ok := e.arrayBoundC(sizeAST)
 	if !ok {
-		return "", "", false
+		return arrDim{}, false
 	}
-	if elem = e.cType(elemAST); elem == "" {
-		return "", "", false
+	if inner, ok := e.arrayDim(elemAST); ok {
+		return arrDim{elem: inner.elem, bound: bound, inner: inner.bounds()}, true
 	}
-	return elem, bound, true
+	elem := e.cType(elemAST)
+	if elem == "" {
+		return arrDim{}, false
+	}
+	return arrDim{elem: elem, bound: bound}, true
 }
 
 // sliceType recognises a slice type `[]T`, returning its element C type. It is a
@@ -1743,6 +1791,110 @@ func (e *emitter) factorIndexSelect(kids []Node) (base string, pre []string, ind
 	return e.src(kids[0].tok), pre, indexAST, post, true
 }
 
+// factorArrayIndex recognises a full index into a multi-dimensional array --
+// `m[i][j]`, `s.m[i][j]` -- as an identifier, an optional field chain, then one
+// Index per dimension.
+//
+// A slice cannot be indexed this way, and is rejected: its inner bound would need
+// the already-emitted prefix as a length expression, which is no longer a string
+// by then. An array has no such problem, because every extent is a compile-time
+// constant, so each dimension is bounds-checked independently.
+func (e *emitter) factorArrayIndex(kids []Node) (base string, fields []string, idxs [][]int32, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, nil, false
+	}
+	suffix := slices.Collect(it(kids[1].ast))
+	at := len(suffix)
+	for i, n := range suffix {
+		if n.sym == Index {
+			at = i
+			break
+		}
+	}
+	if fields, ok = e.selectorFieldsAll(suffix[:at]); !ok {
+		return "", nil, nil, false
+	}
+	for _, n := range suffix[at:] {
+		if n.sym != Index {
+			return "", nil, nil, false // a selector after an index is a different shape
+		}
+		low, _, isSlice := e.sliceParts(n.ast)
+		if isSlice || low == nil {
+			return "", nil, nil, false
+		}
+		idxs = append(idxs, low)
+	}
+	if len(idxs) < 2 {
+		return "", nil, nil, false // one index is the existing single-index shape
+	}
+	return e.src(kids[0].tok), fields, idxs, true
+}
+
+// indexedArray resolves the array an index chain applies to -- a local or package
+// array variable, or an array-typed struct field -- returning the C expression
+// naming its storage and its dimensions.
+func (e *emitter) indexedArray(base string, fields []string) (string, arrDim, bool) {
+	if len(fields) == 0 {
+		if a, ok := e.arrayVar(base); ok {
+			return base, a, true
+		}
+		return "", arrDim{}, false
+	}
+	if a, ok := e.fieldArray(base, fields); ok {
+		return e.fieldAccessC(base, fields), a, true
+	}
+	return "", arrDim{}, false
+}
+
+// emitArrayIndex emits `m[i][j]`, bounds-checking each index against its own
+// extent. The caller must have checked that the chain indexes every dimension.
+func (e *emitter) emitArrayIndex(expr string, a arrDim, idxs [][]int32) {
+	e.emit(expr)
+	bs := a.bounds()
+	for i, idx := range idxs {
+		e.emit("[")
+		e.emitIndex(idx, bs[i])
+		e.emit("]")
+	}
+}
+
+// arrayIndexTarget recognises an assignment target that fully indexes a
+// multi-dimensional array, `m[i][j]` or `s.m[i][j]`. chain is the postfix without
+// its PostfixOp, the same node sequence a FactorSuffix carries, so the shape test
+// matches factorArrayIndex's.
+func (e *emitter) arrayIndexTarget(base string, chain []Node) ([][]int32, arrDim, string, bool) {
+	at := len(chain)
+	for i, n := range chain {
+		if n.sym == Index {
+			at = i
+			break
+		}
+	}
+	fields, ok := e.selectorFieldsAll(chain[:at])
+	if !ok {
+		return nil, arrDim{}, "", false
+	}
+	var idxs [][]int32
+	for _, n := range chain[at:] {
+		if n.sym != Index {
+			return nil, arrDim{}, "", false
+		}
+		low, _, isSlice := e.sliceParts(n.ast)
+		if isSlice || low == nil {
+			return nil, arrDim{}, "", false
+		}
+		idxs = append(idxs, low)
+	}
+	if len(idxs) < 2 {
+		return nil, arrDim{}, "", false
+	}
+	expr, a, ok := e.indexedArray(base, fields)
+	if !ok || a.dims() != len(idxs) {
+		return nil, arrDim{}, "", false
+	}
+	return idxs, a, expr, true
+}
+
 // splitIndexSelect splits an access chain `{Selector} Index {Selector}` into the
 // leading field chain, the index, and the trailing field chain. Shared by the
 // expression shape (a FactorSuffix's children) and the assignment target shape
@@ -1816,6 +1968,9 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 		return sliceSource{cString, base + ".str", base + ".len", ""}, true
 	case e.hasArrayVar(base):
 		a, _ := e.arrayVar(base)
+		if a.dims() > 1 {
+			return sliceSource{}, false // slicing a multi-dimensional array is not modelled
+		}
 		e.needSlice(a.elem)
 		return sliceSource{sliceCName(a.elem), base, a.bound, a.bound}, true
 	case e.hasSliceVar(base):
@@ -2922,6 +3077,19 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.emitIndexAssign(base, postfix[0], postfix[1])
 		return
 	}
+	// A full index into a multi-dimensional array, `m[i][j] = v`: an optional field
+	// chain then one Index per dimension.
+	if idxs, a, expr, ok := e.arrayIndexTarget(base, postfix[:len(postfix)-1]); ok {
+		t, ok := e.assignTailOf(postfix[len(postfix)-1])
+		if !ok {
+			e.fail("unsupported assignment form for a multi-dimensional array element")
+			return
+		}
+		e.ind()
+		e.emitArrayIndex(expr, a, idxs)
+		e.emitAssignTail(t)
+		return
+	}
 	// An indexed element's field `s[i].x = v` / `p.pts[i].x = v`: an optional field
 	// chain, one index, then at least one selector before the assignment. Tried
 	// ahead of the index-last shape below, which cannot match a trailing selector.
@@ -3108,6 +3276,12 @@ func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenEx
 			return base + ".ptr", el, base + ".len", true
 		}
 		if a, ok := e.arrayVar(base); ok {
+			if a.dims() > 1 {
+				// One index into a [N][M]T yields a [M]T row, not an element. C
+				// cannot assign an array by value, and typing the result as elem
+				// would emit `int r = m[1];`, so leave it to the full-index path.
+				return "", "", "", false
+			}
 			return base, a.elem, a.bound, true
 		}
 		return "", "", "", false
@@ -3116,6 +3290,9 @@ func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenEx
 	// declared extent; a slice-typed one goes through its header's backing pointer,
 	// bounded by the runtime length.
 	if a, ok := e.fieldArray(base, pre); ok {
+		if a.dims() > 1 {
+			return "", "", "", false // see the variable case above
+		}
 		return e.fieldAccessC(base, pre), a.elem, a.bound, true
 	}
 	ct, ok := e.fieldType(base, pre)
@@ -3319,6 +3496,10 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		lhs = base + ".ptr"
 		lenExpr = base + ".len"
 	} else if a, ok := e.arrayVar(base); ok {
+		if a.dims() > 1 {
+			e.fail("a multi-dimensional array must be indexed in every dimension")
+			return
+		}
 		lenExpr = a.bound
 	}
 	t, ok := e.assignTailOf(opNode)
@@ -3576,7 +3757,7 @@ func (e *emitter) elemType(ctype string) string { return strings.TrimSuffix(ctyp
 func (e *emitter) structFieldType(ctype, field string) (string, bool) {
 	for _, fld := range e.structs[e.elemType(ctype)] {
 		if fld.name == field {
-			if fld.bound != "" {
+			if fld.dim.bound != "" {
 				// An array field has no single C value type -- C cannot assign or
 				// pass one by value -- so it is not reportable here. Indexing reaches
 				// it through structFieldArray instead, and any path that wanted a
@@ -3595,8 +3776,8 @@ func (e *emitter) structFieldType(ctype, field string) (string, bool) {
 // structFieldType, which deliberately refuses such a field.
 func (e *emitter) structFieldArray(ctype, field string) (arrDim, bool) {
 	for _, fld := range e.structs[e.elemType(ctype)] {
-		if fld.name == field && fld.bound != "" {
-			return arrDim{elem: fld.ctype, bound: fld.bound}, true
+		if fld.name == field && fld.dim.bound != "" {
+			return fld.dim, true
 		}
 	}
 	return arrDim{}, false
@@ -3722,6 +3903,13 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				return e.fieldType(base, fields)
 			}
+			// `m[i][j]` -- a fully indexed multi-dimensional array yields its element.
+			if base, fields, idxs, ok := e.factorArrayIndex(kids); ok {
+				if _, a, ok := e.indexedArray(base, fields); ok && a.dims() == len(idxs) {
+					return a.elem, true
+				}
+				return "", false
+			}
 			// `s[i].x` / `p.pts[i].x` -- the element's selected field type.
 			if base, pre, indexAST, post, ok := e.factorIndexSelect(kids); ok {
 				if _, _, isSlice := e.sliceParts(indexAST); !isSlice {
@@ -3766,8 +3954,13 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					}
 					return "", false
 				}
-				// A plain index yields the element type of an array or a slice.
+				// A plain index yields the element type of an array or a slice. One
+				// index into a multi-dimensional array yields a row instead, which
+				// has no C value type, so it is refused rather than typed as elem.
 				if a, ok := e.arrayVar(base); ok {
+					if a.dims() > 1 {
+						return "", false
+					}
 					return a.elem, true
 				}
 				if elem, ok := e.sliceElem(base); ok {
@@ -3915,6 +4108,13 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 				return
 			}
+			// `m[i][j]` -- a full index into a multi-dimensional array.
+			if base, fields, idxs, ok := e.factorArrayIndex(kids); ok {
+				if expr, a, ok := e.indexedArray(base, fields); ok && a.dims() == len(idxs) {
+					e.emitArrayIndex(expr, a, idxs)
+					return
+				}
+			}
 			// `s[i].x` / `p.pts[i].x` -- index a container, then select from the
 			// element. Checked ahead of the index-only shapes, which cannot match a
 			// trailing selector anyway.
@@ -3969,6 +4169,10 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(base + ".ptr[")
 					lenExpr = base + ".len"
 				} else {
+					if a, ok := e.arrayVar(base); ok && a.dims() > 1 {
+						e.fail("a multi-dimensional array must be indexed in every dimension")
+						return
+					}
 					e.emit(base + "[")
 					if a, ok := e.arrayVar(base); ok {
 						lenExpr = a.bound
