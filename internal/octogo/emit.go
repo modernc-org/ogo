@@ -3380,7 +3380,6 @@ var cAssignOps = map[Symbol]string{
 	SUB_ASSIGN:    "-=",
 	MUL_ASSIGN:    "*=",
 	QUO_ASSIGN:    "/=",
-	REM_ASSIGN:    "%=",
 	AND_ASSIGN:    "&=",
 	OR_ASSIGN:     "|=",
 	XOR_ASSIGN:    "^=",

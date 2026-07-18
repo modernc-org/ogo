@@ -22,7 +22,7 @@ var (
 // operators produced by the AssignOp production ("+=", "&^=", "<<=", ...).
 func isCompoundAssign(sym Symbol) bool {
 	switch sym {
-	case ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, QUO_ASSIGN, REM_ASSIGN,
+	case ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, QUO_ASSIGN,
 		AND_ASSIGN, OR_ASSIGN, XOR_ASSIGN, ANDNOT_ASSIGN, SHL_ASSIGN, SHR_ASSIGN:
 		return true
 	}
@@ -49,7 +49,6 @@ const (
 	SUB_ASSIGN    = TOK_002d003d     // "-="
 	MUL_ASSIGN    = TOK_002a003d     // "*="
 	QUO_ASSIGN    = TOK_002f003d     // "/="
-	REM_ASSIGN    = TOK_0025003d     // "%="
 	AND_ASSIGN    = TOK_0026003d     // "&="
 	OR_ASSIGN     = TOK_007c003d     // "|="
 	XOR_ASSIGN    = TOK_005e003d     // "^="

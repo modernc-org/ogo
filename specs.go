@@ -657,7 +657,7 @@
 //		| "--"
 //		| AssignOp Expression
 //		| { "," LhsItem } ( "=" | ":=" ) Expression .
-//	AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
+//	AssignOp   = "+=" | "-=" | "*=" | "/="
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .
 //	LhsItem    = AssignHead { Selector | Index } .
@@ -670,7 +670,7 @@
 // "x = x op y", except that the target is evaluated only once -- which is
 // observable when the target contains an index expression, as in "a[i()] += 1".
 // The operators mirror the binary ones and carry their operand rules: the
-// arithmetic forms ("+=", "-=", "*=", "/=", "%=") require numeric operands of
+// arithmetic forms ("+=", "-=", "*=", "/=") require numeric operands of
 // the same type, "+=" additionally concatenating strings; the bitwise forms
 // ("&=", "|=", "^=", "&^=") require integers of the same type; and the shifts
 // ("<<=", ">>=") take an unsigned or untyped-constant shift count that need not
