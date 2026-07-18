@@ -645,8 +645,30 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 		}
 		if typeAST == nil {
-			e.fail("a package variable needs an explicit type (inference not supported yet)")
-			return
+			// Type-inferred package variable `var x = expr`. C requires a constant
+			// initializer at file scope (emitGlobalInit), so a single named variable
+			// with an inferable type is modelled; a make/slice initializer still needs
+			// an explicit type and fails honestly through inference.
+			if len(names) != 1 {
+				e.fail("a type-inferred package variable must be a single name (var x = expr)")
+				return
+			}
+			if names[0] == "_" {
+				continue // a blank package variable declares nothing
+			}
+			ct, ok := e.inferCType(initExpr)
+			if !ok {
+				e.fail("cannot infer a type for the package variable %q", names[0])
+				return
+			}
+			e.globals[names[0]] = ct
+			if e.isSliceCType(ct) {
+				e.globalSliceVars[names[0]] = sliceElemFromCName(ct)
+			}
+			e.emit("static " + ct + " " + names[0] + " = ")
+			e.emitGlobalInit(initExpr)
+			e.emit(";\n")
+			continue
 		}
 		if len(names) != 1 && initExpr != nil {
 			e.fail("multi-name package variable with an initializer is not supported yet")
@@ -1278,8 +1300,23 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			}
 		}
 		if typeAST == nil {
-			e.fail("var declaration needs an explicit type (inference not supported yet)")
-			return
+			// Type-inferred `var x = expr` (the var form of `x := expr`) or
+			// `var a, b = f()` (destructuring). The grammar guarantees an initializer
+			// when the type is omitted.
+			if initExpr == nil {
+				e.fail("var declaration needs a type or an initializer")
+				return
+			}
+			if len(names) != 1 {
+				e.emitDestructure(names, true, initExpr)
+				continue
+			}
+			if names[0] == "_" {
+				e.emitDiscard(initExpr)
+				continue
+			}
+			e.emitInferredLocal(names[0], initExpr)
+			continue
 		}
 		// A fixed array `var a [N]T` -> `T a[N] = {0};`. Its name maps to the
 		// element type for `x := a[i]` typing. An initializer copies another array of
@@ -2665,33 +2702,39 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("a short declaration cannot have a field target")
 			return
 		}
-		// A make initializer synthesises a backing array + header (as in a var decl).
-		if elem, lenAST, capAST, ok := e.makeSliceInit(op[1].ast); ok {
-			cname := sliceCName(elem)
-			e.needSlice(elem)
-			e.sliceVars[base] = elem
-			e.locals[base] = cname
-			e.emitMakeSliceVar(base, cname, elem, lenAST, capAST, false)
-			return
-		}
-		ct, ok := e.inferCType(op[1].ast)
-		if !ok {
-			e.fail("cannot infer a type for the short declaration of %q", base)
-			return
-		}
-		e.locals[base] = ct
-		// A slice-typed short declaration (from a slice expression or append) records
-		// its element type, so later indexing / len / cap / append on it resolve.
-		if e.isSliceCType(ct) {
-			e.sliceVars[base] = sliceElemFromCName(ct)
-		}
-		e.ind()
-		e.emit(ct + " " + base + " = ")
-		e.emitExpr(op[1].ast)
-		e.emit(";\n")
+		e.emitInferredLocal(base, op[1].ast)
 	default:
 		e.fail("only `name = expr` and `name := expr` are supported yet")
 	}
+}
+
+// emitInferredLocal emits a type-inferred local declaration -- the short form
+// `name := expr` or the var form `var name = expr` -- inferring name's C type from
+// the initializer. A make initializer synthesises a slice backing array + header; a
+// slice-typed result records its element type so later indexing / len / cap /
+// append on name resolve.
+func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
+	if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
+		cname := sliceCName(elem)
+		e.needSlice(elem)
+		e.sliceVars[name] = elem
+		e.locals[name] = cname
+		e.emitMakeSliceVar(name, cname, elem, lenAST, capAST, false)
+		return
+	}
+	ct, ok := e.inferCType(initExpr)
+	if !ok {
+		e.fail("cannot infer a type for the declaration of %q", name)
+		return
+	}
+	e.locals[name] = ct
+	if e.isSliceCType(ct) {
+		e.sliceVars[name] = sliceElemFromCName(ct)
+	}
+	e.ind()
+	e.emit(ct + " " + name + " = ")
+	e.emitExpr(initExpr)
+	e.emit(";\n")
 }
 
 // emitIndexAssign emits an indexed assignment `a[i] = v` or an indexed increment/
@@ -3132,6 +3175,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			return cString, true
 		case IDENT:
 			nm := e.src(n.tok)
+			if nm == "true" || nm == "false" {
+				return "int", true // the predeclared bool constants; bool is C int
+			}
 			if ct, ok := e.locals[nm]; ok {
 				return ct, true
 			}
