@@ -164,7 +164,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -332,7 +332,8 @@ type emitter struct {
 	f               *File     // file currently being emitted, for token access
 	indent          int
 	includes        map[string]bool
-	funcRet         map[string][]string      // user function name -> C result types (empty=void), for typing calls
+	funcRet         map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
+	methodPtr       map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals         map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs         map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
@@ -783,23 +784,37 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 // for a function with more than one result, emits a result-struct typedef —
 // `typedef struct { <t0> _0; <t1> _1; ... } ogo_ret_<name>;` — that its C
 // signature returns in place of C's absent multiple-return.
+// collectResults records every user function's and method's C result types in
+// funcRet (keyed by the plain name for a function, the mangled `<T>_<method>` for a
+// method) and, for a multi-result callee, emits its result-struct typedef. A
+// method's receiver pointer-ness is recorded in methodPtr for the call site.
 func (e *emitter) collectResults(ast []int32) {
-	e.eachFuncDecl(ast, func(name string, sig []int32) {
+	e.eachFuncDeclAST(ast, func(d []int32) {
+		name, sig, _, recv, ok := e.funcParts(d)
+		if !ok || name == "" {
+			return
+		}
+		cname := name
+		if recv != nil {
+			_, rct := e.receiverInfo(recv)
+			cname = methodCName(methodBaseType(rct), name)
+			e.methodPtr[cname] = e.isPointer(rct)
+		}
 		_, resTypes := e.resultInfo(sig)
-		e.funcRet[name] = resTypes
+		e.funcRet[cname] = resTypes
 		if len(resTypes) > 1 {
 			e.emit("typedef struct { ")
 			for i, ct := range resTypes {
 				fmt.Fprintf(e.w, "%s _%d; ", ct, i)
 			}
-			e.emit("} " + e.retStructName(name) + ";\n")
+			e.emit("} " + e.retStructName(cname) + ";\n")
 		}
 	})
 }
 
-// eachFuncDecl calls fn(name, signature) for each non-method, named user function
-// in a file's AST.
-func (e *emitter) eachFuncDecl(ast []int32, fn func(name string, sig []int32)) {
+// eachFuncDeclAST calls fn with the AST of each FuncDecl (function or method) in a
+// file's AST.
+func (e *emitter) eachFuncDeclAST(ast []int32, fn func(d []int32)) {
 	for n := range it(ast) {
 		if n.sym != SourceFile {
 			continue
@@ -809,11 +824,8 @@ func (e *emitter) eachFuncDecl(ast []int32, fn func(name string, sig []int32)) {
 				continue
 			}
 			for d := range it(c.ast) {
-				if d.sym != FuncDecl {
-					continue
-				}
-				if name, sig, _, isMethod, ok := e.funcParts(d.ast); ok && !isMethod && name != "" {
-					fn(name, sig)
+				if d.sym == FuncDecl {
+					fn(d.ast)
 				}
 			}
 		}
@@ -823,26 +835,31 @@ func (e *emitter) eachFuncDecl(ast []int32, fn func(name string, sig []int32)) {
 // retStructName is the C typedef name of a multi-result function's result struct.
 func (e *emitter) retStructName(fn string) string { return "ogo_ret_" + fn }
 
-// emitPrototypes emits a forward prototype for every user function in a file
-// (all but main, which C declares implicitly). Run before the definitions so a
+// emitPrototypes emits a forward prototype for every user function and method in a
+// file (all but main, which C declares implicitly). Run before the definitions so a
 // call need not follow its callee's definition.
 func (e *emitter) emitPrototypes(ast []int32) {
-	e.eachFuncDecl(ast, func(name string, sig []int32) {
-		if name != "main" {
-			if proto := e.funcSignatureC(name, sig); proto != "" {
-				e.emit(proto + ";\n")
-			}
+	e.eachFuncDeclAST(ast, func(d []int32) {
+		name, sig, _, recv, ok := e.funcParts(d)
+		if !ok || name == "" || (recv == nil && name == "main") {
+			return
+		}
+		var proto string
+		if recv == nil {
+			proto = e.funcSignatureC(name, sig)
+		} else {
+			rn, rct := e.receiverInfo(recv)
+			proto = e.methodSignatureC(methodCName(methodBaseType(rct), name), rn, rct, sig)
+		}
+		if proto != "" {
+			e.emit(proto + ";\n")
 		}
 	})
 }
 
 func (e *emitter) emitFuncDecl(ast []int32) {
-	name, sig, body, isMethod, ok := e.funcParts(ast)
+	name, sig, body, recv, ok := e.funcParts(ast)
 	if !ok {
-		return
-	}
-	if isMethod {
-		e.fail("methods are not supported yet")
 		return
 	}
 	if body == nil {
@@ -855,19 +872,31 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.wroteDecl = true
 
-	if name == "main" {
+	if recv == nil && name == "main" {
 		e.emitMain(sig, body)
-		return
-	}
-	proto := e.funcSignatureC(name, sig)
-	if proto == "" {
 		return
 	}
 	e.locals = map[string]string{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.tmp = 0
-	e.curFunc = name
+	// A method is a function with a mangled name and its receiver as the first
+	// parameter, bound in the local environment so the body reads it like any local
+	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
+	var proto string
+	if recv == nil {
+		proto = e.funcSignatureC(name, sig)
+		e.curFunc = name
+	} else {
+		recvName, recvCType := e.receiverInfo(recv)
+		cname := methodCName(methodBaseType(recvCType), name)
+		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
+		e.curFunc = cname
+		e.locals[recvName] = recvCType
+	}
+	if proto == "" {
+		return
+	}
 	e.bindParams(sig)
 	e.emit(proto + " {\n")
 	e.indent++
@@ -894,10 +923,11 @@ func (e *emitter) declareNamedResults(sig []int32) {
 	}
 }
 
-// funcParts pulls the name, signature subtree and body subtree from a FuncDecl
-// AST. isMethod is set when a Receiver is present; body is nil for a bodyless
-// declaration. ok is false only if the walk hit an unexpected element.
-func (e *emitter) funcParts(ast []int32) (name string, sig, body []int32, isMethod, ok bool) {
+// funcParts pulls the name, signature subtree, body subtree and receiver subtree
+// from a FuncDecl AST. recv is non-nil for a method (a Receiver is present); body
+// is nil for a bodyless declaration. ok is false only if the walk hit an
+// unexpected element.
+func (e *emitter) funcParts(ast []int32) (name string, sig, body, recv []int32, ok bool) {
 	ok = true
 	for n := range it(ast) {
 		switch n.sym {
@@ -906,7 +936,7 @@ func (e *emitter) funcParts(ast []int32) (name string, sig, body []int32, isMeth
 				name = e.src(n.tok)
 			}
 		case Receiver:
-			isMethod = true
+			recv = n.ast
 		case Signature:
 			sig = n.ast
 		case Block:
@@ -916,8 +946,30 @@ func (e *emitter) funcParts(ast []int32) (name string, sig, body []int32, isMeth
 			ok = false
 		}
 	}
-	return name, sig, body, isMethod, ok
+	return name, sig, body, recv, ok
 }
+
+// receiverInfo parses a Receiver subtree `"(" identifier Type ")"`, returning the
+// receiver's name and its C type (e.g. "Point" or "Point*").
+func (e *emitter) receiverInfo(recv []int32) (name, ctype string) {
+	for n := range it(recv) {
+		switch {
+		case n.sym == 0 && e.f.ch(n.tok) == IDENT:
+			name = e.src(n.tok)
+		case n.sym == Type:
+			ctype = e.cType(n.ast)
+		}
+	}
+	return name, ctype
+}
+
+// methodBaseType is a receiver C type without any pointer star: a type's value and
+// pointer methods share this base, so `T` and `*T` methods live in one C namespace,
+// as the checker requires (a value/pointer method-name collision is an error).
+func methodBaseType(recvCType string) string { return strings.TrimSuffix(recvCType, "*") }
+
+// methodCName mangles a method to its C function name `<BaseType>_<method>`.
+func methodCName(baseType, method string) string { return baseType + "_" + method }
 
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
 // results.
@@ -952,6 +1004,19 @@ func (e *emitter) funcSignatureC(name string, sig []int32) string {
 		params = "void"
 	}
 	return e.cReturnType(name, resTypes) + " " + name + "(" + params + ")"
+}
+
+// methodSignatureC builds a method's C signature with the receiver as the leading
+// parameter, e.g. `int Point_Sum(Point p)` or `void Point_Scale(Point* p, int f)`.
+func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int32) string {
+	params, resTypes := e.cSig(sig)
+	recvParam := recvCType + " " + recvName
+	if params == "" {
+		params = recvParam
+	} else {
+		params = recvParam + ", " + params
+	}
+	return e.cReturnType(cname, resTypes) + " " + cname + "(" + params + ")"
 }
 
 // cReturnType is a function's C return type: void for no results, the type itself
@@ -2140,11 +2205,26 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		e.emit(")")
 		return true
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		method := e.soleIdent(suffix[0].ast)
+		// A method call `x.M(args)` on a variable of struct (or pointer-to-struct)
+		// type lowers to `<T>_M(recv, args)`, with the receiver adjusted to match the
+		// method's value or pointer receiver. Distinguished from a package call
+		// (`p2.F(...)`) by recv naming a struct-typed variable rather than an import.
+		if rct, ok := e.varType(recv); ok && e.isStruct(methodBaseType(rct)) {
+			cname := methodCName(methodBaseType(rct), method)
+			e.emit(cname + "(")
+			e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
+			if len(e.callArgExprs(suffix[1].ast)) > 0 {
+				e.emit(", ")
+				e.emitCallArgs(suffix[1].ast)
+			}
+			e.emit(")")
+			return true
+		}
 		if recv != "p2" {
 			e.fail("unknown package %q (only p2 is supported yet)", recv)
 			return false
 		}
-		method := e.soleIdent(suffix[0].ast)
 		intr, ok := p2Intrinsics[method]
 		if !ok {
 			e.fail("unsupported p2 function %q", method)
@@ -2156,6 +2236,21 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		return true
 	}
 	return false
+}
+
+// emitMethodReceiver emits a method call's receiver argument, bridging the receiver
+// the caller holds and the one the method declares: it takes the address of a value
+// passed to a pointer method (&x), dereferences a pointer passed to a value method
+// (*x), and otherwise passes the receiver unchanged.
+func (e *emitter) emitMethodReceiver(recv, recvCType string, wantPtr bool) {
+	switch havePtr := e.isPointer(recvCType); {
+	case wantPtr && !havePtr:
+		e.emit("&" + recv)
+	case !wantPtr && havePtr:
+		e.emit("*" + recv)
+	default:
+		e.emit(recv)
+	}
 }
 
 // emitLen emits the builtin `len(x)`: an array's length is its compile-time bound;
@@ -3052,6 +3147,15 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		}
 		return "", false
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		// A single-result method call `x.M()` carries its recorded result type,
+		// keyed by the receiver type's mangled method name.
+		if rct, ok := e.varType(recv); ok && e.isStruct(methodBaseType(rct)) {
+			method := e.soleIdent(suffix[0].ast)
+			if rts, ok := e.funcRet[methodCName(methodBaseType(rct), method)]; ok && len(rts) == 1 {
+				return rts[0], true
+			}
+			return "", false
+		}
 		if recv == "p2" {
 			return "int", true
 		}
