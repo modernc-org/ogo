@@ -172,7 +172,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -371,7 +371,9 @@ type emitter struct {
 	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	printSliceElems map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
 	defers          []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
-	deferBlockDepth int                      // nesting inside if/for/switch bodies; a defer at depth > 0 is not modelled yet
+	deferBlockDepth int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
+	deferReplay     int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
+	deferReplayArgs []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
 	usesPanic       bool                     // ogo_panic is called: emit its definition and pull in its includes
 	usesBound       bool                     // ogo_bound is called: emit the index bounds-check helper
 	usesNonzero     bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
@@ -519,12 +521,39 @@ func (a arrDim) declSuffix() string {
 }
 
 // deferredCall is a recorded `defer` statement: the call's head (AssignHead) and
-// its suffix (Selector / Index / CallSuffix), replayed through emitCall before the
-// function returns.
+// its suffix (Selector / Index / CallSuffix), replayed before the function returns.
+//
+// Arguments are captured into function-scope temporaries where the defer is
+// written, which is where Go evaluates them. That is not merely closer to Go: a
+// defer in a nested block may name a variable of that block, which no longer
+// exists at the return the call is replayed from.
+//
+// cond marks a defer written inside a nested block, where whether it ran is a
+// runtime question and needs a flag. A defer cannot appear in a loop -- the
+// checker rejects that -- so the number of sites in a function is fixed at compile
+// time and the flags are plain stack locals. This is Go's open-coded defer without
+// the heap fallback Go keeps for the loop case OctoGo does not admit.
 type deferredCall struct {
 	head   Node
 	suffix []Node
+	args   []deferArg
+	cond   bool
+	slot   int
 }
+
+// deferArg is one argument of a deferred call. A literal needs no temporary --
+// re-evaluating it at the return yields the same value -- so it is left inline,
+// which matters on a target with 512 longs of cog RAM per cog.
+type deferArg struct {
+	ctype  string
+	expr   []int32
+	inline bool
+}
+
+// deferFlagName and deferArgName name the temporaries backing a defer slot.
+func deferFlagName(slot int) string { return fmt.Sprintf("_ogo_defer%d", slot) }
+
+func deferArgName(slot, arg int) string { return fmt.Sprintf("_ogo_defer%d_a%d", slot, arg) }
 
 // collectStructs records each package-level struct type's fields in the struct
 // environment and emits a C typedef -- `typedef struct { <t0> f0; ... } T;`.
@@ -1017,6 +1046,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.sliceVars = map[string]string{}
 	e.tmp = 0
 	e.defers = nil
+	e.deferReplay = -1
 	// A method is a function with a mangled name and its receiver as the first
 	// parameter, bound in the local environment so the body reads it like any local
 	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
@@ -1039,12 +1069,22 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.indent++
 	e.emitParamCopies(sig)
 	e.declareNamedResults(sig)
+	// The body goes to a buffer so the defer temporaries can be declared ahead of
+	// it. They must be at function scope -- a defer in a nested block captures its
+	// arguments there, but the call is replayed at a return that block has exited
+	// -- and the full set is only known once the body has been walked.
+	saved := e.w
+	var bodyBuf bytes.Buffer
+	e.w = &bodyBuf
 	e.emitBlockStmts(body)
 	// A body that falls off the end (no trailing return) runs its deferred calls
 	// here; one ending in a return already replayed them at that return.
 	if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
 		e.emitDeferred()
 	}
+	e.w = saved
+	e.emitDeferDecls()
+	e.w.Write(bodyBuf.Bytes())
 	e.indent--
 	e.emit("}\n")
 }
@@ -1139,6 +1179,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.sliceVars = map[string]string{}
 	e.tmp = 0
 	e.defers = nil
+	e.deferReplay = -1
 	e.curFunc = "main"
 	e.emit("int main(void) {\n")
 	e.indent++
@@ -2593,16 +2634,11 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 // it yields `return;`. A single value emits `return <expr>;`. Multiple values are
 // returned as the function's result struct via a compound literal,
 // `return (ogo_ret_<fn>){ e0, e1, ... };`.
-// emitDefer records a top-level `defer` statement to be replayed before the
-// function returns. The call is not emitted here; emitDeferred replays it in LIFO
-// order at each return and at a fall-through function end. A defer inside a nested
-// block (an if/switch body) is conditionally registered at runtime, which needs a
-// per-defer flag not modelled yet, so it fails honestly.
+// emitDefer records a `defer` statement and emits its argument capture here, where
+// Go evaluates the arguments. emitDeferred replays the call in LIFO order at each
+// return and at a fall-through function end. A defer in a nested block also arms a
+// flag, so the replay can tell whether the block ran.
 func (e *emitter) emitDefer(nodes []Node) {
-	if e.deferBlockDepth > 0 {
-		e.fail("defer inside a nested block is not supported yet")
-		return
-	}
 	var head Node
 	var suffix []Node
 	for _, n := range nodes {
@@ -2617,16 +2653,92 @@ func (e *emitter) emitDefer(nodes []Node) {
 		e.fail("a defer statement must be a function call")
 		return
 	}
-	e.defers = append(e.defers, deferredCall{head, suffix})
+	if recv := e.soleIdent(head.ast); recv == "print" || recv == "println" {
+		// emitPrint renders per-type printf calls and does not go through
+		// emitCallArgs, so a captured temporary would be ignored and the argument
+		// re-evaluated at the return. Reject rather than deviate silently.
+		if len(e.callArgExprs(suffix[len(suffix)-1].ast)) != 0 {
+			e.fail("deferring print with arguments is not supported yet")
+			return
+		}
+	}
+	d := deferredCall{head: head, suffix: suffix, cond: e.deferBlockDepth > 0, slot: len(e.defers)}
+	// The call suffix is last; its arguments are what get captured.
+	call := suffix[len(suffix)-1]
+	if call.sym != CallSuffix {
+		e.fail("a defer statement must be a function call")
+		return
+	}
+	for _, a := range e.callArgExprs(call.ast) {
+		if e.isIntLiteral(a) {
+			d.args = append(d.args, deferArg{expr: a.ast, inline: true})
+			continue
+		}
+		ct, ok := e.inferCType(a.ast)
+		if !ok {
+			e.fail("cannot infer the type of a deferred call argument")
+			return
+		}
+		d.args = append(d.args, deferArg{ctype: ct, expr: a.ast})
+	}
+	for i, a := range d.args {
+		if a.inline {
+			continue
+		}
+		e.ind()
+		e.emit(deferArgName(d.slot, i) + " = ")
+		e.emitExpr(a.expr)
+		e.emit(";\n")
+	}
+	if d.cond {
+		e.ind()
+		e.emit(deferFlagName(d.slot) + " = 1;\n")
+	}
+	e.defers = append(e.defers, d)
 }
 
-// emitDeferred replays the recorded defers in LIFO order, each as a statement call.
-// Deferred arguments are evaluated where the call runs (at the return), not where
-// the defer was written -- a simplification from Go that is identical for the
-// constant / cleanup arguments that dominate here.
+// emitDeferDecls declares the temporaries backing every defer slot in the function,
+// at function scope. They must outlive the block a defer was written in, so they
+// cannot be declared at the defer itself. The body is emitted into a buffer first,
+// so the full set is known by the time these are written ahead of it.
+func (e *emitter) emitDeferDecls() {
+	for _, d := range e.defers {
+		if d.cond {
+			e.ind()
+			e.emit("int " + deferFlagName(d.slot) + " = 0;\n")
+		}
+		for i, a := range d.args {
+			if a.inline {
+				continue
+			}
+			e.ind()
+			e.emit(a.ctype + " " + deferArgName(d.slot, i) + " = 0;\n")
+		}
+	}
+}
+
+// emitDeferred replays the recorded defers in LIFO order, each reading the
+// arguments captured at its defer statement. One written in a nested block is
+// replayed under its flag, so it runs only if that block did. Defers recorded after
+// this point are not replayed here, which is right: a return textually before a
+// defer cannot have reached it.
 func (e *emitter) emitDeferred() {
 	for i := len(e.defers) - 1; i >= 0; i-- {
-		e.emitCall(e.defers[i].head, e.defers[i].suffix)
+		d := e.defers[i]
+		e.deferReplay, e.deferReplayArgs = d.slot, d.args
+		if d.cond {
+			// The flag is a statement prefix, so the call emitCall writes lands as
+			// the guarded statement: `if (_ogo_deferN) f(...);`.
+			e.ind()
+			e.emit("if (" + deferFlagName(d.slot) + ") ")
+			saved := e.indent
+			e.indent = 0
+			e.emitCall(d.head, d.suffix)
+			e.indent = saved
+		} else {
+			e.emitCall(d.head, d.suffix)
+		}
+		e.deferReplay, e.deferReplayArgs = -1, nil
 	}
 }
 
@@ -3647,11 +3759,22 @@ func (e *emitter) emitDiscard(expr []int32) {
 
 func (e *emitter) emitCallArgs(callSuffix []int32) {
 	first := true
-	for _, arg := range e.callArgExprs(callSuffix) {
+	for i, arg := range e.callArgExprs(callSuffix) {
 		if !first {
 			e.emit(", ")
 		}
 		first = false
+		// Replaying a deferred call reads the temporaries captured at the defer
+		// statement rather than re-evaluating the expressions, which may name a
+		// variable that has since changed or gone out of scope.
+		if e.deferReplay >= 0 {
+			if a := e.deferReplayArgs[i]; a.inline {
+				e.emitExpr(a.expr)
+			} else {
+				e.emit(deferArgName(e.deferReplay, i))
+			}
+			continue
+		}
 		e.emitExpr(arg.ast)
 	}
 }

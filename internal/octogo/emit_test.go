@@ -3506,6 +3506,79 @@ func main() {
 // TestEmitCDefer pins top-level defer lowering: deferred calls are replayed in LIFO
 // order at a fall-through function end (f) and before every return (g), which the
 // static, zero-allocation model resolves at compile time.
+// TestEmitCDeferNested pins a defer written inside a nested block, and argument
+// capture for both nesting levels.
+//
+// The allocation worry that makes Go's defer unbounded does not arise: that comes
+// from deferring in a loop, which the checker already rejects, so the number of
+// defer sites in a function is fixed at compile time and one stack flag per
+// conditional site suffices. This is Go's open-coded defer without the heap
+// fallback Go keeps for the loop case.
+//
+// Arguments are captured where the defer is written, which is where Go evaluates
+// them. For a nested defer that is not a refinement but a requirement: `y` belongs
+// to the block, and does not exist at the return the call is replayed from. A
+// literal argument needs no temporary, since re-evaluating it yields the same
+// value.
+//
+// Verified against Go itself: this program prints "3 7 1 0 3 1" under both.
+func TestEmitCDeferNested(t *testing.T) {
+	src := `func step(n int) {
+	println(n)
+}
+
+func f(c int) {
+	x := 1
+	defer step(x)
+	x = 99
+	if c > 0 {
+		y := 7
+		defer step(y)
+	}
+	defer step(3)
+}
+
+func main() {
+	f(1)
+	println(0)
+	f(0)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	want := "void f(int c) {\n" +
+		"\tint _ogo_defer0_a0 = 0;\n" +
+		"\tint _ogo_defer1 = 0;\n" +
+		"\tint _ogo_defer1_a0 = 0;\n" +
+		"\tint x = 1;\n" +
+		"\t_ogo_defer0_a0 = x;\n" +
+		"\tx = 99;\n" +
+		"\tif (c > 0) {\n" +
+		"\t\tint y = 7;\n" +
+		"\t\t_ogo_defer1_a0 = y;\n" +
+		"\t\t_ogo_defer1 = 1;\n" +
+		"\t}\n" +
+		"\tstep(3);\n" +
+		"\tif (_ogo_defer1) step(_ogo_defer1_a0);\n" +
+		"\tstep(_ogo_defer0_a0);\n" +
+		"}\n"
+	if got := buf.String(); !strings.Contains(got, want) {
+		t.Errorf("EmitC nested defer:\n got %q\nwant it to contain %q", got, want)
+	}
+}
+
+// TestEmitCDefer pins top-level defers. Their literal arguments stay inline, so
+// this output is unchanged by the capture machinery -- only a non-literal argument
+// needs a temporary.
 func TestEmitCDefer(t *testing.T) {
 	src := `func step(n int) {
 	println(n)
