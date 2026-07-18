@@ -1847,6 +1847,33 @@ func (e *emitter) makeSliceInit(initExpr []int32) (elem string, lenAST, capAST [
 // plus a { ptr, len, cap } header over it. static drives file-scope emission -- a
 // `static` backing that C zero-inits vs a stack backing zeroed explicitly (P2 stack
 // locals are not auto-zeroed).
+// emitMakeSliceAssign assigns a fresh make([]T, ...) slice to an existing lvalue --
+// a slice variable or a struct field -- by hoisting a local backing array and
+// assigning a { backing, len, cap } header to lhs (distinct from emitMakeSliceVar,
+// which declares a new variable).
+func (e *emitter) emitMakeSliceAssign(lhs, cname, elem string, lenAST, capAST []int32) {
+	sizeAST := capAST
+	if sizeAST == nil {
+		sizeAST = lenAST // the two-argument form: cap == len
+	}
+	size, ok := e.arrayBoundC(sizeAST)
+	if !ok {
+		e.fail("make needs a constant capacity")
+		return
+	}
+	backing := e.newBacking()
+	e.ind()
+	e.emit(elem + " " + backing + "[" + size + "] = {0};\n")
+	e.ind()
+	e.emit(lhs + " = (" + cname + "){" + backing + ", ")
+	if capAST != nil {
+		e.emitExpr(lenAST)
+	} else {
+		e.emit(size)
+	}
+	e.emit(", " + size + "};\n")
+}
+
 func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []int32, static bool) {
 	sizeAST := capAST
 	if sizeAST == nil {
@@ -2761,6 +2788,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			// `(void)` cast makes the discard explicit and valid C even when the
 			// expression is a plain value. (`_ := expr` is rejected by the checker.)
 			e.emitDiscard(op[1].ast)
+			return
+		}
+		// A make initializer assigned to an existing lvalue -- a slice variable
+		// (`s = make(...)`) or a slice struct field (`b.data = make(...)`) -- hoists a
+		// backing array and assigns a fresh { backing, len, cap } header.
+		if elem, lenAST, capAST, ok := e.makeSliceInit(op[1].ast); ok {
+			e.needSlice(elem)
+			e.emitMakeSliceAssign(lhs, sliceCName(elem), elem, lenAST, capAST)
 			return
 		}
 		e.ind()
