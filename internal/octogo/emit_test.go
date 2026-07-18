@@ -2532,6 +2532,102 @@ func main() {
 	}
 }
 
+// TestEmitCAccessChain pins an access chain that alternates indexes and selectors
+// more than once -- `b.pts[i].v[j]`, a slice field of structs whose own field is an
+// array. Four fixed shapes had accumulated (field access, index, field-then-index,
+// index-then-select) and none can express this: each stops at the first step of a
+// kind it does not admit. It failed with a misleading "printing a slice or array of
+// P is not supported yet".
+//
+// The general walker types the whole chain before emitting any of it, so a chain it
+// cannot handle fails without leaving a half-written expression behind.
+func TestEmitCAccessChain(t *testing.T) {
+	src := `type P struct {
+	x int
+	v [2]int
+}
+
+type B struct {
+	pts []P
+	fix [2]P
+}
+
+func main() {
+	var b B
+	b.pts = make([]P, 2, 2)
+	b.pts[1].v[0] = 30
+	b.fix[0].v[1] = 12
+	println(b.pts[1].v[0] + b.fix[0].v[1])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	want := "int main(void) {\n" +
+		"\tB b = {0};\n" +
+		"\tP ogo_backing_0[2] = {0};\n" +
+		"\tb.pts = (ogo_slice_P){ogo_backing_0, 2, 2};\n" +
+		"\tb.pts.ptr[1].v[0] = 30;\n" +
+		"\tb.fix[0].v[1] = 12;\n" +
+		"\tprintf(\"%d\\n\", (b.pts.ptr[1].v[0] + b.fix[0].v[1]));\n" +
+		"\treturn 0;\n" +
+		"}\n"
+	if got := buf.String(); !strings.Contains(got, want) {
+		t.Errorf("EmitC access chain:\n got %q\nwant it to contain %q", got, want)
+	}
+}
+
+// TestEmitCAccessChainChecked pins each step of a chain being bounds-checked
+// against its own bound: the slice against its runtime .len, the array against its
+// static extent.
+//
+// It also pins the walker's one real limit. The prefix is accumulated as C text
+// only until an index is emitted, so a slice indexed *after* an earlier index has
+// no prefix left to build a ".len" from. That chain is refused rather than emitted
+// unchecked.
+func TestEmitCAccessChainChecked(t *testing.T) {
+	src := `type P struct {
+	v [2]int
+}
+
+type B struct {
+	pts []P
+}
+
+func main() {
+	var b B
+	b.pts = make([]P, 2, 2)
+	i := 1
+	j := 0
+	b.pts[i].v[j] = 30
+	println(b.pts[i].v[j])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	want := "\tb.pts.ptr[ogo_bound(i, b.pts.len)].v[ogo_bound(j, 2)] = 30;\n"
+	if got := buf.String(); !strings.Contains(got, want) {
+		t.Errorf("EmitC checked access chain: missing %q in\n%s", want, got)
+	}
+}
+
 // TestEmitCMultiDimArray pins multi-dimensional fixed arrays, as a local and as a
 // struct field: the declaration carries every extent on the declarator, and an
 // index chain reaches an element.

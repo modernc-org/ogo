@@ -1895,6 +1895,216 @@ func (e *emitter) arrayIndexTarget(base string, chain []Node) ([][]int32, arrDim
 	return idxs, a, expr, true
 }
 
+// accessCur is the value reached partway along an access chain: a plain C value, a
+// slice header, or a fixed array with the extents it has left. Exactly one of the
+// three holds at a time -- dims non-empty means an array, slice means a header,
+// otherwise ctype is a plain value.
+type accessCur struct {
+	ctype string   // the plain value's C type
+	elem  string   // a slice's or array's element type
+	dims  []string // an array's remaining extents, outermost first
+	slice bool
+}
+
+// accessBase resolves the start of a chain: a slice variable, an array variable,
+// or a plain local/global.
+func (e *emitter) accessBase(base string) (accessCur, bool) {
+	if el, ok := e.sliceElem(base); ok {
+		return accessCur{elem: el, slice: true}, true
+	}
+	if a, ok := e.arrayVar(base); ok {
+		return accessCur{elem: a.elem, dims: a.bounds()}, true
+	}
+	if ct, ok := e.varType(base); ok {
+		return accessCur{ctype: ct}, true
+	}
+	return accessCur{}, false
+}
+
+// accessSelect advances the chain by a field selector.
+func (e *emitter) accessSelect(cur accessCur, field string) (accessCur, bool) {
+	if cur.slice || len(cur.dims) != 0 || cur.ctype == "" {
+		return accessCur{}, false // only a plain struct value has fields
+	}
+	if a, ok := e.structFieldArray(cur.ctype, field); ok {
+		return accessCur{elem: a.elem, dims: a.bounds()}, true
+	}
+	ct, ok := e.structFieldType(cur.ctype, field)
+	if !ok {
+		return accessCur{}, false
+	}
+	if el, ok := e.sliceElemByName[ct]; ok {
+		return accessCur{elem: el, slice: true}, true
+	}
+	return accessCur{ctype: ct}, true
+}
+
+// accessIndex advances the chain by one index, reporting the type reached and the
+// bound to check against. A slice's bound is a length expression built from the
+// prefix, so it is returned separately and is only usable while the prefix is
+// still available as C text.
+func (e *emitter) accessIndex(cur accessCur, prefix string) (next accessCur, lenExpr string, ok bool) {
+	switch {
+	case cur.slice:
+		if prefix == "" {
+			// The prefix has already been emitted, so ".len" cannot be formed from
+			// it. Indexing a slice this deep in a chain is therefore not modelled.
+			return accessCur{}, "", false
+		}
+		return e.plainOrSlice(cur.elem), prefix + ".len", true
+	case len(cur.dims) != 0:
+		rest := cur.dims[1:]
+		if len(rest) != 0 {
+			return accessCur{elem: cur.elem, dims: rest}, cur.dims[0], true
+		}
+		return e.plainOrSlice(cur.elem), cur.dims[0], true
+	}
+	return accessCur{}, "", false
+}
+
+// plainOrSlice classifies an element C type as a nested slice header or a plain
+// value.
+func (e *emitter) plainOrSlice(elem string) accessCur {
+	if el, ok := e.sliceElemByName[elem]; ok {
+		return accessCur{elem: el, slice: true}
+	}
+	return accessCur{ctype: elem}
+}
+
+// emitAccessChain emits `base` followed by an arbitrary run of selectors and
+// indexes, returning the type reached. It is the general form of the four fixed
+// shapes above (field access, index, field-then-index, index-then-select), and
+// reaches chains none of them can express -- `s[i].v[j]`, where an index, a
+// selector and another index alternate.
+//
+// The prefix is accumulated as C text until an index is emitted; after that,
+// selectors are emitted directly, since the text is no longer a string that can be
+// concatenated or used to build a ".len".
+func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
+	cur, ok := e.accessBase(base)
+	if !ok {
+		return accessCur{}, false
+	}
+	// Type the whole chain before emitting any of it, so an unsupported step fails
+	// without leaving a half-written expression behind.
+	if _, ok := e.accessChainType(base, steps); !ok {
+		return accessCur{}, false
+	}
+	prefix := base
+	for _, n := range steps {
+		switch n.sym {
+		case Selector:
+			f := e.soleIdent(n.ast)
+			next, ok := e.accessSelect(cur, f)
+			if !ok {
+				return accessCur{}, false
+			}
+			sep := "."
+			if e.isPointer(cur.ctype) {
+				sep = "->"
+			}
+			if prefix != "" {
+				prefix += sep + f
+			} else {
+				e.emit(sep + f)
+			}
+			cur = next
+		case Index:
+			low, _, isSlice := e.sliceParts(n.ast)
+			if isSlice || low == nil {
+				return accessCur{}, false
+			}
+			next, lenExpr, ok := e.accessIndex(cur, prefix)
+			if !ok {
+				return accessCur{}, false
+			}
+			open := "["
+			if cur.slice {
+				open = ".ptr["
+			}
+			e.emit(prefix + open)
+			e.emitIndex(low, lenExpr)
+			e.emit("]")
+			prefix = ""
+			cur = next
+		default:
+			return accessCur{}, false
+		}
+	}
+	if prefix != "" {
+		e.emit(prefix)
+	}
+	return cur, true
+}
+
+// accessChainType walks a chain without emitting, for inference and for validating
+// ahead of emission.
+func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
+	cur, ok := e.accessBase(base)
+	if !ok {
+		return accessCur{}, false
+	}
+	prefix := base // only its emptiness matters here, mirroring emitAccessChain
+	for _, n := range steps {
+		switch n.sym {
+		case Selector:
+			f := e.soleIdent(n.ast)
+			if cur, ok = e.accessSelect(cur, f); !ok {
+				return accessCur{}, false
+			}
+		case Index:
+			if _, _, isSlice := e.sliceParts(n.ast); isSlice {
+				return accessCur{}, false
+			}
+			if cur, _, ok = e.accessIndex(cur, prefix); !ok {
+				return accessCur{}, false
+			}
+			prefix = ""
+		default:
+			return accessCur{}, false
+		}
+	}
+	return cur, true
+}
+
+// factorAccessChain recognises an identifier followed by a run of selectors and
+// indexes that mixes both kinds more than once -- the shapes the fixed helpers
+// cannot match. Narrower chains are left to them, so their pinned output is
+// unchanged.
+func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if !mixesIndexAndSelect(steps) {
+		return "", nil, false
+	}
+	return e.src(kids[0].tok), steps, true
+}
+
+// mixesIndexAndSelect reports whether steps contain an index followed later by a
+// selector that is itself followed by another index -- the alternation that no
+// fixed shape covers.
+func mixesIndexAndSelect(steps []Node) bool {
+	seenIndex, seenSelectAfter := false, false
+	for _, n := range steps {
+		switch n.sym {
+		case Index:
+			if seenSelectAfter {
+				return true
+			}
+			seenIndex = true
+		case Selector:
+			if seenIndex {
+				seenSelectAfter = true
+			}
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // splitIndexSelect splits an access chain `{Selector} Index {Selector}` into the
 // leading field chain, the index, and the trailing field chain. Shared by the
 // expression shape (a FactorSuffix's children) and the assignment target shape
@@ -3077,6 +3287,23 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.emitIndexAssign(base, postfix[0], postfix[1])
 		return
 	}
+	// A target whose chain alternates indexes and selectors more than once --
+	// `s[i].v[j] = e`. Tried first: the fixed shapes below cannot match it, and the
+	// chain is typed before anything is emitted, so a rejected one leaves no
+	// half-written statement.
+	if chain := postfix[:len(postfix)-1]; stars == "" && mixesIndexAndSelect(chain) {
+		if cur, ok := e.accessChainType(base, chain); ok && !cur.slice && len(cur.dims) == 0 {
+			t, ok := e.assignTailOf(postfix[len(postfix)-1])
+			if !ok {
+				e.fail("unsupported assignment form for an access chain")
+				return
+			}
+			e.ind()
+			e.emitAccessChain(base, chain)
+			e.emitAssignTail(t)
+			return
+		}
+	}
 	// A full index into a multi-dimensional array, `m[i][j] = v`: an optional field
 	// chain then one Index per dimension.
 	if idxs, a, expr, ok := e.arrayIndexTarget(base, postfix[:len(postfix)-1]); ok {
@@ -3902,6 +4129,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				return e.fieldType(base, fields)
 			}
+			// `s[i].v[j]` -- the general chain's result type.
+			if base, steps, ok := e.factorAccessChain(kids); ok {
+				cur, ok := e.accessChainType(base, steps)
+				if !ok || cur.slice || len(cur.dims) != 0 {
+					return "", false // a slice header or a row is not a plain value here
+				}
+				return cur.ctype, true
+			}
 			// `m[i][j]` -- a fully indexed multi-dimensional array yields its element.
 			if base, fields, idxs, ok := e.factorArrayIndex(kids); ok {
 				if _, a, ok := e.indexedArray(base, fields); ok && a.dims() == len(idxs) {
@@ -4106,6 +4341,13 @@ func (e *emitter) emitExprNode(n Node) {
 					e.fail("unsupported call in expression")
 				}
 				return
+			}
+			// A chain that alternates indexes and selectors more than once --
+			// `s[i].v[j]` -- which no fixed shape below can match.
+			if base, steps, ok := e.factorAccessChain(kids); ok {
+				if _, ok := e.emitAccessChain(base, steps); ok {
+					return
+				}
 			}
 			// `m[i][j]` -- a full index into a multi-dimensional array.
 			if base, fields, idxs, ok := e.factorArrayIndex(kids); ok {
