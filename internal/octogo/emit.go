@@ -245,25 +245,36 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteByte('\n')
 	}
 	// Slice header typedefs follow the struct typedefs (a slice's element may be a
-	// struct, so the struct must be declared first), one per distinct element type.
-	var sliceDefs bytes.Buffer
+	// one per distinct element type, split by element type. A scalar-element slice
+	// (ogo_slice_int) has no struct dependency and is emitted before the struct
+	// typedefs, since a struct field may hold one; a struct-element slice
+	// (ogo_slice_Point) references its struct by pointer and so follows the structs.
+	var scalarSliceDefs, structSliceDefs bytes.Buffer
 	for _, el := range sortedKeys(e.sliceElems) {
-		fmt.Fprintf(&sliceDefs, "typedef struct { %s* ptr; int len; int cap; } %s;\n", el, sliceCName(el))
+		def := fmt.Sprintf("typedef struct { %s* ptr; int len; int cap; } %s;\n", el, sliceCName(el))
+		if e.isStruct(el) {
+			structSliceDefs.WriteString(def)
+		} else {
+			scalarSliceDefs.WriteString(def)
+		}
 	}
 	// append's ok-form result struct { slice, ok }, per element type; it references
-	// the slice typedef emitted just above.
+	// the slice typedef emitted above.
 	var appendokDefs bytes.Buffer
 	for _, el := range sortedKeys(e.tryappendElems) {
 		fmt.Fprintf(&appendokDefs, "typedef struct { %s slice; int ok; } %s;\n", sliceCName(el), appendokCName(el))
 	}
 	// The ogo_string typedef leads the typedef section (a struct, array, or result
-	// field may be a string); the string print helpers follow the typedefs.
-	if e.usesString || typedefs.Len() != 0 || sliceDefs.Len() != 0 || appendokDefs.Len() != 0 {
+	// field may be a string); scalar-element slice typedefs precede the struct
+	// typedefs (a struct field may hold one), struct-element slices and the append
+	// ok-form structs follow. The string print helpers follow the typedefs.
+	if e.usesString || typedefs.Len() != 0 || scalarSliceDefs.Len() != 0 || structSliceDefs.Len() != 0 || appendokDefs.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
 		}
+		out.Write(scalarSliceDefs.Bytes())
 		out.Write(typedefs.Bytes())
-		out.Write(sliceDefs.Bytes())
+		out.Write(structSliceDefs.Bytes())
 		out.Write(appendokDefs.Bytes())
 		out.WriteByte('\n')
 	}
@@ -549,11 +560,18 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 		for c := range it(n.ast) {
 			switch c.sym {
 			case Type:
-				// A slice field would force the slice typedef before this struct's,
-				// inverting the emission order; leave it for a later commit.
-				if _, ok := e.sliceType(c.ast); ok {
-					e.fail("slice-typed struct fields are not supported yet")
-					return out
+				if elem, ok := e.sliceType(c.ast); ok {
+					// A scalar-element slice field (`data []int`) is a slice header
+					// whose typedef is emitted before this struct's (see EmitC). A
+					// struct-element slice field (`[]Point`) would need its typedef
+					// after the struct's, inverting the order; leave it for later.
+					if e.isStruct(elem) {
+						e.fail("a struct-element slice struct field is not supported yet")
+						return out
+					}
+					e.needSlice(elem)
+					ctype = sliceCName(elem)
+					break
 				}
 				ctype = e.cType(c.ast)
 			case 0:
