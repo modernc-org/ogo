@@ -2,16 +2,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// TODO 20260307 Keywords: +defer +?map +?range
-// TODO 20260307 Operators and punctuation: +?++/--
+// Reconciled with the implementation 20260719. Done since the list below was
+// written: "defer" (including in a nested block), "++" and "--", the compound
+// assignment operators, "%", and the concurrency layer (channels, "go", "select").
+// "&&" and "||" are parsed and rejected with a diagnostic, which is deliberate --
+// see Operators.
+//
+// TODO 20260307 Keywords: +?map +?range
 // TODO 20260307 Numeric type: +float,float32
-// TODO 20260307 Operators: +||/&&
 // TODO 20260307 For statements: extend
 // TODO 20260307 Return statements: ? disable naked returns
 // TODO 20260307 Return statements: Expression -> ExpressionList
 // TODO 20260317 labels and gotos
+// TODO 20260719 Channels: package-level channels need an init pass before main
+// TODO 20260719 Select: send clauses, and smart-pin clauses
+// TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
 
-// # OctoGo Language Specification (Draft Mar 15, 2026)
+// # OctoGo Language Specification (Draft Jul 19, 2026)
 //
 // # Introduction
 //
@@ -144,6 +151,9 @@
 //	/    <<    =     :=    ,    ;
 //	%    >>    !     <-    .    :
 //	~    ++    --
+//
+//	+=   -=    *=    /=    %=
+//	&=   |=    ^=    &^=   <<=   >>=
 //
 // There is no "&^" operator, and none is needed: "x &^ y" parses as "x & ^y",
 // applying the unary complement, which is the value Go's AND NOT produces. The
@@ -732,22 +742,23 @@
 //		| AssignHead PostfixComm .
 //	PostfixComm = { Selector | Index } ( ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 //
-// (OctoGo Specific): The select statement transpiles into an infinite while(1)
-// polling loop in C. It continuously checks non-blocking runtime functions
-// (e.g., __octogo_chan_try_recv). Because OctoGo leverages Propeller 2 Smart
-// Pins via the standard library, select loops seamlessly multiplex hardware
-// locks (channels) and zero-overhead Smart Pin state checks (e.g.,
-// _pinr(pin)), yielding via _waitx to prevent Hub RAM bus starvation.
+// (OctoGo Specific): A select polls its clauses in order, retrying the
+// non-blocking form of each communication. A default clause makes the select
+// non-blocking: the clauses are tried once and the default runs if none was
+// ready. Without a default the poll repeats, yielding via _waitx between rounds
+// to prevent Hub RAM bus starvation. Because OctoGo reaches Propeller 2 Smart
+// Pins through the standard library, the same loop can multiplex channels and
+// zero-overhead Smart Pin state checks (e.g. _pinr(pin)).
 //
 // # Go Statements (Concurrency)
 //
 // A "go" statement starts the execution of a function call as an independent
 // concurrent thread of control, or goroutine, within the same address space.
 //
-// (OctoGo Specific): The go statement transpiles to a block that allocates a
-// fixed-size stack and explicitly invokes _cogstart_C. There is a strict 1:1
-// hardware mapping to the Propeller 2's physical Cogs. If the 8-cog limit is
-// exceeded, the octogo_rt runtime will panic.
+// (OctoGo Specific): The go statement transpiles to a block that claims a
+// pooled slot holding a fixed-size stack and the call's arguments, then invokes
+// _cogstart_C. There is a strict 1:1 hardware mapping to the Propeller 2's
+// physical Cogs. Exceeding the 8-cog limit is a runtime panic.
 //
 // # Return Statements
 //
@@ -770,13 +781,18 @@
 // (OctoGo Specific): Every goroutine in OctoGo maps strictly 1:1 to a physical
 // P2 Cog. There is no software-level thread scheduler or VM.
 //
-//   - Execution: When a go statement is evaluated, the transpiled C code
-//     requests a fixed-size stack from the octogo_rt runtime and invokes
-//     _cogstart_C via the flexprop compiler.
+//   - Execution: A go statement claims a slot from a statically allocated pool,
+//     marshals the call's arguments into it, and invokes _cogstart_C. The slot
+//     holds the goroutine's stack as well as its arguments, because the launched
+//     Cog reads both after the go statement has returned, so neither can live in
+//     the launching function's frame. The pool holds one slot per available Cog,
+//     which makes running out of slots and running out of Cogs one condition.
 //   - Hardware Limit: The P2 hardware is strictly limited to 8 physical Cogs.
 //     The main function consumes the first Cog. Attempting to spawn more
-//     concurrent goroutines than there are available Cogs will result in a
-//     runtime panic.
+//     concurrent goroutines than there are available Cogs is a runtime panic.
+//     A go statement inside a loop is therefore legal, unlike a defer inside
+//     one: the hardware bounds it, and exhaustion is reported rather than
+//     silently exceeding anything.
 //   - Termination: When the invoked function terminates, its associated Cog is
 //     freed and returned to the hardware pool. If the function has any return
 //     values, they are discarded when the function completes.
@@ -790,12 +806,18 @@
 // grammar, OctoGo simplifies channel types. All channels are bidirectional
 // (chan Type).
 //
-//   - Hardware Representation: In the transpiled C runtime, a channel maps to
-//     an octogo_chan_t structure. This structure is backed by shared Hub RAM
-//     buffers and synchronized using the P2's native hardware locks (locks 0-15).
-//   - Zero-Allocation: OctoGo has no dynamic memory allocator and channels are
-//     not created with make, so they are statically allocated and tracked by the
-//     octogo_rt runtime during compilation.
+//   - Hardware Representation: A channel is a reference to a rendezvous cell in
+//     Hub RAM, synchronized by one of the P2's native hardware locks (0-15).
+//     Because a channel is a reference, passing one to a goroutine shares the
+//     cell rather than copying it. Acquiring a lock can fail once all 16 are in
+//     use, which is a runtime panic.
+//   - Zero-Allocation: OctoGo has no dynamic memory allocator, and channels are
+//     not created with make -- doing so is rejected as a dynamic allocation. A
+//     channel is created by its declaration, which is what allocates its cell and
+//     acquires its lock, so the lock's lifetime is the variable's.
+//   - Unbuffered: A channel holds one value in flight. A send completes only once
+//     a receiver has taken that value, so the two meet in lock step, which is
+//     what makes a buffer unnecessary.
 //
 // # Channel Operations (Send and Receive)
 //
@@ -807,25 +829,22 @@
 //     (Note: Bound contextually via CommOp and Statement left-factoring).
 //
 //     Both the channel and the value expression are evaluated
-//     before communication begins. The send operation transpiles to an
-//     __octogo_chan_send C function call. It blocks the current Cog until a
-//     receiver is ready, utilizing a P2 hardware lock to ensure atomic data
-//     transfer.
+//     before communication begins. A send blocks the current Cog until a
+//     receiver has taken the value, using the channel's hardware lock to keep
+//     each hand-off atomic.
 //
 //   - Receive Operations: For an operand ch of channel type, the receive
 //     operation receives a value from the channel.
 //
 //     (Note: Simplified assignment syntax).  The expression blocks
-//     the current Cog until a sender is available, transpiling to an
-//     __octogo_chan_recv C function call.
+//     the current Cog until a sender has deposited a value.
 //
 // # Synchronization via Hardware Locks
 //
 // Because there is no software thread scheduler, blocked Cogs do not "sleep"
 // in the traditional OS sense. When a Cog blocks on a channel send, channel
-// receive, or a select statement, the transpiled C code executes a tight
-// polling loop wrapped around non-blocking runtime functions (e.g.,
-// __octogo_chan_try_recv).
+// receive, or a select statement, it polls: it retries the non-blocking form of
+// the operation, which reports whether it succeeded rather than waiting.
 //
 // To prevent Hub RAM bus starvation while a Cog is spinning on a lock, the
 // compiler automatically inserts hardware yield instructions (e.g.,

@@ -26,31 +26,34 @@ Forget manual state machines and timer interrupts. In OctoGo, spawning a paralle
 
 import "p2"
 
-// blinkWorker runs independently on its own dedicated Cog  
-func blinkWorker(pin int, rateChan chan int) {  
-    delay := 500  
-    for {  
-        // Non-blocking hardware poll via select  
-        select {  
-        case delay \= \<-rateChan:  
-        default:  
-        }  
-          
-        p2.PinHigh(pin)  
-        p2.WaitMs(delay)  
-        p2.PinLow(pin)  
-        p2.WaitMs(delay)  
-    }  
+// blinkWorker runs independently on its own dedicated Cog
+func blinkWorker(pin int, rateChan chan int) {
+    delay := 500
+    for {
+        // Non-blocking hardware poll via select
+        select {
+        case delay = <-rateChan:
+        default:
+        }
+
+        p2.PinHigh(pin)
+        p2.WaitMs(delay)
+        p2.PinLow(pin)
+        p2.WaitMs(delay)
+    }
 }
 
-func main() {  
-    rateChan := make(chan int)  
-      
-    // Spawns directly to a new hardware Cog\!  
-    go blinkWorker(56, rateChan) 
+func main() {
+    // A channel is created by its declaration. OctoGo has no allocator, so
+    // make(chan int) is rejected: the declaration is what allocates the
+    // rendezvous cell and acquires its hardware lock.
+    var rateChan chan int
 
-    // Update the blink rate from the main Cog via hardware-locked channel  
-    rateChan \<- 100   
+    // Spawns directly to a new hardware Cog!
+    go blinkWorker(56, rateChan)
+
+    // Update the blink rate from the main Cog via hardware-locked channel
+    rateChan <- 100
 }
 ```
 
@@ -58,9 +61,9 @@ func main() {
 
 OctoGo is designed to be a zero-cost abstraction over the Propeller 2's unique 8-cog architecture.
 
-* **Native Hardware Concurrency:** The go keyword transpiles to a scoped block that requests a stack from the octogo\_rt runtime and invokes \_cogstart\_C. We strictly enforce the P2's 8-cog limit—exceeding it results in a compile-time error or runtime panic.
+* **Native Hardware Concurrency:** The go keyword transpiles to a scoped block that claims a pooled slot holding the goroutine's stack and its arguments, then invokes \_cogstart\_C. The pool has one slot per available Cog, so the P2's 8-cog limit is enforced by construction; exceeding it is a runtime panic.
 
-* **Hardware-Backed Channels:** Channels (chan) are not software queues. They are thread-safe conduits that map directly to the P2's native hardware locks (0-15), ensuring atomic, lock-step data transfer between Hub RAM and Cog RAM.  
+* **Hardware-Backed Channels:** Channels (chan) are not software queues. Each is a rendezvous cell in Hub RAM guarded by one of the P2's native hardware locks (0-15), giving atomic, lock-step transfer. A channel is created by its declaration, not by make: there is no allocator to make it with.  
 * **Zero-Allocation & No GC:** OctoGo operates without a Garbage Collector. Memory scoping is strict (Hub RAM vs. Cog RAM), and slices are implemented as non-escaping views over fixed arrays.  
 * **Select Statements:** The select statement  is transpiled into an efficient polling loop, utilizing flexprop's \_waitx yield instructions to prevent bus starvation during non-blocking hardware polling.
 
@@ -73,14 +76,14 @@ OctoGo is a source-to-source compiler (transpiler) written in Go.
 1. **Frontend:** Lexical analysis and parsing are generated via modernc.org/egg using a LL(1) grammar. The AST is represented as a zero-pointer, cache-local flat \[\]int32 slice.
 
 2. **Semantic Pass:** Uses Go 1.23+ iterators (`func(yield func(node) bool)`) to traverse the AST, calculate memory offsets, and resolve scope.  
-3. **Transpilation:** Emits standard C code alongside our custom octogo\_rt.h runtime header.  
+3. **Transpilation:** Emits standard C. The runtime it needs -- bounds and divide-by-zero traps, slice and channel helpers, the goroutine pool -- is emitted into the same file, per program, so only what is used is paid for.  
 4. **Backend Generation:** The ogo build command automatically feeds the emitted C into flexprop, delegating register allocation, instruction scheduling, and P2 binary generation to a proven, hardware-aware backend.
 
 ## **Getting Started**
 
 1. Issue `go install modernc.org/ogo@latest`  
 2. Write your .ogo code.  
-3. Run octogo build blinky/ to compile and generate your P2 binary.
+3. Run `ogo build blinky/` to compile and generate your P2 binary.
 
 *(Note: Testing is built-in. Files ending in \_test.ogo are automatically recognized as test files).*
 
