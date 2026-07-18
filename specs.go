@@ -137,14 +137,18 @@
 // # Operators and punctuation
 //
 // The following character sequences represent operators and punctuation.
-// (Note: OctoGo omits operators like % and &^)
 //
 //	&    +     ==    !=    (    )
 //	-    |     <     <=    [    ]
 //	*    ^     >     >=    {    }
 //	/    <<    =     :=    ,    ;
-//	~    >>    !     <-    .    :
-//	++   --
+//	%    >>    !     <-    .    :
+//	~    ++    --
+//
+// There is no "&^" operator, and none is needed: "x &^ y" parses as "x & ^y",
+// applying the unary complement, which is the value Go's AND NOT produces. The
+// compound form "&^=" is a single token, since no such decomposition applies to
+// an assignment.
 //
 // # Integer literals
 //
@@ -570,8 +574,8 @@
 //     parenthesized expressions (int_lit | string_lit | rune_lit | "(" Expression
 //     ")").
 //   - UnaryExpr: Unary operators (+, -, !, ^, *, &, <-, ~) applied to a Factor.
-//   - Term (MulOp): Multiplication, division, and bitwise operators (*, /, <<,
-//     >>, &).
+//   - Term (MulOp): Multiplication, division, remainder, and bitwise operators
+//     (*, /, %, <<, >>, &).
 //   - SimpleExpr (AddOp): Addition, subtraction, and bitwise operators (+, -,
 //     |, ^).
 //   - Expression (RelOp): Comparison operators (==, !=, <, <=, >, >=).
@@ -583,7 +587,7 @@
 //	UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 //	RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
 //	AddOp = "+" | "-" | "|" | "^" .
-//	MulOp = "*" | "/" | "<<" | ">>" | "&" .
+//	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" .
 //
 // # Function Calls
 //
@@ -657,7 +661,7 @@
 //		| "--"
 //		| AssignOp Expression
 //		| { "," LhsItem } ( "=" | ":=" ) Expression .
-//	AssignOp   = "+=" | "-=" | "*=" | "/="
+//	AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .
 //	LhsItem    = AssignHead { Selector | Index } .
@@ -670,7 +674,7 @@
 // "x = x op y", except that the target is evaluated only once -- which is
 // observable when the target contains an index expression, as in "a[i()] += 1".
 // The operators mirror the binary ones and carry their operand rules: the
-// arithmetic forms ("+=", "-=", "*=", "/=") require numeric operands of
+// arithmetic forms ("+=", "-=", "*=", "/=", "%=") require numeric operands of
 // the same type, "+=" additionally concatenating strings; the bitwise forms
 // ("&=", "|=", "^=", "&^=") require integers of the same type; and the shifts
 // ("<<=", ">>=") take an unsigned or untyped-constant shift count that need not

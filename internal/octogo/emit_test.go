@@ -2741,6 +2741,42 @@ func TestEmitCMultiDimArrayPartial(t *testing.T) {
 	}
 }
 
+// TestEmitCRem pins the remainder operator: "%" maps to C's, binds at MulOp
+// precedence, and takes the same zero-divisor guard "/" does, since both are
+// undefined in C. A literal divisor is provably non-zero and skips the guard.
+func TestEmitCRem(t *testing.T) {
+	src := `func main() {
+	x := 17
+	d := 5
+	println(x % 5)
+	println(x % d)
+	x %= 5
+	println(x + 2 + 17%5*2)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"\tprintf(\"%d\\n\", (x % 5));\n",
+		"\tprintf(\"%d\\n\", (x % ogo_nonzero(d)));\n",
+		"\tx %= 5;\n",
+		"\tprintf(\"%d\\n\", (x + 2 + (17 % 5 * 2)));\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC remainder: missing %q in\n%s", want, got)
+		}
+	}
+}
+
 // TestEmitCAssignOp pins compound assignment. Most operators map straight to the
 // C one of the same name, so the target is written once -- which is the language
 // semantics too: `x op= y` evaluates its target once, not twice as the `x = x op y`

@@ -1,0 +1,30 @@
+// The remainder operator "%" is a MulOp, binding at the same precedence as "*"
+// and "/". It is defined on numeric operands only, and a zero divisor is
+// rejected when both operands are constants and trapped at run time otherwise --
+// the same treatment "/" gets, since both are undefined in the generated C.
+
+func binary() {
+	x := 17
+	y := x % 5
+	println(y)
+}
+
+// Precedence: "%" binds tighter than "+", so this is 2 + ((17 % 5) * 2).
+func precedence() {
+	println(2 + 17%5*2)
+}
+
+const folded = 7 % 3
+
+func constants() {
+	println(folded)
+}
+
+// ERROR "invalid operation: division by zero"
+const byZero = 5 % 0
+
+func operand_type() {
+	s := "a"
+	// ERROR "invalid operation: operator % not defined on string and int"
+	println(s % 2)
+}

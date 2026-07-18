@@ -5791,6 +5791,8 @@ func binaryOpTok(op Symbol) token.Token {
 		return token.MUL
 	case QUO:
 		return token.QUO
+	case REM:
+		return token.REM
 	case AND:
 		return token.AND
 	case OR:
@@ -5832,11 +5834,12 @@ func (f *File) foldBinary(lhs ExpressionNode, op Symbol, opTok Token, rhs Expres
 // expression node instead.
 func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs constant.Value) (v constant.Value, ok bool) {
 	switch op {
-	case QUO:
-		// Division of two numbers by a zero divisor. Requiring both operands
-		// numeric keeps a non-numeric operand (e.g. "s" / 0) on the general
-		// "operator not defined" path below, and skips the report when either is
-		// unknown -- an unknown propagates a prior error.
+	case QUO, REM:
+		// Division or remainder of two numbers by a zero divisor -- both are
+		// undefined, and Go reports either as "division by zero". Requiring both
+		// operands numeric keeps a non-numeric operand (e.g. "s" / 0) on the
+		// general "operator not defined" path below, and skips the report when
+		// either is unknown -- an unknown propagates a prior error.
 		if isNumericConst(lhs) && isNumericConst(rhs) && constant.Sign(rhs) == 0 {
 			f.err(opTok.Position(), "invalid operation: division by zero")
 			return constant.MakeUnknown(), true
@@ -6009,7 +6012,7 @@ func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
 		switch n.sym {
 		case 0:
 			switch sym := f.ch(n.tok); sym {
-			case MUL, QUO, SHL, SHR, AND:
+			case MUL, QUO, REM, SHL, SHR, AND:
 				r = sym
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))

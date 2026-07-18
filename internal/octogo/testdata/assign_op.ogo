@@ -1,6 +1,6 @@
 // A compound assignment "x op= y" is equivalent to "x = x op y", except that the
-// target is evaluated only once. The ten operators mirror the binary ones:
-// "+=", "-=", "*=", "/=", "&=", "|=", "^=", "&^=", "<<=" and ">>=".
+// target is evaluated only once. The eleven operators mirror the binary ones:
+// "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "&^=", "<<=" and ">>=".
 
 func arithmetic() {
 	x := 10
@@ -8,6 +8,7 @@ func arithmetic() {
 	x -= 3
 	x *= 2
 	x /= 4
+	x %= 4
 	println(x)
 }
 

@@ -73,7 +73,7 @@ FuncLiteral = "func" Signature Block .
 UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
 AddOp = "+" | "-" | "|" | "^" .
-MulOp = "*" | "/" | "<<" | ">>" | "&" .
+MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" .
 CallSuffix = "(" [ ArgumentList ] ")" .
 ArgumentList = Expression { "," Expression } .
 Statement = VarDecl
@@ -98,7 +98,7 @@ PostfixOp  = "<-" Expression
 	| "--"
 	| AssignOp Expression
 	| { "," LhsItem } ( "=" | ":=" ) Expression .
-AssignOp   = "+=" | "-=" | "*=" | "/="
+AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 	| "&=" | "|=" | "^=" | "&^="
 	| "<<=" | ">>=" .
 LhsItem    = AssignHead { Selector | Index } .

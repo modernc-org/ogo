@@ -19,132 +19,134 @@ var _ = unicode.MaxRune
 const (
 	TOK_EOF          = Symbol(0)   // EOF
 	TOK_0021003d     = Symbol(1)   // "!="
-	TOK_00260026     = Symbol(2)   // "&&"
-	TOK_0026003d     = Symbol(3)   // "&="
-	TOK_0026005e003d = Symbol(4)   // "&^="
-	TOK_002a003d     = Symbol(5)   // "*="
-	TOK_002b002b     = Symbol(6)   // "++"
-	TOK_002b003d     = Symbol(7)   // "+="
-	TOK_002d002d     = Symbol(8)   // "--"
-	TOK_002d003d     = Symbol(9)   // "-="
-	TOK_002f003d     = Symbol(10)  // "/="
-	TOK_003a003d     = Symbol(11)  // ":="
-	TOK_003c002d     = Symbol(12)  // "<-"
-	TOK_003c003c     = Symbol(13)  // "<<"
-	TOK_003c003c003d = Symbol(14)  // "<<="
-	TOK_003c003d     = Symbol(15)  // "<="
-	TOK_003d003d     = Symbol(16)  // "=="
-	TOK_003e003d     = Symbol(17)  // ">="
-	TOK_003e003e     = Symbol(18)  // ">>"
-	TOK_003e003e003d = Symbol(19)  // ">>="
-	TOK_005e003d     = Symbol(20)  // "^="
-	TOK_case         = Symbol(21)  // "case"
-	TOK_chan         = Symbol(22)  // "chan"
-	TOK_const        = Symbol(23)  // "const"
-	TOK_default      = Symbol(24)  // "default"
-	TOK_defer        = Symbol(25)  // "defer"
-	TOK_else         = Symbol(26)  // "else"
-	TOK_for          = Symbol(27)  // "for"
-	TOK_func         = Symbol(28)  // "func"
-	TOK_go           = Symbol(29)  // "go"
-	TOK_if           = Symbol(30)  // "if"
-	TOK_import       = Symbol(31)  // "import"
-	TOK_interface    = Symbol(32)  // "interface"
-	TOK_return       = Symbol(33)  // "return"
-	TOK_select       = Symbol(34)  // "select"
-	TOK_struct       = Symbol(35)  // "struct"
-	TOK_switch       = Symbol(36)  // "switch"
-	TOK_type         = Symbol(37)  // "type"
-	TOK_var          = Symbol(38)  // "var"
-	TOK_007c003d     = Symbol(39)  // "|="
-	TOK_007c007c     = Symbol(40)  // "||"
-	TOK_0021         = Symbol(41)  // '!'
-	TOK_0026         = Symbol(42)  // '&'
-	TOK_0028         = Symbol(43)  // '('
-	TOK_0029         = Symbol(44)  // ')'
-	TOK_002a         = Symbol(45)  // '*'
-	TOK_002b         = Symbol(46)  // '+'
-	TOK_002c         = Symbol(47)  // ','
-	TOK_002d         = Symbol(48)  // '-'
-	TOK_002e         = Symbol(49)  // '.'
-	TOK_002f         = Symbol(50)  // '/'
-	TOK_003a         = Symbol(51)  // ':'
-	TOK_003b         = Symbol(52)  // ';'
-	TOK_003c         = Symbol(53)  // '<'
-	TOK_003d         = Symbol(54)  // '='
-	TOK_003e         = Symbol(55)  // '>'
-	TOK_005b         = Symbol(56)  // '['
-	TOK_005d         = Symbol(57)  // ']'
-	TOK_005e         = Symbol(58)  // '^'
-	TOK_007b         = Symbol(59)  // '{'
-	TOK_007c         = Symbol(60)  // '|'
-	TOK_007d         = Symbol(61)  // '}'
-	TOK_007e         = Symbol(62)  // '~'
-	float_lit        = Symbol(63)  // float_lit
-	identifier       = Symbol(64)  // identifier
-	int_lit          = Symbol(65)  // int_lit
-	rune_lit         = Symbol(66)  // rune_lit
-	string_lit       = Symbol(67)  // string_lit
-	white_space      = Symbol(68)  // white_space
-	Type             = Symbol(69)  // Type
-	StructType       = Symbol(70)  // StructType
-	FieldDecl        = Symbol(71)  // FieldDecl
-	InterfaceType    = Symbol(72)  // InterfaceType
-	MethodSpec       = Symbol(73)  // MethodSpec
-	Block            = Symbol(74)  // Block
-	TopLevelDecl     = Symbol(75)  // TopLevelDecl
-	VarDecl          = Symbol(76)  // VarDecl
-	VarSpec          = Symbol(77)  // VarSpec
-	ConstDecl        = Symbol(78)  // ConstDecl
-	ConstSpec        = Symbol(79)  // ConstSpec
-	TypeDecl         = Symbol(80)  // TypeDecl
-	TypeSpec         = Symbol(81)  // TypeSpec
-	FuncDecl         = Symbol(82)  // FuncDecl
-	Signature        = Symbol(83)  // Signature
-	Receiver         = Symbol(84)  // Receiver
-	ParameterList    = Symbol(85)  // ParameterList
-	IdentifierList   = Symbol(86)  // IdentifierList
-	ExpressionList   = Symbol(87)  // ExpressionList
-	Expression       = Symbol(88)  // Expression
-	SimpleExpr       = Symbol(89)  // SimpleExpr
-	Term             = Symbol(90)  // Term
-	UnaryExpr        = Symbol(91)  // UnaryExpr
-	Factor           = Symbol(92)  // Factor
-	FactorSuffix     = Symbol(93)  // FactorSuffix
-	Selector         = Symbol(94)  // Selector
-	Index            = Symbol(95)  // Index
-	FuncLiteral      = Symbol(96)  // FuncLiteral
-	UnaryOp          = Symbol(97)  // UnaryOp
-	RelOp            = Symbol(98)  // RelOp
-	AddOp            = Symbol(99)  // AddOp
-	MulOp            = Symbol(100) // MulOp
-	CallSuffix       = Symbol(101) // CallSuffix
-	ArgumentList     = Symbol(102) // ArgumentList
-	Statement        = Symbol(103) // Statement
-	EmptyStatement   = Symbol(104) // EmptyStatement
-	AssignHead       = Symbol(105) // AssignHead
-	Postfix          = Symbol(106) // Postfix
-	PostfixOp        = Symbol(107) // PostfixOp
-	AssignOp         = Symbol(108) // AssignOp
-	LhsItem          = Symbol(109) // LhsItem
-	IfStmt           = Symbol(110) // IfStmt
-	SwitchStmt       = Symbol(111) // SwitchStmt
-	SwitchGuard      = Symbol(112) // SwitchGuard
-	CaseClause       = Symbol(113) // CaseClause
-	CaseHead         = Symbol(114) // CaseHead
-	SelectStmt       = Symbol(115) // SelectStmt
-	CommClause       = Symbol(116) // CommClause
-	CommHead         = Symbol(117) // CommHead
-	CommOp           = Symbol(118) // CommOp
-	PostfixComm      = Symbol(119) // PostfixComm
-	SourceFile       = Symbol(120) // SourceFile
-	ImportDecl       = Symbol(121) // ImportDecl
-	ImportSpec       = Symbol(122) // ImportSpec
+	TOK_0025003d     = Symbol(2)   // "%="
+	TOK_00260026     = Symbol(3)   // "&&"
+	TOK_0026003d     = Symbol(4)   // "&="
+	TOK_0026005e003d = Symbol(5)   // "&^="
+	TOK_002a003d     = Symbol(6)   // "*="
+	TOK_002b002b     = Symbol(7)   // "++"
+	TOK_002b003d     = Symbol(8)   // "+="
+	TOK_002d002d     = Symbol(9)   // "--"
+	TOK_002d003d     = Symbol(10)  // "-="
+	TOK_002f003d     = Symbol(11)  // "/="
+	TOK_003a003d     = Symbol(12)  // ":="
+	TOK_003c002d     = Symbol(13)  // "<-"
+	TOK_003c003c     = Symbol(14)  // "<<"
+	TOK_003c003c003d = Symbol(15)  // "<<="
+	TOK_003c003d     = Symbol(16)  // "<="
+	TOK_003d003d     = Symbol(17)  // "=="
+	TOK_003e003d     = Symbol(18)  // ">="
+	TOK_003e003e     = Symbol(19)  // ">>"
+	TOK_003e003e003d = Symbol(20)  // ">>="
+	TOK_005e003d     = Symbol(21)  // "^="
+	TOK_case         = Symbol(22)  // "case"
+	TOK_chan         = Symbol(23)  // "chan"
+	TOK_const        = Symbol(24)  // "const"
+	TOK_default      = Symbol(25)  // "default"
+	TOK_defer        = Symbol(26)  // "defer"
+	TOK_else         = Symbol(27)  // "else"
+	TOK_for          = Symbol(28)  // "for"
+	TOK_func         = Symbol(29)  // "func"
+	TOK_go           = Symbol(30)  // "go"
+	TOK_if           = Symbol(31)  // "if"
+	TOK_import       = Symbol(32)  // "import"
+	TOK_interface    = Symbol(33)  // "interface"
+	TOK_return       = Symbol(34)  // "return"
+	TOK_select       = Symbol(35)  // "select"
+	TOK_struct       = Symbol(36)  // "struct"
+	TOK_switch       = Symbol(37)  // "switch"
+	TOK_type         = Symbol(38)  // "type"
+	TOK_var          = Symbol(39)  // "var"
+	TOK_007c003d     = Symbol(40)  // "|="
+	TOK_007c007c     = Symbol(41)  // "||"
+	TOK_0021         = Symbol(42)  // '!'
+	TOK_0025         = Symbol(43)  // '%'
+	TOK_0026         = Symbol(44)  // '&'
+	TOK_0028         = Symbol(45)  // '('
+	TOK_0029         = Symbol(46)  // ')'
+	TOK_002a         = Symbol(47)  // '*'
+	TOK_002b         = Symbol(48)  // '+'
+	TOK_002c         = Symbol(49)  // ','
+	TOK_002d         = Symbol(50)  // '-'
+	TOK_002e         = Symbol(51)  // '.'
+	TOK_002f         = Symbol(52)  // '/'
+	TOK_003a         = Symbol(53)  // ':'
+	TOK_003b         = Symbol(54)  // ';'
+	TOK_003c         = Symbol(55)  // '<'
+	TOK_003d         = Symbol(56)  // '='
+	TOK_003e         = Symbol(57)  // '>'
+	TOK_005b         = Symbol(58)  // '['
+	TOK_005d         = Symbol(59)  // ']'
+	TOK_005e         = Symbol(60)  // '^'
+	TOK_007b         = Symbol(61)  // '{'
+	TOK_007c         = Symbol(62)  // '|'
+	TOK_007d         = Symbol(63)  // '}'
+	TOK_007e         = Symbol(64)  // '~'
+	float_lit        = Symbol(65)  // float_lit
+	identifier       = Symbol(66)  // identifier
+	int_lit          = Symbol(67)  // int_lit
+	rune_lit         = Symbol(68)  // rune_lit
+	string_lit       = Symbol(69)  // string_lit
+	white_space      = Symbol(70)  // white_space
+	Type             = Symbol(71)  // Type
+	StructType       = Symbol(72)  // StructType
+	FieldDecl        = Symbol(73)  // FieldDecl
+	InterfaceType    = Symbol(74)  // InterfaceType
+	MethodSpec       = Symbol(75)  // MethodSpec
+	Block            = Symbol(76)  // Block
+	TopLevelDecl     = Symbol(77)  // TopLevelDecl
+	VarDecl          = Symbol(78)  // VarDecl
+	VarSpec          = Symbol(79)  // VarSpec
+	ConstDecl        = Symbol(80)  // ConstDecl
+	ConstSpec        = Symbol(81)  // ConstSpec
+	TypeDecl         = Symbol(82)  // TypeDecl
+	TypeSpec         = Symbol(83)  // TypeSpec
+	FuncDecl         = Symbol(84)  // FuncDecl
+	Signature        = Symbol(85)  // Signature
+	Receiver         = Symbol(86)  // Receiver
+	ParameterList    = Symbol(87)  // ParameterList
+	IdentifierList   = Symbol(88)  // IdentifierList
+	ExpressionList   = Symbol(89)  // ExpressionList
+	Expression       = Symbol(90)  // Expression
+	SimpleExpr       = Symbol(91)  // SimpleExpr
+	Term             = Symbol(92)  // Term
+	UnaryExpr        = Symbol(93)  // UnaryExpr
+	Factor           = Symbol(94)  // Factor
+	FactorSuffix     = Symbol(95)  // FactorSuffix
+	Selector         = Symbol(96)  // Selector
+	Index            = Symbol(97)  // Index
+	FuncLiteral      = Symbol(98)  // FuncLiteral
+	UnaryOp          = Symbol(99)  // UnaryOp
+	RelOp            = Symbol(100) // RelOp
+	AddOp            = Symbol(101) // AddOp
+	MulOp            = Symbol(102) // MulOp
+	CallSuffix       = Symbol(103) // CallSuffix
+	ArgumentList     = Symbol(104) // ArgumentList
+	Statement        = Symbol(105) // Statement
+	EmptyStatement   = Symbol(106) // EmptyStatement
+	AssignHead       = Symbol(107) // AssignHead
+	Postfix          = Symbol(108) // Postfix
+	PostfixOp        = Symbol(109) // PostfixOp
+	AssignOp         = Symbol(110) // AssignOp
+	LhsItem          = Symbol(111) // LhsItem
+	IfStmt           = Symbol(112) // IfStmt
+	SwitchStmt       = Symbol(113) // SwitchStmt
+	SwitchGuard      = Symbol(114) // SwitchGuard
+	CaseClause       = Symbol(115) // CaseClause
+	CaseHead         = Symbol(116) // CaseHead
+	SelectStmt       = Symbol(117) // SelectStmt
+	CommClause       = Symbol(118) // CommClause
+	CommHead         = Symbol(119) // CommHead
+	CommOp           = Symbol(120) // CommOp
+	PostfixComm      = Symbol(121) // PostfixComm
+	SourceFile       = Symbol(122) // SourceFile
+	ImportDecl       = Symbol(123) // ImportDecl
+	ImportSpec       = Symbol(124) // ImportSpec
 )
 
-const SymbolNames = "EOF\"!=\"\"&&\"\"&=\"\"&^=\"\"*=\"\"++\"\"+=\"\"--\"\"-=\"\"/=\"\":=\"\"<-\"\"<<\"\"<<=\"\"<=\"\"==\"\">=\"\">>\"\">>=\"\"^=\"\"case\"\"chan\"\"const\"\"default\"\"defer\"\"else\"\"for\"\"func\"\"go\"\"if\"\"import\"\"interface\"\"return\"\"select\"\"struct\"\"switch\"\"type\"\"var\"\"|=\"\"||\"'!''&''('')''*''+'',''-''.''/'':'';''<''=''>''['']''^''{''|''}''~'float_litidentifierint_litrune_litstring_litwhite_spaceTypeStructTypeFieldDeclInterfaceTypeMethodSpecBlockTopLevelDeclVarDeclVarSpecConstDeclConstSpecTypeDeclTypeSpecFuncDeclSignatureReceiverParameterListIdentifierListExpressionListExpressionSimpleExprTermUnaryExprFactorFactorSuffixSelectorIndexFuncLiteralUnaryOpRelOpAddOpMulOpCallSuffixArgumentListStatementEmptyStatementAssignHeadPostfixPostfixOpAssignOpLhsItemIfStmtSwitchStmtSwitchGuardCaseClauseCaseHeadSelectStmtCommClauseCommHeadCommOpPostfixCommSourceFileImportDeclImportSpec"
+const SymbolNames = "EOF\"!=\"\"%=\"\"&&\"\"&=\"\"&^=\"\"*=\"\"++\"\"+=\"\"--\"\"-=\"\"/=\"\":=\"\"<-\"\"<<\"\"<<=\"\"<=\"\"==\"\">=\"\">>\"\">>=\"\"^=\"\"case\"\"chan\"\"const\"\"default\"\"defer\"\"else\"\"for\"\"func\"\"go\"\"if\"\"import\"\"interface\"\"return\"\"select\"\"struct\"\"switch\"\"type\"\"var\"\"|=\"\"||\"'!''%''&''('')''*''+'',''-''.''/'':'';''<''=''>''['']''^''{''|''}''~'float_litidentifierint_litrune_litstring_litwhite_spaceTypeStructTypeFieldDeclInterfaceTypeMethodSpecBlockTopLevelDeclVarDeclVarSpecConstDeclConstSpecTypeDeclTypeSpecFuncDeclSignatureReceiverParameterListIdentifierListExpressionListExpressionSimpleExprTermUnaryExprFactorFactorSuffixSelectorIndexFuncLiteralUnaryOpRelOpAddOpMulOpCallSuffixArgumentListStatementEmptyStatementAssignHeadPostfixPostfixOpAssignOpLhsItemIfStmtSwitchStmtSwitchGuardCaseClauseCaseHeadSelectStmtCommClauseCommHeadCommOpPostfixCommSourceFileImportDeclImportSpec"
 
-var SymbolIndex = [...]uint16{0, 3, 7, 11, 15, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 61, 65, 69, 73, 77, 82, 86, 92, 98, 105, 114, 121, 127, 132, 138, 142, 146, 154, 165, 173, 181, 189, 197, 203, 208, 212, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246, 249, 252, 255, 258, 261, 264, 267, 270, 273, 276, 279, 282, 291, 301, 308, 316, 326, 337, 341, 351, 360, 373, 383, 388, 400, 407, 414, 423, 432, 440, 448, 456, 465, 473, 486, 500, 514, 524, 534, 538, 547, 553, 565, 573, 578, 589, 596, 601, 606, 611, 621, 633, 642, 656, 666, 673, 682, 690, 697, 703, 713, 724, 734, 742, 752, 762, 770, 776, 787, 797, 807, 817}
+var SymbolIndex = [...]uint16{0, 3, 7, 11, 15, 19, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 65, 69, 73, 77, 81, 86, 90, 96, 102, 109, 118, 125, 131, 136, 142, 146, 150, 158, 169, 177, 185, 193, 201, 207, 212, 216, 220, 223, 226, 229, 232, 235, 238, 241, 244, 247, 250, 253, 256, 259, 262, 265, 268, 271, 274, 277, 280, 283, 286, 289, 298, 308, 315, 323, 333, 344, 348, 358, 367, 380, 390, 395, 407, 414, 421, 430, 439, 447, 455, 463, 472, 480, 493, 507, 521, 531, 541, 545, 554, 560, 572, 580, 585, 596, 603, 608, 613, 618, 628, 640, 649, 663, 673, 680, 689, 697, 704, 710, 720, 731, 741, 749, 759, 769, 777, 783, 794, 804, 814, 824}
 
 func (s Symbol) String() string {
 	idx := int(s) - 0
@@ -179,7 +181,11 @@ var errorSets = [...][]Symbol{
 	{AssignHead, identifier, TOK_002a, TOK_0028, TOK_003c002d},
 	{identifier, TOK_002a, TOK_0028, TOK_003c002d},
 	{TOK_003c002d},
-	{TOK_002f, TOK_002a, TOK_0026, TOK_003e003e, TOK_003c003c},
+	{TOK_002f, TOK_002a, TOK_0026, TOK_0025, TOK_003e003e, TOK_003c003c},
+	{AssignOp, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_003c002d, TOK_003a003d, TOK_002f003d, TOK_002d003d, TOK_002d002d, TOK_002b003d, TOK_002b002b, TOK_002a003d, TOK_0026005e003d, TOK_0026003d, TOK_0025003d},
+	{AssignOp, PostfixOp, CallSuffix, Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_003c002d, TOK_003a003d, TOK_002f003d, TOK_002d003d, TOK_002d002d, TOK_002b003d, TOK_002b002b, TOK_002a003d, TOK_0026005e003d, TOK_0026003d, TOK_0025003d},
+	{TOK_003d, TOK_002c, TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_003c002d, TOK_003a003d, TOK_002f003d, TOK_002d003d, TOK_002d002d, TOK_002b003d, TOK_002b002b, TOK_002a003d, TOK_0026005e003d, TOK_0026003d, TOK_0025003d},
+	{TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_002f003d, TOK_002d003d, TOK_002b003d, TOK_002a003d, TOK_0026005e003d, TOK_0026003d, TOK_0025003d},
 	{CaseHead, TOK_007d, TOK_default, TOK_case},
 	{CommHead, TOK_007d, TOK_default, TOK_case},
 	{TOK_default, TOK_case},
@@ -196,10 +202,6 @@ var errorSets = [...][]Symbol{
 	{TOK_else},
 	{string_lit, rune_lit, int_lit, identifier, float_lit, TOK_005b, TOK_0028, TOK_func},
 	{TOK_func},
-	{AssignOp, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_003c002d, TOK_003a003d, TOK_002f003d, TOK_002d003d, TOK_002d002d, TOK_002b003d, TOK_002b002b, TOK_002a003d, TOK_0026005e003d, TOK_0026003d},
-	{AssignOp, PostfixOp, CallSuffix, Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_003c002d, TOK_003a003d, TOK_002f003d, TOK_002d003d, TOK_002d002d, TOK_002b003d, TOK_002b002b, TOK_002a003d, TOK_0026005e003d, TOK_0026003d},
-	{TOK_003d, TOK_002c, TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_003c002d, TOK_003a003d, TOK_002f003d, TOK_002d003d, TOK_002d002d, TOK_002b003d, TOK_002b002b, TOK_002a003d, TOK_0026005e003d, TOK_0026003d},
-	{TOK_007c003d, TOK_005e003d, TOK_003e003e003d, TOK_003c003c003d, TOK_002f003d, TOK_002d003d, TOK_002b003d, TOK_002a003d, TOK_0026005e003d, TOK_0026003d},
 	{TOK_007b, TOK_if},
 	{TOK_if},
 	{TOK_import},
@@ -261,73 +263,75 @@ type Symbol int32
 //
 //	id   0: $
 //	id   1: !=
-//	id   2: &&
-//	id   3: &=
-//	id   4: &\^=
-//	id   5: \*=
-//	id   6: \+\+
-//	id   7: \+=
-//	id   8: --
-//	id   9: -=
-//	id  10: /=
-//	id  11: :=
-//	id  12: <-
-//	id  13: <<
-//	id  14: <<=
-//	id  15: <=
-//	id  16: ==
-//	id  17: >=
-//	id  18: >>
-//	id  19: >>=
-//	id  20: \^=
-//	id  21: case
-//	id  22: chan
-//	id  23: const
-//	id  24: default
-//	id  25: defer
-//	id  26: else
-//	id  27: for
-//	id  28: func
-//	id  29: go
-//	id  30: if
-//	id  31: import
-//	id  32: interface
-//	id  33: return
-//	id  34: select
-//	id  35: struct
-//	id  36: switch
-//	id  37: type
-//	id  38: var
-//	id  39: \|=
-//	id  40: \|\|
-//	id  41: !
-//	id  42: &
-//	id  43: \(
-//	id  44: \)
-//	id  45: \*
-//	id  46: \+
-//	id  47: ,
-//	id  48: -
-//	id  49: \.
-//	id  50: /
-//	id  51: :
-//	id  52: ;
-//	id  53: <
-//	id  54: =
-//	id  55: >
-//	id  56: \[
-//	id  57: \]
-//	id  58: \^
-//	id  59: \{
-//	id  60: \|
-//	id  61: \}
-//	id  62: ~
-//	id  63: ((([0-9]))(((_))?(([0-9])))*)(\.)((([0-9]))(((_))?(([0-9])))*)
-//	id  64: ((((\pL))|(_)))((((((\pL))|(_)))|((\p{Nd}))))*
-//	id  65: ((((0)|(([1-9]))(((_))?((([0-9]))(((_))?(([0-9])))*))?))|((0)(((b)|(B)))((_))?((((0)|(1)))(((_))?(((0)|(1))))*))|((0)(((o)|(O)))?((_))?((([0-7]))(((_))?(([0-7])))*))|((0)(((x)|(X)))((_))?((([0-9A-Fa-f]))(((_))?(([0-9A-Fa-f])))*)))
-//	id  66: (')((([^'\\\n\r])|((((\\)(u)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(U)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(((a)|(b)|(f)|(n)|(r)|(t)|(v)|(\\)|(')|("))))))|((((\\)(([0-7]))(([0-7]))(([0-7])))|((\\)(x)(([0-9A-Fa-f]))(([0-9A-Fa-f])))))))(')
-//	id  67: (((`)(([^\x60]))*(`))|((")((([^"\\\n\r])|((((\\)(u)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(U)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(((a)|(b)|(f)|(n)|(r)|(t)|(v)|(\\)|(')|("))))))|((((\\)(([0-7]))(([0-7]))(([0-7])))|((\\)(x)(([0-9A-Fa-f]))(([0-9A-Fa-f])))))))*(")))
-//	id  68: (/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r)
+//	id   2: %=
+//	id   3: &&
+//	id   4: &=
+//	id   5: &\^=
+//	id   6: \*=
+//	id   7: \+\+
+//	id   8: \+=
+//	id   9: --
+//	id  10: -=
+//	id  11: /=
+//	id  12: :=
+//	id  13: <-
+//	id  14: <<
+//	id  15: <<=
+//	id  16: <=
+//	id  17: ==
+//	id  18: >=
+//	id  19: >>
+//	id  20: >>=
+//	id  21: \^=
+//	id  22: case
+//	id  23: chan
+//	id  24: const
+//	id  25: default
+//	id  26: defer
+//	id  27: else
+//	id  28: for
+//	id  29: func
+//	id  30: go
+//	id  31: if
+//	id  32: import
+//	id  33: interface
+//	id  34: return
+//	id  35: select
+//	id  36: struct
+//	id  37: switch
+//	id  38: type
+//	id  39: var
+//	id  40: \|=
+//	id  41: \|\|
+//	id  42: !
+//	id  43: %
+//	id  44: &
+//	id  45: \(
+//	id  46: \)
+//	id  47: \*
+//	id  48: \+
+//	id  49: ,
+//	id  50: -
+//	id  51: \.
+//	id  52: /
+//	id  53: :
+//	id  54: ;
+//	id  55: <
+//	id  56: =
+//	id  57: >
+//	id  58: \[
+//	id  59: \]
+//	id  60: \^
+//	id  61: \{
+//	id  62: \|
+//	id  63: \}
+//	id  64: ~
+//	id  65: ((([0-9]))(((_))?(([0-9])))*)(\.)((([0-9]))(((_))?(([0-9])))*)
+//	id  66: ((((\pL))|(_)))((((((\pL))|(_)))|((\p{Nd}))))*
+//	id  67: ((((0)|(([1-9]))(((_))?((([0-9]))(((_))?(([0-9])))*))?))|((0)(((b)|(B)))((_))?((((0)|(1)))(((_))?(((0)|(1))))*))|((0)(((o)|(O)))?((_))?((([0-7]))(((_))?(([0-7])))*))|((0)(((x)|(X)))((_))?((([0-9A-Fa-f]))(((_))?(([0-9A-Fa-f])))*)))
+//	id  68: (')((([^'\\\n\r])|((((\\)(u)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(U)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(((a)|(b)|(f)|(n)|(r)|(t)|(v)|(\\)|(')|("))))))|((((\\)(([0-7]))(([0-7]))(([0-7])))|((\\)(x)(([0-9A-Fa-f]))(([0-9A-Fa-f])))))))(')
+//	id  69: (((`)(([^\x60]))*(`))|((")((([^"\\\n\r])|((((\\)(u)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(U)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(((a)|(b)|(f)|(n)|(r)|(t)|(v)|(\\)|(')|("))))))|((((\\)(([0-7]))(([0-7]))(([0-7])))|((\\)(x)(([0-9A-Fa-f]))(([0-9A-Fa-f])))))))*(")))
+//	id  70: (/\*([^*]|\*+[^*/])*\*+/|//.*| |\t|\n|\r)
 //
 // ID == -1 is returned when no lexeme was recognized.
 func (*Parser) scan(s []byte) (id, length int) {
@@ -378,2263 +382,2259 @@ func (*Parser) scan(s []byte) (id, length int) {
 		r1, width1 = step(pos + width)
 	}
 	if accept('\t') {
-		goto l89
-	}
-	if accept('\n') {
 		goto l91
 	}
-	if accept('\r') {
+	if accept('\n') {
 		goto l93
 	}
-	if accept(' ') {
+	if accept('\r') {
 		goto l95
 	}
-	if accept('!') {
+	if accept(' ') {
 		goto l97
 	}
+	if accept('!') {
+		goto l99
+	}
 	if accept('"') {
-		goto l103
+		goto l105
 	}
-	if accept('&') {
-		goto l294
+	if accept('%') {
+		goto l296
 	}
-	if accept('\'') {
-		goto l311
-	}
-	if accept('(') {
-		goto l440
-	}
-	if accept(')') {
-		goto l442
-	}
-	if accept('*') {
-		goto l444
-	}
-	if accept('+') {
-		goto l450
-	}
-	if accept(',') {
-		goto l460
-	}
-	if accept('-') {
-		goto l462
-	}
-	if accept('.') {
-		goto l472
-	}
-	if accept('/') {
-		goto l474
-	}
-	if accept('0') {
-		goto l516
-	}
-	if accept(':') {
-		goto l748
-	}
-	if accept(';') {
-		goto l754
-	}
-	if accept('<') {
-		goto l756
-	}
-	if accept('=') {
-		goto l774
-	}
-	if accept('>') {
-		goto l780
-	}
-	if accept('[') {
-		goto l794
-	}
-	if accept(']') {
-		goto l796
-	}
-	if accept('^') {
-		goto l798
-	}
-	if accept('_') {
-		goto l804
-	}
-	if accept('`') {
-		goto l836
-	}
-	if accept('c') {
-		goto l848
-	}
-	if accept('d') {
-		goto l956
-	}
-	if accept('e') {
-		goto l1044
-	}
-	if accept('f') {
-		goto l1082
-	}
-	if accept('g') {
-		goto l1140
-	}
-	if accept('i') {
-		goto l1158
-	}
-	if accept('r') {
-		goto l1306
-	}
-	if accept('s') {
-		goto l1364
-	}
-	if accept('t') {
-		goto l1522
-	}
-	if accept('v') {
-		goto l1560
-	}
-	if accept('{') {
-		goto l1588
-	}
-	if accept('|') {
-		goto l1590
-	}
-	if accept('}') {
-		goto l1600
-	}
-	if accept('~') {
-		goto l1602
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l1604
-	}
-	if r < '1' {
-		goto l84out
-	}
-	if accept2('9') {
-		goto l718
-	}
-l84out:
-	if r == endOfText {
-		goto l1612
-	}
-	return id, length
-l89:
-	id, length = 68, pos
-	return id, length
-l91:
-	id, length = 68, pos
-	return id, length
-l93:
-	id, length = 68, pos
-	return id, length
-l95:
-	id, length = 68, pos
-	return id, length
-l97:
-	id, length = 41, pos
-	if accept('=') {
-		goto l101
-	}
-	return id, length
-l101:
-	id, length = 1, pos
-	return id, length
-l103:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l107out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l107out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l107out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l107out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l107out:
-	return id, length
-l110:
-	id, length = 67, pos
-	return id, length
-l112:
-	if accept('"') {
-		goto l141
-	}
-	if accept('\'') {
-		goto l155
-	}
-	if accept('U') {
-		goto l175
-	}
-	if accept('\\') {
-		goto l206
-	}
-	if accept('a') {
-		goto l213
-	}
-	if accept('b') {
-		goto l220
-	}
-	if accept('f') {
-		goto l227
-	}
-	if accept('n') {
-		goto l234
-	}
-	if accept('r') {
-		goto l241
-	}
-	if accept('t') {
-		goto l248
-	}
-	if accept('u') {
-		goto l255
-	}
-	if accept('v') {
-		goto l274
-	}
-	if accept('x') {
-		goto l281
-	}
-	if r < '0' {
-		goto l138out
-	}
-	if accept2('7') {
-		goto l162
-	}
-l138out:
-	return id, length
-l141:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l145out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l145out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l145out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l145out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l145out:
-	return id, length
-l148:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l152out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l152out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l152out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l152out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l152out:
-	return id, length
-l155:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l159out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l159out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l159out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l159out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l159out:
-	return id, length
-l162:
-	if r < '0' {
-		goto l162out
-	}
-	if accept2('7') {
-		goto l165
-	}
-l162out:
-	return id, length
-l165:
-	if r < '0' {
-		goto l165out
-	}
-	if accept2('7') {
-		goto l168
-	}
-l165out:
-	return id, length
-l168:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l172out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l172out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l172out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l172out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l172out:
-	return id, length
-l175:
-	if r < '0' {
-		goto l175out
-	}
-	if accept2('9') {
-		goto l178
-	}
-	if r < 'A' {
-		goto l175out
-	}
-	if accept2('F') {
-		goto l178
-	}
-	if r < 'a' {
-		goto l175out
-	}
-	if accept2('f') {
-		goto l178
-	}
-l175out:
-	return id, length
-l178:
-	if r < '0' {
-		goto l178out
-	}
-	if accept2('9') {
-		goto l181
-	}
-	if r < 'A' {
-		goto l178out
-	}
-	if accept2('F') {
-		goto l181
-	}
-	if r < 'a' {
-		goto l178out
-	}
-	if accept2('f') {
-		goto l181
-	}
-l178out:
-	return id, length
-l181:
-	if r < '0' {
-		goto l181out
-	}
-	if accept2('9') {
-		goto l184
-	}
-	if r < 'A' {
-		goto l181out
-	}
-	if accept2('F') {
-		goto l184
-	}
-	if r < 'a' {
-		goto l181out
-	}
-	if accept2('f') {
-		goto l184
-	}
-l181out:
-	return id, length
-l184:
-	if r < '0' {
-		goto l184out
-	}
-	if accept2('9') {
-		goto l187
-	}
-	if r < 'A' {
-		goto l184out
-	}
-	if accept2('F') {
-		goto l187
-	}
-	if r < 'a' {
-		goto l184out
-	}
-	if accept2('f') {
-		goto l187
-	}
-l184out:
-	return id, length
-l187:
-	if r < '0' {
-		goto l187out
-	}
-	if accept2('9') {
-		goto l190
-	}
-	if r < 'A' {
-		goto l187out
-	}
-	if accept2('F') {
-		goto l190
-	}
-	if r < 'a' {
-		goto l187out
-	}
-	if accept2('f') {
-		goto l190
-	}
-l187out:
-	return id, length
-l190:
-	if r < '0' {
-		goto l190out
-	}
-	if accept2('9') {
-		goto l193
-	}
-	if r < 'A' {
-		goto l190out
-	}
-	if accept2('F') {
-		goto l193
-	}
-	if r < 'a' {
-		goto l190out
-	}
-	if accept2('f') {
-		goto l193
-	}
-l190out:
-	return id, length
-l193:
-	if r < '0' {
-		goto l193out
-	}
-	if accept2('9') {
-		goto l196
-	}
-	if r < 'A' {
-		goto l193out
-	}
-	if accept2('F') {
-		goto l196
-	}
-	if r < 'a' {
-		goto l193out
-	}
-	if accept2('f') {
-		goto l196
-	}
-l193out:
-	return id, length
-l196:
-	if r < '0' {
-		goto l196out
-	}
-	if accept2('9') {
-		goto l199
-	}
-	if r < 'A' {
-		goto l196out
-	}
-	if accept2('F') {
-		goto l199
-	}
-	if r < 'a' {
-		goto l196out
-	}
-	if accept2('f') {
-		goto l199
-	}
-l196out:
-	return id, length
-l199:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l203out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l203out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l203out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l203out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l203out:
-	return id, length
-l206:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l210out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l210out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l210out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l210out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l210out:
-	return id, length
-l213:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l217out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l217out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l217out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l217out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l217out:
-	return id, length
-l220:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l224out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l224out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l224out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l224out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l224out:
-	return id, length
-l227:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l231out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l231out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l231out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l231out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l231out:
-	return id, length
-l234:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l238out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l238out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l238out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l238out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l238out:
-	return id, length
-l241:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l245out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l245out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l245out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l245out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l245out:
-	return id, length
-l248:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l252out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l252out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l252out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l252out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l252out:
-	return id, length
-l255:
-	if r < '0' {
-		goto l255out
-	}
-	if accept2('9') {
-		goto l258
-	}
-	if r < 'A' {
-		goto l255out
-	}
-	if accept2('F') {
-		goto l258
-	}
-	if r < 'a' {
-		goto l255out
-	}
-	if accept2('f') {
-		goto l258
-	}
-l255out:
-	return id, length
-l258:
-	if r < '0' {
-		goto l258out
-	}
-	if accept2('9') {
-		goto l261
-	}
-	if r < 'A' {
-		goto l258out
-	}
-	if accept2('F') {
-		goto l261
-	}
-	if r < 'a' {
-		goto l258out
-	}
-	if accept2('f') {
-		goto l261
-	}
-l258out:
-	return id, length
-l261:
-	if r < '0' {
-		goto l261out
-	}
-	if accept2('9') {
-		goto l264
-	}
-	if r < 'A' {
-		goto l261out
-	}
-	if accept2('F') {
-		goto l264
-	}
-	if r < 'a' {
-		goto l261out
-	}
-	if accept2('f') {
-		goto l264
-	}
-l261out:
-	return id, length
-l264:
-	if r < '0' {
-		goto l264out
-	}
-	if accept2('9') {
-		goto l267
-	}
-	if r < 'A' {
-		goto l264out
-	}
-	if accept2('F') {
-		goto l267
-	}
-	if r < 'a' {
-		goto l264out
-	}
-	if accept2('f') {
-		goto l267
-	}
-l264out:
-	return id, length
-l267:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l271out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l271out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l271out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l271out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l271out:
-	return id, length
-l274:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l278out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l278out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l278out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l278out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l278out:
-	return id, length
-l281:
-	if r < '0' {
-		goto l281out
-	}
-	if accept2('9') {
-		goto l284
-	}
-	if r < 'A' {
-		goto l281out
-	}
-	if accept2('F') {
-		goto l284
-	}
-	if r < 'a' {
-		goto l281out
-	}
-	if accept2('f') {
-		goto l284
-	}
-l281out:
-	return id, length
-l284:
-	if r < '0' {
-		goto l284out
-	}
-	if accept2('9') {
-		goto l287
-	}
-	if r < 'A' {
-		goto l284out
-	}
-	if accept2('F') {
-		goto l287
-	}
-	if r < 'a' {
-		goto l284out
-	}
-	if accept2('f') {
-		goto l287
-	}
-l284out:
-	return id, length
-l287:
-	if accept('"') {
-		goto l110
-	}
-	if accept('\\') {
-		goto l112
-	}
-	if accept2('\t') {
-		goto l148
-	}
-	if r < '\v' {
-		goto l291out
-	}
-	if accept2('\f') {
-		goto l148
-	}
-	if r < '\x0e' {
-		goto l291out
-	}
-	if accept2('!') {
-		goto l148
-	}
-	if r < '#' {
-		goto l291out
-	}
-	if accept2('[') {
-		goto l148
-	}
-	if r < ']' {
-		goto l291out
-	}
-	if accept2('\U0010ffff') {
-		goto l148
-	}
-l291out:
-	return id, length
-l294:
-	id, length = 42, pos
 	if accept('&') {
 		goto l302
 	}
+	if accept('\'') {
+		goto l319
+	}
+	if accept('(') {
+		goto l448
+	}
+	if accept(')') {
+		goto l450
+	}
+	if accept('*') {
+		goto l452
+	}
+	if accept('+') {
+		goto l458
+	}
+	if accept(',') {
+		goto l468
+	}
+	if accept('-') {
+		goto l470
+	}
+	if accept('.') {
+		goto l480
+	}
+	if accept('/') {
+		goto l482
+	}
+	if accept('0') {
+		goto l524
+	}
+	if accept(':') {
+		goto l756
+	}
+	if accept(';') {
+		goto l762
+	}
+	if accept('<') {
+		goto l764
+	}
 	if accept('=') {
-		goto l304
+		goto l782
+	}
+	if accept('>') {
+		goto l788
+	}
+	if accept('[') {
+		goto l802
+	}
+	if accept(']') {
+		goto l804
 	}
 	if accept('^') {
-		goto l306
+		goto l806
 	}
-	return id, length
-l302:
-	id, length = 2, pos
-	return id, length
-l304:
-	id, length = 3, pos
-	return id, length
-l306:
-	if accept('=') {
-		goto l309
+	if accept('_') {
+		goto l812
 	}
-	return id, length
-l309:
-	id, length = 4, pos
-	return id, length
-l311:
-	if accept('\\') {
-		goto l316
+	if accept('`') {
+		goto l844
 	}
-	if accept2('\t') {
-		goto l437
+	if accept('c') {
+		goto l856
 	}
-	if r < '\v' {
-		goto l313out
+	if accept('d') {
+		goto l964
 	}
-	if accept2('\f') {
-		goto l437
-	}
-	if r < '\x0e' {
-		goto l313out
-	}
-	if accept2('&') {
-		goto l437
-	}
-	if r < '(' {
-		goto l313out
-	}
-	if accept2('[') {
-		goto l437
-	}
-	if r < ']' {
-		goto l313out
-	}
-	if accept2('\U0010ffff') {
-		goto l437
-	}
-l313out:
-	return id, length
-l316:
-	if accept('"') {
-		goto l345
-	}
-	if accept('\'') {
-		goto l350
-	}
-	if accept('U') {
-		goto l362
-	}
-	if accept('\\') {
-		goto l389
-	}
-	if accept('a') {
-		goto l392
-	}
-	if accept('b') {
-		goto l395
+	if accept('e') {
+		goto l1052
 	}
 	if accept('f') {
-		goto l398
+		goto l1090
 	}
-	if accept('n') {
-		goto l401
+	if accept('g') {
+		goto l1148
+	}
+	if accept('i') {
+		goto l1166
 	}
 	if accept('r') {
-		goto l404
+		goto l1314
+	}
+	if accept('s') {
+		goto l1372
 	}
 	if accept('t') {
-		goto l407
-	}
-	if accept('u') {
-		goto l410
+		goto l1530
 	}
 	if accept('v') {
-		goto l425
+		goto l1568
+	}
+	if accept('{') {
+		goto l1596
+	}
+	if accept('|') {
+		goto l1598
+	}
+	if accept('}') {
+		goto l1608
+	}
+	if accept('~') {
+		goto l1610
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l1612
+	}
+	if r < '1' {
+		goto l86out
+	}
+	if accept2('9') {
+		goto l726
+	}
+l86out:
+	if r == endOfText {
+		goto l1620
+	}
+	return id, length
+l91:
+	id, length = 70, pos
+	return id, length
+l93:
+	id, length = 70, pos
+	return id, length
+l95:
+	id, length = 70, pos
+	return id, length
+l97:
+	id, length = 70, pos
+	return id, length
+l99:
+	id, length = 42, pos
+	if accept('=') {
+		goto l103
+	}
+	return id, length
+l103:
+	id, length = 1, pos
+	return id, length
+l105:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l109out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l109out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l109out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l109out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l109out:
+	return id, length
+l112:
+	id, length = 69, pos
+	return id, length
+l114:
+	if accept('"') {
+		goto l143
+	}
+	if accept('\'') {
+		goto l157
+	}
+	if accept('U') {
+		goto l177
+	}
+	if accept('\\') {
+		goto l208
+	}
+	if accept('a') {
+		goto l215
+	}
+	if accept('b') {
+		goto l222
+	}
+	if accept('f') {
+		goto l229
+	}
+	if accept('n') {
+		goto l236
+	}
+	if accept('r') {
+		goto l243
+	}
+	if accept('t') {
+		goto l250
+	}
+	if accept('u') {
+		goto l257
+	}
+	if accept('v') {
+		goto l276
 	}
 	if accept('x') {
-		goto l428
+		goto l283
 	}
 	if r < '0' {
-		goto l342out
+		goto l140out
 	}
 	if accept2('7') {
+		goto l164
+	}
+l140out:
+	return id, length
+l143:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l147out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l147out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l147out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l147out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l147out:
+	return id, length
+l150:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l154out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l154out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l154out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l154out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l154out:
+	return id, length
+l157:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l161out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l161out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l161out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l161out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l161out:
+	return id, length
+l164:
+	if r < '0' {
+		goto l164out
+	}
+	if accept2('7') {
+		goto l167
+	}
+l164out:
+	return id, length
+l167:
+	if r < '0' {
+		goto l167out
+	}
+	if accept2('7') {
+		goto l170
+	}
+l167out:
+	return id, length
+l170:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l174out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l174out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l174out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l174out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l174out:
+	return id, length
+l177:
+	if r < '0' {
+		goto l177out
+	}
+	if accept2('9') {
+		goto l180
+	}
+	if r < 'A' {
+		goto l177out
+	}
+	if accept2('F') {
+		goto l180
+	}
+	if r < 'a' {
+		goto l177out
+	}
+	if accept2('f') {
+		goto l180
+	}
+l177out:
+	return id, length
+l180:
+	if r < '0' {
+		goto l180out
+	}
+	if accept2('9') {
+		goto l183
+	}
+	if r < 'A' {
+		goto l180out
+	}
+	if accept2('F') {
+		goto l183
+	}
+	if r < 'a' {
+		goto l180out
+	}
+	if accept2('f') {
+		goto l183
+	}
+l180out:
+	return id, length
+l183:
+	if r < '0' {
+		goto l183out
+	}
+	if accept2('9') {
+		goto l186
+	}
+	if r < 'A' {
+		goto l183out
+	}
+	if accept2('F') {
+		goto l186
+	}
+	if r < 'a' {
+		goto l183out
+	}
+	if accept2('f') {
+		goto l186
+	}
+l183out:
+	return id, length
+l186:
+	if r < '0' {
+		goto l186out
+	}
+	if accept2('9') {
+		goto l189
+	}
+	if r < 'A' {
+		goto l186out
+	}
+	if accept2('F') {
+		goto l189
+	}
+	if r < 'a' {
+		goto l186out
+	}
+	if accept2('f') {
+		goto l189
+	}
+l186out:
+	return id, length
+l189:
+	if r < '0' {
+		goto l189out
+	}
+	if accept2('9') {
+		goto l192
+	}
+	if r < 'A' {
+		goto l189out
+	}
+	if accept2('F') {
+		goto l192
+	}
+	if r < 'a' {
+		goto l189out
+	}
+	if accept2('f') {
+		goto l192
+	}
+l189out:
+	return id, length
+l192:
+	if r < '0' {
+		goto l192out
+	}
+	if accept2('9') {
+		goto l195
+	}
+	if r < 'A' {
+		goto l192out
+	}
+	if accept2('F') {
+		goto l195
+	}
+	if r < 'a' {
+		goto l192out
+	}
+	if accept2('f') {
+		goto l195
+	}
+l192out:
+	return id, length
+l195:
+	if r < '0' {
+		goto l195out
+	}
+	if accept2('9') {
+		goto l198
+	}
+	if r < 'A' {
+		goto l195out
+	}
+	if accept2('F') {
+		goto l198
+	}
+	if r < 'a' {
+		goto l195out
+	}
+	if accept2('f') {
+		goto l198
+	}
+l195out:
+	return id, length
+l198:
+	if r < '0' {
+		goto l198out
+	}
+	if accept2('9') {
+		goto l201
+	}
+	if r < 'A' {
+		goto l198out
+	}
+	if accept2('F') {
+		goto l201
+	}
+	if r < 'a' {
+		goto l198out
+	}
+	if accept2('f') {
+		goto l201
+	}
+l198out:
+	return id, length
+l201:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l205out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l205out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l205out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l205out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l205out:
+	return id, length
+l208:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l212out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l212out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l212out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l212out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l212out:
+	return id, length
+l215:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l219out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l219out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l219out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l219out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l219out:
+	return id, length
+l222:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l226out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l226out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l226out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l226out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l226out:
+	return id, length
+l229:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l233out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l233out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l233out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l233out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l233out:
+	return id, length
+l236:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l240out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l240out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l240out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l240out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l240out:
+	return id, length
+l243:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l247out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l247out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l247out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l247out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l247out:
+	return id, length
+l250:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l254out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l254out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l254out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l254out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l254out:
+	return id, length
+l257:
+	if r < '0' {
+		goto l257out
+	}
+	if accept2('9') {
+		goto l260
+	}
+	if r < 'A' {
+		goto l257out
+	}
+	if accept2('F') {
+		goto l260
+	}
+	if r < 'a' {
+		goto l257out
+	}
+	if accept2('f') {
+		goto l260
+	}
+l257out:
+	return id, length
+l260:
+	if r < '0' {
+		goto l260out
+	}
+	if accept2('9') {
+		goto l263
+	}
+	if r < 'A' {
+		goto l260out
+	}
+	if accept2('F') {
+		goto l263
+	}
+	if r < 'a' {
+		goto l260out
+	}
+	if accept2('f') {
+		goto l263
+	}
+l260out:
+	return id, length
+l263:
+	if r < '0' {
+		goto l263out
+	}
+	if accept2('9') {
+		goto l266
+	}
+	if r < 'A' {
+		goto l263out
+	}
+	if accept2('F') {
+		goto l266
+	}
+	if r < 'a' {
+		goto l263out
+	}
+	if accept2('f') {
+		goto l266
+	}
+l263out:
+	return id, length
+l266:
+	if r < '0' {
+		goto l266out
+	}
+	if accept2('9') {
+		goto l269
+	}
+	if r < 'A' {
+		goto l266out
+	}
+	if accept2('F') {
+		goto l269
+	}
+	if r < 'a' {
+		goto l266out
+	}
+	if accept2('f') {
+		goto l269
+	}
+l266out:
+	return id, length
+l269:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l273out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l273out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l273out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l273out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l273out:
+	return id, length
+l276:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l280out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l280out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l280out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l280out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l280out:
+	return id, length
+l283:
+	if r < '0' {
+		goto l283out
+	}
+	if accept2('9') {
+		goto l286
+	}
+	if r < 'A' {
+		goto l283out
+	}
+	if accept2('F') {
+		goto l286
+	}
+	if r < 'a' {
+		goto l283out
+	}
+	if accept2('f') {
+		goto l286
+	}
+l283out:
+	return id, length
+l286:
+	if r < '0' {
+		goto l286out
+	}
+	if accept2('9') {
+		goto l289
+	}
+	if r < 'A' {
+		goto l286out
+	}
+	if accept2('F') {
+		goto l289
+	}
+	if r < 'a' {
+		goto l286out
+	}
+	if accept2('f') {
+		goto l289
+	}
+l286out:
+	return id, length
+l289:
+	if accept('"') {
+		goto l112
+	}
+	if accept('\\') {
+		goto l114
+	}
+	if accept2('\t') {
+		goto l150
+	}
+	if r < '\v' {
+		goto l293out
+	}
+	if accept2('\f') {
+		goto l150
+	}
+	if r < '\x0e' {
+		goto l293out
+	}
+	if accept2('!') {
+		goto l150
+	}
+	if r < '#' {
+		goto l293out
+	}
+	if accept2('[') {
+		goto l150
+	}
+	if r < ']' {
+		goto l293out
+	}
+	if accept2('\U0010ffff') {
+		goto l150
+	}
+l293out:
+	return id, length
+l296:
+	id, length = 43, pos
+	if accept('=') {
+		goto l300
+	}
+	return id, length
+l300:
+	id, length = 2, pos
+	return id, length
+l302:
+	id, length = 44, pos
+	if accept('&') {
+		goto l310
+	}
+	if accept('=') {
+		goto l312
+	}
+	if accept('^') {
+		goto l314
+	}
+	return id, length
+l310:
+	id, length = 3, pos
+	return id, length
+l312:
+	id, length = 4, pos
+	return id, length
+l314:
+	if accept('=') {
+		goto l317
+	}
+	return id, length
+l317:
+	id, length = 5, pos
+	return id, length
+l319:
+	if accept('\\') {
+		goto l324
+	}
+	if accept2('\t') {
+		goto l445
+	}
+	if r < '\v' {
+		goto l321out
+	}
+	if accept2('\f') {
+		goto l445
+	}
+	if r < '\x0e' {
+		goto l321out
+	}
+	if accept2('&') {
+		goto l445
+	}
+	if r < '(' {
+		goto l321out
+	}
+	if accept2('[') {
+		goto l445
+	}
+	if r < ']' {
+		goto l321out
+	}
+	if accept2('\U0010ffff') {
+		goto l445
+	}
+l321out:
+	return id, length
+l324:
+	if accept('"') {
 		goto l353
 	}
-l342out:
-	return id, length
-l345:
 	if accept('\'') {
-		goto l348
+		goto l358
 	}
-	return id, length
-l348:
-	id, length = 66, pos
-	return id, length
-l350:
-	if accept('\'') {
-		goto l348
+	if accept('U') {
+		goto l370
 	}
+	if accept('\\') {
+		goto l397
+	}
+	if accept('a') {
+		goto l400
+	}
+	if accept('b') {
+		goto l403
+	}
+	if accept('f') {
+		goto l406
+	}
+	if accept('n') {
+		goto l409
+	}
+	if accept('r') {
+		goto l412
+	}
+	if accept('t') {
+		goto l415
+	}
+	if accept('u') {
+		goto l418
+	}
+	if accept('v') {
+		goto l433
+	}
+	if accept('x') {
+		goto l436
+	}
+	if r < '0' {
+		goto l350out
+	}
+	if accept2('7') {
+		goto l361
+	}
+l350out:
 	return id, length
 l353:
-	if r < '0' {
-		goto l353out
-	}
-	if accept2('7') {
+	if accept('\'') {
 		goto l356
 	}
-l353out:
 	return id, length
 l356:
+	id, length = 68, pos
+	return id, length
+l358:
+	if accept('\'') {
+		goto l356
+	}
+	return id, length
+l361:
 	if r < '0' {
-		goto l356out
+		goto l361out
 	}
 	if accept2('7') {
-		goto l359
+		goto l364
 	}
-l356out:
+l361out:
 	return id, length
-l359:
+l364:
+	if r < '0' {
+		goto l364out
+	}
+	if accept2('7') {
+		goto l367
+	}
+l364out:
+	return id, length
+l367:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l362:
+l370:
 	if r < '0' {
-		goto l362out
+		goto l370out
 	}
 	if accept2('9') {
-		goto l365
+		goto l373
 	}
 	if r < 'A' {
-		goto l362out
+		goto l370out
 	}
 	if accept2('F') {
-		goto l365
+		goto l373
 	}
 	if r < 'a' {
-		goto l362out
+		goto l370out
 	}
 	if accept2('f') {
-		goto l365
+		goto l373
 	}
-l362out:
+l370out:
 	return id, length
-l365:
+l373:
 	if r < '0' {
-		goto l365out
+		goto l373out
 	}
 	if accept2('9') {
-		goto l368
+		goto l376
 	}
 	if r < 'A' {
-		goto l365out
+		goto l373out
 	}
 	if accept2('F') {
-		goto l368
+		goto l376
 	}
 	if r < 'a' {
-		goto l365out
+		goto l373out
 	}
 	if accept2('f') {
-		goto l368
+		goto l376
 	}
-l365out:
+l373out:
 	return id, length
-l368:
+l376:
 	if r < '0' {
-		goto l368out
+		goto l376out
 	}
 	if accept2('9') {
-		goto l371
+		goto l379
 	}
 	if r < 'A' {
-		goto l368out
+		goto l376out
 	}
 	if accept2('F') {
-		goto l371
+		goto l379
 	}
 	if r < 'a' {
-		goto l368out
+		goto l376out
 	}
 	if accept2('f') {
-		goto l371
+		goto l379
 	}
-l368out:
+l376out:
 	return id, length
-l371:
+l379:
 	if r < '0' {
-		goto l371out
+		goto l379out
 	}
 	if accept2('9') {
-		goto l374
+		goto l382
 	}
 	if r < 'A' {
-		goto l371out
+		goto l379out
 	}
 	if accept2('F') {
-		goto l374
+		goto l382
 	}
 	if r < 'a' {
-		goto l371out
+		goto l379out
 	}
 	if accept2('f') {
-		goto l374
+		goto l382
 	}
-l371out:
+l379out:
 	return id, length
-l374:
+l382:
 	if r < '0' {
-		goto l374out
+		goto l382out
 	}
 	if accept2('9') {
-		goto l377
+		goto l385
 	}
 	if r < 'A' {
-		goto l374out
+		goto l382out
 	}
 	if accept2('F') {
-		goto l377
+		goto l385
 	}
 	if r < 'a' {
-		goto l374out
+		goto l382out
 	}
 	if accept2('f') {
-		goto l377
+		goto l385
 	}
-l374out:
+l382out:
 	return id, length
-l377:
+l385:
 	if r < '0' {
-		goto l377out
+		goto l385out
 	}
 	if accept2('9') {
-		goto l380
+		goto l388
 	}
 	if r < 'A' {
-		goto l377out
+		goto l385out
 	}
 	if accept2('F') {
-		goto l380
+		goto l388
 	}
 	if r < 'a' {
-		goto l377out
+		goto l385out
 	}
 	if accept2('f') {
-		goto l380
+		goto l388
 	}
-l377out:
+l385out:
 	return id, length
-l380:
+l388:
 	if r < '0' {
-		goto l380out
+		goto l388out
 	}
 	if accept2('9') {
-		goto l383
+		goto l391
 	}
 	if r < 'A' {
-		goto l380out
+		goto l388out
 	}
 	if accept2('F') {
-		goto l383
+		goto l391
 	}
 	if r < 'a' {
-		goto l380out
+		goto l388out
 	}
 	if accept2('f') {
-		goto l383
+		goto l391
 	}
-l380out:
+l388out:
 	return id, length
-l383:
+l391:
 	if r < '0' {
-		goto l383out
+		goto l391out
 	}
 	if accept2('9') {
-		goto l386
+		goto l394
 	}
 	if r < 'A' {
-		goto l383out
+		goto l391out
 	}
 	if accept2('F') {
-		goto l386
+		goto l394
 	}
 	if r < 'a' {
-		goto l383out
+		goto l391out
 	}
 	if accept2('f') {
-		goto l386
+		goto l394
 	}
-l383out:
+l391out:
 	return id, length
-l386:
+l394:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l389:
+l397:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l392:
+l400:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l395:
+l403:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l398:
+l406:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l401:
+l409:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l404:
+l412:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l407:
+l415:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l410:
+l418:
 	if r < '0' {
-		goto l410out
+		goto l418out
 	}
 	if accept2('9') {
-		goto l413
+		goto l421
 	}
 	if r < 'A' {
-		goto l410out
+		goto l418out
 	}
 	if accept2('F') {
-		goto l413
+		goto l421
 	}
 	if r < 'a' {
-		goto l410out
+		goto l418out
 	}
 	if accept2('f') {
-		goto l413
+		goto l421
 	}
-l410out:
+l418out:
 	return id, length
-l413:
+l421:
 	if r < '0' {
-		goto l413out
+		goto l421out
 	}
 	if accept2('9') {
-		goto l416
+		goto l424
 	}
 	if r < 'A' {
-		goto l413out
+		goto l421out
 	}
 	if accept2('F') {
-		goto l416
+		goto l424
 	}
 	if r < 'a' {
-		goto l413out
+		goto l421out
 	}
 	if accept2('f') {
-		goto l416
+		goto l424
 	}
-l413out:
+l421out:
 	return id, length
-l416:
+l424:
 	if r < '0' {
-		goto l416out
+		goto l424out
 	}
 	if accept2('9') {
-		goto l419
+		goto l427
 	}
 	if r < 'A' {
-		goto l416out
+		goto l424out
 	}
 	if accept2('F') {
-		goto l419
+		goto l427
 	}
 	if r < 'a' {
-		goto l416out
+		goto l424out
 	}
 	if accept2('f') {
-		goto l419
+		goto l427
 	}
-l416out:
+l424out:
 	return id, length
-l419:
+l427:
 	if r < '0' {
-		goto l419out
+		goto l427out
 	}
 	if accept2('9') {
-		goto l422
+		goto l430
 	}
 	if r < 'A' {
-		goto l419out
+		goto l427out
 	}
 	if accept2('F') {
-		goto l422
+		goto l430
 	}
 	if r < 'a' {
-		goto l419out
+		goto l427out
 	}
 	if accept2('f') {
-		goto l422
+		goto l430
 	}
-l419out:
+l427out:
 	return id, length
-l422:
+l430:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l425:
+l433:
 	if accept('\'') {
-		goto l348
+		goto l356
 	}
 	return id, length
-l428:
+l436:
 	if r < '0' {
-		goto l428out
+		goto l436out
 	}
 	if accept2('9') {
-		goto l431
+		goto l439
 	}
 	if r < 'A' {
-		goto l428out
+		goto l436out
 	}
 	if accept2('F') {
-		goto l431
+		goto l439
 	}
 	if r < 'a' {
-		goto l428out
+		goto l436out
 	}
 	if accept2('f') {
-		goto l431
+		goto l439
 	}
-l428out:
+l436out:
 	return id, length
-l431:
+l439:
 	if r < '0' {
-		goto l431out
+		goto l439out
 	}
 	if accept2('9') {
-		goto l434
+		goto l442
 	}
 	if r < 'A' {
-		goto l431out
+		goto l439out
 	}
 	if accept2('F') {
-		goto l434
+		goto l442
 	}
 	if r < 'a' {
-		goto l431out
+		goto l439out
 	}
 	if accept2('f') {
-		goto l434
+		goto l442
 	}
-l431out:
-	return id, length
-l434:
-	if accept('\'') {
-		goto l348
-	}
-	return id, length
-l437:
-	if accept('\'') {
-		goto l348
-	}
-	return id, length
-l440:
-	id, length = 43, pos
+l439out:
 	return id, length
 l442:
-	id, length = 44, pos
+	if accept('\'') {
+		goto l356
+	}
 	return id, length
-l444:
-	id, length = 45, pos
-	if accept('=') {
-		goto l448
+l445:
+	if accept('\'') {
+		goto l356
 	}
 	return id, length
 l448:
-	id, length = 5, pos
+	id, length = 45, pos
 	return id, length
 l450:
 	id, length = 46, pos
-	if accept('+') {
-		goto l456
-	}
+	return id, length
+l452:
+	id, length = 47, pos
 	if accept('=') {
-		goto l458
+		goto l456
 	}
 	return id, length
 l456:
 	id, length = 6, pos
 	return id, length
 l458:
+	id, length = 48, pos
+	if accept('+') {
+		goto l464
+	}
+	if accept('=') {
+		goto l466
+	}
+	return id, length
+l464:
 	id, length = 7, pos
 	return id, length
-l460:
-	id, length = 47, pos
-	return id, length
-l462:
-	id, length = 48, pos
-	if accept('-') {
-		goto l468
-	}
-	if accept('=') {
-		goto l470
-	}
-	return id, length
-l468:
+l466:
 	id, length = 8, pos
 	return id, length
-l470:
-	id, length = 9, pos
-	return id, length
-l472:
+l468:
 	id, length = 49, pos
 	return id, length
-l474:
+l470:
 	id, length = 50, pos
-	if accept('*') {
-		goto l482
-	}
-	if accept('/') {
-		goto l506
+	if accept('-') {
+		goto l476
 	}
 	if accept('=') {
-		goto l514
+		goto l478
 	}
+	return id, length
+l476:
+	id, length = 9, pos
+	return id, length
+l478:
+	id, length = 10, pos
+	return id, length
+l480:
+	id, length = 51, pos
 	return id, length
 l482:
+	id, length = 52, pos
 	if accept('*') {
-		goto l487
-	}
-	if accept2(')') {
-		goto l501
-	}
-	if r < '+' {
-		goto l484out
-	}
-	if accept2('\U0010ffff') {
-		goto l501
-	}
-l484out:
-	return id, length
-l487:
-	if accept('*') {
-		goto l487
+		goto l490
 	}
 	if accept('/') {
-		goto l494
+		goto l514
+	}
+	if accept('=') {
+		goto l522
+	}
+	return id, length
+l490:
+	if accept('*') {
+		goto l495
 	}
 	if accept2(')') {
-		goto l496
+		goto l509
 	}
 	if r < '+' {
-		goto l491out
+		goto l492out
+	}
+	if accept2('\U0010ffff') {
+		goto l509
+	}
+l492out:
+	return id, length
+l495:
+	if accept('*') {
+		goto l495
+	}
+	if accept('/') {
+		goto l502
+	}
+	if accept2(')') {
+		goto l504
+	}
+	if r < '+' {
+		goto l499out
 	}
 	if accept2('.') {
-		goto l496
+		goto l504
 	}
 	if r < '0' {
-		goto l491out
+		goto l499out
 	}
 	if accept2('\U0010ffff') {
-		goto l496
+		goto l504
 	}
-l491out:
+l499out:
 	return id, length
-l494:
-	id, length = 68, pos
+l502:
+	id, length = 70, pos
 	return id, length
-l496:
+l504:
 	if accept('*') {
-		goto l487
+		goto l495
 	}
 	if accept2(')') {
-		goto l501
+		goto l509
 	}
 	if r < '+' {
-		goto l498out
+		goto l506out
 	}
 	if accept2('\U0010ffff') {
-		goto l501
+		goto l509
 	}
-l498out:
+l506out:
 	return id, length
-l501:
+l509:
 	if accept('*') {
-		goto l487
+		goto l495
 	}
 	if accept2(')') {
-		goto l501
+		goto l509
 	}
 	if r < '+' {
-		goto l503out
-	}
-	if accept2('\U0010ffff') {
-		goto l501
-	}
-l503out:
-	return id, length
-l506:
-	id, length = 68, pos
-	if accept2('\t') {
-		goto l510
-	}
-	if r < '\v' {
-		goto l507out
-	}
-	if accept2('\U0010ffff') {
-		goto l510
-	}
-l507out:
-	return id, length
-l510:
-	id, length = 68, pos
-	if accept2('\t') {
-		goto l510
-	}
-	if r < '\v' {
 		goto l511out
 	}
 	if accept2('\U0010ffff') {
-		goto l510
+		goto l509
 	}
 l511out:
 	return id, length
 l514:
-	id, length = 10, pos
+	id, length = 70, pos
+	if accept2('\t') {
+		goto l518
+	}
+	if r < '\v' {
+		goto l515out
+	}
+	if accept2('\U0010ffff') {
+		goto l518
+	}
+l515out:
 	return id, length
-l516:
-	id, length = 65, pos
+l518:
+	id, length = 70, pos
+	if accept2('\t') {
+		goto l518
+	}
+	if r < '\v' {
+		goto l519out
+	}
+	if accept2('\U0010ffff') {
+		goto l518
+	}
+l519out:
+	return id, length
+l522:
+	id, length = 11, pos
+	return id, length
+l524:
+	id, length = 67, pos
 	if accept('.') {
-		goto l540
+		goto l548
 	}
 	if accept('8') {
-		goto l582
+		goto l590
 	}
 	if accept('9') {
-		goto l582
+		goto l590
 	}
 	if accept('B') {
-		goto l599
+		goto l607
 	}
 	if accept('O') {
-		goto l648
+		goto l656
 	}
 	if accept('X') {
-		goto l671
+		goto l679
 	}
 	if accept('_') {
-		goto l694
+		goto l702
 	}
 	if accept('b') {
-		goto l701
+		goto l709
 	}
 	if accept('o') {
-		goto l708
+		goto l716
 	}
 	if accept('x') {
-		goto l713
+		goto l721
 	}
 	if r < '0' {
-		goto l537out
+		goto l545out
 	}
 	if accept2('7') {
-		goto l558
+		goto l566
 	}
-l537out:
+l545out:
 	return id, length
-l540:
+l548:
 	if r < '0' {
-		goto l540out
+		goto l548out
 	}
 	if accept2('9') {
-		goto l543
+		goto l551
 	}
-l540out:
+l548out:
 	return id, length
-l543:
-	id, length = 63, pos
-	if accept('_') {
-		goto l555
-	}
-	if r < '0' {
-		goto l546out
-	}
-	if accept2('9') {
-		goto l549
-	}
-l546out:
-	return id, length
-l549:
-	id, length = 63, pos
-	if accept('_') {
-		goto l555
-	}
-	if r < '0' {
-		goto l552out
-	}
-	if accept2('9') {
-		goto l549
-	}
-l552out:
-	return id, length
-l555:
-	if r < '0' {
-		goto l555out
-	}
-	if accept2('9') {
-		goto l549
-	}
-l555out:
-	return id, length
-l558:
+l551:
 	id, length = 65, pos
+	if accept('_') {
+		goto l563
+	}
+	if r < '0' {
+		goto l554out
+	}
+	if accept2('9') {
+		goto l557
+	}
+l554out:
+	return id, length
+l557:
+	id, length = 65, pos
+	if accept('_') {
+		goto l563
+	}
+	if r < '0' {
+		goto l560out
+	}
+	if accept2('9') {
+		goto l557
+	}
+l560out:
+	return id, length
+l563:
+	if r < '0' {
+		goto l563out
+	}
+	if accept2('9') {
+		goto l557
+	}
+l563out:
+	return id, length
+l566:
+	id, length = 67, pos
 	if accept('.') {
-		goto l540
+		goto l548
 	}
 	if accept('8') {
-		goto l582
+		goto l590
 	}
 	if accept('9') {
-		goto l582
+		goto l590
 	}
 	if accept('_') {
-		goto l592
+		goto l600
 	}
 	if r < '0' {
-		goto l567out
+		goto l575out
 	}
 	if accept2('7') {
-		goto l570
+		goto l578
 	}
-l567out:
+l575out:
 	return id, length
-l570:
-	id, length = 65, pos
+l578:
+	id, length = 67, pos
 	if accept('.') {
-		goto l540
+		goto l548
 	}
 	if accept('8') {
-		goto l582
+		goto l590
 	}
 	if accept('9') {
-		goto l582
+		goto l590
 	}
 	if accept('_') {
-		goto l592
+		goto l600
 	}
 	if r < '0' {
-		goto l579out
+		goto l587out
 	}
 	if accept2('7') {
-		goto l570
+		goto l578
 	}
-l579out:
+l587out:
 	return id, length
-l582:
+l590:
 	if accept('.') {
-		goto l540
+		goto l548
 	}
 	if accept('_') {
-		goto l589
+		goto l597
 	}
 	if r < '0' {
-		goto l586out
+		goto l594out
 	}
 	if accept2('9') {
-		goto l582
+		goto l590
 	}
-l586out:
+l594out:
 	return id, length
-l589:
+l597:
 	if r < '0' {
-		goto l589out
+		goto l597out
 	}
 	if accept2('9') {
-		goto l582
+		goto l590
 	}
-l589out:
+l597out:
 	return id, length
-l592:
+l600:
 	if accept('8') {
-		goto l582
+		goto l590
 	}
 	if accept('9') {
-		goto l582
+		goto l590
 	}
 	if r < '0' {
-		goto l596out
+		goto l604out
 	}
 	if accept2('7') {
-		goto l570
+		goto l578
 	}
-l596out:
+l604out:
 	return id, length
-l599:
-	if accept('0') {
-		goto l606
-	}
-	if accept('1') {
-		goto l635
-	}
-	if accept('_') {
-		goto l643
-	}
-	return id, length
-l606:
-	id, length = 65, pos
+l607:
 	if accept('0') {
 		goto l614
 	}
 	if accept('1') {
-		goto l622
+		goto l643
 	}
 	if accept('_') {
-		goto l630
+		goto l651
 	}
 	return id, length
 l614:
-	id, length = 65, pos
+	id, length = 67, pos
 	if accept('0') {
-		goto l614
-	}
-	if accept('1') {
 		goto l622
 	}
-	if accept('_') {
+	if accept('1') {
 		goto l630
+	}
+	if accept('_') {
+		goto l638
 	}
 	return id, length
 l622:
-	id, length = 65, pos
+	id, length = 67, pos
 	if accept('0') {
-		goto l614
-	}
-	if accept('1') {
 		goto l622
 	}
-	if accept('_') {
+	if accept('1') {
 		goto l630
+	}
+	if accept('_') {
+		goto l638
 	}
 	return id, length
 l630:
+	id, length = 67, pos
 	if accept('0') {
-		goto l614
-	}
-	if accept('1') {
 		goto l622
 	}
-	return id, length
-l635:
-	id, length = 65, pos
-	if accept('0') {
-		goto l614
-	}
 	if accept('1') {
-		goto l622
+		goto l630
 	}
 	if accept('_') {
+		goto l638
+	}
+	return id, length
+l638:
+	if accept('0') {
+		goto l622
+	}
+	if accept('1') {
 		goto l630
 	}
 	return id, length
 l643:
+	id, length = 67, pos
 	if accept('0') {
-		goto l606
+		goto l622
 	}
 	if accept('1') {
-		goto l635
+		goto l630
 	}
-	return id, length
-l648:
 	if accept('_') {
-		goto l668
+		goto l638
 	}
-	if r < '0' {
-		goto l650out
-	}
-	if accept2('7') {
-		goto l653
-	}
-l650out:
 	return id, length
-l653:
-	id, length = 65, pos
+l651:
+	if accept('0') {
+		goto l614
+	}
+	if accept('1') {
+		goto l643
+	}
+	return id, length
+l656:
 	if accept('_') {
-		goto l665
+		goto l676
 	}
 	if r < '0' {
-		goto l656out
+		goto l658out
 	}
 	if accept2('7') {
-		goto l659
+		goto l661
 	}
-l656out:
+l658out:
 	return id, length
-l659:
-	id, length = 65, pos
+l661:
+	id, length = 67, pos
 	if accept('_') {
-		goto l665
+		goto l673
 	}
 	if r < '0' {
-		goto l662out
+		goto l664out
 	}
 	if accept2('7') {
-		goto l659
+		goto l667
 	}
-l662out:
+l664out:
 	return id, length
-l665:
-	if r < '0' {
-		goto l665out
-	}
-	if accept2('7') {
-		goto l659
-	}
-l665out:
-	return id, length
-l668:
-	if r < '0' {
-		goto l668out
-	}
-	if accept2('7') {
-		goto l653
-	}
-l668out:
-	return id, length
-l671:
+l667:
+	id, length = 67, pos
 	if accept('_') {
-		goto l691
+		goto l673
 	}
+	if r < '0' {
+		goto l670out
+	}
+	if accept2('7') {
+		goto l667
+	}
+l670out:
+	return id, length
+l673:
 	if r < '0' {
 		goto l673out
 	}
-	if accept2('9') {
-		goto l676
-	}
-	if r < 'A' {
-		goto l673out
-	}
-	if accept2('F') {
-		goto l676
-	}
-	if r < 'a' {
-		goto l673out
-	}
-	if accept2('f') {
-		goto l676
+	if accept2('7') {
+		goto l667
 	}
 l673out:
 	return id, length
 l676:
-	id, length = 65, pos
+	if r < '0' {
+		goto l676out
+	}
+	if accept2('7') {
+		goto l661
+	}
+l676out:
+	return id, length
+l679:
 	if accept('_') {
-		goto l688
+		goto l699
 	}
 	if r < '0' {
-		goto l679out
+		goto l681out
 	}
 	if accept2('9') {
-		goto l682
+		goto l684
 	}
 	if r < 'A' {
-		goto l679out
+		goto l681out
 	}
 	if accept2('F') {
-		goto l682
+		goto l684
 	}
 	if r < 'a' {
-		goto l679out
+		goto l681out
 	}
 	if accept2('f') {
-		goto l682
+		goto l684
 	}
-l679out:
+l681out:
 	return id, length
-l682:
-	id, length = 65, pos
+l684:
+	id, length = 67, pos
 	if accept('_') {
-		goto l688
+		goto l696
 	}
 	if r < '0' {
-		goto l685out
+		goto l687out
 	}
 	if accept2('9') {
-		goto l682
+		goto l690
 	}
 	if r < 'A' {
-		goto l685out
+		goto l687out
 	}
 	if accept2('F') {
-		goto l682
+		goto l690
 	}
 	if r < 'a' {
-		goto l685out
+		goto l687out
 	}
 	if accept2('f') {
-		goto l682
+		goto l690
 	}
-l685out:
+l687out:
 	return id, length
-l688:
+l690:
+	id, length = 67, pos
+	if accept('_') {
+		goto l696
+	}
 	if r < '0' {
-		goto l688out
+		goto l693out
 	}
 	if accept2('9') {
-		goto l682
+		goto l690
 	}
 	if r < 'A' {
-		goto l688out
+		goto l693out
 	}
 	if accept2('F') {
-		goto l682
+		goto l690
 	}
 	if r < 'a' {
-		goto l688out
+		goto l693out
 	}
 	if accept2('f') {
-		goto l682
+		goto l690
 	}
-l688out:
+l693out:
 	return id, length
-l691:
+l696:
 	if r < '0' {
-		goto l691out
+		goto l696out
 	}
 	if accept2('9') {
-		goto l676
+		goto l690
 	}
 	if r < 'A' {
-		goto l691out
+		goto l696out
 	}
 	if accept2('F') {
-		goto l676
+		goto l690
 	}
 	if r < 'a' {
-		goto l691out
+		goto l696out
 	}
 	if accept2('f') {
-		goto l676
+		goto l690
 	}
-l691out:
+l696out:
 	return id, length
-l694:
+l699:
+	if r < '0' {
+		goto l699out
+	}
+	if accept2('9') {
+		goto l684
+	}
+	if r < 'A' {
+		goto l699out
+	}
+	if accept2('F') {
+		goto l684
+	}
+	if r < 'a' {
+		goto l699out
+	}
+	if accept2('f') {
+		goto l684
+	}
+l699out:
+	return id, length
+l702:
 	if accept('8') {
-		goto l582
+		goto l590
 	}
 	if accept('9') {
-		goto l582
+		goto l590
 	}
 	if r < '0' {
-		goto l698out
+		goto l706out
 	}
 	if accept2('7') {
-		goto l558
+		goto l566
 	}
-l698out:
+l706out:
 	return id, length
-l701:
+l709:
 	if accept('0') {
-		goto l606
+		goto l614
 	}
 	if accept('1') {
-		goto l635
-	}
-	if accept('_') {
 		goto l643
 	}
-	return id, length
-l708:
 	if accept('_') {
-		goto l668
+		goto l651
+	}
+	return id, length
+l716:
+	if accept('_') {
+		goto l676
 	}
 	if r < '0' {
-		goto l710out
+		goto l718out
 	}
 	if accept2('7') {
-		goto l653
+		goto l661
 	}
-l710out:
+l718out:
 	return id, length
-l713:
+l721:
 	if accept('_') {
-		goto l691
-	}
-	if r < '0' {
-		goto l715out
-	}
-	if accept2('9') {
-		goto l676
-	}
-	if r < 'A' {
-		goto l715out
-	}
-	if accept2('F') {
-		goto l676
-	}
-	if r < 'a' {
-		goto l715out
-	}
-	if accept2('f') {
-		goto l676
-	}
-l715out:
-	return id, length
-l718:
-	id, length = 65, pos
-	if accept('.') {
-		goto l540
-	}
-	if accept('_') {
-		goto l745
+		goto l699
 	}
 	if r < '0' {
 		goto l723out
 	}
 	if accept2('9') {
-		goto l726
+		goto l684
+	}
+	if r < 'A' {
+		goto l723out
+	}
+	if accept2('F') {
+		goto l684
+	}
+	if r < 'a' {
+		goto l723out
+	}
+	if accept2('f') {
+		goto l684
 	}
 l723out:
 	return id, length
 l726:
-	id, length = 65, pos
+	id, length = 67, pos
 	if accept('.') {
-		goto l540
+		goto l548
 	}
 	if accept('_') {
-		goto l742
+		goto l753
 	}
 	if r < '0' {
 		goto l731out
@@ -2645,1513 +2645,1529 @@ l726:
 l731out:
 	return id, length
 l734:
-	id, length = 65, pos
+	id, length = 67, pos
 	if accept('.') {
-		goto l540
+		goto l548
 	}
 	if accept('_') {
-		goto l742
+		goto l750
 	}
 	if r < '0' {
 		goto l739out
 	}
 	if accept2('9') {
-		goto l734
+		goto l742
 	}
 l739out:
 	return id, length
 l742:
+	id, length = 67, pos
+	if accept('.') {
+		goto l548
+	}
+	if accept('_') {
+		goto l750
+	}
 	if r < '0' {
-		goto l742out
+		goto l747out
+	}
+	if accept2('9') {
+		goto l742
+	}
+l747out:
+	return id, length
+l750:
+	if r < '0' {
+		goto l750out
+	}
+	if accept2('9') {
+		goto l742
+	}
+l750out:
+	return id, length
+l753:
+	if r < '0' {
+		goto l753out
 	}
 	if accept2('9') {
 		goto l734
 	}
-l742out:
-	return id, length
-l745:
-	if r < '0' {
-		goto l745out
-	}
-	if accept2('9') {
-		goto l726
-	}
-l745out:
-	return id, length
-l748:
-	id, length = 51, pos
-	if accept('=') {
-		goto l752
-	}
-	return id, length
-l752:
-	id, length = 11, pos
-	return id, length
-l754:
-	id, length = 52, pos
+l753out:
 	return id, length
 l756:
 	id, length = 53, pos
-	if accept('-') {
-		goto l764
-	}
-	if accept('<') {
-		goto l766
-	}
 	if accept('=') {
-		goto l772
+		goto l760
 	}
 	return id, length
-l764:
+l760:
 	id, length = 12, pos
 	return id, length
-l766:
-	id, length = 13, pos
+l762:
+	id, length = 54, pos
+	return id, length
+l764:
+	id, length = 55, pos
+	if accept('-') {
+		goto l772
+	}
+	if accept('<') {
+		goto l774
+	}
 	if accept('=') {
-		goto l770
+		goto l780
 	}
 	return id, length
-l770:
-	id, length = 14, pos
-	return id, length
 l772:
-	id, length = 15, pos
+	id, length = 13, pos
 	return id, length
 l774:
-	id, length = 54, pos
+	id, length = 14, pos
 	if accept('=') {
 		goto l778
 	}
 	return id, length
 l778:
-	id, length = 16, pos
+	id, length = 15, pos
 	return id, length
 l780:
-	id, length = 55, pos
+	id, length = 16, pos
+	return id, length
+l782:
+	id, length = 56, pos
 	if accept('=') {
 		goto l786
-	}
-	if accept('>') {
-		goto l788
 	}
 	return id, length
 l786:
 	id, length = 17, pos
 	return id, length
 l788:
-	id, length = 18, pos
+	id, length = 57, pos
 	if accept('=') {
-		goto l792
+		goto l794
 	}
-	return id, length
-l792:
-	id, length = 19, pos
+	if accept('>') {
+		goto l796
+	}
 	return id, length
 l794:
-	id, length = 56, pos
+	id, length = 18, pos
 	return id, length
 l796:
-	id, length = 57, pos
-	return id, length
-l798:
-	id, length = 58, pos
+	id, length = 19, pos
 	if accept('=') {
-		goto l802
+		goto l800
 	}
 	return id, length
-l802:
+l800:
 	id, length = 20, pos
 	return id, length
+l802:
+	id, length = 58, pos
+	return id, length
 l804:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
+	id, length = 59, pos
+	return id, length
+l806:
+	id, length = 60, pos
+	if accept('=') {
+		goto l810
 	}
 	return id, length
+l810:
+	id, length = 21, pos
+	return id, length
 l812:
-	id, length = 64, pos
+	id, length = 66, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l820:
-	id, length = 64, pos
+	id, length = 66, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l828:
-	id, length = 64, pos
+	id, length = 66, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l836:
-	if accept('`') {
-		goto l841
-	}
-	if accept2('_') {
-		goto l843
-	}
-	if r < 'a' {
-		goto l838out
-	}
-	if accept2('\U0010ffff') {
-		goto l843
-	}
-l838out:
-	return id, length
-l841:
-	id, length = 67, pos
-	return id, length
-l843:
-	if accept('`') {
-		goto l841
-	}
-	if accept2('_') {
-		goto l843
-	}
-	if r < 'a' {
-		goto l845out
-	}
-	if accept2('\U0010ffff') {
-		goto l843
-	}
-l845out:
-	return id, length
-l848:
-	id, length = 64, pos
+	id, length = 66, pos
 	if accept('_') {
-		goto l812
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l844:
+	if accept('`') {
+		goto l849
+	}
+	if accept2('_') {
+		goto l851
+	}
+	if r < 'a' {
+		goto l846out
+	}
+	if accept2('\U0010ffff') {
+		goto l851
+	}
+l846out:
+	return id, length
+l849:
+	id, length = 69, pos
+	return id, length
+l851:
+	if accept('`') {
+		goto l849
+	}
+	if accept2('_') {
+		goto l851
+	}
+	if r < 'a' {
+		goto l853out
+	}
+	if accept2('\U0010ffff') {
+		goto l851
+	}
+l853out:
+	return id, length
+l856:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
 	}
 	if accept('a') {
-		goto l862
+		goto l870
 	}
 	if accept('h') {
-		goto l890
+		goto l898
 	}
 	if accept('o') {
+		goto l926
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l870:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('s') {
+		goto l880
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l880:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('e') {
+		goto l890
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l890:
+	id, length = 22, pos
+	if accept('_') {
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l898:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('a') {
+		goto l908
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l908:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('n') {
 		goto l918
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
-	}
-	return id, length
-l862:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('s') {
-		goto l872
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l872:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l882
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l882:
-	id, length = 21, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l890:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('a') {
-		goto l900
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l900:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('n') {
-		goto l910
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l910:
-	id, length = 22, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l918:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('n') {
-		goto l928
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l928:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('s') {
-		goto l938
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l938:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l948
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l948:
 	id, length = 23, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l926:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('n') {
+		goto l936
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l936:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('s') {
+		goto l946
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l946:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('t') {
+		goto l956
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l956:
-	id, length = 64, pos
+	id, length = 24, pos
 	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l966
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
+		goto l836
 	}
 	return id, length
-l966:
-	id, length = 64, pos
+l964:
+	id, length = 66, pos
 	if accept('_') {
-		goto l812
+		goto l820
+	}
+	if accept('e') {
+		goto l974
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l974:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
 	}
 	if accept('f') {
-		goto l976
+		goto l984
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
+		goto l836
 	}
 	return id, length
-l976:
-	id, length = 64, pos
+l984:
+	id, length = 66, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if accept('a') {
-		goto l988
+		goto l996
 	}
 	if accept('e') {
+		goto l1034
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l996:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('u') {
+		goto l1006
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1006:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('l') {
+		goto l1016
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1016:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('t') {
 		goto l1026
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
-	}
-	return id, length
-l988:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('u') {
-		goto l998
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l998:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('l') {
-		goto l1008
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1008:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l1018
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1018:
-	id, length = 24, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l1026:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('r') {
-		goto l1036
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1036:
 	id, length = 25, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1034:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('r') {
+		goto l1044
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1044:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('l') {
-		goto l1054
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1054:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('s') {
-		goto l1064
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1064:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l1074
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1074:
 	id, length = 26, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1052:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('l') {
+		goto l1062
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1062:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('s') {
+		goto l1072
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1072:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('e') {
+		goto l1082
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1082:
-	id, length = 64, pos
+	id, length = 27, pos
 	if accept('_') {
-		goto l812
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1090:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
 	}
 	if accept('o') {
-		goto l1094
+		goto l1102
 	}
 	if accept('u') {
+		goto l1120
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1102:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('r') {
 		goto l1112
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
-	}
-	return id, length
-l1094:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('r') {
-		goto l1104
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1104:
-	id, length = 27, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l1112:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('n') {
-		goto l1122
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1122:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('c') {
-		goto l1132
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1132:
 	id, length = 28, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1120:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('n') {
+		goto l1130
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1130:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('c') {
+		goto l1140
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1140:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('o') {
-		goto l1150
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1150:
 	id, length = 29, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1148:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('o') {
+		goto l1158
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1158:
-	id, length = 64, pos
+	id, length = 30, pos
 	if accept('_') {
-		goto l812
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1166:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
 	}
 	if accept('f') {
-		goto l1172
-	}
-	if accept('m') {
 		goto l1180
 	}
+	if accept('m') {
+		goto l1188
+	}
 	if accept('n') {
+		goto l1236
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1180:
+	id, length = 31, pos
+	if accept('_') {
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1188:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('p') {
+		goto l1198
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1198:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('o') {
+		goto l1208
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1208:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('r') {
+		goto l1218
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1218:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('t') {
 		goto l1228
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
-	}
-	return id, length
-l1172:
-	id, length = 30, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1180:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('p') {
-		goto l1190
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1190:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('o') {
-		goto l1200
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1200:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('r') {
-		goto l1210
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1210:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l1220
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1220:
-	id, length = 31, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l1228:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l1238
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1238:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l1248
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1248:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('r') {
-		goto l1258
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1258:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('f') {
-		goto l1268
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1268:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('a') {
-		goto l1278
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1278:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('c') {
-		goto l1288
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1288:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l1298
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1298:
 	id, length = 32, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1236:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('t') {
+		goto l1246
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1246:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('e') {
+		goto l1256
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1256:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('r') {
+		goto l1266
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1266:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('f') {
+		goto l1276
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1276:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('a') {
+		goto l1286
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1286:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('c') {
+		goto l1296
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1296:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('e') {
+		goto l1306
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1306:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l1316
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1316:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l1326
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1326:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('u') {
-		goto l1336
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1336:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('r') {
-		goto l1346
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1346:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('n') {
-		goto l1356
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1356:
 	id, length = 33, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1314:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('e') {
+		goto l1324
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1324:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('t') {
+		goto l1334
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1334:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('u') {
+		goto l1344
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1344:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('r') {
+		goto l1354
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1354:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('n') {
+		goto l1364
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1364:
-	id, length = 64, pos
+	id, length = 34, pos
 	if accept('_') {
-		goto l812
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1372:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
 	}
 	if accept('e') {
-		goto l1378
+		goto l1386
+	}
+	if accept('t') {
+		goto l1434
+	}
+	if accept('w') {
+		goto l1482
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1386:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('l') {
+		goto l1396
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1396:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('e') {
+		goto l1406
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1406:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('c') {
+		goto l1416
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1416:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
 	}
 	if accept('t') {
 		goto l1426
 	}
-	if accept('w') {
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1426:
+	id, length = 35, pos
+	if accept('_') {
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1434:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('r') {
+		goto l1444
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1444:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('u') {
+		goto l1454
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1454:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('c') {
+		goto l1464
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1464:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('t') {
 		goto l1474
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
-	}
-	return id, length
-l1378:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('l') {
-		goto l1388
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1388:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l1398
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1398:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('c') {
-		goto l1408
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1408:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l1418
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1418:
-	id, length = 34, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1426:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('r') {
-		goto l1436
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1436:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('u') {
-		goto l1446
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1446:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('c') {
-		goto l1456
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1456:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l1466
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1466:
-	id, length = 35, pos
-	if accept('_') {
-		goto l812
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
+		goto l836
 	}
 	return id, length
 l1474:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('i') {
-		goto l1484
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1484:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('t') {
-		goto l1494
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1494:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('c') {
-		goto l1504
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1504:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('h') {
-		goto l1514
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1514:
 	id, length = 36, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1482:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('i') {
+		goto l1492
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1492:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('t') {
+		goto l1502
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1502:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('c') {
+		goto l1512
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1512:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('h') {
+		goto l1522
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1522:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('y') {
-		goto l1532
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1532:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('p') {
-		goto l1542
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1542:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('e') {
-		goto l1552
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1552:
 	id, length = 37, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1530:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('y') {
+		goto l1540
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1540:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('p') {
+		goto l1550
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1550:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('e') {
+		goto l1560
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1560:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('a') {
-		goto l1570
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1570:
-	id, length = 64, pos
-	if accept('_') {
-		goto l812
-	}
-	if accept('r') {
-		goto l1580
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l820
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l828
-	}
-	return id, length
-l1580:
 	id, length = 38, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
+		goto l836
+	}
+	return id, length
+l1568:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('a') {
+		goto l1578
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
 		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1578:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if accept('r') {
+		goto l1588
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
 	}
 	return id, length
 l1588:
-	id, length = 59, pos
-	return id, length
-l1590:
-	id, length = 60, pos
-	if accept('=') {
-		goto l1596
-	}
-	if accept('|') {
-		goto l1598
-	}
-	return id, length
-l1596:
 	id, length = 39, pos
-	return id, length
-l1598:
-	id, length = 40, pos
-	return id, length
-l1600:
-	id, length = 61, pos
-	return id, length
-l1602:
-	id, length = 62, pos
-	return id, length
-l1604:
-	id, length = 64, pos
 	if accept('_') {
-		goto l812
+		goto l820
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l820
+		goto l828
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l828
+		goto l836
 	}
 	return id, length
+l1596:
+	id, length = 61, pos
+	return id, length
+l1598:
+	id, length = 62, pos
+	if accept('=') {
+		goto l1604
+	}
+	if accept('|') {
+		goto l1606
+	}
+	return id, length
+l1604:
+	id, length = 40, pos
+	return id, length
+l1606:
+	id, length = 41, pos
+	return id, length
+l1608:
+	id, length = 63, pos
+	return id, length
+l1610:
+	id, length = 64, pos
+	return id, length
 l1612:
+	id, length = 66, pos
+	if accept('_') {
+		goto l820
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l828
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l836
+	}
+	return id, length
+l1620:
 	id, length = 0, pos
 	return id, length
 }
@@ -4318,12 +4334,12 @@ state4:
 
 // AssignOp grammar:
 //
-//	AssignOp   = "+=" | "-=" | "*=" | "/="
+//	AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .
 //
 //	State 0
-//		on  "&=", "&^=", "*=", "+=", "-=", "/=", "<<=", ">>=", "^=", "|="
+//		on  "%=", "&=", "&^=", "*=", "+=", "-=", "/=", "<<=", ">>=", "^=", "|="
 //			shift and goto state 1
 //	State 1
 //		Accept
@@ -4333,9 +4349,9 @@ func (p *Parser) AssignOp() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(AssignOp), 0)
 	// state0:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 28
 	switch Symbol(p.tok.Ch) {
-	case TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b003d, TOK_002d003d, TOK_002f003d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d:
+	case TOK_0025003d, TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b003d, TOK_002d003d, TOK_002f003d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d:
 		r = append(r, p.shift())
 		goto state1
 	}
@@ -4489,7 +4505,7 @@ func (p *Parser) CaseClause() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(CaseClause), 0)
 	// state0:
-	accept, errorSet = false, 27
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
 	case TOK_case, TOK_default:
 		r = p.add(r, p.CaseHead())
@@ -4545,7 +4561,7 @@ func (p *Parser) CaseHead() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(CaseHead), 0)
 	// state0:
-	accept, errorSet = false, 27
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
 	case TOK_case:
 		r = append(r, p.shift())
@@ -4593,7 +4609,7 @@ func (p *Parser) CommClause() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(CommClause), 0)
 	// state0:
-	accept, errorSet = false, 27
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
 	case TOK_case, TOK_default:
 		r = p.add(r, p.CommHead())
@@ -4649,7 +4665,7 @@ func (p *Parser) CommHead() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(CommHead), 0)
 	// state0:
-	accept, errorSet = false, 27
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
 	case TOK_case:
 		r = append(r, p.shift())
@@ -4757,7 +4773,7 @@ func (p *Parser) ConstDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ConstDecl), 0)
 	// state0:
-	accept, errorSet = false, 37
+	accept, errorSet = false, 41
 	switch Symbol(p.tok.Ch) {
 	case TOK_const:
 		r = append(r, p.shift())
@@ -4836,7 +4852,7 @@ func (p *Parser) ConstSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 31
+	accept, errorSet = false, 35
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -5002,7 +5018,7 @@ func (p *Parser) Factor() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Factor), 0)
 	// state0:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 43
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -5052,7 +5068,7 @@ state4:
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 32
+	accept, errorSet = false, 36
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -5214,7 +5230,7 @@ state4:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = true, 29
+	accept, errorSet = true, 33
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = append(r, p.shift())
@@ -5236,7 +5252,7 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 30
+	accept, errorSet = false, 34
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
@@ -5278,7 +5294,7 @@ func (p *Parser) FuncDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(FuncDecl), 0)
 	// state0:
-	accept, errorSet = false, 40
+	accept, errorSet = false, 44
 	switch Symbol(p.tok.Ch) {
 	case TOK_func:
 		r = append(r, p.shift())
@@ -5346,7 +5362,7 @@ func (p *Parser) FuncLiteral() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(FuncLiteral), 0)
 	// state0:
-	accept, errorSet = false, 40
+	accept, errorSet = false, 44
 	switch Symbol(p.tok.Ch) {
 	case TOK_func:
 		r = append(r, p.shift())
@@ -5462,7 +5478,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = true, 38
+	accept, errorSet = true, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_else:
 		r = append(r, p.shift())
@@ -5863,7 +5879,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = true, 28
+	accept, errorSet = true, 32
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -5904,10 +5920,10 @@ state7:
 
 // MulOp grammar:
 //
-//	MulOp = "*" | "/" | "<<" | ">>" | "&" .
+//	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" .
 //
 //	State 0
-//		on  "<<", ">>", '&', '*', '/'
+//		on  "<<", ">>", '%', '&', '*', '/'
 //			shift and goto state 1
 //	State 1
 //		Accept
@@ -5919,7 +5935,7 @@ func (p *Parser) MulOp() (r []int32) {
 	// state0:
 	accept, errorSet = false, 24
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c003c, TOK_003e003e, TOK_0026, TOK_002a, TOK_002f:
+	case TOK_003c003c, TOK_003e003e, TOK_0025, TOK_0026, TOK_002a, TOK_002f:
 		r = append(r, p.shift())
 		goto state1
 	}
@@ -5963,7 +5979,7 @@ func (p *Parser) ParameterList() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 32
+	accept, errorSet = false, 36
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -5999,7 +6015,7 @@ state3:
 //		Accept
 //		on  '('
 //			call CallSuffix and goto state 1
-//		on  "&=", "&^=", "*=", "++", "+=", "--", "-=", "/=", ":=", "<-", "<<=", ">>=", "^=", "|=", ',', '='
+//		on  "%=", "&=", "&^=", "*=", "++", "+=", "--", "-=", "/=", ":=", "<-", "<<=", ">>=", "^=", "|=", ',', '='
 //			call PostfixOp and goto state 2
 //		on  '.'
 //			call Selector and goto state 1
@@ -6009,7 +6025,7 @@ state3:
 //		Accept
 //		on  '('
 //			call CallSuffix and goto state 1
-//		on  "&=", "&^=", "*=", "++", "+=", "--", "-=", "/=", ":=", "<-", "<<=", ">>=", "^=", "|=", ',', '='
+//		on  "%=", "&=", "&^=", "*=", "++", "+=", "--", "-=", "/=", ":=", "<-", "<<=", ">>=", "^=", "|=", ',', '='
 //			call PostfixOp and goto state 2
 //		on  '.'
 //			call Selector and goto state 1
@@ -6023,12 +6039,12 @@ func (p *Parser) Postfix() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Postfix), 0)
 	// state0:
-	accept, errorSet = true, 41
+	accept, errorSet = true, 25
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = p.add(r, p.CallSuffix())
 		goto state1
-	case TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b002b, TOK_002b003d, TOK_002d002d, TOK_002d003d, TOK_002f003d, TOK_003a003d, TOK_003c002d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d, TOK_002c, TOK_003d:
+	case TOK_0025003d, TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b002b, TOK_002b003d, TOK_002d002d, TOK_002d003d, TOK_002f003d, TOK_003a003d, TOK_003c002d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d, TOK_002c, TOK_003d:
 		r = p.add(r, p.PostfixOp())
 		goto state2
 	case TOK_002e:
@@ -6040,12 +6056,12 @@ func (p *Parser) Postfix() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 41
+	accept, errorSet = true, 25
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = p.add(r, p.CallSuffix())
 		goto state1
-	case TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b002b, TOK_002b003d, TOK_002d002d, TOK_002d003d, TOK_002f003d, TOK_003a003d, TOK_003c002d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d, TOK_002c, TOK_003d:
+	case TOK_0025003d, TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b002b, TOK_002b003d, TOK_002d002d, TOK_002d003d, TOK_002f003d, TOK_003a003d, TOK_003c002d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d, TOK_002c, TOK_003d:
 		r = p.add(r, p.PostfixOp())
 		goto state2
 	case TOK_002e:
@@ -6166,7 +6182,7 @@ state4:
 //			shift and goto state 2
 //		on  ','
 //			shift and goto state 3
-//		on  "&=", "&^=", "*=", "+=", "-=", "/=", "<<=", ">>=", "^=", "|="
+//		on  "%=", "&=", "&^=", "*=", "+=", "-=", "/=", "<<=", ">>=", "^=", "|="
 //			call AssignOp and goto state 2
 //	State 1
 //		Accept
@@ -6187,7 +6203,7 @@ func (p *Parser) PostfixOp() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(PostfixOp), 0)
 	// state0:
-	accept, errorSet = false, 43
+	accept, errorSet = false, 27
 	switch Symbol(p.tok.Ch) {
 	case TOK_002b002b, TOK_002d002d:
 		r = append(r, p.shift())
@@ -6198,7 +6214,7 @@ func (p *Parser) PostfixOp() (r []int32) {
 	case TOK_002c:
 		r = append(r, p.shift())
 		goto state3
-	case TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b003d, TOK_002d003d, TOK_002f003d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d:
+	case TOK_0025003d, TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b003d, TOK_002d003d, TOK_002f003d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d:
 		r = p.add(r, p.AssignOp())
 		goto state2
 	}
@@ -6275,7 +6291,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 32
+	accept, errorSet = false, 36
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -6361,7 +6377,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 26
+	accept, errorSet = false, 30
 	switch Symbol(p.tok.Ch) {
 	case TOK_007d:
 		r = append(r, p.shift())
@@ -6495,7 +6511,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 28
+	accept, errorSet = true, 32
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -6600,7 +6616,7 @@ func (p *Parser) SourceFile() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(SourceFile), 0)
 	// state0:
-	accept, errorSet = true, 34
+	accept, errorSet = true, 38
 	switch Symbol(p.tok.Ch) {
 	case TOK_import:
 		r = p.add(r, p.ImportDecl())
@@ -6619,7 +6635,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 35
+	accept, errorSet = true, 39
 	switch Symbol(p.tok.Ch) {
 	case TOK_const, TOK_func, TOK_type, TOK_var:
 		r = p.add(r, p.TopLevelDecl())
@@ -6635,7 +6651,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = true, 34
+	accept, errorSet = true, 38
 	switch Symbol(p.tok.Ch) {
 	case TOK_import:
 		r = p.add(r, p.ImportDecl())
@@ -6727,7 +6743,7 @@ state4:
 //			call ExpressionList and goto state 2
 //	State 8
 //		Accept
-//		on  "&=", "&^=", "*=", "++", "+=", "--", "-=", "/=", ":=", "<-", "<<=", ">>=", "^=", "|=", '(', ',', '.', '=', '['
+//		on  "%=", "&=", "&^=", "*=", "++", "+=", "--", "-=", "/=", ":=", "<-", "<<=", ">>=", "^=", "|=", '(', ',', '.', '=', '['
 //			call Postfix and goto state 2
 //
 // Statement is used internally from Parse.
@@ -6836,9 +6852,9 @@ state7:
 	}
 	return p.stop(r, accept, errorSet)
 state8:
-	accept, errorSet = true, 42
+	accept, errorSet = true, 26
 	switch Symbol(p.tok.Ch) {
-	case TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b002b, TOK_002b003d, TOK_002d002d, TOK_002d003d, TOK_002f003d, TOK_003a003d, TOK_003c002d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d, TOK_0028, TOK_002c, TOK_002e, TOK_003d, TOK_005b:
+	case TOK_0025003d, TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b002b, TOK_002b003d, TOK_002d002d, TOK_002d003d, TOK_002f003d, TOK_003a003d, TOK_003c002d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d, TOK_0028, TOK_002c, TOK_002e, TOK_003d, TOK_005b:
 		r = p.add(r, p.Postfix())
 		goto state2
 	}
@@ -7012,7 +7028,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 25
+	accept, errorSet = false, 29
 	switch Symbol(p.tok.Ch) {
 	case TOK_007d:
 		r = append(r, p.shift())
@@ -7044,7 +7060,7 @@ state4:
 //			call UnaryExpr and goto state 1
 //	State 1
 //		Accept
-//		on  "<<", ">>", '&', '*', '/'
+//		on  "<<", ">>", '%', '&', '*', '/'
 //			call MulOp and goto state 0
 //
 // Term is used internally from Parse.
@@ -7062,7 +7078,7 @@ state0:
 state1:
 	accept, errorSet = true, 24
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c003c, TOK_003e003e, TOK_0026, TOK_002a, TOK_002f:
+	case TOK_003c003c, TOK_003e003e, TOK_0025, TOK_0026, TOK_002a, TOK_002f:
 		r = p.add(r, p.MulOp())
 		goto state0
 	}
@@ -7090,7 +7106,7 @@ func (p *Parser) TopLevelDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(TopLevelDecl), 0)
 	// state0:
-	accept, errorSet = false, 36
+	accept, errorSet = false, 40
 	switch Symbol(p.tok.Ch) {
 	case TOK_var:
 		r = p.add(r, p.VarDecl())
@@ -7163,7 +7179,7 @@ func (p *Parser) Type() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Type), 0)
 	// state0:
-	accept, errorSet = false, 33
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_002a:
 		r = append(r, p.shift())
@@ -7186,7 +7202,7 @@ func (p *Parser) Type() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 32
+	accept, errorSet = false, 36
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -7347,7 +7363,7 @@ func (p *Parser) TypeSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 31
+	accept, errorSet = false, 35
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -7358,7 +7374,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 32
+	accept, errorSet = false, 36
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -7555,7 +7571,7 @@ func (p *Parser) VarSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 31
+	accept, errorSet = false, 35
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())

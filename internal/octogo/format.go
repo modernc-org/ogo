@@ -302,7 +302,7 @@ func isAddOp(s Symbol) bool {
 
 func isMulOp(s Symbol) bool {
 	switch s {
-	case MUL, QUO, SHL, SHR, AND:
+	case MUL, QUO, REM, SHL, SHR, AND:
 		return true
 	}
 	return false
