@@ -109,12 +109,34 @@ outer:
 	return r
 }
 
-func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c formatterCtx) {
+// commentFollows reports whether any remaining separator item is a comment. Such
+// an item emits its own leading space, so an inline whitespace item ahead of it
+// must not emit one too.
+func commentFollows(sep []any) bool {
 	for _, v := range sep {
+		switch v.(type) {
+		case lineComment, generalComment:
+			return true
+		}
+	}
+	return false
+}
+
+func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c formatterCtx) {
+	for i, v := range sep {
 		switch x := v.(type) {
 		case whiteSpace:
 			switch x {
 			case 0:
+				// A comment later in this separator emits its own leading space, and
+				// may align it to a target column, so the spacing there is its to
+				// decide. Emitting one here as well is what doubled it, turning
+				// "x := 1 // c" into "x := 1  // c". The question asked here is
+				// meaningless across a comment anyway: currTok is the token *after*
+				// it, so this would be spacing "1" against whatever follows "// c".
+				if commentFollows(sep[i+1:]) {
+					continue
+				}
 				// The Magic: Ask the rules engine!
 				if !f.nl && f.prevTok != 0 && f.needsSpace(f.prevTok, currTok, c) {
 					f.b(sp)

@@ -302,6 +302,61 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+// TestFormatTrailingComment pins a trailing comment being separated from the code
+// by exactly one space, as gofmt does, and an aligned run -- struct fields -- still
+// padding to its target column.
+//
+// Two independent paths in formatSep each emitted a space: the inline whiteSpace
+// item, and the comment item's "ensure at least one space". Both fired, so
+// "x := 1 // c" came out as "x := 1  // c". The whiteSpace one was asking a
+// meaningless question anyway, since currTok there is the token *after* the
+// comment.
+//
+// Not pinned here, and still differing from gofmt: a run of consecutive trailing
+// comments on statements is not aligned to a common column the way struct fields
+// are. That needs the field-measurement machinery extended to statement runs.
+func TestFormatTrailingComment(t *testing.T) {
+	const in = `type T struct {
+a int    // field comment
+bbbb string  // second
+}
+
+func f() {
+// own-line comment
+x := 1    /* general inline */
+z := 3       // trailing
+println(x + z)
+}
+`
+	const want = `type T struct {
+	a    int    // field comment
+	bbbb string // second
+}
+
+func f() {
+	// own-line comment
+	x := 1 /* general inline */
+	z := 3 // trailing
+	println(x + z)
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("trailing comment spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatIndexSpacing pins the two spacings a '[' can take. A '[' opening an
 // array or slice *type* is spaced off the name it follows ("var a [3]int"), while
 // one opening an *index* binds tight to its base ("a[1]"). needsSpace had no case
