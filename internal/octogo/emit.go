@@ -1769,132 +1769,6 @@ func (e *emitter) factorFieldIndex(kids []Node) (base string, fields []string, i
 	return e.src(kids[0].tok), fields, suffix[len(suffix)-1].ast, true
 }
 
-// factorIndexSelect recognises a Factor that indexes a container and then selects
-// from the element -- `s[i].x`, `a[i].x`, `p.pts[i].x`, `s[i].x.y`: an identifier,
-// an optional leading field chain, exactly one Index, then at least one trailing
-// Selector. None of the other three factor shapes can express it, because each
-// stops at the first step of the other kind: factorFieldAccess admits no Index,
-// factorIndex no Selector, and factorFieldIndex requires the Index to be last.
-//
-// Exactly one Index. A second (`m[i][j]`) would need the already-emitted prefix as
-// the inner bound's length expression, and it is no longer a string by then, so it
-// is rejected here and fails honestly upstream rather than emitting an unchecked
-// access.
-func (e *emitter) factorIndexSelect(kids []Node) (base string, pre []string, indexAST []int32, post []string, ok bool) {
-	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", nil, nil, nil, false
-	}
-	pre, indexAST, post, ok = e.splitIndexSelect(slices.Collect(it(kids[1].ast)))
-	if !ok {
-		return "", nil, nil, nil, false
-	}
-	return e.src(kids[0].tok), pre, indexAST, post, true
-}
-
-// factorArrayIndex recognises a full index into a multi-dimensional array --
-// `m[i][j]`, `s.m[i][j]` -- as an identifier, an optional field chain, then one
-// Index per dimension.
-//
-// A slice cannot be indexed this way, and is rejected: its inner bound would need
-// the already-emitted prefix as a length expression, which is no longer a string
-// by then. An array has no such problem, because every extent is a compile-time
-// constant, so each dimension is bounds-checked independently.
-func (e *emitter) factorArrayIndex(kids []Node) (base string, fields []string, idxs [][]int32, ok bool) {
-	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", nil, nil, false
-	}
-	suffix := slices.Collect(it(kids[1].ast))
-	at := len(suffix)
-	for i, n := range suffix {
-		if n.sym == Index {
-			at = i
-			break
-		}
-	}
-	if fields, ok = e.selectorFieldsAll(suffix[:at]); !ok {
-		return "", nil, nil, false
-	}
-	for _, n := range suffix[at:] {
-		if n.sym != Index {
-			return "", nil, nil, false // a selector after an index is a different shape
-		}
-		low, _, isSlice := e.sliceParts(n.ast)
-		if isSlice || low == nil {
-			return "", nil, nil, false
-		}
-		idxs = append(idxs, low)
-	}
-	if len(idxs) < 2 {
-		return "", nil, nil, false // one index is the existing single-index shape
-	}
-	return e.src(kids[0].tok), fields, idxs, true
-}
-
-// indexedArray resolves the array an index chain applies to -- a local or package
-// array variable, or an array-typed struct field -- returning the C expression
-// naming its storage and its dimensions.
-func (e *emitter) indexedArray(base string, fields []string) (string, arrDim, bool) {
-	if len(fields) == 0 {
-		if a, ok := e.arrayVar(base); ok {
-			return base, a, true
-		}
-		return "", arrDim{}, false
-	}
-	if a, ok := e.fieldArray(base, fields); ok {
-		return e.fieldAccessC(base, fields), a, true
-	}
-	return "", arrDim{}, false
-}
-
-// emitArrayIndex emits `m[i][j]`, bounds-checking each index against its own
-// extent. The caller must have checked that the chain indexes every dimension.
-func (e *emitter) emitArrayIndex(expr string, a arrDim, idxs [][]int32) {
-	e.emit(expr)
-	bs := a.bounds()
-	for i, idx := range idxs {
-		e.emit("[")
-		e.emitIndex(idx, bs[i])
-		e.emit("]")
-	}
-}
-
-// arrayIndexTarget recognises an assignment target that fully indexes a
-// multi-dimensional array, `m[i][j]` or `s.m[i][j]`. chain is the postfix without
-// its PostfixOp, the same node sequence a FactorSuffix carries, so the shape test
-// matches factorArrayIndex's.
-func (e *emitter) arrayIndexTarget(base string, chain []Node) ([][]int32, arrDim, string, bool) {
-	at := len(chain)
-	for i, n := range chain {
-		if n.sym == Index {
-			at = i
-			break
-		}
-	}
-	fields, ok := e.selectorFieldsAll(chain[:at])
-	if !ok {
-		return nil, arrDim{}, "", false
-	}
-	var idxs [][]int32
-	for _, n := range chain[at:] {
-		if n.sym != Index {
-			return nil, arrDim{}, "", false
-		}
-		low, _, isSlice := e.sliceParts(n.ast)
-		if isSlice || low == nil {
-			return nil, arrDim{}, "", false
-		}
-		idxs = append(idxs, low)
-	}
-	if len(idxs) < 2 {
-		return nil, arrDim{}, "", false
-	}
-	expr, a, ok := e.indexedArray(base, fields)
-	if !ok || a.dims() != len(idxs) {
-		return nil, arrDim{}, "", false
-	}
-	return idxs, a, expr, true
-}
-
 // accessCur is the value reached partway along an access chain: a plain C value, a
 // slice header, or a fixed array with the extents it has left. Exactly one of the
 // three holds at a time -- dims non-empty means an array, slice means a header,
@@ -2076,60 +1950,28 @@ func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 		return "", nil, false
 	}
 	steps := slices.Collect(it(kids[1].ast))
-	if !mixesIndexAndSelect(steps) {
+	if len(steps) == 0 {
 		return "", nil, false
+	}
+	for _, n := range steps {
+		if n.sym != Index && n.sym != Selector {
+			return "", nil, false
+		}
 	}
 	return e.src(kids[0].tok), steps, true
 }
 
-// mixesIndexAndSelect reports whether steps contain an index followed later by a
-// selector that is itself followed by another index -- the alternation that no
-// fixed shape covers.
-func mixesIndexAndSelect(steps []Node) bool {
-	seenIndex, seenSelectAfter := false, false
+// isAccessChain reports whether every step is a selector or an index.
+func isAccessChain(steps []Node) bool {
+	if len(steps) == 0 {
+		return false
+	}
 	for _, n := range steps {
-		switch n.sym {
-		case Index:
-			if seenSelectAfter {
-				return true
-			}
-			seenIndex = true
-		case Selector:
-			if seenIndex {
-				seenSelectAfter = true
-			}
-		default:
+		if n.sym != Index && n.sym != Selector {
 			return false
 		}
 	}
-	return false
-}
-
-// splitIndexSelect splits an access chain `{Selector} Index {Selector}` into the
-// leading field chain, the index, and the trailing field chain. Shared by the
-// expression shape (a FactorSuffix's children) and the assignment target shape
-// (a postfix minus its PostfixOp), which are the same node sequence.
-func (e *emitter) splitIndexSelect(chain []Node) (pre []string, indexAST []int32, post []string, ok bool) {
-	at := -1
-	for i, n := range chain {
-		if n.sym != Index {
-			continue
-		}
-		if at >= 0 {
-			return nil, nil, nil, false // more than one index
-		}
-		at = i
-	}
-	if at < 0 || at == len(chain)-1 {
-		return nil, nil, nil, false // no index, or nothing selected after it
-	}
-	if pre, ok = e.selectorFieldsAll(chain[:at]); !ok {
-		return nil, nil, nil, false
-	}
-	if post, ok = e.selectorFieldsAll(chain[at+1:]); !ok || len(post) == 0 {
-		return nil, nil, nil, false
-	}
-	return pre, chain[at].ast, post, true
+	return true
 }
 
 // sliceParts inspects an Index node. isSlice reports a colon -- a slice expression;
@@ -3291,7 +3133,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// `s[i].v[j] = e`. Tried first: the fixed shapes below cannot match it, and the
 	// chain is typed before anything is emitted, so a rejected one leaves no
 	// half-written statement.
-	if chain := postfix[:len(postfix)-1]; stars == "" && mixesIndexAndSelect(chain) {
+	if chain := postfix[:len(postfix)-1]; stars == "" && isAccessChain(chain) {
 		if cur, ok := e.accessChainType(base, chain); ok && !cur.slice && len(cur.dims) == 0 {
 			t, ok := e.assignTailOf(postfix[len(postfix)-1])
 			if !ok {
@@ -3306,24 +3148,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	// A full index into a multi-dimensional array, `m[i][j] = v`: an optional field
 	// chain then one Index per dimension.
-	if idxs, a, expr, ok := e.arrayIndexTarget(base, postfix[:len(postfix)-1]); ok {
-		t, ok := e.assignTailOf(postfix[len(postfix)-1])
-		if !ok {
-			e.fail("unsupported assignment form for a multi-dimensional array element")
-			return
-		}
-		e.ind()
-		e.emitArrayIndex(expr, a, idxs)
-		e.emitAssignTail(t)
-		return
-	}
 	// An indexed element's field `s[i].x = v` / `p.pts[i].x = v`: an optional field
 	// chain, one index, then at least one selector before the assignment. Tried
 	// ahead of the index-last shape below, which cannot match a trailing selector.
-	if pre, indexAST, post, ok := e.splitIndexSelect(postfix[:len(postfix)-1]); ok {
-		e.emitIndexSelectAssign(base, stars, pre, indexAST, post, postfix[len(postfix)-1])
-		return
-	}
 	// A slice-field indexed target `b.data[i] = v`: a field-access chain, a single
 	// trailing index, then the assignment (postfix = { Selector } Index PostfixOp).
 	if len(postfix) >= 3 && postfix[len(postfix)-2].sym == Index {
@@ -3481,18 +3308,6 @@ func (e *emitter) selectorFieldsAll(nodes []Node) (fields []string, ok bool) {
 	return fields, true
 }
 
-// chainFieldType walks a field chain from a starting C type, returning the type
-// selected at the end. Used to validate a chain before any of it is emitted.
-func (e *emitter) chainFieldType(ctype string, fields []string) (string, bool) {
-	for _, f := range fields {
-		var ok bool
-		if ctype, ok = e.structFieldType(ctype, f); !ok {
-			return "", false
-		}
-	}
-	return ctype, true
-}
-
 // indexedContainer resolves what an index applies to: the C expression naming the
 // element storage, the element C type, and the length to bounds-check against.
 // With no leading field chain the base is a slice or array variable; with one it
@@ -3633,45 +3448,6 @@ func (e *emitter) emitAssignTail(t assignTail) {
 		e.emitExpr(t.rhs)
 	}
 	e.emit(";\n")
-}
-
-// emitIndexSelectAssign emits a write to a field of an indexed element,
-// `s[i].x = v` or `p.pts[i].x = v`: the bounds-checked element access followed by
-// the field chain. Only plain assignment is modelled -- no slice colon in the
-// index, and no ++/-- on the selected field.
-func (e *emitter) emitIndexSelectAssign(base, stars string, pre []string, indexAST []int32, post []string, opNode Node) {
-	if stars != "" {
-		// `*s[i].x = v` would deref the selected field, not the base; the parse puts
-		// the star on the base, so the two readings differ. Not modelled.
-		e.fail("a dereferenced indexed assignment target is not supported yet")
-		return
-	}
-	if opNode.sym != PostfixOp {
-		e.fail("unsupported assignment target")
-		return
-	}
-	if _, _, isSlice := e.sliceParts(indexAST); isSlice {
-		e.fail("slicing an assignment target is not supported yet")
-		return
-	}
-	t, ok := e.assignTailOf(opNode)
-	if !ok {
-		e.fail("unsupported assignment form for an indexed element's field")
-		return
-	}
-	expr, elem, lenExpr, ok := e.indexedContainer(base, pre)
-	if !ok {
-		e.fail("unsupported indexed assignment target")
-		return
-	}
-	if _, ok := e.chainFieldType(elem, post); !ok {
-		e.fail("unsupported field in an indexed assignment target")
-		return
-	}
-	low, _, _ := e.sliceParts(indexAST)
-	e.ind()
-	e.emitIndexSelect(expr, lenExpr, low, elem, post)
-	e.emitAssignTail(t)
 }
 
 // emitFieldIndexAssign emits a write to a slice-field element `b.data[i] = v`,
@@ -4132,28 +3908,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 			// `s[i].v[j]` -- the general chain's result type.
 			if base, steps, ok := e.factorAccessChain(kids); ok {
-				cur, ok := e.accessChainType(base, steps)
-				if !ok || cur.slice || len(cur.dims) != 0 {
-					return "", false // a slice header or a row is not a plain value here
+				// Fall through to the fixed shapes when the walker cannot type the
+				// chain, rather than short-circuiting: a slice expression is theirs.
+				if cur, ok := e.accessChainType(base, steps); ok && !cur.slice && len(cur.dims) == 0 {
+					return cur.ctype, true
 				}
-				return cur.ctype, true
 			}
 			// `m[i][j]` -- a fully indexed multi-dimensional array yields its element.
-			if base, fields, idxs, ok := e.factorArrayIndex(kids); ok {
-				if _, a, ok := e.indexedArray(base, fields); ok && a.dims() == len(idxs) {
-					return a.elem, true
-				}
-				return "", false
-			}
 			// `s[i].x` / `p.pts[i].x` -- the element's selected field type.
-			if base, pre, indexAST, post, ok := e.factorIndexSelect(kids); ok {
-				if _, _, isSlice := e.sliceParts(indexAST); !isSlice {
-					if _, elem, _, ok := e.indexedContainer(base, pre); ok {
-						return e.chainFieldType(elem, post)
-					}
-				}
-				return "", false
-			}
 			// `base.f[i]` -- indexing a slice struct field. Checked before the
 			// plain-index and fallback paths: factorFieldAccess rejects the trailing
 			// Index and factorIndex rejects the leading Selector, so without this the
@@ -4351,25 +4113,9 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 			}
 			// `m[i][j]` -- a full index into a multi-dimensional array.
-			if base, fields, idxs, ok := e.factorArrayIndex(kids); ok {
-				if expr, a, ok := e.indexedArray(base, fields); ok && a.dims() == len(idxs) {
-					e.emitArrayIndex(expr, a, idxs)
-					return
-				}
-			}
 			// `s[i].x` / `p.pts[i].x` -- index a container, then select from the
 			// element. Checked ahead of the index-only shapes, which cannot match a
 			// trailing selector anyway.
-			if base, pre, indexAST, post, ok := e.factorIndexSelect(kids); ok {
-				if low, _, isSlice := e.sliceParts(indexAST); !isSlice {
-					if expr, elem, lenExpr, ok := e.indexedContainer(base, pre); ok {
-						if _, ok := e.chainFieldType(elem, post); ok {
-							e.emitIndexSelect(expr, lenExpr, low, elem, post)
-							return
-						}
-					}
-				}
-			}
 			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
 				// A struct field indexed directly, `b.data[i]`: a slice field reads
 				// through its header's backing pointer bounded by len, an array field
@@ -4388,10 +4134,6 @@ func (e *emitter) emitExprNode(n Node) {
 						return
 					}
 				}
-			}
-			if base, fields, ok := e.factorFieldAccess(kids); ok {
-				e.emit(e.fieldAccessC(base, fields))
-				return
 			}
 			if base, indexAST, ok := e.factorIndex(kids); ok {
 				low, high, isSlice := e.sliceParts(indexAST)
