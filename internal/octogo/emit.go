@@ -164,7 +164,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -354,6 +354,7 @@ type emitter struct {
 	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
 	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
+	sliceElemByName map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
 	appendElems     map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	printSliceElems map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
@@ -3212,7 +3213,10 @@ func (e *emitter) isStruct(ctype string) bool { _, ok := e.structs[ctype]; retur
 func (e *emitter) isSliceCType(ctype string) bool { return strings.HasPrefix(ctype, sliceTypePrefix) }
 
 // needSlice records that a slice `[]elem` is used, so its header typedef is emitted.
-func (e *emitter) needSlice(elem string) { e.sliceElems[elem] = true }
+func (e *emitter) needSlice(elem string) {
+	e.sliceElems[elem] = true
+	e.sliceElemByName[sliceCName(elem)] = elem
+}
 
 // sliceElem returns a slice variable's element C type, from the local then the
 // package slice environment.
@@ -3365,6 +3369,26 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				return e.fieldType(base, fields)
+			}
+			// `base.f[i]` -- indexing a slice struct field. Checked before the
+			// plain-index and fallback paths: factorFieldAccess rejects the trailing
+			// Index and factorIndex rejects the leading Selector, so without this the
+			// level fell through to inferNodes(kids), which types a Factor by its
+			// first identifier and so yielded the *base struct's* type (`Buf` for
+			// `b.data[0]`, not `int`) -- invalid C at the declaration it feeds.
+			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
+				ft, ok := e.fieldType(base, fields)
+				if !ok {
+					return "", false
+				}
+				elem, ok := e.sliceElemByName[ft]
+				if !ok {
+					return "", false // not a slice-typed field
+				}
+				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
+					return ft, true // re-slicing a slice field yields the same header type
+				}
+				return elem, true
 			}
 			if base, indexAST, ok := e.factorIndex(kids); ok {
 				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
