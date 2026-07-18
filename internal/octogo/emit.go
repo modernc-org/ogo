@@ -72,6 +72,14 @@ func sliceCName(elem string) string {
 	return sliceTypePrefix + sanitizeElem(elem)
 }
 
+// sliceTypedefDef returns the C typedef declaring the slice header for element
+// type elem. It has two emission sites -- the typedef section in EmitC, and
+// inline in structFieldsOf for a struct-element slice field -- so the shape is
+// defined once here.
+func sliceTypedefDef(elem string) string {
+	return fmt.Sprintf("typedef struct { %s* ptr; int len; int cap; } %s;\n", elem, sliceCName(elem))
+}
+
 // sanitizeElem turns a C element type into an identifier fragment: a pointer's "*"
 // becomes "_ptr", so []*Point -> ogo_slice_Point_ptr stays a valid C identifier.
 func sanitizeElem(elem string) string { return strings.ReplaceAll(elem, "*", "_ptr") }
@@ -164,7 +172,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -251,7 +259,10 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// (ogo_slice_Point) references its struct by pointer and so follows the structs.
 	var scalarSliceDefs, structSliceDefs bytes.Buffer
 	for _, el := range sortedKeys(e.sliceElems) {
-		def := fmt.Sprintf("typedef struct { %s* ptr; int len; int cap; } %s;\n", el, sliceCName(el))
+		if e.inlineSliceDefs[el] {
+			continue // already emitted inline, ahead of the struct field holding it
+		}
+		def := sliceTypedefDef(el)
 		if e.isStruct(el) {
 			structSliceDefs.WriteString(def)
 		} else {
@@ -355,6 +366,7 @@ type emitter struct {
 	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
 	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
+	inlineSliceDefs map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
 	appendElems     map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	printSliceElems map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
@@ -573,12 +585,22 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 			case Type:
 				if elem, ok := e.sliceType(c.ast); ok {
 					// A scalar-element slice field (`data []int`) is a slice header
-					// whose typedef is emitted before this struct's (see EmitC). A
-					// struct-element slice field (`[]Point`) would need its typedef
-					// after the struct's, inverting the order; leave it for later.
-					if e.isStruct(elem) {
-						e.fail("a struct-element slice struct field is not supported yet")
-						return out
+					// whose typedef is emitted before this struct's (see EmitC).
+					//
+					// A struct-element slice field (`pts []Point`) inverts that: its
+					// header names Point, so it must follow Point's typedef, yet it is
+					// held by value here and so must precede this struct's. Emit it
+					// inline -- collectTypeDecl calls us before emitting this struct's
+					// typedef, and both write the same buffer, so it lands exactly
+					// between the two. Recorded so EmitC's typedef section skips it.
+					//
+					// A forward reference (`[]B` with B declared later) cannot reach
+					// here: sliceType resolves the element through cType, which fails
+					// on an unknown name. Declaration order is the rule for plain
+					// struct fields too.
+					if e.isStruct(elem) && !e.inlineSliceDefs[elem] {
+						e.inlineSliceDefs[elem] = true
+						e.emit(sliceTypedefDef(elem))
 					}
 					e.needSlice(elem)
 					ctype = sliceCName(elem)
