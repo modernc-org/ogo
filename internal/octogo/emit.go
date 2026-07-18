@@ -1704,6 +1704,55 @@ func (e *emitter) factorFieldIndex(kids []Node) (base string, fields []string, i
 	return e.src(kids[0].tok), fields, suffix[len(suffix)-1].ast, true
 }
 
+// factorIndexSelect recognises a Factor that indexes a container and then selects
+// from the element -- `s[i].x`, `a[i].x`, `p.pts[i].x`, `s[i].x.y`: an identifier,
+// an optional leading field chain, exactly one Index, then at least one trailing
+// Selector. None of the other three factor shapes can express it, because each
+// stops at the first step of the other kind: factorFieldAccess admits no Index,
+// factorIndex no Selector, and factorFieldIndex requires the Index to be last.
+//
+// Exactly one Index. A second (`m[i][j]`) would need the already-emitted prefix as
+// the inner bound's length expression, and it is no longer a string by then, so it
+// is rejected here and fails honestly upstream rather than emitting an unchecked
+// access.
+func (e *emitter) factorIndexSelect(kids []Node) (base string, pre []string, indexAST []int32, post []string, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, nil, nil, false
+	}
+	pre, indexAST, post, ok = e.splitIndexSelect(slices.Collect(it(kids[1].ast)))
+	if !ok {
+		return "", nil, nil, nil, false
+	}
+	return e.src(kids[0].tok), pre, indexAST, post, true
+}
+
+// splitIndexSelect splits an access chain `{Selector} Index {Selector}` into the
+// leading field chain, the index, and the trailing field chain. Shared by the
+// expression shape (a FactorSuffix's children) and the assignment target shape
+// (a postfix minus its PostfixOp), which are the same node sequence.
+func (e *emitter) splitIndexSelect(chain []Node) (pre []string, indexAST []int32, post []string, ok bool) {
+	at := -1
+	for i, n := range chain {
+		if n.sym != Index {
+			continue
+		}
+		if at >= 0 {
+			return nil, nil, nil, false // more than one index
+		}
+		at = i
+	}
+	if at < 0 || at == len(chain)-1 {
+		return nil, nil, nil, false // no index, or nothing selected after it
+	}
+	if pre, ok = e.selectorFieldsAll(chain[:at]); !ok {
+		return nil, nil, nil, false
+	}
+	if post, ok = e.selectorFieldsAll(chain[at+1:]); !ok || len(post) == 0 {
+		return nil, nil, nil, false
+	}
+	return pre, chain[at].ast, post, true
+}
+
 // sliceParts inspects an Index node. isSlice reports a colon -- a slice expression;
 // low and high are the bound expressions, nil when omitted. For a plain index (no
 // colon), isSlice is false and low is the index expression.
@@ -2827,6 +2876,13 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.emitIndexAssign(base, postfix[0], postfix[1])
 		return
 	}
+	// An indexed element's field `s[i].x = v` / `p.pts[i].x = v`: an optional field
+	// chain, one index, then at least one selector before the assignment. Tried
+	// ahead of the index-last shape below, which cannot match a trailing selector.
+	if pre, indexAST, post, ok := e.splitIndexSelect(postfix[:len(postfix)-1]); ok {
+		e.emitIndexSelectAssign(base, stars, pre, indexAST, post, postfix[len(postfix)-1])
+		return
+	}
 	// A slice-field indexed target `b.data[i] = v`: a field-access chain, a single
 	// trailing index, then the assignment (postfix = { Selector } Index PostfixOp).
 	if len(postfix) >= 3 && postfix[len(postfix)-2].sym == Index {
@@ -2949,6 +3005,14 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 // selectorFields collects the field names from a run of Selector nodes, or ok=false
 // if any node is not a plain field selector (or the run is empty).
 func (e *emitter) selectorFields(nodes []Node) (fields []string, ok bool) {
+	fields, ok = e.selectorFieldsAll(nodes)
+	return fields, ok && len(fields) != 0
+}
+
+// selectorFieldsAll is selectorFields without the non-empty requirement: an empty
+// node list yields no fields and ok, so a chain may start directly with an index
+// (`s[i].x`, where nothing is selected before the index).
+func (e *emitter) selectorFieldsAll(nodes []Node) (fields []string, ok bool) {
 	for _, n := range nodes {
 		if n.sym != Selector {
 			return nil, false
@@ -2959,7 +3023,105 @@ func (e *emitter) selectorFields(nodes []Node) (fields []string, ok bool) {
 		}
 		fields = append(fields, f)
 	}
-	return fields, len(fields) != 0
+	return fields, true
+}
+
+// chainFieldType walks a field chain from a starting C type, returning the type
+// selected at the end. Used to validate a chain before any of it is emitted.
+func (e *emitter) chainFieldType(ctype string, fields []string) (string, bool) {
+	for _, f := range fields {
+		var ok bool
+		if ctype, ok = e.structFieldType(ctype, f); !ok {
+			return "", false
+		}
+	}
+	return ctype, true
+}
+
+// indexedContainer resolves what an index applies to: the C expression naming the
+// element storage, the element C type, and the length to bounds-check against.
+// With no leading field chain the base is a slice or array variable; with one it
+// is a slice-typed struct field (`p.pts[i]`).
+func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenExpr string, ok bool) {
+	if len(pre) == 0 {
+		if el, ok := e.sliceElem(base); ok {
+			return base + ".ptr", el, base + ".len", true
+		}
+		if a, ok := e.arrayVar(base); ok {
+			return base, a.elem, a.bound, true
+		}
+		return "", "", "", false
+	}
+	ct, ok := e.fieldType(base, pre)
+	if !ok || !e.isSliceCType(ct) {
+		return "", "", "", false // an array-typed struct field is not modelled
+	}
+	el, ok := e.sliceElemByName[ct]
+	if !ok {
+		return "", "", "", false
+	}
+	lv := e.fieldAccessC(base, pre)
+	return lv + ".ptr", el, lv + ".len", true
+}
+
+// emitIndexSelect emits `<container>[i].f...` -- an indexed element followed by a
+// field chain. The trailing selectors are emitted after the index rather than
+// concatenated into the prefix, because once the index expression has been written
+// the accumulated C text is no longer available as a string.
+func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string, post []string) {
+	e.emit(expr + "[")
+	e.emitIndex(low, lenExpr)
+	e.emit("]")
+	ct := elem
+	for _, f := range post {
+		if e.isPointer(ct) {
+			e.emit("->" + f)
+		} else {
+			e.emit("." + f)
+		}
+		ct, _ = e.structFieldType(ct, f) // validated by the caller via chainFieldType
+	}
+}
+
+// emitIndexSelectAssign emits a write to a field of an indexed element,
+// `s[i].x = v` or `p.pts[i].x = v`: the bounds-checked element access followed by
+// the field chain. Only plain assignment is modelled -- no slice colon in the
+// index, and no ++/-- on the selected field.
+func (e *emitter) emitIndexSelectAssign(base, stars string, pre []string, indexAST []int32, post []string, opNode Node) {
+	if stars != "" {
+		// `*s[i].x = v` would deref the selected field, not the base; the parse puts
+		// the star on the base, so the two readings differ. Not modelled.
+		e.fail("a dereferenced indexed assignment target is not supported yet")
+		return
+	}
+	if opNode.sym != PostfixOp {
+		e.fail("unsupported assignment target")
+		return
+	}
+	if _, _, isSlice := e.sliceParts(indexAST); isSlice {
+		e.fail("slicing an assignment target is not supported yet")
+		return
+	}
+	op := slices.Collect(it(opNode.ast))
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN || op[1].sym != Expression {
+		e.fail("only `x[i].f = expr` is supported for an indexed element's field yet")
+		return
+	}
+	expr, elem, lenExpr, ok := e.indexedContainer(base, pre)
+	if !ok {
+		e.fail("unsupported indexed assignment target")
+		return
+	}
+	if _, ok := e.chainFieldType(elem, post); !ok {
+		e.fail("unsupported field in an indexed assignment target")
+		return
+	}
+	low, _, _ := e.sliceParts(indexAST)
+	e.ind()
+	e.emitIndexSelect(expr, lenExpr, low, elem, post)
+	e.emit(" = ")
+	e.emitExpr(op[1].ast)
+	e.emit(";\n")
 }
 
 // emitFieldIndexAssign emits a write to a slice-field element `b.data[i] = v`,
@@ -3392,6 +3554,15 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				return e.fieldType(base, fields)
 			}
+			// `s[i].x` / `p.pts[i].x` -- the element's selected field type.
+			if base, pre, indexAST, post, ok := e.factorIndexSelect(kids); ok {
+				if _, _, isSlice := e.sliceParts(indexAST); !isSlice {
+					if _, elem, _, ok := e.indexedContainer(base, pre); ok {
+						return e.chainFieldType(elem, post)
+					}
+				}
+				return "", false
+			}
 			// `base.f[i]` -- indexing a slice struct field. Checked before the
 			// plain-index and fallback paths: factorFieldAccess rejects the trailing
 			// Index and factorIndex rejects the leading Selector, so without this the
@@ -3575,6 +3746,19 @@ func (e *emitter) emitExprNode(n Node) {
 					e.fail("unsupported call in expression")
 				}
 				return
+			}
+			// `s[i].x` / `p.pts[i].x` -- index a container, then select from the
+			// element. Checked ahead of the index-only shapes, which cannot match a
+			// trailing selector anyway.
+			if base, pre, indexAST, post, ok := e.factorIndexSelect(kids); ok {
+				if low, _, isSlice := e.sliceParts(indexAST); !isSlice {
+					if expr, elem, lenExpr, ok := e.indexedContainer(base, pre); ok {
+						if _, ok := e.chainFieldType(elem, post); ok {
+							e.emitIndexSelect(expr, lenExpr, low, elem, post)
+							return
+						}
+					}
+				}
 			}
 			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
 				// A slice struct field indexed directly, `b.data[i]` -> read through
