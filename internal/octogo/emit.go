@@ -90,6 +90,13 @@ func appendCName(elem string) string    { return "ogo_append_" + sanitizeElem(el
 func tryappendCName(elem string) string { return "ogo_tryappend_" + sanitizeElem(elem) }
 func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(elem) }
 
+// printSliceCName and printlnSliceCName name the per-element slice print helpers
+// that render a slice header as "[e0 e1 ...]" over the serial line -- the newline
+// form appends a trailing '\n'. An array is printed through the same helpers by
+// viewing it as a full-length slice header.
+func printSliceCName(elem string) string   { return "ogo_print_slice_" + sanitizeElem(elem) }
+func printlnSliceCName(elem string) string { return "ogo_println_slice_" + sanitizeElem(elem) }
+
 // ogoPanicDef is the runtime panic: a best-effort diagnostic to the serial line, a
 // short drain so it flushes, then a halt or -- in a release build -- a reboot. A
 // debug halt (abort -> _Exit -> _cogstop) stops the offending cog for inspection; a
@@ -157,7 +164,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, globals: map[string]string{}, structs: map[string][]structField{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, sliceElems: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -288,6 +295,21 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\t\ts.ptr[s.len] = v;\n\t\ts.len++;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
 			appendokCName(el), tryappendCName(el), sliceCName(el), el, appendokCName(el))
 	}
+	// The per-element slice printers render "[e0 e1 ...]"; the newline form defers
+	// to the plain one and adds a trailing '\n'. They reference the slice typedef
+	// emitted above and <stdio.h> (pulled in wherever a print is emitted).
+	for _, el := range sortedKeys(e.printSliceElems) {
+		fmt.Fprintf(&helperDefs, "static void %s(%s s) {\n"+
+			"\tprintf(\"[\");\n"+
+			"\tfor (int _i = 0; _i < s.len; _i++) {\n"+
+			"\t\tif (_i) printf(\" \");\n"+
+			"\t\tprintf(\"%%d\", s.ptr[_i]);\n"+
+			"\t}\n"+
+			"\tprintf(\"]\");\n}\n"+
+			"static void %s(%s s) { %s(s); printf(\"\\n\"); }\n",
+			printSliceCName(el), sliceCName(el),
+			printlnSliceCName(el), sliceCName(el), printSliceCName(el))
+	}
 	if helperDefs.Len() != 0 {
 		out.Write(helperDefs.Bytes())
 		out.WriteByte('\n')
@@ -321,6 +343,7 @@ type emitter struct {
 	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	appendElems     map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	printSliceElems map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
 	usesPanic       bool                     // ogo_panic is called: emit its definition and pull in its includes
 	usesBound       bool                     // ogo_bound is called: emit the index bounds-check helper
 	usesNonzero     bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
@@ -1179,19 +1202,34 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			return
 		}
 		// A fixed array `var a [N]T` -> `T a[N] = {0};`. Its name maps to the
-		// element type for `x := a[i]` typing.
+		// element type for `x := a[i]` typing. An initializer copies another array of
+		// the same type by value (`var b [N]T = a`); C cannot assign arrays, so the
+		// array is declared uninitialized and filled with memcpy.
 		if elem, bound, ok := e.arrayType(typeAST); ok {
-			if initExpr != nil {
-				e.fail("array initializers are not supported yet")
+			if len(names) != 1 && initExpr != nil {
+				e.fail("multi-name var with initializer is not supported yet")
 				return
 			}
 			for _, nm := range names {
 				if nm == "_" {
+					if initExpr != nil {
+						e.emitDiscard(initExpr)
+					}
 					continue
 				}
 				e.arrays[nm] = arrDim{elem, bound}
+				if initExpr == nil {
+					e.ind()
+					e.emit(elem + " " + nm + "[" + bound + "] = {0};\n")
+					continue
+				}
+				e.includes["string.h"] = true
 				e.ind()
-				e.emit(elem + " " + nm + "[" + bound + "] = {0};\n")
+				e.emit(elem + " " + nm + "[" + bound + "];\n")
+				e.ind()
+				e.emit("memcpy(" + nm + ", ")
+				e.emitExpr(initExpr)
+				e.emit(", sizeof(" + nm + "));\n")
 			}
 			continue
 		}
@@ -1243,8 +1281,10 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			return
 		}
 		if len(names) != 1 && initExpr != nil {
-			e.fail("multi-name var with initializer is not supported yet")
-			return
+			// A multi-name initializer destructures a multi-result call, declaring
+			// each name -- the var form of `a, b := f()`.
+			e.emitDestructure(names, true, initExpr)
+			continue
 		}
 		for _, nm := range names {
 			if nm == "_" {
@@ -2268,49 +2308,158 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 	return a, ok
 }
 
-// emitPrint maps print/println of a single argument to serial output: an integer
-// via printf, a string via the ogo_string print helper (which handles its exact
-// byte length). println appends a newline.
+// emitPrint maps print/println to serial output. Each argument prints by type: an
+// integer via printf %d, a string via the ogo_string helper (exact byte length),
+// and a slice or array as "[e0 e1 ...]". Multiple arguments are separated by a
+// single space; println appends a trailing newline.
 func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	e.includes["stdio.h"] = true
-	e.ind()
-	switch len(args) {
-	case 0:
+	switch {
+	case len(args) == 0:
+		e.ind()
 		if newline {
 			e.emit("printf(\"\\n\");\n")
 		} else {
 			e.emit("(void)0;\n")
 		}
-	case 1:
-		if ct, ok := e.inferCType(args[0].ast); ok {
-			if ct == cString {
-				e.usesStringPrint = true
-				helper := "ogo_print_str("
-				if newline {
-					helper = "ogo_println_str("
-				}
-				e.emit(helper)
-				e.emitExpr(args[0].ast)
-				e.emit(");\n")
-				return
-			}
-			if e.isSliceCType(ct) {
-				e.fail("printing a slice is not supported yet")
-				return
-			}
-		}
-		verb := "\"%d\""
-		if newline {
-			verb = "\"%d\\n\""
-		}
-		e.emit("printf(" + verb + ", ")
-		e.emitExpr(args[0].ast)
-		e.emit(");\n")
+	case len(args) == 1:
+		e.emitPrintOne(newline, args[0])
 	default:
-		e.fail("print/println with multiple arguments is not supported yet")
+		e.emitPrintMulti(newline, args)
 	}
 }
+
+// emitPrintOne emits print/println of a single argument, appending a newline when
+// newline is set. Integer and string output are folded into one call (preserving
+// the compact printf("%d\n", x) / ogo_println_str(x) forms); slices and arrays go
+// through their per-element print helper.
+func (e *emitter) emitPrintOne(newline bool, arg Node) {
+	if ct, ok := e.inferCType(arg.ast); ok {
+		if ct == cString {
+			e.usesStringPrint = true
+			e.ind()
+			if newline {
+				e.emit("ogo_println_str(")
+			} else {
+				e.emit("ogo_print_str(")
+			}
+			e.emitExpr(arg.ast)
+			e.emit(");\n")
+			return
+		}
+		if e.isSliceCType(ct) {
+			e.emitPrintSlice(newline, sliceElemFromCName(ct), func() { e.emitExpr(arg.ast) })
+			return
+		}
+	}
+	// A bare array variable decays to a pointer, so it is printed by viewing it as a
+	// full-length slice header rather than as a (meaningless) %d of its address.
+	if base, ok := e.exprIdent(arg.ast); ok {
+		if a, ok := e.arrayVar(base); ok {
+			e.emitPrintSlice(newline, a.elem, func() {
+				e.emit("(" + sliceCName(a.elem) + "){" + base + ", " + a.bound + ", " + a.bound + "}")
+			})
+			return
+		}
+	}
+	// Default: an integer, or an integer-typed expression, via printf %d.
+	e.ind()
+	if newline {
+		e.emit("printf(\"%d\\n\", ")
+	} else {
+		e.emit("printf(\"%d\", ")
+	}
+	e.emitExpr(arg.ast)
+	e.emit(");\n")
+}
+
+// emitPrintSlice emits a call to the ogo_print_slice_<T> / ogo_println_slice_<T>
+// helper for element type elem, with the slice-header argument written by emitArg.
+// Only integer elements are printable for now; anything else fails honestly rather
+// than emitting a wrong %d.
+func (e *emitter) emitPrintSlice(newline bool, elem string, emitArg func()) {
+	if !e.canPrintElem(elem) {
+		e.fail("printing a slice or array of %q is not supported yet", elem)
+		return
+	}
+	e.needSlice(elem)
+	e.printSliceElems[elem] = true
+	e.ind()
+	if newline {
+		e.emit(printlnSliceCName(elem) + "(")
+	} else {
+		e.emit(printSliceCName(elem) + "(")
+	}
+	emitArg()
+	e.emit(");\n")
+}
+
+// emitPrintMulti emits print/println of two or more arguments. When every argument
+// prints as a plain integer they fold into a single space-separated printf; a mix
+// of types instead prints each value in turn, a space between operands, then the
+// trailing newline for println.
+func (e *emitter) emitPrintMulti(newline bool, args []Node) {
+	allScalar := true
+	for _, arg := range args {
+		if !e.isScalarPrint(arg) {
+			allScalar = false
+			break
+		}
+	}
+	if allScalar {
+		e.ind()
+		e.emit("printf(\"")
+		for i := range args {
+			if i > 0 {
+				e.emit(" ")
+			}
+			e.emit("%d")
+		}
+		if newline {
+			e.emit("\\n")
+		}
+		e.emit("\"")
+		for _, arg := range args {
+			e.emit(", ")
+			e.emitExpr(arg.ast)
+		}
+		e.emit(");\n")
+		return
+	}
+	for i, arg := range args {
+		if i > 0 {
+			e.ind()
+			e.emit("printf(\" \");\n")
+		}
+		e.emitPrintOne(false, arg)
+	}
+	if newline {
+		e.ind()
+		e.emit("printf(\"\\n\");\n")
+	}
+}
+
+// isScalarPrint reports whether arg prints via printf %d (an integer or integer-
+// typed expression) -- i.e. it is neither a string, a slice nor an array.
+func (e *emitter) isScalarPrint(arg Node) bool {
+	if ct, ok := e.inferCType(arg.ast); ok {
+		if ct == cString || e.isSliceCType(ct) {
+			return false
+		}
+	}
+	if base, ok := e.exprIdent(arg.ast); ok {
+		if _, ok := e.arrayVar(base); ok {
+			return false
+		}
+	}
+	return true
+}
+
+// canPrintElem reports whether a slice/array of the given C element type can be
+// printed. Only int is printable for now (its %d helper); other element types fail
+// honestly until their own print form is wired up.
+func (e *emitter) canPrintElem(elem string) bool { return elem == "int" }
 
 // emitAssignment handles a single-target assignment `lhs = expr`, a field
 // assignment `base.f = expr`, a short declaration `lhs := expr`, and increment /
@@ -2491,7 +2640,7 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 // PostfixOp children (the remaining LhsItem targets, the operator, and the call).
 func (e *emitter) emitMultiAssign(first string, op []Node) {
 	targets := []string{first}
-	var opTok Symbol
+	define := false
 	var rhs []int32
 	for _, n := range op {
 		switch n.sym {
@@ -2506,10 +2655,20 @@ func (e *emitter) emitMultiAssign(first string, op []Node) {
 			rhs = n.ast
 		case 0:
 			if ch := e.f.ch(n.tok); ch == ASSIGN || ch == DEFINE {
-				opTok = ch
+				define = ch == DEFINE
 			}
 		}
 	}
+	e.emitDestructure(targets, define, rhs)
+}
+
+// emitDestructure lowers a multi-result call bound to several targets, shared by
+// `a, b = f()` / `a, b := f()` and the var form `var a, b T = f()`. C has no
+// multiple assignment, so the call's result struct is bound to a temporary and each
+// target reads its field: a defined target is declared with its result type, an
+// assigned target is assigned, and a blank target is skipped. rhs is the call
+// expression; define selects declaration (`:=` / `var`) over plain assignment.
+func (e *emitter) emitDestructure(targets []string, define bool, rhs []int32) {
 	callee, suffix, ok := e.directCall(rhs)
 	if !ok {
 		e.fail("multiple assignment requires a single function call on the right-hand side")
@@ -2517,7 +2676,7 @@ func (e *emitter) emitMultiAssign(first string, op []Node) {
 	}
 	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix {
 		// Two-result append: s, ok = append(s, x) -- the ok form, no trap.
-		e.emitTryAppend(targets, opTok == DEFINE, suffix[0].ast)
+		e.emitTryAppend(targets, define, suffix[0].ast)
 		return
 	}
 	resTypes, ok := e.funcRet[callee]
@@ -2539,7 +2698,7 @@ func (e *emitter) emitMultiAssign(first string, op []Node) {
 		}
 		e.ind()
 		field := fmt.Sprintf("%s._%d", tmp, i)
-		if opTok == DEFINE {
+		if define {
 			e.locals[tgt] = resTypes[i]
 			e.emit(resTypes[i] + " " + tgt + " = " + field + ";\n")
 		} else {
