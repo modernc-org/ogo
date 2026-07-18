@@ -2616,6 +2616,20 @@ func (e *emitter) isScalarPrint(arg Node) bool {
 // honestly until their own print form is wired up.
 func (e *emitter) canPrintElem(elem string) bool { return elem == "int" }
 
+// derefStars returns the leading pointer-indirection prefix of an AssignHead
+// (AssignHead = { "*" } identifier ...), so a dereferenced target `*p = v` writes
+// through the pointer rather than to it.
+func (e *emitter) derefStars(headAST []int32) string {
+	stars := ""
+	for n := range it(headAST) {
+		if n.sym != 0 || e.f.ch(n.tok) != MUL {
+			break
+		}
+		stars += "*"
+	}
+	return stars
+}
+
 // emitAssignment handles a single-target assignment `lhs = expr`, a field
 // assignment `base.f = expr`, a short declaration `lhs := expr`, and increment /
 // decrement. The PostfixOp is the postfix's last element; any Selectors before it
@@ -2630,6 +2644,10 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.fail("only assignment to a simple variable is supported yet")
 		return
 	}
+	// A dereferenced target `*p = v` (AssignHead = { "*" } identifier): keep the
+	// leading star(s) so the assignment writes through the pointer, not to it. The
+	// only reachable case is a pointer receiver mutating its pointee (`*c = v`).
+	stars := e.derefStars(head.ast)
 	// Index target `a[i] = v` (single index; mixing indexes and fields is not
 	// modelled). The index is an expression, so it is emitted directly rather than
 	// built into the string lhs the field path uses.
@@ -2653,6 +2671,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(fields) != 0 {
 		lhs = e.fieldAccessC(base, fields) // a field target, "->" through pointers
 	}
+	lhs = stars + lhs
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
 
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
