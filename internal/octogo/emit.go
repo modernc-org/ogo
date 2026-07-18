@@ -1621,6 +1621,31 @@ func (e *emitter) factorIndex(kids []Node) (base string, indexAST []int32, ok bo
 	return e.src(kids[0].tok), suffix[0].ast, true
 }
 
+// factorFieldIndex recognises `base.f...[i]` -- a field-access chain followed by a
+// single trailing index -- returning the base name, the field chain and the index
+// expression. It is the field-base counterpart of factorIndex, letting a slice
+// struct field be indexed directly (`b.data[i]`).
+func (e *emitter) factorFieldIndex(kids []Node) (base string, fields []string, indexAST []int32, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, nil, false
+	}
+	suffix := slices.Collect(it(kids[1].ast))
+	if len(suffix) < 2 || suffix[len(suffix)-1].sym != Index {
+		return "", nil, nil, false
+	}
+	for _, n := range suffix[:len(suffix)-1] {
+		if n.sym != Selector {
+			return "", nil, nil, false
+		}
+		fld := e.soleIdent(n.ast)
+		if fld == "" {
+			return "", nil, nil, false
+		}
+		fields = append(fields, fld)
+	}
+	return e.src(kids[0].tok), fields, suffix[len(suffix)-1].ast, true
+}
+
 // sliceParts inspects an Index node. isSlice reports a colon -- a slice expression;
 // low and high are the bound expressions, nil when omitted. For a plain index (no
 // colon), isSlice is false and low is the index expression.
@@ -2381,24 +2406,22 @@ func (e *emitter) emitCap(callSuffix []int32) {
 }
 
 // appendParts validates an append call suffix -- exactly two arguments whose first
-// is a slice variable -- returning that slice's element C type and the argument
-// nodes, and recording needSlice(elem). ok is false (with a latched error) for any
-// other shape; only append(s, x) over a slice variable is modelled yet.
+// is a slice -- returning that slice's element C type and the argument nodes, and
+// recording needSlice(elem). The first argument may be a slice variable or a
+// slice-typed struct field (append(b.data, x)); its type is inferred, and emitExpr
+// renders either form. ok is false (with a latched error) for any other shape.
 func (e *emitter) appendParts(callSuffix []int32) (elem string, args []Node, ok bool) {
 	args = e.callArgExprs(callSuffix)
 	if len(args) != 2 {
 		e.fail("append takes exactly two arguments yet -- append(s, x)")
 		return "", nil, false
 	}
-	base, ok := e.exprIdent(args[0].ast)
-	if !ok {
-		e.fail("append's first argument must be a slice variable yet")
+	ct, ok := e.inferCType(args[0].ast)
+	if !ok || !e.isSliceCType(ct) {
+		e.fail("append's first argument must be a slice variable or slice field yet")
 		return "", nil, false
 	}
-	if elem, ok = e.sliceElem(base); !ok {
-		e.fail("append's first argument must be a slice variable yet")
-		return "", nil, false
-	}
+	elem = sliceElemFromCName(ct)
 	e.needSlice(elem)
 	return elem, args, true
 }
@@ -2673,6 +2696,16 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.emitIndexAssign(base, postfix[0], postfix[1])
 		return
 	}
+	// A slice-field indexed target `b.data[i] = v`: a field-access chain, a single
+	// trailing index, then the assignment (postfix = { Selector } Index PostfixOp).
+	if len(postfix) >= 3 && postfix[len(postfix)-2].sym == Index {
+		if flds, ok := e.selectorFields(postfix[:len(postfix)-2]); ok {
+			if ct, ok := e.fieldType(base, flds); ok && e.isSliceCType(ct) {
+				e.emitFieldIndexAssign(base, flds, postfix[len(postfix)-2], postfix[len(postfix)-1])
+				return
+			}
+		}
+	}
 	var fields []string
 	for _, n := range postfix[:len(postfix)-1] {
 		fld := ""
@@ -2771,6 +2804,45 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	e.ind()
 	e.emit(ct + " " + name + " = ")
 	e.emitExpr(initExpr)
+	e.emit(";\n")
+}
+
+// selectorFields collects the field names from a run of Selector nodes, or ok=false
+// if any node is not a plain field selector (or the run is empty).
+func (e *emitter) selectorFields(nodes []Node) (fields []string, ok bool) {
+	for _, n := range nodes {
+		if n.sym != Selector {
+			return nil, false
+		}
+		f := e.soleIdent(n.ast)
+		if f == "" {
+			return nil, false
+		}
+		fields = append(fields, f)
+	}
+	return fields, len(fields) != 0
+}
+
+// emitFieldIndexAssign emits a write to a slice-field element `b.data[i] = v`,
+// through the field header's backing pointer and bounds-checked against its length.
+// Only plain assignment is modelled (no slice colon, no ++/-- on the element).
+func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNode Node) {
+	low, _, isSlice := e.sliceParts(index.ast)
+	if isSlice {
+		e.fail("slicing a slice-field target is not supported yet")
+		return
+	}
+	op := slices.Collect(it(opNode.ast))
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN || op[1].sym != Expression {
+		e.fail("only `b.f[i] = expr` is supported for a slice-field element yet")
+		return
+	}
+	lv := e.fieldAccessC(base, fields)
+	e.ind()
+	e.emit(lv + ".ptr[")
+	e.emitIndex(low, lv+".len")
+	e.emit("] = ")
+	e.emitExpr(op[1].ast)
 	e.emit(";\n")
 }
 
@@ -3341,6 +3413,19 @@ func (e *emitter) emitExprNode(n Node) {
 					e.fail("unsupported call in expression")
 				}
 				return
+			}
+			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
+				// A slice struct field indexed directly, `b.data[i]` -> read through
+				// the field header's backing pointer, bounds-checked against its len.
+				if low, _, isSlice := e.sliceParts(indexAST); !isSlice {
+					if ct, ok := e.fieldType(base, fields); ok && e.isSliceCType(ct) {
+						lv := e.fieldAccessC(base, fields)
+						e.emit(lv + ".ptr[")
+						e.emitIndex(low, lv+".len")
+						e.emit("]")
+						return
+					}
+				}
 			}
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				e.emit(e.fieldAccessC(base, fields))
