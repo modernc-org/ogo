@@ -193,7 +193,19 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		// Handles []int, [-1]int, and multi-dimensional [][5]int
 	case prev == RBRACK && c.inType:
 		return false
+	// A '[' opens either an array/slice type or an index. Only the type is spaced
+	// off the name it follows -- "var a [3]int", "arr [3]int", "func f() [3]int" --
+	// while an index binds tight to its base: "a[1]", "b.arr[1]". There was no case
+	// for this, so every '[' fell through to the closing "return true" and an index
+	// came out as "a [1]". Placed after the RBRACK rule above so "[][]int" keeps
+	// its brackets together.
+	case curr == LBRACK:
+		return c.inType
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
+		return false
+	// The ':' of a slice expression binds tight on both sides -- "s[0:1]", not
+	// "s[0: 1]". Scoped to an index so a case clause's ':' is left alone.
+	case prev == COLON && c.inIndex:
 		return false
 	case prev == PERIOD || curr == PERIOD:
 		return false
@@ -325,6 +337,7 @@ type formatterCtx struct {
 	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
 	inType            bool
+	inIndex           bool // True inside an Index, where ':' binds tight ("s[0:1]")
 }
 
 // fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
@@ -457,6 +470,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.inParams = false
 				case Type, FieldDecl:
 					c.inType = true
+				case Index:
+					// walk takes c by value, so this scopes to the index subtree.
+					c.inIndex = true
 				case StructType, InterfaceType:
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])

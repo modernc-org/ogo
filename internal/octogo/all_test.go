@@ -302,6 +302,80 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+// TestFormatIndexSpacing pins the two spacings a '[' can take. A '[' opening an
+// array or slice *type* is spaced off the name it follows ("var a [3]int"), while
+// one opening an *index* binds tight to its base ("a[1]"). needsSpace had no case
+// for a leading '[' at all, so every one fell through to its closing "return true"
+// and an index came out as "a [1]"; the ':' of a slice expression had the matching
+// problem on its right, giving "s[0: 1]".
+//
+// The bug survived because the older golden above contains no '[' whatsoever, and
+// the Makefile runs `ogo fmt` with --exclude='\/testdata\/' -- which is exactly
+// where the index-heavy .ogo sources live.
+func TestFormatIndexSpacing(t *testing.T) {
+	// Input is deliberately mis-spaced in both directions: the bug's own output
+	// ("a [1]", "s[0: 1]") and the opposite ("var r[2]int").
+	const in = `type buf struct {
+arr [3]int
+grid [2][3]int
+data []int
+}
+
+func f(a [3]int, s []int) [2]int {
+var b buf
+b.arr [1] = 3
+b.data = s[0: 1]
+t := s[: 2]
+u := s[2 :]
+switch a [0] {
+case 1:
+println(t [0])
+default:
+println(u[0] + b.grid [1] [2])
+}
+var r[2]int
+return r
+}
+`
+	const want = `type buf struct {
+	arr  [3]int
+	grid [2][3]int
+	data []int
+}
+
+func f(a [3]int, s []int) [2]int {
+	var b buf
+	b.arr[1] = 3
+	b.data = s[0:1]
+	t := s[:2]
+	u := s[2:]
+	switch a[0] {
+	case 1:
+		println(t[0])
+	default:
+		println(u[0] + b.grid[1][2])
+	}
+	var r [2]int
+	return r
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("index spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatAssignOps pins the compound assignment operators being spaced like the
 // plain "=" -- they reach the same isAssignOp spacing rule -- and the result being
 // a fixed point, which catches an operator that round-trips to different text.

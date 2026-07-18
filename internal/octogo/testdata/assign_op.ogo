@@ -17,7 +17,7 @@ func bitwise() {
 	y &= 10
 	y |= 3
 	y ^= 1
-	y &^= 2 // AND NOT: clears in y every bit set in the operand
+	y &^= 2  // AND NOT: clears in y every bit set in the operand
 	println(y)
 }
 
