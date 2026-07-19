@@ -2985,13 +2985,13 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 	e.emit(", " + size + "};\n")
 }
 
-// emitFor handles `for {}` (infinite -> for(;;)) and `for cond {}` (conditional
-// -> while(cond)). Init/post clauses and range are not supported yet.
-// forHeader decomposes a "for" header into its three parts. The grammar parses a
-// leading Expression before it knows what the header is, so that Expression is the
-// condition when nothing follows it and the init statement's left-hand side when a
-// ForClause does -- the same left-factoring SwitchGuard uses.
+// forHeader decomposes a "for" header. The grammar parses a leading Expression
+// before it knows what the header is, so that Expression is the condition when
+// nothing follows it, an init statement's left-hand side when a three-clause tail
+// follows, or a range key when a range tail does -- the same left-factoring
+// SwitchGuard uses.
 type forHeader struct {
+	// Three-clause / condition form.
 	initLHS   []int32 // nil when there is no init statement
 	initOp    Symbol  // ASSIGN or DEFINE
 	initRHS   []int32
@@ -3000,50 +3000,125 @@ type forHeader struct {
 	postOp    Symbol  // ASSIGN, DEFINE, INC or DEC
 	postRHS   []int32
 	hasClause bool
+
+	// Range form.
+	isRange   bool
+	rangeExpr []int32 // the ranged operand
+	keyVar    []int32 // the index variable, nil for `for range x`
+	valVar    []int32 // the value variable, for `for i, v := range x`
+	rangeDef  bool    // ":=" rather than "="
 }
 
 // parseForHeader reads a ForHeader node.
 func (e *emitter) parseForHeader(n Node) (h forHeader, ok bool) {
-	for c := range it(n.ast) {
+	kids := slices.Collect(it(n.ast))
+	// A header that opens with "range" is the no-variable form `for range x`.
+	if len(kids) >= 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == RANGE {
+		h.isRange = true
+		for _, c := range kids {
+			if c.sym == Expression {
+				h.rangeExpr = c.ast
+			}
+		}
+		return h, true
+	}
+	for _, c := range kids {
 		switch c.sym {
 		case Expression:
-			// The leading expression: the condition, unless a ForClause follows.
+			// The leading expression: the condition, unless a tail reassigns it.
 			h.cond = c.ast
-		case ForClause:
-			h.hasClause = true
-			h.initLHS, h.cond = h.cond, nil
-			semis := 0
-			for q := range it(c.ast) {
-				switch {
-				case q.sym == 0 && e.f.ch(q.tok) == SEMICOLON:
-					semis++
-				case q.sym == 0:
-					h.initOp = e.f.ch(q.tok)
-				case q.sym == Expression && semis == 0:
-					h.initRHS = q.ast
-				case q.sym == Expression && semis == 1:
-					h.cond = q.ast
-				case q.sym == ForPost:
-					if !e.parseForPost(q, &h) {
-						return h, false
-					}
-				}
-			}
-		case ForPost:
-			// The `for ; cond ; post` form, whose header starts with the semicolon.
-			h.hasClause = true
-			if !e.parseForPost(c, &h) {
+		case ForRest:
+			if !e.parseForRest(c, &h) {
 				return h, false
-			}
-		case 0:
-			if e.f.ch(c.tok) == SEMICOLON {
-				// Leading semicolon: no init statement, and what was read as the
-				// condition belongs after it.
-				h.hasClause = true
 			}
 		}
 	}
 	return h, true
+}
+
+// parseForRest reads the ForRest following the leading Expression, distinguishing
+// the three-clause tail from the range tail.
+func (e *emitter) parseForRest(n Node, h *forHeader) bool {
+	kids := slices.Collect(it(n.ast))
+	// `, val := range x`: a comma makes this the two-variable range form, with the
+	// leading expression as the key.
+	if len(kids) >= 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == COMMA {
+		h.isRange = true
+		h.keyVar, h.cond = h.cond, nil
+		seenRange := false
+		for _, c := range kids {
+			switch {
+			case c.sym == 0 && e.f.ch(c.tok) == DEFINE:
+				h.rangeDef = true
+			case c.sym == 0 && e.f.ch(c.tok) == RANGE:
+				seenRange = true
+			case c.sym == Expression && !seenRange:
+				h.valVar = c.ast
+			case c.sym == Expression && seenRange:
+				h.rangeExpr = c.ast
+			}
+		}
+		return true
+	}
+	// Otherwise a leading semicolon or an assignment operator, then ForAssignRest.
+	for _, c := range kids {
+		switch {
+		case c.sym == 0 && e.f.ch(c.tok) == SEMICOLON:
+			// `for expr ; cond ; post`: a bare expression as init.
+			h.hasClause = true
+			h.initLHS, h.cond = h.cond, nil
+		case c.sym == 0:
+			h.initOp = e.f.ch(c.tok)
+		case c.sym == ForAssignRest:
+			if !e.parseForAssignRest(c, h) {
+				return false
+			}
+		case c.sym == Expression:
+			// A bare-expression init's condition/post follow it in this node.
+			h.cond = c.ast
+		case c.sym == ForPost:
+			if !e.parseForPost(c, h) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// parseForAssignRest reads what follows `:=`/`=`: either `range x` (the
+// single-variable range form) or the RHS, condition and post of a three-clause.
+func (e *emitter) parseForAssignRest(n Node, h *forHeader) bool {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) >= 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == RANGE {
+		h.isRange = true
+		h.keyVar, h.cond = h.cond, nil
+		h.rangeDef = h.initOp == DEFINE
+		for _, c := range kids {
+			if c.sym == Expression {
+				h.rangeExpr = c.ast
+			}
+		}
+		return true
+	}
+	// The three-clause form: the leading expression was the init LHS.
+	h.hasClause = true
+	h.initLHS, h.cond = h.cond, nil
+	semis := 0
+	for _, c := range kids {
+		switch {
+		case c.sym == 0 && e.f.ch(c.tok) == SEMICOLON:
+			semis++
+		case c.sym == Expression && semis == 0:
+			h.initRHS = c.ast
+		case c.sym == Expression && semis == 1:
+			h.cond = c.ast
+		case c.sym == ForPost:
+			if !e.parseForPost(c, h) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // parseForPost reads a ForPost node: `i++`, `i--`, or an assignment.
@@ -3081,6 +3156,10 @@ func (e *emitter) emitFor(nodes []Node) {
 	}
 	if body == nil {
 		e.fail("for-loop without a body")
+		return
+	}
+	if h.isRange {
+		e.emitRange(&h, body)
 		return
 	}
 	e.ind()
@@ -3135,17 +3214,105 @@ func (e *emitter) emitFor(nodes []Node) {
 		}
 		e.emit(") {\n")
 	}
+	e.emitLoopBody(body, nil)
+}
+
+// emitLoopBody emits a loop body between the opening `{` and the closing `}`,
+// running inject (if any) as the body's first statement -- the range value copy --
+// and restoring the switch context, since a break inside the loop names the loop.
+func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	e.indent++
 	e.deferBlockDepth++
-	// Inside the loop a break names the loop again, even within a switch case.
 	savedSwitch := e.inSwitchCase
 	e.inSwitchCase = false
+	if inject != nil {
+		inject()
+	}
 	e.emitBlockStmts(body)
 	e.inSwitchCase = savedSwitch
 	e.deferBlockDepth--
 	e.indent--
 	e.ind()
 	e.emit("}\n")
+}
+
+// emitRange emits the range forms of "for". Each becomes a counting loop; the
+// operand is evaluated once (hoisted to a temporary), matching Go, and the
+// two-variable form copies the element into the value variable at the top of each
+// iteration.
+func (e *emitter) emitRange(h *forHeader, body []int32) {
+	ct, _ := e.inferCType(h.rangeExpr)
+	key := "_"
+	if h.keyVar != nil {
+		key = e.exprC(h.keyVar)
+	}
+	if key == "_" {
+		key = e.newTmp() // `for range x`, or `for _ := range x`: a hidden counter
+	}
+
+	switch {
+	case e.isSliceCType(ct):
+		// Hoist the slice header so .len and .ptr come from one evaluation.
+		hdr := e.newTmp()
+		e.ind()
+		e.emit(ct + " " + hdr + " = " + e.exprC(h.rangeExpr) + ";\n")
+		e.locals[key] = "int"
+		e.ind()
+		e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
+		e.emitLoopBody(body, e.rangeValueInject(h, e.sliceElemByName[ct], hdr+".ptr["+key+"]"))
+	case e.rangeArray(h.rangeExpr) != nil:
+		a := e.rangeArray(h.rangeExpr)
+		base, _ := e.exprIdent(h.rangeExpr)
+		e.locals[key] = "int"
+		e.ind()
+		e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
+		e.emitLoopBody(body, e.rangeValueInject(h, a.elem, base+"["+key+"]"))
+	default:
+		// An integer range. Hoist the bound so a side-effecting or costly operand is
+		// evaluated once, as Go does.
+		if h.valVar != nil {
+			e.fail("ranging an integer yields only the index")
+			return
+		}
+		n := e.newTmp()
+		e.ind()
+		e.emit("int " + n + " = " + e.exprC(h.rangeExpr) + ";\n")
+		e.locals[key] = "int"
+		e.ind()
+		e.emit("for (int " + key + " = 0; " + key + " < " + n + "; " + key + "++) {\n")
+		e.emitLoopBody(body, nil)
+	}
+}
+
+// rangeValueInject returns a closure declaring the value variable of a
+// two-variable range, or nil for the index-only form. elem is the element C type
+// and access the C expression reading the current element.
+func (e *emitter) rangeValueInject(h *forHeader, elem, access string) func() {
+	if h.valVar == nil {
+		return nil
+	}
+	val := e.exprC(h.valVar)
+	if val == "_" {
+		return nil // the value is discarded
+	}
+	e.locals[val] = elem
+	return func() {
+		e.ind()
+		e.emit(elem + " " + val + " = " + access + ";\n")
+	}
+}
+
+// rangeArray returns the array dimension of a range operand that is a bare array
+// variable, or nil.
+func (e *emitter) rangeArray(expr []int32) *arrDim {
+	base, ok := e.exprIdent(expr)
+	if !ok {
+		return nil
+	}
+	if a, ok := e.arrayVar(base); ok {
+		return &a
+	}
+	return nil
 }
 
 // emitSwitch emits a switch statement as an if / else-if chain. OctoGo has no

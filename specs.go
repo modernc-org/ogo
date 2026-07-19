@@ -8,9 +8,8 @@
 // "&&" and "||" are parsed and rejected with a diagnostic, which is deliberate --
 // see Operators.
 //
-// TODO 20260307 Keywords: +?map +?range
+// TODO 20260307 Keywords: +?map
 // TODO 20260307 Numeric type: +float,float32
-// TODO 20260307 For statements: range
 // TODO 20260307 Return statements: ? disable naked returns
 // TODO 20260307 Return statements: Expression -> ExpressionList
 // TODO 20260317 labels and gotos
@@ -133,13 +132,12 @@
 // # Keywords
 //
 // The following keywords are reserved and may not be used as identifiers.
-// (Note: Keywords like package, goto, map, and range have been intentionally
-// omitted from OctoGo to simplify the grammar and runtime):
+// (Note: Keywords like package, goto and map have been intentionally omitted
+// from OctoGo to simplify the grammar and runtime):
 //
-//	break       const       else        func        if          return      switch
-//	case        continue    fallthrough go          import      select      type
-//	chan        default     for         interface   struct      var
-//	defer
+//	break       chan        default     fallthrough go          import      range       select      switch
+//	case        const       defer       for         if          interface   return      struct      type
+//	continue    else        func                                                                     var
 //
 // # Operators and punctuation
 //
@@ -648,6 +646,18 @@
 // its condition, its post statement and its body -- and not to the block
 // containing it.
 //
+// A fourth form ranges over an integer, a slice or an array:
+//
+//	for i := range n { ... }       // i = 0, 1, ... n-1  (n an integer)
+//	for i := range xs { ... }      // i indexes the slice or array
+//	for i, v := range xs { ... }   // i is the index, v a copy of each element
+//	for range n { ... }            // repeat n times, no variable
+//
+// Ranging an integer yields only the index; the two-variable form is available
+// for a slice or an array, where the second variable is a copy of the element.
+// Ranging a channel or a string is not provided: a channel has no close, and
+// string iteration would require decoding.
+//
 // (OctoGo Specific): To stay LL(1), a header is parsed as an expression first
 // and what follows it decides how to read it: a "{" makes it the condition, and
 // a ";" or an assignment operator makes it the init statement of the three-clause
@@ -716,8 +726,13 @@
 //		| "<<=" | ">>=" .
 //	LhsItem    = AssignHead { Selector | Index } .
 //	ForHeader  = ";" [ Expression ] ";" [ ForPost ]
-//		| Expression [ ForClause ] .
-//	ForClause  = [ ( "=" | ":=" ) Expression ] ";" [ Expression ] ";" [ ForPost ] .
+//		| "range" Expression
+//		| Expression [ ForRest ] .
+//	ForRest    = ";" [ Expression ] ";" [ ForPost ]
+//		| ( "=" | ":=" ) ForAssignRest
+//		| "," Expression ( "=" | ":=" ) "range" Expression .
+//	ForAssignRest = "range" Expression
+//		| Expression ";" [ Expression ] ";" [ ForPost ] .
 //	ForPost    = Expression [ ( "=" | ":=" ) Expression | "++" | "--" ] .
 //
 // The "++" and "--" forms are the increment and decrement statements "x++" and

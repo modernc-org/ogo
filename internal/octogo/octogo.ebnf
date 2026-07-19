@@ -105,8 +105,13 @@ AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 	| "<<=" | ">>=" .
 LhsItem    = AssignHead { Selector | Index } .
 ForHeader  = ";" [ Expression ] ";" [ ForPost ]
-	| Expression [ ForClause ] .
-ForClause  = [ ( "=" | ":=" ) Expression ] ";" [ Expression ] ";" [ ForPost ] .
+	| "range" Expression
+	| Expression [ ForRest ] .
+ForRest    = ";" [ Expression ] ";" [ ForPost ]
+	| ( "=" | ":=" ) ForAssignRest
+	| "," Expression ( "=" | ":=" ) "range" Expression .
+ForAssignRest = "range" Expression
+	| Expression ";" [ Expression ] ";" [ ForPost ] .
 ForPost    = Expression [ ( "=" | ":=" ) Expression | "++" | "--" ] .
 IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .

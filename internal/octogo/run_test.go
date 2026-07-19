@@ -179,6 +179,41 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "range over integer, slice and array",
+			src: `func main() {
+	sum := 0
+	for i := range 5 {
+		sum = sum + i
+	}
+	s := make([]int, 4, 4)
+	for i := range s {
+		s[i] = i * i
+	}
+	total := 0
+	for i, v := range s {
+		total = total + i + v
+	}
+	var a [3]int
+	a[0] = 10
+	a[1] = 20
+	a[2] = 30
+	asum := 0
+	for _, v := range a {
+		asum = asum + v
+	}
+	count := 0
+	for range 7 {
+		count++
+	}
+	println(sum)
+	println(total)
+	println(asum)
+	println(count)
+}
+`,
+			want: "10\n20\n60\n7\n",
+		},
+		{
 			name: "three-clause for loops",
 			src: `func main() {
 	sum := 0

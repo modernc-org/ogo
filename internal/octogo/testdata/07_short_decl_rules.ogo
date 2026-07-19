@@ -1,4 +1,4 @@
-// ERROR unexpected identifier "topLevel"
+// ERROR "topLevel" \[identifier\]: expected
 topLevel := 100 
 
 func testShortDecl() {

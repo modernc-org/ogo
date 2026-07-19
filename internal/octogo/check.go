@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"io/fs"
 	"iter"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -986,34 +987,145 @@ func (f *File) isPanicCall(head, postfix Node) bool {
 	return ok && id.Src() == "panic"
 }
 
-// forHasCond reports whether a "for" statement has a condition. The grammar parses
-// a header's leading expression before it knows what the header is, so that
-// expression is the condition unless a ForClause follows, in which case the
-// condition is the one between the clause's two semicolons.
+// forInfo is a "for" header decomposed. It mirrors the emitter's forHeader; the
+// two parsers are separate only because the checker and emitter are separate types.
+type forInfo struct {
+	isRange     bool
+	rangeExpr   Node
+	keyVar      Node
+	valVar      Node
+	hasKey      bool
+	hasVal      bool
+	rangeDefine bool
+
+	initLHS  Node
+	hasInit  bool
+	initRHS  Node
+	define   bool
+	cond     Node
+	hasCond  bool
+	postNode Node
+	hasPost  bool
+}
+
+// parseForInfo decomposes a ForHeader node, mirroring the emitter's parseForHeader.
+func (f *File) parseForInfo(hdr Node) forInfo {
+	var fi forInfo
+	kids := slices.Collect(it(hdr.ast))
+	// `for range x`: opens with the keyword, no variable.
+	if len(kids) >= 1 && kids[0].sym == 0 && f.ch(kids[0].tok) == RANGE {
+		fi.isRange = true
+		for _, c := range kids {
+			if c.sym == Expression {
+				fi.rangeExpr = c
+			}
+		}
+		return fi
+	}
+	seenSemi := false
+	for _, c := range kids {
+		switch {
+		case c.sym == Expression && !fi.hasCond && !seenSemi:
+			fi.cond, fi.hasCond = c, true // tentative; a tail may reclassify it
+		case c.sym == Expression && seenSemi:
+			fi.cond, fi.hasCond = c, true // the `for ; cond ; post` condition
+		case c.sym == 0 && f.ch(c.tok) == SEMICOLON:
+			seenSemi = true
+			fi.hasCond = false // the leading expr, if any, was not a condition
+		case c.sym == ForPost:
+			fi.postNode, fi.hasPost = c, true
+		case c.sym == ForRest:
+			f.parseForRestInfo(c, &fi)
+		}
+	}
+	return fi
+}
+
+// parseForRestInfo reads the ForRest following the leading Expression.
+func (f *File) parseForRestInfo(n Node, fi *forInfo) {
+	kids := slices.Collect(it(n.ast))
+	// `, val := range x`: the leading expression was the key.
+	if len(kids) >= 1 && kids[0].sym == 0 && f.ch(kids[0].tok) == COMMA {
+		fi.isRange = true
+		fi.keyVar, fi.hasKey = fi.cond, fi.hasCond
+		fi.cond, fi.hasCond = Node{}, false
+		seenRange := false
+		for _, c := range kids {
+			switch {
+			case c.sym == 0 && f.ch(c.tok) == DEFINE:
+				fi.rangeDefine = true
+			case c.sym == 0 && f.ch(c.tok) == RANGE:
+				seenRange = true
+			case c.sym == Expression && !seenRange:
+				fi.valVar, fi.hasVal = c, true
+			case c.sym == Expression && seenRange:
+				fi.rangeExpr = c
+			}
+		}
+		return
+	}
+	for _, c := range kids {
+		switch {
+		case c.sym == 0 && f.ch(c.tok) == SEMICOLON:
+			// `for expr ; cond ; post`: a bare-expression init.
+			fi.initLHS, fi.hasInit = fi.cond, fi.hasCond
+			fi.cond, fi.hasCond = Node{}, false
+		case c.sym == 0 && f.ch(c.tok) == DEFINE:
+			fi.define = true
+		case c.sym == ForAssignRest:
+			f.parseForAssignRestInfo(c, fi)
+		case c.sym == Expression:
+			fi.cond, fi.hasCond = c, true
+		case c.sym == ForPost:
+			fi.postNode, fi.hasPost = c, true
+		}
+	}
+}
+
+// parseForAssignRestInfo reads what follows `:=`/`=`: `range x`, or the RHS,
+// condition and post of a three-clause.
+func (f *File) parseForAssignRestInfo(n Node, fi *forInfo) {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) >= 1 && kids[0].sym == 0 && f.ch(kids[0].tok) == RANGE {
+		fi.isRange = true
+		fi.keyVar, fi.hasKey = fi.cond, fi.hasCond
+		fi.rangeDefine = fi.define
+		fi.cond, fi.hasCond = Node{}, false
+		for _, c := range kids {
+			if c.sym == Expression {
+				fi.rangeExpr = c
+			}
+		}
+		return
+	}
+	fi.initLHS, fi.hasInit = fi.cond, fi.hasCond
+	fi.cond, fi.hasCond = Node{}, false
+	semis := 0
+	for _, c := range kids {
+		switch {
+		case c.sym == 0 && f.ch(c.tok) == SEMICOLON:
+			semis++
+		case c.sym == Expression && semis == 0:
+			fi.initRHS = c
+		case c.sym == Expression && semis == 1:
+			fi.cond, fi.hasCond = c, true
+		case c.sym == ForPost:
+			fi.postNode, fi.hasPost = c, true
+		}
+	}
+}
+
+// forHasCond reports whether a "for" statement falls through rather than looping
+// forever: a range loop always ends, a conditional or three-clause loop ends when
+// its condition is false, and only a conditionless `for {}` (or an empty
+// three-clause) loops until a break.
 func (f *File) forHasCond(stmt Node) bool {
 	for c := range it(stmt.ast) {
 		if c.sym != ForHeader {
 			continue
 		}
-		lead := false
-		for h := range it(c.ast) {
-			switch h.sym {
-			case Expression:
-				lead = true
-			case ForClause:
-				semis := 0
-				for q := range it(h.ast) {
-					switch {
-					case q.sym == 0 && f.ch(q.tok) == SEMICOLON:
-						semis++
-					case q.sym == Expression && semis == 1:
-						return true
-					}
-				}
-				return false // a clause whose middle part is empty
-			}
-		}
-		return lead
+		fi := f.parseForInfo(c)
+		return fi.isRange || fi.hasCond
 	}
 	return false
 }
@@ -1472,53 +1584,95 @@ func kindName(k Kind) string {
 	return "?"
 }
 
-// checkForHeader checks a "for" header. A three-clause header introduces its init
-// variable into a scope spanning the condition, the post statement and the body,
-// which is why the caller passes the loop's scope rather than the enclosing one.
+// checkForHeader checks a "for" header. A three-clause or range header introduces
+// its variables into a scope spanning the condition, the post statement and the
+// body, which is why the caller passes the loop's scope rather than the enclosing
+// one.
 func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) {
-	var lead Node
-	haveLead := false
-	for h := range it(n.ast) {
-		switch h.sym {
-		case Expression:
-			if !haveLead {
-				lead, haveLead = h, true
-				continue
-			}
-			// The `for ; cond ; post` form: the leading expression is the condition.
-			f.checkCondition(s, kw, h)
-		case ForClause:
-			f.checkForClause(s, kw, lead, haveLead, h)
-			return
-		case ForPost:
-			f.checkForPost(s, h)
-		}
+	fi := f.parseForInfo(n)
+	if fi.isRange {
+		f.checkRange(s, kw, fi)
+		return
 	}
-	if haveLead {
-		f.checkCondition(s, kw, lead) // no clause followed, so it was the condition
+	if fi.hasInit {
+		f.checkNames(s, fi.initRHS)
+		f.declareForInitVar(s, fi.initLHS, fi.initRHS, fi.define)
+	}
+	if fi.hasCond {
+		f.checkCondition(s, kw, fi.cond)
+	}
+	if fi.hasPost {
+		f.checkForPost(s, fi.postNode)
 	}
 }
 
-// checkForClause checks the three-clause header whose init left-hand side was
-// parsed as the leading expression.
-func (f *File) checkForClause(s *Scope, kw string, lhs Node, haveLHS bool, n Node) {
-	semis, define := 0, false
-	for q := range it(n.ast) {
-		switch {
-		case q.sym == 0 && f.ch(q.tok) == SEMICOLON:
-			semis++
-		case q.sym == 0 && f.ch(q.tok) == DEFINE:
-			define = true
-		case q.sym == Expression && semis == 0:
-			f.checkNames(s, q)
-			if haveLHS {
-				f.declareForInitVar(s, lhs, q, define)
-			}
-		case q.sym == Expression && semis == 1:
-			f.checkCondition(s, kw, q)
-		case q.sym == ForPost:
-			f.checkForPost(s, q)
+// checkRange checks a range header: the ranged operand is an integer, a slice or
+// an array, and the key and value variables are introduced with the index and
+// element types. An integer range yields only the index. The distinction between a
+// slice and an array does not matter here -- both give an int index and an element
+// -- and the emitter determines the exact C types, so the checker stays
+// conservative: it declares the variables and rejects the clear errors, ranging a
+// channel and a value variable over an integer.
+func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
+	f.checkNames(s, fi.rangeExpr)
+	elem, hasElem, isInt := f.rangeElem(s, fi.rangeExpr)
+	if fi.hasKey && fi.rangeDefine {
+		f.declareRangeVar(s, fi.keyVar, PredeclaredInt32, true)
+	} else if fi.hasKey {
+		f.checkNames(s, fi.keyVar)
+	}
+	if fi.hasVal {
+		if isInt {
+			f.err(f.tok(fi.valVar.Pos()).Position(), "range over integer permits only one iteration variable")
 		}
+		// Declare the value variable even in the rejected integer case, so a use of
+		// it in the body does not pile a second "undefined" error on the first.
+		if fi.rangeDefine {
+			f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt)
+		} else {
+			f.checkNames(s, fi.valVar)
+		}
+	}
+}
+
+// rangeElem classifies a range operand: an aggregate (slice or array) yields its
+// element kind, an integer yields isInt. A channel is rejected.
+func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt bool) {
+	if id, ok := f.exprSoleIdent(expr); ok {
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			switch {
+			case d.isChan:
+				f.err(id.Position(), "cannot range over a channel")
+				return 0, false, false
+			case d.isPtr:
+				f.err(id.Position(), "cannot range over a pointer")
+				return 0, false, false
+			case d.hasElemKind:
+				return d.elemKind, true, false // slice or array
+			}
+		}
+	}
+	if k, ok := f.exprType(s, expr); ok && kindCategory(k) == catNumeric {
+		return 0, false, true
+	}
+	// An operand whose kind cannot be pinned down (a make() slice, a complex
+	// expression) is left to the emitter, which infers its C type directly.
+	return 0, false, false
+}
+
+// declareRangeVar introduces a range key or value variable. A `:=` range declares
+// them; a plain `=` assigns existing ones (handled by the caller).
+func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool) {
+	id, ok := f.exprSoleIdent(v)
+	if !ok {
+		f.checkNames(s, v)
+		return
+	}
+	if id.Src() == "_" {
+		return
+	}
+	if err := s.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind}); err != nil {
+		f.err(id.Position(), "%s", err)
 	}
 }
 

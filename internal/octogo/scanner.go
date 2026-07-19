@@ -78,6 +78,7 @@ const (
 	IF        = TOK_if        // "if"
 	IMPORT    = TOK_import    // "import"
 	INTERFACE = TOK_interface // "interface"
+	RANGE     = TOK_range     // "range"
 	RETURN    = TOK_return    // "return"
 	SELECT    = TOK_select    // "select"
 	STRUCT    = TOK_struct    // "struct"

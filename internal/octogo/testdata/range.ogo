@@ -1,0 +1,44 @@
+// A "for ... range" loop iterates over an integer, a slice or an array. Ranging an
+// integer yields only the index; a slice or array also offers the element as a
+// second variable. A variable introduced by ":=" in the header is scoped to the
+// loop.
+
+func over_int() {
+	sum := 0
+	for i := range 5 {
+		sum = sum + i
+	}
+	println(sum)
+}
+
+func over_slice() {
+	s := make([]int, 3, 3)
+	for i, v := range s {
+		println(i + v)
+	}
+}
+
+func no_variable() {
+	n := 0
+	for range 4 {
+		n++
+	}
+	println(n)
+}
+
+// Ranging an integer permits only the index.
+func int_two_vars() {
+	// ERROR "range over integer permits only one iteration variable"
+	for i, v := range 3 {
+		println(i + v)
+	}
+}
+
+// A channel has no close, so it cannot be ranged.
+func over_channel() {
+	var ch chan int
+	// ERROR "cannot range over a channel"
+	for v := range ch {
+		println(v)
+	}
+}

@@ -1,4 +1,4 @@
-// ERROR unexpected identifier "package"
+// ERROR "package" \[identifier\]: expected
 package main
 
 import "p2"

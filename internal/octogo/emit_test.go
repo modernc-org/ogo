@@ -3910,3 +3910,45 @@ func TestEmitCForThreeClause(t *testing.T) {
 		}
 	}
 }
+
+// TestEmitCRange pins the range forms. Each becomes a counting loop. Ranging an
+// integer counts to it; ranging a slice counts to its length, read from one
+// evaluation hoisted to a temporary; ranging a two-variable slice or array copies
+// the element into the value variable at the top of each iteration. `for range n`
+// repeats without a variable, using a hidden counter.
+func TestEmitCRange(t *testing.T) {
+	src := `func main() {
+	for i := range 3 {
+		println(i)
+	}
+	s := make([]int, 2, 2)
+	for i, v := range s {
+		println(i + v)
+	}
+	var a [2]int
+	for _, v := range a {
+		println(v)
+	}
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"\tint _ogo_t0 = 3;\n\tfor (int i = 0; i < _ogo_t0; i++) {\n",
+		"\tfor (int i = 0; i < _ogo_t1.len; i++) {\n\t\tint v = _ogo_t1.ptr[i];\n",
+		"\tfor (int _ogo_t2 = 0; _ogo_t2 < 2; _ogo_t2++) {\n\t\tint v = a[_ogo_t2];\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC range: missing %q in\n%s", want, got)
+		}
+	}
+}
