@@ -974,6 +974,7 @@ type emitter struct {
 	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	printSliceElems map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
 	defers          []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
+	inSwitchCase    bool                     // emitting a switch case body, where the if/else lowering gives break a different meaning
 	deferBlockDepth int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
 	deferReplay     int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
 	deferReplayArgs []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
@@ -2059,6 +2060,22 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitDefer(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == GO:
 		e.emitGo(nodes)
+	case first.sym == 0 && e.f.ch(first.tok) == BREAK:
+		// A switch is lowered to a chain of conditionals, not a C switch, so a C
+		// break inside one would leave an enclosing loop instead of the switch --
+		// a silent difference. The checker allows break there, as Go does, so it is
+		// refused here where the lowering is known.
+		if e.inSwitchCase {
+			e.fail("break inside a switch is not supported yet")
+			return
+		}
+		e.ind()
+		e.emit("break;\n")
+	case first.sym == 0 && e.f.ch(first.tok) == CONTINUE:
+		// Unaffected by the switch lowering: a C continue names the enclosing loop
+		// either way, exactly as Go's does.
+		e.ind()
+		e.emit("continue;\n")
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == 0:
@@ -2990,7 +3007,11 @@ func (e *emitter) emitFor(nodes []Node) {
 	}
 	e.indent++
 	e.deferBlockDepth++
+	// Inside the loop a break names the loop again, even within a switch case.
+	savedSwitch := e.inSwitchCase
+	e.inSwitchCase = false
 	e.emitBlockStmts(body)
+	e.inSwitchCase = savedSwitch
 	e.deferBlockDepth--
 	e.indent--
 	e.ind()
@@ -3192,6 +3213,11 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 
 // emitCaseBody emits the statements of a case clause (those following its ":").
 func (e *emitter) emitCaseBody(cc []int32) {
+	// A break written here names the switch, which the if/else lowering cannot
+	// express; emitStatement refuses it while this is set.
+	saved := e.inSwitchCase
+	e.inSwitchCase = true
+	defer func() { e.inSwitchCase = saved }()
 	e.deferBlockDepth++
 	defer func() { e.deferBlockDepth-- }()
 	for n := range it(cc) {

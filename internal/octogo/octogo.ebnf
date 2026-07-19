@@ -81,6 +81,8 @@ Statement = VarDecl
 	| TypeDecl
 	| IfStmt
 	| "for" [ Expression ] Block
+	| "break"
+	| "continue"
 	| "return" [ ExpressionList ]
 	| "go" AssignHead { Selector | Index | CallSuffix }
 	| SwitchStmt

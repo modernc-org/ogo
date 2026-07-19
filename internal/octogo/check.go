@@ -198,7 +198,8 @@ type File struct {
 	hasInvalidImports bool
 	inArrayBound      bool              // evaluating an array length: suppress "is not a constant"
 	inCaseExpr        bool              // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
-	loopDepth         int               // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected
+	loopDepth         int               // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
+	switchDepth       int               // number of enclosing "switch" statements, so a "break" in one is recognised as placed
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	parser            Parser
@@ -863,9 +864,9 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 	case isReturn:
 		return true
 	case isFor:
-		// A conditionless "for" loops forever; a conditional one falls through
-		// when its condition is false. No break exists to exit either.
-		return exprCount == 0
+		// A conditionless "for" loops forever unless something breaks out of it; a
+		// conditional one falls through when its condition is false.
+		return exprCount == 0 && !(len(blocks) == 1 && f.containsBreak(blocks[0]))
 	case hasIf:
 		return f.ifStmtIsTerminating(ifStmt)
 	case hasSwitch:
@@ -983,6 +984,30 @@ func (f *File) isPanicCall(head, postfix Node) bool {
 	return ok && id.Src() == "panic"
 }
 
+// containsBreak reports whether a loop body contains a break that leaves *that*
+// loop. It does not descend into a nested for, switch or select: without labels a
+// break names the innermost enclosing one, so a break inside those leaves them
+// instead.
+func (f *File) containsBreak(n Node) bool {
+	for c := range it(n.ast) {
+		switch c.sym {
+		case SwitchStmt, SelectStmt:
+			continue
+		case 0:
+			switch f.ch(c.tok) {
+			case BREAK:
+				return true
+			case FOR:
+				return false // this statement is a nested loop; its breaks are its own
+			}
+		}
+		if f.containsBreak(c) {
+			return true
+		}
+	}
+	return false
+}
+
 // checkBlock walks the statements of a block, or of a case or comm clause body,
 // type-checking each and reporting the first statement made unreachable by a
 // preceding terminating statement in the same list. The caller provides the
@@ -1087,6 +1112,17 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			case FOR:
 				condKw = f.tok(c.tok).Src()
 				isFor = true
+			case BREAK:
+				// A break leaves the innermost enclosing for or switch. OctoGo has no
+				// labels, so there is nothing else it could name.
+				if f.loopDepth == 0 && f.switchDepth == 0 {
+					f.err(f.tok(c.tok).Position(), "break is not in a loop or switch")
+				}
+			case CONTINUE:
+				// A continue names a loop, and only a loop.
+				if f.loopDepth == 0 {
+					f.err(f.tok(c.tok).Position(), "continue is not in a loop")
+				}
 			case DEFER:
 				// "defer" is resolved statically at compile time (no runtime defer
 				// stack), so it is supported -- except inside a "for" loop, where the
@@ -1663,7 +1699,11 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 			if guardOK {
 				f.checkCaseExprs(ss, guardKind, c)
 			}
+			// A break inside a case names the switch, so the body is checked one
+			// switch level deeper.
+			f.switchDepth++
 			f.checkClauseBody(ss.child(), results, c)
+			f.switchDepth--
 		}
 	}
 	f.reportDuplicateCases(ss, n)

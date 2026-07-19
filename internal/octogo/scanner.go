@@ -64,7 +64,9 @@ const (
 	EQL       = TOK_003d003d  // "=="
 	GEQ       = TOK_003e003d  // ">="
 	SHR       = TOK_003e003e  // ">>"
+	BREAK     = TOK_break     // "break"
 	CASE      = TOK_case      // "case"
+	CONTINUE  = TOK_continue  // "continue"
 	CHAN      = TOK_chan      // "chan"
 	CONST     = TOK_const     // "const"
 	DEFAULT   = TOK_default   // "default"
@@ -562,8 +564,8 @@ out:
 				case
 					INC, // "++"
 					DEC, // "--"
-					//TODO TOK_break
-					//TODO TOK_continue
+					BREAK,
+					CONTINUE,
 					//TODO TOK_fallthrough
 					//TODO? imag_lit,
 					RPAREN, // ')'

@@ -10,13 +10,14 @@
 //
 // TODO 20260307 Keywords: +?map +?range
 // TODO 20260307 Numeric type: +float,float32
-// TODO 20260307 For statements: extend
+// TODO 20260307 For statements: extend (3-clause "for i := 0; i < n; i++", and range)
 // TODO 20260307 Return statements: ? disable naked returns
 // TODO 20260307 Return statements: Expression -> ExpressionList
 // TODO 20260317 labels and gotos
 // TODO 20260719 Channels: package-level channels need an init pass before main
 // TODO 20260719 Select: send clauses, and smart-pin clauses
 // TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
+// TODO 20260719 Break statements: allowed in a switch once switch stops lowering to if/else
 
 // # OctoGo Language Specification (Draft Jul 19, 2026)
 //
@@ -133,13 +134,12 @@
 //
 // The following keywords are reserved and may not be used as identifiers.
 // (Note: Keywords like package, goto, map, and range have been intentionally
-// omitted from OctoGo to simplify the grammar and runtime. "defer" is reserved
-// and parsed for LL(1) simplicity but rejected by the semantic checker, as the
-// zero-allocation target cannot accumulate deferred calls):
+// omitted from OctoGo to simplify the grammar and runtime):
 //
-//	case        default     func        interface   select      type
-//	chan        defer       go          import      struct      var
-//	const       else        if          return      switch
+//	break       const       else        func        if          return      switch
+//	case        continue    fallthrough go          import      select      type
+//	chan        default     for         interface   struct      var
+//	defer
 //
 // # Operators and punctuation
 //
@@ -618,6 +618,8 @@
 //		| TypeDecl
 //		| IfStmt
 //		| "for" [ Expression ] Block
+//		| "break"
+//		| "continue"
 //		| "return" [ ExpressionList ]
 //		| "go" AssignHead { Selector | Index | CallSuffix }
 //		| SwitchStmt
@@ -627,6 +629,20 @@
 //		| "defer" AssignHead { Selector | Index | CallSuffix }
 //		| Block
 //		| EmptyStatement .
+//
+// # Break and Continue Statements
+//
+// A "break" statement terminates execution of the innermost enclosing "for"
+// statement. A "continue" statement begins the next iteration of the innermost
+// enclosing "for" statement. Both appear in the Statement production above.
+//
+// (OctoGo Specific): Unlike Go, "break" may not appear in a "switch" statement.
+// A switch is lowered to a chain of conditionals rather than to a C switch, so
+// the two constructs do not share a notion of what "break" leaves; a break there
+// is rejected rather than silently leaving an enclosing loop. A "continue" inside
+// a switch is unaffected, since it names the enclosing loop either way.
+//
+// Neither statement takes a label, since OctoGo has no labels.
 //
 // # Defer Statements
 //

@@ -179,6 +179,31 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "break and continue",
+			src: `func main() {
+	i := 0
+	for {
+		i++
+		if i > 2 {
+			break
+		}
+	}
+	n := 0
+	j := 0
+	for j < 5 {
+		j++
+		if j == 2 {
+			continue
+		}
+		n = n + j
+	}
+	println(i)
+	println(n)
+}
+`,
+			want: "3\n13\n",
+		},
+		{
 			name: "index out of range traps",
 			src: `func main() {
 	s := make([]int, 2, 2)
