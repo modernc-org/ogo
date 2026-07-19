@@ -1,0 +1,23 @@
+// COMPILE
+
+// A raw string literal is delimited by back quotes. Its value is the verbatim
+// text between them (carriage returns discarded), with no escape processing: a
+// backslash stands for itself, so `\n` is two characters, not a newline. Raw and
+// interpreted strings are the same type and interoperate.
+
+const Path = `C:\dev\ogo`
+
+const Multi = `first
+second`
+
+func use() {
+	greet := `hello, world`
+	println(greet)
+	println(Path)
+	println(Multi)
+	// A raw string participates in constant folding and the string builtins like
+	// any other string constant.
+	println(`a` + `b` + `c`)
+	println(len(`abcde`))
+	println(`interpreted joins raw: ` + "ok")
+}

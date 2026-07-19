@@ -302,6 +302,23 @@ func main() {
 			want: "hello, world\nabc\n6\n",
 		},
 		{
+			// The src is a double-quoted Go string because it contains back-quoted
+			// raw strings, which a Go raw string cannot hold. Inside it, "\\n" is a
+			// literal backslash-n in the OctoGo raw string, and the embedded newline
+			// makes a genuine multi-line raw string.
+			name: "raw string literals",
+			src: "const Path = `C:\\dev\\ogo`\n\n" +
+				"func main() {\n" +
+				"\tprintln(`raw`)\n" +
+				"\tprintln(Path)\n" +
+				"\tprintln(`no \\n escape`)\n" +
+				"\tprintln(len(`abcde`))\n" +
+				"\tprintln(`a` + `b`)\n" +
+				"\tprintln(`line1\nline2`)\n" +
+				"}\n",
+			want: "raw\nC:\\dev\\ogo\nno \\n escape\n5\nab\nline1\nline2\n",
+		},
+		{
 			name: "numeric conversions",
 			src: `func main() {
 	var b byte = 200

@@ -4266,3 +4266,29 @@ func main() {
 		t.Errorf("EmitC: a used named result must still be declared:\n%s", got)
 	}
 }
+
+func TestEmitCRawString(t *testing.T) {
+	// src is a double-quoted Go string because it holds back-quoted raw strings.
+	// Inside it "\\b" is a literal backslash-b and the embedded newline makes a
+	// multi-line raw string.
+	src := "func main() {\n\ts := `a\\b`\n\tu := `x\ny`\n\tprintln(s, u)\n}\n"
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		// A raw string is decoded and re-quoted for C: the backslash survives (and
+		// counts once toward the length), the embedded newline becomes \n.
+		`(ogo_string){"a\\b", 3}`,
+		`(ogo_string){"x\ny", 3}`,
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC raw string: missing %q in\n%s", want, got)
+		}
+	}
+}

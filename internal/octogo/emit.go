@@ -5782,7 +5782,11 @@ func (e *emitter) emitFoldedString(v string) {
 func (e *emitter) emitStringLit(tok int32) {
 	src := e.src(tok)
 	if len(src) != 0 && src[0] == '`' {
-		e.fail("raw string literals are not supported yet")
+		// A raw string is verbatim between the back quotes, with carriage returns
+		// discarded (Go spec) and no escape processing. Its text is not a valid C
+		// literal as-is (it may hold real newlines and unescaped backslashes), so
+		// decode it and re-quote through the same path a folded string uses.
+		e.emitFoldedString(strings.ReplaceAll(src[1:len(src)-1], "\r", ""))
 		return
 	}
 	decoded, err := strconv.Unquote(src)
