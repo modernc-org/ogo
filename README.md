@@ -1,6 +1,3 @@
-![heart](sponsors/heart.png "heart")
-[Github Sponsors Account](https://github.com/sponsors/j-modernc-org) /  j-modernc-org
-
 The repository you are currently viewing might be a mirror. Please review the guidelines below based on where you are viewing this:
 
 | Platform | Role | Contributing Guidelines |
