@@ -1748,6 +1748,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.emit(proto + " {\n")
 	e.indent++
 	e.emitParamCopies(sig)
+	e.emitParamVoids(sig)
 	e.declareNamedResults(sig, body)
 	// A bare "return" (legal only when every result is named) returns these. A
 	// blank result "_" has no C variable, so it contributes its zero value.
@@ -2055,17 +2056,9 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 // entry (see emitParamCopies) to restore the value semantics.
 func (e *emitter) cParamList(ast []int32) []string {
 	var out []string
-	e.forEachParam(ast, func(name string, ta []int32) {
+	e.forEachParam(ast, func(name string, ta []int32, _ bool) {
 		if elem, _, ok := e.arrayType(ta); ok {
-			if name == "" {
-				out = append(out, elem+"*") // unnamed array parameter, received by pointer
-				return
-			}
 			out = append(out, elem+"* "+paramArgName(name))
-			return
-		}
-		if name == "" {
-			out = append(out, e.cType(ta)) // unnamed parameter: type only, flexcc accepts it
 			return
 		}
 		out = append(out, e.cType(ta)+" "+name)
@@ -2077,21 +2070,32 @@ func (e *emitter) cParamList(ast []int32) []string {
 // with each parameter's name and C type (a shared type "a, b int" yields two
 // calls). It underlies both the C parameter rendering (cParamList) and the local
 // type environment (bindParams).
-func (e *emitter) forEachParam(ast []int32, fn func(name string, typeAST []int32)) {
+func (e *emitter) forEachParam(ast []int32, fn func(name string, typeAST []int32, synthetic bool)) {
+	i := 0
 	for _, d := range e.f.paramDecls(ast) {
 		if len(d.Names) == 0 {
-			fn("", d.TypeAST.ast) // an unnamed parameter -- emitted type-only
+			fn(unnamedParamName(i), d.TypeAST.ast, true)
+			i++
 			continue
 		}
 		for _, nm := range d.Names {
 			name := nm.Src()
 			if name == "_" {
-				name = "" // a blank parameter is unused, like an unnamed one
+				fn(unnamedParamName(i), d.TypeAST.ast, true)
+			} else {
+				fn(name, d.TypeAST.ast, false)
 			}
-			fn(name, d.TypeAST.ast)
+			i++
 		}
 	}
 }
+
+// unnamedParamName is the synthetic C name of the i-th parameter when it is
+// unnamed or blank ("_"). flexcc miscompiles a definition that leaves a parameter
+// unnamed -- it drops that parameter's argument slot and shifts every following
+// argument -- so each such parameter is given a name (and a "(void)" reference in
+// the body, since the source never uses it, to stay -Wunused-parameter clean).
+func unnamedParamName(i int) string { return "_ogo_unused" + strconv.Itoa(i) }
 
 // paramArgName is the C name of a value-array parameter as it is received (a
 // pointer), distinct from the local copy the body sees under the source name.
@@ -2108,8 +2112,8 @@ func (e *emitter) bindParams(sig []int32) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
-				e.forEachParam(n.ast, func(name string, ta []int32) {
-					if name == "" {
+				e.forEachParam(n.ast, func(name string, ta []int32, synthetic bool) {
+					if synthetic {
 						return // an unnamed parameter binds nothing; the body cannot name it
 					}
 					if elem, bound, ok := e.arrayType(ta); ok {
@@ -2140,8 +2144,8 @@ func (e *emitter) emitParamCopies(sig []int32) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
-				e.forEachParam(n.ast, func(name string, ta []int32) {
-					if name == "" {
+				e.forEachParam(n.ast, func(name string, ta []int32, synthetic bool) {
+					if synthetic {
 						return // an unnamed array parameter has no in-body copy
 					}
 					if elem, bound, ok := e.arrayType(ta); ok {
@@ -2151,6 +2155,35 @@ func (e *emitter) emitParamCopies(sig []int32) {
 						e.ind()
 						e.emit("memcpy(" + name + ", " + paramArgName(name) + ", sizeof(" + name + "));\n")
 					}
+				})
+			}
+		case 0:
+			if e.f.ch(n.tok) == RPAREN {
+				seenRPar = true
+			}
+		}
+	}
+}
+
+// emitParamVoids emits a "(void)name;" for every synthetic (unnamed or blank)
+// parameter, so the names forced on them for flexcc (see unnamedParamName) do not
+// trip -Wunused-parameter. It reads only the parameter list, not the results.
+func (e *emitter) emitParamVoids(sig []int32) {
+	seenRPar := false
+	for n := range it(sig) {
+		switch n.sym {
+		case ParameterList:
+			if !seenRPar {
+				e.forEachParam(n.ast, func(name string, ta []int32, synthetic bool) {
+					if !synthetic {
+						return
+					}
+					cname := name
+					if _, _, ok := e.arrayType(ta); ok {
+						cname = paramArgName(name) // an array parameter is received by pointer
+					}
+					e.ind()
+					e.emit("(void)" + cname + ";\n")
 				})
 			}
 		case 0:

@@ -4316,10 +4316,13 @@ func main() {
 		t.Fatalf("EmitC: %v", err)
 	}
 	for _, want := range []string{
-		// An unnamed parameter emits its type with no name (flexcc and gcc both
-		// accept it in a definition); a blank "_" parameter is treated the same.
-		"int f(int, int) {\n",
-		"int g(int a, int) {\n",
+		// An unnamed (or blank) parameter is given a synthetic name so flexcc keeps
+		// its argument slot -- leaving it unnamed makes flexcc drop the slot and
+		// shift the following arguments -- with a "(void)" to stay warning-clean.
+		"int f(int _ogo_unused0, int _ogo_unused1) {\n",
+		"\t(void)_ogo_unused0;\n",
+		"int g(int a, int _ogo_unused1) {\n",
+		"\t(void)_ogo_unused1;\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC unnamed params: missing %q in\n%s", want, got)
