@@ -86,13 +86,3 @@ OctoGo is a source-to-source compiler (transpiler) written in Go.
 3. Run `ogo build blinky/` to compile and generate your P2 binary.
 
 *(Note: Testing is built-in. Files ending in \_test.ogo are automatically recognized as test files).*
-
-## **Sponsorship & Support**
-
-OctoGo is an open-source labor of love dedicated to the Parallax community. Its continued development, standard library expansion, and maintenance rely on community and corporate support.
-
-If OctoGo makes your Propeller 2 development faster, easier, or more enjoyable, please consider supporting the project:
-
-* **☕ Hobbyist ($5/mo):** Support ongoing open-source development.  
-* **🛠️ Maker ($15/mo):** Funds the purchase of test hardware, sensors, and dev boards to expand the p2 standard library.  
-* **🏢 Corporate Sponsor ($100+/mo):** For businesses relying on OctoGo. Includes priority bug fixes, roadmap input, and prominent logo placement.
