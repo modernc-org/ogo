@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all clean edit editor test generate
+.PHONY:	all board clean edit editor test generate
 
 all:
 
@@ -32,3 +32,10 @@ test:
 	go install
 	ogo fmt -l -w --exclude='\/testdata\/' .
 	go test -timeout 24h -count=1 -failfast ./...
+
+# board runs the emitRunCases table on a real Propeller 2 board (ogo build ->
+# flexcc -> loadp2), checking each program's serial output. Needs a connected P2
+# on OGO_BOARD_PORT (default /dev/ttyUSB0) and the user in the dialout group. It
+# is separate from `test` because it needs hardware; `go test ./...` skips it.
+board:
+	OGO_BOARD_PORT=$${OGO_BOARD_PORT:-/dev/ttyUSB0} go test -v -count=1 -timeout 10m -run TestOnBoard ./internal/octogo/
