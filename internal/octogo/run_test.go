@@ -209,6 +209,25 @@ func main() {
 			want: "0 1 2\n1024 1048576\n0 2 4\n",
 		},
 		{
+			name: "unnamed multiple results",
+			src: `func divmod(a int, b int) (int, int) {
+	return a / b, a % b
+}
+
+func bounds(lo int, hi int) (int, int, bool) {
+	return lo, hi, lo <= hi
+}
+
+func main() {
+	q, r := divmod(17, 5)
+	println(q, r)
+	x, y, ok := bounds(3, 8)
+	println(x, y, ok)
+}
+`,
+			want: "3 2\n3 8 true\n",
+		},
+		{
 			name: "multiple-value assignment and swap",
 			src: `func main() {
 	a := 1

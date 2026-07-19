@@ -1,0 +1,40 @@
+// COMPILE
+
+// A parenthesized result list may leave its results unnamed. "(int, int)" is two
+// values; a single result keeps the parens-free form "int".
+func divmod(a int, b int) (int, int) {
+	return a / b, a % b
+}
+
+func inc(a int) int {
+	return a + 1
+}
+
+// Unnamed results may differ in type and include named types.
+type Celsius int
+
+func classify(t Celsius) (Celsius, bool) {
+	return t, t > 0
+}
+
+// Named results still work, both fully written out and sharing a type.
+func minmax(a int, b int) (min int, max int) {
+	if a < b {
+		return a, b
+	}
+	return b, a
+}
+
+func split(x int) (lo, hi int) {
+	lo = x / 2
+	hi = x - lo
+	return lo, hi
+}
+
+func use() {
+	q, r := divmod(17, 5)
+	c, ok := classify(7)
+	lo, hi := minmax(3, 8)
+	a, b := split(10)
+	println(inc(q), r, int(c), ok, lo, hi, a, b)
+}

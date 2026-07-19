@@ -39,7 +39,7 @@ StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
 FieldDecl = "*" [ identifier "." ] identifier
 	| identifier [ "." identifier | { "," identifier } Type ] .
 InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
-MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 Block = "{" { Statement ";" } [ Statement ] "}" .
 TopLevelDecl = FuncDecl | VarDecl | ConstDecl | TypeDecl .
 VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
@@ -49,10 +49,12 @@ ConstSpec = identifier [ Type ] [ "=" Expression ] .
 TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 TypeSpec = identifier [ "=" ] Type .
 FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
-Signature      = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 Receiver       = "(" identifier Type ")" .
 ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 IdentifierList = identifier { "," identifier } .
+ResultList     = ResultParam { "," ResultParam } .
+ResultParam    = Type [ Type ] .
 ExpressionList = Expression { "," Expression } .
 Expression     = SimpleExpr { RelOp SimpleExpr } .
 SimpleExpr     = Term { AddOp Term } .

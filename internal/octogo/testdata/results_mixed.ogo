@@ -1,0 +1,12 @@
+// A parenthesized result list is either all named or all unnamed; a named result
+// followed by a bare type, as below, leaves the trailing type with no name to
+// bind and no type of its own to inherit, so it is rejected (like Go's "missing
+// parameter type"). Note that "(int, a int)" is instead accepted: there the bare
+// "int" is a result named int sharing the following result's type.
+
+// ERROR "missing type for function result string"
+func mixed() (a int, string)
+
+func main() {
+	println(1)
+}

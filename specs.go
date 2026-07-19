@@ -381,7 +381,7 @@
 // type ~ operators. Interfaces strictly define method sets).
 //
 //	InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
-//	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+//	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 //
 // # Channel types
 //
@@ -521,10 +521,19 @@
 // receiver's base type.
 //
 //	FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
-//	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+//	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 //	Receiver       = "(" identifier Type ")" .
 //	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
 //	IdentifierList = identifier { "," identifier } .
+//	ResultList     = ResultParam { "," ResultParam } .
+//	ResultParam    = Type [ Type ] .
+//
+// A parenthesized result list may name its results or leave them unnamed, but
+// not both: "(a, b int)" and "(int, int)" are the two-value forms, while
+// "(a int, string)" is illegal. Each ResultParam is one type, optionally
+// preceded by a name; the whole list is named when any ResultParam carries a
+// name, in which case a bare ResultParam is a name sharing the next named
+// result's type ("(a, b int)"). Parameters, by contrast, are always named.
 //
 // If the function declaration omits the Block, it provides the signature for a
 // function implemented externally (e.g., in the transpiled C runtime or PASM).

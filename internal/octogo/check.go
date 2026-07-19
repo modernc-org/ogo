@@ -4284,28 +4284,22 @@ type SignatureNode struct {
 
 func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 	r = &SignatureNode{}
-	// Signature = "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
-	// The first ")" separates parameters from results, so a ParameterList seen
-	// after it is the result list.
-	seenRPar := false
+	// Signature = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
+	// Parameters are the only ParameterList; results are a single Type or a
+	// parenthesized ResultList.
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ParameterList:
-			switch {
-			case seenRPar:
-				r.Results = f.parameterList(s, n)
-			default:
-				r.Params = f.parameterList(s, n)
-			}
+			r.Params = f.parameterList(s, n)
+		case ResultList:
+			r.Results = f.resultList(s, n)
 		case Type:
 			// A single unnamed result: Signature = "(" [...] ")" Type .
 			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
 		case 0:
 			switch f.ch(n.tok) {
-			case LPAREN:
-				// ok
-			case RPAREN:
-				seenRPar = true
+			case LPAREN, RPAREN:
+				// structural
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}
@@ -4314,6 +4308,116 @@ func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 		}
 	}
 	return r
+}
+
+// resultList builds a ParameterListNode from a ResultList AST, reconciling named
+// and unnamed results (see resultDecls) into the same shape a ParameterList
+// yields. It resolves each result's type; declareParamList declares the named
+// ones, and an unnamed result declares nothing.
+func (f *File) resultList(s *Scope, n Node) (r *ParameterListNode) {
+	r = &ParameterListNode{}
+	for _, d := range f.resultDecls(n) {
+		r.List = append(r.List, ParameterDeclNode{Names: d.Names, TypeNode: f.typ(s, d.TypeAST)})
+	}
+	return r
+}
+
+// resultDecl is one reconciled entry of a ResultList: an unnamed result (Names
+// empty) or one or more names sharing a type.
+type resultDecl struct {
+	Names   []Token // empty => an unnamed result
+	TypeAST Node    // the Type subtree for this result's type
+}
+
+// resultDecls reconciles a ResultList AST into result declarations, applying the
+// rule that a parenthesized result list is either all named or all unnamed. Each
+// ResultParam is "Type [ Type ]": with a second Type the first is a name, so the
+// whole list is named and a bare ResultParam is a name sharing the next named
+// result's type ("(a, b int)"); with no second Type anywhere the list is unnamed
+// ("(int, int)"). It is purely syntactic and errors only on a malformed mix.
+func (f *File) resultDecls(n Node) (out []resultDecl) {
+	type group struct {
+		t1, t2 Node
+		has2   bool
+	}
+	var groups []group
+	for c := range it(n.ast) {
+		if c.sym != ResultParam {
+			continue
+		}
+		var g group
+		i := 0
+		for d := range it(c.ast) {
+			if d.sym != Type {
+				continue
+			}
+			switch i {
+			case 0:
+				g.t1 = d
+			default:
+				g.t2, g.has2 = d, true
+			}
+			i++
+		}
+		groups = append(groups, g)
+	}
+	named := false
+	for _, g := range groups {
+		if g.has2 {
+			named = true
+			break
+		}
+	}
+	if !named {
+		for _, g := range groups {
+			out = append(out, resultDecl{TypeAST: g.t1})
+		}
+		return out
+	}
+	// Named: a bare group's type is a name that shares the next typed group's
+	// type; a typed group closes the run of shared names.
+	var pending []Token
+	for _, g := range groups {
+		name, ok := f.typeIdent(g.t1)
+		if !ok {
+			f.err(f.tok(g.t1.Pos()).Position(), "mixed named and unnamed function results")
+			continue
+		}
+		pending = append(pending, name)
+		if g.has2 {
+			out = append(out, resultDecl{Names: pending, TypeAST: g.t2})
+			pending = nil
+		}
+	}
+	if len(pending) != 0 {
+		f.err(pending[0].Position(), "missing type for function result %s", pending[0].Src())
+	}
+	return out
+}
+
+// typeIdent returns the identifier token of a Type node that is exactly a single
+// unqualified type name, and false for any composite or qualified type — used to
+// reinterpret a bare ResultParam ("Type" with no second Type) as a result name.
+func (f *File) typeIdent(n Node) (Token, bool) {
+	var id Token
+	count := 0
+	for c := range it(n.ast) {
+		switch c.sym {
+		case 0:
+			t := f.tok(c.tok)
+			if Symbol(t.Ch) != IDENT {
+				return Token{}, false // punctuation ("[", "*", ".") => composite/qualified
+			}
+			id = t
+			count++
+		default:
+			return Token{}, false // a nested Type or StructType/InterfaceType => composite
+		}
+	}
+	if count != 1 {
+		return Token{}, false
+	}
+	return id, true
 }
 
 // ReceiverNode describes the Receiver production.
@@ -5761,26 +5865,20 @@ func (f *File) interfaceType(s *Scope, n Node) (r *TypeNodeInterface) {
 // The signature part mirrors Signature: the first ")" separates parameters from
 // results.
 func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
-	seenRPar := false
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ParameterList:
-			switch {
-			case seenRPar:
-				r.Results = f.parameterList(s, n)
-			default:
-				r.Params = f.parameterList(s, n)
-			}
+			r.Params = f.parameterList(s, n)
+		case ResultList:
+			r.Results = f.resultList(s, n)
 		case Type:
 			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
 				r.Name = tok
-			case LPAREN:
-				// ok
-			case RPAREN:
-				seenRPar = true
+			case LPAREN, RPAREN:
+				// structural
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}

@@ -4156,3 +4156,43 @@ func main() {
 		t.Errorf("blank const should be skipped:\n%s", buf.String())
 	}
 }
+
+func TestEmitCUnnamedResults(t *testing.T) {
+	src := `func divmod(a int, b int) (int, int) {
+	return a / b, a % b
+}
+
+func flags(n int) (int, bool) {
+	return n, n > 0
+}
+
+func main() {
+	q, r := divmod(17, 5)
+	v, ok := flags(3)
+	println(q, r, v, ok)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		// An unnamed result list still returns through a result struct, one field
+		// per value, named positionally; the field types come straight from the
+		// unnamed result types (int, then bool as _Bool).
+		"typedef struct { int _0; int _1; } ogo_ret_divmod;\n",
+		"typedef struct { int _0; _Bool _1; } ogo_ret_flags;\n",
+		"ogo_ret_divmod divmod(int a, int b) {\n",
+		"return (ogo_ret_divmod){(a / b), (a % b)};\n",
+		"return (ogo_ret_flags){n, n > 0};\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC unnamed results: missing %q in\n%s", want, got)
+		}
+	}
+}

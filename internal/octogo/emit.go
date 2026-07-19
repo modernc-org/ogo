@@ -1919,22 +1919,27 @@ func (e *emitter) cReturnType(name string, resTypes []string) string {
 // more, a named parameter list.
 func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 	var parts []string
-	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
 		case ParameterList:
-			if seenRPar {
-				e.forEachParam(n.ast, func(_ string, ta []int32) { resTypes = append(resTypes, e.cType(ta)) })
-			} else {
-				parts = e.cParamList(n.ast)
+			// Parameters are the only ParameterList; results are ResultList/Type.
+			parts = e.cParamList(n.ast)
+		case ResultList:
+			for _, d := range e.f.resultDecls(n) {
+				ct := e.cType(d.TypeAST.ast)
+				k := len(d.Names)
+				if k == 0 {
+					k = 1 // an unnamed result is one value
+				}
+				for range k {
+					resTypes = append(resTypes, ct)
+				}
 			}
 		case Type:
 			// A single unnamed result: Signature = "(" [...] ")" Type .
 			resTypes = append(resTypes, e.cType(n.ast))
 		case 0:
-			if e.f.ch(n.tok) == RPAREN {
-				seenRPar = true
-			}
+			// structural "(" / ")"
 		default:
 			e.fail("unsupported signature element %v", n.sym)
 		}
@@ -1943,18 +1948,24 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 }
 
 // resultInfo returns a function's result names and C types (one entry per result
-// value). An unnamed single result has an empty name; a multi-result signature is
-// always named (the grammar requires it).
+// value). An unnamed result has an empty name; a named result contributes its
+// name (a shared "(a, b int)" yields one entry per name).
 func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
-		case ParameterList:
-			if seenRPar {
-				e.forEachParam(n.ast, func(nm string, ta []int32) {
-					names = append(names, nm)
-					types = append(types, e.cType(ta))
-				})
+		case ResultList:
+			for _, d := range e.f.resultDecls(n) {
+				ct := e.cType(d.TypeAST.ast)
+				if len(d.Names) == 0 {
+					names = append(names, "")
+					types = append(types, ct)
+					continue
+				}
+				for _, nm := range d.Names {
+					names = append(names, nm.Src())
+					types = append(types, ct)
+				}
 			}
 		case Type:
 			if seenRPar {
