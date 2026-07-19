@@ -288,6 +288,10 @@
 // predeclared constants true and false.
 //
 //   - The predeclared boolean type is bool.
+//   - A bool is a distinct type, not an alias for an integer: it may not be used
+//     in arithmetic, and it transpiles to C99 _Bool -- one byte, normalized to
+//     0 or 1 -- so a bool packs tightly in a struct or array and prints as true
+//     or false rather than as 1 or 0.
 //
 // # Numeric types
 //

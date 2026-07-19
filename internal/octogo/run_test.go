@@ -199,6 +199,31 @@ func main() {
 			want: "10\n24\n",
 		},
 		{
+			name: "bool prints as true or false",
+			src: `type Flags struct {
+	on  bool
+	off bool
+}
+
+func toggle(a bool) bool {
+	return a
+}
+
+func main() {
+	var x bool
+	y := true
+	var f Flags
+	f.on = true
+	println(x)
+	println(y)
+	println(toggle(false))
+	println(5 > 3)
+	println(y, x, f.on)
+}
+`,
+			want: "false\ntrue\nfalse\ntrue\ntrue false true\n",
+		},
+		{
 			name: "unsigned prints as unsigned",
 			src: `func main() {
 	var u uint = 4000000000

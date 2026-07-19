@@ -37,7 +37,7 @@ var importIncludes = map[string]string{
 // and the P2's C int is 32-bit, so int maps to plain int. Fixed-width names use
 // <stdint.h> (see stdintType).
 var cTypes = map[string]string{
-	"int": "int", "uint": "unsigned", "bool": "int",
+	"int": "int", "uint": "unsigned", "bool": cBool,
 	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t",
 	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t",
 	"byte": "uint8_t", "rune": "int32_t", "uintptr": "uintptr_t",
@@ -49,6 +49,13 @@ var cTypes = map[string]string{
 // cString is the C type of an OctoGo string: a { const char* str; int len; }
 // header emitted as stringTypedef, printed via the stringHelpers.
 const cString = "ogo_string"
+
+// cBool is the C type of an OctoGo bool: C99 _Bool. A distinct type, not int, so
+// the emitter can tell a bool from an integer -- which is what lets it print
+// true/false -- and so a bool packs to one byte in a struct or array. _Bool also
+// normalizes any nonzero to 1 on store, matching Go's strict {false, true}. The
+// checker forbids arithmetic on bool, so nothing relies on it being int.
+const cBool = "_Bool"
 
 const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\n"
 
@@ -3905,6 +3912,18 @@ func (e *emitter) emitPrintOne(newline bool, arg Node) {
 			return
 		}
 	}
+	// A bool prints as the word true or false, as in Go.
+	if ct, ok := e.inferCType(arg.ast); ok && ct == cBool {
+		e.ind()
+		nl := ""
+		if newline {
+			nl = "\\n"
+		}
+		e.emit("printf(\"%s" + nl + "\", ")
+		e.emitBoolWord(arg)
+		e.emit(");\n")
+		return
+	}
 	// Default: an integer, or an integer-typed expression. The conversion is %u for
 	// an unsigned type so a large value prints unsigned, as in Go, rather than
 	// wrapping negative.
@@ -3959,7 +3978,11 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 			if i > 0 {
 				e.emit(" ")
 			}
-			e.emit(e.scalarPrintVerbOf(arg))
+			if e.isBoolPrint(arg) {
+				e.emit("%s")
+			} else {
+				e.emit(e.scalarPrintVerbOf(arg))
+			}
 		}
 		if newline {
 			e.emit("\\n")
@@ -3967,7 +3990,11 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 		e.emit("\"")
 		for _, arg := range args {
 			e.emit(", ")
-			e.emitExpr(arg.ast)
+			if e.isBoolPrint(arg) {
+				e.emitBoolWord(arg)
+			} else {
+				e.emitExpr(arg.ast)
+			}
 		}
 		e.emit(");\n")
 		return
@@ -3983,6 +4010,20 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 		e.ind()
 		e.emit("printf(\"\\n\");\n")
 	}
+}
+
+// isBoolPrint reports whether an argument prints as a bool word.
+func (e *emitter) isBoolPrint(arg Node) bool {
+	ct, ok := e.inferCType(arg.ast)
+	return ok && ct == cBool
+}
+
+// emitBoolWord renders a bool argument as the string "true" or "false" via a
+// ternary, so println(b) prints the word rather than 1 or 0.
+func (e *emitter) emitBoolWord(arg Node) {
+	e.emit("(")
+	e.emitExpr(arg.ast)
+	e.emit(") ? \"true\" : \"false\"")
 }
 
 // scalarPrintVerb is the printf conversion for a scalar C type: %u for an unsigned
@@ -4814,7 +4855,7 @@ func (e *emitter) inferCType(ast []int32) (string, bool) {
 func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 	for _, n := range nodes {
 		if n.sym == RelOp {
-			return "int", true // a comparison yields bool, which is C int
+			return cBool, true // a comparison yields bool
 		}
 	}
 	for _, n := range nodes {
@@ -4941,7 +4982,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		case IDENT:
 			nm := e.src(n.tok)
 			if nm == "true" || nm == "false" {
-				return "int", true // the predeclared bool constants; bool is C int
+				return cBool, true // the predeclared bool constants
 			}
 			if ct, ok := e.locals[nm]; ok {
 				return ct, true
