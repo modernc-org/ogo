@@ -179,6 +179,18 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "constant string concatenation folds",
+			src: `const Greeting = "hello" + ", " + "world"
+
+func main() {
+	println(Greeting)
+	println("a" + "b" + "c")
+	println(len("foo" + "bar"))
+}
+`,
+			want: "hello, world\nabc\n6\n",
+		},
+		{
 			name: "numeric conversions",
 			src: `func main() {
 	var b byte = 200

@@ -313,6 +313,11 @@
 //     contents of a string.
 //   - A string's bytes can be accessed by integer indices 0 through len(s)-1.
 //
+// (OctoGo Specific): Concatenation with "+" is limited to compile-time constants,
+// which fold to a single literal. A concatenation with a non-constant operand is
+// rejected, since building a new string at run time needs allocation and the
+// target has no heap.
+//
 // # Array types
 //
 // An array is a numbered sequence of elements of a single type, called the

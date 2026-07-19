@@ -1225,13 +1225,12 @@ func main() {
 		"typedef struct { const char* str; int len; } ogo_string;\n\n" +
 		"static inline void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
 		"static inline void ogo_println_str(ogo_string s) { printf(\"%.*s\\n\", s.len, s.str); }\n\n" +
-		"static const ogo_string banner = {\"OctoGo\", 6};\n\n" +
 		"void greet(ogo_string m);\n\n" +
 		"void greet(ogo_string m) {\n" +
 		"\togo_println_str(m);\n" +
 		"}\n\n" +
 		"int main(void) {\n" +
-		"\tgreet(banner);\n" +
+		"\tgreet((ogo_string){\"OctoGo\", 6});\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -4020,5 +4019,60 @@ func TestEmitCConversion(t *testing.T) {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC conversion: missing %q in\n%s", want, got)
 		}
+	}
+}
+
+// TestEmitCStringConcat pins string concatenation. C cannot add two ogo_string
+// structs, and the target has no heap to build a new one, so a concatenation of
+// compile-time constants is folded to a single literal and one with a runtime
+// operand is rejected. A constant string has no C variable: it inlines as its
+// folded literal at every use, which is also correct because a Go constant has no
+// address.
+func TestEmitCStringConcat(t *testing.T) {
+	src := `const H = "x"
+
+func main() {
+	println("a" + "b")
+	println(H + "y")
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"\togo_println_str((ogo_string){\"ab\", 2});\n",
+		"\togo_println_str((ogo_string){\"xy\", 2});\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC string concat: missing %q in\n%s", want, got)
+		}
+	}
+	if strings.Contains(buf.String(), "const ogo_string H") {
+		t.Errorf("string constant H should inline, not be declared:\n%s", buf.String())
+	}
+}
+
+// TestEmitCStringConcatRuntime pins a runtime concatenation being rejected rather
+// than emitting an ogo_string addition, which is not valid C.
+func TestEmitCStringConcatRuntime(t *testing.T) {
+	src := `func main() {
+	a := "x"
+	println(a + "y")
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err == nil {
+		t.Errorf("EmitC accepted a runtime string concatenation:\n%s", buf.String())
 	}
 }

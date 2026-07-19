@@ -753,7 +753,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -965,6 +965,7 @@ type emitter struct {
 	structs         map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	namedTypes      map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
 	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
+	constStr        map[string]string        // string-constant name -> its decoded value, for folding string concatenation
 	arrays          map[string]arrDim        // local array name -> element type and bound (reset per function)
 	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
 	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
@@ -1553,6 +1554,15 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		// (flexcc rejects a `static const` there); record its value.
 		if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == INT {
 			e.constInt[name] = normalizeIntLit(e.src(tok))
+		}
+		// A constant string -- a literal or a concatenation of constants -- is
+		// recorded decoded and emitted at each use as the folded literal, rather
+		// than as a C variable. A Go constant has no address, so inlining it is
+		// correct, and it avoids an unused-variable warning when the constant is
+		// only ever folded into a concatenation (which does not name it).
+		if v, ok := e.foldConstString(initExpr); ok {
+			e.constStr[name] = v
+			continue
 		}
 		e.ind()
 		if pkg {
@@ -5274,6 +5284,18 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[0])
 			return
 		}
+		// A string-typed additive expression is concatenation. C cannot add two
+		// ogo_string structs, and the target has no heap to build a new one at
+		// runtime, so a concatenation of constants is folded to a single literal and
+		// anything with a runtime operand is rejected.
+		if ct, ok := e.inferCType(n.ast); ok && ct == cString {
+			if v, ok := e.foldConstString(n.ast); ok {
+				e.emitFoldedString(v)
+				return
+			}
+			e.fail("string concatenation with a non-constant operand needs allocation, which the target does not have")
+			return
+		}
 		e.emit("(")
 		for _, c := range kids {
 			e.emitExprNode(c)
@@ -5453,6 +5475,12 @@ func (e *emitter) emitOperandToken(tok int32) {
 		case "false":
 			e.emit("0")
 		default:
+			// A string constant is inlined as its folded literal -- it has no C
+			// variable (see emitConstDecl).
+			if v, ok := e.constStr[s]; ok {
+				e.emitFoldedString(v)
+				return
+			}
 			e.emit(s)
 		}
 	case STRING:
@@ -5471,6 +5499,70 @@ func (e *emitter) emitOperandToken(tok int32) {
 // literal is not a constant expression there); elsewhere the compound literal
 // `(ogo_string){"s", n}` is used. n is the decoded byte length (escapes counted as
 // one byte). The literal text emits verbatim -- Go and C share the common escapes.
+// foldConstString folds a compile-time-constant string expression to its decoded
+// value: a string literal, a string constant, or a concatenation (with "+") of
+// those. It reports false for anything with a non-constant operand -- a variable --
+// or a non-additive operator, which is what distinguishes a foldable concatenation
+// from a runtime one that a zero-allocation target cannot perform.
+func (e *emitter) foldConstString(ast []int32) (string, bool) {
+	var b strings.Builder
+	ok := true
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if !ok {
+				return
+			}
+			switch n.sym {
+			case AddOp:
+				if e.opText(n.ast) != "+" {
+					ok = false // only "+" concatenates; a string has no other operator
+				}
+			case 0:
+				switch e.f.ch(n.tok) {
+				case STRING:
+					v, err := strconv.Unquote(e.src(n.tok))
+					if err != nil {
+						ok = false
+						return
+					}
+					b.WriteString(v)
+				case IDENT:
+					if cv, is := e.constStr[e.src(n.tok)]; is {
+						b.WriteString(cv)
+					} else {
+						ok = false // a non-constant operand: a runtime concatenation
+					}
+				case LPAREN, RPAREN:
+					// grouping, no value
+				default:
+					ok = false
+				}
+			default:
+				walk(n.ast)
+			}
+		}
+	}
+	walk(ast)
+	if !ok {
+		return "", false
+	}
+	return b.String(), true
+}
+
+// emitFoldedString emits a decoded string value as an ogo_string, re-quoting it as
+// a C string literal. Under declInit it is a brace, not a compound literal, since a
+// file-scope initializer is not a constant expression otherwise.
+func (e *emitter) emitFoldedString(v string) {
+	e.usesString = true
+	body := strconv.Quote(v) + ", " + strconv.Itoa(len(v))
+	if e.declInit {
+		e.emit("{" + body + "}")
+	} else {
+		e.emit("(" + cString + "){" + body + "}")
+	}
+}
+
 func (e *emitter) emitStringLit(tok int32) {
 	src := e.src(tok)
 	if len(src) != 0 && src[0] == '`' {
