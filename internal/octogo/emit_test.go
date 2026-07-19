@@ -717,8 +717,6 @@ func main() {
 		"typedef struct { int _0; int _1; } ogo_ret_dm;\n\n" +
 		"ogo_ret_dm dm(int x);\n\n" +
 		"ogo_ret_dm dm(int x) {\n" +
-		"\tint q = 0;\n" +
-		"\tint r = 0;\n" +
 		"\treturn (ogo_ret_dm){(x / 2), (x + 1)};\n" +
 		"}\n\n" +
 		"int main(void) {\n" +
@@ -1954,8 +1952,6 @@ func main() {
 		"typedef struct { int _0; int _1; } ogo_ret_dm;\n\n" +
 		"ogo_ret_dm dm(int x);\n\n" +
 		"ogo_ret_dm dm(int x) {\n" +
-		"\tint q = 0;\n" +
-		"\tint r = 0;\n" +
 		"\treturn (ogo_ret_dm){(x / 2), (x + 1)};\n" +
 		"}\n\n" +
 		"int main(void) {\n" +
@@ -4232,5 +4228,41 @@ func main() {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC naked return: missing %q in\n%s", want, got)
 		}
+	}
+}
+
+func TestEmitCUnusedNamedResult(t *testing.T) {
+	// unused names its results but never reads or writes them and returns
+	// explicitly, so its result variables must not be emitted (they would only be
+	// unused C locals). used assigns and reads its result, so it keeps the local.
+	src := `func unused(a int, b int) (q, r int) {
+	return a / b, a % b
+}
+
+func used(n int) (x int) {
+	x = n + 1
+	return x
+}
+
+func main() {
+	q, r := unused(17, 5)
+	println(q, r, used(9))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	got := buf.String()
+	if strings.Contains(got, "int q = 0;") || strings.Contains(got, "int r = 0;") {
+		t.Errorf("EmitC: unused named result should not be declared:\n%s", got)
+	}
+	if !strings.Contains(got, "int x = 0;") {
+		t.Errorf("EmitC: a used named result must still be declared:\n%s", got)
 	}
 }

@@ -1746,7 +1746,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.emit(proto + " {\n")
 	e.indent++
 	e.emitParamCopies(sig)
-	e.declareNamedResults(sig)
+	e.declareNamedResults(sig, body)
 	// A bare "return" (legal only when every result is named) returns these. A
 	// blank result "_" has no C variable, so it contributes its zero value.
 	e.curResultNames, _ = e.resultInfo(sig)
@@ -1792,16 +1792,70 @@ func (e *emitter) bodyEndsInReturn(body []int32) bool {
 // initialized locals (P2 stack locals are not auto-zeroed) and binds them in the
 // local type environment, so the body may assign and read them like Go's named
 // results. Unnamed and blank results declare nothing.
-func (e *emitter) declareNamedResults(sig []int32) {
+//
+// A named result that the body never reads or writes and that no naked return
+// hands back is not emitted as a C local at all: it would only draw an
+// unused-variable warning ("(q, r int) { return a, b }" is idiomatic Go). Its
+// values are supplied directly by each explicit return.
+func (e *emitter) declareNamedResults(sig, body []int32) {
 	names, types := e.resultInfo(sig)
+	naked := e.bodyHasNakedReturn(body)
 	for i, nm := range names {
 		if nm == "" || nm == "_" {
 			continue
 		}
 		e.locals[nm] = types[i]
+		if !naked && !e.bodyMentions(body, nm) {
+			continue
+		}
 		e.ind()
 		e.emit(types[i] + " " + nm + " = 0;\n")
 	}
+}
+
+// bodyHasNakedReturn reports whether ast contains a bare "return" -- a return
+// statement with no ExpressionList -- anywhere, including in nested blocks. A
+// naked return reads the named result variables, so their declaration cannot be
+// elided when one is present.
+func (e *emitter) bodyHasNakedReturn(ast []int32) bool {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			continue
+		}
+		hasRet, hasExpr := false, false
+		for c := range it(n.ast) {
+			switch {
+			case c.sym == 0 && e.f.ch(c.tok) == RETURN:
+				hasRet = true
+			case c.sym == ExpressionList:
+				hasExpr = true
+			}
+		}
+		if hasRet && !hasExpr {
+			return true
+		}
+		if e.bodyHasNakedReturn(n.ast) {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyMentions reports whether name appears as an identifier anywhere in ast,
+// used to decide whether a named result is actually read or written by the body.
+func (e *emitter) bodyMentions(ast []int32, name string) bool {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT && e.src(n.tok) == name {
+				return true
+			}
+			continue
+		}
+		if e.bodyMentions(n.ast, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // funcParts pulls the name, signature subtree, body subtree and receiver subtree
