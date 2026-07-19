@@ -54,8 +54,8 @@ const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\
 
 // stringHelpers print a string header's exact bytes (a slice need not be
 // null-terminated, so %.*s, not %s).
-const stringHelpers = "static void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
-	"static void ogo_println_str(ogo_string s) { printf(\"%.*s\\n\", s.len, s.str); }\n"
+const stringHelpers = "static inline void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
+	"static inline void ogo_println_str(ogo_string s) { printf(\"%.*s\\n\", s.len, s.str); }\n"
 
 // sliceTypePrefix leads the C typedef name of an OctoGo slice `[]T`: a { pointer,
 // length, capacity } header (`T* ptr; int len; int cap`) named per element type,
@@ -3905,12 +3905,15 @@ func (e *emitter) emitPrintOne(newline bool, arg Node) {
 			return
 		}
 	}
-	// Default: an integer, or an integer-typed expression, via printf %d.
+	// Default: an integer, or an integer-typed expression. The conversion is %u for
+	// an unsigned type so a large value prints unsigned, as in Go, rather than
+	// wrapping negative.
+	verb := e.scalarPrintVerbOf(arg)
 	e.ind()
 	if newline {
-		e.emit("printf(\"%d\\n\", ")
+		e.emit("printf(\"" + verb + "\\n\", ")
 	} else {
-		e.emit("printf(\"%d\", ")
+		e.emit("printf(\"" + verb + "\", ")
 	}
 	e.emitExpr(arg.ast)
 	e.emit(");\n")
@@ -3952,11 +3955,11 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 	if allScalar {
 		e.ind()
 		e.emit("printf(\"")
-		for i := range args {
+		for i, arg := range args {
 			if i > 0 {
 				e.emit(" ")
 			}
-			e.emit("%d")
+			e.emit(e.scalarPrintVerbOf(arg))
 		}
 		if newline {
 			e.emit("\\n")
@@ -3980,6 +3983,28 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 		e.ind()
 		e.emit("printf(\"\\n\");\n")
 	}
+}
+
+// scalarPrintVerb is the printf conversion for a scalar C type: %u for an unsigned
+// one, %d otherwise. Go prints an unsigned value as unsigned, so `%d` on a uint
+// wrapped negative once the high bit was set. A narrow unsigned (uint8_t, uint16_t)
+// promotes to int in varargs, but its value is non-negative, so %u reads it back
+// unchanged; a uint / uint32_t stays unsigned int, which is exactly what %u wants.
+func scalarPrintVerb(ct string) string {
+	switch ct {
+	case "unsigned", "uint8_t", "uint16_t", "uint32_t", "uintptr_t":
+		return "%u"
+	}
+	return "%d"
+}
+
+// scalarPrintVerbOf returns the print conversion for an argument, defaulting to %d
+// when its type cannot be inferred (an integer expression).
+func (e *emitter) scalarPrintVerbOf(arg Node) string {
+	if ct, ok := e.inferCType(arg.ast); ok {
+		return scalarPrintVerb(ct)
+	}
+	return "%d"
 }
 
 // isScalarPrint reports whether arg prints via printf %d (an integer or integer-

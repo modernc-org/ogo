@@ -199,6 +199,21 @@ func main() {
 			want: "10\n24\n",
 		},
 		{
+			name: "unsigned prints as unsigned",
+			src: `func main() {
+	var u uint = 4000000000
+	var w uint32 = 4294967295
+	var b byte = 65
+	var s int = -7
+	println(u)
+	println(w)
+	println(u, s, b)
+	println("x", u, "y")
+}
+`,
+			want: "4000000000\n4294967295\n4000000000 -7 65\nx 4000000000 y\n",
+		},
+		{
 			name: "break and continue",
 			src: `func main() {
 	i := 0
