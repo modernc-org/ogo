@@ -2980,12 +2980,91 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 
 // emitFor handles `for {}` (infinite -> for(;;)) and `for cond {}` (conditional
 // -> while(cond)). Init/post clauses and range are not supported yet.
+// forHeader decomposes a "for" header into its three parts. The grammar parses a
+// leading Expression before it knows what the header is, so that Expression is the
+// condition when nothing follows it and the init statement's left-hand side when a
+// ForClause does -- the same left-factoring SwitchGuard uses.
+type forHeader struct {
+	initLHS   []int32 // nil when there is no init statement
+	initOp    Symbol  // ASSIGN or DEFINE
+	initRHS   []int32
+	cond      []int32 // nil for a conditionless loop
+	postLHS   []int32 // nil when there is no post statement
+	postOp    Symbol  // ASSIGN, DEFINE, INC or DEC
+	postRHS   []int32
+	hasClause bool
+}
+
+// parseForHeader reads a ForHeader node.
+func (e *emitter) parseForHeader(n Node) (h forHeader, ok bool) {
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Expression:
+			// The leading expression: the condition, unless a ForClause follows.
+			h.cond = c.ast
+		case ForClause:
+			h.hasClause = true
+			h.initLHS, h.cond = h.cond, nil
+			semis := 0
+			for q := range it(c.ast) {
+				switch {
+				case q.sym == 0 && e.f.ch(q.tok) == SEMICOLON:
+					semis++
+				case q.sym == 0:
+					h.initOp = e.f.ch(q.tok)
+				case q.sym == Expression && semis == 0:
+					h.initRHS = q.ast
+				case q.sym == Expression && semis == 1:
+					h.cond = q.ast
+				case q.sym == ForPost:
+					if !e.parseForPost(q, &h) {
+						return h, false
+					}
+				}
+			}
+		case ForPost:
+			// The `for ; cond ; post` form, whose header starts with the semicolon.
+			h.hasClause = true
+			if !e.parseForPost(c, &h) {
+				return h, false
+			}
+		case 0:
+			if e.f.ch(c.tok) == SEMICOLON {
+				// Leading semicolon: no init statement, and what was read as the
+				// condition belongs after it.
+				h.hasClause = true
+			}
+		}
+	}
+	return h, true
+}
+
+// parseForPost reads a ForPost node: `i++`, `i--`, or an assignment.
+func (e *emitter) parseForPost(n Node, h *forHeader) bool {
+	for c := range it(n.ast) {
+		switch {
+		case c.sym == Expression && h.postLHS == nil:
+			h.postLHS = c.ast
+		case c.sym == Expression:
+			h.postRHS = c.ast
+		case c.sym == 0:
+			h.postOp = e.f.ch(c.tok)
+		}
+	}
+	return h.postLHS != nil
+}
+
 func (e *emitter) emitFor(nodes []Node) {
-	var cond, body []int32
+	var body []int32
+	var h forHeader
 	for _, n := range nodes[1:] {
 		switch n.sym {
-		case Expression:
-			cond = n.ast
+		case ForHeader:
+			var ok bool
+			if h, ok = e.parseForHeader(n); !ok {
+				e.fail("unsupported for-loop header")
+				return
+			}
 		case Block:
 			body = n.ast
 		default:
@@ -2998,12 +3077,56 @@ func (e *emitter) emitFor(nodes []Node) {
 		return
 	}
 	e.ind()
-	if cond == nil {
-		e.emit("for (;;) {\n")
+	if !h.hasClause {
+		// The one- and two-part forms keep their existing lowering: a conditionless
+		// loop is `for (;;)`, a conditional one a `while`.
+		if h.cond == nil {
+			e.emit("for (;;) {\n")
+		} else {
+			e.emit("while ")
+			e.emitCondition(h.cond)
+			e.emit(" {\n")
+		}
 	} else {
-		e.emit("while ")
-		e.emitCondition(cond)
-		e.emit(" {\n")
+		// The three-clause form maps onto C's own, including the init declaration:
+		// C scopes a variable declared there to the loop, exactly as Go does.
+		e.emit("for (")
+		if h.initLHS != nil {
+			lhs := e.exprC(h.initLHS)
+			switch h.initOp {
+			case DEFINE:
+				ct, ok := e.inferCType(h.initRHS)
+				if !ok {
+					e.fail("cannot infer the type of a for-loop init variable")
+					return
+				}
+				e.locals[lhs] = ct
+				e.emit(ct + " " + lhs + " = " + e.exprC(h.initRHS))
+			case ASSIGN:
+				e.emit(lhs + " = " + e.exprC(h.initRHS))
+			default:
+				e.emit(lhs)
+			}
+		}
+		e.emit("; ")
+		if h.cond != nil {
+			e.emit(e.exprC(h.cond))
+		}
+		e.emit("; ")
+		if h.postLHS != nil {
+			lhs := e.exprC(h.postLHS)
+			switch h.postOp {
+			case INC:
+				e.emit(lhs + "++")
+			case DEC:
+				e.emit(lhs + "--")
+			case ASSIGN, DEFINE:
+				e.emit(lhs + " = " + e.exprC(h.postRHS))
+			default:
+				e.emit(lhs)
+			}
+		}
+		e.emit(") {\n")
 	}
 	e.indent++
 	e.deferBlockDepth++

@@ -1,0 +1,34 @@
+// A three-clause "for" has an init statement, a condition and a post statement:
+// "for i := 0; i < n; i++". A variable introduced by ":=" in the init is scoped to
+// the loop -- its condition, post and body -- and not to the enclosing block.
+
+func counts() {
+	sum := 0
+	for i := 0; i < 5; i++ {
+		sum = sum + i
+	}
+	println(sum)
+}
+
+// The init variable does not escape, so two loops may each declare their own.
+func two_loops() {
+	for i := 0; i < 3; i++ {
+	}
+	for i := 0; i < 3; i++ {
+	}
+}
+
+// The condition, wherever it sits in the header, must be boolean.
+func bad_condition() {
+	// ERROR "non-bool used as for condition|mismatched types"
+	for i := 0; i; i++ {
+	}
+}
+
+// A plain "=" init assigns an existing variable rather than declaring one.
+func assign_init() {
+	i := 0
+	for i = 2; i < 5; i++ {
+	}
+	println(i)
+}

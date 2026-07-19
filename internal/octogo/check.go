@@ -865,8 +865,10 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 		return true
 	case isFor:
 		// A conditionless "for" loops forever unless something breaks out of it; a
-		// conditional one falls through when its condition is false.
-		return exprCount == 0 && !(len(blocks) == 1 && f.containsBreak(blocks[0]))
+		// conditional one falls through when its condition is false. The condition
+		// lives inside the ForHeader, so it is not counted among this statement's
+		// own expressions.
+		return !f.forHasCond(stmt) && !(len(blocks) == 1 && f.containsBreak(blocks[0]))
 	case hasIf:
 		return f.ifStmtIsTerminating(ifStmt)
 	case hasSwitch:
@@ -984,6 +986,38 @@ func (f *File) isPanicCall(head, postfix Node) bool {
 	return ok && id.Src() == "panic"
 }
 
+// forHasCond reports whether a "for" statement has a condition. The grammar parses
+// a header's leading expression before it knows what the header is, so that
+// expression is the condition unless a ForClause follows, in which case the
+// condition is the one between the clause's two semicolons.
+func (f *File) forHasCond(stmt Node) bool {
+	for c := range it(stmt.ast) {
+		if c.sym != ForHeader {
+			continue
+		}
+		lead := false
+		for h := range it(c.ast) {
+			switch h.sym {
+			case Expression:
+				lead = true
+			case ForClause:
+				semis := 0
+				for q := range it(h.ast) {
+					switch {
+					case q.sym == 0 && f.ch(q.tok) == SEMICOLON:
+						semis++
+					case q.sym == Expression && semis == 1:
+						return true
+					}
+				}
+				return false // a clause whose middle part is empty
+			}
+		}
+		return lead
+	}
+	return false
+}
+
 // containsBreak reports whether a loop body contains a break that leaves *that*
 // loop. It does not descend into a nested for, switch or select: without labels a
 // break names the innermost enclosing one, so a break inside those leaves them
@@ -1047,7 +1081,8 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	isDefer := false // a "defer" statement, carrying its own AssignHead
 	isFor := false   // a "for" statement, so its body block is checked one loop level deeper
 	sawPostfix := false
-	condKw := "" // "if"/"for" while the next Expression child is that condition
+	condKw := ""
+	var forScope *Scope // a three-clause for's own scope, holding its init variable // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
 		switch c.sym {
 		case VarDecl:
@@ -1069,8 +1104,12 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			// an unknown number of deferred calls). Other blocks (a bare block, or an
 			// if/switch body reached via their own checkers) do not change the depth.
 			if isFor {
+				body := s
+				if forScope != nil {
+					body = forScope // so the body sees the init variable
+				}
 				f.loopDepth++
-				f.checkBlock(s.child(), results, c)
+				f.checkBlock(body.child(), results, c)
 				f.loopDepth--
 			} else {
 				f.checkBlock(s.child(), results, c)
@@ -1086,6 +1125,15 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			f.checkIf(s, results, c)
 		case SwitchStmt:
 			f.checkSwitch(s, results, c)
+		case ForHeader:
+			// The condition lives in the header, along with the optional init and
+			// post statements of the three-clause form. A variable the init
+			// introduces belongs to this loop alone -- two loops may each declare
+			// their own "i" -- so the header gets a scope of its own, which the body
+			// below then nests inside.
+			forScope = s.child()
+			f.checkForHeader(forScope, results, condKw, c)
+			condKw = ""
 		case SelectStmt:
 			f.checkSelect(s, results, c)
 		case Expression:
@@ -1422,6 +1470,107 @@ func kindName(k Kind) string {
 		return "int"
 	}
 	return "?"
+}
+
+// checkForHeader checks a "for" header. A three-clause header introduces its init
+// variable into a scope spanning the condition, the post statement and the body,
+// which is why the caller passes the loop's scope rather than the enclosing one.
+func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) {
+	var lead Node
+	haveLead := false
+	for h := range it(n.ast) {
+		switch h.sym {
+		case Expression:
+			if !haveLead {
+				lead, haveLead = h, true
+				continue
+			}
+			// The `for ; cond ; post` form: the leading expression is the condition.
+			f.checkCondition(s, kw, h)
+		case ForClause:
+			f.checkForClause(s, kw, lead, haveLead, h)
+			return
+		case ForPost:
+			f.checkForPost(s, h)
+		}
+	}
+	if haveLead {
+		f.checkCondition(s, kw, lead) // no clause followed, so it was the condition
+	}
+}
+
+// checkForClause checks the three-clause header whose init left-hand side was
+// parsed as the leading expression.
+func (f *File) checkForClause(s *Scope, kw string, lhs Node, haveLHS bool, n Node) {
+	semis, define := 0, false
+	for q := range it(n.ast) {
+		switch {
+		case q.sym == 0 && f.ch(q.tok) == SEMICOLON:
+			semis++
+		case q.sym == 0 && f.ch(q.tok) == DEFINE:
+			define = true
+		case q.sym == Expression && semis == 0:
+			f.checkNames(s, q)
+			if haveLHS {
+				f.declareForInitVar(s, lhs, q, define)
+			}
+		case q.sym == Expression && semis == 1:
+			f.checkCondition(s, kw, q)
+		case q.sym == ForPost:
+			f.checkForPost(s, q)
+		}
+	}
+}
+
+// exprSoleIdent returns the single identifier an expression consists of, if that
+// is all it is -- the shape a for-loop init's left-hand side must have.
+func (f *File) exprSoleIdent(n Node) (Token, bool) {
+	var tok Token
+	count := 0
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			if c.sym != 0 {
+				walk(c.ast)
+				continue
+			}
+			count++
+			tok = f.tok(c.tok)
+		}
+	}
+	walk(n.ast)
+	if count != 1 || tok.Ch != rune(IDENT) {
+		return Token{}, false
+	}
+	return tok, true
+}
+
+// declareForInitVar introduces the variable of a `for i := 0; ...` init statement
+// into the loop's scope, typed from its initializer. A plain "=" init assigns an
+// existing variable instead, so its name is only resolved.
+func (f *File) declareForInitVar(s *Scope, lhs, rhs Node, define bool) {
+	id, ok := f.exprSoleIdent(lhs)
+	if !ok {
+		f.checkNames(s, lhs)
+		return
+	}
+	if !define {
+		f.checkNames(s, lhs)
+		return
+	}
+	kind, hasKind := f.exprType(s, rhs)
+	if err := s.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind}); err != nil {
+		f.err(id.Position(), "%s", err)
+	}
+}
+
+// checkForPost checks a post statement's names.
+func (f *File) checkForPost(s *Scope, n Node) {
+	for c := range it(n.ast) {
+		if c.sym == Expression {
+			f.checkNames(s, c)
+		}
+	}
 }
 
 // checkCondition resolves the names and operator operands of an "if"/"for"

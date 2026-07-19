@@ -179,6 +179,26 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "three-clause for loops",
+			src: `func main() {
+	sum := 0
+	for i := 0; i < 5; i++ {
+		sum = sum + i
+	}
+	prod := 1
+	for i := 1; i < 5; i = i + 1 {
+		prod = prod * i
+	}
+	// each loop scopes its own i
+	for i := 0; i < 3; i++ {
+	}
+	println(sum)
+	println(prod)
+}
+`,
+			want: "10\n24\n",
+		},
+		{
 			name: "break and continue",
 			src: `func main() {
 	i := 0

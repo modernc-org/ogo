@@ -80,7 +80,7 @@ Statement = VarDecl
 	| ConstDecl
 	| TypeDecl
 	| IfStmt
-	| "for" [ Expression ] Block
+	| "for" [ ForHeader ] Block
 	| "break"
 	| "continue"
 	| "return" [ ExpressionList ]
@@ -104,6 +104,10 @@ AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 	| "&=" | "|=" | "^=" | "&^="
 	| "<<=" | ">>=" .
 LhsItem    = AssignHead { Selector | Index } .
+ForHeader  = ";" [ Expression ] ";" [ ForPost ]
+	| Expression [ ForClause ] .
+ForClause  = [ ( "=" | ":=" ) Expression ] ";" [ Expression ] ";" [ ForPost ] .
+ForPost    = Expression [ ( "=" | ":=" ) Expression | "++" | "--" ] .
 IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
 SwitchGuard = Expression [ ":=" Expression ] .

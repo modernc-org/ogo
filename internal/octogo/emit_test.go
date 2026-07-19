@@ -3867,3 +3867,46 @@ func main() {
 		}
 	}
 }
+
+// TestEmitCForThreeClause pins the three-clause for. It maps onto C's own for,
+// including the init declaration: C scopes a variable declared in a for header to
+// the loop, exactly as Go does, so `for i := 0; ...` becomes `for (int i = 0; ...)`
+// and two such loops may each declare their own i.
+//
+// To stay LL(1), the header's leading expression is parsed before it is known
+// whether the header is a bare condition or the init of a three-clause form -- the
+// same left-factoring SwitchGuard uses -- so the condition is not a direct child of
+// the for statement and both reachability and the condition type-check read it out
+// of the header.
+func TestEmitCForThreeClause(t *testing.T) {
+	src := `func main() {
+	sum := 0
+	for i := 0; i < 5; i++ {
+		sum = sum + i
+	}
+	for i := 0; i < 3; i++ {
+	}
+	println(sum)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"\tfor (int i = 0; i < 5; i++) {\n",
+		"\t\tsum = (sum + i);\n",
+		"\tfor (int i = 0; i < 3; i++) {\n", // the second loop redeclares i
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC three-clause for: missing %q in\n%s", want, got)
+		}
+	}
+}

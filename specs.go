@@ -10,7 +10,7 @@
 //
 // TODO 20260307 Keywords: +?map +?range
 // TODO 20260307 Numeric type: +float,float32
-// TODO 20260307 For statements: extend (3-clause "for i := 0; i < n; i++", and range)
+// TODO 20260307 For statements: range
 // TODO 20260307 Return statements: ? disable naked returns
 // TODO 20260307 Return statements: Expression -> ExpressionList
 // TODO 20260317 labels and gotos
@@ -617,7 +617,7 @@
 //		| ConstDecl
 //		| TypeDecl
 //		| IfStmt
-//		| "for" [ Expression ] Block
+//		| "for" [ ForHeader ] Block
 //		| "break"
 //		| "continue"
 //		| "return" [ ExpressionList ]
@@ -629,6 +629,26 @@
 //		| "defer" AssignHead { Selector | Index | CallSuffix }
 //		| Block
 //		| EmptyStatement .
+//
+// # For Statements
+//
+// A "for" statement specifies repeated execution. Three forms are provided: a
+// conditionless loop, a loop repeating while a condition holds, and one with an
+// init statement, a condition and a post statement.
+//
+//	for { ... }                    // until a break or return
+//	for i < n { ... }              // while the condition holds
+//	for i := 0; i < n; i++ { ... } // init, condition, post
+//
+// A variable introduced by the init statement is scoped to the whole "for" --
+// its condition, its post statement and its body -- and not to the block
+// containing it.
+//
+// (OctoGo Specific): To stay LL(1), a header is parsed as an expression first
+// and what follows it decides how to read it: a "{" makes it the condition, and
+// a ";" or an assignment operator makes it the init statement of the three-clause
+// form. This is the same left-factoring SwitchGuard uses, and it is why the
+// grammar spells the header out rather than naming the three parts directly.
 //
 // # Break and Continue Statements
 //
@@ -691,6 +711,10 @@
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .
 //	LhsItem    = AssignHead { Selector | Index } .
+//	ForHeader  = ";" [ Expression ] ";" [ ForPost ]
+//		| Expression [ ForClause ] .
+//	ForClause  = [ ( "=" | ":=" ) Expression ] ";" [ Expression ] ";" [ ForPost ] .
+//	ForPost    = Expression [ ( "=" | ":=" ) Expression | "++" | "--" ] .
 //
 // The "++" and "--" forms are the increment and decrement statements "x++" and
 // "x--"; they take no operand of their own (the target is the AssignHead) and,
