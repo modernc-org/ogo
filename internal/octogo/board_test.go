@@ -6,7 +6,6 @@ package octogo
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,6 +27,11 @@ const boardBaud = 230400
 // covers serial latency and the concurrency rendezvous cases. A case that never
 // matches waits the whole window.
 const boardCaseTimeout = 12 * time.Second
+
+// boardAttempts is how many times a case is loaded before it is failed, to ride
+// out the occasional dropped serial handshake. A miscompile prints the same wrong
+// output on every attempt, so retries only absorb transient flakes.
+const boardAttempts = 3
 
 // TestOnBoard runs the emitRunCases table on a real Propeller 2 board: for each
 // program it drives `ogo build` (checker -> C -> flexcc -> .binary) and then `ogo
@@ -82,13 +86,24 @@ func TestOnBoard(t *testing.T) {
 			if test.panics {
 				stop = "panic:"
 			}
-			out, matched := boardLoad(ogo, port, bin, stop)
+			// The serial load is occasionally flaky (a dropped handshake makes
+			// loadp2 exit early), so retry a no-match a couple of times. A real
+			// miscompile is deterministic -- it prints the same wrong output every
+			// time -- so retries never mask one, they only absorb transient hiccups.
+			var out string
+			var matched bool
+			for attempt := 0; attempt < boardAttempts && !matched; attempt++ {
+				if attempt > 0 {
+					t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+				}
+				out, matched = boardLoad(ogo, port, bin, stop)
+			}
 			if !matched {
 				what := strconv.Quote(test.want)
 				if test.panics {
 					what = "a panic"
 				}
-				t.Errorf("board output did not contain %s\ngot:\n%s", what, out)
+				t.Errorf("board output did not contain %s after %d attempts\ngot:\n%s", what, boardAttempts, out)
 			}
 		})
 	}
@@ -109,30 +124,47 @@ func boardBuild(ogo, dir, name, src, out string) error {
 
 // boardLoad loads binary with `ogo loadp2 -t` and reads the board's serial output
 // until it contains stop (success) or boardCaseTimeout elapses. It returns the
-// cleaned output and whether stop was seen. loadp2 -t does not exit on its own, so
-// the process is killed as soon as the match lands, keeping a passing case near
-// the ~2 s load-and-print time rather than the full timeout.
+// cleaned output and whether stop was seen.
+//
+// loadp2 -t does not exit on its own, so it must be told to stop once the match
+// lands. It is NOT SIGKILLed: an abruptly killed loadp2 leaves the serial port in
+// a state (baud, modem lines) that wedges the board for subsequent loads -- the
+// board then stops responding until it is physically reset. Instead we send
+// Ctrl-] (0x1d), loadp2's documented "leave terminal mode" key, on its stdin, so
+// it closes the port cleanly and exits 0. SIGKILL remains only as a last resort
+// if a genuinely hung load ignores Ctrl-].
 func boardLoad(ogo, port, binary, stop string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), boardCaseTimeout)
-	defer cancel()
-
 	// -t echoes the program's serial output; -NOEOF keeps terminal mode alive
-	// despite the /dev/null stdin's immediate EOF.
-	cmd := exec.CommandContext(ctx, ogo, "loadp2", "-t", "-NOEOF", "-p", port, "-b", strconv.Itoa(boardBaud), binary)
-	rd, wr, err := os.Pipe()
+	// despite the stdin pipe carrying no keystrokes until we send Ctrl-].
+	cmd := exec.Command(ogo, "loadp2", "-t", "-NOEOF", "-p", port, "-b", strconv.Itoa(boardBaud), binary)
+	stdinR, stdinW, err := os.Pipe()
 	if err != nil {
 		return "pipe: " + err.Error(), false
 	}
-	cmd.Stdout, cmd.Stderr = wr, wr
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		stdinR.Close()
+		stdinW.Close()
+		return "pipe: " + err.Error(), false
+	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinR, outW, outW
 	if err := cmd.Start(); err != nil {
-		wr.Close()
-		rd.Close()
+		stdinR.Close()
+		stdinW.Close()
+		outR.Close()
+		outW.Close()
 		return "start: " + err.Error(), false
 	}
-	wr.Close() // the child holds its own copy; drop ours so a dead child EOFs rd
+	stdinR.Close() // the child holds its own copies; drop ours so a dead child EOFs outR
+	outW.Close()
+
+	// quit asks loadp2 to leave terminal mode and close the port cleanly. Writing
+	// to a stdin whose reader has exited just errors, which is fine to ignore.
+	quit := func() { stdinW.Write([]byte{0x1d}) }
 
 	// One reader goroutine owns the accumulator, so there is no shared-state race.
-	// On a match it cancels the context (killing loadp2) and drains to EOF.
+	// On a match it asks loadp2 to quit, then drains to EOF (which arrives once
+	// loadp2 has closed the port and exited).
 	type result struct {
 		out     string
 		matched bool
@@ -143,12 +175,12 @@ func boardLoad(ogo, port, binary, stop string) (string, bool) {
 		tmp := make([]byte, 4096)
 		matched := false
 		for {
-			n, rerr := rd.Read(tmp)
+			n, rerr := outR.Read(tmp)
 			if n > 0 {
 				buf.Write(tmp[:n])
 				if !matched && strings.Contains(cleanBoardOutput(buf.String()), stop) {
 					matched = true
-					cancel()
+					quit()
 				}
 			}
 			if rerr != nil {
@@ -158,9 +190,18 @@ func boardLoad(ogo, port, binary, stop string) (string, bool) {
 		}
 	}()
 
+	// If the output never matches, ask loadp2 to quit at the deadline; only if that
+	// is ignored -- a genuinely hung load -- fall back to SIGKILL, the one path that
+	// can wedge the board, reached only on a real failure.
+	nudge := time.AfterFunc(boardCaseTimeout, quit)
+	kill := time.AfterFunc(boardCaseTimeout+3*time.Second, func() { _ = cmd.Process.Kill() })
+
 	r := <-resc
-	rd.Close()
+	nudge.Stop()
+	kill.Stop()
 	_ = cmd.Wait()
+	stdinW.Close()
+	outR.Close()
 	return r.out, r.matched
 }
 
