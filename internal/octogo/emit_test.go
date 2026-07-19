@@ -3986,3 +3986,39 @@ func TestEmitCStringIndex(t *testing.T) {
 		}
 	}
 }
+
+// TestEmitCConversion pins numeric type conversions. `T(x)` parses as a call to a
+// function named T; the emitter recognizes a type-name callee and emits a C cast
+// `(T)(x)` instead, rather than `int(...)`, which is not valid C. A conversion to a
+// fixed-width type pulls in <stdint.h>. bool and string are left out: bool has no
+// numeric source and a string conversion would copy.
+func TestEmitCConversion(t *testing.T) {
+	src := `func main() {
+	var b byte = 65
+	x := int(b)
+	y := uint16(x)
+	println(x + int(y))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"#include <stdint.h>\n",
+		"\tint x = (int)(b);\n",
+		"\tuint16_t y = (uint16_t)(x);\n",
+		"\tprintf(\"%d\\n\", (x + (int)(y)));\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC conversion: missing %q in\n%s", want, got)
+		}
+	}
+}

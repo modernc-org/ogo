@@ -179,6 +179,27 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "numeric conversions",
+			src: `func main() {
+	var b byte = 200
+	println(int(b))
+	x := 300
+	println(int(byte(x)))
+	var big int = 70000
+	println(int(uint16(big)))
+	y := -1
+	println(uint32(y))
+	s := "hi"
+	sum := 0
+	for i := range s {
+		sum = sum + int(s[i])
+	}
+	println(sum)
+}
+`,
+			want: "200\n44\n4464\n4294967295\n209\n",
+		},
+		{
 			name: "string indexing and range",
 			src: `func main() {
 	s := "hello"

@@ -2338,6 +2338,27 @@ func (e *emitter) cType(ast []int32) string {
 // predeclared type or an imported package qualifier.
 func (e *emitter) isUserType(ctype string) bool { return e.isStruct(ctype) || e.namedTypes[ctype] }
 
+// convType reports the C type of a conversion `T(x)` when recv names a type usable
+// in one: a predeclared numeric type, or a named type over such a type. A cast
+// `(T)(x)` expresses it. bool and string are not numeric conversions -- bool has no
+// arithmetic source and a string conversion would need a copy -- so they are left
+// to the generic call path, which fails honestly.
+func (e *emitter) convType(recv string) (string, bool) {
+	if recv == "bool" || recv == "string" {
+		return "", false
+	}
+	if ct, ok := cTypes[recv]; ok {
+		if strings.HasSuffix(ct, "_t") {
+			e.includes["stdint.h"] = true // a fixed-width target needs its header
+		}
+		return ct, true // int, uint, byte, rune, the fixed-width names
+	}
+	if e.namedTypes[recv] {
+		return recv, true // `type Celsius int` used as Celsius(x)
+	}
+	return "", false
+}
+
 // arrayType recognises a fixed-array type `[N]T`, returning the element C type and
 // the C bound. A slice `[]T` (no bound) or a non-constant bound is not modelled.
 func (e *emitter) arrayType(typeAST []int32) (elem, bound string, ok bool) {
@@ -3837,6 +3858,16 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.fail("make is only supported as a `var s []T = make(...)` initializer yet")
 			return true
 		}
+		if ct, ok := e.convType(recv); ok {
+			// A conversion `T(x)` -> a C cast `(T)(x)`.
+			args := e.callArgExprs(suffix[0].ast)
+			if len(args) == 1 {
+				e.emit("(" + ct + ")(")
+				e.emitExpr(args[0].ast)
+				e.emit(")")
+				return true
+			}
+		}
 		e.emit(recv + "(")
 		e.emitCallArgs(suffix[0].ast)
 		e.emit(")")
@@ -5198,6 +5229,9 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 				}
 			}
 			return "", false
+		}
+		if ct, ok := e.convType(recv); ok {
+			return ct, true // a conversion T(x) has type T
 		}
 		// Only a single-result call is a usable single value; a multi-result call
 		// belongs in a destructuring assignment (emitMultiAssign), not here.
