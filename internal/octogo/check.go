@@ -3914,6 +3914,16 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		}
 	}
+	// A bare type name used as a value: "p := P", "x := int", "return T". A type is
+	// not an expression, and was previously accepted silently. With a suffix it is
+	// a conversion "T(x)" (a call) or a qualified name, both legitimate, so only the
+	// suffix-less form is flagged.
+	if hasID && !hasSuffix {
+		switch s.find(id.Src()).(type) {
+		case *TypeDeclaration, *PredeclaredType:
+			f.err(id.Position(), "cannot use type %s as a value", id.Src())
+		}
+	}
 	// Indexing a scalar (numeric or bool) variable or constant read is illegal:
 	// "x[i]" where x is not an array or slice. This is the read-side analogue of
 	// checkIndexAssign. A string is byte-indexable, and a pointer, array or slice

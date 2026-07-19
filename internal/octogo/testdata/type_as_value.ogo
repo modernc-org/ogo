@@ -1,0 +1,26 @@
+// A type is not an expression. Using a bare type name where a value is expected --
+// "p := P", "x := int" -- is rejected, rather than being silently accepted (a type
+// name with a call suffix is a conversion, "T(x)", which is allowed).
+
+type P struct {
+	x int
+}
+
+func named() {
+	// ERROR "cannot use type P as a value"
+	p := P
+	_ = p
+}
+
+func predeclared() {
+	// ERROR "cannot use type int as a value"
+	x := int
+	_ = x
+}
+
+// A conversion is a type name applied to a value; it stays legal.
+func conversion() {
+	var b byte = 65
+	n := int(b)
+	println(n)
+}
