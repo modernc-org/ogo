@@ -1,10 +1,3 @@
-The repository you are currently viewing might be a mirror. Please review the guidelines below based on where you are viewing this:
-
-| Platform | Role | Contributing Guidelines |
-| :--- | :--- | :--- |
-| **GitLab** | **Primary Source** | This is the canonical repository (`cznic/ogo`). CI pipelines and main development happen here. |
-| **GitHub** | **Mirror** | This is a mirror (`modernc-org/ogo`). We **do accept** Issues and Pull Requests here for your convenience! <br> *Note: PRs submitted here will be manually merged into the GitLab source, so please allow extra time for processing.* |
-
 ![logo_png](logo.png)
 
 *Mascot based on the [Go gopher](https://go.dev/blog/gopher) by Renée French, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).*
@@ -14,6 +7,13 @@ The repository you are currently viewing might be a mirror. Please review the gu
 OctoGo brings the elegance of Go's concurrency model to embedded hardware. It compiles a  LL(1) subset of a Go-like language into C99/C11, which is then compiled to native P2 assembly using the industry-standard flexprop toolchain.
 
 There is no software scheduler and no garbage collector. Goroutines map 1:1 to physical silicon.
+
+The repository you are currently viewing might be a mirror. Please review the guidelines below based on where you are viewing this:
+
+| Platform | Role | Contributing Guidelines |
+| :--- | :--- | :--- |
+| **GitLab** | **Primary Source** | This is the canonical repository (`cznic/ogo`). CI pipelines and main development happen here. |
+| **GitHub** | **Mirror** | This is a mirror (`modernc-org/ogo`). We **do accept** Issues and Pull Requests here for your convenience! <br> *Note: PRs submitted here will be manually merged into the GitLab source, so please allow extra time for processing.* |
 
 ### **The Hook: Concurrent Blinky**
 
