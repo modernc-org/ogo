@@ -179,6 +179,23 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "string indexing and range",
+			src: `func main() {
+	s := "hello"
+	println(s[0])
+	println(s[4])
+	i := 2
+	println(s[i])
+	n := 0
+	for range s {
+		n++
+	}
+	println(n)
+}
+`,
+			want: "104\n111\n108\n5\n",
+		},
+		{
 			name: "range over integer, slice and array",
 			src: `func main() {
 	sum := 0

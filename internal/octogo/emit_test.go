@@ -3952,3 +3952,37 @@ func TestEmitCRange(t *testing.T) {
 		}
 	}
 }
+
+// TestEmitCStringIndex pins string byte access. s[i] reads through the string's
+// byte pointer, s.str[i], bounds-checked against s.len, and yields a byte -- not
+// s[i] on the ogo_string struct, which is not a C array and does not compile.
+// Ranging a string iterates its byte indices for the same reason a slice does.
+func TestEmitCStringIndex(t *testing.T) {
+	src := `func main() {
+	s := "hi"
+	println(s[0])
+	for range s {
+		println(1)
+	}
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"\tprintf(\"%u\\n\", s.str[ogo_bound(0, s.len)]);\n",
+		"\tfor (int _ogo_t0 = 0; _ogo_t0 < _ogo_t1.len; _ogo_t0++) {\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC string index: missing %q in\n%s", want, got)
+		}
+	}
+}

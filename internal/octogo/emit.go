@@ -3267,6 +3267,20 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.ind()
 		e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
 		e.emitLoopBody(body, e.rangeValueInject(h, a.elem, base+"["+key+"]"))
+	case ct == cString:
+		// Ranging a string iterates its byte indices. Go's two-variable form yields
+		// a rune, which would need UTF-8 decoding, so only the index form is offered.
+		if h.valVar != nil {
+			e.fail("ranging a string yields only the byte index (rune decoding is not supported yet)")
+			return
+		}
+		hdr := e.newTmp()
+		e.ind()
+		e.emit("ogo_string " + hdr + " = " + e.exprC(h.rangeExpr) + ";\n")
+		e.locals[key] = "int"
+		e.ind()
+		e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
+		e.emitLoopBody(body, nil)
 	default:
 		// An integer range. Hoist the bound so a side-effecting or costly operand is
 		// evaluated once, as Go does.
@@ -5136,6 +5150,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				if elem, ok := e.sliceElem(base); ok {
 					return elem, true
 				}
+				if e.isStringVarName(base) {
+					return "uint8_t", true // s[i] is a byte, as in Go
+				}
 				return "", false
 			}
 		}
@@ -5325,13 +5342,18 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emitSliceExpr(src, low, high)
 					return
 				}
-				// A slice is indexed through its backing pointer; an array (or string)
-				// directly. The index is bounds-checked against the container length.
+				// A slice is indexed through its backing pointer, a string through its
+				// byte pointer, an array directly. The index is bounds-checked against
+				// the container length.
 				lenExpr := ""
-				if e.hasSliceVar(base) {
+				switch {
+				case e.hasSliceVar(base):
 					e.emit(base + ".ptr[")
 					lenExpr = base + ".len"
-				} else {
+				case e.isStringVarName(base):
+					e.emit(base + ".str[")
+					lenExpr = base + ".len"
+				default:
 					if a, ok := e.arrayVar(base); ok && a.dims() > 1 {
 						e.fail("a multi-dimensional array must be indexed in every dimension")
 						return
