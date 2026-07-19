@@ -596,7 +596,9 @@ static inline void %[5]s(%[1]s ch) {
 	ch->taken = 0;
 }
 static inline void %[3]s(%[1]s ch, %[2]s v) {
-	int mine;
+	int mine = 0; // always set below before the rendezvous loop reads it; the
+	// initializer only quiets flexcc, whose flow analysis cannot prove the first
+	// loop exits solely through the break that follows the assignment.
 	while (1) { // wait for the cell to be free, then deposit
 		if (_locktry(ch->lock)) {
 			if (!ch->full) {
