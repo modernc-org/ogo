@@ -3701,13 +3701,35 @@ func TestEmitCChannel(t *testing.T) {
 	}
 }
 
-// TestEmitCChannelPackageLevel pins a package-level channel failing honestly: its
-// lock would have to be acquired before main runs, which is the synthesized-init
-// pass that does not exist yet.
-func TestEmitCChannelPackageLevel(t *testing.T) {
-	src := `var ch chan int
+// TestEmitCPackageInit pins the synthesized package initializer. C requires a
+// file-scope initializer to be a constant expression, so `var b = a + 3` and
+// `var c = five()` were emitted verbatim and rejected outright by the C compiler
+// ("initializer element is not constant"). They are now declared zeroed and
+// assigned in ogo_pkg_init, which main calls before anything else.
+//
+// The same function is where a package-level channel gets its cell wired up and
+// its hardware lock acquired -- a call, so it cannot happen at file scope -- and
+// where a user init() is called. Before this, init() was emitted and never
+// invoked, so its effects silently did not happen.
+//
+// Order matches Go: variable initializers first, then init().
+func TestEmitCPackageInit(t *testing.T) {
+	src := `func five() int {
+	return 5
+}
+
+var a = 2
+var b = a + 3
+var c = five()
+var ch chan int
+var tally int
+
+func init() {
+	tally = a + b + c
+}
 
 func main() {
+	println(tally)
 	ch <- 1
 }
 `
@@ -3718,8 +3740,25 @@ func main() {
 	}
 
 	var buf bytes.Buffer
-	if err := EmitC(pkg, &buf); err == nil {
-		t.Errorf("EmitC accepted a package-level channel:\n%s", buf.String())
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"static int a = 2;\n", // a constant initializer stays at file scope
+		"static int b = 0;\n", // these two cannot, so they are zeroed here
+		"static int c = 0;\n",
+		"static void ogo_pkg_init(void) {\n",
+		"\tb = (a + 3);\n",
+		"\tc = five();\n",
+		"\tch = &ch_cell;\n",
+		"\togo_chan_init_int(ch);\n",
+		"\tinit();\n",
+		"int main(void) {\n\togo_pkg_init();\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC package init: missing %q in\n%s", want, got)
+		}
 	}
 }
 

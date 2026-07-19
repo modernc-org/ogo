@@ -470,6 +470,80 @@ func (e *emitter) selectChan(n Node, c *selectCase) bool {
 	return true
 }
 
+// pkgInitCName is the synthesized function that performs package initialization:
+// the variable initializers C cannot express at file scope, the channels whose
+// locks must be acquired before anything uses them, and the user's own init().
+const pkgInitCName = "ogo_pkg_init"
+
+// zeroInitC is the C initializer for a zero value of ctype: a brace for anything
+// aggregate, 0 otherwise.
+func (e *emitter) zeroInitC(ctype string) string {
+	if e.isStruct(ctype) || ctype == cString || e.isSliceCType(ctype) {
+		return "{0}"
+	}
+	return "0"
+}
+
+// exprC renders an expression to C text instead of the output stream, for the
+// statements collected into the package initializer.
+func (e *emitter) exprC(ast []int32) string {
+	saved, savedIndent := e.w, e.indent
+	var b bytes.Buffer
+	e.w, e.indent = &b, 0
+	e.emitExpr(ast)
+	e.w, e.indent = saved, savedIndent
+	return b.String()
+}
+
+// deferPkgInit records a statement to run at package initialization.
+func (e *emitter) deferPkgInit(stmt string) { e.pkgInit = append(e.pkgInit, stmt) }
+
+// staticInitOK reports whether a package variable's initializer is a constant
+// expression, which C requires of a file-scope initializer. An integer literal is,
+// and so is a name the checker folded to one. Anything else -- a call, a reference
+// to another variable, arithmetic over one -- is not, and C rejects it outright
+// ("initializer element is not constant"), so it is assigned at package
+// initialization instead.
+func (e *emitter) staticInitOK(initExpr []int32) bool {
+	tok, ok := e.soleToken(initExpr)
+	if !ok {
+		return false
+	}
+	switch e.f.ch(tok) {
+	case INT, STRING:
+		return true
+	case IDENT:
+		if _, isConst := e.constInt[e.src(tok)]; isConst {
+			return true
+		}
+		s := e.src(tok)
+		return s == "true" || s == "false"
+	}
+	return false
+}
+
+// pkgInitDefs renders the synthesized initializer, or "" when there is nothing to
+// do. It is emitted after the prototypes, since it calls user functions.
+func (e *emitter) pkgInitDefs() string {
+	if !e.needsPkgInit() {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "static void %s(void) {\n", pkgInitCName)
+	for _, st := range e.pkgInit {
+		fmt.Fprintf(&b, "\t%s\n", st)
+	}
+	// The variable initializers run first, then init(), which is Go's order.
+	for _, fn := range e.initFuncs {
+		fmt.Fprintf(&b, "\t%s();\n", fn)
+	}
+	b.WriteString("}\n")
+	return b.String()
+}
+
+// needsPkgInit reports whether the package has anything to initialize.
+func (e *emitter) needsPkgInit() bool { return len(e.pkgInit) != 0 || len(e.initFuncs) != 0 }
+
 // chanType recognises a channel type `chan T`, returning its element C type.
 func (e *emitter) chanType(typeAST []int32) (elem string, ok bool) {
 	nodes := slices.Collect(it(typeAST))
@@ -862,6 +936,12 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(gd)
 		out.WriteByte('\n')
 	}
+	// The package initializer likewise calls user functions, so it follows the
+	// prototypes too.
+	if pd := e.pkgInitDefs(); pd != "" {
+		out.WriteString(pd)
+		out.WriteByte('\n')
+	}
 	out.Write(body.Bytes())
 	_, err := w.Write(out.Bytes())
 	return err
@@ -882,6 +962,8 @@ type emitter struct {
 	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
 	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
+	pkgInit         []string                 // C statements for the synthesized package initializer, in source order
+	initFuncs       []string                 // user init() functions, called after the variable initializers
 	goSites         []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
 	chanElems       map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
 	chanElemByName  map[string]string        // ogo_chan_<T> C type name -> its element C type
@@ -1314,9 +1396,14 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			if e.isSliceCType(ct) {
 				e.globalSliceVars[names[0]] = sliceElemFromCName(ct)
 			}
-			e.emit("static " + ct + " " + names[0] + " = ")
-			e.emitGlobalInit(initExpr)
-			e.emit(";\n")
+			if e.staticInitOK(initExpr) {
+				e.emit("static " + ct + " " + names[0] + " = ")
+				e.emitGlobalInit(initExpr)
+				e.emit(";\n")
+				continue
+			}
+			e.emit("static " + ct + " " + names[0] + " = " + e.zeroInitC(ct) + ";\n")
+			e.deferPkgInit(names[0] + " = " + e.exprC(initExpr) + ";")
 			continue
 		}
 		if len(names) != 1 && initExpr != nil {
@@ -1386,10 +1473,13 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			e.emit(";\n")
 			if e.isChanCType(ctype) {
-				// A package-level channel would need its lock acquired before main
-				// runs, which is the synthesized-init pass that does not exist yet.
-				e.fail("a package-level channel is not supported yet")
-				return
+				// The cell is a file-scope object like the variable pointing at it;
+				// acquiring its lock is a call, so it waits for package init.
+				elem := e.chanElemByName[ctype]
+				cell := nm + "_cell"
+				e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
+				e.deferPkgInit(nm + " = &" + cell + ";")
+				e.deferPkgInit(chanInitCName(elem) + "(" + nm + ");")
 			}
 		}
 	}
@@ -1545,6 +1635,12 @@ func (e *emitter) emitPrototypes(ast []int32) {
 		}
 		if proto != "" {
 			e.emit(proto + ";\n")
+		}
+		// Go runs init() before main. Recorded here, in the prototype pass, rather
+		// than where the body is emitted: main is emitted in that same later pass,
+		// so an init declared after it would otherwise not be known in time.
+		if recv == nil && name == "init" {
+			e.initFuncs = append(e.initFuncs, name)
 		}
 	})
 }
@@ -1710,6 +1806,11 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.curFunc = "main"
 	e.emit("int main(void) {\n")
 	e.indent++
+	if e.needsPkgInit() {
+		// Package initialization runs before anything in main, as in Go.
+		e.ind()
+		e.emit(pkgInitCName + "();\n")
+	}
 	e.mainRet = true
 	e.emitBlockStmts(body)
 	e.mainRet = false

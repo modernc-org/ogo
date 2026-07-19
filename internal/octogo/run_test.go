@@ -152,6 +152,33 @@ func main() {
 			want: "99\n7\n",
 		},
 		{
+			name: "package initialization runs before main",
+			src: `func five() int {
+	return 5
+}
+
+var a = 2
+var b = a + 3
+var c = five()
+var ch chan int
+var tally int
+
+func init() {
+	tally = a + b + c
+}
+
+func worker(k chan int) {
+	k <- tally
+}
+
+func main() {
+	go worker(ch)
+	println(<-ch)
+}
+`,
+			want: "12\n",
+		},
+		{
 			name: "index out of range traps",
 			src: `func main() {
 	s := make([]int, 2, 2)
