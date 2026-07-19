@@ -1,0 +1,33 @@
+// An assignment may have several targets and several values, "a, b = c, d". Every
+// value is evaluated before any assignment, so "a, b = b, a" swaps. A single call
+// returning as many values as there are targets distributes its results.
+
+func swap() {
+	a := 1
+	b := 2
+	a, b = b, a
+	println(a, b)
+}
+
+func define() {
+	x, y := 3, 4
+	println(x + y)
+}
+
+func from_call() {
+	a, b := two()
+	println(a + b)
+}
+
+func two() (p int, q int) {
+	return 1, 2
+}
+
+// The counts must match.
+func mismatch() {
+	a := 0
+	b := 0
+	// ERROR "assignment mismatch: 2 variables but 3 values"
+	a, b = 1, 2, 3
+	println(a + b)
+}

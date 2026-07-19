@@ -99,7 +99,7 @@ PostfixOp  = "<-" Expression
 	| "++"
 	| "--"
 	| AssignOp Expression
-	| { "," LhsItem } ( "=" | ":=" ) Expression .
+	| { "," LhsItem } ( "=" | ":=" ) ExpressionList .
 AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 	| "&=" | "|=" | "^=" | "&^="
 	| "<<=" | ">>=" .

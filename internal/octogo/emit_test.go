@@ -4076,3 +4076,36 @@ func TestEmitCStringConcatRuntime(t *testing.T) {
 		t.Errorf("EmitC accepted a runtime string concatenation:\n%s", buf.String())
 	}
 }
+
+// TestEmitCMultiValueAssign pins a multiple-value assignment `a, b = c, d`. C has
+// no such statement, so every value is evaluated into a temporary first and each
+// target then takes its temporary -- which is what makes `a, b = b, a` a swap
+// rather than assigning a into b and then b (already a) back into a.
+func TestEmitCMultiValueAssign(t *testing.T) {
+	src := `func main() {
+	a := 1
+	b := 2
+	a, b = b, a
+	println(a + b)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"\tint _ogo_t0 = b;\n",
+		"\tint _ogo_t1 = a;\n",
+		"\ta = _ogo_t0;\n",
+		"\tb = _ogo_t1;\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC multi-value assign: missing %q in\n%s", want, got)
+		}
+	}
+}

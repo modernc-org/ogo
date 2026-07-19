@@ -6810,30 +6810,35 @@ state4:
 //		| "++"
 //		| "--"
 //		| AssignOp Expression
-//		| { "," LhsItem } ( "=" | ":=" ) Expression .
+//		| { "," LhsItem } ( "=" | ":=" ) ExpressionList .
 //
 //	State 0
 //		on  "++", "--"
 //			shift and goto state 1
-//		on  ":=", "<-", '='
+//		on  ":=", '='
 //			shift and goto state 2
-//		on  ','
+//		on  "<-"
 //			shift and goto state 3
+//		on  ','
+//			shift and goto state 4
 //		on  "%=", "&=", "&^=", "*=", "+=", "-=", "/=", "<<=", ">>=", "^=", "|="
-//			call AssignOp and goto state 2
+//			call AssignOp and goto state 3
 //	State 1
 //		Accept
 //	State 2
 //		on  "<-", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
-//			call Expression and goto state 1
+//			call ExpressionList and goto state 1
 //	State 3
-//		on  '(', '*', identifier
-//			call LhsItem and goto state 4
+//		on  "<-", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//			call Expression and goto state 1
 //	State 4
+//		on  '(', '*', identifier
+//			call LhsItem and goto state 5
+//	State 5
 //		on  ":=", '='
 //			shift and goto state 2
 //		on  ','
-//			shift and goto state 3
+//			shift and goto state 4
 //
 // PostfixOp is used internally from Parse.
 func (p *Parser) PostfixOp() (r []int32) {
@@ -6845,21 +6850,32 @@ func (p *Parser) PostfixOp() (r []int32) {
 	case TOK_002b002b, TOK_002d002d:
 		r = append(r, p.shift())
 		goto state1
-	case TOK_003a003d, TOK_003c002d, TOK_003d:
+	case TOK_003a003d, TOK_003d:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_002c:
+	case TOK_003c002d:
 		r = append(r, p.shift())
 		goto state3
+	case TOK_002c:
+		r = append(r, p.shift())
+		goto state4
 	case TOK_0025003d, TOK_0026003d, TOK_0026005e003d, TOK_002a003d, TOK_002b003d, TOK_002d003d, TOK_002f003d, TOK_003c003c003d, TOK_003e003e003d, TOK_005e003d, TOK_007c003d:
 		r = p.add(r, p.AssignOp())
-		goto state2
+		goto state3
 	}
 	return p.stop(r, accept, errorSet)
 state1:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state2:
+	accept, errorSet = false, 21
+	switch Symbol(p.tok.Ch) {
+	case TOK_003c002d, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+		r = p.add(r, p.ExpressionList())
+		goto state1
+	}
+	return p.stop(r, accept, errorSet)
+state3:
 	accept, errorSet = false, 22
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
@@ -6867,15 +6883,15 @@ state2:
 		goto state1
 	}
 	return p.stop(r, accept, errorSet)
-state3:
+state4:
 	accept, errorSet = false, 61
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028, TOK_002a, identifier:
 		r = p.add(r, p.LhsItem())
-		goto state4
+		goto state5
 	}
 	return p.stop(r, accept, errorSet)
-state4:
+state5:
 	accept, errorSet = false, 5
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a003d, TOK_003d:
@@ -6883,7 +6899,7 @@ state4:
 		goto state2
 	case TOK_002c:
 		r = append(r, p.shift())
-		goto state3
+		goto state4
 	}
 	return p.stop(r, accept, errorSet)
 }
@@ -8309,6 +8325,11 @@ func (p *Parser) Parse(name string, src []byte) (ast []int32, err error) {
 	}()
 
 	p.tok = p.Scan()
+	// shift is the only other place maintaining p.eof and it never runs on
+	// empty input, so without this the start rule's 'accept && p.eof' saw a
+	// stale false and every grammar with a nullable start rule rejected the
+	// empty input it accepts by definition.
+	p.eof = p.tok.Ch == rune(TOK_EOF)
 	ast = p.SourceFile()
 	return ast, p.sc.Err()
 }

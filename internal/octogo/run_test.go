@@ -179,6 +179,30 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "multiple-value assignment and swap",
+			src: `func main() {
+	a := 1
+	b := 2
+	a, b = b, a
+	x, y := 10, 20
+	p := 0
+	q := 0
+	r := 0
+	p, q, r = 3, 4, 5
+	i := 0
+	j := 5
+	for i < j {
+		i, j = i+1, j-1
+	}
+	println(a, b)
+	println(x + y)
+	println(p, q, r)
+	println(i, j)
+}
+`,
+			want: "2 1\n30\n3 4 5\n3 2\n",
+		},
+		{
 			name: "constant string concatenation folds",
 			src: `const Greeting = "hello" + ", " + "world"
 

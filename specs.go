@@ -11,7 +11,6 @@
 // TODO 20260307 Keywords: +?map
 // TODO 20260307 Numeric type: +float,float32
 // TODO 20260307 Return statements: ? disable naked returns
-// TODO 20260307 Return statements: Expression -> ExpressionList
 // TODO 20260317 labels and gotos
 // TODO 20260719 Channels: package-level channels need an init pass before main
 // TODO 20260719 Select: send clauses, and smart-pin clauses
@@ -725,7 +724,7 @@
 //		| "++"
 //		| "--"
 //		| AssignOp Expression
-//		| { "," LhsItem } ( "=" | ":=" ) Expression .
+//		| { "," LhsItem } ( "=" | ":=" ) ExpressionList .
 //	AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .
@@ -743,6 +742,12 @@
 // The "++" and "--" forms are the increment and decrement statements "x++" and
 // "x--"; they take no operand of their own (the target is the AssignHead) and,
 // unlike Go's, are statements only -- never expressions.
+//
+// An assignment may have several targets and several values: "a, b = c, d"
+// assigns each value to the corresponding target. The values are all evaluated,
+// in the usual order, before any assignment happens, so "a, b = b, a" swaps.
+// As a special case, the right-hand side may be a single call returning as many
+// values as there are targets, which distributes its results: "a, b = f()".
 //
 // The AssignOp forms are the compound assignments. "x op= y" is equivalent to
 // "x = x op y", except that the target is evaluated only once -- which is

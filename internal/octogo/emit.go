@@ -4418,12 +4418,30 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.emitAssignTail(t)
 		return
 	}
-	// PostfixOp = ( "=" | ":=" ) Expression, for the single-target forms.
-	if len(op) != 2 || op[0].sym != 0 || op[1].sym != Expression {
+	// PostfixOp = "<-" Expression (send), or ( "=" | ":=" ) ExpressionList, for the
+	// single-target forms. The RHS of "="/":=" is a list of one here (a longer list
+	// is a multiple assignment, handled above); a send keeps its bare Expression.
+	if len(op) != 2 || op[0].sym != 0 {
 		e.fail("only `name = expr`, `name := expr`, `name++` and `name--` are supported yet")
 		return
 	}
-	switch e.f.ch(op[0].tok) {
+	opTok := e.f.ch(op[0].tok)
+	var rhsAst []int32
+	if opTok == ARROW {
+		if op[1].sym != Expression {
+			e.fail("unsupported send statement")
+			return
+		}
+		rhsAst = op[1].ast
+	} else {
+		rhs := e.rhsExprs(op[1])
+		if len(rhs) != 1 {
+			e.fail("only `name = expr`, `name := expr`, `name++` and `name--` are supported yet")
+			return
+		}
+		rhsAst = rhs[0].ast
+	}
+	switch opTok {
 	case ARROW:
 		// A send `ch <- v`. The receive form `x = <-ch` is an ordinary assignment
 		// whose right-hand side is a receive expression, so it does not come here.
@@ -4434,7 +4452,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 		e.ind()
 		e.emit(chanSendCName(e.chanElemByName[ct]) + "(" + lhs + ", ")
-		e.emitExpr(op[1].ast)
+		e.emitExpr(rhsAst)
 		e.emit(");\n")
 		return
 	case ASSIGN:
@@ -4443,27 +4461,27 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			// right-hand side for its side effects and drop the result. The
 			// `(void)` cast makes the discard explicit and valid C even when the
 			// expression is a plain value. (`_ := expr` is rejected by the checker.)
-			e.emitDiscard(op[1].ast)
+			e.emitDiscard(rhsAst)
 			return
 		}
 		// A make initializer assigned to an existing lvalue -- a slice variable
 		// (`s = make(...)`) or a slice struct field (`b.data = make(...)`) -- hoists a
 		// backing array and assigns a fresh { backing, len, cap } header.
-		if elem, lenAST, capAST, ok := e.makeSliceInit(op[1].ast); ok {
+		if elem, lenAST, capAST, ok := e.makeSliceInit(rhsAst); ok {
 			e.needSlice(elem)
 			e.emitMakeSliceAssign(lhs, sliceCName(elem), elem, lenAST, capAST)
 			return
 		}
 		e.ind()
 		e.emit(lhs + " = ")
-		e.emitExpr(op[1].ast)
+		e.emitExpr(rhsAst)
 		e.emit(";\n")
 	case DEFINE:
 		if len(fields) != 0 {
 			e.fail("a short declaration cannot have a field target")
 			return
 		}
-		e.emitInferredLocal(base, op[1].ast)
+		e.emitInferredLocal(base, rhsAst)
 	default:
 		e.fail("only `name = expr` and `name := expr` are supported yet")
 	}
@@ -4590,6 +4608,25 @@ func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string
 //
 // It classifies without emitting, so a caller can reject an unsupported form
 // before writing a partial statement.
+// rhsExprs returns the right-hand-side expressions of an assignment: the children
+// of an ExpressionList, or a single bare Expression. The assignment RHS is an
+// ExpressionList, while a compound assignment's operand is a bare Expression.
+func (e *emitter) rhsExprs(n Node) []Node {
+	if n.sym == Expression {
+		return []Node{n}
+	}
+	if n.sym != ExpressionList {
+		return nil
+	}
+	var out []Node
+	for c := range it(n.ast) {
+		if c.sym == Expression {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func (e *emitter) assignTailOf(opNode Node) (assignTail, bool) {
 	if opNode.sym != PostfixOp {
 		return assignTail{}, false
@@ -4603,17 +4640,21 @@ func (e *emitter) assignTailOf(opNode Node) (assignTail, bool) {
 			return assignTail{op: "--"}, true
 		}
 	}
-	if len(op) != 2 || op[1].sym != Expression {
+	if len(op) != 2 {
 		return assignTail{}, false
 	}
+	rhs := e.rhsExprs(op[1])
+	if len(rhs) != 1 {
+		return assignTail{}, false // a multi-value list is not a single-target tail
+	}
 	if op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
-		return assignTail{op: "=", rhs: op[1].ast}, true
+		return assignTail{op: "=", rhs: rhs[0].ast}, true
 	}
 	if op[0].sym == AssignOp {
 		if tok, ok := e.soleToken(op[0].ast); ok {
 			sym := e.f.ch(tok)
 			if c, ok := cAssignOps[sym]; ok {
-				return assignTail{op: c, rhs: op[1].ast, complement: sym == ANDNOT_ASSIGN}, true
+				return assignTail{op: c, rhs: rhs[0].ast, complement: sym == ANDNOT_ASSIGN}, true
 			}
 		}
 	}
@@ -4740,7 +4781,7 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 func (e *emitter) emitMultiAssign(first string, op []Node) {
 	targets := []string{first}
 	define := false
-	var rhs []int32
+	var rhs []Node
 	for _, n := range op {
 		switch n.sym {
 		case LhsItem:
@@ -4750,15 +4791,58 @@ func (e *emitter) emitMultiAssign(first string, op []Node) {
 				return
 			}
 			targets = append(targets, id)
-		case Expression:
-			rhs = n.ast
+		case ExpressionList:
+			rhs = e.rhsExprs(n)
 		case 0:
 			if ch := e.f.ch(n.tok); ch == ASSIGN || ch == DEFINE {
 				define = ch == DEFINE
 			}
 		}
 	}
-	e.emitDestructure(targets, define, rhs)
+	// One expression for several targets distributes a multi-result call; a matching
+	// count is a value list assigned pairwise.
+	if len(rhs) == 1 {
+		e.emitDestructure(targets, define, rhs[0].ast)
+		return
+	}
+	if len(rhs) != len(targets) {
+		e.fail("assignment mismatch: %d targets, %d values", len(targets), len(rhs))
+		return
+	}
+	e.emitValueList(targets, define, rhs)
+}
+
+// emitValueList lowers `a, b = c, d` (or `:=`). Every value is evaluated into a
+// temporary first, then each target takes its temporary, so all right-hand sides
+// see the pre-assignment values -- which is what makes `a, b = b, a` a swap.
+func (e *emitter) emitValueList(targets []string, define bool, rhs []Node) {
+	tmps := make([]string, len(rhs))
+	types := make([]string, len(rhs))
+	for i, r := range rhs {
+		ct, ok := e.inferCType(r.ast)
+		if !ok {
+			e.fail("cannot infer the type of a value in a multiple assignment")
+			return
+		}
+		types[i] = ct
+		tmps[i] = e.newTmp()
+		e.ind()
+		e.emit(ct + " " + tmps[i] + " = ")
+		e.emitExpr(r.ast)
+		e.emit(";\n")
+	}
+	for i, tgt := range targets {
+		if tgt == "_" {
+			continue
+		}
+		e.ind()
+		if define {
+			e.locals[tgt] = types[i]
+			e.emit(types[i] + " " + tgt + " = " + tmps[i] + ";\n")
+		} else {
+			e.emit(tgt + " = " + tmps[i] + ";\n")
+		}
+	}
 }
 
 // emitDestructure lowers a multi-result call bound to several targets, shared by

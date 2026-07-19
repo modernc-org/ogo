@@ -2531,8 +2531,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 						}
 					}
 				}
+			case ExpressionList:
+				// The right-hand side of "="/":=" is a list of one or more values.
+				for c := range it(n.ast) {
+					if c.sym == Expression {
+						rhs = append(rhs, c)
+					}
+				}
 			case Expression:
-				rhs = append(rhs, n)
+				rhs = append(rhs, n) // a send's or compound assignment's operand
 			case AssignOp:
 				// A compound operator is wrapped in an AssignOp node, where "="
 				// and ":=" are direct children of the PostfixOp.
@@ -2760,8 +2767,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 // call, or a compound expression that merely contains a call is left unknown, so a
 // count mismatch there is not reported rather than risk a false one.
 func (f *File) rhsValueCount(s *Scope, rhs []Node) (int, bool) {
-	if len(rhs) != 1 {
+	if len(rhs) == 0 {
 		return 0, false
+	}
+	if len(rhs) > 1 {
+		// A value list: each expression is exactly one value. Go forbids mixing a
+		// multi-result call with other values, so no element expands.
+		return len(rhs), true
 	}
 	e := rhs[0]
 	if r, ok := f.directCallResultCount(s, e); ok {
