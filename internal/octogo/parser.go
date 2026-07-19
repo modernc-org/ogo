@@ -5074,12 +5074,13 @@ state4:
 
 // ConstSpec grammar:
 //
-//	ConstSpec = identifier [ Type ] "=" Expression .
+//	ConstSpec = identifier [ Type ] [ "=" Expression ] .
 //
 //	State 0
 //		on  identifier
 //			shift and goto state 1
 //	State 1
+//		Accept
 //		on  '='
 //			shift and goto state 2
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
@@ -5090,6 +5091,7 @@ state4:
 //	State 3
 //		Accept
 //	State 4
+//		Accept
 //		on  '='
 //			shift and goto state 2
 //
@@ -5106,7 +5108,7 @@ func (p *Parser) ConstSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 41
+	accept, errorSet = true, 41
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -5128,7 +5130,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 86
+	accept, errorSet = true, 86
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -7319,7 +7321,7 @@ stop:
 	}
 	r[1] = int32(len(r) - 2)
 	if !accept {
-		p.err(p.tok.Position(), "%q [%s]: expected %v", p.tok.Src(), Symbol(p.tok.Ch), errorSets[errorSet])
+		p.err(p.tokPos(), "%q [%s]: expected %v", p.tokSrc(), Symbol(p.tok.Ch), errorSets[errorSet])
 	}
 	return r
 }
@@ -8286,10 +8288,39 @@ func (p *Parser) add(r, s []int32) (t []int32) {
 	return append(r, s...)
 }
 
+// tokPos reports where the lookahead token is.
+//
+// RecScanner.Scan hands back a token indexed one past its own table when the
+// lexer rejects the input, and Token.Position and Token.Src index that table
+// checking only that it is not empty. Asking such a token anything therefore
+// panics, and the recovery in Parse turned that into "index out of range"
+// reaching the caller in place of a syntax error, for any input at all that
+// does not tokenize. The lexeme the lexer choked on is already reported, with
+// its own position, through p.sc.Err().
+func (p *Parser) tokPos() token.Position {
+	switch n := p.sc.Len(); {
+	case int(p.tokIndex) < n:
+		return p.tok.Position()
+	case n != 0:
+		return p.sc.Token(n - 1).Position()
+	default:
+		return token.Position{}
+	}
+}
+
+// tokSrc is the lookahead token's source text, guarded as in tokPos.
+func (p *Parser) tokSrc() string {
+	if int(p.tokIndex) < p.sc.Len() {
+		return p.tok.Src()
+	}
+
+	return ""
+}
+
 func (p *Parser) stop(r []int32, accept bool, errorSet int) []int32 {
 	r[1] = int32(len(r) - 2)
 	if !accept {
-		p.err(p.tok.Position(), "%q [%s]: expected %v", p.tok.Src(), Symbol(p.tok.Ch), errorSets[errorSet])
+		p.err(p.tokPos(), "%q [%s]: expected %v", p.tokSrc(), Symbol(p.tok.Ch), errorSets[errorSet])
 	}
 	return r
 }

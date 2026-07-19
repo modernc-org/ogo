@@ -496,11 +496,14 @@
 // expression.
 //
 // (Note: In OctoGo's EBNF, ConstSpec binds a single identifier to a single
-// expression, unlike Go which allows identifier lists. The iota mechanism
-// operates sequentially across the ConstDecl group).
+// expression, unlike Go which allows identifier lists. Within a parenthesized
+// group a ConstSpec may omit its expression, in which case it repeats the
+// previous spec's expression and type. iota is a predeclared integer constant
+// equal to the zero-based index of the ConstSpec in its group, so a repeated
+// expression takes a new value at each spec).
 //
 //	ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
-//	ConstSpec = identifier [ Type ] "=" Expression .
+//	ConstSpec = identifier [ Type ] [ "=" Expression ] .
 //
 // # Type Declarations
 //

@@ -179,6 +179,36 @@ func main() {
 			want: "12\n",
 		},
 		{
+			name: "iota constant groups",
+			src: `type Weekday int
+
+const (
+	Sunday Weekday = iota
+	Monday
+	Tuesday
+)
+
+const (
+	_  = iota
+	KB = 1 << (10 * iota)
+	MB = 1 << (10 * iota)
+)
+
+const (
+	A = iota * 2
+	B
+	C
+)
+
+func main() {
+	println(int(Sunday), int(Monday), int(Tuesday))
+	println(KB, MB)
+	println(A, B, C)
+}
+`,
+			want: "0 1 2\n1024 1048576\n0 2 4\n",
+		},
+		{
 			name: "multiple-value assignment and swap",
 			src: `func main() {
 	a := 1

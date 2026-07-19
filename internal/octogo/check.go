@@ -199,6 +199,7 @@ type File struct {
 	hasInvalidImports bool
 	inArrayBound      bool              // evaluating an array length: suppress "is not a constant"
 	inCaseExpr        bool              // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
+	iota              int               // the current iota value while evaluating a const spec, or -1 outside a const declaration
 	loopDepth         int               // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
 	switchDepth       int               // number of enclosing "switch" statements, so a "break" in one is recognised as placed
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
@@ -245,6 +246,7 @@ func (p *Package) newFile(fn string, fsys fs.FS) (f *File) {
 		Scope:    fileScope,
 		Package:  p,
 		tld:      tldScope,
+		iota:     -1, // iota is only meaningful inside a const declaration
 	}
 	b, err := fs.ReadFile(fsys, fn)
 	if err != nil {
@@ -5810,10 +5812,27 @@ func (f *File) identifierList(s *Scope, n Node) (r []Token) {
 
 // ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
 func (f *File) declareConst(s *Scope, n Node) {
+	// iota counts specs across the group; lastExpr and lastType carry the previous
+	// spec's expression and type forward, so a spec written with neither -- "B" and
+	// "C" in "const ( A = iota; B; C )" -- repeats them, each evaluated at its own
+	// iota. hasLast guards the first spec, which must have an expression of its own.
+	iotaVal := 0
+	var lastExpr, lastType Node
+	var hasLast bool
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ConstSpec:
 			cs := f.declareConstSpec(s, n)
+			cs.iota = iotaVal
+			iotaVal++
+			// A spec omitting its expression repeats the previous spec's expression
+			// and type together; one with an expression of its own carries that
+			// expression and its (possibly absent) type forward instead.
+			if cs.hasExpr {
+				lastExpr, hasLast, lastType = cs.exprNode, true, cs.rawType
+			} else {
+				cs.exprNode, cs.hasExpr, cs.rawType = lastExpr, hasLast, lastType
+			}
 			var valid int32
 			if s.Kind != PackageScope {
 				valid = n.End() + 1
@@ -5862,28 +5881,39 @@ type ConstSpecNode struct {
 	TypeNode   TypeNode
 	node       Node // the ConstSpec AST node, for on-demand evaluation
 	gate       gate // evaluation state: order-independence and cycle detection
+
+	// iota is the spec's zero-based index within its const group; exprNode and
+	// rawType are the Expression and Type nodes to evaluate. A spec with no
+	// expression of its own inherits the previous spec's, so exprNode/rawType may
+	// point at an earlier spec's nodes. hasExpr distinguishes an inherited-empty
+	// spec from one that genuinely has no expression (which is an error).
+	iota     int
+	exprNode Node
+	rawType  Node
+	hasExpr  bool
 }
 
 func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
 	r = &ConstSpecNode{node: n}
-	for n := range it(n.ast) {
-		switch n.sym {
+	for c := range it(n.ast) {
+		switch c.sym {
 		case 0:
-			switch f.ch(n.tok) {
+			switch f.ch(c.tok) {
 			case IDENT:
-				r.Name = f.tok(n.tok)
+				r.Name = f.tok(c.tok)
 			case ASSIGN:
 				// ok
 			default:
-				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
+				panic(todo("", f.tok(c.tok).Position(), f.ch(c.tok)))
 			}
 		case Type:
 			// A typed const's declared type is resolved later, in constSpec;
 			// the declaration pass only binds the name (like declareVarSpec).
+			r.rawType = c
 		case Expression:
-			// ok
+			r.exprNode, r.hasExpr = c, true
 		default:
-			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
+			panic(todo("", f.tok(c.Pos()).Position(), c.sym))
 		}
 	}
 	return r
@@ -5931,17 +5961,25 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 		return
 	}
 	cs.gate.open()
+	// iota is this spec's index while its expression is evaluated; save and restore
+	// it, since resolving one constant can trigger another's resolution.
+	savedIota := f.iota
+	f.iota = cs.iota
 	var exprPos token.Position
-	for c := range it(cs.node.ast) {
-		switch c.sym {
-		case Expression:
-			exprPos = f.tok(c.Pos()).Position()
-			cs.Expression = f.expression(s, c)
-			cs.Value = f.evalConstExpr(cs.Expression)
-		case Type:
-			cs.TypeNode = f.typ(s, c)
-		}
+	if cs.rawType.sym != 0 {
+		cs.TypeNode = f.typ(s, cs.rawType)
 	}
+	if cs.hasExpr {
+		exprPos = f.tok(cs.exprNode.Pos()).Position()
+		cs.Expression = f.expression(s, cs.exprNode)
+		cs.Value = f.evalConstExpr(cs.Expression)
+	} else if cs.node.sym != 0 {
+		// A source const spec with no expression (and none to inherit). The
+		// predeclared true/false/nil carry no source node and already have a value,
+		// so they are not flagged.
+		f.err(cs.Name.Position(), "missing constant value for %s", cs.Name.Src())
+	}
+	f.iota = savedIota
 	if cs.Value == nil {
 		cs.Value = untypedConst{constant.MakeUnknown()}
 	}
@@ -6533,6 +6571,12 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				}
 			case IDENT:
 				nm := tok.Src()
+				if nm == "iota" && f.iota >= 0 {
+					// The predeclared iota: the index of the current spec in its
+					// const group, an untyped integer constant.
+					r = untypedConst{constant.MakeInt64(int64(f.iota))}
+					break
+				}
 				switch d := s.find(nm); x := d.(type) {
 				case *ConstDeclaration:
 					// Evaluate on demand so a forward reference resolves; a cycle

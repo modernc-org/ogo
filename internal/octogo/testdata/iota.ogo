@@ -1,0 +1,38 @@
+// iota is a predeclared constant equal to the zero-based index of a ConstSpec in
+// its const group. A spec that omits its expression repeats the previous spec's
+// expression and type, each evaluated at its own iota.
+
+const (
+	Zero = iota
+	One
+	Two
+)
+
+func sequential() {
+	println(Zero + One + Two)
+}
+
+// iota may appear in an expression, and the blank identifier skips a value.
+const (
+	_  = iota
+	KB = 1 << (10 * iota)
+)
+
+func shifted() {
+	println(KB)
+}
+
+// iota is only meaningful inside a const declaration.
+func outside() {
+	// ERROR "undefined: iota"
+	x := iota
+	println(x)
+}
+
+// A source const spec with nothing to inherit has no value.
+// ERROR "missing constant value for alone"
+const alone int
+
+func missing() {
+	println(alone)
+}

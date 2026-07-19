@@ -45,7 +45,7 @@ TopLevelDecl = FuncDecl | VarDecl | ConstDecl | TypeDecl .
 VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
 VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
 ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
-ConstSpec = identifier [ Type ] "=" Expression .
+ConstSpec = identifier [ Type ] [ "=" Expression ] .
 TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 TypeSpec = identifier [ "=" ] Type .
 FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .

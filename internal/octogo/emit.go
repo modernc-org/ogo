@@ -753,7 +753,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -985,6 +985,7 @@ type emitter struct {
 	inSwitchCase    bool                     // emitting a switch case body, where the if/else lowering gives break a different meaning
 	deferBlockDepth int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
 	deferReplay     int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
+	iota            int                      // the current iota value while emitting a const spec's expression, or -1 outside one
 	deferReplayArgs []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
 	usesPanic       bool                     // ogo_panic is called: emit its definition and pull in its includes
 	usesBound       bool                     // ogo_bound is called: emit the index bounds-check helper
@@ -1516,16 +1517,24 @@ func (e *emitter) emitGlobalInit(initExpr []int32) {
 // is inferred from its initializer, defaulting to int. The name is recorded in the
 // global or local type environment so its later uses can be typed.
 func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
+	// iota counts specs across the group; lastExpr and lastType carry the previous
+	// spec's expression and type forward for a spec that omits its own, mirroring
+	// the checker's declareConst.
+	iotaVal := 0
+	var lastExpr []int32
+	var lastType string
+	haveLastType := false
 	for n := range it(ast) {
 		if n.sym != ConstSpec {
 			continue
 		}
-		var name, ctype string
+		var name, ownType string
 		var initExpr []int32
+		hasType := false
 		for s := range it(n.ast) {
 			switch s.sym {
 			case Type:
-				ctype = e.cType(s.ast)
+				ownType, hasType = e.cType(s.ast), true
 			case Expression:
 				initExpr = s.ast
 			case 0:
@@ -1534,12 +1543,33 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 				}
 			}
 		}
-		if name == "" || initExpr == nil {
+		if name == "" {
 			e.fail("malformed const declaration")
 			return
 		}
-		if ctype == "" {
+		// A spec omitting its expression repeats the previous spec's expression and
+		// type together; one with its own carries that forward.
+		if initExpr != nil {
+			lastExpr = initExpr
+			lastType, haveLastType = ownType, hasType
+		} else {
+			initExpr = lastExpr
+			ownType, hasType = lastType, haveLastType
+		}
+		if initExpr == nil {
+			e.fail("malformed const declaration")
+			return
+		}
+		curIota := iotaVal
+		iotaVal++
+		if name == "_" {
+			continue // a blank const declares nothing; skip it, but it still advances iota
+		}
+		ctype := ownType
+		if !hasType {
+			e.iota = curIota // so inference sees iota as an int
 			ct, ok := e.inferCType(initExpr)
+			e.iota = -1
 			if !ok {
 				ct = "int" // an untyped constant defaults to int
 			}
@@ -1550,10 +1580,13 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		} else {
 			e.locals[name] = ctype
 		}
-		// A constant that is a single integer literal can serve as an array bound
-		// (flexcc rejects a `static const` there); record its value.
+		// A constant that folds to a single integer -- a literal, or iota itself --
+		// can serve as an array bound (flexcc rejects a `static const` there); record
+		// its value.
 		if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == INT {
 			e.constInt[name] = normalizeIntLit(e.src(tok))
+		} else if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == IDENT && e.src(tok) == "iota" {
+			e.constInt[name] = strconv.Itoa(curIota)
 		}
 		// A constant string -- a literal or a concatenation of constants -- is
 		// recorded decoded and emitted at each use as the folded literal, rather
@@ -1564,6 +1597,7 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 			e.constStr[name] = v
 			continue
 		}
+		e.iota = curIota // substitute iota with its value while emitting the expression
 		e.ind()
 		if pkg {
 			// A file-scope constant has static storage, so a string initializer
@@ -1577,6 +1611,7 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 			e.emitExpr(initExpr)
 		}
 		e.emit(";\n")
+		e.iota = -1
 	}
 }
 
@@ -5558,6 +5593,14 @@ func (e *emitter) emitOperandToken(tok int32) {
 			e.emit("1")
 		case "false":
 			e.emit("0")
+		case "iota":
+			// Inside a const spec's expression, iota is its value; elsewhere it is an
+			// ordinary name (the checker rejects a bare iota outside a const).
+			if e.iota >= 0 {
+				e.emit(strconv.Itoa(e.iota))
+				return
+			}
+			e.emit(s)
 		default:
 			// A string constant is inlined as its folded literal -- it has no C
 			// variable (see emitConstDecl).

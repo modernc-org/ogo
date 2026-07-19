@@ -4109,3 +4109,50 @@ func TestEmitCMultiValueAssign(t *testing.T) {
 		}
 	}
 }
+
+// TestEmitCIota pins iota in const groups. iota is the zero-based index of a spec
+// within its group; a spec that omits its expression repeats the previous one, at
+// its own iota, and inherits its type. The value is substituted at each use, so
+// `KB = 1 << (10 * iota)` becomes the shift at that index and C folds it.
+func TestEmitCIota(t *testing.T) {
+	src := `type Color int
+
+const (
+	Red Color = iota
+	Green
+	Blue
+)
+
+const (
+	_  = iota
+	KB = 1 << (10 * iota)
+)
+
+func main() {
+	println(int(Red), int(Green), int(Blue))
+	println(KB)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"static const Color Red = 0;\n",
+		"static const Color Green = 1;\n", // expression and type both inherited
+		"static const Color Blue = 2;\n",
+		"static const int KB = (1 << ((10 * 1)));\n", // iota substituted; blank skipped
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC iota: missing %q in\n%s", want, got)
+		}
+	}
+	if strings.Contains(buf.String(), " _ =") {
+		t.Errorf("blank const should be skipped:\n%s", buf.String())
+	}
+}
