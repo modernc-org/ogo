@@ -228,6 +228,44 @@ func main() {
 			want: "3 2\n3 8 true\n",
 		},
 		{
+			name: "naked return of named results",
+			src: `func inc(n int) (r int) {
+	r = n + 1
+	return
+}
+
+func divmod(a int, b int) (q, r int) {
+	q = a / b
+	r = a % b
+	return
+}
+
+func clamp(x int) (r int) {
+	r = x
+	if x > 10 {
+		r = 10
+		return
+	}
+	return
+}
+
+func blank() (_ int, y int) {
+	y = 7
+	return
+}
+
+func main() {
+	println(inc(41))
+	q, r := divmod(17, 5)
+	println(q, r)
+	println(clamp(4), clamp(20))
+	a, b := blank()
+	println(a, b)
+}
+`,
+			want: "42\n3 2\n4 10\n0 7\n",
+		},
+		{
 			name: "multiple-value assignment and swap",
 			src: `func main() {
 	a := 1

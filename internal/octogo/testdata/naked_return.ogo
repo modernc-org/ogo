@@ -1,0 +1,40 @@
+// COMPILE
+
+// A bare "return" is legal when every result is named: it returns the results'
+// current values (Go's naked return). Named results are ordinary variables,
+// zero-initialized, that the body may assign and read.
+
+func inc(n int) (r int) {
+	r = n + 1
+	return
+}
+
+func divmod(a int, b int) (q, r int) {
+	q = a / b
+	r = a % b
+	return
+}
+
+// A naked return may appear anywhere a return may, including inside a branch,
+// and mixes freely with explicit returns.
+func clamp(x int, hi int) (r int) {
+	r = x
+	if x > hi {
+		return hi
+	}
+	return
+}
+
+// A function with no results allows a bare return as a plain early exit.
+func early(x int) {
+	if x < 0 {
+		return
+	}
+	println(x)
+}
+
+func use() {
+	q, r := divmod(inc(16), 5)
+	println(q, r, clamp(4, 10))
+	early(-1)
+}

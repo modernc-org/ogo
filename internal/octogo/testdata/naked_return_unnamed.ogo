@@ -1,0 +1,13 @@
+// A bare "return" needs named results to supply the values. With unnamed
+// results there is nothing for it to return, so it is rejected exactly like any
+// other return with too few operands.
+
+func f() (int, int) {
+	// ERROR "not enough arguments to return"
+	return
+}
+
+func main() {
+	a, b := f()
+	println(a, b)
+}

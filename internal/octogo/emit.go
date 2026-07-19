@@ -994,6 +994,7 @@ type emitter struct {
 	checks          bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
+	curResultNames  []string                 // current function's result C-variable names, for a bare "return" (naked return)
 	tmp             int                      // per-function counter for generated temporaries (destructuring)
 	makeN           int                      // translation-unit counter for make() backing arrays
 	wroteDecl       bool                     // a top-level definition has been emitted (drives blank-line separators)
@@ -1723,6 +1724,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.tmp = 0
 	e.defers = nil
 	e.deferReplay = -1
+	e.curResultNames = nil
 	// A method is a function with a mangled name and its receiver as the first
 	// parameter, bound in the local environment so the body reads it like any local
 	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
@@ -1745,6 +1747,14 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.indent++
 	e.emitParamCopies(sig)
 	e.declareNamedResults(sig)
+	// A bare "return" (legal only when every result is named) returns these. A
+	// blank result "_" has no C variable, so it contributes its zero value.
+	e.curResultNames, _ = e.resultInfo(sig)
+	for i, nm := range e.curResultNames {
+		if nm == "" || nm == "_" {
+			e.curResultNames[i] = "0"
+		}
+	}
 	// The body goes to a buffer so the defer temporaries can be declared ahead of
 	// it. They must be at function scope -- a defer in a nested block captures its
 	// arguments there, but the call is replayed at a return that block has exited
@@ -3823,10 +3833,24 @@ func (e *emitter) emitReturn(nodes []Node) {
 	e.ind()
 	switch len(exprs) {
 	case 0:
-		if e.mainRet {
+		// A bare "return": main returns 0, a void function returns nothing, and a
+		// named-result function returns its result variables (naked return).
+		switch {
+		case e.mainRet:
 			e.emit("return 0;\n")
-		} else {
+		case len(e.curResultNames) == 0:
 			e.emit("return;\n")
+		case len(e.curResultNames) == 1:
+			e.emit("return " + e.curResultNames[0] + ";\n")
+		default:
+			e.emit("return (" + e.retStructName(e.curFunc) + "){")
+			for i, nm := range e.curResultNames {
+				if i != 0 {
+					e.emit(", ")
+				}
+				e.emit(nm)
+			}
+			e.emit("};\n")
 		}
 	case 1:
 		e.emit("return ")

@@ -4196,3 +4196,41 @@ func main() {
 		}
 	}
 }
+
+func TestEmitCNakedReturn(t *testing.T) {
+	src := `func inc(n int) (r int) {
+	r = n + 1
+	return
+}
+
+func divmod(a int, b int) (q, r int) {
+	q = a / b
+	r = a % b
+	return
+}
+
+func main() {
+	x, y := divmod(17, 5)
+	println(x, y, inc(9))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		// A bare "return" reads the named result variables: a single result
+		// directly, multiple through the result struct.
+		"return r;\n",
+		"return (ogo_ret_divmod){q, r};\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC naked return: missing %q in\n%s", want, got)
+		}
+	}
+}

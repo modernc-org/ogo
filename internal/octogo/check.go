@@ -678,6 +678,7 @@ type retResult struct {
 	name  string // source type name, for messages (e.g. "int")
 	kind  Kind
 	known bool // kind is a predeclared type we can check literals against
+	named bool // the result has a name, so a bare "return" can supply it
 }
 
 // flattenResults expands a signature's result list into one retResult per
@@ -688,6 +689,7 @@ func (f *File) flattenResults(s *Scope, sig *SignatureNode) (r []retResult) {
 	}
 	for _, p := range sig.Results.List {
 		rt := f.resultType(s, p.TypeNode)
+		rt.named = len(p.Names) > 0
 		n := len(p.Names)
 		if n == 0 {
 			n = 1 // an unnamed result contributes one value
@@ -1400,6 +1402,16 @@ func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 	}
 
 	switch {
+	case len(exprs) == 0 && len(results) != 0:
+		// A bare "return" is legal only when every result is named, in which case
+		// it returns the results' current values (Go's naked return).
+		for _, rr := range results {
+			if !rr.named {
+				f.err(retTok.Position(), "not enough arguments to return")
+				return
+			}
+		}
+		return
 	case len(exprs) < len(results):
 		f.err(retTok.Position(), "not enough arguments to return")
 		return

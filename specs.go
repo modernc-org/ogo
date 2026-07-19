@@ -10,7 +10,6 @@
 //
 // TODO 20260307 Keywords: +?map
 // TODO 20260307 Numeric type: +float,float32
-// TODO 20260307 Return statements: ? disable naked returns
 // TODO 20260317 labels and gotos
 // TODO 20260719 Channels: package-level channels need an init pass before main
 // TODO 20260719 Select: send clauses, and smart-pin clauses
@@ -845,6 +844,14 @@
 //
 // A "return" statement in a function F terminates the execution of F, and
 // optionally provides one or more result values.
+//
+// The number of result operands must equal the number of the function's
+// results, each assignable to its result type. A "return" with no operands is
+// allowed in two cases: a function with no results, and a function whose results
+// are all named -- there the bare "return" (a "naked" return) supplies the
+// current values of the named results, which are ordinary variables the body may
+// have assigned. A named result is zero-initialized, so a naked return before
+// any assignment yields the zero value.
 //
 // # Concurrency
 //
