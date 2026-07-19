@@ -206,6 +206,31 @@ func main() {
 		want: "3 2\n3 8 true\n",
 	},
 	{
+		name: "unnamed and blank parameters",
+		src: `func const42(int, int) int {
+	return 42
+}
+
+func first(a int, _ int) int {
+	return a
+}
+
+func mix(_ int, b bool, c byte) int {
+	if b {
+		return int(c)
+	}
+	return 0
+}
+
+func main() {
+	println(const42(1, 2))
+	println(first(8, 3))
+	println(mix(9, true, 65))
+}
+`,
+		want: "42\n8\n65\n",
+	},
+	{
 		name: "naked return of named results",
 		src: `func inc(n int) (r int) {
 	r = n + 1

@@ -4292,3 +4292,37 @@ func TestEmitCRawString(t *testing.T) {
 		}
 	}
 }
+
+func TestEmitCUnnamedParams(t *testing.T) {
+	src := `func f(int, int) int {
+	return 42
+}
+
+func g(a int, _ int) int {
+	return a
+}
+
+func main() {
+	println(f(1, 2) + g(3, 4))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		// An unnamed parameter emits its type with no name (flexcc and gcc both
+		// accept it in a definition); a blank "_" parameter is treated the same.
+		"int f(int, int) {\n",
+		"int g(int a, int) {\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC unnamed params: missing %q in\n%s", want, got)
+		}
+	}
+}

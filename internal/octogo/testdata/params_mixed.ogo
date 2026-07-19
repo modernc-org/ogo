@@ -1,0 +1,12 @@
+// A parameter list, like a result list, must be either all named or all unnamed.
+// A named parameter followed by a bare type is the illegal mix that Go rejects
+// with "missing parameter type" -- the trailing type is read as a name with no
+// type to bind. ("(int, b int)" is instead accepted: there the bare "int" is a
+// parameter named int sharing the following parameter's type.)
+
+// ERROR "missing type for int"
+func mixed(a int, int)
+
+func main() {
+	println(1)
+}

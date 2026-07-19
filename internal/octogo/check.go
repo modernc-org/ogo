@@ -4215,7 +4215,11 @@ func (f *File) flattenParams(s *Scope, sig *SignatureNode) (r []retResult) {
 	}
 	for _, p := range sig.Params.List {
 		pt := f.resultType(s, p.TypeNode)
-		for range len(p.Names) {
+		n := len(p.Names)
+		if n == 0 {
+			n = 1 // an unnamed parameter is still one value
+		}
+		for range n {
 			r = append(r, pt)
 		}
 	}
@@ -4297,14 +4301,14 @@ type SignatureNode struct {
 func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 	r = &SignatureNode{}
 	// Signature = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
-	// Parameters are the only ParameterList; results are a single Type or a
-	// parenthesized ResultList.
+	// ParameterList and ResultList share the ParamDecl grammar, so parameterList
+	// reconciles both; a single Type is a lone unnamed result.
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ParameterList:
 			r.Params = f.parameterList(s, n)
 		case ResultList:
-			r.Results = f.resultList(s, n)
+			r.Results = f.parameterList(s, n)
 		case Type:
 			// A single unnamed result: Signature = "(" [...] ")" Type .
 			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
@@ -4322,39 +4326,28 @@ func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 	return r
 }
 
-// resultList builds a ParameterListNode from a ResultList AST, reconciling named
-// and unnamed results (see resultDecls) into the same shape a ParameterList
-// yields. It resolves each result's type; declareParamList declares the named
-// ones, and an unnamed result declares nothing.
-func (f *File) resultList(s *Scope, n Node) (r *ParameterListNode) {
-	r = &ParameterListNode{}
-	for _, d := range f.resultDecls(n) {
-		r.List = append(r.List, ParameterDeclNode{Names: d.Names, TypeNode: f.typ(s, d.TypeAST)})
-	}
-	return r
+// paramDecl is one reconciled entry of a ParameterList or ResultList: an unnamed
+// entry (Names empty) or one or more names sharing a type.
+type paramDecl struct {
+	Names   []Token // empty => an unnamed parameter or result
+	TypeAST Node    // the Type subtree for this entry's type
 }
 
-// resultDecl is one reconciled entry of a ResultList: an unnamed result (Names
-// empty) or one or more names sharing a type.
-type resultDecl struct {
-	Names   []Token // empty => an unnamed result
-	TypeAST Node    // the Type subtree for this result's type
-}
-
-// resultDecls reconciles a ResultList AST into result declarations, applying the
-// rule that a parenthesized result list is either all named or all unnamed. Each
-// ResultParam is "Type [ Type ]": with a second Type the first is a name, so the
-// whole list is named and a bare ResultParam is a name sharing the next named
-// result's type ("(a, b int)"); with no second Type anywhere the list is unnamed
-// ("(int, int)"). It is purely syntactic and errors only on a malformed mix.
-func (f *File) resultDecls(n Node) (out []resultDecl) {
+// paramDecls reconciles a ParameterList or ResultList AST into declarations,
+// applying the rule that the list is either all named or all unnamed (parameters
+// and results share the grammar and this rule). Each ParamDecl is "Type [ Type ]":
+// with a second Type the first is a name, so the whole list is named and a bare
+// ParamDecl is a name sharing the next named entry's type ("(a, b int)"); with no
+// second Type anywhere the list is unnamed ("(int, int)"). It is purely syntactic
+// and errors only on a malformed mix.
+func (f *File) paramDecls(ast []int32) (out []paramDecl) {
 	type group struct {
 		t1, t2 Node
 		has2   bool
 	}
 	var groups []group
-	for c := range it(n.ast) {
-		if c.sym != ResultParam {
+	for c := range it(ast) {
+		if c.sym != ParamDecl {
 			continue
 		}
 		var g group
@@ -4382,7 +4375,7 @@ func (f *File) resultDecls(n Node) (out []resultDecl) {
 	}
 	if !named {
 		for _, g := range groups {
-			out = append(out, resultDecl{TypeAST: g.t1})
+			out = append(out, paramDecl{TypeAST: g.t1})
 		}
 		return out
 	}
@@ -4392,24 +4385,25 @@ func (f *File) resultDecls(n Node) (out []resultDecl) {
 	for _, g := range groups {
 		name, ok := f.typeIdent(g.t1)
 		if !ok {
-			f.err(f.tok(g.t1.Pos()).Position(), "mixed named and unnamed function results")
+			f.err(f.tok(g.t1.Pos()).Position(), "mixed named and unnamed parameters")
 			continue
 		}
 		pending = append(pending, name)
 		if g.has2 {
-			out = append(out, resultDecl{Names: pending, TypeAST: g.t2})
+			out = append(out, paramDecl{Names: pending, TypeAST: g.t2})
 			pending = nil
 		}
 	}
 	if len(pending) != 0 {
-		f.err(pending[0].Position(), "missing type for function result %s", pending[0].Src())
+		f.err(pending[0].Position(), "missing type for %s", pending[0].Src())
 	}
 	return out
 }
 
 // typeIdent returns the identifier token of a Type node that is exactly a single
 // unqualified type name, and false for any composite or qualified type — used to
-// reinterpret a bare ResultParam ("Type" with no second Type) as a result name.
+// reinterpret a bare ParamDecl ("Type" with no second Type) as a parameter or
+// result name.
 func (f *File) typeIdent(n Node) (Token, bool) {
 	var id Token
 	count := 0
@@ -5192,34 +5186,21 @@ type ParameterDeclNode struct {
 	TypeNode TypeNode
 }
 
-// ParameterListNode describes the ParameterList production.
+// ParameterListNode describes the ParameterList production. Results reuse it too,
+// since the two share the ParamDecl grammar.
 //
-//	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
+//	ParameterList  = ParamDecl { "," ParamDecl } .
 type ParameterListNode struct {
 	List []ParameterDeclNode
 }
 
+// parameterList builds a ParameterListNode from a ParameterList or ResultList AST,
+// reconciling named and unnamed entries (see paramDecls) and resolving each type.
+// declareParamList declares the named entries; an unnamed one declares nothing.
 func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
 	r = &ParameterListNode{}
-	var item ParameterDeclNode
-	for n := range it(n.ast) {
-		switch n.sym {
-		case IdentifierList:
-			item.Names = f.identifierList(s, n)
-		case Type:
-			item.TypeNode = f.typ(s, n)
-			r.List = append(r.List, item)
-			item = ParameterDeclNode{}
-		case 0:
-			switch f.ch(n.tok) {
-			case COMMA:
-				// ok
-			default:
-				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
-			}
-		default:
-			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
-		}
+	for _, d := range f.paramDecls(n.ast) {
+		r.List = append(r.List, ParameterDeclNode{Names: d.Names, TypeNode: f.typ(s, d.TypeAST)})
 	}
 	return r
 }
@@ -5882,7 +5863,7 @@ func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
 		case ParameterList:
 			r.Params = f.parameterList(s, n)
 		case ResultList:
-			r.Results = f.resultList(s, n)
+			r.Results = f.parameterList(s, n)
 		case Type:
 			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
 		case 0:

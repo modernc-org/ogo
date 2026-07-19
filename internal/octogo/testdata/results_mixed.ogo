@@ -4,7 +4,7 @@
 // parameter type"). Note that "(int, a int)" is instead accepted: there the bare
 // "int" is a result named int sharing the following result's type.
 
-// ERROR "missing type for function result string"
+// ERROR "missing type for string"
 func mixed() (a int, string)
 
 func main() {

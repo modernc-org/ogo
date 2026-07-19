@@ -1991,7 +1991,7 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 			// Parameters are the only ParameterList; results are ResultList/Type.
 			parts = e.cParamList(n.ast)
 		case ResultList:
-			for _, d := range e.f.resultDecls(n) {
+			for _, d := range e.f.paramDecls(n.ast) {
 				ct := e.cType(d.TypeAST.ast)
 				k := len(d.Names)
 				if k == 0 {
@@ -2021,7 +2021,7 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 	for n := range it(sig) {
 		switch n.sym {
 		case ResultList:
-			for _, d := range e.f.resultDecls(n) {
+			for _, d := range e.f.paramDecls(n.ast) {
 				ct := e.cType(d.TypeAST.ast)
 				if len(d.Names) == 0 {
 					names = append(names, "")
@@ -2057,7 +2057,15 @@ func (e *emitter) cParamList(ast []int32) []string {
 	var out []string
 	e.forEachParam(ast, func(name string, ta []int32) {
 		if elem, _, ok := e.arrayType(ta); ok {
+			if name == "" {
+				out = append(out, elem+"*") // unnamed array parameter, received by pointer
+				return
+			}
 			out = append(out, elem+"* "+paramArgName(name))
+			return
+		}
+		if name == "" {
+			out = append(out, e.cType(ta)) // unnamed parameter: type only, flexcc accepts it
 			return
 		}
 		out = append(out, e.cType(ta)+" "+name)
@@ -2070,21 +2078,17 @@ func (e *emitter) cParamList(ast []int32) []string {
 // calls). It underlies both the C parameter rendering (cParamList) and the local
 // type environment (bindParams).
 func (e *emitter) forEachParam(ast []int32, fn func(name string, typeAST []int32)) {
-	var names []string
-	for n := range it(ast) {
-		switch n.sym {
-		case IdentifierList:
-			names = names[:0]
-			for id := range it(n.ast) {
-				if id.sym == 0 && e.f.ch(id.tok) == IDENT {
-					names = append(names, e.src(id.tok))
-				}
+	for _, d := range e.f.paramDecls(ast) {
+		if len(d.Names) == 0 {
+			fn("", d.TypeAST.ast) // an unnamed parameter -- emitted type-only
+			continue
+		}
+		for _, nm := range d.Names {
+			name := nm.Src()
+			if name == "_" {
+				name = "" // a blank parameter is unused, like an unnamed one
 			}
-		case Type:
-			for _, nm := range names {
-				fn(nm, n.ast)
-			}
-			names = names[:0]
+			fn(name, d.TypeAST.ast)
 		}
 	}
 }
@@ -2105,6 +2109,9 @@ func (e *emitter) bindParams(sig []int32) {
 		case ParameterList:
 			if !seenRPar {
 				e.forEachParam(n.ast, func(name string, ta []int32) {
+					if name == "" {
+						return // an unnamed parameter binds nothing; the body cannot name it
+					}
 					if elem, bound, ok := e.arrayType(ta); ok {
 						e.arrays[name] = arrDim{elem: elem, bound: bound}
 						return
@@ -2134,6 +2141,9 @@ func (e *emitter) emitParamCopies(sig []int32) {
 		case ParameterList:
 			if !seenRPar {
 				e.forEachParam(n.ast, func(name string, ta []int32) {
+					if name == "" {
+						return // an unnamed array parameter has no in-body copy
+					}
 					if elem, bound, ok := e.arrayType(ta); ok {
 						e.includes["string.h"] = true
 						e.ind()

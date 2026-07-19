@@ -1,0 +1,31 @@
+// COMPILE
+
+// A parameter list may leave entries unnamed, just like a result list: an
+// unnamed parameter is simply one the body does not refer to. Named, unnamed,
+// blank ("_"), and shared-type forms all parse, and a list is either all named
+// or all unnamed.
+
+func ignore(int, int) int {
+	return 0
+}
+
+func firstOnly(a int, _ int) int {
+	return a
+}
+
+func shared(a, b int) int {
+	return a + b
+}
+
+func mixedTypes(int, bool, string) int {
+	return 1
+}
+
+// An unnamed parameter also works in a bodyless (externally implemented)
+// declaration, where naming it would be pointless.
+func extern(int, int) int
+
+func use() {
+	_ = extern
+	println(ignore(1, 2), firstOnly(3, 4), shared(5, 6), mixedTypes(7, true, "x"))
+}

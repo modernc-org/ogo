@@ -522,17 +522,18 @@
 //	FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
 //	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 //	Receiver       = "(" identifier Type ")" .
-//	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
+//	ParameterList  = ParamDecl { "," ParamDecl } .
+//	ResultList     = ParamDecl { "," ParamDecl } .
+//	ParamDecl      = Type [ Type ] .
 //	IdentifierList = identifier { "," identifier } .
-//	ResultList     = ResultParam { "," ResultParam } .
-//	ResultParam    = Type [ Type ] .
 //
-// A parenthesized result list may name its results or leave them unnamed, but
-// not both: "(a, b int)" and "(int, int)" are the two-value forms, while
-// "(a int, string)" is illegal. Each ResultParam is one type, optionally
-// preceded by a name; the whole list is named when any ResultParam carries a
-// name, in which case a bare ResultParam is a name sharing the next named
-// result's type ("(a, b int)"). Parameters, by contrast, are always named.
+// A parameter or result list may name its entries or leave them unnamed, but not
+// both: "(a, b int)" and "(int, int)" are the two-entry forms, while
+// "(a int, string)" is illegal. Each ParamDecl is one type, optionally preceded
+// by a name; the whole list is named when any ParamDecl carries a name, in which
+// case a bare ParamDecl is a name sharing the next named entry's type
+// ("(a, b int)"). Parameters and results share this grammar; an unnamed parameter
+// is simply one the body does not refer to.
 //
 // If the function declaration omits the Block, it provides the signature for a
 // function implemented externally (e.g., in the transpiled C runtime or PASM).

@@ -108,9 +108,9 @@ const (
 	Signature        = Symbol(88)  // Signature
 	Receiver         = Symbol(89)  // Receiver
 	ParameterList    = Symbol(90)  // ParameterList
-	IdentifierList   = Symbol(91)  // IdentifierList
-	ResultList       = Symbol(92)  // ResultList
-	ResultParam      = Symbol(93)  // ResultParam
+	ResultList       = Symbol(91)  // ResultList
+	ParamDecl        = Symbol(92)  // ParamDecl
+	IdentifierList   = Symbol(93)  // IdentifierList
 	ExpressionList   = Symbol(94)  // ExpressionList
 	Expression       = Symbol(95)  // Expression
 	SimpleExpr       = Symbol(96)  // SimpleExpr
@@ -153,9 +153,9 @@ const (
 	ImportSpec       = Symbol(133) // ImportSpec
 )
 
-const SymbolNames = "EOF\"!=\"\"%=\"\"&&\"\"&=\"\"&^=\"\"*=\"\"++\"\"+=\"\"--\"\"-=\"\"/=\"\":=\"\"<-\"\"<<\"\"<<=\"\"<=\"\"==\"\">=\"\">>\"\">>=\"\"^=\"\"break\"\"case\"\"chan\"\"const\"\"continue\"\"default\"\"defer\"\"else\"\"for\"\"func\"\"go\"\"if\"\"import\"\"interface\"\"range\"\"return\"\"select\"\"struct\"\"switch\"\"type\"\"var\"\"|=\"\"||\"'!''%''&''('')''*''+'',''-''.''/'':'';''<''=''>''['']''^''{''|''}''~'float_litidentifierint_litrune_litstring_litwhite_spaceTypeStructTypeFieldDeclInterfaceTypeMethodSpecBlockTopLevelDeclVarDeclVarSpecConstDeclConstSpecTypeDeclTypeSpecFuncDeclSignatureReceiverParameterListIdentifierListResultListResultParamExpressionListExpressionSimpleExprTermUnaryExprFactorFactorSuffixSelectorIndexFuncLiteralUnaryOpRelOpAddOpMulOpCallSuffixArgumentListStatementEmptyStatementAssignHeadPostfixPostfixOpAssignOpLhsItemForHeaderForRestForAssignRestForPostIfStmtSwitchStmtSwitchGuardCaseClauseCaseHeadSelectStmtCommClauseCommHeadCommOpPostfixCommSourceFileImportDeclImportSpec"
+const SymbolNames = "EOF\"!=\"\"%=\"\"&&\"\"&=\"\"&^=\"\"*=\"\"++\"\"+=\"\"--\"\"-=\"\"/=\"\":=\"\"<-\"\"<<\"\"<<=\"\"<=\"\"==\"\">=\"\">>\"\">>=\"\"^=\"\"break\"\"case\"\"chan\"\"const\"\"continue\"\"default\"\"defer\"\"else\"\"for\"\"func\"\"go\"\"if\"\"import\"\"interface\"\"range\"\"return\"\"select\"\"struct\"\"switch\"\"type\"\"var\"\"|=\"\"||\"'!''%''&''('')''*''+'',''-''.''/'':'';''<''=''>''['']''^''{''|''}''~'float_litidentifierint_litrune_litstring_litwhite_spaceTypeStructTypeFieldDeclInterfaceTypeMethodSpecBlockTopLevelDeclVarDeclVarSpecConstDeclConstSpecTypeDeclTypeSpecFuncDeclSignatureReceiverParameterListResultListParamDeclIdentifierListExpressionListExpressionSimpleExprTermUnaryExprFactorFactorSuffixSelectorIndexFuncLiteralUnaryOpRelOpAddOpMulOpCallSuffixArgumentListStatementEmptyStatementAssignHeadPostfixPostfixOpAssignOpLhsItemForHeaderForRestForAssignRestForPostIfStmtSwitchStmtSwitchGuardCaseClauseCaseHeadSelectStmtCommClauseCommHeadCommOpPostfixCommSourceFileImportDeclImportSpec"
 
-var SymbolIndex = [...]uint16{0, 3, 7, 11, 15, 19, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 65, 69, 73, 77, 81, 86, 90, 97, 103, 109, 116, 126, 135, 142, 148, 153, 159, 163, 167, 175, 186, 193, 201, 209, 217, 225, 231, 236, 240, 244, 247, 250, 253, 256, 259, 262, 265, 268, 271, 274, 277, 280, 283, 286, 289, 292, 295, 298, 301, 304, 307, 310, 313, 322, 332, 339, 347, 357, 368, 372, 382, 391, 404, 414, 419, 431, 438, 445, 454, 463, 471, 479, 487, 496, 504, 517, 531, 541, 552, 566, 576, 586, 590, 599, 605, 617, 625, 630, 641, 648, 653, 658, 663, 673, 685, 694, 708, 718, 725, 734, 742, 749, 758, 765, 778, 785, 791, 801, 812, 822, 830, 840, 850, 858, 864, 875, 885, 895, 905}
+var SymbolIndex = [...]uint16{0, 3, 7, 11, 15, 19, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 65, 69, 73, 77, 81, 86, 90, 97, 103, 109, 116, 126, 135, 142, 148, 153, 159, 163, 167, 175, 186, 193, 201, 209, 217, 225, 231, 236, 240, 244, 247, 250, 253, 256, 259, 262, 265, 268, 271, 274, 277, 280, 283, 286, 289, 292, 295, 298, 301, 304, 307, 310, 313, 322, 332, 339, 347, 357, 368, 372, 382, 391, 404, 414, 419, 431, 438, 445, 454, 463, 471, 479, 487, 496, 504, 517, 527, 536, 550, 564, 574, 584, 588, 597, 603, 615, 623, 628, 639, 646, 651, 656, 661, 671, 683, 692, 706, 716, 723, 732, 740, 747, 756, 763, 776, 783, 789, 799, 810, 820, 828, 838, 848, 856, 862, 873, 883, 893, 903}
 
 func (s Symbol) String() string {
 	idx := int(s) - 0
@@ -205,10 +205,11 @@ var errorSets = [...][]Symbol{
 	{CommHead, TOK_007d, TOK_default, TOK_case},
 	{TOK_default, TOK_case},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_0028, TOK_struct, TOK_interface, TOK_func, TOK_chan},
+	{ParamDecl, InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_0029, TOK_struct, TOK_interface, TOK_func, TOK_chan},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002e, TOK_002c, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002c, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_003d, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
-	{ResultParam, InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
+	{ParamDecl, InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
 	{InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
 	{identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan},
@@ -245,7 +246,6 @@ var errorSets = [...][]Symbol{
 	{identifier, TOK_007d, TOK_002a},
 	{identifier, TOK_002a},
 	{TOK_007c, TOK_005e, TOK_002d, TOK_002b},
-	{identifier, TOK_002c},
 	{TOK_002c},
 	{TOK_005b, TOK_002e},
 	{string_lit, identifier, TOK_002e},
@@ -4463,7 +4463,7 @@ func (p *Parser) AddOp() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(AddOp), 0)
 	// state0:
-	accept, errorSet = false, 78
+	accept, errorSet = false, 79
 	switch Symbol(p.tok.Ch) {
 	case TOK_002b, TOK_002d, TOK_005e, TOK_007c:
 		r = append(r, p.shift())
@@ -4541,7 +4541,7 @@ func (p *Parser) AssignHead() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(AssignHead), 0)
 	// state0:
-	accept, errorSet = false, 64
+	accept, errorSet = false, 65
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -4563,7 +4563,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -4574,7 +4574,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 64
+	accept, errorSet = false, 65
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -4705,7 +4705,7 @@ func (p *Parser) CallSuffix() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(CallSuffix), 0)
 	// state0:
-	accept, errorSet = false, 70
+	accept, errorSet = false, 71
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -4727,7 +4727,7 @@ state2:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -5030,7 +5030,7 @@ func (p *Parser) ConstDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ConstDecl), 0)
 	// state0:
-	accept, errorSet = false, 49
+	accept, errorSet = false, 50
 	switch Symbol(p.tok.Ch) {
 	case TOK_const:
 		r = append(r, p.shift())
@@ -5038,7 +5038,7 @@ func (p *Parser) ConstDecl() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 69
+	accept, errorSet = false, 70
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -5049,7 +5049,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 74
+	accept, errorSet = false, 75
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -5063,7 +5063,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 72
+	accept, errorSet = false, 73
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
@@ -5111,7 +5111,7 @@ func (p *Parser) ConstSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 41
+	accept, errorSet = true, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -5277,7 +5277,7 @@ func (p *Parser) Factor() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Factor), 0)
 	// state0:
-	accept, errorSet = false, 51
+	accept, errorSet = false, 52
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -5305,7 +5305,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -5327,7 +5327,7 @@ state4:
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 45
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -5343,7 +5343,7 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = true, 65
+	accept, errorSet = true, 66
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028, TOK_002e, TOK_005b:
 		r = p.add(r, p.FactorSuffix())
@@ -5378,7 +5378,7 @@ func (p *Parser) FactorSuffix() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(FactorSuffix), 0)
 	// state0:
-	accept, errorSet = true, 66
+	accept, errorSet = true, 67
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = p.add(r, p.Selector())
@@ -5392,7 +5392,7 @@ func (p *Parser) FactorSuffix() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 66
+	accept, errorSet = true, 67
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = p.add(r, p.Selector())
@@ -5451,7 +5451,7 @@ func (p *Parser) FieldDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(FieldDecl), 0)
 	// state0:
-	accept, errorSet = false, 77
+	accept, errorSet = false, 78
 	switch Symbol(p.tok.Ch) {
 	case TOK_002a:
 		r = append(r, p.shift())
@@ -5489,7 +5489,7 @@ state4:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = true, 39
+	accept, errorSet = true, 40
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = append(r, p.shift())
@@ -5511,7 +5511,7 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 40
+	accept, errorSet = false, 41
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
@@ -5862,7 +5862,7 @@ state4:
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 57
+	accept, errorSet = false, 58
 	switch Symbol(p.tok.Ch) {
 	case TOK_range:
 		r = append(r, p.shift())
@@ -5936,7 +5936,7 @@ func (p *Parser) FuncDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(FuncDecl), 0)
 	// state0:
-	accept, errorSet = false, 52
+	accept, errorSet = false, 53
 	switch Symbol(p.tok.Ch) {
 	case TOK_func:
 		r = append(r, p.shift())
@@ -5944,7 +5944,7 @@ func (p *Parser) FuncDecl() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 69
+	accept, errorSet = false, 70
 	switch Symbol(p.tok.Ch) {
 	case identifier:
 		r = append(r, p.shift())
@@ -5955,7 +5955,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 70
+	accept, errorSet = false, 71
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = p.add(r, p.Signature())
@@ -6004,7 +6004,7 @@ func (p *Parser) FuncLiteral() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(FuncLiteral), 0)
 	// state0:
-	accept, errorSet = false, 52
+	accept, errorSet = false, 53
 	switch Symbol(p.tok.Ch) {
 	case TOK_func:
 		r = append(r, p.shift())
@@ -6012,7 +6012,7 @@ func (p *Parser) FuncLiteral() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 70
+	accept, errorSet = false, 71
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = p.add(r, p.Signature())
@@ -6096,7 +6096,7 @@ func (p *Parser) IfStmt() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(IfStmt), 0)
 	// state0:
-	accept, errorSet = false, 54
+	accept, errorSet = false, 55
 	switch Symbol(p.tok.Ch) {
 	case TOK_if:
 		r = append(r, p.shift())
@@ -6120,7 +6120,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = true, 50
+	accept, errorSet = true, 51
 	switch Symbol(p.tok.Ch) {
 	case TOK_else:
 		r = append(r, p.shift())
@@ -6128,7 +6128,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 53
+	accept, errorSet = false, 54
 	switch Symbol(p.tok.Ch) {
 	case TOK_if:
 		r = p.add(r, p.IfStmt())
@@ -6173,7 +6173,7 @@ func (p *Parser) ImportDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ImportDecl), 0)
 	// state0:
-	accept, errorSet = false, 55
+	accept, errorSet = false, 56
 	switch Symbol(p.tok.Ch) {
 	case TOK_import:
 		r = append(r, p.shift())
@@ -6181,7 +6181,7 @@ func (p *Parser) ImportDecl() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 67
+	accept, errorSet = false, 68
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -6192,7 +6192,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 71
+	accept, errorSet = false, 72
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -6206,7 +6206,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 72
+	accept, errorSet = false, 73
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
@@ -6375,7 +6375,7 @@ func (p *Parser) InterfaceType() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(InterfaceType), 0)
 	// state0:
-	accept, errorSet = false, 56
+	accept, errorSet = false, 57
 	switch Symbol(p.tok.Ch) {
 	case TOK_interface:
 		r = append(r, p.shift())
@@ -6436,7 +6436,7 @@ func (p *Parser) LhsItem() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(LhsItem), 0)
 	// state0:
-	accept, errorSet = false, 64
+	accept, errorSet = false, 65
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028, TOK_002a, identifier:
 		r = p.add(r, p.AssignHead())
@@ -6469,7 +6469,7 @@ state1:
 //	State 2
 //		on  ')'
 //			shift and goto state 3
-//		on  identifier
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
 //			call ParameterList and goto state 7
 //	State 3
 //		Accept
@@ -6502,7 +6502,7 @@ func (p *Parser) MethodSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 70
+	accept, errorSet = false, 71
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -6510,12 +6510,12 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 73
+	accept, errorSet = false, 39
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
 		goto state3
-	case identifier:
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ParameterList())
 		goto state7
 	}
@@ -6532,7 +6532,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 42
+	accept, errorSet = false, 43
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ResultList())
@@ -6540,7 +6540,7 @@ state4:
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -6551,7 +6551,7 @@ state6:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -6587,41 +6587,34 @@ state1:
 	return p.stop(r, accept, errorSet)
 }
 
-// ParameterList grammar:
+// ParamDecl grammar:
 //
-//	ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
+//	ParamDecl      = Type [ Type ] .
 //
 //	State 0
-//		on  identifier
-//			call IdentifierList and goto state 1
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
+//			call Type and goto state 1
 //	State 1
+//		Accept
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
 //			call Type and goto state 2
 //	State 2
 //		Accept
-//		on  ','
-//			shift and goto state 3
-//	State 3
-//		Accept
-//		on  ','
-//			shift and goto state 3
-//		on  identifier
-//			call IdentifierList and goto state 1
 //
-// ParameterList is used internally from Parse.
-func (p *Parser) ParameterList() (r []int32) {
+// ParamDecl is used internally from Parse.
+func (p *Parser) ParamDecl() (r []int32) {
 	accept, errorSet := false, 0
-	r = append(p.get(), -int32(ParameterList), 0)
+	r = append(p.get(), -int32(ParamDecl), 0)
 	// state0:
-	accept, errorSet = false, 93
+	accept, errorSet = false, 45
 	switch Symbol(p.tok.Ch) {
-	case identifier:
-		r = p.add(r, p.IdentifierList())
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
+		r = p.add(r, p.Type())
 		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 44
+	accept, errorSet = true, 45
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -6629,22 +6622,40 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
+	accept, errorSet = true, 0
+	return p.stop(r, accept, errorSet)
+}
+
+// ParameterList grammar:
+//
+//	ParameterList  = ParamDecl { "," ParamDecl } .
+//
+//	State 0
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
+//			call ParamDecl and goto state 1
+//	State 1
+//		Accept
+//		on  ','
+//			shift and goto state 0
+//
+// ParameterList is used internally from Parse.
+func (p *Parser) ParameterList() (r []int32) {
+	accept, errorSet := false, 0
+	r = append(p.get(), -int32(ParameterList), 0)
+state0:
+	accept, errorSet = false, 44
+	switch Symbol(p.tok.Ch) {
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
+		r = p.add(r, p.ParamDecl())
+		goto state1
+	}
+	return p.stop(r, accept, errorSet)
+state1:
 	accept, errorSet = true, 80
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
-		goto state3
-	}
-	return p.stop(r, accept, errorSet)
-state3:
-	accept, errorSet = true, 79
-	switch Symbol(p.tok.Ch) {
-	case TOK_002c:
-		r = append(r, p.shift())
-		goto state3
-	case identifier:
-		r = p.add(r, p.IdentifierList())
-		goto state1
+		goto state0
 	}
 	return p.stop(r, accept, errorSet)
 }
@@ -6889,7 +6900,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 63
+	accept, errorSet = false, 64
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028, TOK_002a, identifier:
 		r = p.add(r, p.LhsItem())
@@ -6933,7 +6944,7 @@ func (p *Parser) Receiver() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Receiver), 0)
 	// state0:
-	accept, errorSet = false, 70
+	accept, errorSet = false, 71
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -6949,7 +6960,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 45
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -6957,7 +6968,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -6998,11 +7009,11 @@ state1:
 
 // ResultList grammar:
 //
-//	ResultList     = ResultParam { "," ResultParam } .
+//	ResultList     = ParamDecl { "," ParamDecl } .
 //
 //	State 0
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
-//			call ResultParam and goto state 1
+//			call ParamDecl and goto state 1
 //	State 1
 //		Accept
 //		on  ','
@@ -7013,10 +7024,10 @@ func (p *Parser) ResultList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ResultList), 0)
 state0:
-	accept, errorSet = false, 43
+	accept, errorSet = false, 44
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
-		r = p.add(r, p.ResultParam())
+		r = p.add(r, p.ParamDecl())
 		goto state1
 	}
 	return p.stop(r, accept, errorSet)
@@ -7027,45 +7038,6 @@ state1:
 		r = append(r, p.shift())
 		goto state0
 	}
-	return p.stop(r, accept, errorSet)
-}
-
-// ResultParam grammar:
-//
-//	ResultParam    = Type [ Type ] .
-//
-//	State 0
-//		on  "chan", "func", "interface", "struct", '*', '[', identifier
-//			call Type and goto state 1
-//	State 1
-//		Accept
-//		on  "chan", "func", "interface", "struct", '*', '[', identifier
-//			call Type and goto state 2
-//	State 2
-//		Accept
-//
-// ResultParam is used internally from Parse.
-func (p *Parser) ResultParam() (r []int32) {
-	accept, errorSet := false, 0
-	r = append(p.get(), -int32(ResultParam), 0)
-	// state0:
-	accept, errorSet = false, 44
-	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
-		r = p.add(r, p.Type())
-		goto state1
-	}
-	return p.stop(r, accept, errorSet)
-state1:
-	accept, errorSet = true, 44
-	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
-		r = p.add(r, p.Type())
-		goto state2
-	}
-	return p.stop(r, accept, errorSet)
-state2:
-	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 }
 
@@ -7092,7 +7064,7 @@ func (p *Parser) SelectStmt() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(SelectStmt), 0)
 	// state0:
-	accept, errorSet = false, 58
+	accept, errorSet = false, 59
 	switch Symbol(p.tok.Ch) {
 	case TOK_select:
 		r = append(r, p.shift())
@@ -7157,7 +7129,7 @@ func (p *Parser) Selector() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 69
+	accept, errorSet = false, 70
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -7168,7 +7140,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 61
+	accept, errorSet = false, 62
 	switch Symbol(p.tok.Ch) {
 	case TOK_type:
 		r = append(r, p.shift())
@@ -7176,7 +7148,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -7198,7 +7170,7 @@ state4:
 //	State 1
 //		on  ')'
 //			shift and goto state 2
-//		on  identifier
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
 //			call ParameterList and goto state 6
 //	State 2
 //		Accept
@@ -7223,7 +7195,7 @@ func (p *Parser) Signature() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Signature), 0)
 	// state0:
-	accept, errorSet = false, 70
+	accept, errorSet = false, 71
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -7231,12 +7203,12 @@ func (p *Parser) Signature() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 73
+	accept, errorSet = false, 39
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
 		goto state2
-	case identifier:
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ParameterList())
 		goto state6
 	}
@@ -7253,7 +7225,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 42
+	accept, errorSet = false, 43
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ResultList())
@@ -7261,7 +7233,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -7272,7 +7244,7 @@ state5:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 75
+	accept, errorSet = false, 76
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -7306,7 +7278,7 @@ state0:
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 78
+	accept, errorSet = true, 79
 	switch Symbol(p.tok.Ch) {
 	case TOK_002b, TOK_002d, TOK_005e, TOK_007c:
 		r = p.add(r, p.AddOp())
@@ -7347,7 +7319,7 @@ func (p *Parser) SourceFile() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(SourceFile), 0)
 	// state0:
-	accept, errorSet = true, 46
+	accept, errorSet = true, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_import:
 		r = p.add(r, p.ImportDecl())
@@ -7366,7 +7338,7 @@ state1:
 	}
 	goto stop
 state2:
-	accept, errorSet = true, 47
+	accept, errorSet = true, 48
 	switch Symbol(p.tok.Ch) {
 	case TOK_const, TOK_func, TOK_type, TOK_var:
 		r = p.add(r, p.TopLevelDecl())
@@ -7382,7 +7354,7 @@ state3:
 	}
 	goto stop
 state4:
-	accept, errorSet = true, 46
+	accept, errorSet = true, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_import:
 		r = p.add(r, p.ImportDecl())
@@ -7542,7 +7514,7 @@ state2:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 64
+	accept, errorSet = false, 65
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028, TOK_002a, identifier:
 		r = p.add(r, p.AssignHead())
@@ -7550,7 +7522,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = true, 66
+	accept, errorSet = true, 67
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = p.add(r, p.Selector())
@@ -7628,7 +7600,7 @@ func (p *Parser) StructType() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(StructType), 0)
 	// state0:
-	accept, errorSet = false, 59
+	accept, errorSet = false, 60
 	switch Symbol(p.tok.Ch) {
 	case TOK_struct:
 		r = append(r, p.shift())
@@ -7644,7 +7616,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 76
+	accept, errorSet = false, 77
 	switch Symbol(p.tok.Ch) {
 	case TOK_007d:
 		r = append(r, p.shift())
@@ -7748,7 +7720,7 @@ func (p *Parser) SwitchStmt() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(SwitchStmt), 0)
 	// state0:
-	accept, errorSet = false, 60
+	accept, errorSet = false, 61
 	switch Symbol(p.tok.Ch) {
 	case TOK_switch:
 		r = append(r, p.shift())
@@ -7845,7 +7817,7 @@ func (p *Parser) TopLevelDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(TopLevelDecl), 0)
 	// state0:
-	accept, errorSet = false, 48
+	accept, errorSet = false, 49
 	switch Symbol(p.tok.Ch) {
 	case TOK_var:
 		r = p.add(r, p.VarDecl())
@@ -7918,7 +7890,7 @@ func (p *Parser) Type() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Type), 0)
 	// state0:
-	accept, errorSet = false, 45
+	accept, errorSet = false, 46
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_002a:
 		r = append(r, p.shift())
@@ -7941,7 +7913,7 @@ func (p *Parser) Type() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 45
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -7952,7 +7924,7 @@ state2:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 70
+	accept, errorSet = false, 71
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = p.add(r, p.Signature())
@@ -8026,7 +7998,7 @@ func (p *Parser) TypeDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(TypeDecl), 0)
 	// state0:
-	accept, errorSet = false, 61
+	accept, errorSet = false, 62
 	switch Symbol(p.tok.Ch) {
 	case TOK_type:
 		r = append(r, p.shift())
@@ -8034,7 +8006,7 @@ func (p *Parser) TypeDecl() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 69
+	accept, errorSet = false, 70
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -8045,7 +8017,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 74
+	accept, errorSet = false, 75
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -8059,7 +8031,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 72
+	accept, errorSet = false, 73
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
@@ -8102,7 +8074,7 @@ func (p *Parser) TypeSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 41
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -8113,7 +8085,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 45
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -8230,7 +8202,7 @@ func (p *Parser) VarDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(VarDecl), 0)
 	// state0:
-	accept, errorSet = false, 62
+	accept, errorSet = false, 63
 	switch Symbol(p.tok.Ch) {
 	case TOK_var:
 		r = append(r, p.shift())
@@ -8238,7 +8210,7 @@ func (p *Parser) VarDecl() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 68
+	accept, errorSet = false, 69
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -8249,7 +8221,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 73
+	accept, errorSet = false, 74
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -8263,7 +8235,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 72
+	accept, errorSet = false, 73
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
@@ -8310,7 +8282,7 @@ func (p *Parser) VarSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 41
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())

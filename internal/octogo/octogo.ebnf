@@ -51,10 +51,10 @@ TypeSpec = identifier [ "=" ] Type .
 FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
 Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 Receiver       = "(" identifier Type ")" .
-ParameterList  = IdentifierList Type { "," [ IdentifierList Type ] } .
+ParameterList  = ParamDecl { "," ParamDecl } .
+ResultList     = ParamDecl { "," ParamDecl } .
+ParamDecl      = Type [ Type ] .
 IdentifierList = identifier { "," identifier } .
-ResultList     = ResultParam { "," ResultParam } .
-ResultParam    = Type [ Type ] .
 ExpressionList = Expression { "," Expression } .
 Expression     = SimpleExpr { RelOp SimpleExpr } .
 SimpleExpr     = Term { AddOp Term } .
