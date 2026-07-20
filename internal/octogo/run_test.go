@@ -580,11 +580,59 @@ func main() {
 		want: "4\n",
 	},
 	{
-		// Several local channels each with their own `go`, which is where flexcc's
-		// FCACHE used to lift the rendezvous poll into Cog RAM and stop it seeing
-		// the sender's writes -- a silent hang, on hardware only, and only once a
-		// program had roughly this many of both. One channel, or one spawn, was
-		// not enough to trigger it, so the cases above cannot stand in for this.
+		// Sustained rendezvous traffic: three pipelines, each a feeder and a
+		// worker, so six goroutines and main keep seven cogs polling at once for
+		// twenty exchanges apiece. The case above catches the livelock at the
+		// first rendezvous; this one catches a poll that starves only under load,
+		// which a handful of one-shot exchanges would step over. Verified to hang
+		// outright with the pre-test removed from the polling loops.
+		name: "sustained channel traffic across pipelines",
+		src: `func worker(in chan int, out chan int) {
+	for i := 0; i < 20; i++ {
+		v := <-in
+		out <- v + 1
+	}
+}
+
+func feeder(c chan int, n int) {
+	for i := 0; i < 20; i++ {
+		c <- n
+	}
+}
+
+func main() {
+	var a1 chan int
+	var a2 chan int
+	var b1 chan int
+	var b2 chan int
+	var c1 chan int
+	var c2 chan int
+
+	go feeder(a1, 10)
+	go worker(a1, a2)
+	go feeder(b1, 20)
+	go worker(b1, b2)
+	go feeder(c1, 30)
+	go worker(c1, c2)
+
+	sum := 0
+	for i := 0; i < 20; i++ {
+		sum += <-a2
+		sum += <-b2
+		sum += <-c2
+	}
+	println(sum)
+}
+`,
+		want: "1260\n",
+	},
+	{
+		// Several local channels each with their own `go`. This is where the
+		// rendezvous used to livelock: the poll called _locktry every turn and
+		// re-took the lock faster than the cog on the other side could win it, so
+		// both sides span forever. It showed up on hardware only, and only once a
+		// program had roughly this many of both, so the cases above cannot stand
+		// in for it.
 		name: "several local channels and spawns",
 		src: `func id(n int) int {
 	return n

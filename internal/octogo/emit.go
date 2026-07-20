@@ -736,9 +736,28 @@ func (e *emitter) isChanCType(ctype string) bool { return strings.HasPrefix(ctyp
 // except that they are `static` (see below), which makes an unused one a
 // -Wunused-function warning the host test suite treats as a failure.
 //
-// Blocking is a poll over _locktry with a _waitx(1) yield between attempts: a
-// blocked cog cannot sleep, since there is no scheduler, and spinning on the Hub
-// bus without yielding would starve the cogs doing real work.
+// Blocking is a poll with a _waitx(1) yield between attempts: a blocked cog
+// cannot sleep, since there is no scheduler, and spinning on the Hub bus without
+// yielding would starve the cogs doing real work.
+//
+// Each poll reads the volatile flag it is waiting on *before* asking for the
+// lock, and only asks when the read says there is plausibly something to do. The
+// authoritative check is still the one inside the lock, so the outer read is a
+// hint and may be wrong either way: a false positive costs one acquire and
+// release, a false negative costs one more turn round the loop.
+//
+// Testing first is what makes the rendezvous work, not an optimization. A loop
+// that calls _locktry every turn re-takes the lock so quickly that the cog on the
+// other side never wins it -- both sides live, neither progressing. It is a
+// livelock in the polling loop, and it is timing-dependent, so it appears only
+// once the loop is fast enough: with FCACHE lifting the loop into Cog RAM, a
+// program with a few channels and a few goroutines would hang at a rendezvous.
+// That was misread as an FCACHE miscompilation for a while, and builds carried
+// --fcache=0 to avoid it; the flag is gone now (see internal/build) and the
+// backoff is still one cycle. Raising the backoff instead also works -- 256
+// cycles was enough for every case here -- but it paces the symptom, costs
+// latency on every rendezvous, and leaves the threshold to be rediscovered by the
+// next program that beats it.
 //
 // The helpers are deliberately `static` and NOT `static inline`. Inlined into a
 // call argument -- `println(<-ch)` rather than `v := <-ch` -- flexcc miscompiles
@@ -770,7 +789,7 @@ typedef %[6]s* %[1]s;
 	// initializer only quiets flexcc, whose flow analysis cannot prove the first
 	// loop exits solely through the break that follows the assignment.
 	while (1) { // wait for the cell to be free, then deposit
-		if (_locktry(ch->lock)) {
+		if (!ch->full && _locktry(ch->lock)) {
 			if (!ch->full) {
 				mine = ch->taken;
 				ch->val = v;
@@ -784,7 +803,7 @@ typedef %[6]s* %[1]s;
 	}
 	while (1) { // rendezvous: wait until a receiver has taken *this* value
 		int done = 0;
-		if (_locktry(ch->lock)) {
+		if (ch->taken != mine && _locktry(ch->lock)) {
 			done = ch->taken != mine;
 			_lockrel(ch->lock);
 		}
@@ -798,7 +817,7 @@ typedef %[6]s* %[1]s;
 	}
 	if e.chanTryRecvElems[elem] {
 		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[2]s* out) {
-	if (_locktry(ch->lock)) {
+	if (ch->full && _locktry(ch->lock)) {
 		if (ch->full) {
 			*out = ch->val;
 			ch->full = 0;
@@ -815,7 +834,7 @@ typedef %[6]s* %[1]s;
 	if e.chanRecvElems[elem] {
 		fmt.Fprintf(&b, `static %[2]s %[4]s(%[1]s ch) {
 	while (1) {
-		if (_locktry(ch->lock)) {
+		if (ch->full && _locktry(ch->lock)) {
 			if (ch->full) {
 				%[2]s v = ch->val;
 				ch->full = 0;
