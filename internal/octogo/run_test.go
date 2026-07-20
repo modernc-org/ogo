@@ -62,6 +62,43 @@ func main() {
 		want: "43\n",
 	},
 	{
+		// A composite literal builds a struct value from its fields in declaration
+		// order. It may appear anywhere an expression may except the top level of a
+		// control-flow header, where its "{" would be the block (see the grammar).
+		name: "composite literals",
+		src: `type Q struct {
+	v int
+}
+
+type P struct {
+	q Q
+	n int
+	s string
+}
+
+func sum(p P) int {
+	return p.q.v + p.n
+}
+
+func mk(n int) P {
+	return P{Q{n}, n * 2, "made"}
+}
+
+func main() {
+	p := P{Q{1}, 2, "hi"}
+	println(p.q.v, p.n, p.s)
+	var z P = P{}
+	println(z.q.v, z.n)
+	z = P{Q{3}, 4, "set"}
+	println(z.q.v, z.n, z.s)
+	println(sum(P{Q{5}, 6, "arg"}))
+	r := mk(7)
+	println(r.q.v, r.n, r.s)
+}
+`,
+		want: "1 2 hi\n0 0\n3 4 set\n11\n7 14 made\n",
+	},
+	{
 		name: "methods on values, pointers and named types",
 		src: `type Point struct {
 	x int

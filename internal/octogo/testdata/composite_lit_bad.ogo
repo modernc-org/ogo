@@ -1,0 +1,40 @@
+// A composite literal supplies its struct's fields positionally, so the number of
+// values must match, and the type named must actually be a struct.
+
+type P struct {
+	x int
+	y int
+}
+
+type C int
+
+func tooFew() {
+	// ERROR "not enough values in P\{...\}: 1 value but 2 fields"
+	p := P{1}
+	println(p.x)
+}
+
+func tooMany() {
+	// ERROR "too many values in P\{...\}: 3 values but 2 fields"
+	p := P{1, 2, 3}
+	println(p.x)
+}
+
+func notAStruct() {
+	// ERROR "invalid composite literal type: C is not a struct type"
+	c := C{1}
+	println(int(c))
+}
+
+func undefinedInside() {
+	// ERROR "undefined: nope"
+	p := P{nope, 2}
+	println(p.x)
+}
+
+func main() {
+	tooFew()
+	tooMany()
+	notAStruct()
+	undefinedInside()
+}

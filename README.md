@@ -99,6 +99,10 @@ broken.
 
 * Integers (sized and unsized), `byte`, `rune`, `bool`, `string`, structs, fixed
   arrays including multi-dimensional, slices, named types, channels.
+* Composite literals for structs, positionally: `p := P{1, 2}`, `P{}`, nested.
+  One place they may not appear bare is the top level of an `if`, `for` or
+  `switch` header, where `{` is the block — parenthesize there, as in Go:
+  `if p == (P{}) {`.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
   functions and methods with value or pointer receivers.
 * Named and unnamed parameters and results, multiple return values, naked returns.
@@ -112,13 +116,10 @@ broken.
 
 **Does not work yet**, in rough order of how likely you are to hit it:
 
-* **Composite literals.** `p := Point{1, 2}` does not parse. Write
-  `var p Point; p.x = 1` instead. This is the one that will annoy you first, and it
-  is a consequence of keeping the grammar strictly LL(1) — the `{` after a type name
-  is ambiguous with a block, which Go resolves with parser context an LL(1) grammar
-  cannot express. Not a decision I am happy with, and not a settled one.
 * **Importing your own packages.** Only `import "p2"` resolves; a program is one
   package in one directory for now.
+* **Keyed composite literals** (`P{x: 1}`) and literals for arrays and slices
+  (`[]int{1, 2}`); only positional struct literals are built so far.
 * **`ogo test`** is not implemented, and neither is `ogo help`.
 * **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).
   It is enough for blinky, not a standard library.

@@ -1,0 +1,46 @@
+// COMPILE
+
+// A composite literal "T{a, b}" builds a value of the named struct type from its
+// fields, positionally, in declaration order. "T{}" supplies none and zeroes them
+// all. Fields declared together ("x, y int") count once per name.
+
+type Q struct {
+	v int
+}
+
+type P struct {
+	q Q
+	n int
+	s string
+}
+
+type Pair struct {
+	x, y int
+}
+
+func take(p P) int {
+	return p.n
+}
+
+func make2() P {
+	return P{Q{1}, 2, "made"}
+}
+
+func use() {
+	// Every position an expression may occupy, other than a control-flow header.
+	a := P{Q{1}, 2, "hi"}
+	var b P = P{}
+	b = P{Q{3}, 4, "set"}
+	c := Pair{5, 6}
+	n := 7
+	d := Pair{n * 2, n + 1}
+	println(take(P{Q{8}, 9, "arg"}), make2().n)
+	println(a.q.v, b.n, c.x, c.y, d.x, d.y)
+
+	// Parenthesizing lets a literal be used where a header would otherwise take
+	// the brace as its block.
+	e := (Pair{10, 11})
+	if e.x > 0 {
+		println(e.x, e.y)
+	}
+}

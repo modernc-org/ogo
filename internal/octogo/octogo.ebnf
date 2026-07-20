@@ -60,7 +60,20 @@ Expression     = SimpleExpr { RelOp SimpleExpr } .
 SimpleExpr     = Term { AddOp Term } .
 Term           = UnaryExpr { MulOp UnaryExpr } .
 UnaryExpr  = { UnaryOp } Factor .
-Factor     = identifier [ FactorSuffix ]
+Factor     = identifier [ CompositeLit | FactorSuffix ]
+	| int_lit
+	| float_lit
+	| string_lit
+	| rune_lit
+	| "(" Expression ")"
+	| "[" [ Expression ] "]" Type
+	| FuncLiteral .
+CompositeLit = "{" [ ExpressionList ] "}" .
+HeaderExpression = HeaderSimpleExpr { RelOp HeaderSimpleExpr } .
+HeaderSimpleExpr = HeaderTerm { AddOp HeaderTerm } .
+HeaderTerm       = HeaderUnaryExpr { MulOp HeaderUnaryExpr } .
+HeaderUnaryExpr  = { UnaryOp } HeaderFactor .
+HeaderFactor     = identifier [ FactorSuffix ]
 	| int_lit
 	| float_lit
 	| string_lit
@@ -106,18 +119,18 @@ AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 	| "&=" | "|=" | "^=" | "&^="
 	| "<<=" | ">>=" .
 LhsItem    = AssignHead { Selector | Index } .
-ForHeader  = ";" [ Expression ] ";" [ ForPost ]
-	| "range" Expression
-	| Expression [ ForRest ] .
-ForRest    = ";" [ Expression ] ";" [ ForPost ]
+ForHeader  = ";" [ HeaderExpression ] ";" [ ForPost ]
+	| "range" HeaderExpression
+	| HeaderExpression [ ForRest ] .
+ForRest    = ";" [ HeaderExpression ] ";" [ ForPost ]
 	| ( "=" | ":=" ) ForAssignRest
-	| "," Expression ( "=" | ":=" ) "range" Expression .
-ForAssignRest = "range" Expression
-	| Expression ";" [ Expression ] ";" [ ForPost ] .
-ForPost    = Expression [ ( "=" | ":=" ) Expression | "++" | "--" ] .
-IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
+	| "," HeaderExpression ( "=" | ":=" ) "range" HeaderExpression .
+ForAssignRest = "range" HeaderExpression
+	| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .
+ForPost    = HeaderExpression [ ( "=" | ":=" ) HeaderExpression | "++" | "--" ] .
+IfStmt = "if" HeaderExpression Block [ "else" ( IfStmt | Block ) ] .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
-SwitchGuard = Expression [ ":=" Expression ] .
+SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] .
 CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 CaseHead   = "case" ExpressionList | "default" .
 SelectStmt  = "select" "{" { CommClause } "}" .

@@ -2465,6 +2465,43 @@ func (e *emitter) emitVarDecl(ast []int32) {
 	}
 }
 
+// factorCompositeLit matches a Factor of the shape "T{...}": an identifier naming
+// the type, followed by the literal. Nothing else may follow, so a suffixed factor
+// (a call, selector or index) is not one.
+func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != CompositeLit {
+		return "", Node{}, false
+	}
+	return e.src(kids[0].tok), kids[1], true
+}
+
+// emitCompositeLit emits "T{a, b}" as the C compound literal "(T){a, b}". Under
+// declInit it emits the braces alone: a file-scope initializer must be a constant
+// expression, which a compound literal is not. "T{}" zeroes every field.
+func (e *emitter) emitCompositeLit(name string, lit Node) {
+	var values []Node
+	for c := range it(lit.ast) {
+		if c.sym == ExpressionList {
+			values = expressionListItems(c)
+		}
+	}
+	if !e.declInit {
+		e.emit("(" + name + ")")
+	}
+	if len(values) == 0 {
+		e.emit("{0}") // no values: zero every field
+		return
+	}
+	e.emit("{")
+	for i, v := range values {
+		if i != 0 {
+			e.emit(", ")
+		}
+		e.emitExpr(v.ast)
+	}
+	e.emit("}")
+}
+
 // emitVarList emits a local `var a, b = e0, e1` (typed or inferred): each name is
 // an independent declaration taking its own value, so this is the single-name path
 // repeated. A declared array type is refused -- C cannot initialize an array from
@@ -5488,6 +5525,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 		}
 		if n.sym == Factor {
+			// "T{...}" is a value of T, and a struct's C type is the typedef named
+			// after it, so the literal types itself.
+			if name, _, ok := e.factorCompositeLit(kids); ok {
+				return name, true
+			}
 			if recv, suffix, ok := e.factorCall(kids); ok {
 				return e.callResultCType(recv, suffix)
 			}
@@ -5705,6 +5747,10 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		if n.sym == Factor {
+			if name, lit, ok := e.factorCompositeLit(kids); ok {
+				e.emitCompositeLit(name, lit)
+				return
+			}
 			if recv, suffix, ok := e.factorCall(kids); ok {
 				// A multi-result call yields no single value; it is only valid in a
 				// destructuring assignment (emitMultiAssign), not as an operand.

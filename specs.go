@@ -556,7 +556,28 @@
 // variable, or function, or a parenthesized expression.
 //
 //	UnaryExpr  = { UnaryOp } Factor .
-//	Factor     = identifier [ FactorSuffix ]
+//	Factor     = identifier [ CompositeLit | FactorSuffix ]
+//		| int_lit
+//		| float_lit
+//		| string_lit
+//		| rune_lit
+//		| "(" Expression ")"
+//		| "[" [ Expression ] "]" Type
+//		| FuncLiteral .
+//	CompositeLit = "{" [ ExpressionList ] "}" .
+//
+// A composite literal "T{a, b}" builds a value of the named struct type from its
+// fields in declaration order. Because the grammar is LL(1), a composite literal
+// may not appear at the top level of an "if", "for" or "switch" header, where the
+// "{" would be indistinguishable from the block that follows: those headers use
+// HeaderExpression below, which is the ordinary expression grammar minus this one
+// production. Parenthesizing restores it, exactly as in Go: "if p == (P{}) {".
+//
+//	HeaderExpression = HeaderSimpleExpr { RelOp HeaderSimpleExpr } .
+//	HeaderSimpleExpr = HeaderTerm { AddOp HeaderTerm } .
+//	HeaderTerm       = HeaderUnaryExpr { MulOp HeaderUnaryExpr } .
+//	HeaderUnaryExpr  = { UnaryOp } HeaderFactor .
+//	HeaderFactor     = identifier [ FactorSuffix ]
 //		| int_lit
 //		| float_lit
 //		| string_lit
@@ -742,15 +763,15 @@
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .
 //	LhsItem    = AssignHead { Selector | Index } .
-//	ForHeader  = ";" [ Expression ] ";" [ ForPost ]
-//		| "range" Expression
-//		| Expression [ ForRest ] .
-//	ForRest    = ";" [ Expression ] ";" [ ForPost ]
+//	ForHeader  = ";" [ HeaderExpression ] ";" [ ForPost ]
+//		| "range" HeaderExpression
+//		| HeaderExpression [ ForRest ] .
+//	ForRest    = ";" [ HeaderExpression ] ";" [ ForPost ]
 //		| ( "=" | ":=" ) ForAssignRest
-//		| "," Expression ( "=" | ":=" ) "range" Expression .
-//	ForAssignRest = "range" Expression
-//		| Expression ";" [ Expression ] ";" [ ForPost ] .
-//	ForPost    = Expression [ ( "=" | ":=" ) Expression | "++" | "--" ] .
+//		| "," HeaderExpression ( "=" | ":=" ) "range" HeaderExpression .
+//	ForAssignRest = "range" HeaderExpression
+//		| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .
+//	ForPost    = HeaderExpression [ ( "=" | ":=" ) HeaderExpression | "++" | "--" ] .
 //
 // The "++" and "--" forms are the increment and decrement statements "x++" and
 // "x--"; they take no operand of their own (the target is the AssignHead) and,
@@ -784,7 +805,7 @@
 // executed. An "else" may be followed by another "if" statement, forming an
 // "else if" chain, or by a block.
 //
-//	IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
+//	IfStmt = "if" HeaderExpression Block [ "else" ( IfStmt | Block ) ] .
 //
 // # For Statements
 //
@@ -801,7 +822,7 @@
 // to the "cases" inside the "switch" to determine which branch to execute.
 //
 //	SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
-//	SwitchGuard = Expression [ ":=" Expression ] .
+//	SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] .
 //	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 //	CaseHead   = "case" ExpressionList | "default" .
 //

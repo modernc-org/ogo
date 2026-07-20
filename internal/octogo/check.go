@@ -125,6 +125,30 @@ func (n Node) End() int32 {
 	return lastIndex(n.ast)
 }
 
+// baseSym maps the header-restricted expression productions onto the ordinary
+// ones. They exist only so the grammar stays LL(1): inside an "if", "for" or
+// "switch" header a composite literal's "{" would be indistinguishable from the
+// block that follows, so those headers parse a HeaderExpression, which is the
+// ordinary expression grammar minus that one production. The two are otherwise
+// identical, so every consumer of the tree treats them as the same production and
+// nothing outside the parser needs to know the distinction exists.
+func baseSym(s Symbol) Symbol {
+	switch s {
+	case HeaderExpression:
+		return Expression
+	case HeaderSimpleExpr:
+		return SimpleExpr
+	case HeaderTerm:
+		return Term
+	case HeaderUnaryExpr:
+		return UnaryExpr
+	case HeaderFactor:
+		return Factor
+	default:
+		return s
+	}
+}
+
 func it(ast []int32) iter.Seq[Node] {
 	return func(yield func(Node) bool) {
 		for len(ast) != 0 {
@@ -132,7 +156,7 @@ func it(ast []int32) iter.Seq[Node] {
 			case v < 0:
 				// Non-Terminal: [-SymbolID, Size, Children...]
 				n := ast[1]
-				if !yield(Node{ast: ast[2 : 2+n], sym: Symbol(-v)}) {
+				if !yield(Node{ast: ast[2 : 2+n], sym: baseSym(Symbol(-v))}) {
 					return
 				}
 
@@ -3069,6 +3093,56 @@ func namedTypeToken(tn TypeNode) (Token, bool) {
 	}
 }
 
+// checkCompositeLit checks "T{e0, e1, ...}". T must name a struct type, and the
+// values are positional -- one per field, in declaration order -- so their count
+// must match. "T{}" supplies none and zeroes every field.
+func (f *File) checkCompositeLit(s *Scope, id Token, hasID bool, lit Node) {
+	var values []Node
+	for c := range it(lit.ast) {
+		if c.sym == ExpressionList {
+			values = expressionListItems(c)
+		}
+	}
+	// Resolve the names the values use whatever the literal's type turns out to
+	// be, so an undefined name inside is reported even for a bad type.
+	for _, v := range values {
+		f.checkNames(s, v)
+	}
+	if !hasID {
+		return
+	}
+	st, ok := f.structTypeOf(s, id)
+	if !ok {
+		f.err(id.Position(), "invalid composite literal type: %s is not a struct type", id.Src())
+		return
+	}
+	if len(values) == 0 {
+		return // "T{}" zeroes every field
+	}
+	fields := 0
+	for _, fld := range st.Fields {
+		fields += len(fld.Names)
+	}
+	if len(values) != fields {
+		what := "not enough"
+		if len(values) > fields {
+			what = "too many"
+		}
+		f.err(id.Position(), "%s values in %s{...}: %s but %s", what, id.Src(), countUnits(len(values), "value"), countUnits(fields, "field"))
+	}
+}
+
+// structTypeOf resolves a name to the struct type it declares. It reports false
+// for a name that is not a type at all, or names one that is not a struct.
+func (f *File) structTypeOf(s *Scope, name Token) (*TypeNodeStruct, bool) {
+	td, ok := s.find(name.Src()).(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return nil, false
+	}
+	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	return st, ok
+}
+
 // structFields returns the set of field names of a named struct type; ok is
 // false when the name is not a struct (a predeclared type, an interface, or an
 // undefined name), in which case field access is left unchecked.
@@ -3892,19 +3966,24 @@ func (f *File) checkIndexExprs(s *Scope, n Node) {
 // through the file scope; a literal is left alone.
 func (f *File) checkFactorNames(s *Scope, n Node) {
 	var id Token
-	var suffix Node
-	hasID, hasSuffix := false, false
+	var suffix, lit Node
+	hasID, hasSuffix, hasLit := false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Expression:
 			f.checkNames(s, c)
 		case FactorSuffix:
 			suffix, hasSuffix = c, true
+		case CompositeLit:
+			lit, hasLit = c, true
 		case 0:
 			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
 				id, hasID = tok, true
 			}
 		}
+	}
+	if hasLit {
+		f.checkCompositeLit(s, id, hasID, lit)
 	}
 	// Reading the blank identifier -- as an operand, argument, initializer,
 	// condition or return value, whether bare or with a call, selector or index
@@ -3956,9 +4035,9 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	}
 	// A bare type name used as a value: "p := P", "x := int", "return T". A type is
 	// not an expression, and was previously accepted silently. With a suffix it is
-	// a conversion "T(x)" (a call) or a qualified name, both legitimate, so only the
-	// suffix-less form is flagged.
-	if hasID && !hasSuffix {
+	// a conversion "T(x)" (a call) or a qualified name, and with a composite literal
+	// it names the literal's type, so only the bare form is flagged.
+	if hasID && !hasSuffix && !hasLit {
 		switch s.find(id.Src()).(type) {
 		case *TypeDeclaration, *PredeclaredType:
 			f.err(id.Position(), "cannot use type %s as a value", id.Src())

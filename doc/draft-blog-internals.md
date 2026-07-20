@@ -60,32 +60,75 @@ guards. LL(1) holds, and the language does not lose anything — the only cost i
 that the condition is no longer a direct child of the for-statement, so the
 checker has to go find it.
 
-And sometimes it costs something real. OctoGo has no composite literals. You
-cannot write:
+And sometimes it looks like it costs something real, right up until it doesn't.
+
+Composite literals are Go's classic parsing ambiguity. After a type name, a `{`
+might open a literal or might open a block:
 
 ```go
-p := Point{1, 2}
+p := Point{1, 2}   // literal
+if x {             // block
 ```
 
-This is Go's classic ambiguity: after a type name, a `{` might open a composite
-literal or might open a block. Go's own parser resolves it with a parser-level
-flag that tracks whether a composite literal is currently permitted — which is
-precisely the kind of context-sensitivity an LL(1) grammar cannot express. In
-`if x {`, the `{` is a block. In `p := P{`, it is a literal. One token of
-lookahead sees the same thing.
+One token of lookahead sees the same thing in both. Go's own parser resolves it
+with a parser-level flag tracking whether a composite literal is currently
+permitted — precisely the context-sensitivity an LL(1) grammar cannot express.
+For a long time OctoGo simply had no composite literals, and I assumed that was
+the price of the constraint.
 
-So today you write:
+It isn't, and the way out is worth the detour. Go's actual *rule* — as opposed to
+its implementation — is that a composite literal may not appear at the top level
+of an `if`, `for` or `switch` header unless you parenthesize it. That rule is
+perfectly context-free. It just has to be said in the grammar rather than in the
+parser. So there are two expression grammars:
+
+```ebnf
+Factor           = identifier [ CompositeLit | FactorSuffix ] | ...
+CompositeLit     = "{" [ ExpressionList ] "}" .
+
+HeaderExpression = HeaderSimpleExpr { RelOp HeaderSimpleExpr } .
+HeaderFactor     = identifier [ FactorSuffix ]      // no CompositeLit
+                 | "(" Expression ")"               // ... but parentheses restore it
+                 | ...
+```
+
+The ordinary chain allows composite literals. The header chain is the same
+grammar with that one production removed, and it is what `if`, `for` and `switch`
+headers parse. Inside parentheses you are back to the full expression, which is
+where Go's escape hatch comes from for free: `if p == (P{}) {` works, for exactly
+the reason it works in Go. egg accepted the whole thing without a single new
+conflict.
+
+The obvious objection is that duplicating five productions means duplicating
+every consumer of them, and the checker and emitter switch on node kinds all over
+the place. That turned out to be a non-problem, because the two chains are
+*structurally identical* — the header one is a strict subset. So the AST iterator
+maps the header productions onto the ordinary ones as it yields them:
 
 ```go
-var p Point
-p.x = 1
-p.y = 2
+func baseSym(s Symbol) Symbol {
+	switch s {
+	case HeaderExpression:
+		return Expression
+	case HeaderFactor:
+		return Factor
+	// ...
+	default:
+		return s
+	}
+}
 ```
 
-I am not thrilled about it, and it is the first thing anyone trying the language
-will bump into. But I would rather ship the honest limitation than quietly grow
-a hand-written parser around one feature. It is a real fork in the road and I
-have not taken it yet.
+Nothing outside the parser knows the distinction exists. The entire checker and
+the entire emitter were untouched by this change; the whole test suite went from
+red to green the moment that function was added. The duplication buys LL(1) and
+then disappears.
+
+That is the shape of the constraint in practice. It does not usually forbid
+things. It forbids *saying* them in a particular way, and often the rewrite is
+clearer about what the language actually means than the original would have been
+— Go's composite-literal rule is real, and here it is written down instead of
+being an emergent property of a parser flag.
 
 The payoff for all this discipline is that the frontend is boring in the way you
 want a frontend to be boring. The grammar is machine-checked. The parser is
@@ -274,8 +317,7 @@ structs, methods with value and pointer receivers, slices and fixed arrays,
 channels, and `select`. There are 119 semantic-check specs and 28 programs
 verified on silicon on every change.
 
-It is also unfinished in ways I have tried to be honest about above. No
-composite literals. `ogo test` is a stub. The `p2` package wraps nine intrinsics
+It is also unfinished. `ogo test` is a stub. The `p2` package wraps nine intrinsics
 and needs to be a real standard library. Interfaces are designed but not built,
 and the whole-program-optimization strategy behind them is still an open
 question I would genuinely like opinions on.
@@ -302,6 +344,6 @@ development:
 - [ ] p2 intrinsic count
 - [ ] the sample program's compiled binary size
 - [ ] feature list in "Where it is" — add anything landed since
-- [ ] limitations list — remove anything fixed since (esp. composite literals)
+- [ ] limitations list — remove anything fixed since
 - [ ] fill in the two blog backlinks
 - [ ] confirm the repo is public and the install path works before linking it
