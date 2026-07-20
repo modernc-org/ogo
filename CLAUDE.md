@@ -104,10 +104,15 @@ inputs, and never hand-edit the outputs.
    >
    > **v7.7.0 changed nothing we depend on.** Every flexcc bug the compiler works
    > around was re-measured against it, on a P2-EDGE, and every one still
-   > reproduces identically: the FCACHE channel hang, the dropped argument slot for
-   > an unnamed parameter, the miscompiled `static inline` rendezvous, and the four
-   > compile-time refusals around structs holding arrays and designated
-   > initializers. The upgrade is hygiene, not a fix — keep the workarounds.
+   > reproduces identically: the dropped argument slot for an unnamed parameter,
+   > the miscompiled `static inline` rendezvous, and the four compile-time refusals
+   > around structs holding arrays and designated initializers. The upgrade is
+   > hygiene, not a fix — keep the workarounds.
+   >
+   > The channel hang that used to head that list was **not** a flexcc bug at all.
+   > It was a livelock in this compiler's own rendezvous, exposed rather than
+   > caused by FCACHE; see `doc/rendezvous-livelock.c` and `chanRuntimeDefs` in
+   > `internal/octogo/emit.go`. Builds no longer pass `--fcache=0`.
 
 ## Architecture
 
