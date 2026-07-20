@@ -1856,16 +1856,27 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 	var lit Token
 	var paren, suffix Node
-	var hasLit, hasParen, hasSuffix bool
+	var hasLit, hasParen, hasSuffix, hasType bool
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Expression:
 			paren, hasParen = c, true
 		case FactorSuffix:
 			suffix, hasSuffix = c, true
+		case Type:
+			hasType = true
 		case 0:
 			lit, hasLit = f.tok(c.tok), true
 		}
+	}
+	// A bracketed type used as a value -- "[3]int{...}", "[]int{...}", or the
+	// "[]int" type argument of make -- also carries an Expression, its length. That
+	// is not a parenthesized operand, and reading it as one typed "a := [3]int{...}"
+	// as an int and then refused "a[0]" as indexing a scalar. A Factor with a Type
+	// child is one of these; its own type is an array or slice, which this scalar
+	// Kind cannot express, so it is left unknown.
+	if hasType {
+		return 0, false
 	}
 	switch {
 	case hasSuffix:

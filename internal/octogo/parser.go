@@ -5388,7 +5388,7 @@ state1:
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")"
-//		| "[" [ Expression ] "]" Type
+//		| "[" [ Expression ] "]" Type [ CompositeLit ]
 //		| "chan" Type
 //		| FuncLiteral .
 //
@@ -5402,7 +5402,7 @@ state1:
 //		on  '['
 //			shift and goto state 5
 //		on  identifier
-//			shift and goto state 7
+//			shift and goto state 9
 //		on  "func"
 //			call FuncLiteral and goto state 2
 //	State 1
@@ -5418,13 +5418,20 @@ state1:
 //			shift and goto state 2
 //	State 5
 //		on  ']'
-//			shift and goto state 1
+//			shift and goto state 6
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
-//			call Expression and goto state 6
+//			call Expression and goto state 8
 //	State 6
-//		on  ']'
-//			shift and goto state 1
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
+//			call Type and goto state 7
 //	State 7
+//		Accept
+//		on  '{'
+//			call CompositeLit and goto state 2
+//	State 8
+//		on  ']'
+//			shift and goto state 6
+//	State 9
 //		Accept
 //		on  '{'
 //			call CompositeLit and goto state 2
@@ -5452,7 +5459,7 @@ func (p *Parser) Factor() (r []int32) {
 		goto state5
 	case identifier:
 		r = append(r, p.shift())
-		goto state7
+		goto state9
 	case TOK_func:
 		r = p.add(r, p.FuncLiteral())
 		goto state2
@@ -5490,21 +5497,37 @@ state5:
 	switch Symbol(p.tok.Ch) {
 	case TOK_005d:
 		r = append(r, p.shift())
-		goto state1
+		goto state6
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
-		goto state6
+		goto state8
 	}
 	return p.stop(r, accept, errorSet)
 state6:
+	accept, errorSet = false, 51
+	switch Symbol(p.tok.Ch) {
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
+		r = p.add(r, p.Type())
+		goto state7
+	}
+	return p.stop(r, accept, errorSet)
+state7:
+	accept, errorSet = true, 98
+	switch Symbol(p.tok.Ch) {
+	case TOK_007b:
+		r = p.add(r, p.CompositeLit())
+		goto state2
+	}
+	return p.stop(r, accept, errorSet)
+state8:
 	accept, errorSet = false, 97
 	switch Symbol(p.tok.Ch) {
 	case TOK_005d:
 		r = append(r, p.shift())
-		goto state1
+		goto state6
 	}
 	return p.stop(r, accept, errorSet)
-state7:
+state9:
 	accept, errorSet = true, 73
 	switch Symbol(p.tok.Ch) {
 	case TOK_007b:

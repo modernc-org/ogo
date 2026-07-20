@@ -4511,9 +4511,11 @@ func main() {
 		// level of an initializer, so an array or struct field left unnamed needs
 		// its own braces, one per array extent.
 		"\tGrid grid = {{0}, {{0}}, {0}, 5};\n",
-		// Named out of order, emitted in declaration order.
-		"\tP b = {{2}, 0, (ogo_string){\"hi\", 2}};\n",
-		"\tP c = {{3}, 4, (ogo_string){\"x\", 1}};\n",
+		// Named out of order, emitted in declaration order. A string element is
+		// braced, not a compound literal: it is a { pointer, length } struct, so
+		// inside a declarator's initializer it is a nested aggregate like any other.
+		"\tP b = {{2}, 0, {\"hi\", 2}};\n",
+		"\tP c = {{3}, 4, {\"x\", 1}};\n",
 		// A keyed literal of constants is still a constant initializer, so the
 		// package variable is initialized rather than assigned at startup.
 		"static P pkg = {{0}, 10, {\"pkg\", 3}};\n",
@@ -4521,5 +4523,115 @@ func main() {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC keyed composite literal: missing %q in\n%s", want, got)
 		}
+	}
+}
+
+// TestEmitCArrayLit pins the two lowerings an array or slice literal gets. An array
+// literal is C's own aggregate initialization. A slice literal has no C spelling, so
+// it becomes a backing array carrying the values plus a { pointer, len, cap } header
+// -- the same shape make produces, with the length taken from the element count.
+func TestEmitCArrayLit(t *testing.T) {
+	src := `type P struct {
+	x int
+	y int
+}
+
+func main() {
+	tab := [4]int{10, 20, 30, 40}
+	part := [4]int{1, 2}
+	var typed [3]int = [3]int{7, 8, 9}
+	xs := []int{5, 6}
+	empty := []int{}
+	strs := [2]string{"a", "b"}
+	pts := [2]P{P{1, 2}, P{3, 4}}
+	println(tab[0], part[0], typed[0], xs[0], len(empty), strs[0], pts[0].x)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"\tint tab[4] = {10, 20, 30, 40};\n",
+		"\tint part[4] = {1, 2};\n", // fewer than the length: C zeroes the rest
+		"\tint typed[3] = {7, 8, 9};\n",
+		// A slice literal: backing array, then the header over it.
+		"\tint ogo_backing_0[2] = {5, 6};\n\togo_slice_int xs = {ogo_backing_0, 2, 2};\n",
+		// "[]T{}" gets no backing array: C has no zero-length one, and the zero
+		// header never dereferences its pointer because the length is 0.
+		"\togo_slice_int empty = {0};\n",
+		// A string element is a { pointer, length } struct, so it is braced rather
+		// than written as a compound literal.
+		"\togo_string strs[2] = {{\"a\", 1}, {\"b\", 1}};\n",
+		"\tP pts[2] = {{1, 2}, {3, 4}};\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC array literal: missing %q in\n%s", want, got)
+		}
+	}
+}
+
+// TestEmitCArrayLitRefused pins the cases that are refused by name rather than
+// mis-emitted: an array literal outside a declaration (C cannot assign an array,
+// and a slice literal needs a backing array hoisted beside the declaration it
+// belongs to), a literal whose type is not the declared one, and more values than
+// the array is long -- which C only warns about while dropping the excess.
+func TestEmitCArrayLitRefused(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "assignment",
+			src:  "func main() {\n\tvar a [3]int\n\ta = [3]int{1, 2, 3}\n\tprintln(a[0])\n}\n",
+			want: "a [3]int literal is only supported as a variable's initializer",
+		},
+		{
+			name: "call argument",
+			src:  "func take(s []int) int { return s[0] }\n\nfunc main() {\n\tprintln(take([]int{1, 2}))\n}\n",
+			want: "a []int literal is only supported as a variable's initializer",
+		},
+		{
+			name: "length mismatch",
+			src:  "func main() {\n\tvar a [3]int = [2]int{1, 2}\n\tprintln(a[0])\n}\n",
+			want: "a [2]int literal cannot initialize a variable declared [3]int",
+		},
+		{
+			name: "slice from array literal",
+			src:  "func main() {\n\tvar a []int = [3]int{1, 2, 3}\n\tprintln(a[0])\n}\n",
+			want: "a [3]int literal cannot initialize a variable declared []int",
+		},
+		{
+			name: "too many values",
+			src:  "func main() {\n\ta := [3]int{1, 2, 3, 4}\n\tprintln(a[0])\n}\n",
+			want: "too many values in [3]int literal: 4 values but the length is 3",
+		},
+		{
+			name: "indexed element",
+			src:  "func main() {\n\ta := [3]int{2: 5}\n\tprintln(a[0])\n}\n",
+			want: "an index in an array or slice literal is not supported yet",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			if err == nil {
+				t.Fatalf("EmitC accepted it:\n%s", buf.String())
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
 	}
 }

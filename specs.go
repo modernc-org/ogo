@@ -562,7 +562,7 @@
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")"
-//		| "[" [ Expression ] "]" Type
+//		| "[" [ Expression ] "]" Type [ CompositeLit ]
 //		| "chan" Type
 //		| FuncLiteral .
 //	CompositeLit = "{" [ ElementList ] "}" .
@@ -575,6 +575,14 @@
 // mixed, because once one Element names its field, position stops meaning anything.
 // A keyed literal may name any subset of the fields in any order, and a field it
 // does not name takes its zero value.
+//
+// A bracketed type may carry one too, giving an array literal "[N]T{a, b}" or a
+// slice literal "[]T{a, b}". Their elements are positional; Go's indexed form
+// ("[3]int{2: 5}") is not supported. An array literal may supply fewer values than
+// its length, zeroing the rest, and no more; a slice literal's length and capacity
+// are however many it supplies. Both are a variable's initializer and nothing else:
+// an array cannot be assigned, and a slice literal's backing storage belongs to the
+// declaration it initializes.
 //
 // A "chan" type may stand where a type-as-value may, so that "make(chan T)"
 // parses and is then refused by the checker, which can name the real problem;

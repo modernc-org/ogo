@@ -136,6 +136,46 @@ func main() {
 		want: "pkg true 2 6\npkg 4 4\n",
 	},
 	{
+		// Array and slice literals. An array literal is C's own aggregate
+		// initialization; a slice literal has no C spelling and lowers the way make
+		// does, to a backing array carrying the values plus a { pointer, len, cap }
+		// header. "[]T{}" gets no backing array at all -- C has no zero-length one,
+		// and an empty slice needs none.
+		name: "array and slice literals",
+		src: `type P struct {
+	x int
+	y int
+}
+
+func sum(s []int) int {
+	t := 0
+	for _, v := range s {
+		t += v
+	}
+	return t
+}
+
+func main() {
+	tab := [4]int{10, 20, 30, 40}
+	part := [4]int{1, 2}
+	var typed [3]int = [3]int{7, 8, 9}
+	xs := []int{5, 6, 7}
+	var ts []int = []int{1, 1}
+	empty := []int{}
+	strs := [2]string{"a", "b"}
+	pts := [2]P{P{1, 2}, P{3, 4}}
+
+	tab[0] = 11
+	xs[0] = 50
+
+	println(tab[0], tab[3], part[1], part[3], typed[2], len(tab))
+	println(xs[0], len(xs), cap(xs), sum(xs), ts[1], len(empty))
+	println(strs[1], pts[1].x, pts[0].y)
+}
+`,
+		want: "11 40 2 0 9 4\n50 3 3 63 1 0\nb 3 2\n",
+	},
+	{
 		// A keyed composite literal names its fields, in any order and in any
 		// number. C's designated initializers look like the lowering for this and
 		// are not one -- flexcc mishandles them -- so the literal is rewritten into

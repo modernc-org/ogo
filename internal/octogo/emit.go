@@ -2562,6 +2562,14 @@ func (e *emitter) emitVarDecl(ast []int32) {
 					e.emit(elem + " " + nm + a.declSuffix() + " = {0};\n")
 					continue
 				}
+				// A literal initializer is aggregate initialization, not a copy.
+				if litType, lit, ok := e.soleArrayLit(initExpr); ok {
+					if !e.sameArrayType(a, litType) {
+						return
+					}
+					e.emitArrayLitVar(nm, litType, lit)
+					continue
+				}
 				e.includes["string.h"] = true
 				e.ind()
 				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
@@ -2582,8 +2590,17 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			}
 			cname := sliceCName(elem)
 			e.needSlice(elem)
-			// A make([]T, ...) initializer synthesises a backing array + header.
+			// A make([]T, ...) or a literal initializer synthesises a backing array
+			// + header, rather than copying an existing header.
 			if initExpr != nil && len(names) == 1 && names[0] != "_" {
+				if litType, lit, ok := e.soleArrayLit(initExpr); ok {
+					if me, isSlice := e.sliceType(litType); !isSlice || me != elem {
+						e.fail("a %s literal cannot initialize a variable declared []%s", e.litTypeName(litType), elem)
+						return
+					}
+					e.emitArrayLitVar(names[0], litType, lit)
+					continue
+				}
 				if me, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
 					if me != elem {
 						e.fail("make element type %q does not match the declared slice element type %q", me, elem)
@@ -2688,14 +2705,24 @@ func (e *emitter) soleCompositeLit(ast []int32) (name string, lit Node, ok bool)
 // soleFactor returns the children of the Factor an expression consists of, if that
 // is all it is: no operator, no unary prefix, just the one operand.
 func (e *emitter) soleFactor(ast []int32) (kids []Node, ok bool) {
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return nil, false
+	}
+	return slices.Collect(it(fac.ast)), true
+}
+
+// soleFactorNode is soleFactor returning the Factor node itself, for a caller that
+// needs its AST slice rather than its children.
+func (e *emitter) soleFactorNode(ast []int32) (Node, bool) {
 	nodes := slices.Collect(it(ast))
 	for len(nodes) == 1 && nodes[0].sym != 0 {
 		if n := nodes[0]; n.sym == Factor {
-			return slices.Collect(it(n.ast)), true
+			return n, true
 		}
 		nodes = slices.Collect(it(nodes[0].ast))
 	}
-	return nil, false
+	return Node{}, false
 }
 
 // emitCompositeLit emits "T{a, b}" as the C compound literal "(T){a, b}", or, with
@@ -2729,17 +2756,185 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 			e.emit(e.zeroFieldC(fields[i])) // a field this keyed literal omits
 			continue
 		}
-		if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok {
-			if len(compositeLitElements(sub)) == 0 {
-				e.emit(e.zeroBraceC(nm)) // "{0}" does not nest; see zeroBraceC
-				continue
-			}
-			e.emitCompositeLit(nm, sub, true)
-			continue
-		}
-		e.emitExpr(v.ast)
+		e.emitLitElement(*v, brace)
 	}
 	e.emit("}")
+}
+
+// emitLitElement emits one element of a composite literal. Inside a brace
+// initializer an element that is itself a literal is written with braces too,
+// which is C's spelling for a nested aggregate and the only one flexcc lowers for
+// a struct that holds an array (see emitCompositeLit).
+func (e *emitter) emitLitElement(v Node, brace bool) {
+	if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok {
+		if len(compositeLitElements(sub)) == 0 {
+			e.emit(e.zeroBraceC(nm)) // "{0}" does not nest; see zeroBraceC
+			return
+		}
+		e.emitCompositeLit(nm, sub, true)
+		return
+	}
+	// A string is a { pointer, length } struct, so an element that is one is a
+	// nested aggregate and takes braces here for the same reason a literal does.
+	// Only a bare string literal qualifies: a call that returns one is an
+	// expression, and bracing what it contains would not be C.
+	if tok, ok := e.soleToken(v.ast); brace && ok && e.f.ch(tok) == STRING {
+		saved := e.declInit
+		e.declInit = true
+		e.emitExpr(v.ast)
+		e.declInit = saved
+		return
+	}
+	e.emitExpr(v.ast)
+}
+
+// emitLitValues emits an array or slice literal's elements as a braced C
+// initializer list. Unlike a struct's, these have no field names to reorder, so
+// they are positional by construction; Go's indexed form ("[3]int{2: 5}") is
+// refused rather than silently dropped.
+func (e *emitter) emitLitValues(lit Node) bool {
+	elements := compositeLitElements(lit)
+	for _, el := range elements {
+		if el.keyed {
+			e.fail("an index in an array or slice literal is not supported yet")
+			return false
+		}
+	}
+	if len(elements) == 0 {
+		e.emit("{0}") // no values: zero every element
+		return true
+	}
+	e.emit("{")
+	for i, el := range elements {
+		if i != 0 {
+			e.emit(", ")
+		}
+		e.emitLitElement(el.value, true)
+	}
+	e.emit("}")
+	return true
+}
+
+// emitArrayLitVar declares a local initialized from an array or slice literal.
+//
+// An array is C's own aggregate initialization, `int a[3] = {1, 2, 3};` -- which is
+// also why an array literal is only ever a declaration's initializer: C cannot
+// assign an array, so there is nowhere else to put one.
+//
+// A slice literal has no such spelling. It lowers the way make does, to a backing
+// array plus a { pointer, len, cap } header, the difference being that the backing
+// array carries the values and its length is the number of them.
+func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
+	if a, ok := e.arrayDim(typeAST); ok {
+		// Fewer values than the length is legal and zeroes the rest, as in Go; more
+		// is not. C only warns about the excess, and the extra values are dropped,
+		// so saying so here is the difference between a diagnostic and a surprise.
+		if n, err := strconv.Atoi(a.bound); err == nil && len(compositeLitElements(lit)) > n {
+			e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(a), countUnits(len(compositeLitElements(lit)), "value"), a.bound)
+			return
+		}
+		e.arrays[name] = a
+		e.ind()
+		e.emit(a.elem + " " + name + a.declSuffix() + " = ")
+		if !e.emitLitValues(lit) {
+			return
+		}
+		e.emit(";\n")
+		return
+	}
+	elem, ok := e.sliceType(typeAST)
+	if !ok {
+		e.fail("unsupported array or slice literal type")
+		return
+	}
+	e.needSlice(elem)
+	cname := sliceCName(elem)
+	e.sliceVars[name] = elem
+	e.locals[name] = cname
+	count := len(compositeLitElements(lit))
+	if count == 0 {
+		// "[]T{}" is an empty slice, not a slice of one zero element. C has no
+		// zero-length array to point it at, and it needs none: the header is the
+		// zero value, whose pointer is never dereferenced because the length is 0.
+		e.ind()
+		e.emit(cname + " " + name + " = {0};\n")
+		return
+	}
+	backing := e.newBacking()
+	n := strconv.Itoa(count)
+	e.ind()
+	e.emit(elem + " " + backing + "[" + n + "] = ")
+	if !e.emitLitValues(lit) {
+		return
+	}
+	e.emit(";\n")
+	e.ind()
+	e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")
+}
+
+// sameArrayType reports whether a literal's bracketed type is the array type the
+// variable was declared with, and reports the mismatch by name if not. The checker
+// does not compare composite types yet, so this is where "var a [3]int = [2]int{}"
+// is caught -- without it the literal's own extent would silently win.
+func (e *emitter) sameArrayType(declared arrDim, litType []int32) bool {
+	lit, ok := e.arrayDim(litType)
+	if ok && lit.elem == declared.elem && slices.Equal(lit.bounds(), declared.bounds()) {
+		return true
+	}
+	e.fail("a %s literal cannot initialize a variable declared %s", e.litTypeName(litType), arrayTypeName(declared))
+	return false
+}
+
+// litTypeName renders a literal's bracketed type for a diagnostic, as the source
+// spells it rather than as C would.
+func (e *emitter) litTypeName(litType []int32) string {
+	if a, ok := e.arrayDim(litType); ok {
+		return arrayTypeName(a)
+	}
+	if elem, ok := e.sliceType(litType); ok {
+		return "[]" + elem
+	}
+	return "array or slice"
+}
+
+// arrayTypeName spells an array type the way the source does, "[2][3]int", rather
+// than the way C declares it, which puts the extents on the declarator.
+func arrayTypeName(a arrDim) string {
+	s := ""
+	for _, b := range a.bounds() {
+		s += "[" + b + "]"
+	}
+	return s + a.elem
+}
+
+// soleArrayLit matches an initializer that is exactly an array or slice literal,
+// "[N]T{...}" or "[]T{...}". The bracketed type the grammar already allows as a
+// value (so "make([]int, n)" parses) carries the composite literal as its tail, so
+// the Factor's own nodes are the type -- which is why arrayDim and sliceType, both
+// of which read that shape, can be handed them unchanged.
+func (e *emitter) soleArrayLit(initExpr []int32) (typeAST []int32, lit Node, ok bool) {
+	fac, ok := e.soleFactorNode(initExpr)
+	if !ok {
+		return nil, Node{}, false
+	}
+	return e.factorArrayLit(fac)
+}
+
+// factorArrayLit matches a Factor that is an array or slice literal: the bracketed
+// type followed by a composite literal.
+func (e *emitter) factorArrayLit(fac Node) (typeAST []int32, lit Node, ok bool) {
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) == 0 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LBRACK {
+		return nil, Node{}, false
+	}
+	last := kids[len(kids)-1]
+	if last.sym != CompositeLit {
+		return nil, Node{}, false
+	}
+	// The Factor's own nodes are the bracketed type, so they are what arrayDim and
+	// sliceType read; the trailing CompositeLit is not part of the type and both
+	// ignore it, looking only for the length Expression and the element Type.
+	return fac.ast, last, true
 }
 
 // litFieldValues returns a composite literal's values in field order, and the
@@ -5091,6 +5286,10 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 // slice-typed result records its element type so later indexing / len / cap /
 // append on name resolve.
 func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
+	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
+		e.emitArrayLitVar(name, typeAST, lit)
+		return
+	}
 	if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
 		cname := sliceCName(elem)
 		e.needSlice(elem)
@@ -6073,6 +6272,14 @@ func (e *emitter) emitExprNode(n Node) {
 		if n.sym == Factor {
 			if name, lit, ok := e.factorCompositeLit(kids); ok {
 				e.emitCompositeLit(name, lit, e.declInit)
+				return
+			}
+			// An array or slice literal is a declaration's initializer and nothing
+			// else: C cannot assign an array, and a slice literal needs a backing
+			// array hoisted beside the declaration it belongs to, which an
+			// expression position has nowhere to put.
+			if litType, _, ok := e.factorArrayLit(n); ok {
+				e.fail("a %s literal is only supported as a variable's initializer", e.litTypeName(litType))
 				return
 			}
 			if recv, suffix, ok := e.factorCall(kids); ok {

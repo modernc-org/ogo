@@ -227,8 +227,14 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// for this, so every '[' fell through to the closing "return true" and an index
 	// came out as "a [1]". Placed after the RBRACK rule above so "[][]int" keeps
 	// its brackets together.
+	//
+	// An index is the only thing that binds tight, and it is recognisable from what
+	// it indexes: a name, or a closing bracket or paren. A '[' anywhere else opens a
+	// type, whether or not inType is set -- an array or slice literal is a type in
+	// an expression -- and is spaced like an ordinary operand, so "x := [4]int{...}"
+	// does not come out as "x :=[4]int{...}".
 	case curr == LBRACK:
-		return c.inType
+		return c.inType || (prev != IDENT && prev != RBRACK && prev != RPAREN)
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false
 	// "++" and "--" are postfix and bind to their operand: "i++", "b.arr[i]++".
