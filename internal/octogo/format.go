@@ -231,6 +231,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		return c.inType
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false
+	// "++" and "--" are postfix and bind to their operand: "i++", "b.arr[i]++".
+	// They are statements here, never expressions, so there is no prefix form for
+	// this to get wrong.
+	case curr == INC || curr == DEC:
+		return false
 	// The ':' of a slice expression binds tight on both sides -- "s[0:1]", not
 	// "s[0: 1]". Scoped to an index so a case clause's ':' is left alone.
 	case prev == COLON && c.inIndex:

@@ -562,3 +562,67 @@ func main() {
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatIncDec pins "++" and "--" binding to their operand. The formatter had
+// no rule for them, so they fell through to the default space and every increment
+// came out as "i ++". They are statements in this language, never expressions, so
+// there is no prefix form for the rule to get wrong.
+func TestFormatIncDec(t *testing.T) {
+	const in = `type B struct {
+arr [3]int
+data []int
+n int
+}
+
+func main() {
+i := 0
+i ++
+i  --
+var b B
+b.n ++
+b.arr[i] ++
+b.data = make([]int, 2, 2)
+b.data[i] --
+for j := 0; j < 2; j ++ {
+i ++
+}
+println(i, b.n)
+}
+`
+	const want = `type B struct {
+	arr  [3]int
+	data []int
+	n    int
+}
+
+func main() {
+	i := 0
+	i++
+	i--
+	var b B
+	b.n++
+	b.arr[i]++
+	b.data = make([]int, 2, 2)
+	b.data[i]--
+	for j := 0; j < 2; j++ {
+		i++
+	}
+	println(i, b.n)
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("increment spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
