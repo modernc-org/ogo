@@ -116,13 +116,21 @@ func main() {
 		os.Exit(rc)
 	case "version":
 		printVersion(os.Stdout)
-	case
-		"help",
-		"test":
-
+	case "help":
+		if !help(os.Stdout, args) {
+			fail(2, "unknown command %q. Run %q.", args[0], os.Args[0]+" help")
+		}
+	case "test":
 		fail(1, "TODO: %v", subCommand)
 	default:
-		fail(2, `ogo is a tool for managing OctoGo source code.
+		usage(os.Stderr)
+		os.Exit(2)
+	}
+}
+
+// usage writes the command overview.
+func usage(w io.Writer) {
+	fmt.Fprintf(w, `ogo is a tool for managing OctoGo source code.
 
 Usage:
 
@@ -132,12 +140,101 @@ The commands are:
 
 	build       compile packages and dependencies
 	fmt         reformat source files
+	help        show help for a command
 	loadp2      load a program onto a Propeller 2 board (loadp2 passthrough)
 	run         compile and run a program on a connected board
 	smith       output a random program for compiler testing
 	test        test packages
 	version     print the ogo version
 
-Use "%s help <command>" for more information about a command.`, os.Args[0])
+Use "%s help <command>" for more information about a command.
+`, os.Args[0])
+}
+
+// commandHelp is the per-command detail behind "ogo help <command>".
+var commandHelp = map[string]string{
+	"build": `usage: ogo build [-o output] [--release] [--unchecked] [package | file.ogo ...]
+
+Build compiles a package to a Propeller 2 binary.
+
+A package is a directory. With no argument the current directory is built; with a
+directory argument that directory is; either way every .ogo file in it is compiled
+together, except _test.ogo files. Source files may also be named explicitly, in
+which case they must all be in one directory.
+
+The binary is written beside the package and named after its directory, except
+when a single file is named, which keeps that file's name: ogo build x.ogo writes
+x.binary. -o overrides the path.
+
+Runtime checks for out-of-range indexing and division by zero are on by default.
+
+	-o output     write the binary here
+	--unchecked   omit the runtime checks
+	--release     reboot the board on a panic instead of halting the cog
+`,
+	"run": `usage: ogo run [--release] [--unchecked] [package | file.ogo ...]
+
+Run builds a package exactly as ogo build does, loads the binary onto a connected
+Propeller 2 and opens a terminal on its serial output.
+
+Press Ctrl-] to leave the terminal.
+`,
+	"fmt": `usage: ogo fmt [-l] [-w] [-exclude regexp] [path ...]
+
+Fmt formats .ogo source files in the canonical style. Each path may be a file or a
+directory, which is searched recursively. With no flags the formatted result is
+compared and nothing is written.
+
+	-l            list the files whose formatting differs
+	-w            rewrite the files in place
+	-exclude re   skip paths matching the regular expression
+`,
+	"loadp2": `usage: ogo loadp2 [loadp2 arguments]
+
+Loadp2 hands its arguments to the embedded Propeller 2 loader unchanged, so
+loadp2's own flag grammar applies rather than ogo's. Run it without arguments for
+loadp2's usage.
+
+The loader is built in; no separate loadp2 installation is needed.
+`,
+	"smith": `usage: ogo smith [-seed n]
+
+Smith writes a random OctoGo program to standard output, for testing the compiler
+against itself: it interprets the program as it generates it, so the program
+carries an assertion of its own expected result and a compiled binary that fails
+that assertion implicates the compiler.
+
+	-seed n       seed the generator (0 uses the current time)
+
+Note: generation is not yet reproducible from a seed.
+`,
+	"test": `usage: ogo test [package]
+
+Test is not implemented yet. Files ending in _test.ogo are recognized as test
+files and excluded from a build, but nothing runs them.
+`,
+	"version": `usage: ogo version
+
+Version prints the ogo version, the host platform and the Go toolchain that built
+it -- what a bug report needs to identify a build.
+`,
+	"help": `usage: ogo help [command]
+
+Help shows the command overview, or the detail for one command.
+`,
+}
+
+// help writes the overview when given no command, or that command's detail. It
+// reports false for an unknown command, leaving the diagnostic to the caller.
+func help(w io.Writer, args []string) bool {
+	if len(args) == 0 {
+		usage(w)
+		return true
 	}
+	text, ok := commandHelp[args[0]]
+	if !ok {
+		return false
+	}
+	fmt.Fprint(w, text)
+	return true
 }

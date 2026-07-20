@@ -4,7 +4,7 @@
 the compiler moves fast. See the checklist at the end.*
 
 The last few posts here have been about pieces of a toolchain without saying
-what they were for. [egg][egg-post], my LL(1) parser generator. The
+what they were for. [egg][egg-post], the LL(1) parser generator. The
 [flat AST][flat-ast-post] and the ergonomics of walking one when you have
 decided that allocation is the enemy. And underneath both, ccgo, which turns C
 into Go.

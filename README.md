@@ -120,7 +120,8 @@ broken.
   package in one directory for now.
 * **Keyed composite literals** (`P{x: 1}`) and literals for arrays and slices
   (`[]int{1, 2}`); only positional struct literals are built so far.
-* **`ogo test`** is not implemented, and neither is `ogo help`.
+* **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
+  of a build, but nothing runs them yet.
 * **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).
   It is enough for blinky, not a standard library.
 * `go` on a method, and send clauses in `select`.
