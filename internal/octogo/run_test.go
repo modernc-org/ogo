@@ -62,6 +62,108 @@ func main() {
 		want: "43\n",
 	},
 	{
+		name: "methods on values, pointers and named types",
+		src: `type Point struct {
+	x int
+	y int
+}
+
+func (p Point) sum() int {
+	return p.x + p.y
+}
+
+func (p *Point) scale(k int) {
+	p.x = p.x * k
+	p.y = p.y * k
+}
+
+type Celsius int
+
+func (c Celsius) double() Celsius {
+	return c * 2
+}
+
+func main() {
+	var p Point
+	p.x = 3
+	p.y = 4
+	println(p.sum())
+	p.scale(2)
+	println(p.x, p.y, p.sum())
+	var c Celsius = 21
+	println(int(c.double()))
+}
+`,
+		want: "7\n6 8 14\n42\n",
+	},
+	{
+		// A struct crosses the call boundary by value in both directions, so the
+		// callee's writes must not be visible to the caller.
+		name: "struct passed and returned by value",
+		src: `type P struct {
+	x int
+	y int
+}
+
+func addOne(p P) P {
+	p.x = p.x + 1
+	p.y = p.y + 1
+	return p
+}
+
+func main() {
+	var a P
+	a.x = 10
+	a.y = 20
+	b := addOne(a)
+	println(a.x, a.y)
+	println(b.x, b.y)
+}
+`,
+		want: "10 20\n11 21\n",
+	},
+	{
+		name: "switch with and without a guard",
+		src: `func classify(n int) int {
+	switch {
+	case n < 0:
+		return -1
+	case n == 0:
+		return 0
+	}
+	return 1
+}
+
+func day(n int) int {
+	switch n {
+	case 1:
+		return 10
+	case 2:
+		return 20
+	default:
+		return 99
+	}
+}
+
+func main() {
+	println(classify(-5), classify(0), classify(7))
+	println(day(1), day(2), day(5))
+}
+`,
+		want: "-1 0 1\n10 20 99\n",
+	},
+	{
+		name: "append and cap",
+		src: `func main() {
+	s := make([]int, 0, 4)
+	s = append(s, 1)
+	s = append(s, 2)
+	println(len(s), cap(s), s[0], s[1])
+}
+`,
+		want: "2 4 1 2\n",
+	},
+	{
 		name: "defer captures at the defer, not the return",
 		src: `func step(n int) {
 	println(n)
