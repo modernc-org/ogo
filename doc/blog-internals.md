@@ -1,8 +1,5 @@
 # Building OctoGo: A Go-like Language Where Goroutines Are Cores
 
-*DRAFT — not published. Revisit and re-verify every number before publishing;
-the compiler moves fast. See the checklist at the end.*
-
 The last few posts here have been about pieces of a toolchain without saying
 what they were for. [egg][egg-post], the LL(1) parser generator. The
 [flat AST][flat-ast-post] and the ergonomics of walking one when you have
@@ -290,8 +287,8 @@ The lesson is not the fix. It is this: **a cross-compiler that is verified only
 on the host is not verified.** I had been treating the host suite as ground
 truth and the board as a demo. It is the other way around. So OctoGo now has a
 second suite — the same table of programs, but built with the real backend,
-loaded onto a real P2, and checked against the serial output. Twenty-eight
-programs, about thirty seconds, and it is the suite that actually means
+loaded onto a real P2, and checked against the serial output. Twenty-nine
+programs, a little over half a minute, and it is the suite that actually means
 something.
 
 There is a coda. The first version of that harness killed the loader with
@@ -310,39 +307,41 @@ I spent a while assuming the board was flaky hardware. It was my test harness.
 
 ## Where it is
 
-OctoGo compiles and runs real programs on real Propeller 2 hardware today:
-structs, methods with value and pointer receivers, slices and fixed arrays,
-`defer`, the full control-flow set, `iota`, multiple return values, goroutines,
-channels, and `select`. There are 119 semantic-check specs and 28 programs
-verified on silicon on every change.
+OctoGo compiles and runs real programs on real Propeller 2 hardware today.
+Structs and composite literals, methods with value and pointer receivers, slices
+and fixed arrays, the full control-flow set including `switch`, `defer`, `iota`,
+multiple return values named and unnamed, `append`, goroutines, channels and
+`select`. A package is a directory, so a program can be spread over as many files
+as it wants. There are 121 semantic-check specs, and 29 programs are built with
+the real backend and run on silicon on every change.
 
-It is also unfinished. `ogo test` is a stub. The `p2` package wraps nine intrinsics
-and needs to be a real standard library. Interfaces are designed but not built,
-and the whole-program-optimization strategy behind them is still an open
-question I would genuinely like opinions on.
+It is also unfinished, in ways worth stating plainly. `ogo test` is a stub.
+Composite literals are positional only — no `P{x: 1}`, no `[]int{1, 2}` yet. A
+program is one package in one directory: only `import "p2"` resolves. And the
+`p2` package wraps nine intrinsics, which is enough for blinky and not a standard
+library.
 
-If you have a P2 and any interest in writing Go-shaped code for it, I would like
-to hear what breaks.
+Interfaces are designed but not built, and the whole-program-optimization
+strategy behind them is genuinely undecided — bounded tagged unions, strict
+monomorphization, or static vtables, each with a different bargain between Go
+compatibility and the memory budget. That is the question I would most like
+opinions on, along with whether the zero-allocation constraints feel workable
+once you try to write something real, and whether a channel that is created by
+its declaration rather than by `make` reads naturally or just reads odd.
 
-<!-- Links to fill in before publishing -->
-[egg-post]: TODO
-[flat-ast-post]: TODO
+One practical note: the toolchain is built and tested on linux/amd64, and that is
+the only platform it ships for today. Which one do you need next? That is a real
+question rather than a polite one — each port means regenerating the transpiled
+backend for that target, so I would rather spend the effort where it is actually
+wanted than guess. In the meantime the two halves come apart cleanly: `ogo build`
+emits an ordinary P2 `.binary`, so it can be built in a VM, on a Pi or under WSL
+and flashed with whatever loader is already installed. (WSL is fine for building;
+its USB passthrough makes `ogo run` more trouble than it is worth.)
 
----
+	go install modernc.org/ogo@latest
 
-## Pre-publication checklist
+The source is at <https://gitlab.com/cznic/ogo>. If you have a P2 and any
+interest in writing Go-shaped code for it, I would like to hear what breaks.
 
-Re-verify against the repo at publish time — all of these have moved during
-development:
-
-- [ ] flexcc line count and size (`wc -l internal/flexcc/ccgo_linux_amd64.go`)
-- [ ] embedded include-tree size (`ls -lh internal/flexcc/p2include.tar.gz`)
-- [ ] `ogo` binary size
-- [ ] board suite case count (`grep -c 'name: "' internal/octogo/run_test.go`)
-- [ ] spec testdata count (`ls internal/octogo/testdata/*.ogo | wc -l`)
-- [ ] p2 intrinsic count
-- [ ] the sample program's compiled binary size
-- [ ] feature list in "Where it is" — add anything landed since
-- [ ] limitations list — remove anything fixed since
-- [ ] fill in the two blog backlinks
-- [ ] confirm the repo is public and the install path works before linking it
+[egg-post]: https://modern-c.blogspot.com/2026/01/building-high-performance-json-parser.html
+[flat-ast-post]: https://modern-c.blogspot.com/2026/02/taming-flat-ast-ergonomics-in-age-of.html
