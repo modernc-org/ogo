@@ -92,7 +92,20 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	}
 
 	// flexcc.Main auto-injects the embedded flexprop P2 include tree.
-	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-o", out, cFile}); err != nil {
+	//
+	// --fcache=0 because FCACHE miscompiles the channel rendezvous. FCACHE lifts
+	// a hot loop into Cog RAM, and a loop polling a Hub cell another cog writes
+	// then stops observing the writes -- sender and receiver spin forever, both
+	// live, neither progressing. It survives `volatile` on the cell, so this is
+	// not the C compiler being within its rights. The reproducer is small enough
+	// to be worth reporting upstream: two cogs, one lock-guarded cell, a Hub
+	// pointer into the caller's frame.
+	//
+	// The cost is real -- no loop in a build gets cached, not just the channel
+	// ones -- so this wants revisiting: narrow it to programs that spawn, or
+	// carry a flexprop fix. Correctness first for now: the alternative is a
+	// program that silently hangs.
+	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "--fcache=0", "-o", out, cFile}); err != nil {
 		return "", 1, fmt.Errorf("flexcc: %v", err)
 	}
 	return out, 0, nil

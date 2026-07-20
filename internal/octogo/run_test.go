@@ -359,6 +359,41 @@ func main() {
 		want: "4\n",
 	},
 	{
+		// Several local channels each with their own `go`, which is where flexcc's
+		// FCACHE used to lift the rendezvous poll into Cog RAM and stop it seeing
+		// the sender's writes -- a silent hang, on hardware only, and only once a
+		// program had roughly this many of both. One channel, or one spawn, was
+		// not enough to trigger it, so the cases above cannot stand in for this.
+		name: "several local channels and spawns",
+		src: `func id(n int) int {
+	return n
+}
+
+func send(k chan int, n int) {
+	k <- n
+}
+
+func main() {
+	var a chan int
+	go send(a, 1)
+	println(<-a)
+
+	var b chan int
+	go send(b, 2)
+	println(id(<-b))
+
+	var c chan int
+	go send(c, 3)
+	println(1 + <-c)
+
+	var d chan int
+	go send(d, 4)
+	println(<-d)
+}
+`,
+		want: "1\n2\n4\n4\n",
+	},
+	{
 		name: "iota constant groups",
 		src: `type Weekday int
 
