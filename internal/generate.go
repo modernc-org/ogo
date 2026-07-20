@@ -6,4 +6,4 @@
 //go:generate gofmt -l -s -w .
 //go:generate go build -o /dev/null ./flexcc/
 
-package octogo // import "modernc.org/ogo/internal"
+package octogo

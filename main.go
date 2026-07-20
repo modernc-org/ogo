@@ -4,7 +4,7 @@
 
 // Command ogo is a compiler for the OctoGo programming language. OctoGo
 // brings Native Go-like Concurrency for the Parallax Propeller 2.
-package main // import "modernc.org/octogo"
+package main
 
 import (
 	"fmt"

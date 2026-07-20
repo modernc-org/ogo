@@ -14,7 +14,7 @@
 // and keeps global state; lib.Main locks the OS thread for the call and is not
 // safe for concurrent use. Like the flexcc backend it is linux/amd64 only; on
 // other targets lib.Main reports the unsupported target and returns non-zero.
-package loadp2 // import "modernc.org/ogo/internal/loadp2"
+package loadp2
 
 import (
 	"strconv"

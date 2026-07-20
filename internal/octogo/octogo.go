@@ -229,4 +229,4 @@
 //   - Pruning: The original generic functions containing any or ...any are
 //     pruned from the AST. Any unused methods or interface definitions are
 //     stripped to conserve Propeller 2 ROM space.
-package octogo // import "modernc.org/ogo/internal/ogo"
+package octogo

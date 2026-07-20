@@ -1067,4 +1067,4 @@
 // statement:
 //
 //	select {}
-package main // import "modernc.org/octogo"
+package main

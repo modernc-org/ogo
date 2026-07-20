@@ -7,7 +7,7 @@
 // to a P2 binary (internal/flexcc), and — for run — load it onto a connected
 // board (internal/loadp2). It is the walking skeleton of the toolchain's back
 // half; the emitter it drives currently handles only a trivial program.
-package build // import "modernc.org/ogo/internal/build"
+package build
 
 import (
 	"bytes"
