@@ -4,7 +4,7 @@
 
 **A modern, zero-allocation, Go-like programming language built specifically for the Parallax Propeller 2 (P2) multi-core microcontroller.**
 
-OctoGo brings the elegance of Go's concurrency model to embedded hardware. It compiles a  LL(1) subset of a Go-like language into C99/C11, which is then compiled to native P2 assembly using the industry-standard flexprop toolchain.
+OctoGo brings the elegance of Go's concurrency model to embedded hardware. It compiles an LL(1) subset of a Go-like language into C99/C11, which is then compiled to native P2 assembly using the industry-standard flexprop toolchain.
 
 There is no software scheduler and no garbage collector. Goroutines map 1:1 to physical silicon.
 
@@ -62,7 +62,7 @@ OctoGo is designed to be a zero-cost abstraction over the Propeller 2's unique 8
 
 * **Hardware-Backed Channels:** Channels (chan) are not software queues. Each is a rendezvous cell in Hub RAM guarded by one of the P2's native hardware locks (0-15), giving atomic, lock-step transfer. A channel is created by its declaration, not by make: there is no allocator to make it with.  
 * **Zero-Allocation & No GC:** OctoGo operates without a Garbage Collector. Memory scoping is strict (Hub RAM vs. Cog RAM), and slices are implemented as non-escaping views over fixed arrays.  
-* **Select Statements:** The select statement  is transpiled into an efficient polling loop, utilizing flexprop's \_waitx yield instructions to prevent bus starvation during non-blocking hardware polling.
+* **Select Statements:** The select statement is transpiled into an efficient polling loop, utilizing flexprop's \_waitx yield instructions to prevent bus starvation during non-blocking hardware polling.
 
 * **Implicit Namespaces:** To keep the grammar clean and strictly LL(1), there is no package keyword. A package's namespace is implicitly inferred from its directory name, mapping cleanly to a single C translation unit.
 
@@ -86,6 +86,14 @@ OctoGo is a source-to-source compiler (transpiler) written in Go.
 That is the whole toolchain. `ogo` embeds the C backend (flexspin's compiler,
 transpiled to Go) and the P2 loader, so there is no flexprop installation, no
 separate loader and no SDK path to configure.
+
+Building `ogo` needs Go 1.25 or newer. The binary it produces is built and tested
+on linux/amd64, which is the only platform it ships for today — if you need
+another, please say so, it helps decide which to do first. Note that the two
+halves come apart: `ogo build` emits an ordinary P2 `.binary`, so you can compile
+on one machine and flash with whatever loader you already have on another.
+
+Run `ogo help` for the command list, or `ogo help build` for one command.
 
 ## **Status: early preview**
 
@@ -120,6 +128,14 @@ broken.
   package in one directory for now.
 * **Keyed composite literals** (`P{x: 1}`) and literals for arrays and slices
   (`[]int{1, 2}`); only positional struct literals are built so far.
+* **Some rejections are diagnosed badly.** A construct the grammar cannot
+  represent at all does not fail cleanly: the parse goes wrong first and the
+  checker then complains about something else entirely. The two you are most
+  likely to meet are a keyed composite literal and `make(chan T)` — both real
+  limitations, but they surface as `P is not a struct type`, `undefined: P`,
+  `undefined: f` or `declared and not used: c`, none of which is the actual
+  problem. If a message makes no sense against code you believe is correct,
+  check this list before believing the message.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
 * **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).
