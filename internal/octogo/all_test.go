@@ -483,3 +483,82 @@ println(x)
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatCompositeLit pins a composite literal's braces binding to what they
+// enclose, which is the opposite of a block's braces being spaced off the header
+// they follow. The formatter is token-based and had no rule for the distinction, so
+// every literal came out as "P { Q { 1 }, 2 }". The func-literal element is the
+// case the rule must not overreach into: those braces are a block's, however deep
+// inside a literal they sit.
+//
+// The "func () int" in want is a separate, pre-existing bug -- a function literal
+// should be "func()", while the "func (r R)" of a method declaration does want its
+// space, so telling them apart needs context this rule does not have. It is spelled
+// out here so the expectation reads as a record of it, not as approval.
+func TestFormatCompositeLit(t *testing.T) {
+	// Input is deliberately mis-spaced in both directions: the bug's own output
+	// and the opposite ("P{n:1,q:Q{v:2}}").
+	const in = `type Q struct {
+v int
+}
+
+type P struct {
+q Q
+n int
+}
+
+func main() {
+a := P   {   Q  {  1  }  ,   2   }
+b := P{n:1,q:Q{v:2}}
+c := P{}
+d := P { n : 3 }
+if a == (P{Q{1}, 2}) {
+println(a.n, b.n, c.n, d.n)
+}
+e := func() int {
+p := P{Q{4}, 5}
+return p.n
+}
+println(e())
+}
+`
+	const want = `type Q struct {
+	v int
+}
+
+type P struct {
+	q Q
+	n int
+}
+
+func main() {
+	a := P{Q{1}, 2}
+	b := P{n: 1, q: Q{v: 2}}
+	c := P{}
+	d := P{n: 3}
+	if a == (P{Q{1}, 2}) {
+		println(a.n, b.n, c.n, d.n)
+	}
+	e := func () int {
+		p := P{Q{4}, 5}
+		return p.n
+	}
+	println(e())
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("composite literal spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}

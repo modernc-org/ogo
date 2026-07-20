@@ -202,6 +202,12 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		return false // No artificial space needed before the EOF dummy token
 	case prev == LBRACE && curr == RBRACE:
 		return false // Keep empty blocks, structs, and interfaces as {}
+	// A composite literal's braces bind to what they enclose, unlike a block's,
+	// which are spaced off the header they follow: "P{Q{1}, 2}" and "P{x: 1}", not
+	// "P { Q { 1 }, 2 }". This covers the brace against the type name before it,
+	// and against the first and last element within.
+	case (curr == LBRACE || prev == LBRACE || curr == RBRACE) && c.inLiteralBraces:
+		return false
 	case prev == ARROW:
 		if prevPrev == IDENT || prevPrev == RBRACK || prevPrev == RPAREN {
 			return true
@@ -360,6 +366,13 @@ type formatterCtx struct {
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
 	inType            bool
 	inIndex           bool // True inside an Index, where ':' binds tight ("s[0:1]")
+	// inLiteralBraces is true inside a composite literal, whose braces are spaced
+	// the opposite way to a block's: "P{1, 2}", not "P { 1, 2 }". It stays set
+	// across the elements, because the space after "{" is decided while emitting
+	// the first of them, and is cleared by every construct that owns braces of its
+	// own -- a block, a switch, a struct type -- so a function literal given as an
+	// element is spaced as itself again.
+	inLiteralBraces bool
 }
 
 // fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
@@ -474,11 +487,15 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])
 					c.undentRBraceIndex = lastIndex(ast[:next])
+					// These braces are a block's, however deep inside a composite
+					// literal they sit -- a function literal given as an element.
+					c.inLiteralBraces = false
 				case CaseClause, CommClause:
 					c.indentLevel++
 				case SwitchStmt, SelectStmt:
 					// Flag the closing '}' for an extra separator indent
 					c.indentSepForIndex = lastIndex(ast[:next])
+					c.inLiteralBraces = false
 				case ParameterList, CallSuffix:
 					c.inParams = true
 				case SimpleExpr:
@@ -495,10 +512,13 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				case Index:
 					// walk takes c by value, so this scopes to the index subtree.
 					c.inIndex = true
+				case CompositeLit:
+					c.inLiteralBraces = true
 				case StructType, InterfaceType:
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])
 					c.undentRBraceIndex = lastIndex(ast[:next])
+					c.inLiteralBraces = false
 
 					childSym := FieldDecl
 					if Symbol(-n) == InterfaceType {
