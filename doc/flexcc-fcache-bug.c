@@ -9,8 +9,8 @@
  *
  * Build and run on a P2:
  *
- *	flexcc -2 -O1              -o bug.binary flexcc-fcache-bug.c   # hangs
- *	flexcc -2 -O1 --fcache=0   -o ok.binary  flexcc-fcache-bug.c   # works
+ *	flexcc -2              -o bug.binary flexcc-fcache-bug.c   # hangs
+ *	flexcc -2 --fcache=0   -o ok.binary  flexcc-fcache-bug.c   # works
  *	loadp2 -t -b 230400 bug.binary
  *
  * Expected, and what --fcache=0 prints:
@@ -19,29 +19,38 @@
  *	1
  *	2
  *	3
+ *	4
  *	done
  *
- * Actual with FCACHE on: "begin", then nothing. Both sides are alive and
- * spinning -- the producer waits for the consumer to take the value, the
- * consumer never sees full become 1.
+ * Actual with FCACHE on: stops after 2. Both sides are alive and spinning --
+ * the producer waits for the consumer to take the value, the consumer never
+ * sees full become 1.
  *
- * Two things narrow it down:
+ * The cell fields are `volatile`, so this is not the compiler being within its
+ * rights to hoist the load out of the loop.
  *
- *   - The cell fields are `volatile`, so this is not the compiler being
- *     within its rights to hoist the load out of the loop.
+ * Where the cells live decides it. Same program, only the storage of the four
+ * cells changed, FCACHE on, measured on a P2-EDGE against flexprop v7.6.11:
  *
- *   - Where the cells live decides it, which is what points away from the
- *     locks. Same program, only the storage of `cells` changed, FCACHE on:
+ *	four separate locals (as below)		stops after 2
+ *	__builtin_alloca			stops after 0
+ *	file-scope static			runs to completion
  *
- *		in main's frame      hangs at once (prints only "begin")
- *		`static` in main     reaches 2 of 3, then hangs
- *		file scope           runs to completion
+ * That alloca is *worse* than the plain locals is worth stating, because
+ * "prefer alloca over a local array" is the natural advice for code that hands
+ * a pointer into a stack frame to another Cog, and here it does not help. It
+ * is also what makes this reduction the honest one. An earlier version of this
+ * file used a single `cell cells[4]` array instead of four separate locals,
+ * and that version *is* fixed by alloca -- so it had been reduced past the
+ * point where it still stood in for the original. The OctoGo program it came
+ * from behaves like the code below: alloca makes it fail sooner, not later.
  *
- *     That a function-scope `static` behaves unlike a file-scope one, for
- *     identical storage, suggests a heuristic rather than a rule.
+ * File-scope storage is the one thing that works, and is not available to the
+ * language: a channel's cell has the lifetime of the scope that declares it,
+ * so making it static would have two concurrent or recursive calls share one
+ * cell.
  *
- * The program's shape decides it too: one cell and one Cog does not
- * reproduce, three does. Tested against flexprop v7.6.11 on a P2-EDGE.
+ * The program's shape decides it too: one cell and one Cog does not reproduce.
  */
 
 #include <propeller2.h>
@@ -54,7 +63,7 @@ typedef struct {
 	volatile int val;
 } cell;
 
-static long stacks[3][256];
+static long stacks[4][256];
 
 /* produce deposits v, then waits for the consumer to take that value. */
 static void produce(cell *c, int v)
@@ -111,7 +120,7 @@ typedef struct {
 	int v;
 } args;
 
-static args argblk[3];
+static args argblk[4];
 
 static void tramp(void *p)
 {
@@ -122,17 +131,21 @@ static void tramp(void *p)
 
 int main(void)
 {
-	cell cells[3]; /* in main's frame: moving these to static storage fixes it */
+	/* Four separate locals, each created and consumed in turn: the shape the
+	   OctoGo channel rendezvous emits. One array in their place is a weaker
+	   reduction -- see the note at the top. */
+	cell a, b, c, d;
+	cell *cs[4] = {&a, &b, &c, &d};
 
 	printf("begin\n");
-	for (int i = 0; i < 3; i++) {
-		cells[i].lock = _locknew();
-		cells[i].full = 0;
-		cells[i].taken = 0;
-		argblk[i].c = &cells[i];
+	for (int i = 0; i < 4; i++) {
+		cs[i]->lock = _locknew();
+		cs[i]->full = 0;
+		cs[i]->taken = 0;
+		argblk[i].c = cs[i];
 		argblk[i].v = i + 1;
 		_cogstart_C(tramp, &argblk[i], stacks[i], sizeof stacks[i]);
-		printf("%d\n", consume(&cells[i]));
+		printf("%d\n", consume(cs[i]));
 	}
 	printf("done\n");
 	return 0;
