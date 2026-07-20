@@ -4334,3 +4334,132 @@ func main() {
 		}
 	}
 }
+
+// TestEmitCArrayStructABI pins the two struct-with-an-array cases that cannot be
+// lowered at all. A copy becomes a memcpy (TestEmitCArrayStructCopy), but a
+// parameter and a result are the C calling convention itself, which flexcc gets
+// wrong in a way the emitter cannot reach -- so they are refused where the
+// signature is written, naming the declaration rather than every call of it.
+func TestEmitCArrayStructABI(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "by-value parameter",
+			src: `type B struct {
+	a [3]int
+}
+
+func take(b B) int { return b.a[0] }
+
+func main() {
+	var b B
+	println(take(b))
+}
+`,
+			want: "parameter b",
+		},
+		{
+			name: "by-value result",
+			src: `type B struct {
+	a [3]int
+}
+
+func mk() B {
+	var b B
+	return b
+}
+
+func main() {
+	b := mk()
+	println(b.a[0])
+}
+`,
+			want: "result",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			if err == nil {
+				t.Fatalf("EmitC accepted a struct holding an array by value:\n%s", buf.String())
+			}
+			for _, want := range []string{test.want, "holds an array", "use a pointer"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("EmitC error %q does not mention %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestEmitCArrayStructCopy pins the memcpy lowering. C's own struct assignment is
+// what flexcc miscompiles for a struct holding an array, and the destination shapes
+// differ enough -- a variable, a field, an array element, a bounds-checked slice
+// element -- that each has its own emitter, so all four are checked here.
+func TestEmitCArrayStructCopy(t *testing.T) {
+	src := `type Row struct {
+	cells [3]int
+}
+
+type Wrap struct {
+	r    Row
+	rows []Row
+}
+
+type Plain struct {
+	x int
+}
+
+func main() {
+	var s Row
+	d := s
+	var w Wrap
+	w.r = s
+	w.rows = make([]Row, 2, 2)
+	i := 1
+	w.rows[i] = s
+	var arr [2]Row
+	arr[1] = s
+	z := Row{}
+	z = Row{}
+	// A struct with no array is left alone: plain C assignment, no memcpy.
+	var p Plain
+	q := p
+	println(d.cells[0], w.rows[i].cells[0], arr[1].cells[0], z.cells[0], q.x)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	// Checked() so the slice-element destination carries its bounds check: that is
+	// the case sizeof(Row) exists for, a sizeof of the destination expression having
+	// to name the check a second time.
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"\tRow d;\n\tmemcpy(&d, &s, sizeof(Row));\n",
+		"\tmemcpy(&w.r, &s, sizeof(Row));\n",
+		"\tmemcpy(&w.rows.ptr[ogo_bound(i, w.rows.len)], &s, sizeof(Row));\n",
+		"\tmemcpy(&arr[1], &s, sizeof(Row));\n",
+		// A literal is not addressable, so it initializes a temporary first --
+		// initialization being the one form flexcc does lower.
+		"\tRow _ogo_t0 = {0};\n\tmemcpy(&z, &_ogo_t0, sizeof(Row));\n",
+		"\tPlain q = p;\n", // no array, no memcpy
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC array-struct copy: missing %q in\n%s", want, got)
+		}
+	}
+}

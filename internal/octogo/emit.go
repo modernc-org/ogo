@@ -553,15 +553,85 @@ func (e *emitter) zeroBraceC(ctype string) string {
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
-// exprC renders an expression to C text instead of the output stream, for the
-// statements collected into the package initializer.
-func (e *emitter) exprC(ast []int32) string {
+// hasArrayField reports whether a struct type holds a fixed-size array anywhere
+// within it. flexcc cannot copy such a struct by value: `y = x` fails with
+// "Unable to multiply assign this target", naming C the user never wrote.
+//
+// The predicate is deliberately coarser than the bug. What actually trips flexcc
+// depends on its own layout decisions -- `struct { int a[3]; int n; }` fails while
+// `struct { int a[2]; int n; }`, `struct { int m[2][3]; }` and a struct merely
+// *containing* the failing one all copy fine -- so mirroring it would mean
+// encoding a backend heuristic nobody can state. Every array-free struct copies
+// correctly, at every size and shape tried, so "holds an array" is a safe
+// over-approximation that leaves the common case untouched.
+func (e *emitter) hasArrayField(ctype string) bool {
+	for _, f := range e.structs[ctype] {
+		if f.dim.bound != "" || e.hasArrayField(f.ctype) {
+			return true
+		}
+	}
+	return false
+}
+
+// emitStructCopy emits a copy of an array-holding struct as a memcpy, the one form
+// flexcc lowers correctly (see hasArrayField). dst is a C lvalue; src is the
+// right-hand side, which must be addressable -- taking its address is how the copy
+// is expressed. A composite literal is not addressable, so it initializes a
+// temporary first, initialization being the case that does work.
+func (e *emitter) emitStructCopy(dst, ctype string, src []int32) {
+	e.includes["string.h"] = true
+	from := ""
+	switch name, lit, ok := e.soleCompositeLit(src); {
+	case ok:
+		tmp := e.newTmp()
+		e.ind()
+		e.emit(ctype + " " + tmp + " = ")
+		e.emitCompositeLit(name, lit, true)
+		e.emit(";\n")
+		from = tmp
+	default:
+		from = e.exprC(src)
+	}
+	// sizeof takes the type, not the destination: an indexed destination carries a
+	// bounds check, and naming it twice would repeat that in the source even though
+	// C leaves a sizeof operand unevaluated.
+	e.ind()
+	e.emit("memcpy(&" + dst + ", &" + from + ", sizeof(" + ctype + "));\n")
+}
+
+// checkStructCopySrc reports whether a struct-copy source can have its address
+// taken, which is what memcpy needs. Only a call cannot be, and a function that
+// returns such a struct is already refused where it is declared
+// (refuseArrayStructABI), so this is a backstop that keeps the lowering from
+// emitting "&f(...)" if that report is ever bypassed.
+func (e *emitter) checkStructCopySrc(ctype string, src []int32) bool {
+	kids, ok := e.soleFactor(src)
+	if !ok {
+		return true // not a bare factor: an operator chain, which is not a struct
+	}
+	if _, _, isCall := e.factorCall(kids); !isCall {
+		return true
+	}
+	e.fail("cannot copy %s from a call: it holds an array, which the target's C compiler cannot return by value", ctype)
+	return false
+}
+
+// captureC renders whatever emit writes to C text instead of the output stream.
+// It is what lets a lowering that rewrites a statement -- memcpy needs its
+// destination as a string -- reuse the emitters that otherwise stream their output.
+func (e *emitter) captureC(emit func()) string {
 	saved, savedIndent := e.w, e.indent
 	var b bytes.Buffer
 	e.w, e.indent = &b, 0
-	e.emitExpr(ast)
+	emit()
 	e.w, e.indent = saved, savedIndent
 	return b.String()
+}
+
+// exprC renders an expression to C text instead of the output stream, for the
+// statements collected into the package initializer.
+func (e *emitter) exprC(ast []int32) string {
+	return e.captureC(func() { e.emitExpr(ast) })
 }
 
 // deferPkgInit records a statement to run at package initialization.
@@ -2122,6 +2192,7 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 		case ResultList:
 			for _, d := range e.f.paramDecls(n.ast) {
 				ct := e.cType(d.TypeAST.ast)
+				e.refuseArrayStructABI(ct, "result")
 				k := len(d.Names)
 				if k == 0 {
 					k = 1 // an unnamed result is one value
@@ -2132,7 +2203,9 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 			}
 		case Type:
 			// A single unnamed result: Signature = "(" [...] ")" Type .
-			resTypes = append(resTypes, e.cType(n.ast))
+			ct := e.cType(n.ast)
+			e.refuseArrayStructABI(ct, "result")
+			resTypes = append(resTypes, ct)
 		case 0:
 			// structural "(" / ")"
 		default:
@@ -2189,9 +2262,24 @@ func (e *emitter) cParamList(ast []int32) []string {
 			out = append(out, elem+"* "+paramArgName(name))
 			return
 		}
-		out = append(out, e.cType(ta)+" "+name)
+		ct := e.cType(ta)
+		e.refuseArrayStructABI(ct, "parameter "+name)
+		out = append(out, ct+" "+name)
 	})
 	return out
+}
+
+// refuseArrayStructABI rejects passing or returning a struct that holds an array.
+// A copy elsewhere is lowered to memcpy (see emitStructCopy), but a parameter or a
+// result is the C calling convention itself, and flexcc gets that wrong in a way
+// no lowering here can reach: it drops the argument slot ("Internal error,
+// couldn't find object variable with offset 4") or fails to assign the result.
+// Reported where the signature is written, so the message names the declaration
+// rather than every call of it. Passing a pointer is the way to write this.
+func (e *emitter) refuseArrayStructABI(ctype, what string) {
+	if e.hasArrayField(ctype) {
+		e.fail("%s: %s holds an array, which the target's C compiler cannot pass or return by value; use a pointer", what, ctype)
+	}
 }
 
 // forEachParam walks a ParameterList's `IdentifierList Type` groups, calling fn
@@ -2543,17 +2631,12 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				continue
 			}
 			e.locals[nm] = ctype
-			e.ind()
-			e.emit(ctype + " " + nm + " = ")
-			switch {
-			case initExpr != nil:
-				e.emitVarInit(initExpr)
-			case e.isStruct(ctype) || ctype == cString:
-				e.emit("{0}") // zero every field (a string's zero is {NULL, 0})
-			default:
-				e.emit("0")
+			if initExpr != nil {
+				e.emitVarDeclInit(ctype, nm, initExpr)
+			} else {
+				e.ind()
+				e.emit(ctype + " " + nm + " = " + e.zeroInitC(ctype) + ";\n")
 			}
-			e.emit(";\n")
 			// A channel is storage, not a handle: the checker rejects make() for one
 			// ("dynamic allocation not supported"), so the declaration is what
 			// creates it. Acquiring the hardware lock here is what makes the cell
@@ -2590,14 +2673,24 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 // a brace initializer rather than a compound literal; "f(P{1})" may not, because
 // the literal there is an argument, not the initializer.
 func (e *emitter) soleCompositeLit(ast []int32) (name string, lit Node, ok bool) {
-	kids := slices.Collect(it(ast))
-	for len(kids) == 1 && kids[0].sym != 0 {
-		if n := kids[0]; n.sym == Factor {
-			return e.factorCompositeLit(slices.Collect(it(n.ast)))
-		}
-		kids = slices.Collect(it(kids[0].ast))
+	kids, ok := e.soleFactor(ast)
+	if !ok {
+		return "", Node{}, false
 	}
-	return "", Node{}, false
+	return e.factorCompositeLit(kids)
+}
+
+// soleFactor returns the children of the Factor an expression consists of, if that
+// is all it is: no operator, no unary prefix, just the one operand.
+func (e *emitter) soleFactor(ast []int32) (kids []Node, ok bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && nodes[0].sym != 0 {
+		if n := nodes[0]; n.sym == Factor {
+			return slices.Collect(it(n.ast)), true
+		}
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	return nil, false
 }
 
 // emitCompositeLit emits "T{a, b}" as the C compound literal "(T){a, b}", or, with
@@ -2683,10 +2776,7 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 			e.sliceVars[nm] = elem
 		}
 		e.locals[nm] = ctype
-		e.ind()
-		e.emit(ctype + " " + nm + " = ")
-		e.emitVarInit(inits[i])
-		e.emit(";\n")
+		e.emitVarDeclInit(ctype, nm, inits[i])
 	}
 }
 
@@ -4807,9 +4897,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				e.fail("unsupported assignment form for an access chain")
 				return
 			}
-			e.ind()
-			e.emitAccessChain(base, chain)
-			e.emitAssignTail(t)
+			e.emitAssignTailOrCopy(func() { e.emitAccessChain(base, chain) }, t)
 			return
 		}
 	}
@@ -4939,10 +5027,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.emitMakeSliceAssign(lhs, sliceCName(elem), elem, lenAST, capAST)
 			return
 		}
-		e.ind()
-		e.emit(lhs + " = ")
-		e.emitExpr(rhsAst)
-		e.emit(";\n")
+		// Shared with the indexed and access-chain targets, so a struct holding an
+		// array becomes a memcpy here too (see emitAssignTailOrCopy).
+		e.emitAssignTailOrCopy(func() { e.emit(lhs) }, assignTail{op: "=", rhs: rhsAst})
 	case DEFINE:
 		if len(fields) != 0 {
 			e.fail("a short declaration cannot have a field target")
@@ -4977,8 +5064,26 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	if e.isSliceCType(ct) {
 		e.sliceVars[name] = sliceElemFromCName(ct)
 	}
+	e.emitVarDeclInit(ct, name, initExpr)
+}
+
+// emitVarDeclInit emits a local declaration of ctype with an initializer. A struct
+// holding an array is declared and then filled with memcpy: initializing one from
+// another value is a copy, which flexcc gets wrong (see hasArrayField). A composite
+// literal is not a copy -- it is the aggregate initialization that does work -- so
+// it stays on the ordinary path.
+func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
+	if _, _, isLit := e.soleCompositeLit(initExpr); !isLit && e.hasArrayField(ctype) {
+		if !e.checkStructCopySrc(ctype, initExpr) {
+			return
+		}
+		e.ind()
+		e.emit(ctype + " " + name + ";\n")
+		e.emitStructCopy(name, ctype, initExpr)
+		return
+	}
 	e.ind()
-	e.emit(ct + " " + name + " = ")
+	e.emit(ctype + " " + name + " = ")
 	e.emitVarInit(initExpr)
 	e.emit(";\n")
 }
@@ -5153,6 +5258,28 @@ var cAssignOps = map[Symbol]string{
 	ANDNOT_ASSIGN: "&=",
 }
 
+// emitAssignTailOrCopy emits an indented assignment statement whose target is
+// written by target and whose tail is t, lowering the one case C's own assignment
+// cannot express here: a struct that holds an array is copied with memcpy (see
+// hasArrayField). target is rendered rather than streamed for that case, since
+// memcpy needs the destination as an argument; it is called exactly once either
+// way, and not at all if the copy is refused, so a refusal leaves no half-written
+// statement.
+func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
+	if t.op == "=" {
+		if ct, ok := e.inferCType(t.rhs); ok && e.hasArrayField(ct) {
+			if !e.checkStructCopySrc(ct, t.rhs) {
+				return
+			}
+			e.emitStructCopy(e.captureC(target), ct, t.rhs)
+			return
+		}
+	}
+	e.ind()
+	target()
+	e.emitAssignTail(t)
+}
+
 // emitAssignTail writes the classified tail after a target has been emitted. The
 // complemented operand is parenthesised, so `x &^= a | b` clears both bits rather
 // than complementing only a.
@@ -5191,9 +5318,7 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 		e.fail("unsupported indexed field assignment target")
 		return
 	}
-	e.ind()
-	e.emitIndexSelect(expr, lenExpr, low, elem, nil)
-	e.emitAssignTail(t)
+	e.emitAssignTailOrCopy(func() { e.emitIndexSelect(expr, lenExpr, low, elem, nil) }, t)
 }
 
 // emitIndexAssign emits an indexed assignment `a[i] = v` or an indexed increment/
@@ -5232,11 +5357,11 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		e.fail("unsupported assignment form for an indexed target")
 		return
 	}
-	e.ind()
-	e.emit(lhs + "[")
-	e.emitIndex(idx, lenExpr)
-	e.emit("]")
-	e.emitAssignTail(t)
+	e.emitAssignTailOrCopy(func() {
+		e.emit(lhs + "[")
+		e.emitIndex(idx, lenExpr)
+		e.emit("]")
+	}, t)
 }
 
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`

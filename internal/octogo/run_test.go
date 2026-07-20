@@ -176,6 +176,57 @@ func main() {
 		want: "5 6 7 g 3 0\n",
 	},
 	{
+		// Copying a struct that holds an array. flexcc miscompiles C's own struct
+		// assignment for one, so every copy here lowers to memcpy; the host compiler
+		// is fine either way, so TestTargetBuild is what pins it. A copy has to be a
+		// copy, not an alias, which is what mutating the source afterwards checks.
+		name: "copying a struct that holds an array",
+		src: `type Row struct {
+	cells [3]int
+	n     int
+}
+
+type Wrap struct {
+	r    Row
+	rows []Row
+	k    int
+}
+
+func main() {
+	var src Row
+	src.cells[1] = 5
+	src.n = 2
+
+	// Every target shape: a plain variable, a declaration, a field, an array
+	// element and a slice-field element.
+	var a Row = src
+	b := src
+	var c Row
+	c = src
+
+	var w Wrap
+	w.r = src
+	w.rows = make([]Row, 2, 2)
+	w.rows[1] = src
+
+	var arr [2]Row
+	arr[1] = src
+
+	src.cells[1] = 99 // a copy is a copy: none of the above may see this
+
+	d := w
+	d.r.cells[1] = 7
+
+	e := Row{}
+	e = Row{}
+
+	println(a.cells[1], b.cells[1], c.n, w.r.cells[1], w.rows[1].cells[1])
+	println(arr[1].cells[1], d.r.cells[1], e.n, src.cells[1])
+}
+`,
+		want: "5 5 2 5 5\n5 7 0 99\n",
+	},
+	{
 		name: "methods on values, pointers and named types",
 		src: `type Point struct {
 	x int
