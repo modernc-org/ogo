@@ -2,6 +2,8 @@
 
 *Mascot based on the [Go gopher](https://go.dev/blog/gopher) by Renée French, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).*
 
+[![Go Reference](https://pkg.go.dev/badge/modernc.org/ogo.svg)](https://pkg.go.dev/modernc.org/ogo)
+
 **A modern, zero-allocation, Go-like programming language built specifically for the Parallax Propeller 2 (P2) multi-core microcontroller.**
 
 OctoGo brings the elegance of Go's concurrency model to embedded hardware. It compiles an LL(1) subset of a Go-like language into C99/C11, which is then compiled to native P2 assembly using the industry-standard flexprop toolchain.
@@ -54,6 +56,55 @@ func main() {
 }
 ```
 
+## **Installation**
+
+```sh
+go install modernc.org/ogo@latest
+```
+
+Building `ogo` needs Go 1.25 or newer. The binary it produces is built and tested
+on linux/amd64, which is the only platform it ships for today — if you need
+another, please say so, it helps decide which to do first. Note that the two
+halves come apart: `ogo build` emits an ordinary P2 `.binary`, so you can compile
+on one machine and flash with whatever loader you already have on another.
+
+That is the whole toolchain. `ogo` embeds the C backend (flexspin's compiler,
+transpiled to Go) and the P2 loader, so there is no flexprop installation, no
+separate loader and no SDK path to configure.
+
+## **Usage**
+
+```
+ogo <command> [arguments]
+```
+
+The commands are:
+
+| Command | |
+| :--- | :--- |
+| `build` | compile packages and dependencies |
+| `fmt` | reformat source files |
+| `help` | show help for a command |
+| `loadp2` | load a program onto a Propeller 2 board (loadp2 passthrough) |
+| `run` | compile and run a program on a connected board |
+| `smith` | output a random program for compiler testing |
+| `test` | test packages |
+| `version` | print the ogo version |
+
+Run `ogo help` for this list at the terminal, or `ogo help <command>` — for
+example `ogo help build` — for one command's flags and detail. A typical session:
+
+1. Write your `.ogo` code.
+2. Run `ogo build blinky/` to compile and generate your P2 binary.
+3. Run `ogo run blinky/` to compile it, load it onto a connected board and open a terminal.
+
+## **Language Specification**
+
+The language is specified in the package documentation:
+[**OctoGo Language Specification**](https://pkg.go.dev/modernc.org/ogo#hdr-OctoGo_Language_Specification).
+It is a draft and is reconciled with the implementation as the compiler moves;
+the **Status** section below is the shorter answer to what works today.
+
 ## **Architecture & Design**
 
 OctoGo is designed to be a zero-cost abstraction over the Propeller 2's unique 8-cog architecture.
@@ -76,25 +127,6 @@ OctoGo is a source-to-source compiler (transpiler) written in Go.
 3. **Transpilation:** Emits standard C. The runtime it needs -- bounds and divide-by-zero traps, slice and channel helpers, the goroutine pool -- is emitted into the same file, per program, so only what is used is paid for.  
 4. **Backend Generation:** The ogo build command automatically feeds the emitted C into flexprop, delegating register allocation, instruction scheduling, and P2 binary generation to a proven, hardware-aware backend.
 
-## **Getting Started**
-
-1. Issue `go install modernc.org/ogo@latest`
-2. Write your .ogo code.
-3. Run `ogo build blinky/` to compile and generate your P2 binary.
-4. Run `ogo run blinky/` to compile it, load it onto a connected board and open a terminal.
-
-That is the whole toolchain. `ogo` embeds the C backend (flexspin's compiler,
-transpiled to Go) and the P2 loader, so there is no flexprop installation, no
-separate loader and no SDK path to configure.
-
-Building `ogo` needs Go 1.25 or newer. The binary it produces is built and tested
-on linux/amd64, which is the only platform it ships for today — if you need
-another, please say so, it helps decide which to do first. Note that the two
-halves come apart: `ogo build` emits an ordinary P2 `.binary`, so you can compile
-on one machine and flash with whatever loader you already have on another.
-
-Run `ogo help` for the command list, or `ogo help build` for one command.
-
 ## **Status: early preview**
 
 OctoGo compiles and runs real programs on real Propeller 2 hardware, and every
@@ -107,10 +139,11 @@ broken.
 
 * Integers (sized and unsized), `byte`, `rune`, `bool`, `string`, structs, fixed
   arrays including multi-dimensional, slices, named types, channels.
-* Composite literals for structs, positionally: `p := P{1, 2}`, `P{}`, nested.
-  One place they may not appear bare is the top level of an `if`, `for` or
-  `switch` header, where `{` is the block — parenthesize there, as in Go:
-  `if p == (P{}) {`.
+* Composite literals: structs positionally (`P{1, 2}`, `P{}`, nested) or by field
+  name (`P{y: 2}`, any subset in any order, the rest zeroed), and arrays and
+  slices (`[4]int{10, 20}`, `[]int{1, 2, 3}`). One place a literal may not appear
+  bare is the top level of an `if`, `for` or `switch` header, where `{` is the
+  block — parenthesize there, as in Go: `if p == (P{}) {`.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
   functions and methods with value or pointer receivers.
 * Named and unnamed parameters and results, multiple return values, naked returns.
@@ -126,9 +159,9 @@ broken.
 
 * **Importing your own packages.** Only `import "p2"` resolves; a program is one
   package in one directory for now.
-* **Keyed composite literals** (`P{x: 1}`) and literals for arrays and slices
-  (`[]int{1, 2}`); only positional struct literals are built so far. A keyed
-  literal is refused by name, so you get told what is actually wrong.
+* An array or slice literal is a variable's initializer and nothing else: C cannot
+  assign an array, and a slice literal's backing storage belongs beside the
+  declaration it initializes. Go's indexed form (`[3]int{2: 5}`) is not built.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
 * **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).

@@ -95,3 +95,39 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+// TestDocsListEveryCommand keeps the prose in step with the tool. The command
+// overview exists in three places -- usage(), the README's Usage table and the
+// package documentation in specs.go -- because each is read in a different place
+// and none can link to the others usefully. Three hand-written copies of one list
+// is exactly the shape that goes stale, so adding a command fails here until both
+// documents mention it, and removing one fails until they stop.
+//
+// Only the names are checked. The wording around them is free to differ, and does:
+// the README uses a table, specs.go the same tab-indented list the terminal prints.
+func TestDocsListEveryCommand(t *testing.T) {
+	var buf bytes.Buffer
+	usage(&buf)
+	var names []string
+	for _, m := range commandListRE.FindAllStringSubmatch(buf.String(), -1) {
+		names = append(names, m[1])
+	}
+	if len(names) == 0 {
+		t.Fatalf("no commands parsed from the usage overview:\n%s", buf.String())
+	}
+	for _, doc := range []string{"README.md", "specs.go"} {
+		b, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("%s: %v", doc, err)
+		}
+		s := string(b)
+		for _, name := range names {
+			// Matched with the surrounding punctuation the documents use, so that
+			// a stray occurrence of a word like "run" or "test" in prose does not
+			// count as documenting the command.
+			if !strings.Contains(s, "`"+name+"`") && !strings.Contains(s, "\t"+name+" ") {
+				t.Errorf("%s does not document the %q command", doc, name)
+			}
+		}
+	}
+}

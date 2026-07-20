@@ -16,7 +16,32 @@
 // TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
 // TODO 20260719 Break statements: allowed in a switch once switch stops lowering to if/else
 
-// # OctoGo Language Specification (Draft Jul 19, 2026)
+// The C backend and the board loader are embedded, so no separate flexprop
+// installation is needed.
+//
+// Usage:
+//
+//	ogo <command> [arguments]
+//
+// The commands are:
+//
+//	build       compile packages and dependencies
+//	fmt         reformat source files
+//	help        show help for a command
+//	loadp2      load a program onto a Propeller 2 board (loadp2 passthrough)
+//	run         compile and run a program on a connected board
+//	smith       output a random program for compiler testing
+//	test        test packages
+//	version     print the ogo version
+//
+// Run "ogo help <command>" for more information about a command.
+//
+// Installation is "go install modernc.org/ogo@latest", which needs Go 1.25 or
+// newer. The rest of this document is the language specification.
+//
+// # OctoGo Language Specification
+//
+// Draft of Jul 19, 2026.
 //
 // # Introduction
 //
