@@ -151,7 +151,8 @@ broken.
   `break`, `continue`, `defer` (including in nested blocks, capturing its arguments).
 * The full operator set, compound assignment, multiple assignment.
 * `len`, `cap`, `append`, `make` for a fixed-capacity slice, `print`/`println`.
-* `go`, `chan` and `select`, mapped to cogs and hardware locks.
+* `go`, `chan` and `select`, mapped to cogs and hardware locks. Channels may be
+  declared at package level as well as locally.
 * Runtime traps for out-of-range indexing, division by zero and cog exhaustion.
 * A package is a directory: `ogo build` compiles every `.ogo` file in it together.
 
@@ -167,7 +168,6 @@ broken.
 * **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).
   It is enough for blinky, not a standard library.
 * `go` on a method, and send clauses in `select`.
-* Package-level channels, which need an initialization pass that does not exist.
 * An array as a function result, and slicing a multi-dimensional array.
 
 **Not planned**, because the target does not permit them: a garbage collector, a

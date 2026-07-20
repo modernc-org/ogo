@@ -2,19 +2,26 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Reconciled with the implementation 20260719. Done since the list below was
-// written: "defer" (including in a nested block), "++" and "--", the compound
-// assignment operators, "%", and the concurrency layer (channels, "go", "select").
-// "&&" and "||" are parsed and rejected with a diagnostic, which is deliberate --
-// see Operators.
+// Reconciled with the implementation 20260720. Done since the list below was
+// written: composite literals for structs, positional and keyed; array and slice
+// literals; package-level channels; "defer" (including in a nested block); "++"
+// and "--"; the compound assignment operators; "%"; and the concurrency layer
+// (channels, "go", "select"). "&&" and "||" are parsed and rejected with a
+// diagnostic, which is deliberate -- see Operators.
 //
-// TODO 20260307 Keywords: +?map
-// TODO 20260307 Numeric type: +float,float32
-// TODO 20260317 labels and gotos
-// TODO 20260719 Channels: package-level channels need an init pass before main
+// Maps and floating point are not on the list because they are not pending: the
+// body of this document omits both deliberately (see Keywords and Types), and the
+// README says so as well. They were TODO items until 20260720, which read as work
+// owed rather than as a decision taken.
+//
+// TODO 20260317 labels and gotos. Note that Keywords says "goto" is intentionally
+// omitted, so this contradicts the body and one of the two is wrong.
 // TODO 20260719 Select: send clauses, and smart-pin clauses
 // TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
 // TODO 20260719 Break statements: allowed in a switch once switch stops lowering to if/else
+// TODO 20260720 Composite literals: Go's indexed form, "[3]int{2: 5}"
+// TODO 20260720 Arrays: an array as a function result; slicing a multi-dimensional array
+// TODO 20260720 Imports: only "p2" resolves, so a program is one package in one directory
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
