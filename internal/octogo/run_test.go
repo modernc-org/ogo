@@ -99,6 +99,43 @@ func main() {
 		want: "1 2 hi\n0 0\n3 4 set\n11\n7 14 made\n",
 	},
 	{
+		// Fields of a package-scope struct, which resolve through a different type
+		// environment than a local's and so are typed on their own path. Every field
+		// here is one whose type has to be known to emit it at all: a string and a
+		// bool print differently from an int, a slice field is what len reads, and an
+		// inferred local takes its type from the field.
+		name: "fields of a package-scope struct",
+		src: `type Inner struct {
+	name string
+	on   bool
+	xs   []int
+}
+
+type Outer struct {
+	in Inner
+	n  int
+}
+
+func (o Outer) sum() int { return o.n }
+
+var g Outer
+var gp *Outer
+
+func main() {
+	gp = &g
+	g.in.name = "pkg"
+	g.in.on = true
+	g.n = 4
+	g.in.xs = make([]int, 2, 2)
+	g.in.xs[1] = 6
+	q := g.in.name
+	println(g.in.name, g.in.on, len(g.in.xs), g.in.xs[1])
+	println(q, g.sum(), gp.n)
+}
+`,
+		want: "pkg true 2 6\npkg 4 4\n",
+	},
+	{
 		// A composite literal of a struct that has an array field. flexcc cannot
 		// lower a compound literal of one, so this is spelled as a plain brace
 		// initializer; the host C compiler accepts either, which is why the target

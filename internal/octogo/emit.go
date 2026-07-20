@@ -5568,7 +5568,7 @@ func (e *emitter) fieldArray(base string, fields []string) (arrDim, bool) {
 	if len(fields) == 0 {
 		return arrDim{}, false
 	}
-	ctype, ok := e.locals[base]
+	ctype, ok := e.varType(base)
 	if !ok {
 		return arrDim{}, false
 	}
@@ -5581,10 +5581,10 @@ func (e *emitter) fieldArray(base string, fields []string) (arrDim, bool) {
 }
 
 // fieldType resolves the C type of a field access chain `base.f.g...` from the
-// local type environment: base's (possibly pointer) struct type, then each field's
-// type in turn.
+// type environment: base's (possibly pointer) struct type, then each field's type
+// in turn.
 func (e *emitter) fieldType(base string, fields []string) (string, bool) {
-	ctype, ok := e.locals[base]
+	ctype, ok := e.varType(base)
 	if !ok {
 		return "", false
 	}
@@ -5599,7 +5599,7 @@ func (e *emitter) fieldType(base string, fields []string) (string, bool) {
 // fieldAccessC renders a field access chain `base.f.g...` in C, choosing "->" for
 // each pointer step (an auto-dereferenced Go field access) and "." otherwise.
 func (e *emitter) fieldAccessC(base string, fields []string) string {
-	ctype := e.locals[base]
+	ctype, _ := e.varType(base)
 	s := base
 	for _, f := range fields {
 		if e.isPointer(ctype) {
