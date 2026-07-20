@@ -80,7 +80,7 @@ inputs, and never hand-edit the outputs.
 3. **flexcc backend.** `internal/flexcc/ccgo_linux_amd64.go` (~12 MB, ~455k lines)
    is the flexspin/flexcc C compiler transpiled to Go by `modernc.org/ccgo`.
    `internal/generator.go` (build-tagged `//go:build ignore`) drives it: it clones
-   `totalspectrum/flexprop` (pinned to tag **`v7.6.11`** via the `flexpropRef`
+   `totalspectrum/flexprop` (pinned to tag **`v7.7.0`** via the `flexpropRef`
    constant), applies `internal/mcpp_main.c.diff`, transpiles, and rewrites the
    emitted `main` package into a reusable `flexcc` library (threading a `*CC` state
    struct through the C globals). The same run also emits two sibling artifacts that
@@ -93,16 +93,21 @@ inputs, and never hand-edit the outputs.
    changed `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is
    re-cloned.
 
-   > **Backend regenerated 2026-07-15** against the `v7.6.11` pin (flexprop repo and
-   > `spin2cpp` submodule both at `v7.6.11`) using **ccgo v4.34.6**; `mcpp_main.c.diff`
-   > applied cleanly. This regen replaced the 2026-07-10 build to adopt ccgo v4.34.6's
-   > newer pointer-deref codegen (`**(**T)(__ccgo_up(x))` in place of
-   > `*(*T)(unsafe.Pointer(x))`). Post-regen chore: `rm -rf internal/flexprop
+   > **Backend regenerated 2026-07-20** against the `v7.7.0` pin (flexprop repo and
+   > `spin2cpp` submodule both at `v7.7.0`) using **ccgo v4.34.6**; `mcpp_main.c.diff`
+   > applied cleanly. Post-regen chore: `rm -rf internal/flexprop
    > internal/flexprop_install` (git-ignored build clones that otherwise break
    > `go build ./...` / `go test ./...`). The flexcc `--help` golden in
-   > `internal/flexcc/all_test.go` no longer needs a manual refresh — its volatile
-   > `Version … Compiled on: …` line is normalized (`versionLineRE`), so a same-pin
-   > regen doesn't force a golden edit.
+   > `internal/flexcc/all_test.go` needs no manual refresh — its volatile
+   > `Version … Compiled on: …` line is normalized (`versionLineRE`), so even a
+   > version bump doesn't force a golden edit.
+   >
+   > **v7.7.0 changed nothing we depend on.** Every flexcc bug the compiler works
+   > around was re-measured against it, on a P2-EDGE, and every one still
+   > reproduces identically: the FCACHE channel hang, the dropped argument slot for
+   > an unnamed parameter, the miscompiled `static inline` rendezvous, and the four
+   > compile-time refusals around structs holding arrays and designated
+   > initializers. The upgrade is hygiene, not a fix — keep the workarounds.
 
 ## Architecture
 

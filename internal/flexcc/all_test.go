@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 
 // versionLineRE matches the second line of the flexcc banner, e.g.
 //
-//	Version 7.6.11-HEAD-v7.6.11 Compiled on: Jul 10 2026
+//	Version 7.7.0-HEAD-v7.7.0 Compiled on: Jul 20 2026
 //
 // It embeds the pinned build's version string (from the spin2cpp submodule) and
 // the C __DATE__ of the transpile, both of which change every time the backend

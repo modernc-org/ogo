@@ -31,16 +31,15 @@ const (
 	cloneDir    = "flexprop"
 	flexpropURL = "https://github.com/totalspectrum/flexprop.git"
 	// flexpropRef pins the flexprop source so backend regeneration is
-	// reproducible. v7.6.11 (commit 858f51c4a24e7ae0f6cbc78f625c731083ad304f,
-	// released 2026-06-15) is the latest flexprop release as of 2026-07-10;
-	// upstream cuts releases roughly every 1-2 months.
+	// reproducible. v7.7.0 (released 2026-07-17) is the latest flexprop release as
+	// of 2026-07-20; upstream cuts releases roughly every 1-2 months.
 	//
 	// The committed ccgo_<goos>_<goarch>.go was regenerated against this pin on
-	// 2026-07-15 with ccgo v4.34.6 (flexprop repo and spin2cpp submodule both at
-	// v7.6.11); mcpp_main.c.diff applied cleanly. To adopt a new flexpropRef: bump it,
+	// 2026-07-20 with ccgo v4.34.6 (flexprop repo and spin2cpp submodule both at
+	// v7.7.0); mcpp_main.c.diff applied cleanly. To adopt a new flexpropRef: bump it,
 	// `rm -rf flexprop flexprop_install`, rerun `go generate` (linux/amd64 only),
 	// then update the flexcc --help golden in internal/flexcc/all_test.go.
-	flexpropRef = "v7.6.11"
+	flexpropRef = "v7.7.0"
 	installDir  = "flexprop_install"
 )
 
