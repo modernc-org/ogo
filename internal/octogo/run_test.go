@@ -99,6 +99,46 @@ func main() {
 		want: "1 2 hi\n0 0\n3 4 set\n11\n7 14 made\n",
 	},
 	{
+		// A composite literal of a struct that has an array field. flexcc cannot
+		// lower a compound literal of one, so this is spelled as a plain brace
+		// initializer; the host C compiler accepts either, which is why the target
+		// build (TestTargetBuild) is what pins it. The nested "Deep{}" also pins the
+		// written-out zero: "{0}" does not nest, so every field and every array
+		// extent has to be braced (see zeroBraceC).
+		name: "composite literal of a struct with an array field",
+		src: `type Cell struct {
+	v int
+	w int
+}
+
+type Deep struct {
+	m    [2][3]int
+	cs   [2]Cell
+	n    int
+	name string
+}
+
+type Grid struct {
+	d    Deep
+	name string
+}
+
+var top = Grid{Deep{}, "top"}
+
+func main() {
+	var d Deep = Deep{}
+	d.m[1][2] = 5
+	d.cs[1].v = 6
+	g := Grid{Deep{}, "g"}
+	g.d.n = 7
+	top.d.n = 3
+	empty := Grid{}
+	println(d.m[1][2], d.cs[1].v, g.d.n, g.name, top.d.n, empty.d.n)
+}
+`,
+		want: "5 6 7 g 3 0\n",
+	},
+	{
 		name: "methods on values, pointers and named types",
 		src: `type Point struct {
 	x int

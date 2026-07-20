@@ -33,6 +33,40 @@ const boardCaseTimeout = 12 * time.Second
 // output on every attempt, so retries only absorb transient flakes.
 const boardAttempts = 3
 
+// TestTargetBuild compiles every emitRunCases program with the real backend --
+// `ogo build`, so checker -> C -> flexcc -> P2 binary, the path a user runs. It
+// only compiles: running the programs is TestOnBoard's job and needs hardware.
+//
+// It exists because TestEmitCRun's host C compiler is not a stand-in for flexcc.
+// The two disagree on what they accept, not just on what they warn about: flexcc
+// cannot lower a compound literal of a struct that has an array field, so `b :=
+// B{}` compiled cleanly on the host and failed for the target with "Unable to
+// multiply assign this target", naming C the user never wrote. Nothing caught that
+// until a board happened to be plugged in. This test needs no board, so the whole
+// class of target-only compile break now fails in the default `go test ./...`.
+func TestTargetBuild(t *testing.T) {
+	ogo := buildOgoCLI(t)
+	for _, test := range emitRunCases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel() // separate processes, so the builds are independent
+			dir := t.TempDir()
+			if err := boardBuild(ogo, dir, "prog", test.src, filepath.Join(dir, "prog.binary")); err != nil {
+				t.Errorf("%v", err)
+			}
+		})
+	}
+}
+
+// buildOgoCLI builds the ogo command once for a test to shell out to.
+func buildOgoCLI(t *testing.T) string {
+	t.Helper()
+	ogo := filepath.Join(t.TempDir(), "ogo")
+	if out, err := exec.Command("go", "build", "-o", ogo, "modernc.org/ogo").CombinedOutput(); err != nil {
+		t.Fatalf("go build ogo: %v\n%s", err, out)
+	}
+	return ogo
+}
+
 // TestOnBoard runs the emitRunCases table on a real Propeller 2 board: for each
 // program it drives `ogo build` (checker -> C -> flexcc -> .binary) and then `ogo
 // loadp2 -t` to load and run it, and checks the serial output. It is the hardware
@@ -56,10 +90,7 @@ func TestOnBoard(t *testing.T) {
 	// Build the ogo CLI once; the cases shell out to it for build and load. A
 	// subprocess isolates loadp2, which drives the real serial port and terminal
 	// and keeps global state, and lets a hung load be killed by timeout.
-	ogo := filepath.Join(t.TempDir(), "ogo")
-	if out, err := exec.Command("go", "build", "-o", ogo, "modernc.org/ogo").CombinedOutput(); err != nil {
-		t.Fatalf("go build ogo: %v\n%s", err, out)
-	}
+	ogo := buildOgoCLI(t)
 
 	// Preflight: confirm the board answers before running the whole table, so a
 	// disconnected or unpowered board fails fast with a clear message instead of

@@ -527,6 +527,32 @@ func (e *emitter) zeroInitC(ctype string) string {
 	return "0"
 }
 
+// zeroBraceC is zeroInitC written out in full: every field of a struct, with an
+// array field's extents brace-nested. "{0}" is C's universal zero only at the top
+// level of an initializer; nested inside one, an aggregate sub-object initialized
+// by a bare 0 draws -Wmissing-braces from the host compiler and, past one array
+// dimension, defeats flexcc outright. A struct cannot contain itself -- the
+// checker refuses a recursive type -- so this terminates.
+func (e *emitter) zeroBraceC(ctype string) string {
+	fields, ok := e.structs[ctype]
+	if !ok {
+		return e.zeroInitC(ctype) // a string or slice header leads with a scalar
+	}
+	var parts []string
+	for _, f := range fields {
+		z := e.zeroBraceC(f.ctype)
+		if f.dim.bound != "" {
+			// An array's extents live on the declarator, so its zero is the
+			// element's wrapped in one brace per dimension.
+			for range f.dim.dims() {
+				z = "{" + z + "}"
+			}
+		}
+		parts = append(parts, z)
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
+}
+
 // exprC renders an expression to C text instead of the output stream, for the
 // statements collected into the package initializer.
 func (e *emitter) exprC(ast []int32) string {
@@ -547,7 +573,22 @@ func (e *emitter) deferPkgInit(stmt string) { e.pkgInit = append(e.pkgInit, stmt
 // to another variable, arithmetic over one -- is not, and C rejects it outright
 // ("initializer element is not constant"), so it is assigned at package
 // initialization instead.
+//
+// A composite literal qualifies when every element does, because at file scope it
+// is emitted as a brace initializer (see emitCompositeLit), and a brace of
+// constants is constant. Deferring one instead would be both wasteful -- the
+// variable is zeroed and then overwritten with the same values at startup -- and,
+// for a struct with an array field, broken: the deferred form is an assignment
+// from a compound literal, which flexcc cannot lower.
 func (e *emitter) staticInitOK(initExpr []int32) bool {
+	if _, lit, ok := e.soleCompositeLit(initExpr); ok {
+		for _, el := range compositeLitElements(lit) {
+			if el.keyed || !e.staticInitOK(el.value.ast) {
+				return false
+			}
+		}
+		return true
+	}
 	tok, ok := e.soleToken(initExpr)
 	if !ok {
 		return false
@@ -2506,7 +2547,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			e.emit(ctype + " " + nm + " = ")
 			switch {
 			case initExpr != nil:
-				e.emitExpr(initExpr)
+				e.emitVarInit(initExpr)
 			case e.isStruct(ctype) || ctype == cString:
 				e.emit("{0}") // zero every field (a string's zero is {NULL, 0})
 			default:
@@ -2543,10 +2584,33 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 	return e.src(kids[0].tok), kids[1], true
 }
 
-// emitCompositeLit emits "T{a, b}" as the C compound literal "(T){a, b}". Under
-// declInit it emits the braces alone: a file-scope initializer must be a constant
-// expression, which a compound literal is not. "T{}" zeroes every field.
-func (e *emitter) emitCompositeLit(name string, lit Node) {
+// soleCompositeLit reports whether an expression is nothing but a composite
+// literal -- no operator, no unary prefix, no call or index around it -- and
+// returns the type name and the literal. This is the shape that may be spelled as
+// a brace initializer rather than a compound literal; "f(P{1})" may not, because
+// the literal there is an argument, not the initializer.
+func (e *emitter) soleCompositeLit(ast []int32) (name string, lit Node, ok bool) {
+	kids := slices.Collect(it(ast))
+	for len(kids) == 1 && kids[0].sym != 0 {
+		if n := kids[0]; n.sym == Factor {
+			return e.factorCompositeLit(slices.Collect(it(n.ast)))
+		}
+		kids = slices.Collect(it(kids[0].ast))
+	}
+	return "", Node{}, false
+}
+
+// emitCompositeLit emits "T{a, b}" as the C compound literal "(T){a, b}", or, with
+// brace set, as the plain initializer "{a, b}". "T{}" zeroes every field.
+//
+// Braces are what C spells in a declarator ("P p = {1, 2}") and what a file-scope
+// initializer requires, a compound literal not being a constant expression. They
+// are also the only form flexcc can lower for a struct that has an array field:
+// given a compound literal of one it fails with "Unable to multiply assign this
+// target", naming C the user never wrote. So the brace form propagates into an
+// element that is itself a literal, which is C's own spelling for a nested
+// aggregate initializer anyway.
+func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 	var values []Node
 	for _, el := range compositeLitElements(lit) {
 		if el.keyed {
@@ -2556,7 +2620,7 @@ func (e *emitter) emitCompositeLit(name string, lit Node) {
 		}
 		values = append(values, el.value)
 	}
-	if !e.declInit {
+	if !brace {
 		e.emit("(" + name + ")")
 	}
 	if len(values) == 0 {
@@ -2568,9 +2632,27 @@ func (e *emitter) emitCompositeLit(name string, lit Node) {
 		if i != 0 {
 			e.emit(", ")
 		}
+		if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok {
+			if len(compositeLitElements(sub)) == 0 {
+				e.emit(e.zeroBraceC(nm)) // "{0}" does not nest; see zeroBraceC
+				continue
+			}
+			e.emitCompositeLit(nm, sub, true)
+			continue
+		}
 		e.emitExpr(v.ast)
 	}
 	e.emit("}")
+}
+
+// emitVarInit emits a variable declaration's initializer. A composite literal that
+// is the whole of one is emitted as a brace initializer; see emitCompositeLit.
+func (e *emitter) emitVarInit(initExpr []int32) {
+	if name, lit, ok := e.soleCompositeLit(initExpr); ok {
+		e.emitCompositeLit(name, lit, true)
+		return
+	}
+	e.emitExpr(initExpr)
 }
 
 // emitVarList emits a local `var a, b = e0, e1` (typed or inferred): each name is
@@ -2603,7 +2685,7 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 		e.locals[nm] = ctype
 		e.ind()
 		e.emit(ctype + " " + nm + " = ")
-		e.emitExpr(inits[i])
+		e.emitVarInit(inits[i])
 		e.emit(";\n")
 	}
 }
@@ -4897,7 +4979,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	}
 	e.ind()
 	e.emit(ct + " " + name + " = ")
-	e.emitExpr(initExpr)
+	e.emitVarInit(initExpr)
 	e.emit(";\n")
 }
 
@@ -5821,7 +5903,7 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		if n.sym == Factor {
 			if name, lit, ok := e.factorCompositeLit(kids); ok {
-				e.emitCompositeLit(name, lit)
+				e.emitCompositeLit(name, lit, e.declInit)
 				return
 			}
 			if recv, suffix, ok := e.factorCall(kids); ok {
