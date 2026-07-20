@@ -339,6 +339,26 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A receive in call-argument position, over a channel that is a local
+		// rather than a package-level var. Both halves matter: this is the shape
+		// that deadlocked on hardware while the assignment form `v := <-ch` and
+		// the package-level channel above both ran, because flexcc dropped the
+		// _lockrel when it inlined the rendezvous loop into an argument. gcc
+		// compiles it correctly, so only the board run guards this.
+		name: "local channel received into call arguments",
+		src: `func send(k chan int, n int) {
+	k <- n
+}
+
+func main() {
+	var ch chan int
+	go send(ch, 4)
+	println(<-ch)
+}
+`,
+		want: "4\n",
+	},
+	{
 		name: "iota constant groups",
 		src: `type Weekday int
 

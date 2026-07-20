@@ -3681,7 +3681,7 @@ func TestEmitCChannel(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"typedef struct { int lock; int full; int taken; int val; } ogo_chan_int_cell;\n",
+		"typedef struct { int lock; volatile int full; volatile int taken; volatile int val; } ogo_chan_int_cell;\n",
 		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
 		"\togo_chan_int_cell ch_cell = {0};\n",
 		"\tch = &ch_cell;\n",
@@ -3796,14 +3796,19 @@ func main() {
 		"static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];\n",
 		"typedef struct { int slot; ogo_chan_int a0; int a1; } ogo_go_args0;\n",
 		"\tworker(a->a0, a->a1);\n",
-		"\togo_cog_release(a->slot);\n",
+		// The trampoline must not release the slot: reclamation is _cogchk's
+		// job in ogo_cog_claim, once the cog has actually stopped.
 		"\t\tif (_ogo_t0 < 0) { ogo_panic(\"out of cogs\"); }\n",
 		"\t\t_ogo_t1->a1 = 42;\n",
-		"\t\tif (_cogstart_C(ogo_go0, _ogo_t1, ogo_cog_pool[_ogo_t0].stack, sizeof ogo_cog_pool[_ogo_t0].stack) < 0) {\n",
+		"\t\togo_cog_pool[_ogo_t0].cog = _cogstart_C(ogo_go0, _ogo_t1, ogo_cog_pool[_ogo_t0].stack, sizeof ogo_cog_pool[_ogo_t0].stack);\n",
+		"\t\tif (ogo_cog_pool[_ogo_t0].cog < 0) {\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC go: missing %q in\n%s", want, got)
 		}
+	}
+	if got := buf.String(); strings.Contains(got, "ogo_cog_release(a->slot)") {
+		t.Errorf("EmitC go: trampoline still releases its slot; the cog is still running there:\n%s", got)
 	}
 }
 
@@ -3850,7 +3855,7 @@ func main() {
 	}
 
 	for _, want := range []string{
-		"static inline int ogo_chan_tryrecv_int(ogo_chan_int ch, int* out) {\n",
+		"static int ogo_chan_tryrecv_int(ogo_chan_int ch, int* out) {\n",
 		"\t\tdo {\n", // default: one pass
 		"\t\t\tif (ogo_chan_tryrecv_int(ch, &_ogo_t1)) {\n",
 		"\t\t} while (0);\n",

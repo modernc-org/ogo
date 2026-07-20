@@ -36,24 +36,40 @@ static inline void _lockret(int l) { if (l >= 0) ogo_host_lock_used[l] = 0; }
 static inline int _locktry(int l) { return pthread_mutex_trylock(&ogo_host_lock[l]) == 0; }
 static inline int _lockrel(int l) { return pthread_mutex_unlock(&ogo_host_lock[l]) == 0; }
 
+/* Cog ids are recycled once the thread standing in for the cog has run out, so
+   that _cogchk models the hardware the emitted pool relies on: a cog id reads as
+   running until it genuinely is not. Index 0 is main and is always live. */
 #define OGO_HOST_COGS 8
-static int ogo_host_cogs = 1; /* main occupies the first cog */
-struct ogo_host_start { void (*fn)(void *); void *arg; };
+static volatile int ogo_host_cog_live[OGO_HOST_COGS] = {1};
+struct ogo_host_start { void (*fn)(void *); void *arg; int cog; };
 static void *ogo_host_trampoline(void *p) {
 	struct ogo_host_start s = *(struct ogo_host_start *)p;
 	free(p);
 	s.fn(s.arg);
+	ogo_host_cog_live[s.cog] = 0;
 	return 0;
 }
 static inline int _cogstart(void (*fn)(void *), void *arg, void *stack, uint32_t size) {
 	(void)stack; (void)size;
-	if (ogo_host_cogs >= OGO_HOST_COGS) return -1;
+	int cog = -1;
+	for (int i = 1; i < OGO_HOST_COGS; i++) {
+		if (!ogo_host_cog_live[i]) { cog = i; break; }
+	}
+	if (cog < 0) return -1;
+	ogo_host_cog_live[cog] = 1;
 	struct ogo_host_start *s = malloc(sizeof *s);
-	s->fn = fn; s->arg = arg;
+	s->fn = fn; s->arg = arg; s->cog = cog;
 	pthread_t t;
-	if (pthread_create(&t, 0, ogo_host_trampoline, s) != 0) return -1;
+	if (pthread_create(&t, 0, ogo_host_trampoline, s) != 0) {
+		ogo_host_cog_live[cog] = 0;
+		free(s);
+		return -1;
+	}
 	pthread_detach(t);
-	return ogo_host_cogs++;
+	return cog;
+}
+static inline int _cogchk(int cog) {
+	return cog >= 0 && cog < OGO_HOST_COGS && ogo_host_cog_live[cog];
 }
 #define _cogstart_C(f, a, s, n) _cogstart(f, a, s, n)
 #endif

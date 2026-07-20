@@ -152,24 +152,53 @@ func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
 // statically, with no allocator. It also makes `go` inside a loop safe, which is
 // why it need not be rejected the way `defer` in a loop is: defer's problem was
 // unbounded storage in the current frame, while this is bounded by the silicon.
+// A slot is only recycled on two signals together: the goroutine reached the end
+// of the trampoline (done), and _cogchk confirms its cog has stopped. Neither
+// alone is enough. done cannot be trusted by itself because the goroutine sets it
+// while still executing on the slot's stack, with the return through _cogstart's
+// epilogue ahead of it -- handing that stack to a new cog wedges both. _cogchk
+// alone would read a slot that has not started yet as idle, which is why cog
+// stays -1 from claim until _cogstart returns an id. A never-used slot is always
+// preferred, so recycling only happens once all 7 have been handed out.
 const ogoCogPool = `#define OGO_COGS 8
 #define OGO_STACK_LONGS 256
-typedef struct { int used; long args[OGO_ARG_LONGS]; long stack[OGO_STACK_LONGS]; } ogo_cog_slot;
+typedef struct { int used; int done; int cog; long args[OGO_ARG_LONGS]; long stack[OGO_STACK_LONGS]; } ogo_cog_slot;
 static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
 static int ogo_cog_lock = -1;
 static int ogo_cog_claim(void) {
+	int got = -1;
 	if (ogo_cog_lock < 0) {
+		// The first claim is always main's: another cog can only be running
+		// because a spawn already came through here, so this races nothing.
 		ogo_cog_lock = _locknew();
-	}
-	for (int i = 0; i < OGO_COGS - 1; i++) {
-		if (!ogo_cog_pool[i].used) {
-			ogo_cog_pool[i].used = 1;
-			return i;
+		if (ogo_cog_lock < 0) {
+			ogo_panic("out of hardware locks");
 		}
 	}
-	return -1;
+	while (!_locktry(ogo_cog_lock)) { // a goroutine may itself spawn one
+		_waitx(1);
+	}
+	for (int i = 0; i < OGO_COGS - 1; i++) { // a slot no goroutine has ever used
+		if (!ogo_cog_pool[i].used) {
+			got = i;
+			break;
+		}
+	}
+	for (int i = 0; got < 0 && i < OGO_COGS - 1; i++) { // else recycle a finished one
+		if (ogo_cog_pool[i].done && ogo_cog_pool[i].cog >= 0 && !_cogchk(ogo_cog_pool[i].cog)) {
+			got = i;
+		}
+	}
+	if (got >= 0) {
+		ogo_cog_pool[got].used = 1;
+		ogo_cog_pool[got].done = 0;
+		ogo_cog_pool[got].cog = -1;
+	}
+	_lockrel(ogo_cog_lock);
+	return got;
 }
 static void ogo_cog_release(int slot) { ogo_cog_pool[slot].used = 0; }
+static void ogo_cog_done(int slot) { ogo_cog_pool[slot].done = 1; }
 `
 
 // emitGo emits a `go` statement: claim a pool slot, marshal the arguments into it,
@@ -229,8 +258,10 @@ func (e *emitter) emitGo(nodes []Node) {
 		e.emit(";\n")
 	}
 	e.ind()
-	e.emit("if (_cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
-		", ogo_cog_pool[" + slot + "].stack, sizeof ogo_cog_pool[" + slot + "].stack) < 0) {\n")
+	e.emit("ogo_cog_pool[" + slot + "].cog = _cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
+		", ogo_cog_pool[" + slot + "].stack, sizeof ogo_cog_pool[" + slot + "].stack);\n")
+	e.ind()
+	e.emit("if (ogo_cog_pool[" + slot + "].cog < 0) {\n")
 	e.indent++
 	e.ind()
 	e.emit("ogo_cog_release(" + slot + ");\n")
@@ -272,7 +303,11 @@ func (e *emitter) goDefs() string {
 			}
 			fmt.Fprintf(&b, "a->a%d", i)
 		}
-		b.WriteString(");\n\togo_cog_release(a->slot);\n}\n")
+		// Not ogo_cog_release: the goroutine is still on this slot's stack
+		// here, with the return through _cogstart's epilogue ahead of it. done
+		// only makes the slot a recycling candidate; ogo_cog_claim still waits
+		// for _cogchk to confirm the cog stopped before reusing the stack.
+		b.WriteString(");\n\togo_cog_done(a->slot);\n}\n")
 	}
 	// The argument block is sized in longs to keep it aligned for any member.
 	return fmt.Sprintf("#define OGO_ARG_LONGS %d\n", widest) + ogoCogPool + b.String()
@@ -353,6 +388,7 @@ func (e *emitter) emitSelect(ast []int32) {
 			e.emit("else ")
 		}
 		first = false
+		e.chanTryRecvElems[c.elem] = true
 		e.emit("if (" + chanTryRecvCName(c.elem) + "(" + c.ch + ", &" + tmp + ")) {\n")
 		e.indent++
 		if !hasDefault {
@@ -578,16 +614,31 @@ func (e *emitter) needChan(elem string) {
 // isChanCType reports whether a C type is a channel cell.
 func (e *emitter) isChanCType(ctype string) bool { return strings.HasPrefix(ctype, chanTypePrefix) }
 
-// chanRuntimeDefs returns the typedef and the three helpers for `chan elem`.
+// chanRuntimeDefs returns the typedef for `chan elem` plus the helpers the
+// program actually reaches for: a send-only program never sees the receive, and
+// only a select polls with tryrecv. Emitting the unused ones would be harmless
+// except that they are `static` (see below), which makes an unused one a
+// -Wunused-function warning the host test suite treats as a failure.
 //
 // Blocking is a poll over _locktry with a _waitx(1) yield between attempts: a
 // blocked cog cannot sleep, since there is no scheduler, and spinning on the Hub
 // bus without yielding would starve the cogs doing real work.
-func chanRuntimeDefs(elem string) string {
+//
+// The helpers are deliberately `static` and NOT `static inline`. Inlined into a
+// call argument -- `println(<-ch)` rather than `v := <-ch` -- flexcc miscompiles
+// the rendezvous loop: sender and receiver both spin forever, each holding the
+// other off, on hardware only. gcc compiles both shapes correctly, so the host
+// tests cannot see it, and the board case above is what guards it. Do not re-add
+// `inline` here; the call costs nothing next to the lock-and-yield loop it
+// guards.
+func (e *emitter) chanRuntimeDefs(elem string) string {
 	c, snd, rcv, ini := chanCName(elem), chanSendCName(elem), chanRecvCName(elem), chanInitCName(elem)
-	return fmt.Sprintf(`typedef struct { int lock; int full; int taken; %[2]s val; } %[6]s;
+	var b strings.Builder
+	fmt.Fprintf(&b, `typedef struct { int lock; volatile int full; volatile int taken; volatile %[2]s val; } %[6]s;
 typedef %[6]s* %[1]s;
-static inline void %[5]s(%[1]s ch) {
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+	if e.chanInitElems[elem] {
+		fmt.Fprintf(&b, `static void %[5]s(%[1]s ch) {
 	ch->lock = _locknew();
 	if (ch->lock < 0) {
 		ogo_panic("out of hardware locks");
@@ -595,7 +646,10 @@ static inline void %[5]s(%[1]s ch) {
 	ch->full = 0;
 	ch->taken = 0;
 }
-static inline void %[3]s(%[1]s ch, %[2]s v) {
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+	}
+	if e.chanSendElems[elem] {
+		fmt.Fprintf(&b, `static void %[3]s(%[1]s ch, %[2]s v) {
 	int mine = 0; // always set below before the rendezvous loop reads it; the
 	// initializer only quiets flexcc, whose flow analysis cannot prove the first
 	// loop exits solely through the break that follows the assignment.
@@ -624,7 +678,10 @@ static inline void %[3]s(%[1]s ch, %[2]s v) {
 		_waitx(1);
 	}
 }
-static inline int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[2]s* out) {
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+	}
+	if e.chanTryRecvElems[elem] {
+		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[2]s* out) {
 	if (_locktry(ch->lock)) {
 		if (ch->full) {
 			*out = ch->val;
@@ -637,7 +694,10 @@ static inline int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[2]s* out) {
 	}
 	return 0;
 }
-static inline %[2]s %[4]s(%[1]s ch) {
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+	}
+	if e.chanRecvElems[elem] {
+		fmt.Fprintf(&b, `static %[2]s %[4]s(%[1]s ch) {
 	while (1) {
 		if (_locktry(ch->lock)) {
 			if (ch->full) {
@@ -653,6 +713,8 @@ static inline %[2]s %[4]s(%[1]s ch) {
 	}
 }
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+	}
+	return b.String()
 }
 
 // sliceTypedefDef returns the C typedef declaring the slice header for element
@@ -755,7 +817,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -897,7 +959,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// A channel's helpers call ogo_panic (out of locks) and the P2 lock and wait
 	// intrinsics, so they follow the panic definition and pull in propeller2.h.
 	for _, el := range sortedKeys(e.chanElems) {
-		helperDefs.WriteString(chanRuntimeDefs(el))
+		helperDefs.WriteString(e.chanRuntimeDefs(el))
 	}
 	for _, el := range sortedKeys(e.appendElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n"+
@@ -957,54 +1019,58 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 }
 
 type emitter struct {
-	w               io.Writer // body buffer during the walk
-	f               *File     // file currently being emitted, for token access
-	indent          int
-	includes        map[string]bool
-	funcRet         map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
-	methodPtr       map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
-	globals         map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
-	structs         map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
-	namedTypes      map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
-	constInt        map[string]string        // integer-constant name -> its C literal value, for array bounds
-	constStr        map[string]string        // string-constant name -> its decoded value, for folding string concatenation
-	arrays          map[string]arrDim        // local array name -> element type and bound (reset per function)
-	globalArrays    map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
-	sliceVars       map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
-	globalSliceVars map[string]string        // package-level slice name -> element C type (persists across functions)
-	pkgInit         []string                 // C statements for the synthesized package initializer, in source order
-	initFuncs       []string                 // user init() functions, called after the variable initializers
-	goSites         []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
-	chanElems       map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
-	chanElemByName  map[string]string        // ogo_chan_<T> C type name -> its element C type
-	sliceElems      map[string]bool          // element C types that need an ogo_slice_<T> typedef
-	sliceElemByName map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
-	inlineSliceDefs map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
-	appendElems     map[string]bool          // element C types needing the trapping ogo_append_<T> helper
-	tryappendElems  map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
-	printSliceElems map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
-	defers          []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
-	inSwitchCase    bool                     // emitting a switch case body, where the if/else lowering gives break a different meaning
-	deferBlockDepth int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
-	deferReplay     int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
-	iota            int                      // the current iota value while emitting a const spec's expression, or -1 outside one
-	deferReplayArgs []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
-	usesPanic       bool                     // ogo_panic is called: emit its definition and pull in its includes
-	usesBound       bool                     // ogo_bound is called: emit the index bounds-check helper
-	usesNonzero     bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
-	release         bool                     // release build: a panic reboots (_reboot) instead of halting the cog
-	checks          bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
-	locals          map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
-	curFunc         string                   // name of the function whose body is being emitted (for its result-struct type)
-	curResultNames  []string                 // current function's result C-variable names, for a bare "return" (naked return)
-	tmp             int                      // per-function counter for generated temporaries (destructuring)
-	makeN           int                      // translation-unit counter for make() backing arrays
-	wroteDecl       bool                     // a top-level definition has been emitted (drives blank-line separators)
-	mainRet         bool                     // currently emitting main's body: a bare `return` yields `return 0;`
-	declInit        bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
-	usesString      bool                     // an ogo_string type/literal appears: emit stringTypedef
-	usesStringPrint bool                     // a string is printed: emit stringHelpers
-	err             error
+	w                io.Writer // body buffer during the walk
+	f                *File     // file currently being emitted, for token access
+	indent           int
+	includes         map[string]bool
+	funcRet          map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
+	methodPtr        map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
+	globals          map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
+	structs          map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
+	namedTypes       map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	constInt         map[string]string        // integer-constant name -> its C literal value, for array bounds
+	constStr         map[string]string        // string-constant name -> its decoded value, for folding string concatenation
+	arrays           map[string]arrDim        // local array name -> element type and bound (reset per function)
+	globalArrays     map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
+	sliceVars        map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
+	globalSliceVars  map[string]string        // package-level slice name -> element C type (persists across functions)
+	pkgInit          []string                 // C statements for the synthesized package initializer, in source order
+	initFuncs        []string                 // user init() functions, called after the variable initializers
+	goSites          []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
+	chanElems        map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
+	chanInitElems    map[string]bool          // element types whose channel init helper is reached
+	chanSendElems    map[string]bool          // element types whose channel send helper is reached
+	chanRecvElems    map[string]bool          // element types whose blocking receive helper is reached
+	chanTryRecvElems map[string]bool          // element types whose select tryrecv helper is reached
+	chanElemByName   map[string]string        // ogo_chan_<T> C type name -> its element C type
+	sliceElems       map[string]bool          // element C types that need an ogo_slice_<T> typedef
+	sliceElemByName  map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
+	inlineSliceDefs  map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
+	appendElems      map[string]bool          // element C types needing the trapping ogo_append_<T> helper
+	tryappendElems   map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	printSliceElems  map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
+	defers           []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
+	inSwitchCase     bool                     // emitting a switch case body, where the if/else lowering gives break a different meaning
+	deferBlockDepth  int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
+	deferReplay      int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
+	iota             int                      // the current iota value while emitting a const spec's expression, or -1 outside one
+	deferReplayArgs  []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
+	usesPanic        bool                     // ogo_panic is called: emit its definition and pull in its includes
+	usesBound        bool                     // ogo_bound is called: emit the index bounds-check helper
+	usesNonzero      bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
+	release          bool                     // release build: a panic reboots (_reboot) instead of halting the cog
+	checks           bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
+	locals           map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
+	curFunc          string                   // name of the function whose body is being emitted (for its result-struct type)
+	curResultNames   []string                 // current function's result C-variable names, for a bare "return" (naked return)
+	tmp              int                      // per-function counter for generated temporaries (destructuring)
+	makeN            int                      // translation-unit counter for make() backing arrays
+	wroteDecl        bool                     // a top-level definition has been emitted (drives blank-line separators)
+	mainRet          bool                     // currently emitting main's body: a bare `return` yields `return 0;`
+	declInit         bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
+	usesString       bool                     // an ogo_string type/literal appears: emit stringTypedef
+	usesStringPrint  bool                     // a string is printed: emit stringHelpers
+	err              error
 }
 
 // emit writes verbatim C text, latching the first write error. All C is written
@@ -1512,6 +1578,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				cell := nm + "_cell"
 				e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
 				e.deferPkgInit(nm + " = &" + cell + ";")
+				e.chanInitElems[elem] = true
 				e.deferPkgInit(chanInitCName(elem) + "(" + nm + ");")
 			}
 		}
@@ -2459,6 +2526,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.ind()
 				e.emit(nm + " = &" + cell + ";\n")
 				e.ind()
+				e.chanInitElems[elem] = true
 				e.emit(chanInitCName(elem) + "(" + nm + ");\n")
 			}
 		}
@@ -4767,6 +4835,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			return
 		}
 		e.ind()
+		e.chanSendElems[e.chanElemByName[ct]] = true
 		e.emit(chanSendCName(e.chanElemByName[ct]) + "(" + lhs + ", ")
 		e.emitExpr(rhsAst)
 		e.emit(");\n")
@@ -5746,6 +5815,7 @@ func (e *emitter) emitExprNode(n Node) {
 		// A receive `<-ch` wraps its operand in the channel's recv helper, so it
 		// cannot be emitted as the operator token followed by the operand.
 		if elem, base, ok := e.recvOperand(n, kids); ok {
+			e.chanRecvElems[elem] = true
 			e.emit(chanRecvCName(elem) + "(" + base + ")")
 			return
 		}
