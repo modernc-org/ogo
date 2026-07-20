@@ -8,24 +8,24 @@ OctoGo is a special-purpose, Go-inspired programming language and its compiler,
 targeting the Parallax Propeller 2 (P2) 8-core microcontroller. The compiler is a
 source-to-source transpiler written in Go: it parses a strict LL(1) subset of a
 Go-like language, statically checks it against the P2's zero-allocation/no-GC
-hardware model, and (eventually) emits C that is compiled to a P2 binary by an
-in-process, transpiled copy of the flexspin/flexcc C compiler.
+hardware model, and emits C that is compiled to a P2 binary by an in-process,
+transpiled copy of the flexspin/flexcc C compiler.
 
-This is early-stage work in progress. The frontend (scanner, parser, formatter)
-and the fuzzer work; the semantic checker is partially implemented; C emission
-and the backend hookup do not exist yet (see **Implementation status**).
+This is early-stage work in progress, but the whole pipeline is connected: the
+frontend (scanner, parser, formatter), the checker, C emission and the backend
+all work, and `ogo build` produces a P2 binary while `ogo run` loads it onto a
+board. What is missing is breadth, not a stage -- see **Implementation status**.
 
 ## Module path vs. directory (important)
 
-- Repo directory on disk: `modernc.org/octogo`
+- Repo directory on disk: `modernc.org/ogo`
 - `go.mod` module path: `modernc.org/ogo`
 - Installed binary / CLI command: `ogo` (`go install modernc.org/ogo@latest`)
 - Internal packages import as `modernc.org/ogo/internal/...`
 
-The `// import "..."` comments on many `package` clauses are **stale and
-inconsistent** (you'll see `modernc.org/octogo`, `.../internal/ogo`,
-`.../lib/internal/flexcc`, etc.). Ignore them. Trust `go.mod` and the actual
-`import` statements: the module is `modernc.org/ogo`.
+The package name inside `internal/octogo` is `octogo` while the module is `ogo`;
+that mismatch is deliberate and is the only one left. The stale `// import "..."`
+comments that used to contradict all of this have been removed.
 
 The canonical repository is GitLab (`cznic/ogo`); GitHub (`modernc-org/ogo`) is a
 mirror that accepts issues/PRs which are then manually merged upstream.
@@ -48,8 +48,8 @@ go test ./internal/octogo/ -run 'TestOctoGoSpecs/05_scope_shadowing.ogo' -v
 go test ./internal/octogo/ -re '05_' -run TestOctoGoSpecs -v   # -re is a custom flag filtering which .ogo files run
 ```
 
-CLI subcommands (`ogo <cmd>`): `fmt` and `smith` work; `build`, `test`, `version`,
-`help` are stubs that print `TODO`.
+CLI subcommands (`ogo <cmd>`): `build`, `run`, `fmt`, `loadp2`, `smith`, `help`
+and `version` all work. Only `test` is still a stub that prints `TODO`.
 
 ```sh
 ogo fmt -l -w --exclude='\/testdata\/' .   # gofmt-style reformat of .ogo sources in place
@@ -146,21 +146,34 @@ subcommands to `internal/*` packages.
   into Go writers. Not yet wired into `ogo build`; currently only exercised
   standalone (see `all_test.go`'s `--help` golden test).
 
-Data flow (target): `.ogo` sources → scanner/parser (`internal/octogo`) → flat AST
-→ semantic checks + WPO → emitted C → `internal/flexcc` → P2 binary. Today the path
-runs as far as parse + partial checking.
+Data flow: `.ogo` sources → scanner/parser (`internal/octogo`) → flat AST →
+semantic checks → emitted C → `internal/flexcc` → P2 binary → `internal/loadp2` →
+board. That whole path runs today (`ogo build`, `ogo run`); WPO is the one stage
+still design-only.
 
 ## Implementation status (where the TODOs are)
 
 - `Build()` runs phases 1–3; phases 4 (body/hardware checks) and 5 (deep init
-  cycles) are `//TODO` stubs in `build.go`. WPO and C emission are design-only.
+  cycles) are `//TODO` stubs in `build.go`. WPO is design-only. C emission is
+  **not** -- `internal/octogo/emit.go` is the largest single piece of the
+  compiler and is wired through `internal/build` to flexcc and loadp2.
 - `TestOctoGoSpecs` (`internal/octogo/tests_test.go`) runs every `*.ogo` file in
   `internal/octogo/testdata` — there is no skip list (the historical one was
   retired as the checker caught up). Each file is annotated `// COMPILE` or
   `// ERROR <regexp>`; all currently pass, but the checker is still partial, so a
   green spec is not proof a whole feature is finished — the testdata covers only
   what has been wired up.
-- `ogo build`/`test`/`version` are unimplemented CLI stubs.
+- `ogo test` is the one unimplemented CLI stub.
+- Composite literals are positional-struct-only: keyed (`P{x: 1}`) and
+  array/slice literals are not built yet.
+- A program is one package in one directory: only `import "p2"` resolves, and the
+  emitter has no C header mapping for a user import.
+- **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
+  table with the host C compiler and runs it against a pthread shim
+  (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real
+  backend and runs it on a real P2, gated on `OGO_BOARD_PORT` (`make board`).
+  The second exists because flexcc and gcc have been observed to disagree on
+  semantics, not just warnings -- a host-green emit feature is not verified.
 - `smith` is not yet seed-reproducible (known TODO in `octosmith.go`).
 
 ## Test conventions
