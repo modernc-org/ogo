@@ -1,0 +1,35 @@
+// COMPILE
+
+// A single VarSpec may declare several names at package scope, with or without a
+// type. All the names of one spec share a single VarSpecNode, so its resolution
+// gate is opened once by the first name; opening it per name made every later
+// name look like a redeclaration of itself.
+
+var a, b int
+
+var s, u string
+
+var flag, other bool
+
+var x, y, z int
+
+// A single-name spec and a grouped declaration keep working alongside them.
+var lone = 7
+
+var (
+	grouped int
+	pair    string
+)
+
+func use() {
+	a = 1
+	b = 2
+	x = 3
+	y = 4
+	z = 5
+	flag = true
+	grouped = 6
+	println(a, b, x, y, z, lone, grouped)
+	println(len(s), len(u), len(pair))
+	println(flag, other)
+}

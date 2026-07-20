@@ -5468,6 +5468,9 @@ func (f *File) varSpec(s *Scope, n Node) {
 			case resolving:
 				vs.TypeNode = typ
 				vs.gate.close()
+			case resolved:
+				// A sibling name of the same VarSpec ("var a, b int") already
+				// recorded the type on the shared node and closed its gate.
 			default:
 				panic(todo("", vs.gate))
 			}
@@ -5478,6 +5481,12 @@ func (f *File) varSpec(s *Scope, n Node) {
 		switch n.sym {
 		case IdentifierList:
 			names = f.identifierList(s, n)
+			// Every name of one VarSpec shares a single VarSpecNode, so its gate
+			// is opened once, by the first name. A later name that finds the same
+			// node already open is a sibling of this very declaration ("var a, b
+			// int"), not a redeclaration -- only a *different* node already being
+			// resolved is.
+			var spec *VarSpecNode
 			for _, nmTok := range names {
 				nm := nmTok.Src()
 				switch x := s.Declarations[nm].(type) {
@@ -5485,8 +5494,11 @@ func (f *File) varSpec(s *Scope, n Node) {
 					varDecls = append(varDecls, nil)
 					continue
 				case *VarDeclaration:
-					switch vs := x.VarSpec; vs.gate {
-					case unvisited:
+					switch vs := x.VarSpec; {
+					case vs == spec:
+						varDecls = append(varDecls, x)
+					case vs.gate == unvisited:
+						spec = vs
 						varDecls = append(varDecls, x)
 						vs.gate.open()
 					default:

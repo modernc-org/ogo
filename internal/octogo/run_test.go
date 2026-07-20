@@ -232,6 +232,27 @@ func main() {
 		want: "99\n7\n",
 	},
 	{
+		// One VarSpec declaring several names at package scope. The names share a
+		// single VarSpecNode, whose resolution gate must be opened once rather
+		// than once per name -- doing the latter reported every name after the
+		// first as a redeclaration of itself.
+		name: "package-scope multi-name var declarations",
+		src: `var a, b int
+var s, u string
+var flag, other bool
+
+func main() {
+	a = 10
+	b = 32
+	println(a, b, a+b)
+	println(len(s), len(u))
+	flag = true
+	println(flag, other)
+}
+`,
+		want: "10 32 42\n0 0\ntrue false\n",
+	},
+	{
 		name: "package initialization runs before main",
 		src: `func five() int {
 	return 5
