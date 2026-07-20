@@ -1,0 +1,33 @@
+// A channel is created by its declaration, so make() has no channel form: there
+// is no allocator to make one with. "chan T" is admitted by the grammar as a
+// type-in-value position purely so that this call parses and the rejection can
+// name the real problem -- otherwise the parse fails and the error comes out as
+// something unrelated on another line.
+
+func viaShortDecl() {
+	// ERROR "dynamic allocation not supported"
+	c := make(chan int)
+	println(<-c)
+}
+
+func viaArgument(c chan int) {
+	println(<-c)
+}
+
+func caller() {
+	// ERROR "dynamic allocation not supported"
+	viaArgument(make(chan int))
+}
+
+// new is refused for the same reason.
+func viaNew() {
+	// ERROR "dynamic allocation not supported"
+	p := new(int)
+	println(p)
+}
+
+func main() {
+	viaShortDecl()
+	caller()
+	viaNew()
+}

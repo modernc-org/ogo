@@ -127,15 +127,8 @@ broken.
 * **Importing your own packages.** Only `import "p2"` resolves; a program is one
   package in one directory for now.
 * **Keyed composite literals** (`P{x: 1}`) and literals for arrays and slices
-  (`[]int{1, 2}`); only positional struct literals are built so far.
-* **Some rejections are diagnosed badly.** A construct the grammar cannot
-  represent at all does not fail cleanly: the parse goes wrong first and the
-  checker then complains about something else entirely. The two you are most
-  likely to meet are a keyed composite literal and `make(chan T)` — both real
-  limitations, but they surface as `P is not a struct type`, `undefined: P`,
-  `undefined: f` or `declared and not used: c`, none of which is the actual
-  problem. If a message makes no sense against code you believe is correct,
-  check this list before believing the message.
+  (`[]int{1, 2}`); only positional struct literals are built so far. A keyed
+  literal is refused by name, so you get told what is actually wrong.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
 * **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).

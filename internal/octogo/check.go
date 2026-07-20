@@ -3093,20 +3093,66 @@ func namedTypeToken(tn TypeNode) (Token, bool) {
 	}
 }
 
+// litElement is one element of a composite literal. A keyed element ("k: v")
+// carries both; the language has no keyed literals yet, but the grammar admits
+// them so that checkCompositeLit can say so instead of the parser failing and the
+// error surfacing as something unrelated.
+type litElement struct {
+	key   Node // only meaningful when keyed
+	value Node
+	keyed bool
+}
+
+// compositeLitElements returns a composite literal's elements in source order.
+func compositeLitElements(lit Node) (r []litElement) {
+	for c := range it(lit.ast) {
+		if c.sym != ElementList {
+			continue
+		}
+		for el := range it(c.ast) {
+			if el.sym != Element {
+				continue
+			}
+			var exprs []Node
+			for e := range it(el.ast) {
+				if e.sym == Expression {
+					exprs = append(exprs, e)
+				}
+			}
+			switch len(exprs) {
+			case 1:
+				r = append(r, litElement{value: exprs[0]})
+			case 2:
+				r = append(r, litElement{key: exprs[0], value: exprs[1], keyed: true})
+			}
+		}
+	}
+	return r
+}
+
 // checkCompositeLit checks "T{e0, e1, ...}". T must name a struct type, and the
 // values are positional -- one per field, in declaration order -- so their count
 // must match. "T{}" supplies none and zeroes every field.
 func (f *File) checkCompositeLit(s *Scope, id Token, hasID bool, lit Node) {
+	elements := compositeLitElements(lit)
 	var values []Node
-	for c := range it(lit.ast) {
-		if c.sym == ExpressionList {
-			values = expressionListItems(c)
+	keyed := false
+	for _, el := range elements {
+		if el.keyed && !keyed {
+			keyed = true
+			// A key names a field, not something in scope, so it is not
+			// name-checked -- doing so would report it as undefined.
+			f.err(f.tok(el.key.Pos()).Position(), "keyed composite literals are not supported yet: give the fields positionally")
 		}
+		values = append(values, el.value)
 	}
 	// Resolve the names the values use whatever the literal's type turns out to
 	// be, so an undefined name inside is reported even for a bad type.
 	for _, v := range values {
 		f.checkNames(s, v)
+	}
+	if keyed {
+		return // the field count of a keyed literal says nothing useful
 	}
 	if !hasID {
 		return

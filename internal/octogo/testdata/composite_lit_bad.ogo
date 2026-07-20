@@ -32,9 +32,19 @@ func undefinedInside() {
 	println(p.x)
 }
 
+// A keyed literal parses -- the grammar admits a key precisely so this can be
+// reported against the key rather than breaking the parse and surfacing as a
+// complaint about the type or some later line.
+func keyed() {
+	// ERROR "keyed composite literals are not supported yet"
+	p := P{x: 1, y: 2}
+	println(p.x)
+}
+
 func main() {
 	tooFew()
 	tooMany()
 	notAStruct()
 	undefinedInside()
+	keyed()
 }

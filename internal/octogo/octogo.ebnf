@@ -67,8 +67,11 @@ Factor     = identifier [ CompositeLit | FactorSuffix ]
 	| rune_lit
 	| "(" Expression ")"
 	| "[" [ Expression ] "]" Type
+	| "chan" Type
 	| FuncLiteral .
-CompositeLit = "{" [ ExpressionList ] "}" .
+CompositeLit = "{" [ ElementList ] "}" .
+ElementList  = Element { "," Element } .
+Element      = Expression [ ":" Expression ] .
 HeaderExpression = HeaderSimpleExpr { RelOp HeaderSimpleExpr } .
 HeaderSimpleExpr = HeaderTerm { AddOp HeaderTerm } .
 HeaderTerm       = HeaderUnaryExpr { MulOp HeaderUnaryExpr } .
@@ -80,6 +83,7 @@ HeaderFactor     = identifier [ FactorSuffix ]
 	| rune_lit
 	| "(" Expression ")"
 	| "[" [ Expression ] "]" Type
+	| "chan" Type
 	| FuncLiteral .
 FactorSuffix = { Selector | Index | CallSuffix } .
 Selector     = "." ( identifier | "(" "type" ")" ) .

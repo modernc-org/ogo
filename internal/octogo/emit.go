@@ -2480,10 +2480,13 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 // expression, which a compound literal is not. "T{}" zeroes every field.
 func (e *emitter) emitCompositeLit(name string, lit Node) {
 	var values []Node
-	for c := range it(lit.ast) {
-		if c.sym == ExpressionList {
-			values = expressionListItems(c)
+	for _, el := range compositeLitElements(lit) {
+		if el.keyed {
+			// The checker refuses these, so reaching here means it let one past.
+			e.fail("keyed composite literals are not supported yet")
+			return
 		}
+		values = append(values, el.value)
 	}
 	if !e.declInit {
 		e.emit("(" + name + ")")

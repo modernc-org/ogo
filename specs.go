@@ -563,11 +563,18 @@
 //		| rune_lit
 //		| "(" Expression ")"
 //		| "[" [ Expression ] "]" Type
+//		| "chan" Type
 //		| FuncLiteral .
-//	CompositeLit = "{" [ ExpressionList ] "}" .
+//	CompositeLit = "{" [ ElementList ] "}" .
+//	ElementList  = Element { "," Element } .
+//	Element      = Expression [ ":" Expression ] .
 //
 // A composite literal "T{a, b}" builds a value of the named struct type from its
-// fields in declaration order. Because the grammar is LL(1), a composite literal
+// fields in declaration order. An Element may carry a key, and a "chan" type may
+// stand where a type-as-value may, so that "T{k: v}" and "make(chan T)" parse:
+// both are then refused by the checker, which can name the real problem. Left out
+// of the grammar they would break the parse instead and be reported as something
+// else entirely. Because the grammar is LL(1), a composite literal
 // may not appear at the top level of an "if", "for" or "switch" header, where the
 // "{" would be indistinguishable from the block that follows: those headers use
 // HeaderExpression below, which is the ordinary expression grammar minus this one
@@ -584,6 +591,7 @@
 //		| rune_lit
 //		| "(" Expression ")"
 //		| "[" [ Expression ] "]" Type
+//		| "chan" Type
 //		| FuncLiteral .
 //
 // A slice or array type may appear as a Factor so that the type argument such as
