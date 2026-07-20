@@ -2335,6 +2335,31 @@ func (f *File) checkClauseBody(s *Scope, results []retResult, n Node) {
 }
 
 // declareLocalVar declares the names of a local var declaration in scope s,
+// expressionListItems returns the Expression children of an ExpressionList node,
+// the "e0, e1, ..." of a var spec's initializer or an assignment's right-hand
+// side.
+func expressionListItems(n Node) (r []Node) {
+	for c := range it(n.ast) {
+		if c.sym == Expression {
+			r = append(r, c)
+		}
+	}
+	return r
+}
+
+// checkVarSpecArity reports a var spec whose initializer does not supply exactly
+// one value per name. A spec with no initializer zero-values every name; with one
+// the values must match, either an expression each ("var a, b = 1, 2") or a
+// single call yielding them all ("var q, r = divmod(17, 5)").
+func (f *File) checkVarSpecArity(s *Scope, names []Token, exprs []Node) {
+	if len(names) == 0 || len(exprs) == 0 {
+		return
+	}
+	if v, ok := f.rhsValueCount(s, exprs); ok && v != len(names) {
+		f.err(names[0].Position(), "assignment mismatch: %s but %s", countUnits(len(names), "variable"), countUnits(v, "value"))
+	}
+}
+
 // reporting redeclarations. It resolves the declared type enough to record a
 // predeclared Kind on each variable (for later type checking) but does not
 // evaluate the initializer expression yet.
@@ -2343,14 +2368,14 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		if n.sym != VarSpec {
 			continue
 		}
-		// VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+		// VarSpec = IdentifierList ( Type [ "=" ExpressionList ] | "=" ExpressionList ) .
 		// The IdentifierList precedes the Type, so collect the names and resolve
 		// the type's Kind first, then bind the names carrying that Kind.
 		var names []Token
 		var kind, elemKind, chanElemKind Kind
-		var hasKind, hasInit, isPtr, hasElemKind, isChan, hasChanElemKind bool
+		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
 		var typeName Token
-		var initExpr Node
+		var initExprs []Node
 		for c := range it(n.ast) {
 			switch c.sym {
 			case IdentifierList:
@@ -2371,16 +2396,17 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
 					}
 				}
-			case Expression:
-				initExpr, hasInit = c, true
+			case ExpressionList:
+				initExprs = expressionListItems(c)
 			}
 		}
-		// Resolve the names used in the initializer before binding the new names,
+		f.checkVarSpecArity(s, names, initExprs)
+		// Resolve the names used in each initializer before binding the new names,
 		// so a variable is not visible within its own initializer.
-		if hasInit {
-			f.checkNames(s, initExpr)
+		for _, e := range initExprs {
+			f.checkNames(s, e)
 			if hasKind {
-				f.checkValueOverflow(s, sizedTarget(kind, typeName), initExpr)
+				f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
 			}
 		}
 		for _, nm := range names {
@@ -5406,9 +5432,10 @@ func (f *File) varDecl(s *Scope, n Node) {
 	}
 }
 
-// VarSpecNode describes the VarSpec production.
+// VarSpecNode describes the VarSpec production. One node is shared by every name
+// of the spec, so per-name work must not mutate it more than once (see varSpec).
 //
-//	VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+//	VarSpec = IdentifierList ( Type [ "=" ExpressionList ] | "=" ExpressionList ) .
 type VarSpecNode struct {
 	gate
 	Expression ExpressionNode
@@ -5422,10 +5449,10 @@ func (f *File) declareVarSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) 
 		switch n.sym {
 		case IdentifierList:
 			names = f.identifierList(s, n)
-		case Expression:
-			if len(names) > 1 {
-				f.err(names[1].Position(), "only one variable can be initialized")
-			}
+		case ExpressionList:
+			// This pass only binds the names; the initializer's arity and the
+			// names it uses are checked in varSpec, once the whole package scope
+			// exists (an initializer may call a function declared later).
 		case Type:
 			// ok
 		case 0:
@@ -5519,13 +5546,17 @@ func (f *File) varSpec(s *Scope, n Node) {
 			}
 		case Type:
 			typ = f.typ(s, n)
-		case Expression:
+		case ExpressionList:
 			// A global var's initializer is a run-time value evaluated at
 			// startup, not necessarily a constant: it may reference another var
 			// or call a function. Resolve the names it uses (like a local var's
 			// initializer) rather than folding it as a constant, which would
 			// wrongly report a non-constant initializer or panic on a call.
-			f.checkNames(s, n)
+			exprs := expressionListItems(n)
+			f.checkVarSpecArity(s, names, exprs)
+			for _, e := range exprs {
+				f.checkNames(s, e)
+			}
 		case 0:
 			switch f.ch(n.tok) {
 			case ASSIGN:

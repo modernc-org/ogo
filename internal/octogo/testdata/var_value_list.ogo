@@ -1,0 +1,28 @@
+// COMPILE
+
+// A var spec may supply one value per name, at package or local scope, with or
+// without a declared type. Alternatively a single call yielding one value per
+// name stands in for the whole list.
+
+var a, b = 1, 2
+
+var c, d int = 3, 4
+
+var s, u = "hi", "yo"
+
+func two() (int, int) {
+	return 5, 6
+}
+
+func use() {
+	var e, f = 7, 8
+	var g, h int = 9, 10
+	var i, j = two()
+	// A blank in the list declares nothing but still takes its value.
+	var k, _ = 11, 12
+	// Single-name specs and specs with no initializer keep working alongside.
+	var lone = 13
+	var zero int
+	println(a, b, c, d, e, f, g, h, i, j, k, lone, zero)
+	println(s, u)
+}

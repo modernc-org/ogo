@@ -8249,7 +8249,7 @@ state4:
 
 // VarSpec grammar:
 //
-//	VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+//	VarSpec = IdentifierList ( Type [ "=" ExpressionList ] | "=" ExpressionList ) .
 //
 //	State 0
 //		on  identifier
@@ -8261,7 +8261,7 @@ state4:
 //			call Type and goto state 4
 //	State 2
 //		on  "<-", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
-//			call Expression and goto state 3
+//			call ExpressionList and goto state 3
 //	State 3
 //		Accept
 //	State 4
@@ -8293,10 +8293,10 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 22
+	accept, errorSet = false, 21
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
-		r = p.add(r, p.Expression())
+		r = p.add(r, p.ExpressionList())
 		goto state3
 	}
 	return p.stop(r, accept, errorSet)

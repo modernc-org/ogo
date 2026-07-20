@@ -1,0 +1,30 @@
+// A var spec's initializer must supply exactly one value per name: too few or too
+// many is an assignment mismatch, the same rule an ordinary assignment follows.
+
+func two() (int, int) {
+	return 1, 2
+}
+
+func tooFew() {
+	// ERROR "assignment mismatch: 2 variables but 1 value"
+	var a, b = 1
+	println(a, b)
+}
+
+func tooMany() {
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	var a = 1, 2
+	println(a)
+}
+
+func callWrongArity() {
+	// ERROR "assignment mismatch: 3 variables but 2 values"
+	var a, b, c = two()
+	println(a, b, c)
+}
+
+func main() {
+	tooFew()
+	tooMany()
+	callWrongArity()
+}

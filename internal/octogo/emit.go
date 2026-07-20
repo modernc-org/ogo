@@ -1369,7 +1369,8 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			continue
 		}
 		var names []string
-		var typeAST, initExpr []int32
+		var typeAST []int32
+		var initExprs [][]int32
 		for s := range it(n.ast) {
 			switch s.sym {
 			case IdentifierList:
@@ -1380,13 +1381,25 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				}
 			case Type:
 				typeAST = s.ast
-			case Expression:
-				initExpr = s.ast
+			case ExpressionList:
+				for _, x := range expressionListItems(s) {
+					initExprs = append(initExprs, x.ast)
+				}
 			case 0:
 				// The "=" separator.
 			default:
 				e.fail("unsupported var-spec element %v", s.sym)
 			}
+		}
+		// As for locals: a value list is that many independent single-name
+		// declarations; one value (or none) keeps the single-spec paths below.
+		if len(names) > 1 && len(initExprs) == len(names) {
+			e.emitPackageVarList(names, typeAST, initExprs)
+			continue
+		}
+		var initExpr []int32
+		if len(initExprs) != 0 {
+			initExpr = initExprs[0]
 		}
 		if typeAST == nil {
 			// Type-inferred package variable `var x = expr`. C requires a constant
@@ -1394,6 +1407,13 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			// with an inferable type is modelled; a make/slice initializer still needs
 			// an explicit type and fails honestly through inference.
 			if len(names) != 1 {
+				if len(initExprs) == 1 {
+					// `var a, b = f()` at package scope. C cannot call in a file-scope
+					// initializer, so this needs the destructuring temporary emitted
+					// into the synthesized package init, which is not modelled yet.
+					e.fail("destructuring a call into package variables is not supported yet")
+					return
+				}
 				e.fail("a type-inferred package variable must be a single name (var x = expr)")
 				return
 			}
@@ -2266,7 +2286,8 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			continue
 		}
 		var names []string
-		var typeAST, initExpr []int32
+		var typeAST []int32
+		var initExprs [][]int32
 		for s := range it(n.ast) {
 			switch s.sym {
 			case IdentifierList:
@@ -2277,13 +2298,26 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				}
 			case Type:
 				typeAST = s.ast
-			case Expression:
-				initExpr = s.ast
+			case ExpressionList:
+				for _, x := range expressionListItems(s) {
+					initExprs = append(initExprs, x.ast)
+				}
 			case 0:
 				// The "=" separator between the type and the initializer.
 			default:
 				e.fail("unsupported var-spec element %v", s.sym)
 			}
+		}
+		// A value list gives every name its own initializer, so the spec is that
+		// many independent single-name declarations. One value (or none) keeps the
+		// single-spec paths below, which is where destructuring a call lives.
+		if len(names) > 1 && len(initExprs) == len(names) {
+			e.emitVarList(names, typeAST, initExprs)
+			continue
+		}
+		var initExpr []int32
+		if len(initExprs) != 0 {
+			initExpr = initExprs[0]
 		}
 		if typeAST == nil {
 			// Type-inferred `var x = expr` (the var form of `x := expr`) or
@@ -2428,6 +2462,79 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.emit(chanInitCName(elem) + "(" + nm + ");\n")
 			}
 		}
+	}
+}
+
+// emitVarList emits a local `var a, b = e0, e1` (typed or inferred): each name is
+// an independent declaration taking its own value, so this is the single-name path
+// repeated. A declared array type is refused -- C cannot initialize an array from
+// an expression, and copying one needs the single-name path's memcpy.
+func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) {
+	if typeAST != nil {
+		if _, ok := e.arrayDim(typeAST); ok {
+			e.fail("a multi-name array var with an initializer is not supported yet")
+			return
+		}
+	}
+	for i, nm := range names {
+		if nm == "_" {
+			e.emitDiscard(inits[i]) // declares nothing; the value's effects still run
+			continue
+		}
+		if typeAST == nil {
+			e.emitInferredLocal(nm, inits[i])
+			continue
+		}
+		ctype := e.cType(typeAST)
+		if ctype == "" {
+			return
+		}
+		if elem, ok := e.sliceType(typeAST); ok {
+			e.sliceVars[nm] = elem
+		}
+		e.locals[nm] = ctype
+		e.ind()
+		e.emit(ctype + " " + nm + " = ")
+		e.emitExpr(inits[i])
+		e.emit(";\n")
+	}
+}
+
+// emitPackageVarList is emitVarList for package scope: each name becomes its own
+// file-scope static. A constant initializer is emitted in place; anything else is
+// zero-initialized and assigned in the synthesized package init, exactly as the
+// single-name path does.
+func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]int32) {
+	for i, nm := range names {
+		if nm == "_" {
+			continue // a blank package variable declares nothing
+		}
+		ctype := ""
+		switch {
+		case typeAST != nil:
+			ctype = e.cType(typeAST)
+		default:
+			var ok bool
+			if ctype, ok = e.inferCType(inits[i]); !ok {
+				e.fail("cannot infer a type for the package variable %q", nm)
+				return
+			}
+		}
+		if ctype == "" {
+			return
+		}
+		e.globals[nm] = ctype
+		if e.isSliceCType(ctype) {
+			e.globalSliceVars[nm] = sliceElemFromCName(ctype)
+		}
+		if e.staticInitOK(inits[i]) {
+			e.emit("static " + ctype + " " + nm + " = ")
+			e.emitGlobalInit(inits[i])
+			e.emit(";\n")
+			continue
+		}
+		e.emit("static " + ctype + " " + nm + " = " + e.zeroInitC(ctype) + ";\n")
+		e.deferPkgInit(nm + " = " + e.exprC(inits[i]) + ";")
 	}
 }
 

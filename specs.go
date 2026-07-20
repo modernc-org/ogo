@@ -454,14 +454,15 @@
 // A variable declaration creates one or more variables, binds corresponding
 // identifiers to them, and gives each a type and an initial value.
 //
-// If an expression is given, only one variable is permitted and the variables
-// is initialized with that expression. Otherwise, each variable is initialized
-// to its zero value.
+// If expressions are given there must be one per identifier, each variable
+// taking its own ("var a, b = 1, 2"); alternatively a single call yielding one
+// value per identifier may stand in for the whole list ("var q, r = divmod(17,
+// 5)"). Otherwise each variable is initialized to its zero value.
 //
 // Grammar:
 //
 //	VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
-//	VarSpec = IdentifierList ( Type [ "=" Expression ] | "=" Expression ) .
+//	VarSpec = IdentifierList ( Type [ "=" ExpressionList ] | "=" ExpressionList ) .
 //
 // # Short Variable Declarations (:=)
 //

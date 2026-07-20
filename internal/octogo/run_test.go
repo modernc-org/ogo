@@ -232,6 +232,28 @@ func main() {
 		want: "99\n7\n",
 	},
 	{
+		// A var spec may give each of its names its own value, at either scope,
+		// with or without a declared type.
+		name: "var declarations with a value list",
+		src: `var pa, pb = 1, 2
+var pc, pd int = 3, 4
+var ps, pu = "hi", "yo"
+
+func main() {
+	var a, b = 5, 6
+	var c, d int = 7, 8
+	x := 9
+	var e, f = x * 2, x + 1
+	var g, _ = 10, 11
+	println(pa, pb, pc, pd)
+	println(ps, pu)
+	println(a, b, c, d)
+	println(e, f, g)
+}
+`,
+		want: "1 2 3 4\nhi yo\n5 6 7 8\n18 10 10\n",
+	},
+	{
 		// One VarSpec declaring several names at package scope. The names share a
 		// single VarSpecNode, whose resolution gate must be opened once rather
 		// than once per name -- doing the latter reported every name after the
