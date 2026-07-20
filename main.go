@@ -8,7 +8,10 @@ package main // import "modernc.org/octogo"
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"modernc.org/ogo/internal/build"
@@ -22,6 +25,43 @@ func fail(rc int, s string, args ...any) {
 	s = fmt.Sprintf(s, args...)
 	fmt.Fprintln(os.Stderr, s)
 	os.Exit(rc)
+}
+
+// printVersion reports what a bug report needs to identify a build: the module
+// version (or the VCS revision, for a build from source), the host platform and
+// the Go toolchain that built it. The values come from the build info the Go
+// toolchain stamps in, so a `go install modernc.org/ogo@latest` binary names its
+// release while a local build names its commit.
+func printVersion(w io.Writer) {
+	version, revision, modified := "(devel)", "", false
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; v != "" {
+			version = v
+		}
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				revision = s.Value
+			case "vcs.modified":
+				modified = s.Value == "true"
+			}
+		}
+	}
+	// A module version already names the commit (a release tag, or a pseudo-version
+	// with the revision in it), so the bare revision is only worth printing when
+	// there is no module version at all.
+	if version == "(devel)" && revision != "" {
+		if len(revision) > 12 {
+			revision = revision[:12]
+		}
+		version = revision
+	}
+	// A pseudo-version of a dirty tree already carries the marker.
+	if modified && !strings.HasSuffix(version, "+dirty") {
+		version += "+dirty"
+	}
+	fmt.Fprintf(w, "ogo version %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+	fmt.Fprintf(w, "built with %s\n", runtime.Version())
 }
 
 func main() {
@@ -74,10 +114,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(rc)
+	case "version":
+		printVersion(os.Stdout)
 	case
 		"help",
-		"test",
-		"version":
+		"test":
 
 		fail(1, "TODO: %v", subCommand)
 	default:
@@ -95,7 +136,7 @@ The commands are:
 	run         compile and run a program on a connected board
 	smith       output a random program for compiler testing
 	test        test packages
-	version     print Go version
+	version     print the ogo version
 
 Use "%s help <command>" for more information about a command.`, os.Args[0])
 	}

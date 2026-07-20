@@ -78,8 +78,57 @@ OctoGo is a source-to-source compiler (transpiler) written in Go.
 
 ## **Getting Started**
 
-1. Issue `go install modernc.org/ogo@latest`  
-2. Write your .ogo code.  
+1. Issue `go install modernc.org/ogo@latest`
+2. Write your .ogo code.
 3. Run `ogo build blinky/` to compile and generate your P2 binary.
+4. Run `ogo run blinky/` to compile it, load it onto a connected board and open a terminal.
 
-*(Note: Testing is built-in. Files ending in \_test.ogo are automatically recognized as test files).*
+That is the whole toolchain. `ogo` embeds the C backend (flexspin's compiler,
+transpiled to Go) and the P2 loader, so there is no flexprop installation, no
+separate loader and no SDK path to configure.
+
+## **Status: early preview**
+
+OctoGo compiles and runs real programs on real Propeller 2 hardware, and every
+change is verified by a suite that builds each test program with the real backend,
+loads it onto a P2 and checks its serial output. It is also unfinished. This
+section is the honest inventory — please read it before deciding the compiler is
+broken.
+
+**Works** (all of it exercised on hardware):
+
+* Integers (sized and unsized), `byte`, `rune`, `bool`, `string`, structs, fixed
+  arrays including multi-dimensional, slices, named types, channels.
+* `var` (including several names and a value list), `const` with `iota`, `type`,
+  functions and methods with value or pointer receivers.
+* Named and unnamed parameters and results, multiple return values, naked returns.
+* `if`/`else`, all `for` forms including `range`, `switch` with or without a guard,
+  `break`, `continue`, `defer` (including in nested blocks, capturing its arguments).
+* The full operator set, compound assignment, multiple assignment.
+* `len`, `cap`, `append`, `make` for a fixed-capacity slice, `print`/`println`.
+* `go`, `chan` and `select`, mapped to cogs and hardware locks.
+* Runtime traps for out-of-range indexing, division by zero and cog exhaustion.
+* A package is a directory: `ogo build` compiles every `.ogo` file in it together.
+
+**Does not work yet**, in rough order of how likely you are to hit it:
+
+* **Composite literals.** `p := Point{1, 2}` does not parse. Write
+  `var p Point; p.x = 1` instead. This is the one that will annoy you first, and it
+  is a consequence of keeping the grammar strictly LL(1) — the `{` after a type name
+  is ambiguous with a block, which Go resolves with parser context an LL(1) grammar
+  cannot express. Not a decision I am happy with, and not a settled one.
+* **Importing your own packages.** Only `import "p2"` resolves; a program is one
+  package in one directory for now.
+* **`ogo test`** is not implemented, and neither is `ogo help`.
+* **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).
+  It is enough for blinky, not a standard library.
+* `go` on a method, and send clauses in `select`.
+* Package-level channels, which need an initialization pass that does not exist.
+* An array as a function result, and slicing a multi-dimensional array.
+
+**Not planned**, because the target does not permit them: a garbage collector, a
+heap, maps, floating point, closures that capture their environment, and runtime
+string concatenation. Constant string concatenation folds at compile time.
+
+Interfaces are designed but not implemented; the whole-program-optimization
+strategy behind them is still an open question, and opinions are welcome.
