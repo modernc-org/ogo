@@ -3,8 +3,8 @@
 *DRAFT — not published. Revisit and re-verify every number before publishing;
 the compiler moves fast. See the checklist at the end.*
 
-For the last few posts I have been writing about pieces of a toolchain without
-saying what they were for. [egg][egg-post], my LL(1) parser generator. The
+The last few posts here have been about pieces of a toolchain without saying
+what they were for. [egg][egg-post], my LL(1) parser generator. The
 [flat AST][flat-ast-post] and the ergonomics of walking one when you have
 decided that allocation is the enemy. And underneath both, ccgo, which turns C
 into Go.
@@ -42,13 +42,13 @@ Everything below follows from that.
 ## LL(1) as a design force
 
 egg accepts LL(1) grammars and rejects everything else, with detailed
-diagnostics. I did not soften this for OctoGo. The grammar lives in a doc
+diagnostics. It was not softened for OctoGo. The grammar lives in a doc
 comment in `specs.go`, gets extracted to EBNF, and egg turns it into the parser.
 If a language feature is not LL(1), it does not go in.
 
 Most language designers would call that a bad trade. You give up real
-expressiveness to keep the parser simple. I want to show what it actually costs,
-because the answer is more interesting than "you lose some syntax."
+expressiveness to keep the parser simple. What it actually costs is worth
+spelling out, because the answer is more interesting than "you lose some syntax."
 
 Sometimes it costs nothing and you just have to be clever. Consider parsing a
 `for` header. After `for`, an identifier could begin a condition (`for x {`) or
@@ -132,8 +132,8 @@ being an emergent property of a parser flag.
 
 The payoff for all this discipline is that the frontend is boring in the way you
 want a frontend to be boring. The grammar is machine-checked. The parser is
-generated. When I change the language, I edit a doc comment and regenerate, and
-egg tells me immediately if I have proposed something ambiguous.
+generated. When the language changes, the doc comment is edited and the parser
+regenerated, and egg reports immediately if the new grammar is ambiguous.
 
 ## Concurrency compiled to silicon
 
@@ -224,27 +224,26 @@ standard library, and the pipeline is:
 `ogo build` runs the first four stages; `ogo run` adds the last one. Both are a
 single Go binary talking to a serial port.
 
-I want to be clear about why this matters beyond convenience. Vendoring a
-toolchain this way means the compiler I test against is the compiler my users
-get, pinned to a specific upstream revision, with no "works on my machine
-because I have flexprop 7.4 installed." For a project with one maintainer, that
-removes an entire category of bug report.
+This matters beyond convenience. Vendoring a toolchain this way means the
+compiler under test is the compiler users get, pinned to a specific upstream
+revision, with no "works on my machine, I have flexprop 7.4 installed." For a
+project with one maintainer, that removes an entire category of bug report.
 
 ## The bug that only silicon could find
 
-Now the part I actually want to tell you about.
+Now the part that actually matters.
 
 OctoGo's test suite compiles every emitted program with the host C compiler and
 runs it, checking the output. Concurrency is covered too, via a small shim that
 backs cogs with pthreads and hardware locks with mutexes, at the real eight-cog
 and sixteen-lock limits. It is a good suite. It catches real bugs.
 
-Recently I added unnamed function parameters — Go's `func f(int, int)`, where a
+Unnamed function parameters landed recently — Go's `func f(int, int)`, where a
 parameter has no name because the body does not use it. The emitted C leaves the
-parameter unnamed too. gcc accepts that in a definition, flexcc accepts it, the
-host suite went green across the board, and I committed it.
+parameter unnamed too. gcc accepts that in a definition, flexcc accepts it, and
+the host suite went green across the board.
 
-Then I ran it on the board:
+Then it ran on the board:
 
 ```go
 func mix(_ int, b bool, c byte) int {
