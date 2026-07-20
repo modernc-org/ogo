@@ -26,18 +26,52 @@ func notAStruct() {
 	println(int(c))
 }
 
+// The type is wrong however few values follow it, so an empty literal is checked
+// too rather than short-circuiting on the count.
+func notAStructEmpty() {
+	// ERROR "invalid composite literal type: C is not a struct type"
+	c := C{}
+	println(int(c))
+}
+
 func undefinedInside() {
 	// ERROR "undefined: nope"
 	p := P{nope, 2}
 	println(p.x)
 }
 
-// A keyed literal parses -- the grammar admits a key precisely so this can be
-// reported against the key rather than breaking the parse and surfacing as a
-// complaint about the type or some later line.
-func keyed() {
-	// ERROR "keyed composite literals are not supported yet"
-	p := P{x: 1, y: 2}
+// A key names one of the struct's fields. It is not resolved as an ordinary
+// expression -- that would report every field name as undefined -- so a key that is
+// not a field name is refused rather than looked up.
+func unknownField() {
+	// ERROR "unknown field z in struct literal of type P"
+	p := P{x: 1, z: 2}
+	println(p.x)
+}
+
+func duplicateField() {
+	// ERROR "duplicate field name x in struct literal"
+	p := P{x: 1, x: 2}
+	println(p.x)
+}
+
+func notAFieldName() {
+	// ERROR "invalid field name 1 in struct literal"
+	p := P{1: 2}
+	println(p.x)
+}
+
+// The two forms cannot be mixed: once one element names its field, position stops
+// meaning anything, so the rest say nothing reliable about which field they are.
+func mixedKeyedFirst() {
+	// ERROR "mixture of field:value and value elements in struct literal"
+	p := P{x: 1, 2}
+	println(p.x)
+}
+
+func mixedPositionalFirst() {
+	// ERROR "mixture of field:value and value elements in struct literal"
+	p := P{1, y: 2}
 	println(p.x)
 }
 
@@ -45,6 +79,11 @@ func main() {
 	tooFew()
 	tooMany()
 	notAStruct()
+	notAStructEmpty()
 	undefinedInside()
-	keyed()
+	unknownField()
+	duplicateField()
+	notAFieldName()
+	mixedKeyedFirst()
+	mixedPositionalFirst()
 }

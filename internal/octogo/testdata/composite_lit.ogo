@@ -3,6 +3,11 @@
 // A composite literal "T{a, b}" builds a value of the named struct type from its
 // fields, positionally, in declaration order. "T{}" supplies none and zeroes them
 // all. Fields declared together ("x, y int") count once per name.
+//
+// The fields may instead be given by name, "T{b: 2}", in any order and in any
+// number: a field the literal does not name takes its zero value. The two forms
+// may not be mixed, since once one element names its field, position stops meaning
+// anything.
 
 type Q struct {
 	v int
@@ -43,4 +48,27 @@ func use() {
 	if e.x > 0 {
 		println(e.x, e.y)
 	}
+}
+
+func keyed() {
+	// Any subset of the fields, in any order; the rest are zeroed.
+	a := P{n: 1}
+	b := P{s: "hi", q: Q{2}}
+	c := P{q: Q{3}, n: 4, s: "all"}
+	d := Pair{y: 5}
+	e := Pair{x: 6, y: 7}
+
+	// A keyed element's value is an ordinary expression, and may be a literal of
+	// either form itself.
+	n := 8
+	g := P{n: n * 2, q: Q{v: n}}
+
+	println(take(P{n: 9}), a.n, b.q.v, b.s)
+	println(c.n, c.s, d.x, d.y, e.x, g.q.v)
+}
+
+var pkgKeyed = P{n: 10, s: "pkg"}
+
+func usePkgKeyed() {
+	println(pkgKeyed.n, pkgKeyed.s, pkgKeyed.q.v)
 }

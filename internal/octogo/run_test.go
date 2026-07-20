@@ -136,6 +136,59 @@ func main() {
 		want: "pkg true 2 6\npkg 4 4\n",
 	},
 	{
+		// A keyed composite literal names its fields, in any order and in any
+		// number. C's designated initializers look like the lowering for this and
+		// are not one -- flexcc mishandles them -- so the literal is rewritten into
+		// declaration order with the omitted fields zeroed, which makes it exactly
+		// as compilable as the positional literal it is equivalent to. The zeroed
+		// gaps are the interesting part: a struct or array gap has to be written
+		// out in full, not as "{0}".
+		name: "keyed composite literals",
+		src: `type Q struct {
+	v int
+}
+
+type P struct {
+	q Q
+	n int
+	s string
+}
+
+// A struct whose gaps are aggregates, so zeroing them has to be written out in
+// full: "{0}" is C's universal zero only at the top level of an initializer.
+type Grid struct {
+	cell [2]int
+	m    [2][2]int
+	q    Q
+	k    int
+}
+
+func nOf(p P) int { return p.n }
+
+var pkg = P{s: "pkg", n: 10}
+
+func main() {
+	a := P{n: 1}
+	b := P{s: "hi", q: Q{2}}
+	c := P{q: Q{3}, n: 4, s: "all"}
+	d := P{q: Q{v: 5}}
+	var e P = P{n: 6}
+	e = P{n: 7}
+	n := 8
+	g := P{n: n * 2}
+
+	// Only k is named, so both arrays and the nested struct are zeroed gaps.
+	var grid Grid = Grid{k: 5}
+	grid.cell[1] = 9
+
+	println(a.n, a.q.v, b.q.v, b.s, c.n, c.s, d.q.v)
+	println(e.n, g.n, nOf(P{n: 9}), pkg.n, pkg.s)
+	println(grid.k, grid.cell[0], grid.cell[1], grid.m[1][1], grid.q.v)
+}
+`,
+		want: "1 0 2 hi 4 all 5\n7 16 9 10 pkg\n5 0 9 0 0\n",
+	},
+	{
 		// A composite literal of a struct that has an array field. flexcc cannot
 		// lower a compound literal of one, so this is spelled as a plain brace
 		// initializer; the host C compiler accepts either, which is why the target

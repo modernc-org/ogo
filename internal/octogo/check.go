@@ -3130,51 +3130,94 @@ func compositeLitElements(lit Node) (r []litElement) {
 	return r
 }
 
-// checkCompositeLit checks "T{e0, e1, ...}". T must name a struct type, and the
-// values are positional -- one per field, in declaration order -- so their count
-// must match. "T{}" supplies none and zeroes every field.
+// checkCompositeLit checks "T{e0, e1, ...}". T must name a struct type. The values
+// are either all positional -- one per field, in declaration order, so their count
+// must match -- or all keyed by field name, which may name any subset of the fields
+// in any order. "T{}" supplies none and zeroes every field.
 func (f *File) checkCompositeLit(s *Scope, id Token, hasID bool, lit Node) {
 	elements := compositeLitElements(lit)
-	var values []Node
-	keyed := false
-	for _, el := range elements {
-		if el.keyed && !keyed {
-			keyed = true
-			// A key names a field, not something in scope, so it is not
-			// name-checked -- doing so would report it as undefined.
-			f.err(f.tok(el.key.Pos()).Position(), "keyed composite literals are not supported yet: give the fields positionally")
-		}
-		values = append(values, el.value)
-	}
 	// Resolve the names the values use whatever the literal's type turns out to
-	// be, so an undefined name inside is reported even for a bad type.
-	for _, v := range values {
-		f.checkNames(s, v)
-	}
-	if keyed {
-		return // the field count of a keyed literal says nothing useful
+	// be, so an undefined name inside is reported even for a bad type. A key names
+	// a field rather than something in scope, so it is deliberately not resolved
+	// here -- that would report every field name as undefined.
+	for _, el := range elements {
+		f.checkNames(s, el.value)
 	}
 	if !hasID {
 		return
 	}
+	// The type is checked even for "T{}", which supplies no values: naming a
+	// non-struct type is wrong however few values follow it.
 	st, ok := f.structTypeOf(s, id)
 	if !ok {
 		f.err(id.Position(), "invalid composite literal type: %s is not a struct type", id.Src())
 		return
 	}
-	if len(values) == 0 {
+	if len(elements) == 0 {
 		return // "T{}" zeroes every field
 	}
-	fields := 0
+	var names []Token
 	for _, fld := range st.Fields {
-		fields += len(fld.Names)
+		names = append(names, fld.Names...)
 	}
-	if len(values) != fields {
+	if !f.checkLitUniform(elements) {
+		return // mixed forms say nothing reliable about which value is which field
+	}
+	if elements[0].keyed {
+		f.checkKeyedLit(id, names, elements)
+		return
+	}
+	if len(elements) != len(names) {
 		what := "not enough"
-		if len(values) > fields {
+		if len(elements) > len(names) {
 			what = "too many"
 		}
-		f.err(id.Position(), "%s values in %s{...}: %s but %s", what, id.Src(), countUnits(len(values), "value"), countUnits(fields, "field"))
+		f.err(id.Position(), "%s values in %s{...}: %s but %s", what, id.Src(), countUnits(len(elements), "value"), countUnits(len(names), "field"))
+	}
+}
+
+// checkLitUniform reports whether every element of a composite literal is of the
+// same form. Go allows all-keyed or all-positional and nothing in between, because
+// the two disagree about which field a value belongs to: once one element names its
+// field, position stops meaning anything.
+func (f *File) checkLitUniform(elements []litElement) bool {
+	keyed := elements[0].keyed
+	for _, el := range elements[1:] {
+		if el.keyed == keyed {
+			continue
+		}
+		at := el.value
+		if el.keyed {
+			at = el.key
+		}
+		f.err(f.tok(at.Pos()).Position(), "mixture of field:value and value elements in struct literal")
+		return false
+	}
+	return true
+}
+
+// checkKeyedLit checks the keys of an all-keyed composite literal against the
+// struct's field names. A key is a field name, not an expression: anything else is
+// refused rather than resolved, and each field may be named at most once. Fields
+// left unnamed take their zero value, so there is no count to check.
+func (f *File) checkKeyedLit(id Token, names []Token, elements []litElement) {
+	seen := map[string]bool{}
+	for _, el := range elements {
+		key, ok := f.exprSoleIdent(el.key)
+		if !ok {
+			f.err(f.tok(el.key.Pos()).Position(), "invalid field name %s in struct literal", f.exprSource(el.key))
+			continue
+		}
+		name := key.Src()
+		if !slices.ContainsFunc(names, func(n Token) bool { return n.Src() == name }) {
+			f.err(key.Position(), "unknown field %s in struct literal of type %s", name, id.Src())
+			continue
+		}
+		if seen[name] {
+			f.err(key.Position(), "duplicate field name %s in struct literal", name)
+			continue
+		}
+		seen[name] = true
 	}
 }
 

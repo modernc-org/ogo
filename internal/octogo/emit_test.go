@@ -4463,3 +4463,63 @@ func main() {
 		}
 	}
 }
+
+// TestEmitCKeyedCompositeLit pins the rewrite of a keyed literal into declaration
+// order with its omitted fields zeroed. C's designated initializers ("(P){.n = 5}")
+// look like the obvious lowering and are not one: flexcc mishandles them, failing
+// with "Expected multiple values" when a struct-typed field is skipped or named out
+// of order. Written out positionally, a keyed literal compiles exactly as well as
+// the positional literal it is equivalent to.
+func TestEmitCKeyedCompositeLit(t *testing.T) {
+	src := `type Q struct {
+	v int
+}
+
+type Grid struct {
+	cell [2]int
+	m    [2][2]int
+	q    Q
+	k    int
+}
+
+type P struct {
+	q Q
+	n int
+	s string
+}
+
+var pkg = P{s: "pkg", n: 10}
+
+func main() {
+	var grid Grid = Grid{k: 5}
+	b := P{s: "hi", q: Q{2}}
+	c := P{q: Q{v: 3}, n: 4, s: "x"}
+	println(grid.k, b.n, c.n, pkg.n)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		// Every gap is written out: "{0}" is C's universal zero only at the top
+		// level of an initializer, so an array or struct field left unnamed needs
+		// its own braces, one per array extent.
+		"\tGrid grid = {{0}, {{0}}, {0}, 5};\n",
+		// Named out of order, emitted in declaration order.
+		"\tP b = {{2}, 0, (ogo_string){\"hi\", 2}};\n",
+		"\tP c = {{3}, 4, (ogo_string){\"x\", 1}};\n",
+		// A keyed literal of constants is still a constant initializer, so the
+		// package variable is initialized rather than assigned at startup.
+		"static P pkg = {{0}, 10, {\"pkg\", 3}};\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC keyed composite literal: missing %q in\n%s", want, got)
+		}
+	}
+}

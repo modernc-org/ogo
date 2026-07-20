@@ -540,17 +540,22 @@ func (e *emitter) zeroBraceC(ctype string) string {
 	}
 	var parts []string
 	for _, f := range fields {
-		z := e.zeroBraceC(f.ctype)
-		if f.dim.bound != "" {
-			// An array's extents live on the declarator, so its zero is the
-			// element's wrapped in one brace per dimension.
-			for range f.dim.dims() {
-				z = "{" + z + "}"
-			}
-		}
-		parts = append(parts, z)
+		parts = append(parts, e.zeroFieldC(f))
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
+}
+
+// zeroFieldC is the written-out zero of one struct field. An array's extents live
+// on the declarator, so its zero is the element's wrapped in one brace per
+// dimension.
+func (e *emitter) zeroFieldC(f structField) string {
+	z := e.zeroBraceC(f.ctype)
+	if f.dim.bound != "" {
+		for range f.dim.dims() {
+			z = "{" + z + "}"
+		}
+	}
+	return z
 }
 
 // hasArrayField reports whether a struct type holds a fixed-size array anywhere
@@ -653,7 +658,7 @@ func (e *emitter) deferPkgInit(stmt string) { e.pkgInit = append(e.pkgInit, stmt
 func (e *emitter) staticInitOK(initExpr []int32) bool {
 	if _, lit, ok := e.soleCompositeLit(initExpr); ok {
 		for _, el := range compositeLitElements(lit) {
-			if el.keyed || !e.staticInitOK(el.value.ast) {
+			if !e.staticInitOK(el.value.ast) {
 				return false
 			}
 		}
@@ -2704,14 +2709,9 @@ func (e *emitter) soleFactor(ast []int32) (kids []Node, ok bool) {
 // element that is itself a literal, which is C's own spelling for a nested
 // aggregate initializer anyway.
 func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
-	var values []Node
-	for _, el := range compositeLitElements(lit) {
-		if el.keyed {
-			// The checker refuses these, so reaching here means it let one past.
-			e.fail("keyed composite literals are not supported yet")
-			return
-		}
-		values = append(values, el.value)
+	values, fields, ok := e.litFieldValues(name, lit)
+	if !ok {
+		return
 	}
 	if !brace {
 		e.emit("(" + name + ")")
@@ -2725,6 +2725,10 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 		if i != 0 {
 			e.emit(", ")
 		}
+		if v == nil {
+			e.emit(e.zeroFieldC(fields[i])) // a field this keyed literal omits
+			continue
+		}
 		if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok {
 			if len(compositeLitElements(sub)) == 0 {
 				e.emit(e.zeroBraceC(nm)) // "{0}" does not nest; see zeroBraceC
@@ -2736,6 +2740,46 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 		e.emitExpr(v.ast)
 	}
 	e.emit("}")
+}
+
+// litFieldValues returns a composite literal's values in field order, and the
+// fields they belong to. A positional literal is in that order already, one value
+// per field, and needs no field list. A keyed one is rewritten into it, with a nil
+// for every field the literal omits, so that both forms emit through the one path
+// above.
+//
+// The rewrite is why keyed literals do not become C designated initializers, which
+// look like the obvious lowering: flexcc mishandles those. "(P){.n = 5}" skipping a
+// struct-typed field fails with "Expected multiple values", and so does naming the
+// fields out of declaration order. Written out positionally, a keyed literal is
+// exactly as compilable as the positional one it is equivalent to.
+func (e *emitter) litFieldValues(name string, lit Node) (values []*Node, fields []structField, ok bool) {
+	elements := compositeLitElements(lit)
+	if len(elements) == 0 || !elements[0].keyed {
+		for i := range elements {
+			values = append(values, &elements[i].value)
+		}
+		return values, nil, true
+	}
+	fields = e.structs[name]
+	values = make([]*Node, len(fields))
+	for i := range elements {
+		el := &elements[i]
+		key, ok := e.soleToken(el.key.ast)
+		if !ok || e.f.ch(key) != IDENT {
+			// The checker refuses these, so reaching here means one got past it.
+			e.fail("a composite literal key must be a field name")
+			return nil, nil, false
+		}
+		nm := e.src(key)
+		at := slices.IndexFunc(fields, func(f structField) bool { return f.name == nm })
+		if at < 0 {
+			e.fail("unknown field %s in a %s literal", nm, name)
+			return nil, nil, false
+		}
+		values[at] = &el.value
+	}
+	return values, fields, true
 }
 
 // emitVarInit emits a variable declaration's initializer. A composite literal that
