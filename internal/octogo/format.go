@@ -219,7 +219,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 			return true
 		}
 		return false
-	case curr == LPAREN && prev == IDENT:
+	// A call binds tight to its callee: "f(x)" and, after an index or slice, the
+	// call suffix "h[0]()" / "m[1](5)". A "]" is only ever directly followed by "("
+	// in a call on an indexed value -- in a type the "]" is followed by the element
+	// type -- so this never tightens a genuine type.
+	case curr == LPAREN && (prev == IDENT || prev == RBRACK):
 		return false
 	case prev == LPAREN || prev == LBRACK || curr == RPAREN || curr == RBRACK:
 		return false

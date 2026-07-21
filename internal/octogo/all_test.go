@@ -792,3 +792,42 @@ _ = b
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatCallAfterIndex pins that a call binds tight after an index or slice
+// suffix ("h[0]()", "m[1](5)", "go h[0]()"), which used to be spaced ("h[0] ()").
+// The "func ()" in the signature is deliberately recorded as-is: a func type's
+// "func()" losing its tightness is the separate func/method-receiver backlog item,
+// not this fix.
+func TestFormatCallAfterIndex(t *testing.T) {
+	const in = `func run(h []func(), m [3]func(int)) {
+h[0] ()
+m[1] (5)
+go h[0] ()
+x := h[0]
+_ = x
+}
+`
+	const want = `func run(h []func (), m [3]func (int)) {
+	h[0]()
+	m[1](5)
+	go h[0]()
+	x := h[0]
+	_ = x
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("call-after-index spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
