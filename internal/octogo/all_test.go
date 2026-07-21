@@ -626,3 +626,64 @@ func main() {
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatStructBraces pins gofmt's line-based rule for a struct or interface
+// type's opening brace: it binds tight to the keyword for an empty or one-line
+// body ("struct{}", "struct{ v int }", "interface{ M() }") and is spaced off it
+// only when the body spans lines. The rule is purely line-based, so an empty body
+// written across lines keeps the space ("struct {\n}").
+func TestFormatStructBraces(t *testing.T) {
+	const in = `type Empty struct {}
+
+type OneLine struct { v int }
+
+type Multi struct {
+a int
+}
+
+type EmptyMulti struct {
+}
+
+type IfaceEmpty interface {}
+
+type IfaceOne interface { M() }
+
+type IfaceMulti interface {
+M()
+}
+`
+	const want = `type Empty struct{}
+
+type OneLine struct{ v int }
+
+type Multi struct {
+	a int
+}
+
+type EmptyMulti struct {
+}
+
+type IfaceEmpty interface{}
+
+type IfaceOne interface{ M() }
+
+type IfaceMulti interface {
+	M()
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("struct/interface brace spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}

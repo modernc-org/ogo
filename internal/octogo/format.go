@@ -208,6 +208,12 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// and against the first and last element within.
 	case (curr == LBRACE || prev == LBRACE || curr == RBRACE) && c.inLiteralBraces:
 		return false
+	// A struct or interface type's opening brace binds tight to the keyword unless
+	// the body spans lines: "struct{}" and "struct{ v int }", but a multi-line body
+	// keeps "struct {". The keyword right before "{" identifies the type body,
+	// distinguishing it from a block's or a composite literal's brace.
+	case curr == LBRACE && (prev == STRUCT || prev == INTERFACE):
+		return c.structBraceMultiline
 	case prev == ARROW:
 		if prevPrev == IDENT || prevPrev == RBRACK || prevPrev == RPAREN {
 			return true
@@ -384,6 +390,10 @@ type formatterCtx struct {
 	// own -- a block, a switch, a struct type -- so a function literal given as an
 	// element is spaced as itself again.
 	inLiteralBraces bool
+	// structBraceMultiline is set inside a StructType or InterfaceType when its body
+	// spans lines. gofmt spaces the opening brace off the keyword only then; an
+	// empty or one-line body binds tight ("struct{}", "struct{ v int }").
+	structBraceMultiline bool
 }
 
 // fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
@@ -530,6 +540,10 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.undentLBraceIndex = firstIndex(ast[:next])
 					c.undentRBraceIndex = lastIndex(ast[:next])
 					c.inLiteralBraces = false
+					// The keyword (first token) and the closing "}" (last token) sit on
+					// different source lines exactly when the body is multi-line; gofmt
+					// spaces the opening brace off the keyword only then.
+					c.structBraceMultiline = f.p.Token(c.undentLBraceIndex).Position().Line != f.p.Token(c.undentRBraceIndex).Position().Line
 
 					childSym := FieldDecl
 					if Symbol(-n) == InterfaceType {
