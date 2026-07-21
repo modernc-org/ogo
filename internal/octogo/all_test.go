@@ -934,3 +934,40 @@ func TestFormatIndexArith(t *testing.T) {
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatDotImport pins a dot-import spacing its "." on both sides
+// ("import . \"p2\""), while a selector's "." stays tight ("a.b"). The formatter's
+// blanket "." rule used to tighten the dot-import to `import."p2"`.
+func TestFormatDotImport(t *testing.T) {
+	const in = `import."p2"
+import _ "p2"
+
+func run(a T) {
+	a . b = 1
+	_ = a.b
+}
+`
+	const want = `import . "p2"
+import _ "p2"
+
+func run(a T) {
+	a.b = 1
+	_ = a.b
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("dot-import spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}

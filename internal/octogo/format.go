@@ -261,6 +261,10 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// "s[0: 1]". Scoped to an index so a case clause's ':' is left alone.
 	case prev == COLON && c.inIndex:
 		return false
+	// A dot-import spaces its "." on both sides ("import . \"p2\""), unlike a
+	// selector, whose "." binds tight ("a.b"). Only an ImportSpec holds a ".".
+	case (curr == PERIOD || prev == PERIOD) && c.inImport:
+		return true
 	case prev == PERIOD || curr == PERIOD:
 		return false
 	// Inside an index or slice subscript, gofmt renders binary operators tight to
@@ -421,6 +425,9 @@ type formatterCtx struct {
 	// spaced off the "(" ("func (r T) m()"); a func type or literal binds tight
 	// ("func()", "func(int) bool").
 	inReceiver bool
+	// inImport is set inside an ImportSpec, where a dot-import's "." is spaced
+	// ("import . \"p2\""), unlike a selector's tight ".".
+	inImport bool
 }
 
 // fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
@@ -551,6 +558,8 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.inParams = true
 				case Receiver:
 					c.inReceiver = true
+				case ImportSpec:
+					c.inImport = true
 				case SimpleExpr:
 					c.inType = false
 					c.inParams = false
