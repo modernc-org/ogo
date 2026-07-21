@@ -62,6 +62,44 @@ func main() {
 		want: "43\n",
 	},
 	{
+		// A named array type resolves to its dimensions at every array site: a local
+		// variable, a struct field, a by-value parameter (copied on entry, like any
+		// array parameter), a multi-dimensional type and a non-int element.
+		name: "named array types",
+		src: `type Row [3]int
+type Grid [2][2]int
+type RGB [3]uint8
+
+type Box struct {
+	row Row
+	n   int
+}
+
+func first(r Row) int {
+	return r[0]
+}
+
+func main() {
+	var r Row
+	r[0] = 5
+	r[2] = 9
+	var b Box
+	b.row[1] = 4
+	b.n = 8
+	var g Grid
+	g[1][1] = 7
+	var c RGB
+	c[0] = 255
+	println(r[0]+r[2], len(r))
+	println(b.row[1] + b.n)
+	println(first(r))
+	println(g[1][1])
+	println(c[0])
+}
+`,
+		want: "14 3\n12\n5\n7\n255\n",
+	},
+	{
 		// Printing a slice or array renders "[e0 e1 ...]" per element, for any
 		// scalar-printable element: a bool as true/false, a string as its bytes, an
 		// unsigned width without wrapping (%u), a signed one with its sign.

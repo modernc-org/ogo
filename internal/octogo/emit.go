@@ -952,7 +952,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1176,6 +1176,7 @@ type emitter struct {
 	globals          map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs          map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	namedTypes       map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	namedArrays      map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
 	constInt         map[string]string        // integer-constant name -> its C literal value, for array bounds
 	constStr         map[string]string        // string-constant name -> its decoded value, for folding string concatenation
 	arrays           map[string]arrDim        // local array name -> element type and bound (reset per function)
@@ -1445,6 +1446,18 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 				e.emit(" " + fld.ctype + " " + fld.name + ";")
 			}
 			e.emit(" } " + name + ";\n")
+			continue
+		}
+		// A named array type: `type Row [3]int` -> `typedef int Row[3];` (the extent
+		// rides the declarator, C-style), the array counterpart of `type Celsius int`.
+		// Recording it is what does the work: arrayDim resolves the name to these
+		// dimensions wherever an array is expected -- a variable of the type, a field,
+		// a parameter -- so each such site renders the underlying `int[3]` declarator
+		// directly. The typedef documents the type in the output and keeps the name a
+		// valid C type should anything refer to it by name.
+		if a, ok := e.arrayDim(typeAST); ok {
+			e.namedArrays[name] = a
+			e.emit("typedef " + a.elem + " " + name + a.declSuffix() + ";\n")
 			continue
 		}
 		// A non-struct named type: `type Celsius int` -> `typedef int Celsius;`. The
@@ -3261,6 +3274,14 @@ func (e *emitter) arrayType(typeAST []int32) (elem, bound string, ok bool) {
 // -- which is why `[2][3]int` used to fail as `unsupported type ""`.
 func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 	nodes := slices.Collect(it(typeAST))
+	// A named array type stands in for its dimensions: `type Row [3]int` used as
+	// `var r Row` resolves here so every array site (declaration, indexing, len,
+	// a struct field, a parameter) treats r as its `[3]int`. Only a bare name that
+	// was declared as an array type matches -- `type Celsius int` is not here.
+	if len(nodes) == 1 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT {
+		a, ok := e.namedArrays[e.src(nodes[0].tok)]
+		return a, ok
+	}
 	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK {
 		return arrDim{}, false
 	}
