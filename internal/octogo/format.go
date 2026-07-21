@@ -258,16 +258,19 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	case prev == NOT || prev == TILDE:
 		return false
 	case prev == ADD || prev == SUB || prev == MUL || prev == AND || prev == XOR:
+		// In a type or a parameter list, "*" is always a pointer and binds tight to
+		// the element type ("[]*int", "[3]*int", "func() *int", "var a *int"). Type
+		// syntax has no multiplication to confuse it with -- an array length is an
+		// Expression, where inType is cleared -- so a leading "]" or ")" does not make
+		// it binary.
+		if prev == MUL && (c.inType || c.inParams) {
+			return false
+		}
 		// Check the token BEFORE the operator to determine its context
 		switch prevPrev {
 
 		// If preceded by a literal, closing punctuation, or an identifier:
 		case INT, STRING, CHAR, RPAREN, RBRACK, IDENT:
-			// The IDENT Ambiguity: If we are inside a parameter list or type declaration,
-			// and preceded by an identifier, '*' is a pointer! (e.g., var a *int)
-			if prev == MUL && prevPrev == IDENT && (c.inParams || c.inType) {
-				return false
-			}
 
 			// Otherwise, it's a binary operator!
 			// Respect the hasAddOp precedence for MulOps to group multiplication:

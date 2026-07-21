@@ -687,3 +687,62 @@ type IfaceMulti interface {
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatPointerType pins that "*" in a type or parameter position binds tight
+// to the element type ("[]*int", "[3]*int", "func() *int", "var a *int"), while
+// multiplication in an expression stays spaced ("3 * 2"). The formatter used to
+// read a "*" after "]" or ")" as binary multiplication, emitting "[]* int" and
+// "func() * int".
+func TestFormatPointerType(t *testing.T) {
+	const in = `type T struct {
+p *int
+s []* int
+a [3]* int
+pp **int
+}
+
+func f(x *int) * int {
+return x
+}
+
+func run() {
+var v *int
+_ = v
+a := 3 * 2
+_ = a
+}
+`
+	const want = `type T struct {
+	p  *int
+	s  []*int
+	a  [3]*int
+	pp **int
+}
+
+func f(x *int) *int {
+	return x
+}
+
+func run() {
+	var v *int
+	_ = v
+	a := 3 * 2
+	_ = a
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("pointer-type spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
