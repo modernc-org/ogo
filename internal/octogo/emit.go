@@ -2230,8 +2230,7 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 			parts = e.cParamList(n.ast)
 		case ResultList:
 			for _, d := range e.f.paramDecls(n.ast) {
-				ct := e.cType(d.TypeAST.ast)
-				e.refuseArrayStructABI(ct, "result")
+				ct := e.resultCType(d.TypeAST.ast)
 				k := len(d.Names)
 				if k == 0 {
 					k = 1 // an unnamed result is one value
@@ -2242,9 +2241,7 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 			}
 		case Type:
 			// A single unnamed result: Signature = "(" [...] ")" Type .
-			ct := e.cType(n.ast)
-			e.refuseArrayStructABI(ct, "result")
-			resTypes = append(resTypes, ct)
+			resTypes = append(resTypes, e.resultCType(n.ast))
 		case 0:
 			// structural "(" / ")"
 		default:
@@ -2263,7 +2260,7 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 		switch n.sym {
 		case ResultList:
 			for _, d := range e.f.paramDecls(n.ast) {
-				ct := e.cType(d.TypeAST.ast)
+				ct := e.resultCType(d.TypeAST.ast)
 				if len(d.Names) == 0 {
 					names = append(names, "")
 					types = append(types, ct)
@@ -2277,7 +2274,7 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 		case Type:
 			if seenRPar {
 				names = append(names, "")
-				types = append(types, e.cType(n.ast))
+				types = append(types, e.resultCType(n.ast))
 			}
 		case 0:
 			if e.f.ch(n.tok) == RPAREN {
@@ -2319,6 +2316,23 @@ func (e *emitter) refuseArrayStructABI(ctype, what string) {
 	if e.hasArrayField(ctype) {
 		e.fail("%s: %s holds an array, which the target's C compiler cannot pass or return by value; use a pointer", what, ctype)
 	}
+}
+
+// resultCType maps a result Type to its C type, refusing a fixed-array result. C
+// cannot return an array by value, and a result -- unlike a parameter, which decays
+// to a pointer (cParamList) -- has nowhere to decay to, so it is refused with an
+// actionable message. cType would instead fail with an empty, nameless "unsupported
+// type", the array's element being a nested node it finds no identifier for. arrayDim
+// catches every rank, a multi-dimensional array included. A struct that merely holds
+// an array is refused by refuseArrayStructABI for the same ABI reason.
+func (e *emitter) resultCType(ta []int32) string {
+	if _, ok := e.arrayDim(ta); ok {
+		e.fail("cannot return an array by value; return a slice or a pointer to it")
+		return ""
+	}
+	ct := e.cType(ta)
+	e.refuseArrayStructABI(ct, "result")
+	return ct
 }
 
 // forEachParam walks a ParameterList's `IdentifierList Type` groups, calling fn

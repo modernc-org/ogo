@@ -4562,6 +4562,56 @@ func main() {
 	}
 }
 
+// TestEmitCArrayResultABI pins the refusal of a fixed-array result. C cannot return
+// an array by value, and a result -- unlike a parameter, which decays to a pointer
+// -- has nowhere to decay to. It is refused with an actionable message rather than an
+// empty, nameless "unsupported type" (the element is a nested node, so cType finds no
+// identifier to name). A one- and a multi-dimensional result are both covered.
+func TestEmitCArrayResultABI(t *testing.T) {
+	for _, test := range []struct{ name, src string }{
+		{
+			name: "one-dimensional",
+			src: `func f() [3]int {
+	var a [3]int
+	return a
+}
+
+func main() {
+	b := f()
+	println(b[0])
+}
+`,
+		},
+		{
+			name: "multi-dimensional",
+			src: `func f() [2][3]int {
+	var a [2][3]int
+	return a
+}
+
+func main() {
+	b := f()
+	println(b[0][0])
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf); err == nil {
+				t.Fatalf("EmitC accepted an array result by value:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), "cannot return an array by value") {
+				t.Errorf("EmitC error %q is not the array-result refusal", err)
+			}
+		})
+	}
+}
+
 // TestEmitCArrayStructCopy pins the memcpy lowering. C's own struct assignment is
 // what flexcc miscompiles for a struct holding an array, and the destination shapes
 // differ enough -- a variable, a field, an array element, a bounds-checked slice
