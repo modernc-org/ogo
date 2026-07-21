@@ -225,6 +225,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// type -- so this never tightens a genuine type.
 	case curr == LPAREN && (prev == IDENT || prev == RBRACK):
 		return false
+	// "func" binds tight to its signature's "(" for a type or literal ("func()",
+	// "func(int) bool"), but a method declaration spaces it off the receiver
+	// ("func (r T) m()").
+	case curr == LPAREN && prev == FUNC:
+		return c.inReceiver
 	case prev == LPAREN || prev == LBRACK || curr == RPAREN || curr == RBRACK:
 		return false
 		// No space after ']' in array/slice type signatures
@@ -406,6 +411,10 @@ type formatterCtx struct {
 	// spans lines. gofmt spaces the opening brace off the keyword only then; an
 	// empty or one-line body binds tight ("struct{}", "struct{ v int }").
 	structBraceMultiline bool
+	// inReceiver is set inside a method's Receiver "(ident Type)", where "func" is
+	// spaced off the "(" ("func (r T) m()"); a func type or literal binds tight
+	// ("func()", "func(int) bool").
+	inReceiver bool
 }
 
 // fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
@@ -531,6 +540,8 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.inLiteralBraces = false
 				case ParameterList, CallSuffix:
 					c.inParams = true
+				case Receiver:
+					c.inReceiver = true
 				case SimpleExpr:
 					c.inType = false
 					c.inParams = false

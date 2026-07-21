@@ -491,10 +491,9 @@ println(x)
 // case the rule must not overreach into: those braces are a block's, however deep
 // inside a literal they sit.
 //
-// The "func () int" in want is a separate, pre-existing bug -- a function literal
-// should be "func()", while the "func (r R)" of a method declaration does want its
-// space, so telling them apart needs context this rule does not have. It is spelled
-// out here so the expectation reads as a record of it, not as approval.
+// The func-literal element also exercises func-literal spacing: "func() int" binds
+// tight, while a method declaration's "func (r R)" keeps its space (see
+// TestFormatFuncReceiver).
 func TestFormatCompositeLit(t *testing.T) {
 	// Input is deliberately mis-spaced in both directions: the bug's own output
 	// and the opposite ("P{n:1,q:Q{v:2}}").
@@ -539,7 +538,7 @@ func main() {
 	if a == (P{Q{1}, 2}) {
 		println(a.n, b.n, c.n, d.n)
 	}
-	e := func () int {
+	e := func() int {
 		p := P{Q{4}, 5}
 		return p.n
 	}
@@ -795,9 +794,6 @@ _ = b
 
 // TestFormatCallAfterIndex pins that a call binds tight after an index or slice
 // suffix ("h[0]()", "m[1](5)", "go h[0]()"), which used to be spaced ("h[0] ()").
-// The "func ()" in the signature is deliberately recorded as-is: a func type's
-// "func()" losing its tightness is the separate func/method-receiver backlog item,
-// not this fix.
 func TestFormatCallAfterIndex(t *testing.T) {
 	const in = `func run(h []func(), m [3]func(int)) {
 h[0] ()
@@ -807,7 +803,7 @@ x := h[0]
 _ = x
 }
 `
-	const want = `func run(h []func (), m [3]func (int)) {
+	const want = `func run(h []func(), m [3]func(int)) {
 	h[0]()
 	m[1](5)
 	go h[0]()
@@ -821,6 +817,61 @@ _ = x
 	}
 	if g := out.String(); g != want {
 		t.Errorf("call-after-index spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
+// TestFormatFuncReceiver pins that "func" binds tight to its signature for a type
+// or literal ("func()", "func(int) bool", "func() int"), while a method declaration
+// spaces it off the receiver ("func (r T) m()"). The formatter used to space every
+// "func (", including types and literals; the receiver is told apart by a context
+// flag set on the Receiver node.
+func TestFormatFuncReceiver(t *testing.T) {
+	const in = `type H func (int) bool
+
+type T struct {
+	cb func ()
+}
+
+func(r T) m(x int) bool {
+	return x > 0
+}
+
+func F(g func (int) bool, h func ()) func () {
+	var v func (int) bool
+	_ = v
+	return h
+}
+`
+	const want = `type H func(int) bool
+
+type T struct {
+	cb func()
+}
+
+func (r T) m(x int) bool {
+	return x > 0
+}
+
+func F(g func(int) bool, h func()) func() {
+	var v func(int) bool
+	_ = v
+	return h
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("func/receiver spacing:\n got %q\nwant %q", g, want)
 	}
 
 	var again bytes.Buffer
