@@ -533,6 +533,25 @@ func main() {
 		want: "10 32 42\n0 0\ntrue false\n",
 	},
 	{
+		// `var a, b = f()` at package scope distributes a multi-result call. C
+		// forbids the call in a file-scope initializer, so it runs in the
+		// synthesized package init (which main enters first); a blank target drops
+		// its value but the call still runs.
+		name: "package-scope destructuring var",
+		src: `func sums(a, b int) (int, int) {
+	return a + b, a - b
+}
+
+var sum, diff = sums(10, 3)
+var _, gap = sums(20, 5)
+
+func main() {
+	println(sum, diff, gap)
+}
+`,
+		want: "13 7 15\n",
+	},
+	{
 		name: "package initialization runs before main",
 		src: `func five() int {
 	return 5

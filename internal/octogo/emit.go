@@ -1609,11 +1609,12 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			// an explicit type and fails honestly through inference.
 			if len(names) != 1 {
 				if len(initExprs) == 1 {
-					// `var a, b = f()` at package scope. C cannot call in a file-scope
-					// initializer, so this needs the destructuring temporary emitted
-					// into the synthesized package init, which is not modelled yet.
-					e.fail("destructuring a call into package variables is not supported yet")
-					return
+					// `var a, b = f()` at package scope: a multi-result call bound to
+					// several variables. C cannot call in a file-scope initializer, so
+					// the call and its distribution are deferred to the synthesized
+					// package init.
+					e.emitPackageDestructure(names, initExprs[0])
+					continue
 				}
 				e.fail("a type-inferred package variable must be a single name (var x = expr)")
 				return
@@ -3073,6 +3074,53 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 		}
 		e.emit("static " + ctype + " " + nm + " = " + e.zeroInitC(ctype) + ";\n")
 		e.deferPkgInit(nm + " = " + e.exprC(inits[i]) + ";")
+	}
+}
+
+// emitPackageDestructure lowers a package-scope `var a, b = f()` that distributes a
+// multi-result call across several package variables. It is emitDestructure split
+// across two locations: C forbids a call in a file-scope initializer, so each
+// variable is declared static and zero-initialized here, while the call binds to a
+// temporary and each variable reads its field in the synthesized package init.
+func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
+	callee, suffix, ok := e.directCall(rhs)
+	if !ok {
+		e.fail("destructuring into package variables requires a single function call on the right-hand side")
+		return
+	}
+	resTypes, ok := e.funcRet[callee]
+	if !ok {
+		e.fail("destructuring into package variables requires a call to a function, not %q", callee)
+		return
+	}
+	if len(resTypes) != len(names) {
+		e.fail("assignment mismatch: %d variables but %s returns %d values", len(names), callee, len(resTypes))
+		return
+	}
+	call := e.captureC(func() { e.emitCallExpr(callee, suffix) })
+	// An all-blank `var _, _ = f()` keeps the call for its side effects but binds
+	// nothing, so no result temporary is emitted -- an unused one would warn.
+	if !slices.ContainsFunc(names, func(nm string) bool { return nm != "_" }) {
+		e.deferPkgInit(call + ";")
+		return
+	}
+	for i, nm := range names {
+		if nm == "_" {
+			continue // a blank package variable declares nothing
+		}
+		e.globals[nm] = resTypes[i]
+		if e.isSliceCType(resTypes[i]) {
+			e.globalSliceVars[nm] = sliceElemFromCName(resTypes[i])
+		}
+		e.emit("static " + resTypes[i] + " " + nm + " = " + e.zeroInitC(resTypes[i]) + ";\n")
+	}
+	tmp := e.newTmp()
+	e.deferPkgInit(e.retStructName(callee) + " " + tmp + " = " + call + ";")
+	for i, nm := range names {
+		if nm == "_" {
+			continue // its value is produced but bound to nothing
+		}
+		e.deferPkgInit(fmt.Sprintf("%s = %s._%d;", nm, tmp, i))
 	}
 }
 
