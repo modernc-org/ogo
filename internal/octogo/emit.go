@@ -4539,10 +4539,11 @@ func (e *emitter) emitIfBody(ast []int32) {
 // Expression node, which would add its own binary-operator parens) so a simple
 // `i < 20` becomes `(i < 20)`, not `((i < 20))`.
 func (e *emitter) emitCondition(exprChildren []int32) {
+	// A condition is the Expression's children directly (not a wrapped Expression
+	// node), so route them through emitLogicalKids for the same && / || grouping an
+	// Expression operand gets, keeping gcc's -Wparentheses quiet in `if a && b || c`.
 	e.emit("(")
-	for n := range it(exprChildren) {
-		e.emitExprNode(n)
-	}
+	e.emitLogicalKids(slices.Collect(it(exprChildren)))
 	e.emit(")")
 }
 
@@ -6348,6 +6349,56 @@ func (e *emitter) emitExpr(ast []int32) {
 	}
 }
 
+// emitLogicalKids emits the operand/operator children of an Expression or
+// SimpleExpr in source order. When a chain mixes || with && it wraps each
+// ||-operand that holds a && in parentheses: C already groups it that way (&& binds
+// tighter than ||), so the parentheses change nothing, but they keep gcc's
+// -Wparentheses -- which the run tests treat as an error -- quiet. `a && b || c`
+// becomes `(a && b) || c`. Every other chain, including one with only comparisons
+// or only && or only ||, is emitted verbatim.
+func (e *emitter) emitLogicalKids(kids []Node) {
+	hasOr, hasAnd := false, false
+	for _, c := range kids {
+		if c.sym == RelOp {
+			switch e.opText(c.ast) {
+			case "||":
+				hasOr = true
+			case "&&":
+				hasAnd = true
+			}
+		}
+	}
+	if !hasOr || !hasAnd {
+		for _, c := range kids {
+			e.emitExprNode(c)
+		}
+		return
+	}
+	emitGroup := func(group []Node) {
+		wrap := slices.ContainsFunc(group, func(c Node) bool {
+			return c.sym == RelOp && e.opText(c.ast) == "&&"
+		})
+		if wrap {
+			e.emit("(")
+		}
+		for _, c := range group {
+			e.emitExprNode(c)
+		}
+		if wrap {
+			e.emit(")")
+		}
+	}
+	start := 0
+	for i, c := range kids {
+		if c.sym == RelOp && e.opText(c.ast) == "||" {
+			emitGroup(kids[start:i])
+			e.emitExprNode(c) // the " || " operator itself
+			start = i + 1
+		}
+	}
+	emitGroup(kids[start:])
+}
+
 func (e *emitter) emitExprNode(n Node) {
 	switch n.sym {
 	case Expression, SimpleExpr:
@@ -6369,9 +6420,7 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		e.emit("(")
-		for _, c := range kids {
-			e.emitExprNode(c)
-		}
+		e.emitLogicalKids(kids)
 		e.emit(")")
 	case Term:
 		// Like SimpleExpr, but a "/" or "%" divisor is guarded against zero:

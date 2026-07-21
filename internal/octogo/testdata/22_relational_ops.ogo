@@ -13,6 +13,10 @@ func testRelational() {
 	// Valid boolean equality
 	var bEq bool = (b1 != b2)
 
+	// Valid logical operators: bool operands, a bool result.
+	var bAnd bool = (b1 && b2)
+	var bOr bool = (b1 || b2)
+
 	// ERROR "invalid operation|operator < not defined for bool"
 	var inv1 bool = (b1 < b2)
 
@@ -20,10 +24,17 @@ func testRelational() {
 	// ERROR "mismatched types string and int|cannot compare"
 	var inv2 bool = (s1 == num)
 
+	// A logical operator's operands must be bool, not int.
+	// ERROR "operand of a logical operator must be bool"
+	var inv3 bool = (num && b1)
+
 	_ = s3
 	_ = isEqual
 	_ = isLess
 	_ = bEq
+	_ = bAnd
+	_ = bOr
 	_ = inv1
 	_ = inv2
+	_ = inv3
 }

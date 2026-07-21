@@ -1,0 +1,28 @@
+// COMPILE
+
+// The logical operators && and || combine boolean operands and yield a bool. They
+// bind looser than a comparison, so a mix like `a > 0 && a < 9` groups as
+// `(a > 0) && (a < 9)`, and && binds tighter than ||.
+
+func flags(a bool, b bool) bool {
+	return a && b || !a
+}
+
+func inRange(x int) bool {
+	return x > 0 && x < 10
+}
+
+func use() {
+	x := 5
+	ok := true
+	// A comparison, a bool variable and a not all serve as operands.
+	if x > 0 && x < 10 && ok && !false {
+		println(1)
+	}
+	// && binds tighter than ||: this is (x < 0) || (x > 3 && ok).
+	if x < 0 || x > 3 && ok {
+		println(2)
+	}
+	c := inRange(x) || flags(ok, false)
+	println(c)
+}

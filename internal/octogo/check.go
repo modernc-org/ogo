@@ -3615,21 +3615,50 @@ func (f *File) checkComparison(s *Scope, n Node) {
 			relOps = append(relOps, c)
 		}
 	}
-	for i, op := range relOps {
-		if i+1 < len(operands) {
-			f.checkRelOp(s, op, operands[i], operands[i+1])
-		}
-	}
-}
-
-// checkRelOp reports an incompatible pair of operands of a relational operator.
-// The logical operators "&&" and "||" are recognized by the grammar but not
-// supported, so any use is rejected here regardless of its operands.
-func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
-	if op := Symbol(f.tok(opNode.Pos()).Ch); op == LAND || op == LOR {
-		f.err(f.tok(opNode.Pos()).Position(), "unexpected token '%s'", f.tok(opNode.Pos()).Src())
+	if len(operands) == 0 {
 		return
 	}
+	// The grammar keeps comparison and logical operators at one flat level, but
+	// they differ in precedence: && and || bind looser than a comparison, so they
+	// partition the chain into comparison groups -- `a > 0 && a < 9` is
+	// `(a > 0) && (a < 9)`, not `((a > 0) && a) < 9`. A comparison operator's own
+	// two operands are checked as before; a logical operator joins whole groups
+	// instead, each of which must be boolean. A group is boolean when it holds a
+	// comparison; a lone operand must be a bool itself.
+	anyLogical := false
+	for _, op := range relOps {
+		if o := Symbol(f.tok(op.Pos()).Ch); o == LAND || o == LOR {
+			anyLogical = true
+		}
+	}
+	groupStart, groupHasCmp := 0, false
+	requireBoolGroup := func() {
+		if anyLogical && !groupHasCmp && groupStart < len(operands) {
+			operand := operands[groupStart]
+			if k, ok := f.exprType(s, operand); ok && kindCategory(k) != catBool {
+				f.err(f.tok(operand.Pos()).Position(), "invalid operation: operand of a logical operator must be bool, got %s", kindName(k))
+			}
+		}
+	}
+	for i, op := range relOps {
+		if i+1 >= len(operands) {
+			break
+		}
+		if o := Symbol(f.tok(op.Pos()).Ch); o == LAND || o == LOR {
+			requireBoolGroup()
+			groupStart, groupHasCmp = i+1, false
+			continue
+		}
+		f.checkRelOp(s, op, operands[i], operands[i+1])
+		groupHasCmp = true
+	}
+	requireBoolGroup()
+}
+
+// checkRelOp reports an incompatible pair of operands of a comparison operator.
+// Only a comparison (== != < <= > >=) reaches here; a logical operator (&& / ||)
+// is handled by checkComparison, which groups the chain by precedence around it.
+func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)

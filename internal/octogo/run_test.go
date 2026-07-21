@@ -40,6 +40,34 @@ var emitRunCases = []emitRunCase{
 		want: "18\n",
 	},
 	{
+		// Logical && and || combine bools and short-circuit. They bind looser than a
+		// comparison and && tighter than ||, so `a && b || c` groups as `(a && b) ||
+		// c` -- exercised in a condition, an assignment and a bool result.
+		name: "logical operators",
+		src: `func between(x int) bool {
+	return x > 0 && x < 10
+}
+
+func main() {
+	x := 5
+	a := true
+	b := false
+	println(a && b, a || b)
+	if x > 0 && x < 10 && a {
+		println(11)
+	}
+	if x < 0 || x > 3 {
+		println(22)
+	}
+	if x > 0 && x > 100 || x == 5 {
+		println(33)
+	}
+	println(between(5), between(50))
+}
+`,
+		want: "false true\n11\n22\n33\ntrue false\n",
+	},
+	{
 		name: "slices, arrays and access chains",
 		src: `type P struct {
 	v [2]int
