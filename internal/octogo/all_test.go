@@ -887,12 +887,7 @@ func F(g func(int) bool, h func()) func() {
 // subscript render tight ("xs[n+1]", "xs[:n+1]", "xs[a+b*c]", "m[a+1][b+1]",
 // "xs[a&b]"), matching gofmt, while the same expression outside a subscript keeps
 // its normal spacing ("a + b*c").
-//
-// The slice colon of a two-bound slice whose bounds are binary -- which gofmt
-// spaces, "xs[i+1 : j-1]" -- is not handled yet: it is recorded here as the tight
-// "xs[i+1:j-1]". Spacing it needs per-bound "is this a binary expression" analysis
-// (gofmt: blanks iff >1 non-empty bound and at least one is binary), the separate
-// remaining slice-colon-blank sub-item.
+// Slice-colon spacing is covered by TestFormatSliceColon.
 func TestFormatIndexArith(t *testing.T) {
 	const in = `func run(xs []int, m [3][3]int, a int, b int, c int, n int, i int, j int) {
 	_ = xs[n + 1]
@@ -913,7 +908,7 @@ func TestFormatIndexArith(t *testing.T) {
 	_ = xs[a+b*c]
 	_ = m[a+1][b+1]
 	_ = xs[a&b]
-	_ = xs[i+1:j-1]
+	_ = xs[i+1 : j-1]
 	x := a + b*c
 	_ = x
 }
@@ -924,6 +919,48 @@ func TestFormatIndexArith(t *testing.T) {
 	}
 	if g := out.String(); g != want {
 		t.Errorf("index-arith spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
+// TestFormatSliceColon pins gofmt's rule for spacing a slice ":": spaced when the
+// slice has two non-empty bounds and at least one is a binary expression
+// ("xs[i+1 : j-1]", "xs[a+1 : b]", "xs[a : b+1]"), tight otherwise ("xs[a:b]",
+// "xs[:n+1]", "xs[n+1:]"). The bounds themselves still render their operators tight.
+func TestFormatSliceColon(t *testing.T) {
+	const in = `func run(xs []int, a int, b int, n int, i int, j int) {
+	_ = xs[a : b]
+	_ = xs[i+1:j-1]
+	_ = xs[a+1:b]
+	_ = xs[a:b+1]
+	_ = xs[ : n+1]
+	_ = xs[n+1 : ]
+	_ = xs[a]
+}
+`
+	const want = `func run(xs []int, a int, b int, n int, i int, j int) {
+	_ = xs[a:b]
+	_ = xs[i+1 : j-1]
+	_ = xs[a+1 : b]
+	_ = xs[a : b+1]
+	_ = xs[:n+1]
+	_ = xs[n+1:]
+	_ = xs[a]
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("slice-colon spacing:\n got %q\nwant %q", g, want)
 	}
 
 	var again bytes.Buffer

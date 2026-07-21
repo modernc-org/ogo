@@ -250,6 +250,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// does not come out as "x :=[4]int{...}".
 	case curr == LBRACK:
 		return c.inType || (prev != IDENT && prev != RBRACK && prev != RPAREN)
+	// A slice ":" takes spaces when the slice has two non-empty bounds and one is a
+	// binary expression ("xs[i+1 : j-1]"), matching gofmt; otherwise it binds tight
+	// (the cases just below). The decision is computed once at the Index node.
+	case c.inIndex && c.sliceColonBlanks && (curr == COLON || prev == COLON):
+		return true
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false
 	// "++" and "--" are postfix and bind to their operand: "i++", "b.arr[i]++".
@@ -401,6 +406,48 @@ func containsNode(ast []int32, target Symbol) bool {
 	return false
 }
 
+// isBinaryBound reports whether a slice bound is a top-level binary expression
+// (gofmt's isBinary): "a+1", "a*b", "a<<2", "a==b". It walks the
+// Expression -> SimpleExpr -> Term spine and reports true at the first level that
+// holds a binary operator, stopping before a Factor so a parenthesised or called
+// operand ("(a+b)", "f(a+b)") -- where the operator is nested, not top-level -- does
+// not count.
+func isBinaryBound(ast []int32) bool {
+	for {
+		var child []int32
+		spine := 0
+		for n := range it(ast) {
+			switch n.sym {
+			case RelOp, AddOp, MulOp:
+				return true
+			case Expression, SimpleExpr, Term:
+				child = n.ast
+				spine++
+			}
+		}
+		if spine != 1 {
+			return false
+		}
+		ast = child
+	}
+}
+
+// sliceColonNeedsBlanks reports whether a slice expression's ":" takes spaces around
+// it. gofmt spaces it when the slice has two non-empty bounds and at least one is a
+// binary expression -- "xs[i+1 : j-1]", "xs[a+1 : b]" -- and keeps it tight otherwise
+// -- "xs[a:b]", "xs[:n+1]", "xs[a+1:]". A two-bound slice is exactly an Index with
+// two direct Expression children (the grammar allows two only as "Expr ':' Expr"); a
+// plain index or a one-sided slice has at most one.
+func sliceColonNeedsBlanks(indexKids []int32) bool {
+	var bounds [][]int32
+	for n := range it(indexKids) {
+		if n.sym == Expression {
+			bounds = append(bounds, n.ast)
+		}
+	}
+	return len(bounds) == 2 && (isBinaryBound(bounds[0]) || isBinaryBound(bounds[1]))
+}
+
 type formatterCtx struct {
 	indentLevel       int32
 	undentLBraceIndex int32
@@ -410,6 +457,9 @@ type formatterCtx struct {
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
 	inType            bool
 	inIndex           bool // True inside an Index, where ':' binds tight ("s[0:1]")
+	// sliceColonBlanks is true inside a two-bound slice whose ":" gofmt spaces
+	// because a bound is a binary expression ("xs[i+1 : j-1]").
+	sliceColonBlanks bool
 	// inLiteralBraces is true inside a composite literal, whose braces are spaced
 	// the opposite way to a block's: "P{1, 2}", not "P { 1, 2 }". It stays set
 	// across the elements, because the space after "{" is decided while emitting
@@ -574,6 +624,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				case Index:
 					// walk takes c by value, so this scopes to the index subtree.
 					c.inIndex = true
+					c.sliceColonBlanks = sliceColonNeedsBlanks(ast[2:next])
 				case CompositeLit:
 					c.inLiteralBraces = true
 				case StructType, InterfaceType:
