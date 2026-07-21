@@ -540,6 +540,27 @@ func main() {
 		want: "2 1 2\n1 1 2 3 4\n",
 	},
 	{
+		// min and max over one or more integer arguments, folded left. The last case
+		// evaluates a side-effecting argument once (the helper takes it by value), so
+		// f prints exactly once.
+		name: "min and max builtins",
+		src: `func f() int {
+	println(-1)
+	return 5
+}
+
+func main() {
+	println(min(3, 8), max(3, 8))
+	println(min(9, 4, 7, 1), max(9, 4, 7, 1))
+	println(min(42))
+	n := max(10, 20)
+	println(n)
+	println(min(f(), 3))
+}
+`,
+		want: "3 8\n1 9\n42\n20\n-1\n3\n",
+	},
+	{
 		name: "defer captures at the defer, not the return",
 		src: `func step(n int) {
 	println(n)

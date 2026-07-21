@@ -881,6 +881,10 @@ func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(
 // copyCName names the per-element helper for the copy builtin, ogo_copy_<T>.
 func copyCName(elem string) string { return "ogo_copy_" + sanitizeElem(elem) }
 
+// minCName and maxCName name the per-type two-argument helpers for min and max.
+func minCName(ct string) string { return "ogo_min_" + sanitizeElem(ct) }
+func maxCName(ct string) string { return "ogo_max_" + sanitizeElem(ct) }
+
 // printSliceCName and printlnSliceCName name the per-element slice print helpers
 // that render a slice header as "[e0 e1 ...]" over the serial line -- the newline
 // form appends a trailing '\n'. An array is printed through the same helpers by
@@ -955,7 +959,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1114,6 +1118,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\treturn n;\n}\n",
 			copyCName(el), sliceCName(el), sliceCName(el))
 	}
+	// The two-argument min and max helpers a variadic call folds over.
+	for _, ct := range sortedKeys(e.minElems) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return a < b ? a : b; }\n", ct, minCName(ct), ct, ct)
+	}
+	for _, ct := range sortedKeys(e.maxElems) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return a > b ? a : b; }\n", ct, maxCName(ct), ct, ct)
+	}
 	for _, el := range sortedKeys(e.tryappendElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
 			"\tif (s.len >= s.cap) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
@@ -1210,6 +1221,8 @@ type emitter struct {
 	appendElems      map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems   map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	copyElems        map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
+	minElems         map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
+	maxElems         map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
 	printSliceElems  map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
 	printlnElems     map[string]bool          // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers           []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
@@ -4790,6 +4803,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitCopy(suffix[0].ast)
 			return true
 		}
+		if _, isUser := e.funcRet[recv]; !isUser && (recv == "min" || recv == "max") {
+			// min and max are common names; a user function of that name (in funcRet)
+			// shadows the builtin, as Go allows, and is emitted as a real call below.
+			e.emitMinMax(recv, suffix[0].ast)
+			return true
+		}
 		if recv == "make" {
 			// make needs a hoisted backing array, so it is only handled as a
 			// `var s []T = make(...)` initializer (see emitMakeSliceVar), not as a
@@ -4995,6 +5014,43 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	e.emit(", ")
 	e.emitExpr(args[1].ast)
 	e.emit(")")
+}
+
+// emitMinMax emits the builtin min or max over one or more integer arguments. It
+// folds a two-argument helper left over the arguments -- min(a, b, c) is
+// min(min(a, b), c) -- through a helper (not an inline a<b?a:b) so each argument is
+// evaluated exactly once, even one with a side effect. A single argument is itself.
+func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) == 0 {
+		e.fail("%s requires at least one argument", recv)
+		return
+	}
+	ct, ok := e.inferCType(args[0].ast)
+	if !ok || !isIntCType(ct) {
+		e.fail("%s is only supported on integer arguments yet", recv)
+		return
+	}
+	if len(args) == 1 {
+		e.emitExpr(args[0].ast) // min(x) / max(x) is x
+		return
+	}
+	fn := minCName(ct)
+	if recv == "max" {
+		fn = maxCName(ct)
+		e.maxElems[ct] = true
+	} else {
+		e.minElems[ct] = true
+	}
+	for range args[1:] {
+		e.emit(fn + "(")
+	}
+	e.emitExpr(args[0].ast)
+	for _, arg := range args[1:] {
+		e.emit(", ")
+		e.emitExpr(arg.ast)
+		e.emit(")")
+	}
 }
 
 // emitTryAppend emits the two-result append `s, ok = append(s, x)` (or `:=`): it
@@ -6358,6 +6414,13 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		if recv == "len" || recv == "cap" || recv == "copy" {
 			return "int", true // the builtins len, cap and copy return int
+		}
+		if recv == "min" || recv == "max" {
+			// min/max return the type of their arguments; take the first.
+			if args := e.callArgExprs(suffix[0].ast); len(args) >= 1 {
+				return e.inferCType(args[0].ast)
+			}
+			return "", false
 		}
 		if recv == "append" {
 			// append returns a slice of its first argument's element type.
