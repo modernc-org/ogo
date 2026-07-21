@@ -62,6 +62,28 @@ func main() {
 		want: "43\n",
 	},
 	{
+		// Printing a slice or array renders "[e0 e1 ...]" per element, for any
+		// scalar-printable element: a bool as true/false, a string as its bytes, an
+		// unsigned width without wrapping (%u), a signed one with its sign.
+		name: "print slices of every scalar element type",
+		src: `func main() {
+	bs := []bool{true, false, true}
+	println(bs)
+	us := []uint8{1, 2, 3}
+	println(us)
+	ss := []string{"a", "bc"}
+	println(ss)
+	var xs [3]int32
+	xs[0] = 7
+	xs[2] = -9
+	println(xs)
+	big := []uint{4000000000}
+	println(big)
+}
+`,
+		want: "[true false true]\n[1 2 3]\n[a bc]\n[7 0 -9]\n[4000000000]\n",
+	},
+	{
 		// A composite literal builds a struct value from its fields in declaration
 		// order. It may appear anywhere an expression may except the top level of a
 		// control-flow header, where its "{" would be the block (see the grammar).

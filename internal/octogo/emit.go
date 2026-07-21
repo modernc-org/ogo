@@ -1116,11 +1116,12 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\tprintf(\"[\");\n"+
 			"\tfor (int _i = 0; _i < s.len; _i++) {\n"+
 			"\t\tif (_i) printf(\" \");\n"+
-			"\t\tprintf(\"%%d\", s.ptr[_i]);\n"+
+			"\t\t%s\n"+
 			"\t}\n"+
 			"\tprintf(\"]\");\n}\n"+
 			"static void %s(%s s) { %s(s); printf(\"\\n\"); }\n",
 			printSliceCName(el), sliceCName(el),
+			sliceElemPrintf(el),
 			printlnSliceCName(el), sliceCName(el), printSliceCName(el))
 	}
 	if helperDefs.Len() != 0 {
@@ -5123,6 +5124,32 @@ func scalarPrintVerb(ct string) string {
 	return "%d"
 }
 
+// isIntCType reports whether ct is one of the integer C types an OctoGo numeric
+// maps to. It is the printable-integer set: a named type over int (its own typedef
+// name) is not in it, so a slice of one still fails honestly.
+func isIntCType(ct string) bool {
+	switch ct {
+	case "int", "unsigned", "int8_t", "int16_t", "int32_t",
+		"uint8_t", "uint16_t", "uint32_t", "uintptr_t":
+		return true
+	}
+	return false
+}
+
+// sliceElemPrintf is the printf statement the slice/array printer runs for one
+// element `s.ptr[_i]`: a bool as the word true/false and a string as its exact
+// bytes, matching the scalar forms (emitBoolWord, ogo_print_str), and an integer
+// with the width-appropriate verb from scalarPrintVerb.
+func sliceElemPrintf(el string) string {
+	switch el {
+	case cBool:
+		return `printf("%s", s.ptr[_i] ? "true" : "false");`
+	case cString:
+		return `printf("%.*s", s.ptr[_i].len, s.ptr[_i].str);`
+	}
+	return fmt.Sprintf(`printf("%s", s.ptr[_i]);`, scalarPrintVerb(el))
+}
+
 // scalarPrintVerbOf returns the print conversion for an argument, defaulting to %d
 // when its type cannot be inferred (an integer expression).
 func (e *emitter) scalarPrintVerbOf(arg Node) string {
@@ -5149,9 +5176,12 @@ func (e *emitter) isScalarPrint(arg Node) bool {
 }
 
 // canPrintElem reports whether a slice/array of the given C element type can be
-// printed. Only int is printable for now (its %d helper); other element types fail
-// honestly until their own print form is wired up.
-func (e *emitter) canPrintElem(elem string) bool { return elem == "int" }
+// printed: any integer width, a bool, or a string -- the scalar-printable types,
+// each rendered by sliceElemPrintf. A slice of structs, pointers, or a named type
+// still fails honestly until its own print form is wired up.
+func (e *emitter) canPrintElem(elem string) bool {
+	return elem == cBool || elem == cString || isIntCType(elem)
+}
 
 // derefStars returns the leading pointer-indirection prefix of an AssignHead
 // (AssignHead = { "*" } identifier ...), so a dereferenced target `*p = v` writes
