@@ -561,6 +561,23 @@ func main() {
 		want: "3 8\n1 9\n42\n20\n-1\n3\n",
 	},
 	{
+		// clear zeroes a slice's elements, its length unchanged; it works over a
+		// slice of an array too. A map or a bare array is not a valid argument.
+		name: "clear builtin",
+		src: `func main() {
+	s := []int{1, 2, 3}
+	clear(s)
+	println(s[0], s[1], s[2], len(s))
+	var a [3]int
+	a[0] = 7
+	a[2] = 9
+	clear(a[:])
+	println(a[0], a[2])
+}
+`,
+		want: "0 0 0 3\n0 0\n",
+	},
+	{
 		name: "defer captures at the defer, not the return",
 		src: `func step(n int) {
 	println(n)

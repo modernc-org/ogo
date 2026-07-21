@@ -881,6 +881,9 @@ func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(
 // copyCName names the per-element helper for the copy builtin, ogo_copy_<T>.
 func copyCName(elem string) string { return "ogo_copy_" + sanitizeElem(elem) }
 
+// clearCName names the per-element helper for the clear builtin, ogo_clear_<T>.
+func clearCName(elem string) string { return "ogo_clear_" + sanitizeElem(elem) }
+
 // minCName and maxCName name the per-type two-argument helpers for min and max.
 func minCName(ct string) string { return "ogo_min_" + sanitizeElem(ct) }
 func maxCName(ct string) string { return "ogo_max_" + sanitizeElem(ct) }
@@ -959,7 +962,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1118,6 +1121,14 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\treturn n;\n}\n",
 			copyCName(el), sliceCName(el), sliceCName(el))
 	}
+	// clear(s): zero every element (memset, since every zero value is all-zero
+	// bytes), the length unchanged.
+	for _, el := range sortedKeys(e.clearElems) {
+		fmt.Fprintf(&helperDefs, "static void %s(%s s) {\n"+
+			"\tif (s.len > 0) { memset(s.ptr, 0, (unsigned)s.len * sizeof(*s.ptr)); }\n"+
+			"}\n",
+			clearCName(el), sliceCName(el))
+	}
 	// The two-argument min and max helpers a variadic call folds over.
 	for _, ct := range sortedKeys(e.minElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return a < b ? a : b; }\n", ct, minCName(ct), ct, ct)
@@ -1221,6 +1232,7 @@ type emitter struct {
 	appendElems      map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems   map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	copyElems        map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
+	clearElems       map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
 	minElems         map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
 	maxElems         map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
 	printSliceElems  map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
@@ -4803,6 +4815,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitCopy(suffix[0].ast)
 			return true
 		}
+		if _, isUser := e.funcRet[recv]; !isUser && recv == "clear" {
+			e.emitClear(suffix[0].ast)
+			return true
+		}
 		if _, isUser := e.funcRet[recv]; !isUser && (recv == "min" || recv == "max") {
 			// min and max are common names; a user function of that name (in funcRet)
 			// shadows the builtin, as Go allows, and is emitted as a real call below.
@@ -5013,6 +5029,32 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	e.emitExpr(args[0].ast)
 	e.emit(", ")
 	e.emitExpr(args[1].ast)
+	e.emit(")")
+}
+
+// emitClear emits the builtin clear(s) over a slice: it zeroes every element, the
+// length unchanged. Every OctoGo value's zero is all-zero bytes (a string or slice
+// header is {NULL, 0(, 0)}, a bool is false, a pointer is null), so one memset of
+// the elements does it for any element type, through the ogo_clear_<T> helper. A
+// map argument (there are no maps) or an array (Go's clear takes only a map or
+// slice) is refused.
+func (e *emitter) emitClear(callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) != 1 {
+		e.fail("clear takes exactly one argument -- clear(s)")
+		return
+	}
+	ct, ok := e.inferCType(args[0].ast)
+	if !ok || !e.isSliceCType(ct) {
+		e.fail("clear is only supported on a slice yet")
+		return
+	}
+	elem := sliceElemFromCName(ct)
+	e.needSlice(elem)
+	e.clearElems[elem] = true
+	e.includes["string.h"] = true
+	e.emit(clearCName(elem) + "(")
+	e.emitExpr(args[0].ast)
 	e.emit(")")
 }
 
