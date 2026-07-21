@@ -523,6 +523,23 @@ func main() {
 		want: "2 4 1 2\n",
 	},
 	{
+		// copy moves min(len(dst), len(src)) elements and returns the count. The
+		// last case copies a slice onto a shifted view of itself, which overlaps --
+		// memmove handles it, as Go's copy guarantees.
+		name: "copy builtin",
+		src: `func main() {
+	src := []int{1, 2, 3, 4}
+	dst := make([]int, 2)
+	n := copy(dst, src)
+	println(n, dst[0], dst[1])
+	s := []int{1, 2, 3, 4, 5}
+	copy(s[1:], s)
+	println(s[0], s[1], s[2], s[3], s[4])
+}
+`,
+		want: "2 1 2\n1 1 2 3 4\n",
+	},
+	{
 		name: "defer captures at the defer, not the return",
 		src: `func step(n int) {
 	println(n)

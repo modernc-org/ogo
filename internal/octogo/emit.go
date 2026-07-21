@@ -878,6 +878,9 @@ func appendCName(elem string) string    { return "ogo_append_" + sanitizeElem(el
 func tryappendCName(elem string) string { return "ogo_tryappend_" + sanitizeElem(elem) }
 func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(elem) }
 
+// copyCName names the per-element helper for the copy builtin, ogo_copy_<T>.
+func copyCName(elem string) string { return "ogo_copy_" + sanitizeElem(elem) }
+
 // printSliceCName and printlnSliceCName name the per-element slice print helpers
 // that render a slice header as "[e0 e1 ...]" over the serial line -- the newline
 // form appends a trailing '\n'. An array is printed through the same helpers by
@@ -952,7 +955,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1102,6 +1105,15 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\t\ts.ptr[s.len] = v;\n\t\ts.len++;\n\t}\n\treturn s;\n}\n",
 			sliceCName(el), appendCName(el), sliceCName(el), el)
 	}
+	// copy(dst, src): move min(len) elements and return the count. memmove, not
+	// memcpy, because Go's copy allows dst and src to overlap.
+	for _, el := range sortedKeys(e.copyElems) {
+		fmt.Fprintf(&helperDefs, "static int %s(%s dst, %s src) {\n"+
+			"\tint n = dst.len < src.len ? dst.len : src.len;\n"+
+			"\tif (n > 0) { memmove(dst.ptr, src.ptr, (unsigned)n * sizeof(*dst.ptr)); }\n"+
+			"\treturn n;\n}\n",
+			copyCName(el), sliceCName(el), sliceCName(el))
+	}
 	for _, el := range sortedKeys(e.tryappendElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
 			"\tif (s.len >= s.cap) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
@@ -1197,6 +1209,7 @@ type emitter struct {
 	inlineSliceDefs  map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
 	appendElems      map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems   map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	copyElems        map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
 	printSliceElems  map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
 	printlnElems     map[string]bool          // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers           []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
@@ -4773,6 +4786,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitAppend(suffix[0].ast)
 			return true
 		}
+		if recv == "copy" {
+			e.emitCopy(suffix[0].ast)
+			return true
+		}
 		if recv == "make" {
 			// make needs a hoisted backing array, so it is only handled as a
 			// `var s []T = make(...)` initializer (see emitMakeSliceVar), not as a
@@ -4933,6 +4950,37 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	e.appendElems[elem] = true
 	e.needPanic()
 	e.emit(appendCName(elem) + "(")
+	e.emitExpr(args[0].ast)
+	e.emit(", ")
+	e.emitExpr(args[1].ast)
+	e.emit(")")
+}
+
+// emitCopy emits the builtin copy(dst, src). Both must be slices of the same
+// element type; it copies min(len(dst), len(src)) elements and yields that count,
+// through the per-element ogo_copy_<T> helper. dst and src may overlap (the helper
+// uses memmove), as Go's copy allows.
+func (e *emitter) emitCopy(callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) != 2 {
+		e.fail("copy takes exactly two arguments -- copy(dst, src)")
+		return
+	}
+	dstCT, dok := e.inferCType(args[0].ast)
+	srcCT, sok := e.inferCType(args[1].ast)
+	if !dok || !e.isSliceCType(dstCT) || !sok || !e.isSliceCType(srcCT) {
+		e.fail("copy's arguments must both be slices")
+		return
+	}
+	if dstCT != srcCT {
+		e.fail("copy's arguments must be slices of the same type, not %s and %s", dstCT, srcCT)
+		return
+	}
+	elem := sliceElemFromCName(dstCT)
+	e.needSlice(elem)
+	e.copyElems[elem] = true
+	e.includes["string.h"] = true
+	e.emit(copyCName(elem) + "(")
 	e.emitExpr(args[0].ast)
 	e.emit(", ")
 	e.emitExpr(args[1].ast)
@@ -6298,8 +6346,8 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
-		if recv == "len" || recv == "cap" {
-			return "int", true // the builtins len and cap return int
+		if recv == "len" || recv == "cap" || recv == "copy" {
+			return "int", true // the builtins len, cap and copy return int
 		}
 		if recv == "append" {
 			// append returns a slice of its first argument's element type.
