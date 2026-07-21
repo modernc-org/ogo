@@ -263,6 +263,12 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		return false
 	case prev == PERIOD || curr == PERIOD:
 		return false
+	// Inside an index or slice subscript, gofmt renders binary operators tight to
+	// keep it compact ("xs[:n+1]", "a[i+1]", "xs[a+b*c]", "xs[a&b]"). Commas (in a
+	// call), ":" and the brackets are handled by the cases above; this covers the
+	// add- and mul-level operators the rules below would otherwise space.
+	case c.inIndex && (isAddOp(prev) || isAddOp(curr) || isMulOp(prev) || isMulOp(curr)):
+		return false
 	// Unambiguous unary operators never need a space after them
 	case prev == NOT || prev == TILDE:
 		return false
@@ -532,6 +538,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					// These braces are a block's, however deep inside a composite
 					// literal they sit -- a function literal given as an element.
 					c.inLiteralBraces = false
+					// A block resets subscript depth, so the tight-operator rule for an
+					// index does not reach into a statement body nested inside one.
+					c.inIndex = false
 				case CaseClause, CommClause:
 					c.indentLevel++
 				case SwitchStmt, SelectStmt:
