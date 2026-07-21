@@ -746,3 +746,49 @@ func run() {
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatLeadingUnary pins that a unary operator binds tight to its operand at
+// the start of a statement ("*p = x", "<-ch") and after an assignment operator
+// ("x = *p"), while binary multiplication keeps its spaces and its grouping
+// ("2 * 3", "a*q + 1"). A statement-leading "*" used to be read as multiplication
+// against the previous statement's last token (a skipped synthetic semicolon left
+// the token history stale), and "= *p" lost its space when the RHS had an AddOp.
+func TestFormatLeadingUnary(t *testing.T) {
+	const in = `func run(ch chan int, q *int) {
+<-ch
+* q = 3
+x := <- ch
+_ = x
+* q =*q + 1
+a := 2 * 3
+b := a*q + 1
+_ = b
+}
+`
+	const want = `func run(ch chan int, q *int) {
+	<-ch
+	*q = 3
+	x := <-ch
+	_ = x
+	*q = *q + 1
+	a := 2 * 3
+	b := a*q + 1
+	_ = b
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("leading-unary spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}

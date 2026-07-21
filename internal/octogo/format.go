@@ -288,6 +288,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 
 	case isAssignOp(curr) || isRelOp(curr):
 		return true
+	case isAssignOp(prev):
+		// Always a space after an assignment operator, even before a unary operand
+		// ("x = *p", "x = -1"); the mul/add grouping below would otherwise swallow it
+		// when the right-hand side contains an AddOp.
+		return true
 	case isAddOp(curr) || isAddOp(prev):
 		return true
 	case isMulOp(curr) || isMulOp(prev):
@@ -637,6 +642,12 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				case SEMICOLON:
 					if len(src) == 0 {
 						syntheticSep = append(syntheticSep[:0], sep...)
+						// A synthetic semicolon is not emitted, but it still ends a
+						// statement: advance the token history as a real ";" would, so a
+						// leading operator in the next statement is not classified against
+						// the previous statement's last token (e.g. "*p" read as a product).
+						f.prevPrevTok = f.prevTok
+						f.prevTok = SEMICOLON
 						break outer
 					}
 				case LBRACE:
