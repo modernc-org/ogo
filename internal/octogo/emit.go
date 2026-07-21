@@ -4807,6 +4807,16 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				return true
 			}
 		}
+		if _, isUser := e.funcRet[recv]; !isUser && isBuiltinFuncName(recv) {
+			// A predeclared builtin the emitter does not implement. The checker
+			// exempts every builtin name from its undefined check, so one not handled
+			// above (len, cap, append, copy, make; print/println via emitCall) would
+			// otherwise fall through and emit a call to a C function that does not
+			// exist -- as copy silently did. Refuse it by name. A user function of the
+			// same name (funcRet holds it) shadows the builtin and is emitted below.
+			e.fail("the %s builtin is not supported yet", recv)
+			return true
+		}
 		e.emit(recv + "(")
 		e.emitCallArgs(suffix[0].ast)
 		e.emit(")")

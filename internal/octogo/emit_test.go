@@ -1756,6 +1756,55 @@ func TestEmitCCopy(t *testing.T) {
 	}
 }
 
+// TestEmitCUnsupportedBuiltins pins that a predeclared builtin the emitter does not
+// implement is refused by name rather than emitted as a call to a nonexistent C
+// function, which is what copy silently did before it was implemented. The checker
+// exempts every builtin name from its undefined check, so the emitter is the only
+// place this can be caught. A user function that shadows a builtin name is a real
+// call and must still emit.
+func TestEmitCUnsupportedBuiltins(t *testing.T) {
+	refused := map[string]string{
+		"min":     "func main() {\n\tprintln(min(3, 5))\n}\n",
+		"max":     "func main() {\n\tprintln(max(3, 5))\n}\n",
+		"panic":   "func main() {\n\tpanic(\"boom\")\n}\n",
+		"delete":  "func main() {\n\tvar m int\n\tdelete(m, 1)\n}\n",
+		"recover": "func main() {\n\trecover()\n}\n",
+	}
+	for name, src := range refused {
+		t.Run(name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			if err == nil {
+				t.Fatalf("EmitC accepted the unimplemented %s builtin:\n%s", name, buf.String())
+			}
+			if want := "the " + name + " builtin is not supported yet"; !strings.Contains(err.Error(), want) {
+				t.Errorf("EmitC error %q does not name the %s builtin", err, name)
+			}
+		})
+	}
+
+	t.Run("user shadow", func(t *testing.T) {
+		src := "func min(a int, b int) int {\n\tif a < b {\n\t\treturn a\n\t}\n\treturn b\n}\n\nfunc main() {\n\tprintln(min(3, 5))\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		var buf bytes.Buffer
+		if err := EmitC(pkg, &buf); err != nil {
+			t.Fatalf("EmitC refused a user function shadowing a builtin: %v", err)
+		}
+		if !strings.Contains(buf.String(), "min(3, 5)") {
+			t.Errorf("expected a real call to the user min:\n%s", buf.String())
+		}
+	})
+}
+
 // TestEmitCSliceInfer pins short-declaration slice inference: "s := a[1:4]" gives s
 // a slice type (not its element's), so it can be indexed and re-sliced ("s2 :=
 // s[1:]"). Previously the checker mis-typed s as a scalar and rejected s[i].
