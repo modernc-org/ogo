@@ -84,6 +84,19 @@ func main() {
 		want: "[true false true]\n[1 2 3]\n[a bc]\n[7 0 -9]\n[4000000000]\n",
 	},
 	{
+		// A slice printed only with the no-newline form defines just its print
+		// helper -- no unused ogo_println_slice_int, which -Wall -Wextra rejects.
+		// print writes no trailing newline, so the following println ends the line.
+		name: "print a slice without a newline",
+		src: `func main() {
+	xs := []int{1, 2, 3}
+	print(xs)
+	println(9)
+}
+`,
+		want: "[1 2 3]9\n",
+	},
+	{
 		// A composite literal builds a struct value from its fields in declaration
 		// order. It may appear anywhere an expression may except the top level of a
 		// control-flow header, where its "{" would be the block (see the grammar).

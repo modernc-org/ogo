@@ -952,7 +952,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1110,19 +1110,31 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	}
 	// The per-element slice printers render "[e0 e1 ...]"; the newline form defers
 	// to the plain one and adds a trailing '\n'. They reference the slice typedef
-	// emitted above and <stdio.h> (pulled in wherever a print is emitted).
-	for _, el := range sortedKeys(e.printSliceElems) {
+	// emitted above and <stdio.h> (pulled in wherever a print is emitted). The plain
+	// helper is emitted whenever an element is printed either way (the newline form
+	// calls it); the newline helper only when a println of that element occurs, so a
+	// print with no matching println leaves no unused function behind.
+	printElems := map[string]bool{}
+	for el := range e.printSliceElems {
+		printElems[el] = true
+	}
+	for el := range e.printlnElems {
+		printElems[el] = true
+	}
+	for _, el := range sortedKeys(printElems) {
 		fmt.Fprintf(&helperDefs, "static void %s(%s s) {\n"+
 			"\tprintf(\"[\");\n"+
 			"\tfor (int _i = 0; _i < s.len; _i++) {\n"+
 			"\t\tif (_i) printf(\" \");\n"+
 			"\t\t%s\n"+
 			"\t}\n"+
-			"\tprintf(\"]\");\n}\n"+
-			"static void %s(%s s) { %s(s); printf(\"\\n\"); }\n",
+			"\tprintf(\"]\");\n}\n",
 			printSliceCName(el), sliceCName(el),
-			sliceElemPrintf(el),
-			printlnSliceCName(el), sliceCName(el), printSliceCName(el))
+			sliceElemPrintf(el))
+		if e.printlnElems[el] {
+			fmt.Fprintf(&helperDefs, "static void %s(%s s) { %s(s); printf(\"\\n\"); }\n",
+				printlnSliceCName(el), sliceCName(el), printSliceCName(el))
+		}
 	}
 	if helperDefs.Len() != 0 {
 		out.Write(helperDefs.Bytes())
@@ -1184,7 +1196,8 @@ type emitter struct {
 	inlineSliceDefs  map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
 	appendElems      map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems   map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
-	printSliceElems  map[string]bool          // element C types needing the ogo_print_slice_<T> / ogo_println_slice_<T> helpers
+	printSliceElems  map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
+	printlnElems     map[string]bool          // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers           []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
 	inSwitchCase     bool                     // emitting a switch case body, where the if/else lowering gives break a different meaning
 	deferBlockDepth  int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
@@ -5025,19 +5038,22 @@ func (e *emitter) emitPrintOne(newline bool, arg Node) {
 
 // emitPrintSlice emits a call to the ogo_print_slice_<T> / ogo_println_slice_<T>
 // helper for element type elem, with the slice-header argument written by emitArg.
-// Only integer elements are printable for now; anything else fails honestly rather
-// than emitting a wrong %d.
+// The element must be scalar-printable (canPrintElem); anything else fails honestly
+// rather than emitting a wrong %d. The two forms are tracked apart so only the
+// helpers actually called are defined -- a print without a matching println must
+// not leave an unused ogo_println_slice_<T> behind.
 func (e *emitter) emitPrintSlice(newline bool, elem string, emitArg func()) {
 	if !e.canPrintElem(elem) {
 		e.fail("printing a slice or array of %q is not supported yet", elem)
 		return
 	}
 	e.needSlice(elem)
-	e.printSliceElems[elem] = true
 	e.ind()
 	if newline {
+		e.printlnElems[elem] = true
 		e.emit(printlnSliceCName(elem) + "(")
 	} else {
+		e.printSliceElems[elem] = true
 		e.emit(printSliceCName(elem) + "(")
 	}
 	emitArg()
