@@ -34,20 +34,30 @@ func SubCommand(args []string) int {
 	return loadp2lib.Main(append([]string{"loadp2"}, args...))
 }
 
-// Options configures a load driven by `ogo run` / `ogo test`. The zero value
-// loads Binary with loadp2's defaults (115200 baud, auto-detected port).
 // DefaultUserBaud is the -b user baud rate Load uses when Options.UserBaud is 0.
-// flexcc-emitted P2 programs print at 230400 (verified on hardware 2026-07-15),
-// so this matches the emitted serial out of the box — unlike loadp2's own
-// default of 115200, which garbles that output. Faster rates near 1 Mbps (e.g.
-// 921600) also work in practice but are host/USB-adapter dependent, so 230400 is
-// the portable default; callers override via Options.UserBaud.
+// flexcc-emitted P2 programs print at 230400 (verified on hardware), so this
+// matches the emitted serial out of the box — unlike loadp2's own default of
+// 115200, which garbles that output. Faster rates near 1 Mbps (e.g. 921600) also
+// work in practice but are host/USB-adapter dependent, so 230400 is the portable
+// default; callers override via Options.UserBaud.
 const DefaultUserBaud = 230400
+
+// DefaultClockHz is the -f clock frequency Load uses when Options.ClockHz is 0.
+// It is the load-bearing default: loadp2's own default leaves the P2 on its
+// imprecise internal RC oscillator, so the flexcc serial timing
+// (bitperiod = clkfreq / baud) drifts and the output is garbled at EVERY read
+// baud — the single most likely "ogo run does nothing / prints garbage" report.
+// Passing a real frequency makes loadp2 lock the crystal PLL, so the serial is
+// accurate. 200 MHz assumes the standard 20 MHz P2 crystal (P2-EC / Edge and most
+// boards) and is verified clean on hardware; a board with a different crystal
+// overrides via Options.ClockHz.
+const DefaultClockHz = 200_000_000
 
 type Options struct {
 	Binary   string   // path to the .binary to load (required)
 	Port     string   // -p serial port; empty lets loadp2 auto-detect
 	UserBaud int      // -b user baud rate; 0 = DefaultUserBaud (230400)
+	ClockHz  int      // -f clock frequency; 0 = DefaultClockHz (200 MHz)
 	Verbose  bool     // -v verbose loader output
 	Quiet    bool     // -q quiet mode, watch for the program's exit sequence (ogo test)
 	Terminal bool     // -t enter interactive terminal after load (ogo run)
@@ -62,17 +72,21 @@ func Load(o Options) int {
 }
 
 // buildArgs turns o into a loadp2 argv (including argv[0] "loadp2"). A zero
-// Options.UserBaud resolves to DefaultUserBaud (230400), matching the baud of
-// flexcc-emitted programs (verified on P2 hardware 2026-07-15).
-//
-// TODO: exact flag ordering (notably -t/-e/-a relative to the filespec) should
-// be validated against real hardware when `ogo run`/`ogo test` are wired; the
-// current order follows loadp2's documented usage.
+// Options.UserBaud resolves to DefaultUserBaud (230400) and a zero
+// Options.ClockHz to DefaultClockHz (200 MHz), so a load driven by ogo run gets
+// a precise clock and a matching read baud out of the box (both verified on P2
+// hardware). The -f is what makes the emitted serial readable at all; see
+// DefaultClockHz.
 func buildArgs(o Options) []string {
 	args := []string{"loadp2"}
 	if o.Port != "" {
 		args = append(args, "-p", o.Port)
 	}
+	clock := o.ClockHz
+	if clock == 0 {
+		clock = DefaultClockHz
+	}
+	args = append(args, "-f", strconv.Itoa(clock))
 	baud := o.UserBaud
 	if baud == 0 {
 		baud = DefaultUserBaud

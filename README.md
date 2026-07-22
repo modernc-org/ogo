@@ -105,6 +105,15 @@ example `ogo help build` — for one command's flags and detail. A typical sessi
 2. Run `ogo build blinky/` to compile and generate your P2 binary.
 3. Run `ogo run blinky/` to compile it, load it onto a connected board and open a terminal.
 
+> **Seeing garbled serial output?** `ogo run` sets a precise 200 MHz clock and
+> reads at 230400 baud, so `println` output is readable out of the box. If you
+> load with the raw `ogo loadp2` passthrough instead, it uses loadp2's own
+> defaults — which leave the P2 on its imprecise internal oscillator, so the
+> output is garbled at *every* baud. Pass a real clock and the matching baud:
+> `ogo loadp2 -f 200000000 -b 230400 -t prog.binary` (the `-f` is the key part;
+> `200000000` assumes the usual 20 MHz P2 crystal — use your board's value if it
+> differs). This is a P2 clocking detail, not an ogo bug.
+
 ## **Language Specification**
 
 The language is specified in the package documentation:

@@ -184,7 +184,9 @@ Runtime checks for out-of-range indexing and division by zero are on by default.
 	"run": `usage: ogo run [--release] [--unchecked] [package | file.ogo ...]
 
 Run builds a package exactly as ogo build does, loads the binary onto a connected
-Propeller 2 and opens a terminal on its serial output.
+Propeller 2 and opens a terminal on its serial output. It sets a precise 200 MHz
+clock and reads at 230400 baud, so println output is readable out of the box (a
+board with a non-standard crystal needs "ogo loadp2" with an explicit -f).
 
 Press Ctrl-] to leave the terminal.
 
@@ -209,6 +211,12 @@ loadp2's own flag grammar applies rather than ogo's. Run it without arguments fo
 loadp2's usage.
 
 The loader is built in; no separate loadp2 installation is needed.
+
+Unlike "ogo run", this passthrough uses loadp2's own defaults, which leave the P2
+on its imprecise internal oscillator and read at 115200 -- so a program's println
+output is garbled at every baud. To see it, set a real clock and the matching
+baud, e.g. "ogo loadp2 -f 200000000 -b 230400 -t prog.binary" (200000000 assumes
+the usual 20 MHz crystal). "ogo run" does this for you.
 
 On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
 (git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the terminal's

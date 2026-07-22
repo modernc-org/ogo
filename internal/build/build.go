@@ -31,7 +31,12 @@ func Build(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error
 }
 
 // Run implements `ogo run <file.ogo>`: build, then load and run on a connected
-// P2 board with an interactive terminal (loadp2 -t at the default baud).
+// P2 board with an interactive terminal. It loads with a precise crystal clock
+// (loadp2 -f, 200 MHz) and a matching 230400 read baud so the program's serial
+// output is readable out of the box — see internal/loadp2.DefaultClockHz for why
+// the clock, not just the baud, is the load-bearing setting. A board with a
+// non-standard crystal, or a program that reconfigures its serial, needs the raw
+// `ogo loadp2` passthrough with explicit -f/-b instead.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	bin, code, err := compile(args, stdout, stderr)
 	if err != nil || code != 0 {
