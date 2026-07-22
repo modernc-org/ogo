@@ -232,11 +232,14 @@ still design-only.
   backend and runs it on a real P2, gated on `OGO_BOARD_PORT` (`make board`).
   The second exists because flexcc and gcc have been observed to disagree on
   semantics, not just warnings -- a host-green emit feature is not verified.
-- `smith` is seed-reproducible: `ogo smith -seed N` emits the same program every
-  run (the last non-determinism, map-iteration order in `Scope.GetSymbolsOfType`,
-  was sorted). Its generator still has separate bugs -- it can emit programs that
-  reference an out-of-scope loop variable or call the unimplemented `panic`, so a
-  generated program does not always compile yet.
+- `smith` is seed-reproducible and generates compilable, self-checking programs.
+  `ogo smith -seed N` emits the same program every run (the last non-determinism,
+  map-iteration order in `Scope.GetSymbolsOfType`, was sorted), and `TestOracle`
+  (`internal/smith/oracle_test.go`) generates a fixed seed corpus, compiles each
+  to C and runs it on the host shim, so a miscompile (the program panics on a
+  checksum mismatch) or a generator regression fails the test. The earlier
+  out-of-scope-loop-variable, bare-block and `panic` gaps that kept generated
+  programs from compiling are fixed. Widen `oracleSeeds` to hunt for new bugs.
 
 ## Test conventions
 
