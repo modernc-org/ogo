@@ -702,6 +702,50 @@
 //	CallSuffix = "(" [ ArgumentList ] ")" .
 //	ArgumentList = Expression { "," Expression } .
 //
+// # Built-in functions
+//
+// A few functions are predeclared: they are called like ordinary functions but
+// belong to no package and need no import. Constrained to fit a zero-allocation,
+// no-GC target, the set OctoGo implements today is:
+//
+//	len(s)              length of a string, array or slice
+//	cap(s)              capacity of a slice (the length of its backing array)
+//	make([]T, n[, m])   a length-n, capacity-m slice over a fresh backing array
+//	append(s, x)        append one element to a slice
+//	copy(dst, src)      copy elements between two slices, returning the count
+//	clear(s)            set every element of a slice to its zero value
+//	min(x, y, …)        the smallest of its ordered arguments
+//	max(x, y, …)        the largest of its ordered arguments
+//	print(args…)        write the arguments to the serial console
+//	println(args…)      like print, but space-separated and newline-terminated
+//
+// The names are predeclared in the universe block, so a local or package-level
+// declaration of the same name shadows the built-in — min, max and clear are the
+// likely collisions.
+//
+// make and append are where the fixed-memory model shows through. make performs
+// no heap allocation: it reserves a backing array whose size is fixed at compile
+// time, so n and m must be constants, and it is admitted only as the initializer
+// of a slice variable, "var s []T = make([]T, n, m)"; the two-argument form
+// "make([]T, n)" sets the capacity equal to the length. append adds a single
+// element and cannot grow a slice past its capacity, so it has two forms: the
+// one-result form "s = append(s, x)" traps at run time if the element does not
+// fit, while the two-result form "s, ok = append(s, x)" never traps and reports
+// through ok whether the element was appended. copy copies min(len(dst),
+// len(src)) elements between two slices of the same element type — which may
+// overlap — and yields that count. clear zeroes a slice's elements in place.
+//
+// print and println are the only I/O built-ins; they write to the board's serial
+// output. Each takes any number of arguments, either scalar values or a whole
+// slice or array of a scalar element type. println separates its arguments with a
+// space and ends with a newline; print writes them adjacently with no terminator.
+//
+// The other Go built-ins are recognized by the checker but not yet emitted:
+// close, complex, delete, imag, panic, real and recover each report "the X
+// built-in is not supported yet". The exception is new, which — together with
+// every make form other than the slice form above — is rejected outright as
+// "dynamic allocation not supported", a heap having no place on the target.
+//
 // # Statements
 //
 // Statements control execution.
