@@ -64,6 +64,15 @@ const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\
 const stringHelpers = "static inline void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
 	"static inline void ogo_println_str(ogo_string s) { printf(\"%.*s\\n\", s.len, s.str); }\n"
 
+// stringEqHelper compares two ogo_string values by content, as Go's == does. The
+// byte loop avoids a memcmp (and its <string.h>); a string here is never long
+// enough for that to matter.
+const stringEqHelper = "static inline int ogo_string_eq(ogo_string a, ogo_string b) {\n" +
+	"\tif (a.len != b.len) return 0;\n" +
+	"\tfor (int i = 0; i < a.len; i++) if (a.str[i] != b.str[i]) return 0;\n" +
+	"\treturn 1;\n" +
+	"}\n"
+
 // sliceTypePrefix leads the C typedef name of an OctoGo slice `[]T`: a { pointer,
 // length, capacity } header (`T* ptr; int len; int cap`) named per element type,
 // e.g. []int -> ogo_slice_int, []*Point -> ogo_slice_Point_ptr. Like ogo_string it
@@ -1089,6 +1098,10 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(stringHelpers)
 		out.WriteByte('\n')
 	}
+	if e.usesStringEq {
+		out.WriteString(stringEqHelper)
+		out.WriteByte('\n')
+	}
 	// Runtime helpers: the panic routine, then the per-element append helpers (the
 	// trapping form and the ok form), after the typedefs they reference.
 	var helperDefs bytes.Buffer
@@ -1260,6 +1273,7 @@ type emitter struct {
 	declInit         bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
 	usesString       bool                     // an ogo_string type/literal appears: emit stringTypedef
 	usesStringPrint  bool                     // a string is printed: emit stringHelpers
+	usesStringEq     bool                     // a string == / != appears: emit ogo_string_eq
 	err              error
 }
 
@@ -4760,10 +4774,21 @@ func (e *emitter) caseHead(cc []int32) (exprs []Node, isDefault bool) {
 // of the case expressions (`guard == a || guard == b`); for an expression switch
 // (guardVar ""), the case expressions are themselves the conditions (`a || b`).
 func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
+	// A string switch compares the guard against each case by content, not with C's
+	// `==` on the { ptr, len } struct (see emitStringEq).
+	stringGuard := guardVar != "" && (e.locals[guardVar] == cString || e.globals[guardVar] == cString)
 	e.emit("(")
 	for i, ex := range exprs {
 		if i != 0 {
 			e.emit(" || ")
+		}
+		if stringGuard {
+			e.usesString = true
+			e.usesStringEq = true
+			e.emit("ogo_string_eq(" + guardVar + ", ")
+			e.emitExpr(ex.ast)
+			e.emit(")")
+			continue
 		}
 		if guardVar != "" {
 			e.emit(guardVar + " == ")
@@ -4863,8 +4888,12 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 	// A condition is the Expression's children directly (not a wrapped Expression
 	// node), so route them through emitLogicalKids for the same && / || grouping an
 	// Expression operand gets, keeping gcc's -Wparentheses quiet in `if a && b || c`.
+	// The C `if`/`while` parentheses stay in place around a lowered string compare.
 	e.emit("(")
-	e.emitLogicalKids(slices.Collect(it(exprChildren)))
+	kids := slices.Collect(it(exprChildren))
+	if !e.emitStringEq(kids) {
+		e.emitLogicalKids(kids)
+	}
 	e.emit(")")
 }
 
@@ -6864,9 +6893,45 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 // operator precedence differs (notably Go binds << tighter than C does).
 // Integer-literal text is normalized for C by normalizeIntLit.
 func (e *emitter) emitExpr(ast []int32) {
-	for n := range it(ast) {
+	kids := slices.Collect(it(ast))
+	// A condition or assignment RHS reaches here as the Expression's unwrapped
+	// children, so a string comparison must be recognized on this flat list too --
+	// emitExprNode's Expression case only fires for a wrapped Expression node.
+	if e.emitStringEq(kids) {
+		return
+	}
+	for _, n := range kids {
 		e.emitExprNode(n)
 	}
+}
+
+// emitStringEq lowers a standalone string equality -- kids being exactly
+// "operand (== | !=) operand" with string operands -- to the ogo_string_eq helper,
+// returning true when it did. C cannot compare the { ptr, len } structs and Go
+// compares contents. A string comparison nested in a larger || / && chain is not a
+// three-node list, so it falls through (and the backend rejects it, as before).
+func (e *emitter) emitStringEq(kids []Node) bool {
+	if len(kids) != 3 || kids[1].sym != RelOp {
+		return false
+	}
+	op := e.opText(kids[1].ast)
+	if op != "==" && op != "!=" {
+		return false
+	}
+	if ct, ok := e.inferCType(kids[0].ast); !ok || ct != cString {
+		return false
+	}
+	e.usesString = true
+	e.usesStringEq = true
+	if op == "!=" {
+		e.emit("!")
+	}
+	e.emit("ogo_string_eq(")
+	e.emitExprNode(kids[0])
+	e.emit(", ")
+	e.emitExprNode(kids[2])
+	e.emit(")")
+	return true
 }
 
 // emitLogicalKids emits the operand/operator children of an Expression or
@@ -6937,6 +7002,11 @@ func (e *emitter) emitExprNode(n Node) {
 				return
 			}
 			e.fail("string concatenation with a non-constant operand needs allocation, which the target does not have")
+			return
+		}
+		// A standalone string equality is a content compare (see emitStringEq); a C
+		// `==` on the { ptr, len } struct is not valid.
+		if e.emitStringEq(kids) {
 			return
 		}
 		e.emit("(")
