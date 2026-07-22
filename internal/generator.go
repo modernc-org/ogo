@@ -41,21 +41,36 @@ const (
 	// `rm -rf flexprop flexprop_install`, rerun `go generate`, then update the flexcc
 	// --help golden in internal/flexcc/all_test.go.
 	//
-	// Two backends are generated from this pin: linux/amd64 natively (the default)
-	// and windows/amd64 cross-compiled on a linux/amd64 host with MinGW
+	// Four backends are generated from this pin. linux/amd64 natively (the default).
+	// windows/amd64 cross-compiled on a linux/amd64 host with MinGW
 	// (TARGET_GOOS=windows TARGET_GOARCH=amd64 go run generator.go; needs
-	// x86_64-w64-mingw32-gcc and the ccgo CLI on PATH). See transpileWindows.
+	// x86_64-w64-mingw32-gcc and the ccgo CLI on PATH; see transpileWindows).
+	// darwin/arm64 and darwin/amd64 natively on a darwin host (arm64 directly;
+	// amd64 on an arm64 mac under Rosetta 2 with the amd64 go+ccgo toolchain via
+	// `arch -x86_64`; needs clang and the homebrew gmake/gsed; see transpileDarwin).
 	flexpropRef = "v7.7.0"
 	installDir  = "flexprop_install"
 )
 
 var (
-	gmake  = "make"
+	// gmake/gsed are GNU make and GNU sed. The main2lib seds use GNU-only syntax
+	// (\<, \(...\)) and the flexprop Makefile assumes GNU make, so on darwin -- where
+	// /usr/bin/{make,sed} are BSD -- the homebrew g-prefixed tools are used instead.
+	gmake  = gnuTool("make", "gmake")
 	goarch = env("TARGET_GOARCH", env("GOARCH", runtime.GOARCH))
 	goos   = env("TARGET_GOOS", env("GOOS", runtime.GOOS))
-	gsed   = "sed"
+	gsed   = gnuTool("sed", "gsed")
 	target = fmt.Sprintf("%s/%s", goos, goarch)
 )
+
+// gnuTool returns gnu on a darwin host (where the base tool is the BSD variant) and
+// dflt elsewhere (where it is already GNU).
+func gnuTool(dflt, gnu string) string {
+	if runtime.GOOS == "darwin" {
+		return gnu
+	}
+	return dflt
+}
 
 func fail(rc int, msg string, args ...any) {
 	fmt.Fprintln(os.Stderr, strings.TrimSpace(fmt.Sprintf(msg, args...)))
@@ -101,7 +116,7 @@ func main() {
 	}
 
 	switch target {
-	case "linux/amd64", "windows/amd64":
+	case "linux/amd64", "windows/amd64", "darwin/amd64", "darwin/arm64":
 		// ok
 	default:
 		fail(1, "unsupported target: %s", target)
@@ -153,6 +168,8 @@ func main() {
 	switch goos {
 	case "windows":
 		flexccGoSrc = transpileWindows(wd)
+	case "darwin":
+		flexccGoSrc = transpileDarwin(wd)
 	default:
 		flexccGoSrc = transpileLinux(wd, flexccDir)
 	}
@@ -343,6 +360,67 @@ func transpileWindows(wd string) string {
 		fail(1, "windows: ccgo cross-transpile: err=%v", err)
 	}
 	return filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc_windows.go")
+}
+
+// transpileDarwin transpiles flexcc for darwin natively on a darwin host --
+// darwin/arm64 directly, darwin/amd64 on an arm64 mac under Rosetta 2 (run the
+// generator with the amd64 go+ccgo toolchain under `arch -x86_64`, per cron2.sh).
+// It mirrors transpileWindows rather than transpileLinux: a native `gmake` (real
+// clang) produces the generated C sources, then a single direct ccgo pass over the
+// whole flexcc link unit compiles it with clang for the darwin headers/predefines.
+//
+// `-exec make` is avoided for the same reason as windows -- in exec mode ccgo would
+// also transpile the flexspin host tool, dragging the macOS system/Mach headers
+// through modernc.org/cc, which trips on their over-aligned and framework types.
+// The P2 include tree and license are target-independent (produced by
+// transpileLinux), so this path leaves the committed copies untouched.
+func transpileDarwin(wd string) string {
+	spin2cppDir := filepath.Join(cloneDir, "spin2cpp")
+
+	// Phase 1: native build so the bison grammars (build/*.tab.c) and the xxd'd
+	// sys/*.spin.h exist before ccgo reads them. See transpileWindows phase 1.
+	if err := shell(spin2cppDir, gmake, "clean"); err != nil {
+		fail(1, "darwin: make clean: err=%v", err)
+	}
+	if err := shell(spin2cppDir, gmake, "OPT=-O1"); err != nil {
+		fail(1, "darwin: native make: err=%v", err)
+	}
+
+	// Phase 2: transpile just the flexcc link unit with clang for the darwin
+	// headers/predefines. The flag set matches transpileWindows' (and so
+	// transpileLinux's) apart from the toolchain: --cpp clang instead of MinGW, and
+	// none of the windows-only intrinsic guard. -ignore-link-errors leaves the libc
+	// symbols modernc.org/libc lacks or stubs on darwin as bare package-level names
+	// for flexcc/supplement_darwin.go to define.
+	args := []string{
+		"--goos", "darwin", "--goarch", goarch,
+		"--cpp", "clang",
+
+		"--prefix-enumerator=_",
+		"--prefix-external=x__",
+		"--prefix-macro=m_",
+		"--prefix-static-internal=s__",
+		"--prefix-static-none=s__",
+		"--prefix-tagged-enum=_",
+		"--prefix-tagged-struct=_",
+		"--prefix-tagged-union=_",
+		"--prefix-typename=_",
+		"--prefix-undefined=_",
+		"-DNDEBUG",
+		"-DFLEXSPIN_BUILD",
+		"-O1",
+		"-I.", "-I./backends", "-I./frontends", "-Ibuild",
+		"-extended-errors",
+		"-ignore-link-errors",
+		"-ignore-unsupported-alignment",
+		"-eval-all-macros",
+		"-o", "build/flexcc_darwin.go",
+	}
+	args = append(args, resolveFlexccSources(spin2cppDir)...)
+	if err := shell(spin2cppDir, "ccgo", args...); err != nil {
+		fail(1, "darwin: ccgo transpile: err=%v", err)
+	}
+	return filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc_darwin.go")
 }
 
 // flexccVPATH mirrors the spin2cpp Makefile's VPATH: the directories, in search
