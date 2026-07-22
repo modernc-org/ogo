@@ -12,10 +12,11 @@
 //
 // loadp2 drives the process's real stdio, serial ports and controlling terminal
 // and keeps global state; lib.Main locks the OS thread for the call and is not
-// safe for concurrent use. Like the flexcc backend it is built for linux/amd64
-// and windows/amd64; on other targets lib.Main reports the unsupported target and
-// returns non-zero. On windows the serial/terminal commands (ogo run, ogo loadp2)
-// need a native console -- cmd.exe or PowerShell, not git-bash/MSYS2/Cygwin.
+// safe for concurrent use. Like the flexcc backend it is built for linux/amd64,
+// windows/amd64 and darwin (amd64 + arm64); on other targets lib.Main reports the
+// unsupported target and returns non-zero. On windows the serial/terminal commands
+// (ogo run, ogo loadp2) need a native console -- cmd.exe or PowerShell, not
+// git-bash/MSYS2/Cygwin.
 package loadp2
 
 import (

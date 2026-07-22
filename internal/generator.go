@@ -386,6 +386,27 @@ func transpileDarwin(wd string) string {
 		fail(1, "darwin: native make: err=%v", err)
 	}
 
+	// clang predefines MACOSX on macOS, so lexer.c pulls <mach-o/dyld.h> (for
+	// _NSGetExecutablePath, used to find the install dir) -- which drags in
+	// <mach/message.h>, whose structs modernc.org/cc cannot size ("struct changed
+	// size unexpectedly"). flexcc gets its includes from the embedded P2 tar, so the
+	// executable path is unused; shadow the header with a minimal shim that declares
+	// only _NSGetExecutablePath, on an -I dir searched before the SDK. The symbol
+	// resolves via flexcc/supplement_darwin.go.
+	shimDir := filepath.Join(spin2cppDir, ".ccgo-shim")
+	if err := os.MkdirAll(filepath.Join(shimDir, "mach-o"), 0o755); err != nil {
+		fail(1, "darwin: mkdir shim: err=%v", err)
+	}
+	const dyldShim = `#ifndef _CCGO_MACH_O_DYLD_SHIM_H
+#define _CCGO_MACH_O_DYLD_SHIM_H
+#include <stdint.h>
+int _NSGetExecutablePath(char *buf, uint32_t *bufsize);
+#endif
+`
+	if err := os.WriteFile(filepath.Join(shimDir, "mach-o", "dyld.h"), []byte(dyldShim), 0o644); err != nil {
+		fail(1, "darwin: write dyld shim: err=%v", err)
+	}
+
 	// Phase 2: transpile just the flexcc link unit with clang for the darwin
 	// headers/predefines. The flag set matches transpileWindows' (and so
 	// transpileLinux's) apart from the toolchain: --cpp clang instead of MinGW, and
@@ -409,6 +430,14 @@ func transpileDarwin(wd string) string {
 		"-DNDEBUG",
 		"-DFLEXSPIN_BUILD",
 		"-O1",
+		// macOS <sys/cdefs.h> defaults _FORTIFY_SOURCE to 2, rewriting str/mem calls
+		// to __builtin___*_chk fortify builtins that ccgo emits as unresolved iqlibc
+		// helpers. Linux at these flags does not fortify; -D_FORTIFY_SOURCE=0 (the
+		// header keys off the level, so this must be a define, not -U -- which the
+		// header would just re-default back to 2) makes both backends use the plain,
+		// libc-backed calls.
+		"-D_FORTIFY_SOURCE=0",
+		"-I", ".ccgo-shim", // must precede the SDK: shadows <mach-o/dyld.h>
 		"-I.", "-I./backends", "-I./frontends", "-Ibuild",
 		"-extended-errors",
 		"-ignore-link-errors",
@@ -836,6 +865,24 @@ func main2lib(destFn, srcFn string) {
 		"-e", `s/libc.Xprintf(tls,/printf(tls, cc,/g`,
 		"-e", `s/libc.Xrealloc(tls,/realloc(tls, cc,/g`,
 		"-e", `s/libc.Xvfprintf(tls,/vfprintf(tls, cc,/g`,
+	}
+
+	// strupr and strrev come from util/ only on darwin (linux and windows resolve
+	// them to libc), so only there do they get *CC-threaded -- and the threading
+	// mis-forms their signature into `(tls, cc *libc.TLS, ...)` (both params typed
+	// *libc.TLS) instead of `(tls *libc.TLS, cc *CC, ...)`. The bodies are correct;
+	// only these two leaf signatures need the type split restored.
+	if goos == "darwin" {
+		sedArgs = append(sedArgs,
+			"-e", `s/func x__strupr(tls, cc \*libc.TLS,/func x__strupr(tls *libc.TLS, cc *CC,/`,
+			"-e", `s/func x__strrev(tls, cc \*libc.TLS,/func x__strrev(tls *libc.TLS, cc *CC,/`,
+
+			// Redirect the two libc functions that are panic(todo()) stubs for darwin
+			// to the hand-written implementations in supplement_darwin.go. On linux
+			// these are real libc entries and must not be rewritten.
+			"-e", `s/libc.Xungetc(tls,/xUngetc(tls,/g`,
+			"-e", `s/libc.Xabort(tls)/xAbort(tls)/g`,
+		)
 	}
 
 	// The windows backend needs fixups the linux one does not, so they are gated on

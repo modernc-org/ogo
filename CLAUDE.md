@@ -79,12 +79,13 @@ inputs, and never hand-edit the outputs.
 
 3. **flexcc backend.** `internal/flexcc/ccgo_<goos>_<goarch>.go` (~12 MB, ~455k
    lines each) is the flexspin/flexcc C compiler transpiled to Go by
-   `modernc.org/ccgo`. Two targets are committed — `ccgo_linux_amd64.go` and
-   `ccgo_windows_amd64.go` — plus `ccgo.go`, the byte-identical decls `undup`
-   (`modernc.org/undup`) folds out of both under a shared build tag. The fold is
-   only ~1.03x here: the LP64 linux and LLP64 windows transpiles share almost no
-   decls byte-for-byte (unlike loadp2, whose ~2x comes from its same-ABI
-   linux/amd64+arm64 pair). Do not hand-edit any of the three. `internal/generator.go`
+   `modernc.org/ccgo`. Four targets are committed — `ccgo_linux_amd64.go`,
+   `ccgo_windows_amd64.go`, `ccgo_darwin_arm64.go` and `ccgo_darwin_amd64.go` —
+   plus `ccgo.go`, the byte-identical decls `undup` (`modernc.org/undup`) folds out
+   of all of them under a shared build tag. The fold is only ~1.05x here: the LP64
+   linux, LLP64 windows and LP64 darwin transpiles share almost no decls
+   byte-for-byte (unlike loadp2, whose ~2x comes from its same-ABI linux/amd64+arm64
+   pair). Do not hand-edit any of them. `internal/generator.go`
    (build-tagged `//go:build
    ignore`) drives both: it clones `totalspectrum/flexprop` (pinned to tag
    **`v7.7.0`** via the `flexpropRef` constant), applies `internal/mcpp_main.c.diff`,
@@ -94,17 +95,29 @@ inputs, and never hand-edit the outputs.
    the windows backend is cross-compiled on a linux/amd64 host with MinGW
    (`transpileWindows`: a native `make` to produce the bison/xxd-generated C sources,
    then a direct `ccgo --goos windows --goarch amd64 --cpp x86_64-w64-mingw32-gcc`
-   pass over the explicit flexcc source list). The linux run also emits two sibling
+   pass over the explicit flexcc source list). The two darwin backends are generated
+   natively on a darwin host (`transpileDarwin`, same native-make-then-direct-ccgo
+   shape as windows but with `--cpp clang`): darwin/arm64 directly, darwin/amd64 on
+   an arm64 mac under Rosetta 2 (the amd64 go+ccgo toolchain via `arch -x86_64`; the
+   generator uses the homebrew `gmake`/`gsed` since macOS ships BSD make/sed).
+   transpileDarwin shadows `<mach-o/dyld.h>` with a one-symbol shim (its real form
+   drags in `<mach/message.h>`, which `modernc.org/cc` cannot size) and passes
+   `-D_FORTIFY_SOURCE=0` (macOS defaults it to 2, emitting `__builtin___*_chk`
+   fortify calls ccgo cannot resolve). The linux run also emits two sibling
    artifacts that keep the in-repo compiler self-contained (the windows run reuses
    them, being target-independent): `internal/flexcc/p2include.tar.gz` — the installed
    flexprop P2 include/lib tree (headers, libc sources, `libc.a`) packed as a
    deterministic gzip'd tar, `go:embed`ed by `flexcc/p2include.go` and extracted at
    runtime so `flexcc.Main` needs no external flexprop install — and
    `internal/flexcc/LICENSE-flexprop` for attribution. Regeneration is `cd internal &&
-   go generate` (linux; the native default) or `cd internal && TARGET_GOOS=windows
+   go generate` (linux; the native default), `cd internal && TARGET_GOOS=windows
    TARGET_GOARCH=amd64 go run generator.go` (windows, needs `x86_64-w64-mingw32-gcc`
-   and the `ccgo` CLI on PATH) — heavy and network-dependent; to adopt a changed
-   `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is re-cloned.
+   and the `ccgo` CLI on PATH), or `cd internal && go run generator.go` on a darwin
+   host for darwin/arm64 and `arch -x86_64 <amd64-go> run generator.go` (with an
+   amd64 `ccgo` on PATH) for darwin/amd64 — heavy and network-dependent; to adopt a
+   changed `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is
+   re-cloned. Generating darwin/amd64 after darwin/arm64 (without resetting between)
+   accumulates both into the fold; run them in that order on the mac.
    The generator handles the `undup` fold itself so the steps can't be run out of
    order: it `undup.Expand`s the prior fold to full per-target files, regenerates this
    target, `gofmt -s`s so the shared decls are byte-canonical across targets, then
@@ -113,8 +126,12 @@ inputs, and never hand-edit the outputs.
    only in the `//go:build ignore` generator). No manual expand/gofmt/dedup needed.
    The windows backend also needs two hand-written companions:
    `internal/flexcc/supplement_windows_amd64.go` (the CRT/Win32 functions
-   `modernc.org/libc` lacks or stubs for windows) and `freopen_notwindows.go` (its
-   linux counterpart); see the windows note below.
+   `modernc.org/libc` lacks or stubs for windows) and `freopen_notwindows.go` (the
+   linux/other-unix counterpart, tagged `!windows && !darwin`); see the windows note
+   below. Darwin has its own `internal/flexcc/supplement_darwin.go` (the libc
+   functions — `stpcpy`, `wcrtomb`, `asctime`, `fseeko`/`ftello`, `powl`/`frexpl`,
+   `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
+   stubs for both darwin arches).
 
    > **Backend regenerated 2026-07-20** against the `v7.7.0` pin (flexprop repo and
    > `spin2cpp` submodule both at `v7.7.0`) using **ccgo v4.34.6**; `mcpp_main.c.diff`
