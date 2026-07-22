@@ -153,7 +153,10 @@ func free(t *libc.TLS, cc *CC, p uintptr) {
 
 func freopen(tls *libc.TLS, cc *CC, filename uintptr, mode, file uintptr) (r uintptr) {
 	delete(cc.fopen, file)
-	if r = libc.Xfreopen(tls, filename, mode, file); r != 0 {
+	// xFreopen is the raw C freopen, split per platform (freopen_notwindows.go /
+	// supplement_windows_amd64.go) because modernc.org/libc exports Xfreopen only
+	// for linux. The cc.fopen bookkeeping stays here, shared.
+	if r = xFreopen(tls, filename, mode, file); r != 0 {
 		cc.fopen[r] = struct{}{}
 	}
 	return r

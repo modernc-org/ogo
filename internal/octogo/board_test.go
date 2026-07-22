@@ -18,8 +18,8 @@ import (
 
 // boardBaud is the user baud rate of flexcc-emitted P2 programs (loadp2's default
 // 115200 garbles them). It mirrors internal/loadp2.DefaultUserBaud, duplicated
-// here to avoid importing that package (which pulls in the linux/amd64-only
-// transpiled loader) into the checker's test binary.
+// here to avoid importing that package (which pulls in the large transpiled
+// loader) into the checker's test binary.
 const boardBaud = 230400
 
 // boardCaseTimeout bounds one program's load + run + capture. A load is ~0.6 s

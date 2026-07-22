@@ -37,8 +37,13 @@ const (
 	// The committed ccgo_<goos>_<goarch>.go was regenerated against this pin on
 	// 2026-07-20 with ccgo v4.34.6 (flexprop repo and spin2cpp submodule both at
 	// v7.7.0); mcpp_main.c.diff applied cleanly. To adopt a new flexpropRef: bump it,
-	// `rm -rf flexprop flexprop_install`, rerun `go generate` (linux/amd64 only),
-	// then update the flexcc --help golden in internal/flexcc/all_test.go.
+	// `rm -rf flexprop flexprop_install`, rerun `go generate`, then update the flexcc
+	// --help golden in internal/flexcc/all_test.go.
+	//
+	// Two backends are generated from this pin: linux/amd64 natively (the default)
+	// and windows/amd64 cross-compiled on a linux/amd64 host with MinGW
+	// (TARGET_GOOS=windows TARGET_GOARCH=amd64 go run generator.go; needs
+	// x86_64-w64-mingw32-gcc and the ccgo CLI on PATH). See transpileWindows.
 	flexpropRef = "v7.7.0"
 	installDir  = "flexprop_install"
 )
@@ -95,7 +100,7 @@ func main() {
 	}
 
 	switch target {
-	case "linux/amd64":
+	case "linux/amd64", "windows/amd64":
 		// ok
 	default:
 		fail(1, "unsupported target: %s", target)
@@ -129,15 +134,38 @@ func main() {
 	}
 
 	flexccDir := filepath.Join(wd, "flexcc")
-	flexccGoSrc := filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc.go")
-	installDir := filepath.Join(wd, filepath.Join(installDir))
-	installDir2 := filepath.Join(installDir, "flexprop")
-	os.RemoveAll(installDir)
-	os.Remove(flexccGoSrc)
 	if err := os.MkdirAll(flexccDir, 0755); err != nil {
 		fail(1, "os.MkdirAll(%q): err=%v", flexccDir, err)
 	}
 
+	// The linux/amd64 backend is transpiled natively (ccgo -exec make);
+	// windows/amd64 is cross-compiled on this linux host with MinGW. Both hand off
+	// the emitted package-main Go to main2lib, which threads a *CC state struct and
+	// re-homes it into package flexcc.
+	var flexccGoSrc string
+	switch goos {
+	case "windows":
+		flexccGoSrc = transpileWindows(wd)
+	default:
+		flexccGoSrc = transpileLinux(wd, flexccDir)
+	}
+
+	flexccGoDest := filepath.Join(flexccDir, fmt.Sprintf("ccgo_%s_%s.go", goos, goarch))
+	main2lib(flexccGoDest, flexccGoSrc)
+}
+
+// transpileLinux transpiles flexcc for linux/amd64 the native way: `ccgo -exec
+// make` stands in for the C compiler across every flexprop translation unit and
+// the final link, emitting spin2cpp/build/flexcc.go. It also refreshes the
+// embedded P2 include tree and flexprop license; those artifacts are
+// target-independent but are produced here because this is the path that runs
+// the flexprop `install`. Returns the emitted flexcc.go path for main2lib.
+func transpileLinux(wd, flexccDir string) string {
+	flexccGoSrc := filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc.go")
+	installDir := filepath.Join(wd, installDir)
+	installDir2 := filepath.Join(installDir, "flexprop")
+	os.RemoveAll(installDir)
+	os.Remove(flexccGoSrc)
 	if err := os.MkdirAll(installDir2, 0755); err != nil {
 		fail(1, "os.MkdirAll(%q): err=%v", installDir2, err)
 	}
@@ -172,9 +200,6 @@ func main() {
 		fail(1, "ccgo -exec: err=%v", err)
 	}
 
-	flexccGoDest := filepath.Join(flexccDir, fmt.Sprintf("ccgo_%s_%s.go", goos, goarch))
-	main2lib(flexccGoDest, flexccGoSrc)
-
 	// Bundle the installed flexprop P2 include/lib tree next to the transpiled
 	// compiler so the in-repo flexcc is self-contained (see flexcc/p2include.go),
 	// and carry flexprop's license for attribution.
@@ -184,6 +209,151 @@ func main() {
 	if err := copyFile(filepath.Join(wd, cloneDir, "License.txt"), filepath.Join(flexccDir, "LICENSE-flexprop")); err != nil {
 		fail(1, "copy flexprop license: err=%v", err)
 	}
+	return flexccGoSrc
+}
+
+// transpileWindows cross-compiles flexcc for windows/amd64 on this linux/amd64
+// host, mirroring modernc.org/loadp2's windows path. It runs in two phases: a
+// native `make` (real gcc) to produce the generated C sources ccgo needs, then a
+// single direct ccgo pass over the whole flexcc link unit with the MinGW
+// toolchain. Returns the emitted flexcc.go path for main2lib.
+//
+// `-exec make` is deliberately not reused here: in exec mode ccgo wraps the
+// compiler make invokes, but it can't retarget those wrapped compiles at MinGW,
+// so it would preprocess the windows code with linux headers. The direct pass
+// with `--cpp x86_64-w64-mingw32-gcc` is the only way to get the windows
+// headers/predefines. The P2 include tree and license are target-independent, so
+// this path leaves the committed copies (produced by transpileLinux) untouched.
+func transpileWindows(wd string) string {
+	// spin2cppDir is relative to the process working directory (internal/) so that
+	// ccgo, run with that as its cwd (see shell), records clean relative source
+	// paths in the generated file's header rather than absolute host paths.
+	spin2cppDir := filepath.Join(cloneDir, "spin2cpp")
+
+	// Phase 1: native build so the generated C sources exist before ccgo reads
+	// them — the three bison grammars (build/*.tab.c) and the xxd'd sys/*.spin.h
+	// that spinc.c and outasm.c #include. The native host binaries it also produces
+	// are discarded; the point is those generated prerequisites. Build the default
+	// `all` target (not `build/flexcc` directly), because only `all` carries the
+	// $(BUILD) mkdir prerequisite that creates build/ before the -MMD compiles write
+	// their .d files there. `clean` first so a prior linux `-exec make` run's build/
+	// (ccgo .o.go files) can't confuse make's native compile.
+	if err := shell(spin2cppDir, gmake, "clean"); err != nil {
+		fail(1, "windows: make clean: err=%v", err)
+	}
+	if err := shell(spin2cppDir, gmake, "OPT=-O1"); err != nil {
+		fail(1, "windows: native make: err=%v", err)
+	}
+
+	// Phase 2: cross-transpile just the flexcc link unit. -D_X86INTRIN_H_INCLUDED=1
+	// keeps MinGW's <winnt.h> from pulling in <x86intrin.h> (the avx512bf16 __bf16
+	// intrinsic modernc.org/cc can't parse); -ignore-link-errors leaves the windows
+	// CRT/Win32 symbols modernc.org/libc lacks as bare package-level names for
+	// flexcc/supplement_windows_amd64.go to define. The flag set otherwise matches
+	// transpileLinux's so the two backends stay structurally comparable.
+	const xgcc = "x86_64-w64-mingw32-gcc"
+	args := []string{
+		"--goos", "windows", "--goarch", "amd64",
+		"--cpp", xgcc, "-map", "gcc=" + xgcc,
+
+		"--prefix-enumerator=_",
+		"--prefix-external=x__",
+		"--prefix-macro=m_",
+		"--prefix-static-internal=s__",
+		"--prefix-static-none=s__",
+		"--prefix-tagged-enum=_",
+		"--prefix-tagged-struct=_",
+		"--prefix-tagged-union=_",
+		"--prefix-typename=_",
+		"--prefix-undefined=_",
+		"-DNDEBUG",
+		"-DFLEXSPIN_BUILD",
+		"-D_X86INTRIN_H_INCLUDED=1",
+		"-O1",
+		"-I.", "-I./backends", "-I./frontends", "-Ibuild",
+		"-extended-errors",
+		"-ignore-link-errors",
+		"-ignore-unsupported-alignment",
+		"-eval-all-macros",
+		"-o", "build/flexcc_windows.go",
+	}
+	args = append(args, resolveFlexccSources(spin2cppDir)...)
+	if err := shell(spin2cppDir, "ccgo", args...); err != nil {
+		fail(1, "windows: ccgo cross-transpile: err=%v", err)
+	}
+	return filepath.Join(wd, cloneDir, "spin2cpp", "build", "flexcc_windows.go")
+}
+
+// flexccVPATH mirrors the spin2cpp Makefile's VPATH: the directories, in search
+// order, where the flexcc translation units live. resolveFlexccSources searches
+// it to turn the Makefile's bare source basenames into paths, exactly as make
+// does. Order matters: dofmt.c exists in both util/ and include/libsys/, and
+// util/ must win — include/libsys/ is P2 target code, not part of the compiler,
+// and is not on the Makefile VPATH.
+var flexccVPATH = []string{
+	".", "util", "frontends", "frontends/basic", "frontends/spin", "frontends/c",
+	"backends", "frontends/bf", "backends/asm", "backends/cpp", "backends/bytecode",
+	"backends/dat", "backends/nucode", "backends/objfile", "backends/zip",
+	"backends/compress", "backends/compress/lz4", "mcpp",
+}
+
+// flexccSources is the flexcc link unit — flexcc.c cmdline.c $(OBJS) — taken
+// verbatim and in order from the spin2cpp Makefile (v7.7.0). The linux backend
+// gets the identical set implicitly via `ccgo -exec make`; the windows cross pass
+// invokes ccgo directly and so must name each source. If this drifts from a
+// future flexprop the cross-transpile fails loudly with undefined symbols, which
+// is the signal to re-sync it. The three bison outputs (build/*.tab.c) are
+// appended by resolveFlexccSources since they live in build/, not on VPATH.
+var flexccSources = []string{
+	"flexcc.c", "cmdline.c",
+	// SPINSRCS = common.c case.c spinc.c $(LEXSRCS) functions.c ... version.c becommon.c brkdebug.c printdebug.c
+	"common.c", "case.c", "spinc.c",
+	// LEXSRCS = lexer.c uni2sjis.c symbol.c ast.c expr.c $(UTIL) preprocess.c
+	"lexer.c", "uni2sjis.c", "symbol.c", "ast.c", "expr.c",
+	// UTIL
+	"dofmt.c", "flexbuf.c", "lltoa_prec.c", "strupr.c", "strrev.c", "strdupcat.c",
+	"to_utf8.c", "from_utf8.c", "sha256.c", "softcordic.c",
+	"preprocess.c",
+	"functions.c", "cse.c", "loops.c", "hloptimize.c", "hltransform.c", "types.c",
+	"pasm.c", "outdat.c", "outlst.c", "outobj.c", "spinlang.c", "basiclang.c",
+	"clang.c", "bflang.c",
+	// PASMBACK
+	"outasm.c", "assemble_ir.c", "optimize_ir.c", "asm_peep.c", "inlineasm.c", "compress_ir.c",
+	// BCBACK
+	"outbc.c", "bcbuffers.c", "bcir.c", "bc_spin1.c",
+	// NUBACK
+	"outnu.c", "nuir.c", "nupeep.c",
+	// CPPBACK
+	"outcpp.c", "cppfunc.c", "outgas.c", "cppexpr.c", "cppbuiltin.c",
+	// COMPBACK
+	"compress.c", "lz4.c", "lz4hc.c",
+	// ZIPBACK
+	"outzip.c", "zip.c",
+	// MCPP
+	"directive.c", "expand.c", "mbchar.c", "mcpp_eval.c", "mcpp_main.c", "mcpp_system.c", "mcpp_support.c",
+	"version.c", "becommon.c", "brkdebug.c", "printdebug.c",
+}
+
+// resolveFlexccSources resolves every flexccSources basename against flexccVPATH
+// (relative to spin2cppDir) and appends the three generated bison grammars from
+// build/. The returned paths are relative to spin2cppDir, which is ccgo's working
+// directory for the cross pass.
+func resolveFlexccSources(spin2cppDir string) []string {
+	r := make([]string, 0, len(flexccSources)+3)
+	for _, base := range flexccSources {
+		found := ""
+		for _, d := range flexccVPATH {
+			if _, err := os.Stat(filepath.Join(spin2cppDir, d, base)); err == nil {
+				found = filepath.Join(d, base)
+				break
+			}
+		}
+		if found == "" {
+			fail(1, "windows: flexcc source not found via VPATH: %s", base)
+		}
+		r = append(r, found)
+	}
+	return append(r, "build/spin.tab.c", "build/basic.tab.c", "build/cgram.tab.c")
 }
 
 // writeP2Include packs every regular file under srcDir into a deterministic
@@ -508,7 +678,7 @@ func main2lib(destFn, srcFn string) {
 	// libc.malloc(
 	// libc.realloc(
 
-	if err := shell("", gsed, "-i",
+	sedArgs := []string{"-i",
 		"-e", `s/package main/package flexcc/g`,
 		"-e", `s/"reflect"/"io";"reflect";"runtime"/g`,
 		"-e", `s/\<libc\.Int32FromInt32$/int32/g`,
@@ -527,7 +697,33 @@ func main2lib(destFn, srcFn string) {
 		"-e", `s/libc.Xprintf(tls,/printf(tls, cc,/g`,
 		"-e", `s/libc.Xrealloc(tls,/realloc(tls, cc,/g`,
 		"-e", `s/libc.Xvfprintf(tls,/vfprintf(tls, cc,/g`,
-		destFn); err != nil {
+	}
+
+	// The windows backend needs fixups the linux one does not, so they are gated on
+	// the target rather than relying on the patterns being absent from linux.
+	if goos == "windows" {
+		sedArgs = append(sedArgs,
+			// Codegen the Go compiler rejects (each a single occurrence): getcwd is
+			// mapped to libc.Xgetcwd but with an int32 length that will not convert to
+			// its Tsize_t parameter; and miniz's ~mask folds to the constant -4096,
+			// which cannot convert to uint32 (complementing the uint32 is equivalent).
+			"-e", `s/libc.Xgetcwd(tls, \([^,]*\), int32(260))/libc.Xgetcwd(tls, \1, libc.Tsize_t(260))/g`,
+			"-e", `s/uint32(^int32(_TDEFL_MAX_PROBES_MASK))/(^uint32(_TDEFL_MAX_PROBES_MASK))/g`,
+
+			// Redirect the libc functions that are panic(todo()) stubs for windows to
+			// the hand-written implementations in supplement_windows_amd64.go. On linux
+			// these are real libc entries and must not be rewritten. Xstat is itself
+			// real but forwards to the Xstat64 stub, so it is redirected too.
+			"-e", `s/libc.XGetModuleFileNameA(tls,/xGetModuleFileNameA(tls,/g`,
+			"-e", `s/libc.Xtime(tls,/xTime(tls,/g`,
+			"-e", `s/libc.Xungetc(tls,/xUngetc(tls,/g`,
+			"-e", `s/libc.Xabort(tls)/xAbort(tls)/g`,
+			"-e", `s/libc.Xstat(tls,/xStat(tls,/g`,
+		)
+	}
+
+	sedArgs = append(sedArgs, destFn)
+	if err := shell("", gsed, sedArgs...); err != nil {
 		fail(1, "%v: err=%v", gsed, err)
 	}
 }
