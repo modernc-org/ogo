@@ -5070,9 +5070,11 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 			want: "too many values in [3]int literal: 4 values but the length is 3",
 		},
 		{
-			name: "indexed element",
-			src:  "func main() {\n\ta := [3]int{2: 5}\n\tprintln(a[0])\n}\n",
-			want: "an index in an array or slice literal is not supported yet",
+			// A constant index is supported (see the emitRunCases); a non-constant
+			// one is not -- the length would not be known at compile time.
+			name: "non-constant index",
+			src:  "func main() {\n\ti := 2\n\ta := [3]int{i: 5}\n\tprintln(a[0])\n}\n",
+			want: "an array or slice literal index must be a non-negative integer constant",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

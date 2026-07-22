@@ -2936,31 +2936,95 @@ func (e *emitter) emitLitElement(v Node, brace bool) {
 	e.emitExpr(v.ast)
 }
 
-// emitLitValues emits an array or slice literal's elements as a braced C
-// initializer list. Unlike a struct's, these have no field names to reorder, so
-// they are positional by construction; Go's indexed form ("[3]int{2: 5}") is
-// refused rather than silently dropped.
-func (e *emitter) emitLitValues(lit Node) bool {
-	elements := compositeLitElements(lit)
-	for _, el := range elements {
-		if el.keyed {
-			e.fail("an index in an array or slice literal is not supported yet")
-			return false
-		}
+// litKeyIndex evaluates an array or slice literal's element index -- the "2" in
+// "[]int{2: 5}" -- to a non-negative integer. Only a constant is admitted: an
+// integer literal or a name bound to an integer const, in any base normalizeIntLit
+// produces. A non-constant, negative, or unparsable key yields ok=false.
+func (e *emitter) litKeyIndex(keyAST []int32) (int, bool) {
+	tok, ok := e.soleToken(keyAST)
+	if !ok {
+		return 0, false
 	}
-	if len(elements) == 0 {
+	var s string
+	switch e.f.ch(tok) {
+	case INT:
+		s = normalizeIntLit(e.src(tok))
+	case IDENT:
+		v, ok := e.constInt[e.src(tok)]
+		if !ok {
+			return 0, false
+		}
+		s = v
+	default:
+		return 0, false
+	}
+	n, err := strconv.ParseInt(s, 0, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return int(n), true
+}
+
+// litPositions expands an array or slice literal's elements into a positional list,
+// a nil entry marking an index the literal skips (and so zeroes). It resolves Go's
+// indexed form: a keyed element places its value at a constant index, and a later
+// positional element continues from that index plus one ("[]int{1, 4: 9, 5}" fills
+// 0, 4 and 5). length is the highest index used plus one -- the array's declared or
+// backing-slice length. A non-constant, negative, or repeated index is refused.
+func (e *emitter) litPositions(lit Node) (values []*Node, length int, ok bool) {
+	elements := compositeLitElements(lit)
+	byIndex := map[int]*Node{}
+	cur, maxIdx := 0, -1
+	for i := range elements {
+		el := &elements[i]
+		idx := cur
+		if el.keyed {
+			k, ok := e.litKeyIndex(el.key.ast)
+			if !ok {
+				e.fail("an array or slice literal index must be a non-negative integer constant")
+				return nil, 0, false
+			}
+			idx = k
+		}
+		if _, dup := byIndex[idx]; dup {
+			e.fail("duplicate index %d in an array or slice literal", idx)
+			return nil, 0, false
+		}
+		byIndex[idx] = &el.value
+		if idx > maxIdx {
+			maxIdx = idx
+		}
+		cur = idx + 1
+	}
+	length = maxIdx + 1
+	values = make([]*Node, length)
+	for idx, v := range byIndex {
+		values[idx] = v
+	}
+	return values, length, true
+}
+
+// emitPositionalValues emits a positional value list as a braced C initializer.
+// A nil entry -- an index the literal skips -- is written as the element type's
+// zero, because C cannot leave a gap in a positional list the way "[i]=v" could
+// (and flexcc mishandles designated initializers anyway; see litFieldValues).
+func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
+	if len(values) == 0 {
 		e.emit("{0}") // no values: zero every element
-		return true
+		return
 	}
 	e.emit("{")
-	for i, el := range elements {
+	for i, v := range values {
 		if i != 0 {
 			e.emit(", ")
 		}
-		e.emitLitElement(el.value, true)
+		if v == nil {
+			e.emit(e.zeroInitC(elemCType))
+			continue
+		}
+		e.emitLitElement(*v, true)
 	}
 	e.emit("}")
-	return true
 }
 
 // emitArrayLitVar declares a local initialized from an array or slice literal.
@@ -2973,20 +3037,24 @@ func (e *emitter) emitLitValues(lit Node) bool {
 // array plus a { pointer, len, cap } header, the difference being that the backing
 // array carries the values and its length is the number of them.
 func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
+	values, length, ok := e.litPositions(lit)
+	if !ok {
+		return
+	}
 	if a, ok := e.arrayDim(typeAST); ok {
 		// Fewer values than the length is legal and zeroes the rest, as in Go; more
 		// is not. C only warns about the excess, and the extra values are dropped,
 		// so saying so here is the difference between a diagnostic and a surprise.
-		if n, err := strconv.Atoi(a.bound); err == nil && len(compositeLitElements(lit)) > n {
-			e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(a), countUnits(len(compositeLitElements(lit)), "value"), a.bound)
+		// An index-form literal spans highest-index+1 positions, so this also
+		// catches "[3]int{5: 1}", whose index lies past the declared length.
+		if n, err := strconv.Atoi(a.bound); err == nil && length > n {
+			e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(a), countUnits(length, "value"), a.bound)
 			return
 		}
 		e.arrays[name] = a
 		e.ind()
 		e.emit(a.elem + " " + name + a.declSuffix() + " = ")
-		if !e.emitLitValues(lit) {
-			return
-		}
+		e.emitPositionalValues(values, a.elem)
 		e.emit(";\n")
 		return
 	}
@@ -2999,8 +3067,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
 	cname := sliceCName(elem)
 	e.sliceVars[name] = elem
 	e.locals[name] = cname
-	count := len(compositeLitElements(lit))
-	if count == 0 {
+	if length == 0 {
 		// "[]T{}" is an empty slice, not a slice of one zero element. C has no
 		// zero-length array to point it at, and it needs none: the header is the
 		// zero value, whose pointer is never dereferenced because the length is 0.
@@ -3009,12 +3076,10 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
 		return
 	}
 	backing := e.newBacking()
-	n := strconv.Itoa(count)
+	n := strconv.Itoa(length)
 	e.ind()
 	e.emit(elem + " " + backing + "[" + n + "] = ")
-	if !e.emitLitValues(lit) {
-		return
-	}
+	e.emitPositionalValues(values, elem)
 	e.emit(";\n")
 	e.ind()
 	e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")

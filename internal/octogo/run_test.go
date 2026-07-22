@@ -87,6 +87,23 @@ var emitRunCases = []emitRunCase{
 		want: "9 2 3\n1\n4 5 6\n4\n",
 	},
 	{
+		// Indexed array and slice literals ("[]int{2: 5}"): a keyed element places
+		// its value at a constant index, gaps zero-fill, and a positional element
+		// after an index continues from index+1. A slice's length is the highest
+		// index plus one. The emitter expands these to positional C initializers.
+		name: "indexed array and slice composite literals",
+		src: `func main() {
+	a := [5]int{0: 1, 4: 9}
+	println(a[0], a[1], a[4])
+	xs := []int{2: 5, 4: 9}
+	println(len(xs), xs[0], xs[2], xs[4])
+	ys := []int{1, 2, 4: 9, 10}
+	println(len(ys), ys[0], ys[1], ys[2], ys[4], ys[5])
+}
+`,
+		want: "1 0 9\n5 0 5 9\n6 1 2 0 9 10\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

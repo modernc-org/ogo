@@ -221,9 +221,12 @@ still design-only.
   green spec is not proof a whole feature is finished — the testdata covers only
   what has been wired up.
 - `ogo test` is the one unimplemented CLI stub.
-- Composite literals cover positional and keyed structs (`P{1, 2}`, `P{x: 1}`)
-  and positional array/slice literals (`[3]int{1, 2, 3}`, `[]int{1, 2, 3}`); only
-  indexed array/slice literals (`[]int{2: 5}`) are not built yet.
+- Composite literals cover positional and keyed structs (`P{1, 2}`, `P{x: 1}`),
+  positional array/slice literals (`[3]int{1, 2, 3}`, `[]int{1, 2, 3}`), and
+  indexed array/slice literals (`[]int{2: 5}`, `[5]int{0: 1, 4: 9}`, mixed
+  `[]int{1, 4: 9}`) with constant indices -- expanded to positional C initializers
+  (gaps zero-filled), a slice's length being the highest index plus one. A
+  non-constant index is refused.
 - A program is one package in one directory: only `import "p2"` resolves, and the
   emitter has no C header mapping for a user import.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
