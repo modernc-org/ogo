@@ -126,6 +126,13 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
 	loopVar := fmt.Sprintf("i_%d", f.Rand.Intn(10000))
 
+	// The returned AST wraps the loop variable and the loop in a block (see the
+	// BlockNode below), so scope them in a matching block here. Declaring the loop
+	// variable in the parent env instead leaked it: later statements picked it and
+	// referenced it out of scope in the generated program.
+	mem.PushScope()
+	f.CurrentEnv = NewScope(f.CurrentEnv)
+
 	// 1. Setup the loop variable BEFORE the loop
 	zeroVal, _ := vm.Eval("int_lit", "0")
 	mem.Store(loopVar, zeroVal)
@@ -174,7 +181,9 @@ func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
 	}
 	stmts = append(stmts, incNode)
 
-	// Pop Scope
+	// Pop the body scope, then the block scope that wraps the loop variable.
+	mem.PopScope()
+	f.CurrentEnv = f.CurrentEnv.Parent
 	mem.PopScope()
 	f.CurrentEnv = f.CurrentEnv.Parent
 
