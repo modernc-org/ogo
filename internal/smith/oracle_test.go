@@ -25,7 +25,7 @@ import (
 // a stable regression, not a live fuzz -- widen oracleSeeds to hunt for new bugs.
 // Skipped when no C compiler is available.
 func TestOracle(t *testing.T) {
-	const oracleSeeds = 25
+	const oracleSeeds = 100
 
 	cc := ""
 	for _, c := range []string{"cc", "gcc", "clang"} {

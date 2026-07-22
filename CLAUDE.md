@@ -239,7 +239,15 @@ still design-only.
   to C and runs it on the host shim, so a miscompile (the program panics on a
   checksum mismatch) or a generator regression fails the test. The earlier
   out-of-scope-loop-variable, bare-block and `panic` gaps that kept generated
-  programs from compiling are fixed. Widen `oracleSeeds` to hunt for new bugs.
+  programs from compiling are fixed, and the generator now mints unique variable
+  names (a counter, not a random suffix) so it never accidentally shadows. Widen
+  `oracleSeeds` to hunt for new bugs.
+- **Known open miscompile (found by the oracle, unfixed):** a shadowing local
+  whose initializer references the shadowed name — `var x = x + 5` with an outer
+  `x` in scope — miscompiles, because the emitter names locals verbatim so the C
+  initializer reads the new (uninitialized) variable instead of the outer one.
+  The general fix needs scope-aware C naming; the smith generator sidesteps it via
+  unique names. See the `shadowing-selfref-miscompile` memory for the repro.
 
 ## Test conventions
 

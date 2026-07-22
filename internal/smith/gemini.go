@@ -10,6 +10,13 @@ import (
 	"sort"
 )
 
+// newVarName returns a unique variable name (see Fuzzer.VarSeq for why a counter
+// rather than a random suffix).
+func (f *Fuzzer) newVarName(prefix string) string {
+	f.VarSeq++
+	return fmt.Sprintf("%s_%d", prefix, f.VarSeq)
+}
+
 // GenerateProgram builds the AST and computes the final expected state.
 // It directly outputs the generated source code to f.Out.
 func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
@@ -124,7 +131,7 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 // genForStmt generates a bounded loop that executes exactly once
 // to maintain VM and generation-time synchronization.
 func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
-	loopVar := fmt.Sprintf("i_%d", f.Rand.Intn(10000))
+	loopVar := f.newVarName("i")
 
 	// The returned AST wraps the loop variable and the loop in a block (see the
 	// BlockNode below), so scope them in a matching block here. Declaring the loop
@@ -261,7 +268,7 @@ func (f *Fuzzer) genIfStmt(vm Machine, mem Memory) Node {
 
 // genVarDecl generates: var <name> int = <expr>
 func (f *Fuzzer) genVarDecl(vm Machine, mem Memory) Node {
-	varName := fmt.Sprintf("v_%d", f.Rand.Intn(10000))
+	varName := f.newVarName("v")
 
 	// Generate an integer expression
 	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)

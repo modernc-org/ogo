@@ -90,6 +90,12 @@ type Fuzzer struct {
 	GlobalEnv  *Scope
 	CurrentEnv *Scope
 
+	// VarSeq mints unique variable names. A random suffix collided (two vars with
+	// the same name in one block, or a nested one shadowing an outer), which the
+	// checker rejects and the emitter miscompiles respectively; a monotonic counter
+	// guarantees every generated variable has a distinct name.
+	VarSeq int
+
 	// Hardware limits tracking
 	CogCount int // Max 8
 
