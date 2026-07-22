@@ -41,10 +41,11 @@ const (
 	// `rm -rf flexprop flexprop_install`, rerun `go generate`, then update the flexcc
 	// --help golden in internal/flexcc/all_test.go.
 	//
-	// Four backends are generated from this pin. linux/amd64 natively (the default).
-	// windows/amd64 cross-compiled on a linux/amd64 host with MinGW
-	// (TARGET_GOOS=windows TARGET_GOARCH=amd64 go run generator.go; needs
-	// x86_64-w64-mingw32-gcc and the ccgo CLI on PATH; see transpileWindows).
+	// Five backends are generated from this pin. linux/amd64 and linux/arm64
+	// natively, each on a host of that architecture (the default path; run
+	// `go run generator.go` there). windows/amd64 cross-compiled on a linux/amd64
+	// host with MinGW (TARGET_GOOS=windows TARGET_GOARCH=amd64 go run generator.go;
+	// needs x86_64-w64-mingw32-gcc and the ccgo CLI on PATH; see transpileWindows).
 	// darwin/arm64 and darwin/amd64 natively on a darwin host (arm64 directly;
 	// amd64 on an arm64 mac under Rosetta 2 with the amd64 go+ccgo toolchain via
 	// `arch -x86_64`; needs clang and the homebrew gmake/gsed; see transpileDarwin).
@@ -116,7 +117,7 @@ func main() {
 	}
 
 	switch target {
-	case "linux/amd64", "windows/amd64", "darwin/amd64", "darwin/arm64":
+	case "linux/amd64", "linux/arm64", "windows/amd64", "darwin/amd64", "darwin/arm64":
 		// ok
 	default:
 		fail(1, "unsupported target: %s", target)
@@ -264,6 +265,11 @@ func transpileLinux(wd, flexccDir string) string {
 		"-DNDEBUG",
 		"-extended-errors",
 		"-ignore-link-errors",
+		// On linux/arm64 the host glibc <signal.h> (pulled in for SIGINT handling)
+		// drags in aarch64 structs 16-byte aligned via __int128, which modernc.org/cc
+		// otherwise rejects ("unsupported alignment 16"); flexcc never references them.
+		// Inert on linux/amd64 (no over-aligned structs in that header set).
+		"-ignore-unsupported-alignment",
 
 		"-exec",
 		"make",

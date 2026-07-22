@@ -1079,8 +1079,6 @@ type _bcir_memop_attr = struct {
  *===-----------------------------------------------------------------------===
  */
 
-type _blksize_t = int32
-
 type _dev_t = int32
 
 type _mbstate_t = struct {

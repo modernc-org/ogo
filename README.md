@@ -63,8 +63,8 @@ go install modernc.org/ogo@latest
 ```
 
 Building `ogo` needs Go 1.25 or newer. It is built and tested on **linux/amd64**,
-**windows/amd64**, **darwin/arm64** and **darwin/amd64** — if you need another
-platform, please say so, it helps decide which to do first. Note that the two
+**linux/arm64**, **windows/amd64**, **darwin/arm64** and **darwin/amd64** — if you
+need another platform, please say so, it helps decide which to do first. Note that the two
 halves come apart: `ogo build` emits an ordinary P2 `.binary`, so you can compile
 on one machine and flash with whatever loader you already have on another.
 

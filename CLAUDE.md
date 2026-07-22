@@ -79,13 +79,13 @@ inputs, and never hand-edit the outputs.
 
 3. **flexcc backend.** `internal/flexcc/ccgo_<goos>_<goarch>.go` (~12 MB, ~455k
    lines each) is the flexspin/flexcc C compiler transpiled to Go by
-   `modernc.org/ccgo`. Four targets are committed — `ccgo_linux_amd64.go`,
-   `ccgo_windows_amd64.go`, `ccgo_darwin_arm64.go` and `ccgo_darwin_amd64.go` —
-   plus `ccgo.go`, the byte-identical decls `undup` (`modernc.org/undup`) folds out
-   of all of them under a shared build tag. The fold is only ~1.05x here: the LP64
-   linux, LLP64 windows and LP64 darwin transpiles share almost no decls
-   byte-for-byte (unlike loadp2, whose ~2x comes from its same-ABI linux/amd64+arm64
-   pair). Do not hand-edit any of them. `internal/generator.go`
+   `modernc.org/ccgo`. Five targets are committed — `ccgo_linux_amd64.go`,
+   `ccgo_linux_arm64.go`, `ccgo_windows_amd64.go`, `ccgo_darwin_arm64.go` and
+   `ccgo_darwin_amd64.go` — plus `ccgo.go` and `ccgo_g_*.go`, the shared decls
+   `undup` (`modernc.org/undup`) folds out of them under shared build tags. The
+   same-ABI LP64 linux amd64+arm64 pair now shares a lot (like loadp2's ~2x),
+   while the LLP64 windows and the darwin transpiles share little cross-ABI. Do not
+   hand-edit any of them. `internal/generator.go`
    (build-tagged `//go:build
    ignore`) drives both: it clones `totalspectrum/flexprop` (pinned to tag
    **`v7.7.0`** via the `flexpropRef` constant), applies `internal/mcpp_main.c.diff`,
@@ -110,14 +110,16 @@ inputs, and never hand-edit the outputs.
    deterministic gzip'd tar, `go:embed`ed by `flexcc/p2include.go` and extracted at
    runtime so `flexcc.Main` needs no external flexprop install — and
    `internal/flexcc/LICENSE-flexprop` for attribution. Regeneration is `cd internal &&
-   go generate` (linux; the native default), `cd internal && TARGET_GOOS=windows
-   TARGET_GOARCH=amd64 go run generator.go` (windows, needs `x86_64-w64-mingw32-gcc`
-   and the `ccgo` CLI on PATH), or `cd internal && go run generator.go` on a darwin
-   host for darwin/arm64 and `arch -x86_64 <amd64-go> run generator.go` (with an
-   amd64 `ccgo` on PATH) for darwin/amd64 — heavy and network-dependent; to adopt a
-   changed `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is
-   re-cloned. Generating darwin/amd64 after darwin/arm64 (without resetting between)
-   accumulates both into the fold; run them in that order on the mac.
+   go generate` (or `go run generator.go`) on a linux host of the target
+   architecture — linux/amd64 or linux/arm64, native either way (`ccgo -exec make`,
+   no ccgo CLI needed); `cd internal && TARGET_GOOS=windows TARGET_GOARCH=amd64
+   go run generator.go` (windows, needs `x86_64-w64-mingw32-gcc` and the `ccgo` CLI
+   on PATH); or `cd internal && go run generator.go` on a darwin host for
+   darwin/arm64 and `arch -x86_64 <amd64-go> run generator.go` (with an amd64 `ccgo`
+   on PATH) for darwin/amd64 — heavy and network-dependent; to adopt a changed
+   `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is re-cloned.
+   Generating a second target after a first (without resetting between) accumulates
+   both into the fold; e.g. run darwin/amd64 after darwin/arm64 on the mac.
    The generator handles the `undup` fold itself so the steps can't be run out of
    order: it `undup.Expand`s the prior fold to full per-target files, regenerates this
    target, `gofmt -s`s so the shared decls are byte-canonical across targets, then
