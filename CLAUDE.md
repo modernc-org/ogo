@@ -206,9 +206,13 @@ still design-only.
 
 ## Implementation status (where the TODOs are)
 
-- `Build()` runs phases 1–3; phases 4 (body/hardware checks) and 5 (deep init
-  cycles) are `//TODO` stubs in `build.go`. WPO is design-only. C emission is
-  **not** -- `internal/octogo/emit.go` is the largest single piece of the
+- `Build()` runs phases 1–3 fully; phases 4 (body/hardware checks) and 5 (deep
+  init cycles) are **partial**, not stubs (`internal/octogo/build.go`): phase 4
+  walks bodies to declare parameters and locals (reporting redeclarations) and to
+  descend into nested blocks, but has no statement type-checking or
+  hardware-constraint checks yet; phase 5 reports value-recursive (infinite-size)
+  types but not global initialization-order cycles. WPO is design-only. C emission
+  is **not** a stub -- `internal/octogo/emit.go` is the largest single piece of the
   compiler and is wired through `internal/build` to flexcc and loadp2.
 - `TestOctoGoSpecs` (`internal/octogo/tests_test.go`) runs every `*.ogo` file in
   `internal/octogo/testdata` — there is no skip list (the historical one was
@@ -217,8 +221,9 @@ still design-only.
   green spec is not proof a whole feature is finished — the testdata covers only
   what has been wired up.
 - `ogo test` is the one unimplemented CLI stub.
-- Composite literals are positional-struct-only: keyed (`P{x: 1}`) and
-  array/slice literals are not built yet.
+- Composite literals cover positional and keyed structs (`P{1, 2}`, `P{x: 1}`)
+  and positional array/slice literals (`[3]int{1, 2, 3}`, `[]int{1, 2, 3}`); only
+  indexed array/slice literals (`[]int{2: 5}`) are not built yet.
 - A program is one package in one directory: only `import "p2"` resolves, and the
   emitter has no C header mapping for a user import.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
