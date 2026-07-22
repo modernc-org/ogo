@@ -1838,7 +1838,6 @@ func TestEmitCMinMax(t *testing.T) {
 // call and must still emit.
 func TestEmitCUnsupportedBuiltins(t *testing.T) {
 	refused := map[string]string{
-		"panic":   "func main() {\n\tpanic(\"boom\")\n}\n",
 		"delete":  "func main() {\n\tvar m int\n\tdelete(m, 1)\n}\n",
 		"recover": "func main() {\n\trecover()\n}\n",
 		"close":   "func f(ch chan int) {\n\tclose(ch)\n}\n\nfunc main() {\n\tvar ch chan int\n\tf(ch)\n}\n",

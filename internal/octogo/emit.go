@@ -2548,6 +2548,20 @@ func (e *emitter) emitStatement(ast []int32) {
 		e.emitSwitch(first.ast)
 	case first.sym == SelectStmt:
 		e.emitSelect(first.ast)
+	case first.sym == Block:
+		// A bare block statement "{ ... }": a nested C compound statement, which
+		// gives its declarations their own scope. break and continue pass through a
+		// block unchanged (it is not a loop or switch), so switchBreak is left as
+		// is; a defer inside needs the depth flag, as in any nested body.
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		e.deferBlockDepth++
+		e.emitBlockStmts(first.ast)
+		e.deferBlockDepth--
+		e.indent--
+		e.ind()
+		e.emit("}\n")
 	case first.sym == 0 && e.f.ch(first.tok) == RETURN:
 		e.emitReturn(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == DEFER:
@@ -4823,6 +4837,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitCap(suffix[0].ast)
 			return true
 		}
+		if recv == "panic" {
+			e.emitPanic(suffix[0].ast)
+			return true
+		}
 		if recv == "append" {
 			// Single-result append: s = append(s, x). The two-result form
 			// s, ok = append(s, x) is handled in emitMultiAssign.
@@ -4950,6 +4968,26 @@ func (e *emitter) emitLen(callSuffix []int32) {
 
 // emitCap emits the builtin `cap(x)`: an array's capacity is its compile-time
 // bound; a slice's is its header's `cap` field. Strings have no capacity.
+// emitPanic emits the builtin panic. Only a string argument is supported so far
+// -- what smith's oracle assertion and the hardware error paths use -- mapping to
+// the runtime ogo_panic(const char* msg) with the ogo_string's char* field. A
+// general panic(any) needs value formatting and is left for later.
+func (e *emitter) emitPanic(callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) != 1 {
+		e.fail("panic takes exactly one argument")
+		return
+	}
+	if ct, ok := e.inferCType(args[0].ast); !ok || ct != cString {
+		e.fail("panic is supported only with a string argument yet")
+		return
+	}
+	e.needPanic()
+	e.emit("ogo_panic((")
+	e.emitExpr(args[0].ast)
+	e.emit(").str)")
+}
+
 func (e *emitter) emitCap(callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {

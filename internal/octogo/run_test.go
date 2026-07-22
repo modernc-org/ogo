@@ -1247,6 +1247,33 @@ func main() {
 }
 `,
 		panics: true,
+	},
+	{
+		// A bare block statement introduces its own scope: each block's x is local
+		// to it, so the two blocks do not collide.
+		name: "block statement scopes its declarations",
+		src: `func main() {
+	{
+		x := 1
+		println(x)
+	}
+	{
+		x := 2
+		println(x)
+	}
+}
+`,
+		want: "1\n2\n",
+	},
+	{
+		// panic("msg") aborts through ogo_panic. smith's oracle relies on this: a
+		// generated program panics on a checksum mismatch, implicating the compiler.
+		name: "panic aborts",
+		src: `func main() {
+	panic("boom")
+}
+`,
+		panics: true,
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
