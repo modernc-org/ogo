@@ -2689,6 +2689,23 @@ func (e *emitter) emitVarDecl(ast []int32) {
 					continue
 				}
 				e.includes["string.h"] = true
+				// A self-referential shadowing copy (`var a [N]T = a` with an outer a)
+				// means the outer array; capture it before the new one shadows it, or
+				// the memcpy reads the uninitialized destination (see emitVarDeclInit).
+				if e.initRefsName(initExpr, nm) {
+					tmp := e.newTmp()
+					e.ind()
+					e.emit(elem + " " + tmp + a.declSuffix() + ";\n")
+					e.ind()
+					e.emit("memcpy(" + tmp + ", ")
+					e.emitExpr(initExpr)
+					e.emit(", sizeof(" + tmp + "));\n")
+					e.ind()
+					e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+					e.ind()
+					e.emit("memcpy(" + nm + ", " + tmp + ", sizeof(" + nm + "));\n")
+					continue
+				}
 				e.ind()
 				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
 				e.ind()
@@ -2739,6 +2756,19 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				}
 				e.sliceVars[nm] = elem
 				e.locals[nm] = cname
+				// A self-referential shadowing copy (`var xs []T = xs` with an outer
+				// xs) means the outer header; capture it before the new one shadows it
+				// (see emitVarDeclInit).
+				if initExpr != nil && e.initRefsName(initExpr, nm) {
+					tmp := e.newTmp()
+					e.ind()
+					e.emit(cname + " " + tmp + " = ")
+					e.emitExpr(initExpr)
+					e.emit(";\n")
+					e.ind()
+					e.emit(cname + " " + nm + " = " + tmp + ";\n")
+					continue
+				}
 				e.ind()
 				e.emit(cname + " " + nm + " = ")
 				if initExpr != nil {
@@ -5677,6 +5707,29 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 // literal is not a copy -- it is the aggregate initialization that does work -- so
 // it stays on the ordinary path.
 func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
+	// A self-referential initializer -- `var x = x + 5` where an outer x is in scope
+	// and this declaration shadows it -- reads the *outer* binding in Go, because a
+	// var initializer is evaluated before the new name comes into scope. C, however,
+	// brings the new name into scope for its own initializer, so a verbatim emission
+	// would read the new, uninitialized variable instead. Evaluate the initializer
+	// into a fresh temporary first, while `name` still resolves to the outer binding,
+	// then define name from the temporary. The temporary name cannot itself appear in
+	// the initializer, so the recursion bottoms out on the ordinary path below.
+	if e.initRefsName(initExpr, name) {
+		tmp := e.newTmp()
+		e.emitVarDeclInit(ctype, tmp, initExpr)
+		if e.hasArrayField(ctype) {
+			e.includes["string.h"] = true
+			e.ind()
+			e.emit(ctype + " " + name + ";\n")
+			e.ind()
+			e.emit("memcpy(&" + name + ", &" + tmp + ", sizeof(" + ctype + "));\n")
+			return
+		}
+		e.ind()
+		e.emit(ctype + " " + name + " = " + tmp + ";\n")
+		return
+	}
 	if _, _, isLit := e.soleCompositeLit(initExpr); !isLit && e.hasArrayField(ctype) {
 		if !e.checkStructCopySrc(ctype, initExpr) {
 			return
@@ -5690,6 +5743,33 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	e.emit(ctype + " " + name + " = ")
 	e.emitVarInit(initExpr)
 	e.emit(";\n")
+}
+
+// initRefsName reports whether initExpr reads the variable `name` as a value: a
+// bare identifier occurrence, but not a struct field (a Selector's field name) or
+// the field name in a keyed composite literal. Such a read means the outer,
+// shadowed binding, so emitVarDeclInit must capture the initializer before the new
+// C variable of the same name shadows it. A Selector node's subtree is only the
+// field identifier -- the selected operand is a separate sibling -- so skipping it
+// drops `obj.name` (a field) while still catching `name.field` (the operand).
+func (e *emitter) initRefsName(initExpr []int32, name string) bool {
+	var walk func(nodes []int32) bool
+	walk = func(nodes []int32) bool {
+		for n := range it(nodes) {
+			switch {
+			case n.sym == Selector:
+				// The field name, not a value reference -- skip its subtree.
+			case n.sym != 0:
+				if walk(n.ast) {
+					return true
+				}
+			case e.f.ch(n.tok) == IDENT && e.src(n.tok) == name:
+				return true
+			}
+		}
+		return false
+	}
+	return walk(initExpr)
 }
 
 // selectorFields collects the field names from a run of Selector nodes, or ok=false

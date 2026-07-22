@@ -40,6 +40,53 @@ var emitRunCases = []emitRunCase{
 		want: "18\n",
 	},
 	{
+		// A shadowing local whose initializer references the shadowed name reads the
+		// OUTER binding (Go evaluates the initializer before the new name is in scope).
+		// The emitter must capture the initializer before the same-named C variable
+		// shadows it, or C reads the new, uninitialized variable. Both the inferred
+		// (`var x = x + 5`) and typed (`var x int = x * 2`) forms are exercised, and
+		// the outer x must survive each block unchanged.
+		name: "shadowing self-referential initializer reads the outer binding",
+		src: `func main() {
+	x := 100
+	{
+		var x = x + 5
+		println(x)
+	}
+	{
+		var x int = x * 2
+		println(x)
+	}
+	println(x)
+}
+`,
+		want: "105\n200\n100\n",
+	},
+	{
+		// The same shadowing rule for aggregate copies: `var a [N]T = a` and
+		// `var xs []T = xs` copy the OUTER array/slice, so mutating the inner one
+		// must not disturb the outer. Both copy paths (array memcpy, slice header)
+		// capture the source before the same-named variable shadows it.
+		name: "shadowing self-referential copy of an array and a slice",
+		src: `func main() {
+	a := [3]int{1, 2, 3}
+	{
+		var a [3]int = a
+		a[0] = 9
+		println(a[0], a[1], a[2])
+	}
+	println(a[0])
+	xs := []int{4, 5, 6}
+	{
+		var xs []int = xs
+		println(xs[0], xs[1], xs[2])
+	}
+	println(xs[0])
+}
+`,
+		want: "9 2 3\n1\n4 5 6\n4\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

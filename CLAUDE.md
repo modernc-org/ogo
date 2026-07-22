@@ -242,12 +242,15 @@ still design-only.
   programs from compiling are fixed, and the generator now mints unique variable
   names (a counter, not a random suffix) so it never accidentally shadows. Widen
   `oracleSeeds` to hunt for new bugs.
-- **Known open miscompile (found by the oracle, unfixed):** a shadowing local
-  whose initializer references the shadowed name — `var x = x + 5` with an outer
-  `x` in scope — miscompiles, because the emitter names locals verbatim so the C
-  initializer reads the new (uninitialized) variable instead of the outer one.
-  The general fix needs scope-aware C naming; the smith generator sidesteps it via
-  unique names. See the `shadowing-selfref-miscompile` memory for the repro.
+- **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
+  references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
+  to miscompile, because the emitter names locals verbatim so the C initializer read
+  the new (uninitialized) variable instead of the outer one. `emitVarDeclInit` (and
+  the array/slice copy paths) now capture the initializer into a fresh temporary
+  before the same-named C variable shadows it (`initRefsName` + `newTmp`), covering
+  scalar, struct, array (`var a [N]T = a`) and slice (`var xs []T = xs`) forms; see
+  the two shadowing `emitRunCases`. This is a targeted capture-before-shadow, not
+  the general scope-aware C-naming layer the emitter still lacks.
 
 ## Test conventions
 
