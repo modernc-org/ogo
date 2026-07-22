@@ -1873,14 +1873,15 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		} else {
 			e.locals[name] = ctype
 		}
-		// A constant that folds to a single integer -- a literal, or iota itself --
-		// can serve as an array bound (flexcc rejects a `static const` there); record
-		// its value.
-		if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == INT {
-			e.constInt[name] = normalizeIntLit(e.src(tok))
-		} else if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == IDENT && e.src(tok) == "iota" {
-			e.constInt[name] = strconv.Itoa(curIota)
+		// A constant that folds to an integer -- a literal, iota, or a constant
+		// expression like "2 + 1" or "W * H" -- can serve as an array bound (flexcc
+		// rejects a `static const` there); record its value. iota is visible to the
+		// fold as this spec's index for the duration.
+		e.iota = curIota
+		if v, ok := e.foldConstInt(initExpr); ok {
+			e.constInt[name] = strconv.FormatInt(v, 10)
 		}
+		e.iota = -1
 		// A constant string -- a literal or a concatenation of constants -- is
 		// recorded decoded and emitted at each use as the folded literal, rather
 		// than as a C variable. A Go constant has no address, so inlining it is
@@ -1892,15 +1893,24 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		}
 		e.iota = curIota // substitute iota with its value while emitting the expression
 		e.ind()
+		storage := "const "
 		if pkg {
+			storage = "static const "
+		}
+		e.emit(storage + ctype + " " + name + " = ")
+		switch v, folded := e.constInt[name]; {
+		case folded:
+			// A folded integer constant emits its literal value, so a constant that
+			// references another ("const M = N + 1") does not become the C
+			// initializer "N + 1" -- not a constant expression at file scope.
+			e.emit(v)
+		case pkg:
 			// A file-scope constant has static storage, so a string initializer
 			// must be a brace, not a compound literal (see emitStringLit).
-			e.emit("static const " + ctype + " " + name + " = ")
 			e.declInit = true
 			e.emitExpr(initExpr)
 			e.declInit = false
-		} else {
-			e.emit("const " + ctype + " " + name + " = ")
+		default:
 			e.emitExpr(initExpr)
 		}
 		e.emit(";\n")
@@ -3493,19 +3503,165 @@ func (e *emitter) sliceType(typeAST []int32) (elem string, ok bool) {
 // integer literal directly, or a single integer-constant name folded to its value
 // (flexcc rejects a `static const` as an array bound). Anything else is unmodelled.
 func (e *emitter) arrayBoundC(sizeAST []int32) (string, bool) {
-	tok, ok := e.soleToken(sizeAST)
-	if !ok {
-		return "", false
-	}
-	switch e.f.ch(tok) {
-	case INT:
-		return normalizeIntLit(e.src(tok)), true
-	case IDENT:
-		if v, ok := e.constInt[e.src(tok)]; ok {
-			return v, true
+	if tok, ok := e.soleToken(sizeAST); ok {
+		switch e.f.ch(tok) {
+		case INT:
+			return normalizeIntLit(e.src(tok)), true
+		case IDENT:
+			if v, ok := e.constInt[e.src(tok)]; ok {
+				return v, true
+			}
 		}
 	}
+	// Not a bare literal or named constant: a constant expression like "[2+1]int"
+	// or "[W*H]int". Fold it -- C cannot use a `const int` (or a nested const) as an
+	// array bound, so the value must be spelled as a literal.
+	if v, ok := e.foldConstInt(sizeAST); ok && v >= 0 {
+		return strconv.FormatInt(v, 10), true
+	}
 	return "", false
+}
+
+// foldConstInt folds a constant integer expression -- integer literals, integer
+// constants, and the arithmetic and bitwise operators over them -- to its value.
+// It mirrors the grammar levels emitExprNode walks: SimpleExpr and Term are flat,
+// left-associative operand/operator lists and precedence lives in the nesting, so
+// the result matches the C the emitter emits for the same expression. It reports
+// ok=false for a non-constant operand, a comparison or logical operator (not an
+// integer), or an operator it does not fold, leaving the caller its prior behavior.
+func (e *emitter) foldConstInt(ast []int32) (int64, bool) {
+	return e.foldIntSeq(slices.Collect(it(ast)))
+}
+
+// foldIntSeq folds a flat "operand (op operand)*" list left-associatively.
+func (e *emitter) foldIntSeq(kids []Node) (int64, bool) {
+	if len(kids) == 0 {
+		return 0, false
+	}
+	acc, ok := e.foldIntNode(kids[0])
+	if !ok {
+		return 0, false
+	}
+	for i := 1; i+1 < len(kids); i += 2 {
+		op := kids[i]
+		if op.sym != AddOp && op.sym != MulOp {
+			return 0, false // a RelOp (comparison or logical) is not an integer
+		}
+		rhs, ok := e.foldIntNode(kids[i+1])
+		if !ok {
+			return 0, false
+		}
+		if acc, ok = foldIntOp(acc, e.opText(op.ast), rhs); !ok {
+			return 0, false
+		}
+	}
+	return acc, true
+}
+
+func (e *emitter) foldIntNode(n Node) (int64, bool) {
+	switch n.sym {
+	case Expression, SimpleExpr, Term:
+		return e.foldIntSeq(slices.Collect(it(n.ast)))
+	case UnaryExpr, Factor:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+			return e.foldIntNode(kids[1]) // "(" Expression ")"
+		}
+		if len(kids) >= 2 && kids[0].sym == 0 {
+			switch e.f.ch(kids[0].tok) {
+			case SUB:
+				v, ok := e.foldIntSeq(kids[1:])
+				return -v, ok
+			case ADD:
+				return e.foldIntSeq(kids[1:])
+			case XOR:
+				v, ok := e.foldIntSeq(kids[1:])
+				return ^v, ok
+			default:
+				return 0, false
+			}
+		}
+		if len(kids) == 1 {
+			return e.foldIntNode(kids[0])
+		}
+		return 0, false // a call, index or selector -- not a constant integer
+	case 0:
+		return e.foldIntToken(n.tok)
+	default:
+		return 0, false
+	}
+}
+
+func (e *emitter) foldIntToken(tok int32) (int64, bool) {
+	switch e.f.ch(tok) {
+	case INT:
+		v, err := strconv.ParseInt(normalizeIntLit(e.src(tok)), 0, 64)
+		return v, err == nil
+	case IDENT:
+		switch s := e.src(tok); s {
+		case "true":
+			return 1, true
+		case "false":
+			return 0, true
+		case "iota":
+			if e.iota >= 0 {
+				return int64(e.iota), true
+			}
+			return 0, false
+		default:
+			if v, ok := e.constInt[s]; ok {
+				n, err := strconv.ParseInt(v, 0, 64)
+				return n, err == nil
+			}
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+}
+
+// foldIntOp applies one integer operator during constant folding. A division or
+// shift the fold cannot perform (a zero divisor, an out-of-range shift) yields
+// ok=false rather than a wrong value.
+func foldIntOp(a int64, op string, b int64) (int64, bool) {
+	switch op {
+	case "+":
+		return a + b, true
+	case "-":
+		return a - b, true
+	case "*":
+		return a * b, true
+	case "/":
+		if b == 0 {
+			return 0, false
+		}
+		return a / b, true
+	case "%":
+		if b == 0 {
+			return 0, false
+		}
+		return a % b, true
+	case "<<":
+		if b < 0 || b >= 64 {
+			return 0, false
+		}
+		return a << uint(b), true
+	case ">>":
+		if b < 0 || b >= 64 {
+			return 0, false
+		}
+		return a >> uint(b), true
+	case "&":
+		return a & b, true
+	case "|":
+		return a | b, true
+	case "^":
+		return a ^ b, true
+	case "&^":
+		return a &^ b, true
+	default:
+		return 0, false
+	}
 }
 
 // soleToken returns the single terminal token of an expression subtree, if it has

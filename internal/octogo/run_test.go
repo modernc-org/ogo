@@ -104,6 +104,29 @@ var emitRunCases = []emitRunCase{
 		want: "1 0 9\n5 0 5 9\n6 1 2 0 9 10\n",
 	},
 	{
+		// A constant integer expression is a valid array bound: a literal expression
+		// (`[2 + 1]int`), a named constant bound to an expression (`const N = W * H`,
+		// itself referencing other constants), and a shift. The emitter folds each to
+		// a literal, because C cannot use a const-qualified variable as a bound, and
+		// len() reports the folded extent.
+		name: "constant-expression array bounds",
+		src: `const W = 4
+const H = 3
+const N = W * H
+
+func main() {
+	var g [N]int
+	g[N-1] = 9
+	var b [2 + 1]int
+	b[2] = 7
+	var s [1 << 3]int
+	s[7] = 3
+	println(len(g), g[N-1], len(b), b[2], len(s), s[7], N, W+H)
+}
+`,
+		want: "12 9 3 7 8 3 12 7\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
