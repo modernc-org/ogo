@@ -2345,7 +2345,7 @@ func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr 
 		if !f.isImportQualifier(s, nm) {
 			f.err(id.Position(), "undefined: %s", nm)
 		}
-	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 		if !suffixed {
 			f.err(id.Position(), "cannot assign to %s", nm)
 		}
@@ -2648,7 +2648,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
 				}
-			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
 				}
@@ -2675,7 +2675,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
 				}
-			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
 				}
@@ -2759,7 +2759,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
 				}
-			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
 				}
@@ -4170,6 +4170,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		switch s.find(id.Src()).(type) {
 		case *TypeDeclaration, *PredeclaredType:
 			f.err(id.Position(), "cannot use type %s as a value", id.Src())
+		case *PredeclaredFunc:
+			f.err(id.Position(), "cannot use built-in %s as a value", id.Src())
 		}
 	}
 	// Indexing a scalar (numeric or bool) variable or constant read is illegal:
@@ -4379,6 +4381,11 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		if d.FuncDecl != nil && d.FuncDecl.Type != nil {
 			f.checkArgs(s, callee, d.FuncDecl.Type.Signature, args)
 		}
+	case *PredeclaredFunc:
+		// A builtin call. Builtin signatures are not modelled, so argument checking
+		// is left to the emitter, which special-cases each. make/new and the
+		// not-yet-emitted builtins are unregistered and reach the nil case below,
+		// exempted there by isBuiltinFuncName.
 	case *VarDeclaration, *ConstDeclaration:
 		// The callee is a value, not a function: "x()" where x is a variable or a
 		// constant. (A type callee -- "T(x)" -- is an explicit conversion, which

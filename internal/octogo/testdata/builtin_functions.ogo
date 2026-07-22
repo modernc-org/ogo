@@ -1,0 +1,23 @@
+// Built-in functions are registered in the Universe: calls resolve and compile,
+// a user declaration of a built-in name shadows it, and using a built-in as a
+// value or an assignment target is diagnosed.
+
+func min(a int) int { return a } // shadows the built-in min
+
+func calls() {
+	var s []int = make([]int, 2, 4)
+	s = append(s, 7)
+	d := make([]int, 2, 2)
+	copy(d, s)
+	clear(s)
+	println(len(d), cap(d), max(1, 2), min(3))
+}
+
+func misuse() {
+	// ERROR "cannot use built-in len as a value"
+	x := len
+	_ = x
+
+	// ERROR "cannot assign to cap"
+	cap = 3
+}

@@ -48,6 +48,28 @@ uint8
 // uintptr is an integer type that is large enough to hold the bit pattern of
 // any pointer.
 uintptr
+// append adds one element to a slice and returns the result. On this fixed-memory
+// target a slice cannot grow past its capacity: the one-result form traps on
+// overflow, while "s, ok = append(s, x)" reports through ok whether it fit.
+append
+// cap returns the capacity of a slice, the length of its backing array.
+cap
+// clear sets every element of its slice argument to the zero value.
+clear
+// copy copies elements between two slices of the same element type and returns
+// the number copied, min(len(dst), len(src)); the two may overlap.
+copy
+// len returns the length of a string, array or slice.
+len
+// max returns the largest of its ordered arguments.
+max
+// min returns the smallest of its ordered arguments.
+min
+// print writes its arguments to the serial console with no separator or newline.
+print
+// println writes its arguments to the serial console, space-separated and
+// newline-terminated.
+println
 `
 
 //TODO what is the size of a flexcc func pointer?
@@ -55,9 +77,20 @@ uintptr
 var (
 	_ Declaration = (*ConstDeclaration)(nil)
 	_ Declaration = (*ImportDeclaration)(nil)
+	_ Declaration = (*PredeclaredFunc)(nil)
 	_ Declaration = (*PredeclaredType)(nil)
 	_ Declaration = (*VarDeclaration)(nil)
 )
+
+// PredeclaredFunc is a predeclared (built-in) function such as len or append. It
+// is registered in the Universe so a use resolves and carries its doc comment
+// from preclaredNames; the checker and emitter special-case each builtin, so no
+// signature is modelled here. make and new are deliberately not registered --
+// their use is validated on resolving to nothing (see checkFactorNames) -- and
+// the builtins not yet emitted are left to isBuiltinFuncName.
+type PredeclaredFunc struct {
+	declaration
+}
 
 // Universe binds predefined declarations.
 var Universe = newScope(nil, UniverseScope)
@@ -127,6 +160,14 @@ out:
 		ConstSpec: &ConstSpecNode{
 			Name: tok,
 		},
+	}
+
+	// Predeclared functions. Only the emitted builtins are registered: make keeps
+	// the resolve-to-nothing validation in checkFactorNames (its slice form is
+	// allowed, other forms and new are rejected as dynamic allocation), and the
+	// builtins not yet emitted stay exempt via isBuiltinFuncName.
+	for _, bn := range []string{"append", "cap", "clear", "copy", "len", "max", "min", "print", "println"} {
+		Universe.Declarations[bn] = &PredeclaredFunc{declaration: declaration{token: names[bn]}}
 	}
 }
 
