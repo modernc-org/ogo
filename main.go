@@ -4,6 +4,15 @@
 
 // Command ogo is a compiler for the OctoGo programming language. OctoGo
 // brings Native Go-like Concurrency for the Parallax Propeller 2.
+//
+// # Windows
+//
+// On Windows, run ogo from cmd.exe or PowerShell, not a Unix-emulation shell
+// (git-bash, MSYS2, Cygwin). The board-facing commands (run, loadp2) drive the
+// serial port through the native Windows console and are unreliable under those
+// shells: the P2 handshake times out intermittently and the terminal's exit key
+// can stop responding (use Ctrl-C to escape). Building (build, fmt) is
+// unaffected and works in any shell.
 package main
 
 import (
@@ -178,6 +187,10 @@ Run builds a package exactly as ogo build does, loads the binary onto a connecte
 Propeller 2 and opens a terminal on its serial output.
 
 Press Ctrl-] to leave the terminal.
+
+On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
+(git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the exit key
+may not respond (use Ctrl-C).
 `,
 	"fmt": `usage: ogo fmt [-l] [-w] [-exclude regexp] [path ...]
 
@@ -196,6 +209,10 @@ loadp2's own flag grammar applies rather than ogo's. Run it without arguments fo
 loadp2's usage.
 
 The loader is built in; no separate loadp2 installation is needed.
+
+On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
+(git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the terminal's
+exit key may not respond (use Ctrl-C).
 `,
 	"smith": `usage: ogo smith [-seed n]
 

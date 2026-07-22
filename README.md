@@ -62,11 +62,18 @@ func main() {
 go install modernc.org/ogo@latest
 ```
 
-Building `ogo` needs Go 1.25 or newer. The binary it produces is built and tested
-on linux/amd64, which is the only platform it ships for today — if you need
-another, please say so, it helps decide which to do first. Note that the two
-halves come apart: `ogo build` emits an ordinary P2 `.binary`, so you can compile
-on one machine and flash with whatever loader you already have on another.
+Building `ogo` needs Go 1.25 or newer. It is built and tested on **linux/amd64**
+and **windows/amd64** — if you need another platform, please say so, it helps
+decide which to do first. Note that the two halves come apart: `ogo build` emits
+an ordinary P2 `.binary`, so you can compile on one machine and flash with
+whatever loader you already have on another.
+
+> **On Windows, run `ogo` from `cmd.exe` or PowerShell — not a Unix-emulation
+> shell** (git-bash, MSYS2, Cygwin). The board-facing commands (`run`, `loadp2`)
+> drive the serial port through the native Windows console and are unreliable
+> under those shells: the P2 handshake times out intermittently and the
+> terminal's exit key can stop responding (use Ctrl-C to escape). Building
+> (`build`, `fmt`) is unaffected and works in any shell.
 
 That is the whole toolchain. `ogo` embeds the C backend (flexspin's compiler,
 transpiled to Go) and the P2 loader, so there is no flexprop installation, no
