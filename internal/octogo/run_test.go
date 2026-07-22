@@ -1442,8 +1442,12 @@ func TestEmitCRun(t *testing.T) {
 			}
 			bin := filepath.Join(dir, "prog")
 			// -Wall -Wextra so a lowering that provokes a diagnostic fails here
-			// rather than being discovered on real hardware.
-			out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra", "-I", shim,
+			// rather than being discovered on real hardware. -Wno-unused-function
+			// because the string print/println helpers are emitted as a pair whenever
+			// either is needed, so a program using only one leaves the other unused --
+			// harmless (the P2 backend drops it), but clang warns where gcc does not.
+			out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+				"-Wno-unused-function", "-I", shim,
 				"-o", bin, csrc, "-lpthread").CombinedOutput()
 			if err != nil {
 				t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())
