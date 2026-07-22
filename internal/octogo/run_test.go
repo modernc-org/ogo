@@ -40,6 +40,63 @@ var emitRunCases = []emitRunCase{
 		want: "18\n",
 	},
 	{
+		// break exits the switch: the rest of the case is skipped and execution
+		// resumes after the switch. The if/else lowering makes it a forward goto.
+		name: "break exits a switch case",
+		src: `func main() {
+	x := 2
+	switch x {
+	case 2:
+		println(1)
+		if x > 0 {
+			break
+		}
+		println(99)
+	}
+	println(2)
+}
+`,
+		want: "1\n2\n",
+	},
+	{
+		// A break in a switch that sits inside a loop names the switch, not the
+		// loop, so the loop runs to completion (0, 1, 2). If it named the loop the
+		// output would be just 0.
+		name: "break in a switch inside a loop names the switch",
+		src: `func main() {
+	for i := 0; i < 3; i++ {
+		switch {
+		case i == 1:
+			break
+		}
+		println(i)
+	}
+}
+`,
+		want: "0\n1\n2\n",
+	},
+	{
+		// A break in a loop that sits inside a switch case names the loop, not the
+		// switch, so the statement after the loop still runs (8). If it named the
+		// switch, 8 would be skipped.
+		name: "break in a loop inside a switch names the loop",
+		src: `func main() {
+	x := 1
+	switch x {
+	case 1:
+		for j := 0; j < 5; j++ {
+			if j == 2 {
+				break
+			}
+			println(j)
+		}
+		println(8)
+	}
+}
+`,
+		want: "0\n1\n8\n",
+	},
+	{
 		// Logical && and || combine bools and short-circuit. They bind looser than a
 		// comparison and && tighter than ||, so `a && b || c` groups as `(a && b) ||
 		// c` -- exercised in a condition, an assignment and a bool result.

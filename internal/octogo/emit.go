@@ -962,7 +962,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1238,7 +1238,9 @@ type emitter struct {
 	printSliceElems  map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
 	printlnElems     map[string]bool          // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers           []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
-	inSwitchCase     bool                     // emitting a switch case body, where the if/else lowering gives break a different meaning
+	switchBreak      string                   // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
+	switchBreakSeq   int                      // counter minting unique switch-end labels
+	switchBreakUsed  map[string]bool          // switch-end labels a break actually jumped to, so an unreferenced label is not emitted
 	deferBlockDepth  int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
 	deferReplay      int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
 	iota             int                      // the current iota value while emitting a const spec's expression, or -1 outside one
@@ -2553,16 +2555,19 @@ func (e *emitter) emitStatement(ast []int32) {
 	case first.sym == 0 && e.f.ch(first.tok) == GO:
 		e.emitGo(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == BREAK:
-		// A switch is lowered to a chain of conditionals, not a C switch, so a C
-		// break inside one would leave an enclosing loop instead of the switch --
-		// a silent difference. The checker allows break there, as Go does, so it is
-		// refused here where the lowering is known.
-		if e.inSwitchCase {
-			e.fail("break inside a switch is not supported yet")
-			return
-		}
+		// A switch is lowered to a chain of conditionals, not a C switch, so a
+		// break naming the switch cannot be a C break -- that would leave an
+		// enclosing loop. Cases do not fall through, so breaking a switch merely
+		// exits it: jump past the chain to the switch's end label (emitSwitch emits
+		// the label once a break has referenced it). A break naming a loop, where
+		// switchBreak is "" -- emitLoopBody clears it -- stays a plain C break.
 		e.ind()
-		e.emit("break;\n")
+		if e.switchBreak != "" {
+			e.emit("goto " + e.switchBreak + ";\n")
+			e.switchBreakUsed[e.switchBreak] = true
+		} else {
+			e.emit("break;\n")
+		}
 	case first.sym == 0 && e.f.ch(first.tok) == CONTINUE:
 		// Unaffected by the switch lowering: a C continue names the enclosing loop
 		// either way, exactly as Go's does.
@@ -4189,13 +4194,13 @@ func (e *emitter) emitFor(nodes []Node) {
 func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	e.indent++
 	e.deferBlockDepth++
-	savedSwitch := e.inSwitchCase
-	e.inSwitchCase = false
+	savedBreak := e.switchBreak
+	e.switchBreak = ""
 	if inject != nil {
 		inject()
 	}
 	e.emitBlockStmts(body)
-	e.inSwitchCase = savedSwitch
+	e.switchBreak = savedBreak
 	e.deferBlockDepth--
 	e.indent--
 	e.ind()
@@ -4329,6 +4334,15 @@ func (e *emitter) emitSwitch(ast []int32) {
 		}
 	}
 
+	// A break in any case exits the switch. With the if/else lowering that is a
+	// forward goto to a label after the chain, minted here and emitted below only
+	// if a break referenced it. Saved and restored so a nested switch, or a loop
+	// in a case (emitLoopBody), can set its own target.
+	label := fmt.Sprintf("ogo_break_%d", e.switchBreakSeq)
+	e.switchBreakSeq++
+	savedBreak := e.switchBreak
+	e.switchBreak = label
+
 	var defaultClause Node
 	hasDefault, wrote := false, false
 	for _, cc := range cases {
@@ -4370,6 +4384,12 @@ func (e *emitter) emitSwitch(ast []int32) {
 		e.emit("}\n")
 	case wrote:
 		e.emit("\n")
+	}
+
+	e.switchBreak = savedBreak
+	if e.switchBreakUsed[label] {
+		e.ind()
+		e.emit(label + ":;\n")
 	}
 
 	if block {
@@ -4490,11 +4510,9 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 
 // emitCaseBody emits the statements of a case clause (those following its ":").
 func (e *emitter) emitCaseBody(cc []int32) {
-	// A break written here names the switch, which the if/else lowering cannot
-	// express; emitStatement refuses it while this is set.
-	saved := e.inSwitchCase
-	e.inSwitchCase = true
-	defer func() { e.inSwitchCase = saved }()
+	// A break here names the switch. emitSwitch sets switchBreak (the break's goto
+	// target) around the whole chain, and emitLoopBody clears it inside a loop, so
+	// nothing to toggle here.
 	e.deferBlockDepth++
 	defer func() { e.deferBlockDepth-- }()
 	for n := range it(cc) {
