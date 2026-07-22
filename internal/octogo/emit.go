@@ -6893,45 +6893,77 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 // operator precedence differs (notably Go binds << tighter than C does).
 // Integer-literal text is normalized for C by normalizeIntLit.
 func (e *emitter) emitExpr(ast []int32) {
-	kids := slices.Collect(it(ast))
 	// A condition or assignment RHS reaches here as the Expression's unwrapped
 	// children, so a string comparison must be recognized on this flat list too --
 	// emitExprNode's Expression case only fires for a wrapped Expression node.
-	if e.emitStringEq(kids) {
-		return
-	}
-	for _, n := range kids {
-		e.emitExprNode(n)
-	}
+	// emitKidsStringEq rewrites both a standalone and an embedded string compare and
+	// is otherwise identical to emitting the kids in order.
+	e.emitKidsStringEq(slices.Collect(it(ast)))
 }
 
-// emitStringEq lowers a standalone string equality -- kids being exactly
-// "operand (== | !=) operand" with string operands -- to the ogo_string_eq helper,
-// returning true when it did. C cannot compare the { ptr, len } structs and Go
-// compares contents. A string comparison nested in a larger || / && chain is not a
-// three-node list, so it falls through (and the backend rejects it, as before).
-func (e *emitter) emitStringEq(kids []Node) bool {
-	if len(kids) != 3 || kids[1].sym != RelOp {
-		return false
+// stringEqAt reports whether kids[i:i+3] is a string equality comparison --
+// "operand (== | !=) operand" with a string operand -- and returns the operator.
+// C cannot compare the { ptr, len } structs; Go compares contents.
+func (e *emitter) stringEqAt(kids []Node, i int) (op string, ok bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return "", false
 	}
-	op := e.opText(kids[1].ast)
+	op = e.opText(kids[i+1].ast)
 	if op != "==" && op != "!=" {
-		return false
+		return "", false
 	}
-	if ct, ok := e.inferCType(kids[0].ast); !ok || ct != cString {
-		return false
+	if ct, ok := e.inferCType(kids[i].ast); !ok || ct != cString {
+		return "", false
 	}
+	return op, true
+}
+
+// emitStringEqTriple emits a string equality as the ogo_string_eq helper (negated
+// for "!="), l being the left operand and r the right.
+func (e *emitter) emitStringEqTriple(l, r Node, op string) {
 	e.usesString = true
 	e.usesStringEq = true
 	if op == "!=" {
 		e.emit("!")
 	}
 	e.emit("ogo_string_eq(")
-	e.emitExprNode(kids[0])
+	e.emitExprNode(l)
 	e.emit(", ")
-	e.emitExprNode(kids[2])
+	e.emitExprNode(r)
 	e.emit(")")
+}
+
+// emitStringEq lowers a standalone string equality -- kids being exactly
+// "operand (== | !=) operand" with string operands -- to ogo_string_eq, returning
+// true when it did. It is the no-extra-parens fast path; emitKidsStringEq handles
+// a comparison embedded in a larger chain.
+func (e *emitter) emitStringEq(kids []Node) bool {
+	if len(kids) != 3 {
+		return false
+	}
+	op, ok := e.stringEqAt(kids, 0)
+	if !ok {
+		return false
+	}
+	e.emitStringEqTriple(kids[0], kids[2], op)
 	return true
+}
+
+// emitKidsStringEq emits a flat operand/operator kid list, rewriting each string
+// equality sub-comparison to ogo_string_eq so a string compare embedded in a
+// larger || / && chain (`s == "a" && cond`) lowers correctly. Non-string operands
+// and every other operator emit unchanged, so a chain with no string comparison is
+// identical to emitting the kids in order.
+func (e *emitter) emitKidsStringEq(kids []Node) {
+	for i := 0; i < len(kids); {
+		if op, ok := e.stringEqAt(kids, i); ok {
+			e.emitStringEqTriple(kids[i], kids[i+2], op)
+			i += 3
+			continue
+		}
+		e.emitExprNode(kids[i])
+		i++
+	}
 }
 
 // emitLogicalKids emits the operand/operator children of an Expression or
@@ -6954,9 +6986,7 @@ func (e *emitter) emitLogicalKids(kids []Node) {
 		}
 	}
 	if !hasOr || !hasAnd {
-		for _, c := range kids {
-			e.emitExprNode(c)
-		}
+		e.emitKidsStringEq(kids)
 		return
 	}
 	emitGroup := func(group []Node) {
@@ -6966,9 +6996,7 @@ func (e *emitter) emitLogicalKids(kids []Node) {
 		if wrap {
 			e.emit("(")
 		}
-		for _, c := range group {
-			e.emitExprNode(c)
-		}
+		e.emitKidsStringEq(group)
 		if wrap {
 			e.emit(")")
 		}

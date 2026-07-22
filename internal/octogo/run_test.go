@@ -128,9 +128,10 @@ func main() {
 	},
 	{
 		// String equality compares contents, not the { ptr, len } struct C's `==`
-		// would reject. Exercised as a value, an if condition, a for condition, and
-		// a switch (single and multi-value cases) -- every lowering path that emits
-		// a comparison routes a string operand through the ogo_string_eq helper.
+		// would reject. Exercised as a value, an if condition, a for condition, a
+		// switch (single and multi-value cases), and -- the embedded case -- string
+		// comparisons mixed with && / || and int comparisons: every lowering path
+		// routes each string comparison through the ogo_string_eq helper.
 		name: "string equality and string switch",
 		src: `func classify(s string) int {
 	switch s {
@@ -155,9 +156,15 @@ func main() {
 	}
 	println(n)
 	println(classify("hey"), classify("bye"), classify("x"))
+	b := "yes"
+	x := 1
+	if b == "yes" && x > 0 {
+		println(2)
+	}
+	println(b == "no" || b == "yes", x > 0 && b != "z")
 }
 `,
-		want: "true false\n1\n1\n1 2 0\n",
+		want: "true false\n1\n1\n1 2 0\n2\ntrue true\n",
 	},
 	{
 		// break exits the switch: the rest of the case is skipped and execution
