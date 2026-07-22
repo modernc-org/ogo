@@ -47,8 +47,6 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 	return rc, nil
 }
 
-//TODO given the same seed, the results are not reproducible.
-
 // Main is the entry point for the octosmith fuzzer as a standalone executable.
 // It parses arguments, initializes the deterministic RNG, and drives generation.
 func Main(args []string, stdout, stderr io.Writer) error {

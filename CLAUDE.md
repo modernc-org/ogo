@@ -232,7 +232,11 @@ still design-only.
   backend and runs it on a real P2, gated on `OGO_BOARD_PORT` (`make board`).
   The second exists because flexcc and gcc have been observed to disagree on
   semantics, not just warnings -- a host-green emit feature is not verified.
-- `smith` is not yet seed-reproducible (known TODO in `octosmith.go`).
+- `smith` is seed-reproducible: `ogo smith -seed N` emits the same program every
+  run (the last non-determinism, map-iteration order in `Scope.GetSymbolsOfType`,
+  was sorted). Its generator still has separate bugs -- it can emit programs that
+  reference an out-of-scope loop variable or call the unimplemented `panic`, so a
+  generated program does not always compile yet.
 
 ## Test conventions
 

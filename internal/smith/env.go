@@ -4,6 +4,8 @@
 
 package octosmith
 
+import "sort"
+
 // Symbol represents a declared entity (variable, constant, func).
 type Symbol struct {
 	Name string
@@ -46,7 +48,16 @@ func (s *Scope) Lookup(name string) *Symbol {
 // This is critical for generating expressions.
 func (s *Scope) GetSymbolsOfType(typ Type) []*Symbol {
 	var matches []*Symbol
-	for _, sym := range s.Symbols {
+	// Iterate in sorted name order: Go randomizes map iteration, and the caller
+	// picks from the result with the seeded RNG by index, so an unsorted order
+	// makes generation non-reproducible from a seed (mirrors flushUnused).
+	names := make([]string, 0, len(s.Symbols))
+	for name := range s.Symbols {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		sym := s.Symbols[name]
 		// Basic type matching (we can refine this for assignability later)
 		if sym.Type.String() == typ.String() {
 			matches = append(matches, sym)
