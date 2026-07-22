@@ -79,8 +79,13 @@ inputs, and never hand-edit the outputs.
 
 3. **flexcc backend.** `internal/flexcc/ccgo_<goos>_<goarch>.go` (~12 MB, ~455k
    lines each) is the flexspin/flexcc C compiler transpiled to Go by
-   `modernc.org/ccgo`. Two targets are committed: `ccgo_linux_amd64.go` and
-   `ccgo_windows_amd64.go`. `internal/generator.go` (build-tagged `//go:build
+   `modernc.org/ccgo`. Two targets are committed — `ccgo_linux_amd64.go` and
+   `ccgo_windows_amd64.go` — plus `ccgo.go`, the byte-identical decls `undup`
+   (`modernc.org/undup`) folds out of both under a shared build tag. The fold is
+   only ~1.03x here: the LP64 linux and LLP64 windows transpiles share almost no
+   decls byte-for-byte (unlike loadp2, whose ~2x comes from its same-ABI
+   linux/amd64+arm64 pair). Do not hand-edit any of the three. `internal/generator.go`
+   (build-tagged `//go:build
    ignore`) drives both: it clones `totalspectrum/flexprop` (pinned to tag
    **`v7.7.0`** via the `flexpropRef` constant), applies `internal/mcpp_main.c.diff`,
    transpiles, and rewrites the emitted `main` package into a reusable `flexcc`
@@ -100,7 +105,11 @@ inputs, and never hand-edit the outputs.
    TARGET_GOARCH=amd64 go run generator.go && gofmt -s -w flexcc/` (windows, needs
    `x86_64-w64-mingw32-gcc` and the `ccgo` CLI on PATH) — heavy and network-dependent;
    to adopt a changed `flexpropRef` you must `rm -rf internal/flexprop` first so the
-   pin is re-cloned. The windows backend also needs two hand-written companions:
+   pin is re-cloned. Because the `ccgo_*.go` are `undup`-deduped, every regen must be
+   wrapped (all local): `undup -base ccgo -expand -dir flexcc/` first — Dedup reads
+   only the `ccgo_*.go` files, so skipping the expand loses `ccgo.go`'s shared decls —
+   then regenerate the target, then `undup -base ccgo -pattern 'ccgo_*.go' -dir flexcc/`
+   to re-fold. The windows backend also needs two hand-written companions:
    `internal/flexcc/supplement_windows_amd64.go` (the CRT/Win32 functions
    `modernc.org/libc` lacks or stubs for windows) and `freopen_notwindows.go` (its
    linux counterpart); see the windows note below.
