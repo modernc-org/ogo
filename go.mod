@@ -28,4 +28,7 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sortutil v1.2.1 // indirect
 	modernc.org/strutil v1.2.1 // indirect
+	modernc.org/undup v0.1.1 // indirect
 )
+
+tool modernc.org/undup

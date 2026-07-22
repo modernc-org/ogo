@@ -102,14 +102,16 @@ inputs, and never hand-edit the outputs.
    runtime so `flexcc.Main` needs no external flexprop install — and
    `internal/flexcc/LICENSE-flexprop` for attribution. Regeneration is `cd internal &&
    go generate` (linux; the native default) or `cd internal && TARGET_GOOS=windows
-   TARGET_GOARCH=amd64 go run generator.go && gofmt -s -w flexcc/` (windows, needs
-   `x86_64-w64-mingw32-gcc` and the `ccgo` CLI on PATH) — heavy and network-dependent;
-   to adopt a changed `flexpropRef` you must `rm -rf internal/flexprop` first so the
-   pin is re-cloned. Because the `ccgo_*.go` are `undup`-deduped, every regen must be
-   wrapped (all local): `undup -base ccgo -expand -dir flexcc/` first — Dedup reads
-   only the `ccgo_*.go` files, so skipping the expand loses `ccgo.go`'s shared decls —
-   then regenerate the target, then `undup -base ccgo -pattern 'ccgo_*.go' -dir flexcc/`
-   to re-fold. The windows backend also needs two hand-written companions:
+   TARGET_GOARCH=amd64 go run generator.go` (windows, needs `x86_64-w64-mingw32-gcc`
+   and the `ccgo` CLI on PATH) — heavy and network-dependent; to adopt a changed
+   `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is re-cloned.
+   The generator handles the `undup` fold itself so the steps can't be run out of
+   order: it `undup.Expand`s the prior fold to full per-target files, regenerates this
+   target, `gofmt -s`s so the shared decls are byte-canonical across targets, then
+   `undup.Dedup`s to re-fold (`modernc.org/undup/lib`, pinned via go.mod's `tool
+   modernc.org/undup` directive so `go mod tidy` keeps it despite the import living
+   only in the `//go:build ignore` generator). No manual expand/gofmt/dedup needed.
+   The windows backend also needs two hand-written companions:
    `internal/flexcc/supplement_windows_amd64.go` (the CRT/Win32 functions
    `modernc.org/libc` lacks or stubs for windows) and `freopen_notwindows.go` (its
    linux counterpart); see the windows note below.

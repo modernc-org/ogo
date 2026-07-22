@@ -25,6 +25,7 @@ import (
 
 	"modernc.org/ccgo/v4/lib"
 	"modernc.org/gc/v3"
+	undup "modernc.org/undup/lib"
 )
 
 const (
@@ -138,6 +139,12 @@ func main() {
 		fail(1, "os.MkdirAll(%q): err=%v", flexccDir, err)
 	}
 
+	// Regeneration is wrapped in an undup expand/dedup so the committed backends stay
+	// folded with none of the manual steps done in the wrong order: reconstruct the
+	// full per-target files from the prior fold, (re)generate this target over its
+	// file, gofmt so shared decls are byte-canonical across targets, then re-fold.
+	undupExpand(flexccDir)
+
 	// The linux/amd64 backend is transpiled natively (ccgo -exec make);
 	// windows/amd64 is cross-compiled on this linux host with MinGW. Both hand off
 	// the emitted package-main Go to main2lib, which threads a *CC state struct and
@@ -149,9 +156,63 @@ func main() {
 	default:
 		flexccGoSrc = transpileLinux(wd, flexccDir)
 	}
-
 	flexccGoDest := filepath.Join(flexccDir, fmt.Sprintf("ccgo_%s_%s.go", goos, goarch))
 	main2lib(flexccGoDest, flexccGoSrc)
+
+	gofmtFlexcc(flexccDir)
+	undupDedup(flexccDir)
+}
+
+// undupBase / undupPattern identify the flexcc backend group undup folds: the
+// per-target ccgo_<goos>_<goarch>.go files and the shared ccgo.go they collapse
+// into.
+const (
+	undupBase    = "ccgo"
+	undupPattern = "ccgo_*.go"
+)
+
+// undupExpand reconstructs the full per-target ccgo_*.go files from a prior undup
+// fold (the shared ccgo.go), removing that shared file, so the regen and the
+// following undupDedup see full inputs -- undup.Dedup reads only the per-target
+// files and would silently drop a fold left in place. It is a no-op when the
+// backend is not folded (no ccgo.go), e.g. a first-ever generation.
+func undupExpand(flexccDir string) {
+	if _, err := os.Stat(filepath.Join(flexccDir, undupBase+".go")); err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		fail(1, "stat %s.go: err=%v", undupBase, err)
+	}
+	r, err := undup.Expand(flexccDir, undupBase)
+	if err != nil {
+		fail(1, "undup expand: err=%v", err)
+	}
+	fmt.Printf("undup expand: %d targets reconstructed\n", r.Targets)
+}
+
+// undupDedup folds the byte-identical top-level decls shared by the per-target
+// ccgo_*.go backends into the build-tagged shared ccgo.go, verifying each target
+// reconstructs byte-for-byte before writing anything. Its inputs must be
+// gofmt-canonical (see gofmtFlexcc) or the freshly generated target's decls will
+// not match the expand-reconstructed ones and would not fold.
+func undupDedup(flexccDir string) {
+	r, err := undup.Dedup(flexccDir, undupBase, undupPattern)
+	if err != nil {
+		fail(1, "undup dedup: err=%v", err)
+	}
+	fmt.Printf("undup dedup: %d targets, %d decls, %.2fx (%d -> %d bytes)\n",
+		r.Targets, r.TotalDecls, r.Ratio(), r.InBytes, r.OutBytes)
+}
+
+// gofmtFlexcc runs gofmt -s -w over the flexcc package. main2lib emits via sed,
+// not gofmt, and undup keys decls on their exact bytes, so the per-target files
+// must be canonicalized before the fold. Doing it here (rather than leaving it to
+// generate.go's go:generate gofmt step, which runs too late -- after undupDedup)
+// also removes the need to gofmt by hand after a manual windows regen.
+func gofmtFlexcc(flexccDir string) {
+	if err := shell("", "gofmt", "-s", "-w", flexccDir); err != nil {
+		fail(1, "gofmt %s: err=%v", flexccDir, err)
+	}
 }
 
 // transpileLinux transpiles flexcc for linux/amd64 the native way: `ccgo -exec
