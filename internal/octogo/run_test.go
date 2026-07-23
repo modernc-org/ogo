@@ -245,6 +245,38 @@ func main() {
 		want: "2147483648 1 4278190080\n",
 	},
 	{
+		// An empty struct carries no data but is a real, legal type: it holds
+		// methods, can be passed and returned by value, embedded as a field, and
+		// stored in arrays/slices. C rejects a struct with no members, so the
+		// emitter gives it one hidden byte; that byte stays invisible to OctoGo.
+		name: "empty struct type",
+		src: `type marker struct{}
+
+func (m marker) tag() int { return 42 }
+
+func use(m marker) int { return m.tag() }
+
+func mk() marker { return marker{} }
+
+type wrap struct {
+	m marker
+	n int
+}
+
+func main() {
+	var m marker
+	println(m.tag())
+	println(use(mk()))
+	var a [3]marker
+	s := a[:]
+	println(len(s))
+	w := wrap{marker{}, 7}
+	println(w.n)
+}
+`,
+		want: "42\n42\n3\n7\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

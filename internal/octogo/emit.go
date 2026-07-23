@@ -629,6 +629,9 @@ func (e *emitter) zeroBraceC(ctype string) string {
 	if !ok {
 		return e.zeroInitC(ctype) // a string or slice header leads with a scalar
 	}
+	if len(fields) == 0 {
+		return "{0}" // empty struct: zero its one hidden byte, not "{}" (invalid C)
+	}
 	var parts []string
 	for _, f := range fields {
 		parts = append(parts, e.zeroFieldC(f))
@@ -1604,6 +1607,13 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 				}
 				e.emit(" " + fld.ctype + " " + fld.name + ";")
 			}
+			if len(fields) == 0 {
+				// C rejects a struct with no members; Go's empty struct is a
+				// legal, zero-information type (markers, chan struct{} signals).
+				// Give it one hidden byte so the C type is well-formed. OctoGo
+				// code cannot name the field, so it stays invisible.
+				e.emit(" char _ogo_empty;")
+			}
 			e.emit(" } " + name + ";\n")
 			continue
 		}
@@ -2150,6 +2160,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	// parameter, bound in the local environment so the body reads it like any local
 	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
 	var proto string
+	var emptyRecvName string // receiver of an empty-struct method: nothing to access, so (void) it
 	if recv == nil {
 		proto = e.funcSignatureC(name, sig)
 		e.curFunc = name
@@ -2159,6 +2170,9 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
 		e.locals[recvName] = recvCType
+		if flds, ok := e.structs[methodBaseType(recvCType)]; ok && len(flds) == 0 {
+			emptyRecvName = recvName
+		}
 	}
 	if proto == "" {
 		return
@@ -2168,6 +2182,10 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.indent++
 	e.emitParamCopies(sig)
 	e.emitParamVoids(sig)
+	if emptyRecvName != "" {
+		e.ind()
+		e.emit("(void)" + emptyRecvName + ";\n")
+	}
 	e.declareNamedResults(sig, body)
 	// A bare "return" (legal only when every result is named) returns these. A
 	// blank result "_" has no C variable, so it contributes its zero value.

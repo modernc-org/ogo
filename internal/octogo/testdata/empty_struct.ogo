@@ -1,0 +1,34 @@
+// COMPILE
+
+// An empty struct carries no data but is a legal, first-class type: it is Go's
+// canonical zero-information value, used for markers, set membership and signal
+// channels (chan struct{}). It holds methods, is passed and returned by value,
+// embeds as a field, and stores in arrays and slices. The emitter gives the C
+// struct one hidden byte -- C rejects a struct with no members -- and (void)s an
+// empty-struct method receiver, which by definition has nothing to access.
+
+type marker struct{}
+
+func (m marker) tag() int { return 42 }
+
+func use(m marker) int { return m.tag() }
+
+func mk() marker { return marker{} }
+
+type wrap struct {
+	m marker
+	n int
+}
+
+func run() {
+	var m marker
+	_ = m.tag()
+	_ = use(mk())
+
+	var a [3]marker
+	s := a[:]
+	_ = len(s)
+
+	w := wrap{marker{}, 7}
+	_ = w.n
+}
