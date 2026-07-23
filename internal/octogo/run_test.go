@@ -592,6 +592,23 @@ func main() {
 		want: "10\nHi, P2! é\ntrue 2\n",
 	},
 	{
+		// A Unicode function name is valid, as in Go. flexcc (like older C) rejects a
+		// Unicode C identifier, so every emitted identifier passes through cIdent,
+		// which escapes a non-ASCII name to an ogo_U_ form (here Δ -> ogo_U_394) at
+		// both its definition and its calls. ASCII identifiers are unchanged.
+		name: "unicode function name",
+		src: `func Δ(x int) int { return x * 2 }
+
+func μ(a, b int) int { return a + b }
+
+func main() {
+	println(Δ(21))
+	println(μ(Δ(10), 2))
+}
+`,
+		want: "42\n22\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
@@ -1933,16 +1950,23 @@ func TestEmitCMultiPackage(t *testing.T) {
 	fsys := fstest.MapFS{
 		"main.ogo": &fstest.MapFile{Data: []byte(`import "greet"
 
+// A private helper of main's, same name as one in greet: with per-package name
+// mangling the two do not collide in the single translation unit.
+func scale(n int) int { return n + 1 }
+
 func main() {
 	println(greet.Hello(3))
 	msg := greet.Loud("hi")
 	println(msg)
 	println(greet.Twice(21) + 8)
+	println(scale(5))
 }
 `)},
-		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`func Hello(n int) int { return n * 100 }
+		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`func Hello(n int) int { return scale(n) * 100 }
 
 func Twice(n int) int { return n * 2 }
+
+func scale(n int) int { return n }
 `)},
 		"greet/loud.ogo": &fstest.MapFile{Data: []byte(`func Loud(s string) string {
 	if len(s) > 0 {
@@ -1978,7 +2002,7 @@ func Twice(n int) int { return n * 2 }
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
-	const want = "300\nLOUD\n50\n"
+	const want = "300\nLOUD\n50\n6\n"
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
 	}

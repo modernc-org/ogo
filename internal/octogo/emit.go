@@ -18,6 +18,63 @@ import (
 // exceeds the signed 64-bit range so C reads it as unsigned (uint64) rather than
 // warning that the constant is too large to be signed. Smaller values need no
 // suffix: they assign cleanly to any integer type.
+// cIdent turns an OctoGo identifier into a valid C identifier. It is the identity on
+// an already-valid ASCII C identifier -- so every ASCII program's emitted C is
+// byte-for-byte unchanged -- and escapes any identifier containing a non-ASCII rune
+// (flexcc, like older C, rejects Unicode identifiers). The escape is injective: a
+// name with any non-C rune becomes "ogo_U_" followed by each rune's hex code, so
+// distinct identifiers never collide and the result cannot collide with a normal
+// identifier (the ogo_ prefix is reserved for the compiler's own symbols).
+func cIdent(name string) string {
+	if isCIdent(name) {
+		return name
+	}
+	var b strings.Builder
+	b.WriteString("ogo_U")
+	for _, r := range name {
+		fmt.Fprintf(&b, "_%x", r)
+	}
+	return b.String()
+}
+
+// isCIdent reports whether name is already a valid, non-empty C identifier: ASCII
+// letters, digits and underscore, not starting with a digit.
+func isCIdent(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+		case i > 0 && r >= '0' && r <= '9':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// pkgPrefix is the C-symbol prefix for a package's top-level names, derived from its
+// import path. The main package (import path "") has no prefix, so its symbols keep
+// their source names (and main() stays main); an imported package's path is made a
+// C identifier (a "/" separator becomes "_", non-ASCII is escaped) so its symbols
+// are namespaced and cannot collide with another package's.
+func pkgPrefix(importPath string) string {
+	if importPath == "" {
+		return ""
+	}
+	return cIdent(strings.ReplaceAll(importPath, "/", "_"))
+}
+
+// mangle is a package's C symbol name for a top-level identifier: the (Unicode-safe)
+// name in the main package, or prefix_name in an imported one.
+func mangle(prefix, name string) string {
+	if prefix == "" {
+		return cIdent(name)
+	}
+	return prefix + "_" + cIdent(name)
+}
+
 func cIntLit(src string) string {
 	lit := normalizeIntLit(src)
 	if v, err := strconv.ParseUint(lit, 0, 64); err == nil && v > math.MaxInt64 {
@@ -373,11 +430,11 @@ func (e *emitter) emitGo(nodes []Node) {
 		e.fail("only `go f(args)` on a plain function is supported yet")
 		return
 	}
-	if _, ok := e.funcRet[callee]; !ok {
+	if _, ok := e.userFunc(callee); !ok {
 		e.fail("only `go f(args)` on a package function is supported yet")
 		return
 	}
-	site := goSite{callee: callee, id: len(e.goSites)}
+	site := goSite{callee: e.funcCallC(callee), id: len(e.goSites)}
 	args := e.callArgExprs(suffix[0].ast)
 	for _, a := range args {
 		ct, ok := e.inferCType(a.ast)
@@ -1133,8 +1190,8 @@ func Release() EmitOption { return func(e *emitter) { e.release = true } }
 // packages are compiled together, matching the no-separate-compilation model). A p2
 // import resolves to noPkg -- it has no .ogo source, only intrinsics -- and is
 // skipped here, staying on the p2Intrinsics path.
-func reachableFiles(main *Package) []*File {
-	var order []*File
+func reachablePackages(main *Package) []*Package {
+	var order []*Package
 	seen := map[string]bool{}
 	var visit func(p *Package)
 	visit = func(p *Package) {
@@ -1147,7 +1204,7 @@ func reachableFiles(main *Package) []*File {
 				visit(spec.Pkg)
 			}
 		}
-		order = append(order, p.Files...)
+		order = append(order, p)
 	}
 	visit(main)
 	return order
@@ -1161,18 +1218,32 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	e.registerBuilder()
 
 	// The whole program -- the main package and every package it imports,
-	// transitively -- is emitted into one translation unit, so every pass runs over
-	// all reachable files in dependency order rather than just the main package's.
-	allFiles := reachableFiles(pkg)
+	// transitively -- is emitted into one translation unit, in dependency order.
+	// forEachFile runs a pass over every reachable file with e.curPkgPrefix set to
+	// that file's package, so top-level symbols are mangled into their package's
+	// namespace (see mangle) and cannot collide across packages.
+	pkgs := reachablePackages(pkg)
+	forEachFile := func(fn func()) {
+		for _, p := range pkgs {
+			e.curPkgPrefix = pkgPrefix(p.ImportPath)
+			for _, f := range p.Files {
+				e.f = f
+				fn()
+			}
+		}
+		e.curPkgPrefix = ""
+	}
 
-	// Record the qualifiers of resolved user-package imports (a p2 import is
-	// unresolved -- noPkg -- and stays on the intrinsic path), so a `pkg.F(...)` call
-	// is recognised as a call into an emitted package rather than an unknown one.
-	e.importQualifiers = map[string]bool{}
-	for _, f := range allFiles {
-		for _, spec := range f.ImportSpecs {
-			if spec.Pkg != nil && spec.Pkg != noPkg {
-				e.importQualifiers[spec.ImportQualifier] = true
+	// Record each import qualifier -> the imported package's C prefix, so a
+	// `pkg.F(...)` call resolves into that package's namespace. A p2 import is
+	// unresolved (noPkg) and stays on the intrinsic path.
+	e.importQualifiers = map[string]string{}
+	for _, p := range pkgs {
+		for _, f := range p.Files {
+			for _, spec := range f.ImportSpecs {
+				if spec.Pkg != nil && spec.Pkg != noPkg {
+					e.importQualifiers[spec.ImportQualifier] = pkgPrefix(spec.Pkg.ImportPath)
+				}
 			}
 		}
 	}
@@ -1182,36 +1253,24 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// later signature, result struct, or variable of struct type resolves.
 	var typedefs bytes.Buffer
 	e.w = &typedefs
-	for _, f := range allFiles {
-		e.f = f
-		e.collectStructs(f.AST)
-	}
+	forEachFile(func() { e.collectStructs(e.f.AST) })
 
 	// Pass 0: record each function's C result types in funcRet (for typing calls
 	// in `x := f()` and destructuring `a, b := f()`), and emit a result-struct
 	// typedef for each multi-result function (C has no multiple return, so a
 	// function returning N>1 values returns a struct of N fields).
-	for _, f := range allFiles {
-		e.f = f
-		e.collectResults(f.AST)
-	}
+	forEachFile(func() { e.collectResults(e.f.AST) })
 
 	// Pass 0.5: package-level constant declarations, emitted (in source order)
 	// before the functions that use them and recorded in the global type
 	// environment so a `x := CONST` short declaration can be typed.
 	var globals bytes.Buffer
 	e.w = &globals
-	for _, f := range allFiles {
-		e.f = f
-		e.emitPackageConsts(f.AST)
-	}
+	forEachFile(func() { e.emitPackageConsts(e.f.AST) })
 	// Package-level variables follow the constants (so a variable's initializer may
 	// fold a constant), each a file-scope `static` recorded in the global type
 	// environment.
-	for _, f := range allFiles {
-		e.f = f
-		e.emitPackageVars(f.AST)
-	}
+	forEachFile(func() { e.emitPackageVars(e.f.AST) })
 
 	// Pass 1: forward prototypes for user functions. C requires a declaration
 	// before use, but OctoGo (like Go) does not order top-level declarations, so
@@ -1219,19 +1278,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// independent of source order.
 	var protos bytes.Buffer
 	e.w = &protos
-	for _, f := range allFiles {
-		e.f = f
-		e.emitPrototypes(f.AST)
-	}
+	forEachFile(func() { e.emitPrototypes(e.f.AST) })
 
 	// Pass 2: the function definitions themselves.
 	var body bytes.Buffer
 	e.w = &body
 	e.wroteDecl = false
-	for _, f := range allFiles {
-		e.f = f
-		e.emitFileDecls(f.AST)
-	}
+	forEachFile(func() { e.emitFileDecls(e.f.AST) })
 	if e.err != nil {
 		return e.err
 	}
@@ -1474,7 +1527,8 @@ type emitter struct {
 	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
 	usesCopyStr        bool                     // copy(dst []byte, src string) is used: emit the ogo_copystr helper
 	usesBuilder        bool                     // the Builder type is used: emit its typedef and method helpers
-	importQualifiers   map[string]bool          // qualifiers of resolved user-package imports (not p2), so `pkg.F(...)` is a call into an emitted package
+	importQualifiers   map[string]string        // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
+	curPkgPrefix       string                   // the C symbol prefix of the package whose file is currently being emitted ("" for main)
 	clearElems         map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
 	minElems           map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
 	maxElems           map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
@@ -2194,7 +2248,7 @@ func (e *emitter) collectResults(ast []int32) {
 		if !ok || name == "" {
 			return
 		}
-		cname := name
+		cname := mangle(e.curPkgPrefix, name)
 		if recv != nil {
 			_, rct, _ := e.receiverInfo(recv)
 			cname = methodCName(methodBaseType(rct), name)
@@ -2246,7 +2300,7 @@ func (e *emitter) emitPrototypes(ast []int32) {
 		}
 		var proto string
 		if recv == nil {
-			proto = e.funcSignatureC(name, sig)
+			proto = e.funcSignatureC(mangle(e.curPkgPrefix, name), sig)
 		} else {
 			rn, rct, _ := e.receiverInfo(recv)
 			proto = e.methodSignatureC(methodCName(methodBaseType(rct), name), rn, rct, sig)
@@ -2254,11 +2308,11 @@ func (e *emitter) emitPrototypes(ast []int32) {
 		if proto != "" {
 			e.emit(proto + ";\n")
 		}
-		// Go runs init() before main. Recorded here, in the prototype pass, rather
-		// than where the body is emitted: main is emitted in that same later pass,
-		// so an init declared after it would otherwise not be known in time.
+		// Go runs each package's init() before main, imports first. Recorded here, in
+		// the prototype pass, by mangled name so every package's init is distinct and
+		// callable in dependency order.
 		if recv == nil && name == "init" {
-			e.initFuncs = append(e.initFuncs, name)
+			e.initFuncs = append(e.initFuncs, mangle(e.curPkgPrefix, name))
 		}
 	})
 }
@@ -2295,8 +2349,9 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	var proto string
 	var emptyRecvName string // receiver of an empty-struct method: nothing to access, so (void) it
 	if recv == nil {
-		proto = e.funcSignatureC(name, sig)
-		e.curFunc = name
+		cname := mangle(e.curPkgPrefix, name)
+		proto = e.funcSignatureC(cname, sig)
+		e.curFunc = cname
 	} else {
 		recvName, recvCType, recvNamed := e.receiverInfo(recv)
 		cname := methodCName(methodBaseType(recvCType), name)
@@ -3695,7 +3750,7 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		e.fail("destructuring into package variables requires a single function call on the right-hand side")
 		return
 	}
-	resTypes, ok := e.funcRet[callee]
+	resTypes, ok := e.userFunc(callee)
 	if !ok {
 		e.fail("destructuring into package variables requires a call to a function, not %q", callee)
 		return
@@ -3722,7 +3777,7 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		e.emit("static " + resTypes[i] + " " + nm + " = " + e.zeroInitC(resTypes[i]) + ";\n")
 	}
 	tmp := e.newTmp()
-	e.deferPkgInit(e.retStructName(callee) + " " + tmp + " = " + call + ";")
+	e.deferPkgInit(e.retStructName(e.funcCallC(callee)) + " " + tmp + " = " + call + ";")
 	for i, nm := range names {
 		if nm == "_" {
 			continue // its value is produced but bound to nothing
@@ -5560,11 +5615,11 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitCopy(suffix[0].ast)
 			return true
 		}
-		if _, isUser := e.funcRet[recv]; !isUser && recv == "clear" {
+		if _, isUser := e.userFunc(recv); !isUser && recv == "clear" {
 			e.emitClear(suffix[0].ast)
 			return true
 		}
-		if _, isUser := e.funcRet[recv]; !isUser && (recv == "min" || recv == "max") {
+		if _, isUser := e.userFunc(recv); !isUser && (recv == "min" || recv == "max") {
 			// min and max are common names; a user function of that name (in funcRet)
 			// shadows the builtin, as Go allows, and is emitted as a real call below.
 			e.emitMinMax(recv, suffix[0].ast)
@@ -5600,7 +5655,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				return true
 			}
 		}
-		if _, isUser := e.funcRet[recv]; !isUser && isBuiltinFuncName(recv) {
+		if _, isUser := e.userFunc(recv); !isUser && isBuiltinFuncName(recv) {
 			// A predeclared builtin the emitter does not implement. The checker
 			// exempts every builtin name from its undefined check, so one not handled
 			// above (len, cap, append, copy, make; print/println via emitCall) would
@@ -5610,7 +5665,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.fail("the %s builtin is not supported yet", recv)
 			return true
 		}
-		e.emit(recv + "(")
+		e.emit(e.funcCallC(recv) + "(")
 		e.emitCallArgs(suffix[0].ast)
 		e.emit(")")
 		return true
@@ -5631,11 +5686,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emit(")")
 			return true
 		}
-		if e.importQualifiers[recv] {
-			// A call into an imported user package. In the single-TU whole-program
-			// model its functions are emitted unmangled, so the qualifier is dropped
-			// and the exported name is called directly.
-			e.emit(method + "(")
+		if prefix, ok := e.importQualifiers[recv]; ok {
+			// A call into an imported user package: the exported function is emitted
+			// in that package's namespace, so the call resolves to the mangled name.
+			e.emit(mangle(prefix, method) + "(")
 			e.emitCallArgs(suffix[1].ast)
 			e.emit(")")
 			return true
@@ -5684,7 +5738,17 @@ func (e *emitter) emitMethodReceiver(recv, recvCType string, wantPtr bool) {
 // value (a slice, array or plain variable) that a suffix reads from, or a function
 // whose first suffix must be the call that produces a value.
 func (e *emitter) isChainVar(base string) bool  { _, ok := e.accessBase(base); return ok }
-func (e *emitter) isChainFunc(base string) bool { _, ok := e.funcRet[base]; return ok }
+func (e *emitter) isChainFunc(base string) bool { _, ok := e.userFunc(base); return ok }
+
+// userFunc looks up a same-package top-level function's recorded result types by its
+// source name, mangling to the current package's namespace (see mangle). funcCallC
+// is the C name that same call emits, so a definition and its call always agree.
+func (e *emitter) userFunc(name string) ([]string, bool) {
+	rts, ok := e.funcRet[mangle(e.curPkgPrefix, name)]
+	return rts, ok
+}
+
+func (e *emitter) funcCallC(name string) string { return mangle(e.curPkgPrefix, name) }
 
 // argsCText renders a CallSuffix's arguments as C text -- the same output
 // emitCallArgs streams, captured to a string so a call reached mid-chain can be
@@ -5758,11 +5822,11 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		case CallSuffix:
 			// A call reaches here only on the pending leading function; a method
 			// call is recognised at its Selector and consumes the CallSuffix there.
-			rts, okr := e.funcRet[base]
+			rts, okr := e.userFunc(base)
 			if !pendingFn || !okr || len(rts) != 1 {
 				return "", "", false, false
 			}
-			text = base + "(" + e.argsCText(n.ast) + ")"
+			text = e.funcCallC(base) + "(" + e.argsCText(n.ast) + ")"
 			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
 		case Selector:
 			field := e.soleIdent(n.ast)
@@ -5861,7 +5925,7 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 		n := steps[i]
 		switch n.sym {
 		case CallSuffix:
-			rts, okr := e.funcRet[base]
+			rts, okr := e.userFunc(base)
 			if !pendingFn || !okr || len(rts) != 1 {
 				return "", false
 			}
@@ -7144,14 +7208,14 @@ func (e *emitter) emitDestructure(targets []string, define bool, rhs []int32) {
 		e.emitTryAppend(targets, define, suffix[0].ast)
 		return
 	}
-	resTypes, ok := e.funcRet[callee]
+	resTypes, ok := e.userFunc(callee)
 	if !ok || len(resTypes) != len(targets) {
 		e.fail("multiple-assignment target/result count mismatch")
 		return
 	}
 	tmp := e.newTmp()
 	e.ind()
-	e.emit(e.retStructName(callee) + " " + tmp + " = ")
+	e.emit(e.retStructName(e.funcCallC(callee)) + " " + tmp + " = ")
 	if !e.emitCallExpr(callee, suffix) {
 		e.fail("unsupported call on the right-hand side of a multiple assignment")
 		return
@@ -7627,7 +7691,7 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		}
 		// Only a single-result call is a usable single value; a multi-result call
 		// belongs in a destructuring assignment (emitMultiAssign), not here.
-		if rts, ok := e.funcRet[recv]; ok && len(rts) == 1 {
+		if rts, ok := e.userFunc(recv); ok && len(rts) == 1 {
 			return rts[0], true
 		}
 		return "", false
@@ -7641,10 +7705,10 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 			}
 			return "", false
 		}
-		if e.importQualifiers[recv] {
-			// A call into an imported user package: its function is emitted unmangled,
-			// so its recorded single result type is keyed by the bare exported name.
-			if rts, ok := e.funcRet[e.soleIdent(suffix[0].ast)]; ok && len(rts) == 1 {
+		if prefix, ok := e.importQualifiers[recv]; ok {
+			// A call into an imported user package: its function's recorded result type
+			// is keyed by its mangled name in that package's namespace.
+			if rts, ok := e.funcRet[mangle(prefix, e.soleIdent(suffix[0].ast))]; ok && len(rts) == 1 {
 				return rts[0], true
 			}
 			return "", false
@@ -7906,7 +7970,7 @@ func (e *emitter) emitExprNode(n Node) {
 			if recv, suffix, ok := e.factorCall(kids); ok {
 				// A multi-result call yields no single value; it is only valid in a
 				// destructuring assignment (emitMultiAssign), not as an operand.
-				if len(suffix) == 1 && suffix[0].sym == CallSuffix && len(e.funcRet[recv]) > 1 {
+				if rts, _ := e.userFunc(recv); len(suffix) == 1 && suffix[0].sym == CallSuffix && len(rts) > 1 {
 					e.fail("a multi-value call cannot be used as a single value")
 					return
 				}
