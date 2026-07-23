@@ -441,6 +441,38 @@ loop:
 		want: "65 66\n10 9 48\n233 19990\n1\n20\n",
 	},
 	{
+		// A short-declared `p := &x` is a pointer, inferred from the address-of just
+		// as `var p *int = &x` is from its type. Its dereference reads and writes the
+		// pointee (`*p`, `*p = e`), it may point at a struct field or array element,
+		// and it may be passed to a pointer parameter.
+		name: "pointer to a local variable",
+		src: `type point struct{ x, y int }
+
+func inc(p *int) { *p = *p + 1 }
+
+func main() {
+	n := 5
+	p := &n
+	*p = 9
+	println(n)
+	inc(p)
+	println(n)
+
+	var pt point
+	q := &pt.y
+	*q = 7
+	println(pt.y)
+
+	var a [3]int
+	r := &a[1]
+	*r = 42
+	*r = *r + 1
+	println(a[1])
+}
+`,
+		want: "9\n10\n7\n43\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

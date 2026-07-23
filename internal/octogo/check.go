@@ -2982,7 +2982,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		vd := &VarDeclaration{declaration: declaration{token: id}}
 		if inferKinds {
-			if k, ok := f.exprType(s, rhs[i]); ok {
+			if ek, hasEk, tn, isPtr := f.addressOfInfo(s, rhs[i]); isPtr {
+				// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
+				// `*p` reads and writes are admitted and checked.
+				vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName = true, ek, hasEk, tn
+			} else if k, ok := f.exprType(s, rhs[i]); ok {
 				vd.kind, vd.hasKind = k, true
 			}
 		}
@@ -4136,6 +4140,63 @@ func (f *File) exprIsPointer(s *Scope, n Node) bool {
 		}
 	}
 	return false
+}
+
+// soleUnaryExpr unwraps an expression that is a single UnaryExpr -- no binary
+// operator anywhere above it -- returning that UnaryExpr. It is how a `p := &x`
+// initializer is recognised as exactly an address-of and not part of a larger
+// expression.
+func (f *File) soleUnaryExpr(n Node) (Node, bool) {
+	for n.sym != UnaryExpr {
+		var next Node
+		count := 0
+		for c := range it(n.ast) {
+			switch c.sym {
+			case Expression, SimpleExpr, Term, UnaryExpr:
+				next, count = c, count+1
+			case RelOp, AddOp, MulOp:
+				return Node{}, false // a binary operator: more than one unary expr
+			}
+		}
+		if count != 1 {
+			return Node{}, false
+		}
+		n = next
+	}
+	return n, true
+}
+
+// addressOfInfo reports whether an initializer is an address-of `&x` and, if so,
+// the pointed-to variable's kind and named type. A short-declared `p := &x` is then
+// recorded as a pointer with a known element type -- enough to admit and type-check
+// `*p` reads and writes, exactly as an explicit `var p *T` is. For `&s.f` or `&a[i]`
+// the pointer is recorded without an element kind (isPtr only), so `*p` is admitted
+// but its assigned value is left unchecked.
+func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typeName Token, isPtr bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return 0, false, Token{}, false
+	}
+	var fac Node
+	var ops []Node
+	facSet := false
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+		case UnaryOp:
+			ops = append(ops, c)
+		}
+	}
+	if !facSet || len(ops) != 1 || f.unaryOp(s, ops[0]) != AND {
+		return 0, false, Token{}, false
+	}
+	if id, ok := f.exprIdent(fac); ok {
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			return d.kind, d.hasKind, d.typeName, true
+		}
+	}
+	return 0, false, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
 }
 
 // chanElemOf reports whether variable d has channel type "chan T" and, if so,

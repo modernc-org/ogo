@@ -1,0 +1,29 @@
+// COMPILE
+
+// Taking the address of a local with "&" yields a pointer, whether the variable is
+// short-declared (p := &x, its pointer type inferred from the address-of) or
+// explicitly typed (var p *int = &x). The pointer dereferences to read and write
+// its pointee, and may point at a variable, a struct field or an array element.
+
+type point struct{ x, y int }
+
+func inc(p *int) { *p = *p + 1 }
+
+func run() {
+	n := 5
+	p := &n
+	*p = 9
+	_ = *p + 1
+	inc(p)
+
+	var q *int = &n
+	*q = 0
+
+	var pt point
+	r := &pt.y
+	*r = 7
+
+	var a [3]int
+	e := &a[1]
+	*e = 42
+}
