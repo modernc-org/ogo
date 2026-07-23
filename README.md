@@ -187,7 +187,10 @@ broken.
 * An array as a function result, and slicing a multi-dimensional array.
 
 Floating point (float32/float64) is supported: the P2's C toolchain provides it,
-so float arithmetic, comparison, int conversions and printing all work.
+so float arithmetic, comparison, int conversions and printing all work. Note the
+target has no double-precision hardware, so `float64` is 32-bit here, same as
+`float32` (~7 significant digits, not ~15) -- the name is kept for Go source
+compatibility but carries no extra precision.
 
 **Not planned**, because the target does not permit them: a garbage collector, a
 heap, maps, closures that capture their environment, and runtime string

@@ -94,6 +94,10 @@ var cTypes = map[string]string{
 	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t", "int64": "int64_t",
 	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t", "uint64": "uint64_t",
 	"byte": "uint8_t", "rune": "int32_t", "uintptr": "uintptr_t",
+	// float64 -> C double, but note the P2 toolchain's double is 32-bit (no
+	// double-precision hardware), so float64 has float32 precision here (~7 digits).
+	// The name is kept for Go compatibility; %g's 6-digit default matches the real
+	// precision, so no spurious digits are printed. See the Numeric types spec.
 	"float32": "float", "float64": "double",
 	// A Go string is an immutable { pointer, length } header -- a value type that
 	// will later support slicing -- so it maps to the ogo_string struct.

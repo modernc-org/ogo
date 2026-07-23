@@ -329,11 +329,19 @@
 //   - Explicit conversions are required when different numeric types are mixed in
 //     an expression or assignment.
 //
-// A floating-point type represents the set of IEEE-754 values: float32 (C float,
-// 32-bit) and float64 (C double, 64-bit). Float literals, arithmetic, comparison,
-// and conversion to and from the integer types are supported; unlike integer
-// division, float division by zero is not a runtime panic (it yields the IEEE
-// infinity or NaN). Complex numeric types are omitted.
+// A floating-point type represents the set of IEEE-754 values: float32 and
+// float64. Float literals, arithmetic, comparison, and conversion to and from the
+// integer types are supported; unlike integer division, float division by zero is
+// not a runtime panic (it yields the IEEE infinity or NaN). Complex numeric types
+// are omitted.
+//
+// (OctoGo Specific): the Propeller 2 has no double-precision hardware, and its C
+// toolchain implements C double as 32-bit. So on this target float64 has the same
+// representation and precision as float32 -- 32-bit IEEE single precision, about 7
+// significant decimal digits, NOT the ~15 of a 64-bit double. float64 is kept as a
+// distinct type name for Go source compatibility (Go's default float), but it does
+// not carry extra precision here. Programs needing more than ~7 digits must scale
+// to integers.
 //
 // # String types
 //
