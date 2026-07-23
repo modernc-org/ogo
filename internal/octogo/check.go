@@ -7323,7 +7323,8 @@ type ImportSpecNode struct {
 	ImportQualifier string
 	IsDotImport     bool
 	IsStdLib        bool
-	resolved        bool // the import path named a package that loaded without error, so an unused-import report is warranted
+	resolved        bool     // the import path named a package that loaded without error, so an unused-import report is warranted
+	Pkg             *Package // the resolved imported package (noPkg on failure), retained so the checker and emitter can reach its scope and files
 }
 
 func (f *File) declareImportSpec(n Node) (r *ImportSpecNode) {

@@ -20,6 +20,11 @@ var (
 	noPkg = &Package{Scope: newScope(Universe, PackageScope)}
 )
 
+// intrinsicImports are the compiler-known packages that have no .ogo source
+// directory: their symbols are provided by the emitter (p2's hardware intrinsics),
+// so an import of one resolving to noPkg is expected, not a missing-package error.
+var intrinsicImports = map[string]bool{"p2": true}
+
 type importTask struct {
 	sync.Mutex
 	p     *Package
@@ -120,6 +125,13 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 			dirEntries, err := fs.ReadDir(c.fsys, importPath)
 			if err != nil {
 				task.p = noPkg
+				// A non-intrinsic import that names no readable directory is a
+				// mistake -- a typo, or a package that is not present. An intrinsic
+				// import (p2) has no source directory by design and is handled by the
+				// emitter, so it is not reported here.
+				if !intrinsicImports[importPath] {
+					c.syncErr(importPathToken.Position(), "cannot find package %q", importPath)
+				}
 				return
 			}
 
@@ -270,8 +282,11 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		for _, spec := range f.ImportSpecs {
 			// An import that resolves to a real package is eligible for the
 			// later unused-import report; a failed import (missing directory,
-			// cycle) resolves to noPkg and is reported at import time instead.
-			spec.resolved = c.importPkg(p.ImportPath, spec.ImportPath, spec.ImportPathToken) != noPkg
+			// cycle) resolves to noPkg and is reported at import time instead. The
+			// resolved package is retained on the spec so the checker can resolve
+			// qualified names against it and the emitter can emit its declarations.
+			spec.Pkg = c.importPkg(p.ImportPath, spec.ImportPath, spec.ImportPathToken)
+			spec.resolved = spec.Pkg != noPkg
 		}
 		// Merge file top level declarations into package scope.
 		for _, nm := range slices.Sorted(maps.Keys(f.tld.Declarations)) {

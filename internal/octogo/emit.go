@@ -1126,6 +1126,33 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 // an unattended device self-heals. Diagnostics and checks are unaffected.
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
+// reachableFiles returns the files of the main package and every package reachable
+// through its imports, in dependency order: a package's imports precede it, and the
+// main package's files come last. Each package appears once. This flattens the whole
+// program into the single C translation unit the emitter produces (all reachable
+// packages are compiled together, matching the no-separate-compilation model). A p2
+// import resolves to noPkg -- it has no .ogo source, only intrinsics -- and is
+// skipped here, staying on the p2Intrinsics path.
+func reachableFiles(main *Package) []*File {
+	var order []*File
+	seen := map[string]bool{}
+	var visit func(p *Package)
+	visit = func(p *Package) {
+		if p == nil || p == noPkg || seen[p.ImportPath] {
+			return
+		}
+		seen[p.ImportPath] = true
+		for _, f := range p.Files {
+			for _, spec := range f.ImportSpecs {
+				visit(spec.Pkg)
+			}
+		}
+		order = append(order, p.Files...)
+	}
+	visit(main)
+	return order
+}
+
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
@@ -1133,12 +1160,29 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	}
 	e.registerBuilder()
 
+	// The whole program -- the main package and every package it imports,
+	// transitively -- is emitted into one translation unit, so every pass runs over
+	// all reachable files in dependency order rather than just the main package's.
+	allFiles := reachableFiles(pkg)
+
+	// Record the qualifiers of resolved user-package imports (a p2 import is
+	// unresolved -- noPkg -- and stays on the intrinsic path), so a `pkg.F(...)` call
+	// is recognised as a call into an emitted package rather than an unknown one.
+	e.importQualifiers = map[string]bool{}
+	for _, f := range allFiles {
+		for _, spec := range f.ImportSpecs {
+			if spec.Pkg != nil && spec.Pkg != noPkg {
+				e.importQualifiers[spec.ImportQualifier] = true
+			}
+		}
+	}
+
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
 	// later signature, result struct, or variable of struct type resolves.
 	var typedefs bytes.Buffer
 	e.w = &typedefs
-	for _, f := range pkg.Files {
+	for _, f := range allFiles {
 		e.f = f
 		e.collectStructs(f.AST)
 	}
@@ -1147,7 +1191,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// in `x := f()` and destructuring `a, b := f()`), and emit a result-struct
 	// typedef for each multi-result function (C has no multiple return, so a
 	// function returning N>1 values returns a struct of N fields).
-	for _, f := range pkg.Files {
+	for _, f := range allFiles {
 		e.f = f
 		e.collectResults(f.AST)
 	}
@@ -1157,14 +1201,14 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// environment so a `x := CONST` short declaration can be typed.
 	var globals bytes.Buffer
 	e.w = &globals
-	for _, f := range pkg.Files {
+	for _, f := range allFiles {
 		e.f = f
 		e.emitPackageConsts(f.AST)
 	}
 	// Package-level variables follow the constants (so a variable's initializer may
 	// fold a constant), each a file-scope `static` recorded in the global type
 	// environment.
-	for _, f := range pkg.Files {
+	for _, f := range allFiles {
 		e.f = f
 		e.emitPackageVars(f.AST)
 	}
@@ -1175,7 +1219,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// independent of source order.
 	var protos bytes.Buffer
 	e.w = &protos
-	for _, f := range pkg.Files {
+	for _, f := range allFiles {
 		e.f = f
 		e.emitPrototypes(f.AST)
 	}
@@ -1184,7 +1228,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	var body bytes.Buffer
 	e.w = &body
 	e.wroteDecl = false
-	for _, f := range pkg.Files {
+	for _, f := range allFiles {
 		e.f = f
 		e.emitFileDecls(f.AST)
 	}
@@ -1430,6 +1474,7 @@ type emitter struct {
 	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
 	usesCopyStr        bool                     // copy(dst []byte, src string) is used: emit the ogo_copystr helper
 	usesBuilder        bool                     // the Builder type is used: emit its typedef and method helpers
+	importQualifiers   map[string]bool          // qualifiers of resolved user-package imports (not p2), so `pkg.F(...)` is a call into an emitted package
 	clearElems         map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
 	minElems           map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
 	maxElems           map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
@@ -1529,10 +1574,12 @@ func (e *emitter) addImportIncludes(ast []int32) {
 			if err != nil {
 				continue
 			}
+			// An import mapped to a C header (p2 -> propeller2.h) pulls it in. A user
+			// package has no header -- its declarations are emitted inline into this
+			// same translation unit (see reachableFiles) -- so it needs nothing here.
+			// A genuinely unresolvable import is reported at build time, not here.
 			if inc, ok := importIncludes[path]; ok {
 				e.includes[inc] = true
-			} else {
-				e.fail("no C header mapping for import %q", path)
 			}
 		}
 	}
@@ -5584,6 +5631,15 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emit(")")
 			return true
 		}
+		if e.importQualifiers[recv] {
+			// A call into an imported user package. In the single-TU whole-program
+			// model its functions are emitted unmangled, so the qualifier is dropped
+			// and the exported name is called directly.
+			e.emit(method + "(")
+			e.emitCallArgs(suffix[1].ast)
+			e.emit(")")
+			return true
+		}
 		if recv != "p2" {
 			e.fail("unknown package %q (only p2 is supported yet)", recv)
 			return false
@@ -7581,6 +7637,14 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
 			method := e.soleIdent(suffix[0].ast)
 			if rts, ok := e.funcRet[methodCName(methodBaseType(rct), method)]; ok && len(rts) == 1 {
+				return rts[0], true
+			}
+			return "", false
+		}
+		if e.importQualifiers[recv] {
+			// A call into an imported user package: its function is emitted unmangled,
+			// so its recorded single result type is keyed by the bare exported name.
+			if rts, ok := e.funcRet[e.soleIdent(suffix[0].ast)]; ok && len(rts) == 1 {
 				return rts[0], true
 			}
 			return "", false

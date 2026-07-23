@@ -1910,3 +1910,76 @@ func TestEmitCRun(t *testing.T) {
 		})
 	}
 }
+
+// TestEmitCMultiPackage builds a program spread over two packages -- a main package
+// importing a local "greet" package -- and runs it on the host shim. It checks that
+// import resolution, cross-package calls (greet.Hello(...)), and a package function's
+// result type all work when the whole program is emitted into one translation unit.
+func TestEmitCMultiPackage(t *testing.T) {
+	cc := ""
+	for _, c := range []string{"cc", "gcc", "clang"} {
+		if p, err := exec.LookPath(c); err == nil {
+			cc = p
+			break
+		}
+	}
+	if cc == "" {
+		t.Skip("no C compiler found")
+	}
+	shim, err := filepath.Abs(filepath.Join("testdata", "hostp2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys := fstest.MapFS{
+		"main.ogo": &fstest.MapFile{Data: []byte(`import "greet"
+
+func main() {
+	println(greet.Hello(3))
+	msg := greet.Loud("hi")
+	println(msg)
+	println(greet.Twice(21) + 8)
+}
+`)},
+		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`func Hello(n int) int { return n * 100 }
+
+func Twice(n int) int { return n * 2 }
+`)},
+		"greet/loud.ogo": &fstest.MapFile{Data: []byte(`func Loud(s string) string {
+	if len(s) > 0 {
+		return "LOUD"
+	}
+	return s
+}
+`)},
+	}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	dir := t.TempDir()
+	csrc := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(csrc, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "prog")
+	out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
+	if err != nil {
+		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())
+	}
+	if len(bytes.TrimSpace(out)) != 0 {
+		t.Errorf("cc warned:\n%s\n--- emitted ---\n%s", out, buf.String())
+	}
+	got, runErr := exec.Command(bin).CombinedOutput()
+	if runErr != nil {
+		t.Fatalf("run: %v\n%s", runErr, got)
+	}
+	const want = "300\nLOUD\n50\n"
+	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
+		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
+	}
+}
