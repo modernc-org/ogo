@@ -6381,9 +6381,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("unsupported compound assignment operator")
 			return
 		}
-		e.ind()
-		e.emit(lhs)
-		e.emitAssignTail(t)
+		// Routed through emitAssignTailOrCopy so a string "+=" is refused there,
+		// centrally, the same as the field and access-chain compound targets.
+		e.emitAssignTailOrCopy(func() { e.emit(lhs) }, t)
 		return
 	}
 	// PostfixOp = "<-" Expression (send), or ( "=" | ":=" ) ExpressionList, for the
@@ -6740,6 +6740,17 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 				return
 			}
 			e.emitStructCopy(e.captureC(target), ct, t.rhs)
+			return
+		}
+	}
+	// A compound assignment whose operand is a string ("s += t") is runtime string
+	// concatenation -- the only such op Go allows on a string -- which this target
+	// cannot do, exactly as `s = s + t` is refused. Caught here, across the bare,
+	// field and access-chain target paths, rather than emitted as "+=" on a struct,
+	// which flexcc rejects as "Expected integer type".
+	if t.rhs != nil && t.op != "=" {
+		if ct, ok := e.inferCType(t.rhs); ok && ct == cString {
+			e.fail("string concatenation with a non-constant operand needs allocation, which the target does not have")
 			return
 		}
 	}

@@ -4489,6 +4489,29 @@ func TestEmitCStringConcatRuntime(t *testing.T) {
 	}
 }
 
+// TestEmitCStringConcatAssignRefused pins that a compound string concatenation
+// `s += t` is refused for the same reason `s = s + t` is: it is runtime string
+// concatenation, which the allocation-free target cannot do. Without the check it
+// would reach flexcc as "+=" on an ogo_string struct ("Expected integer type").
+// The bare variable, struct field and access-chain target shapes are all covered.
+func TestEmitCStringConcatAssignRefused(t *testing.T) {
+	for _, src := range []string{
+		"func main() {\n\ts := \"a\"\n\tt := \"b\"\n\ts += t\n\tprintln(s)\n}\n",
+		"func main() {\n\ts := \"a\"\n\ts += \"b\"\n\tprintln(s)\n}\n",
+		"type B struct{ s string }\n\nfunc main() {\n\tvar b B\n\tb.s = \"a\"\n\tb.s += \"x\"\n\tprintln(b.s)\n}\n",
+	} {
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			t.Fatalf("Build: %v\n%s", err, src)
+		}
+		var buf bytes.Buffer
+		if err := EmitC(pkg, &buf); err == nil {
+			t.Errorf("EmitC accepted a compound string concatenation:\n%s\n=>\n%s", src, buf.String())
+		}
+	}
+}
+
 // TestEmitCMultiValueAssign pins a multiple-value assignment `a, b = c, d`. C has
 // no such statement, so every value is evaluated into a temporary first and each
 // target then takes its temporary -- which is what makes `a, b = b, a` a swap
