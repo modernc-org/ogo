@@ -208,6 +208,25 @@ func main() {
 		want: "0 65\n1 98\n2 67\n0 97\n1 233\n3 122\n5\n",
 	},
 	{
+		// 64-bit integers: int64/uint64 map to C int64_t/uint64_t. Arithmetic,
+		// division (guarded by ogo_nonzero64 so a large divisor is not truncated to
+		// 32 bits), conversions to and from int, and printing (%lld/%llu) all work on
+		// the 32-bit P2 via flexcc's long long.
+		name: "64-bit integer arithmetic",
+		src: `func main() {
+	var a int64 = 5000000000
+	var b int64 = 3
+	println(a+b, a*b, a/b, a%b)
+	var u uint64 = 18000000000000000000
+	println(u, u/2)
+	x := 7
+	println(int64(x) * 1000000000)
+	println(int(a / 1000000000))
+}
+`,
+		want: "5000000003 15000000000 1666666666 2\n18000000000000000000 9000000000000000000\n7000000000\n5\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
@@ -1494,8 +1513,14 @@ func TestEmitCRun(t *testing.T) {
 			// because the string print/println helpers are emitted as a pair whenever
 			// either is needed, so a program using only one leaves the other unused --
 			// harmless (the P2 backend drops it), but clang warns where gcc does not.
+			// -Wno-format because int64_t is `long long` on the 32-bit P2 (so %lld/%llu
+			// are the correct, verified target formats) but `long` on this 64-bit host,
+			// which then warns about %lld; flexcc's (long long) cast miscompiles a
+			// 64-bit expression and its PRId64 is non-standard, so %lld is the only
+			// target-correct choice. Real int64 output is checked on hardware
+			// (TestOnBoard).
 			out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
-				"-Wno-unused-function", "-I", shim,
+				"-Wno-unused-function", "-Wno-format", "-I", shim,
 				"-o", bin, csrc, "-lpthread").CombinedOutput()
 			if err != nil {
 				t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())

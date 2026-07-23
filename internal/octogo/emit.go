@@ -8,10 +8,23 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
 )
+
+// cIntLit renders an integer literal as C, appending a "ULL" suffix to a value that
+// exceeds the signed 64-bit range so C reads it as unsigned (uint64) rather than
+// warning that the constant is too large to be signed. Smaller values need no
+// suffix: they assign cleanly to any integer type.
+func cIntLit(src string) string {
+	lit := normalizeIntLit(src)
+	if v, err := strconv.ParseUint(lit, 0, 64); err == nil && v > math.MaxInt64 {
+		lit += "ULL"
+	}
+	return lit
+}
 
 // p2Intrinsics maps exported functions of the builtin "p2" package to the
 // flexcc / propeller2.h C intrinsics they wrap (the p2 mapping documented in
@@ -38,8 +51,8 @@ var importIncludes = map[string]string{
 // <stdint.h> (see stdintType).
 var cTypes = map[string]string{
 	"int": "int", "uint": "unsigned", "bool": cBool,
-	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t",
-	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t",
+	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t", "int64": "int64_t",
+	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t", "uint64": "uint64_t",
 	"byte": "uint8_t", "rune": "int32_t", "uintptr": "uintptr_t",
 	// A Go string is an immutable { pointer, length } header -- a value type that
 	// will later support slicing -- so it maps to the ogo_string struct.
@@ -982,6 +995,15 @@ const ogoNonzero = "static int ogo_nonzero(int b) {\n" +
 	"\treturn b;\n" +
 	"}\n"
 
+// ogoNonzero64 is the 64-bit divisor guard. A single signed-long-long form serves
+// both int64 and uint64: the divisor's bits pass through unchanged and the division
+// context (the dividend's type) decides signedness, while the == 0 test is the same
+// for either sign.
+const ogoNonzero64 = "static long long ogo_nonzero64(long long b) {\n" +
+	"\tif (b == 0) ogo_panic(\"integer divide by zero\");\n" +
+	"\treturn b;\n" +
+	"}\n"
+
 // sortedKeys returns the keys of a set in deterministic (sorted) order, for stable
 // emission of per-element-type typedefs and helpers.
 func sortedKeys(m map[string]bool) []string {
@@ -1168,6 +1190,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if e.usesBound {
 		helperDefs.WriteString(ogoBound)
 	}
+	if e.usesNonzero64 {
+		helperDefs.WriteString(ogoNonzero64)
+	}
 	if e.usesNonzero {
 		helperDefs.WriteString(ogoNonzero)
 	}
@@ -1318,6 +1343,7 @@ type emitter struct {
 	usesPanic        bool                     // ogo_panic is called: emit its definition and pull in its includes
 	usesBound        bool                     // ogo_bound is called: emit the index bounds-check helper
 	usesNonzero      bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
+	usesNonzero64    bool                     // ogo_nonzero64 (64-bit divisor guard) is called
 	release          bool                     // release build: a panic reboots (_reboot) instead of halting the cog
 	checks           bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals           map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
@@ -5742,6 +5768,10 @@ func scalarPrintVerb(ct string) string {
 	switch ct {
 	case "unsigned", "uint8_t", "uint16_t", "uint32_t", "uintptr_t":
 		return "%u"
+	case "int64_t":
+		return "%lld"
+	case "uint64_t":
+		return "%llu"
 	}
 	return "%d"
 }
@@ -5751,8 +5781,8 @@ func scalarPrintVerb(ct string) string {
 // name) is not in it, so a slice of one still fails honestly.
 func isIntCType(ct string) bool {
 	switch ct {
-	case "int", "unsigned", "int8_t", "int16_t", "int32_t",
-		"uint8_t", "uint16_t", "uint32_t", "uintptr_t":
+	case "int", "unsigned", "int8_t", "int16_t", "int32_t", "int64_t",
+		"uint8_t", "uint16_t", "uint32_t", "uint64_t", "uintptr_t":
 		return true
 	}
 	return false
@@ -7150,8 +7180,16 @@ func (e *emitter) emitExprNode(n Node) {
 				guardNext = e.checks && (op == "/" || op == "%")
 			case guardNext && !e.isIntLiteral(c):
 				e.needPanic()
-				e.usesNonzero = true
-				e.emit("ogo_nonzero(")
+				// A 64-bit divisor needs the 64-bit guard, or ogo_nonzero(int) would
+				// truncate it (mis-detecting a large nonzero divisor as zero and
+				// dividing by a wrong value).
+				fn := "ogo_nonzero"
+				if ct, ok := e.inferCType(c.ast); ok && (ct == "int64_t" || ct == "uint64_t") {
+					fn, e.usesNonzero64 = "ogo_nonzero64", true
+				} else {
+					e.usesNonzero = true
+				}
+				e.emit(fn + "(")
 				e.emitExprNode(c)
 				e.emit(")")
 				guardNext = false
@@ -7309,7 +7347,7 @@ func (e *emitter) opText(ast []int32) string {
 func (e *emitter) emitOperandToken(tok int32) {
 	switch ch := e.f.ch(tok); ch {
 	case INT:
-		e.emit(normalizeIntLit(e.src(tok)))
+		e.emit(cIntLit(e.src(tok)))
 	case IDENT:
 		// The predeclared bool constants have no C keyword here (bool is int); emit
 		// their integer values. Any other identifier is a name reference.

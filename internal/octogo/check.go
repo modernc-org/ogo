@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"io/fs"
 	"iter"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -1517,8 +1518,9 @@ func (f *File) bareLiteral(n Node) (Token, bool) {
 // isNumericKind reports whether k is one of the predeclared integer types.
 func isNumericKind(k Kind) bool {
 	switch k {
-	case PredeclaredInt8, PredeclaredInt16, PredeclaredInt32,
-		PredeclaredUint8, PredeclaredUint16, PredeclaredUint32, PredeclaredUintptr:
+	case PredeclaredInt8, PredeclaredInt16, PredeclaredInt32, PredeclaredInt64,
+		PredeclaredUint8, PredeclaredUint16, PredeclaredUint32, PredeclaredUint64,
+		PredeclaredUintptr:
 		return true
 	}
 	return false
@@ -1536,12 +1538,17 @@ func intKindRange(k Kind) (lo, hi constant.Value, ok bool) {
 		lo64, hi64 = -32768, 32767
 	case PredeclaredInt32:
 		lo64, hi64 = -2147483648, 2147483647
+	case PredeclaredInt64:
+		lo64, hi64 = math.MinInt64, math.MaxInt64
 	case PredeclaredUint8:
 		lo64, hi64 = 0, 255
 	case PredeclaredUint16:
 		lo64, hi64 = 0, 65535
 	case PredeclaredUint32, PredeclaredUintptr:
 		lo64, hi64 = 0, 4294967295
+	case PredeclaredUint64:
+		// uint64's maximum does not fit in an int64, so build it directly.
+		return constant.MakeInt64(0), constant.MakeUint64(math.MaxUint64), true
 	default:
 		return nil, nil, false
 	}
@@ -1559,12 +1566,16 @@ func sizedKindName(k Kind) string {
 		return "int16"
 	case PredeclaredInt32:
 		return "int32"
+	case PredeclaredInt64:
+		return "int64"
 	case PredeclaredUint8:
 		return "uint8"
 	case PredeclaredUint16:
 		return "uint16"
 	case PredeclaredUint32:
 		return "uint32"
+	case PredeclaredUint64:
+		return "uint64"
 	case PredeclaredUintptr:
 		return "uintptr"
 	}

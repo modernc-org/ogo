@@ -15,25 +15,28 @@ func _() {
 	_ = x[PredeclaredUint16-4]
 	_ = x[PredeclaredInt32-5]
 	_ = x[PredeclaredUint32-6]
-	_ = x[PredeclaredUintptr-7]
-	_ = x[PredeclaredString-8]
-	_ = x[UntypedBool-9]
-	_ = x[UntypedFloat-10]
-	_ = x[UntypedInt-11]
-	_ = x[UntypedNil-12]
-	_ = x[UntypedString-13]
-	_ = x[Alias-14]
+	_ = x[PredeclaredInt64-7]
+	_ = x[PredeclaredUint64-8]
+	_ = x[PredeclaredUintptr-9]
+	_ = x[PredeclaredString-10]
+	_ = x[UntypedBool-11]
+	_ = x[UntypedFloat-12]
+	_ = x[UntypedInt-13]
+	_ = x[UntypedNil-14]
+	_ = x[UntypedString-15]
+	_ = x[Alias-16]
 }
 
-const _Kind_name = "PredeclaredBoolPredeclaredInt8PredeclaredUint8PredeclaredInt16PredeclaredUint16PredeclaredInt32PredeclaredUint32PredeclaredUintptrPredeclaredStringUntypedBoolUntypedFloatUntypedIntUntypedNilUntypedStringAlias"
+const _Kind_name = "PredeclaredBoolPredeclaredInt8PredeclaredUint8PredeclaredInt16PredeclaredUint16PredeclaredInt32PredeclaredUint32PredeclaredInt64PredeclaredUint64PredeclaredUintptrPredeclaredStringUntypedBoolUntypedFloatUntypedIntUntypedNilUntypedStringAlias"
 
-var _Kind_index = [...]uint8{0, 15, 30, 46, 62, 79, 95, 112, 130, 147, 158, 170, 180, 190, 203, 208}
+var _Kind_index = [...]uint8{0, 15, 30, 46, 62, 79, 95, 112, 128, 145, 163, 180, 191, 203, 213, 223, 236, 241}
 
 func (i Kind) String() string {
-	if i < 0 || i >= Kind(len(_Kind_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_Kind_index)-1 {
 		return "Kind(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Kind_name[_Kind_index[i]:_Kind_index[i+1]]
+	return _Kind_name[_Kind_index[idx]:_Kind_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -50,10 +53,11 @@ const _ScopeKind_name = "UniverseScopeFileScopePackageScopeBlockScope"
 var _ScopeKind_index = [...]uint8{0, 13, 22, 34, 44}
 
 func (i ScopeKind) String() string {
-	if i < 0 || i >= ScopeKind(len(_ScopeKind_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_ScopeKind_index)-1 {
 		return "ScopeKind(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _ScopeKind_name[_ScopeKind_index[i]:_ScopeKind_index[i+1]]
+	return _ScopeKind_name[_ScopeKind_index[idx]:_ScopeKind_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -69,8 +73,9 @@ const _gate_name = "unvisitedresolvingresolved"
 var _gate_index = [...]uint8{0, 9, 18, 26}
 
 func (i gate) String() string {
-	if i < 0 || i >= gate(len(_gate_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_gate_index)-1 {
 		return "gate(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _gate_name[_gate_index[i]:_gate_index[i+1]]
+	return _gate_name[_gate_index[idx]:_gate_index[idx+1]]
 }
