@@ -4345,8 +4345,15 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		case CompositeLit:
 			lit, hasLit = c, true
 		case 0:
-			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+			switch tok := f.tok(c.tok); Symbol(tok.Ch) {
+			case IDENT:
 				id, hasID = tok, true
+			case FLOAT:
+				// Floating point is deliberately omitted (see the language spec), like
+				// the float types the type checker already rejects. Caught here, at the
+				// literal, so a float value fails with a clear message rather than an
+				// opaque emit error ("unsupported operand float_lit").
+				f.err(tok.Position(), "floating-point is not supported")
 			}
 		}
 	}
@@ -7146,9 +7153,12 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
 				}
 			case FLOAT:
-				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.FLOAT, 0)}); r.Type() == nil {
-					f.err(tok.Position(), "invalid floating-point literal: %s", tok.Src())
-				}
+				// Floating point is deliberately omitted (see the language spec). A
+				// valid float literal is refused with a clear message, like the float
+				// types the checker rejects; an invalid one is not worth a second,
+				// contradictory diagnostic.
+				f.err(tok.Position(), "floating-point is not supported")
+				r = untypedConst{constant.MakeUnknown()}
 			case CHAR:
 				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid rune literal: %s", tok.Src())

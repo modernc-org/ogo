@@ -1,0 +1,34 @@
+// Floating point is deliberately omitted from OctoGo (see the language spec and
+// Keywords/Types). A float literal is refused with a clear message wherever it is
+// used as a value -- a short declaration, an initializer, an operand, a call
+// argument, a condition or a return -- matching the way the float types are
+// refused, rather than reaching the emitter as an opaque "unsupported operand".
+
+func shortDecl() {
+	// ERROR "floating-point is not supported"
+	x := 3.14
+	_ = x
+}
+
+func inExpr() {
+	// ERROR "floating-point is not supported"
+	_ = 1.5 + 2.5
+}
+
+func callArg() {
+	// ERROR "floating-point is not supported"
+	_ = takeInt(2.5)
+}
+
+func takeInt(n int) int { return n }
+
+func inCondition() {
+	// ERROR "floating-point is not supported"
+	if 1.5 > 2.0 {
+	}
+}
+
+func inReturn() int {
+	// ERROR "floating-point is not supported"
+	return 2.5
+}

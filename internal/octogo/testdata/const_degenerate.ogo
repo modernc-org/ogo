@@ -6,7 +6,9 @@
 // ERROR "division by zero"
 const divZeroInt = 1 / 0
 
-// ERROR "division by zero"
+// A float literal is refused before the operator is even considered: floating
+// point is deliberately omitted from the language.
+// ERROR "floating-point is not supported"
 const divZeroFloat = 1.0 / 0.0
 
 // ERROR "negative shift count"
@@ -16,6 +18,9 @@ const negShift = 1 << -1
 const strSub = "a" - "b"
 
 // ERROR "operator & not defined"
+const strBitAnd = "a" & 1
+
+// ERROR "floating-point is not supported"
 const floatBitAnd = 1.5 & 1
 
 // ERROR "operator / not defined"
@@ -28,6 +33,9 @@ const strShift = "a" << 1
 const negString = -"a"
 
 // ERROR "operator \^ not defined"
+const xorString = ^"a"
+
+// ERROR "floating-point is not supported"
 const xorFloat = ^1.5
 
 // ERROR "operator ! not defined"
@@ -37,4 +45,7 @@ const notInt = !1
 var divArray [6 / 0]int
 
 // ERROR "operator \^ not defined"
+var xorBoundString [^"x"]int
+
+// ERROR "floating-point is not supported"
 var xorArray [^1.5]int
