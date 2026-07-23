@@ -1793,11 +1793,15 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			e.structs[mn] = fields
 			e.emit("typedef struct {")
 			for _, fld := range fields {
+				// A field name may be Unicode; cIdent it in the typedef and, to match,
+				// wherever a field is selected (see fieldAccessC and the chain/selector
+				// paths). The structs map still stores the source name, so the type
+				// lookups (structFieldType etc.) compare source names.
 				if fld.dim.bound != "" {
-					e.emit(" " + fld.ctype + " " + fld.name + fld.dim.declSuffix() + ";")
+					e.emit(" " + fld.ctype + " " + cIdent(fld.name) + fld.dim.declSuffix() + ";")
 					continue
 				}
-				e.emit(" " + fld.ctype + " " + fld.name + ";")
+				e.emit(" " + fld.ctype + " " + cIdent(fld.name) + ";")
 			}
 			if len(fields) == 0 {
 				// C rejects a struct with no members; Go's empty struct is a
@@ -2610,7 +2614,7 @@ func (e *emitter) funcSignatureC(name string, sig []int32) string {
 // parameter, e.g. `int Point_Sum(Point p)` or `void Point_Scale(Point* p, int f)`.
 func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int32) string {
 	params, resTypes := e.cSig(sig)
-	recvParam := recvCType + " " + recvName
+	recvParam := recvCType + " " + cIdent(recvName)
 	if params == "" {
 		params = recvParam
 	} else {
@@ -2715,7 +2719,7 @@ func (e *emitter) cParamList(ast []int32) []string {
 		}
 		ct := e.cType(ta)
 		e.refuseArrayStructABI(ct, "parameter "+name)
-		out = append(out, ct+" "+name)
+		out = append(out, ct+" "+cIdent(name)) // a parameter name may be Unicode
 	})
 	return out
 }
@@ -2783,7 +2787,7 @@ func unnamedParamName(i int) string { return "_ogo_unused" + strconv.Itoa(i) }
 
 // paramArgName is the C name of a value-array parameter as it is received (a
 // pointer), distinct from the local copy the body sees under the source name.
-func paramArgName(name string) string { return "_ogo_" + name }
+func paramArgName(name string) string { return "_ogo_" + cIdent(name) }
 
 // bindParams records the current function's parameters in the local type
 // environment, so a `x := p` short declaration can be typed from a parameter p. A
@@ -4299,7 +4303,7 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 	if _, ok := e.accessChainType(base, steps); !ok {
 		return accessCur{}, false
 	}
-	prefix := base
+	prefix := e.varRef(base)
 	for _, n := range steps {
 		switch n.sym {
 		case Selector:
@@ -4313,9 +4317,9 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 				sep = "->"
 			}
 			if prefix != "" {
-				prefix += sep + f
+				prefix += sep + cIdent(f)
 			} else {
-				e.emit(sep + f)
+				e.emit(sep + cIdent(f))
 			}
 			cur = next
 		case Index:
@@ -4451,12 +4455,12 @@ func (e *emitter) globalC(name string) string { return mangle(e.curPkgPrefix, na
 // inlined elsewhere). It is the read counterpart to the global declarations.
 func (e *emitter) varRef(name string) string {
 	if _, ok := e.locals[name]; ok {
-		return name
+		return cIdent(name) // a local or parameter: Unicode-escaped, no package prefix
 	}
 	if _, ok := e.globals[e.globalC(name)]; ok {
 		return e.globalC(name)
 	}
-	return name
+	return cIdent(name)
 }
 
 // sliceSource describes what a slice expression slices: the C type of the result
@@ -5852,7 +5856,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	switch {
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
-		text, addr = base, true
+		text, addr = e.varRef(base), true
 	case e.isChainFunc(base):
 		pendingFn, text = true, base
 	default:
@@ -5918,7 +5922,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if e.isPointer(cur.ctype) {
 				sep = "->"
 			}
-			text += sep + field
+			text += sep + cIdent(field)
 			cur = next
 		case Index:
 			if !addr {
@@ -6816,19 +6820,22 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	// into a fresh temporary first, while `name` still resolves to the outer binding,
 	// then define name from the temporary. The temporary name cannot itself appear in
 	// the initializer, so the recursion bottoms out on the ordinary path below.
+	// cn is the emitted C name (Unicode-escaped); `name` stays the source name, used
+	// for initRefsName's comparison against the initializer's own identifiers.
+	cn := cIdent(name)
 	if e.initRefsName(initExpr, name) {
 		tmp := e.newTmp()
 		e.emitVarDeclInit(ctype, tmp, initExpr)
 		if e.hasArrayField(ctype) {
 			e.includes["string.h"] = true
 			e.ind()
-			e.emit(ctype + " " + name + ";\n")
+			e.emit(ctype + " " + cn + ";\n")
 			e.ind()
-			e.emit("memcpy(&" + name + ", &" + tmp + ", sizeof(" + ctype + "));\n")
+			e.emit("memcpy(&" + cn + ", &" + tmp + ", sizeof(" + ctype + "));\n")
 			return
 		}
 		e.ind()
-		e.emit(ctype + " " + name + " = " + tmp + ";\n")
+		e.emit(ctype + " " + cn + " = " + tmp + ";\n")
 		return
 	}
 	if _, _, isLit := e.soleCompositeLit(initExpr); !isLit && e.hasArrayField(ctype) {
@@ -6836,12 +6843,12 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 			return
 		}
 		e.ind()
-		e.emit(ctype + " " + name + ";\n")
-		e.emitStructCopy(name, ctype, initExpr)
+		e.emit(ctype + " " + cn + ";\n")
+		e.emitStructCopy(cn, ctype, initExpr)
 		return
 	}
 	e.ind()
-	e.emit(ctype + " " + name + " = ")
+	e.emit(ctype + " " + cn + " = ")
 	e.emitVarInit(initExpr)
 	e.emit(";\n")
 }
@@ -6949,9 +6956,9 @@ func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string
 	ct := elem
 	for _, f := range post {
 		if e.isPointer(ct) {
-			e.emit("->" + f)
+			e.emit("->" + cIdent(f))
 		} else {
-			e.emit("." + f)
+			e.emit("." + cIdent(f))
 		}
 		ct, _ = e.structFieldType(ct, f) // validated by the caller via chainFieldType
 	}
@@ -7271,9 +7278,9 @@ func (e *emitter) emitDestructure(targets []string, define bool, rhs []int32) {
 		field := fmt.Sprintf("%s._%d", tmp, i)
 		if define {
 			e.locals[tgt] = resTypes[i]
-			e.emit(resTypes[i] + " " + tgt + " = " + field + ";\n")
+			e.emit(resTypes[i] + " " + cIdent(tgt) + " = " + field + ";\n")
 		} else {
-			e.emit(tgt + " = " + field + ";\n")
+			e.emit(e.varRef(tgt) + " = " + field + ";\n")
 		}
 	}
 }
@@ -7521,14 +7528,14 @@ func (e *emitter) fieldType(base string, fields []string) (string, bool) {
 // each pointer step (an auto-dereferenced Go field access) and "." otherwise.
 func (e *emitter) fieldAccessC(base string, fields []string) string {
 	ctype, _ := e.varType(base)
-	s := base
+	s := e.varRef(base) // a global base is mangled, a Unicode local base escaped
 	for _, f := range fields {
 		if e.isPointer(ctype) {
 			s += "->"
 		} else {
 			s += "."
 		}
-		s += f
+		s += cIdent(f) // the emitted field name matches the (cIdent'd) typedef
 		ctype, _ = e.structFieldType(ctype, f)
 	}
 	return s

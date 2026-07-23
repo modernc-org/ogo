@@ -609,6 +609,42 @@ func main() {
 		want: "42\n22\n",
 	},
 	{
+		// Unicode identifiers reach C escaped (ogo_U_<hex>) in EVERY class: type
+		// name (Δ), struct field (π, ω), method receiver (ρ), function parameter
+		// (σ), a multiple-assignment target (α, β), a range key/value (ι, ν) and a
+		// plain local (τ). flexcc rejects raw Unicode C identifiers, so the escape is
+		// what lets these compile on the P2; the host shim confirms they still mean
+		// the same thing. Range is over a named slice, not an inline composite
+		// literal, to sidestep an unrelated checker quirk.
+		name: "unicode in types, fields, methods, params, locals",
+		src: `type Δ struct {
+	π int
+	ω int
+}
+
+func (ρ Δ) total() int {
+	return ρ.π + ρ.ω
+}
+
+func μ(σ int) (int, int) {
+	return σ, σ * 2
+}
+
+func main() {
+	d := Δ{π: 7, ω: 3}
+	α, β := μ(5)
+	τ := d.total()
+	xs := []int{10, 20, 30}
+	s := 0
+	for ι, ν := range xs {
+		s += ι + ν
+	}
+	println(d.total(), α, β, τ, s)
+}
+`,
+		want: "10 5 10 10 63\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
