@@ -85,6 +85,43 @@ const stringCmpHelper = "static inline int ogo_string_cmp(ogo_string a, ogo_stri
 	"\treturn a.len == b.len ? 0 : (a.len < b.len ? -1 : 1);\n" +
 	"}\n"
 
+// runeDecodeHelper decodes one UTF-8 rune of an ogo_string at byte offset i, writes
+// its byte width through w, and returns the rune -- matching Go's for-range over a
+// string, including RuneError (U+FFFD, width 1) for any invalid, overlong, out-of-
+// range or surrogate encoding. Bytes are read unsigned.
+const runeDecodeHelper = `static inline int ogo_decode_rune(ogo_string s, int i, int *w) {
+	unsigned char b0 = (unsigned char)s.str[i];
+	if (b0 < 0x80) { *w = 1; return b0; }
+	int n = s.len - i;
+	if (b0 < 0xC0) { *w = 1; return 0xFFFD; }
+	if (b0 < 0xE0) {
+		if (n < 2) { *w = 1; return 0xFFFD; }
+		unsigned char b1 = (unsigned char)s.str[i+1];
+		if ((b1 & 0xC0) != 0x80) { *w = 1; return 0xFFFD; }
+		int r = ((b0 & 0x1F) << 6) | (b1 & 0x3F);
+		if (r < 0x80) { *w = 1; return 0xFFFD; }
+		*w = 2; return r;
+	}
+	if (b0 < 0xF0) {
+		if (n < 3) { *w = 1; return 0xFFFD; }
+		unsigned char b1 = (unsigned char)s.str[i+1], b2 = (unsigned char)s.str[i+2];
+		if ((b1 & 0xC0) != 0x80 || (b2 & 0xC0) != 0x80) { *w = 1; return 0xFFFD; }
+		int r = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+		if (r < 0x800 || (r >= 0xD800 && r <= 0xDFFF)) { *w = 1; return 0xFFFD; }
+		*w = 3; return r;
+	}
+	if (b0 < 0xF8) {
+		if (n < 4) { *w = 1; return 0xFFFD; }
+		unsigned char b1 = (unsigned char)s.str[i+1], b2 = (unsigned char)s.str[i+2], b3 = (unsigned char)s.str[i+3];
+		if ((b1 & 0xC0) != 0x80 || (b2 & 0xC0) != 0x80 || (b3 & 0xC0) != 0x80) { *w = 1; return 0xFFFD; }
+		int r = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+		if (r < 0x10000 || r > 0x10FFFF) { *w = 1; return 0xFFFD; }
+		*w = 4; return r;
+	}
+	*w = 1; return 0xFFFD;
+}
+`
+
 // sliceTypePrefix leads the C typedef name of an OctoGo slice `[]T`: a { pointer,
 // length, capacity } header (`T* ptr; int len; int cap`) named per element type,
 // e.g. []int -> ogo_slice_int, []*Point -> ogo_slice_Point_ptr. Like ogo_string it
@@ -1114,6 +1151,10 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(stringCmpHelper)
 		out.WriteByte('\n')
 	}
+	if e.usesRuneDecode {
+		out.WriteString(runeDecodeHelper)
+		out.WriteByte('\n')
+	}
 	if e.usesStringEq {
 		out.WriteString(stringEqHelper)
 		out.WriteByte('\n')
@@ -1291,6 +1332,7 @@ type emitter struct {
 	usesStringPrint  bool                     // a string is printed: emit stringHelpers
 	usesStringEq     bool                     // a string == / != appears: emit ogo_string_eq
 	usesStringCmp    bool                     // a string < <= > >= appears: emit ogo_string_cmp
+	usesRuneDecode   bool                     // `for i, c := range s` appears: emit ogo_decode_rune
 	err              error
 }
 
@@ -4535,19 +4577,38 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
 		e.emitLoopBody(body, e.rangeValueInject(h, a.elem, base+"["+key+"]"))
 	case ct == cString:
-		// Ranging a string iterates its byte indices. Go's two-variable form yields
-		// a rune, which would need UTF-8 decoding, so only the index form is offered.
-		if h.valVar != nil {
-			e.fail("ranging a string yields only the byte index (rune decoding is not supported yet)")
-			return
-		}
+		// Ranging a string iterates its runes, as Go does (not its bytes): key is the
+		// byte index of each rune's start, the two-variable value is the decoded rune,
+		// and the index advances by the rune's UTF-8 width. That width lives in a
+		// variable declared before the loop so the for-increment (i += w) and the
+		// body's decode (which sets it) share it; for ASCII every width is 1, so the
+		// index-only form still counts 0,1,2,...
 		hdr := e.newTmp()
 		e.ind()
 		e.emit("ogo_string " + hdr + " = " + e.exprC(h.rangeExpr) + ";\n")
 		e.locals[key] = "int"
+		e.usesRuneDecode = true
+		width := e.newTmp()
 		e.ind()
-		e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
-		e.emitLoopBody(body, nil)
+		e.emit("int " + width + " = 0;\n")
+		e.ind()
+		e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + " += " + width + ") {\n")
+		val := "_"
+		if h.valVar != nil {
+			val = e.exprC(h.valVar)
+		}
+		inject := func() {
+			e.ind()
+			if val == "_" {
+				// No rune variable (`for range s` or `for i := range s`): decode only
+				// to advance the index by the rune width, discarding the rune itself.
+				e.emit("ogo_decode_rune(" + hdr + ", " + key + ", &" + width + ");\n")
+				return
+			}
+			e.locals[val] = "int" // a rune is int32, i.e. int on the P2
+			e.emit("int " + val + " = ogo_decode_rune(" + hdr + ", " + key + ", &" + width + ");\n")
+		}
+		e.emitLoopBody(body, inject)
 	default:
 		// An integer range. Hoist the bound so a side-effecting or costly operand is
 		// evaluated once, as Go does.

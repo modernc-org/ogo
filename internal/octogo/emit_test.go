@@ -4386,7 +4386,11 @@ func TestEmitCStringIndex(t *testing.T) {
 
 	for _, want := range []string{
 		"\tprintf(\"%u\\n\", s.str[ogo_bound(0, s.len)]);\n",
-		"\tfor (int _ogo_t0 = 0; _ogo_t0 < _ogo_t1.len; _ogo_t0++) {\n",
+		// Ranging a string iterates runes: the index advances by the decoded rune's
+		// width (1 for ASCII), so the loop steps `_ogo_t0 += _ogo_t2` and each
+		// iteration decodes to set that width.
+		"\tfor (int _ogo_t0 = 0; _ogo_t0 < _ogo_t1.len; _ogo_t0 += _ogo_t2) {\n",
+		"\t\togo_decode_rune(_ogo_t1, _ogo_t0, &_ogo_t2);\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC string index: missing %q in\n%s", want, got)

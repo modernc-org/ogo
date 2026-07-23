@@ -185,6 +185,29 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// Ranging a string iterates runes, not bytes, like Go: the index is each
+		// rune's start byte (so it jumps past a multi-byte rune) and the
+		// two-variable value is the decoded rune. `é` (é) is two UTF-8 bytes, so
+		// the index after it is 3, and a five-rune string counts 5 though it is six
+		// bytes -- exercising ogo_decode_rune.
+		name: "range over string yields runes",
+		src: `func main() {
+	for i, c := range "AbC" {
+		println(i, int(c))
+	}
+	for i, c := range "aéz" {
+		println(i, int(c))
+	}
+	n := 0
+	for range "héllo" {
+		n++
+	}
+	println(n)
+}
+`,
+		want: "0 65\n1 98\n2 67\n0 97\n1 233\n3 122\n5\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
