@@ -1264,6 +1264,14 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\treturn n;\n}\n",
 			copyCName(el), sliceCName(el), sliceCName(el))
 	}
+	// copy(dst []byte, src string): copy the string's bytes into the byte slice,
+	// min(len) of them, returning the count. The bytes are text, so a plain memcpy.
+	if e.usesCopyStr {
+		fmt.Fprintf(&helperDefs, "static int ogo_copystr(%s dst, ogo_string src) {\n"+
+			"\tint n = dst.len < src.len ? dst.len : src.len;\n"+
+			"\tif (n > 0) { memcpy(dst.ptr, src.str, (unsigned)n); }\n"+
+			"\treturn n;\n}\n", sliceCName("uint8_t"))
+	}
 	// clear(s): zero every element (memset, since every zero value is all-zero
 	// bytes), the length unchanged.
 	for _, el := range sortedKeys(e.clearElems) {
@@ -1375,6 +1383,7 @@ type emitter struct {
 	appendElems        map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems     map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
+	usesCopyStr        bool                     // copy(dst []byte, src string) is used: emit the ogo_copystr helper
 	clearElems         map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
 	minElems           map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
 	maxElems           map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
@@ -5918,6 +5927,21 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	}
 	dstCT, dok := e.inferCType(args[0].ast)
 	srcCT, sok := e.inferCType(args[1].ast)
+	// copy(dst []byte, src string): Go's byte-slice-from-string copy. The string's
+	// bytes are copied into the byte slice, min(len(dst), len(src)) of them, with no
+	// allocation -- the destination is the caller's storage. This is what lets a
+	// user-backed buffer append a string (a WriteString) on this target.
+	if dok && sok && srcCT == cString && e.isSliceCType(dstCT) && sliceElemFromCName(dstCT) == "uint8_t" {
+		e.needSlice("uint8_t")
+		e.usesCopyStr = true
+		e.includes["string.h"] = true
+		e.emit("ogo_copystr(")
+		e.emitExpr(args[0].ast)
+		e.emit(", ")
+		e.emitExpr(args[1].ast)
+		e.emit(")")
+		return
+	}
 	if !dok || !e.isSliceCType(dstCT) || !sok || !e.isSliceCType(srcCT) {
 		e.fail("copy's arguments must both be slices")
 		return

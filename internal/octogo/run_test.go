@@ -530,6 +530,37 @@ func main() {
 		want: "3 2 1.25 5\n9 2.5\n3 4.5\n3\n-1\n",
 	},
 	{
+		// copy(dst []byte, src string) copies a string's bytes into a byte slice,
+		// min(len(dst), len(src)) of them, with no allocation -- the destination is
+		// the caller's storage. That is exactly what a user-backed buffer needs to
+		// append a string (a WriteString) on this allocation-free target: reserve a
+		// fixed array, slice it into the buffer, and copy into the free tail. The
+		// bytes written are verified by their codes ('H'=72, ' '=32, '!'=33).
+		name: "copy string into a byte-slice buffer",
+		src: `type buf struct {
+	b []byte
+	n int
+}
+
+func (bf *buf) writeString(s string) { bf.n += copy(bf.b[bf.n:], s) }
+
+func (bf *buf) writeByte(c byte) {
+	bf.b[bf.n] = c
+	bf.n++
+}
+
+func main() {
+	var back [32]byte
+	bf := buf{back[:], 0}
+	bf.writeString("Hi")
+	bf.writeByte(' ')
+	bf.writeString("P2!")
+	println(bf.n, int(back[0]), int(back[2]), int(back[5]))
+}
+`,
+		want: "6 72 32 33\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
