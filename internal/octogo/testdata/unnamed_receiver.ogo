@@ -1,0 +1,29 @@
+// COMPILE
+
+// A method receiver, like a parameter or result, may be named or unnamed. An
+// unnamed receiver "(T)" or "(*T)" declares a method whose body does not refer to
+// the receiver -- idiomatic for a stateless type used only to group behaviour --
+// while a named receiver "(r T)" binds it for use in the body. Because the grammar
+// makes the receiver a single ParamDecl, the choice stays LL(1).
+
+type T struct{ x int }
+
+// Unnamed value and pointer receivers: neither body names the receiver.
+func (T) kind() int  { return 1 }
+func (*T) label() int { return 2 }
+
+// Named value and pointer receivers, referring to the receiver in the body.
+func (t T) value() int  { return t.x }
+func (t *T) bump()      { t.x++ }
+
+// A blank receiver binds nothing, exactly like an unnamed one.
+func (_ T) blank() int { return 3 }
+
+func run() {
+	var t T
+	_ = t.kind()
+	_ = t.label()
+	_ = t.value()
+	t.bump()
+	_ = t.blank()
+}

@@ -9,7 +9,9 @@
 
 type marker struct{}
 
-func (m marker) tag() int { return 42 }
+// The receiver is unnamed: an empty struct has nothing to access, so "(marker)"
+// is the natural spelling.
+func (marker) tag() int { return 42 }
 
 func use(m marker) int { return m.tag() }
 

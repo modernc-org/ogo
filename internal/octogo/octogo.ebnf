@@ -50,7 +50,7 @@ TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 TypeSpec = identifier [ "=" ] Type .
 FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
 Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
-Receiver       = "(" identifier Type ")" .
+Receiver       = "(" ParamDecl ")" .
 ParameterList  = ParamDecl { "," ParamDecl } .
 ResultList     = ParamDecl { "," ParamDecl } .
 ParamDecl      = Type [ Type ] .

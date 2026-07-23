@@ -7392,21 +7392,18 @@ state5:
 
 // Receiver grammar:
 //
-//	Receiver       = "(" identifier Type ")" .
+//	Receiver       = "(" ParamDecl ")" .
 //
 //	State 0
 //		on  '('
 //			shift and goto state 1
 //	State 1
-//		on  identifier
-//			shift and goto state 2
-//	State 2
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
-//			call Type and goto state 3
-//	State 3
+//			call ParamDecl and goto state 2
+//	State 2
 //		on  ')'
-//			shift and goto state 4
-//	State 4
+//			shift and goto state 3
+//	State 3
 //		Accept
 //
 // Receiver is used internally from Parse.
@@ -7422,30 +7419,22 @@ func (p *Parser) Receiver() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 101
+	accept, errorSet = false, 50
 	switch Symbol(p.tok.Ch) {
-	case identifier:
-		r = append(r, p.shift())
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
+		r = p.add(r, p.ParamDecl())
 		goto state2
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 51
-	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
-		r = p.add(r, p.Type())
-		goto state3
-	}
-	return p.stop(r, accept, errorSet)
-state3:
 	accept, errorSet = false, 83
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
-		goto state4
+		goto state3
 	}
 	return p.stop(r, accept, errorSet)
-state4:
+state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 }
@@ -7834,12 +7823,22 @@ state4:
 		goto state1
 	}
 stop:
-	if accept = accept && p.eof; accept {
+	accepted := accept
+	if accept = accepted && p.eof; accept {
 		r = append(r, p.shift())
 	}
 	r[1] = int32(len(r) - 2)
 	if !accept {
-		p.err(p.tokPos(), "%q [%s]: expected %v", p.tokSrc(), Symbol(p.tok.Ch), errorSets[errorSet])
+		expected := errorSets[errorSet]
+		if accepted {
+			// The rule accepted and input is left over, so EOF belongs in the
+			// message on top of whatever this state still admits. A state that
+			// accepts and has no outgoing edge admits nothing, and reporting that
+			// bare set answered every trailing garbage input, "[1]]" and the like,
+			// with "expected []".
+			expected = append(append([]Symbol{}, expected...), TOK_EOF)
+		}
+		p.err(p.tokPos(), "%q [%s]: expected %v", p.tokSrc(), Symbol(p.tok.Ch), expected)
 	}
 	return r
 }
@@ -8815,6 +8814,14 @@ func (p *Parser) add(r, s []int32) (t []int32) {
 // reaching the caller in place of a syntax error, for any input at all that
 // does not tokenize. The lexeme the lexer choked on is already reported, with
 // its own position, through p.sc.Err().
+//
+// The last case is an input whose very first lexeme the lexer rejects, so there
+// is no token to fall back on at all. A zero token.Position renders as nothing
+// whatever, which left the follow-up diagnostic saying only that EOF was found
+// where a value was expected, with no file, line or column on it. Offset 0 is
+// where such an input goes wrong and is the honest answer. RecScanner.Position
+// predates the v1.4.0 fix, so this still compiles against v1.3.1, as the rest
+// of the guard does.
 func (p *Parser) tokPos() token.Position {
 	switch n := p.sc.Len(); {
 	case int(p.tokIndex) < n:
@@ -8822,7 +8829,7 @@ func (p *Parser) tokPos() token.Position {
 	case n != 0:
 		return p.sc.Token(n - 1).Position()
 	default:
-		return token.Position{}
+		return p.sc.Position(0)
 	}
 }
 

@@ -682,19 +682,21 @@ func (f *File) reportUnusedImports() {
 	}
 }
 
-// declareReceiver declares a method receiver's name in the function body scope
-// so the body may reference it. Receiver = "(" identifier Type ")", so the
-// first identifier is the receiver name.
+// declareReceiver declares a method receiver's name in the function body scope so
+// the body may reference it. Receiver = "(" ParamDecl ")", so a named receiver
+// "(p Point)" carries a name to bind while an unnamed "(Point)" or blank "(_ Point)"
+// binds nothing -- its body cannot refer to the receiver.
 func (f *File) declareReceiver(s *Scope, n Node) {
-	for c := range it(n.ast) {
-		if c.sym == 0 {
-			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
-				if err := s.add(&VarDeclaration{declaration: declaration{token: tok}}); err != nil {
-					f.err(tok.Position(), "%v", err)
-				}
-				return
-			}
-		}
+	decls := f.paramDecls(n.ast)
+	if len(decls) == 0 || len(decls[0].Names) == 0 {
+		return
+	}
+	tok := decls[0].Names[0]
+	if tok.Src() == "_" {
+		return
+	}
+	if err := s.add(&VarDeclaration{declaration: declaration{token: tok}}); err != nil {
+		f.err(tok.Position(), "%v", err)
 	}
 }
 
@@ -3409,9 +3411,9 @@ func (f *File) fieldKind(s *Scope, head, field Token) (Kind, bool) {
 }
 
 // receiverTypeName returns the base type name of a method Receiver
-// "( identifier Type )". Because the grammar is "identifier Type", the receiver
-// name is the first identifier and the base type name is the last one in
-// traversal order (the Type is a nested node), so "(r *T)" and "(r T)" both
+// "( ParamDecl )". The base type name is the last identifier in traversal order:
+// for a named receiver the name comes first and the type last, and for an unnamed
+// one the type is the only identifier, so "(r *T)", "(r T)", "(T)" and "(*T)" all
 // yield T.
 func (f *File) receiverTypeName(recv Node) (name Token) {
 	for c := range it(recv.ast) {
@@ -4680,7 +4682,7 @@ func (f *File) typeIdent(n Node) (Token, bool) {
 
 // ReceiverNode describes the Receiver production.
 //
-//	Receiver       = "(" identifier Type ")" .
+//	Receiver       = "(" ParamDecl ")" .
 type ReceiverNode struct {
 	Name     Token
 	TypeNode TypeNode

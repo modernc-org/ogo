@@ -554,7 +554,7 @@
 //
 //	FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
 //	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
-//	Receiver       = "(" identifier Type ")" .
+//	Receiver       = "(" ParamDecl ")" .
 //	ParameterList  = ParamDecl { "," ParamDecl } .
 //	ResultList     = ParamDecl { "," ParamDecl } .
 //	ParamDecl      = Type [ Type ] .
@@ -567,6 +567,14 @@
 // case a bare ParamDecl is a name sharing the next named entry's type
 // ("(a, b int)"). Parameters and results share this grammar; an unnamed parameter
 // is simply one the body does not refer to.
+//
+// A Receiver is a single ParamDecl, so it too may be named or unnamed: "(p Point)"
+// binds the receiver to p, while "(Point)" and "(*Point)" declare a method whose
+// body does not name its receiver -- the natural spelling for a method on an
+// empty struct or any type used only to group behaviour. Reusing ParamDecl keeps
+// the choice LL(1): the "(" Type" prefix is shared, and a second Type (the base
+// type after the name) is what distinguishes the named form, exactly as for a
+// parameter.
 //
 // If the function declaration omits the Block, it provides the signature for a
 // function implemented externally (e.g., in the transpiled C runtime or PASM).

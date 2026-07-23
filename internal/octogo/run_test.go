@@ -277,6 +277,34 @@ func main() {
 		want: "42\n42\n3\n7\n",
 	},
 	{
+		// A method may leave its receiver unnamed -- "(T)" or "(*T)" -- when the
+		// body does not use it, matching Go and reading naturally for a method on a
+		// stateless type. The emitter still gives the C parameter a name (flexcc
+		// drops an unnamed one's argument slot) and (void)s it. A named receiver on
+		// the same type must keep working alongside, value and pointer both.
+		name: "unnamed method receiver",
+		src: `type counter struct{ n int }
+
+func (counter) kind() int { return 7 }
+
+func (*counter) tag() int { return 9 }
+
+func (c counter) get() int { return c.n }
+
+func (c *counter) bump() { c.n++ }
+
+func main() {
+	c := counter{40}
+	println(c.kind())
+	println(c.tag())
+	c.bump()
+	c.bump()
+	println(c.get())
+}
+`,
+		want: "7\n9\n42\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

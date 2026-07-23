@@ -2063,7 +2063,7 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		cname := name
 		if recv != nil {
-			_, rct := e.receiverInfo(recv)
+			_, rct, _ := e.receiverInfo(recv)
 			cname = methodCName(methodBaseType(rct), name)
 			e.methodPtr[cname] = e.isPointer(rct)
 		}
@@ -2115,7 +2115,7 @@ func (e *emitter) emitPrototypes(ast []int32) {
 		if recv == nil {
 			proto = e.funcSignatureC(name, sig)
 		} else {
-			rn, rct := e.receiverInfo(recv)
+			rn, rct, _ := e.receiverInfo(recv)
 			proto = e.methodSignatureC(methodCName(methodBaseType(rct), name), rn, rct, sig)
 		}
 		if proto != "" {
@@ -2165,12 +2165,16 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		proto = e.funcSignatureC(name, sig)
 		e.curFunc = name
 	} else {
-		recvName, recvCType := e.receiverInfo(recv)
+		recvName, recvCType, recvNamed := e.receiverInfo(recv)
 		cname := methodCName(methodBaseType(recvCType), name)
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
 		e.locals[recvName] = recvCType
-		if flds, ok := e.structs[methodBaseType(recvCType)]; ok && len(flds) == 0 {
+		// (void) the receiver when the body cannot use it: an unnamed receiver
+		// `(T)` (the source never names it) or a receiver whose type is an empty
+		// struct (nothing to access). Both would otherwise draw -Wunused-parameter.
+		flds, isStruct := e.structs[methodBaseType(recvCType)]
+		if !recvNamed || (isStruct && len(flds) == 0) {
 			emptyRecvName = recvName
 		}
 	}
@@ -2324,18 +2328,27 @@ func (e *emitter) funcParts(ast []int32) (name string, sig, body, recv []int32, 
 	return name, sig, body, recv, ok
 }
 
-// receiverInfo parses a Receiver subtree `"(" identifier Type ")"`, returning the
-// receiver's name and its C type (e.g. "Point" or "Point*").
-func (e *emitter) receiverInfo(recv []int32) (name, ctype string) {
-	for n := range it(recv) {
-		switch {
-		case n.sym == 0 && e.f.ch(n.tok) == IDENT:
-			name = e.src(n.tok)
-		case n.sym == Type:
-			ctype = e.cType(n.ast)
-		}
+// recvSynthName is the C name given to an unnamed method receiver `(T)`. flexcc
+// drops the argument slot of an unnamed parameter (see unnamedParamName), so the
+// receiver always needs a name in the emitted C even when the source omits one;
+// the body cannot refer to it, so it is (void)-cast like any synthetic parameter.
+const recvSynthName = "_ogo_recv"
+
+// receiverInfo parses a Receiver subtree `"(" ParamDecl ")"`, returning the
+// receiver's name, its C type (e.g. "Point" or "Point*"), and whether the source
+// named it. An unnamed or blank receiver reports named=false and takes the
+// synthetic recvSynthName so the emitted C parameter still has an identifier.
+func (e *emitter) receiverInfo(recv []int32) (name, ctype string, named bool) {
+	decls := e.f.paramDecls(recv)
+	if len(decls) == 0 {
+		return recvSynthName, "", false
 	}
-	return name, ctype
+	d := decls[0]
+	ctype = e.cType(d.TypeAST.ast)
+	if len(d.Names) != 0 && d.Names[0].Src() != "_" {
+		return d.Names[0].Src(), ctype, true
+	}
+	return recvSynthName, ctype, false
 }
 
 // methodBaseType is a receiver C type without any pointer star: a type's value and
