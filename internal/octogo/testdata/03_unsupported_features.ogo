@@ -1,6 +1,6 @@
 func mathOps() {
-    // ERROR "undeclared type: float32|floating-point types not supported"
-    var pi float32 = 3.14 
+    // ERROR "undefined: complex128"
+    var c complex128
 
     a := 1
     b := 2
@@ -8,5 +8,6 @@ func mathOps() {
         a = 3
     }
 
-    _ = pi
+    _ = c
+    _ = a
 }

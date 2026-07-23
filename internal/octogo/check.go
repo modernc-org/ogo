@@ -1677,6 +1677,13 @@ func isNumericKind(k Kind) bool {
 	return false
 }
 
+// isFloatKind reports whether k is a floating-point type. Kept apart from
+// isNumericKind, which drives the integer range and overflow checks that do not
+// apply to a float; both are numeric for the coarser kindCategory.
+func isFloatKind(k Kind) bool {
+	return k == PredeclaredFloat32 || k == PredeclaredFloat64
+}
+
 // intKindRange returns the inclusive minimum and maximum value of a predeclared
 // integer type k, as constants, and ok == false for any other Kind. Uintptr uses
 // the 32-bit range: a P2 pointer is a 32-bit Hub RAM address.
@@ -1738,16 +1745,6 @@ func isBoolKind(k Kind) bool {
 	return k == PredeclaredBool || k == UntypedBool
 }
 
-// isFloatTypeName reports whether nm names one of Go's floating-point types,
-// which OctoGo reserves but does not support.
-func isFloatTypeName(nm string) bool {
-	switch nm {
-	case "float32", "float64":
-		return true
-	}
-	return false
-}
-
 // Broad comparability classes returned by kindCategory.
 const (
 	catUnknown = iota
@@ -1765,7 +1762,7 @@ func kindCategory(k Kind) int {
 		return catBool
 	case k == PredeclaredString || k == UntypedString:
 		return catString
-	case isNumericKind(k) || k == UntypedInt || k == UntypedFloat:
+	case isNumericKind(k) || isFloatKind(k) || k == UntypedInt || k == UntypedFloat:
 		return catNumeric
 	}
 	return catUnknown
@@ -1773,6 +1770,9 @@ func kindCategory(k Kind) int {
 
 // kindName returns a source-like name for k, for use in diagnostics.
 func kindName(k Kind) string {
+	if isFloatKind(k) || k == UntypedFloat {
+		return "float"
+	}
 	switch kindCategory(k) {
 	case catBool:
 		return "bool"
@@ -4345,15 +4345,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		case CompositeLit:
 			lit, hasLit = c, true
 		case 0:
-			switch tok := f.tok(c.tok); Symbol(tok.Ch) {
-			case IDENT:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
 				id, hasID = tok, true
-			case FLOAT:
-				// Floating point is deliberately omitted (see the language spec), like
-				// the float types the type checker already rejects. Caught here, at the
-				// literal, so a float value fails with a clear message rather than an
-				// opaque emit error ("unsupported operand float_lit").
-				f.err(tok.Position(), "floating-point is not supported")
 			}
 		}
 	}
@@ -6218,22 +6211,15 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 					// ident.Name = tok
 				default:
 					nm := tok.Src()
-					switch {
-					case isFloatTypeName(nm):
-						// Reserved but unsupported: OctoGo's zero-allocation
-						// hardware target has no floating-point types.
-						f.err(tok.Position(), "floating-point types not supported")
+					switch s.find(nm).(type) {
+					case *PredeclaredType, *TypeDeclaration:
+						ident.Name = tok
+						ident.Index = n.tok
+						r = &ident
+					case nil:
+						f.err(tok.Position(), "undefined: %s", nm)
 					default:
-						switch s.find(nm).(type) {
-						case *PredeclaredType, *TypeDeclaration:
-							ident.Name = tok
-							ident.Index = n.tok
-							r = &ident
-						case nil:
-							f.err(tok.Position(), "undefined: %s", nm)
-						default:
-							f.err(tok.Position(), "%s is not a type", nm)
-						}
+						f.err(tok.Position(), "%s is not a type", nm)
 					}
 				}
 			case CHAN:
@@ -7153,12 +7139,9 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
 				}
 			case FLOAT:
-				// Floating point is deliberately omitted (see the language spec). A
-				// valid float literal is refused with a clear message, like the float
-				// types the checker rejects; an invalid one is not worth a second,
-				// contradictory diagnostic.
-				f.err(tok.Position(), "floating-point is not supported")
-				r = untypedConst{constant.MakeUnknown()}
+				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.FLOAT, 0)}); r.Type() == nil {
+					f.err(tok.Position(), "invalid floating-point literal: %s", tok.Src())
+				}
 			case CHAR:
 				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid rune literal: %s", tok.Src())

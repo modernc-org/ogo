@@ -25,6 +25,8 @@ const (
 	PredeclaredUint32
 	PredeclaredInt64
 	PredeclaredUint64
+	PredeclaredFloat32
+	PredeclaredFloat64
 	PredeclaredUintptr
 	PredeclaredString
 	UntypedBool

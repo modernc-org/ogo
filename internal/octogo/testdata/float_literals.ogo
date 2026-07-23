@@ -1,34 +1,39 @@
-// Floating point is deliberately omitted from OctoGo (see the language spec and
-// Keywords/Types). A float literal is refused with a clear message wherever it is
-// used as a value -- a short declaration, an initializer, an operand, a call
-// argument, a condition or a return -- matching the way the float types are
-// refused, rather than reaching the emitter as an opaque "unsupported operand".
+// COMPILE
 
-func shortDecl() {
-	// ERROR "floating-point is not supported"
+// Floating point is supported: float32 and float64, their literals, arithmetic,
+// comparison, conversion to and from integers, and use as variables, parameters,
+// results and struct fields.
+
+type vec struct {
+	x float64
+	y float64
+}
+
+func length2(v vec) float64 { return v.x*v.x + v.y*v.y }
+
+func run() {
 	x := 3.14
-	_ = x
-}
+	var y float64 = 2.0
+	var z float32 = 1.5
+	_ = x + y
+	_ = x * y
+	_ = x / y
+	_ = z
 
-func inExpr() {
-	// ERROR "floating-point is not supported"
-	_ = 1.5 + 2.5
-}
+	// An untyped integer constant is usable where a float is wanted.
+	_ = x + 1
 
-func callArg() {
-	// ERROR "floating-point is not supported"
-	_ = takeInt(2.5)
-}
+	// Conversions both ways.
+	n := 7
+	f := float64(n)
+	_ = int(f / 2.0)
+	_ = float32(f)
 
-func takeInt(n int) int { return n }
-
-func inCondition() {
-	// ERROR "floating-point is not supported"
-	if 1.5 > 2.0 {
+	// Comparison.
+	if x > y {
+		_ = x
 	}
-}
 
-func inReturn() int {
-	// ERROR "floating-point is not supported"
-	return 2.5
+	v := vec{1.5, 2.5}
+	_ = length2(v)
 }

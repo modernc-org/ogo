@@ -26,6 +26,11 @@ func cIntLit(src string) string {
 	return lit
 }
 
+// cFloatLit renders a Go float literal as C. Go and C float syntax overlap for the
+// decimal forms OctoGo's scanner accepts ("3.14", "1.0", ".5", "1."), so the text
+// is valid C as written; it is passed through unchanged.
+func cFloatLit(src string) string { return src }
+
 // runeLitValue decodes a rune literal's source ('A', '\n', '\x41', 'é', 'é')
 // to its Unicode code point. strconv.Unquote handles every Go rune escape and, for
 // a single-quoted literal, yields the one rune's UTF-8 string.
@@ -89,6 +94,7 @@ var cTypes = map[string]string{
 	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t", "int64": "int64_t",
 	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t", "uint64": "uint64_t",
 	"byte": "uint8_t", "rune": "int32_t", "uintptr": "uintptr_t",
+	"float32": "float", "float64": "double",
 	// A Go string is an immutable { pointer, length } header -- a value type that
 	// will later support slicing -- so it maps to the ogo_string struct.
 	"string": cString,
@@ -6223,6 +6229,8 @@ func scalarPrintVerb(ct string) string {
 	switch ct {
 	case "unsigned", "uint8_t", "uint16_t", "uint32_t", "uintptr_t":
 		return "%u"
+	case "double", "float":
+		return "%g" // concise, like Go's fmt for a float (7.0 -> "7", 0.25 -> "0.25")
 	case "int64_t":
 		return "%lld"
 	case "uint64_t":
@@ -7393,6 +7401,8 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			return "int", true
 		case CHAR:
 			return "int", true // a rune literal is an int32, C "int" on this target
+		case FLOAT:
+			return "double", true // an untyped float literal defaults to float64 (C double)
 		case STRING:
 			return cString, true
 		case IDENT:
@@ -7655,12 +7665,21 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emit(" " + op + " ")
 				guardNext = e.checks && (op == "/" || op == "%")
 			case guardNext && !e.isIntLiteral(c):
+				guardNext = false
+				ct, _ := e.inferCType(c.ast)
+				// A float divisor is never guarded: Go's float division by zero is
+				// ±Inf/NaN, not a panic, and ogo_nonzero(int) would truncate the
+				// divisor (2.5 -> 2), miscompiling the division.
+				if ct == "double" || ct == "float" {
+					e.emitExprNode(c)
+					continue
+				}
 				e.needPanic()
 				// A 64-bit divisor needs the 64-bit guard, or ogo_nonzero(int) would
 				// truncate it (mis-detecting a large nonzero divisor as zero and
 				// dividing by a wrong value).
 				fn := "ogo_nonzero"
-				if ct, ok := e.inferCType(c.ast); ok && (ct == "int64_t" || ct == "uint64_t") {
+				if ct == "int64_t" || ct == "uint64_t" {
 					fn, e.usesNonzero64 = "ogo_nonzero64", true
 				} else {
 					e.usesNonzero = true
@@ -7668,7 +7687,6 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emit(fn + "(")
 				e.emitExprNode(c)
 				e.emit(")")
-				guardNext = false
 			default:
 				e.emitExprNode(c)
 				guardNext = false
@@ -7834,6 +7852,8 @@ func (e *emitter) emitOperandToken(tok int32) {
 			return
 		}
 		e.emit(strconv.Itoa(int(r)))
+	case FLOAT:
+		e.emit(cFloatLit(e.src(tok))) // a float literal is valid C as written (see cFloatLit)
 	case IDENT:
 		// The predeclared bool constants have no C keyword here (bool is int); emit
 		// their integer values. Any other identifier is a name reference.

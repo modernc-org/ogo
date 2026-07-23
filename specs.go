@@ -9,10 +9,11 @@
 // (channels, "go", "select"). "&&" and "||" are parsed and rejected with a
 // diagnostic, which is deliberate -- see Operators.
 //
-// Maps and floating point are not on the list because they are not pending: the
-// body of this document omits both deliberately (see Keywords and Types), and the
-// README says so as well. They were TODO items until 20260720, which read as work
-// owed rather than as a decision taken.
+// Floating point (float32/float64) is now supported: literals, arithmetic,
+// comparison, conversion to and from integers, and use as variables, parameters,
+// results and fields, printed as %g. Maps and complex numbers remain omitted (see
+// Keywords and Types); they were TODO items until 20260720, which read as work owed
+// rather than as a decision taken.
 //
 // TODO 20260317 goto. Labels and labeled break/continue are now supported (see
 // Break and Continue Statements); "goto" itself stays omitted (Keywords), pending
@@ -211,11 +212,8 @@
 //
 // # Floating-point literals
 //
-// OctoGo does not support floating-point types (see Types). A floating-point
-// literal is nonetheless recognized by the grammar and folds to an untyped
-// floating-point constant, so that an unsupported use -- such as a
-// float-typed declaration -- is reported with a clear semantic diagnostic
-// instead of a confusing parse error on the literal.
+// A floating-point literal is an untyped floating-point constant. It has the
+// decimal form below; the exponent form ("1e3") is not recognized by the scanner.
 //
 //	float_lit = decimal_digits "." decimal_digits .
 //
@@ -331,7 +329,11 @@
 //   - Explicit conversions are required when different numeric types are mixed in
 //     an expression or assignment.
 //
-// (Note: OctoGo omits all floating-point and complex numeric types).
+// A floating-point type represents the set of IEEE-754 values: float32 (C float,
+// 32-bit) and float64 (C double, 64-bit). Float literals, arithmetic, comparison,
+// and conversion to and from the integer types are supported; unlike integer
+// division, float division by zero is not a runtime panic (it yields the IEEE
+// infinity or NaN). Complex numeric types are omitted.
 //
 // # String types
 //

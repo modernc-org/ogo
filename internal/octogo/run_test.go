@@ -508,6 +508,28 @@ func main() {
 		want: "1 2 3\n11\n7\n",
 	},
 	{
+		// Floating point: float64 (C double) and float32 (C float), their literals,
+		// arithmetic, a float parameter and result, conversions to and from int, and
+		// printing (as %g, concise like Go's fmt). Float division is not guarded --
+		// Go's float divide-by-zero is +-Inf/NaN, not a panic -- so a non-integer
+		// divisor divides exactly rather than being truncated by the integer guard.
+		name: "floating point",
+		src: `func sq(x float64) float64 { return x * x }
+
+func main() {
+	a := 2.5
+	b := 0.5
+	println(a+b, a-b, a*b, a/b)
+	println(sq(3.0), 10.0/4.0)
+	println(int(3.75), float64(9)/2.0)
+	var f float32 = 1.5
+	println(f * 2.0)
+	println(-1.5 + 0.5)
+}
+`,
+		want: "3 2 1.25 5\n9 2.5\n3 4.5\n3\n-1\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

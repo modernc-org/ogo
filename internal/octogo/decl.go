@@ -133,6 +133,8 @@ out:
 	f("uint64", PredeclaredUint64)
 	f("uint8", PredeclaredUint8)
 	f("uintptr", PredeclaredUintptr)
+	f("float32", PredeclaredFloat32)
+	f("float64", PredeclaredFloat64)
 	f("string", PredeclaredString)
 	// Type aliases
 	f("byte", PredeclaredUint8)

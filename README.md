@@ -186,9 +186,12 @@ broken.
 * `go` on a method, and send clauses in `select`.
 * An array as a function result, and slicing a multi-dimensional array.
 
+Floating point (float32/float64) is supported: the P2's C toolchain provides it,
+so float arithmetic, comparison, int conversions and printing all work.
+
 **Not planned**, because the target does not permit them: a garbage collector, a
-heap, maps, floating point, closures that capture their environment, and runtime
-string concatenation. Constant string concatenation folds at compile time.
+heap, maps, closures that capture their environment, and runtime string
+concatenation. Constant string concatenation folds at compile time.
 
 Interfaces are designed but not implemented; the whole-program-optimization
 strategy behind them is still an open question, and opinions are welcome.
