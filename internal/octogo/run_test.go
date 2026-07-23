@@ -167,6 +167,24 @@ func main() {
 		want: "true false\n1\n1\n1 2 0\n2\ntrue true\n",
 	},
 	{
+		// String ordering (< <= > >=) compares lexicographically by unsigned byte,
+		// like Go, via the ogo_string_cmp helper against 0 -- a prefix ties on the
+		// shorter length. Exercised standalone, with variables, and embedded in a
+		// boolean chain (composing with the ogo_string_eq lowering).
+		name: "string ordering comparisons",
+		src: `func main() {
+	println("abc" < "abd", "abd" < "abc", "ab" < "abc")
+	a := "cat"
+	b := "dog"
+	println(a < b, a >= b, a <= "cat")
+	if a > "a" && a < "z" {
+		println(1)
+	}
+}
+`,
+		want: "true false true\ntrue false true\n1\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

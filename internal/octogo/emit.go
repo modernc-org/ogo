@@ -73,6 +73,18 @@ const stringEqHelper = "static inline int ogo_string_eq(ogo_string a, ogo_string
 	"\treturn 1;\n" +
 	"}\n"
 
+// stringCmpHelper orders two ogo_string values lexicographically by unsigned byte,
+// as Go's < <= > >= do: negative if a < b, zero if equal, positive if a > b. A
+// prefix ties on the shorter length.
+const stringCmpHelper = "static inline int ogo_string_cmp(ogo_string a, ogo_string b) {\n" +
+	"\tint n = a.len < b.len ? a.len : b.len;\n" +
+	"\tfor (int i = 0; i < n; i++) {\n" +
+	"\t\tunsigned char ca = a.str[i], cb = b.str[i];\n" +
+	"\t\tif (ca != cb) return ca < cb ? -1 : 1;\n" +
+	"\t}\n" +
+	"\treturn a.len == b.len ? 0 : (a.len < b.len ? -1 : 1);\n" +
+	"}\n"
+
 // sliceTypePrefix leads the C typedef name of an OctoGo slice `[]T`: a { pointer,
 // length, capacity } header (`T* ptr; int len; int cap`) named per element type,
 // e.g. []int -> ogo_slice_int, []*Point -> ogo_slice_Point_ptr. Like ogo_string it
@@ -1098,6 +1110,10 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(stringHelpers)
 		out.WriteByte('\n')
 	}
+	if e.usesStringCmp {
+		out.WriteString(stringCmpHelper)
+		out.WriteByte('\n')
+	}
 	if e.usesStringEq {
 		out.WriteString(stringEqHelper)
 		out.WriteByte('\n')
@@ -1274,6 +1290,7 @@ type emitter struct {
 	usesString       bool                     // an ogo_string type/literal appears: emit stringTypedef
 	usesStringPrint  bool                     // a string is printed: emit stringHelpers
 	usesStringEq     bool                     // a string == / != appears: emit ogo_string_eq
+	usesStringCmp    bool                     // a string < <= > >= appears: emit ogo_string_cmp
 	err              error
 }
 
@@ -4775,7 +4792,7 @@ func (e *emitter) caseHead(cc []int32) (exprs []Node, isDefault bool) {
 // (guardVar ""), the case expressions are themselves the conditions (`a || b`).
 func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 	// A string switch compares the guard against each case by content, not with C's
-	// `==` on the { ptr, len } struct (see emitStringEq).
+	// `==` on the { ptr, len } struct (see emitStringCompare).
 	stringGuard := guardVar != "" && (e.locals[guardVar] == cString || e.globals[guardVar] == cString)
 	e.emit("(")
 	for i, ex := range exprs {
@@ -4891,7 +4908,7 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 	// The C `if`/`while` parentheses stay in place around a lowered string compare.
 	e.emit("(")
 	kids := slices.Collect(it(exprChildren))
-	if !e.emitStringEq(kids) {
+	if !e.emitStringCompare(kids) {
 		e.emitLogicalKids(kids)
 	}
 	e.emit(")")
@@ -6896,20 +6913,23 @@ func (e *emitter) emitExpr(ast []int32) {
 	// A condition or assignment RHS reaches here as the Expression's unwrapped
 	// children, so a string comparison must be recognized on this flat list too --
 	// emitExprNode's Expression case only fires for a wrapped Expression node.
-	// emitKidsStringEq rewrites both a standalone and an embedded string compare and
+	// emitKidsStringCompare rewrites both a standalone and an embedded string compare and
 	// is otherwise identical to emitting the kids in order.
-	e.emitKidsStringEq(slices.Collect(it(ast)))
+	e.emitKidsStringCompare(slices.Collect(it(ast)))
 }
 
-// stringEqAt reports whether kids[i:i+3] is a string equality comparison --
-// "operand (== | !=) operand" with a string operand -- and returns the operator.
-// C cannot compare the { ptr, len } structs; Go compares contents.
-func (e *emitter) stringEqAt(kids []Node, i int) (op string, ok bool) {
+// stringCompareAt reports whether kids[i:i+3] is a string comparison --
+// "operand <relop> operand" with a string operand -- and returns the operator. C
+// cannot compare the { ptr, len } structs; Go compares by content (==/!=) or
+// lexicographic order (< <= > >=).
+func (e *emitter) stringCompareAt(kids []Node, i int) (op string, ok bool) {
 	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
 		return "", false
 	}
-	op = e.opText(kids[i+1].ast)
-	if op != "==" && op != "!=" {
+	switch op = e.opText(kids[i+1].ast); op {
+	case "==", "!=", "<", "<=", ">", ">=":
+		// a comparison operator
+	default:
 		return "", false
 	}
 	if ct, ok := e.inferCType(kids[i].ast); !ok || ct != cString {
@@ -6918,46 +6938,57 @@ func (e *emitter) stringEqAt(kids []Node, i int) (op string, ok bool) {
 	return op, true
 }
 
-// emitStringEqTriple emits a string equality as the ogo_string_eq helper (negated
-// for "!="), l being the left operand and r the right.
-func (e *emitter) emitStringEqTriple(l, r Node, op string) {
+// emitStringCompareTriple emits a string comparison: equality (== / !=) via the
+// content helper ogo_string_eq, ordering (< <= > >=) via the lexicographic
+// ogo_string_cmp compared against 0. l is the left operand, r the right.
+func (e *emitter) emitStringCompareTriple(l, r Node, op string) {
 	e.usesString = true
-	e.usesStringEq = true
-	if op == "!=" {
-		e.emit("!")
+	switch op {
+	case "==", "!=":
+		e.usesStringEq = true
+		if op == "!=" {
+			e.emit("!")
+		}
+		e.emit("ogo_string_eq(")
+		e.emitExprNode(l)
+		e.emit(", ")
+		e.emitExprNode(r)
+		e.emit(")")
+	default: // < <= > >=
+		e.usesStringCmp = true
+		e.emit("(ogo_string_cmp(")
+		e.emitExprNode(l)
+		e.emit(", ")
+		e.emitExprNode(r)
+		e.emit(") " + op + " 0)")
 	}
-	e.emit("ogo_string_eq(")
-	e.emitExprNode(l)
-	e.emit(", ")
-	e.emitExprNode(r)
-	e.emit(")")
 }
 
-// emitStringEq lowers a standalone string equality -- kids being exactly
-// "operand (== | !=) operand" with string operands -- to ogo_string_eq, returning
-// true when it did. It is the no-extra-parens fast path; emitKidsStringEq handles
-// a comparison embedded in a larger chain.
-func (e *emitter) emitStringEq(kids []Node) bool {
+// emitStringCompare lowers a standalone string comparison -- kids being exactly
+// "operand <relop> operand" with string operands -- returning true when it did. It
+// is the no-extra-parens fast path; emitKidsStringCompare handles a comparison
+// embedded in a larger chain.
+func (e *emitter) emitStringCompare(kids []Node) bool {
 	if len(kids) != 3 {
 		return false
 	}
-	op, ok := e.stringEqAt(kids, 0)
+	op, ok := e.stringCompareAt(kids, 0)
 	if !ok {
 		return false
 	}
-	e.emitStringEqTriple(kids[0], kids[2], op)
+	e.emitStringCompareTriple(kids[0], kids[2], op)
 	return true
 }
 
-// emitKidsStringEq emits a flat operand/operator kid list, rewriting each string
-// equality sub-comparison to ogo_string_eq so a string compare embedded in a
-// larger || / && chain (`s == "a" && cond`) lowers correctly. Non-string operands
-// and every other operator emit unchanged, so a chain with no string comparison is
-// identical to emitting the kids in order.
-func (e *emitter) emitKidsStringEq(kids []Node) {
+// emitKidsStringCompare emits a flat operand/operator kid list, rewriting each
+// string sub-comparison (equality or ordering) so a string compare embedded in a
+// larger || / && chain (`s == "a" && cond`, `s < t || s == "z"`) lowers correctly.
+// Non-string operands and every other operator emit unchanged, so a chain with no
+// string comparison is identical to emitting the kids in order.
+func (e *emitter) emitKidsStringCompare(kids []Node) {
 	for i := 0; i < len(kids); {
-		if op, ok := e.stringEqAt(kids, i); ok {
-			e.emitStringEqTriple(kids[i], kids[i+2], op)
+		if op, ok := e.stringCompareAt(kids, i); ok {
+			e.emitStringCompareTriple(kids[i], kids[i+2], op)
 			i += 3
 			continue
 		}
@@ -6986,7 +7017,7 @@ func (e *emitter) emitLogicalKids(kids []Node) {
 		}
 	}
 	if !hasOr || !hasAnd {
-		e.emitKidsStringEq(kids)
+		e.emitKidsStringCompare(kids)
 		return
 	}
 	emitGroup := func(group []Node) {
@@ -6996,7 +7027,7 @@ func (e *emitter) emitLogicalKids(kids []Node) {
 		if wrap {
 			e.emit("(")
 		}
-		e.emitKidsStringEq(group)
+		e.emitKidsStringCompare(group)
 		if wrap {
 			e.emit(")")
 		}
@@ -7032,9 +7063,9 @@ func (e *emitter) emitExprNode(n Node) {
 			e.fail("string concatenation with a non-constant operand needs allocation, which the target does not have")
 			return
 		}
-		// A standalone string equality is a content compare (see emitStringEq); a C
+		// A standalone string equality is a content compare (see emitStringCompare); a C
 		// `==` on the { ptr, len } struct is not valid.
-		if e.emitStringEq(kids) {
+		if e.emitStringCompare(kids) {
 			return
 		}
 		e.emit("(")
