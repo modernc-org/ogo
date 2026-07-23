@@ -71,7 +71,8 @@ Factor     = identifier [ CompositeLit | FactorSuffix ]
 	| FuncLiteral .
 CompositeLit = "{" [ ElementList ] "}" .
 ElementList  = Element { "," Element } .
-Element      = Expression [ ":" Expression ] .
+Element      = CompositeLit | Expression [ ":" ElementValue ] .
+ElementValue = CompositeLit | Expression .
 HeaderExpression = HeaderSimpleExpr { RelOp HeaderSimpleExpr } .
 HeaderSimpleExpr = HeaderTerm { AddOp HeaderTerm } .
 HeaderTerm       = HeaderUnaryExpr { MulOp HeaderUnaryExpr } .

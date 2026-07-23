@@ -3064,7 +3064,11 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 			e.emit(e.zeroFieldC(fields[i])) // a field this keyed literal omits
 			continue
 		}
-		e.emitLitElement(*v, brace)
+		expect := ""
+		if i < len(fields) {
+			expect = fields[i].ctype // the field's type, for a type-elided element
+		}
+		e.emitLitElement(*v, expect, brace)
 	}
 	e.emit("}")
 }
@@ -3073,7 +3077,25 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 // initializer an element that is itself a literal is written with braces too,
 // which is C's spelling for a nested aggregate and the only one flexcc lowers for
 // a struct that holds an array (see emitCompositeLit).
-func (e *emitter) emitLitElement(v Node, brace bool) {
+//
+// expectType is the C type this element's position implies -- the array/slice
+// element type, or the struct field type. A type-elided element (`{1}` for `P{1}`)
+// arrives as a bare CompositeLit node with no type of its own, so it is emitted
+// against expectType, which must be a struct (a nested array or slice element type
+// is not yet supported and is refused rather than mis-emitted).
+func (e *emitter) emitLitElement(v Node, expectType string, brace bool) {
+	if v.sym == CompositeLit {
+		if !e.isStruct(expectType) {
+			e.fail("a type-elided composite literal element is only supported for a struct element type yet")
+			return
+		}
+		if len(compositeLitElements(v)) == 0 {
+			e.emit(e.zeroBraceC(expectType)) // "{}" -> full zeros; see zeroBraceC
+			return
+		}
+		e.emitCompositeLit(expectType, v, true)
+		return
+	}
 	if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok {
 		if len(compositeLitElements(sub)) == 0 {
 			e.emit(e.zeroBraceC(nm)) // "{0}" does not nest; see zeroBraceC
@@ -3182,7 +3204,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 			e.emit(e.zeroInitC(elemCType))
 			continue
 		}
-		e.emitLitElement(*v, true)
+		e.emitLitElement(*v, elemCType, true)
 	}
 	e.emit("}")
 }
@@ -3327,7 +3349,9 @@ func (e *emitter) litFieldValues(name string, lit Node) (values []*Node, fields 
 		for i := range elements {
 			values = append(values, &elements[i].value)
 		}
-		return values, nil, true
+		// Positional: pair each value with the field at its position, so a
+		// type-elided element (`{1}`) can be emitted against that field's type.
+		return values, e.structs[name], true
 	}
 	fields = e.structs[name]
 	values = make([]*Node, len(fields))

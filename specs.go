@@ -607,7 +607,8 @@
 //		| FuncLiteral .
 //	CompositeLit = "{" [ ElementList ] "}" .
 //	ElementList  = Element { "," Element } .
-//	Element      = Expression [ ":" Expression ] .
+//	Element      = CompositeLit | Expression [ ":" ElementValue ] .
+//	ElementValue = CompositeLit | Expression .
 //
 // A composite literal "T{a, b}" builds a value of the named struct type from its
 // fields in declaration order. An Element may instead carry a key naming the field
@@ -615,6 +616,13 @@
 // mixed, because once one Element names its field, position stops meaning anything.
 // A keyed literal may name any subset of the fields in any order, and a field it
 // does not name takes its zero value.
+//
+// An element value that is itself a composite literal may elide its type when that
+// type is implied by position -- the element type of an array or slice literal, or
+// a field's type in a struct literal -- so "[]P{{1}, {2}}" means "[]P{P{1}, P{2}}"
+// and "Outer{{5}}" means "Outer{Inner{5}}", as in Go. Because a "{" cannot begin an
+// Expression, the elided form is distinguished from a keyed or ordinary element with
+// one token of lookahead, keeping the grammar LL(1).
 //
 // A bracketed type may carry one too, giving an array literal "[N]T{a, b}" or a
 // slice literal "[]T{a, b}". Their elements are positional; Go's indexed form

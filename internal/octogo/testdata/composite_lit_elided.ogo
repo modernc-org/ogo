@@ -1,0 +1,36 @@
+// COMPILE
+
+// A composite-literal element value may elide its type when position implies it:
+// the element type of an array or slice literal, or a field's type in a struct
+// literal. `[]P{{1}, {2}}` means `[]P{P{1}, P{2}}` and `Outer{{5}}` means
+// `Outer{Inner{5}}`, as in Go. Positional and keyed inner forms, and an empty `{}`
+// that zeroes the element, are all admitted; the explicit form still works too.
+
+type inner struct {
+	a int
+	b int
+}
+
+type outer struct {
+	i inner
+	n int
+}
+
+func run() {
+	// Array and slice literals with elided struct elements.
+	var arr [3]inner = [3]inner{{1, 2}, {}, {5, 6}}
+	sl := []inner{{7, 8}, {a: 9}}
+
+	// Struct literals with an elided field value, positional and keyed.
+	o := outer{{1, 2}, 3}
+	k := outer{i: {4, 5}, n: 6}
+
+	// The explicit, non-elided form remains valid.
+	e := []inner{inner{1, 2}, inner{3, 4}}
+
+	_ = arr
+	_ = sl
+	_ = o
+	_ = k
+	_ = e
+}

@@ -3128,6 +3128,12 @@ type litElement struct {
 }
 
 // compositeLitElements returns a composite literal's elements in source order.
+// An Element is `CompositeLit | Expression [ ":" ElementValue ]`: a bare
+// CompositeLit is a positional element whose type is elided (its value Node is the
+// CompositeLit itself, distinguishable from an ordinary value by its sym); an
+// Expression alone is a positional element; and an Expression before an
+// ElementValue is keyed, the value being the ElementValue's inner Expression or
+// (again type-elided) CompositeLit.
 func compositeLitElements(lit Node) (r []litElement) {
 	for c := range it(lit.ast) {
 		if c.sym != ElementList {
@@ -3137,17 +3143,27 @@ func compositeLitElements(lit Node) (r []litElement) {
 			if el.sym != Element {
 				continue
 			}
-			var exprs []Node
+			var head Node // the Expression or CompositeLit before any ":"
+			var val Node  // the ElementValue's inner node, when keyed
+			keyed := false
 			for e := range it(el.ast) {
-				if e.sym == Expression {
-					exprs = append(exprs, e)
+				switch e.sym {
+				case Expression, CompositeLit:
+					head = e
+				case ElementValue:
+					keyed = true
+					for v := range it(e.ast) {
+						if v.sym == Expression || v.sym == CompositeLit {
+							val = v
+						}
+					}
 				}
 			}
-			switch len(exprs) {
-			case 1:
-				r = append(r, litElement{value: exprs[0]})
-			case 2:
-				r = append(r, litElement{key: exprs[0], value: exprs[1], keyed: true})
+			switch {
+			case keyed:
+				r = append(r, litElement{key: head, value: val, keyed: true})
+			case head.sym != 0:
+				r = append(r, litElement{value: head})
 			}
 		}
 	}

@@ -343,6 +343,33 @@ func main() {
 		want: "30\n9\n11\n11\n15\n",
 	},
 	{
+		// A composite-literal element value may elide its type when position implies
+		// it: `[]P{{1,2},{3,4}}` means `[]P{P{1,2},P{3,4}}`, `O{{5}}` means
+		// `O{Inner{5}}`, and a keyed element value `O{i: {7}}` elides too. The
+		// emitter fills the elided type from the array/slice element type or the
+		// struct field type at that position. Positional and keyed inner forms and an
+		// empty `{}` (all-zero) are all exercised.
+		name: "type-elided composite literals",
+		src: `type pt struct{ x, y int }
+
+type box struct{ p pt }
+
+func main() {
+	a := []pt{{1, 2}, {3, 4}}
+	println(a[0].x, a[0].y, a[1].x, a[1].y)
+	var b [3]pt = [3]pt{{5, 6}, {}, {7, 8}}
+	println(b[0].x, b[1].x, b[2].y)
+	c := []pt{{x: 9}, {y: 10}}
+	println(c[0].x, c[0].y, c[1].y)
+	o := box{{11, 12}}
+	println(o.p.x, o.p.y)
+	k := box{p: {13, 14}}
+	println(k.p.x, k.p.y)
+}
+`,
+		want: "1 2 3 4\n5 0 8\n9 0 10\n11 12\n13 14\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
