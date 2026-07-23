@@ -473,6 +473,41 @@ func main() {
 		want: "9\n10\n7\n43\n",
 	},
 	{
+		// A pointer-receiver method call is a valid call statement at the end of a
+		// chain even when it returns nothing: `a[i].inc()`, `s[i].inc()`, `b.c.inc()`
+		// mutate an addressable element or field in place. This is the idiom for
+		// updating slice/array elements (`for i := range xs { xs[i].update() }`),
+		// where ranging by index and calling through &element is how a value method
+		// set mutates the backing store.
+		name: "void method on an element",
+		src: `type counter struct{ n int }
+
+func (c *counter) inc()      { c.n++ }
+func (c *counter) add(d int) { c.n += d }
+
+type box struct{ c counter }
+
+func main() {
+	var a [3]counter
+	for i := range a {
+		a[i].inc()
+		a[i].add(i)
+	}
+	println(a[0].n, a[1].n, a[2].n)
+
+	s := make([]counter, 0, 2)
+	s = append(s, counter{10})
+	s[0].inc()
+	println(s[0].n)
+
+	var b box
+	b.c.add(7)
+	println(b.c.n)
+}
+`,
+		want: "1 2 3\n11\n7\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

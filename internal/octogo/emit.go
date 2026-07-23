@@ -5636,7 +5636,11 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
 				cname := methodCName(bt, field)
 				rts, okm := e.funcRet[cname]
-				if !okm || len(rts) != 1 {
+				// A void method (no result) is valid as the final step of a call
+				// statement -- `xs[i].update()` mutating an element in place -- so 0
+				// results is admitted; a further step then fails on the empty type. A
+				// multi-result method is not a single value and cannot continue a chain.
+				if !okm || len(rts) > 1 {
 					return "", "", false, false
 				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
@@ -5647,7 +5651,12 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					recv += ", " + args
 				}
 				text = cname + "(" + recv + ")"
-				cur, addr = e.plainOrSlice(rts[0]), false
+				addr = false
+				if len(rts) == 1 {
+					cur = e.plainOrSlice(rts[0])
+				} else {
+					cur = accessCur{} // void: no value to continue with
+				}
 				i++ // consumed the CallSuffix
 				continue
 			}
@@ -5728,10 +5737,15 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 			bt := methodBaseType(cur.ctype)
 			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
 				rts, okm := e.funcRet[methodCName(bt, field)]
-				if !okm || len(rts) != 1 {
+				if !okm || len(rts) > 1 {
 					return "", false
 				}
-				cur, addr = e.plainOrSlice(rts[0]), false
+				if len(rts) == 1 {
+					cur = e.plainOrSlice(rts[0])
+				} else {
+					cur = accessCur{} // void method: no result type (a void chain yields none)
+				}
+				addr = false
 				i++
 				continue
 			}
