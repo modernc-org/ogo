@@ -1,0 +1,35 @@
+// COMPILE
+
+// A label, "L:", prefixes a statement; a "break L" or "continue L" then names that
+// enclosing statement instead of the innermost. "break" may name a labeled "for" or
+// "switch"; "continue" may name only a labeled "for".
+
+func run() {
+outer:
+	for i := 0; i < 3; i++ {
+		for j := 0; j < 3; j++ {
+			if j == 1 {
+				continue outer
+			}
+			if i == 2 {
+				break outer
+			}
+		}
+	}
+
+sw:
+	for i := 0; i < 3; i++ {
+		switch i {
+		case 1:
+			break sw
+		}
+	}
+
+	// Plain break and continue still work.
+	for {
+		break
+	}
+	for i := 0; i < 2; i++ {
+		continue
+	}
+}

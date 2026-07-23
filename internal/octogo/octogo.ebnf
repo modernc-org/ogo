@@ -101,8 +101,8 @@ Statement = VarDecl
 	| TypeDecl
 	| IfStmt
 	| "for" [ ForHeader ] Block
-	| "break"
-	| "continue"
+	| "break" [ identifier ]
+	| "continue" [ identifier ]
 	| "return" [ ExpressionList ]
 	| "go" AssignHead { Selector | Index | CallSuffix }
 	| SwitchStmt
@@ -119,7 +119,8 @@ PostfixOp  = "<-" Expression
 	| "++"
 	| "--"
 	| AssignOp Expression
-	| { "," LhsItem } ( "=" | ":=" ) ExpressionList .
+	| { "," LhsItem } ( "=" | ":=" ) ExpressionList
+	| ":" Statement .
 AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 	| "&=" | "|=" | "^=" | "&^="
 	| "<<=" | ">>=" .

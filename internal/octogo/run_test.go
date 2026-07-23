@@ -370,6 +370,51 @@ func main() {
 		want: "1 2 3 4\n5 0 8\n9 0 10\n11 12\n13 14\n",
 	},
 	{
+		// A labeled break or continue names an enclosing loop or switch: "break L"
+		// leaves the labeled "for"/"switch" from any depth, and "continue L" begins
+		// the labeled "for"'s next iteration. Each lowers to a goto -- to a label
+		// after the loop for break, and at the loop body's end (a fall-through re-runs
+		// the post and test) for continue.
+		name: "labeled break and continue",
+		src: `func main() {
+	found := -1
+outer:
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 5; j++ {
+			if i*10+j == 12 {
+				found = i*10 + j
+				break outer
+			}
+		}
+	}
+	println(found)
+
+	sum := 0
+next:
+	for i := 1; i <= 3; i++ {
+		for j := 0; j < 3; j++ {
+			sum += i
+			continue next
+		}
+	}
+	println(sum)
+
+	last := -1
+loop:
+	for i := 0; i < 5; i++ {
+		switch i {
+		case 3:
+			break loop
+		default:
+			last = i
+		}
+	}
+	println(last)
+}
+`,
+		want: "12\n6\n2\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

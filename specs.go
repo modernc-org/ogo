@@ -14,8 +14,9 @@
 // README says so as well. They were TODO items until 20260720, which read as work
 // owed rather than as a decision taken.
 //
-// TODO 20260317 labels and gotos. Note that Keywords says "goto" is intentionally
-// omitted, so this contradicts the body and one of the two is wrong.
+// TODO 20260317 goto. Labels and labeled break/continue are now supported (see
+// Break and Continue Statements); "goto" itself stays omitted (Keywords), pending
+// the jump-over-declaration safety analysis its unrestricted form needs.
 // TODO 20260719 Select: send clauses, and smart-pin clauses
 // TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
 // TODO 20260719 Break statements: allowed in a switch once switch stops lowering to if/else
@@ -771,8 +772,8 @@
 //		| TypeDecl
 //		| IfStmt
 //		| "for" [ ForHeader ] Block
-//		| "break"
-//		| "continue"
+//		| "break" [ identifier ]
+//		| "continue" [ identifier ]
 //		| "return" [ ExpressionList ]
 //		| "go" AssignHead { Selector | Index | CallSuffix }
 //		| SwitchStmt
@@ -817,17 +818,19 @@
 //
 // # Break and Continue Statements
 //
-// A "break" statement terminates execution of the innermost enclosing "for"
-// statement. A "continue" statement begins the next iteration of the innermost
-// enclosing "for" statement. Both appear in the Statement production above.
+// A "break" statement terminates execution of the innermost enclosing "for" or
+// "switch" statement. A "continue" statement begins the next iteration of the
+// innermost enclosing "for" statement. Both appear in the Statement production
+// above.
 //
-// (OctoGo Specific): Unlike Go, "break" may not appear in a "switch" statement.
-// A switch is lowered to a chain of conditionals rather than to a C switch, so
-// the two constructs do not share a notion of what "break" leaves; a break there
-// is rejected rather than silently leaving an enclosing loop. A "continue" inside
-// a switch is unaffected, since it names the enclosing loop either way.
-//
-// Neither statement takes a label, since OctoGo has no labels.
+// Either statement may name an enclosing labeled statement, and then acts on that
+// one instead of the innermost: "break Label" leaves the labeled "for" or "switch",
+// and "continue Label" begins the next iteration of the labeled "for". A label is
+// an identifier prefixing a statement, "Label:", as in Go -- syntactically it is a
+// ":" continuation of the leading identifier, so the grammar stays LL(1). The
+// labeled statement a "break" names must be an enclosing "for" or "switch", and the
+// one a "continue" names must be an enclosing "for"; a label that names neither, or
+// one that is not in scope, is rejected.
 //
 // # Defer Statements
 //
@@ -871,7 +874,8 @@
 //		| "++"
 //		| "--"
 //		| AssignOp Expression
-//		| { "," LhsItem } ( "=" | ":=" ) ExpressionList .
+//		| { "," LhsItem } ( "=" | ":=" ) ExpressionList
+//		| ":" Statement .
 //	AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .

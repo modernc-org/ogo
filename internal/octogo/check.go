@@ -227,6 +227,7 @@ type File struct {
 	iota              int               // the current iota value while evaluating a const spec, or -1 outside a const declaration
 	loopDepth         int               // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
 	switchDepth       int               // number of enclosing "switch" statements, so a "break" in one is recognised as placed
+	labels            []labelFrame      // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	parser            Parser
@@ -1211,6 +1212,130 @@ func (f *File) checkBlock(s *Scope, results []retResult, n Node) {
 	}
 }
 
+// labelKind classifies what an enclosing labeled statement labels, which is what
+// a labeled break or continue may name: only a "for" (break and continue) or a
+// "switch" (break) is a valid target.
+type labelKind int
+
+const (
+	labelOther  labelKind = iota // a label on anything else -- valid to write, but not a break/continue target
+	labelLoop                    // a label on a "for"
+	labelSwitch                  // a label on a "switch"
+)
+
+// labelFrame is one enclosing labeled statement, as seen from a break/continue
+// nested inside it.
+type labelFrame struct {
+	name string
+	kind labelKind
+}
+
+// findLabel resolves a label name against the enclosing labeled statements,
+// innermost first.
+func (f *File) findLabel(name string) (labelFrame, bool) {
+	for i := len(f.labels) - 1; i >= 0; i-- {
+		if f.labels[i].name == name {
+			return f.labels[i], true
+		}
+	}
+	return labelFrame{}, false
+}
+
+// postfixLabel reports whether a Postfix is the ":" continuation that makes its
+// leading identifier a label -- `PostfixOp = ... | ":" Statement` -- and returns
+// the labeled Statement. A well-formed label has no other suffix; hasSuffix flags
+// a malformed one like "a.b:" so the caller can reject it while still descending.
+func (f *File) postfixLabel(postfix Node) (inner Node, hasSuffix, ok bool) {
+	for n := range it(postfix.ast) {
+		switch n.sym {
+		case Selector, Index, CallSuffix:
+			hasSuffix = true
+		case PostfixOp:
+			sawColon := false
+			for c := range it(n.ast) {
+				switch {
+				case c.sym == 0 && f.ch(c.tok) == COLON:
+					sawColon = true
+				case c.sym == Statement && sawColon:
+					inner, ok = c, true
+				}
+			}
+		}
+	}
+	return inner, hasSuffix, ok
+}
+
+// labelKindOf classifies the statement a label prefixes, by the same cues
+// checkStatement dispatches on: a leading "for" token or a SwitchStmt child.
+func (f *File) labelKindOf(inner Node) labelKind {
+	for c := range it(inner.ast) {
+		switch {
+		case c.sym == 0 && f.ch(c.tok) == FOR:
+			return labelLoop
+		case c.sym == SwitchStmt:
+			return labelSwitch
+		}
+	}
+	return labelOther
+}
+
+// checkLabeledStatement checks "Label: Statement". The label must be a bare
+// identifier with no other suffix, and unique among the enclosing labels; it is
+// then pushed while the labeled statement is checked, so a break or continue
+// nested inside can resolve it, and popped after.
+func (f *File) checkLabeledStatement(s *Scope, results []retResult, head, postfix, inner Node) {
+	name, ok := f.assignHeadIdent(head)
+	_, hasSuffix, _ := f.postfixLabel(postfix)
+	if !ok || hasSuffix {
+		f.err(f.tok(head.Pos()).Position(), "invalid label: a label must be a plain identifier")
+		f.checkStatement(s, results, inner)
+		return
+	}
+	if _, dup := f.findLabel(name.Src()); dup {
+		f.err(name.Position(), "label %s already declared", name.Src())
+	}
+	f.labels = append(f.labels, labelFrame{name: name.Src(), kind: f.labelKindOf(inner)})
+	f.checkStatement(s, results, inner)
+	f.labels = f.labels[:len(f.labels)-1]
+}
+
+// checkBreak validates a "break", labeled or not. A plain break needs an enclosing
+// for or switch; a labeled one needs the named label to be an enclosing for or
+// switch.
+func (f *File) checkBreak(breakTok Token, label Token, hasLabel bool) {
+	if !hasLabel {
+		if f.loopDepth == 0 && f.switchDepth == 0 {
+			f.err(breakTok.Position(), "break is not in a loop or switch")
+		}
+		return
+	}
+	fr, ok := f.findLabel(label.Src())
+	switch {
+	case !ok:
+		f.err(label.Position(), "undefined label %s", label.Src())
+	case fr.kind != labelLoop && fr.kind != labelSwitch:
+		f.err(label.Position(), "invalid break label %s: not a for or switch", label.Src())
+	}
+}
+
+// checkContinue validates a "continue", labeled or not. A continue names a loop,
+// and only a loop, whether it does so by label or by enclosing position.
+func (f *File) checkContinue(continueTok Token, label Token, hasLabel bool) {
+	if !hasLabel {
+		if f.loopDepth == 0 {
+			f.err(continueTok.Position(), "continue is not in a loop")
+		}
+		return
+	}
+	fr, ok := f.findLabel(label.Src())
+	switch {
+	case !ok:
+		f.err(label.Position(), "undefined label %s", label.Src())
+	case fr.kind != labelLoop:
+		f.err(label.Position(), "invalid continue label %s: not a for", label.Src())
+	}
+}
+
 // checkStatement handles the statement forms Phase 4 currently understands:
 // local variable/constant declarations (reporting redeclarations), return
 // statements (operand arity and, for literal operands, result type), "go"
@@ -1223,7 +1348,12 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	isRecv := false  // a bare receive statement "<-ch", pending its Expression operand
 	isDefer := false // a "defer" statement, carrying its own AssignHead
 	isFor := false   // a "for" statement, so its body block is checked one loop level deeper
+	isLabel := false // a labeled statement "L: Stmt", handled in the Postfix case
 	sawPostfix := false
+	// A "break"/"continue" and its optional label operand, validated after the loop
+	// once both the keyword and any label token have been seen.
+	var breakContinueTok, labelTok Token
+	isBreak, isContinue, hasLabel := false, false, false
 	condKw := ""
 	var forScope *Scope // a three-clause for's own scope, holding its init variable // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
@@ -1262,6 +1392,13 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 		case AssignHead:
 			head = c
 		case Postfix:
+			// A Postfix that is a ":" continuation makes the leading identifier a
+			// label ("L: Stmt"); anything else is an assignment, call or postfix op.
+			if inner, _, ok := f.postfixLabel(c); ok {
+				isLabel = true
+				f.checkLabeledStatement(s, results, head, c, inner)
+				break
+			}
 			sawPostfix = true
 			f.checkAssignment(s, head, c)
 		case IfStmt:
@@ -1304,15 +1441,20 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				condKw = f.tok(c.tok).Src()
 				isFor = true
 			case BREAK:
-				// A break leaves the innermost enclosing for or switch. OctoGo has no
-				// labels, so there is nothing else it could name.
-				if f.loopDepth == 0 && f.switchDepth == 0 {
-					f.err(f.tok(c.tok).Position(), "break is not in a loop or switch")
-				}
+				// A break leaves the innermost enclosing for or switch, or the one an
+				// optional label names. Validated after the loop, once the label (which
+				// follows the keyword) has been seen.
+				isBreak, breakContinueTok = true, f.tok(c.tok)
 			case CONTINUE:
-				// A continue names a loop, and only a loop.
-				if f.loopDepth == 0 {
-					f.err(f.tok(c.tok).Position(), "continue is not in a loop")
+				// A continue names a loop, either the innermost or the one an optional
+				// label names.
+				isContinue, breakContinueTok = true, f.tok(c.tok)
+			case IDENT:
+				// The optional label operand of a "break"/"continue" is the only bare
+				// identifier token a statement carries directly (everything else
+				// identifier-led is an AssignHead).
+				if isBreak || isContinue {
+					labelTok, hasLabel = f.tok(c.tok), true
 				}
 			case DEFER:
 				// "defer" is resolved statically at compile time (no runtime defer
@@ -1334,12 +1476,19 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	if isDefer {
 		f.checkDeferStmt(s, head, stmt)
 	}
+	if isBreak {
+		f.checkBreak(breakContinueTok, labelTok, hasLabel)
+	}
+	if isContinue {
+		f.checkContinue(breakContinueTok, labelTok, hasLabel)
+	}
 	// A statement that is a bare name ("x", "*p") carries an AssignHead but no
 	// Postfix -- a value with no effect, rejected like the suffixed bare values
 	// checkAssignment reports. A "go"/"defer" statement also carries a lone
-	// AssignHead (its call is unwrapped), so both are excluded; every other
-	// keyword-led form has no AssignHead.
-	if head.sym == AssignHead && !sawPostfix && !isGo && !isDefer && !isReturn && !isRecv && condKw == "" {
+	// AssignHead (its call is unwrapped), and a label carries its identifier as an
+	// AssignHead too, so all are excluded; every other keyword-led form has no
+	// AssignHead.
+	if head.sym == AssignHead && !sawPostfix && !isGo && !isDefer && !isReturn && !isRecv && !isLabel && condKw == "" {
 		f.err(f.tok(head.Pos()).Position(), "%s evaluated but not used", f.sourceSpan(head.Pos(), head.End()))
 	}
 }

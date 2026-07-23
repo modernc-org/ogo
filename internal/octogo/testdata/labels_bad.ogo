@@ -1,0 +1,36 @@
+// A break or continue that names a label must resolve it to an enclosing statement
+// of the right kind: break to a for or switch, continue to a for.
+
+func undefinedBreak() {
+	for i := 0; i < 3; i++ {
+		// ERROR "undefined label nope"
+		break nope
+	}
+}
+
+func undefinedContinue() {
+	for i := 0; i < 3; i++ {
+		// ERROR "undefined label gone"
+		continue gone
+	}
+}
+
+func continueNamesSwitch() {
+sw:
+	switch 1 {
+	case 1:
+		// ERROR "invalid continue label sw: not a for"
+		continue sw
+	}
+}
+
+func duplicateLabel() {
+dup:
+	for {
+		// ERROR "label dup already declared"
+	dup:
+		for {
+			break dup
+		}
+	}
+}

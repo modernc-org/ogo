@@ -1065,7 +1065,7 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1319,70 +1319,76 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 }
 
 type emitter struct {
-	w                io.Writer // body buffer during the walk
-	f                *File     // file currently being emitted, for token access
-	indent           int
-	includes         map[string]bool
-	funcRet          map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
-	methodPtr        map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
-	globals          map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
-	structs          map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
-	namedTypes       map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
-	namedArrays      map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
-	constInt         map[string]string        // integer-constant name -> its C literal value, for array bounds
-	constStr         map[string]string        // string-constant name -> its decoded value, for folding string concatenation
-	arrays           map[string]arrDim        // local array name -> element type and bound (reset per function)
-	globalArrays     map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
-	sliceVars        map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
-	globalSliceVars  map[string]string        // package-level slice name -> element C type (persists across functions)
-	pkgInit          []string                 // C statements for the synthesized package initializer, in source order
-	initFuncs        []string                 // user init() functions, called after the variable initializers
-	goSites          []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
-	chanElems        map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
-	chanInitElems    map[string]bool          // element types whose channel init helper is reached
-	chanSendElems    map[string]bool          // element types whose channel send helper is reached
-	chanRecvElems    map[string]bool          // element types whose blocking receive helper is reached
-	chanTryRecvElems map[string]bool          // element types whose select tryrecv helper is reached
-	chanElemByName   map[string]string        // ogo_chan_<T> C type name -> its element C type
-	sliceElems       map[string]bool          // element C types that need an ogo_slice_<T> typedef
-	sliceElemByName  map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
-	inlineSliceDefs  map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
-	appendElems      map[string]bool          // element C types needing the trapping ogo_append_<T> helper
-	tryappendElems   map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
-	copyElems        map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
-	clearElems       map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
-	minElems         map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
-	maxElems         map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
-	printSliceElems  map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
-	printlnElems     map[string]bool          // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
-	defers           []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
-	switchBreak      string                   // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
-	switchBreakSeq   int                      // counter minting unique switch-end labels
-	switchBreakUsed  map[string]bool          // switch-end labels a break actually jumped to, so an unreferenced label is not emitted
-	deferBlockDepth  int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
-	deferReplay      int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
-	iota             int                      // the current iota value while emitting a const spec's expression, or -1 outside one
-	deferReplayArgs  []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
-	usesPanic        bool                     // ogo_panic is called: emit its definition and pull in its includes
-	usesBound        bool                     // ogo_bound is called: emit the index bounds-check helper
-	usesNonzero      bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
-	usesNonzero64    bool                     // ogo_nonzero64 (64-bit divisor guard) is called
-	release          bool                     // release build: a panic reboots (_reboot) instead of halting the cog
-	checks           bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
-	locals           map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
-	curFunc          string                   // name of the function whose body is being emitted (for its result-struct type)
-	curResultNames   []string                 // current function's result C-variable names, for a bare "return" (naked return)
-	tmp              int                      // per-function counter for generated temporaries (destructuring)
-	makeN            int                      // translation-unit counter for make() backing arrays
-	wroteDecl        bool                     // a top-level definition has been emitted (drives blank-line separators)
-	mainRet          bool                     // currently emitting main's body: a bare `return` yields `return 0;`
-	declInit         bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
-	usesString       bool                     // an ogo_string type/literal appears: emit stringTypedef
-	usesStringPrint  bool                     // a string is printed: emit stringHelpers
-	usesStringEq     bool                     // a string == / != appears: emit ogo_string_eq
-	usesStringCmp    bool                     // a string < <= > >= appears: emit ogo_string_cmp
-	usesRuneDecode   bool                     // `for i, c := range s` appears: emit ogo_decode_rune
-	err              error
+	w                  io.Writer // body buffer during the walk
+	f                  *File     // file currently being emitted, for token access
+	indent             int
+	includes           map[string]bool
+	funcRet            map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
+	methodPtr          map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
+	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
+	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
+	namedTypes         map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	namedArrays        map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
+	constInt           map[string]string        // integer-constant name -> its C literal value, for array bounds
+	constStr           map[string]string        // string-constant name -> its decoded value, for folding string concatenation
+	arrays             map[string]arrDim        // local array name -> element type and bound (reset per function)
+	globalArrays       map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
+	sliceVars          map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
+	globalSliceVars    map[string]string        // package-level slice name -> element C type (persists across functions)
+	pkgInit            []string                 // C statements for the synthesized package initializer, in source order
+	initFuncs          []string                 // user init() functions, called after the variable initializers
+	goSites            []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
+	chanElems          map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
+	chanInitElems      map[string]bool          // element types whose channel init helper is reached
+	chanSendElems      map[string]bool          // element types whose channel send helper is reached
+	chanRecvElems      map[string]bool          // element types whose blocking receive helper is reached
+	chanTryRecvElems   map[string]bool          // element types whose select tryrecv helper is reached
+	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
+	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
+	sliceElemByName    map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
+	inlineSliceDefs    map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
+	appendElems        map[string]bool          // element C types needing the trapping ogo_append_<T> helper
+	tryappendElems     map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
+	clearElems         map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
+	minElems           map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
+	maxElems           map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
+	printSliceElems    map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
+	printlnElems       map[string]bool          // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
+	defers             []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
+	switchBreak        string                   // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
+	switchBreakSeq     int                      // counter minting unique switch-end labels
+	switchBreakUsed    map[string]bool          // switch-end labels a break actually jumped to, so an unreferenced label is not emitted
+	labelBreak         map[string]string        // source label -> C break-target label, for "break L" (a labeled for or switch)
+	labelContinue      map[string]string        // source label -> C continue-target label, for "continue L" (a labeled for)
+	labelUsed          map[string]bool          // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
+	labelSeq           int                      // counter minting unique labeled-loop break/continue labels
+	pendingContLabel   string                   // the current labeled for's C continue target, for emitLoopBody to place at the body's end
+	pendingSwitchLabel string                   // the source label of a labeled switch, for emitSwitch to bind to its end label
+	deferBlockDepth    int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
+	deferReplay        int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
+	iota               int                      // the current iota value while emitting a const spec's expression, or -1 outside one
+	deferReplayArgs    []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
+	usesPanic          bool                     // ogo_panic is called: emit its definition and pull in its includes
+	usesBound          bool                     // ogo_bound is called: emit the index bounds-check helper
+	usesNonzero        bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
+	usesNonzero64      bool                     // ogo_nonzero64 (64-bit divisor guard) is called
+	release            bool                     // release build: a panic reboots (_reboot) instead of halting the cog
+	checks             bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
+	locals             map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
+	curFunc            string                   // name of the function whose body is being emitted (for its result-struct type)
+	curResultNames     []string                 // current function's result C-variable names, for a bare "return" (naked return)
+	tmp                int                      // per-function counter for generated temporaries (destructuring)
+	makeN              int                      // translation-unit counter for make() backing arrays
+	wroteDecl          bool                     // a top-level definition has been emitted (drives blank-line separators)
+	mainRet            bool                     // currently emitting main's body: a bare `return` yields `return 0;`
+	declInit           bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
+	usesString         bool                     // an ogo_string type/literal appears: emit stringTypedef
+	usesStringPrint    bool                     // a string is printed: emit stringHelpers
+	usesStringEq       bool                     // a string == / != appears: emit ogo_string_eq
+	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
+	usesRuneDecode     bool                     // `for i, c := range s` appears: emit ogo_decode_rune
+	err                error
 }
 
 // emit writes verbatim C text, latching the first write error. All C is written
@@ -2690,10 +2696,95 @@ func (e *emitter) emitBlockStmts(ast []int32) {
 	}
 }
 
+// stmtLabelParts reports whether the statement is a labeled one, "L: Stmt" -- an
+// AssignHead identifier followed by a Postfix that is a ":" continuation -- and
+// returns the label name and the labeled statement's AST.
+func (e *emitter) stmtLabelParts(nodes []Node) (label string, inner []int32, ok bool) {
+	if len(nodes) < 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return "", nil, false
+	}
+	label, isID := e.exprIdent(nodes[0].ast)
+	if !isID {
+		return "", nil, false
+	}
+	for n := range it(nodes[1].ast) {
+		if n.sym != PostfixOp {
+			continue
+		}
+		sawColon := false
+		for c := range it(n.ast) {
+			switch {
+			case c.sym == 0 && e.f.ch(c.tok) == COLON:
+				sawColon = true
+			case c.sym == Statement && sawColon:
+				return label, c.ast, true
+			}
+		}
+	}
+	return "", nil, false
+}
+
+// stmtLabelOperand returns the label a "break"/"continue" names, from the optional
+// identifier token after the keyword.
+func (e *emitter) stmtLabelOperand(nodes []Node) (string, bool) {
+	if len(nodes) >= 2 && nodes[1].sym == 0 && e.f.ch(nodes[1].tok) == IDENT {
+		return e.src(nodes[1].tok), true
+	}
+	return "", false
+}
+
+// emitLabeledStatement emits "L: Stmt". A labeled "for" gets a break-target label
+// after the loop and a continue-target label at the end of its body (a fall-through
+// there is exactly C's continue); "break L"/"continue L" become gotos to those. A
+// labeled "switch" binds L to the end label the switch already mints. A label on
+// anything else has no break/continue target (there is no goto), so its statement is
+// emitted plainly.
+func (e *emitter) emitLabeledStatement(label string, inner []int32) {
+	switch e.stmtKind(inner) {
+	case FOR:
+		e.labelSeq++
+		brk := fmt.Sprintf("ogo_lbreak_%d", e.labelSeq)
+		cont := fmt.Sprintf("ogo_lcont_%d", e.labelSeq)
+		e.labelBreak[label] = brk
+		e.labelContinue[label] = cont
+		e.pendingContLabel = cont
+		e.emitStatement(inner)
+		if e.labelUsed[brk] {
+			e.ind()
+			e.emit(brk + ":;\n")
+		}
+		delete(e.labelBreak, label)
+		delete(e.labelContinue, label)
+	case SwitchStmt:
+		e.pendingSwitchLabel = label
+		e.emitStatement(inner) // emitSwitch binds and unbinds labelBreak[label]
+	default:
+		e.emitStatement(inner)
+	}
+}
+
+// stmtKind classifies a statement node for labeling: the "for" keyword symbol, the
+// SwitchStmt node symbol, or 0 for neither.
+func (e *emitter) stmtKind(inner []int32) Symbol {
+	for n := range it(inner) {
+		switch {
+		case n.sym == 0 && e.f.ch(n.tok) == FOR:
+			return FOR
+		case n.sym == SwitchStmt:
+			return SwitchStmt
+		}
+	}
+	return 0
+}
+
 func (e *emitter) emitStatement(ast []int32) {
 	nodes := slices.Collect(it(ast))
 	if len(nodes) == 0 {
 		return // EmptyStatement
+	}
+	if label, inner, ok := e.stmtLabelParts(nodes); ok {
+		e.emitLabeledStatement(label, inner)
+		return
 	}
 	switch first := nodes[0]; {
 	case first.sym == VarDecl:
@@ -2729,24 +2820,36 @@ func (e *emitter) emitStatement(ast []int32) {
 	case first.sym == 0 && e.f.ch(first.tok) == GO:
 		e.emitGo(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == BREAK:
-		// A switch is lowered to a chain of conditionals, not a C switch, so a
-		// break naming the switch cannot be a C break -- that would leave an
-		// enclosing loop. Cases do not fall through, so breaking a switch merely
-		// exits it: jump past the chain to the switch's end label (emitSwitch emits
-		// the label once a break has referenced it). A break naming a loop, where
-		// switchBreak is "" -- emitLoopBody clears it -- stays a plain C break.
+		// A labeled break jumps to the named loop's or switch's break-target label.
+		// An unlabeled break in a switch -- lowered to a chain of conditionals, not
+		// a C switch -- jumps past the chain to the switch's end label (a C break
+		// would leave an enclosing loop); in a loop, where switchBreak is "" (cleared
+		// by emitLoopBody), it stays a plain C break. Each end label is emitted only
+		// once a break has referenced it.
 		e.ind()
-		if e.switchBreak != "" {
+		if lbl, ok := e.stmtLabelOperand(nodes); ok {
+			target := e.labelBreak[lbl]
+			e.emit("goto " + target + ";\n")
+			e.labelUsed[target] = true
+		} else if e.switchBreak != "" {
 			e.emit("goto " + e.switchBreak + ";\n")
 			e.switchBreakUsed[e.switchBreak] = true
 		} else {
 			e.emit("break;\n")
 		}
 	case first.sym == 0 && e.f.ch(first.tok) == CONTINUE:
-		// Unaffected by the switch lowering: a C continue names the enclosing loop
+		// A labeled continue jumps to the named loop's continue-target label at the
+		// end of its body (a fall-through there re-runs the loop's post and test). An
+		// unlabeled continue is a plain C continue, which names the enclosing loop
 		// either way, exactly as Go's does.
 		e.ind()
-		e.emit("continue;\n")
+		if lbl, ok := e.stmtLabelOperand(nodes); ok {
+			target := e.labelContinue[lbl]
+			e.emit("goto " + target + ";\n")
+			e.labelUsed[target] = true
+		} else {
+			e.emit("continue;\n")
+		}
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == 0:
@@ -4633,12 +4736,21 @@ func (e *emitter) emitFor(nodes []Node) {
 func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	e.indent++
 	e.deferBlockDepth++
+	// A labeled continue targets a label at the end of this loop's body, so a jump
+	// there falls through to the loop's post step and re-test. Captured and cleared
+	// on entry so a nested loop does not inherit this loop's target.
+	cont := e.pendingContLabel
+	e.pendingContLabel = ""
 	savedBreak := e.switchBreak
 	e.switchBreak = ""
 	if inject != nil {
 		inject()
 	}
 	e.emitBlockStmts(body)
+	if cont != "" && e.labelUsed[cont] {
+		e.ind()
+		e.emit(cont + ":;\n")
+	}
 	e.switchBreak = savedBreak
 	e.deferBlockDepth--
 	e.indent--
@@ -4800,6 +4912,14 @@ func (e *emitter) emitSwitch(ast []int32) {
 	e.switchBreakSeq++
 	savedBreak := e.switchBreak
 	e.switchBreak = label
+	// A labeled switch binds its label to this same end label, so "break L" from a
+	// case reaches it exactly as a plain break does. Consumed once, then unbound
+	// after the switch is fully emitted.
+	srcLabel := e.pendingSwitchLabel
+	e.pendingSwitchLabel = ""
+	if srcLabel != "" {
+		e.labelBreak[srcLabel] = label
+	}
 
 	var defaultClause Node
 	hasDefault, wrote := false, false
@@ -4845,9 +4965,12 @@ func (e *emitter) emitSwitch(ast []int32) {
 	}
 
 	e.switchBreak = savedBreak
-	if e.switchBreakUsed[label] {
+	if e.switchBreakUsed[label] || e.labelUsed[label] {
 		e.ind()
 		e.emit(label + ":;\n")
+	}
+	if srcLabel != "" {
+		delete(e.labelBreak, srcLabel)
 	}
 
 	if block {
