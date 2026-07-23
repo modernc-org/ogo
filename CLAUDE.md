@@ -323,22 +323,28 @@ Monomorphization WPO strategy…"). The alternatives and their rationale survive
 
 Option C's catch: with no heap/GC, WPO must prove the pointed-to data stays in scope.
 
-### 2. Unbuilt `p2` standard library — intended 1:1 mapping to flexprop C intrinsics
+### 2. `p2` standard library — 1:1 mapping to flexprop C intrinsics (PARTLY BUILT)
 
-The `p2` package (resolved from the dotless import `"p2"`) is meant to be a thin,
-strongly-typed wrapper over flexcc's built-in P2 intrinsics — zero runtime overhead,
-no custom PASM. Intended surface:
+The `p2` package (resolved from the dotless import `"p2"`) is a thin, strongly-typed
+wrapper over flexcc's built-in P2 intrinsics — zero runtime overhead, no custom PASM.
+The mapping is the `p2Intrinsics` table in `internal/octogo/emit.go` (each entry is
+the C intrinsic plus the result C type, so a uint32 intrinsic like `Rnd` prints
+unsigned). The checker admits any exported `p2.X`; the emitter maps it and rejects an
+unknown one. Currently wired (verified on the P2 via `TestOnBoard`, and off-target
+via the `testdata/hostp2` shim which now stubs these):
 
-| OctoGo | flexprop C intrinsic |
-| --- | --- |
-| `p2.WritePinMode(pin, mode)` | `_wrpin(pin, mode)` |
-| `p2.WritePinX(pin, xVal)` | `_wxpin(pin, xVal)` |
-| `p2.WritePinY(pin, yVal)` | `_wypin(pin, yVal)` |
-| `p2.ReadPin(pin)` | `_rdpin(pin)` |
-| `p2.AckPin(pin)` | `_akpin(pin)` |
-| `p2.PinHigh(pin)` / `p2.PinLow(pin)` | `_pinh(pin)` / `_pinl(pin)` |
-| `p2.PinIn(pin)` | `_pinr(pin)` |
-| `p2.WaitMs(ms)` | `_waitms(ms)` |
+| OctoGo | intrinsic (→ result) | OctoGo | intrinsic (→ result) |
+| --- | --- | --- | --- |
+| `p2.PinHigh(pin)` | `_pinh` | `p2.WritePinMode(pin,m)` | `_wrpin` |
+| `p2.PinLow(pin)` | `_pinl` | `p2.WritePinX(pin,x)` | `_wxpin` |
+| `p2.PinToggle(pin)` | `_pinnot` | `p2.WritePinY(pin,y)` | `_wypin` |
+| `p2.PinFloat(pin)` | `_pinf` | `p2.ReadPin(pin)` | `_rdpin`→uint32 |
+| `p2.PinIn(pin)` | `_pinr`→int | `p2.AckPin(pin)` | `_akpin` |
+| `p2.PinWrite(pin,v)` | `_pinw` | `p2.GetCt()` | `_cnt`→uint32 |
+| `p2.WaitMs(ms)` | `_waitms` | `p2.GetMs()` | `_getms`→uint32 |
+| `p2.WaitUs(us)` | `_waitus` | `p2.GetSec()` | `_getsec`→uint32 |
+| `p2.WaitCycles(n)` | `_waitx` | `p2.Rnd()` | `_rnd`→uint32 |
+| `p2.Rev(x)` | `_rev`→uint32 | `p2.Reboot()` | `_reboot` |
 
 A `select` waiting on a Smart Pin transpiles to a `while(1)` poll of `_pinr(pin)`,
 calling `_akpin(pin)` to clear the IN flag and `_waitx(1)` to yield and avoid Hub-bus

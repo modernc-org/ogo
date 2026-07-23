@@ -227,6 +227,24 @@ func main() {
 		want: "5000000003 15000000000 1666666666 2\n18000000000000000000 9000000000000000000\n7000000000\n5\n",
 	},
 	{
+		// The p2 package wraps flexcc/propeller2.h hardware intrinsics. Rev (a pure
+		// 32-bit bit reverse) is deterministic on and off target and returns uint32,
+		// so its high-bit result prints unsigned. The pin and wait ops compile and
+		// run (no-ops off target, real on the board).
+		name: "p2 intrinsics",
+		src: `import "p2"
+
+func main() {
+	println(p2.Rev(1), p2.Rev(0x80000000), p2.Rev(255))
+	p2.PinHigh(56)
+	p2.PinToggle(56)
+	p2.PinLow(56)
+	p2.WaitUs(1)
+}
+`,
+		want: "2147483648 1 4278190080\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

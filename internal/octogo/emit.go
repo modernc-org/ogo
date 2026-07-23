@@ -26,19 +26,39 @@ func cIntLit(src string) string {
 	return lit
 }
 
-// p2Intrinsics maps exported functions of the builtin "p2" package to the
-// flexcc / propeller2.h C intrinsics they wrap (the p2 mapping documented in
-// CLAUDE.md's appendix). The call `p2.PinHigh(56)` emits `_pinh(56)`.
-var p2Intrinsics = map[string]string{
-	"PinHigh":      "_pinh",
-	"PinLow":       "_pinl",
-	"PinIn":        "_pinr",
-	"WaitMs":       "_waitms",
-	"AckPin":       "_akpin",
-	"ReadPin":      "_rdpin",
-	"WritePinMode": "_wrpin",
-	"WritePinX":    "_wxpin",
-	"WritePinY":    "_wypin",
+// p2Intrinsic is one exported function of the builtin "p2" package: the flexcc /
+// propeller2.h C intrinsic it wraps and its C result type (empty for a void one, so
+// a p2 result is typed accurately -- a uint32 intrinsic like Rnd or ReadPin as
+// unsigned, not signed int, which would print a high-bit value as negative).
+type p2Intrinsic struct {
+	c   string
+	ret string
+}
+
+// p2Intrinsics maps the p2 package's exported functions to their intrinsics (the
+// mapping documented in CLAUDE.md's appendix). The call `p2.PinHigh(56)` emits
+// `_pinh(56)`; `p2.Rnd()` emits `_rnd()` and types as unsigned.
+var p2Intrinsics = map[string]p2Intrinsic{
+	"PinHigh":      {"_pinh", ""},
+	"PinLow":       {"_pinl", ""},
+	"PinToggle":    {"_pinnot", ""},
+	"PinFloat":     {"_pinf", ""},
+	"PinIn":        {"_pinr", "int"},
+	"PinWrite":     {"_pinw", ""},
+	"WaitMs":       {"_waitms", ""},
+	"WaitUs":       {"_waitus", ""},
+	"WaitCycles":   {"_waitx", ""},
+	"AckPin":       {"_akpin", ""},
+	"ReadPin":      {"_rdpin", "unsigned"},
+	"WritePinMode": {"_wrpin", ""},
+	"WritePinX":    {"_wxpin", ""},
+	"WritePinY":    {"_wypin", ""},
+	"GetCt":        {"_cnt", "unsigned"},
+	"GetMs":        {"_getms", "unsigned"},
+	"GetSec":       {"_getsec", "unsigned"},
+	"Rnd":          {"_rnd", "unsigned"},
+	"Rev":          {"_rev", "unsigned"},
+	"Reboot":       {"_reboot", ""},
 }
 
 // importIncludes maps an OctoGo import path to the C header it pulls in.
@@ -5302,7 +5322,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.fail("unsupported p2 function %q", method)
 			return false
 		}
-		e.emit(intr + "(")
+		e.emit(intr.c + "(")
 		e.emitCallArgs(suffix[1].ast)
 		e.emit(")")
 		return true
@@ -6990,7 +7010,13 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 			return "", false
 		}
 		if recv == "p2" {
-			return "int", true
+			// A p2 intrinsic's result carries its declared C type (unsigned for a
+			// uint32 one), so a high-bit value prints and compares unsigned. A void
+			// intrinsic has no result type.
+			if intr, ok := p2Intrinsics[e.soleIdent(suffix[0].ast)]; ok {
+				return intr.ret, intr.ret != ""
+			}
+			return "", false
 		}
 	}
 	return "", false

@@ -11,7 +11,33 @@
 #include <time.h>
 
 static inline void _waitms(int ms) { (void)ms; }
+static inline void _waitus(uint32_t us) { (void)us; }
 static inline void _waitx(int cycles) { (void)cycles; struct timespec t = {0, 1000}; nanosleep(&t, 0); }
+
+/* Pin and misc intrinsics. Off-target there is no hardware, so the pin ops are
+   no-ops and the read / counter / random ones return host stand-ins; only _rev is
+   a faithful pure function, which OctoGo tests deterministically. */
+static inline void _pinh(int pin) { (void)pin; }
+static inline void _pinl(int pin) { (void)pin; }
+static inline void _pinnot(int pin) { (void)pin; }
+static inline void _pinf(int pin) { (void)pin; }
+static inline int _pinr(int pin) { (void)pin; return 0; }
+static inline void _pinw(int pin, int val) { (void)pin; (void)val; }
+static inline void _akpin(int pin) { (void)pin; }
+static inline uint32_t _rdpin(int pin) { (void)pin; return 0; }
+static inline void _wrpin(int pin, uint32_t val) { (void)pin; (void)val; }
+static inline void _wxpin(int pin, uint32_t val) { (void)pin; (void)val; }
+static inline void _wypin(int pin, uint32_t val) { (void)pin; (void)val; }
+static inline uint32_t _cnt(void) { return (uint32_t)clock(); }
+static inline uint32_t _getms(void) { return (uint32_t)((uint64_t)clock() * 1000 / CLOCKS_PER_SEC); }
+static inline uint32_t _getsec(void) { return (uint32_t)(clock() / CLOCKS_PER_SEC); }
+static inline uint32_t _rnd(void) { return (uint32_t)rand(); }
+static inline uint32_t _rev(uint32_t v) {
+	uint32_t r = 0;
+	for (int i = 0; i < 32; i++) { r = (r << 1) | (v & 1); v >>= 1; }
+	return r;
+}
+static inline void _reboot(void) { }
 
 #define OGO_HOST_LOCKS 16
 static pthread_mutex_t ogo_host_lock[OGO_HOST_LOCKS];
