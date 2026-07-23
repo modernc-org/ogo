@@ -4625,6 +4625,16 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// is left to the emitter, which special-cases each. make/new and the
 		// not-yet-emitted builtins are unregistered and reach the nil case below,
 		// exempted there by isBuiltinFuncName.
+	case *PredeclaredType:
+		// A type callee "T(x)" is an explicit conversion. Numeric ones are lowered
+		// to a C cast by the emitter; a string conversion -- string(r) from a rune,
+		// string(b) from a byte slice -- builds a new string, which needs the copy
+		// this allocation-free target cannot make (as runtime string concatenation
+		// does). Refused here with a clear message rather than at the emitter, where
+		// it surfaces as "cannot infer a type".
+		if callee.Src() == "string" {
+			f.err(callee.Position(), "a string conversion needs allocation, which the target does not have")
+		}
 	case *VarDeclaration, *ConstDeclaration:
 		// The callee is a value, not a function: "x()" where x is a variable or a
 		// constant. (A type callee -- "T(x)" -- is an explicit conversion, which

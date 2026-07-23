@@ -1,0 +1,25 @@
+// A string conversion -- string(r) from a rune, string(b) from a byte slice --
+// builds a new string, whose bytes must be copied somewhere. The allocation-free
+// target has nowhere to put them, exactly as runtime string concatenation does, so
+// the conversion is refused with a clear message rather than an opaque emit error.
+// Numeric conversions (int, float64, the sized and named types) are unaffected.
+
+func run() {
+	r := 66
+
+	// ERROR "a string conversion needs allocation"
+	s := string(rune(r))
+	_ = s
+
+	b := []byte{104, 105}
+
+	// ERROR "a string conversion needs allocation"
+	t := string(b)
+	_ = t
+
+	// Numeric conversions remain valid.
+	x := 3.9
+	_ = int(x)
+	_ = float64(r)
+	_ = uint8(r)
+}
