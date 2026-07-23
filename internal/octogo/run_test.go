@@ -1960,6 +1960,9 @@ type Point struct{ x, y int }
 
 func (p Point) sum() int { return p.x + p.y }
 
+// A package global with the same name as greet's, likewise namespaced.
+var base int = 5
+
 func main() {
 	println(greet.Hello(3))
 	msg := greet.Loud("hi")
@@ -1969,6 +1972,8 @@ func main() {
 	p := Point{2, 3}
 	println(p.sum())
 	println(greet.PointSum())
+	base = base + 1
+	println(base, greet.Base())
 }
 `)},
 		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`type Point struct{ x, y int }
@@ -1979,6 +1984,10 @@ func PointSum() int {
 	p := Point{4, 5}
 	return p.sum()
 }
+
+var base int = 1000
+
+func Base() int { return base }
 
 func Hello(n int) int { return scale(n) * 100 }
 
@@ -2020,7 +2029,7 @@ func scale(n int) int { return n }
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
-	const want = "300\nLOUD\n50\n6\n5\n45\n"
+	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n"
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
 	}

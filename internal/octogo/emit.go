@@ -2015,18 +2015,19 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				e.fail("cannot infer a type for the package variable %q", names[0])
 				return
 			}
-			e.globals[names[0]] = ct
+			gn := e.globalC(names[0])
+			e.globals[gn] = ct
 			if e.isSliceCType(ct) {
-				e.globalSliceVars[names[0]] = sliceElemFromCName(ct)
+				e.globalSliceVars[gn] = sliceElemFromCName(ct)
 			}
 			if e.staticInitOK(initExpr) {
-				e.emit("static " + ct + " " + names[0] + " = ")
+				e.emit("static " + ct + " " + gn + " = ")
 				e.emitGlobalInit(initExpr)
 				e.emit(";\n")
 				continue
 			}
-			e.emit("static " + ct + " " + names[0] + " = " + e.zeroInitC(ct) + ";\n")
-			e.deferPkgInit(names[0] + " = " + e.exprC(initExpr) + ";")
+			e.emit("static " + ct + " " + gn + " = " + e.zeroInitC(ct) + ";\n")
+			e.deferPkgInit(gn + " = " + e.exprC(initExpr) + ";")
 			continue
 		}
 		if len(names) != 1 && initExpr != nil {
@@ -2041,8 +2042,9 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			for _, nm := range names {
 				if nm != "_" {
-					e.globalArrays[nm] = arrDim{elem: elem, bound: bound}
-					e.emit("static " + elem + " " + nm + "[" + bound + "];\n")
+					gn := e.globalC(nm)
+					e.globalArrays[gn] = arrDim{elem: elem, bound: bound}
+					e.emit("static " + elem + " " + gn + "[" + bound + "];\n")
 				}
 			}
 			continue
@@ -2066,16 +2068,18 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					e.fail("a make slice initializer needs a single named variable")
 					return
 				}
-				e.globalSliceVars[names[0]] = elem
-				e.globals[names[0]] = cname
-				e.emitMakeSliceVar(names[0], cname, elem, lenAST, capAST, true)
+				gn := e.globalC(names[0])
+				e.globalSliceVars[gn] = elem
+				e.globals[gn] = cname
+				e.emitMakeSliceVar(gn, cname, elem, lenAST, capAST, true)
 				continue
 			}
 			for _, nm := range names {
 				if nm != "_" {
-					e.globalSliceVars[nm] = elem
-					e.globals[nm] = cname
-					e.emit("static " + cname + " " + nm + ";\n")
+					gn := e.globalC(nm)
+					e.globalSliceVars[gn] = elem
+					e.globals[gn] = cname
+					e.emit("static " + cname + " " + gn + ";\n")
 				}
 			}
 			continue
@@ -2088,8 +2092,9 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			if nm == "_" {
 				continue // a blank package variable declares nothing
 			}
-			e.globals[nm] = ctype
-			e.emit("static " + ctype + " " + nm)
+			gn := e.globalC(nm)
+			e.globals[gn] = ctype
+			e.emit("static " + ctype + " " + gn)
 			if initExpr != nil {
 				e.emit(" = ")
 				e.emitGlobalInit(initExpr)
@@ -2099,11 +2104,11 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// The cell is a file-scope object like the variable pointing at it;
 				// acquiring its lock is a call, so it waits for package init.
 				elem := e.chanElemByName[ctype]
-				cell := nm + "_cell"
+				cell := gn + "_cell"
 				e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
-				e.deferPkgInit(nm + " = &" + cell + ";")
+				e.deferPkgInit(gn + " = &" + cell + ";")
 				e.chanInitElems[elem] = true
-				e.deferPkgInit(chanInitCName(elem) + "(" + nm + ");")
+				e.deferPkgInit(chanInitCName(elem) + "(" + gn + ");")
 			}
 		}
 	}
@@ -3736,18 +3741,19 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 		if ctype == "" {
 			return
 		}
-		e.globals[nm] = ctype
+		gn := e.globalC(nm)
+		e.globals[gn] = ctype
 		if e.isSliceCType(ctype) {
-			e.globalSliceVars[nm] = sliceElemFromCName(ctype)
+			e.globalSliceVars[gn] = sliceElemFromCName(ctype)
 		}
 		if e.staticInitOK(inits[i]) {
-			e.emit("static " + ctype + " " + nm + " = ")
+			e.emit("static " + ctype + " " + gn + " = ")
 			e.emitGlobalInit(inits[i])
 			e.emit(";\n")
 			continue
 		}
-		e.emit("static " + ctype + " " + nm + " = " + e.zeroInitC(ctype) + ";\n")
-		e.deferPkgInit(nm + " = " + e.exprC(inits[i]) + ";")
+		e.emit("static " + ctype + " " + gn + " = " + e.zeroInitC(ctype) + ";\n")
+		e.deferPkgInit(gn + " = " + e.exprC(inits[i]) + ";")
 	}
 }
 
@@ -3782,11 +3788,12 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		if nm == "_" {
 			continue // a blank package variable declares nothing
 		}
-		e.globals[nm] = resTypes[i]
+		gn := e.globalC(nm)
+		e.globals[gn] = resTypes[i]
 		if e.isSliceCType(resTypes[i]) {
-			e.globalSliceVars[nm] = sliceElemFromCName(resTypes[i])
+			e.globalSliceVars[gn] = sliceElemFromCName(resTypes[i])
 		}
-		e.emit("static " + resTypes[i] + " " + nm + " = " + e.zeroInitC(resTypes[i]) + ";\n")
+		e.emit("static " + resTypes[i] + " " + gn + " = " + e.zeroInitC(resTypes[i]) + ";\n")
 	}
 	tmp := e.newTmp()
 	e.deferPkgInit(e.retStructName(e.funcCallC(callee)) + " " + tmp + " = " + call + ";")
@@ -4429,8 +4436,27 @@ func (e *emitter) varType(name string) (string, bool) {
 	if ct, ok := e.locals[name]; ok {
 		return ct, true
 	}
-	ct, ok := e.globals[name]
+	ct, ok := e.globals[e.globalC(name)]
 	return ct, ok
+}
+
+// globalC is the C name of a package-level variable: its source name mangled into
+// the current package's namespace, so two packages' same-named globals do not
+// collide as file-scope statics in the one translation unit.
+func (e *emitter) globalC(name string) string { return mangle(e.curPkgPrefix, name) }
+
+// varRef is the C name a bare variable reference emits: a package global takes its
+// mangled name; a local or parameter (which shadows a global, and lives in locals)
+// keeps its source name, as does anything not a known variable (a constant is
+// inlined elsewhere). It is the read counterpart to the global declarations.
+func (e *emitter) varRef(name string) string {
+	if _, ok := e.locals[name]; ok {
+		return name
+	}
+	if _, ok := e.globals[e.globalC(name)]; ok {
+		return e.globalC(name)
+	}
+	return name
 }
 
 // sliceSource describes what a slice expression slices: the C type of the result
@@ -5276,7 +5302,7 @@ func (e *emitter) caseHead(cc []int32) (exprs []Node, isDefault bool) {
 func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 	// A string switch compares the guard against each case by content, not with C's
 	// `==` on the { ptr, len } struct (see emitStringCompare).
-	stringGuard := guardVar != "" && (e.locals[guardVar] == cString || e.globals[guardVar] == cString)
+	stringGuard := guardVar != "" && (e.locals[guardVar] == cString || e.globals[e.globalC(guardVar)] == cString)
 	e.emit("(")
 	for i, ex := range exprs {
 		if i != 0 {
@@ -6298,7 +6324,7 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 	if a, ok := e.arrays[name]; ok {
 		return a, true
 	}
-	a, ok := e.globalArrays[name]
+	a, ok := e.globalArrays[e.globalC(name)]
 	return a, ok
 }
 
@@ -6633,7 +6659,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 		fields = append(fields, fld)
 	}
-	lhs := base
+	lhs := e.varRef(base) // a package global target is mangled; a local keeps its name
 	if len(fields) != 0 {
 		lhs = e.fieldAccessC(base, fields) // a field target, "->" through pointers
 	}
@@ -7393,7 +7419,7 @@ func (e *emitter) sliceElem(name string) (string, bool) {
 	if el, ok := e.sliceVars[name]; ok {
 		return el, true
 	}
-	el, ok := e.globalSliceVars[name]
+	el, ok := e.globalSliceVars[e.globalC(name)]
 	return el, ok
 }
 
@@ -7667,7 +7693,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if ct, ok := e.locals[nm]; ok {
 				return ct, true
 			}
-			ct, ok := e.globals[nm]
+			ct, ok := e.globals[e.globalC(nm)]
 			return ct, ok
 		}
 	}
@@ -8139,7 +8165,7 @@ func (e *emitter) emitOperandToken(tok int32) {
 				e.emitFoldedString(v)
 				return
 			}
-			e.emit(s)
+			e.emit(e.varRef(s)) // a package global is mangled; a local keeps its name
 		}
 	case STRING:
 		e.emitStringLit(tok)
