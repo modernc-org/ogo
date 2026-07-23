@@ -136,6 +136,11 @@ out:
 	f("float32", PredeclaredFloat32)
 	f("float64", PredeclaredFloat64)
 	f("string", PredeclaredString)
+	// Builder is the compiler-known string builder (see emit.go). Registered as a
+	// predeclared type so its name resolves in a signature, e.g. "*Builder". Its
+	// construction (NewBuilder) and methods are handled by the emitter. Intended to
+	// become strings.Builder once packages land -- see specs.go.
+	f("Builder", PredeclaredBuilder)
 	// Type aliases
 	f("byte", PredeclaredUint8)
 	f("int", PredeclaredInt32)

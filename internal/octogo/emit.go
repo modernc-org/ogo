@@ -94,6 +94,9 @@ var cTypes = map[string]string{
 	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t", "int64": "int64_t",
 	"uint8": "uint8_t", "uint16": "uint16_t", "uint32": "uint32_t", "uint64": "uint64_t",
 	"byte": "uint8_t", "rune": "int32_t", "uintptr": "uintptr_t",
+	// The compiler-known string builder; see registerBuilder. Mapping it here lets
+	// "*Builder" appear in a signature (-> ogo_builder*).
+	"Builder": "ogo_builder",
 	// float64 -> C double, but note the P2 toolchain's double is 32-bit (no
 	// double-precision hardware), so float64 has float32 precision here (~7 digits).
 	// The name is kept for Go compatibility; %g's 6-digit default matches the real
@@ -130,7 +133,23 @@ const builderTypedef = "typedef struct { uint8_t* ptr; int cap; int len; } ogo_b
 // forbidding use after further building.
 const builderHelpers = "static ogo_builder ogo_builder_new(ogo_slice_uint8_t back) { ogo_builder b; b.ptr = back.ptr; b.cap = back.len; b.len = 0; return b; }\n" +
 	"static void ogo_builder_WriteString(ogo_builder* b, ogo_string s) { int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } }\n" +
+	// Write appends a byte slice's bytes. Named Write (not WriteBytes) so a future
+	// Builder can satisfy io.Writer's method set once interfaces exist, matching Go's
+	// strings.Builder.Write; the result will grow to (int, error) then.
+	"static void ogo_builder_Write(ogo_builder* b, ogo_slice_uint8_t p) { int n = p.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, p.ptr, (unsigned)n); b->len += n; } }\n" +
 	"static void ogo_builder_WriteByte(ogo_builder* b, uint8_t c) { if (b->len < b->cap) b->ptr[b->len++] = c; }\n" +
+	// WriteRune encodes a rune as UTF-8. An out-of-range or surrogate value is
+	// written as U+FFFD, as Go's WriteRune does. It writes nothing if the encoding
+	// would not fit whole (never a partial rune).
+	"static void ogo_builder_WriteRune(ogo_builder* b, int32_t r) {\n" +
+	"\tunsigned int c = (unsigned int)r; uint8_t t[4]; int n;\n" +
+	"\tif (r < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;\n" +
+	"\tif (c < 0x80) { t[0] = (uint8_t)c; n = 1; }\n" +
+	"\telse if (c < 0x800) { t[0] = (uint8_t)(0xC0 | (c >> 6)); t[1] = (uint8_t)(0x80 | (c & 0x3F)); n = 2; }\n" +
+	"\telse if (c < 0x10000) { t[0] = (uint8_t)(0xE0 | (c >> 12)); t[1] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[2] = (uint8_t)(0x80 | (c & 0x3F)); n = 3; }\n" +
+	"\telse { t[0] = (uint8_t)(0xF0 | (c >> 18)); t[1] = (uint8_t)(0x80 | ((c >> 12) & 0x3F)); t[2] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[3] = (uint8_t)(0x80 | (c & 0x3F)); n = 4; }\n" +
+	"\tif (n > b->cap - b->len) return;\n" +
+	"\tfor (int i = 0; i < n; i++) b->ptr[b->len++] = t[i];\n}\n" +
 	"static ogo_string ogo_builder_String(ogo_builder* b) { ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
 	"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
 	"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
@@ -5969,10 +5988,12 @@ func (e *emitter) registerBuilder() {
 	e.funcRet["NewBuilder"] = []string{"ogo_builder"}
 	e.funcRet["ogo_builder_WriteString"] = nil
 	e.funcRet["ogo_builder_WriteByte"] = nil
+	e.funcRet["ogo_builder_WriteRune"] = nil
+	e.funcRet["ogo_builder_Write"] = nil
 	e.funcRet["ogo_builder_Reset"] = nil
 	e.funcRet["ogo_builder_String"] = []string{cString}
 	e.funcRet["ogo_builder_Len"] = []string{"int"}
-	for _, m := range []string{"WriteString", "WriteByte", "Reset", "String", "Len"} {
+	for _, m := range []string{"WriteString", "WriteByte", "WriteRune", "Write", "Reset", "String", "Len"} {
 		e.methodPtr["ogo_builder_"+m] = true // all methods take a pointer receiver
 	}
 }

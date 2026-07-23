@@ -366,16 +366,31 @@
 //	var back [64]byte
 //	sb := NewBuilder(back[:])   // a write cursor over the backing
 //	sb.WriteString("value=")
-//	sb.WriteByte('4')
+//	sb.WriteRune('4')
 //	s := sb.String()           // "value=4"
 //
-// NewBuilder(back []byte) wraps a fixed byte slice; WriteString and WriteByte append
-// into it, truncating a write that would exceed the backing (the caller sized it);
-// Len reports the count and Reset rewinds it. String() returns a view of the written
-// prefix -- an ordinary string aliasing the backing, so it makes no copy and is only
-// valid until the next write into the same Builder, exactly as a strings.Builder's
-// result is invalidated by further building. (Prototype: a Builder is usable as a
-// local; passing one to a function is not yet supported.)
+// NewBuilder(back []byte) wraps a fixed byte slice. The methods append into the free
+// tail, truncating a write that would exceed the backing (the caller sized it):
+//
+//	WriteString(s string)   append a string's bytes
+//	WriteByte(c byte)        append one byte
+//	WriteRune(r rune)        append a rune, UTF-8 encoded (U+FFFD for an invalid one)
+//	Write(p []byte)          append a byte slice's bytes
+//	Reset()                  rewind to empty, reusing the backing
+//	Len() int                the number of bytes written
+//	String() string          a view of the written prefix
+//
+// String() returns an ordinary string aliasing the backing, so it makes no copy and
+// is only valid until the next write into the same Builder, exactly as a
+// strings.Builder's result is invalidated by further building. A *Builder may be
+// passed to a function, so building can be factored into helpers.
+//
+// Intent: Builder is predeclared for now, but it is meant to become strings.Builder
+// once packages exist; the method names follow Go's (Write, not WriteBytes, so a
+// later Builder can satisfy io.Writer). OctoGo is pre-v1 with no compatibility
+// promise, so the name and the method results (currently none, where Go returns
+// (int, error)) may change; if type aliases (type T = U) arrive first, the move can
+// keep the predeclared name working via `type Builder = strings.Builder`.
 //
 // # Array types
 //

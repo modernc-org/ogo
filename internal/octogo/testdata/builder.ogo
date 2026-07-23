@@ -2,22 +2,31 @@
 
 // Builder is a compiler-known string builder over a caller-owned []byte -- the
 // allocation-free counterpart to strings.Builder. NewBuilder(back[:]) wraps a fixed
-// backing array in a write cursor; WriteString and WriteByte append into it (a write
-// past the backing is truncated, since the caller sized the storage); Len reports the
-// count; Reset rewinds; and String() returns a zero-copy view of the written prefix,
-// usable wherever a string is -- printing, comparison, a string argument.
+// backing array in a write cursor; WriteString, WriteByte, WriteRune (UTF-8 encoded)
+// and Write([]byte) append into it (a write past the backing is truncated, since the
+// caller sized the storage); Len reports the count; Reset rewinds; and String()
+// returns a zero-copy view of the written prefix, usable wherever a string is --
+// printing, comparison, a string argument. A *Builder passes to a function, so
+// building can be factored into helpers.
+
+func appendField(sb *Builder, name string) {
+	sb.WriteString(name)
+	sb.WriteByte('=')
+}
 
 func run() {
 	var back [64]byte
 	sb := NewBuilder(back[:])
 
-	sb.WriteString("value=")
-	sb.WriteByte('4')
-	sb.WriteByte('2')
+	appendField(&sb, "value")
+	sb.WriteRune('4')
+	sb.WriteRune('世')
+	p := []byte{33}
+	sb.Write(p)
 
 	_ = sb.Len()
 	_ = sb.String()
-	_ = sb.String() == "value=42"
+	_ = sb.String() == "value=4世!"
 
 	sb.Reset()
 	sb.WriteString("next")

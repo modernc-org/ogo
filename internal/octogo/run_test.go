@@ -562,26 +562,34 @@ func main() {
 	},
 	{
 		// Builder is a compiler-known string builder over a caller-owned []byte, the
-		// allocation-free answer to strings.Builder: NewBuilder(back[:]) starts a
-		// cursor into the backing, WriteString/WriteByte append into it, Len reports
-		// the count, Reset rewinds, and String() returns a zero-copy VIEW (an
-		// ogo_string aliasing the written prefix) usable for printing and comparison.
+		// allocation-free answer to strings.Builder. NewBuilder(back[:]) starts a
+		// cursor into the backing; WriteString, WriteByte, WriteRune (UTF-8 encoded)
+		// and Write([]byte) append into it; Len reports the count; Reset rewinds; and
+		// String() returns a zero-copy VIEW (an ogo_string aliasing the written
+		// prefix) usable for printing and comparison. A *Builder passes to a function.
 		name: "string Builder over a backing array",
-		src: `func main() {
-	var back [32]byte
+		src: `func greet(sb *Builder, who string) {
+	sb.WriteString("Hi, ")
+	sb.WriteString(who)
+	sb.WriteByte('!')
+}
+
+func main() {
+	var back [64]byte
 	sb := NewBuilder(back[:])
-	sb.WriteString("Hi ")
-	sb.WriteByte('P')
-	sb.WriteByte('2')
-	sb.WriteString("!")
+	greet(&sb, "P2")
+	sb.WriteRune(' ')
+	sb.WriteRune('é')
 	println(sb.Len())
 	println(sb.String())
+
 	sb.Reset()
-	sb.WriteString("again")
-	println(sb.String() == "again")
+	ok := []byte{'O', 'K'}
+	sb.Write(ok)
+	println(sb.String() == "OK", sb.Len())
 }
 `,
-		want: "6\nHi P2!\ntrue\n",
+		want: "10\nHi, P2! é\ntrue 2\n",
 	},
 	{
 		// break exits the switch: the rest of the case is skipped and execution

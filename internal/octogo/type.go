@@ -29,6 +29,10 @@ const (
 	PredeclaredFloat64
 	PredeclaredUintptr
 	PredeclaredString
+	// PredeclaredBuilder is the compiler-known string Builder (see emit.go's
+	// registerBuilder). It has no scalar semantics; the kind exists only so the type
+	// name resolves in a signature, e.g. a "*Builder" parameter.
+	PredeclaredBuilder
 	UntypedBool
 	UntypedFloat
 	UntypedInt
