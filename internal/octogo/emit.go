@@ -26,6 +26,21 @@ func cIntLit(src string) string {
 	return lit
 }
 
+// runeLitValue decodes a rune literal's source ('A', '\n', '\x41', 'é', 'é')
+// to its Unicode code point. strconv.Unquote handles every Go rune escape and, for
+// a single-quoted literal, yields the one rune's UTF-8 string.
+func runeLitValue(src string) (rune, bool) {
+	s, err := strconv.Unquote(src)
+	if err != nil {
+		return 0, false
+	}
+	r := []rune(s)
+	if len(r) != 1 {
+		return 0, false
+	}
+	return r[0], true
+}
+
 // p2Intrinsic is one exported function of the builtin "p2" package: the flexcc /
 // propeller2.h C intrinsic it wraps and its C result type (empty for a void one, so
 // a p2 result is typed accurately -- a uint32 intrinsic like Rnd or ReadPin as
@@ -7362,6 +7377,8 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		switch e.f.ch(n.tok) {
 		case INT:
 			return "int", true
+		case CHAR:
+			return "int", true // a rune literal is an int32, C "int" on this target
 		case STRING:
 			return cString, true
 		case IDENT:
@@ -7793,6 +7810,16 @@ func (e *emitter) emitOperandToken(tok int32) {
 	switch ch := e.f.ch(tok); ch {
 	case INT:
 		e.emit(cIntLit(e.src(tok)))
+	case CHAR:
+		// A rune literal is its Unicode code point, an int32. Emitted as the numeric
+		// value rather than a C character constant, so a non-ASCII rune ('é' = 233)
+		// is its code point and not an implementation-defined narrow-char value.
+		r, ok := runeLitValue(e.src(tok))
+		if !ok {
+			e.fail("malformed rune literal %s", e.src(tok))
+			return
+		}
+		e.emit(strconv.Itoa(int(r)))
 	case IDENT:
 		// The predeclared bool constants have no C keyword here (bool is int); emit
 		// their integer values. Any other identifier is a name reference.

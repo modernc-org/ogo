@@ -1,0 +1,33 @@
+// COMPILE
+
+// A rune literal, 'a', is a Unicode code point of type rune (an alias for int32).
+// It may be short-declared (its type is inferred), given an explicit rune or byte
+// type, converted, and used in arithmetic, comparisons and switches. Every Go rune
+// escape is accepted, as is a non-ASCII rune.
+
+func run() {
+	c := 'A'
+	_ = c + 1
+
+	var r rune = 'z'
+	var b byte = '0'
+	_ = int(r)
+	_ = int(b)
+
+	_ = '\n'
+	_ = '\t'
+	_ = '\x41'
+	_ = 'é'
+	_ = 'é'
+	_ = '世'
+
+	if c >= 'A' && c <= 'Z' {
+		_ = c
+	}
+	switch c {
+	case 'A':
+		_ = 1
+	case 'B':
+		_ = 2
+	}
+}

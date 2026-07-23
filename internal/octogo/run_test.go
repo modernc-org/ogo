@@ -415,6 +415,32 @@ loop:
 		want: "12\n6\n2\n",
 	},
 	{
+		// A rune literal is its Unicode code point (an int32): 'A' is 65, '\n' is 10,
+		// and a non-ASCII 'é' is 233 -- emitted as the numeric value, not a C
+		// character constant, so the code point is exact regardless of the target's
+		// narrow-char encoding. Runes take part in arithmetic, comparison and switch.
+		name: "rune literals",
+		src: `func main() {
+	c := 'A'
+	println(int(c), int(c+1))
+	println(int('\n'), int('\t'), int('0'))
+	println(int('é'), int('世'))
+
+	r := 'm'
+	if r >= 'a' && r <= 'z' {
+		println(1)
+	}
+	switch r {
+	case 'a':
+		println(10)
+	case 'm':
+		println(20)
+	}
+}
+`,
+		want: "65 66\n10 9 48\n233 19990\n1\n20\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",
