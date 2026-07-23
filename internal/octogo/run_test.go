@@ -305,6 +305,44 @@ func main() {
 		want: "7\n9\n42\n",
 	},
 	{
+		// A method call may follow a call, index or field result: `mk().sum()` calls
+		// on a function's struct return, `p.shift().sum()` and
+		// `p.shift().shift().sum()` chain method results, `a[i].sum()` calls on an
+		// indexed element, and `b.p.sum()` calls through a field. The emitter lowers
+		// each into one C expression, wrapping a method call as `T_M(recv, ...)`
+		// around the accumulated receiver text and tracking the type reached.
+		//
+		// A plain field read off a call result (`mk().y`) is deliberately NOT emitted:
+		// flexcc miscompiles a nonzero-offset field read of a struct return value
+		// (the return temporary is not materialised first). A method call, which
+		// passes the whole struct, is unaffected -- so the chains here all end in one.
+		name: "call and selector chains",
+		src: `type point struct{ x, y int }
+
+func (p point) sum() int { return p.x + p.y }
+
+func (p point) shift() point { return point{p.x + 1, p.y + 1} }
+
+func mk() point { return point{10, 20} }
+
+type box struct{ p point }
+
+func main() {
+	println(mk().sum())
+	p := point{3, 4}
+	println(p.shift().sum())
+	println(p.shift().shift().sum())
+	var a [2]point
+	a[1] = point{5, 6}
+	println(a[1].sum())
+	var b box
+	b.p = point{7, 8}
+	println(b.p.sum())
+}
+`,
+		want: "30\n9\n11\n11\n15\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

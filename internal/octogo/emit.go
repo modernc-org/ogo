@@ -5358,6 +5358,14 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		e.emit(")")
 		return true
 	}
+	// A longer chain the two fixed shapes cannot match -- a call result selected or
+	// called further (`mk().n`, `t.self().n`, `a[i].get()`). chainCText types and
+	// lowers it, or reports it cannot (an unsupported step, or a pointer method on a
+	// non-addressable value).
+	if text, _, _, ok := e.chainCText(recv, suffix); ok {
+		e.emit(text)
+		return true
+	}
 	return false
 }
 
@@ -5374,6 +5382,226 @@ func (e *emitter) emitMethodReceiver(recv, recvCType string, wantPtr bool) {
 	default:
 		e.emit(recv)
 	}
+}
+
+// isChainVar and isChainFunc classify the leading identifier of a Factor chain: a
+// value (a slice, array or plain variable) that a suffix reads from, or a function
+// whose first suffix must be the call that produces a value.
+func (e *emitter) isChainVar(base string) bool  { _, ok := e.accessBase(base); return ok }
+func (e *emitter) isChainFunc(base string) bool { _, ok := e.funcRet[base]; return ok }
+
+// argsCText renders a CallSuffix's arguments as C text -- the same output
+// emitCallArgs streams, captured to a string so a call reached mid-chain can be
+// wrapped in `f(...)`/`T_M(recv, ...)`.
+func (e *emitter) argsCText(callSuffix []int32) string {
+	saved := e.w
+	var buf bytes.Buffer
+	e.w = &buf
+	e.emitCallArgs(callSuffix)
+	e.w = saved
+	return buf.String()
+}
+
+// indexCText renders an index expression (with its bound check) to a string.
+func (e *emitter) indexCText(idxAST []int32, lenExpr string) string {
+	saved := e.w
+	var buf bytes.Buffer
+	e.w = &buf
+	e.emitIndex(idxAST, lenExpr)
+	e.w = saved
+	return buf.String()
+}
+
+// chainReceiver bridges an accumulated receiver expression to the form a method
+// declares, like emitMethodReceiver but over text and reporting failure instead of
+// emitting: a pointer method wants `&recv`, which is invalid C for a
+// non-addressable value (a call result), so that combination is refused.
+func (e *emitter) chainReceiver(text, ctype string, addr, wantPtr bool) (string, bool) {
+	switch havePtr := e.isPointer(ctype); {
+	case wantPtr && havePtr:
+		return text, true
+	case wantPtr && !havePtr:
+		if !addr {
+			return "", false // &rvalue is not valid C -- a temporary would be needed
+		}
+		return "&" + text, true
+	case !wantPtr && havePtr:
+		return "*" + text, true
+	default:
+		return text, true
+	}
+}
+
+// chainCText lowers a Factor's leading identifier and its FactorSuffix run into one
+// C expression string, admitting the calls the fixed shapes cannot: a leading
+// function call `mk()`, a method call `x.M()` at any point, alternating with field
+// selectors and indexes -- `mk().n`, `t.self().n`, `a[i].get()`, `p.inner.get()`.
+// It returns text rather than streaming because a method call must wrap the
+// receiver text in `T_M(recv, ...)`.
+//
+// It tracks the type reached (as accessCur) and whether the value is an addressable
+// lvalue. A pointer-receiver method needs `&receiver`; on a non-addressable value
+// (a call result) that is `&`-of-an-rvalue, which C rejects, so the chain is refused
+// (ok=false) rather than miscompiled -- a temporary would be needed and is not yet
+// synthesised here.
+func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, addr, ok bool) {
+	var cur accessCur
+	pendingFn := false
+	switch {
+	case e.isChainVar(base):
+		cur, _ = e.accessBase(base)
+		text, addr = base, true
+	case e.isChainFunc(base):
+		pendingFn, text = true, base
+	default:
+		return "", "", false, false
+	}
+	for i := 0; i < len(steps); i++ {
+		n := steps[i]
+		switch n.sym {
+		case CallSuffix:
+			// A call reaches here only on the pending leading function; a method
+			// call is recognised at its Selector and consumes the CallSuffix there.
+			rts, okr := e.funcRet[base]
+			if !pendingFn || !okr || len(rts) != 1 {
+				return "", "", false, false
+			}
+			text = base + "(" + e.argsCText(n.ast) + ")"
+			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
+		case Selector:
+			field := e.soleIdent(n.ast)
+			bt := methodBaseType(cur.ctype)
+			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
+				cname := methodCName(bt, field)
+				rts, okm := e.funcRet[cname]
+				if !okm || len(rts) != 1 {
+					return "", "", false, false
+				}
+				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
+				if !okr {
+					return "", "", false, false
+				}
+				if args := e.argsCText(steps[i+1].ast); args != "" {
+					recv += ", " + args
+				}
+				text = cname + "(" + recv + ")"
+				cur, addr = e.plainOrSlice(rts[0]), false
+				i++ // consumed the CallSuffix
+				continue
+			}
+			// flexcc miscompiles a field read at a nonzero offset directly off a
+			// function's struct return value -- `f(...).y` yields garbage (the return
+			// temporary is not materialised before the offset is applied) -- while a
+			// method call on that same result, which passes the whole struct, is fine.
+			// A non-addressable base (a call result) is therefore refused for a field
+			// read; it would need a hoisted temporary, not synthesised here. Method
+			// calls are recognised above and never reach this branch.
+			if !addr {
+				return "", "", false, false
+			}
+			next, oks := e.accessSelect(cur, field)
+			if !oks {
+				return "", "", false, false
+			}
+			sep := "."
+			if e.isPointer(cur.ctype) {
+				sep = "->"
+			}
+			text += sep + field
+			cur = next
+		case Index:
+			if !addr {
+				return "", "", false, false // indexing a call result: see the field case
+			}
+			low, _, isSlice := e.sliceParts(n.ast)
+			if isSlice || low == nil {
+				return "", "", false, false
+			}
+			next, lenExpr, oki := e.accessIndex(cur, text)
+			if !oki {
+				return "", "", false, false
+			}
+			open := "["
+			if cur.slice {
+				open = ".ptr["
+			}
+			text += open + e.indexCText(low, lenExpr) + "]"
+			cur, addr = next, true
+		default:
+			return "", "", false, false
+		}
+	}
+	if pendingFn {
+		return "", "", false, false // a bare function name, never called
+	}
+	return text, cur.ctype, addr, true
+}
+
+// chainResultType is chainCText's type half: it walks the same chain without
+// emitting -- and without the argument side effects emission has -- to report the
+// C type a call chain yields, for inferCType/callResultCType.
+func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
+	var cur accessCur
+	pendingFn, addr := false, false
+	switch {
+	case e.isChainVar(base):
+		cur, _ = e.accessBase(base)
+		addr = true
+	case e.isChainFunc(base):
+		pendingFn = true
+	default:
+		return "", false
+	}
+	for i := 0; i < len(steps); i++ {
+		n := steps[i]
+		switch n.sym {
+		case CallSuffix:
+			rts, okr := e.funcRet[base]
+			if !pendingFn || !okr || len(rts) != 1 {
+				return "", false
+			}
+			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
+		case Selector:
+			field := e.soleIdent(n.ast)
+			bt := methodBaseType(cur.ctype)
+			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
+				rts, okm := e.funcRet[methodCName(bt, field)]
+				if !okm || len(rts) != 1 {
+					return "", false
+				}
+				cur, addr = e.plainOrSlice(rts[0]), false
+				i++
+				continue
+			}
+			if !addr {
+				return "", false // field of a call result: chainCText refuses it too
+			}
+			var oks bool
+			if cur, oks = e.accessSelect(cur, field); !oks {
+				return "", false
+			}
+		case Index:
+			if !addr {
+				return "", false
+			}
+			if _, _, isSlice := e.sliceParts(n.ast); isSlice {
+				return "", false
+			}
+			// A non-empty prefix stands in for the real one: only its emptiness
+			// gates the slice-length path in accessIndex, never used for typing.
+			var oki bool
+			if cur, _, oki = e.accessIndex(cur, base); !oki {
+				return "", false
+			}
+			addr = true
+		default:
+			return "", false
+		}
+	}
+	if pendingFn || cur.ctype == "" {
+		return "", false // never called, or ended on an array/slice, not a single value
+	}
+	return cur.ctype, true
 }
 
 // emitLen emits the builtin `len(x)`: an array's length is its compile-time bound;
@@ -7050,7 +7278,9 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 			return "", false
 		}
 	}
-	return "", false
+	// A longer call chain (`mk().n`, `t.self().n`): its value type is what the chain
+	// reaches, mirroring chainCText's lowering.
+	return e.chainResultType(recv, suffix)
 }
 
 // emitExpr emits a value expression. Binary operators (Expression/SimpleExpr/
