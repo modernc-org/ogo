@@ -1,0 +1,24 @@
+// COMPILE
+
+// Builder is a compiler-known string builder over a caller-owned []byte -- the
+// allocation-free counterpart to strings.Builder. NewBuilder(back[:]) wraps a fixed
+// backing array in a write cursor; WriteString and WriteByte append into it (a write
+// past the backing is truncated, since the caller sized the storage); Len reports the
+// count; Reset rewinds; and String() returns a zero-copy view of the written prefix,
+// usable wherever a string is -- printing, comparison, a string argument.
+
+func run() {
+	var back [64]byte
+	sb := NewBuilder(back[:])
+
+	sb.WriteString("value=")
+	sb.WriteByte('4')
+	sb.WriteByte('2')
+
+	_ = sb.Len()
+	_ = sb.String()
+	_ = sb.String() == "value=42"
+
+	sb.Reset()
+	sb.WriteString("next")
+}

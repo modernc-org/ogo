@@ -359,6 +359,24 @@
 // rejected, since building a new string at run time needs allocation and the
 // target has no heap.
 //
+// To build a string at run time without allocation, use the predeclared Builder
+// over a caller-owned backing array -- the allocation-free counterpart to Go's
+// strings.Builder:
+//
+//	var back [64]byte
+//	sb := NewBuilder(back[:])   // a write cursor over the backing
+//	sb.WriteString("value=")
+//	sb.WriteByte('4')
+//	s := sb.String()           // "value=4"
+//
+// NewBuilder(back []byte) wraps a fixed byte slice; WriteString and WriteByte append
+// into it, truncating a write that would exceed the backing (the caller sized it);
+// Len reports the count and Reset rewinds it. String() returns a view of the written
+// prefix -- an ordinary string aliasing the backing, so it makes no copy and is only
+// valid until the next write into the same Builder, exactly as a strings.Builder's
+// result is invalidated by further building. (Prototype: a Builder is usable as a
+// local; passing one to a function is not yet supported.)
+//
 // # Array types
 //
 // An array is a numbered sequence of elements of a single type, called the

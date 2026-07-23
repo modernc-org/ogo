@@ -117,6 +117,24 @@ const cBool = "_Bool"
 
 const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\n"
 
+// builderTypedef is the compiler-known Builder: a write cursor over a caller-owned
+// []byte. It carries the backing pointer, its capacity (the backing length), and
+// the count written so far. No allocation: the storage is the caller's.
+const builderTypedef = "typedef struct { uint8_t* ptr; int cap; int len; } ogo_builder;\n"
+
+// builderHelpers implement the Builder methods. NewBuilder(back) takes a []byte and
+// starts empty. WriteString/WriteByte append into the free tail, bounded by cap (an
+// overflowing write is truncated, not a trap -- the caller sized the backing).
+// String() returns a VIEW: an ogo_string aliasing the backing's written prefix, no
+// copy -- so it is only valid until the next write, exactly like Go's strings.Builder
+// forbidding use after further building.
+const builderHelpers = "static ogo_builder ogo_builder_new(ogo_slice_uint8_t back) { ogo_builder b; b.ptr = back.ptr; b.cap = back.len; b.len = 0; return b; }\n" +
+	"static void ogo_builder_WriteString(ogo_builder* b, ogo_string s) { int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } }\n" +
+	"static void ogo_builder_WriteByte(ogo_builder* b, uint8_t c) { if (b->len < b->cap) b->ptr[b->len++] = c; }\n" +
+	"static ogo_string ogo_builder_String(ogo_builder* b) { ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
+	"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
+	"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
+
 // stringHelpers print a string header's exact bytes (a slice need not be
 // null-terminated, so %.*s, not %s).
 const stringHelpers = "static inline void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
@@ -1094,6 +1112,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	for _, opt := range opts {
 		opt(e)
 	}
+	e.registerBuilder()
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
@@ -1211,6 +1230,10 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.Write(typedefs.Bytes())
 		out.Write(structSliceDefs.Bytes())
 		out.Write(appendokDefs.Bytes())
+		// The Builder typedef follows the string and byte-slice types it embeds.
+		if e.usesBuilder {
+			out.WriteString(builderTypedef)
+		}
 		out.WriteByte('\n')
 	}
 	if e.usesStringPrint {
@@ -1271,6 +1294,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\tint n = dst.len < src.len ? dst.len : src.len;\n"+
 			"\tif (n > 0) { memcpy(dst.ptr, src.str, (unsigned)n); }\n"+
 			"\treturn n;\n}\n", sliceCName("uint8_t"))
+	}
+	if e.usesBuilder {
+		helperDefs.WriteString(builderHelpers)
 	}
 	// clear(s): zero every element (memset, since every zero value is all-zero
 	// bytes), the length unchanged.
@@ -1384,6 +1410,7 @@ type emitter struct {
 	tryappendElems     map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
 	usesCopyStr        bool                     // copy(dst []byte, src string) is used: emit the ogo_copystr helper
+	usesBuilder        bool                     // the Builder type is used: emit its typedef and method helpers
 	clearElems         map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
 	minElems           map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
 	maxElems           map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
@@ -5484,6 +5511,19 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.fail("make is only supported as a `var s []T = make(...)` initializer yet")
 			return true
 		}
+		if recv == "NewBuilder" {
+			// NewBuilder(back []byte) -> a Builder over the caller's backing.
+			args := e.callArgExprs(suffix[0].ast)
+			if len(args) != 1 {
+				e.fail("NewBuilder takes one []byte argument")
+				return true
+			}
+			e.needBuilder()
+			e.emit("ogo_builder_new(")
+			e.emitExpr(args[0].ast)
+			e.emit(")")
+			return true
+		}
 		if ct, ok := e.convType(recv); ok {
 			// A conversion `T(x)` -> a C cast `(T)(x)`.
 			args := e.callArgExprs(suffix[0].ast)
@@ -5919,6 +5959,35 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 // element type; it copies min(len(dst), len(src)) elements and yields that count,
 // through the per-element ogo_copy_<T> helper. dst and src may overlap (the helper
 // uses memmove), as Go's copy allows.
+// registerBuilder pre-populates the type and method maps for the compiler-known
+// Builder, so `sb := NewBuilder(back[:])` types as ogo_builder and `sb.WriteString(s)`
+// dispatches through the ordinary user-method path -- methodCName + methodPtr -- to
+// the ogo_builder_* helpers. Only emitting the helper definitions is gated on actual
+// use (usesBuilder), set by needBuilder at the NewBuilder call.
+func (e *emitter) registerBuilder() {
+	e.namedTypes["ogo_builder"] = true
+	e.funcRet["NewBuilder"] = []string{"ogo_builder"}
+	e.funcRet["ogo_builder_WriteString"] = nil
+	e.funcRet["ogo_builder_WriteByte"] = nil
+	e.funcRet["ogo_builder_Reset"] = nil
+	e.funcRet["ogo_builder_String"] = []string{cString}
+	e.funcRet["ogo_builder_Len"] = []string{"int"}
+	for _, m := range []string{"WriteString", "WriteByte", "Reset", "String", "Len"} {
+		e.methodPtr["ogo_builder_"+m] = true // all methods take a pointer receiver
+	}
+}
+
+// needBuilder records that the Builder type is used, so its typedef and helpers are
+// emitted, and pulls in what they reference: the byte-slice header, the string type,
+// and the stdint/string.h headers.
+func (e *emitter) needBuilder() {
+	e.usesBuilder = true
+	e.needSlice("uint8_t")
+	e.usesString = true
+	e.includes["stdint.h"] = true
+	e.includes["string.h"] = true
+}
+
 func (e *emitter) emitCopy(callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 2 {

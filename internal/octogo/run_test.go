@@ -561,6 +561,29 @@ func main() {
 		want: "6 72 32 33\n",
 	},
 	{
+		// Builder is a compiler-known string builder over a caller-owned []byte, the
+		// allocation-free answer to strings.Builder: NewBuilder(back[:]) starts a
+		// cursor into the backing, WriteString/WriteByte append into it, Len reports
+		// the count, Reset rewinds, and String() returns a zero-copy VIEW (an
+		// ogo_string aliasing the written prefix) usable for printing and comparison.
+		name: "string Builder over a backing array",
+		src: `func main() {
+	var back [32]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("Hi ")
+	sb.WriteByte('P')
+	sb.WriteByte('2')
+	sb.WriteString("!")
+	println(sb.Len())
+	println(sb.String())
+	sb.Reset()
+	sb.WriteString("again")
+	println(sb.String() == "again")
+}
+`,
+		want: "6\nHi P2!\ntrue\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

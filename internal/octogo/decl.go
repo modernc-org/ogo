@@ -173,6 +173,11 @@ out:
 	for _, bn := range []string{"append", "cap", "clear", "copy", "len", "max", "min", "print", "println"} {
 		Universe.Declarations[bn] = &PredeclaredFunc{declaration: declaration{token: names[bn]}}
 	}
+	// NewBuilder(back []byte) Builder -- the compiler-known Builder constructor. It
+	// is registered so a use resolves; its result type and methods are handled by
+	// the emitter (see registerBuilder). The token is synthesized: NewBuilder is not
+	// in preclaredNames.
+	Universe.Declarations["NewBuilder"] = &PredeclaredFunc{declaration: declaration{name: "NewBuilder"}}
 }
 
 // ScopeKind describes the type of a Scope.
