@@ -1783,9 +1783,14 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			e.fail("malformed type declaration")
 			return
 		}
+		// The C type name is the source name mangled into this package's namespace,
+		// so it is a valid C identifier and cannot collide with another package's
+		// type. cType returns the same mangled name for a reference to it, so every
+		// use resolves to the same typedef and the same structs/namedTypes map key.
+		mn := mangle(e.curPkgPrefix, name)
 		if structAST := e.structTypeAST(typeAST); structAST != nil {
 			fields := e.structFieldsOf(structAST)
-			e.structs[name] = fields
+			e.structs[mn] = fields
 			e.emit("typedef struct {")
 			for _, fld := range fields {
 				if fld.dim.bound != "" {
@@ -1801,7 +1806,7 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 				// code cannot name the field, so it stays invisible.
 				e.emit(" char _ogo_empty;")
 			}
-			e.emit(" } " + name + ";\n")
+			e.emit(" } " + mn + ";\n")
 			continue
 		}
 		// A named array type: `type Row [3]int` -> `typedef int Row[3];` (the extent
@@ -1812,8 +1817,8 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// directly. The typedef documents the type in the output and keeps the name a
 		// valid C type should anything refer to it by name.
 		if a, ok := e.arrayDim(typeAST); ok {
-			e.namedArrays[name] = a
-			e.emit("typedef " + a.elem + " " + name + a.declSuffix() + ";\n")
+			e.namedArrays[mn] = a
+			e.emit("typedef " + a.elem + " " + mn + a.declSuffix() + ";\n")
 			continue
 		}
 		// A non-struct named type: `type Celsius int` -> `typedef int Celsius;`. The
@@ -1822,8 +1827,8 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		if underlying == "" {
 			return // cType has latched the failure
 		}
-		e.namedTypes[name] = true
-		e.emit("typedef " + underlying + " " + name + ";\n")
+		e.namedTypes[mn] = true
+		e.emit("typedef " + underlying + " " + mn + ";\n")
 	}
 }
 
@@ -2545,7 +2550,11 @@ func (e *emitter) receiverInfo(recv []int32) (name, ctype string, named bool) {
 func methodBaseType(recvCType string) string { return strings.TrimSuffix(recvCType, "*") }
 
 // methodCName mangles a method to its C function name `<BaseType>_<method>`.
-func methodCName(baseType, method string) string { return baseType + "_" + method }
+// methodCName mangles a method to its C name, baseType_method. baseType is already
+// the receiver type's mangled C name (package-namespaced), so a method is namespaced
+// by its type and cannot collide across packages; the method name is passed through
+// cIdent so a Unicode method name is a valid C identifier too.
+func methodCName(baseType, method string) string { return baseType + "_" + cIdent(method) }
 
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
 // results.
@@ -3279,7 +3288,10 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != CompositeLit {
 		return "", Node{}, false
 	}
-	return e.src(kids[0].tok), kids[1], true
+	// The composite literal names a same-package struct type; return its mangled C
+	// name so both the value's inferred type and its emission (the (T){...} cast and
+	// the structs lookup) use the same package-namespaced typedef.
+	return mangle(e.curPkgPrefix, e.src(kids[0].tok)), kids[1], true
 }
 
 // soleCompositeLit reports whether an expression is nothing but a composite
@@ -3843,11 +3855,15 @@ func (e *emitter) cType(ast []int32) string {
 		}
 		return ct
 	}
-	if _, ok := e.structs[name]; ok {
-		return name
+	// A user type resolves to its mangled C name, matching how collectTypeDecl
+	// recorded it and named its typedef; the mangled string is then the key for
+	// every downstream structs/namedTypes lookup.
+	mn := mangle(e.curPkgPrefix, name)
+	if _, ok := e.structs[mn]; ok {
+		return mn
 	}
-	if e.namedTypes[name] {
-		return name
+	if e.namedTypes[mn] {
+		return mn
 	}
 	e.fail("unsupported type %q", name)
 	return ""
@@ -3873,8 +3889,8 @@ func (e *emitter) convType(recv string) (string, bool) {
 		}
 		return ct, true // int, uint, byte, rune, the fixed-width names
 	}
-	if e.namedTypes[recv] {
-		return recv, true // `type Celsius int` used as Celsius(x)
+	if mn := mangle(e.curPkgPrefix, recv); e.namedTypes[mn] {
+		return mn, true // `type Celsius int` used as Celsius(x)
 	}
 	return "", false
 }
@@ -3900,7 +3916,7 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 	// a struct field, a parameter) treats r as its `[3]int`. Only a bare name that
 	// was declared as an array type matches -- `type Celsius int` is not here.
 	if len(nodes) == 1 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT {
-		a, ok := e.namedArrays[e.src(nodes[0].tok)]
+		a, ok := e.namedArrays[mangle(e.curPkgPrefix, e.src(nodes[0].tok))]
 		return a, ok
 	}
 	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK {
