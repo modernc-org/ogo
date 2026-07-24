@@ -3570,6 +3570,19 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 // A slice literal has no such spelling. It lowers the way make does, to a backing
 // array plus a { pointer, len, cap } header, the difference being that the backing
 // array carries the values and its length is the number of them.
+// emitArrayCopy declares array local dst with the same dimensions as source array
+// src (an already-declared array's C name) and copies it by value with memcpy, the
+// lowering of Go's `dst := src` / `var dst [N]T = src` array-value copy (C forbids
+// array assignment). dst is registered so later dst[i] / len(dst) resolve.
+func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
+	e.arrays[dst] = a
+	e.includes["string.h"] = true
+	e.ind()
+	e.emit(a.elem + " " + dst + a.declSuffix() + ";\n")
+	e.ind()
+	e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n")
+}
+
 func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
 	values, length, ok := e.litPositions(lit)
 	if !ok {
@@ -6864,6 +6877,20 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
 		e.emitArrayLitVar(name, typeAST, lit)
 		return
+	}
+	// `b := a` where a is an array variable: Go copies the array by value. C cannot
+	// assign an array, so declare b with a's dimensions and memcpy from a. (inferCType
+	// cannot type an array operand -- an array has no assignable C value type -- so
+	// this must be handled before the general path below.)
+	if rhs, ok := e.exprIdent(initExpr); ok {
+		if a, isLocal := e.arrays[rhs]; isLocal {
+			e.emitArrayCopy(name, rhs, a)
+			return
+		}
+		if a, isGlobal := e.globalArrays[e.globalC(rhs)]; isGlobal {
+			e.emitArrayCopy(name, e.globalC(rhs), a)
+			return
+		}
 	}
 	if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
 		cname := sliceCName(elem)

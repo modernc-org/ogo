@@ -87,6 +87,30 @@ var emitRunCases = []emitRunCase{
 		want: "9 2 3\n1\n4 5 6\n4\n",
 	},
 	{
+		// An array is a value: `b := a` copies it (unlike a slice, which shares its
+		// backing). C forbids array assignment, so the emitter declares b and copies
+		// with memcpy. Mutating the copy must not touch the original -- exercised for a
+		// 1-D and a 2-D array -- and len works on the copy.
+		name: "array value copy",
+		src: `func main() {
+	a := [3]int{1, 2, 3}
+	b := a
+	b[0] = 9
+	b[2] = 8
+	println(a[0], a[2], b[0], b[2])
+	var m [2][2]int
+	m[0][0] = 1
+	m[1][1] = 4
+	n := m
+	n[0][0] = 9
+	println(m[0][0], n[0][0], n[1][1])
+	c := a
+	println(len(c), c[1])
+}
+`,
+		want: "1 3 9 8\n1 9 4\n3 2\n",
+	},
+	{
 		// Indexed array and slice literals ("[]int{2: 5}"): a keyed element places
 		// its value at a constant index, gaps zero-fill, and a positional element
 		// after an index continues from index+1. A slice's length is the highest
