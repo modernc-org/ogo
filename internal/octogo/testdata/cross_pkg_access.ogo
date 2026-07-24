@@ -1,0 +1,49 @@
+// A value of an imported package's type exposes only its EXPORTED members to the
+// importer: an unexported field or method of another package is inaccessible, and a
+// member the type does not have is reported (previously a cross-package field or
+// method access was not checked at all). Same-package unexported access stays legal
+// and is covered elsewhere; this file is an importer of p.
+
+import "p"
+
+// The exported field and method resolve for an importer.
+func ok() {
+	var x p.T
+	x.F = 1
+	println(x.F, x.Get())
+}
+
+// Reading an unexported field of an imported type is illegal.
+func unexportedFieldRead() {
+	var x p.T
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = x.g
+}
+
+// Writing one is illegal too.
+func unexportedFieldWrite() {
+	var x p.T
+	// ERROR "cannot refer to unexported field g of type p.T"
+	x.g = 2
+}
+
+// Calling an unexported method of an imported type is illegal.
+func unexportedMethod() {
+	var x p.T
+	// ERROR "cannot refer to unexported method hidden of type p.T"
+	_ = x.hidden()
+}
+
+// A field the type does not have is reported.
+func noSuchField() {
+	var x p.T
+	// ERROR "type p.T has no field Missing"
+	_ = x.Missing
+}
+
+// A method the type does not have is reported.
+func noSuchMethod() {
+	var x p.T
+	// ERROR "type p.T has no method Bogus"
+	_ = x.Bogus()
+}

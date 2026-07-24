@@ -816,10 +816,11 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		kind, hasKind := f.typeKind(s, p.TypeNode)
 		_, isPtr := p.TypeNode.(*TypeNodePointer)
 		typeName, _ := namedTypeToken(p.TypeNode)
+		typeQual := namedTypeQual(p.TypeNode)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -2577,7 +2578,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var names []Token
 		var kind, elemKind, chanElemKind Kind
 		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
-		var typeName Token
+		var typeName, typeQual Token
 		var initExprs []Node
 		for c := range it(n.ast) {
 			switch c.sym {
@@ -2595,6 +2596,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						kind, hasKind = f.typeKind(s, tn)
 						_, isPtr = tn.(*TypeNodePointer)
 						typeName, _ = namedTypeToken(tn)
+						typeQual = namedTypeQual(tn)
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
 					}
@@ -2613,7 +2615,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			}
 		}
 		for _, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue
@@ -3328,6 +3330,79 @@ func namedTypeToken(tn TypeNode) (Token, bool) {
 	}
 }
 
+// namedTypeQual returns a named type's package qualifier ("geo" in "geo.Point"),
+// following pointers, or an invalid token for an unqualified or non-named type. It
+// pairs with namedTypeToken so a variable can record whether its type is imported.
+func namedTypeQual(tn TypeNode) Token {
+	for {
+		switch x := tn.(type) {
+		case *TypeNodeIdent:
+			return x.Qualifier
+		case *TypeNodePointer:
+			tn = x.TypeNode
+		default:
+			return Token{}
+		}
+	}
+}
+
+// importedStruct resolves a qualified type "qual.name" to the struct it declares in
+// the imported package, or ok=false when the qualifier is not a resolved user import
+// or name is not a struct type there. It backs the cross-package member checks.
+func (f *File) importedStruct(qual, name Token) (*TypeDeclaration, *TypeNodeStruct, bool) {
+	imp, ok := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+		return nil, nil, false
+	}
+	td, ok := imp.Import.Pkg.Scope.Declarations[name.Src()].(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return nil, nil, false
+	}
+	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	return td, st, ok
+}
+
+// checkCrossPkgField reports a field access "v.field" where v has a cross-package
+// type qual.typeName: the field must exist in the imported struct AND be exported.
+// Accessing another package's unexported field is illegal, as is naming a field the
+// struct does not have.
+func (f *File) checkCrossPkgField(qual, typeName, field Token) {
+	_, st, ok := f.importedStruct(qual, typeName)
+	if !ok {
+		return
+	}
+	found := false
+	for _, fld := range st.Fields {
+		for _, nm := range fld.Names {
+			if nm.Src() == field.Src() {
+				found = true
+			}
+		}
+	}
+	switch {
+	case !found:
+		f.err(field.Position(), "type %s.%s has no field %s", qual.Src(), typeName.Src(), field.Src())
+	case !token.IsExported(field.Src()):
+		f.err(field.Position(), "cannot refer to unexported field %s of type %s.%s", field.Src(), qual.Src(), typeName.Src())
+	}
+}
+
+// checkCrossPkgMethod reports a method call "v.m()" where v has a cross-package type
+// qual.typeName: m must be an exported method of the imported type. An unexported
+// method, or a name that is not a method there, is rejected.
+func (f *File) checkCrossPkgMethod(qual, typeName, member Token) {
+	td, _, ok := f.importedStruct(qual, typeName)
+	if !ok {
+		return
+	}
+	switch {
+	case td.methods[member.Src()] == nil:
+		f.err(member.Position(), "type %s.%s has no method %s", qual.Src(), typeName.Src(), member.Src())
+	case !token.IsExported(member.Src()):
+		f.err(member.Position(), "cannot refer to unexported method %s of type %s.%s", member.Src(), qual.Src(), typeName.Src())
+	}
+}
+
 // litElement is one element of a composite literal. A keyed element ("k: v")
 // carries both; the language has no keyed literals yet, but the grammar admits
 // them so that checkCompositeLit can say so instead of the parser failing and the
@@ -3606,6 +3681,12 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token) {
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 		return
 	}
+	if d.typeQual.IsValid() {
+		// A cross-package type: resolve the field in the imported struct and enforce
+		// the export rule (another package's unexported field is inaccessible).
+		f.checkCrossPkgField(d.typeQual, d.typeName, field)
+		return
+	}
 	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 	}
@@ -3736,6 +3817,12 @@ func (f *File) methodCallMember(n Node) (member Token, ok bool) {
 func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok || !d.typeName.IsValid() {
+		return
+	}
+	if d.typeQual.IsValid() {
+		// A cross-package type: the method must be an exported method of the imported
+		// type (another package's unexported method is inaccessible).
+		f.checkCrossPkgMethod(d.typeQual, d.typeName, member)
 		return
 	}
 	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)

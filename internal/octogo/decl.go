@@ -317,6 +317,7 @@ type VarDeclaration struct {
 	hasKind     bool  // kind is meaningful
 	isPtr       bool  // the variable's type is a pointer "*T"
 	typeName    Token // the variable's named (possibly pointed-to) type, for field access
+	typeQual    Token // the package qualifier of a cross-package named type ("geo" in "geo.Point"), for cross-package member checks
 	elemKind    Kind  // the predeclared element/pointed-to type of a pointer, array or slice variable, for deref/index assignment
 	hasElemKind bool  // elemKind is meaningful
 
