@@ -1365,6 +1365,23 @@ func main() {
 		want: "-1 0 1\n10 20 99\n",
 	},
 	{
+		name: "slice nil comparison",
+		src: `func main() {
+	var s []int
+	println(s == nil, s != nil)
+	s = make([]int, 2)
+	s[0] = 7
+	if s != nil {
+		println(s[0])
+	}
+	println(s == nil, s != nil)
+	var t []string
+	println(t == nil, nil == t)
+}
+`,
+		want: "true false\n7\nfalse true\ntrue true\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

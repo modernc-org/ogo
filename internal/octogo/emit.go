@@ -8068,6 +8068,46 @@ func (e *emitter) structCompareAt(kids []Node, i int) (op, ctype string, ok bool
 	return op, ct, true
 }
 
+// isNilExpr reports whether an expression is exactly the predeclared nil.
+func (e *emitter) isNilExpr(ast []int32) bool {
+	tok, ok := e.soleToken(ast)
+	return ok && e.f.ch(tok) == IDENT && e.src(tok) == "nil"
+}
+
+// sliceNilCompareAt reports whether kids[i..i+2] compares a slice with nil for
+// equality (`s == nil` / `s != nil`, either operand order) and, if so, the op and
+// the slice operand. A slice is the only aggregate whose nil is modelled here;
+// scalars/pointers compare with nil via the ordinary `== 0` path.
+func (e *emitter) sliceNilCompareAt(kids []Node, i int) (op string, sliceNode Node, ok bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return "", Node{}, false
+	}
+	if op = e.opText(kids[i+1].ast); op != "==" && op != "!=" {
+		return "", Node{}, false
+	}
+	l, r := kids[i], kids[i+2]
+	lNil, rNil := e.isNilExpr(l.ast), e.isNilExpr(r.ast)
+	if lNil == rNil {
+		return "", Node{}, false // both nil, or neither: not a slice-vs-nil compare
+	}
+	operand := l
+	if lNil {
+		operand = r
+	}
+	if ct, ok := e.inferCType(operand.ast); ok && e.isSliceCType(ct) {
+		return op, operand, true
+	}
+	return "", Node{}, false
+}
+
+// emitSliceNilTriple lowers a slice-vs-nil comparison. A slice is nil exactly when
+// its backing pointer is null, so `s == nil` becomes `(s.ptr == 0)`.
+func (e *emitter) emitSliceNilTriple(sliceNode Node, op string) {
+	e.emit("(")
+	e.emitExprNode(sliceNode)
+	e.emit(".ptr " + op + " 0)")
+}
+
 // emitStructCompareTriple emits a struct equality/inequality as a call to the
 // per-type helper ogo_eq_<T>, negated for "!=". Go compares structs field by field.
 func (e *emitter) emitStructCompareTriple(l, r Node, op, ctype string) {
@@ -8199,6 +8239,11 @@ func (e *emitter) emitStringCompare(kids []Node) bool {
 // string comparison is identical to emitting the kids in order.
 func (e *emitter) emitKidsStringCompare(kids []Node) {
 	for i := 0; i < len(kids); {
+		if op, sn, ok := e.sliceNilCompareAt(kids, i); ok {
+			e.emitSliceNilTriple(sn, op)
+			i += 3
+			continue
+		}
 		if op, ct, ok := e.structCompareAt(kids, i); ok {
 			e.emitStructCompareTriple(kids[i], kids[i+2], op, ct)
 			i += 3
