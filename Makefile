@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all board clean edit editor test generate
+.PHONY:	all board clean edit editor test generate release
 
 all:
 
@@ -39,3 +39,11 @@ test:
 # is separate from `test` because it needs hardware; `go test ./...` skips it.
 board:
 	OGO_BOARD_PORT=$${OGO_BOARD_PORT:-/dev/ttyUSB0} go test -v -count=1 -timeout 10m -run TestOnBoard ./internal/octogo/
+
+# release builds the self-contained preview binaries for every supported target
+# (CGO-free, so all cross-compile from one host) and stages them under
+# build/release/<version>/ as one zip per target plus SHA256SUMS, ready to upload to
+# a GitHub Release. VERSION defaults to the tag at HEAD; override with `make release
+# VERSION=vX.Y.Z`. Tag first, so the binaries self-report the release.
+release:
+	scripts/release.sh $(VERSION)

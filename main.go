@@ -36,16 +36,29 @@ func fail(rc int, s string, args ...any) {
 	os.Exit(rc)
 }
 
-// printVersion reports what a bug report needs to identify a build: the module
-// version (or the VCS revision, for a build from source), the host platform and
-// the Go toolchain that built it. The values come from the build info the Go
-// toolchain stamps in, so a `go install modernc.org/ogo@latest` binary names its
-// release while a local build names its commit.
+// version, when non-empty, is the release tag stamped into a prebuilt binary by the
+// build with -ldflags "-X main.version=vX.Y.Z". A `go build` of a tagged checkout
+// only records the commit, not the tag, so the published preview binaries set this
+// to self-report their release; an ordinary build leaves it empty and falls back to
+// the Go build info below.
+var version string
+
+// printVersion reports what a bug report needs to identify a build: the release tag
+// or module version (or the VCS revision, for a build from source), the host
+// platform and the Go toolchain that built it. The values come from the stamped-in
+// version above or the build info the Go toolchain records, so a published preview
+// binary and a `go install modernc.org/ogo@latest` binary each name their release
+// while a plain local build names its commit.
 func printVersion(w io.Writer) {
-	version, revision, modified := "(devel)", "", false
+	ver, revision, modified := "(devel)", "", false
+	if version != "" {
+		ver = version // a published binary stamped with its release tag by the build
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok {
-		if v := bi.Main.Version; v != "" {
-			version = v
+		if version == "" {
+			if v := bi.Main.Version; v != "" {
+				ver = v
+			}
 		}
 		for _, s := range bi.Settings {
 			switch s.Key {
@@ -58,18 +71,18 @@ func printVersion(w io.Writer) {
 	}
 	// A module version already names the commit (a release tag, or a pseudo-version
 	// with the revision in it), so the bare revision is only worth printing when
-	// there is no module version at all.
-	if version == "(devel)" && revision != "" {
+	// there is no stamped or module version at all.
+	if ver == "(devel)" && revision != "" {
 		if len(revision) > 12 {
 			revision = revision[:12]
 		}
-		version = revision
+		ver = revision
 	}
 	// A pseudo-version of a dirty tree already carries the marker.
-	if modified && !strings.HasSuffix(version, "+dirty") {
-		version += "+dirty"
+	if modified && !strings.HasSuffix(ver, "+dirty") {
+		ver += "+dirty"
 	}
-	fmt.Fprintf(w, "ogo version %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+	fmt.Fprintf(w, "ogo version %s %s/%s\n", ver, runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(w, "built with %s\n", runtime.Version())
 }
 
