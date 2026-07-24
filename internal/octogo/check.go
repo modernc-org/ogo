@@ -3213,15 +3213,7 @@ func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 		return
 	}
 	if f.isImportQualifier(s, id.Src()) {
-		for c := range it(postfix.ast) {
-			if c.sym != Selector {
-				continue
-			}
-			if m, ok := f.selectorMember(c); ok && !token.IsExported(m.Src()) {
-				f.err(m.Position(), "cannot refer to unexported name %s.%s", id.Src(), m.Src())
-			}
-			return
-		}
+		f.checkQualifiedRef(id, postfix)
 		return
 	}
 	// Not an import qualifier: a "head.field" selection of a struct variable
@@ -3241,6 +3233,40 @@ func (f *File) isImportQualifier(s *Scope, name string) bool {
 	}
 	_, ok := f.Scope.Declarations[name].(*ImportDeclaration)
 	return ok
+}
+
+// checkQualifiedRef validates a package-qualified reference "qual.member", where
+// qual is an import qualifier and member is the first selector of suffix. The
+// member must be exported and, for a user package whose source scope loaded, be
+// declared there -- so "greet.hello" (unexported) and "greet.Missing" (undefined)
+// are both reported cleanly instead of slipping through to a C-level error. An
+// intrinsic package (p2) resolves to noPkg: its members are provided by the
+// emitter, not a source scope, so only the export rule applies and the emitter
+// rejects an unknown intrinsic. A failed import (noPkg) is likewise left to the
+// import-time diagnostic. Only the first selector qualifies the package; a deeper
+// selector operates on its result, which is not modelled.
+func (f *File) checkQualifiedRef(qual Token, suffix Node) {
+	for c := range it(suffix.ast) {
+		if c.sym != Selector {
+			continue
+		}
+		m, ok := f.selectorMember(c)
+		if !ok {
+			return
+		}
+		if !token.IsExported(m.Src()) {
+			f.err(m.Position(), "cannot refer to unexported name %s.%s", qual.Src(), m.Src())
+			return
+		}
+		imp, ok := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+		if !ok || imp.Import == nil {
+			return
+		}
+		if pkg := imp.Import.Pkg; pkg != nil && pkg != noPkg && pkg.Scope.Declarations[m.Src()] == nil {
+			f.err(m.Position(), "undefined: %s.%s", qual.Src(), m.Src())
+		}
+		return
+	}
 }
 
 // selectorMember returns the member identifier of a Selector node ".name".
@@ -4396,6 +4422,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			switch {
 			case directCall:
 			case hasSelector && f.isImportQualifier(s, id.Src()):
+				f.checkQualifiedRef(id, suffix)
 			default:
 				f.err(id.Position(), "undefined: %s", id.Src())
 			}

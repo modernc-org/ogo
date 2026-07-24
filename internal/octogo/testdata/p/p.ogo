@@ -3,3 +3,11 @@ const p = 'p'
 // Use is an exported, referenceable member so that importers can satisfy the
 // unused-import check.
 func Use() {}
+
+// Do is an exported function, the callee of the package-qualified call
+// "p.Do()" exercised by call_base.ogo.
+func Do() {}
+
+// Value is an exported variable, the target of the package-qualified read
+// "p.Value" exercised by read_base.ogo.
+var Value int

@@ -1,0 +1,40 @@
+// A package-qualified reference "pkg.member" is resolved against the imported
+// package, not merely export-checked: member must be exported AND actually
+// declared in pkg. This holds in every position -- a bare call or read at
+// statement head, and nested inside an argument, a short-declaration right-hand
+// side or any other operand -- not only at the statement head, which was the sole
+// place the old export-only check fired. An intrinsic package (p2) has no source
+// scope, so only the export rule applies to it (see p2 members elsewhere).
+
+import "p"
+
+// A member that is exported and defined resolves in each position.
+func valid() {
+	p.Use()
+	_ = p.Value
+	go p.Do()
+}
+
+// An unexported member is rejected wherever it appears, not just at the head.
+func unexported() {
+	// ERROR "cannot refer to unexported name p.p"
+	_ = p.p
+	// ERROR "cannot refer to unexported name p.p"
+	x := p.p
+	_ = x
+}
+
+// A member the package does not declare is reported "undefined", cleanly, rather
+// than slipping through to a backend error -- at the head, in a right-hand side
+// and inside a call argument.
+func undefinedMember() {
+	// ERROR "undefined: p.Missing"
+	p.Missing()
+	// ERROR "undefined: p.Nope"
+	y := p.Nope
+	_ = y
+	// ERROR "undefined: p.Gone"
+	use(p.Gone())
+}
+
+func use(int) {}
