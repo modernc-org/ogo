@@ -885,7 +885,7 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 	case INT, STRING:
 		return true
 	case IDENT:
-		if _, isConst := e.constInt[e.src(tok)]; isConst {
+		if _, isConst := e.foldedInt(e.src(tok)); isConst {
 			return true
 		}
 		s := e.src(tok)
@@ -2124,7 +2124,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 // literal uses the brace form (declInit).
 func (e *emitter) emitGlobalInit(initExpr []int32) {
 	if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == IDENT {
-		if v, ok := e.constInt[e.src(tok)]; ok {
+		if v, ok := e.foldedInt(e.src(tok)); ok {
 			e.emit(v)
 			return
 		}
@@ -2188,6 +2188,14 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		if name == "_" {
 			continue // a blank const declares nothing; skip it, but it still advances iota
 		}
+		// A package-level constant is namespaced by its package, exactly like a
+		// package variable (see globalC), so same-named constants in different
+		// packages neither collide in the single translation unit nor cross-pollute
+		// the constInt/constStr fold maps. A block-scope constant keeps its own name.
+		cname := name
+		if pkg {
+			cname = mangle(e.curPkgPrefix, name)
+		}
 		ctype := ownType
 		if !hasType {
 			e.iota = curIota // so inference sees iota as an int
@@ -2199,9 +2207,9 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 			ctype = ct
 		}
 		if pkg {
-			e.globals[name] = ctype
+			e.globals[cname] = ctype
 		} else {
-			e.locals[name] = ctype
+			e.locals[cname] = ctype
 		}
 		// A constant that folds to an integer -- a literal, iota, or a constant
 		// expression like "2 + 1" or "W * H" -- can serve as an array bound (flexcc
@@ -2209,7 +2217,7 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		// fold as this spec's index for the duration.
 		e.iota = curIota
 		if v, ok := e.foldConstInt(initExpr); ok {
-			e.constInt[name] = strconv.FormatInt(v, 10)
+			e.constInt[cname] = strconv.FormatInt(v, 10)
 		}
 		e.iota = -1
 		// A constant string -- a literal or a concatenation of constants -- is
@@ -2218,7 +2226,7 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		// correct, and it avoids an unused-variable warning when the constant is
 		// only ever folded into a concatenation (which does not name it).
 		if v, ok := e.foldConstString(initExpr); ok {
-			e.constStr[name] = v
+			e.constStr[cname] = v
 			continue
 		}
 		e.iota = curIota // substitute iota with its value while emitting the expression
@@ -2227,8 +2235,8 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		if pkg {
 			storage = "static const "
 		}
-		e.emit(storage + ctype + " " + name + " = ")
-		switch v, folded := e.constInt[name]; {
+		e.emit(storage + ctype + " " + cname + " = ")
+		switch v, folded := e.constInt[cname]; {
 		case folded:
 			// A folded integer constant emits its literal value, so a constant that
 			// references another ("const M = N + 1") does not become the C
@@ -2246,6 +2254,28 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		e.emit(";\n")
 		e.iota = -1
 	}
+}
+
+// foldedInt returns a folded integer constant's C literal by its source name,
+// trying the block-scope (unmangled) key first, then the current package's mangled
+// global key. A package constant's fold maps are keyed by its mangled name (see
+// emitConstDecl) to keep same-named constants in different packages distinct, so a
+// same-package read resolves through globalC just as a package variable does.
+func (e *emitter) foldedInt(name string) (string, bool) {
+	if v, ok := e.constInt[name]; ok {
+		return v, true
+	}
+	v, ok := e.constInt[e.globalC(name)]
+	return v, ok
+}
+
+// foldedStr is foldedInt's string-constant counterpart.
+func (e *emitter) foldedStr(name string) (string, bool) {
+	if v, ok := e.constStr[name]; ok {
+		return v, true
+	}
+	v, ok := e.constStr[e.globalC(name)]
+	return v, ok
 }
 
 // collectResults records every user function's C result types in funcRet and,
@@ -3438,7 +3468,7 @@ func (e *emitter) litKeyIndex(keyAST []int32) (int, bool) {
 	case INT:
 		s = normalizeIntLit(e.src(tok))
 	case IDENT:
-		v, ok := e.constInt[e.src(tok)]
+		v, ok := e.foldedInt(e.src(tok))
 		if !ok {
 			return 0, false
 		}
@@ -3994,7 +4024,7 @@ func (e *emitter) arrayBoundC(sizeAST []int32) (string, bool) {
 		case INT:
 			return normalizeIntLit(e.src(tok)), true
 		case IDENT:
-			if v, ok := e.constInt[e.src(tok)]; ok {
+			if v, ok := e.foldedInt(e.src(tok)); ok {
 				return v, true
 			}
 		}
@@ -4095,7 +4125,7 @@ func (e *emitter) foldIntToken(tok int32) (int64, bool) {
 			}
 			return 0, false
 		default:
-			if v, ok := e.constInt[s]; ok {
+			if v, ok := e.foldedInt(s); ok {
 				n, err := strconv.ParseInt(v, 0, 64)
 				return n, err == nil
 			}
@@ -7474,6 +7504,15 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 		return "", "", false
 	}
 	gn := mangle(prefix, fields[0])
+	// A folded string constant has no addressable C symbol -- it is inlined at each
+	// use (see emitConstDecl) -- so a cross-package read of one is left to the
+	// caller's other shapes (reported there) rather than naming a symbol that does
+	// not exist. An integer constant does emit a `static const` definition, so it
+	// resolves through the ordinary global path below (naming the symbol, matching a
+	// same-package read, so the definition is not left unreferenced).
+	if _, isStr := e.constStr[gn]; isStr {
+		return "", "", false
+	}
 	ct, ok := e.globals[gn]
 	if !ok {
 		return "", "", false
@@ -8223,7 +8262,7 @@ func (e *emitter) emitOperandToken(tok int32) {
 		default:
 			// A string constant is inlined as its folded literal -- it has no C
 			// variable (see emitConstDecl).
-			if v, ok := e.constStr[s]; ok {
+			if v, ok := e.foldedStr(s); ok {
 				e.emitFoldedString(v)
 				return
 			}
@@ -8274,7 +8313,7 @@ func (e *emitter) foldConstString(ast []int32) (string, bool) {
 					}
 					b.WriteString(v)
 				case IDENT:
-					if cv, is := e.constStr[e.src(n.tok)]; is {
+					if cv, is := e.foldedStr(e.src(n.tok)); is {
 						b.WriteString(cv)
 					} else {
 						ok = false // a non-constant operand: a runtime concatenation

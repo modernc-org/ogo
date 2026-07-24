@@ -1999,6 +1999,10 @@ func (p Point) sum() int { return p.x + p.y }
 // A package global with the same name as greet's, likewise namespaced.
 var base int = 5
 
+// A package constant with the same name as greet's: per-package mangling keeps the
+// two from colliding in the single translation unit (both emit a distinct C name).
+const K = 3
+
 func main() {
 	println(greet.Hello(3))
 	msg := greet.Loud("hi")
@@ -2015,6 +2019,9 @@ func main() {
 	println(greet.Total)
 	greet.Total = greet.Total + 7
 	println(greet.Total)
+	// A same-named constant in each package, and a cross-package read of greet's
+	// (a folded integer constant inlines its value).
+	println(K, greet.K)
 }
 `)},
 		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`type Point struct{ x, y int }
@@ -2030,6 +2037,9 @@ var base int = 1000
 
 // Total is an exported variable read and written directly from main.
 var Total int = 200
+
+// K is an exported constant, same name as main's, read directly from main.
+const K = 100
 
 func Base() int { return base }
 
@@ -2073,7 +2083,7 @@ func scale(n int) int { return n }
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
-	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n"
+	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n"
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
 	}
