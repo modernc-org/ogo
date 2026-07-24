@@ -291,6 +291,55 @@ func main() {
 		want: "2147483648 1 4278190080\n",
 	},
 	{
+		// A self-referential struct -- a field that is a pointer to the same type --
+		// backs linked lists and trees. The emitter emits a tagged, forward-declared
+		// typedef (`typedef struct N N; struct N { ... N* next; };`) so the field can
+		// name the type, and `nil` lowers to the null pointer 0. Exercised by walking
+		// a list and recursively summing a tree, with nil terminators and checks.
+		name: "self-referential struct (list and tree)",
+		src: `type N struct {
+	v    int
+	next *N
+}
+
+func walk(n *N) int {
+	t := 0
+	for n != nil {
+		t += n.v
+		n = n.next
+	}
+	return t
+}
+
+type T struct {
+	v int
+	l *T
+	r *T
+}
+
+func total(t *T) int {
+	if t == nil {
+		return 0
+	}
+	return t.v + total(t.l) + total(t.r)
+}
+
+func main() {
+	c := N{3, nil}
+	b := N{2, &c}
+	a := N{1, &b}
+	println(walk(&a))
+	var p *N
+	println(p == nil, a.next == nil)
+	lf := T{1, nil, nil}
+	rf := T{3, nil, nil}
+	root := T{2, &lf, &rf}
+	println(total(&root))
+}
+`,
+		want: "6\ntrue false\n6\n",
+	},
+	{
 		// Struct equality: Go compares structs field by field, which C's == cannot do
 		// on the struct value, so the emitter generates a per-type ogo_eq_<T> helper.
 		// Exercised with scalar fields, a string field (compared through

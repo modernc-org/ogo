@@ -1803,9 +1803,18 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// use resolves to the same typedef and the same structs/namedTypes map key.
 		mn := mangle(e.curPkgPrefix, name)
 		if structAST := e.structTypeAST(typeAST); structAST != nil {
+			// Register the name before computing the fields so a self-referential
+			// pointer field -- `next *N` in a linked-list or tree node -- resolves to
+			// this type rather than failing "unsupported type". The typedef is emitted
+			// tagged and forward-declared (`typedef struct N N; struct N { ... };`)
+			// rather than as an anonymous `typedef struct { ... } N;`, because C cannot
+			// name a type inside its own anonymous typedef, so an `N*` field could not
+			// refer back to it.
+			e.structs[mn] = nil
 			fields := e.structFieldsOf(structAST)
 			e.structs[mn] = fields
-			e.emit("typedef struct {")
+			e.emit("typedef struct " + mn + " " + mn + ";\n")
+			e.emit("struct " + mn + " {")
 			for _, fld := range fields {
 				// A field name may be Unicode; cIdent it in the typedef and, to match,
 				// wherever a field is selected (see fieldAccessC and the chain/selector
@@ -1824,7 +1833,7 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 				// code cannot name the field, so it stays invisible.
 				e.emit(" char _ogo_empty;")
 			}
-			e.emit(" } " + mn + ";\n")
+			e.emit(" };\n")
 			continue
 		}
 		// A named array type: `type Row [3]int` -> `typedef int Row[3];` (the extent
@@ -8455,6 +8464,11 @@ func (e *emitter) emitOperandToken(tok int32) {
 		case "true":
 			e.emit("1")
 		case "false":
+			e.emit("0")
+		case "nil":
+			// The nil pointer, emitted as the null pointer constant 0 -- valid as a
+			// pointer value and in a pointer comparison (`p != nil` -> `p != 0`). A nil
+			// slice or other aggregate zero value is not modelled here.
 			e.emit("0")
 		case "iota":
 			// Inside a const spec's expression, iota is its value; elsewhere it is an
