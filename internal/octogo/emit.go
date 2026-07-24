@@ -1574,6 +1574,7 @@ type emitter struct {
 	locals             map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc            string                   // name of the function whose body is being emitted (for its result-struct type)
 	curResultNames     []string                 // current function's result C-variable names, for a bare "return" (naked return)
+	curResultTypes     []string                 // current function's result C types, for typing a `return nil` in a slice-returning function
 	tmp                int                      // per-function counter for generated temporaries (destructuring)
 	makeN              int                      // translation-unit counter for make() backing arrays
 	wroteDecl          bool                     // a top-level definition has been emitted (drives blank-line separators)
@@ -2479,6 +2480,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.defers = nil
 	e.deferReplay = -1
 	e.curResultNames = nil
+	e.curResultTypes = nil
 	// A method is a function with a mangled name and its receiver as the first
 	// parameter, bound in the local environment so the body reads it like any local
 	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
@@ -2517,7 +2519,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.declareNamedResults(sig, body)
 	// A bare "return" (legal only when every result is named) returns these. A
 	// blank result "_" has no C variable, so it contributes its zero value.
-	e.curResultNames, _ = e.resultInfo(sig)
+	e.curResultNames, e.curResultTypes = e.resultInfo(sig)
 	for i, nm := range e.curResultNames {
 		if nm == "" || nm == "_" {
 			e.curResultNames[i] = "0"
@@ -3356,7 +3358,9 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				}
 				e.ind()
 				e.emit(cname + " " + nm + " = ")
-				if initExpr != nil {
+				// An explicit `= nil`, like no initializer at all, is the zero header
+				// {0} -- nil's integer form 0 is not a slice value.
+				if initExpr != nil && !e.isNilExpr(initExpr) {
 					e.emitExpr(initExpr)
 				} else {
 					e.emit("{0}")
@@ -5726,7 +5730,13 @@ func (e *emitter) emitReturn(nodes []Node) {
 		}
 	case 1:
 		e.emit("return ")
-		e.emitExpr(exprs[0].ast)
+		// `return nil` in a slice-returning function yields the zero slice header,
+		// not the integer 0 (which is only nil's pointer form).
+		if e.isNilExpr(exprs[0].ast) && len(e.curResultTypes) == 1 && e.isSliceCType(e.curResultTypes[0]) {
+			e.emit("(" + e.curResultTypes[0] + "){0}")
+		} else {
+			e.emitExpr(exprs[0].ast)
+		}
 		e.emit(";\n")
 	default:
 		e.emit("return (" + e.retStructName(e.curFunc) + "){")
@@ -6923,6 +6933,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			// expression is a plain value. (`_ := expr` is rejected by the checker.)
 			e.emitDiscard(rhsAst)
 			return
+		}
+		// `s = nil` resets a slice variable to its zero header, not the integer 0.
+		if e.isNilExpr(rhsAst) && len(fields) == 0 {
+			if ct, ok := e.varType(base); ok && e.isSliceCType(ct) {
+				e.ind()
+				e.emit(lhs + " = (" + ct + "){0};\n")
+				return
+			}
 		}
 		// A make initializer assigned to an existing lvalue -- a slice variable
 		// (`s = make(...)`) or a slice struct field (`b.data = make(...)`) -- hoists a

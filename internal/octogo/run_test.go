@@ -1365,8 +1365,20 @@ func main() {
 		want: "-1 0 1\n10 20 99\n",
 	},
 	{
-		name: "slice nil comparison",
-		src: `func main() {
+		// A slice is nil exactly when its backing pointer is null. Comparison
+		// (`s == nil`) lowers to a pointer test; the value forms -- `s = nil`,
+		// `var u []int = nil` and `return nil` from a slice-returning function -- all
+		// yield the zero header {0}, not the integer 0.
+		name: "slice nil comparison and value forms",
+		src: `func mk(b bool) []int {
+	if b {
+		return nil
+	}
+	v := make([]int, 1)
+	return v
+}
+
+func main() {
 	var s []int
 	println(s == nil, s != nil)
 	s = make([]int, 2)
@@ -1375,11 +1387,16 @@ func main() {
 		println(s[0])
 	}
 	println(s == nil, s != nil)
-	var t []string
-	println(t == nil, nil == t)
+	s = nil
+	println(s == nil, len(s))
+	var u []int = nil
+	println(u == nil, nil == u)
+	a := mk(true)
+	b := mk(false)
+	println(a == nil, b == nil, len(b))
 }
 `,
-		want: "true false\n7\nfalse true\ntrue true\n",
+		want: "true false\n7\nfalse true\ntrue 0\ntrue true\ntrue false 1\n",
 	},
 	{
 		name: "append and cap",
