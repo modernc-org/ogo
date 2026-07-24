@@ -124,15 +124,90 @@
 // dependencies (without errors), the compiler has successfully established all
 // types, constant values, variable initializations, and method scopes. The AST
 // is now guaranteed to be semantically valid OctoGo code that adheres to the
-// Propeller 2 hardware constraints, ready to be passed to the WPO pass and C
-// emitter.
+// Propeller 2 hardware constraints, ready to be passed to the escape analysis,
+// the WPO pass and the C emitter.
+//
+// # Escape & Lifetime Analysis (Static Guarantees)
+//
+// Status: design intent, NOT YET IMPLEMENTED (2026-07-24). No escape analysis
+// exists today. The zero-heap model is currently enforced only at allocation
+// sites (make/new/slice literals reserve a compile-time-sized backing; a
+// value-recursive, infinite-size type is refused) plus a few syntactic lifetime
+// guards (a closure may not capture its surrounding scope; a defer may not sit in
+// a loop). Nothing tracks whether a reference outlives its referent, so return
+// &local, return localArray[:] and global = &local all compile silently into
+// dangling references. This section specifies the pass that closes that gap.
+//
+// Purpose. On a target with no heap and no GC, every reference -- a pointer, a
+// slice header, or a zero-copy string view -- borrows storage owned by some frame.
+// The hardware offers no place to promote an escaping value to, so the single
+// invariant the pass enforces is: a reference must never be stored where the store
+// outlives the referent's storage. Where Go's escape analysis has a fallback --
+// move the referent to the heap -- OctoGo has none, so what Go silently
+// heap-promotes, OctoGo reports as a compile-time error.
+//
+// The lattice. Each value carries an escape level:
+//
+//   - does-not-escape: every use is bounded by the frame that created the
+//     referent. The default and the common case.
+//   - escapes-to-caller: the value flows out through a result, so its referent
+//     must live at least as long as the caller's frame. Only a value whose storage
+//     already does -- a parameter's target, a global -- may take this level; the
+//     address of a local may not.
+//   - escapes-forbidden: the value would have to outlive every frame that could
+//     own its storage. No heap exists to satisfy this, so it is a static error.
+//
+// Passing a reference DOWN is safe; leaking it UP or SIDEWAYS is not. Taking the
+// address of a local and passing it as a pointer argument -- x := ...; f(&x) -- is
+// does-not-escape, because the callee's execution is strictly nested inside the
+// caller's frame: the referent outlives every use f makes of it during the call.
+// This downward-borrow pattern (a mutable reference handed to a callee) stays
+// legal and must stay legal -- forbidding it would gut the language. The address
+// escapes only when the CALLEE leaks it past the call: stores it into a global,
+// returns it, sends it on a channel that outlives the call, or captures it in a
+// go/deferred context that outlives the call. This is precisely why the analysis
+// is interprocedural rather than a local check.
+//
+// Interprocedural summaries. Each function is summarized once, per reference-typed
+// parameter, with a single fact: does this parameter leak beyond the call? A
+// parameter leaks if the body stores it into anything that outlives the call,
+// returns it, or forwards it to another parameter that (transitively) leaks. Given
+// the summaries a call site is cheap: f(&local) is legal iff the matching
+// parameter does not leak; otherwise the escape propagates to &local and the
+// local's address is escapes-forbidden. Summaries are computed bottom-up over the
+// call graph (already built for Phase 5 init-cycle detection and for WPO); a
+// strongly connected component -- mutual recursion -- is solved to a fixed point
+// seeded leak=false.
+//
+// Reference sources (what creates a borrow): the address-of operator (&x); a slice
+// of an array or another slice (a[:], s[i:j] -- the header borrows the backing);
+// Builder.String() and every future zero-copy view (the string borrows the
+// caller's []byte); a closure capture; and the argument marshalling of go and
+// defer.
+//
+// Escape channels (how a borrow leaves a frame): a return; an assignment whose
+// left-hand storage outlives the referent (a global, a field reached through a
+// longer-lived pointer, or the target of a caller-supplied pointer parameter that
+// itself escapes); a channel send; and capture by a go statement or by a defer
+// whose execution outlives the enclosing frame.
+//
+// First clients. The pass is the stated precondition for the interface-strategy
+// decision below: a fat-pointer (Option C) representation is sound only if the
+// pointed-to data is proven to stay in scope, and even monomorphization (Option B)
+// needs lifetime facts once an interface value holds a pointer. Its first concrete
+// duty is Builder.String(): the returned view must be proven not to outlive its
+// backing []byte -- a guarantee nothing checks today.
+//
+// Placement. The pass runs after the semantic checks (Phases 1-5), over the same
+// call graph WPO uses, and before or as the opening sub-pass of WPO: lifetime
+// facts are an input to devirtualization, not an output of it.
 //
 // # Whole Program Optimization (WPO) & Devirtualization ====
 //
-// The WPO phase runs after the AST has passed all static and semantic checks.
-// Its primary objective is to enforce OctoGo's zero-allocation model by
-// completely eliminating interface types, type assertions, and type switches
-// before emitting C code.
+// The WPO phase runs after the AST has passed all static and semantic checks and
+// the escape analysis above (whose lifetime facts it consumes). Its primary
+// objective is to enforce OctoGo's zero-allocation model by completely eliminating
+// interface types, type assertions, and type switches before emitting C code.
 //
 // To achieve this uniformly, the WPO treats all polymorphic and variadic
 // function calls as accepting a "Type Vector" or "Conceptual Tuple.
