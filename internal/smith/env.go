@@ -13,6 +13,12 @@ type Symbol struct {
 	// We can expand this to differentiate between Var, Const, and Func
 	IsConst bool
 	Used    bool // Track if the symbol has been referenced in an expression
+	// LoopVar marks a for-loop control variable. It may be read, but must not be
+	// mutated by a generated statement (e.g. a compound assignment): the loop is
+	// designed to run exactly once, and mutating its variable in the body could make
+	// the condition stay true and loop forever at runtime, diverging from the VM,
+	// which evaluated a single iteration.
+	LoopVar bool
 }
 
 // Scope tracks variables and types available at a given block level.

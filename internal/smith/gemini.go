@@ -124,6 +124,8 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genIfStmt(vm, mem) // 15% chance for an if
 	} else if r < 0.45 {
 		return f.genVarDecl(vm, mem) // 20% chance for var
+	} else if r < 0.60 {
+		return f.genCompoundAssign(vm, mem) // 15% chance for a compound assignment
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -144,6 +146,7 @@ func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
 	zeroVal, _ := vm.Eval("int_lit", "0")
 	mem.Store(loopVar, zeroVal)
 	f.CurrentEnv.Declare(loopVar, BasicType{Kind: KindInt}, false)
+	f.CurrentEnv.Lookup(loopVar).LoopVar = true // read-only in the body: see Symbol.LoopVar
 
 	initNode := &VarDeclNode{
 		Name: loopVar,
@@ -287,6 +290,35 @@ func (f *Fuzzer) genVarDecl(vm Machine, mem Memory) Node {
 }
 
 // genChecksumMutation generates: octosmith_checksum = octosmith_checksum ^ <expr>
+// genCompoundAssign mutates an existing integer variable in place with a compound
+// assignment (`x += e`, `x *= e`, `x <<= e`, ...), exercising the compound-assignment
+// lowerings across the full operator set. The operator's binary form is evaluated in
+// the VM so the oracle stays in sync; an operand combination undefined in C (see
+// binOp) falls back to XOR, which is always defined.
+func (f *Fuzzer) genCompoundAssign(vm Machine, mem Memory) Node {
+	var targets []*Symbol
+	for _, s := range f.CurrentEnv.GetSymbolsOfType(BasicType{Kind: KindInt}) {
+		if !s.IsConst && !s.LoopVar {
+			targets = append(targets, s)
+		}
+	}
+	if len(targets) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	target := targets[f.Rand.Intn(len(targets))]
+	target.Used = true
+	op := []string{"+", "-", "*", "/", "%", "<<", ">>", "&", "|", "&^", "^"}[f.Rand.Intn(11)]
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	cur := mem.Load(target.Name)
+	result, err := vm.Eval(op, cur, exprVal)
+	if err != nil {
+		op = "^" // undefined for these operands; XOR-assign the same operand instead
+		result, _ = vm.Eval(op, cur, exprVal)
+	}
+	mem.Store(target.Name, result)
+	return &AssignStmtNode{Lhs: target.Name, Op: op + "=", Rhs: exprNode}
+}
+
 func (f *Fuzzer) genChecksumMutation(vm Machine, mem Memory) Node {
 	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
 

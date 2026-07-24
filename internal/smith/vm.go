@@ -116,12 +116,26 @@ func (n Int32) binOp(op string, rhs Value) (Value, error) {
 	a := int32(n)
 	b := int32(rhs.(Int32))
 	switch op {
+	// Signed +, -, * that overflow int32 are undefined in C, and a constant
+	// expression that overflows is rejected outright by the checker (Go's
+	// constant-overflow rule). Detect overflow in int64 and reject it so the
+	// generator falls back to a safe operator; the emitter never emits an
+	// overflowing arithmetic form.
 	case "+":
-		return Int32(a + b), nil
+		if r := int64(a) + int64(b); r >= math.MinInt32 && r <= math.MaxInt32 {
+			return Int32(r), nil
+		}
+		return nil, fmt.Errorf("add overflow: %d + %d", a, b)
 	case "-":
-		return Int32(a - b), nil
+		if r := int64(a) - int64(b); r >= math.MinInt32 && r <= math.MaxInt32 {
+			return Int32(r), nil
+		}
+		return nil, fmt.Errorf("sub overflow: %d - %d", a, b)
 	case "*":
-		return Int32(a * b), nil
+		if r := int64(a) * int64(b); r >= math.MinInt32 && r <= math.MaxInt32 {
+			return Int32(r), nil
+		}
+		return nil, fmt.Errorf("mul overflow: %d * %d", a, b)
 	case "/", "%":
 		// Division and modulo by zero are undefined in C (and would panic through the
 		// emitter's nonzero guard); INT32_MIN / -1 overflows. Reject both so the
