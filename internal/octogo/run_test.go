@@ -245,6 +245,42 @@ func main() {
 		want: "2147483648 1 4278190080\n",
 	},
 	{
+		// Struct equality: Go compares structs field by field, which C's == cannot do
+		// on the struct value, so the emitter generates a per-type ogo_eq_<T> helper.
+		// Exercised with scalar fields, a string field (compared through
+		// ogo_string_eq), a nested struct field (compared through its own helper), and
+		// both == and != -- as a value, an if condition and mixed into a && chain.
+		name: "struct equality",
+		src: `type P struct {
+	x int
+	y int
+}
+
+type Named struct {
+	p    P
+	name string
+}
+
+func main() {
+	a := P{1, 2}
+	b := P{1, 2}
+	c := P{1, 3}
+	println(a == b, a == c, a != c)
+	n1 := Named{P{1, 2}, "hi"}
+	n2 := Named{P{1, 2}, "hi"}
+	n3 := Named{P{1, 2}, "no"}
+	n4 := Named{P{9, 2}, "hi"}
+	println(n1 == n2, n1 == n3, n1 == n4)
+	if a == b && n1 == n2 {
+		println(1)
+	}
+	e := P{}
+	println(e == P{0, 0})
+}
+`,
+		want: "true false true\ntrue false false\n1\ntrue\n",
+	},
+	{
 		// An empty struct carries no data but is a real, legal type: it holds
 		// methods, can be passed and returned by value, embedded as a field, and
 		// stored in arrays/slices. C rejects a struct with no members, so the

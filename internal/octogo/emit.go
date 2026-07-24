@@ -1211,7 +1211,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1366,6 +1366,19 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	}
 	if e.usesStringEq {
 		out.WriteString(stringEqHelper)
+		out.WriteByte('\n')
+	}
+	// Per-struct-type equality helpers (Go's struct ==). They follow ogo_string_eq
+	// (a string field compares through it) and the struct typedefs. All are
+	// forward-declared first, then defined, so a nested-struct field's helper need
+	// not precede the outer one regardless of the map's iteration order.
+	if len(e.eqStructs) > 0 {
+		for _, ct := range sortedKeys(e.eqStructs) {
+			fmt.Fprintf(&out, "static int %s(%s a, %s b);\n", structEqName(ct), ct, ct)
+		}
+		for _, ct := range sortedKeys(e.eqStructs) {
+			out.WriteString(e.structEqDef(ct))
+		}
 		out.WriteByte('\n')
 	}
 	// Runtime helpers: the panic routine, then the per-element append helpers (the
@@ -1565,6 +1578,7 @@ type emitter struct {
 	usesString         bool                     // an ogo_string type/literal appears: emit stringTypedef
 	usesStringPrint    bool                     // a string is printed: emit stringHelpers
 	usesStringEq       bool                     // a string == / != appears: emit ogo_string_eq
+	eqStructs          map[string]bool          // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode     bool                     // `for i, c := range s` appears: emit ogo_decode_rune
 	err                error
@@ -7909,6 +7923,101 @@ func (e *emitter) stringCompareAt(kids []Node, i int) (op string, ok bool) {
 	return op, true
 }
 
+// structEqName is the C name of a struct type's generated equality helper.
+func structEqName(ctype string) string { return "ogo_eq_" + ctype }
+
+// structCompareAt reports whether kids[i..i+2] is a struct equality "a == b" or
+// inequality "a != b" -- the operands being of the same struct C type -- and, if so,
+// that type. Structs are comparable only for equality in Go, not ordering, so only
+// == and != qualify.
+func (e *emitter) structCompareAt(kids []Node, i int) (op, ctype string, ok bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return "", "", false
+	}
+	switch op = e.opText(kids[i+1].ast); op {
+	case "==", "!=":
+		// an equality operator
+	default:
+		return "", "", false
+	}
+	ct, ok := e.inferCType(kids[i].ast)
+	if !ok {
+		return "", "", false
+	}
+	if _, isStruct := e.structs[ct]; !isStruct {
+		return "", "", false
+	}
+	return op, ct, true
+}
+
+// emitStructCompareTriple emits a struct equality/inequality as a call to the
+// per-type helper ogo_eq_<T>, negated for "!=". Go compares structs field by field.
+func (e *emitter) emitStructCompareTriple(l, r Node, op, ctype string) {
+	e.needStructEq(ctype)
+	if op == "!=" {
+		e.emit("!")
+	}
+	e.emit(structEqName(ctype) + "(")
+	e.emitExprNode(l)
+	e.emit(", ")
+	e.emitExprNode(r)
+	e.emit(")")
+}
+
+// needStructEq records that struct type ctype needs an equality helper and, by
+// walking its fields, that every struct type reachable through a struct field does
+// too (so nested comparisons resolve). A field type that is not comparable -- a
+// slice, or a fixed array (whose element comparison is not lowered yet) -- is
+// refused here, during body emission, so the diagnostic has a source position.
+// Marking ctype before recursing bottoms out a type reached through a pointer field.
+func (e *emitter) needStructEq(ctype string) {
+	if e.eqStructs[ctype] {
+		return
+	}
+	e.eqStructs[ctype] = true
+	for _, fld := range e.structs[ctype] {
+		switch {
+		case fld.dim.bound != "":
+			e.fail("struct comparison with an array field (%s) is not supported yet", fld.name)
+		case fld.ctype == cString:
+			e.usesStringEq = true
+		case e.isSliceCType(fld.ctype):
+			e.fail("struct comparison with a slice field (%s) is not supported: slices are not comparable", fld.name)
+		case e.structs[fld.ctype] != nil:
+			e.needStructEq(fld.ctype) // a nested struct field compares through its own helper
+		}
+	}
+}
+
+// structEqDef renders struct type ctype's equality helper: a function returning the
+// conjunction of its fields' comparisons -- ogo_string_eq for a string field, the
+// nested helper for a struct field, C == for a scalar or pointer field. An empty
+// struct (its C form carries one hidden byte, not compared) is always equal.
+func (e *emitter) structEqDef(ctype string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "static int %s(%s a, %s b) {\n\treturn ", structEqName(ctype), ctype, ctype)
+	fields := e.structs[ctype]
+	if len(fields) == 0 {
+		b.WriteString("1")
+	}
+	for i, fld := range fields {
+		if i > 0 {
+			b.WriteString(" && ")
+		}
+		nm := cIdent(fld.name)
+		switch {
+		case fld.ctype == cString:
+			fmt.Fprintf(&b, "ogo_string_eq(a.%s, b.%s)", nm, nm)
+		case e.structs[fld.ctype] != nil:
+			fmt.Fprintf(&b, "%s(a.%s, b.%s)", structEqName(fld.ctype), nm, nm)
+		default:
+			fmt.Fprintf(&b, "a.%s == b.%s", nm, nm)
+		}
+	}
+	b.WriteString(";\n}\n")
+	return b.String()
+}
+
 // emitStringCompareTriple emits a string comparison: equality (== / !=) via the
 // content helper ogo_string_eq, ordering (< <= > >=) via the lexicographic
 // ogo_string_cmp compared against 0. l is the left operand, r the right.
@@ -7958,6 +8067,11 @@ func (e *emitter) emitStringCompare(kids []Node) bool {
 // string comparison is identical to emitting the kids in order.
 func (e *emitter) emitKidsStringCompare(kids []Node) {
 	for i := 0; i < len(kids); {
+		if op, ct, ok := e.structCompareAt(kids, i); ok {
+			e.emitStructCompareTriple(kids[i], kids[i+2], op, ct)
+			i += 3
+			continue
+		}
 		if op, ok := e.stringCompareAt(kids, i); ok {
 			e.emitStringCompareTriple(kids[i], kids[i+2], op)
 			i += 3
