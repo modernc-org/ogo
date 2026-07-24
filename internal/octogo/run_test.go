@@ -281,6 +281,25 @@ func main() {
 		want: "true false true\ntrue false false\n1\ntrue\n",
 	},
 	{
+		// A struct field named `a` or `b` must not collide with the equality helper's
+		// parameters, which is why they use the reserved _ogo_ prefix: named `a`/`b`,
+		// the helper's `b.b` (parameter b, field b) is miscompiled by flexcc.
+		name: "struct equality with fields named a and b",
+		src: `type T struct {
+	a int
+	b int
+}
+
+func main() {
+	x := T{1, 2}
+	y := T{1, 2}
+	z := T{1, 9}
+	println(x == y, x == z, x != z)
+}
+`,
+		want: "true false true\n",
+	},
+	{
 		// An empty struct carries no data but is a real, legal type: it holds
 		// methods, can be passed and returned by value, embedded as a field, and
 		// stored in arrays/slices. C rejects a struct with no members, so the

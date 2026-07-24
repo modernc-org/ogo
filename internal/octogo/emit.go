@@ -1374,7 +1374,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// not precede the outer one regardless of the map's iteration order.
 	if len(e.eqStructs) > 0 {
 		for _, ct := range sortedKeys(e.eqStructs) {
-			fmt.Fprintf(&out, "static int %s(%s a, %s b);\n", structEqName(ct), ct, ct)
+			fmt.Fprintf(&out, "static int %s(%s _ogo_l, %s _ogo_r);\n", structEqName(ct), ct, ct)
 		}
 		for _, ct := range sortedKeys(e.eqStructs) {
 			out.WriteString(e.structEqDef(ct))
@@ -7978,7 +7978,11 @@ func (e *emitter) needStructEq(ctype string) {
 	for _, fld := range e.structs[ctype] {
 		switch {
 		case fld.dim.bound != "":
-			e.fail("struct comparison with an array field (%s) is not supported yet", fld.name)
+			// The eq helper takes the struct by value, and flexcc cannot pass a struct
+			// with an array field by value (see refuseArrayStructABI / the memcpy
+			// workaround). So a struct with an array field -- directly, or through a
+			// nested struct, since this recurses -- cannot be compared yet.
+			e.fail("struct comparison with an array field (%s) is not supported: the backend cannot pass a struct with an array field by value", fld.name)
 		case fld.ctype == cString:
 			e.usesStringEq = true
 		case e.isSliceCType(fld.ctype):
@@ -7989,30 +7993,40 @@ func (e *emitter) needStructEq(ctype string) {
 	}
 }
 
+// fieldEqCmp returns a boolean C expression comparing operands l and r of C type
+// ct: ogo_string_eq for a string, the struct's helper for a struct, C == otherwise
+// (a scalar or pointer).
+func (e *emitter) fieldEqCmp(ct, l, r string) string {
+	switch {
+	case ct == cString:
+		return "ogo_string_eq(" + l + ", " + r + ")"
+	case e.structs[ct] != nil:
+		return structEqName(ct) + "(" + l + ", " + r + ")"
+	default:
+		return l + " == " + r
+	}
+}
+
 // structEqDef renders struct type ctype's equality helper: a function returning the
 // conjunction of its fields' comparisons -- ogo_string_eq for a string field, the
 // nested helper for a struct field, C == for a scalar or pointer field. An empty
 // struct (its C form carries one hidden byte, not compared) is always equal.
 func (e *emitter) structEqDef(ctype string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "static int %s(%s a, %s b) {\n\treturn ", structEqName(ctype), ctype, ctype)
+	// The parameters use the emitter's reserved _ogo_ prefix so they cannot collide
+	// with any struct field name -- `a`/`b` would clash with a field named a or b
+	// (and flexcc then mishandles the resulting `b.b`).
+	fmt.Fprintf(&b, "static int %s(%s _ogo_l, %s _ogo_r) {\n\treturn ", structEqName(ctype), ctype, ctype)
 	fields := e.structs[ctype]
 	if len(fields) == 0 {
-		b.WriteString("1")
+		b.WriteString("1") // an empty struct (its C form's hidden byte is not compared) is always equal
 	}
 	for i, fld := range fields {
 		if i > 0 {
 			b.WriteString(" && ")
 		}
 		nm := cIdent(fld.name)
-		switch {
-		case fld.ctype == cString:
-			fmt.Fprintf(&b, "ogo_string_eq(a.%s, b.%s)", nm, nm)
-		case e.structs[fld.ctype] != nil:
-			fmt.Fprintf(&b, "%s(a.%s, b.%s)", structEqName(fld.ctype), nm, nm)
-		default:
-			fmt.Fprintf(&b, "a.%s == b.%s", nm, nm)
-		}
+		b.WriteString(e.fieldEqCmp(fld.ctype, "_ogo_l."+nm, "_ogo_r."+nm))
 	}
 	b.WriteString(";\n}\n")
 	return b.String()
