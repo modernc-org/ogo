@@ -489,10 +489,15 @@ func (f *File) funcDecl(s *Scope, n Node) {
 		case Signature:
 			fd.Type.Signature = f.signature(block, n)
 		case Receiver:
-			// A method receiver. Methods are not entered into the package scope
-			// (declareFunc skips them), so this funcDecl pass returns at the
-			// method name below without resolving a signature; the receiver only
-			// needs to not crash here. Body checking declares the receiver name.
+			// A method. It is not entered into the package scope (declareFunc skips
+			// it) and its signature is resolved by registerMethod, so funcDecl does
+			// nothing here. Returning is essential: the method NAME must not be looked
+			// up in the package scope below, where an unrelated same-named variable,
+			// constant or type would otherwise look like a redeclaration. Go keeps
+			// method names in the receiver type's method set, not the package block.
+			// (The Receiver precedes the name in a FuncDecl, so this return fires
+			// before the name is ever resolved.) Body checking declares the receiver.
+			return
 		case Block:
 			// ok
 		case 0:

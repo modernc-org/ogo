@@ -1,0 +1,34 @@
+// A method name lives in its receiver type's method set, not the package block, so
+// it does not collide with a package-level variable, constant, type or function of
+// the same name -- all legal Go. Before this was fixed, funcDecl looked the method
+// name up in the package scope and reported a spurious "redeclared" when an
+// unrelated same-named declaration was there. A genuine duplicate -- two methods of
+// the same name on the same receiver type -- is still reported.
+
+type T struct{ n int }
+
+// A package-level name in each namespace, each also the name of a method on T
+// below; none of them collide with the method.
+var Sum = 5
+
+const Total = 10
+
+type Get struct{ x int }
+
+func Make() int { return 0 }
+
+func (t T) Sum() int { return t.n }
+
+func (t T) Total() int { return t.n }
+
+func (t T) Get() int { return t.n }
+
+func (t T) Make() int { return t.n }
+
+// A real duplicate method on the same receiver type is still an error.
+type U struct{}
+
+func (u U) M() int { return 1 }
+
+// ERROR "method U.M redeclared"
+func (u U) M() int { return 2 }
