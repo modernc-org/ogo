@@ -2896,6 +2896,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			f.checkNames(s, e)
 		}
 	}
+	// A plain `g = &x` that would let a local's address outlive its frame via a
+	// package global (the store counterpart of the return-escape check).
+	f.checkEscapeStore(s, lhs, lhsSuffixed, op, rhs)
 	// A plain "=" also checks each operand is assignable to its target; a receive
 	// "y = <-ch" additionally checks the channel's element type against y.
 	if op == ASSIGN {
@@ -4306,6 +4309,30 @@ func (f *File) checkEscapeReturn(s *Scope, e Node) {
 	if f.escapesFrame(s, root, suffixed) {
 		f.err(root.Position(), "cannot return the address of local variable %s: it does not outlive the function", root.Src())
 	}
+}
+
+// checkEscapeStore reports storing a reference to current-frame storage into a
+// variable that outlives the frame: `g = &x` where g is a package global and x is a
+// local variable or parameter. The stored pointer dangles once the frame returns,
+// and with no heap to promote x to it is a static error -- the assignment
+// counterpart of checkEscapeReturn. Conservative: only a plain `=` whose sole
+// target is a bare package-global variable is considered, not a field/index target
+// nor a write through a pointer (`*p = &x`), which reach storage whose lifetime a
+// later increment must model. lhs/lhsSuffixed/rhs are the parsed targets and
+// right-hand operands of the assignment.
+func (f *File) checkEscapeStore(s *Scope, lhs []Token, lhsSuffixed []bool, op Symbol, rhs []Node) {
+	if op != ASSIGN || len(lhs) != 1 || len(rhs) != 1 || lhsSuffixed[0] {
+		return
+	}
+	sc, d := s.find2(lhs[0].Src())
+	if _, ok := d.(*VarDeclaration); !ok || sc == nil || sc.Kind != PackageScope {
+		return
+	}
+	root, suffixed, ok := f.addressOperandRoot(s, rhs[0])
+	if !ok || !f.escapesFrame(s, root, suffixed) {
+		return
+	}
+	f.err(root.Position(), "cannot store the address of local variable %s in global %s: it does not outlive the function", root.Src(), lhs[0].Src())
 }
 
 // chanElemOf reports whether variable d has channel type "chan T" and, if so,

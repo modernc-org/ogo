@@ -1,0 +1,58 @@
+// Increment 2 of the escape analysis, the store counterpart of the return check
+// (see escape_return_address.ogo): a reference to current-frame storage must not be
+// stored where the store outlives the frame. `g = &x` with g a package global and x
+// a local variable or parameter would leave g dangling once the frame returns, and
+// with no heap to promote x to it is a static error. A global's address, a pointer
+// parameter, or a fresh local target (`g := &x`, which does not outlive x) are all
+// safe and still compile.
+
+type P struct{ a int }
+
+var g *int
+
+var G int
+
+var GP P
+
+// Safe stores: the referent outlives the global, or the target does not outlive
+// the referent, so each compiles.
+func safeGlobalAddr() {
+	g = &G
+}
+
+func safeGlobalField() {
+	g = &GP.a
+}
+
+func safePtrParam(p *int) {
+	g = p
+}
+
+func safePtrParamField(p *P) {
+	g = &p.a
+}
+
+func safeFreshLocal() {
+	x := 7
+	// `:=` binds a new local that does not outlive x, so this does not escape.
+	h := &x
+	_ = h
+}
+
+// Escaping stores: a local's address parked in a global.
+func badLocal() {
+	x := 7
+	// ERROR "cannot store the address of local variable x in global g"
+	g = &x
+}
+
+func badParam(x int) {
+	// ERROR "cannot store the address of local variable x in global g"
+	g = &x
+}
+
+func badLocalField() {
+	var p P
+	// ERROR "cannot store the address of local variable p in global g"
+	g = &p.a
+}
