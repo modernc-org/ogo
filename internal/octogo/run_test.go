@@ -2010,6 +2010,11 @@ func main() {
 	println(greet.PointSum())
 	base = base + 1
 	println(base, greet.Base())
+	// A direct read and write of another package's exported variable, resolved to
+	// its mangled global -- not routed through a getter/setter.
+	println(greet.Total)
+	greet.Total = greet.Total + 7
+	println(greet.Total)
 }
 `)},
 		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`type Point struct{ x, y int }
@@ -2022,6 +2027,9 @@ func PointSum() int {
 }
 
 var base int = 1000
+
+// Total is an exported variable read and written directly from main.
+var Total int = 200
 
 func Base() int { return base }
 
@@ -2065,7 +2073,7 @@ func scale(n int) int { return n }
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
-	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n"
+	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n"
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
 	}

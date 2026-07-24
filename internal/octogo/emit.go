@@ -6665,7 +6665,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	lhs := e.varRef(base) // a package global target is mangled; a local keeps its name
 	if len(fields) != 0 {
-		lhs = e.fieldAccessC(base, fields) // a field target, "->" through pointers
+		// A write to an exported variable of an imported package, `pkg.V = x` (or a
+		// field of it): base is the import qualifier, so the target is that package's
+		// mangled global, symmetric with the read. Otherwise a struct field target.
+		if text, _, ok := e.qualifiedGlobalRead(base, fields); ok {
+			lhs = text
+		} else {
+			lhs = e.fieldAccessC(base, fields) // a field target, "->" through pointers
+		}
 	}
 	lhs = stars + lhs
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
@@ -7453,6 +7460,39 @@ func (e *emitter) factorFieldAccess(kids []Node) (base string, fields []string, 
 	return e.src(kids[0].tok), fields, true
 }
 
+// qualifiedGlobalRead resolves a read of an exported variable from an imported
+// user package -- `pkg.V`, or a field chain `pkg.V.f` selecting into it -- to the C
+// text and type of the mangled package global. The imported package's variables
+// were recorded in e.globals under their mangled names when that package's files
+// were emitted (every reachable package is collected before any body is emitted),
+// so the read resolves just as a same-package `x := g` does. ok is false when base
+// is not an import qualifier or the member is not one of that package's globals (a
+// function or a type member, left to the caller's other shapes).
+func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype string, ok bool) {
+	prefix, isQual := e.importQualifiers[base]
+	if !isQual || len(fields) == 0 {
+		return "", "", false
+	}
+	gn := mangle(prefix, fields[0])
+	ct, ok := e.globals[gn]
+	if !ok {
+		return "", "", false
+	}
+	text, ctype = gn, ct
+	// A further field chain selects into the global's struct value (or pointer).
+	for _, f := range fields[1:] {
+		sep := "."
+		if e.isPointer(ctype) {
+			sep = "->"
+		}
+		text += sep + cIdent(f)
+		if ctype, ok = e.structFieldType(ctype, f); !ok {
+			return "", "", false
+		}
+	}
+	return text, ctype, true
+}
+
 // isPointer reports whether a C type is a pointer (spelled "T*").
 func (e *emitter) isPointer(ctype string) bool { return strings.HasSuffix(ctype, "*") }
 
@@ -7616,6 +7656,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				return e.callResultCType(recv, suffix)
 			}
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
+				// An exported variable read from an imported package, `pkg.V`, types
+				// from that package's mangled global; a plain `base.f` from the struct.
+				if _, ctype, ok := e.qualifiedGlobalRead(base, fields); ok {
+					return ctype, true
+				}
 				return e.fieldType(base, fields)
 			}
 			// `s[i].v[j]` -- the general chain's result type.
@@ -8027,6 +8072,16 @@ func (e *emitter) emitExprNode(n Node) {
 					e.fail("unsupported call in expression")
 				}
 				return
+			}
+			// A read of an exported variable from an imported user package, `pkg.V`
+			// (or a field chain into it). Checked before the struct-field shapes,
+			// which take base to be a local/global variable; here base is an import
+			// qualifier, so the read resolves to that package's mangled global.
+			if base, fields, ok := e.factorFieldAccess(kids); ok {
+				if text, _, ok := e.qualifiedGlobalRead(base, fields); ok {
+					e.emit(text)
+					return
+				}
 			}
 			// A chain that alternates indexes and selectors more than once --
 			// `s[i].v[j]` -- which no fixed shape below can match.
