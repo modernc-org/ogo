@@ -1,0 +1,29 @@
+// A qualified type name "pkg.T" in a type position resolves against the imported
+// package: T must be an exported type declared there. This is the type-position
+// counterpart of a package-qualified value reference (see qualified_member.ogo).
+// Before this was wired the checker's type parser panicked on the "." of a
+// qualified type name. A cross-package composite literal "pkg.T{...}" is a
+// separate, grammar-level gap (the grammar attaches a composite literal only to a
+// bare identifier) and is not exercised here.
+
+import "p"
+
+// An exported type of the imported package resolves in a var declaration.
+func ok() {
+	var x p.T
+	_ = x
+}
+
+// A member the package does not declare is reported cleanly rather than crashing.
+func undefined() {
+	// ERROR "undefined: p.Missing"
+	var x p.Missing
+	_ = x
+}
+
+// The export rule applies to a qualified type name as well.
+func unexported() {
+	// ERROR "cannot refer to unexported name p.t"
+	var x p.t
+	_ = x
+}

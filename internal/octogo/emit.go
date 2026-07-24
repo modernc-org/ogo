@@ -3329,7 +3329,9 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 	}
 	// The composite literal names a same-package struct type; return its mangled C
 	// name so both the value's inferred type and its emission (the (T){...} cast and
-	// the structs lookup) use the same package-namespaced typedef.
+	// the structs lookup) use the same package-namespaced typedef. A qualified type
+	// "pkg.T{...}" is not reachable here: the grammar attaches a composite literal
+	// only to a bare identifier, not a qualified name (see the cross-package note).
 	return mangle(e.curPkgPrefix, e.src(kids[0].tok)), kids[1], true
 }
 
@@ -3870,6 +3872,19 @@ func (e *emitter) cType(ast []int32) string {
 			continue
 		}
 		toks = append(toks, n.tok)
+	}
+	// A qualified type "pkg.T" -> the imported package's mangled typedef, matching
+	// how collectTypeDecl named it while emitting that package's files.
+	if len(toks) == 3 && e.f.ch(toks[0]) == IDENT && e.f.ch(toks[1]) == PERIOD && e.f.ch(toks[2]) == IDENT {
+		if prefix, ok := e.importQualifiers[e.src(toks[0])]; ok {
+			mn := mangle(prefix, e.src(toks[2]))
+			if _, ok := e.structs[mn]; ok {
+				return mn
+			}
+			if e.namedTypes[mn] {
+				return mn
+			}
+		}
 	}
 	// A simple named type is exactly one IDENT token; anything else -- a pointer
 	// "*T", an array "[N]T", a slice, a channel, a qualified name -- carries extra

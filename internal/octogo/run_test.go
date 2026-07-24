@@ -2022,6 +2022,13 @@ func main() {
 	// A same-named constant in each package, and a cross-package read of greet's
 	// (a folded integer constant inlines its value).
 	println(K, greet.K)
+	// A variable of an imported package's type: declared, its exported fields
+	// written and read, and its exported method called -- all resolving to greet's
+	// mangled typedef greet_Vec.
+	var v greet.Vec
+	v.A = 4
+	v.B = 5
+	println(v.A, v.Sum())
 }
 `)},
 		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`type Point struct{ x, y int }
@@ -2040,6 +2047,15 @@ var Total int = 200
 
 // K is an exported constant, same name as main's, read directly from main.
 const K = 100
+
+// Vec is an exported type with exported fields and an exported method, used from
+// main through a var declaration (var v greet.Vec).
+type Vec struct {
+	A int
+	B int
+}
+
+func (v Vec) Sum() int { return v.A + v.B }
 
 func Base() int { return base }
 
@@ -2083,7 +2099,7 @@ func scale(n int) int { return n }
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
-	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n"
+	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n"
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
 	}

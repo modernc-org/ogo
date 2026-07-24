@@ -3273,6 +3273,29 @@ func (f *File) checkQualifiedRef(qual Token, suffix Node) {
 	}
 }
 
+// checkQualifiedType validates a qualified type name "qualifier.name" used in a
+// type position (e.g. `var p geo.Point`): name must be an exported type declared in
+// the imported package. An intrinsic package (p2, noPkg) or a failed import has no
+// source scope to resolve against, so only the export rule applies there. It is the
+// type-position counterpart of checkQualifiedRef. (A cross-package composite literal
+// `geo.Point{...}` never reaches here: the grammar attaches a composite literal only
+// to a bare identifier, so a qualified one does not parse as a literal.)
+func (f *File) checkQualifiedType(qualifier, name Token) {
+	if !token.IsExported(name.Src()) {
+		f.err(name.Position(), "cannot refer to unexported name %s.%s", qualifier.Src(), name.Src())
+		return
+	}
+	imp, ok := f.Scope.Declarations[qualifier.Src()].(*ImportDeclaration)
+	if !ok || imp.Import == nil {
+		return
+	}
+	if pkg := imp.Import.Pkg; pkg != nil && pkg != noPkg {
+		if _, ok := pkg.Scope.Declarations[name.Src()].(*TypeDeclaration); !ok {
+			f.err(name.Position(), "undefined: %s.%s", qualifier.Src(), name.Src())
+		}
+	}
+}
+
 // selectorMember returns the member identifier of a Selector node ".name".
 func (f *File) selectorMember(n Node) (Token, bool) {
 	for c := range it(n.ast) {
@@ -6351,13 +6374,22 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
+				nm := tok.Src()
 				switch {
+				case ident.Qualifier.IsValid() && !ident.Name.IsValid():
+					// The type name following "qualifier .": an exported type of the
+					// imported package. checkQualifiedType resolves it there for a clean
+					// diagnostic; the emitter maps the qualified name to that package's
+					// mangled typedef.
+					ident.Name = tok
+					ident.Index = n.tok
+					r = &ident
+					f.checkQualifiedType(ident.Qualifier, tok)
 				case ident.Name.IsValid():
 					panic(todo("", origin(1)))
-					// ident.Qualifier = ident.Name
-					// ident.Name = tok
+				case f.isImportQualifier(s, nm):
+					ident.Qualifier = tok // a "pkg.T" qualified type; the "." and T follow
 				default:
-					nm := tok.Src()
 					switch s.find(nm).(type) {
 					case *PredeclaredType, *TypeDeclaration:
 						ident.Name = tok
@@ -6369,6 +6401,9 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 						f.err(tok.Position(), "%s is not a type", nm)
 					}
 				}
+			case PERIOD:
+				// The separator in a qualified type name "pkg.T": the qualifier was
+				// recorded on the preceding IDENT, the type name follows.
 			case CHAN:
 				r = &TypeNodeChan{}
 			case FUNC:

@@ -11,3 +11,11 @@ func Do() {}
 // Value is an exported variable, the target of the package-qualified read
 // "p.Value" exercised by read_base.ogo.
 var Value int
+
+// T is an exported type, named in the qualified type position "p.T" exercised by
+// qualified_type.ogo.
+type T struct{ F int }
+
+// t is an unexported type, referenced by qualified_type.ogo to check that the
+// export rule applies to a qualified type name too.
+type t struct{ f int }
