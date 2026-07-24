@@ -1598,6 +1598,7 @@ func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 	for i, e := range exprs {
 		f.checkNames(s, e)
 		f.checkReturnValue(s, results[i], e)
+		f.checkEscapeReturn(s, e)
 	}
 }
 
@@ -4223,6 +4224,88 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 		}
 	}
 	return 0, false, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
+}
+
+// factorRoot returns a Factor's leading identifier (the base a suffix reads from)
+// and whether it carries a selector/index suffix. The scan is over the Factor's
+// direct children, so an identifier inside an index expression (`a[i]` -- the i)
+// does not shadow the base.
+func (f *File) factorRoot(fac Node) (root Token, suffixed, ok bool) {
+	for c := range it(fac.ast) {
+		switch c.sym {
+		case FactorSuffix:
+			suffixed = true
+		case 0:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !ok {
+				root, ok = tok, true
+			}
+		}
+	}
+	return root, suffixed, ok
+}
+
+// addressOperandRoot reports whether expression e is an address-of `&x` (or `&x.f`
+// / `&x[i]`) and, if so, the root variable's identifier and whether the operand
+// carries a field/index suffix. It is the shape checkEscapeReturn keys on.
+func (f *File) addressOperandRoot(s *Scope, e Node) (root Token, suffixed, ok bool) {
+	ue, ok := f.soleUnaryExpr(e)
+	if !ok {
+		return Token{}, false, false
+	}
+	var fac Node
+	var ops []Node
+	facSet := false
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+		case UnaryOp:
+			ops = append(ops, c)
+		}
+	}
+	if !facSet || len(ops) != 1 || f.unaryOp(s, ops[0]) != AND {
+		return Token{}, false, false
+	}
+	return f.factorRoot(fac)
+}
+
+// escapesFrame reports whether taking the address of root (optionally through a
+// field/index suffix) yields a pointer into the current function's frame -- storage
+// that does not outlive the call. root must resolve to a local or parameter (a
+// BlockScope variable); the address of a package global outlives every call and a
+// name that is not a variable is not an address at all. `&x` for any local x refers
+// to the variable's own frame slot. `&x.f` / `&x[i]` refers into the frame only
+// when x is a value (a struct or scalar held inline); through a pointer, slice or
+// channel the address reaches storage the frame does not own, so it is left alone
+// (conservatively -- a slice's backing may still be frame-local, deferred to a
+// later increment that models backing lifetimes).
+func (f *File) escapesFrame(s *Scope, root Token, suffixed bool) bool {
+	sc, d := s.find2(root.Src())
+	vd, ok := d.(*VarDeclaration)
+	if !ok || sc == nil || sc.Kind != BlockScope {
+		return false
+	}
+	if !suffixed {
+		return true
+	}
+	return !vd.isPtr && !vd.hasElemKind && !vd.isChan
+}
+
+// checkEscapeReturn reports a return operand that would let a reference to
+// current-frame storage outlive the function: `return &x` (or `&x.f`) where x is a
+// local variable or parameter. On a target with no heap and no GC there is nowhere
+// to promote the referent to, so -- unlike Go, which heap-allocates x here -- the
+// dangling reference is a static error. Returning the address of a package global
+// (which outlives every call) or one reached through a pointer/slice parameter is
+// unaffected.
+func (f *File) checkEscapeReturn(s *Scope, e Node) {
+	root, suffixed, ok := f.addressOperandRoot(s, e)
+	if !ok {
+		return
+	}
+	if f.escapesFrame(s, root, suffixed) {
+		f.err(root.Position(), "cannot return the address of local variable %s: it does not outlive the function", root.Src())
+	}
 }
 
 // chanElemOf reports whether variable d has channel type "chan T" and, if so,

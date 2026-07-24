@@ -1,0 +1,52 @@
+// A function must not return a pointer into its own frame. The address of a local
+// variable or parameter -- or of a field of a local value -- does not outlive the
+// call, and on a target with no heap there is nowhere to promote the referent to,
+// so unlike Go (which heap-allocates the referent here) this is a static error.
+// This is the first, intraprocedural increment of the escape analysis: it flags a
+// returned `&x` whose root x is a current-frame value. A global's address, or one
+// reached through a pointer parameter, refers to storage that outlives the call and
+// still compiles.
+
+type P struct{ a int }
+
+var G int
+
+var GP P
+
+// Safe returns: the referent outlives the call, so each compiles.
+func safeGlobal() *int { return &G }
+
+func safeGlobalField() *int { return &GP.a }
+
+func safePtrParam(p *int) *int { return p }
+
+func safePtrParamField(p *P) *int { return &p.a }
+
+func safeValue() int {
+	x := 5
+	return x
+}
+
+// Escaping returns: a pointer into this frame, reported.
+func badLocal() *int {
+	x := 5
+	// ERROR "cannot return the address of local variable x"
+	return &x
+}
+
+func badParam(x int) *int {
+	// ERROR "cannot return the address of local variable x"
+	return &x
+}
+
+func badLocalStruct() *P {
+	var p P
+	// ERROR "cannot return the address of local variable p"
+	return &p
+}
+
+func badLocalField() *int {
+	var p P
+	// ERROR "cannot return the address of local variable p"
+	return &p.a
+}
