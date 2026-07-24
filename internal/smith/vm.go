@@ -13,7 +13,23 @@ import (
 var (
 	_ Value = (Int32)(0)
 	_ Value = (Bool)(false)
+	_ Value = (*ArrayVal)(nil)
 )
+
+// ArrayVal is a fixed integer array in the generation-time VM, zero-initialized to
+// match the emitter's `var a [N]int`. It holds concrete element values so an index
+// read or write resolves to a known Int32, keeping the oracle in step with the
+// compiled array. It is a pointer type so a write mutates the stored array in place.
+type ArrayVal struct {
+	Elems []Int32
+}
+
+func (a *ArrayVal) Literal() string { return "" } // declared zero, never literal-initialized here
+func (a *ArrayVal) Type() Type      { return ArrayType{Len: len(a.Elems), Elem: BasicType{Kind: KindInt}} }
+func (a *ArrayVal) Value() any      { return a.Elems }
+func (a *ArrayVal) binOp(op string, rhs Value) (Value, error) {
+	panic(todo("array is not a binary operand: %q", op))
+}
 
 type storage map[string]Value
 

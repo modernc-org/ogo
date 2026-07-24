@@ -52,6 +52,28 @@ func (s *Scope) Lookup(name string) *Symbol {
 
 // GetSymbolsOfType returns all symbols in scope matching the requested type.
 // This is critical for generating expressions.
+// GetArraySymbols returns the in-scope variables of a fixed integer-array type, in
+// sorted name order (like GetSymbolsOfType) so generation stays reproducible.
+func (s *Scope) GetArraySymbols() []*Symbol {
+	var matches []*Symbol
+	names := make([]string, 0, len(s.Symbols))
+	for name := range s.Symbols {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if at, ok := s.Symbols[name].Type.(ArrayType); ok {
+			if bt, ok := at.Elem.(BasicType); ok && bt.Kind == KindInt {
+				matches = append(matches, s.Symbols[name])
+			}
+		}
+	}
+	if s.Parent != nil {
+		matches = append(matches, s.Parent.GetArraySymbols()...)
+	}
+	return matches
+}
+
 func (s *Scope) GetSymbolsOfType(typ Type) []*Symbol {
 	var matches []*Symbol
 	// Iterate in sorted name order: Go randomizes map iteration, and the caller

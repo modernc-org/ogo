@@ -94,20 +94,29 @@ func (f *Fuzzer) flushUnused(vm Machine, mem Memory) []Node {
 		sym := f.CurrentEnv.Lookup(name)
 		sym.Used = true // Mark as used
 
-		// Evaluate the mutation in our VM
+		// Fold the unused variable into the checksum with XOR. An array cannot be an
+		// operand, so fold its first element instead; a scalar folds directly.
 		currentChecksum := mem.Load(f.ChecksumName)
-		varVal := mem.Load(name)
+		var varVal Value
+		var right Node
+		if _, isArr := sym.Type.(ArrayType); isArr {
+			varVal = mem.Load(name).(*ArrayVal).Elems[0]
+			right = &IndexNode{Array: name, Index: 0}
+		} else {
+			varVal = mem.Load(name)
+			right = &IdentNode{Name: name}
+		}
 		newChecksum, _ := vm.Eval("^", currentChecksum, varVal)
 		mem.Store(f.ChecksumName, newChecksum)
 
-		// Generate the AST Node: octosmith_checksum = octosmith_checksum ^ unused_var
+		// Generate: octosmith_checksum = octosmith_checksum ^ <unused var or a[0]>
 		flushNodes = append(flushNodes, &AssignStmtNode{
 			Lhs: f.ChecksumName,
 			Op:  "=",
 			Rhs: &BinaryExprNode{
 				Left:  &IdentNode{Name: f.ChecksumName},
 				Op:    "^",
-				Right: &IdentNode{Name: name},
+				Right: right,
 			},
 		})
 	}
@@ -122,10 +131,14 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genForStmt(vm, mem) // 10% chance for a loop
 	} else if r < 0.25 {
 		return f.genIfStmt(vm, mem) // 15% chance for an if
-	} else if r < 0.45 {
-		return f.genVarDecl(vm, mem) // 20% chance for var
-	} else if r < 0.60 {
-		return f.genCompoundAssign(vm, mem) // 15% chance for a compound assignment
+	} else if r < 0.40 {
+		return f.genVarDecl(vm, mem) // 15% chance for var
+	} else if r < 0.50 {
+		return f.genArrayDecl(vm, mem) // 10% chance for a fixed array declaration
+	} else if r < 0.63 {
+		return f.genCompoundAssign(vm, mem) // 13% chance for a compound assignment
+	} else if r < 0.75 {
+		return f.genArrayWrite(vm, mem) // 12% chance for an array element write
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -290,6 +303,31 @@ func (f *Fuzzer) genVarDecl(vm Machine, mem Memory) Node {
 }
 
 // genChecksumMutation generates: octosmith_checksum = octosmith_checksum ^ <expr>
+// genArrayDecl declares a fixed integer array `var a [N]int`, zero-initialized (the
+// emitter zero-inits too). Its elements are read and written by index elsewhere.
+func (f *Fuzzer) genArrayDecl(vm Machine, mem Memory) Node {
+	name := f.newVarName("a")
+	n := 2 + f.Rand.Intn(3) // length 2..4
+	mem.Store(name, &ArrayVal{Elems: make([]Int32, n)})
+	f.CurrentEnv.Declare(name, ArrayType{Len: n, Elem: BasicType{Kind: KindInt}}, false)
+	return &ArrayDeclNode{Name: name, Len: n}
+}
+
+// genArrayWrite assigns an integer expression to one element of an existing array,
+// `a[c] = e`, with a constant in-bounds index, exercising the element-store codegen.
+func (f *Fuzzer) genArrayWrite(vm Machine, mem Memory) Node {
+	arrays := f.CurrentEnv.GetArraySymbols()
+	if len(arrays) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	arr := arrays[f.Rand.Intn(len(arrays))]
+	arr.Used = true
+	idx := f.Rand.Intn(arr.Type.(ArrayType).Len)
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	mem.Load(arr.Name).(*ArrayVal).Elems[idx] = exprVal.(Int32)
+	return &AssignStmtNode{Lhs: fmt.Sprintf("%s[%d]", arr.Name, idx), Op: "=", Rhs: exprNode}
+}
+
 // genCompoundAssign mutates an existing integer variable in place with a compound
 // assignment (`x += e`, `x *= e`, `x <<= e`, ...), exercising the compound-assignment
 // lowerings across the full operator set. The operator's binary form is evaluated in
@@ -345,6 +383,14 @@ func (f *Fuzzer) genChecksumMutation(vm Machine, mem Memory) Node {
 func (f *Fuzzer) genExpression(targetType Type, vm Machine, mem Memory, depth int) (Node, Value, error) {
 	// Base cases: Literal or existing Variable
 	if depth > 3 || f.Rand.Float32() < 0.5 {
+		// Read an array element a[c] at a constant, in-bounds index. Its value is known
+		// from the VM, so the oracle stays in sync with the compiled array read.
+		if arrays := f.CurrentEnv.GetArraySymbols(); len(arrays) > 0 && f.Rand.Float32() < 0.25 {
+			arr := arrays[f.Rand.Intn(len(arrays))]
+			arr.Used = true
+			idx := f.Rand.Intn(arr.Type.(ArrayType).Len)
+			return &IndexNode{Array: arr.Name, Index: idx}, mem.Load(arr.Name).(*ArrayVal).Elems[idx], nil
+		}
 		if f.Rand.Float32() < 0.5 {
 			// Generate int_lit
 			valStr := fmt.Sprintf("%d", f.Rand.Intn(100))
@@ -440,6 +486,25 @@ func (n *IntLitNode) Write(w io.Writer, indent int) { fmt.Fprint(w, n.Value) }
 type IdentNode struct{ Name string }
 
 func (n *IdentNode) Write(w io.Writer, indent int) { fmt.Fprint(w, n.Name) }
+
+type ArrayDeclNode struct {
+	Name string
+	Len  int
+}
+
+func (n *ArrayDeclNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "var %s [%d]int", n.Name, n.Len)
+}
+
+type IndexNode struct {
+	Array string
+	Index int
+}
+
+func (n *IndexNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "%s[%d]", n.Array, n.Index)
+}
 
 type IfStmtNode struct {
 	Cond Node
