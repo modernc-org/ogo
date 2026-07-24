@@ -111,6 +111,28 @@ var emitRunCases = []emitRunCase{
 		want: "1 3 9 8\n1 9 4\n3 2\n",
 	},
 	{
+		// A package-level array with an inferred type and an initializer,
+		// `var g = [N]T{...}` -- a file-scope static array. Fewer values than the
+		// length zero-fill (pal), it is indexable and mutable, len reports the extent,
+		// and it copies by value like any array.
+		name: "inferred global array",
+		src: `var g = [3]int{5, 6, 7}
+
+var pal = [4]int{1, 2}
+
+func main() {
+	println(g[0], g[1], g[2], len(g))
+	g[1] = 9
+	println(g[1])
+	println(pal[0], pal[1], pal[2], pal[3])
+	b := g
+	b[0] = 100
+	println(g[0], b[0])
+}
+`,
+		want: "5 6 7 3\n9\n1 2 0 0\n5 100\n",
+	},
+	{
 		// Indexed array and slice literals ("[]int{2: 5}"): a keyed element places
 		// its value at a constant index, gaps zero-fill, and a positional element
 		// after an index continues from index+1. A slice's length is the highest

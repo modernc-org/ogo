@@ -2028,6 +2028,28 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			if names[0] == "_" {
 				continue // a blank package variable declares nothing
 			}
+			// var g = [N]T{...} at package scope: a file-scope static array, the
+			// global counterpart of a local array-literal variable (inferCType cannot
+			// type an array). A slice literal []T{...} still needs a hoisted backing
+			// and falls through to inference, which fails honestly.
+			if arrTypeAST, lit, isArr := e.soleArrayLit(initExpr); isArr {
+				if a, okDim := e.arrayDim(arrTypeAST); okDim {
+					gn := e.globalC(names[0])
+					values, length, okv := e.litPositions(lit)
+					if !okv {
+						return
+					}
+					if n, err := strconv.Atoi(a.bound); err == nil && length > n {
+						e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(a), countUnits(length, "value"), a.bound)
+						return
+					}
+					e.globalArrays[gn] = a
+					e.emit("static " + a.elem + " " + gn + a.declSuffix() + " = ")
+					e.emitPositionalValues(values, a.elem)
+					e.emit(";\n")
+					continue
+				}
+			}
 			ct, ok := e.inferCType(initExpr)
 			if !ok {
 				e.fail("cannot infer a type for the package variable %q", names[0])
