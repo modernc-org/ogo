@@ -1250,9 +1250,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 
 	// Pass -1: struct type declarations -> C typedefs, recorded in the struct
 	// environment (for typing `var p T` and field accesses). Emitted first so a
-	// later signature, result struct, or variable of struct type resolves.
+	// later signature, result struct, or variable of struct type resolves. Every
+	// struct's forward declaration (`typedef struct T T;`) is emitted first, across
+	// all files, before any body, so a field may point to a struct declared later or
+	// to a mutually-recursive one.
 	var typedefs bytes.Buffer
 	e.w = &typedefs
+	forEachFile(func() { e.collectStructForwards(e.f.AST) })
 	forEachFile(func() { e.collectStructs(e.f.AST) })
 
 	// Pass 0: record each function's C result types in funcRet (for typing calls
@@ -1771,6 +1775,53 @@ func (e *emitter) collectStructs(ast []int32) {
 	}
 }
 
+// collectStructForwards emits a forward declaration `typedef struct T T;` for every
+// package-level struct type and registers its name, ahead of any struct body (see
+// collectStructs). With every struct tag already known, a struct field may point to
+// a struct declared later in source, or to a mutually-recursive one (A holds *B, B
+// holds *A). A by-value field still needs the referenced struct's body first, which
+// remains source order.
+func (e *emitter) collectStructForwards(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != SourceFile {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym != TopLevelDecl {
+				continue
+			}
+			for d := range it(c.ast) {
+				if d.sym != TypeDecl {
+					continue
+				}
+				for ts := range it(d.ast) {
+					if ts.sym != TypeSpec {
+						continue
+					}
+					var name string
+					var typeAST []int32
+					for s := range it(ts.ast) {
+						switch s.sym {
+						case 0:
+							if e.f.ch(s.tok) == IDENT && name == "" {
+								name = e.src(s.tok)
+							}
+						case Type:
+							typeAST = s.ast
+						}
+					}
+					if name == "" || typeAST == nil || e.structTypeAST(typeAST) == nil {
+						continue
+					}
+					mn := mangle(e.curPkgPrefix, name)
+					e.structs[mn] = nil
+					e.emit("typedef struct " + mn + " " + mn + ";\n")
+				}
+			}
+		}
+	}
+}
+
 // collectTypeDecl records a type declaration (single or grouped) and emits its
 // typedef: a `type Name struct { ... }` as `typedef struct { ... } Name;`, and a
 // non-struct named type `type Name <underlying>` (e.g. `type Celsius int`) as
@@ -1803,17 +1854,13 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// use resolves to the same typedef and the same structs/namedTypes map key.
 		mn := mangle(e.curPkgPrefix, name)
 		if structAST := e.structTypeAST(typeAST); structAST != nil {
-			// Register the name before computing the fields so a self-referential
-			// pointer field -- `next *N` in a linked-list or tree node -- resolves to
-			// this type rather than failing "unsupported type". The typedef is emitted
-			// tagged and forward-declared (`typedef struct N N; struct N { ... };`)
+			// The name was registered and forward-declared by collectStructForwards,
+			// so a self-referential or forward/mutually-referential pointer field
+			// resolves. Emit only the body here, tagged (`struct N { ... N* next; };`)
 			// rather than as an anonymous `typedef struct { ... } N;`, because C cannot
-			// name a type inside its own anonymous typedef, so an `N*` field could not
-			// refer back to it.
-			e.structs[mn] = nil
+			// name a type inside its own anonymous typedef.
 			fields := e.structFieldsOf(structAST)
 			e.structs[mn] = fields
-			e.emit("typedef struct " + mn + " " + mn + ";\n")
 			e.emit("struct " + mn + " {")
 			for _, fld := range fields {
 				// A field name may be Unicode; cIdent it in the typedef and, to match,

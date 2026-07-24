@@ -291,6 +291,47 @@ func main() {
 		want: "2147483648 1 4278190080\n",
 	},
 	{
+		// Two struct types that point to each other (A holds *B, B holds *A), and a
+		// struct that points to a type declared later in source (Node -> *Leaf). Both
+		// work because every struct's forward declaration is emitted before any body,
+		// so a field may name a struct not yet defined -- Go imposes no declaration
+		// order, and neither does this.
+		name: "mutually recursive and forward-referenced structs",
+		src: `type A struct {
+	v int
+	b *B
+}
+
+type B struct {
+	w int
+	a *A
+}
+
+func main() {
+	var x A
+	var y B
+	x.v = 1
+	x.b = &y
+	y.w = 2
+	y.a = &x
+	println(x.v, x.b.w, x.b.a.v)
+	l := Leaf{9}
+	n := Node{1, &l}
+	println(n.val, n.child.data)
+}
+
+type Node struct {
+	val   int
+	child *Leaf
+}
+
+type Leaf struct {
+	data int
+}
+`,
+		want: "1 2 1\n1 9\n",
+	},
+	{
 		// A self-referential struct -- a field that is a pointer to the same type --
 		// backs linked lists and trees. The emitter emits a tagged, forward-declared
 		// typedef (`typedef struct N N; struct N { ... N* next; };`) so the field can
