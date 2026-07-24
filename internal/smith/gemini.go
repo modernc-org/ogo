@@ -338,17 +338,20 @@ func (f *Fuzzer) genExpression(targetType Type, vm Machine, mem Memory, depth in
 		}
 	}
 
-	// Recursive case: Binary Operation (AddOp or MulOp)
-	op := []string{"+", "-", "^"}[f.Rand.Intn(3)] // Safe operators that won't easily div-by-zero
+	// Recursive case: a binary operation over the full integer operator set. The VM
+	// evaluates each as it is generated (the oracle knows the operands' values), so a
+	// choice that is undefined for those operands -- division/modulo by zero, a shift
+	// amount outside [0, 32) -- is rejected below and swapped for XOR, which is always
+	// defined; the emitter never emits an undefined form.
+	op := []string{"+", "-", "*", "/", "%", "<<", ">>", "&", "|", "&^", "^"}[f.Rand.Intn(11)]
 
 	leftNode, leftVal, _ := f.genExpression(targetType, vm, mem, depth+1)
 	rightNode, rightVal, _ := f.genExpression(targetType, vm, mem, depth+1)
 
 	resultVal, err := vm.Eval(op, leftVal, rightVal)
 	if err != nil {
-		// If VM rejects it, fallback to a safe literal.
-		val, _ := vm.Eval("int_lit", "1")
-		return &IntLitNode{Value: "1"}, val, nil
+		op = "^" // undefined for these operands; XOR the same operands instead
+		resultVal, _ = vm.Eval(op, leftVal, rightVal)
 	}
 
 	return &BinaryExprNode{

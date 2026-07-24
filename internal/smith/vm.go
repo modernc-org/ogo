@@ -6,6 +6,7 @@ package octosmith
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -81,7 +82,7 @@ func (m *machine) Eval(op string, operands ...any /* Value but also "0" etc. */)
 		}
 
 		return Int32(n), nil
-	case "!=", "+", "-", "<", "<=", "==", ">", ">=", "^":
+	case "!=", "+", "-", "*", "/", "%", "<<", ">>", "&", "|", "&^", "<", "<=", "==", ">", ">=", "^":
 		switch len(operands) {
 		case 2:
 			return operands[0].(Value).binOp(op, operands[1].(Value))
@@ -119,6 +120,44 @@ func (n Int32) binOp(op string, rhs Value) (Value, error) {
 		return Int32(a + b), nil
 	case "-":
 		return Int32(a - b), nil
+	case "*":
+		return Int32(a * b), nil
+	case "/", "%":
+		// Division and modulo by zero are undefined in C (and would panic through the
+		// emitter's nonzero guard); INT32_MIN / -1 overflows. Reject both so the
+		// generator falls back to a safe operator, since it never emits them.
+		if b == 0 || (a == math.MinInt32 && b == -1) {
+			return nil, fmt.Errorf("undefined %s: %d %s %d", op, a, op, b)
+		}
+		if op == "/" {
+			return Int32(a / b), nil
+		}
+		return Int32(a % b), nil
+	case "<<", ">>":
+		// A shift amount outside [0, 32) is undefined in C. Reject it (the generator
+		// then picks a safe operator instead, since the emitter never emits it).
+		if b < 0 || b >= 32 {
+			return nil, fmt.Errorf("shift amount out of range: %d", b)
+		}
+		if op == ">>" {
+			// int32 width matches C's int, and gcc's arithmetic right shift of a
+			// negative value agrees with Go's, so >> needs no further restriction.
+			return Int32(a >> uint(b)), nil
+		}
+		// A signed left shift is undefined in C when the operand is negative or the
+		// result does not fit in int (result overflow). Go defines both (wrapping),
+		// so restrict << to the C-defined cases to keep the oracle's Go-side and its
+		// emitted C in agreement.
+		if a < 0 || int64(a)<<uint(b) > math.MaxInt32 {
+			return nil, fmt.Errorf("left shift overflow: %d << %d", a, b)
+		}
+		return Int32(a << uint(b)), nil
+	case "&":
+		return Int32(a & b), nil
+	case "|":
+		return Int32(a | b), nil
+	case "&^":
+		return Int32(a &^ b), nil
 	case "^":
 		return Int32(a ^ b), nil
 	case "==":
