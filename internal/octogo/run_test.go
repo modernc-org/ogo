@@ -1240,6 +1240,23 @@ func main() {
 		want: "2 4 1 2\n",
 	},
 	{
+		// append with several values -- append(s, a, b, c) -- appends each in turn
+		// (the emitter nests the per-element ogo_append_<T> calls). Exercised with an
+		// int slice and a string slice, mixed with a single-value append.
+		name: "multi-value append",
+		src: `func main() {
+	s := make([]int, 0, 5)
+	s = append(s, 1, 2, 3)
+	s = append(s, 4)
+	println(len(s), s[0], s[1], s[2], s[3])
+	t := make([]string, 0, 3)
+	t = append(t, "a", "b", "c")
+	println(len(t), t[0], t[2])
+}
+`,
+		want: "4 1 2 3 4\n3 a c\n",
+	},
+	{
 		// copy moves min(len(dst), len(src)) elements and returns the count. The
 		// last case copies a slice onto a shifted view of itself, which overlaps --
 		// memmove handles it, as Go's copy guarantees.

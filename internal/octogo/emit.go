@@ -6152,15 +6152,16 @@ func (e *emitter) emitCap(callSuffix []int32) {
 	e.fail("cap is only supported for arrays and slices yet")
 }
 
-// appendParts validates an append call suffix -- exactly two arguments whose first
-// is a slice -- returning that slice's element C type and the argument nodes, and
-// recording needSlice(elem). The first argument may be a slice variable or a
-// slice-typed struct field (append(b.data, x)); its type is inferred, and emitExpr
-// renders either form. ok is false (with a latched error) for any other shape.
+// appendParts validates an append call suffix -- a slice followed by one or more
+// values -- returning that slice's element C type and the argument nodes (args[0] is
+// the slice, args[1:] the values), and recording needSlice(elem). The first argument
+// may be a slice variable or a slice-typed struct field (append(b.data, x)); its type
+// is inferred, and emitExpr renders either form. ok is false (with a latched error)
+// for any other shape.
 func (e *emitter) appendParts(callSuffix []int32) (elem string, args []Node, ok bool) {
 	args = e.callArgExprs(callSuffix)
-	if len(args) != 2 {
-		e.fail("append takes exactly two arguments yet -- append(s, x)")
+	if len(args) < 2 {
+		e.fail("append needs a slice and at least one value -- append(s, x)")
 		return "", nil, false
 	}
 	ct, ok := e.inferCType(args[0].ast)
@@ -6183,8 +6184,11 @@ func (e *emitter) exprIdent(ast []int32) (string, bool) {
 	return "", false
 }
 
-// emitAppend emits the single-result append `append(s, x)` as a call to the
-// trapping ogo_append_<T> helper (which panics if the slice is already at cap).
+// emitAppend emits the single-result append `append(s, x, ...)` through the trapping
+// ogo_append_<T> helper (which panics if the slice is already at cap). Several values
+// nest the calls -- append(s, a, b, c) becomes
+// ogo_append(ogo_append(ogo_append(s, a), b), c) -- so each is appended in turn and
+// any that overflows the capacity traps.
 func (e *emitter) emitAppend(callSuffix []int32) {
 	elem, args, ok := e.appendParts(callSuffix)
 	if !ok {
@@ -6192,11 +6196,16 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	}
 	e.appendElems[elem] = true
 	e.needPanic()
-	e.emit(appendCName(elem) + "(")
+	values := args[1:]
+	for range values {
+		e.emit(appendCName(elem) + "(")
+	}
 	e.emitExpr(args[0].ast)
-	e.emit(", ")
-	e.emitExpr(args[1].ast)
-	e.emit(")")
+	for _, v := range values {
+		e.emit(", ")
+		e.emitExpr(v.ast)
+		e.emit(")")
+	}
 }
 
 // emitCopy emits the builtin copy(dst, src). Both must be slices of the same
@@ -6350,6 +6359,10 @@ func (e *emitter) emitTryAppend(targets []string, define bool, callSuffix []int3
 	}
 	elem, args, ok := e.appendParts(callSuffix)
 	if !ok {
+		return
+	}
+	if len(args) != 2 {
+		e.fail("the two-result append form takes a single value -- s, ok = append(s, x)")
 		return
 	}
 	e.tryappendElems[elem] = true
