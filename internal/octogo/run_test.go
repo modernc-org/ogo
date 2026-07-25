@@ -1817,6 +1817,36 @@ func main() {
 		want: "true false false true\ntrue\ntrue false\ntrue false\ntrue false\nchained\n",
 	},
 	{
+		// A deferred call in main capturing an argument. Arguments are captured
+		// where the defer is written, as Go does, into a temporary declared at
+		// function scope -- it has to outlive the block the defer sits in. main was
+		// the one function that never declared those temporaries, so any deferred
+		// call with a non-literal argument failed to build there. Every case below
+		// is in main deliberately; the same shapes in an ordinary function already
+		// worked, which is what made the gap easy to miss.
+		name: "defer with captured arguments in main",
+		src: `func show(n int) { println(n) }
+
+func two(a int, b int) { println(a, b) }
+
+func main() {
+	a := 1
+	b := 2
+	defer show(a)
+	defer two(a, b)
+	if a > 0 {
+		defer show(b)
+	}
+	if a > 100 {
+		defer show(9999) // never armed
+	}
+	a, b = 8, 9
+	println(a, b)
+}
+`,
+		want: "8 9\n2\n1 2\n1\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

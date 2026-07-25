@@ -25,6 +25,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A deferred call in `main` could not capture an argument.** `defer f(x)` there
+  failed to build with `Unknown symbol '_ogo_defer0_a0'`: the capture was emitted
+  and the temporary it assigned to never declared. `main` was the only function
+  missing that step, so the same code in any other function already worked.
 - **Array equality silently answered `false`.** `a == b` on two arrays emitted C's
   `a == b`, where both operands decay to pointers, so it asked whether they were the
   same array. It compiled cleanly and was always false. Array ordering (`a < b`),

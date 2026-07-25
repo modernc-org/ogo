@@ -2805,12 +2805,24 @@ func (e *emitter) emitMain(sig, body []int32) {
 		e.ind()
 		e.emit(pkgInitCName + "();\n")
 	}
+	// The body goes to a buffer so the defer temporaries can be declared ahead of
+	// it, exactly as emitFunc does. Without this main was the one function whose
+	// deferred call could not capture an argument: the capture was emitted and the
+	// temporary it assigned to never declared, so any `defer f(x)` in main failed
+	// to build with "Unknown symbol '_ogo_defer0_a0'". The goldens missed it because
+	// a literal argument needs no temporary and stays inline.
 	e.mainRet = true
+	saved := e.w
+	var bodyBuf bytes.Buffer
+	e.w = &bodyBuf
 	e.emitBlockStmts(body)
-	e.mainRet = false
 	if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
 		e.emitDeferred()
 	}
+	e.w = saved
+	e.mainRet = false
+	e.emitDeferDecls()
+	e.w.Write(bodyBuf.Bytes())
 	e.ind()
 	e.emit("return 0;\n")
 	e.indent--
