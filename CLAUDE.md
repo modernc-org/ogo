@@ -310,7 +310,14 @@ still design-only.
   map-iteration order in `Scope.GetSymbolsOfType`, was sorted), and `TestOracle`
   (`internal/smith/oracle_test.go`) generates a fixed seed corpus, compiles each
   to C and runs it on the host shim, so a miscompile (the program panics on a
-  checksum mismatch) or a generator regression fails the test. The earlier
+  checksum mismatch) or a generator regression fails the test.
+  **`TestGeneratorCoverage` guards the fuzzer's own blind spot:** a generator that
+  produces *less* still passes `TestOracle`, which only checks that whatever was
+  generated matches the VM. It asserts every construct still appears across a seed
+  corpus. **Adding a construct to the generator means adding it to
+  `generatedConstructs`** -- that entry is what makes its coverage tested rather
+  than assumed. It catches what `staticcheck` cannot: a generator still called from
+  a dispatch case whose probability range can no longer be reached. The earlier
   out-of-scope-loop-variable, bare-block and `panic` gaps that kept generated
   programs from compiling are fixed, and the generator now mints unique variable
   names (a counter, not a random suffix) so it never accidentally shadows. Widen
