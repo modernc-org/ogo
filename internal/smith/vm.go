@@ -14,6 +14,7 @@ var (
 	_ Value = (Int32)(0)
 	_ Value = (Bool)(false)
 	_ Value = (*ArrayVal)(nil)
+	_ Value = (*SliceVal)(nil)
 )
 
 // ArrayVal is a fixed integer array in the generation-time VM, zero-initialized to
@@ -29,6 +30,25 @@ func (a *ArrayVal) Type() Type      { return ArrayType{Len: len(a.Elems), Elem: 
 func (a *ArrayVal) Value() any      { return a.Elems }
 func (a *ArrayVal) binOp(op string, rhs Value) (Value, error) {
 	panic(todo("array is not a binary operand: %q", op))
+}
+
+// SliceVal is an integer slice in the generation-time VM, created zero-length-or-more
+// by `make([]int, len, cap)`. Elems models the live elements, so an index read or
+// write and len() resolve to known values; Cap is the backing array's fixed extent.
+// The target has no heap, so the emitted ogo_append panics rather than reallocating
+// once the backing array is full -- the generator therefore only appends while
+// len(Elems) < Cap, and Cap is what tells it when to stop. Like ArrayVal it is a
+// pointer type, so an element write or an append mutates the stored slice in place.
+type SliceVal struct {
+	Elems []Int32
+	Cap   int
+}
+
+func (s *SliceVal) Literal() string { return "" } // built by make, never literal-initialized
+func (s *SliceVal) Type() Type      { return SliceType{Elem: BasicType{Kind: KindInt}} }
+func (s *SliceVal) Value() any      { return s.Elems }
+func (s *SliceVal) binOp(op string, rhs Value) (Value, error) {
+	panic(todo("slice is not a binary operand: %q", op))
 }
 
 type storage map[string]Value

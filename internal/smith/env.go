@@ -50,11 +50,13 @@ func (s *Scope) Lookup(name string) *Symbol {
 	return nil
 }
 
-// GetSymbolsOfType returns all symbols in scope matching the requested type.
-// This is critical for generating expressions.
-// GetArraySymbols returns the in-scope variables of a fixed integer-array type, in
-// sorted name order (like GetSymbolsOfType) so generation stays reproducible.
-func (s *Scope) GetArraySymbols() []*Symbol {
+// matching returns the symbols of this scope and its parents whose type satisfies
+// pred, innermost scope first.
+//
+// Each scope is walked in sorted name order: Go randomizes map iteration, and the
+// caller picks from the result with the seeded RNG by index, so an unsorted order
+// makes generation non-reproducible from a seed (mirrors flushUnused).
+func (s *Scope) matching(pred func(Type) bool) []*Symbol {
 	var matches []*Symbol
 	names := make([]string, 0, len(s.Symbols))
 	for name := range s.Symbols {
@@ -62,37 +64,42 @@ func (s *Scope) GetArraySymbols() []*Symbol {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if at, ok := s.Symbols[name].Type.(ArrayType); ok {
-			if bt, ok := at.Elem.(BasicType); ok && bt.Kind == KindInt {
-				matches = append(matches, s.Symbols[name])
-			}
-		}
-	}
-	if s.Parent != nil {
-		matches = append(matches, s.Parent.GetArraySymbols()...)
-	}
-	return matches
-}
-
-func (s *Scope) GetSymbolsOfType(typ Type) []*Symbol {
-	var matches []*Symbol
-	// Iterate in sorted name order: Go randomizes map iteration, and the caller
-	// picks from the result with the seeded RNG by index, so an unsorted order
-	// makes generation non-reproducible from a seed (mirrors flushUnused).
-	names := make([]string, 0, len(s.Symbols))
-	for name := range s.Symbols {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		sym := s.Symbols[name]
-		// Basic type matching (we can refine this for assignability later)
-		if sym.Type.String() == typ.String() {
+		if sym := s.Symbols[name]; pred(sym.Type) {
 			matches = append(matches, sym)
 		}
 	}
 	if s.Parent != nil {
-		matches = append(matches, s.Parent.GetSymbolsOfType(typ)...)
+		matches = append(matches, s.Parent.matching(pred)...)
 	}
 	return matches
+}
+
+// GetSymbolsOfType returns all symbols in scope matching the requested type.
+// This is critical for generating expressions.
+func (s *Scope) GetSymbolsOfType(typ Type) []*Symbol {
+	// Basic type matching (we can refine this for assignability later)
+	return s.matching(func(t Type) bool { return t.String() == typ.String() })
+}
+
+// GetArraySymbols returns the in-scope variables of a fixed integer-array type.
+func (s *Scope) GetArraySymbols() []*Symbol {
+	return s.matching(func(t Type) bool {
+		at, ok := t.(ArrayType)
+		return ok && isInt(at.Elem)
+	})
+}
+
+// GetSliceSymbols returns the in-scope variables of an integer-slice type. A
+// caller that indexes or appends must also consult the variable's SliceVal for its
+// current length and capacity, which the type does not carry.
+func (s *Scope) GetSliceSymbols() []*Symbol {
+	return s.matching(func(t Type) bool {
+		st, ok := t.(SliceType)
+		return ok && isInt(st.Elem)
+	})
+}
+
+func isInt(t Type) bool {
+	bt, ok := t.(BasicType)
+	return ok && bt.Kind == KindInt
 }

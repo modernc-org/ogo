@@ -58,6 +58,17 @@ func (a ArrayType) String() string {
 }
 func (a ArrayType) IsNumeric() bool { return false }
 
+// SliceType represents a slice. Its length and capacity are not part of the type;
+// the generation-time VM tracks both per variable (see SliceVal), because the
+// target has no heap and an append past the backing array's capacity panics.
+type SliceType struct {
+	Elem Type
+}
+
+func (s SliceType) String() string { return "[]" + s.Elem.String() }
+
+func (s SliceType) IsNumeric() bool { return false }
+
 // ChanType represents a bidirectional channel.
 type ChanType struct {
 	Elem Type

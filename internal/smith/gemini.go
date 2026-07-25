@@ -94,15 +94,21 @@ func (f *Fuzzer) flushUnused(vm Machine, mem Memory) []Node {
 		sym := f.CurrentEnv.Lookup(name)
 		sym.Used = true // Mark as used
 
-		// Fold the unused variable into the checksum with XOR. An array cannot be an
-		// operand, so fold its first element instead; a scalar folds directly.
+		// Fold the unused variable into the checksum with XOR. Neither an array nor a
+		// slice can be an operand, so fold an array's first element and a slice's
+		// length -- len is defined even for the empty slice, whose element 0 is not;
+		// a scalar folds directly.
 		currentChecksum := mem.Load(f.ChecksumName)
 		var varVal Value
 		var right Node
-		if _, isArr := sym.Type.(ArrayType); isArr {
+		switch sym.Type.(type) {
+		case ArrayType:
 			varVal = mem.Load(name).(*ArrayVal).Elems[0]
-			right = &IndexNode{Array: name, Index: 0}
-		} else {
+			right = &IndexNode{Name: name, Index: 0}
+		case SliceType:
+			varVal = Int32(len(mem.Load(name).(*SliceVal).Elems))
+			right = &BuiltinCallNode{Fn: "len", Arg: name}
+		default:
 			varVal = mem.Load(name)
 			right = &IdentNode{Name: name}
 		}
@@ -126,19 +132,25 @@ func (f *Fuzzer) flushUnused(vm Machine, mem Memory) []Node {
 
 // genStatement generates a new variable declaration, an if statement, or mutates the checksum.
 func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
-	r := f.Rand.Float32()
-	if r < 0.10 {
+	switch r := f.Rand.Float32(); {
+	case r < 0.10:
 		return f.genForStmt(vm, mem) // 10% chance for a loop
-	} else if r < 0.25 {
+	case r < 0.25:
 		return f.genIfStmt(vm, mem) // 15% chance for an if
-	} else if r < 0.40 {
-		return f.genVarDecl(vm, mem) // 15% chance for var
-	} else if r < 0.50 {
-		return f.genArrayDecl(vm, mem) // 10% chance for a fixed array declaration
-	} else if r < 0.63 {
-		return f.genCompoundAssign(vm, mem) // 13% chance for a compound assignment
-	} else if r < 0.75 {
-		return f.genArrayWrite(vm, mem) // 12% chance for an array element write
+	case r < 0.37:
+		return f.genVarDecl(vm, mem) // 12% chance for var
+	case r < 0.44:
+		return f.genArrayDecl(vm, mem) // 7% chance for a fixed array declaration
+	case r < 0.53:
+		return f.genArrayWrite(vm, mem) // 9% chance for an array element write
+	case r < 0.60:
+		return f.genSliceDecl(vm, mem) // 7% chance for a slice declaration
+	case r < 0.69:
+		return f.genSliceWrite(vm, mem) // 9% chance for a slice element write
+	case r < 0.76:
+		return f.genAppend(vm, mem) // 7% chance for an append
+	case r < 0.85:
+		return f.genCompoundAssign(vm, mem) // 9% chance for a compound assignment
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -328,6 +340,67 @@ func (f *Fuzzer) genArrayWrite(vm Machine, mem Memory) Node {
 	return &AssignStmtNode{Lhs: fmt.Sprintf("%s[%d]", arr.Name, idx), Op: "=", Rhs: exprNode}
 }
 
+// genSliceDecl declares an integer slice over a backing array of fixed capacity,
+// `var s []int = make([]int, L, C)`. The length may be zero -- the empty slice is
+// worth exercising -- but the capacity is always strictly greater, so every live
+// slice can take at least one append (see genAppend for why capacity is tracked).
+func (f *Fuzzer) genSliceDecl(vm Machine, mem Memory) Node {
+	name := f.newVarName("s")
+	n := f.Rand.Intn(4)         // length 0..3
+	c := n + 1 + f.Rand.Intn(3) // capacity, one to three elements of headroom
+	mem.Store(name, &SliceVal{Elems: make([]Int32, n), Cap: c})
+	f.CurrentEnv.Declare(name, SliceType{Elem: BasicType{Kind: KindInt}}, false)
+	return &SliceDeclNode{Name: name, Len: n, Cap: c}
+}
+
+// genSliceWrite assigns an integer expression to one element of an existing slice,
+// `s[c] = e`, with a constant index below the slice's current length, exercising
+// the element-store codegen through a slice header. A zero-length slice has no
+// element to write, so it is not a candidate.
+func (f *Fuzzer) genSliceWrite(vm Machine, mem Memory) Node {
+	var targets []*Symbol
+	for _, s := range f.CurrentEnv.GetSliceSymbols() {
+		if len(mem.Load(s.Name).(*SliceVal).Elems) != 0 {
+			targets = append(targets, s)
+		}
+	}
+	if len(targets) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	sl := targets[f.Rand.Intn(len(targets))]
+	sl.Used = true
+	sv := mem.Load(sl.Name).(*SliceVal)
+	idx := f.Rand.Intn(len(sv.Elems))
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	sv.Elems[idx] = exprVal.(Int32)
+	return &AssignStmtNode{Lhs: fmt.Sprintf("%s[%d]", sl.Name, idx), Op: "=", Rhs: exprNode}
+}
+
+// genAppend grows an existing slice by one element, `s = append(s, e)`.
+//
+// Only a slice with spare capacity is a candidate. The target has no heap, so the
+// emitted ogo_append cannot reallocate a full backing array and panics instead;
+// tracking each slice's capacity in the VM is what keeps the generated program
+// within that limit. Every element ever appended stays known to the VM, so a later
+// index read of the grown slice still resolves to a value the oracle can predict.
+func (f *Fuzzer) genAppend(vm Machine, mem Memory) Node {
+	var targets []*Symbol
+	for _, s := range f.CurrentEnv.GetSliceSymbols() {
+		if sv := mem.Load(s.Name).(*SliceVal); len(sv.Elems) < sv.Cap {
+			targets = append(targets, s)
+		}
+	}
+	if len(targets) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	sl := targets[f.Rand.Intn(len(targets))]
+	sl.Used = true
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	sv := mem.Load(sl.Name).(*SliceVal)
+	sv.Elems = append(sv.Elems, exprVal.(Int32))
+	return &AssignStmtNode{Lhs: sl.Name, Op: "=", Rhs: &AppendNode{Slice: sl.Name, Value: exprNode}}
+}
+
 // genCompoundAssign mutates an existing integer variable in place with a compound
 // assignment (`x += e`, `x *= e`, `x <<= e`, ...), exercising the compound-assignment
 // lowerings across the full operator set. The operator's binary form is evaluated in
@@ -389,7 +462,23 @@ func (f *Fuzzer) genExpression(targetType Type, vm Machine, mem Memory, depth in
 			arr := arrays[f.Rand.Intn(len(arrays))]
 			arr.Used = true
 			idx := f.Rand.Intn(arr.Type.(ArrayType).Len)
-			return &IndexNode{Array: arr.Name, Index: idx}, mem.Load(arr.Name).(*ArrayVal).Elems[idx], nil
+			return &IndexNode{Name: arr.Name, Index: idx}, mem.Load(arr.Name).(*ArrayVal).Elems[idx], nil
+		}
+		// Read from an existing slice: an element s[c] at a constant index below the
+		// current length, or len(s) / cap(s). The VM knows all three, so the oracle
+		// stays in sync with the compiled slice.
+		if slices := f.CurrentEnv.GetSliceSymbols(); len(slices) > 0 && f.Rand.Float32() < 0.25 {
+			sl := slices[f.Rand.Intn(len(slices))]
+			sl.Used = true
+			sv := mem.Load(sl.Name).(*SliceVal)
+			if n := len(sv.Elems); n > 0 && f.Rand.Float32() < 0.6 {
+				idx := f.Rand.Intn(n)
+				return &IndexNode{Name: sl.Name, Index: idx}, sv.Elems[idx], nil
+			}
+			if f.Rand.Float32() < 0.5 {
+				return &BuiltinCallNode{Fn: "cap", Arg: sl.Name}, Int32(sv.Cap), nil
+			}
+			return &BuiltinCallNode{Fn: "len", Arg: sl.Name}, Int32(len(sv.Elems)), nil
 		}
 		if f.Rand.Float32() < 0.5 {
 			// Generate int_lit
@@ -497,13 +586,48 @@ func (n *ArrayDeclNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, "var %s [%d]int", n.Name, n.Len)
 }
 
+// IndexNode is an element of an array or a slice at a constant index.
 type IndexNode struct {
-	Array string
+	Name  string
 	Index int
 }
 
 func (n *IndexNode) Write(w io.Writer, indent int) {
-	fmt.Fprintf(w, "%s[%d]", n.Array, n.Index)
+	fmt.Fprintf(w, "%s[%d]", n.Name, n.Index)
+}
+
+type SliceDeclNode struct {
+	Name string
+	Len  int
+	Cap  int
+}
+
+func (n *SliceDeclNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "var %s []int = make([]int, %d, %d)", n.Name, n.Len, n.Cap)
+}
+
+// AppendNode is `append(s, v)`, generated only as the right-hand side of the
+// assignment `s = append(s, v)` back to the same slice.
+type AppendNode struct {
+	Slice string
+	Value Node
+}
+
+func (n *AppendNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "append(%s, ", n.Slice)
+	n.Value.Write(w, 0)
+	fmt.Fprint(w, ")")
+}
+
+// BuiltinCallNode is a one-argument builtin applied to a variable: len(s), cap(s).
+type BuiltinCallNode struct {
+	Fn  string
+	Arg string
+}
+
+func (n *BuiltinCallNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "%s(%s)", n.Fn, n.Arg)
 }
 
 type IfStmtNode struct {
