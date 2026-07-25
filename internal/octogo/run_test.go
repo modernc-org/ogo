@@ -1546,6 +1546,37 @@ func main() {
 		want: "1 6\n20 30\n1 0 5 0\n1 6 8\n2 0 5\n8 99\n",
 	},
 	{
+		// The bit-clear operator "a &^ b" -- AND NOT -- which a program on this
+		// target reaches for whenever it clears bits in a register. C has no such
+		// operator, so it lowers to "a & ~(b)", the operand parenthesised because
+		// "~" binds tighter than anything an expression operand may contain.
+		// Exercised against the unary "^" it used to be mistaken for, at both
+		// precedence neighbours, and in a constant expression.
+		name: "and-not operator",
+		src: `const mask = 0xff &^ 0x0f
+
+func main() {
+	x := 0xff
+	y := 0x0f
+	println(x &^ y)
+	println(x &^ (y + 1))
+	println(255 &^ 15 &^ 32)
+	println(1+12&^4, 3*12&^4)
+	println(mask)
+
+	// The unary complement is a different operator and still means what it did.
+	println(x & ^y)
+
+	var n int64 = 0xffff
+	println(n &^ 0x00ff)
+
+	x &^= 0x0f
+	println(x)
+}
+`,
+		want: "240\n239\n208\n9 32\n240\n240\n65280\n240\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

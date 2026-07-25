@@ -7270,6 +7270,8 @@ func binaryOpTok(op Symbol) token.Token {
 		return token.SHL
 	case SHR:
 		return token.SHR
+	case ANDNOT:
+		return token.AND_NOT
 	default:
 		return token.ILLEGAL
 	}
@@ -7479,7 +7481,7 @@ func (f *File) mulOp(s *Scope, n Node) (r Symbol) {
 		switch n.sym {
 		case 0:
 			switch sym := f.ch(n.tok); sym {
-			case MUL, QUO, REM, SHL, SHR, AND:
+			case MUL, QUO, REM, SHL, SHR, AND, ANDNOT:
 				r = sym
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))

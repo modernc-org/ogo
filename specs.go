@@ -797,10 +797,17 @@
 //     ")").
 //   - UnaryExpr: Unary operators (+, -, !, ^, *, &, <-, ~) applied to a Factor.
 //   - Term (MulOp): Multiplication, division, remainder, and bitwise operators
-//     (*, /, %, <<, >>, &).
+//     (*, /, %, <<, >>, &, &^).
 //   - SimpleExpr (AddOp): Addition, subtraction, and bitwise operators (+, -,
 //     |, ^).
 //   - Expression (RelOp): Comparison operators (==, !=, <, <=, >, >=).
+//
+// The bit-clear operator "a &^ b" is Go's AND NOT: the bits of a that b does not
+// have set. Until it was made an operator of its own it still computed the right
+// answer, because "&^" lexes as "&" followed by the unary complement "^" and "a &
+// ^b" is the same value -- but the two tokens were what the formatter then wrote
+// back, rewriting a program's "&^" into "& ^". C has no such operator, so it
+// lowers to "a & ~(b)".
 //
 // (Note: the logical operators && and || sit at the RelOp level in the grammar,
 // alongside the comparisons rather than below them. The grammar is therefore
@@ -812,7 +819,7 @@
 //	UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 //	RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
 //	AddOp = "+" | "-" | "|" | "^" .
-//	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" .
+//	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
 //
 // # Function Calls
 //

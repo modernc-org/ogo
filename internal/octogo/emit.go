@@ -8576,13 +8576,28 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		e.emit("(")
-		guardNext := false
+		guardNext, complementNext := false, false
 		for _, c := range kids {
 			switch {
 			case c.sym == MulOp:
 				op := e.opText(c.ast)
+				guardNext, complementNext = false, false
+				if op == "&^" {
+					// C has no "&^". Go defines "a &^ b" as "a AND NOT b", so it
+					// lowers to "a & ~(b)" -- the same rewrite "&^=" uses. The
+					// operand is parenthesised because it may be an expression and
+					// "~" binds tighter than anything inside one.
+					e.emit(" & ")
+					complementNext = true
+					continue
+				}
 				e.emit(" " + op + " ")
 				guardNext = e.checks && (op == "/" || op == "%")
+			case complementNext:
+				complementNext = false
+				e.emit("~(")
+				e.emitExprNode(c)
+				e.emit(")")
 			case guardNext && !e.isIntLiteral(c):
 				guardNext = false
 				ct, _ := e.inferCType(c.ast)

@@ -53,6 +53,7 @@ const (
 	AND_ASSIGN    = TOK_0026003d     // "&="
 	OR_ASSIGN     = TOK_007c003d     // "|="
 	XOR_ASSIGN    = TOK_005e003d     // "^="
+	ANDNOT        = TOK_0026005e     // "&^"
 	ANDNOT_ASSIGN = TOK_0026005e003d // "&^="
 	SHL_ASSIGN    = TOK_003c003c003d // "<<="
 	SHR_ASSIGN    = TOK_003e003e003d // ">>="
