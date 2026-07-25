@@ -18,8 +18,17 @@ Releases before v0.9.0 predate this file; see
 - **A bare receive statement**, `<-ch`, discarding the value — how one goroutine
   waits for another. It previously had to be written `_ = <-ch`.
 
+### Language
+
+- **Array equality**, `a == b` and `a != b`, comparing element by element. Works for
+  any comparable element type — scalars, strings, structs — and at any rank.
+
 ### Fixed
 
+- **Array equality silently answered `false`.** `a == b` on two arrays emitted C's
+  `a == b`, where both operands decay to pointers, so it asked whether they were the
+  same array. It compiled cleanly and was always false. Array ordering (`a < b`),
+  which Go does not define, is now refused rather than doing the same thing.
 - **A mixed short declaration silently computed the wrong answer.** In `a, b :=
   f()` with `a` already declared, Go assigns to `a` and declares only `b`; the
   emitter declared both, so the C had two declarations of `a` in one block. The

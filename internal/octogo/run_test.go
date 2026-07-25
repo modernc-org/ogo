@@ -1769,6 +1769,54 @@ func main() {
 		want: "10 20\n5 6\n1 1 7\n10 20\n99\n",
 	},
 	{
+		// Array equality. C would accept "a == b" and mean something else entirely:
+		// both operands decay to pointers, so it asks whether they are the same
+		// array, which for two distinct ones is always false. That compiled without
+		// a murmur from either compiler and quietly answered false, so this compares
+		// element by element through a per-type helper, the way struct equality
+		// does. The helper takes pointers rather than values, which is also what
+		// keeps it clear of the by-value limit that stops a struct with an array
+		// field being compared.
+		name: "array equality",
+		src: `type pt struct {
+	x int
+	y int
+}
+
+var g1 = [2]int{5, 6}
+var g2 = [2]int{5, 6}
+
+func main() {
+	a := [3]int{1, 2, 3}
+	b := [3]int{1, 2, 3}
+	c := [3]int{1, 2, 4}
+	println(a == b, a == c, a != b, a != c)
+
+	println(g1 == g2)
+
+	s := [2]string{"x", "yy"}
+	t := [2]string{"x", "yy"}
+	u := [2]string{"x", "zz"}
+	println(s == t, s == u)
+
+	p := [2]pt{{1, 2}, {3, 4}}
+	q := [2]pt{{1, 2}, {3, 4}}
+	r := [2]pt{{1, 2}, {3, 9}}
+	println(p == q, p == r)
+
+	m := [2][2]int{{1, 2}, {3, 4}}
+	n := [2][2]int{{1, 2}, {3, 4}}
+	o := [2][2]int{{1, 2}, {3, 9}}
+	println(m == n, m == o)
+
+	if a == b && g1 == g2 {
+		println("chained")
+	}
+}
+`,
+		want: "true false false true\ntrue\ntrue false\ntrue false\ntrue false\nchained\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

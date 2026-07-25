@@ -807,6 +807,13 @@
 //     |, ^).
 //   - Expression (RelOp): Comparison operators (==, !=, <, <=, >, >=).
 //
+// Equality is defined on more than the scalars. Two strings compare by content,
+// two structs field by field, and two arrays element by element, each through a
+// helper the compiler emits for that type; ordering ("<") is defined on the
+// numeric types and on strings, which compare lexicographically, but not on
+// structs or arrays. An array's element type must itself be comparable, and a
+// slice may only be compared with nil, never with another slice.
+//
 // The bit-clear operator "a &^ b" is Go's AND NOT: the bits of a that b does not
 // have set. Until it was made an operator of its own it still computed the right
 // answer, because "&^" lexes as "&" followed by the unary complement "^" and "a &

@@ -1241,7 +1241,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1412,6 +1412,20 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		}
 		for _, ct := range sortedKeys(e.eqStructs) {
 			out.WriteString(e.structEqDef(ct))
+		}
+		out.WriteByte('\n')
+	}
+	// Per-array-type equality helpers (Go's array ==). After the struct ones, which
+	// an array of structs compares its elements through. Forward-declared first and
+	// defined after, as the struct helpers are: a multi-dimensional array compares
+	// its rows through the helper for one dimension less, and name order does not
+	// put that one first ("ogo_eq_arr_2_2_int" sorts before "ogo_eq_arr_2_int").
+	if len(e.eqArrays) > 0 {
+		for _, name := range sortedArrayKeys(e.eqArrays) {
+			out.WriteString(e.arrayEqSig(name, e.eqArrays[name]) + ";\n")
+		}
+		for _, name := range sortedArrayKeys(e.eqArrays) {
+			out.WriteString(e.arrayEqDef(name, e.eqArrays[name]))
 		}
 		out.WriteByte('\n')
 	}
@@ -1615,6 +1629,7 @@ type emitter struct {
 	usesStringPrint    bool                     // a string is printed: emit stringHelpers
 	usesStringEq       bool                     // a string == / != appears: emit ogo_string_eq
 	eqStructs          map[string]bool          // struct C types compared with == / !=: emit an ogo_eq_<T> helper
+	eqArrays           map[string]arrDim        // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode     bool                     // `for i, c := range s` appears: emit ogo_decode_rune
 	err                error
@@ -8606,6 +8621,11 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 			i += 3
 			continue
 		}
+		if op, a, ok := e.arrayCompareAt(kids, i); ok {
+			e.emitArrayCompareTriple(kids[i], kids[i+2], op, a)
+			i += 3
+			continue
+		}
 		if op, ct, ok := e.structCompareAt(kids, i); ok {
 			e.emitStructCompareTriple(kids[i], kids[i+2], op, ct)
 			i += 3
@@ -9126,4 +9146,151 @@ func allTrue(n int) []bool {
 		r[i] = true
 	}
 	return r
+}
+
+// sortedArrayKeys is sortedKeys for the array-equality helper map.
+func sortedArrayKeys(m map[string]arrDim) []string {
+	r := make([]string, 0, len(m))
+	for k := range m {
+		r = append(r, k)
+	}
+	slices.Sort(r)
+	return r
+}
+
+// arrayEqName is the name of the equality helper for an array type, `[3]int` ->
+// `ogo_eq_arr_3_int`. Every extent is in the name, so a [2][3]int and a [3][2]int
+// get distinct helpers.
+func arrayEqName(a arrDim) string {
+	s := "ogo_eq_arr"
+	for _, b := range a.bounds() {
+		s += "_" + b
+	}
+	return s + "_" + sanitizeElem(a.elem)
+}
+
+// needArrayEq records that an array type needs an equality helper, and that a
+// multi-dimensional one needs a helper for its rows too, since it compares them
+// through it. A struct element compares through its own helper, which is required
+// here for the same reason.
+func (e *emitter) needArrayEq(a arrDim) {
+	name := arrayEqName(a)
+	if _, seen := e.eqArrays[name]; seen {
+		return
+	}
+	e.eqArrays[name] = a
+	switch {
+	case a.dims() > 1:
+		e.needArrayEq(a.row())
+	case a.elem == cString:
+		e.usesStringEq = true
+	case e.structs[a.elem] != nil:
+		e.needStructEq(a.elem)
+	}
+}
+
+// arrayEqDef defines an array's equality helper. The operands are pointers, not
+// values: an array decays to one at the call, which is also what keeps this clear
+// of the by-value struct-with-array-field limit that stops struct comparison
+// (needStructEq) -- nothing is passed by value here.
+func (e *emitter) arrayEqDef(name string, a arrDim) string {
+	cmp := ""
+	if a.dims() > 1 {
+		// A row is itself an array and decays in turn, so it compares through the
+		// helper for one dimension less.
+		cmp = arrayEqName(a.row()) + "(_ogo_l[i], _ogo_r[i])"
+	} else {
+		cmp = e.fieldEqCmp(a.elem, "_ogo_l[i]", "_ogo_r[i]")
+	}
+	return fmt.Sprintf(`%s {
+	for (int i = 0; i < %s; i++) {
+		if (!(%s)) { return 0; }
+	}
+	return 1;
+}
+`, e.arrayEqSig(name, a), a.bound, cmp)
+}
+
+// arrayEqSig renders an array equality helper's signature, shared by the forward
+// declaration and the definition so the two cannot drift apart.
+func (e *emitter) arrayEqSig(name string, a arrDim) string {
+	// The outermost extent is the one that decays to a pointer, so it is the empty
+	// bracket and every inner extent must stay complete: a [2][3]int parameter is
+	// `int p[][3]`, not `int p[2][]`, which is an array of incomplete type.
+	inner := ""
+	for _, b := range a.bounds()[1:] {
+		inner += "[" + b + "]"
+	}
+	// No const on the parameters. It would be accurate -- nothing here writes --
+	// but for a multi-dimensional array the parameter is a pointer to an array, and
+	// the target's C compiler does not apply the qualifier conversion there: passing
+	// an `int (*)[2]` where an `int (*)[2]` const-qualified is expected draws
+	// "incompatible pointer types in parameter passing" on every call.
+	return fmt.Sprintf("static int %s(%s _ogo_l[]%s, %s _ogo_r[]%s)", name, a.elem, inner, a.elem, inner)
+}
+
+// arrayCompareAt reports whether kids[i..i+2] compares two arrays for equality.
+// Arrays are comparable in Go when their element type is, and only for equality,
+// never ordering.
+//
+// It exists because C would happily accept the comparison and mean something else:
+// both operands decay to pointers, so `a == b` asks whether they are the same
+// array, which for two distinct ones is always false. That compiled without a
+// murmur from either compiler and quietly answered false.
+func (e *emitter) arrayCompareAt(kids []Node, i int) (op string, a arrDim, ok bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return "", arrDim{}, false
+	}
+	// The operands are classified before the operator, so that an ordering operator
+	// on arrays is refused here rather than falling through to C's -- where it would
+	// compare the decayed pointers and mean nothing, exactly as == did.
+	l, lok := e.arrayOperand(kids[i])
+	r, rok := e.arrayOperand(kids[i+2])
+	if !lok && !rok {
+		return "", arrDim{}, false
+	}
+	if !lok || !rok {
+		known := l
+		if !lok {
+			known = r
+		}
+		e.fail("cannot compare %s with a value of another type", arrayTypeName(known))
+		return "", arrDim{}, false
+	}
+	switch op = e.opText(kids[i+1].ast); op {
+	case "==", "!=":
+		// Go compares arrays for equality only.
+	default:
+		e.fail("invalid operation: operator %s is not defined on %s", op, arrayTypeName(l))
+		return "", arrDim{}, false
+	}
+	if l.elem != r.elem || !slices.Equal(l.bounds(), r.bounds()) {
+		e.fail("cannot compare %s with %s", arrayTypeName(l), arrayTypeName(r))
+		return "", arrDim{}, false
+	}
+	return op, l, true
+}
+
+// arrayOperand reports the array type of a comparison operand that is a plain
+// array variable, local or package-level.
+func (e *emitter) arrayOperand(n Node) (arrDim, bool) {
+	name, ok := e.exprIdent(n.ast)
+	if !ok {
+		return arrDim{}, false
+	}
+	return e.arrayVar(name)
+}
+
+// emitArrayCompareTriple emits an array equality as a call to the per-type helper,
+// negated for "!=".
+func (e *emitter) emitArrayCompareTriple(l, r Node, op string, a arrDim) {
+	e.needArrayEq(a)
+	if op == "!=" {
+		e.emit("!")
+	}
+	e.emit(arrayEqName(a) + "(")
+	e.emitExprNode(l)
+	e.emit(", ")
+	e.emitExprNode(r)
+	e.emit(")")
 }
