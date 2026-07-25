@@ -96,6 +96,10 @@ type Fuzzer struct {
 	// guarantees every generated variable has a distinct name.
 	VarSeq int
 
+	// Funcs are the top-level functions generated ahead of main, in generation
+	// order, so a call site can pick one reproducibly.
+	Funcs []*FuncDef
+
 	// Hardware limits tracking
 	CogCount int // Max 8
 

@@ -35,7 +35,14 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 
 	fmt.Fprintf(f.Out, "var %s int = 0\n\n", f.ChecksumName)
 
-	// 3. Generate the main function
+	// 3. Generate the functions main will call. They come first so that every call
+	// site in main has one to draw on, and they take no part in the environment:
+	// a body reads only its own parameters (see genPureExpr).
+	for i, n := 0, f.Rand.Intn(4); i < n; i++ {
+		f.genFuncDecl()
+	}
+
+	// 4. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
 
@@ -74,6 +81,106 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	fmt.Fprint(f.Out, "}\n")           // Close main()
 
 	return nil
+}
+
+// FuncDef is a generated top-level function: one int result, computed from its
+// int parameters by a single expression. Keeping the whole body one expression is
+// what lets the generation-time VM re-evaluate it at each call site, which is how
+// the oracle knows a call's value without modelling a call stack.
+type FuncDef struct {
+	Name   string
+	Params []string
+	Body   Node // over Params and literals only; see genFuncDecl for why it is total
+}
+
+// pureOps are the operators a generated function's body may use.
+//
+// The restriction is what makes calls safe to generate at all. Everywhere else
+// the VM evaluates an operator against the operands in hand and swaps in XOR when
+// that combination is undefined in C (see genExpression). A function body cannot
+// be fixed up that way: it is emitted once and then evaluated again at every call,
+// with argument values it has never seen, so an operator that is undefined for
+// *some* operands would eventually be reached with them. These four are total over
+// int32 -- no division by zero, no shift-count range, no signed overflow -- so the
+// body is defined for every argument the generator can pass it. Arithmetic is
+// fuzzed thoroughly at the top level; what a call adds is the call itself.
+var pureOps = []string{"&", "|", "^", "&^"}
+
+// genFuncDecl generates a top-level function and writes it out, returning it for
+// the call sites to draw on.
+func (f *Fuzzer) genFuncDecl() *FuncDef {
+	fn := &FuncDef{Name: f.newVarName("fn")}
+	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
+		fn.Params = append(fn.Params, f.newVarName("p"))
+	}
+	fn.Body = f.genPureExpr(fn.Params, 0)
+	f.Funcs = append(f.Funcs, fn)
+	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body}).Write(f.Out, 0)
+	fmt.Fprint(f.Out, "\n")
+	return fn
+}
+
+// genPureExpr builds a function body: an expression over the parameters and
+// integer literals, using only the total operators (see pureOps). It reads
+// nothing from the environment, so a body can never reference a name that is out
+// of scope where the function is declared.
+func (f *Fuzzer) genPureExpr(params []string, depth int) Node {
+	if depth > 2 || f.Rand.Float32() < 0.4 {
+		if len(params) != 0 && f.Rand.Float32() < 0.6 {
+			return &IdentNode{Name: params[f.Rand.Intn(len(params))]}
+		}
+		return &IntLitNode{Value: fmt.Sprintf("%d", f.Rand.Intn(100))}
+	}
+	return &BinaryExprNode{
+		Left:  f.genPureExpr(params, depth+1),
+		Op:    pureOps[f.Rand.Intn(len(pureOps))],
+		Right: f.genPureExpr(params, depth+1),
+	}
+}
+
+// evalCall evaluates a generated function's body with its parameters bound to a
+// call's argument values, giving the oracle the call's result.
+//
+// The operators pureOps admits are total, so an evaluation error here is not a
+// property of the arguments but a broken invariant -- a body built from something
+// outside that set -- and panics rather than being papered over.
+func (f *Fuzzer) evalCall(fn *FuncDef, args map[string]Int32, vm Machine) Int32 {
+	var eval func(Node) Int32
+	eval = func(n Node) Int32 {
+		switch x := n.(type) {
+		case *IntLitNode:
+			v, _ := vm.Eval("int_lit", x.Value)
+			return v.(Int32)
+		case *IdentNode:
+			return args[x.Name]
+		case *BinaryExprNode:
+			v, err := vm.Eval(x.Op, eval(x.Left), eval(x.Right))
+			if err != nil {
+				panic(todo("%s: body is not total: %v", fn.Name, err))
+			}
+			return v.(Int32)
+		default:
+			panic(todo("%s: unexpected body node %T", fn.Name, n))
+		}
+	}
+	return eval(fn.Body)
+}
+
+// genCall generates a call to an already-declared function, its arguments being
+// ordinary generated integer expressions. The VM re-evaluates the callee's body
+// against those argument values, so the oracle predicts the result of the compiled
+// call -- which is what puts argument passing, parameter binding and the returned
+// value under test.
+func (f *Fuzzer) genCall(vm Machine, mem Memory, depth int) (Node, Value) {
+	fn := f.Funcs[f.Rand.Intn(len(f.Funcs))]
+	args := map[string]Int32{}
+	var argNodes []Node
+	for _, p := range fn.Params {
+		node, val, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, depth+1)
+		argNodes = append(argNodes, node)
+		args[p] = val.(Int32)
+	}
+	return &CallNode{Fn: fn.Name, Args: argNodes}, f.evalCall(fn, args, vm)
 }
 
 // flushUnused finds all unused variables in the current scope, generates mutations
@@ -480,6 +587,13 @@ func (f *Fuzzer) genExpression(targetType Type, vm Machine, mem Memory, depth in
 			}
 			return &BuiltinCallNode{Fn: "len", Arg: sl.Name}, Int32(len(sv.Elems)), nil
 		}
+		// Call one of the generated functions. Its arguments are themselves
+		// generated expressions, and the VM re-evaluates the callee's body against
+		// their values, so the whole call is predicted by the oracle.
+		if len(f.Funcs) != 0 && f.Rand.Float32() < 0.2 {
+			node, val := f.genCall(vm, mem, depth)
+			return node, val, nil
+		}
 		if f.Rand.Float32() < 0.5 {
 			// Generate int_lit
 			valStr := fmt.Sprintf("%d", f.Rand.Intn(100))
@@ -670,4 +784,47 @@ func (n *ForStmtNode) Write(w io.Writer, indent int) {
 	}
 	fmt.Fprint(w, " ")
 	n.Body.Write(w, indent)
+}
+
+// FuncDeclNode writes a generated function: int parameters, one int result, and a
+// body that is a single return of an expression.
+type FuncDeclNode struct {
+	Name   string
+	Params []string
+	Body   Node
+}
+
+func (n *FuncDeclNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "func %s(", n.Name)
+	for i, p := range n.Params {
+		if i != 0 {
+			fmt.Fprint(w, ", ")
+		}
+		fmt.Fprintf(w, "%s int", p)
+	}
+	fmt.Fprint(w, ") int {\n")
+	writeIndent(w, indent+1)
+	fmt.Fprint(w, "return ")
+	n.Body.Write(w, 0)
+	fmt.Fprint(w, "\n")
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}\n")
+}
+
+// CallNode is a call to a generated function in expression position.
+type CallNode struct {
+	Fn   string
+	Args []Node
+}
+
+func (n *CallNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "%s(", n.Fn)
+	for i, a := range n.Args {
+		if i != 0 {
+			fmt.Fprint(w, ", ")
+		}
+		a.Write(w, 0)
+	}
+	fmt.Fprint(w, ")")
 }
