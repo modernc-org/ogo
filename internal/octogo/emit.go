@@ -383,7 +383,7 @@ func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
 // preferred, so recycling only happens once all 7 have been handed out.
 const ogoCogPool = `#define OGO_COGS 8
 #define OGO_STACK_LONGS 256
-typedef struct { int used; int done; int cog; long args[OGO_ARG_LONGS]; long stack[OGO_STACK_LONGS]; } ogo_cog_slot;
+typedef struct { int ogo_used; int ogo_done; int ogo_cog; long ogo_args[OGO_ARG_LONGS]; long ogo_stack[OGO_STACK_LONGS]; } ogo_cog_slot;
 static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
 static int ogo_cog_lock = -1;
 static int ogo_cog_claim(void) {
@@ -400,26 +400,26 @@ static int ogo_cog_claim(void) {
 		_waitx(1);
 	}
 	for (int i = 0; i < OGO_COGS - 1; i++) { // a slot no goroutine has ever used
-		if (!ogo_cog_pool[i].used) {
+		if (!ogo_cog_pool[i].ogo_used) {
 			got = i;
 			break;
 		}
 	}
 	for (int i = 0; got < 0 && i < OGO_COGS - 1; i++) { // else recycle a finished one
-		if (ogo_cog_pool[i].done && ogo_cog_pool[i].cog >= 0 && !_cogchk(ogo_cog_pool[i].cog)) {
+		if (ogo_cog_pool[i].ogo_done && ogo_cog_pool[i].ogo_cog >= 0 && !_cogchk(ogo_cog_pool[i].ogo_cog)) {
 			got = i;
 		}
 	}
 	if (got >= 0) {
-		ogo_cog_pool[got].used = 1;
-		ogo_cog_pool[got].done = 0;
-		ogo_cog_pool[got].cog = -1;
+		ogo_cog_pool[got].ogo_used = 1;
+		ogo_cog_pool[got].ogo_done = 0;
+		ogo_cog_pool[got].ogo_cog = -1;
 	}
 	_lockrel(ogo_cog_lock);
 	return got;
 }
-static void ogo_cog_release(int slot) { ogo_cog_pool[slot].used = 0; }
-static void ogo_cog_done(int slot) { ogo_cog_pool[slot].done = 1; }
+static void ogo_cog_release(int slot) { ogo_cog_pool[slot].ogo_used = 0; }
+static void ogo_cog_done(int slot) { ogo_cog_pool[slot].ogo_done = 1; }
 `
 
 // emitGo emits a `go` statement: claim a pool slot, marshal the arguments into it,
@@ -469,9 +469,9 @@ func (e *emitter) emitGo(nodes []Node) {
 	e.ind()
 	e.emit("if (" + slot + " < 0) { ogo_panic(\"out of cogs\"); }\n")
 	e.ind()
-	e.emit(goArgsCName(site.id) + "* " + ap + " = (void*)ogo_cog_pool[" + slot + "].args;\n")
+	e.emit(goArgsCName(site.id) + "* " + ap + " = (void*)ogo_cog_pool[" + slot + "].ogo_args;\n")
 	e.ind()
-	e.emit(ap + "->slot = " + slot + ";\n")
+	e.emit(ap + "->ogo_slot = " + slot + ";\n")
 	for i, a := range args {
 		e.ind()
 		e.emit(fmt.Sprintf("%s->a%d = ", ap, i))
@@ -479,10 +479,10 @@ func (e *emitter) emitGo(nodes []Node) {
 		e.emit(";\n")
 	}
 	e.ind()
-	e.emit("ogo_cog_pool[" + slot + "].cog = _cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
-		", ogo_cog_pool[" + slot + "].stack, sizeof ogo_cog_pool[" + slot + "].stack);\n")
+	e.emit("ogo_cog_pool[" + slot + "].ogo_cog = _cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
+		", ogo_cog_pool[" + slot + "].ogo_stack, sizeof ogo_cog_pool[" + slot + "].ogo_stack);\n")
 	e.ind()
-	e.emit("if (ogo_cog_pool[" + slot + "].cog < 0) {\n")
+	e.emit("if (ogo_cog_pool[" + slot + "].ogo_cog < 0) {\n")
 	e.indent++
 	e.ind()
 	e.emit("ogo_cog_release(" + slot + ");\n")
@@ -506,7 +506,7 @@ func (e *emitter) goDefs() string {
 	var b strings.Builder
 	widest := 1 // the slot field alone
 	for _, s := range e.goSites {
-		fmt.Fprintf(&b, "typedef struct { int slot;")
+		fmt.Fprintf(&b, "typedef struct { int ogo_slot;")
 		for i, a := range s.args {
 			fmt.Fprintf(&b, " %s a%d;", a, i)
 		}
@@ -528,7 +528,7 @@ func (e *emitter) goDefs() string {
 		// here, with the return through _cogstart's epilogue ahead of it. done
 		// only makes the slot a recycling candidate; ogo_cog_claim still waits
 		// for _cogchk to confirm the cog stopped before reusing the stack.
-		b.WriteString(");\n\togo_cog_done(a->slot);\n}\n")
+		b.WriteString(");\n\togo_cog_done(a->ogo_slot);\n}\n")
 	}
 	// The argument block is sized in longs to keep it aligned for any member.
 	return fmt.Sprintf("#define OGO_ARG_LONGS %d\n", widest) + ogoCogPool + b.String()

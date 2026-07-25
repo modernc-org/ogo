@@ -1661,6 +1661,35 @@ func main() {
 		want: "200 1\n",
 	},
 	{
+		// A package-level name that matches a field of the cog-pool runtime struct
+		// used to break the build: the target's C compiler treats a struct as a
+		// class and resolved "ogo_cog_pool[i].done" against the file-scope "done"
+		// instead of the member, reporting "unknown identifier done in class
+		// __anon_...". "done" is about the commonest name there is for a
+		// completion channel, so every one of those fields is now ogo_-prefixed.
+		// The names below are exactly that set.
+		name: "package names matching runtime struct fields",
+		src: `var done chan int
+var used int
+var cog int
+var slot int
+var args int
+var stack int
+
+func worker() {
+	used, cog, slot, args, stack = 1, 2, 3, 4, 5
+	done <- 1
+}
+
+func main() {
+	go worker()
+	n := <-done
+	println(used, cog, slot, args, stack, n)
+}
+`,
+		want: "1 2 3 4 5 1\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)
