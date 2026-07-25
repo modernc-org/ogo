@@ -1211,7 +1211,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1516,6 +1516,7 @@ type emitter struct {
 	indent             int
 	includes           map[string]bool
 	funcRet            map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
+	funcSliceParams    map[string][]string      // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
 	methodPtr          map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
@@ -2393,6 +2394,7 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		_, resTypes := e.resultInfo(sig)
 		e.funcRet[cname] = resTypes
+		e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 		if len(resTypes) > 1 {
 			e.emit("typedef struct { ")
 			for i, ct := range resTypes {
@@ -2401,6 +2403,31 @@ func (e *emitter) collectResults(ast []int32) {
 			e.emit("} " + e.retStructName(cname) + ";\n")
 		}
 	})
+}
+
+// paramSliceTypes returns one entry per declared parameter: the C slice type when
+// that parameter is a slice, "" otherwise. It answers the single question a call
+// site asks of a parameter -- whether a bare `nil` argument there is a slice
+// header rather than a null pointer -- so only the slice shape is resolved. A
+// parameter of any other type never reaches cType here, which keeps this pass from
+// reporting a type the signature's own emission reports anyway, earlier and
+// against the wrong position.
+func (e *emitter) paramSliceTypes(sig []int32) []string {
+	var out []string
+	for n := range it(sig) {
+		if n.sym != ParameterList {
+			continue // parameters are the only ParameterList; results are ResultList/Type
+		}
+		e.forEachParam(n.ast, func(_ string, ta []int32, _ bool) {
+			elem, ok := e.sliceType(ta)
+			if !ok {
+				out = append(out, "")
+				return
+			}
+			out = append(out, sliceCName(elem))
+		})
+	}
+	return out
 }
 
 // eachFuncDeclAST calls fn with the AST of each FuncDecl (function or method) in a
@@ -5871,8 +5898,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.fail("the %s builtin is not supported yet", recv)
 			return true
 		}
-		e.emit(e.funcCallC(recv) + "(")
-		e.emitCallArgs(suffix[0].ast)
+		cname := e.funcCallC(recv)
+		e.emit(cname + "(")
+		e.emitCallArgs(cname, suffix[0].ast)
 		e.emit(")")
 		return true
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
@@ -5887,7 +5915,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
 			if len(e.callArgExprs(suffix[1].ast)) > 0 {
 				e.emit(", ")
-				e.emitCallArgs(suffix[1].ast)
+				e.emitCallArgs(cname, suffix[1].ast)
 			}
 			e.emit(")")
 			return true
@@ -5895,8 +5923,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: the exported function is emitted
 			// in that package's namespace, so the call resolves to the mangled name.
-			e.emit(mangle(prefix, method) + "(")
-			e.emitCallArgs(suffix[1].ast)
+			cname := mangle(prefix, method)
+			e.emit(cname + "(")
+			e.emitCallArgs(cname, suffix[1].ast)
 			e.emit(")")
 			return true
 		}
@@ -5910,7 +5939,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			return false
 		}
 		e.emit(intr.c + "(")
-		e.emitCallArgs(suffix[1].ast)
+		e.emitCallArgs("", suffix[1].ast) // a p2 intrinsic takes no slice
 		e.emit(")")
 		return true
 	}
@@ -5959,11 +5988,11 @@ func (e *emitter) funcCallC(name string) string { return mangle(e.curPkgPrefix, 
 // argsCText renders a CallSuffix's arguments as C text -- the same output
 // emitCallArgs streams, captured to a string so a call reached mid-chain can be
 // wrapped in `f(...)`/`T_M(recv, ...)`.
-func (e *emitter) argsCText(callSuffix []int32) string {
+func (e *emitter) argsCText(cname string, callSuffix []int32) string {
 	saved := e.w
 	var buf bytes.Buffer
 	e.w = &buf
-	e.emitCallArgs(callSuffix)
+	e.emitCallArgs(cname, callSuffix)
 	e.w = saved
 	return buf.String()
 }
@@ -6032,7 +6061,8 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if !pendingFn || !okr || len(rts) != 1 {
 				return "", "", false, false
 			}
-			text = e.funcCallC(base) + "(" + e.argsCText(n.ast) + ")"
+			cname := e.funcCallC(base)
+			text = cname + "(" + e.argsCText(cname, n.ast) + ")"
 			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
 		case Selector:
 			field := e.soleIdent(n.ast)
@@ -6051,7 +6081,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if !okr {
 					return "", "", false, false
 				}
-				if args := e.argsCText(steps[i+1].ast); args != "" {
+				if args := e.argsCText(cname, steps[i+1].ast); args != "" {
 					recv += ", " + args
 				}
 				text = cname + "(" + recv + ")"
@@ -7540,13 +7570,27 @@ func (e *emitter) emitDiscard(expr []int32) {
 	e.emit(";\n")
 }
 
-func (e *emitter) emitCallArgs(callSuffix []int32) {
+// emitCallArgs emits a call's argument list. cname is the callee's C name, used
+// only to recover its parameter types; "" (a p2 intrinsic, or a callee whose
+// signature is not recorded) simply emits every argument as written.
+func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
+	sliceParams := e.funcSliceParams[cname]
 	first := true
 	for i, arg := range e.callArgExprs(callSuffix) {
 		if !first {
 			e.emit(", ")
 		}
 		first = false
+		// The predeclared nil has no type of its own: alone it emits the null
+		// pointer 0, which is not a slice header, so passing it to a slice
+		// parameter built a call whose argument count did not even match. The
+		// parameter is what says which nil this is, so here it becomes that slice
+		// type's zero value. This precedes the defer replay because nil is a
+		// constant -- there is nothing to capture and re-read at the return.
+		if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(arg.ast) {
+			e.emit("(" + sliceParams[i] + "){0}")
+			continue
+		}
 		// Replaying a deferred call reads the temporaries captured at the defer
 		// statement rather than re-evaluating the expressions, which may name a
 		// variable that has since changed or gone out of scope.

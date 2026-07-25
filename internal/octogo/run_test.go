@@ -1399,6 +1399,35 @@ func main() {
 		want: "true false\n7\nfalse true\ntrue 0\ntrue true\ntrue false 1\n",
 	},
 	{
+		// nil passed where a slice is expected. The predeclared nil alone emits the
+		// null pointer 0, which is not a slice header, so the parameter's type is
+		// what identifies it: at a slice parameter it becomes that slice type's zero
+		// value. Covered for a plain function, a method (whose receiver takes the
+		// first C argument slot, so the parameter indices must not shift), a slice
+		// parameter between two scalars, and two slice parameters at once.
+		name: "nil as a slice argument",
+		src: `type box struct{ n int }
+
+func (b box) size(s []int) int { return b.n + len(s) }
+
+func size(s []int) int            { return len(s) }
+func mid(a int, s []int, b int) int { return a + len(s) + b }
+func both(x []int, y []int) int     { return len(x) + len(y) }
+
+func main() {
+	var b box
+	println(size(nil), b.size(nil))
+	println(mid(3, nil, 4), both(nil, nil))
+	v := make([]int, 2)
+	println(size(v), mid(1, v, 1), both(v, nil))
+	if size(nil) == 0 {
+		println("empty")
+	}
+}
+`,
+		want: "0 0\n7 0\n2 4 2\nempty\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)
