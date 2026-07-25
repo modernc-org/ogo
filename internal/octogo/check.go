@@ -230,6 +230,7 @@ type File struct {
 	labels            []labelFrame      // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
+	clauseFallthrough map[string]bool   // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -558,6 +559,7 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	fs := newScope(pkg, BlockScope)
 	f.localVars = nil
 	f.writeTargets = map[string]bool{}
+	f.clauseFallthrough = map[string]bool{}
 	var results []retResult
 	var body Node
 	hasBody := false
@@ -971,11 +973,28 @@ func (f *File) switchIsTerminating(n Node) bool {
 		if f.caseIsDefault(c) {
 			hasDefault = true
 		}
-		if !f.blockIsTerminating(c) || f.containsBreak(c) {
+		if !f.clauseIsTerminating(c) || f.containsBreak(c) {
 			return false
 		}
 	}
 	return hasDefault
+}
+
+// clauseIsTerminating reports whether a case clause's body terminates for the
+// purpose of the switch's own termination. Go's rule accepts a body that ends
+// either in a terminating statement or in a fallthrough: a fallthrough continues
+// into the next clause rather than falling out of the bottom of the switch, so it
+// leaves no path that reaches past the switch.
+func (f *File) clauseIsTerminating(clause Node) bool {
+	if f.blockIsTerminating(clause) {
+		return true
+	}
+	last, ok := f.lastStatement(clause)
+	if !ok {
+		return false
+	}
+	_, isFallthrough := f.fallthroughToken(last)
+	return isFallthrough
 }
 
 // selectIsTerminating reports whether a select terminates: every communication
@@ -1459,6 +1478,14 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				// A continue names a loop, either the innermost or the one an optional
 				// label names.
 				isContinue, breakContinueTok = true, f.tok(c.tok)
+			case FALLTHROUGH:
+				// Legal only as the last statement of a case clause that is not the
+				// switch's last, which markClauseFallthroughs has already accounted
+				// for. Everything else -- deeper in the clause, before another
+				// statement, in a select clause, outside a switch -- is out of place.
+				if tok := f.tok(c.tok); !f.clauseFallthrough[tok.Position().String()] {
+					f.err(tok.Position(), "fallthrough statement out of place")
+				}
 			case IDENT:
 				// The optional label operand of a "break"/"continue" is the only bare
 				// identifier token a statement carries directly (everything else
@@ -2270,6 +2297,7 @@ func (f *File) caseConstValue(s *Scope, e Node) (constant.Value, bool) {
 // body in a nested scope.
 func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	f.reportMultipleDefaults(n, CaseClause, "switch")
+	f.markClauseFallthroughs(n)
 	ss := s.child()
 	var guardKind Kind
 	guardOK := false
@@ -2298,6 +2326,49 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 		}
 	}
 	f.reportDuplicateCases(ss, n)
+}
+
+// markClauseFallthroughs records every "fallthrough" that is legally placed --
+// the last statement of a case clause that is not the switch's last -- and
+// reports one in the final clause, which has nothing to fall into. It runs before
+// any clause body is walked, so the statement walk can report as out of place
+// every fallthrough this pass did not account for: inside a nested block, before
+// another statement, in a select clause, or outside a switch entirely.
+//
+// A fallthrough in the final clause is recorded here too, having been reported
+// here, so that the statement walk does not report the same keyword twice.
+func (f *File) markClauseFallthroughs(n Node) {
+	var clauses []Node
+	for c := range it(n.ast) {
+		if c.sym == CaseClause {
+			clauses = append(clauses, c)
+		}
+	}
+	for i, clause := range clauses {
+		last, ok := f.lastStatement(clause)
+		if !ok {
+			continue
+		}
+		tok, ok := f.fallthroughToken(last)
+		if !ok {
+			continue
+		}
+		f.clauseFallthrough[tok.Position().String()] = true
+		if i == len(clauses)-1 {
+			f.err(tok.Position(), "cannot fallthrough final case in switch")
+		}
+	}
+}
+
+// fallthroughToken returns a statement's "fallthrough" keyword token when the
+// statement is exactly a fallthrough.
+func (f *File) fallthroughToken(stmt Node) (Token, bool) {
+	for c := range it(stmt.ast) {
+		if c.sym == 0 && f.ch(c.tok) == FALLTHROUGH {
+			return f.tok(c.tok), true
+		}
+	}
+	return Token{}, false
 }
 
 // declareSwitchGuardVar declares the variable introduced by a "v := expr" switch

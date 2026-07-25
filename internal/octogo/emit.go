@@ -5330,12 +5330,12 @@ func (e *emitter) emitSwitch(ast []int32) {
 		e.labelBreak[srcLabel] = label
 	}
 
-	var defaultClause Node
-	hasDefault, wrote := false, false
-	for _, cc := range cases {
+	defaultIdx := -1
+	wrote := false
+	for i, cc := range cases {
 		exprs, isDefault := e.caseHead(cc.ast)
 		if isDefault {
-			defaultClause, hasDefault = cc, true
+			defaultIdx = i
 			continue
 		}
 		if !wrote {
@@ -5348,24 +5348,24 @@ func (e *emitter) emitSwitch(ast []int32) {
 		e.emitCaseCond(guardVar, exprs)
 		e.emit(" {\n")
 		e.indent++
-		e.emitCaseBody(cc.ast)
+		e.emitCaseFrom(cases, i)
 		e.indent--
 		e.ind()
 		e.emit("}")
 	}
 	switch {
-	case hasDefault && wrote:
+	case defaultIdx >= 0 && wrote:
 		e.emit(" else {\n")
 		e.indent++
-		e.emitCaseBody(defaultClause.ast)
+		e.emitCaseFrom(cases, defaultIdx)
 		e.indent--
 		e.ind()
 		e.emit("}\n")
-	case hasDefault: // a switch of only a default clause
+	case defaultIdx >= 0: // a switch of only a default clause
 		e.ind()
 		e.emit("{\n")
 		e.indent++
-		e.emitCaseBody(defaultClause.ast)
+		e.emitCaseFrom(cases, defaultIdx)
 		e.indent--
 		e.ind()
 		e.emit("}\n")
@@ -5510,6 +5510,8 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 }
 
 // emitCaseBody emits the statements of a case clause (those following its ":").
+// A trailing "fallthrough" emits nothing itself: it is realised by emitCaseFrom,
+// which appends the next clause's body.
 func (e *emitter) emitCaseBody(cc []int32) {
 	// A break here names the switch. emitSwitch sets switchBreak (the break's goto
 	// target) around the whole chain, and emitLoopBody clears it inside a loop, so
@@ -5517,10 +5519,64 @@ func (e *emitter) emitCaseBody(cc []int32) {
 	e.deferBlockDepth++
 	defer func() { e.deferBlockDepth-- }()
 	for n := range it(cc) {
-		if n.sym == Statement {
+		if n.sym == Statement && !e.isFallthroughStmt(n.ast) {
 			e.emitStatement(n.ast)
 		}
 	}
+}
+
+// emitCaseFrom emits the body of clause i and, when that body ends in a
+// "fallthrough", the body of the clause after it in *source* order -- repeating,
+// so a chain of fallthroughs works.
+//
+// The next clause's body is emitted again here rather than jumped to. A switch
+// lowers to an if/else chain, which has no place to jump into: a C label inside
+// one arm cannot be reached from another without jumping into a block. Repeating
+// the body costs code space (a chain of k clauses can repeat the last body k
+// times) but needs no change to the lowering, so a switch without a fallthrough
+// emits exactly the C it did before. Source order is what matters here, not
+// emission order: a default clause is hoisted to the trailing else wherever it was
+// written, yet "fallthrough" continues into whichever clause was written next.
+func (e *emitter) emitCaseFrom(clauses []Node, i int) {
+	e.emitCaseBody(clauses[i].ast)
+	if i+1 >= len(clauses) || !e.clauseFallsThrough(clauses[i].ast) {
+		return
+	}
+	// The appended body gets its own C block. Each clause is a scope of its own in
+	// the source, so two clauses may declare the same name; emitted into the block
+	// the falling-through clause already occupies, the second declaration would be
+	// a C redefinition of the first.
+	e.ind()
+	e.emit("{\n")
+	e.indent++
+	e.emitCaseFrom(clauses, i+1)
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+}
+
+// clauseFallsThrough reports whether a case clause's last non-empty statement is
+// a "fallthrough". The checker has already refused one anywhere else, so this is
+// the only position that has to be recognised.
+func (e *emitter) clauseFallsThrough(cc []int32) bool {
+	r := false
+	for n := range it(cc) {
+		if n.sym != Statement || isEmptyStatement(n) {
+			continue
+		}
+		r = e.isFallthroughStmt(n.ast)
+	}
+	return r
+}
+
+// isFallthroughStmt reports whether a Statement is exactly "fallthrough".
+func (e *emitter) isFallthroughStmt(stmt []int32) bool {
+	for n := range it(stmt) {
+		if n.sym == 0 && e.f.ch(n.tok) == FALLTHROUGH {
+			return true
+		}
+	}
+	return false
 }
 
 // emitIf emits an if statement (the IfStmt node):

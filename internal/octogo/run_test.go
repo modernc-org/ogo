@@ -1428,6 +1428,58 @@ func main() {
 		want: "0 0\n7 0\n2 4 2\nempty\n",
 	},
 	{
+		// fallthrough continues into the next clause's body without testing its
+		// condition. The switch lowers to an if/else chain, so the next body is
+		// emitted again at the fallthrough point, in its own C block -- each clause
+		// is a scope of its own, and two may declare the same name. Covered: a
+		// chain of them, a fallthrough into and out of a default written in the
+		// middle (the emitter hoists a default to the trailing else, so source
+		// order and emission order differ here), and same-named clause locals.
+		name: "switch fallthrough",
+		src: `func classify(n int) {
+	switch n {
+	case 0:
+		println("zero")
+		fallthrough
+	case 1:
+		println("one")
+	case 2:
+		println("two")
+		fallthrough
+	case 3:
+		println("three")
+		fallthrough
+	default:
+		println("rest")
+	}
+}
+
+func scoped(n int) {
+	switch n {
+	case 0:
+		v := 10
+		println(v)
+		fallthrough
+	default:
+		v := 20
+		println(v)
+		fallthrough
+	case 1:
+		v := 30
+		println(v)
+	}
+}
+
+func main() {
+	classify(0)
+	classify(2)
+	classify(9)
+	scoped(0)
+}
+`,
+		want: "zero\none\ntwo\nthree\nrest\nrest\n10\n20\n30\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

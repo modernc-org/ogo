@@ -8,8 +8,8 @@
 // block; "++" and "--"; the compound assignment operators; "%"; the concurrency
 // layer (channels, "go", "select"); the logical operators "&&" and "||";
 // three-clause and range "for"; labels, with labeled break and continue, and
-// break inside a switch; floating point (float32/float64) and the 64-bit
-// integers; methods; "panic"; and multi-package programs.
+// break inside a switch; "fallthrough"; floating point (float32/float64) and the
+// 64-bit integers; methods; "panic"; and multi-package programs.
 //
 // TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
 // and Continue Statements); "goto" itself stays out (Keywords), pending the
@@ -17,7 +17,6 @@
 // TODO 20260719 Select: send clauses, and smart-pin clauses
 // TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
 // TODO 20260720 Arrays: an array as a function result; slicing a multi-dimensional array
-// TODO 20260725 fallthrough (see Switch Statements)
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
 
@@ -179,8 +178,10 @@
 // productions. Like Go, OctoGo programs may omit most of these semicolons
 // using the standard insertion rules: when the input is broken into tokens, a
 // semicolon is automatically inserted into the token stream immediately after
-// a line's final token if that token is an identifier, a literal, a control
-// flow keyword (return), or closing punctuation.
+// a line's final token if that token is an identifier, a literal, one of the
+// control-flow keywords that can end a statement ("break", "continue",
+// "fallthrough", "return"), an increment or decrement operator, or closing
+// punctuation.
 //
 // # Identifiers
 //
@@ -860,6 +861,7 @@
 //		| "for" [ ForHeader ] Block
 //		| "break" [ identifier ]
 //		| "continue" [ identifier ]
+//		| "fallthrough"
 //		| "return" [ ExpressionList ]
 //		| "go" AssignHead { Selector | Index | CallSuffix }
 //		| SwitchStmt
@@ -1044,9 +1046,18 @@
 // the associated case.
 //
 // As in Go, a case body does not fall through to the next, and "break" leaves the
-// switch rather than any enclosing loop. "fallthrough" is not implemented yet (see
-// the TODO at the top of this document): it is a reserved keyword the grammar
-// accepts as a statement, so a use is currently reported as an unused expression.
+// switch rather than any enclosing loop.
+//
+// A "fallthrough" statement transfers control to the first statement of the next
+// case clause. It is legal only as the last statement of a clause that is not the
+// switch's last: anywhere else -- before another statement, inside a nested block,
+// loop or if, in a select's communication clause, or outside a switch entirely --
+// is "fallthrough statement out of place", and one in the final clause, which has
+// nothing to fall into, is "cannot fallthrough final case in switch". The clause
+// it continues into is the one written next, which for a default clause need not
+// be the one tested next. A clause ending in a fallthrough counts as terminating
+// for the switch's own termination, since control continues into the next clause
+// rather than out of the bottom of the switch.
 //
 // A type switch is not implemented, and waits on the interface model -- see
 // Relationship to Go.

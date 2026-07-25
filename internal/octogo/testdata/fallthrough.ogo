@@ -1,0 +1,138 @@
+// "fallthrough" transfers control to the first statement of the next case clause.
+// It is legal only as the last statement of a clause that is not the switch's
+// last; anywhere else -- deeper inside the clause, before another statement, in a
+// select clause, or outside a switch entirely -- is "out of place", and the final
+// clause has nothing to fall into.
+
+func legal(n int) int {
+	switch n {
+	case 1:
+		println("one")
+		fallthrough
+	case 2:
+		println("two")
+	default:
+		println("other")
+	}
+
+	// A chain of them, and a fallthrough as a clause's only statement.
+	switch n {
+	case 1:
+		fallthrough
+	case 2:
+		println("a")
+		fallthrough
+	case 3:
+		println("b")
+	case 4:
+		println("c")
+	}
+
+	// A default clause is not special: written before another clause, it may fall
+	// into it, and a clause may fall into it.
+	switch n {
+	case 1:
+		fallthrough
+	default:
+		println("d")
+		fallthrough
+	case 2:
+		println("e")
+	}
+	return n
+}
+
+// A clause ending in a fallthrough terminates for the switch's own purposes: it
+// continues into the next clause rather than out of the bottom of the switch, so
+// this function needs no return after it.
+func terminating(n int) int {
+	switch n {
+	case 1:
+		fallthrough
+	default:
+		return 1
+	}
+}
+
+func finalClause(n int) {
+	switch n {
+	case 1:
+		println("one")
+	default:
+		// ERROR "cannot fallthrough final case in switch"
+		fallthrough
+	}
+}
+
+func finalClauseNoDefault(n int) {
+	switch n {
+	case 1:
+		println("one")
+	case 2:
+		// ERROR "cannot fallthrough final case in switch"
+		fallthrough
+	}
+}
+
+func notLastStatement(n int) {
+	switch n {
+	case 1:
+		// ERROR "fallthrough statement out of place"
+		fallthrough
+		println("unreachable")
+	case 2:
+	}
+}
+
+func insideAnIf(n int) {
+	switch n {
+	case 1:
+		if n > 0 {
+			// ERROR "fallthrough statement out of place"
+			fallthrough
+		}
+	case 2:
+	}
+}
+
+func insideANestedBlock(n int) {
+	switch n {
+	case 1:
+		{
+			// ERROR "fallthrough statement out of place"
+			fallthrough
+		}
+	case 2:
+	}
+}
+
+func insideALoopInAClause(n int) {
+	switch n {
+	case 1:
+		for n > 0 {
+			// ERROR "fallthrough statement out of place"
+			fallthrough
+		}
+	case 2:
+	}
+}
+
+func outsideAnySwitch() {
+	// ERROR "fallthrough statement out of place"
+	fallthrough
+}
+
+func insideAFor() {
+	for {
+		// ERROR "fallthrough statement out of place"
+		fallthrough
+	}
+}
+
+func insideASelect(c chan int) {
+	select {
+	case <-c:
+		// ERROR "fallthrough statement out of place"
+		fallthrough
+	}
+}
