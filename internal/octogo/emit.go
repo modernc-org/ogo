@@ -2086,27 +2086,14 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			if names[0] == "_" {
 				continue // a blank package variable declares nothing
 			}
-			// var g = [N]T{...} at package scope: a file-scope static array, the
-			// global counterpart of a local array-literal variable (inferCType cannot
-			// type an array). A slice literal []T{...} still needs a hoisted backing
-			// and falls through to inference, which fails honestly.
-			if arrTypeAST, lit, isArr := e.soleArrayLit(initExpr); isArr {
-				if a, okDim := e.arrayDim(arrTypeAST); okDim {
-					gn := e.globalC(names[0])
-					values, length, okv := e.litPositions(lit)
-					if !okv {
-						return
-					}
-					if n, err := strconv.Atoi(a.bound); err == nil && length > n {
-						e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(a), countUnits(length, "value"), a.bound)
-						return
-					}
-					e.globalArrays[gn] = a
-					e.emit("static " + a.elem + " " + gn + a.declSuffix() + " = ")
-					e.emitPositionalValues(values, a.elem)
-					e.emit(";\n")
-					continue
-				}
+			// `var g = [N]T{...}` or `var g = []T{...}` at package scope: a
+			// file-scope static table, the global counterpart of a local
+			// array-literal variable. inferCType can type neither -- an array has no
+			// assignable C value type, and a slice literal needs a hoisted backing --
+			// so this precedes the general inference path below.
+			if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
+				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
+				continue
 			}
 			ct, ok := e.inferCType(initExpr)
 			if !ok {
@@ -2134,6 +2121,20 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 		}
 		// A package-level fixed array `var a [N]T` -> `static T a[N];`.
 		if elem, bound, ok := e.arrayType(typeAST); ok {
+			// `var a [N]T = [N]T{...}`: the same static table as the inferred form,
+			// after checking the literal's type against the declared one.
+			if initExpr != nil && len(names) == 1 && names[0] != "_" {
+				litType, lit, isLit := e.soleArrayLit(initExpr)
+				if !isLit {
+					e.fail("a package array initializer must be an array literal")
+					return
+				}
+				if !e.sameArrayType(arrDim{elem: elem, bound: bound}, litType) {
+					return
+				}
+				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
+				continue
+			}
 			if initExpr != nil {
 				e.fail("array variable initializers are not supported yet")
 				return
@@ -2153,9 +2154,23 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			e.needSlice(elem)
 			cname := sliceCName(elem)
 			if initExpr != nil {
+				// `var s []T = []T{...}`: a static backing array plus a header over
+				// it, the same lowering the local form uses.
+				if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
+					if me, isSlice := e.sliceType(litType); !isSlice || me != elem {
+						e.fail("a %s literal cannot initialize a variable declared []%s", e.litTypeName(litType), elem)
+						return
+					}
+					if len(names) != 1 || names[0] == "_" {
+						e.fail("a slice literal initializer needs a single named variable")
+						return
+					}
+					e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
+					continue
+				}
 				me, lenAST, capAST, ok := e.makeSliceInit(initExpr)
 				if !ok {
-					e.fail("a package slice initializer must be make([]T, ...)")
+					e.fail("a package slice initializer must be make([]T, ...) or a []T literal")
 					return
 				}
 				if me != elem {
@@ -3299,7 +3314,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 					if !e.sameArrayType(a, litType) {
 						return
 					}
-					e.emitArrayLitVar(nm, litType, lit)
+					e.emitArrayLitVar(nm, litType, lit, false)
 					continue
 				}
 				e.includes["string.h"] = true
@@ -3347,7 +3362,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 						e.fail("a %s literal cannot initialize a variable declared []%s", e.litTypeName(litType), elem)
 						return
 					}
-					e.emitArrayLitVar(names[0], litType, lit)
+					e.emitArrayLitVar(names[0], litType, lit, false)
 					continue
 				}
 				if me, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
@@ -3692,10 +3707,29 @@ func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 	e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n")
 }
 
-func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
+// emitArrayLitVar emits a variable initialized by an array or slice literal --
+// "[N]T{...}" as a C aggregate, "[]T{...}" as a backing array plus a header over
+// it. static drives file-scope emission: "static", no indent, and the package
+// rather than the local type environment. name is the emitted C name, already
+// mangled for a package variable.
+//
+// A file-scope slice header initialized with the backing array's name is a valid
+// C static initializer -- an address constant -- so a package-level slice literal
+// needs no run-time init step, unlike a package variable whose initializer is a
+// call.
+func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static bool) {
 	values, length, ok := e.litPositions(lit)
 	if !ok {
 		return
+	}
+	// lead opens a declaration: "static " at file scope, the current indent inside
+	// a function.
+	lead := func() {
+		if static {
+			e.emit("static ")
+			return
+		}
+		e.ind()
 	}
 	if a, ok := e.arrayDim(typeAST); ok {
 		// Fewer values than the length is legal and zeroes the rest, as in Go; more
@@ -3707,8 +3741,12 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
 			e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(a), countUnits(length, "value"), a.bound)
 			return
 		}
-		e.arrays[name] = a
-		e.ind()
+		if static {
+			e.globalArrays[name] = a
+		} else {
+			e.arrays[name] = a
+		}
+		lead()
 		e.emit(a.elem + " " + name + a.declSuffix() + " = ")
 		e.emitPositionalValues(values, a.elem)
 		e.emit(";\n")
@@ -3721,23 +3759,28 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node) {
 	}
 	e.needSlice(elem)
 	cname := sliceCName(elem)
-	e.sliceVars[name] = elem
-	e.locals[name] = cname
+	if static {
+		e.globalSliceVars[name] = elem
+		e.globals[name] = cname
+	} else {
+		e.sliceVars[name] = elem
+		e.locals[name] = cname
+	}
 	if length == 0 {
 		// "[]T{}" is an empty slice, not a slice of one zero element. C has no
 		// zero-length array to point it at, and it needs none: the header is the
 		// zero value, whose pointer is never dereferenced because the length is 0.
-		e.ind()
+		lead()
 		e.emit(cname + " " + name + " = {0};\n")
 		return
 	}
 	backing := e.newBacking()
 	n := strconv.Itoa(length)
-	e.ind()
+	lead()
 	e.emit(elem + " " + backing + "[" + n + "] = ")
 	e.emitPositionalValues(values, elem)
 	e.emit(";\n")
-	e.ind()
+	lead()
 	e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")
 }
 
@@ -7057,7 +7100,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 // append on name resolve.
 func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
-		e.emitArrayLitVar(name, typeAST, lit)
+		e.emitArrayLitVar(name, typeAST, lit, false)
 		return
 	}
 	// `b := a` where a is an array variable: Go copies the array by value. C cannot

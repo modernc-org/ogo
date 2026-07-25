@@ -1480,6 +1480,40 @@ func main() {
 		want: "zero\none\ntwo\nthree\nrest\nrest\n10\n20\n30\n",
 	},
 	{
+		// Package-level lookup tables: an array or slice literal initializing a
+		// package variable, with the type written or inferred. Each becomes a
+		// file-scope static -- for a slice, a static backing array plus a header
+		// over it, which is a valid C static initializer (an address constant), so
+		// none of these needs a run-time init step.
+		name: "package-level table literals",
+		src: `type point struct {
+	x int
+	y int
+}
+
+var sizes [4]int = [4]int{1, 2, 4, 8}
+var masks = [3]uint8{0x0f, 0xf0, 0xff}
+var names []string = []string{"tx", "rx"}
+var primes = []int{2, 3, 5, 7}
+var sparse [5]int = [5]int{0: 100, 4: 900}
+var corners = []point{{1, 2}, {3, 4}}
+var empty = []int{}
+
+func main() {
+	println(sizes[0], sizes[3], len(sizes))
+	println(masks[0], masks[2])
+	println(names[0], names[1], len(names))
+	println(primes[3], len(primes), cap(primes))
+	println(sparse[0], sparse[1], sparse[4])
+	println(corners[1].x, corners[1].y, len(corners))
+	println(len(empty))
+	primes[0] = 11
+	println(primes[0])
+}
+`,
+		want: "1 8 4\n15 255\ntx rx 2\n7 4 4\n100 0 900\n3 4 2\n0\n11\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

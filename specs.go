@@ -710,9 +710,19 @@
 // 4: 9}", "[]int{2: 5}") or a mixture ("[]int{1, 4: 9}"); an index must be a
 // constant, and the elements it skips are zeroed. An array literal may supply
 // fewer values than its length, zeroing the rest, and no more; a slice literal's
-// length and capacity are its highest index plus one. Both are a variable's initializer and nothing else:
-// an array cannot be assigned, and a slice literal's backing storage belongs to the
-// declaration it initializes.
+// length and capacity are its highest index plus one. Both are a variable's
+// initializer and nothing else: an array cannot be assigned, and a slice
+// literal's backing storage belongs to the declaration it initializes.
+//
+// That declaration may be at package scope as well as inside a function, with the
+// type written or inferred, which is how a program states a lookup table:
+//
+//	var sizes [4]int = [4]int{1, 2, 4, 8}
+//	var primes = []int{2, 3, 5, 7}
+//
+// A package-level table is laid out statically, so it costs no start-up work: an
+// array is a static array, and a slice is a static backing array plus a header
+// over it.
 //
 // A "chan" type may stand where a type-as-value may, so that "make(chan T)"
 // parses and is then refused by the checker, which can name the real problem;
