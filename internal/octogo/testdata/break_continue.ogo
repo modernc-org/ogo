@@ -1,6 +1,8 @@
-// A "break" leaves the innermost enclosing "for" or "switch"; a "continue" begins
-// the next iteration of the innermost enclosing "for". OctoGo has no labels, so
-// neither takes one and there is nothing else they could name.
+// A "break" leaves the innermost enclosing "for", "switch" or "select"; a
+// "continue" begins the next iteration of the innermost enclosing "for". Either
+// may name an enclosing labeled statement instead (see labels.ogo). A "break"
+// outside all three, and a "continue" outside a loop, are reported -- a switch or
+// select is not something a "continue" can name.
 
 func breaks() {
 	i := 0
@@ -36,7 +38,7 @@ func reachable_after_break() {
 }
 
 func misplaced() {
-	// ERROR "break is not in a loop or switch"
+	// ERROR "break is not in a loop, switch or select"
 	break
 }
 
@@ -44,6 +46,30 @@ func misplaced_continue() {
 	x := 1
 	switch x {
 	case 1:
+		// ERROR "continue is not in a loop"
+		continue
+	}
+}
+
+var ch chan int
+
+// A break in a communication clause leaves the select.
+func breaks_select() {
+	select {
+	case v := <-ch:
+		println(v)
+		break
+	default:
+		break
+	}
+	println("after")
+}
+
+// A continue names a loop, so a select is no more a target for it than a switch.
+func continue_in_select() {
+	select {
+	case v := <-ch:
+		println(v)
 		// ERROR "continue is not in a loop"
 		continue
 	}

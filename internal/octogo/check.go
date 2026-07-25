@@ -227,6 +227,7 @@ type File struct {
 	iota              int               // the current iota value while evaluating a const spec, or -1 outside a const declaration
 	loopDepth         int               // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
 	switchDepth       int               // number of enclosing "switch" statements, so a "break" in one is recognised as placed
+	selectDepth       int               // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
 	labels            []labelFrame      // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
@@ -998,12 +999,15 @@ func (f *File) clauseIsTerminating(clause Node) bool {
 }
 
 // selectIsTerminating reports whether a select terminates: every communication
-// clause body must end in a terminating statement. A select blocks until one
-// clause can proceed, so -- unlike a switch -- it needs no default; an empty
-// select blocks forever and so terminates vacuously.
+// clause body must end in a terminating statement and none may break out of the
+// select. A select blocks until one clause can proceed, so -- unlike a switch --
+// it needs no default; an empty select blocks forever and so terminates
+// vacuously. The break condition is the switch's (see switchIsTerminating): a
+// break that is not the last statement leaves a body that ends in a terminating
+// statement yet can still exit the select and fall past it.
 func (f *File) selectIsTerminating(n Node) bool {
 	for c := range it(n.ast) {
-		if c.sym == CommClause && !f.blockIsTerminating(c) {
+		if c.sym == CommClause && (!f.blockIsTerminating(c) || f.containsBreak(c)) {
 			return false
 		}
 	}
@@ -1333,8 +1337,8 @@ func (f *File) checkLabeledStatement(s *Scope, results []retResult, head, postfi
 // switch.
 func (f *File) checkBreak(breakTok Token, label Token, hasLabel bool) {
 	if !hasLabel {
-		if f.loopDepth == 0 && f.switchDepth == 0 {
-			f.err(breakTok.Position(), "break is not in a loop or switch")
+		if f.loopDepth == 0 && f.switchDepth == 0 && f.selectDepth == 0 {
+			f.err(breakTok.Position(), "break is not in a loop, switch or select")
 		}
 		return
 	}
@@ -2488,7 +2492,11 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 		if id, ok := f.commRecvVar(c); ok {
 			_ = cs.add(&VarDeclaration{declaration: declaration{token: id}})
 		}
+		// A break inside a comm clause leaves the select, so the body is checked
+		// one select level deeper.
+		f.selectDepth++
 		f.checkClauseBody(cs, results, c)
+		f.selectDepth--
 	}
 }
 

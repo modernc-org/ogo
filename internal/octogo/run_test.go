@@ -1728,6 +1728,49 @@ func main() {
 		want: "99\n7\n",
 	},
 	{
+		// A break in a communication clause leaves the select, as it does in Go.
+		// Both select lowerings are C loop constructs, so a plain C break is that
+		// jump -- but the switch context has to be cleared around them, or a select
+		// written inside a switch case would emit that switch's end-label goto and
+		// leave the switch as well. The second select here is the one that catches
+		// it: "in case" must still print.
+		name: "break inside a select",
+		src: `func worker(ch chan int) {
+	ch <- 1
+	ch <- 2
+}
+
+func main() {
+	var ch chan int
+	go worker(ch)
+
+	for i := 0; i < 2; i++ {
+		select {
+		case v := <-ch:
+			println(v)
+			break
+		}
+		println("after select")
+	}
+
+	n := 1
+	switch n {
+	case 1:
+		select {
+		case x := <-ch:
+			println(x)
+		default:
+			println("empty")
+			break
+		}
+		println("in case")
+	}
+	println("done")
+}
+`,
+		want: "1\nafter select\n2\nafter select\nempty\nin case\ndone\n",
+	},
+	{
 		// A var spec may give each of its names its own value, at either scope,
 		// with or without a declared type.
 		name: "var declarations with a value list",

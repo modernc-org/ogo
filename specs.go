@@ -934,10 +934,11 @@
 //
 // # Break and Continue Statements
 //
-// A "break" statement terminates execution of the innermost enclosing "for" or
-// "switch" statement. A "continue" statement begins the next iteration of the
-// innermost enclosing "for" statement. Both appear in the Statement production
-// above.
+// A "break" statement terminates execution of the innermost enclosing "for",
+// "switch" or "select" statement. A "continue" statement begins the next
+// iteration of the innermost enclosing "for" statement -- only a loop, so a
+// switch or a select is not something it can name. Both appear in the Statement
+// production above.
 //
 // Either statement may name an enclosing labeled statement, and then acts on that
 // one instead of the innermost: "break Label" leaves the labeled "for" or "switch",

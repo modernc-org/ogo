@@ -569,6 +569,16 @@ func (e *emitter) emitSelect(ast []int32) {
 			hasDefault = true
 		}
 	}
+	// A break in a comm clause leaves the select. Both lowerings below are C loop
+	// constructs -- a polling "while", or a "do { } while (0)" for the
+	// non-blocking form -- so a plain C break is exactly that jump, and the switch
+	// context must be cleared or a select written inside a switch case would emit
+	// that switch's end-label goto instead and leave the switch too. Restored
+	// after, like emitLoopBody does for a loop.
+	savedBreak := e.switchBreak
+	e.switchBreak = ""
+	defer func() { e.switchBreak = savedBreak }()
+
 	done := e.newTmp()
 	e.ind()
 	e.emit("{\n")
