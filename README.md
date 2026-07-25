@@ -119,7 +119,9 @@ example `ogo help build` — for one command's flags and detail. A typical sessi
 The language is specified in the package documentation:
 [**OctoGo Language Specification**](https://pkg.go.dev/modernc.org/ogo#hdr-OctoGo_Language_Specification).
 It is a draft and is reconciled with the implementation as the compiler moves;
-the **Status** section below is the shorter answer to what works today.
+the **Status** section below is the shorter answer to what works today, and
+[CHANGELOG.md](CHANGELOG.md) records what changed in each release — including the
+cases where a new release rejects a program the last one accepted.
 
 ## **Architecture & Design**
 
@@ -153,38 +155,47 @@ broken.
 
 **Works** (all of it exercised on hardware):
 
-* Integers (sized and unsized), `byte`, `rune`, `bool`, `string`, structs, fixed
-  arrays including multi-dimensional, slices, named types, channels.
+* Integers (sized and unsized, including 64-bit), `byte`, `rune`, `bool`, `string`,
+  structs, fixed arrays including multi-dimensional, slices, named types, channels.
+  Structs may refer to themselves, to each other, and to a type declared later, so
+  linked lists, trees and graphs build.
 * Composite literals: structs positionally (`P{1, 2}`, `P{}`, nested) or by field
-  name (`P{y: 2}`, any subset in any order, the rest zeroed), and arrays and
-  slices (`[4]int{10, 20}`, `[]int{1, 2, 3}`). One place a literal may not appear
-  bare is the top level of an `if`, `for` or `switch` header, where `{` is the
-  block — parenthesize there, as in Go: `if p == (P{}) {`.
+  name (`P{y: 2}`, any subset in any order, the rest zeroed), and arrays and slices
+  positionally, by index or mixed (`[4]int{10, 20}`, `[]int{1, 2, 3}`,
+  `[5]int{0: 1, 4: 9}`), including multi-dimensional (`[2][3]int{{1, 2, 3}, {4, 5,
+  6}}`) and at package scope, which is how you write a lookup table. One place a
+  literal may not appear bare is the top level of an `if`, `for` or `switch` header,
+  where `{` is the block — parenthesize there, as in Go: `if p == (P{}) {`.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
   functions and methods with value or pointer receivers.
 * Named and unnamed parameters and results, multiple return values, naked returns.
 * `if`/`else`, all `for` forms including `range`, `switch` with or without a guard,
-  `break`, `continue`, `defer` (including in nested blocks, capturing its arguments).
-* The full operator set, compound assignment, multiple assignment.
-* `len`, `cap`, `append`, `make` for a fixed-capacity slice, `print`/`println`.
+  `fallthrough`, `break` and `continue` (including labeled), `defer` (including in
+  nested blocks, capturing its arguments).
+* The full operator set, compound assignment, multiple assignment, struct and
+  string comparison.
+* `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
+  fixed-capacity slice, `panic`, `print`/`println`.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. Channels may be
-  declared at package level as well as locally.
+  declared at package level as well as locally, and the P2's locks are reachable
+  directly through the `p2` package.
 * Runtime traps for out-of-range indexing, division by zero and cog exhaustion.
-* A package is a directory: `ogo build` compiles every `.ogo` file in it together.
+* A package is a directory: `ogo build` compiles every `.ogo` file in it together,
+  and a program may span several packages.
 
 **Does not work yet**, in rough order of how likely you are to hit it:
 
-* **Importing your own packages.** Only `import "p2"` resolves; a program is one
-  package in one directory for now.
-* An array or slice literal is a variable's initializer and nothing else: C cannot
-  assign an array, and a slice literal's backing storage belongs beside the
-  declaration it initializes. Go's indexed form (`[3]int{2: 5}`) is not built.
+* **There is no standard library.** The `p2` package wraps twenty-four intrinsics
+  (pin control, smart pins, timing, the hardware locks) and is the whole of it.
+  Your own packages do import and build; there is just nothing to import yet.
+* **Interfaces**, and with them type switches and type assertions. See below.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
-* **The `p2` package** wraps nine intrinsics (pin control, smart pins, `WaitMs`).
-  It is enough for blinky, not a standard library.
+* An array or slice literal is a variable's initializer and nothing else: C cannot
+  assign an array, and a slice literal's backing storage belongs beside the
+  declaration it initializes.
 * `go` on a method, and send clauses in `select`.
-* An array as a function result, and slicing a multi-dimensional array.
+* An array as a function result, a slice whose element is an array, and `goto`.
 
 Floating point (float32/float64) is supported: the P2's C toolchain provides it,
 so float arithmetic, comparison, int conversions and printing all work. Note the
@@ -195,6 +206,10 @@ compatibility but carries no extra precision.
 **Not planned**, because the target does not permit them: a garbage collector, a
 heap, maps, closures that capture their environment, and runtime string
 concatenation. Constant string concatenation folds at compile time.
+
+Everything else Go has is meant to be here eventually — anything missing above is
+work not yet done rather than a decision taken. Generics are the one open question:
+not supported, not planned, and not ruled out either.
 
 Interfaces are designed but not implemented; the whole-program-optimization
 strategy behind them is still an open question, and opinions are welcome.

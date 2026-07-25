@@ -2,14 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Reconciled with the implementation 20260725. Landed since this list was first
-// written: composite literals for structs, positional, keyed and indexed; array
-// and slice literals; package-level channels; "defer", including in a nested
-// block; "++" and "--"; the compound assignment operators; "%"; the concurrency
-// layer (channels, "go", "select"); the logical operators "&&" and "||";
-// three-clause and range "for"; labels, with labeled break and continue, and
-// break inside a switch; "fallthrough"; floating point (float32/float64) and the
-// 64-bit integers; methods; "panic"; and multi-package programs.
+// Reconciled with the implementation 20260725. What landed in each release,
+// including the changes that reject a program an earlier one accepted, is in
+// CHANGELOG.md; this list is only what is still owed.
 //
 // TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
 // and Continue Statements); "goto" itself stays out (Keywords), pending the
