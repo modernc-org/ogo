@@ -16,7 +16,7 @@
 // jump-over-declaration safety analysis its unrestricted form needs.
 // TODO 20260719 Select: send clauses, and smart-pin clauses
 // TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
-// TODO 20260720 Arrays: an array as a function result; slicing a multi-dimensional array
+// TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
 
@@ -734,6 +734,12 @@
 // row zeroes that row entirely, both following the one-dimensional rule. A slice
 // of arrays and an array of slices are not supported: each needs an element that
 // is itself indirect, which the flat static layout above has nowhere to put.
+//
+// A row of such an array may be sliced -- "m[i][:]", or any sub-range of it --
+// giving a slice over the row's own storage, so a write through it is a write to
+// the array. Slicing the array itself is what a slice of arrays would be, and is
+// refused. Only a row that is one-dimensional can be sliced, for the same reason:
+// a row of a [2][3][4]int is a [3][4]int.
 //
 // A "chan" type may stand where a type-as-value may, so that "make(chan T)"
 // parses and is then refused by the checker, which can name the real problem;

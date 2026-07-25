@@ -1577,6 +1577,48 @@ func main() {
 		want: "240\n239\n208\n9 32\n240\n240\n65280\n240\n",
 	},
 	{
+		// Slicing a row of a multi-dimensional array, "m[i][:]". The row decays to
+		// a pointer to its first element and its extent is both the length and the
+		// capacity, so the header aliases the array's own storage -- a write
+		// through the slice is a write to the array, which the case checks. The
+		// row index keeps its bounds check. Slicing the array itself is refused:
+		// that would be a slice of arrays, whose element C cannot name here.
+		name: "slicing a row of a multi-dimensional array",
+		src: `var grid = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+
+func total(s []int) int {
+	n := 0
+	for _, v := range s {
+		n = n + v
+	}
+	return n
+}
+
+func main() {
+	r := grid[1][:]
+	println(len(r), cap(r), r[0], r[2])
+	println(total(grid[0][:]), total(grid[1][:]))
+
+	m := [2][3]int{{1, 2, 3}, {4, 5, 6}}
+	sub := m[0][1:3]
+	println(len(sub), sub[0], sub[1])
+
+	// The slice aliases the array, so this write is visible through both.
+	row := m[0][:]
+	row[1] = 99
+	println(m[0][1], row[1])
+
+	i := 1
+	row2 := m[i][:]
+	println(len(row2), row2[0])
+
+	cube := [2][2][2]int{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}
+	println(total(cube[1][0][:]))
+}
+`,
+		want: "3 3 4 6\n6 15\n2 2 3\n99 99\n3 4\n11\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

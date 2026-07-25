@@ -4786,7 +4786,11 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 	case e.hasArrayVar(base):
 		a, _ := e.arrayVar(base)
 		if a.dims() > 1 {
-			return sliceSource{}, false // slicing a multi-dimensional array is not modelled
+			// "m[:]" over a [2][3]int would be a slice of [3]int, and a slice of
+			// arrays has no element type C can name here. Slicing a *row*,
+			// "m[0][:]", is a slice of int and does work (sliceableChainRow).
+			e.fail("cannot slice %s: its element is an array; slice a row instead, %s[i][:]", arrayTypeName(a), base)
+			return sliceSource{}, false
 		}
 		e.needSlice(a.elem)
 		return sliceSource{sliceCName(a.elem), base, a.bound, a.bound}, true
@@ -4819,6 +4823,52 @@ func (e *emitter) sliceableField(base string, fields []string) (sliceSource, boo
 		e.needSlice(elem)
 	}
 	return sliceSource{ct, lv + ".ptr", lv + ".len", lv + ".cap"}, true
+}
+
+// sliceableChainRow recognises an access chain whose last step slices what the
+// steps before it reach -- `m[0][:]`, a row of a multi-dimensional array.
+//
+// It is separate from the plain chain walk because emitAccessChain streams its
+// output, and once an index has been written the prefix is no longer available as
+// text; a slice header needs exactly that text for its pointer. So the prefix is
+// typed and then rendered to a string, and the row's own extent bounds the result.
+//
+// Only a row that is itself one-dimensional can become a slice: a row of a
+// [2][3][4]int is a [3][4]int, and a slice of arrays has no element type C can
+// name here (the same limit that refuses a `[][2]int` literal).
+func (e *emitter) sliceableChainRow(base string, steps []Node) (src sliceSource, low, high []int32, ok bool) {
+	if len(steps) < 2 || steps[len(steps)-1].sym != Index {
+		return sliceSource{}, nil, nil, false
+	}
+	low, high, isSlice := e.sliceParts(steps[len(steps)-1].ast)
+	if !isSlice {
+		return sliceSource{}, nil, nil, false
+	}
+	prefix := steps[:len(steps)-1]
+	cur, ok := e.accessChainType(base, prefix)
+	if !ok || cur.slice || len(cur.dims) != 1 {
+		return sliceSource{}, nil, nil, false
+	}
+	text, ok := e.accessChainCText(base, prefix)
+	if !ok {
+		return sliceSource{}, nil, nil, false
+	}
+	e.needSlice(cur.elem)
+	// The row decays to a pointer to its first element, and its extent is both the
+	// length and the capacity: an array's storage is exactly its extent.
+	return sliceSource{sliceCName(cur.elem), text, cur.dims[0], cur.dims[0]}, low, high, true
+}
+
+// accessChainCText renders an access chain to a string, the way argsCText does
+// for a call's arguments, so a caller that needs the chain as an operand rather
+// than as streamed output can have it.
+func (e *emitter) accessChainCText(base string, steps []Node) (string, bool) {
+	saved := e.w
+	var buf bytes.Buffer
+	e.w = &buf
+	_, ok := e.emitAccessChain(base, steps)
+	e.w = saved
+	return buf.String(), ok
 }
 
 // emitSliceExpr emits a slice expression `base[low:high]` as a new { pointer,
@@ -8097,6 +8147,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, steps, ok := e.factorAccessChain(kids); ok {
 				// Fall through to the fixed shapes when the walker cannot type the
 				// chain, rather than short-circuiting: a slice expression is theirs.
+				if src, _, _, ok := e.sliceableChainRow(base, steps); ok {
+					return src.cname, true // `m[0][:]` -- a slice over a row
+				}
 				if cur, ok := e.accessChainType(base, steps); ok && !cur.slice && len(cur.dims) == 0 {
 					return cur.ctype, true
 				}
@@ -8690,6 +8743,12 @@ func (e *emitter) emitExprNode(n Node) {
 			// A chain that alternates indexes and selectors more than once --
 			// `s[i].v[j]` -- which no fixed shape below can match.
 			if base, steps, ok := e.factorAccessChain(kids); ok {
+				// `m[0][:]` -- slicing a row. Tried first: the chain walk cannot
+				// emit a slice step, and would consume the prefix the header needs.
+				if src, low, high, ok := e.sliceableChainRow(base, steps); ok {
+					e.emitSliceExpr(src, low, high)
+					return
+				}
 				if _, ok := e.emitAccessChain(base, steps); ok {
 					return
 				}
