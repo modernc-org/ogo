@@ -100,6 +100,9 @@ type Fuzzer struct {
 	// order, so a call site can pick one reproducibly.
 	Funcs []*FuncDef
 
+	// Structs are the generated struct types, in generation order.
+	Structs []*StructDef
+
 	// Hardware limits tracking
 	CogCount int // Max 8
 

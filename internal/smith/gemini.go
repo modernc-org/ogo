@@ -35,14 +35,20 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 
 	fmt.Fprintf(f.Out, "var %s int = 0\n\n", f.ChecksumName)
 
-	// 3. Generate the functions main will call. They come first so that every call
+	// 3. Generate the struct types, ahead of the functions and of main so both can
+	// use them.
+	for i, n := 0, f.Rand.Intn(3); i < n; i++ {
+		f.genStructType()
+	}
+
+	// 4. Generate the functions main will call. They come first so that every call
 	// site in main has one to draw on, and they take no part in the environment:
 	// a body reads only its own parameters (see genPureExpr).
 	for i, n := 0, f.Rand.Intn(4); i < n; i++ {
 		f.genFuncDecl()
 	}
 
-	// 4. Generate the main function
+	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
 
@@ -64,10 +70,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		fmt.Fprint(f.Out, "\n")
 	}
 
-	// 4. Retrieve the FINAL generation-time state of the checksum
+	// 6. Retrieve the FINAL generation-time state of the checksum
 	finalChecksum := mem.Load(f.ChecksumName)
 
-	// 5. Emit the Oracle Assertion
+	// 7. Emit the Oracle Assertion
 	// If the compiled P2 binary gets a different result, it prints the error and halts.
 	writeIndent(f.Out, 1)
 	fmt.Fprintf(f.Out, "if %s != %s {\n", f.ChecksumName, finalChecksum.Literal())
@@ -215,6 +221,11 @@ func (f *Fuzzer) flushUnused(vm Machine, mem Memory) []Node {
 		case SliceType:
 			varVal = Int32(len(mem.Load(name).(*SliceVal).Elems))
 			right = &BuiltinCallNode{Fn: "len", Arg: name}
+		case StructType:
+			sv := mem.Load(name).(*StructVal)
+			fld := sv.Def.Fields[0]
+			varVal = sv.Fields[fld]
+			right = &FieldNode{Name: name, Field: fld}
 		default:
 			varVal = mem.Load(name)
 			right = &IdentNode{Name: name}
@@ -256,8 +267,14 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genSliceWrite(vm, mem) // 9% chance for a slice element write
 	case r < 0.76:
 		return f.genAppend(vm, mem) // 7% chance for an append
-	case r < 0.85:
-		return f.genCompoundAssign(vm, mem) // 9% chance for a compound assignment
+	case r < 0.82:
+		return f.genStructDecl(vm, mem) // 6% chance for a struct declaration
+	case r < 0.89:
+		return f.genFieldWrite(vm, mem) // 7% chance for a struct field write
+	case r < 0.93:
+		return f.genStructCopy(vm, mem) // 4% chance for a by-value struct copy
+	case r < 0.97:
+		return f.genCompoundAssign(vm, mem) // 4% chance for a compound assignment
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -587,6 +604,16 @@ func (f *Fuzzer) genExpression(targetType Type, vm Machine, mem Memory, depth in
 			}
 			return &BuiltinCallNode{Fn: "len", Arg: sl.Name}, Int32(len(sv.Elems)), nil
 		}
+		// Read a field of an existing struct, `v.f`. The VM holds every field's
+		// value, so the oracle stays in step with the compiled field read -- which
+		// is where a wrong field offset would show.
+		if structs := f.CurrentEnv.GetStructSymbols(); len(structs) != 0 && f.Rand.Float32() < 0.25 {
+			sym := structs[f.Rand.Intn(len(structs))]
+			sym.Used = true
+			sv := mem.Load(sym.Name).(*StructVal)
+			fld := sv.Def.Fields[f.Rand.Intn(len(sv.Def.Fields))]
+			return &FieldNode{Name: sym.Name, Field: fld}, sv.Fields[fld], nil
+		}
 		// Call one of the generated functions. Its arguments are themselves
 		// generated expressions, and the VM re-evaluates the callee's body against
 		// their values, so the whole call is predicted by the oracle.
@@ -827,4 +854,113 @@ func (n *CallNode) Write(w io.Writer, indent int) {
 		a.Write(w, 0)
 	}
 	fmt.Fprint(w, ")")
+}
+
+// genStructType generates a struct type declaration and writes it out. All fields
+// are int, which keeps the VM's model one Int32 per field while still exercising
+// what struct codegen actually gets wrong: field offsets, by-value copies and the
+// per-type equality helper.
+func (f *Fuzzer) genStructType() *StructDef {
+	def := &StructDef{Name: f.newVarName("S")}
+	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
+		def.Fields = append(def.Fields, f.newVarName("f"))
+	}
+	f.Structs = append(f.Structs, def)
+	(&StructTypeNode{Def: def}).Write(f.Out, 0)
+	fmt.Fprint(f.Out, "\n")
+	return def
+}
+
+// genStructDecl declares a struct variable, `var v S`, zero-initialized as the
+// emitter zeroes it.
+func (f *Fuzzer) genStructDecl(vm Machine, mem Memory) Node {
+	if len(f.Structs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	def := f.Structs[f.Rand.Intn(len(f.Structs))]
+	name := f.newVarName("st")
+	sv := &StructVal{Def: def, Fields: map[string]Int32{}}
+	for _, fld := range def.Fields {
+		sv.Fields[fld] = 0
+	}
+	mem.Store(name, sv)
+	f.CurrentEnv.Declare(name, StructType{Def: def}, false)
+	return &StructDeclNode{Name: name, TypeName: def.Name}
+}
+
+// genFieldWrite assigns an integer expression to one field, `v.f = e`.
+func (f *Fuzzer) genFieldWrite(vm Machine, mem Memory) Node {
+	structs := f.CurrentEnv.GetStructSymbols()
+	if len(structs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	sym := structs[f.Rand.Intn(len(structs))]
+	sym.Used = true
+	sv := mem.Load(sym.Name).(*StructVal)
+	fld := sv.Def.Fields[f.Rand.Intn(len(sv.Def.Fields))]
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	sv.Fields[fld] = exprVal.(Int32)
+	return &AssignStmtNode{Lhs: sym.Name + "." + fld, Op: "=", Rhs: exprNode}
+}
+
+// genStructCopy declares a new struct variable from an existing one, `w := v`.
+// Go copies a struct by value, so the two are independent afterwards -- which is
+// what the VM's Copy models and what a miscompile here would get wrong.
+func (f *Fuzzer) genStructCopy(vm Machine, mem Memory) Node {
+	structs := f.CurrentEnv.GetStructSymbols()
+	if len(structs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	src := structs[f.Rand.Intn(len(structs))]
+	src.Used = true
+	name := f.newVarName("st")
+	sv := mem.Load(src.Name).(*StructVal)
+	mem.Store(name, sv.Copy())
+	f.CurrentEnv.Declare(name, StructType{Def: sv.Def}, false)
+	return &ShortDeclNode{Name: name, Rhs: &IdentNode{Name: src.Name}}
+}
+
+// StructTypeNode writes a generated struct type declaration.
+type StructTypeNode struct{ Def *StructDef }
+
+func (n *StructTypeNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "type %s struct {\n", n.Def.Name)
+	for _, f := range n.Def.Fields {
+		writeIndent(w, indent+1)
+		fmt.Fprintf(w, "%s int\n", f)
+	}
+	fmt.Fprint(w, "}\n")
+}
+
+// StructDeclNode is `var v S`, zero-initialized.
+type StructDeclNode struct {
+	Name     string
+	TypeName string
+}
+
+func (n *StructDeclNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "var %s %s", n.Name, n.TypeName)
+}
+
+// ShortDeclNode is `name := rhs`, used for the by-value struct copy.
+type ShortDeclNode struct {
+	Name string
+	Rhs  Node
+}
+
+func (n *ShortDeclNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s := ", n.Name)
+	n.Rhs.Write(w, 0)
+}
+
+// FieldNode reads one field of a struct variable, `v.f`.
+type FieldNode struct {
+	Name  string
+	Field string
+}
+
+func (n *FieldNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "%s.%s", n.Name, n.Field)
 }

@@ -15,6 +15,7 @@ var (
 	_ Value = (Bool)(false)
 	_ Value = (*ArrayVal)(nil)
 	_ Value = (*SliceVal)(nil)
+	_ Value = (*StructVal)(nil)
 )
 
 // ArrayVal is a fixed integer array in the generation-time VM, zero-initialized to
@@ -242,4 +243,43 @@ func (b Bool) Value() any { return bool(b) }
 
 func (b Bool) binOp(op string, rhs Value) (Value, error) {
 	panic(todo("bool binOp %q", op))
+}
+
+// StructVal is a generated struct value in the generation-time VM: one Int32 per
+// field, zero when the variable is declared, exactly as the emitter zeroes it.
+//
+// Like ArrayVal and SliceVal it is a pointer type so a field write mutates the
+// stored value in place. Copy is therefore explicit -- which is the point of
+// having it, since `w := v` copies a struct by value in Go and getting that wrong
+// is a miscompile the oracle can see.
+type StructVal struct {
+	Def    *StructDef
+	Fields map[string]Int32
+}
+
+func (s *StructVal) Literal() string { return "" } // declared zero, never literal-initialized
+func (s *StructVal) Type() Type      { return StructType{Def: s.Def} }
+func (s *StructVal) Value() any      { return s.Fields }
+func (s *StructVal) binOp(op string, rhs Value) (Value, error) {
+	panic(todo("struct is not a binary operand: %q", op))
+}
+
+// Copy is Go's by-value struct assignment.
+func (s *StructVal) Copy() *StructVal {
+	r := &StructVal{Def: s.Def, Fields: make(map[string]Int32, len(s.Fields))}
+	for k, v := range s.Fields {
+		r.Fields[k] = v
+	}
+	return r
+}
+
+// Equal reports whether every field matches, which is what the emitted per-type
+// equality helper compares.
+func (s *StructVal) Equal(o *StructVal) bool {
+	for _, f := range s.Def.Fields {
+		if s.Fields[f] != o.Fields[f] {
+			return false
+		}
+	}
+	return true
 }

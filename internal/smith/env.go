@@ -103,3 +103,8 @@ func isInt(t Type) bool {
 	bt, ok := t.(BasicType)
 	return ok && bt.Kind == KindInt
 }
+
+// GetStructSymbols returns the in-scope variables of a generated struct type.
+func (s *Scope) GetStructSymbols() []*Symbol {
+	return s.matching(func(t Type) bool { _, ok := t.(StructType); return ok })
+}

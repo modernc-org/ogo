@@ -79,3 +79,21 @@ func (c ChanType) String() string {
 }
 
 func (c ChanType) IsNumeric() bool { return false }
+
+// StructDef is a generated struct type: its name and its fields, all int. Fields
+// are kept in declaration order rather than a map so that generation stays
+// reproducible from a seed.
+type StructDef struct {
+	Name   string
+	Fields []string
+}
+
+// StructType names a generated struct. Only the name distinguishes it, so
+// GetSymbolsOfType's String() comparison identifies a variable's struct exactly.
+type StructType struct {
+	Def *StructDef
+}
+
+func (s StructType) String() string { return s.Def.Name }
+
+func (s StructType) IsNumeric() bool { return false }
