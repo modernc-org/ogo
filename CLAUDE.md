@@ -388,6 +388,16 @@ via the `testdata/hostp2` shim which now stubs these):
 | `p2.WaitUs(us)` | `_waitus` | `p2.GetSec()` | `_getsec`→uint32 |
 | `p2.WaitCycles(n)` | `_waitx` | `p2.Rnd()` | `_rnd`→uint32 |
 | `p2.Rev(x)` | `_rev`→uint32 | `p2.Reboot()` | `_reboot` |
+| `p2.NewLock()` | `_locknew`→int | `p2.TryLock(l)` | `_locktry`→bool |
+| `p2.Unlock(l)` | `_lockrel` | `p2.FreeLock(l)` | `_lockret` |
+
+The four lock entries are the P2's 16 hardware locks, the same pool the channel
+runtime draws from -- `NewLock` returns -1 when none is left. There is no blocking
+acquire in the hardware, so waiting is a spin on `TryLock`, which is why it is the
+one intrinsic typed `bool`. They are what lets user code write a multi-producer
+structure; a single-producer/single-consumer ring buffer needs no lock and already
+works (verified on the board), though it leans on the backend not hoisting the
+shared index out of the poll -- there is no `volatile` in the language.
 
 A `select` waiting on a Smart Pin transpiles to a `while(1)` poll of `_pinr(pin)`,
 calling `_akpin(pin)` to clear the IN flag and `_waitx(1)` to yield and avoid Hub-bus

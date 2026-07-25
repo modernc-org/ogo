@@ -136,6 +136,17 @@ var p2Intrinsics = map[string]p2Intrinsic{
 	"Rnd":          {"_rnd", "unsigned"},
 	"Rev":          {"_rev", "unsigned"},
 	"Reboot":       {"_reboot", ""},
+
+	// The hardware locks. The P2 has 16, shared with the channel runtime, which
+	// claims one per channel -- NewLock reports -1 when none is left, exactly as
+	// _locknew does, rather than trapping. TryLock is the only way to take one:
+	// the hardware offers no blocking acquire, so a caller that must wait spins on
+	// it. Unlock and FreeLock discard the int their intrinsics return (whether the
+	// lock had been held, and nothing, respectively), so both are statements.
+	"NewLock":  {"_locknew", "int"},
+	"FreeLock": {"_lockret", ""},
+	"TryLock":  {"_locktry", cBool},
+	"Unlock":   {"_lockrel", ""},
 }
 
 // importIncludes maps an OctoGo import path to the C header it pulls in.

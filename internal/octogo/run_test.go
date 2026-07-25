@@ -1619,6 +1619,48 @@ func main() {
 		want: "3 3 4 6\n6 15\n2 2 3\n99 99\n3 4\n11\n",
 	},
 	{
+		// The P2 hardware locks, through the p2 package. Two cogs increment one
+		// counter 100 times each; without the lock the read-modify-write would
+		// interleave and lose updates. The hardware offers no blocking acquire, so
+		// waiting is a spin on TryLock -- which is why TryLock types as bool.
+		// Completion is signalled over a channel rather than by polling the
+		// counter: a channel's cell is volatile, an ordinary global is not.
+		name: "p2 hardware locks",
+		src: `import "p2"
+
+var lock int
+var counter int
+var finished chan int
+
+func bump() {
+	for i := 0; i < 100; i++ {
+		for !p2.TryLock(lock) {
+		}
+		counter = counter + 1
+		p2.Unlock(lock)
+	}
+}
+
+func worker() {
+	bump()
+	finished <- 1
+}
+
+func main() {
+	lock = p2.NewLock()
+	if lock < 0 {
+		panic("out of hardware locks")
+	}
+	go worker()
+	bump()
+	ok := <-finished
+	println(counter, ok)
+	p2.FreeLock(lock)
+}
+`,
+		want: "200 1\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)
