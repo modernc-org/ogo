@@ -232,6 +232,7 @@ type File struct {
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	clauseFallthrough map[string]bool   // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
+	defineRedeclares  map[string]bool   // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -3143,7 +3144,16 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		nonBlank++
 		if s.Declarations[nm] != nil {
-			continue // already declared in this scope: an assignment, not new
+			// Already declared in this scope, so ":=" assigns to it rather than
+			// introducing anything -- Go's mixed short declaration, "a, b := f()"
+			// with a already here. Recorded for the emitter, which has no scopes of
+			// its own and would otherwise emit a second C declaration of the same
+			// name in the same block.
+			if f.defineRedeclares == nil {
+				f.defineRedeclares = map[string]bool{}
+			}
+			f.defineRedeclares[id.Position().String()] = true
+			continue
 		}
 		vd := &VarDeclaration{declaration: declaration{token: id}}
 		if inferKinds {

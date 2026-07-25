@@ -3315,7 +3315,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				return
 			}
 			if len(names) != 1 {
-				e.emitDestructure(names, true, initExpr)
+				e.emitDestructure(names, allTrue(len(names)), initExpr)
 				continue
 			}
 			if names[0] == "_" {
@@ -3457,7 +3457,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 		if len(names) != 1 && initExpr != nil {
 			// A multi-name initializer destructures a multi-result call, declaring
 			// each name -- the var form of `a, b := f()`.
-			e.emitDestructure(names, true, initExpr)
+			e.emitDestructure(names, allTrue(len(names)), initExpr)
 			continue
 		}
 		for _, nm := range names {
@@ -6737,7 +6737,7 @@ func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
 // binds the ok-form helper's { slice, ok } result to a temporary, then assigns (or,
 // for `:=`, declares) the slice and ok targets. A blank target is skipped. This
 // form never traps -- an overflow leaves the slice unchanged and reports ok == 0.
-func (e *emitter) emitTryAppend(targets []string, define bool, callSuffix []int32) {
+func (e *emitter) emitTryAppend(targets []string, declare []bool, callSuffix []int32) {
 	if len(targets) != 2 {
 		e.fail("the two-result append form is `s, ok = append(s, x)`")
 		return
@@ -6761,7 +6761,7 @@ func (e *emitter) emitTryAppend(targets []string, define bool, callSuffix []int3
 	// The slice target, then the ok target (int).
 	if targets[0] != "_" {
 		e.ind()
-		if define {
+		if declare[0] {
 			e.sliceVars[targets[0]] = elem
 			e.locals[targets[0]] = sliceCName(elem)
 			e.emit(sliceCName(elem) + " " + targets[0] + " = " + tmp + ".slice;\n")
@@ -6771,7 +6771,7 @@ func (e *emitter) emitTryAppend(targets []string, define bool, callSuffix []int3
 	}
 	if targets[1] != "_" {
 		e.ind()
-		if define {
+		if declare[1] {
 			e.locals[targets[1]] = "int"
 			e.emit("int " + targets[1] + " = " + tmp + ".ok;\n")
 		} else {
@@ -7141,7 +7141,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("a field target in a multiple assignment is not supported yet")
 			return
 		}
-		e.emitMultiAssign(base, op)
+		e.emitMultiAssign(head, base, op)
 		return
 	}
 	// Increment/decrement: PostfixOp = "++" | "--" (no operand of its own).
@@ -7659,8 +7659,12 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 // field: a `:=` target is declared with its result type, a `=` target is assigned,
 // and a blank target is skipped. first is the head identifier; op holds the
 // PostfixOp children (the remaining LhsItem targets, the operator, and the call).
-func (e *emitter) emitMultiAssign(first string, op []Node) {
+func (e *emitter) emitMultiAssign(head Node, first string, op []Node) {
 	targets := []string{first}
+	toks := []int32{-1}
+	if tok, ok := e.soleToken(head.ast); ok {
+		toks[0] = tok
+	}
 	define := false
 	var rhs []Node
 	for _, n := range op {
@@ -7672,6 +7676,11 @@ func (e *emitter) emitMultiAssign(first string, op []Node) {
 				return
 			}
 			targets = append(targets, id)
+			tok := int32(-1)
+			if inner, ok := e.lhsItemToken(n.ast); ok {
+				tok = inner
+			}
+			toks = append(toks, tok)
 		case ExpressionList:
 			rhs = e.rhsExprs(n)
 		case 0:
@@ -7680,23 +7689,57 @@ func (e *emitter) emitMultiAssign(first string, op []Node) {
 			}
 		}
 	}
+	declare := e.declareTargets(define, toks)
 	// One expression for several targets distributes a multi-result call; a matching
 	// count is a value list assigned pairwise.
 	if len(rhs) == 1 {
-		e.emitDestructure(targets, define, rhs[0].ast)
+		e.emitDestructure(targets, declare, rhs[0].ast)
 		return
 	}
 	if len(rhs) != len(targets) {
 		e.fail("assignment mismatch: %d targets, %d values", len(targets), len(rhs))
 		return
 	}
-	e.emitValueList(targets, define, rhs)
+	e.emitValueList(targets, declare, rhs)
+}
+
+// declareTargets decides, per target of a multiple assignment, whether to emit a C
+// declaration or an assignment.
+//
+// A plain "=" never declares. A ":=" declares each target *except* those Go says it
+// only assigns to: a name already declared in the same scope, as in "a, b := f()"
+// where a is already here. The emitter has no scopes -- e.locals is flat over the
+// whole function -- so it cannot tell that name from one shadowing an outer block,
+// which ":=" genuinely does redeclare. The checker can, and recorded the answer per
+// target position while it walked the scopes; this reads it back. Without that, both
+// cases emitted a second C declaration of the same name in the same block, which the
+// target's C compiler accepts with a warning and then ignores, leaving the variable
+// holding its old value.
+func (e *emitter) declareTargets(define bool, toks []int32) []bool {
+	declare := make([]bool, len(toks))
+	for i, tok := range toks {
+		declare[i] = define
+		if define && tok >= 0 && e.f.defineRedeclares[e.f.tok(tok).Position().String()] {
+			declare[i] = false
+		}
+	}
+	return declare
+}
+
+// lhsItemToken returns the identifier token of a multiple-assignment LhsItem, the
+// token counterpart of lhsItemIdent.
+func (e *emitter) lhsItemToken(ast []int32) (int32, bool) {
+	nodes := slices.Collect(it(ast))
+	if len(nodes) != 1 || nodes[0].sym != AssignHead {
+		return 0, false
+	}
+	return e.soleToken(nodes[0].ast)
 }
 
 // emitValueList lowers `a, b = c, d` (or `:=`). Every value is evaluated into a
 // temporary first, then each target takes its temporary, so all right-hand sides
 // see the pre-assignment values -- which is what makes `a, b = b, a` a swap.
-func (e *emitter) emitValueList(targets []string, define bool, rhs []Node) {
+func (e *emitter) emitValueList(targets []string, declare []bool, rhs []Node) {
 	tmps := make([]string, len(rhs))
 	types := make([]string, len(rhs))
 	for i, r := range rhs {
@@ -7717,7 +7760,7 @@ func (e *emitter) emitValueList(targets []string, define bool, rhs []Node) {
 			continue
 		}
 		e.ind()
-		if define {
+		if declare[i] {
 			e.locals[tgt] = types[i]
 			e.emit(types[i] + " " + tgt + " = " + tmps[i] + ";\n")
 		} else {
@@ -7732,7 +7775,7 @@ func (e *emitter) emitValueList(targets []string, define bool, rhs []Node) {
 // target reads its field: a defined target is declared with its result type, an
 // assigned target is assigned, and a blank target is skipped. rhs is the call
 // expression; define selects declaration (`:=` / `var`) over plain assignment.
-func (e *emitter) emitDestructure(targets []string, define bool, rhs []int32) {
+func (e *emitter) emitDestructure(targets []string, declare []bool, rhs []int32) {
 	callee, suffix, ok := e.directCall(rhs)
 	if !ok {
 		e.fail("multiple assignment requires a single function call on the right-hand side")
@@ -7740,7 +7783,7 @@ func (e *emitter) emitDestructure(targets []string, define bool, rhs []int32) {
 	}
 	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix {
 		// Two-result append: s, ok = append(s, x) -- the ok form, no trap.
-		e.emitTryAppend(targets, define, suffix[0].ast)
+		e.emitTryAppend(targets, declare, suffix[0].ast)
 		return
 	}
 	resTypes, ok := e.userFunc(callee)
@@ -7762,7 +7805,7 @@ func (e *emitter) emitDestructure(targets []string, define bool, rhs []int32) {
 		}
 		e.ind()
 		field := fmt.Sprintf("%s._%d", tmp, i)
-		if define {
+		if declare[i] {
 			e.locals[tgt] = resTypes[i]
 			e.emit(resTypes[i] + " " + cIdent(tgt) + " = " + field + ";\n")
 		} else {
@@ -9073,4 +9116,14 @@ func (e *emitter) emitRecvStmt(nodes []Node) {
 		return
 	}
 	e.fail("a receive statement needs a channel operand")
+}
+
+// allTrue is the per-target declare vector of a `var` declaration, which declares
+// every one of its names -- unlike ":=", which may only assign to some.
+func allTrue(n int) []bool {
+	r := make([]bool, n)
+	for i := range r {
+		r[i] = true
+	}
+	return r
 }

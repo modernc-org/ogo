@@ -18,6 +18,15 @@ Releases before v0.9.0 predate this file; see
 - **A bare receive statement**, `<-ch`, discarding the value — how one goroutine
   waits for another. It previously had to be written `_ = <-ch`.
 
+### Fixed
+
+- **A mixed short declaration silently computed the wrong answer.** In `a, b :=
+  f()` with `a` already declared, Go assigns to `a` and declares only `b`; the
+  emitter declared both, so the C had two declarations of `a` in one block. The
+  target's C compiler accepts that with a warning and then ignores the second, so
+  the build *succeeded* and `a` kept its old value. Affected every form — a
+  multi-result call, a value list, a receive, and `s, ok := append(s, x)`.
+
 ## v0.9.0
 
 ### Language

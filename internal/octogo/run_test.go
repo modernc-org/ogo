@@ -1719,6 +1719,41 @@ func main() {
 		want: "step\nstep\nfinished\n",
 	},
 	{
+		// A mixed short declaration: "a, b := f()" where a is already declared in
+		// this scope assigns to it and declares only b, as Go has it. The emitter
+		// used to declare every target, so the C had two declarations of a in one
+		// block -- which the host compiler rejects outright and the target's accepts
+		// with a warning, then ignores, leaving a holding its old value. The last
+		// two cases are the ones that keep the fix honest: a ":=" in an inner block
+		// *does* introduce a new variable even though the name exists outside, and
+		// the emitter cannot tell the two apart on its own.
+		name: "mixed short variable declaration",
+		src: `func two() (int, int) { return 10, 20 }
+
+func main() {
+	a := 99
+	a, b := two()
+	println(a, b)
+
+	c := 1
+	c, d := 5, 6
+	println(c, d)
+
+	s := make([]int, 0, 2)
+	s, ok := append(s, 7)
+	println(len(s), ok, s[0])
+
+	outer := 99
+	{
+		outer, inner := two()
+		println(outer, inner)
+	}
+	println(outer)
+}
+`,
+		want: "10 20\n5 6\n1 1 7\n10 20\n99\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)
