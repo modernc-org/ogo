@@ -828,11 +828,12 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 }
 
 // blockIsTerminating reports whether a block's statement list ends in a
-// terminating statement, following Go's terminating-statement rules. The analysis
-// is simpler than Go's because OctoGo has no break, continue, fallthrough or goto:
-// nothing can jump out of an enclosing loop, switch or select, so a conditionless
-// "for" loops forever and a switch or select terminates exactly when all of its
-// clause bodies do -- no break-target bookkeeping is required.
+// terminating statement, following Go's terminating-statement rules. Ending in a
+// terminating statement is not on its own enough for the statements that a break
+// can leave: a conditionless "for" and a switch each additionally require that
+// nothing breaks out of them (containsBreak), since a break makes control fall out
+// the bottom of a statement whose bodies all otherwise terminate. There is no
+// goto or fallthrough to account for.
 func (f *File) blockIsTerminating(block Node) bool {
 	last, ok := f.lastStatement(block)
 	return ok && f.stmtIsTerminating(last)
@@ -956,8 +957,11 @@ func (f *File) ifStmtIsTerminating(n Node) bool {
 }
 
 // switchIsTerminating reports whether an expression switch terminates: it must
-// have a default clause and every clause body -- the default included -- must end
-// in a terminating statement. OctoGo has no break, so none can escape the switch.
+// have a default clause, every clause body -- the default included -- must end in
+// a terminating statement, and no clause may break out of the switch. The break
+// condition is Go's and is not implied by the others: a break that is not itself
+// the last statement, as in "if c { break }; return v", leaves a body that ends in
+// a terminating statement yet can still exit the switch and fall out the bottom.
 func (f *File) switchIsTerminating(n Node) bool {
 	hasDefault := false
 	for c := range it(n.ast) {
@@ -967,7 +971,7 @@ func (f *File) switchIsTerminating(n Node) bool {
 		if f.caseIsDefault(c) {
 			hasDefault = true
 		}
-		if !f.blockIsTerminating(c) {
+		if !f.blockIsTerminating(c) || f.containsBreak(c) {
 			return false
 		}
 	}
@@ -1168,10 +1172,10 @@ func (f *File) forHasCond(stmt Node) bool {
 	return false
 }
 
-// containsBreak reports whether a loop body contains a break that leaves *that*
-// loop. It does not descend into a nested for, switch or select: without labels a
-// break names the innermost enclosing one, so a break inside those leaves them
-// instead.
+// containsBreak reports whether a loop body or a switch case clause contains a
+// break that leaves *that* statement. It does not descend into a nested for,
+// switch or select: a break names the innermost enclosing one, so a break inside
+// those leaves them instead.
 func (f *File) containsBreak(n Node) bool {
 	for c := range it(n.ast) {
 		switch c.sym {
@@ -3478,9 +3482,8 @@ func (f *File) checkCrossPkgMethod(qual, typeName, member Token) {
 }
 
 // litElement is one element of a composite literal. A keyed element ("k: v")
-// carries both; the language has no keyed literals yet, but the grammar admits
-// them so that checkCompositeLit can say so instead of the parser failing and the
-// error surfacing as something unrelated.
+// carries both: a field name in a struct literal, a constant index in an array or
+// slice literal.
 type litElement struct {
 	key   Node // only meaningful when keyed
 	value Node
