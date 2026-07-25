@@ -2612,7 +2612,11 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkNames(s, e)
 			if hasKind {
 				f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
+				continue
 			}
+			// No written type: the variable infers one from the initializer,
+			// which still bounds a constant value.
+			f.checkInferredOverflow(s, e)
 		}
 		for _, nm := range names {
 			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}
@@ -2999,6 +3003,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName = true, ek, hasEk, tn
 			} else if k, ok := f.exprType(s, rhs[i]); ok {
 				vd.kind, vd.hasKind = k, true
+				// ":=" writes no type, so the initializer's own type bounds a
+				// constant value, as for "var x = expr".
+				f.checkInferredOverflow(s, rhs[i])
 			}
 		}
 		_ = s.add(vd)
@@ -6270,8 +6277,18 @@ func (f *File) varSpec(s *Scope, n Node) {
 			// wrongly report a non-constant initializer or panic on a call.
 			exprs := expressionListItems(n)
 			f.checkVarSpecArity(s, names, exprs)
+			// The Type production precedes the initializer in the grammar, so typ
+			// is already resolved here; it is nil for an inferred type, whose
+			// constant initializer is bounded by the type it infers instead.
+			kind, hasKind := f.typeKind(s, typ)
+			typeName, _ := namedTypeToken(typ)
 			for _, e := range exprs {
 				f.checkNames(s, e)
+				if hasKind {
+					f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
+					continue
+				}
+				f.checkInferredOverflow(s, e)
 			}
 		case 0:
 			switch f.ch(n.tok) {
@@ -6880,6 +6897,35 @@ func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
 	if cv, ok := f.constValue(s, n); ok {
 		f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
 	}
+}
+
+// checkInferredOverflow reports a constant initializer that does not fit the type
+// the variable it initializes infers from it, for a declaration that writes no
+// type: "var x = 1 << 40" and "x := 1 << 40".
+//
+// An untyped integer constant carries arbitrary precision only until it is bound
+// to a variable, at which point it takes its default type, int -- 32 bits wide on
+// the target -- so both of those are "constant 1099511627776 overflows int",
+// exactly as they are in Go on a 32-bit platform. Until this ran, only a written
+// target type was range-checked, so the identical value was rejected in "var x int
+// = 1 << 40" and accepted one line later in "var x = 1 << 40", which then
+// initialized x with the truncated low 32 bits.
+//
+// An initializer that is not a constant, is a constant of a non-integer type, or
+// is of an integer type that is not range-checked, is left alone.
+func (f *File) checkInferredOverflow(s *Scope, e Node) {
+	k, ok := f.exprType(s, e)
+	if !ok {
+		return
+	}
+	if k == UntypedInt {
+		// The default type of an untyped integer constant. It reads as "int"
+		// rather than the int32 it aliases, since int is the type the variable
+		// gets: there is no written type token here to take the name from.
+		f.checkValueOverflow(s, retResult{name: "int", kind: PredeclaredInt32}, e)
+		return
+	}
+	f.checkValueOverflow(s, sizedTarget(k, Token{}), e)
 }
 
 // reportOverflow reports "constant CV overflows NAME" when cv is an integer
