@@ -1,0 +1,81 @@
+// The predeclared nil is a value of the pointer, slice and channel types only.
+// Used where any other type is required -- a variable declaration, an assignment,
+// a return operand or a call argument -- it is reported ("cannot use nil as T
+// value in ..."), in Go's wording. A ":="-inferred variable is named by its
+// canonical type, having recorded no type token.
+
+func takeString(s string) int { return len(s) }
+func takeSlice(s []int) int { return len(s) }
+func takePointer(p *int) bool { return p == nil }
+
+// ERROR "cannot use nil as int value in variable declaration"
+var pkgInt int = nil
+
+func declarations() {
+	// ERROR "cannot use nil as int value in variable declaration"
+	var a int = nil
+	// ERROR "cannot use nil as bool value in variable declaration"
+	var b bool = nil
+	// ERROR "cannot use nil as string value in variable declaration"
+	var c string = nil
+	// ERROR "cannot use nil as uint8 value in variable declaration"
+	var d uint8 = nil
+
+	// nil is the zero value of a pointer, a slice and a channel.
+	var p *int = nil
+	var s []int = nil
+	var ch chan int = nil
+
+	_ = a
+	_ = b
+	_ = c
+	_ = d
+	_ = p
+	_ = s
+	_ = ch
+}
+
+func assignments() {
+	var a int = 1
+	var b string = "x"
+	// ERROR "cannot use nil as int value in assignment"
+	a = nil
+	// ERROR "cannot use nil as string value in assignment"
+	b = nil
+
+	// A ":="-inferred variable is bounded the same way, under its canonical name.
+	n := 1
+	// ERROR "cannot use nil as int value in assignment"
+	n = nil
+
+	// A pointer and a slice accept it.
+	var x int = 2
+	p := &x
+	p = nil
+	s := make([]int, 1)
+	s = nil
+
+	_ = a
+	_ = b
+	_ = n
+	_ = p
+	_ = s
+}
+
+func returnsString() string {
+	// ERROR "cannot use nil as string value in return statement"
+	return nil
+}
+
+func returnsPointer() *int { return nil }
+
+func returnsSlice() []int { return nil }
+
+func arguments() {
+	// ERROR "cannot use nil as string value in argument to takeString"
+	takeString(nil)
+
+	// A slice and a pointer parameter accept it.
+	takeSlice(nil)
+	takePointer(nil)
+}

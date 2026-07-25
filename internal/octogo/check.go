@@ -1620,6 +1620,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	// A constant operand must fit the result's width, as one must fit a variable
 	// it initializes or a parameter it is passed to.
 	f.checkValueOverflow(s, rt, e)
+	f.checkNilAssignable(s, rt, e, "return statement")
 	if tok, ok := f.bareLiteral(e); ok {
 		var valName string
 		var assignable bool
@@ -1641,39 +1642,101 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	}
 }
 
-// bareLiteral reports whether an expression node is a single int, string or rune
-// literal -- no operators, call/index/selector suffix or parentheses -- and
-// returns that literal token.
-func (f *File) bareLiteral(n Node) (Token, bool) {
-	var lit Token
+// bareToken reports whether an expression node is a single terminal token
+// accepted by want -- no operators, call/index/selector suffix or parentheses --
+// and returns that token. It underlies both bareLiteral and bareName.
+func (f *File) bareToken(n Node, want func(Symbol) bool) (Token, bool) {
+	var hit Token
 	found, extra := false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case SimpleExpr, Term, UnaryExpr, Factor:
-			switch t, ok := f.bareLiteral(c); {
+			switch t, ok := f.bareToken(c, want); {
 			case !ok, found:
 				extra = true
 			default:
-				lit, found = t, true
+				hit, found = t, true
 			}
 		case 0:
-			switch Symbol(f.tok(c.tok).Ch) {
-			case INT, STRING, CHAR:
+			if t := f.tok(c.tok); want(Symbol(t.Ch)) {
 				if found {
 					extra = true
 				}
-				lit, found = f.tok(c.tok), true
-			default:
-				extra = true
+				hit, found = t, true
+				continue
 			}
+			extra = true
 		default:
 			extra = true
 		}
 	}
 	if found && !extra {
-		return lit, true
+		return hit, true
 	}
 	return Token{}, false
+}
+
+// bareLiteral reports whether an expression node is a single int, string or rune
+// literal -- no operators, call/index/selector suffix or parentheses -- and
+// returns that literal token.
+func (f *File) bareLiteral(n Node) (Token, bool) {
+	return f.bareToken(n, func(ch Symbol) bool {
+		switch ch {
+		case INT, STRING, CHAR:
+			return true
+		}
+		return false
+	})
+}
+
+// bareName reports whether an expression node is a single identifier, and returns
+// it. It is how the predeclared nil, an identifier rather than a literal, is
+// recognised as a whole operand.
+func (f *File) bareName(n Node) (Token, bool) {
+	return f.bareToken(n, func(ch Symbol) bool { return ch == IDENT })
+}
+
+// nilOperand reports whether an expression is exactly the predeclared nil, and
+// returns its token for the message position. A declaration that shadows the name
+// makes it an ordinary value, not the untyped nil, so the name must still resolve
+// to the universe declaration.
+func (f *File) nilOperand(s *Scope, n Node) (Token, bool) {
+	tok, ok := f.bareName(n)
+	if !ok || tok.Src() != "nil" {
+		return Token{}, false
+	}
+	return tok, s.find("nil") == Universe.Declarations["nil"]
+}
+
+// checkNilAssignable reports the predeclared nil used where a non-nilable type is
+// required, e.g. "var n int = nil" -> "cannot use nil as int value in variable
+// declaration". context names the position, following Go's wording.
+//
+// nil is a value of the pointer, slice and channel types only, and none of those
+// resolves to a predeclared Kind here (typeKind resolves a predeclared *name*, so
+// a composite type leaves dst unknown). A known Kind is therefore exactly the set
+// nil cannot fill -- int, string, bool, float and their sized forms. Until this
+// ran, "var n int = nil" and "return nil" from a string function were accepted and
+// silently emitted a zero, while the string forms reached the target's C compiler
+// and failed there, naming C the user never wrote.
+func (f *File) checkNilAssignable(s *Scope, dst retResult, e Node, context string) {
+	if !dst.known {
+		return
+	}
+	if tok, ok := f.nilOperand(s, e); ok {
+		f.err(tok.Position(), "cannot use nil as %s value in %s", dst.name, context)
+	}
+}
+
+// nilTarget describes an assignment target for checkNilAssignable: a variable's
+// resolved Kind, named as written where a type token was recorded and by its
+// canonical name otherwise (a ":="-inferred variable records none).
+func nilTarget(kind Kind, hasKind bool, typeName Token) retResult {
+	name := typeName.Src()
+	if name == "" {
+		name = kindName(kind)
+	}
+	return retResult{name: name, kind: kind, known: hasKind}
 }
 
 // isNumericKind reports whether k is one of the predeclared integer types.
@@ -2613,6 +2676,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		// so a variable is not visible within its own initializer.
 		for _, e := range initExprs {
 			f.checkNames(s, e)
+			f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 			if hasKind {
 				f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
 				continue
@@ -4081,6 +4145,9 @@ func binaryAllowed(op Symbol, c int) bool {
 // checkAssignType reports when the right-hand side of an assignment is of a
 // different type class than the target variable. Both must be known.
 func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
+	if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok {
+		f.checkNilAssignable(s, nilTarget(d.kind, d.hasKind, d.typeName), rhsNode, "assignment")
+	}
 	lk, lok := f.identKind(s, lhsTok)
 	rk, rok := f.exprType(s, rhsNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)
@@ -4960,6 +5027,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 			if !p.known {
 				continue
 			}
+			f.checkNilAssignable(s, p, arg, "argument to "+name.Src())
 			ak, aok := f.exprType(s, arg)
 			if aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(p.kind) {
 				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.exprSource(arg), kindName(ak), p.name, name.Src())
@@ -6301,6 +6369,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			typeName, _ := namedTypeToken(typ)
 			for _, e := range exprs {
 				f.checkNames(s, e)
+				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 				if hasKind {
 					f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
 					continue
