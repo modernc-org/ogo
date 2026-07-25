@@ -11,6 +11,13 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Language
+
+- **A bare receive statement**, `<-ch`, discarding the value — how one goroutine
+  waits for another. It previously had to be written `_ = <-ch`.
+
 ## v0.9.0
 
 ### Language

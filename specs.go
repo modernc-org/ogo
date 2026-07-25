@@ -501,6 +501,10 @@
 // statically allocated Hub RAM buffers. They facilitate synchronous, lock-step
 // communication without a software scheduler.
 //
+// A receive may stand alone as a statement, "<-ch", discarding the value. The
+// receive still happens, so on a rendezvous channel that is how one goroutine
+// waits for another.
+//
 // # Blocks
 //
 // A block is a possibly empty sequence of declarations and statements within

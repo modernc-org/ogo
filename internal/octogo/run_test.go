@@ -1653,12 +1653,12 @@ func main() {
 	}
 	go worker()
 	bump()
-	ok := <-finished
-	println(counter, ok)
+	<-finished
+	println(counter)
 	p2.FreeLock(lock)
 }
 `,
-		want: "200 1\n",
+		want: "200\n",
 	},
 	{
 		// A package-level name that matches a field of the cog-pool runtime struct
@@ -1683,11 +1683,40 @@ func worker() {
 
 func main() {
 	go worker()
-	n := <-done
-	println(used, cog, slot, args, stack, n)
+	<-done
+	println(used, cog, slot, args, stack)
 }
 `,
-		want: "1 2 3 4 5 1\n",
+		want: "1 2 3 4 5\n",
+	},
+	{
+		// A bare receive statement, "<-ch": the value is discarded but the receive
+		// still happens, which on a rendezvous channel is how a program waits for a
+		// goroutine. Until this worked the wait had to be spelled "_ = <-ch", or a
+		// value bound and ignored.
+		name: "bare receive statement",
+		src: `var step chan int
+var done chan int
+
+func worker() {
+	step <- 1
+	step <- 2
+	done <- 1
+}
+
+func main() {
+	go worker()
+	for i := 0; i < 2; i++ {
+		<-step
+		println("step")
+	}
+	if 1 < 2 {
+		<-done
+	}
+	println("finished")
+}
+`,
+		want: "step\nstep\nfinished\n",
 	},
 	{
 		name: "append and cap",

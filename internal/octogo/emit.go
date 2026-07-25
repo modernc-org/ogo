@@ -338,7 +338,16 @@ func (e *emitter) recvOperand(n Node, kids []Node) (elem, base string, ok bool) 
 	if !ok || e.f.ch(tok) != ARROW {
 		return "", "", false
 	}
-	base, ok = e.exprIdent(kids[1].ast)
+	return e.chanOperand(kids[1].ast)
+}
+
+// chanOperand resolves an expression that names a channel to the channel's element
+// C type and its C name. It is the half of a receive that does not involve the
+// "<-": recvOperand reaches it with the operator inside a unary expression, and a
+// bare receive statement reaches it with the operator on the statement, so the two
+// cannot disagree about what channel is being read.
+func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
+	base, ok = e.exprIdent(ast)
 	if !ok {
 		return "", "", false
 	}
@@ -3244,6 +3253,8 @@ func (e *emitter) emitStatement(ast []int32) {
 		} else {
 			e.emit("continue;\n")
 		}
+	case first.sym == 0 && e.f.ch(first.tok) == ARROW:
+		e.emitRecvStmt(nodes)
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == 0:
@@ -9035,4 +9046,31 @@ func containsSym(nodes []Node, sym Symbol) bool {
 		}
 	}
 	return false
+}
+
+// emitRecvStmt emits a bare receive statement `<-ch`. The value is discarded but
+// the receive still happens: on a rendezvous channel that is how a program waits
+// for a goroutine, which is the whole point of the form.
+//
+// The grammar attaches the "<-" to the statement rather than to an expression, so
+// the operand here is the channel alone and recvOperand -- which matches a "<-"
+// inside a unary expression -- does not apply; both resolve the channel through
+// chanOperand. The (void) cast is what `_ = <-ch` already emitted, and keeps the
+// discarded result from drawing a warning.
+func (e *emitter) emitRecvStmt(nodes []Node) {
+	for _, n := range nodes {
+		if n.sym != Expression {
+			continue
+		}
+		elem, base, ok := e.chanOperand(n.ast)
+		if !ok {
+			e.fail("a receive statement needs a plain channel operand")
+			return
+		}
+		e.chanRecvElems[elem] = true
+		e.ind()
+		e.emit("(void)" + chanRecvCName(elem) + "(" + base + ");\n")
+		return
+	}
+	e.fail("a receive statement needs a channel operand")
 }
