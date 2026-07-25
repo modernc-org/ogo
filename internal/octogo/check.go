@@ -1617,6 +1617,9 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	if !rt.known {
 		return
 	}
+	// A constant operand must fit the result's width, as one must fit a variable
+	// it initializes or a parameter it is passed to.
+	f.checkValueOverflow(s, rt, e)
 	if tok, ok := f.bareLiteral(e); ok {
 		var valName string
 		var assignable bool
@@ -4089,9 +4092,11 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 		return
 	}
 	// Same type class: a constant assigned to a sized integer variable may still
-	// overflow it, e.g. "x = 300" where x is uint8.
+	// overflow it, e.g. "x = 300" where x is uint8. A ":="-inferred variable
+	// records the untyped kind of the constant it was declared from, so it is
+	// bounded by that constant's default type, as the declaration itself is.
 	if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok && d.hasKind {
-		f.checkValueOverflow(s, sizedTarget(d.kind, d.typeName), rhsNode)
+		f.checkValueOverflow(s, defaultTarget(d.kind, d.typeName), rhsNode)
 	}
 }
 
@@ -4884,6 +4889,18 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// is left to the emitter, which special-cases each. make/new and the
 		// not-yet-emitted builtins are unregistered and reach the nil case below,
 		// exempted there by isBuiltinFuncName.
+		//
+		// print and println are the exception: they constrain an argument to
+		// nothing, so a constant one takes its default type and is bounded by it,
+		// exactly as an inferred variable's initializer is. The builtins whose
+		// arguments a container's element type does constrain (append, copy, ...)
+		// need that type, not the default one, so they are left to the emitter.
+		switch callee.Src() {
+		case "print", "println":
+			for _, a := range args {
+				f.checkInferredOverflow(s, a)
+			}
+		}
 	case *PredeclaredType:
 		// A type callee "T(x)" is an explicit conversion. Numeric ones are lowered
 		// to a C cast by the emitter; a string conversion -- string(r) from a rune,
@@ -6914,18 +6931,21 @@ func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
 // An initializer that is not a constant, is a constant of a non-integer type, or
 // is of an integer type that is not range-checked, is left alone.
 func (f *File) checkInferredOverflow(s *Scope, e Node) {
-	k, ok := f.exprType(s, e)
-	if !ok {
-		return
+	if k, ok := f.exprType(s, e); ok {
+		f.checkValueOverflow(s, defaultTarget(k, Token{}), e)
 	}
+}
+
+// defaultTarget is sizedTarget for a target whose type was inferred rather than
+// written: an untyped integer kind resolves to its default type, int, which is
+// what a variable inferred from an untyped constant actually becomes. It reads as
+// "int" rather than the int32 that int aliases, since int is the type in play and
+// there is no written type token to take the name from.
+func defaultTarget(k Kind, typeName Token) retResult {
 	if k == UntypedInt {
-		// The default type of an untyped integer constant. It reads as "int"
-		// rather than the int32 it aliases, since int is the type the variable
-		// gets: there is no written type token here to take the name from.
-		f.checkValueOverflow(s, retResult{name: "int", kind: PredeclaredInt32}, e)
-		return
+		return retResult{name: "int", kind: PredeclaredInt32}
 	}
-	f.checkValueOverflow(s, sizedTarget(k, Token{}), e)
+	return sizedTarget(k, typeName)
 }
 
 // reportOverflow reports "constant CV overflows NAME" when cv is an integer

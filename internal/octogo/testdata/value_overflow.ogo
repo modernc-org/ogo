@@ -111,6 +111,48 @@ var pkgInferred = 1 << 40
 // arbitrary precision; only binding it to a variable applies the default type.
 const wideConst = 1 << 40
 
+// A result type bounds a constant return operand, as a parameter bounds an
+// argument.
+func returnsInt() int {
+	// ERROR "constant 1099511627776 overflows int"
+	return 1 << 40
+}
+
+func returnsUint8() uint8 {
+	// ERROR "constant 300 overflows uint8"
+	return 300
+}
+
+func returnsInRange() uint8 { return 255 }
+
+// print and println constrain an argument to nothing, so a constant one takes its
+// default type and is bounded by that, like an inferred variable's initializer.
+func printArguments() {
+	// ERROR "constant 1099511627776 overflows int"
+	println(1 << 40)
+	// ERROR "constant 3000000000 overflows int"
+	print(3000000000)
+
+	// In range; a non-integer argument has no integer default type to overflow.
+	println(2147483647, "text", true)
+}
+
+// A ":="-inferred variable keeps the bound it was declared with, for a later
+// plain assignment and for a compound one.
+func inferredAssignments() {
+	x := 1
+	// ERROR "constant 1099511627776 overflows int"
+	x = 1 << 40
+	// ERROR "constant 3000000000 overflows int"
+	x += 3000000000
+
+	// In range.
+	x = 2147483647
+	x -= 1
+
+	_ = x
+}
+
 // A run-time value is not folded: another variable, a call and a channel receive
 // each pass without a range check whatever the target width.
 func runtimeValues(ch chan int) {
