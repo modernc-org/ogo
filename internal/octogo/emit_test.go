@@ -5093,7 +5093,7 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 		{
 			name: "length mismatch",
 			src:  "func main() {\n\tvar a [3]int = [2]int{1, 2}\n\tprintln(a[0])\n}\n",
-			want: "a [2]int literal cannot initialize a variable declared [3]int",
+			want: "cannot use a [2]int literal as [3]int",
 		},
 		{
 			name: "slice from array literal",

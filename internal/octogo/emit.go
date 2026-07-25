@@ -1712,6 +1712,10 @@ func (a arrDim) dims() int { return 1 + len(a.inner) }
 // bounds returns every extent, outermost first.
 func (a arrDim) bounds() []string { return append([]string{a.bound}, a.inner...) }
 
+// row is the array one index in: the element type of a [2][3]int is a [3]int.
+// Only meaningful when dims() > 1.
+func (a arrDim) row() arrDim { return arrDim{elem: a.elem, bound: a.inner[0], inner: a.inner[1:]} }
+
 // declSuffix renders the C declarator brackets, `[2][3]`.
 func (a arrDim) declSuffix() string {
 	s := ""
@@ -2119,8 +2123,11 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			e.fail("multi-name package variable with an initializer is not supported yet")
 			return
 		}
-		// A package-level fixed array `var a [N]T` -> `static T a[N];`.
-		if elem, bound, ok := e.arrayType(typeAST); ok {
+		// A package-level fixed array `var a [N]T` -> `static T a[N];`, of any rank:
+		// arrayDim carries every extent, where arrayType reports only the outermost
+		// (a `var m [2][3]int` read through that one lost its inner extent and
+		// failed as a nameless "unsupported type").
+		if a, ok := e.arrayDim(typeAST); ok {
 			// `var a [N]T = [N]T{...}`: the same static table as the inferred form,
 			// after checking the literal's type against the declared one.
 			if initExpr != nil && len(names) == 1 && names[0] != "_" {
@@ -2129,7 +2136,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					e.fail("a package array initializer must be an array literal")
 					return
 				}
-				if !e.sameArrayType(arrDim{elem: elem, bound: bound}, litType) {
+				if !e.sameArrayType(a, litType) {
 					return
 				}
 				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
@@ -2142,8 +2149,8 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			for _, nm := range names {
 				if nm != "_" {
 					gn := e.globalC(nm)
-					e.globalArrays[gn] = arrDim{elem: elem, bound: bound}
-					e.emit("static " + elem + " " + gn + "[" + bound + "];\n")
+					e.globalArrays[gn] = a
+					e.emit("static " + a.elem + " " + gn + a.declSuffix() + ";\n")
 				}
 			}
 			continue
@@ -3707,6 +3714,70 @@ func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 	e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n")
 }
 
+// emitArrayValues emits an array literal's values as a braced C initializer,
+// descending a multi-dimensional array one extent at a time. C spells a nested
+// array exactly this way -- `int m[2][2] = {{1, 2}, {3, 4}}` -- so an element of a
+// rank > 1 array is itself a braced list of that row's values.
+//
+// It takes the arrDim rather than the element type string emitPositionalValues
+// works from because an element of a multi-dimensional array has no C value type
+// to name: cType models no array type at all, so only the innermost level has a
+// type to emit against, and it is the row's own extent that bounds the level above.
+func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
+	if a.dims() == 1 {
+		e.emitPositionalValues(values, a.elem)
+		return
+	}
+	if len(values) == 0 {
+		e.emit("{0}") // no values: zero every element, at every depth
+		return
+	}
+	row := a.row()
+	e.emit("{")
+	for i, v := range values {
+		if i != 0 {
+			e.emit(", ")
+		}
+		if v == nil {
+			e.emit("{0}") // an index the literal skips: the whole row is zero
+			continue
+		}
+		rowValues, ok := e.rowValues(*v, row)
+		if !ok {
+			return
+		}
+		e.emitArrayValues(rowValues, row)
+	}
+	e.emit("}")
+}
+
+// rowValues reads one element of a multi-dimensional array literal as the values
+// of a row. The element is written either type-elided (`{1, 2}`, the usual form)
+// or carrying its own type (`[2]int{1, 2}`), which must then be the row's type.
+func (e *emitter) rowValues(v Node, row arrDim) ([]*Node, bool) {
+	lit := v
+	if v.sym != CompositeLit {
+		litType, sub, ok := e.soleArrayLit(v.ast)
+		if !ok {
+			e.fail("an element of a %s literal must itself be a literal", arrayTypeName(row))
+			return nil, false
+		}
+		if !e.sameArrayType(row, litType) {
+			return nil, false
+		}
+		lit = sub
+	}
+	values, length, ok := e.litPositions(lit)
+	if !ok {
+		return nil, false
+	}
+	if n, err := strconv.Atoi(row.bound); err == nil && length > n {
+		e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(row), countUnits(length, "value"), row.bound)
+		return nil, false
+	}
+	return values, true
+}
+
 // emitArrayLitVar emits a variable initialized by an array or slice literal --
 // "[N]T{...}" as a C aggregate, "[]T{...}" as a backing array plus a header over
 // it. static drives file-scope emission: "static", no indent, and the package
@@ -3748,7 +3819,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		}
 		lead()
 		e.emit(a.elem + " " + name + a.declSuffix() + " = ")
-		e.emitPositionalValues(values, a.elem)
+		e.emitArrayValues(values, a)
 		e.emit(";\n")
 		return
 	}
@@ -3784,16 +3855,18 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")
 }
 
-// sameArrayType reports whether a literal's bracketed type is the array type the
-// variable was declared with, and reports the mismatch by name if not. The checker
-// does not compare composite types yet, so this is where "var a [3]int = [2]int{}"
-// is caught -- without it the literal's own extent would silently win.
-func (e *emitter) sameArrayType(declared arrDim, litType []int32) bool {
+// sameArrayType reports whether a literal's bracketed type is the array type
+// required where it stands, and reports the mismatch by name if not. The checker
+// does not compare composite types yet, so this is where "var a [3]int =
+// [2]int{}" is caught -- without it the literal's own extent would silently win.
+// The same comparison bounds a row of a multi-dimensional literal that carries its
+// own type, so the message names the expected type rather than the position.
+func (e *emitter) sameArrayType(want arrDim, litType []int32) bool {
 	lit, ok := e.arrayDim(litType)
-	if ok && lit.elem == declared.elem && slices.Equal(lit.bounds(), declared.bounds()) {
+	if ok && lit.elem == want.elem && slices.Equal(lit.bounds(), want.bounds()) {
 		return true
 	}
-	e.fail("a %s literal cannot initialize a variable declared %s", e.litTypeName(litType), arrayTypeName(declared))
+	e.fail("cannot use a %s literal as %s", e.litTypeName(litType), arrayTypeName(want))
 	return false
 }
 

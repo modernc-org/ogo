@@ -1514,6 +1514,38 @@ func main() {
 		want: "1 8 4\n15 255\ntx rx 2\n7 4 4\n100 0 900\n3 4 2\n0\n11\n",
 	},
 	{
+		// A multi-dimensional array literal. C spells a nested array the same way,
+		// so each element of a rank > 1 array is a braced list of that row's
+		// values -- which is what an element having no C value type of its own
+		// forces: the emission descends the extents rather than naming an element
+		// type. Covered: rank 2 and 3, local and package scope, a row shorter than
+		// its extent and an outer index that skips a whole row (both zero-filled),
+		// a row written with its own type, and a write through both indices.
+		name: "multi-dimensional array literals",
+		src: `var grid = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+var lut [2][2]uint8 = [2][2]uint8{{10, 20}, {30, 40}}
+
+func main() {
+	println(grid[0][0], grid[1][2])
+	println(lut[0][1], lut[1][0])
+
+	m := [3][3]int{{1}, {4, 5}}
+	println(m[0][0], m[0][2], m[1][1], m[2][2])
+
+	cube := [2][2][2]int{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}
+	println(cube[0][0][0], cube[1][0][1], cube[1][1][1])
+
+	sparse := [3][2]int{0: {1, 2}, 2: {5, 6}}
+	println(sparse[0][1], sparse[1][0], sparse[2][0])
+
+	typed := [2][2]int{[2]int{7, 8}, {9, 0}}
+	typed[1][0] = 99
+	println(typed[0][1], typed[1][0])
+}
+`,
+		want: "1 6\n20 30\n1 0 5 0\n1 6 8\n2 0 5\n8 99\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

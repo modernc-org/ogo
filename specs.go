@@ -724,6 +724,17 @@
 // array is a static array, and a slice is a static backing array plus a header
 // over it.
 //
+// An array literal of more than one dimension nests, each element being a literal
+// of the row type. That row may be written with its type or with it elided, as Go
+// allows, and the elision is the usual form:
+//
+//	var m = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+//
+// A row shorter than its extent zeroes the rest, and an outer index that skips a
+// row zeroes that row entirely, both following the one-dimensional rule. A slice
+// of arrays and an array of slices are not supported: each needs an element that
+// is itself indirect, which the flat static layout above has nowhere to put.
+//
 // A "chan" type may stand where a type-as-value may, so that "make(chan T)"
 // parses and is then refused by the checker, which can name the real problem;
 // left out of the grammar it would break the parse instead and be reported as
