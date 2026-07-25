@@ -16,6 +16,45 @@ frontend (scanner, parser, formatter), the checker, C emission and the backend
 all work, and `ogo build` produces a P2 binary while `ogo run` loads it onto a
 board. What is missing is breadth, not a stage -- see **Implementation status**.
 
+## Language feature policy (read before assuming something is excluded)
+
+**The goal is to support what pre-generics Go supports, wherever that is feasible
+on the target.** A construct that does not work is therefore *work not yet done*,
+not a decision taken -- unless it is one of the hardware-rooted exceptions below.
+
+This distinction matters because it is easy to get backwards. The grammar was
+frozen early to reach a proof of concept, and the notes written then ("OctoGo does
+not support X") have been read since as design decisions when they were only
+status. Floats, the sized integer types, `&&`/`||`, three-clause and range `for`,
+labels, and multi-package programs were all once "not supported" and are now in
+the language. **Before treating any such note as settled, check whether the
+feature actually works** -- and if a stale note is found, fix the note.
+
+The deliberate exceptions, all rooted in the Propeller 2 hardware:
+
+- **No heap.** Nothing allocates at run time. This is what rules out `new`, every
+  `make` form but the slice one, maps, runtime string concatenation, and a
+  function literal that captures its surrounding scope.
+- **A goroutine is a physical cog** (there are eight). No scheduler, no
+  preemption; `go` starts a real core, not a task.
+- **A channel is a P2 hardware lock** over statically allocated Hub RAM -- a
+  synchronous rendezvous with no scheduler behind it.
+- **Interface types are not implemented yet.** They *are* wanted; what is unsettled
+  is the dispatch model with no heap and no runtime vtable (the candidate
+  strategies are in `internal/octogo/octogo.go` and the appendix below). Type
+  switches and type assertions wait on that choice -- these are the one place where
+  "not supported" means "blocked on a design decision" rather than either of the
+  above.
+
+**Generics are a separate category: not supported, not planned, not ruled out.**
+A question for after v1 -- whether an LL(1) grammar can describe them at all,
+whether they earn their complexity on a microcontroller, and how they meet the
+whole-program specialization the compiler already intends. Do not build toward
+them, and do not design them out.
+
+`specs.go`'s "Relationship to Go" section states the same policy for language
+users; keep the two in step.
+
 ## Module path vs. directory (important)
 
 - Repo directory on disk: `modernc.org/ogo`
@@ -246,8 +285,12 @@ still design-only.
   `[]int{1, 4: 9}`) with constant indices -- expanded to positional C initializers
   (gaps zero-filled), a slice's length being the highest index plus one. A
   non-constant index is refused.
-- A program is one package in one directory: only `import "p2"` resolves, and the
-  emitter has no C header mapping for a user import.
+- Multi-package programs work: a user `import "geo"` resolves to a sibling
+  directory and the whole program -- the main package plus every package it
+  imports, transitively -- is emitted into **one C translation unit** in dependency
+  order, with top-level symbols mangled into their package's namespace. `import
+  "p2"` remains the one dotless, directory-less import, mapping to the hardware
+  intrinsics. There is no standard library.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real

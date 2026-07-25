@@ -2,28 +2,24 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Reconciled with the implementation 20260720. Done since the list below was
-// written: composite literals for structs, positional and keyed; array and slice
-// literals; package-level channels; "defer" (including in a nested block); "++"
-// and "--"; the compound assignment operators; "%"; and the concurrency layer
-// (channels, "go", "select"). "&&" and "||" are parsed and rejected with a
-// diagnostic, which is deliberate -- see Operators.
+// Reconciled with the implementation 20260725. Landed since this list was first
+// written: composite literals for structs, positional, keyed and indexed; array
+// and slice literals; package-level channels; "defer", including in a nested
+// block; "++" and "--"; the compound assignment operators; "%"; the concurrency
+// layer (channels, "go", "select"); the logical operators "&&" and "||";
+// three-clause and range "for"; labels, with labeled break and continue, and
+// break inside a switch; floating point (float32/float64) and the 64-bit
+// integers; methods; "panic"; and multi-package programs.
 //
-// Floating point (float32/float64) is now supported: literals, arithmetic,
-// comparison, conversion to and from integers, and use as variables, parameters,
-// results and fields, printed as %g. Maps and complex numbers remain omitted (see
-// Keywords and Types); they were TODO items until 20260720, which read as work owed
-// rather than as a decision taken.
-//
-// TODO 20260317 goto. Labels and labeled break/continue are now supported (see
-// Break and Continue Statements); "goto" itself stays omitted (Keywords), pending
-// the jump-over-declaration safety analysis its unrestricted form needs.
+// TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
+// and Continue Statements); "goto" itself stays out (Keywords), pending the
+// jump-over-declaration safety analysis its unrestricted form needs.
 // TODO 20260719 Select: send clauses, and smart-pin clauses
 // TODO 20260719 Go statements: methods and qualified callees, per-goroutine stack size
-// TODO 20260719 Break statements: allowed in a switch once switch stops lowering to if/else
-// TODO 20260720 Composite literals: Go's indexed form, "[3]int{2: 5}"
 // TODO 20260720 Arrays: an array as a function result; slicing a multi-dimensional array
-// TODO 20260720 Imports: only "p2" resolves, so a program is one package in one directory
+// TODO 20260725 fallthrough (see Switch Statements)
+// TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
+// is work owed, unlike that of maps.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
@@ -51,6 +47,39 @@
 // # OctoGo Language Specification
 //
 // Draft of Jul 19, 2026.
+//
+// # Relationship to Go
+//
+// The goal is to support what pre-generics Go supports, wherever that is feasible
+// on the target. A construct missing here is therefore work not yet done rather
+// than a decision taken, unless it is listed below or said to be one where it is
+// described. This matters when reading the rest of this document: a note that
+// OctoGo "does not support X" records the state of the implementation when it was
+// written, and is retired as X lands -- it is not, by itself, evidence that X was
+// ruled out.
+//
+// Generics are the one part of Go held at arm's length: not supported, not
+// planned, and not ruled out either. They are a question for after v1, on three
+// counts -- whether an LL(1) grammar can describe them at all, whether they earn
+// their complexity in Propeller 2 programming, and how they would interact with
+// the whole-program specialization the compiler already intends to do. Nothing
+// here is designed to exclude them.
+//
+// The deliberate deviations are rooted in the Propeller 2 hardware, not in
+// keeping the language small:
+//
+//   - No heap. Nothing allocates at run time, which is ordinary for a
+//     microcontroller. This is what rules out "new", every "make" form but the
+//     slice one, maps, run-time string concatenation, and a function literal that
+//     captures its surrounding scope.
+//   - A goroutine is a physical cog, of which the P2 has eight. There is no
+//     scheduler and no preemption, so "go" starts a real core, not a task.
+//   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
+//     synchronous rendezvous with no scheduler behind it.
+//   - Interface types are not implemented yet. They are wanted, but the model --
+//     how a method set dispatches with no heap and no run-time vtable -- is not
+//     settled; the candidate strategies are in internal/octogo/octogo.go. Type
+//     switches and type assertions wait on that choice.
 //
 // # Introduction
 //
@@ -164,8 +193,11 @@
 // # Keywords
 //
 // The following keywords are reserved and may not be used as identifiers.
-// (Note: Keywords like package, goto and map have been intentionally omitted
-// from OctoGo to simplify the grammar and runtime):
+// Three of Go's are absent, for three different reasons: "package" because a
+// source file carries no package clause (see Packages), "map" because a map
+// allocates and the target has no heap (see Relationship to Go), and "goto"
+// because the analysis its unrestricted form needs is not written yet -- labels
+// and labeled break/continue, which need no such analysis, are supported:
 //
 //	break       chan        default     fallthrough go          import      range       select      switch
 //	case        const       defer       for         if          interface   return      struct      type
@@ -333,7 +365,7 @@
 // float64. Float literals, arithmetic, comparison, and conversion to and from the
 // integer types are supported; unlike integer division, float division by zero is
 // not a runtime panic (it yields the IEEE infinity or NaN). Complex numeric types
-// are omitted.
+// are not implemented yet.
 //
 // (OctoGo Specific): the Propeller 2 has no double-precision hardware, and its C
 // toolchain implements C double as 32-bit. So on this target float64 has the same
@@ -452,8 +484,12 @@
 //     type set of the interface.
 //   - The value of an uninitialized variable of interface type is nil.
 //
-// (Note: OctoGo omits generic interface constraints, unions, and underlying
-// type ~ operators. Interfaces strictly define method sets).
+// (Interface types are not implemented yet: the grammar admits the declaration
+// below, but the checker and the emitter reject it. What is undecided is the
+// dispatch model, not whether to have them -- see Relationship to Go. Generic
+// interface constraints, unions and the underlying-type "~" operator belong to
+// generics, which is a separate question entirely; an interface here strictly
+// defines a method set).
 //
 //	InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
 //	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
@@ -669,10 +705,11 @@
 // one token of lookahead, keeping the grammar LL(1).
 //
 // A bracketed type may carry one too, giving an array literal "[N]T{a, b}" or a
-// slice literal "[]T{a, b}". Their elements are positional; Go's indexed form
-// ("[3]int{2: 5}") is not supported. An array literal may supply fewer values than
-// its length, zeroing the rest, and no more; a slice literal's length and capacity
-// are however many it supplies. Both are a variable's initializer and nothing else:
+// slice literal "[]T{a, b}". Elements may be positional, indexed ("[5]int{0: 1,
+// 4: 9}", "[]int{2: 5}") or a mixture ("[]int{1, 4: 9}"); an index must be a
+// constant, and the elements it skips are zeroed. An array literal may supply
+// fewer values than its length, zeroing the rest, and no more; a slice literal's
+// length and capacity are its highest index plus one. Both are a variable's initializer and nothing else:
 // an array cannot be assigned, and a slice literal's backing storage belongs to the
 // declaration it initializes.
 //
@@ -743,9 +780,12 @@
 //     |, ^).
 //   - Expression (RelOp): Comparison operators (==, !=, <, <=, >, >=).
 //
-// (Note: OctoGo does not support the logical && and || operators. They are
-// recognized by the grammar so that a use is rejected with a clear semantic
-// diagnostic rather than a confusing parse error, but they carry no meaning).
+// (Note: the logical operators && and || sit at the RelOp level in the grammar,
+// alongside the comparisons rather than below them. The grammar is therefore
+// looser than the language: precedence is imposed by the checker and the emitter,
+// which read the flat operand/operator chain as Go groups it, so "x > 0 && x < 10"
+// joins two comparisons rather than comparing 0 with x. Both short-circuit, as
+// their C counterparts do).
 //
 //	UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 //	RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
@@ -771,11 +811,12 @@
 //	len(s)              length of a string, array or slice
 //	cap(s)              capacity of a slice (the length of its backing array)
 //	make([]T, n[, m])   a length-n, capacity-m slice over a fresh backing array
-//	append(s, x)        append one element to a slice
+//	append(s, x…)       append one or more elements to a slice
 //	copy(dst, src)      copy elements between two slices, returning the count
 //	clear(s)            set every element of a slice to its zero value
 //	min(x, y, …)        the smallest of its ordered arguments
 //	max(x, y, …)        the largest of its ordered arguments
+//	panic(s)            abort with a string message
 //	print(args…)        write the arguments to the serial console
 //	println(args…)      like print, but space-separated and newline-terminated
 //
@@ -787,13 +828,15 @@
 // no heap allocation: it reserves a backing array whose size is fixed at compile
 // time, so n and m must be constants, and it is admitted only as the initializer
 // of a slice variable, "var s []T = make([]T, n, m)"; the two-argument form
-// "make([]T, n)" sets the capacity equal to the length. append adds a single
-// element and cannot grow a slice past its capacity, so it has two forms: the
-// one-result form "s = append(s, x)" traps at run time if the element does not
-// fit, while the two-result form "s, ok = append(s, x)" never traps and reports
-// through ok whether the element was appended. copy copies min(len(dst),
-// len(src)) elements between two slices of the same element type — which may
-// overlap — and yields that count. clear zeroes a slice's elements in place.
+// "make([]T, n)" sets the capacity equal to the length. append takes one or more
+// elements, appending each in turn, and cannot grow a slice past its capacity, so
+// it has two forms: the one-result form "s = append(s, x)" traps at run time if
+// an element does not fit, while the two-result form "s, ok = append(s, x)" never
+// traps and reports through ok whether the element was appended. copy copies
+// min(len(dst), len(src)) elements between two slices of the same element type —
+// which may overlap — and yields that count. clear zeroes a slice's elements in
+// place. panic takes a string, writes "panic: " and that message to the serial
+// console and halts the cog; with --release it reboots the board instead.
 //
 // print and println are the only I/O built-ins; they write to the board's serial
 // output. Each takes any number of arguments, either scalar values or a whole
@@ -801,10 +844,10 @@
 // space and ends with a newline; print writes them adjacently with no terminator.
 //
 // The other Go built-ins are recognized by the checker but not yet emitted:
-// close, complex, delete, imag, panic, real and recover each report "the X
-// built-in is not supported yet". The exception is new, which — together with
-// every make form other than the slice form above — is rejected outright as
-// "dynamic allocation not supported", a heap having no place on the target.
+// close, complex, delete, imag, real and recover each report "the X built-in is
+// not supported yet". The exception is new, which — together with every make form
+// other than the slice form above — is rejected outright as "dynamic allocation
+// not supported", a heap having no place on the target.
 //
 // # Statements
 //
@@ -969,12 +1012,21 @@
 //
 // # For Statements
 //
-// A "for" statement specifies repeated execution of a block. In OctoGo, the
-// iteration is strictly controlled by a single boolean condition:
+// A "for" statement specifies repeated execution of a block. Iteration is
+// controlled by a single boolean condition, by an init/condition/post clause
+// triple, or by a range clause.
 //
 // If the condition is absent, it is equivalent to the boolean value true.
 //
-// (Note: OctoGo does not support init/post statements or range clauses).
+// A variable introduced by the init clause ("for i := 0; i < n; i++") is scoped
+// to the loop, so two loops may each declare their own.
+//
+// A range clause iterates over an integer, an array or a slice, and over a
+// string by rune: "for range n", "for i := range x", and "for i, v := range x",
+// where for a string i is each rune's start byte index and v the rune itself.
+// The operand is evaluated once. Ranging over a map or a channel is not
+// implemented (a map needs a heap; a channel range needs a close, which the
+// rendezvous does not model yet).
 //
 // # Switch Statements
 //
@@ -991,7 +1043,13 @@
 // that equals the switch expression triggers execution of the statements of
 // the associated case.
 //
-// (Note: OctoGo does not support type switches or fallthrough statements).
+// As in Go, a case body does not fall through to the next, and "break" leaves the
+// switch rather than any enclosing loop. "fallthrough" is not implemented yet (see
+// the TODO at the top of this document): it is a reserved keyword the grammar
+// accepts as a statement, so a use is currently reported as an unused expression.
+//
+// A type switch is not implemented, and waits on the interface model -- see
+// Relationship to Go.
 //
 // # Select Statements & Smart Pin Hardware Polling
 //
