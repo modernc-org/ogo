@@ -24,6 +24,14 @@ type emitRunCase struct {
 	// panics marks a program expected to abort through ogo_panic rather than run
 	// to completion.
 	panics bool
+	// backendWarning is a substring of a diagnostic the C backend prints for this
+	// program and that has been examined and found harmless. TestTargetBuild fails
+	// any other backend output, because the backend warns where it should refuse:
+	// it accepts a duplicate declaration in one block with "Redefining x", ignores
+	// the second, and builds -- which is how a mixed ":=" silently computed the
+	// wrong answer until aa300e2. Listing an exception here keeps it visible rather
+	// than swallowed, and each one should say why it is not a defect.
+	backendWarning string
 }
 
 var emitRunCases = []emitRunCase{
@@ -441,6 +449,13 @@ func main() {
 		// stored in arrays/slices. C rejects a struct with no members, so the
 		// emitter gives it one hidden byte; that byte stays invisible to OctoGo.
 		name: "empty struct type",
+		// The C is valid and the host compiler accepts it: a `marker a[3]` decays to
+		// `marker*`, which is exactly the slice header's pointer field. The target's
+		// compiler does not follow the tagged forward declaration that a
+		// self-referential-capable struct is emitted with, and calls the type
+		// unknown. The program's output is checked on real hardware by TestOnBoard,
+		// so the warning is noise rather than a defect.
+		backendWarning: "incompatible pointer types in parameter passing",
 		src: `type marker struct{}
 
 func (m marker) tag() int { return 42 }

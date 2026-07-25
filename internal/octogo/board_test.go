@@ -50,7 +50,7 @@ func TestTargetBuild(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel() // separate processes, so the builds are independent
 			dir := t.TempDir()
-			if err := boardBuild(ogo, dir, "prog", test.src, filepath.Join(dir, "prog.binary")); err != nil {
+			if err := boardBuild(ogo, dir, "prog", test.src, filepath.Join(dir, "prog.binary"), test.backendWarning); err != nil {
 				t.Errorf("%v", err)
 			}
 		})
@@ -97,7 +97,7 @@ func TestOnBoard(t *testing.T) {
 	// timing out on every case.
 	dir := t.TempDir()
 	preflight := filepath.Join(dir, "preflight.binary")
-	if err := boardBuild(ogo, dir, "preflight", "func main() { println(\"OGO-PREFLIGHT-OK\") }\n", preflight); err != nil {
+	if err := boardBuild(ogo, dir, "preflight", "func main() { println(\"OGO-PREFLIGHT-OK\") }\n", preflight, ""); err != nil {
 		t.Fatalf("preflight build: %v", err)
 	}
 	if out, matched := boardLoad(ogo, port, preflight, "OGO-PREFLIGHT-OK"); !matched {
@@ -107,7 +107,7 @@ func TestOnBoard(t *testing.T) {
 	for _, test := range emitRunCases {
 		t.Run(test.name, func(t *testing.T) {
 			bin := filepath.Join(dir, "prog.binary")
-			if err := boardBuild(ogo, dir, "prog", test.src, bin); err != nil {
+			if err := boardBuild(ogo, dir, "prog", test.src, bin, test.backendWarning); err != nil {
 				t.Fatalf("build: %v", err)
 			}
 			// A panic case aborts through ogo_panic, which prints "panic: <msg>"
@@ -142,13 +142,30 @@ func TestOnBoard(t *testing.T) {
 
 // boardBuild writes src to <dir>/<name>.ogo and compiles it to a P2 binary at out
 // with `ogo build`. Checks are left on (the default), so the panic cases trap.
-func boardBuild(ogo, dir, name, src, out string) error {
+//
+// A successful build that printed anything is also a failure, unless what it
+// printed contains allowWarning. The C backend warns where it ought to refuse --
+// it takes a duplicate declaration in one block, says "Redefining x", ignores the
+// second and builds -- so a diagnostic it emits is the only sign that the emitted
+// C is wrong in a way the exit status will not show. A clean build is silent, so
+// anything at all is worth reading.
+func boardBuild(ogo, dir, name, src, out, allowWarning string) error {
 	srcFile := filepath.Join(dir, name+".ogo")
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		return err
 	}
-	if b, err := exec.Command(ogo, "build", "-o", out, srcFile).CombinedOutput(); err != nil {
+	b, err := exec.Command(ogo, "build", "-o", out, srcFile).CombinedOutput()
+	if err != nil {
 		return fmt.Errorf("ogo build: %v\n%s", err, b)
+	}
+	switch chatter := strings.TrimSpace(string(b)); {
+	case chatter == "":
+	case allowWarning != "" && strings.Contains(chatter, allowWarning):
+		// A diagnostic this case records as examined and harmless.
+	default:
+		return fmt.Errorf("ogo build succeeded but the backend reported:\n%s\n"+
+			"A backend diagnostic means the emitted C is suspect even though the build passed. "+
+			"Fix the emitter, or record it in the case's backendWarning field with the reason it is harmless.", chatter)
 	}
 	return nil
 }
