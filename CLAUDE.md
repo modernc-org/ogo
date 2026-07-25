@@ -297,6 +297,14 @@ still design-only.
   backend and runs it on a real P2, gated on `OGO_BOARD_PORT` (`make board`).
   The second exists because flexcc and gcc have been observed to disagree on
   semantics, not just warnings -- a host-green emit feature is not verified.
+- **A backend diagnostic fails the target-build tests, even when `ogo build`
+  succeeds.** flexcc warns where it should refuse: given a duplicate declaration in
+  one block it says `Redefining x`, ignores the second and produces a working binary
+  holding the wrong value (that was `aa300e2`). So `boardBuild` treats any output
+  from a *successful* build as a failure, which puts the check in `TestTargetBuild`
+  -- no board needed, in the default `go test ./...`. A clean build is silent. A
+  diagnostic examined and found harmless goes in the case's `backendWarning` field
+  together with the reason; there is exactly one, in `empty struct type`.
 - `smith` is seed-reproducible and generates compilable, self-checking programs.
   `ogo smith -seed N` emits the same program every run (the last non-determinism,
   map-iteration order in `Scope.GetSymbolsOfType`, was sorted), and `TestOracle`
