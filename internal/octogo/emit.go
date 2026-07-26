@@ -506,6 +506,12 @@ func (e *emitter) emitGo(nodes []Node) {
 	}
 	site := goSite{callee: e.funcCallC(callee), id: len(e.goSites)}
 	args := e.callArgExprs(suffix[0].ast)
+	if x, name, bad := e.crossBackedByFrame(args); bad {
+		e.fail("%v: cannot pass a slice backed by local %s to a goroutine: its storage does not outlive "+
+			"the function, and the goroutine may; declare the backing array at package scope",
+			e.f.tok(x.Pos()).Position(), name)
+		return
+	}
 	for _, a := range args {
 		ct, ok := e.inferCType(a.ast)
 		if !ok {
@@ -7465,6 +7471,12 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("a send statement needs a channel on the left")
 			return
 		}
+		if x, name, bad := e.crossBackedByFrame([]Node{op[1]}); bad {
+			e.fail("%v: cannot send a slice backed by local %s: its storage does not outlive the function, "+
+				"and the receiver keeps the value; declare the backing array at package scope",
+				e.f.tok(x.Pos()).Position(), name)
+			return
+		}
 		e.ind()
 		e.chanSendElems[e.chanElemByName[ct]] = true
 		e.emit(chanSendCName(e.chanElemByName[ct]) + "(" + lhs + ", ")
@@ -9654,10 +9666,9 @@ func (e *emitter) checkReturnBacking(exprs []Node) {
 //
 // A package variable outlives every call, so the header would still point at the
 // frame's storage long after it is gone -- the same error checkReturnBacking
-// catches at a return, through the other door. This needs no reasoning about
-// lifetimes, which is why it is refused where a send on a channel or an argument to
-// a goroutine is not: those may well be read while the frame is still alive, and
-// often are.
+// catches at a return, through the other door. crossBackedByFrame is the third
+// door: a reference that does not provably outlive the frame, but leaves its
+// control.
 func (e *emitter) checkStoreBacking(base string, op []Node) {
 	if _, isLocal := e.locals[base]; isLocal {
 		return // a local target dies with the frame, like the backing
@@ -9679,6 +9690,31 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 			return
 		}
 	}
+}
+
+// crossBackedByFrame finds, among values about to cross to another cog, one that is
+// a slice viewing this frame's storage, and names the local it came from.
+//
+// Where a return or a store into a package variable hands out a reference that
+// provably outlives its referent, a crossing hands out one that leaves the frame's
+// control: a goroutine runs until it returns, and a receiver keeps the header it
+// took long after the rendezvous that delivered it. Either may read the backing
+// array once this function has returned and its storage been reused. Callers report
+// it themselves, each in its own words -- the two crossings dangle for different
+// reasons and a programmer fixing one is served by hearing which.
+//
+// This sees a slice the way sliceBackingIsFrame does: as a variable, a slice of a
+// local array, or a re-slice of either. A frame pointer wrapped in a struct is not
+// found -- `b.data = a[:]; go g(b)` still compiles -- because provenance is tracked
+// per variable and not per field. That is the next increment, along with the pointer
+// a parameter arrived through, whose backing belongs to a caller this cannot see.
+func (e *emitter) crossBackedByFrame(exprs []Node) (Node, string, bool) {
+	for _, x := range exprs {
+		if name, frame := e.sliceBackingIsFrame(x.ast); frame {
+			return x, name, true
+		}
+	}
+	return Node{}, "", false
 }
 
 // localChanCell gives a locally declared channel its cell, and returns the cell's

@@ -1543,8 +1543,20 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 // call statement's is, so the statement node itself carries the selectors and the
 // CallSuffix the call helpers scan for. The suffix chain must end in a call, since
 // a goroutine launches a call, not a bare value ("go x", "go p.f").
+// An argument crosses to the launched cog, so it is checked for a reference into
+// this frame -- which a deferred call's argument, evaluated here and read on the way
+// out of the same frame, does not need.
 func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
 	f.checkCallStmt(s, head, stmt, "go")
+	argList, _, isCall := f.callInfo(stmt)
+	if !isCall {
+		return
+	}
+	for a := range it(argList.ast) {
+		if a.sym == Expression {
+			f.checkEscapeCross(s, a, false)
+		}
+	}
 }
 
 // checkDeferStmt checks a "defer" statement's call, exactly as checkGoStmt does for
@@ -3375,6 +3387,7 @@ func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
 		f.err(chTok.Position(), "invalid operation: cannot send to non-channel")
 		return
 	}
+	f.checkEscapeCross(s, valNode, true)
 	vk, vok := f.exprType(s, valNode)
 	if !hasElem || !vok {
 		return
@@ -4659,6 +4672,36 @@ func (f *File) checkEscapeStore(s *Scope, lhs []Token, lhsSuffixed []bool, op Sy
 		return
 	}
 	f.err(root.Position(), "cannot store the address of local variable %s in global %s: it does not outlive the function", root.Src(), lhs[0].Src())
+}
+
+// checkEscapeCross reports a reference to current-frame storage handed to another
+// cog: `go g(&x)` or `ch <- &x`, where x is a local variable or parameter.
+//
+// The two sinks checkEscapeReturn and checkEscapeStore cover are about a reference
+// that provably outlives its referent. This one is about a reference that leaves the
+// frame's control: a goroutine runs until it returns and nothing here says when that
+// is, and a receiver keeps what it took long after the rendezvous that delivered it.
+// Either may still be reading x's storage once this function has returned and its
+// frame been reused, and neither has any way to be prevented from it -- so, as
+// everywhere else on a target with no heap, the fix is for the storage to be
+// somewhere that outlives every frame.
+//
+// The same conservatism as checkEscapeReturn: only an address whose root is a local
+// value is reported, so a pointer, slice or channel this cannot see through is
+// accepted rather than wrongly refused. arrow distinguishes a send from a go
+// statement in the diagnostic.
+func (f *File) checkEscapeCross(s *Scope, e Node, arrow bool) {
+	root, suffixed, ok := f.addressOperandRoot(s, e)
+	if !ok || !f.escapesFrame(s, root, suffixed) {
+		return
+	}
+	if arrow {
+		f.err(root.Position(), "cannot send the address of local variable %s: it does not outlive the "+
+			"function, and the receiver may; declare %s at package scope", root.Src(), root.Src())
+		return
+	}
+	f.err(root.Position(), "cannot pass the address of local variable %s to a goroutine: it does not "+
+		"outlive the function, and the goroutine may; declare %s at package scope", root.Src(), root.Src())
 }
 
 // chanElemOf reports whether variable d has channel type "chan T" and, if so,

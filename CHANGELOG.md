@@ -29,6 +29,31 @@ Releases before v0.9.0 predate this file; see
   because the target's C compiler miscompiles that read directly; the result is now
   bound to a temporary first, which reads correctly.
 
+### Behaviour changes
+
+- **A reference to a local may no longer be handed to another cog.** `go f(&x)` and
+  `ch <- &x`, and the slice forms `go f(a[:])` and `ch <- s` where the backing array
+  is a local — all four compiled and produced a program reading storage its owner was
+  free to reuse. The two earlier rules of this kind are about a reference that
+  outlives its referent; this one is about a reference that leaves the frame's
+  control, since a goroutine runs until it returns and a receiver keeps what it took.
+  Declare the buffer at package scope and pass a slice of it:
+
+  ```go
+  var buf [64]byte
+
+  func main() {
+  	var done chan int
+  	go fill(buf[:], done)   // buf outlives every frame
+  	<-done
+  }
+  ```
+
+  An ordinary call and a deferred one are unaffected: both read the argument while
+  the frame is still alive. Two shapes are still accepted and remain the
+  programmer's responsibility — a slice that arrived as a parameter, whose backing
+  belongs to a caller this cannot see, and a frame pointer wrapped in a struct.
+
 ### Fixed
 
 - **A program could only ever start seven goroutines.** The seven-cog limit is meant
@@ -103,9 +128,6 @@ Releases before v0.9.0 predate this file; see
   — usually getting the right answer anyway, until something reused the memory. Use a
   slice over a package-level array, or over one the caller passed in.
 
-Each of these rejects a program the previous release accepted. All were verified
-against real Go, which rejects them too.
-
 - **A constant that does not fit its type is reported wherever it meets one.**
   Previously only a written target type was checked, so `var x int = 1 << 40` was
   rejected while `var x = 1 << 40`, `x := 1 << 40`, `return 1 << 40`,
@@ -118,6 +140,9 @@ against real Go, which rejects them too.
   fall past one without returning is now "missing return" rather than a C function
   that runs off its end.
 - **`fallthrough` is a reserved word**, so it can no longer be used as an identifier.
+
+Each of these rejects a program the previous release accepted. All were verified
+against real Go, which rejects them too.
 
 ### Fixed
 

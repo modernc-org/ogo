@@ -5387,6 +5387,111 @@ func main() {
 }
 `,
 		},
+
+		// The third door: a value crossing to another cog. Unlike a return or a store
+		// into a package variable, nothing here says the reference outlives its
+		// referent -- only that the frame stops controlling when it is read.
+		{
+			name: "passed to a goroutine",
+			src: `func work(s []int) { println(s[0]) }
+
+func main() {
+	s := make([]int, 2)
+	go work(s)
+}
+`,
+			want: "cannot pass a slice backed by local s to a goroutine",
+		},
+		{
+			name: "slice of a local array passed to a goroutine",
+			src: `func work(s []int) { println(s[0]) }
+
+func main() {
+	var a [4]int
+	go work(a[:])
+}
+`,
+			want: "cannot pass a slice backed by local a to a goroutine",
+		},
+		{
+			name: "sent on a channel",
+			src: `func main() {
+	var ch chan []int
+	s := make([]int, 2)
+	ch <- s
+}
+`,
+			want: "cannot send a slice backed by local s",
+		},
+		{
+			name: "slice of a local array sent on a channel",
+			src: `func main() {
+	var ch chan []int
+	var a [4]int
+	ch <- a[:]
+}
+`,
+			want: "cannot send a slice backed by local a",
+		},
+		{
+			// Accepted: the backing outlives every frame, which is the whole of what
+			// the rule asks. A goroutine reading g's storage cannot outlive it.
+			name: "package backing passed to a goroutine",
+			src: `var g [4]int
+
+func work(s []int) { println(s[0]) }
+
+func main() {
+	g[0] = 7
+	go work(g[:])
+}
+`,
+		},
+		{
+			// Accepted, and unsound -- the caller's array may itself be a local of a
+			// frame that returns while the goroutine runs. Refusing it would refuse
+			// the one idiom left for handing a goroutine a buffer, so the caller's
+			// storage is the writer's responsibility until per-parameter provenance
+			// is tracked across calls.
+			name: "a parameter passed to a goroutine",
+			src: `var g [4]int
+
+func work(s []int) { println(s[0]) }
+
+func spawn(p []int) { go work(p) }
+
+func main() { spawn(g[:]) }
+`,
+		},
+		{
+			// Accepted, and a known hole: the frame pointer is inside a struct, and
+			// provenance is tracked per variable, not per field.
+			name: "a frame-backed slice wrapped in a struct",
+			src: `type buf struct{ data []int }
+
+func work(b buf) { println(b.data[0]) }
+
+func main() {
+	var a [4]int
+	var b buf
+	b.data = a[:]
+	go work(b)
+}
+`,
+		},
+		{
+			// A deferred call is not a crossing: its arguments are evaluated here and
+			// read on the way out of this same frame, while the backing is alive.
+			name: "a frame-backed slice in a deferred call",
+			src: `func work(s []int) { println(s[0]) }
+
+func main() {
+	s := make([]int, 2)
+	s[0] = 3
+	defer work(s)
+}
+`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}

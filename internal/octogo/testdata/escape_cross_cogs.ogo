@@ -1,0 +1,111 @@
+// Increment 3 of the escape analysis, the cog-crossing counterpart of the return
+// and store checks (see escape_return_address.ogo and escape_store_global.ogo): a
+// reference to current-frame storage must not be handed to another cog, either as an
+// argument to a "go" statement or as a channel send operand.
+//
+// The first two increments key on a reference that provably outlives its referent.
+// This one keys on a reference that leaves the frame's control: a goroutine runs
+// until it returns and nothing at the "go" statement says when that is, and a
+// receiver keeps what it took long after the rendezvous delivered it. Either may
+// read the storage once the frame has returned, so the referent has to be somewhere
+// that outlives every frame.
+//
+// A deferred call is not a crossing -- its arguments are read on the way out of the
+// same frame -- and neither is an ordinary call, whose callee returns first.
+
+type P struct{ a int }
+
+var G int
+
+var GP P
+
+func take(p *int) { println(*p) }
+
+func takeVal(v int) { println(v) }
+
+// Safe: the referent is package-level storage, which outlives every frame and so
+// every goroutine reading it.
+func safeGlobalAddr() {
+	go take(&G)
+}
+
+func safeGlobalField() {
+	go take(&GP.a)
+}
+
+func safeGlobalSend(ch chan *int) {
+	ch <- &G
+	ch <- &GP.a
+}
+
+// Safe: a pointer parameter's referent belongs to a caller, not to this frame. Not
+// provably safe -- the caller's own local would dangle just the same -- but out of
+// reach until provenance is tracked across calls, so it is left to the writer.
+func safePtrParam(p *int) {
+	go take(p)
+}
+
+func safePtrParamField(p *P) {
+	go take(&p.a)
+}
+
+// Safe: a value crosses by copy, carrying no reference to anything.
+func safeValue() {
+	x := 7
+	go takeVal(x)
+	go takeVal(x + 1)
+}
+
+func safeValueSend(ch chan int) {
+	x := 7
+	ch <- x
+}
+
+// Safe: a deferred call runs before this frame goes, so its argument is read while
+// the local is still alive. This is the same argument the go statement cannot make.
+func safeDefer() {
+	x := 7
+	defer take(&x)
+}
+
+// Safe: an ordinary call returns before the frame does.
+func safeCall() {
+	x := 7
+	take(&x)
+}
+
+// Crossing to a goroutine: the frame is free to return while it runs.
+func badLocalToGoroutine() {
+	x := 7
+	// ERROR "cannot pass the address of local variable x to a goroutine"
+	go take(&x)
+}
+
+func badParamToGoroutine(x int) {
+	// ERROR "cannot pass the address of local variable x to a goroutine"
+	go take(&x)
+}
+
+func badLocalFieldToGoroutine() {
+	var p P
+	// ERROR "cannot pass the address of local variable p to a goroutine"
+	go take(&p.a)
+}
+
+// Crossing through a channel: the receiver keeps the pointer.
+func badLocalSend(ch chan *int) {
+	x := 7
+	// ERROR "cannot send the address of local variable x"
+	ch <- &x
+}
+
+func badParamSend(ch chan *int, x int) {
+	// ERROR "cannot send the address of local variable x"
+	ch <- &x
+}
+
+func badLocalFieldSend(ch chan *int) {
+	var p P
+	// ERROR "cannot send the address of local variable p"
+	ch <- &p.a
+}

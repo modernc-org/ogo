@@ -65,7 +65,12 @@
 //   - No heap. Nothing allocates at run time, which is ordinary for a
 //     microcontroller. This is what rules out "new", every "make" form but the
 //     slice one, maps, run-time string concatenation, and a function literal that
-//     captures its surrounding scope.
+//     captures its surrounding scope. It is also why a reference must not outlive
+//     what it refers to: where Go moves a referent to the heap and says nothing,
+//     there is nowhere to move it to, so the program is refused instead. That is
+//     one rule met in four places -- returning a local's address or a slice backed
+//     by a local, storing either in a package variable, and handing either to
+//     another cog.
 //   - A goroutine is a physical cog, of which the P2 has eight. There is no
 //     scheduler and no preemption, so "go" starts a real core, not a task.
 //   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
@@ -850,10 +855,35 @@
 // variable's address. A slice over a package-level array or slice, or one reached
 // through a parameter -- the caller's -- travels freely.
 //
-// Sending such a slice on a channel or passing it to a goroutine is not refused.
-// Either may well read it while the frame is still alive, and usually does, so
-// refusing them would reject correct programs; keeping the frame alive until the
-// reader is done is the writer's responsibility there.
+// Handing one to another Cog is refused too: a slice backed by a local may not be
+// an argument of a go statement, nor be sent on a channel. The first two refusals
+// are about a reference that outlives its referent; this one is about a reference
+// that leaves the frame's control. A goroutine runs until it returns and the go
+// statement says nothing about when that is, and a receiver keeps what it took long
+// after the rendezvous that delivered it -- so either may read the backing array
+// once the frame that owned it has returned. The same applies to a local's address:
+// "go f(&x)" and "ch <- &x" are refused where "f(&x)" and "defer f(&x)" are not,
+// because an ordinary call returns before the frame does and a deferred one runs on
+// the way out of it.
+//
+// What that leaves is the shape to write: give the buffer a lifetime at least as long
+// as the goroutine's by declaring it at package scope, and hand the Cog a slice of
+// it.
+//
+//	var buf [64]byte
+//
+//	func main() {
+//		var done chan int
+//		go fill(buf[:], done)   // buf outlives every frame
+//		<-done
+//	}
+//
+// Two shapes are accepted that this cannot yet prove safe, and both are the
+// programmer's responsibility. A slice that arrived as a parameter views the
+// caller's storage, which may itself be a local of a frame that returns while the
+// goroutine runs; seeing that needs provenance tracked across calls. And a frame
+// pointer wrapped in a struct is not seen at all -- "b.data = a[:]" then "go g(b)"
+// compiles -- because provenance is tracked per variable, not per field.
 //
 // A call that returns a struct may have a field selected from its result,
 // "mk().y", a method called on it, "mk().sum()", and its result indexed,
