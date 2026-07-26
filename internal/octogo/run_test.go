@@ -2986,6 +2986,48 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// Ranging over a composite literal, `for _, v := range []int{1, 2, 3}`, which
+		// is how the idiom is written in Go and did not parse: the grammar keeps a
+		// literal out of a header, since its "{" would be the block's. A bracketed
+		// type has no such trouble -- a "[" cannot begin a block -- so only the
+		// bare-name form is still kept out.
+		//
+		// The operand is bound to a local first, which is where a slice literal's
+		// backing array comes from. Every form of the loop is covered, since each
+		// reads the operand differently.
+		name: "range over a composite literal",
+		src: `type P struct {
+	x int
+	y int
+}
+
+func main() {
+	for _, v := range []int{1, 2, 3} {
+		println("slice", v)
+	}
+	for i, v := range [3]int{4, 5, 6} {
+		println("array", i, v)
+	}
+	for i := range []int{7, 8} {
+		println("index", i)
+	}
+	n := 0
+	for range []int{1, 2, 3} {
+		n++
+	}
+	println("count", n)
+	for _, s := range []string{"a", "bb"} {
+		println("string", s, len(s))
+	}
+	for _, p := range []P{{1, 2}, {3, 4}} {
+		println("struct", p.x, p.y)
+	}
+}
+`,
+		want: "slice 1\nslice 2\nslice 3\narray 0 4\narray 1 5\narray 2 6\n" +
+			"index 0\nindex 1\ncount 3\nstring a 1\nstring bb 2\nstruct 1 2\nstruct 3 4\n",
+	},
+	{
 		// A trailing comma, which is what lets a list be written across lines -- the
 		// form gofmt produces and the only readable way to spell a table. Go takes one
 		// in a composite literal, a call's arguments, a parameter list and a result

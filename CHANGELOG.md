@@ -26,6 +26,12 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A composite literal may be ranged over**, `for _, v := range []int{1, 2, 3}`,
+  which is how the idiom is written in Go. A literal is kept out of an `if`, `for`
+  or `switch` header because its `{` would be the block's — but only when its type
+  is a bare name: a `[` cannot begin a block, so the bracketed form has no such
+  trouble and is now allowed there. The operand is bound to a local first, which is
+  where a slice literal's backing array comes from.
 - **A composite literal's type may be qualified**, `geo.Point{1, 2}`, so a value of
   an imported package's struct type can be written directly instead of only through
   a constructor that package supplies. Positional, keyed and empty forms all work,

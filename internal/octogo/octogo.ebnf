@@ -83,7 +83,7 @@ HeaderFactor     = identifier [ FactorSuffix ]
 	| string_lit
 	| rune_lit
 	| "(" Expression ")"
-	| "[" [ Expression ] "]" Type
+	| "[" [ Expression ] "]" Type [ CompositeLit ]
 	| "chan" Type
 	| FuncLiteral .
 FactorSuffix = { Selector | Index | CallSuffix } .

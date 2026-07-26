@@ -168,7 +168,9 @@ broken.
   `[5]int{0: 1, 4: 9}`), including multi-dimensional (`[2][3]int{{1, 2, 3}, {4, 5,
   6}}`) and at package scope, which is how you write a lookup table. One place a
   literal may not appear bare is the top level of an `if`, `for` or `switch` header,
-  where `{` is the block — parenthesize there, as in Go: `if p == (P{}) {`.
+  where `{` is the block — parenthesize there, as in Go: `if p == (P{}) {`. That is
+  only for a literal whose type is a bare name; `for _, v := range []int{1, 2, 3}`
+  needs nothing, a `[` not being able to begin a block.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
   functions and methods with value or pointer receivers.
 * Named and unnamed parameters and results, multiple return values, naked returns.

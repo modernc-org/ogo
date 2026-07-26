@@ -747,9 +747,10 @@
 //
 // An array literal may stand as an element of a composite literal too, filling an
 // array-typed field or an element of an array of arrays, since a nested aggregate
-// is written where it stands. Anywhere else both are a variable's initializer and
-// nothing else: an array cannot be assigned, and a slice literal's backing storage
-// belongs to the declaration it initializes.
+// is written where it stands, and either may be the operand of a "range", which
+// binds it to a local of its own. Anywhere else both are a variable's initializer
+// and nothing else: an array cannot be assigned, and a slice literal's backing
+// storage belongs to the declaration it initializes.
 //
 // That declaration may be at package scope as well as inside a function, with the
 // type written or inferred, which is how a program states a lookup table:
@@ -797,7 +798,7 @@
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")"
-//		| "[" [ Expression ] "]" Type
+//		| "[" [ Expression ] "]" Type [ CompositeLit ]
 //		| "chan" Type
 //		| FuncLiteral .
 //

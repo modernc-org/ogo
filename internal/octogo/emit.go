@@ -6436,23 +6436,29 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		key = e.newTmp() // `for range x`, or `for _ := range x`: a hidden counter
 	}
 
+	// A literal operand, `range []int{1, 2}`: it has no name for the loop to read its
+	// length off, and a slice one's backing storage has to be declared somewhere.
+	// Bind it to a temporary exactly as a declaration would -- which is where the
+	// backing array comes from -- and range over that. Nothing escapes: the loop
+	// reads elements, and the value variable is a copy. Bound before the switch, so
+	// the binding happens once however the operand turns out to be shaped.
+	name := e.rangeLitVar(h.rangeExpr)
 	switch {
+	case name != "":
+		if a, isArray := e.arrays[name]; isArray {
+			e.emitRangeArray(h, body, key, a, name)
+			break
+		}
+		e.emitRangeSlice(h, body, key, e.locals[name], name)
 	case e.isSliceCType(ct):
 		// Hoist the slice header so .len and .ptr come from one evaluation.
 		hdr := e.newTmp()
 		e.ind()
 		e.emit(ct + " " + hdr + " = " + e.exprC(h.rangeExpr) + ";\n")
-		e.locals[key] = "int"
-		e.ind()
-		e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
-		e.emitLoopBody(body, e.rangeValueInject(h, e.sliceElemByName[ct], hdr+".ptr["+key+"]"))
+		e.emitRangeSlice(h, body, key, ct, hdr)
 	case e.rangeArray(h.rangeExpr) != nil:
-		a := e.rangeArray(h.rangeExpr)
 		base, _ := e.exprIdent(h.rangeExpr)
-		e.locals[key] = "int"
-		e.ind()
-		e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
-		e.emitLoopBody(body, e.rangeValueInject(h, a.elem, base+"["+key+"]"))
+		e.emitRangeArray(h, body, key, *e.rangeArray(h.rangeExpr), base)
 	case ct == cString:
 		// Ranging a string iterates its runes, as Go does (not its bytes): key is the
 		// byte index of each rune's start, the two-variable value is the decoded rune,
@@ -6519,6 +6525,38 @@ func (e *emitter) rangeValueInject(h *forHeader, elem, access string) func() {
 		e.ind()
 		e.emit(elem + " " + val + " = " + access + ";\n")
 	}
+}
+
+// emitRangeSlice emits the counting loop over a slice named by hdr, whose header
+// has already been given a name.
+func (e *emitter) emitRangeSlice(h *forHeader, body []int32, key, ct, hdr string) {
+	e.locals[key] = "int"
+	e.ind()
+	e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
+	e.emitLoopBody(body, e.rangeValueInject(h, e.sliceElemByName[ct], hdr+".ptr["+key+"]"))
+}
+
+// emitRangeArray emits the counting loop over an array named by base, bounded by
+// its compile-time extent.
+func (e *emitter) emitRangeArray(h *forHeader, body []int32, key string, a arrDim, base string) {
+	e.locals[key] = "int"
+	e.ind()
+	e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
+	e.emitLoopBody(body, e.rangeValueInject(h, a.elem, base+"["+key+"]"))
+}
+
+// rangeLitVar binds a range operand that is an array or slice literal to a fresh
+// local, the way a declaration of one would, and returns that local's name; it
+// returns "" for any other operand. Emitting it here rather than through hoist is
+// what gives a slice literal its backing array, which is two declarations, not one.
+func (e *emitter) rangeLitVar(rangeExpr []int32) string {
+	typeAST, lit, ok := e.soleArrayLit(rangeExpr)
+	if !ok {
+		return ""
+	}
+	name := e.newTmp()
+	e.emitArrayLitVar(name, typeAST, lit, false)
+	return name
 }
 
 // rangeArray returns the array dimension of a range operand that is a bare array
