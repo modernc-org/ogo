@@ -5681,6 +5681,24 @@ func main() {
 			want: "cannot store a slice backed by local local in package variable table",
 		},
 		{
+			name: "stored in a field of a package array's element",
+			src: `type item struct{ v []int }
+
+var table [2]item
+
+func fill() {
+	var local [4]int
+	table[1].v = local[:]
+}
+
+func main() {
+	fill()
+	println(len(table[1].v))
+}
+`,
+			want: "cannot store a slice backed by local local in package variable table",
+		},
+		{
 			// A local array's element dies with the backing it is given, so it takes
 			// one -- the rule is about outliving, not about indexing.
 			name: "stored in a local array's element",

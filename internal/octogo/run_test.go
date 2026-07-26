@@ -2986,6 +2986,54 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// Assigning a slice-typed field of an indexed element, `s[i].v = xs`. The
+		// element's other fields already took a value this way; a slice-valued one was
+		// left out, because a plain `b.data = ...` target has to reach the shapes that
+		// know how to give a `make` its backing array, and the rule keeping it there
+		// caught this too. An index is what tells the two apart.
+		//
+		// What is assigned is the header: the field ends up naming the same storage
+		// the right-hand side does, which the first three lines check by writing
+		// through one view and reading the other.
+		name: "a slice field of an indexed element",
+		src: `type item struct {
+	n int
+	v []int
+}
+
+type outer struct{ list []item }
+
+var b1 = []int{1, 2, 3}
+var b2 = []int{7, 8}
+
+func main() {
+	var a [2]item
+	a[1].v = b1
+	q := a[1].v
+	q[0] = 9
+	println(b1[0], len(a[1].v), cap(a[1].v))
+
+	s := make([]item, 2, 2)
+	s[0].v = b1
+	s[1].v = b2
+	s[1].n = 5
+	r := s[1].v
+	println(len(s[0].v), len(r), r[1], s[1].n)
+
+	s[1].v = b1
+	t := s[1].v
+	println(len(t), t[2])
+
+	var o outer
+	o.list = make([]item, 2, 2)
+	o.list[1].v = b2
+	u := o.list[1].v
+	println(len(u), u[0])
+}
+`,
+		want: "9 3 3\n3 2 8 5\n3 3\n2 7\n",
+	},
+	{
 		// A string byte over 127. Go's byte is unsigned, while the string header
 		// carries `const char*`, whose signedness C leaves to the implementation --
 		// so a read of s[i] has to be cast or it is negative wherever char is signed.

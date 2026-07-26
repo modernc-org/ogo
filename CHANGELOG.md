@@ -26,6 +26,10 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A slice-typed field of an indexed element may be assigned**, `s[i].v = xs` and
+  `a[i].v = xs`. Its other fields already could; a slice-valued one was refused with
+  `only simple and field assignment targets are supported yet`. What is assigned is
+  the header, so the field ends up viewing the same storage the right-hand side does.
 - **A slice expression may be indexed or sliced again**, `a[1:6][2]` and
   `a[1:6][1:4]`, over an array, a slice, a struct field or a string. Both had to be
   written as two statements before. The index is checked against the length of the

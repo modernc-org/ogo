@@ -5400,6 +5400,12 @@ func isAccessChain(steps []Node) bool {
 	return true
 }
 
+// hasIndexStep reports whether a chain indexes anything, which is what puts it out
+// of the reach of the shapes that expect a run of selectors.
+func hasIndexStep(steps []Node) bool {
+	return slices.ContainsFunc(steps, func(n Node) bool { return n.sym == Index })
+}
+
 // sliceParts inspects an Index node. isSlice reports a colon -- a slice expression;
 // low, high and max are the bound expressions, nil when omitted, max being the
 // third bound of `a[low:high:max]`. For a plain index (no colon), isSlice is false
@@ -8083,7 +8089,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// chain is typed before anything is emitted, so a rejected one leaves no
 	// half-written statement.
 	if chain := postfix[:len(postfix)-1]; stars == "" && isAccessChain(chain) {
-		if cur, ok := e.accessChainType(base, chain); ok && !cur.slice && len(cur.dims) == 0 {
+		// A slice-valued target is a header assignment, `s[i].v = xs`, which C makes
+		// by copying the struct -- the view changes, the storage it names does not.
+		// Only when an index put it out of the fixed shapes' reach, though: a plain
+		// field target, `b.data = ...`, belongs to them, since they are what knows
+		// how to give a `make` its backing array. An array-valued target is refused
+		// either way, C having no array assignment.
+		if cur, ok := e.accessChainType(base, chain); ok && len(cur.dims) == 0 &&
+			(!cur.slice || hasIndexStep(chain)) {
 			t, ok := e.assignTailOf(postfix[len(postfix)-1])
 			if !ok {
 				e.fail("unsupported assignment form for an access chain")
