@@ -2015,11 +2015,9 @@ func decl(n int) int {
 }
 
 func main() {
-	// Six spawns, not more: the cog pool has seven slots and does not recycle a
-	// finished one, so a loop past that panics "out of cogs" -- a separate defect,
-	// unrelated to where the cell lives.
+	// Past the seven pool slots, so this leans on slot reuse as well.
 	sum := 0
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 20; i++ {
 		sum = sum + spawn(i)
 	}
 	println(sum)
@@ -2033,7 +2031,56 @@ func main() {
 	println(total)
 }
 `,
-		want: "15\n190\n",
+		want: "190\n190\n",
+	},
+	{
+		// A goroutine's slot is reused once it finishes, so the seven-cog ceiling
+		// bounds how many run at once and not how many a program may start. Both
+		// halves are load-bearing: a run of 20 sequential spawns, each joined before
+		// the next, and then full-pool batches that hand out all seven at a time and
+		// take them all back.
+		//
+		// This only ever failed on hardware. A goroutine that has just handed main
+		// its value is a few instructions short of stopping, and ogo_cog_claim used
+		// to give up on a slot whose cog still read live rather than wait for it --
+		// so the eighth spawn of a program panicked "out of cogs". The host shim's
+		// pthread wins that race and clears the flag in time, which is why the board
+		// suite is the one that caught this and is the one that guards it.
+		name: "goroutine slots are reused",
+		src: `func worker(ch chan int, n int) { ch <- n }
+
+func batch(ch chan int, n int) int {
+	go worker(ch, n)
+	go worker(ch, n)
+	go worker(ch, n)
+	go worker(ch, n)
+	go worker(ch, n)
+	go worker(ch, n)
+	go worker(ch, n)
+	sum := 0
+	for i := 0; i < 7; i++ {
+		sum = sum + <-ch
+	}
+	return sum
+}
+
+func main() {
+	var ch chan int
+	sum := 0
+	for i := 1; i <= 20; i++ {
+		go worker(ch, i)
+		sum = sum + <-ch
+	}
+	println(sum)
+
+	total := 0
+	for i := 1; i <= 5; i++ {
+		total = total + batch(ch, i)
+	}
+	println(total)
+}
+`,
+		want: "210\n105\n",
 	},
 	{
 		name: "append and cap",
@@ -2755,6 +2802,10 @@ func main() {
 		panics: true,
 	},
 	{
+		// Eight at once, none of them finished, so there is nothing to wait for and
+		// the panic is immediate. This is the other side of "goroutine slots are
+		// reused": waiting out a cog that is stopping must not turn genuine
+		// exhaustion into a spin.
 		name: "more goroutines than cogs traps",
 		src: `func spin(ch chan int) {
 	ch <- 1

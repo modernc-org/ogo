@@ -382,21 +382,61 @@ func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
 // statically, with no allocator. It also makes `go` inside a loop safe, which is
 // why it need not be rejected the way `defer` in a loop is: defer's problem was
 // unbounded storage in the current frame, while this is bounded by the silicon.
-// A slot is only recycled on two signals together: the goroutine reached the end
-// of the trampoline (done), and _cogchk confirms its cog has stopped. Neither
-// alone is enough. done cannot be trusted by itself because the goroutine sets it
-// while still executing on the slot's stack, with the return through _cogstart's
-// epilogue ahead of it -- handing that stack to a new cog wedges both. _cogchk
-// alone would read a slot that has not started yet as idle, which is why cog
-// stays -1 from claim until _cogstart returns an id. A never-used slot is always
-// preferred, so recycling only happens once all 7 have been handed out.
+//
+// A slot is freed on two signals together: the goroutine reached the end of the
+// trampoline (done), and its cog has stopped. Neither alone is enough. done cannot
+// be trusted by itself because the goroutine sets it while still executing on the
+// slot's stack, with the return through _cogstart's epilogue ahead of it -- handing
+// that stack to a new cog wedges both. A stopped cog alone is not enough either: a
+// slot between claim and _cogstart has no cog yet, which is why cog stays -1 over
+// that window and a slot holding -1 is never freed.
+//
+// The gap between those two signals is what claim has to wait out. A goroutine that
+// has just handed main its result is a few instructions short of stopping, so the
+// next `go` in the sequence arrives while its predecessor still reads live; giving
+// up there caps a program at 7 goroutines for its whole run rather than at 7 at a
+// time, which is what the spec promises. Waiting is bounded, because done is set on
+// the way out and nothing between it and the stop can block.
+//
+// Freeing is done by a sweep at the top of each claim rather than only when a slot
+// is needed, so a cog id is never left recorded in a slot whose cog has stopped.
+// That matters because the hardware reissues ids: were a stale pairing kept, a later
+// _cogchk would answer about the id's new occupant, and a slot whose goroutine ended
+// long ago would read as forever-finishing. The sweep also catches that case
+// directly, in the rare order where the reissue happens between two claims.
 const ogoCogPool = `#define OGO_COGS 8
 #define OGO_STACK_LONGS 256
+// A backstop, not a timeout: a cog stops within a few instructions of setting done,
+// so this many spins cannot elapse legitimately. It turns a state this protocol did
+// not anticipate into a diagnosable panic instead of a silent hang.
+#define OGO_STOP_SPINS 100000
 typedef struct { int ogo_used; int ogo_done; int ogo_cog; long ogo_args[OGO_ARG_LONGS]; long ogo_stack[OGO_STACK_LONGS]; } ogo_cog_slot;
 static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
 static int ogo_cog_lock = -1;
+static void ogo_cog_sweep(void) { // frees every finished slot; caller holds ogo_cog_lock
+	for (int i = 0; i < OGO_COGS - 1; i++) {
+		if (!ogo_cog_pool[i].ogo_used || !ogo_cog_pool[i].ogo_done || ogo_cog_pool[i].ogo_cog < 0) {
+			continue;
+		}
+		int stopped = !_cogchk(ogo_cog_pool[i].ogo_cog);
+		for (int j = 0; !stopped && j < OGO_COGS - 1; j++) {
+			// The id is running another slot's goroutine, so this slot's own cog
+			// stopped and the id was handed out again: _cogchk is answering about
+			// the new occupant. Only a slot that has not finished proves that,
+			// being the one certain owner of the id it holds.
+			if (j != i && ogo_cog_pool[j].ogo_used && !ogo_cog_pool[j].ogo_done &&
+				ogo_cog_pool[j].ogo_cog == ogo_cog_pool[i].ogo_cog) {
+				stopped = 1;
+			}
+		}
+		if (stopped) {
+			ogo_cog_pool[i].ogo_used = 0;
+			ogo_cog_pool[i].ogo_done = 0;
+			ogo_cog_pool[i].ogo_cog = -1;
+		}
+	}
+}
 static int ogo_cog_claim(void) {
-	int got = -1;
 	if (ogo_cog_lock < 0) {
 		// The first claim is always main's: another cog can only be running
 		// because a spawn already came through here, so this races nothing.
@@ -405,27 +445,37 @@ static int ogo_cog_claim(void) {
 			ogo_panic("out of hardware locks");
 		}
 	}
-	while (!_locktry(ogo_cog_lock)) { // a goroutine may itself spawn one
+	for (int spin = 0;; spin++) {
+		int got = -1;
+		int stopping = 0;
+		while (!_locktry(ogo_cog_lock)) { // a goroutine may itself spawn one
+			_waitx(1);
+		}
+		ogo_cog_sweep();
+		for (int i = 0; i < OGO_COGS - 1; i++) {
+			if (!ogo_cog_pool[i].ogo_used) {
+				got = i;
+				break;
+			}
+			stopping |= ogo_cog_pool[i].ogo_done; // finished, but still stopping
+		}
+		if (got >= 0) {
+			ogo_cog_pool[got].ogo_used = 1;
+			ogo_cog_pool[got].ogo_done = 0;
+			ogo_cog_pool[got].ogo_cog = -1;
+		}
+		_lockrel(ogo_cog_lock);
+		if (got >= 0) {
+			return got;
+		}
+		if (!stopping) { // every slot is running a goroutine that has not finished
+			return -1;
+		}
+		if (spin == OGO_STOP_SPINS) {
+			ogo_panic("cog failed to stop");
+		}
 		_waitx(1);
 	}
-	for (int i = 0; i < OGO_COGS - 1; i++) { // a slot no goroutine has ever used
-		if (!ogo_cog_pool[i].ogo_used) {
-			got = i;
-			break;
-		}
-	}
-	for (int i = 0; got < 0 && i < OGO_COGS - 1; i++) { // else recycle a finished one
-		if (ogo_cog_pool[i].ogo_done && ogo_cog_pool[i].ogo_cog >= 0 && !_cogchk(ogo_cog_pool[i].ogo_cog)) {
-			got = i;
-		}
-	}
-	if (got >= 0) {
-		ogo_cog_pool[got].ogo_used = 1;
-		ogo_cog_pool[got].ogo_done = 0;
-		ogo_cog_pool[got].ogo_cog = -1;
-	}
-	_lockrel(ogo_cog_lock);
-	return got;
 }
 static void ogo_cog_release(int slot) { ogo_cog_pool[slot].ogo_used = 0; }
 static void ogo_cog_done(int slot) { ogo_cog_pool[slot].ogo_done = 1; }
@@ -535,8 +585,8 @@ func (e *emitter) goDefs() string {
 		}
 		// Not ogo_cog_release: the goroutine is still on this slot's stack
 		// here, with the return through _cogstart's epilogue ahead of it. done
-		// only makes the slot a recycling candidate; ogo_cog_claim still waits
-		// for _cogchk to confirm the cog stopped before reusing the stack.
+		// only makes the slot a candidate; ogo_cog_sweep waits for _cogchk to
+		// confirm the cog stopped before the stack is handed to anyone else.
 		b.WriteString(");\n\togo_cog_done(a->ogo_slot);\n}\n")
 	}
 	// The argument block is sized in longs to keep it aligned for any member.

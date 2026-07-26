@@ -31,6 +31,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A program could only ever start seven goroutines.** The seven-cog limit is meant
+  to bound how many run at one time, and a finished goroutine's slot to be reused,
+  but a goroutine that has just handed its result to the receiver is a few
+  instructions short of stopping — and the eighth `go` statement reported `panic: out
+  of cogs` rather than waiting out those instructions. So `for i := 0; i < 20; i++ {
+  go worker(ch, i); sum += <-ch }`, twenty goroutines one after another with never
+  more than one alive, died on the eighth. Only on hardware: off-target the shim's
+  thread wins the same race.
 - **A locally declared channel's storage is now static.** Its cell used to be a
   local of the declaring function, so `var ch chan int; go worker(ch)` — the
   ordinary way to write this — handed another cog a pointer into a frame the spawner
