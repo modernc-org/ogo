@@ -878,12 +878,26 @@
 //		<-done
 //	}
 //
-// Two shapes are accepted that this cannot yet prove safe, and both are the
-// programmer's responsibility. A slice that arrived as a parameter views the
-// caller's storage, which may itself be a local of a frame that returns while the
-// goroutine runs; seeing that needs provenance tracked across calls. And a frame
-// pointer wrapped in a struct is not seen at all -- "b.data = a[:]" then "go g(b)"
-// compiles -- because provenance is tracked per variable, not per field.
+// A parameter may cross: whose storage it is, is the caller's business. The
+// requirement travels there instead. A function that lets one of its parameters reach
+// another Cog -- itself, or by passing it to a function that does -- may only be
+// called with storage that outlives the goroutine, and it is the call that is
+// refused:
+//
+//	func spawn(p []int) { go work(p) }   // parameter p reaches another Cog
+//
+//	func setup() {
+//		var local [4]int
+//		spawn(local[:])             // refused here, where the storage was chosen
+//	}
+//
+// That holds however many calls separate the two, across package boundaries, and
+// through mutual recursion.
+//
+// One shape is accepted that this cannot see: a pointer or slice wrapped in a
+// struct. "b.data = a[:]" and then "go g(b)" compiles, because provenance is tracked
+// per variable and not per field, and keeping such a struct alive is the writer's
+// responsibility.
 //
 // A call that returns a struct may have a field selected from its result,
 // "mk().y", a method called on it, "mk().sum()", and its result indexed,

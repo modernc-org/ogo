@@ -50,9 +50,27 @@ Releases before v0.9.0 predate this file; see
   ```
 
   An ordinary call and a deferred one are unaffected: both read the argument while
-  the frame is still alive. Two shapes are still accepted and remain the
-  programmer's responsibility — a slice that arrived as a parameter, whose backing
-  belongs to a caller this cannot see, and a frame pointer wrapped in a struct.
+  the frame is still alive.
+
+  A parameter may still cross — whose storage it is, is the caller's business — but
+  **the requirement now travels to the caller**. A function that lets a parameter
+  reach another cog, itself or by passing it to a function that does, may only be
+  called with storage that outlives the goroutine, and it is the *call* that is
+  refused:
+
+  ```go
+  func spawn(p []int) { go work(p) }   // parameter p reaches another cog
+
+  func setup() {
+  	var local [4]int
+  	spawn(local[:])             // refused here, where the storage was chosen
+  }
+  ```
+
+  That holds however many calls separate the two, across package boundaries, and
+  through mutual recursion. One shape is still accepted and remains the programmer's
+  responsibility: a pointer or slice wrapped in a struct, since provenance is tracked
+  per variable and not per field.
 
 ### Fixed
 

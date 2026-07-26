@@ -1309,7 +1309,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1362,6 +1362,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// typedef for each multi-result function (C has no multiple return, so a
 	// function returning N>1 values returns a struct of N fields).
 	forEachFile(func() { e.collectResults(e.f.AST) })
+
+	// Pass 0.1: which parameters of which functions let a value reach another cog,
+	// closed over the call graph. A call site cannot be checked against a callee
+	// that has not been seen yet, so the whole program is summarised before any of
+	// it is emitted.
+	forEachFile(func() { e.collectCrossParams(e.f.AST) })
+	e.closeCrossParams()
 
 	// Pass 0.5: package-level constant declarations, emitted (in source order)
 	// before the functions that use them and recorded in the global type
@@ -1709,6 +1716,9 @@ type emitter struct {
 	eqArrays           map[string]arrDim        // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string                 // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
 	frameBacked        map[string]bool          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
+	crossParams        map[string][]bool        // per function, which parameters reach another cog -- as a go argument or a send value, directly or through a call (see collectCrossParams)
+	crossEdges         []crossEdge              // call sites passing a parameter straight on, the graph closeCrossParams walks
+	crossNames         map[string]string        // C function name -> the name it was declared with, for crossParams diagnostics
 	chanCells          []string                 // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
 	chanCellN          int                      // counter minting unique cell names, program-wide like makeN
 	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
@@ -2551,6 +2561,277 @@ func (e *emitter) collectResults(ast []int32) {
 			e.emit("} " + e.retStructName(cname) + ";\n")
 		}
 	})
+}
+
+// crossEdge records that a call passes the caller's parameter `from` straight into
+// the callee's parameter `to`, so whatever the callee does with it, the caller does.
+type crossEdge struct {
+	caller string
+	from   int
+	callee string
+	to     int
+}
+
+// collectCrossParams seeds the per-parameter crossing summary for the functions of
+// one file, and records the call edges the fixed point later walks.
+//
+// The question it answers is the one increment 3 could not: a `go` statement or a
+// send is refused an argument backed by *this* frame, but a parameter is accepted,
+// its storage belonging to a caller this cannot see. Now it can. A function that
+// lets one of its parameters reach another cog imposes a requirement on everyone who
+// calls it -- that the argument outlive the goroutine -- and the summary is what
+// carries that requirement back to the call sites.
+//
+//	func spawn(p []int) { go work(p) }   // parameter 0 crosses
+//	func setup() {
+//		var local [4]int
+//		spawn(local[:])              // ... so this is refused, here
+//	}
+//
+// Seeding is direct: a parameter named as a go argument or a send value crosses.
+// Passing it on to another function is the indirect case, and cannot be settled
+// until that function's own summary is known -- hence the edge, and hence a fixed
+// point rather than a single walk. A cycle among mutually recursive functions
+// converges because a parameter only ever goes from not-crossing to crossing.
+func (e *emitter) collectCrossParams(ast []int32) {
+	e.eachFuncDeclAST(ast, func(d []int32) {
+		cname, srcName, params, body, ok := e.funcParamNames(d)
+		if !ok {
+			return
+		}
+		at := func(name string) int { return slices.Index(params, name) }
+		if _, seen := e.crossParams[cname]; !seen {
+			e.crossParams[cname] = make([]bool, len(params))
+		}
+		e.crossNames[cname] = srcName
+		e.eachStmt(body, func(nodes []Node) {
+			switch {
+			case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
+				for _, a := range e.goStmtArgs(nodes) {
+					if i := at(e.crossRoot(a.ast)); i >= 0 {
+						e.crossParams[cname][i] = true
+					}
+				}
+			default:
+				if v, ok := e.sendValue(nodes); ok {
+					if i := at(e.crossRoot(v)); i >= 0 {
+						e.crossParams[cname][i] = true
+					}
+				}
+			}
+			// Any call in the statement, go statement and send included: an
+			// argument that is one of this function's parameters ties the two
+			// together.
+			for _, c := range e.stmtCalls(nodes) {
+				for j, a := range c.args {
+					if i := at(e.crossRoot(a.ast)); i >= 0 {
+						e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
+					}
+				}
+			}
+		})
+	})
+}
+
+// closeCrossParams propagates the crossing summary along the recorded call edges
+// until it stops changing. Every pass over the edges can only set flags, and there
+// are finitely many, so it terminates.
+func (e *emitter) closeCrossParams() {
+	for changed := true; changed; {
+		changed = false
+		for _, g := range e.crossEdges {
+			callee, caller := e.crossParams[g.callee], e.crossParams[g.caller]
+			if g.to >= len(callee) || g.from >= len(caller) || !callee[g.to] || caller[g.from] {
+				continue
+			}
+			caller[g.from] = true
+			changed = true
+		}
+	}
+}
+
+// funcParamNames returns a function or method declaration's C name, the name it was
+// declared with, its parameter names in order, and its body. A method's receiver is
+// not a parameter here: it is not one at the call sites this feeds, which name
+// arguments positionally.
+func (e *emitter) funcParamNames(d []int32) (cname, srcName string, params []string, body []int32, ok bool) {
+	name, sig, body, recv, ok := e.funcParts(d)
+	if !ok || name == "" || body == nil {
+		return "", "", nil, nil, false
+	}
+	cname = mangle(e.curPkgPrefix, name)
+	if recv != nil {
+		_, rct, _ := e.receiverInfo(recv)
+		cname = methodCName(methodBaseType(rct), name)
+	}
+	for n := range it(sig) {
+		if n.sym != ParameterList {
+			continue // parameters are the only ParameterList; results are ResultList/Type
+		}
+		e.forEachParam(n.ast, func(nm string, _ []int32, _ bool) { params = append(params, nm) })
+	}
+	return cname, name, params, body, true
+}
+
+// eachStmt calls fn with the children of every Statement in ast, at any depth, so a
+// go statement or a send nested in a loop or a block is seen like a top-level one.
+func (e *emitter) eachStmt(ast []int32, fn func(nodes []Node)) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			continue
+		}
+		if n.sym == Statement {
+			fn(slices.Collect(it(n.ast)))
+		}
+		e.eachStmt(n.ast, fn)
+	}
+}
+
+// crossRoot names the variable whose storage a value about to cross is a view of, or
+// "" when there is none to name. A bare identifier and a re-slice of one both answer
+// with the base variable -- sliceBackingIsFrame already resolves that shape, and only
+// its verdict about the frame is unwanted here -- and `&x` answers with x.
+func (e *emitter) crossRoot(ast []int32) string {
+	if name, ok := e.addrOfRoot(ast); ok {
+		return name
+	}
+	name, _ := e.sliceBackingIsFrame(ast)
+	return name
+}
+
+// goStmtArgs returns the argument expressions of a go statement.
+func (e *emitter) goStmtArgs(nodes []Node) []Node {
+	for _, n := range nodes {
+		if n.sym == CallSuffix {
+			return e.callArgExprs(n.ast)
+		}
+	}
+	return nil
+}
+
+// sendValue returns the value expression of a send statement, `ch <- v`.
+func (e *emitter) sendValue(nodes []Node) ([]int32, bool) {
+	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return nil, false
+	}
+	postfix := slices.Collect(it(nodes[1].ast))
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil, false
+	}
+	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ARROW || op[1].sym != Expression {
+		return nil, false
+	}
+	return op[1].ast, true
+}
+
+// stmtCall is one call found in a statement: the callee's C name and its arguments.
+type stmtCall struct {
+	callee string
+	args   []Node
+}
+
+// stmtCalls finds the calls a statement makes, so that an argument which is one of
+// the enclosing function's parameters can be tied to the callee's parameter in that
+// position. Two shapes are recognised: the statement-level call, `f(x)`, and a call
+// on a plain name anywhere inside an expression, `y := f(x)` or `return f(x)`.
+//
+// A callee this does not resolve to a name -- a method, or a call through a
+// selector -- yields no edge, so the requirement simply is not propagated through
+// it. That errs the way the rest of the analysis does: towards accepting.
+func (e *emitter) stmtCalls(nodes []Node) []stmtCall {
+	var out []stmtCall
+	add := func(name string, suffix []int32) {
+		if _, ok := e.userFunc(name); ok {
+			out = append(out, stmtCall{callee: e.funcCallC(name), args: e.callArgExprs(suffix)})
+		}
+	}
+	// The statement-level call and the go statement: the callee is in the
+	// AssignHead, a sibling of the Postfix holding the CallSuffix.
+	if len(nodes) != 0 {
+		if head := nodes[0]; head.sym == AssignHead || (head.sym == 0 && e.f.ch(head.tok) == GO) {
+			if name := e.soleIdent(headOf(nodes).ast); name != "" {
+				for _, n := range nodes {
+					for c := range it(n.ast) {
+						if c.sym == CallSuffix {
+							add(name, c.ast)
+						}
+					}
+					if n.sym == CallSuffix {
+						add(name, n.ast)
+					}
+				}
+			}
+		}
+	}
+	// A call inside an expression: the callee is the identifier before the CallSuffix.
+	// It is carried into a nested level because the two are not always siblings --
+	// `f(x)` in an expression is an identifier followed by a Postfix that holds the
+	// CallSuffix -- but never past the call it belongs to, so `f(g(x))` pairs g with
+	// its own suffix and not with f's.
+	var walk func(ast []int32, outer string)
+	walk = func(ast []int32, outer string) {
+		last := outer
+		for n := range it(ast) {
+			switch {
+			case n.sym == 0:
+				if e.f.ch(n.tok) == IDENT {
+					last = e.src(n.tok)
+					continue
+				}
+			case n.sym == CallSuffix:
+				if last != "" {
+					add(last, n.ast)
+				}
+				walk(n.ast, "")
+			default:
+				walk(n.ast, last)
+			}
+			last = ""
+		}
+	}
+	for _, n := range nodes {
+		walk(n.ast, "")
+	}
+	return out
+}
+
+// headOf returns the AssignHead of a statement's children, which a go statement
+// carries after its keyword and a call statement first.
+func headOf(nodes []Node) Node {
+	for _, n := range nodes {
+		if n.sym == AssignHead {
+			return n
+		}
+	}
+	return Node{}
+}
+
+// addrOfRoot reports whether an expression is the address of a variable -- `&x`,
+// `&x.f`, `&x[i]` -- and names the variable.
+func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) < 2 || kids[0].sym != UnaryOp {
+		return "", false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != AND {
+		return "", false
+	}
+	// The operand is a Factor: its base identifier is the variable whose storage the
+	// address reaches, whatever field or index suffix follows.
+	for n := range it(kids[len(kids)-1].ast) {
+		if n.sym == 0 && e.f.ch(n.tok) == IDENT {
+			return e.src(n.tok), true
+		}
+	}
+	return "", false
 }
 
 // paramSliceTypes returns one entry per declared parameter: the C slice type when
@@ -8164,6 +8445,7 @@ func (e *emitter) emitDiscard(expr []int32) {
 func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	sliceParams := e.funcSliceParams[cname]
 	args := e.callArgExprs(callSuffix)
+	e.checkCrossArgs(cname, args)
 	// Go evaluates a call's arguments left to right. C leaves the order
 	// unspecified, and the two compilers this targets disagree: given
 	// `f(t(1), t(2), t(3))` the P2 backend evaluates left to right while the host's
@@ -9727,6 +10009,55 @@ func (e *emitter) crossBackedByFrame(exprs []Node) (Node, string, bool) {
 		}
 	}
 	return Node{}, "", false
+}
+
+// checkCrossArgs refuses an argument backed by this frame where the callee lets that
+// parameter reach another cog. It is increment 3's rule applied one call further out:
+// the crossing itself is in the callee, but the storage is chosen here, and here is
+// the only place that knows where it came from.
+//
+// The diagnostic has to carry that, because the line it points at contains no `go`
+// and no send -- so it names the callee and the parameter, which is what the reader
+// needs to find the crossing for themselves.
+func (e *emitter) checkCrossArgs(cname string, args []Node) {
+	crosses := e.crossParams[cname]
+	for i, a := range args {
+		if i >= len(crosses) || !crosses[i] {
+			continue
+		}
+		pos := e.f.tok(a.Pos()).Position()
+		if name, frame := e.sliceBackingIsFrame(a.ast); frame {
+			e.fail("%v: cannot pass a slice backed by local %s to %s: its parameter %d reaches another cog, "+
+				"which may outlive this function; declare the backing array at package scope",
+				pos, name, e.funcSourceName(cname), i+1)
+			return
+		}
+		if name, ok := e.addrOfRoot(a.ast); ok && e.isFrameVar(name) {
+			e.fail("%v: cannot pass the address of local variable %s to %s: its parameter %d reaches "+
+				"another cog, which may outlive this function; declare %s at package scope",
+				pos, name, e.funcSourceName(cname), i+1, name)
+			return
+		}
+	}
+}
+
+// isFrameVar reports whether a name is a variable of the frame being emitted, as
+// opposed to a package-level one. A parameter counts: its own storage is this
+// frame's, whatever it may point at.
+func (e *emitter) isFrameVar(name string) bool {
+	_, local := e.locals[name]
+	return local
+}
+
+// funcSourceName gives the name a function was declared with, for a diagnostic that
+// should read the way the program was written rather than the way it was mangled. It
+// is unqualified even for a function from another package: the position the
+// diagnostic carries points at the call, where the qualifier is already in view.
+func (e *emitter) funcSourceName(cname string) string {
+	if name := e.crossNames[cname]; name != "" {
+		return name
+	}
+	return cname
 }
 
 // localChanCell gives a locally declared channel its cell, and returns the cell's

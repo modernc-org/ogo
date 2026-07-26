@@ -5224,6 +5224,42 @@ func main() {
 // It went unnoticed for a long time because the program usually appears to work:
 // the caller reads the header before anything reuses the dead frame. One of this
 // package's own run cases returned such a slice and passed.
+// TestEmitCCrossPackageParam checks that the per-parameter crossing summary reaches
+// across a package boundary. Nothing in the analysis is package-aware -- the summary
+// is keyed by the mangled C name a call site already resolves to -- and the whole
+// program landing in one translation unit is what makes that work, so this is the
+// test that would notice if either stopped being true.
+func TestEmitCCrossPackageParam(t *testing.T) {
+	fsys := fstest.MapFS{
+		"main.ogo": &fstest.MapFile{Data: []byte(`import "helper"
+
+func main() {
+	var a [4]int
+	helper.Spawn(a[:])
+}
+`)},
+		"helper/helper.ogo": &fstest.MapFile{Data: []byte(`func Work(s []int) { println(s[0]) }
+
+func Spawn(p []int) { go Work(p) }
+`)},
+	}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	err = EmitC(pkg, &buf)
+	if err == nil {
+		t.Fatal("EmitC accepted a local passed to another package's spawning function")
+	}
+	// Named by the declaration, not by the mangled helper_Spawn: the position points
+	// at the call, where the qualifier is already in view.
+	const want = "cannot pass a slice backed by local a to Spawn: its parameter 1 reaches another cog"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("EmitC error %q does not mention %q", err, want)
+	}
+}
+
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -5448,11 +5484,9 @@ func main() {
 `,
 		},
 		{
-			// Accepted, and unsound -- the caller's array may itself be a local of a
-			// frame that returns while the goroutine runs. Refusing it would refuse
-			// the one idiom left for handing a goroutine a buffer, so the caller's
-			// storage is the writer's responsibility until per-parameter provenance
-			// is tracked across calls.
+			// A parameter may cross: whose storage it is, is the caller's business, and
+			// this caller's is package-level. What made that check possible is the
+			// per-parameter summary -- see the interprocedural cases below.
 			name: "a parameter passed to a goroutine",
 			src: `var g [4]int
 
@@ -5461,6 +5495,153 @@ func work(s []int) { println(s[0]) }
 func spawn(p []int) { go work(p) }
 
 func main() { spawn(g[:]) }
+`,
+		},
+
+		// Increment 4: the requirement a crossing puts on a parameter is carried back
+		// to the call sites, so the caller that chose the storage is the one told.
+		{
+			name: "local passed to a function that spawns",
+			src: `func work(s []int) { println(s[0]) }
+
+func spawn(p []int) { go work(p) }
+
+func main() {
+	var a [4]int
+	spawn(a[:])
+}
+`,
+			want: "cannot pass a slice backed by local a to spawn: its parameter 1 reaches another cog",
+		},
+		{
+			name: "local passed to a function that sends",
+			src: `func send(s []int, ch chan []int) { ch <- s }
+
+func main() {
+	var ch chan []int
+	var a [4]int
+	send(a[:], ch)
+}
+`,
+			want: "cannot pass a slice backed by local a to send: its parameter 1 reaches another cog",
+		},
+		{
+			// Two calls deep: mid does not cross anything itself, it just hands the
+			// parameter on, which is what the fixed point is for.
+			name: "local passed two calls from the crossing",
+			src: `func work(s []int) { println(s[0]) }
+
+func spawn(p []int) { go work(p) }
+
+func mid(q []int) { spawn(q) }
+
+func main() {
+	var a [4]int
+	mid(a[:])
+}
+`,
+			want: "cannot pass a slice backed by local a to mid: its parameter 1 reaches another cog",
+		},
+		{
+			// The onward call is in an expression rather than a statement of its own.
+			name: "the onward call is in a return",
+			src: `func work(s []int) { println(s[0]) }
+
+func spawn(p []int) int {
+	go work(p)
+	return len(p)
+}
+
+func mid(q []int) int { return spawn(q) }
+
+func main() {
+	var a [4]int
+	println(mid(a[:]))
+}
+`,
+			want: "cannot pass a slice backed by local a to mid: its parameter 1 reaches another cog",
+		},
+		{
+			name: "the address of a local passed to a function that spawns",
+			src: `func work(p *int) { println(*p) }
+
+func spawn(q *int) { go work(q) }
+
+func main() {
+	var x int = 3
+	spawn(&x)
+}
+`,
+			want: "cannot pass the address of local variable x to spawn: its parameter 1 reaches another cog",
+		},
+		{
+			// Mutually recursive functions, one of which crosses: the flag has to reach
+			// both, and the fixed point has to stop. A parameter only ever goes from
+			// not-crossing to crossing, so it does.
+			name: "the crossing is inside a recursive cycle",
+			src: `func work(s []int) { println(s[0]) }
+
+func a(p []int) { b(p) }
+
+func b(p []int) {
+	if len(p) > 1 {
+		go work(p)
+	} else {
+		a(p)
+	}
+}
+
+func main() {
+	var x [4]int
+	a(x[:])
+}
+`,
+			want: "cannot pass a slice backed by local x to a: its parameter 1 reaches another cog",
+		},
+		{
+			// The same cycle with no crossing in it: nothing is refused, and the fixed
+			// point still terminates.
+			name: "a recursive cycle that crosses nothing",
+			src: `func a(p []int) { b(p) }
+
+func b(p []int) { a(p) }
+
+func main() {
+	var x [4]int
+	a(x[:])
+}
+`,
+		},
+		{
+			// A parameter that goes nowhere near a cog puts no requirement on anyone:
+			// the ordinary case, which must stay ordinary.
+			name: "a function that does not cross its parameter",
+			src: `func plain(p []int) int { return p[0] }
+
+func main() {
+	var a [4]int
+	a[0] = 5
+	println(plain(a[:]))
+}
+`,
+		},
+		{
+			// The parameter that crosses is not the one the local is passed to.
+			name: "the local goes to a parameter that does not cross",
+			src: `var g [4]int
+
+func work(s []int) { println(s[0]) }
+
+func spawn(p []int, q []int) {
+	go work(p)
+	println(q[0])
+}
+
+func main() {
+	var a [4]int
+	a[0] = 1
+	spawn(g[:], a[:])
+}
 `,
 		},
 		{
