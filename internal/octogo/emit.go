@@ -5212,13 +5212,39 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 	if !ok {
 		return accessCur{}, false
 	}
+	return e.emitAccessChainAt(e.varRef(base), cur, steps, false)
+}
+
+// emitAccessChainAt emits a chain from a value already reached and named by prefix.
+// claimed says the chain has done something no fixed shape can, so a trailing slice
+// step belongs here rather than being handed back to them.
+//
+// A step may need a base it can name -- an index into a slice or a string wants its
+// ".len", a slice step its ".ptr" -- at a point where the chain has already emitted
+// the value and left nothing to name. What the chain reaches by then is bound to a
+// temporary, which is that name, and the rest goes on from there; the tail is
+// emitted through this same function, so a chain needing a second such binding gets
+// one. Rendering the prefix once into the temporary is also what keeps the indexes
+// inside it evaluated once, and for a slice it is the header that is copied, so a
+// write through the temporary still lands in the storage the field names.
+func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, claimed bool) (accessCur, bool) {
 	// Type the whole chain before emitting any of it, so an unsupported step fails
 	// without leaving a half-written expression behind.
-	if _, ok := e.accessChainType(base, steps); !ok {
+	if _, ok := e.accessChainTypeAt(cur, steps, claimed); !ok {
 		return accessCur{}, false
 	}
-	prefix := e.varRef(base)
-	sliced := false
+	if k, ctype, ok := e.chainHoistPointAt(cur, steps); ok {
+		text, ok := e.accessChainCTextAt(prefix, cur, steps[:k], claimed)
+		if !ok {
+			return accessCur{}, false
+		}
+		at, ok := e.accessChainTypeAt(cur, steps[:k], claimed)
+		if !ok {
+			return accessCur{}, false
+		}
+		return e.emitAccessChainAt(e.hoist(ctype, func() { e.emit(text) }), at, steps[k:], true)
+	}
+	sliced := claimed
 	for i, n := range steps {
 		last := i == len(steps)-1
 		switch n.sym {
@@ -5241,10 +5267,12 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 		case Index:
 			low, high, max, isSlice := e.sliceParts(n.ast)
 			if isSlice {
-				if last && !sliced {
+				if last && !sliced && prefix != "" {
 					// A chain that is only a slice of something the fixed shapes already
 					// reach is left to them: they write the header straight into place,
-					// where this would bind a temporary nothing goes on to use.
+					// where this would bind a temporary nothing goes on to use. Reaching
+					// it is what the prefix says -- once an index has consumed that, they
+					// cannot express the chain and this is the only way to emit it.
 					return accessCur{}, false
 				}
 				next, prefixNext, ok := e.emitChainSlice(cur, prefix, low, high, max, last)
@@ -5320,6 +5348,66 @@ func (e *emitter) emitChainSlice(cur accessCur, prefix string, low, high, max []
 	return next, e.hoist(src.cname, func() { e.emitSliceExpr(src, low, high, max) }), true
 }
 
+// chainHoistPoint finds the first step that needs a base it can name at a point
+// where the chain has none left, returning that step's position and the C type of
+// the value to bind there. An index consumes the prefix -- what it produces is
+// written, not a string that can be appended to -- so anything after it that wants
+// a ".len" or a ".ptr" has to be given a name of its own.
+//
+// A value with no C type to bind stops it: an array is the one such value, and an
+// array never asks for a name in the first place, its extents being compile-time
+// constants.
+func (e *emitter) chainHoistPointAt(cur accessCur, steps []Node) (int, string, bool) {
+	ok := true
+	named := true
+	for i, n := range steps {
+		switch n.sym {
+		case Selector:
+			if cur, ok = e.accessSelect(cur, e.soleIdent(n.ast)); !ok {
+				return 0, "", false
+			}
+		case Index:
+			_, _, _, isSlice := e.sliceParts(n.ast)
+			if (isSlice || cur.slice || cur.ctype == cString) && !named {
+				ctype, ok := e.chainValueCType(cur)
+				if !ok {
+					return 0, "", false
+				}
+				return i, ctype, true
+			}
+			if isSlice {
+				if cur, ok = e.accessSlice(cur); !ok {
+					return 0, "", false
+				}
+				// emitChainSlice binds a temporary for every slice step but the last,
+				// which it streams because nothing follows to want a name.
+				named = i != len(steps)-1
+				continue
+			}
+			// The prefix only has to be non-empty here; its text is not read.
+			if cur, _, ok = e.accessIndex(cur, "?"); !ok {
+				return 0, "", false
+			}
+			named = false
+		default:
+			return 0, "", false
+		}
+	}
+	return 0, "", false
+}
+
+// chainValueCType names the C type a chain's value can be bound to. An array has
+// none -- C has no array value type -- which is what makes it unbindable.
+func (e *emitter) chainValueCType(cur accessCur) (string, bool) {
+	switch {
+	case cur.slice:
+		return sliceCName(cur.elem), true
+	case len(cur.dims) != 0, cur.ctype == "":
+		return "", false
+	}
+	return cur.ctype, true
+}
+
 // accessChainType walks a chain without emitting, for inference and for validating
 // ahead of emission.
 func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
@@ -5327,8 +5415,17 @@ func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
 	if !ok {
 		return accessCur{}, false
 	}
-	prefix := base // only its emptiness matters here, mirroring emitAccessChain
-	sliced := false
+	return e.accessChainTypeAt(cur, steps, false)
+}
+
+// accessChainTypeAt is accessChainType from a value already reached. It models the
+// temporary emitAccessChainAt binds where a step needs a name and the chain has
+// none: a value that can be bound gets one back, and one that cannot -- an array --
+// is what makes the chain unsupported.
+func (e *emitter) accessChainTypeAt(cur accessCur, steps []Node, claimed bool) (accessCur, bool) {
+	ok := true
+	named := true
+	sliced := claimed
 	for i, n := range steps {
 		last := i == len(steps)-1
 		switch n.sym {
@@ -5339,27 +5436,34 @@ func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
 			}
 		case Index:
 			if _, _, _, isSlice := e.sliceParts(n.ast); isSlice {
-				if last && !sliced {
+				if last && !sliced && named {
 					return accessCur{}, false // left to the fixed shapes, as in emitAccessChain
 				}
-				if _, ok := e.accessSliceSource(cur, prefix); !ok {
-					return accessCur{}, false
+				if !named {
+					if _, ok := e.chainValueCType(cur); !ok {
+						return accessCur{}, false
+					}
+					named = true
 				}
 				if cur, ok = e.accessSlice(cur); !ok {
 					return accessCur{}, false
 				}
 				// The emitter binds a temporary here, so a name is available again --
 				// except for the last step, whose header is streamed into place.
-				prefix, sliced = base, true
-				if last {
-					prefix = ""
-				}
+				named, sliced = !last, true
 				continue
 			}
-			if cur, _, ok = e.accessIndex(cur, prefix); !ok {
+			if !named && (cur.slice || cur.ctype == cString) {
+				if _, ok := e.chainValueCType(cur); !ok {
+					return accessCur{}, false
+				}
+				named = true
+			}
+			// The prefix only has to be non-empty here; its text is not read.
+			if cur, _, ok = e.accessIndex(cur, "?"); !ok {
 				return accessCur{}, false
 			}
-			prefix = ""
+			named = false
 		default:
 			return accessCur{}, false
 		}
@@ -5579,10 +5683,19 @@ func (e *emitter) sliceableChainRow(base string, steps []Node) (src sliceSource,
 // for a call's arguments, so a caller that needs the chain as an operand rather
 // than as streamed output can have it.
 func (e *emitter) accessChainCText(base string, steps []Node) (string, bool) {
+	cur, ok := e.accessBase(base)
+	if !ok {
+		return "", false
+	}
+	return e.accessChainCTextAt(e.varRef(base), cur, steps, false)
+}
+
+// accessChainCTextAt is accessChainCText from a value already reached.
+func (e *emitter) accessChainCTextAt(prefix string, cur accessCur, steps []Node, claimed bool) (string, bool) {
 	saved := e.w
 	var buf bytes.Buffer
 	e.w = &buf
-	_, ok := e.emitAccessChain(base, steps)
+	_, ok := e.emitAccessChainAt(prefix, cur, steps, claimed)
 	e.w = saved
 	return buf.String(), ok
 }

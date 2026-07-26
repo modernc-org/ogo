@@ -5025,6 +5025,49 @@ func main() {
 	}
 }
 
+// TestEmitCIndexedSliceField pins the temporary that a slice reached past an index
+// is bound to. An index writes its result rather than leaving a string that can be
+// appended to, so the field's header has nothing left to form a `.len` from and is
+// given a name of its own. The write on the second line is the point of binding the
+// header rather than the elements: `_ogo_t0.ptr` is the storage the field names, so
+// assigning through it is assigning through the field.
+//
+// The last line binds twice, once for the field and once for the slice expression
+// over it, which is what makes the chain emittable at all.
+func TestEmitCIndexedSliceField(t *testing.T) {
+	src := `type item struct{ v []int }
+
+var b1 = []int{1, 2, 3}
+
+func main() {
+	s := make([]item, 2, 2)
+	s[1].v = b1
+	s[1].v[0] = 9
+	println(s[1].v[1], s[1].v[1:][1])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	want := "\ts.ptr[ogo_bound(1, s.len)].v = b1;\n" +
+		"\togo_slice_int _ogo_t0 = s.ptr[ogo_bound(1, s.len)].v;\n" +
+		"\t_ogo_t0.ptr[ogo_bound(0, _ogo_t0.len)] = 9;\n" +
+		"\togo_slice_int _ogo_t1 = s.ptr[ogo_bound(1, s.len)].v;\n" +
+		"\togo_slice_int _ogo_t2 = s.ptr[ogo_bound(1, s.len)].v;\n" +
+		"\togo_slice_int _ogo_t3 = ogo_reslice_int(_ogo_t2.ptr, _ogo_t2.cap, 1, _ogo_t2.len);\n" +
+		"\tprintf(\"%d %d\\n\", _ogo_t1.ptr[ogo_bound(1, _ogo_t1.len)], " +
+		"_ogo_t3.ptr[ogo_bound(1, _ogo_t3.len)]);\n"
+	if !bytes.Contains(buf.Bytes(), []byte(want)) {
+		t.Errorf("indexed slice field:\n got %q\nwant it to contain %q", buf.String(), want)
+	}
+}
+
 // TestEmitCSliceExprChain pins the lowering of an operation applied to a slice
 // expression. A header is a value and C has nowhere to put one mid-expression, so
 // an interior slice step binds a temporary before the statement and the steps after

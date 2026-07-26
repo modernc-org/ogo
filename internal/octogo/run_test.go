@@ -2986,6 +2986,78 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// Reading and writing through a slice-typed field of an indexed element,
+		// `s[i].v[j]`. The index before it consumes the prefix -- what an index
+		// produces is written, not a string that can be appended to -- so the field's
+		// header had nothing left to build its `.len` from and the whole shape was
+		// refused. It is bound to a temporary now, and since a header is a view, a
+		// write through the temporary lands in the storage the field names: the
+		// `write` and `nested` lines read the backing slice to say so.
+		//
+		// The bound value is what the bounds check measures against, too, so an index
+		// past the field's own length traps whatever the element it came from.
+		name: "through a slice field of an indexed element",
+		src: `type item struct {
+	n int
+	v []int
+}
+
+type outer struct{ list []item }
+
+var b1 = []int{10, 20, 30, 40}
+var b2 = []int{7, 8}
+
+func main() {
+	s := make([]item, 2, 2)
+	s[0].v = b2
+	s[1].v = b1
+
+	println("read", s[1].v[0], s[1].v[3], len(s[1].v), cap(s[1].v))
+
+	s[1].v[0] = 99
+	println("write", b1[0], s[1].v[0])
+
+	q := s[1].v[1:3]
+	println("reslice", len(q), q[0], s[1].v[1:][1])
+
+	println("double", s[1].v[1:][2])
+
+	var a [2]item
+	a[1].v = b1
+	a[1].v[1] = 21
+	println("array", b1[1], a[1].v[1], a[1].v[2:][0])
+
+	var o outer
+	o.list = make([]item, 2, 2)
+	o.list[1].v = b2
+	o.list[1].v[0] = 77
+	println("nested", b2[0], o.list[1].v[0], len(o.list[1].v))
+
+	t := 0
+	for i := 0; i < len(s[1].v); i++ {
+		t += s[1].v[i]
+	}
+	println("sum", t)
+}
+`,
+		want: "read 10 40 4 4\nwrite 99 99\nreslice 2 20 30\ndouble 40\narray 21 21 30\nnested 77 77 2\nsum 190\n",
+	},
+	{
+		name: "index past a slice field of an indexed element traps",
+		src: `type item struct{ v []int }
+
+var b1 = []int{1, 2}
+
+func main() {
+	s := make([]item, 2, 2)
+	s[1].v = b1
+	i := 5
+	println(s[1].v[i])
+}
+`,
+		panics: true,
+	},
+	{
 		// Assigning a slice-typed field of an indexed element, `s[i].v = xs`. The
 		// element's other fields already took a value this way; a slice-valued one was
 		// left out, because a plain `b.data = ...` target has to reach the shapes that

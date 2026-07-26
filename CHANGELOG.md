@@ -26,6 +26,12 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A slice reached through an index may be read and written**, `s[i].v[j]`, and
+  sliced again, `s[i].v[1:]`. The index before it left the field's header with
+  nothing to measure a bounds check against, so the whole shape was refused; it is
+  bound to a temporary now. A header is a view, so a write through it lands in the
+  storage the field names. Still out: the same over a row of a multi-dimensional
+  array, `m[0][:][1]`, an array being the one value C cannot name.
 - **A slice-typed field of an indexed element may be assigned**, `s[i].v = xs` and
   `a[i].v = xs`. Its other fields already could; a slice-valued one was refused with
   `only simple and field assignment targets are supported yet`. What is assigned is

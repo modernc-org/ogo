@@ -815,9 +815,13 @@
 //
 // A slice expression may itself be indexed or sliced again, "a[1:6][2]" and
 // "a[1:6][1:4]", the index being checked against the length of the expression it
-// applies to rather than the operand's. Only a slice expression whose operand's own
-// storage is still nameable can be written that way: "m[0][:][1]", where an index
-// has already consumed the operand, is not.
+// applies to rather than the operand's. The same holds for a slice reached through
+// an index, "s[i].v[j]", read or written.
+//
+// The one operand that cannot be sliced this way is a row of a multi-dimensional
+// array reached through an index, "m[0][:][1]": what the slice would view has to be
+// named before the steps after it can be written, and an array is the one value
+// with no C type to name it by. "m[0][:]" on its own is fine.
 //
 // # Function Literals
 //
