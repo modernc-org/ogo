@@ -2986,6 +2986,45 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A receiver or parameter the body never uses. Go allows both -- an unused
+		// parameter is not an unused variable -- and C warns about both, which the
+		// harness fails on, so this case tests itself: without the "(void)name;" the
+		// emitter writes for each, the compile step reports and the test fails.
+		//
+		// The receiver already got one when the source left it unnamed or its type
+		// was an empty struct; a named one the body ignores is the same situation and
+		// did not. A parameter got one only when unnamed.
+		name: "an unused receiver or parameter",
+		src: `type box struct{ n int }
+
+func (b box) tag() int { return 7 }
+
+func (b *box) ptag() int { return 8 }
+
+func pick(a int, b int) int { return a }
+
+func mix(a int, s string, xs []int, p *box) int { return len(xs) }
+
+// A receiver used only inside a nested scope is used, and keeps its name.
+func (b box) deep() int {
+	if true {
+		return b.n
+	}
+	return 0
+}
+
+func main() {
+	var b box
+	b.n = 3
+	println(b.tag(), b.ptag(), b.deep())
+	println(pick(1, 2))
+	xs := []int{1, 2}
+	println(mix(1, "x", xs, &b))
+}
+`,
+		want: "7 8 3\n1\n2\n",
+	},
+	{
 		// Ranging over a composite literal, `for _, v := range []int{1, 2, 3}`, which
 		// is how the idiom is written in Go and did not parse: the grammar keeps a
 		// literal out of a header, since its "{" would be the block's. A bracketed

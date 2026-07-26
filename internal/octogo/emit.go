@@ -3040,11 +3040,18 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
 		e.locals[recvName] = recvCType
-		// (void) the receiver when the body cannot use it: an unnamed receiver
-		// `(T)` (the source never names it) or a receiver whose type is an empty
-		// struct (nothing to access). Both would otherwise draw -Wunused-parameter.
+		// (void) the receiver when the body does not use it: an unnamed receiver
+		// `(T)` (the source never names it), a receiver whose type is an empty struct
+		// (nothing to access), or a named one the body simply never mentions -- a
+		// method that answers the same thing for every value of its type. All three
+		// would otherwise draw -Wunused-parameter, which the run harness fails on.
+		//
+		// The mention test is by name, so a local of the same name in a nested scope
+		// counts as a use. That over-emits a no-op and never under-emits, which is
+		// the safe direction and the one declareNamedResults takes for the same
+		// reason.
 		flds, isStruct := e.structs[methodBaseType(recvCType)]
-		if !recvNamed || (isStruct && len(flds) == 0) {
+		if !recvNamed || (isStruct && len(flds) == 0) || !e.bodyMentions(body, recvName) {
 			emptyRecvName = recvName
 		}
 	}
@@ -3055,7 +3062,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.emit(proto + " {\n")
 	e.indent++
 	e.emitParamCopies(sig)
-	e.emitParamVoids(sig)
+	e.emitParamVoids(sig, body)
 	if emptyRecvName != "" {
 		e.ind()
 		e.emit("(void)" + emptyRecvName + ";\n")
@@ -3535,17 +3542,21 @@ func (e *emitter) emitParamCopies(sig []int32) {
 	}
 }
 
-// emitParamVoids emits a "(void)name;" for every synthetic (unnamed or blank)
+// emitParamVoids emits a "(void)name;" for every unused (unnamed, blank, or named
+// and never mentioned)
 // parameter, so the names forced on them for flexcc (see unnamedParamName) do not
 // trip -Wunused-parameter. It reads only the parameter list, not the results.
-func (e *emitter) emitParamVoids(sig []int32) {
+func (e *emitter) emitParamVoids(sig, body []int32) {
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
 				e.forEachParam(n.ast, func(name string, ta []int32, synthetic bool) {
-					if !synthetic {
+					// A parameter the body never uses, whether the source left it
+					// unnamed or named it and ignored it. Go allows both -- an unused
+					// parameter is not an unused variable -- and C warns about both.
+					if !synthetic && e.bodyMentions(body, name) {
 						return
 					}
 					cname := name

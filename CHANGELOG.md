@@ -104,6 +104,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A receiver or parameter the body never uses no longer warns.** `func (b box)
+  tag() int { return 7 }` and `func pick(a int, b int) int { return a }` are both
+  legal Go — an unused parameter is not an unused variable — and both emitted C the
+  host compiler reports as `unused parameter`, which the run tests fail on. The
+  emitter already wrote a `(void)` for a receiver the source left unnamed and for a
+  parameter with no name; a named one that is simply ignored is the same situation.
 - **A string byte is unsigned.** `s[i]` is a `byte` in Go, but it was read straight
   off the string's `const char*`, whose signedness C leaves to the implementation —
   so on one where `char` is signed, any byte over 127 came out negative: summing the
