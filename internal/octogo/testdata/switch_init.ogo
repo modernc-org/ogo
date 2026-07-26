@@ -1,0 +1,72 @@
+// A switch may carry an init statement, "switch v := f(); v", as an "if" may. The
+// declared name is scoped to the whole statement -- the expression switched on,
+// every case expression and every clause body -- and not beyond it, so it may
+// shadow an outer name and a use after the statement is undefined.
+
+func f() int { return 2 }
+
+func ok() {
+	switch v := f(); v {
+	case 1:
+		println("one")
+	case 2:
+		println(v)
+	default:
+		println(-v)
+	}
+
+	// The expression switched on may be left out, which switches on true with v in
+	// scope, as a bare "switch {" does.
+	switch v := f(); {
+	case v > 1:
+		println(v)
+	default:
+		println(0)
+	}
+
+	// It need not name what the init statement declared.
+	w := 3
+	switch v := f(); w {
+	case 3:
+		println(v)
+	}
+
+	// Shadowing an outer name of the same type is legal: the inner one is a
+	// different variable, scoped to the statement, and its initializer reads the
+	// outer one, which is not yet shadowed while the init statement runs.
+	x := 1
+	switch x := x + 1; x {
+	case 2:
+		println(x)
+	}
+	println(x)
+
+	// Nested, and inside a loop.
+	for i := 0; i < 2; i++ {
+		switch d := i; d {
+		case 0:
+			switch e := d + 1; e {
+			case 1:
+				println(d, e)
+			}
+		}
+	}
+}
+
+func outOfScope() {
+	switch v := f(); v {
+	case 2:
+		println(v)
+	}
+	// ERROR "undefined: v"
+	println(v)
+}
+
+func notAShortDeclaration() {
+	x := 1
+	// ERROR "a switch init statement must be a short variable declaration"
+	switch x; f() {
+	case 2:
+		println(x)
+	}
+}

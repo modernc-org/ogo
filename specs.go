@@ -1178,7 +1178,8 @@
 // to the "cases" inside the "switch" to determine which branch to execute.
 //
 //	SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
-//	SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] .
+//	SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] [ SwitchTag ] .
+//	SwitchTag  = ";" [ HeaderExpression ] .
 //	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 //	CaseHead   = "case" ExpressionList | "default" .
 //
@@ -1186,6 +1187,18 @@
 // expressions are evaluated left-to-right and top-to-bottom. The first one
 // that equals the switch expression triggers execution of the statements of
 // the associated case.
+//
+// A switch may carry an init statement, "switch v := f(); v", as an "if" may.
+// The name it declares is scoped to the whole statement -- the expression
+// switched on, every case expression and every clause body -- and not beyond it,
+// so it may shadow a name from outside without disturbing it. The expression may
+// be left out, "switch v := f(); { case v > 3: }", which switches on true with v
+// in scope. Only a ":=" init is provided, the form nearly every use takes; Go
+// also admits an assignment or an increment there.
+//
+// (OctoGo Specific): the ":=" guard without an init statement, "switch v := f()",
+// declares v and switches on it. Go rejects that text, so the portable spelling
+// of the same thing is "switch v := f(); v".
 //
 // As in Go, a case body does not fall through to the next, and "break" leaves the
 // switch rather than any enclosing loop.

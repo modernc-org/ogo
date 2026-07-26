@@ -1423,6 +1423,79 @@ func main() {
 		want: "inner 10\nouter 9\ndelta 3\nepsilon 6\ngreeting\n",
 	},
 	{
+		// A switch with an init statement. The name is scoped to the whole statement
+		// -- the expression switched on, the case expressions and every clause body --
+		// and gone afterwards, which is what lets it shadow an outer name while its
+		// own initializer still reads that outer one. The scoping is a C block wrapped
+		// around the switch, the same one a guard already needed.
+		//
+		// The expression switched on may be anything, or nothing: it may name what the
+		// init declared, name something else entirely, be computed (and so bound to a
+		// temporary beside the declaration, inside the one block), or be left out, in
+		// which case the switch is on true with the name in scope.
+		name: "switch with an init statement",
+		src: `func f() int { return 5 }
+
+func main() {
+	switch v := f(); v {
+	case 4:
+		println("four")
+	case 5:
+		println("five", v)
+	default:
+		println("other")
+	}
+
+	switch v := f(); {
+	case v > 9:
+		println("big")
+	case v > 3:
+		println("mid", v)
+	default:
+		println("small")
+	}
+
+	switch v := f(); v * 2 {
+	case 10:
+		println("ten", v)
+	}
+
+	w := 3
+	switch v := f(); w {
+	case 3:
+		println("three", v)
+	}
+
+	x := 1
+	switch x := x + 1; x {
+	case 2:
+		println("inner", x)
+	}
+	println("outer", x)
+
+	for i := 0; i < 3; i++ {
+		switch d := i * 2; d {
+		case 0:
+			println("zero")
+			fallthrough
+		case 2:
+			println("twoish", d)
+		default:
+			println("rest", d)
+		}
+	}
+
+	switch s := "hi"; s {
+	case "bye":
+		println("bye")
+	case "hi":
+		println("hi", len(s))
+	}
+}
+`,
+		want: "five 5\nmid 5\nten 5\nthree 5\ninner 2\nouter 1\nzero\ntwoish 0\ntwoish 2\nrest 4\nhi 2\n",
+	},
+	{
 		// A slice is nil exactly when its backing pointer is null. Comparison
 		// (`s == nil`) lowers to a pointer test; the value forms -- `s = nil`,
 		// `var u []int = nil` and `return nil` from a slice-returning function -- all

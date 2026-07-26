@@ -169,10 +169,10 @@ broken.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
   functions and methods with value or pointer receivers.
 * Named and unnamed parameters and results, multiple return values, naked returns.
-* `if`/`else` including an init statement (`if v := f(); v > 0`), all `for` forms
-  including `range`, `switch` with or without a guard, `fallthrough`, `break` and
-  `continue` (including labeled), `defer` (including in nested blocks, capturing its
-  arguments).
+* `if`/`else` and `switch` including an init statement (`if v := f(); v > 0`,
+  `switch v := f(); v`), all `for` forms including `range`, `switch` with or without
+  a guard, `fallthrough`, `break` and `continue` (including labeled), `defer`
+  (including in nested blocks, capturing its arguments).
 * The full operator set, compound assignment, multiple assignment, and equality on
   strings, structs and arrays.
 * A call's result may be used directly: a field read off it (`mk().y`), a method

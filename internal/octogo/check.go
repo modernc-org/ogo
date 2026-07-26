@@ -2348,10 +2348,10 @@ func (f *File) caseConstValue(s *Scope, e Node) (constant.Value, bool) {
 }
 
 // checkSwitch walks a switch statement in its own implicit block scope: it reports
-// a repeated default clause or case value, determines the guard's type, declares a
-// "v := expr" guard variable (visible in the clauses but not after the switch),
-// checks each case expression is comparable to the guard, and walks each clause
-// body in a nested scope.
+// a repeated default clause or case value, checks the guard and declares what it
+// introduces (visible in the clauses but not after the switch), checks each case
+// expression is comparable to the guard, and walks each clause body in a nested
+// scope.
 func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	f.reportMultipleDefaults(n, CaseClause, "switch")
 	f.markClauseFallthroughs(n)
@@ -2362,15 +2362,7 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	for c := range it(n.ast) {
 		switch c.sym {
 		case SwitchGuard:
-			// Resolve the names in the guard's value expression, reporting an
-			// undefined name, a blank read or an ill-typed operator there, just as
-			// a case expression's are checked. The guard is evaluated in the outer
-			// scope s, before any "v := expr" guard variable is declared.
-			if e, ok := f.guardValueExpr(c); ok {
-				f.checkNames(s, e)
-			}
-			guardKind, guardOK = f.switchGuardType(s, c)
-			f.declareSwitchGuardVar(ss, guardKind, guardOK, c)
+			guardKind, guardOK = f.checkSwitchGuard(s, ss, c)
 		case CaseClause:
 			if guardOK {
 				f.checkCaseExprs(ss, guardKind, c)
@@ -2428,52 +2420,83 @@ func (f *File) fallthroughToken(stmt Node) (Token, bool) {
 	return Token{}, false
 }
 
-// declareSwitchGuardVar declares the variable introduced by a "v := expr" switch
-// guard in scope s. Guards without ":=" introduce nothing.
-func (f *File) declareSwitchGuardVar(s *Scope, kind Kind, hasKind bool, n Node) {
-	var lhs Node
-	hasDefine, hasLHS := false, false
-	for c := range it(n.ast) {
-		switch c.sym {
-		case Expression:
-			if !hasLHS {
-				lhs, hasLHS = c, true
-			}
-		case 0:
-			if f.ch(c.tok) == DEFINE {
-				hasDefine = true
-			}
+// checkSwitchGuard checks a switch header and declares what it introduces,
+// returning the type the case expressions are compared against. s is the scope
+// enclosing the switch and ss the switch's own, which the declared name goes into
+// so that it is visible in the clauses and nowhere after.
+//
+// The initializer of an init statement is read in s, not ss: the name it declares
+// is not in scope until the init statement is over, so "switch v := v; v" reads
+// the outer v, as Go does. The expression switched on is read in ss, since naming
+// what the init just declared is the whole point of the form.
+func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
+	g, ok := f.switchGuardParts(n.ast)
+	if !ok {
+		f.err(f.tok(n.Pos()).Position(), "malformed switch header")
+		return 0, false
+	}
+	if g.semi && !g.hasName {
+		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration")
+		return 0, false
+	}
+	if g.hasName {
+		f.checkNames(s, g.value)
+		kind, hasKind := f.exprType(s, g.value)
+		if id, ok := f.exprIdent(g.name); ok {
+			_ = ss.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
 		}
 	}
-	if !hasDefine || !hasLHS {
-		return
+	if !g.hasTag {
+		// "switch v := f(); {" switches on true, like a bare "switch {", with v in
+		// scope. There is no guard type for the case expressions to match.
+		return 0, false
 	}
-	if id, ok := f.exprIdent(lhs); ok {
-		_ = s.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
-	}
+	// Resolve the names in the expression switched on, reporting an undefined name,
+	// a blank read or an ill-typed operator there, just as a case expression's are.
+	f.checkNames(ss, g.tag)
+	return f.exprType(ss, g.tag)
 }
 
-// switchGuardType resolves the type a switch compares against: the type of the
-// guard's value expression (see guardValueExpr).
-func (f *File) switchGuardType(s *Scope, n Node) (Kind, bool) {
-	if e, ok := f.guardValueExpr(n); ok {
-		return f.exprType(s, e)
-	}
-	return 0, false
+// switchGuard is a switch statement's header taken apart. A switch may carry an
+// init statement and may leave out the expression it switches on, so which of the
+// shapes was written becomes clear only once the guard's children have been read:
+//
+//	switch t           value:       tag = t
+//	switch v := e      guard var:   name = v, value = e, tag = v
+//	switch v := e; t   init + tag:  name = v, value = e, tag = t
+//	switch v := e;     init only:   name = v, value = e, no tag
+//
+// The last switches on true, as a bare "switch {" does, with v in scope. The
+// second is OctoGo's own -- Go has no ":=" guard without an init statement -- and
+// switching on the name it declares is what makes it mean the same as the third.
+type switchGuard struct {
+	name  Node // the name a ":=" declares
+	value Node // that name's initializer
+	tag   Node // the expression switched on
+
+	hasName bool
+	hasTag  bool
+	semi    bool // a ";" was written, making this Go's init-statement form
 }
 
-// guardValueExpr returns a switch guard's value expression -- the operand a plain
-// "switch expr" guard switches on, or the right-hand side of a "switch v := expr"
-// guard. The left-hand side of a ":=" guard names the guard variable being
-// declared, not a value that is read, so it is never returned. A degenerate guard
-// with no value expression returns ok == false.
-func (f *File) guardValueExpr(n Node) (Node, bool) {
+// switchGuardParts decomposes a SwitchGuard node's children. ok is false for a
+// header matching none of the shapes above. A ";" not preceded by ":=" -- Go's
+// init statement in a form other than a short variable declaration -- is a shape
+// this recognizes but does not provide, reported by the caller.
+func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 	var exprs []Node
 	hasDefine := false
-	for c := range it(n.ast) {
+	for c := range it(guard) {
 		switch c.sym {
 		case Expression:
 			exprs = append(exprs, c)
+		case SwitchTag:
+			g.semi = true
+			for t := range it(c.ast) {
+				if t.sym == Expression {
+					g.tag, g.hasTag = t, true
+				}
+			}
 		case 0:
 			if f.ch(c.tok) == DEFINE {
 				hasDefine = true
@@ -2481,14 +2504,20 @@ func (f *File) guardValueExpr(n Node) (Node, bool) {
 		}
 	}
 	switch {
-	case hasDefine:
-		if len(exprs) >= 2 {
-			return exprs[1], true
+	case hasDefine && len(exprs) >= 2:
+		g.name, g.hasName = exprs[0], true
+		g.value = exprs[1]
+		if !g.semi {
+			g.tag, g.hasTag = exprs[0], true
 		}
-	case len(exprs) >= 1:
-		return exprs[0], true
+	case !hasDefine && !g.semi && len(exprs) >= 1:
+		g.tag, g.hasTag = exprs[0], true
+	case !hasDefine && g.semi:
+		// An init statement that is not a short variable declaration.
+	default:
+		return g, false
 	}
-	return Node{}, false
+	return g, true
 }
 
 // checkCaseExprs checks every expression of a case clause's CaseHead against the

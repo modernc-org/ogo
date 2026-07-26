@@ -13,6 +13,26 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Language
+
+- **`switch` with an init statement**, `switch v := f(); v`, as `if` gained last
+  release. The name is scoped to the whole statement — the expression switched on,
+  every case expression and every clause body — and not beyond, so it may shadow an
+  outer one while its own initializer still reads that outer one. The expression
+  switched on may be left out, `switch v := f(); { case v > 3: }`, which switches on
+  true with the name in scope. Only the `:=` form; Go also admits an assignment or
+  an increment there, and one is now rejected by name rather than as a parse error.
+
+  This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
+  as a syntax error. That form still works and means the same thing.
+
+### Behaviour changes
+
+- **A `switch` guard may no longer be the blank identifier.** `switch _ := f()`
+  declared `_` and then switched on it — reading a name Go says cannot be read — and
+  compiled to a comparison against a C variable named `_`. What a switch switches on
+  is now resolved like any other expression, which reports it.
+
 ### Fixed
 
 - **A switch guard is now declared like the variable it is.** The emitter wrote its

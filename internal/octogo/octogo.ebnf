@@ -138,7 +138,8 @@ ForPost    = HeaderExpression [ ( "=" | ":=" ) HeaderExpression | "++" | "--" ] 
 IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
 IfInit = ":=" HeaderExpression ";" HeaderExpression .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
-SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] .
+SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] [ SwitchTag ] .
+SwitchTag  = ";" [ HeaderExpression ] .
 CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 CaseHead   = "case" ExpressionList | "default" .
 SelectStmt  = "select" "{" { CommClause } "}" .
