@@ -102,6 +102,12 @@ Releases before v0.9.0 predate this file; see
   column. Only an array operand qualifies: a slice's length and capacity are run-time
   values, so a bound against one can still only be checked as the program runs, which
   it is.
+- **A `:=` whose left side is all blanks is now refused.** `_ := f()` introduces no
+  variable, which every short declaration must do at least one of, and Go says so:
+  it is `_ = f()` written wrongly. The rule reaches every form — a statement of its
+  own, an `if`, `switch` or `for` init, a range variable, and a select's `case _ :=
+  <-ch` — all eight of which compiled before. A blank alongside a name that is new,
+  `a, _ := f()`, is unaffected, as are the forms that write no `:=` at all.
 - **A variable declared in a statement's header must be used.** The rule every
   short declaration follows did not reach the ones that declare inside a header, so
   `if v := f(); true {}`, `switch v := f(); {}`, `for i := 0; ; {}`, `for i := range

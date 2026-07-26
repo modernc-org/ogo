@@ -1977,8 +1977,9 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	f.checkNames(s, fi.rangeExpr)
 	elem, hasElem, isInt := f.rangeElem(s, fi.rangeExpr)
+	declared := false
 	if fi.hasKey && fi.rangeDefine {
-		f.declareRangeVar(s, fi.keyVar, PredeclaredInt32, true)
+		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt32, true)
 	} else if fi.hasKey {
 		f.checkNames(s, fi.keyVar)
 	}
@@ -1989,10 +1990,15 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		// Declare the value variable even in the rejected integer case, so a use of
 		// it in the body does not pile a second "undefined" error on the first.
 		if fi.rangeDefine {
-			f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt)
+			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt) || declared
 		} else {
 			f.checkNames(s, fi.valVar)
 		}
+	}
+	// "for _ := range x" and "for _, _ := range x" write a ":=" that introduces
+	// nothing. "for range x" writes none and is the way to say this.
+	if fi.rangeDefine && !declared && fi.hasKey {
+		f.errNoNewVars(f.tok(fi.keyVar.Pos()))
 	}
 }
 
@@ -2023,16 +2029,17 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt bool) {
 
 // declareRangeVar introduces a range key or value variable. A `:=` range declares
 // them; a plain `=` assigns existing ones (handled by the caller).
-func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool) {
+func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool) bool {
 	id, ok := f.exprSoleIdent(v)
 	if !ok {
 		f.checkNames(s, v)
-		return
+		return false
 	}
 	if id.Src() == "_" {
-		return
+		return false
 	}
 	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
+	return true
 }
 
 // exprSoleIdent returns the single identifier an expression consists of, if that
@@ -2069,6 +2076,10 @@ func (f *File) declareForInitVar(s *Scope, lhs, rhs Node, define bool) {
 	}
 	if !define {
 		f.checkNames(s, lhs)
+		return
+	}
+	if id.Src() == "_" {
+		f.errNoNewVars(id)
 		return
 	}
 	kind, hasKind := f.exprType(s, rhs)
@@ -2452,7 +2463,9 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 	if g.hasName {
 		f.checkNames(s, g.value)
 		kind, hasKind := f.exprType(s, g.value)
-		if id, ok := f.exprIdent(g.name); ok {
+		if id, ok := f.exprIdent(g.name); ok && id.Src() == "_" {
+			f.errNoNewVars(id) // "switch _ := f(); ..." introduces nothing
+		} else if ok {
 			vd := &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind}
 			// Only an init statement's name is subject to the unused rule. In the
 			// ":=" guard without one, the name declared is also what the switch
@@ -2590,7 +2603,11 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 		// exactly as "v := <-ch" would outside a select.
 		cs := s.child()
 		if id, ok := f.commRecvVar(c); ok {
-			f.declareLocal(cs, &VarDeclaration{declaration: declaration{token: id}})
+			if id.Src() == "_" {
+				f.errNoNewVars(id) // "case _ := <-ch" introduces nothing
+			} else {
+				f.declareLocal(cs, &VarDeclaration{declaration: declaration{token: id}})
+			}
 		}
 		// A break inside a comm clause leaves the select, so the body is checked
 		// one select level deeper.
@@ -2603,8 +2620,8 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 // commRecvVar returns the variable a "case v := <-ch" comm clause introduces, when
 // the clause is that short-declaration receive. A bare receive "case <-ch", a send
 // "case ch <- v", or an "=" receive to an existing variable "case v = <-ch" declares
-// nothing and returns ok == false, as does a blank "case _ := <-ch", whose target
-// binds no name.
+// nothing and returns ok == false. A blank "case _ := <-ch" does come back, so the
+// caller can report a ":=" that introduces nothing rather than silently taking it.
 func (f *File) commRecvVar(commClause Node) (Token, bool) {
 	for head := range it(commClause.ast) {
 		if head.sym != CommHead {
@@ -2634,7 +2651,7 @@ func (f *File) commRecvVar(commClause Node) (Token, bool) {
 				}
 			}
 			if hasHead && hasDefine && !hasSuffix {
-				if id, ok := f.assignHeadIdent(assignHead); ok && id.Src() != "_" {
+				if id, ok := f.assignHeadIdent(assignHead); ok {
 					return id, true
 				}
 			}
@@ -3235,13 +3252,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// just like an explicitly-typed variable's. A multi-result initializer (fewer
 	// initializers than operands) is not modelled, so those kinds stay unknown.
 	inferKinds := len(lhs) == len(rhs)
-	newCount, nonBlank := 0, 0
+	newCount := 0
 	for i, id := range lhs {
 		nm := id.Src()
 		if nm == "_" {
 			continue
 		}
-		nonBlank++
 		if s.Declarations[nm] != nil {
 			// Already declared in this scope, so ":=" assigns to it rather than
 			// introducing anything -- Go's mixed short declaration, "a, b := f()"
@@ -3271,9 +3287,19 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		f.localVars = append(f.localVars, vd)
 		newCount++
 	}
-	if nonBlank != 0 && newCount == 0 {
-		f.err(f.tok(head.Pos()).Position(), "no new variables on left side of :=")
+	if newCount == 0 {
+		f.errNoNewVars(f.tok(head.Pos()))
 	}
+}
+
+// errNoNewVars reports a short declaration that introduces nothing. Every form of
+// ":=" requires at least one new variable, and a left side that is all blanks
+// declares none at all -- "_ := f()" is "_ = f()" written wrongly.
+//
+// The position is the declaration's own, a few columns short of the ":=" Go names,
+// which is not at hand at every site this is reported from.
+func (f *File) errNoNewVars(at Token) {
+	f.err(at.Position(), "no new variables on left side of :=")
 }
 
 // rhsValueCount returns the number of values the right-hand side of an assignment

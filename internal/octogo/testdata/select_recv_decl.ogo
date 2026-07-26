@@ -2,8 +2,9 @@
 // "case v := <-ch", mirroring Go's "v := <-ch". The variable is bound to the
 // received value and scoped to its own clause body, alongside the pre-existing
 // forms: a bare receive "case <-ch", an assign-to-existing receive "case v = <-ch",
-// a send "case ch <- v", and "default". A blank "case _ := <-ch" receives and
-// discards, binding no name.
+// a send "case ch <- v", and "default". A blank "case _ := <-ch" introduces nothing,
+// which every ":=" must do at least once, so it is refused as Go refuses it -- the
+// bare "case <-ch" is the form that receives and discards.
 
 var ch chan int
 var other chan int
@@ -16,9 +17,10 @@ func recvDecl() {
 	}
 }
 
-// The blank identifier receives and discards, binding no name.
+// A ":=" whose target is the blank identifier introduces no variable at all.
 func blankRecv() {
 	select {
+	// ERROR "no new variables on left side of :="
 	case _ := <-ch:
 	}
 }

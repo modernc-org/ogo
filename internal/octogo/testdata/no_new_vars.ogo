@@ -1,0 +1,80 @@
+// A ":=" must introduce at least one variable, wherever it is written. A left side
+// that is nothing but blanks introduces none -- "_ := f()" is "_ = f()" written
+// wrongly -- and the rule reaches every form of short declaration, not only the one
+// that stands as a statement of its own.
+
+func f() int  { return 1 }
+func g() int  { return 2 }
+func h() (int, int) { return 1, 2 }
+
+var ch chan int
+
+func statement() {
+	// ERROR "no new variables on left side of :="
+	_ := f()
+	// ERROR "no new variables on left side of :="
+	_, _ := h()
+}
+
+func ifInit() {
+	// ERROR "no new variables on left side of :="
+	if _ := f(); true {
+		println("x")
+	}
+}
+
+func switchInit() {
+	// ERROR "no new variables on left side of :="
+	switch _ := f(); {
+	default:
+		println("x")
+	}
+}
+
+func forInit() {
+	// ERROR "no new variables on left side of :="
+	for _ := 0; ; {
+		break
+	}
+}
+
+func rangeVars() {
+	// ERROR "no new variables on left side of :="
+	for _ := range 3 {
+		println("x")
+	}
+	xs := []int{1, 2}
+	// ERROR "no new variables on left side of :="
+	for _, _ := range xs {
+		println("x")
+	}
+}
+
+func selectRecv() {
+	select {
+	// ERROR "no new variables on left side of :="
+	case _ := <-ch:
+		println("x")
+	}
+}
+
+// A blank alongside a name that is new is fine: one variable is introduced, which
+// is all the rule asks. So are the forms that write no ":=" at all.
+func ok() {
+	a, _ := h()
+	println(a)
+
+	_ = g()
+
+	xs := []int{1, 2}
+	for _, v := range xs {
+		println(v)
+	}
+	for range xs {
+		println("x")
+	}
+	select {
+	case <-ch:
+		println("x")
+	}
+}

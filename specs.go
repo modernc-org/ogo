@@ -610,7 +610,10 @@
 //   - They were originally declared earlier in the same block (or the parameter
 //     lists if the block is the function body).
 //   - They are declared with the same type.
-//   - At least one of the non-blank variables in the identifier list is new.
+//   - At least one of the non-blank variables in the identifier list is new. A left
+//     side that is nothing but blanks therefore introduces nothing and is rejected,
+//     wherever the declaration stands -- a statement of its own, an init statement,
+//     a range variable, or a select's short receive.
 //
 // As a consequence, redeclaration can only appear in a multi-variable short
 // declaration. Redeclaration does not introduce a new variable; it merely
