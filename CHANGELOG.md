@@ -26,6 +26,11 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A slice expression may be indexed or sliced again**, `a[1:6][2]` and
+  `a[1:6][1:4]`, over an array, a slice, a struct field or a string. Both had to be
+  written as two statements before. The index is checked against the length of the
+  expression it applies to, not the operand's. One shape is still out: `m[0][:][1]`,
+  where an index has already consumed the operand the slice would be built from.
 - **A slice expression may set the result's capacity**, `a[low:high:max]`. Without a
   heap this is how a region of a package-level buffer is handed out: appending to the
   region stops at its own end instead of running on into the next one's storage.

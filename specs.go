@@ -813,6 +813,12 @@
 // not is a runtime panic, as an out-of-range index is. Bounds a compile-time extent
 // already settles carry no check. Each bound is evaluated once.
 //
+// A slice expression may itself be indexed or sliced again, "a[1:6][2]" and
+// "a[1:6][1:4]", the index being checked against the length of the expression it
+// applies to rather than the operand's. Only a slice expression whose operand's own
+// storage is still nameable can be written that way: "m[0][:][1]", where an index
+// has already consumed the operand, is not.
+//
 // # Function Literals
 //
 // A function literal represents an anonymous function.

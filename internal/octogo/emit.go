@@ -5126,6 +5126,11 @@ func (e *emitter) accessIndex(cur accessCur, prefix string) (next accessCur, len
 			return accessCur{}, "", false
 		}
 		return e.plainOrSlice(cur.elem), prefix + ".len", true
+	case cur.ctype == cString:
+		if prefix == "" {
+			return accessCur{}, "", false
+		}
+		return accessCur{ctype: "uint8_t"}, prefix + ".len", true // s[i] is a byte, as in Go
 	case len(cur.dims) != 0:
 		rest := cur.dims[1:]
 		if len(rest) != 0 {
@@ -5134,6 +5139,41 @@ func (e *emitter) accessIndex(cur accessCur, prefix string) (next accessCur, len
 		return e.plainOrSlice(cur.elem), cur.dims[0], true
 	}
 	return accessCur{}, "", false
+}
+
+// accessSlice advances the chain by a slice step, `[l:h]`. Slicing an array or a
+// slice yields a slice of the same element; slicing a string yields a string. A
+// multi-dimensional array cannot be sliced here for the reason it cannot be
+// elsewhere: a slice of arrays has no element type C can name.
+func (e *emitter) accessSlice(cur accessCur) (accessCur, bool) {
+	switch {
+	case cur.slice, len(cur.dims) == 1:
+		return accessCur{elem: cur.elem, slice: true}, true
+	case cur.ctype == cString:
+		return accessCur{ctype: cString}, true
+	}
+	return accessCur{}, false
+}
+
+// accessSliceSource describes what a slice step slices -- sliceableVar's form for a
+// position part-way along a chain, named by the prefix reached so far. An emitted
+// prefix leaves nothing to build a header's pointer and length from, so a slice step
+// after an index is not modelled. Pure: the caller registers what the header needs.
+func (e *emitter) accessSliceSource(cur accessCur, prefix string) (sliceSource, bool) {
+	if prefix == "" {
+		return sliceSource{}, false
+	}
+	switch {
+	case cur.slice:
+		return sliceSource{sliceCName(cur.elem), prefix + ".ptr", prefix + ".len", prefix + ".cap"}, true
+	case len(cur.dims) == 1:
+		// An array decays to a pointer to its first element and its extent is both
+		// its length and its capacity.
+		return sliceSource{sliceCName(cur.elem), prefix, cur.dims[0], cur.dims[0]}, true
+	case cur.ctype == cString:
+		return sliceSource{cString, prefix + ".str", prefix + ".len", ""}, true
+	}
+	return sliceSource{}, false
 }
 
 // plainOrSlice classifies an element C type as a nested slice header or a plain
@@ -5165,7 +5205,9 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 		return accessCur{}, false
 	}
 	prefix := e.varRef(base)
-	for _, n := range steps {
+	sliced := false
+	for i, n := range steps {
+		last := i == len(steps)-1
 		switch n.sym {
 		case Selector:
 			f := e.soleIdent(n.ast)
@@ -5184,8 +5226,22 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 			}
 			cur = next
 		case Index:
-			low, _, _, isSlice := e.sliceParts(n.ast)
-			if isSlice || low == nil {
+			low, high, max, isSlice := e.sliceParts(n.ast)
+			if isSlice {
+				if last && !sliced {
+					// A chain that is only a slice of something the fixed shapes already
+					// reach is left to them: they write the header straight into place,
+					// where this would bind a temporary nothing goes on to use.
+					return accessCur{}, false
+				}
+				next, prefixNext, ok := e.emitChainSlice(cur, prefix, low, high, max, last)
+				if !ok {
+					return accessCur{}, false
+				}
+				prefix, cur, sliced = prefixNext, next, true
+				continue
+			}
+			if low == nil {
 				return accessCur{}, false
 			}
 			next, lenExpr, ok := e.accessIndex(cur, prefix)
@@ -5193,8 +5249,11 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 				return accessCur{}, false
 			}
 			open := "["
-			if cur.slice {
+			switch {
+			case cur.slice:
 				open = ".ptr["
+			case cur.ctype == cString:
+				open = ".str["
 			}
 			e.emit(prefix + open)
 			e.emitIndex(low, lenExpr)
@@ -5211,6 +5270,43 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 	return cur, true
 }
 
+// emitChainSlice emits a slice step of a chain, `a[:][1]` and the like, returning
+// the value reached and the name it is now reachable by.
+//
+// A slice expression is a header value, and C has nowhere to put one mid-expression:
+// the steps after it want a base they can write `.ptr` and `.len` off, and streaming
+// the header inline would leave them nothing. So the header is bound to a temporary
+// declared before the statement, which is exactly the base they need -- and which is
+// also what a reader would write by hand, since binding the slice to a variable is
+// the workaround this step removes.
+//
+// A static initializer has no statement to hang the temporary off, so a slice step
+// is refused there rather than emitted into nothing.
+func (e *emitter) emitChainSlice(cur accessCur, prefix string, low, high, max []int32, last bool) (next accessCur, name string, ok bool) {
+	if e.declInit {
+		return accessCur{}, "", false
+	}
+	src, ok := e.accessSliceSource(cur, prefix)
+	if !ok {
+		return accessCur{}, "", false
+	}
+	if next, ok = e.accessSlice(cur); !ok {
+		return accessCur{}, "", false
+	}
+	if src.cname == cString {
+		e.usesString = true
+	} else {
+		e.needSlice(sliceElemFromCName(src.cname))
+	}
+	if last {
+		// The end of the chain: nothing after it needs a base, so the header goes
+		// straight where the chain's value goes.
+		e.emitSliceExpr(src, low, high, max)
+		return next, "", true
+	}
+	return next, e.hoist(src.cname, func() { e.emitSliceExpr(src, low, high, max) }), true
+}
+
 // accessChainType walks a chain without emitting, for inference and for validating
 // ahead of emission.
 func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
@@ -5219,7 +5315,9 @@ func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
 		return accessCur{}, false
 	}
 	prefix := base // only its emptiness matters here, mirroring emitAccessChain
-	for _, n := range steps {
+	sliced := false
+	for i, n := range steps {
+		last := i == len(steps)-1
 		switch n.sym {
 		case Selector:
 			f := e.soleIdent(n.ast)
@@ -5228,7 +5326,22 @@ func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
 			}
 		case Index:
 			if _, _, _, isSlice := e.sliceParts(n.ast); isSlice {
-				return accessCur{}, false
+				if last && !sliced {
+					return accessCur{}, false // left to the fixed shapes, as in emitAccessChain
+				}
+				if _, ok := e.accessSliceSource(cur, prefix); !ok {
+					return accessCur{}, false
+				}
+				if cur, ok = e.accessSlice(cur); !ok {
+					return accessCur{}, false
+				}
+				// The emitter binds a temporary here, so a name is available again --
+				// except for the last step, whose header is streamed into place.
+				prefix, sliced = base, true
+				if last {
+					prefix = ""
+				}
+				continue
 			}
 			if cur, _, ok = e.accessIndex(cur, prefix); !ok {
 				return accessCur{}, false
@@ -9138,7 +9251,13 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				if src, _, _, _, ok := e.sliceableChainRow(base, steps); ok {
 					return src.cname, true // `m[0][:]` -- a slice over a row
 				}
-				if cur, ok := e.accessChainType(base, steps); ok && !cur.slice && len(cur.dims) == 0 {
+				if cur, ok := e.accessChainType(base, steps); ok && len(cur.dims) == 0 {
+					// A chain reaching a slice -- `a[1:6][1:4]`, or a slice field past
+					// an index -- is its header type; an array is still nameless, C
+					// having no array value type.
+					if cur.slice {
+						return sliceCName(cur.elem), true
+					}
 					return cur.ctype, true
 				}
 			}

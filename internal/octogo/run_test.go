@@ -2986,6 +2986,71 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// Operating on a slice expression's result -- indexing it, and slicing it
+		// again. Both had to be written out as two statements, because a header is a
+		// value and C has nowhere to put one mid-expression: the step after it wants
+		// a base to write `.ptr` and `.len` off. The header is now bound to a
+		// temporary before the statement, which is that base, and is exactly the
+		// variable a reader used to have to introduce by hand.
+		//
+		// Only an interior slice step needs one. A chain that merely ends in a slice
+		// -- `b.data[1:3]` -- still writes its header straight into place, so nothing
+		// that already worked grew a temporary.
+		name: "indexing and re-slicing a slice expression",
+		src: `type buf struct {
+	data []int
+	fix  [4]int
+}
+
+var pool [8]int
+
+func main() {
+	var a [8]int
+	for i := 0; i < 8; i++ {
+		a[i] = i * 10
+	}
+
+	println("array", a[:][1], a[2:][1], a[1:6][2])
+
+	s := make([]int, 6, 8)
+	for i := 0; i < 6; i++ {
+		s[i] = i + 1
+	}
+	println("slice", s[1:][0], s[:4][3], s[2:5][1])
+
+	var b buf
+	b.data = s
+	b.fix[2] = 9
+	println("field", b.data[1:][0], b.fix[1:3][1])
+
+	r := a[1:6][1:4]
+	println("reslice", len(r), cap(r), r[0], r[2])
+
+	x := a[1:5:6][1:3]
+	println("cap bound", len(x), cap(x), x[0])
+
+	str := "hello"
+	println("string", str[1:][0], str[1:4][1:][0])
+
+	pool[3] = 7
+	println("package", pool[:][3], pool[1:][2])
+}
+`,
+		want: "array 10 30 30\nslice 2 4 4\nfield 2 9\nreslice 3 6 20 40\ncap bound 2 4 20\nstring 101 108\npackage 7 7\n",
+	},
+	{
+		// The index is checked against the slice expression's own length, not the
+		// operand's: a[1:3] has two elements however long a is.
+		name: "index past a slice expression traps",
+		src: `func main() {
+	var a [8]int
+	i := 5
+	println(a[1:3][i])
+}
+`,
+		panics: true,
+	},
+	{
 		// A loop condition that needs a temporary. An expression can ask for a line
 		// to be emitted before the statement it is in -- a field read off a call
 		// result, arguments put in order, a bounds-checked slice -- and before the

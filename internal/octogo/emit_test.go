@@ -5022,6 +5022,53 @@ func main() {
 	}
 }
 
+// TestEmitCSliceExprChain pins the lowering of an operation applied to a slice
+// expression. A header is a value and C has nowhere to put one mid-expression, so
+// an interior slice step binds a temporary before the statement and the steps after
+// it write `.ptr` and `.len` off that -- which is also where the index gets a length
+// to be checked against, the slice expression's own rather than the operand's.
+//
+// A chain that merely ends in a slice keeps writing its header straight into place:
+// the last line's `r` shows the two together, the inner step bound and the outer
+// streamed, and `b.data[1:3]` inside a len() shows a trailing one on its own.
+func TestEmitCSliceExprChain(t *testing.T) {
+	src := `type buf struct{ data []int }
+
+func main() {
+	var a [4]int
+	b := buf{a[:]}
+	println(a[:][1], b.data[1:3][1], len(b.data[1:3]))
+	r := a[1:4][1:2]
+	println(len(r))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	want := "int main(void) {\n" +
+		"\tint a[4] = {0};\n" +
+		"\tbuf b = {(ogo_slice_int){a, 4, 4}};\n" +
+		"\togo_slice_int _ogo_t0 = (ogo_slice_int){a, 4, 4};\n" +
+		"\togo_slice_int _ogo_t1 = ogo_reslice_int(b.data.ptr, b.data.cap, 1, 3);\n" +
+		"\togo_slice_int _ogo_t2 = ogo_reslice_int(b.data.ptr, b.data.cap, 1, 3);\n" +
+		"\tprintf(\"%d %d %d\\n\", _ogo_t0.ptr[ogo_bound(1, _ogo_t0.len)], " +
+		"_ogo_t1.ptr[ogo_bound(1, _ogo_t1.len)], _ogo_t2.len);\n" +
+		"\togo_slice_int _ogo_t3 = (ogo_slice_int){a + 1, 4 - 1, 4 - 1};\n" +
+		"\togo_slice_int r = ogo_reslice_int(_ogo_t3.ptr, _ogo_t3.cap, 1, 2);\n" +
+		"\tprintf(\"%d\\n\", (r).len);\n" +
+		"\treturn 0;\n" +
+		"}\n"
+	if !bytes.Contains(buf.Bytes(), []byte(want)) {
+		t.Errorf("slice-expression chain:\n got %q\nwant it to contain %q", buf.String(), want)
+	}
+}
+
 // TestEmitCLoopCondTemporary pins where a loop condition's temporary goes. A
 // condition is re-evaluated every iteration, so a line hoisted out of it belongs
 // inside the loop, not before it where emitStatement puts a statement's prologue --
