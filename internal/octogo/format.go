@@ -7,6 +7,7 @@ package octogo
 import (
 	"bytes"
 	"io"
+	"slices"
 )
 
 var (
@@ -250,10 +251,13 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// does not come out as "x :=[4]int{...}".
 	case curr == LBRACK:
 		return c.inType || (prev != IDENT && prev != RBRACK && prev != RPAREN)
-	// A slice ":" takes spaces when the slice has two non-empty bounds and one is a
-	// binary expression ("xs[i+1 : j-1]"), matching gofmt; otherwise it binds tight
-	// (the cases just below). The decision is computed once at the Index node.
-	case c.inIndex && c.sliceColonBlanks && (curr == COLON || prev == COLON):
+	// A slice ":" takes spaces when the slice writes more than one bound and one of
+	// them is a binary expression ("xs[i+1 : j-1]", "a[i+1 : j : k]"), matching
+	// gofmt; otherwise it binds tight (the cases just below). The decision is
+	// computed once at the Index node. A ":" straight after the "[" keeps its side
+	// of the bracket tight even so -- there is no bound there to separate from --
+	// which is how gofmt writes "a[: j+1 : k]".
+	case c.inIndex && c.sliceColonBlanks && (curr == COLON || prev == COLON) && prev != LBRACK:
 		return true
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false
@@ -433,11 +437,11 @@ func isBinaryBound(ast []int32) bool {
 }
 
 // sliceColonNeedsBlanks reports whether a slice expression's ":" takes spaces around
-// it. gofmt spaces it when the slice has two non-empty bounds and at least one is a
-// binary expression -- "xs[i+1 : j-1]", "xs[a+1 : b]" -- and keeps it tight otherwise
-// -- "xs[a:b]", "xs[:n+1]", "xs[a+1:]". A two-bound slice is exactly an Index with
-// two direct Expression children (the grammar allows two only as "Expr ':' Expr"); a
-// plain index or a one-sided slice has at most one.
+// it. gofmt spaces it when the slice writes more than one bound and at least one of
+// them is a binary expression -- "xs[i+1 : j-1]", "xs[a+1 : b]", "a[i+1 : j : k]" --
+// and keeps it tight otherwise ("xs[0:1]", "a[i:j:k]", "xs[i+1:]", where the one
+// written bound is on its own). A plain index writes a single bound and so never
+// qualifies.
 func sliceColonNeedsBlanks(indexKids []int32) bool {
 	var bounds [][]int32
 	for n := range it(indexKids) {
@@ -445,7 +449,7 @@ func sliceColonNeedsBlanks(indexKids []int32) bool {
 			bounds = append(bounds, n.ast)
 		}
 	}
-	return len(bounds) == 2 && (isBinaryBound(bounds[0]) || isBinaryBound(bounds[1]))
+	return len(bounds) > 1 && slices.ContainsFunc(bounds, isBinaryBound)
 }
 
 type formatterCtx struct {
@@ -457,8 +461,8 @@ type formatterCtx struct {
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
 	inType            bool
 	inIndex           bool // True inside an Index, where ':' binds tight ("s[0:1]")
-	// sliceColonBlanks is true inside a two-bound slice whose ":" gofmt spaces
-	// because a bound is a binary expression ("xs[i+1 : j-1]").
+	// sliceColonBlanks is true inside a multi-bound slice whose ":" gofmt spaces
+	// because one of the bounds is a binary expression ("xs[i+1 : j-1]").
 	sliceColonBlanks bool
 	// inLiteralBraces is true inside a composite literal, whose braces are spaced
 	// the opposite way to a block's: "P{1, 2}", not "P { 1, 2 }". It stays set

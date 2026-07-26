@@ -3889,15 +3889,39 @@ func (f *File) indexIsSlice(index Node) bool {
 // "base.field[i]" (a selector first) or "base()[i]" (a call first), where it applies
 // to the selection or call result instead. The suffix children are in source order.
 func firstSuffixIsIndex(n Node) bool {
+	_, ok := firstSuffixIndex(n)
+	return ok
+}
+
+// firstSuffixIndex is firstSuffixIsIndex with the Index node itself, for a caller
+// that has to look inside it.
+func firstSuffixIndex(n Node) (Node, bool) {
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Index:
-			return true
+			return c, true
 		case Selector, CallSuffix, PostfixOp:
-			return false
+			return Node{}, false
 		}
 	}
-	return false
+	return Node{}, false
+}
+
+// thirdSliceBound returns the third bound of a slice expression, the "m" of
+// "a[l:h:m]", when the Index node writes one.
+func (f *File) thirdSliceBound(index Node) (Node, bool) {
+	colons := 0
+	for c := range it(index.ast) {
+		switch {
+		case c.sym == Expression:
+			if colons == 2 {
+				return c, true
+			}
+		case c.sym == 0 && f.ch(c.tok) == COLON:
+			colons++
+		}
+	}
+	return Node{}, false
 }
 
 // endsInCall reports whether the last operation of a statement postfix's suffix
@@ -4851,11 +4875,48 @@ func (f *File) checkIndexExprs(s *Scope, n Node) {
 		if c.sym != Index {
 			continue
 		}
+		f.checkSliceBounds(c)
 		for e := range it(c.ast) {
 			if e.sym == Expression {
 				f.checkNames(s, e)
 			}
 		}
+	}
+}
+
+// checkSliceBounds reports a three-bound slice expression that leaves out one of
+// the two bounds it must write. In "a[low:high:max]" only low may be omitted, the
+// capacity being meaningless without the length that has to fit inside it, so
+// "a[l::m]" and "a[l:h:]" are not slice expressions at all. The grammar admits both
+// -- a bound is optional after either colon -- so that each can be named here
+// instead of arriving as a parse error, and each is reported at the colon before
+// the bound that is missing, which is where Go reports it.
+func (f *File) checkSliceBounds(index Node) {
+	colons := 0
+	var colonTok [2]Token
+	var written [3]bool
+	for c := range it(index.ast) {
+		switch {
+		case c.sym == Expression:
+			if colons < len(written) {
+				written[colons] = true
+			}
+		case c.sym == 0 && f.ch(c.tok) == COLON:
+			if colons < len(colonTok) {
+				colonTok[colons] = f.tok(c.tok)
+			}
+			colons++
+		}
+	}
+	if colons < 2 {
+		return
+	}
+	if !written[1] {
+		f.err(colonTok[0].Position(), "middle index required in 3-index slice")
+		return
+	}
+	if !written[2] {
+		f.err(colonTok[1].Position(), "final index required in 3-index slice")
 	}
 }
 
@@ -4953,11 +5014,17 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	// checkIndexAssign. A string is byte-indexable, and a pointer, array or slice
 	// carries its element kind rather than a scalar kind, so identKind reports those
 	// not-known and they are left to their own handling.
-	if hasID && hasSuffix && firstSuffixIsIndex(suffix) {
+	if index, isIndex := firstSuffixIndex(suffix); hasID && hasSuffix && isIndex {
 		if k, known := f.identKind(s, id); known {
 			switch kindCategory(k) {
 			case catNumeric, catBool:
 				f.err(id.Position(), "invalid operation: cannot index %s", id.Src())
+			case catString:
+				// A third slice bound sets the result's capacity, and a string has
+				// none: slicing one yields a string, which is { pointer, length }.
+				if mx, ok := f.thirdSliceBound(index); ok {
+					f.err(f.tok(mx.Pos()).Position(), "invalid operation: 3-index slice of string")
+				}
 			}
 		}
 	}

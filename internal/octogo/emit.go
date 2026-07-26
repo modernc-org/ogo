@@ -1215,10 +1215,17 @@ func copyCName(elem string) string { return "ogo_copy_" + sanitizeElem(elem) }
 // ogo_reslice_<T>. It is not ogo_slice_<T>, which is the header type itself.
 func resliceCName(elem string) string { return "ogo_reslice_" + sanitizeElem(elem) }
 
-// sliceBoundsCheck is the test both reslice helpers make: Go requires 0 <= lo <=
-// hi <= c, and each unsigned compare folds one pair's low and high tests, since a
-// negative bound wraps past the limit it is compared with.
+// reslice3CName names its three-bound twin, which takes the capacity to set.
+func reslice3CName(elem string) string { return "ogo_reslice3_" + sanitizeElem(elem) }
+
+// sliceBoundsCheck is the test the two-bound reslice helpers make: Go requires
+// 0 <= lo <= hi <= c, and each unsigned compare folds one pair's low and high
+// tests, since a negative bound wraps past the limit it is compared with.
 const sliceBoundsCheck = "\tif ((unsigned)hi > (unsigned)c || (unsigned)lo > (unsigned)hi) ogo_panic(\"slice bounds out of range\");\n"
+
+// sliceBoundsCheck3 is the same chain with the third bound in it, 0 <= lo <= hi <=
+// mx <= c.
+const sliceBoundsCheck3 = "\tif ((unsigned)mx > (unsigned)c || (unsigned)hi > (unsigned)mx || (unsigned)lo > (unsigned)hi) ogo_panic(\"slice bounds out of range\");\n"
 
 // clearCName names the per-element helper for the clear builtin, ogo_clear_<T>.
 func clearCName(elem string) string { return "ogo_clear_" + sanitizeElem(elem) }
@@ -1337,7 +1344,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1571,15 +1578,22 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// than the inline compound literal, so each bound is evaluated exactly once
 	// however many of the three fields it appears in -- which is why the helper is
 	// reached by a side-effecting bound even with the check itself compiled out.
-	check := ""
+	check, check3 := "", ""
 	if e.checks {
-		check = sliceBoundsCheck
+		check, check3 = sliceBoundsCheck, sliceBoundsCheck3
 	}
 	for _, el := range sortedKeys(e.resliceElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s* p, int c, int lo, int hi) {\n"+
 			check+
 			"\treturn (%s){p + lo, hi - lo, c - lo};\n}\n",
 			sliceCName(el), resliceCName(el), el, sliceCName(el))
+	}
+	// x[lo:hi:mx]: the same, with the capacity the third bound sets.
+	for _, el := range sortedKeys(e.reslice3Elems) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s* p, int c, int lo, int hi, int mx) {\n"+
+			check3+
+			"\treturn (%s){p + lo, hi - lo, mx - lo};\n}\n",
+			sliceCName(el), reslice3CName(el), el, sliceCName(el))
 	}
 	// The same for a string, whose header has no capacity field: c is its length.
 	if e.usesResliceStr {
@@ -1720,6 +1734,7 @@ type emitter struct {
 	tryappendElems     map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
 	resliceElems       map[string]bool          // element C types needing the ogo_reslice_<T> helper, a bounds-checked slice expression
+	reslice3Elems      map[string]bool          // element C types needing its three-bound twin, ogo_reslice3_<T>
 	usesResliceStr     bool                     // a string is sliced through the helper: emit ogo_reslice_str
 	resliceCalled      bool                     // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
 	usesCopyStr        bool                     // copy(dst []byte, src string) is used: emit the ogo_copystr helper
@@ -5169,7 +5184,7 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 			}
 			cur = next
 		case Index:
-			low, _, isSlice := e.sliceParts(n.ast)
+			low, _, _, isSlice := e.sliceParts(n.ast)
 			if isSlice || low == nil {
 				return accessCur{}, false
 			}
@@ -5212,7 +5227,7 @@ func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
 				return accessCur{}, false
 			}
 		case Index:
-			if _, _, isSlice := e.sliceParts(n.ast); isSlice {
+			if _, _, _, isSlice := e.sliceParts(n.ast); isSlice {
 				return accessCur{}, false
 			}
 			if cur, _, ok = e.accessIndex(cur, prefix); !ok {
@@ -5260,25 +5275,33 @@ func isAccessChain(steps []Node) bool {
 }
 
 // sliceParts inspects an Index node. isSlice reports a colon -- a slice expression;
-// low and high are the bound expressions, nil when omitted. For a plain index (no
-// colon), isSlice is false and low is the index expression.
-func (e *emitter) sliceParts(indexAST []int32) (low, high []int32, isSlice bool) {
-	beforeColon := true
+// low, high and max are the bound expressions, nil when omitted, max being the
+// third bound of `a[low:high:max]`. For a plain index (no colon), isSlice is false
+// and low is the index expression.
+//
+// Which bound an expression is follows from how many colons precede it, so an
+// omitted one is simply a colon the loop passes with nothing in between.
+func (e *emitter) sliceParts(indexAST []int32) (low, high, max []int32, isSlice bool) {
+	colons := 0
 	for n := range it(indexAST) {
 		switch n.sym {
 		case Expression:
-			if beforeColon {
+			switch colons {
+			case 0:
 				low = n.ast
-			} else {
+			case 1:
 				high = n.ast
+			default:
+				max = n.ast
 			}
 		case 0:
 			if e.f.ch(n.tok) == COLON {
-				isSlice, beforeColon = true, false
+				isSlice = true
+				colons++
 			}
 		}
 	}
-	return low, high, isSlice
+	return low, high, max, isSlice
 }
 
 // varType returns a variable's C type from the local then the package environment.
@@ -5375,27 +5398,27 @@ func (e *emitter) sliceableField(base string, fields []string) (sliceSource, boo
 // Only a row that is itself one-dimensional can become a slice: a row of a
 // [2][3][4]int is a [3][4]int, and a slice of arrays has no element type C can
 // name here (the same limit that refuses a `[][2]int` literal).
-func (e *emitter) sliceableChainRow(base string, steps []Node) (src sliceSource, low, high []int32, ok bool) {
+func (e *emitter) sliceableChainRow(base string, steps []Node) (src sliceSource, low, high, max []int32, ok bool) {
 	if len(steps) < 2 || steps[len(steps)-1].sym != Index {
-		return sliceSource{}, nil, nil, false
+		return sliceSource{}, nil, nil, nil, false
 	}
-	low, high, isSlice := e.sliceParts(steps[len(steps)-1].ast)
+	low, high, max, isSlice := e.sliceParts(steps[len(steps)-1].ast)
 	if !isSlice {
-		return sliceSource{}, nil, nil, false
+		return sliceSource{}, nil, nil, nil, false
 	}
 	prefix := steps[:len(steps)-1]
 	cur, ok := e.accessChainType(base, prefix)
 	if !ok || cur.slice || len(cur.dims) != 1 {
-		return sliceSource{}, nil, nil, false
+		return sliceSource{}, nil, nil, nil, false
 	}
 	text, ok := e.accessChainCText(base, prefix)
 	if !ok {
-		return sliceSource{}, nil, nil, false
+		return sliceSource{}, nil, nil, nil, false
 	}
 	e.needSlice(cur.elem)
 	// The row decays to a pointer to its first element, and its extent is both the
 	// length and the capacity: an array's storage is exactly its extent.
-	return sliceSource{sliceCName(cur.elem), text, cur.dims[0], cur.dims[0]}, low, high, true
+	return sliceSource{sliceCName(cur.elem), text, cur.dims[0], cur.dims[0]}, low, high, max, true
 }
 
 // accessChainCText renders an access chain to a string, the way argsCText does
@@ -5418,19 +5441,27 @@ func (e *emitter) accessChainCText(base string, steps []Node) (string, bool) {
 // over .ptr/.len). In a static initializer a brace is used, not a compound literal
 // (not a constant expression there; see declInit).
 //
+// A third bound, `base[low:high:max]`, gives the result max less low for its
+// capacity instead of the base's own, so appending to it stops there. A string has
+// no capacity field and so takes no such bound.
+//
 // With checks on, bounds that are not provably in range go through the reslice
 // helper instead, which panics rather than yielding a header over storage the base
 // does not own.
-func (e *emitter) emitSliceExpr(src sliceSource, low, high []int32) {
+func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
 	cname, ptr, baseLen, baseCap := src.cname, src.ptr, src.baseLen, src.baseCap
+	if max != nil && baseCap == "" {
+		e.fail("a string has no capacity to set with a third slice bound")
+		return
+	}
 	// A string has no capacity, so its length is the limit a bound may reach; for
 	// an array the two are the same compile-time extent.
 	capExpr := baseCap
 	if capExpr == "" {
 		capExpr = baseLen
 	}
-	if e.sliceNeedsHelper(low, high, baseLen, capExpr) {
-		e.emitHelperSliceExpr(cname, ptr, baseLen, capExpr, low, high)
+	if e.sliceNeedsHelper(low, high, max, baseLen, capExpr) {
+		e.emitHelperSliceExpr(cname, ptr, baseLen, capExpr, low, high, max)
 		return
 	}
 	if e.declInit {
@@ -5455,10 +5486,16 @@ func (e *emitter) emitSliceExpr(src sliceSource, low, high []int32) {
 		e.emit(" - ")
 		e.emitExpr(low)
 	}
-	// cap (slices only): cap(base) - low, so the result can still be re-sliced up
-	// to the end of the backing storage (Go: the slice upper bound reaches cap).
+	// cap (slices only): max when a third bound sets one, else cap(base), less low
+	// either way -- so without one the result can still be re-sliced to the end of
+	// the backing storage (Go: the slice upper bound reaches cap).
 	if baseCap != "" {
-		e.emit(", " + baseCap)
+		e.emit(", ")
+		if max != nil {
+			e.emitExpr(max)
+		} else {
+			e.emit(baseCap)
+		}
 		if low != nil {
 			e.emit(" - ")
 			e.emitExpr(low)
@@ -5478,25 +5515,26 @@ func (e *emitter) emitSliceExpr(src sliceSource, low, high []int32) {
 // bounds check: on, and not already settled at compile time. `x[:]` is always
 // settled -- 0 <= 0 <= len <= cap holds for any base -- as are bounds a compile-time
 // extent bounds.
-func (e *emitter) sliceNeedsHelper(low, high []int32, lenExpr, capExpr string) bool {
+func (e *emitter) sliceNeedsHelper(low, high, max []int32, lenExpr, capExpr string) bool {
 	if e.declInit {
 		return false
 	}
-	if e.exprHasEffect(low) || e.exprHasEffect(high) {
+	if e.exprHasEffect(low) || e.exprHasEffect(high) || e.exprHasEffect(max) {
 		return true
 	}
-	if !e.checks || (low == nil && high == nil) {
+	if !e.checks || (low == nil && high == nil && max == nil) {
 		return false
 	}
-	return !e.constSliceInRange(low, high, lenExpr, capExpr)
+	return !e.constSliceInRange(low, high, max, lenExpr, capExpr)
 }
 
-// constSliceInRange reports whether both written bounds fold to constants that
-// satisfy 0 <= low <= high <= cap, the base's length and capacity being known at
-// compile time. An omitted low is 0 and an omitted high the base's length, which is
-// a decimal literal only for an array or a string constant -- a slice's ".len" is a
-// run-time value and never parses, so such a slice keeps its check.
-func (e *emitter) constSliceInRange(low, high []int32, lenExpr, capExpr string) bool {
+// constSliceInRange reports whether every written bound folds to a constant and
+// together they satisfy 0 <= low <= high <= max <= cap, the base's length and
+// capacity being known at compile time. An omitted low is 0, an omitted high the
+// base's length and an omitted max its capacity; those stand-ins are decimal
+// literals only for an array or a string constant -- a slice's ".len" is a run-time
+// value and never parses, so such a slice keeps its check.
+func (e *emitter) constSliceInRange(low, high, max []int32, lenExpr, capExpr string) bool {
 	lo := int64(0)
 	if low != nil {
 		v, ok := e.foldConstInt(low)
@@ -5513,7 +5551,11 @@ func (e *emitter) constSliceInRange(low, high []int32, lenExpr, capExpr string) 
 	if err != nil {
 		return false
 	}
-	return 0 <= lo && lo <= hi && hi <= c
+	mx, ok := e.foldBoundOrLiteral(max, capExpr)
+	if !ok {
+		return false
+	}
+	return 0 <= lo && lo <= hi && hi <= mx && mx <= c
 }
 
 // foldBoundOrLiteral folds a written slice bound, or parses the expression standing
@@ -5527,19 +5569,24 @@ func (e *emitter) foldBoundOrLiteral(bound []int32, omitted string) (int64, bool
 }
 
 // emitHelperSliceExpr emits a slice expression as a call to its reslice helper,
-// ogo_reslice_<T>(ptr, cap, low, high), which builds the header and, in a checked
-// build, panics on bounds that are out of range. Being a call, it evaluates each
-// bound exactly once whether or not the check is there.
-func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, high []int32) {
+// ogo_reslice_<T>(ptr, cap, low, high) -- or ogo_reslice3_<T>(..., max) when a third
+// bound sets the capacity -- which builds the header and, in a checked build, panics
+// on bounds that are out of range. Being a call, it evaluates each bound exactly
+// once, in order, whether or not the check is there.
+func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, high, max []int32) {
 	if e.checks {
 		e.needPanic()
 	}
 	e.resliceCalled = true
-	if cname == cString {
+	switch elem := sliceElemFromCName(cname); {
+	case cname == cString:
 		e.usesResliceStr = true
 		e.emit("ogo_reslice_str(")
-	} else {
-		elem := sliceElemFromCName(cname)
+	case max != nil:
+		e.needSlice(elem)
+		e.reslice3Elems[elem] = true
+		e.emit(reslice3CName(elem) + "(")
+	default:
 		e.needSlice(elem)
 		e.resliceElems[elem] = true
 		e.emit(resliceCName(elem) + "(")
@@ -5555,6 +5602,10 @@ func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, 
 		e.emitExpr(high)
 	} else {
 		e.emit(baseLen)
+	}
+	if max != nil {
+		e.emit(", ")
+		e.emitExpr(max)
 	}
 	e.emit(")")
 }
@@ -7085,7 +7136,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				inner := text
 				text, addr = e.hoist(ct, func() { e.emit(inner) }), true
 			}
-			low, _, isSlice := e.sliceParts(n.ast)
+			low, _, _, isSlice := e.sliceParts(n.ast)
 			if isSlice || low == nil {
 				return "", "", false, false
 			}
@@ -7155,7 +7206,7 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 				return "", false
 			}
 		case Index:
-			if _, _, isSlice := e.sliceParts(n.ast); isSlice {
+			if _, _, _, isSlice := e.sliceParts(n.ast); isSlice {
 				return "", false
 			}
 			// A non-empty prefix stands in for the real one: only its emptiness
@@ -8383,7 +8434,7 @@ func (e *emitter) emitAssignTail(t assignTail) {
 // through the field header's backing pointer and bounds-checked against its length.
 // Only plain assignment is modelled (no slice colon, no ++/-- on the element).
 func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNode Node) {
-	low, _, isSlice := e.sliceParts(index.ast)
+	low, _, _, isSlice := e.sliceParts(index.ast)
 	if isSlice {
 		e.fail("slicing a slice-field target is not supported yet")
 		return
@@ -9029,7 +9080,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, steps, ok := e.factorAccessChain(kids); ok {
 				// Fall through to the fixed shapes when the walker cannot type the
 				// chain, rather than short-circuiting: a slice expression is theirs.
-				if src, _, _, ok := e.sliceableChainRow(base, steps); ok {
+				if src, _, _, _, ok := e.sliceableChainRow(base, steps); ok {
 					return src.cname, true // `m[0][:]` -- a slice over a row
 				}
 				if cur, ok := e.accessChainType(base, steps); ok && !cur.slice && len(cur.dims) == 0 {
@@ -9045,7 +9096,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// first identifier and so yielded the *base struct's* type (`Buf` for
 			// `b.data[0]`, not `int`) -- invalid C at the declaration it feeds.
 			if base, fields, indexAST, ok := e.factorFieldIndex(kids); ok {
-				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
+				if _, _, _, isSlice := e.sliceParts(indexAST); isSlice {
 					// Re-slicing a field yields a slice header: the field's own type
 					// for a slice field, one over the element type for an array field.
 					if src, ok := e.sliceableField(base, fields); ok {
@@ -9059,7 +9110,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				return "", false
 			}
 			if base, indexAST, ok := e.factorIndex(kids); ok {
-				if _, _, isSlice := e.sliceParts(indexAST); isSlice {
+				if _, _, _, isSlice := e.sliceParts(indexAST); isSlice {
 					// Slicing a string yields a string; slicing an array or a slice
 					// yields the corresponding slice header type.
 					if e.isStringVarName(base) {
@@ -9632,8 +9683,8 @@ func (e *emitter) emitExprNode(n Node) {
 			if base, steps, ok := e.factorAccessChain(kids); ok {
 				// `m[0][:]` -- slicing a row. Tried first: the chain walk cannot
 				// emit a slice step, and would consume the prefix the header needs.
-				if src, low, high, ok := e.sliceableChainRow(base, steps); ok {
-					e.emitSliceExpr(src, low, high)
+				if src, low, high, max, ok := e.sliceableChainRow(base, steps); ok {
+					e.emitSliceExpr(src, low, high, max)
 					return
 				}
 				if _, ok := e.emitAccessChain(base, steps); ok {
@@ -9649,11 +9700,11 @@ func (e *emitter) emitExprNode(n Node) {
 				// through its header's backing pointer bounded by len, an array field
 				// its inline storage bounded by the declared extent. indexedContainer
 				// resolves which, so both read the same way here.
-				low, high, isSlice := e.sliceParts(indexAST)
+				low, high, max, isSlice := e.sliceParts(indexAST)
 				if isSlice {
 					// Re-slicing a struct field, `b.data[1:3]`.
 					if src, ok := e.sliceableField(base, fields); ok {
-						e.emitSliceExpr(src, low, high)
+						e.emitSliceExpr(src, low, high, max)
 						return
 					}
 				} else {
@@ -9664,14 +9715,14 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 			}
 			if base, indexAST, ok := e.factorIndex(kids); ok {
-				low, high, isSlice := e.sliceParts(indexAST)
+				low, high, max, isSlice := e.sliceParts(indexAST)
 				if isSlice {
 					src, ok := e.sliceableVar(base)
 					if !ok {
 						e.fail("only string, array and slice slicing is supported yet")
 						return
 					}
-					e.emitSliceExpr(src, low, high)
+					e.emitSliceExpr(src, low, high, max)
 					return
 				}
 				// A slice is indexed through its backing pointer, a string through its
@@ -10147,7 +10198,7 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if _, _, isSlice := e.sliceParts(indexAST); !isSlice {
+	if _, _, _, isSlice := e.sliceParts(indexAST); !isSlice {
 		return "", false
 	}
 	if _, isLocalArray := e.arrays[base]; isLocalArray {

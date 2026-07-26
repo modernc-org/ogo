@@ -2088,6 +2088,37 @@ func main() {
 	if bytes.Contains(eff.Bytes(), []byte("slice bounds out of range")) {
 		t.Errorf("default build should emit no slice check:\n%s", eff.String())
 	}
+
+	// A third bound sets the capacity, so it takes the helper's three-bound twin and
+	// its longer check; one the compiler can settle stays inline, with the bound in
+	// the capacity field where the operand's own capacity would otherwise be.
+	third := `func main() {
+	var a [8]int
+	i := 1
+	s := a[i:3:5]
+	t := a[1:3:5]
+	println(len(s), cap(t))
+}
+`
+	fsys = fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(third)}}
+	if pkg, err = Build(-1, []string{"main.ogo"}, fsys); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var cap3 bytes.Buffer
+	if err := EmitC(pkg, &cap3, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"static ogo_slice_int ogo_reslice3_int(int* p, int c, int lo, int hi, int mx) {\n" +
+			"\tif ((unsigned)mx > (unsigned)c || (unsigned)hi > (unsigned)mx || (unsigned)lo > (unsigned)hi) ogo_panic(\"slice bounds out of range\");\n" +
+			"\treturn (ogo_slice_int){p + lo, hi - lo, mx - lo};\n}\n",
+		"ogo_slice_int s = ogo_reslice3_int(a, 8, i, 3, 5);\n",
+		"ogo_slice_int t = (ogo_slice_int){a + 1, 3 - 1, 5 - 1};\n",
+	} {
+		if !bytes.Contains(cap3.Bytes(), []byte(want)) {
+			t.Errorf("missing %q in:\n%s", want, cap3.String())
+		}
+	}
 }
 
 // printSliceIntHelpers is the generated ogo_print_slice_int / ogo_println_slice_int

@@ -1,0 +1,47 @@
+// A slice expression may write a third bound, "a[low:high:max]", which sets the
+// result's capacity to max less low instead of taking the operand's own. Only low
+// may be left out of the three; a string has no capacity for one to set.
+
+var pool [16]int
+
+func ok() {
+	var a [8]int
+	s := a[1:4:6]
+	println(len(s), cap(s))
+
+	// The point of the form here: two regions of one package-level buffer, neither
+	// able to append its way into the other.
+	head := pool[0:0:4]
+	tail := pool[4:4:8]
+	println(len(head), cap(head), len(tail), cap(tail))
+
+	// A slice may be re-sliced with one too, and the bounds may be run-time values.
+	b := a[:]
+	c := b[2:5:6]
+	println(len(c), cap(c))
+
+	i, j, k := 1, 3, 5
+	d := a[i:j:k]
+	println(len(d), cap(d))
+}
+
+func middleRequired() {
+	var a [8]int
+	// ERROR "middle index required in 3-index slice"
+	s := a[1::6]
+	println(len(s))
+}
+
+func finalRequired() {
+	var a [8]int
+	// ERROR "final index required in 3-index slice"
+	s := a[1:4:]
+	println(len(s))
+}
+
+func stringHasNoCapacity() {
+	s := "hello"
+	// ERROR "invalid operation: 3-index slice of string"
+	t := s[1:3:4]
+	println(len(t))
+}

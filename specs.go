@@ -785,7 +785,8 @@
 //
 //	FactorSuffix = { Selector | Index | CallSuffix } .
 //	Selector     = "." ( identifier | "(" "type" ")" ) .
-//	Index        = "[" ( Expression [ ":" [ Expression ] ] | ":" [ Expression ] ) "]" .
+//	Index        = "[" ( Expression [ ":" [ Expression ] [ ":" [ Expression ] ] ]
+//		| ":" [ Expression ] [ ":" [ Expression ] ] ) "]" .
 //
 // A single-expression Index "a[i]" indexes an element. The colon forms are slice
 // expressions "a[low:high]", "a[low:]", "a[:high]" and "a[:]", which create a new
@@ -795,9 +796,22 @@
 // result's capacity is the operand's capacity less low. Slicing a string yields a
 // string (a string has no capacity).
 //
-// The bounds must satisfy 0 <= low <= high <= capacity, and one that does not is a
-// runtime panic, as an out-of-range index is. Bounds a compile-time extent already
-// settles carry no check. Each bound is evaluated once.
+// A third bound, "a[low:high:max]", sets the result's capacity to max less low
+// instead, so that appending to it stops there rather than running on into storage
+// the operand shares with someone else. That is the way to hand out a region of a
+// package-level buffer, there being no heap to allocate one from:
+//
+//	var pool [256]byte
+//
+//	head := pool[0:0:64]    // appending stops at 64, not at 256
+//	tail := pool[64:64:128]
+//
+// This form writes both of the bounds it follows: "a[l::m]" and "a[l:h:]" are not
+// slice expressions. A string has no capacity to set, so it does not take one.
+//
+// The bounds must satisfy 0 <= low <= high <= max <= capacity, and one that does
+// not is a runtime panic, as an out-of-range index is. Bounds a compile-time extent
+// already settles carry no check. Each bound is evaluated once.
 //
 // # Function Literals
 //

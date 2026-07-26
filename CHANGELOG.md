@@ -26,6 +26,21 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A slice expression may set the result's capacity**, `a[low:high:max]`. Without a
+  heap this is how a region of a package-level buffer is handed out: appending to the
+  region stops at its own end instead of running on into the next one's storage.
+
+  ```go
+  var pool [256]byte
+
+  head := pool[0:0:64]     // appending stops at 64, not at 256
+  tail := pool[64:64:128]
+  ```
+
+  Only `low` may be left out of the three, so `a[l::m]` and `a[l:h:]` are rejected in
+  Go's words, and a string has no capacity for a bound to set. The new bound is
+  checked with the other two, `0 <= low <= high <= max <= cap`.
+
 ### Behaviour changes
 
 - **A `switch` guard may no longer be the blank identifier.** `switch _ := f()`

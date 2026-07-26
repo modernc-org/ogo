@@ -159,6 +159,9 @@ broken.
   structs, fixed arrays including multi-dimensional, slices, named types, channels.
   Structs may refer to themselves, to each other, and to a type declared later, so
   linked lists, trees and graphs build.
+* Slicing, including the capacity bound: `pool[0:0:64]` hands out a region of a
+  package-level buffer that appending cannot grow past, which is how you sub-divide
+  storage with no heap to allocate from.
 * Composite literals: structs positionally (`P{1, 2}`, `P{}`, nested) or by field
   name (`P{y: 2}`, any subset in any order, the rest zeroed), and arrays and slices
   positionally, by index or mixed (`[4]int{10, 20}`, `[]int{1, 2, 3}`,

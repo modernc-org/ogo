@@ -88,7 +88,8 @@ HeaderFactor     = identifier [ FactorSuffix ]
 	| FuncLiteral .
 FactorSuffix = { Selector | Index | CallSuffix } .
 Selector     = "." ( identifier | "(" "type" ")" ) .
-Index        = "[" ( Expression [ ":" [ Expression ] ] | ":" [ Expression ] ) "]" .
+Index        = "[" ( Expression [ ":" [ Expression ] [ ":" [ Expression ] ] ]
+	| ":" [ Expression ] [ ":" [ Expression ] ] ) "]" .
 FuncLiteral = "func" Signature Block .
 UnaryOp    = "+" | "-" | "!" | "^" | "*" | "&" | "<-" | "~" .
 RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .

@@ -931,9 +931,13 @@ func TestFormatIndexArith(t *testing.T) {
 }
 
 // TestFormatSliceColon pins gofmt's rule for spacing a slice ":": spaced when the
-// slice has two non-empty bounds and at least one is a binary expression
-// ("xs[i+1 : j-1]", "xs[a+1 : b]", "xs[a : b+1]"), tight otherwise ("xs[a:b]",
-// "xs[:n+1]", "xs[n+1:]"). The bounds themselves still render their operators tight.
+// slice writes more than one bound and at least one of them is a binary expression
+// ("xs[i+1 : j-1]", "xs[a+1 : b]", "xs[a : b+1]", "xs[a+1 : b : n]"), tight
+// otherwise ("xs[a:b]", "xs[:n+1]", "xs[n+1:]", "xs[a:b:n]"). One written bound is
+// never enough, however it is spelled, and a bound that is a call or a unary
+// expression is not binary. The bounds themselves still render their operators
+// tight, and a ":" straight after the "[" keeps that side tight even when the rest
+// are spaced ("xs[: n+1 : b]").
 func TestFormatSliceColon(t *testing.T) {
 	const in = `func run(xs []int, a int, b int, n int, i int, j int) {
 	_ = xs[a : b]
@@ -943,6 +947,11 @@ func TestFormatSliceColon(t *testing.T) {
 	_ = xs[ : n+1]
 	_ = xs[n+1 : ]
 	_ = xs[a]
+	_ = xs[a:b:n]
+	_ = xs[a+1:b:n]
+	_ = xs[a : b : n+1]
+	_ = xs[:n+1:b]
+	_ = xs[-a:b:n]
 }
 `
 	const want = `func run(xs []int, a int, b int, n int, i int, j int) {
@@ -953,6 +962,11 @@ func TestFormatSliceColon(t *testing.T) {
 	_ = xs[:n+1]
 	_ = xs[n+1:]
 	_ = xs[a]
+	_ = xs[a:b:n]
+	_ = xs[a+1 : b : n]
+	_ = xs[a : b : n+1]
+	_ = xs[: n+1 : b]
+	_ = xs[-a:b:n]
 }
 `
 	var out bytes.Buffer

@@ -2986,6 +2986,80 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A slice expression's third bound, `a[low:high:max]`, which sets the
+		// result's capacity to max less low rather than taking the operand's own.
+		// Without a heap this is how a region of a package-level buffer is handed
+		// out: appending to a region stops at its own end instead of running on into
+		// the next one's storage, which is what the head/tail pair below shows.
+		//
+		// Every operand shape goes through the same path -- an array, a slice, a
+		// struct's slice and array fields, a row of a multi-dimensional array, and a
+		// package-level view -- with constant and run-time bounds both.
+		name: "slice expression with a capacity bound",
+		src: `type buf struct {
+	data []int
+	fix  [4]int
+}
+
+var pool [8]int
+var view = pool[2:3:5]
+
+func main() {
+	var a [8]int
+	for i := 0; i < 8; i++ {
+		a[i] = i * 10
+	}
+
+	s := a[1:4:6]
+	println(len(s), cap(s), s[0], s[2])
+
+	i, j, k := 1, 3, 5
+	d := a[i:j:k]
+	println(len(d), cap(d), d[0])
+
+	b := a[:]
+	c := b[2:5:6]
+	println(len(c), cap(c), c[0])
+
+	var t buf
+	t.data = make([]int, 4, 8)
+	t.fix[2] = 7
+	u := t.data[1:2:3]
+	v := t.fix[1:3:4]
+	println(len(u), cap(u), len(v), cap(v), v[1])
+
+	var m [2][4]int
+	m[1][2] = 5
+	r := m[1][1:3:4]
+	println(len(r), cap(r), r[1])
+
+	head := pool[0:0:2]
+	tail := pool[2:2:4]
+	head = append(head, 1)
+	head = append(head, 2)
+	tail = append(tail, 9)
+	println(len(head), cap(head), len(tail), cap(tail), head[0], tail[0])
+
+	println(len(view), cap(view))
+}
+`,
+		want: "3 5 10 30\n2 4 10\n3 4 20\n1 2 2 3 7\n2 3 5\n2 2 1 2 1 9\n1 3\n",
+	},
+	{
+		// The capacity bound is checked like the other two: 0 <= low <= high <= max
+		// <= cap. Here max reaches past the array, so the region would have handed
+		// out storage the array does not own.
+		name: "slice capacity bound out of range trap",
+		src: `func main() {
+	var a [4]int
+	i := 9
+	s := a[0:2:i]
+	println(len(s))
+}
+`,
+		panics: true,
+	},
+	{
 		// A package variable initialized from something that needs a temporary. The
 		// temporary is requested by the expression and placed before the statement
 		// that uses it, which at package scope had nowhere to go: the initializer is
