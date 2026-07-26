@@ -5211,3 +5211,135 @@ func main() {
 		t.Errorf("EmitC package table literals:\n got %q\nwant %q", got, want)
 	}
 }
+
+// TestEmitCSliceEscapeRefused pins the refusal of a returned slice whose backing
+// array is a local of the frame. The header would outlive the storage it views, and
+// with no heap there is nowhere to promote that storage to, so it is a static error
+// -- the slice counterpart of the checker refusing to return a local's address.
+//
+// It went unnoticed for a long time because the program usually appears to work:
+// the caller reads the header before anything reuses the dead frame. One of this
+// package's own run cases returned such a slice and passed.
+func TestEmitCSliceEscapeRefused(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "literal backing",
+			src: `func mk() []int {
+	s := []int{1, 2, 3}
+	return s
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local s",
+		},
+		{
+			name: "make backing",
+			src: `func mk() []int {
+	var s []int = make([]int, 2)
+	return s
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local s",
+		},
+		{
+			name: "slice of a local array",
+			src: `func mk() []int {
+	a := [3]int{1, 2, 3}
+	return a[:]
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local a",
+		},
+		{
+			name: "re-slice of a local",
+			src: `func mk() []int {
+	s := []int{1, 2, 3}
+	return s[1:2]
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local s",
+		},
+		{
+			name: "copy of a local, then returned",
+			src: `func mk() []int {
+	s := []int{1, 2, 3}
+	t := s
+	return t
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local t",
+		},
+		// Storage that outlives the call returns freely.
+		{
+			name: "package slice",
+			src: `var g = []int{1, 2, 3}
+
+func mk() []int { return g }
+
+func main() { println(len(mk())) }
+`,
+		},
+		{
+			name: "slice of a package array",
+			src: `var ga = [3]int{1, 2, 3}
+
+func mk() []int { return ga[:] }
+
+func main() { println(len(mk())) }
+`,
+		},
+		{
+			name: "parameter, and a re-slice of one",
+			src: `var g = []int{1, 2, 3}
+
+func mk(p []int) []int  { return p }
+func cut(p []int) []int { return p[1:2] }
+
+func main() { println(len(mk(g)), len(cut(g))) }
+`,
+		},
+		{
+			name: "a local slice that does not leave the frame",
+			src: `func mk() int {
+	s := []int{4, 5, 6}
+	return s[1]
+}
+
+func main() { println(mk()) }
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a slice backed by a local; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}

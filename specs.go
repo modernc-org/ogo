@@ -833,6 +833,13 @@
 //	AddOp = "+" | "-" | "|" | "^" .
 //	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
 //
+// A slice returned from a function must view storage that outlives the call: a
+// package-level array or slice, or one reached through a parameter, which is the
+// caller's. Returning a slice whose backing array is a local of the frame is
+// refused -- the header would outlive the storage it views, and there is no heap to
+// promote that storage to. It is the slice counterpart of refusing to return a
+// local variable's address.
+//
 // A call that returns a struct may have a field selected from its result,
 // "mk().y", a method called on it, "mk().sum()", and its result indexed,
 // "mk()[1]" or "mk().d[1]".

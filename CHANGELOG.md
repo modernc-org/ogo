@@ -83,6 +83,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Behaviour changes
 
+- **Returning a slice whose backing array is a local is now refused.** The header
+  outlived the storage it viewed, and with no heap there is nowhere to promote that
+  storage to, so the caller read a dead frame — usually getting the right answer
+  anyway, until something reused the memory. Return a slice over a package-level
+  array, or over one the caller passed in.
+
 Each of these rejects a program the previous release accepted. All were verified
 against real Go, which rejects them too.
 

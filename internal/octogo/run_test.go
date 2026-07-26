@@ -1384,13 +1384,19 @@ func main() {
 		// (`s == nil`) lowers to a pointer test; the value forms -- `s = nil`,
 		// `var u []int = nil` and `return nil` from a slice-returning function -- all
 		// yield the zero header {0}, not the integer 0.
+		//
+		// mk's non-nil arm returns a package-level slice. It used to return one whose
+		// backing was its own local, which dangles the moment the frame goes -- this
+		// test passed only because the caller read the header before anything reused
+		// that storage. Returning such a slice is now refused outright.
 		name: "slice nil comparison and value forms",
-		src: `func mk(b bool) []int {
+		src: `var backing = []int{5}
+
+func mk(b bool) []int {
 	if b {
 		return nil
 	}
-	v := make([]int, 1)
-	return v
+	return backing
 }
 
 func main() {

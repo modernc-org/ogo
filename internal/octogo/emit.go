@@ -1241,7 +1241,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1631,6 +1631,7 @@ type emitter struct {
 	eqStructs          map[string]bool          // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim        // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string                 // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	frameBacked        map[string]bool          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
 	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode     bool                     // `for i, c := range s` appears: emit ogo_decode_rune
 	err                error
@@ -2571,6 +2572,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.locals = map[string]string{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
+	e.frameBacked = map[string]bool{}
 	e.tmp = 0
 	e.defers = nil
 	e.deferReplay = -1
@@ -2795,6 +2797,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.locals = map[string]string{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
+	e.frameBacked = map[string]bool{}
 	e.tmp = 0
 	e.defers = nil
 	e.deferReplay = -1
@@ -3974,6 +3977,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	} else {
 		e.sliceVars[name] = elem
 		e.locals[name] = cname
+		e.frameBacked[name] = true // the backing array is a local of this frame
 	}
 	if length == 0 {
 		// "[]T{}" is an empty slice, not a slice of one zero element. C has no
@@ -5188,6 +5192,9 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 		return
 	}
 	backing := e.newBacking()
+	if !static {
+		e.frameBacked[name] = true // the backing array is a local of this frame
+	}
 	// Backing array.
 	if static {
 		e.emit("static " + elem + " " + backing + "[" + size + "];\n")
@@ -6156,6 +6163,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 			}
 		}
 	}
+	e.checkReturnBacking(exprs)
 	e.emitDeferred()
 	e.ind()
 	switch len(exprs) {
@@ -7487,6 +7495,11 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	e.locals[name] = ct
 	if e.isSliceCType(ct) {
 		e.sliceVars[name] = sliceElemFromCName(ct)
+		// A slice copied from another views the same storage, so it inherits where
+		// that storage lives; otherwise returning the copy would dodge the check.
+		if _, frame := e.sliceBackingIsFrame(initExpr); frame {
+			e.frameBacked[name] = true
+		}
 	}
 	e.emitVarDeclInit(ct, name, initExpr)
 }
@@ -9526,4 +9539,57 @@ func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
 		names = append(names, e.hoist(ct, func() { e.emitExpr(a.ast) }))
 	}
 	return names, true
+}
+
+// sliceBackingIsFrame reports whether a slice-valued expression's backing array is
+// storage of the current frame, and names what it came from.
+//
+// It answers the question a return has to ask. A slice is a { pointer, len, cap }
+// view, and on a target with no heap the storage it views is either a package-level
+// array, the caller's (reached through a parameter), or a local of this frame --
+// and the last dangles the moment the frame goes. Three shapes are recognised: a
+// local slice variable whose backing this frame created (make, or a slice
+// literal), a slice of a local array, and a re-slice of either. Anything else --
+// a package variable, a parameter, a call's result -- is left alone, so a shape
+// this does not model is accepted rather than wrongly refused.
+func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
+	if name, ok := e.exprIdent(ast); ok {
+		return name, e.frameBacked[name]
+	}
+	// `a[:]` / `s[1:2]`: the result views the base's storage, so it is frame-backed
+	// exactly when the base is.
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return "", false
+	}
+	kids := slices.Collect(it(fac.ast))
+	base, indexAST, ok := e.factorIndex(kids)
+	if !ok {
+		return "", false
+	}
+	if _, _, isSlice := e.sliceParts(indexAST); !isSlice {
+		return "", false
+	}
+	if _, isLocalArray := e.arrays[base]; isLocalArray {
+		return base, true
+	}
+	return base, e.frameBacked[base]
+}
+
+// checkReturnBacking refuses returning a slice whose backing array is a local of
+// this frame. The header would outlive the storage it points at, and with no heap
+// there is nowhere to promote that storage to, so it is a static error -- the slice
+// counterpart of the checker's refusal to return a local's address.
+func (e *emitter) checkReturnBacking(exprs []Node) {
+	for _, x := range exprs {
+		if name, frame := e.sliceBackingIsFrame(x.ast); frame {
+			// Positioned, unlike most emitter diagnostics: this one refuses a program
+			// a user wrote rather than reporting a shape the emitter cannot lower, so
+			// it needs to say where.
+			e.fail("%v: cannot return a slice backed by local %s: its storage does not outlive the function; "+
+				"take the backing array from the caller or declare it at package scope",
+				e.f.tok(x.Pos()).Position(), name)
+			return
+		}
+	}
 }
