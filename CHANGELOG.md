@@ -95,6 +95,13 @@ Releases before v0.9.0 predate this file; see
   declared `_` and then switched on it — reading a name Go says cannot be read — and
   compiled to a comparison against a C variable named `_`. What a switch switches on
   is now resolved like any other expression, which reports it.
+- **A slice bound that is a constant out of range is now refused.** `a[1:9]` over a
+  `[4]int` compiled and trapped when it ran; it is wrong however the program runs, and
+  Go rejects it. The four shapes it covers — a bound past the extent, a negative one,
+  and a pair out of order in either direction — are reported in Go's words at Go's
+  column. Only an array operand qualifies: a slice's length and capacity are run-time
+  values, so a bound against one can still only be checked as the program runs, which
+  it is.
 - **A variable declared in a statement's header must be used.** The rule every
   short declaration follows did not reach the ones that declare inside a header, so
   `if v := f(); true {}`, `switch v := f(); {}`, `for i := 0; ; {}`, `for i := range

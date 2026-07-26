@@ -1996,6 +1996,81 @@ func TestEmitCChecks(t *testing.T) {
 	}
 }
 
+// TestEmitCConstSliceBounds pins the bounds that are wrong however the program runs
+// being reported rather than left to trap. Go rejects each of these at compile time,
+// in these words and at these columns.
+//
+// Only an operand whose extent is a compile-time constant qualifies -- an array's.
+// A slice's length and capacity are run-time values, so a bound against them can
+// only be checked as the program runs, and Go says nothing about those either.
+func TestEmitCConstSliceBounds(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "high past the extent",
+			src:  "\tvar a [4]int\n\ts := a[1:9]\n\tprintln(len(s))",
+			want: "3:11: invalid argument: index 9 out of bounds [0:5]",
+		},
+		{
+			name: "low above high",
+			src:  "\tvar a [8]int\n\ts := a[3:1]\n\tprintln(len(s))",
+			want: "3:11: invalid slice indices: 1 < 3",
+		},
+		{
+			name: "capacity bound past the extent",
+			src:  "\tvar a [4]int\n\ts := a[0:2:9]\n\tprintln(len(s))",
+			want: "3:13: invalid argument: index 9 out of bounds [0:5]",
+		},
+		{
+			name: "high above the capacity bound",
+			src:  "\tvar a [8]int\n\ts := a[0:5:3]\n\tprintln(len(s))",
+			want: "3:13: invalid slice indices: 3 < 5",
+		},
+		{
+			name: "negative bound",
+			src:  "\tvar a [8]int\n\ts := a[0-1 : 2]\n\tprintln(len(s))",
+			want: "3:9: invalid argument: index -1 must not be negative",
+		},
+		{
+			name: "a folded constant expression",
+			src:  "\tvar a [4]int\n\ts := a[1 : 2+8]\n\tprintln(len(s))",
+			want: "3:13: invalid argument: index 10 out of bounds [0:5]",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := "func main() {\n" + test.src + "\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted %q:\n%s", test.src, buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+
+	// A bound the compiler cannot settle is left to the run-time check, whatever it
+	// is: a slice operand has no compile-time extent, and neither has a string one.
+	for _, src := range []string{
+		"\ts := make([]int, 2, 4)\n\tt := s[0:9]\n\tprintln(len(t))",
+		"\ts := \"hello\"\n\tt := s[1:9]\n\tprintln(len(t))",
+		"\tvar a [4]int\n\ti := 9\n\ts := a[1:i]\n\tprintln(len(s))",
+	} {
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte("func main() {\n" + src + "\n}\n")}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		var buf bytes.Buffer
+		if err := EmitC(pkg, &buf, Checked()); err != nil {
+			t.Errorf("EmitC refused %q, which only the run-time check can decide: %v", src, err)
+		}
+	}
+}
+
 // TestEmitCSliceBounds pins where a slice expression's bounds are checked. A bound
 // the compiler cannot settle goes through ogo_reslice_<T>, which panics on a bound
 // out of range; one it can settle is spelled inline as before, which is why `a[:]`

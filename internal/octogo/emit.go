@@ -5796,6 +5796,11 @@ func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
 	if capExpr == "" {
 		capExpr = baseLen
 	}
+	// Bounds that are constants and out of range are wrong however the program runs,
+	// so they are reported here rather than left to trap. Go rejects them too.
+	if e.reportConstSliceBounds(low, high, max, baseLen, capExpr) {
+		return
+	}
 	if e.sliceNeedsHelper(low, high, max, baseLen, capExpr) {
 		e.emitHelperSliceExpr(cname, ptr, baseLen, capExpr, low, high, max)
 		return
@@ -5838,6 +5843,79 @@ func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
 		}
 	}
 	e.emit("}")
+}
+
+// reportConstSliceBounds reports a slice expression whose bounds are constants that
+// cannot be in range, and says whether it reported. Go rejects such a program at
+// compile time rather than letting it trap, and a bound written into the source is
+// wrong however the program runs.
+//
+// It reports only when every written bound folds and the operand's extent is itself
+// a compile-time constant -- an array's, since a slice's length and capacity are
+// run-time values and a bound against them can only be checked as the program runs.
+// Each bound is reported at its own position, and the first wrong one wins, as Go
+// does it.
+func (e *emitter) reportConstSliceBounds(low, high, max []int32, lenExpr, capExpr string) bool {
+	c, err := strconv.ParseInt(capExpr, 10, 64)
+	if err != nil {
+		return false
+	}
+	lo, okLo := int64(0), true
+	if low != nil {
+		lo, okLo = e.foldConstInt(low)
+	}
+	hi, okHi := e.foldBoundOrLiteral(high, lenExpr)
+	mx, okMx := e.foldBoundOrLiteral(max, capExpr)
+	if !okLo || !okHi || !okMx {
+		return false
+	}
+	for _, b := range []struct {
+		v int64
+		n []int32
+	}{{lo, low}, {hi, high}, {mx, max}} {
+		if b.n == nil {
+			continue // an omitted bound is the extent itself, which is in range
+		}
+		switch {
+		case b.v < 0:
+			e.failAt(b.n, "invalid argument: index %d must not be negative", b.v)
+			return true
+		case b.v > c:
+			// The bound may reach the extent, so the range Go prints is one past it.
+			e.failAt(b.n, "invalid argument: index %d out of bounds [0:%d]", b.v, c+1)
+			return true
+		}
+	}
+	// In range individually, but not in order. Go names the later bound and prints
+	// the pair the way the source reads, later first.
+	switch {
+	case hi < lo:
+		e.failAt(orNodes(high, low), "invalid slice indices: %d < %d", hi, lo)
+	case mx < hi:
+		e.failAt(orNodes(max, high), "invalid slice indices: %d < %d", mx, hi)
+	default:
+		return false
+	}
+	return true
+}
+
+// orNodes is the first of two nodes that was written, for a diagnostic about a pair
+// of bounds where either may have been omitted.
+func orNodes(a, b []int32) []int32 {
+	if a != nil {
+		return a
+	}
+	return b
+}
+
+// failAt reports an emitter error at a node's source position.
+func (e *emitter) failAt(n []int32, format string, args ...any) {
+	at := ""
+	for c := range it(n) {
+		at = e.f.tok(c.Pos()).Position().String()
+		break
+	}
+	e.fail("%s: "+format, append([]any{at}, args...)...)
 }
 
 // sliceNeedsHelper reports whether a slice expression goes through its reslice

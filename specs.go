@@ -841,9 +841,11 @@
 // This form writes both of the bounds it follows: "a[l::m]" and "a[l:h:]" are not
 // slice expressions. A string has no capacity to set, so it does not take one.
 //
-// The bounds must satisfy 0 <= low <= high <= max <= capacity, and one that does
-// not is a runtime panic, as an out-of-range index is. Bounds a compile-time extent
-// already settles carry no check. Each bound is evaluated once.
+// The bounds must satisfy 0 <= low <= high <= max <= capacity. Constant bounds
+// against an operand whose extent is known at compile time -- an array's -- are
+// checked there and refused, as in Go; anything else is checked as the program runs
+// and is a panic, the way an out-of-range index is. Bounds a compile-time extent
+// settles as being in range carry no check at all. Each bound is evaluated once.
 //
 // A slice expression may itself be indexed or sliced again, "a[1:6][2]" and
 // "a[1:6][1:4]", the index being checked against the length of the expression it
