@@ -17,23 +17,28 @@ Releases before v0.9.0 predate this file; see
 
 - **A bare receive statement**, `<-ch`, discarding the value — how one goroutine
   waits for another. It previously had to be written `_ = <-ch`.
-
-### Language
-
 - **`if` with an init statement**, `if v := f(); v > 0`. The name is scoped to the
   whole statement — the condition, the `then` block and every `else if` branch — and
   not beyond, so it may shadow an outer one. Only the `:=` form, which is what
   nearly every use is.
 - **Array equality**, `a == b` and `a != b`, comparing element by element. Works for
   any comparable element type — scalars, strings, structs — and at any rank.
-
-### Fixed
-
 - **A call's result may be indexed**, `mk()[1]`, including through a field,
   `mk().d[1]`.
 - **A field may be read off a call's struct result**, `mk().y`. It was refused
   because the target's C compiler miscompiles that read directly; the result is now
   bound to a temporary first, which reads correctly.
+
+### Fixed
+
+- **A locally declared channel's storage is now static.** Its cell used to be a
+  local of the declaring function, so `var ch chan int; go worker(ch)` — the
+  ordinary way to write this — handed another cog a pointer into a frame the spawner
+  was free to leave. The same change fixes a lock leak: the cell's lock was acquired
+  on every call and never released, so a function declaring a channel could be
+  called about fifteen times before the P2 ran out of hardware locks. The cell now
+  belongs to the declaration site, so two concurrent calls of one function share its
+  channel rather than each having one.
 - **A call's arguments are now evaluated left to right**, as Go specifies. C leaves
   the order unspecified and the two compilers disagreed: the P2 backend went left to
   right, the host's gcc right to left, so a program whose arguments had side effects
