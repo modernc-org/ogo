@@ -5022,6 +5022,93 @@ func main() {
 	}
 }
 
+// TestEmitCLoopCondTemporary pins where a loop condition's temporary goes. A
+// condition is re-evaluated every iteration, so a line hoisted out of it belongs
+// inside the loop, not before it where emitStatement puts a statement's prologue --
+// there the value would be computed once and the loop would test it for ever. Both
+// conditional forms move the test to the top of the body and leave their own
+// condition slot empty; a loop whose condition hoists nothing is untouched, which
+// the third loop here pins.
+//
+// The post statement has no such place to move to -- it runs after the body and on
+// every continue, so C's third clause, which takes an expression and can declare
+// nothing, is the only place it fits -- and is refused instead.
+func TestEmitCLoopCondTemporary(t *testing.T) {
+	src := `type P struct {
+	x int
+	y int
+}
+
+func mk() P { return P{1, 3} }
+
+func main() {
+	for i := 0; i < mk().y; i++ {
+		println(i)
+	}
+	j := 0
+	for j < mk().y {
+		j++
+	}
+	for k := 0; k < 3; k++ {
+		println(k)
+	}
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	want := "int main(void) {\n" +
+		"\tfor (int i = 0; ; i++) {\n" +
+		"\t\tP _ogo_t0 = mk();\n" +
+		"\t\tif (!(i < _ogo_t0.y)) break;\n" +
+		"\t\tprintf(\"%d\\n\", i);\n" +
+		"\t}\n" +
+		"\tint j = 0;\n" +
+		"\tfor (;;) {\n" +
+		"\t\tP _ogo_t1 = mk();\n" +
+		"\t\tif (!(j < _ogo_t1.y)) break;\n" +
+		"\t\tj++;\n" +
+		"\t}\n" +
+		"\tfor (int k = 0; k < 3; k++) {\n" +
+		"\t\tprintf(\"%d\\n\", k);\n" +
+		"\t}\n" +
+		"\treturn 0;\n" +
+		"}\n"
+	if !bytes.Contains(buf.Bytes(), []byte(want)) {
+		t.Errorf("loop lowering:\n got %q\nwant it to contain %q", buf.String(), want)
+	}
+
+	post := `type P struct {
+	x int
+	y int
+}
+
+func mk() P { return P{1, 1} }
+
+func main() {
+	for i := 0; i < 3; i = mk().y {
+		println(i)
+	}
+}
+`
+	fsys = fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(post)}}
+	if pkg, err = Build(-1, []string{"main.ogo"}, fsys); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var pbuf bytes.Buffer
+	if err := EmitC(pkg, &pbuf); err == nil {
+		t.Fatalf("EmitC accepted a post statement needing a temporary:\n%s", pbuf.String())
+	} else if !strings.Contains(err.Error(), "post statement may not need a temporary") {
+		t.Errorf("EmitC error %q is not the post-statement refusal", err)
+	}
+}
+
 // TestEmitCArrayStructCopy pins the memcpy lowering. C's own struct assignment is
 // what flexcc miscompiles for a struct holding an array, and the destination shapes
 // differ enough -- a variable, a field, an array element, a bounds-checked slice

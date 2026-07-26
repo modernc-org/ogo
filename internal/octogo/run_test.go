@@ -2986,6 +2986,114 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A loop condition that needs a temporary. An expression can ask for a line
+		// to be emitted before the statement it is in -- a field read off a call
+		// result, arguments put in order, a bounds-checked slice -- and before the
+		// statement is the wrong place when the statement is a loop and the
+		// expression is its condition: the value would be computed once and the loop
+		// would go on testing it. Every count below says how many times the condition
+		// really ran, and each was one before the test moved into the loop body.
+		//
+		// What that move must not disturb: `continue` still reaching the post step,
+		// `break` still leaving this loop, a labeled break still leaving the outer
+		// one, and a `break` in a switch still naming the switch.
+		name: "a loop condition that needs a temporary",
+		src: `type P struct {
+	x int
+	y int
+}
+
+var n int
+
+func mk() P {
+	n++
+	return P{1, 4}
+}
+
+func t(v int) int {
+	n = n*10 + v
+	return v
+}
+
+func pick(a int, b int) int { return a + b }
+
+func main() {
+	sum := 0
+	for i := 0; i < mk().y; i++ {
+		if i == 1 {
+			continue
+		}
+		sum += i
+	}
+	println("continue", sum, n)
+
+	n = 0
+	c := 0
+	for i := 0; i < mk().y; i++ {
+		c++
+		if i == 2 {
+			break
+		}
+	}
+	println("break", c, n)
+
+	n = 0
+	hits := 0
+L:
+	for i := 0; i < mk().y; i++ {
+		for j := 0; j < 3; j++ {
+			hits++
+			if i == 1 && j == 1 {
+				break L
+			}
+		}
+	}
+	println("labeled", hits)
+
+	n = 0
+	s := 0
+	for i := 0; i < mk().y; i++ {
+		switch i {
+		case 1:
+			s += 10
+			break
+		default:
+			s++
+		}
+	}
+	println("switch", s)
+
+	n = 0
+	k := 0
+	tot := 0
+	for k < mk().y {
+		k++
+		if k == 2 {
+			continue
+		}
+		tot += k
+	}
+	println("while", k, tot, n)
+
+	xs := make([]int, 5, 8)
+	r := 0
+	for i := 0; i < len(xs[1:]); i++ {
+		r++
+		xs = xs[:len(xs)-1]
+	}
+	println("reslice", r, len(xs))
+
+	n = 0
+	a := 0
+	for i := 0; i < pick(t(1), t(2)); i++ {
+		a++
+	}
+	println("args", a, n)
+}
+`,
+		want: "continue 5 5\nbreak 3 3\nlabeled 5\nswitch 13\nwhile 4 8 5\nreslice 2 3\nargs 3 12121212\n",
+	},
+	{
 		// A slice expression's third bound, `a[low:high:max]`, which sets the
 		// result's capacity to max less low rather than taking the operand's own.
 		// Without a heap this is how a region of a package-level buffer is handed

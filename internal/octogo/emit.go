@@ -5959,16 +5959,48 @@ func (e *emitter) emitFor(nodes []Node) {
 		e.emitRange(&h, body)
 		return
 	}
+	// A loop's condition is re-evaluated on every iteration, so a temporary hoisted
+	// out of it cannot be left standing before the loop, which is where emitStatement
+	// would otherwise place it -- there it would be computed once, and the condition
+	// would go on testing that one value. The condition is therefore rendered here
+	// with its prologue held back: when there is one the loop is written with no
+	// condition of its own and the test moves to the top of its body, where the
+	// temporary is rebuilt each time round; when there is none, which is every loop
+	// until such an expression appears in a condition, nothing about the emitted loop
+	// changes.
+	var condText string
+	var condPro []string
+	if h.cond != nil {
+		if h.hasClause {
+			condText, condPro = e.capturePrologue(func() { e.emit(e.exprC(h.cond)) })
+			if len(condPro) != 0 {
+				condText = "(" + condText + ")" // emitCondition's form brings its own
+			}
+		} else {
+			condText, condPro = e.capturePrologue(func() { e.emitCondition(h.cond) })
+		}
+	}
+	var inject func()
+	if len(condPro) != 0 {
+		inject = func() {
+			for _, line := range condPro {
+				e.ind()
+				e.emit(line)
+			}
+			e.ind()
+			e.emit("if (!" + condText + ") break;\n")
+		}
+	}
 	e.ind()
 	if !h.hasClause {
 		// The one- and two-part forms keep their existing lowering: a conditionless
-		// loop is `for (;;)`, a conditional one a `while`.
-		if h.cond == nil {
+		// loop is `for (;;)`, a conditional one a `while`. A condition whose test has
+		// moved into the body leaves the loop conditionless here too.
+		switch {
+		case h.cond == nil, inject != nil:
 			e.emit("for (;;) {\n")
-		} else {
-			e.emit("while ")
-			e.emitCondition(h.cond)
-			e.emit(" {\n")
+		default:
+			e.emit("while " + condText + " {\n")
 		}
 	} else {
 		// The three-clause form maps onto C's own, including the init declaration:
@@ -5992,26 +6024,49 @@ func (e *emitter) emitFor(nodes []Node) {
 			}
 		}
 		e.emit("; ")
-		if h.cond != nil {
-			e.emit(e.exprC(h.cond))
+		if inject == nil {
+			e.emit(condText)
 		}
 		e.emit("; ")
 		if h.postLHS != nil {
-			lhs := e.exprC(h.postLHS)
-			switch h.postOp {
-			case INC:
-				e.emit(lhs + "++")
-			case DEC:
-				e.emit(lhs + "--")
-			case ASSIGN, DEFINE:
-				e.emit(lhs + " = " + e.exprC(h.postRHS))
-			default:
-				e.emit(lhs)
+			// The post statement runs after every iteration and on every continue, so
+			// C's third clause is the only place it fits -- and that clause takes an
+			// expression, with nowhere to declare the temporary a value might need.
+			post, postPro := e.capturePrologue(func() {
+				lhs := e.exprC(h.postLHS)
+				switch h.postOp {
+				case INC:
+					e.emit(lhs + "++")
+				case DEC:
+					e.emit(lhs + "--")
+				case ASSIGN, DEFINE:
+					e.emit(lhs + " = " + e.exprC(h.postRHS))
+				default:
+					e.emit(lhs)
+				}
+			})
+			if len(postPro) != 0 {
+				e.fail("a for-loop post statement may not need a temporary; compute the value in the loop body instead")
+				return
 			}
+			e.emit(post)
 		}
 		e.emit(") {\n")
 	}
-	e.emitLoopBody(body, nil)
+	e.emitLoopBody(body, inject)
+}
+
+// capturePrologue renders through emit and returns the text along with any prologue
+// lines the rendering hoisted out of itself, keeping them from reaching the
+// enclosing statement. A caller uses it where emitStatement's placement -- before
+// the whole statement -- would be the wrong place for a temporary.
+func (e *emitter) capturePrologue(emit func()) (text string, pro []string) {
+	saved := e.prologue
+	e.prologue = nil
+	text = e.captureC(emit)
+	pro = e.prologue
+	e.prologue = saved
+	return text, pro
 }
 
 // emitLoopBody emits a loop body between the opening `{` and the closing `}`,

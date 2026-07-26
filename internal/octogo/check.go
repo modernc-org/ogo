@@ -3884,17 +3884,10 @@ func (f *File) indexIsSlice(index Node) bool {
 	return false
 }
 
-// firstSuffixIsIndex reports whether the first operation of a factor suffix is an
+// firstSuffixIndex returns the first operation of a factor suffix when it is an
 // index -- "base[i]...", so the index applies directly to base, as opposed to
 // "base.field[i]" (a selector first) or "base()[i]" (a call first), where it applies
 // to the selection or call result instead. The suffix children are in source order.
-func firstSuffixIsIndex(n Node) bool {
-	_, ok := firstSuffixIndex(n)
-	return ok
-}
-
-// firstSuffixIndex is firstSuffixIsIndex with the Index node itself, for a caller
-// that has to look inside it.
 func firstSuffixIndex(n Node) (Node, bool) {
 	for c := range it(n.ast) {
 		switch c.sym {

@@ -50,6 +50,19 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A loop condition is evaluated on every iteration again.** Some expressions need
+  a line emitted ahead of the statement they appear in — a field read off a call's
+  struct result, arguments put in Go's order, a bounds-checked slice — and ahead of
+  the statement is the wrong place when the statement is a loop and the expression
+  is its condition. `for i := 0; i < mk().y; i++` called `mk` once and then tested
+  that one value for the rest of the loop, where Go calls it before every test. Both
+  conditional forms now carry the test at the top of the loop body instead, so
+  `continue` still reaches the post step and `break` still leaves the loop.
+
+  The post statement has nowhere to move to — it runs after the body and on every
+  `continue`, which is what C's third clause is for, and that clause can declare
+  nothing — so `for i := 0; i < 3; i = mk().y` is now refused rather than computing
+  its value once. Compute it in the loop body.
 - **A slice expression's bounds are now checked.** Slicing was the one indexing
   form that trapped on nothing: over a `[4]int`, `a[1:9]` produced a length-8 view
   of storage the array does not own and `a[3:1]` a length of −2, and both compiled
