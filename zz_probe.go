@@ -39,7 +39,7 @@ func main() {
 	os.WriteFile(csrc, c.Bytes(), 0o644)
 	shim, _ := filepath.Abs(filepath.Join("internal", "octogo", "testdata", "hostp2"))
 	bin := filepath.Join(dir, "prog")
-	cc, err := exec.Command("cc", "-std=gnu11", "-Wall", "-Wextra", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
+	cc, err := exec.Command("cc", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
 	if err != nil {
 		fmt.Printf("CC ERROR: %v\n%s\n", err, cc)
 		os.Exit(1)
@@ -47,7 +47,8 @@ func main() {
 	// A warning is not an error to the compiler, but it is to TestEmitCRun, which
 	// fails on any output at all. Swallowing them here would let a probe call a
 	// program clean that the suite rejects -- which is how an unused receiver went
-	// unnoticed.
+	// unnoticed. The flags are the ones that test uses, so the two agree on what
+	// counts.
 	if len(bytes.TrimSpace(cc)) != 0 {
 		fmt.Printf("CC WARNED:\n%s\n", cc)
 	}

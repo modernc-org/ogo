@@ -617,6 +617,14 @@
 // assigns a new value to the original variable. Short variable declarations
 // may appear only inside functions.
 //
+// A declared variable must be used, as in Go, and it does not matter where the
+// declaration stands: the ones inside a statement's header count too -- an "if",
+// "switch" or "for" init statement, a range variable, and the one a select's
+// "case v := <-ch" receives. A parameter and a result are not variables in this
+// sense and may go unused, again as in Go. The one form outside the rule is the
+// ":=" switch guard with no init statement, described under Switch Statements,
+// where the name declared is what the switch switches on.
+//
 // # Constant Declarations
 //
 // A constant declaration binds an identifier to the value of a constant

@@ -1,0 +1,83 @@
+// A variable a short declaration introduces must be used, wherever the declaration
+// stands. The plain forms -- "var x T" and "x := e" -- were subject to that rule
+// already; the ones that declare inside a statement's header were not, and Go
+// reports every one of them.
+
+func f() int { return 1 }
+
+func ifInit() {
+	// ERROR "declared and not used: v"
+	if v := f(); true {
+		println("x")
+	}
+}
+
+func switchInit() {
+	// ERROR "declared and not used: v"
+	switch v := f(); {
+	default:
+		println("x")
+	}
+}
+
+func forInit() {
+	// ERROR "declared and not used: i"
+	for i := 0; ; {
+		break
+	}
+}
+
+func rangeKey() {
+	// ERROR "declared and not used: i"
+	for i := range 3 {
+		println("x")
+	}
+}
+
+func rangeValue() {
+	xs := []int{1, 2}
+	// ERROR "declared and not used: v"
+	for i, v := range xs {
+		println(i)
+	}
+}
+
+func selectRecv() {
+	var ch chan int
+	select {
+	// ERROR "declared and not used: v"
+	case v := <-ch:
+		println("x")
+	}
+}
+
+// Every one of them used, which is what the rule is there to allow.
+func used() {
+	if v := f(); v > 0 {
+		println(v)
+	}
+	switch v := f(); v {
+	case 1:
+		println(v)
+	}
+	for i := 0; i < 2; i++ {
+		println(i)
+	}
+	for i, v := range []int{7, 8} {
+		println(i, v)
+	}
+	var ch chan int
+	select {
+	case v := <-ch:
+		println(v)
+	}
+}
+
+// A ":=" switch guard with no init statement is OctoGo's own form, and the name it
+// declares is what the switch switches on -- its declaration is its use.
+func guard() {
+	switch v := f() {
+	case 1:
+		println("one")
+	}
+}

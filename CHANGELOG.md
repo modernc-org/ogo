@@ -95,6 +95,15 @@ Releases before v0.9.0 predate this file; see
   declared `_` and then switched on it — reading a name Go says cannot be read — and
   compiled to a comparison against a C variable named `_`. What a switch switches on
   is now resolved like any other expression, which reports it.
+- **A variable declared in a statement's header must be used.** The rule every
+  short declaration follows did not reach the ones that declare inside a header, so
+  `if v := f(); true {}`, `switch v := f(); {}`, `for i := 0; ; {}`, `for i := range
+  3 {}` and `case v := <-ch:` all compiled with the name unused. Go reports each of
+  them, in the same words and at the same column this now does, and the emitted C
+  drew an unused-variable warning besides.
+
+  The one form left out is OctoGo's own `switch v := f()` with no init statement,
+  where the name declared is what the switch switches on: its declaration is its use.
 - **A package array's element may no longer be given a reference to a local.**
   `table[1] = local[:]`, where `table` is a package-level array, left it pointing at
   storage the function was free to reuse — the rule that refuses this for every other

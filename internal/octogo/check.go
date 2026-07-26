@@ -2032,9 +2032,7 @@ func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool) {
 	if id.Src() == "_" {
 		return
 	}
-	if err := s.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind}); err != nil {
-		f.err(id.Position(), "%s", err)
-	}
+	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
 }
 
 // exprSoleIdent returns the single identifier an expression consists of, if that
@@ -2074,9 +2072,21 @@ func (f *File) declareForInitVar(s *Scope, lhs, rhs Node, define bool) {
 		return
 	}
 	kind, hasKind := f.exprType(s, rhs)
-	if err := s.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind}); err != nil {
-		f.err(id.Position(), "%s", err)
+	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
+}
+
+// declareLocal adds a variable to s and records it for the unused-variable report.
+//
+// Recording is what subjects the name to the rule every other short declaration
+// follows. Without it an init statement's variable, a range variable and a select's
+// received one were all exempt -- Go reports each of them, and the emitted C drew an
+// unused-variable warning besides.
+func (f *File) declareLocal(s *Scope, vd *VarDeclaration) {
+	if err := s.add(vd); err != nil {
+		f.err(vd.token.Position(), "%s", err)
+		return
 	}
+	f.localVars = append(f.localVars, vd)
 }
 
 // checkForPost checks a post statement's names.
@@ -2443,7 +2453,15 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 		f.checkNames(s, g.value)
 		kind, hasKind := f.exprType(s, g.value)
 		if id, ok := f.exprIdent(g.name); ok {
-			_ = ss.add(&VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
+			vd := &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind}
+			// Only an init statement's name is subject to the unused rule. In the
+			// ":=" guard without one, the name declared is also what the switch
+			// switches on, so its declaration is its use.
+			if g.semi {
+				f.declareLocal(ss, vd)
+			} else {
+				_ = ss.add(vd)
+			}
 		}
 	}
 	if !g.hasTag {
@@ -2572,7 +2590,7 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 		// exactly as "v := <-ch" would outside a select.
 		cs := s.child()
 		if id, ok := f.commRecvVar(c); ok {
-			_ = cs.add(&VarDeclaration{declaration: declaration{token: id}})
+			f.declareLocal(cs, &VarDeclaration{declaration: declaration{token: id}})
 		}
 		// A break inside a comm clause leaves the select, so the body is checked
 		// one select level deeper.
