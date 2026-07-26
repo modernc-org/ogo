@@ -1380,6 +1380,49 @@ func main() {
 		want: "-1 0 1\n10 20 99\n",
 	},
 	{
+		// A switch guard binds an ordinary variable, which the emitter used to write
+		// out by hand rather than declare as one. Three things went wrong, and all
+		// three are fixed by declaring it the way every other local is declared.
+		//
+		// A `v := expr` guard whose initializer names the variable it shadows read
+		// the new, uninitialized C variable instead of the outer one, so the case
+		// below did not run at all. A Unicode-named guard was declared under its
+		// source spelling while every use of it was escaped, which does not compile.
+		// And the temporary a non-trivial guard binds was not recorded as a local, so
+		// a string-valued guard was compared with C's `==` on the { ptr, len } struct
+		// -- which the backend rejects -- rather than by content.
+		name: "a switch guard is an ordinary variable",
+		src: `func greet() string { return "hi" }
+
+func main() {
+	v := 9
+	switch v := v + 1 {
+	case 10:
+		println("inner", v)
+	}
+	println("outer", v)
+
+	δ := 3
+	switch δ {
+	case 3:
+		println("delta", δ)
+	}
+	switch ε := δ * 2 {
+	case 6:
+		println("epsilon", ε)
+	}
+
+	switch greet() {
+	case "bye":
+		println("bye")
+	case "hi":
+		println("greeting")
+	}
+}
+`,
+		want: "inner 10\nouter 9\ndelta 3\nepsilon 6\ngreeting\n",
+	},
+	{
 		// A slice is nil exactly when its backing pointer is null. Comparison
 		// (`s == nil`) lowers to a pointer test; the value forms -- `s = nil`,
 		// `var u []int = nil` and `return nil` from a slice-returning function -- all

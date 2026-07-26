@@ -6056,10 +6056,20 @@ func (e *emitter) emitSwitch(ast []int32) {
 	}
 }
 
-// emitSwitchGuard emits the guard of a value or guard-var switch, returning the C
+// emitSwitchGuard emits the guard of a value or guard-var switch, returning the
 // name to compare cases against, whether an enclosing block was opened (to close
 // after the chain), and ok. A plain variable guard is compared directly; a
 // non-trivial value or a `v := expr` guard is bound to a scoped name first.
+//
+// Whatever the guard binds is declared as the ordinary local it is, through
+// emitInferredLocal, rather than by writing the declaration here. That is what
+// records it in e.locals, so emitCaseCond knows its type -- a string guard
+// compares by content, not with C's `==` on the { ptr, len } struct -- and what
+// captures a self-referential initializer before the new name shadows the outer
+// one, `switch v := v + 1`, which C would otherwise read uninitialized.
+//
+// The name returned is the source one, which the type lookups are keyed by;
+// emitCaseCond spells it in C through varRef.
 func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok bool) {
 	var exprs []Node
 	hasDefine := false
@@ -6083,8 +6093,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 			e.fail("unsupported switch guard variable")
 			return "", false, false
 		}
-		vtype, tok := e.inferCType(exprs[1].ast)
-		if !tok {
+		if _, tok := e.inferCType(exprs[1].ast); !tok {
 			e.fail("cannot infer the type of the switch guard variable")
 			return "", false, false
 		}
@@ -6092,11 +6101,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		e.ind()
 		e.emit("{\n")
 		e.indent++
-		e.locals[name] = vtype
-		e.ind()
-		e.emit(vtype + " " + name + " = ")
-		e.emitExpr(exprs[1].ast)
-		e.emit(";\n")
+		e.emitInferredLocal(name, exprs[1].ast)
 		return name, true, true
 	}
 	if len(exprs) < 1 {
@@ -6108,8 +6113,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 	if tok, single := e.soleToken(exprs[0].ast); single && e.f.ch(tok) == IDENT {
 		return e.src(tok), false, true
 	}
-	gtype, tok := e.inferCType(exprs[0].ast)
-	if !tok {
+	if _, tok := e.inferCType(exprs[0].ast); !tok {
 		e.fail("cannot infer the type of the switch value")
 		return "", false, false
 	}
@@ -6117,10 +6121,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 	e.ind()
 	e.emit("{\n")
 	e.indent++
-	e.ind()
-	e.emit(gtype + " " + tmp + " = ")
-	e.emitExpr(exprs[0].ast)
-	e.emit(";\n")
+	e.emitInferredLocal(tmp, exprs[0].ast)
 	return tmp, true, true
 }
 
@@ -6153,8 +6154,14 @@ func (e *emitter) caseHead(cc []int32) (exprs []Node, isDefault bool) {
 // (guardVar ""), the case expressions are themselves the conditions (`a || b`).
 func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 	// A string switch compares the guard against each case by content, not with C's
-	// `==` on the { ptr, len } struct (see emitStringCompare).
-	stringGuard := guardVar != "" && (e.locals[guardVar] == cString || e.globals[e.globalC(guardVar)] == cString)
+	// `==` on the { ptr, len } struct (see emitStringCompare). The guard is looked
+	// up by its source name and written by its C one; the two differ for a Unicode
+	// name and for a package variable, which carries its package's prefix.
+	cname, stringGuard := "", false
+	if guardVar != "" {
+		cname = e.varRef(guardVar)
+		stringGuard = e.locals[guardVar] == cString || e.globals[e.globalC(guardVar)] == cString
+	}
 	e.emit("(")
 	for i, ex := range exprs {
 		if i != 0 {
@@ -6163,13 +6170,13 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 		if stringGuard {
 			e.usesString = true
 			e.usesStringEq = true
-			e.emit("ogo_string_eq(" + guardVar + ", ")
+			e.emit("ogo_string_eq(" + cname + ", ")
 			e.emitExpr(ex.ast)
 			e.emit(")")
 			continue
 		}
-		if guardVar != "" {
-			e.emit(guardVar + " == ")
+		if cname != "" {
+			e.emit(cname + " == ")
 		}
 		e.emitExpr(ex.ast)
 	}

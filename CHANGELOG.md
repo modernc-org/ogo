@@ -11,6 +11,21 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Fixed
+
+- **A switch guard is now declared like the variable it is.** The emitter wrote its
+  declaration out by hand instead, and three things went wrong. A `switch v := v + 1`
+  whose initializer names the variable it shadows read the new, uninitialized one
+  rather than the outer one, so the switch silently took the wrong branch — the same
+  bug `var x = x + 5` had. A Unicode-named guard, `switch δ` or `switch ε := δ * 2`,
+  was declared under its source spelling while every use of it was escaped, so the
+  build failed with an undeclared identifier. And a guard that is neither a plain
+  variable nor a `:=` binding, `switch greet()`, bound a temporary that was not
+  recorded as a variable, so a string one was compared with C's `==` on the header
+  struct — which the backend rejects — rather than by content.
+
 ## v0.10.0
 
 ### Language
