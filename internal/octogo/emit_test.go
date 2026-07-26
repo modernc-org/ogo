@@ -4502,6 +4502,9 @@ func TestEmitCRange(t *testing.T) {
 // byte pointer, s.str[i], bounds-checked against s.len, and yields a byte -- not
 // s[i] on the ogo_string struct, which is not a C array and does not compile.
 // Ranging a string iterates its byte indices for the same reason a slice does.
+//
+// The read is cast: Go's byte is unsigned and the header carries `const char*`,
+// whose signedness C leaves open, so without it a byte over 127 reads negative.
 func TestEmitCStringIndex(t *testing.T) {
 	src := `func main() {
 	s := "hi"
@@ -4523,7 +4526,7 @@ func TestEmitCStringIndex(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"\tprintf(\"%u\\n\", s.str[ogo_bound(0, s.len)]);\n",
+		"\tprintf(\"%u\\n\", (uint8_t)(s.str[ogo_bound(0, s.len)]));\n",
 		// Ranging a string iterates runes: the index advances by the decoded rune's
 		// width (1 for ASCII), so the loop steps `_ogo_t0 += _ogo_t2` and each
 		// iteration decodes to set that width.

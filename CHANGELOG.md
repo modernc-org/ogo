@@ -55,6 +55,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A string byte is unsigned.** `s[i]` is a `byte` in Go, but it was read straight
+  off the string's `const char*`, whose signedness C leaves to the implementation —
+  so on one where `char` is signed, any byte over 127 came out negative: summing the
+  bytes of `"hé"` gave −44 where Go gives 468. The target's C compiler happens to
+  make `char` unsigned, so this was right on a board and wrong under the host test
+  compiler; the read is now cast either way. The runtime helpers already did.
 - **A loop condition is evaluated on every iteration again.** Some expressions need
   a line emitted ahead of the statement they appear in — a field read off a call's
   struct result, arguments put in Go's order, a bounds-checked slice — and ahead of

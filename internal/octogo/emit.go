@@ -5176,6 +5176,19 @@ func (e *emitter) accessSliceSource(cur accessCur, prefix string) (sliceSource, 
 	return sliceSource{}, false
 }
 
+// byteReadOpen opens the cast every read of a string byte carries, `s[i]`, and
+// records the header the cast's type needs. Go's byte is unsigned, while the string
+// header carries `const char*`, whose signedness C leaves to the implementation: on
+// one where char is signed, reading a byte over 127 without this yields a negative
+// number. The runtime helpers cast for the same reason -- ogo_decode_rune and
+// ogo_string_cmp both do -- and these two index sites were what did not.
+//
+// The caller closes it with "])" in place of the "]" an unread cast would have.
+func (e *emitter) byteReadOpen() string {
+	e.includes["stdint.h"] = true
+	return "(uint8_t)("
+}
+
 // plainOrSlice classifies an element C type as a nested slice header or a plain
 // value.
 func (e *emitter) plainOrSlice(elem string) accessCur {
@@ -5248,16 +5261,16 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 			if !ok {
 				return accessCur{}, false
 			}
-			open := "["
+			open, pre, closing := "[", "", "]"
 			switch {
 			case cur.slice:
 				open = ".ptr["
 			case cur.ctype == cString:
-				open = ".str["
+				open, pre, closing = ".str[", e.byteReadOpen(), "])"
 			}
-			e.emit(prefix + open)
+			e.emit(pre + prefix + open)
 			e.emitIndex(low, lenExpr)
-			e.emit("]")
+			e.emit(closing)
 			prefix = ""
 			cur = next
 		default:
@@ -9902,14 +9915,14 @@ func (e *emitter) emitExprNode(n Node) {
 				// A slice is indexed through its backing pointer, a string through its
 				// byte pointer, an array directly. The index is bounds-checked against
 				// the container length.
-				lenExpr := ""
+				lenExpr, closing := "", "]"
 				switch {
 				case e.hasSliceVar(base):
 					e.emit(base + ".ptr[")
 					lenExpr = base + ".len"
 				case e.isStringVarName(base):
-					e.emit(base + ".str[")
-					lenExpr = base + ".len"
+					e.emit(e.byteReadOpen() + base + ".str[")
+					lenExpr, closing = base+".len", "])"
 				default:
 					if a, ok := e.arrayVar(base); ok && a.dims() > 1 {
 						e.fail("a multi-dimensional array must be indexed in every dimension")
@@ -9921,7 +9934,7 @@ func (e *emitter) emitExprNode(n Node) {
 					}
 				}
 				e.emitIndex(low, lenExpr)
-				e.emit("]")
+				e.emit(closing)
 				return
 			}
 		}

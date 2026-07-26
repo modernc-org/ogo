@@ -2986,6 +2986,30 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A string byte over 127. Go's byte is unsigned, while the string header
+		// carries `const char*`, whose signedness C leaves to the implementation --
+		// so a read of s[i] has to be cast or it is negative wherever char is signed.
+		// It is on the host compiler and is not on the target's, which is why every
+		// existing case agreed on both: they all index ASCII, where the two cannot
+		// differ. This one sums the bytes of a two-byte rune, where they do.
+		name: "a string byte is unsigned",
+		src: `var g = "hé"
+
+func main() {
+	s := "hé"
+	n := 0
+	for i := 0; i < len(s); i++ {
+		n += int(s[i])
+	}
+	println(s[0], s[1], int(s[1]), n)
+	println(g[1], s[1:][0], s[0:2][1])
+	var c byte = s[1]
+	println(c, c > 128)
+}
+`,
+		want: "104 195 195 468\n195 195 195\n195 true\n",
+	},
+	{
 		// Operating on a slice expression's result -- indexing it, and slicing it
 		// again. Both had to be written out as two statements, because a header is a
 		// value and C has nowhere to put one mid-expression: the step after it wants
