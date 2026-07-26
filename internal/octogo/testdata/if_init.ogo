@@ -1,0 +1,44 @@
+// An "if" may carry an init statement, "if v := f(); cond". The declared name is
+// scoped to the whole statement -- the condition, the "then" block and every
+// "else" branch -- and not beyond it, so it may shadow an outer name and a use
+// after the statement is undefined.
+
+func f() int { return 2 }
+
+func ok() {
+	if v := f(); v > 0 {
+		println(v)
+	} else if v < 0 {
+		println(-v)
+	} else {
+		println(0)
+	}
+
+	// Shadowing an outer name of the same type is legal: the inner one is a
+	// different variable, scoped to the statement.
+	v := 1
+	if v := f(); v > v {
+		println(v)
+	}
+	println(v)
+
+	// Nested, and inside a loop.
+	if a := 1; a > 0 {
+		if b := a; b > 0 {
+			println(a, b)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if d := i; d >= 0 {
+			println(d)
+		}
+	}
+}
+
+func outOfScope() {
+	if v := f(); v > 0 {
+		println(v)
+	}
+	// ERROR "undefined: v"
+	println(v)
+}

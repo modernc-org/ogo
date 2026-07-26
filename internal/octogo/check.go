@@ -1586,15 +1586,55 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string) {
 // scope (OctoGo has no if-init clause, so the condition needs no shared scope),
 // and an "else if" continuation is checked recursively.
 func (f *File) checkIf(s *Scope, results []retResult, n Node) {
+	// An "if" with an init statement -- `if v := f(); v > 0` -- scopes v to the
+	// whole statement: the condition, the "then" block and every "else" branch, and
+	// nothing after. That is Go's rule, and it is why the init form gets its own
+	// scope here rather than declaring into the enclosing one. The grammar puts the
+	// init's left-hand side where a plain condition would be and hangs the rest off
+	// an IfInit, so which of the two forms this is only becomes clear after the
+	// children have been read.
+	var lhs, cond, init Node
+	var blocks []Node
+	var elseIf Node
+	hasCond, hasInit, hasElseIf := false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Expression:
-			f.checkCondition(s, "if", c)
+			lhs, hasCond = c, true
+		case IfInit:
+			init, hasInit = c, true
 		case Block:
-			f.checkBlock(s.child(), results, c)
+			blocks = append(blocks, c)
 		case IfStmt:
-			f.checkIf(s, results, c)
+			elseIf, hasElseIf = c, true
 		}
+	}
+	if hasInit {
+		var exprs []Node
+		for c := range it(init.ast) {
+			if c.sym == Expression {
+				exprs = append(exprs, c)
+			}
+		}
+		if len(exprs) != 2 {
+			f.err(f.tok(n.Pos()).Position(), "malformed if init statement")
+			return
+		}
+		s = s.child()
+		f.checkNames(s, exprs[0])
+		f.declareForInitVar(s, lhs, exprs[0], true)
+		cond = exprs[1]
+	} else if hasCond {
+		cond = lhs
+	}
+	if cond.sym != 0 || hasCond || hasInit {
+		f.checkCondition(s, "if", cond)
+	}
+	for _, b := range blocks {
+		f.checkBlock(s.child(), results, b)
+	}
+	if hasElseIf {
+		f.checkIf(s, results, elseIf)
 	}
 }
 

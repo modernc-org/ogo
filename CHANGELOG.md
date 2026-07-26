@@ -20,6 +20,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **`if` with an init statement**, `if v := f(); v > 0`. The name is scoped to the
+  whole statement — the condition, the `then` block and every `else if` branch — and
+  not beyond, so it may shadow an outer one. Only the `:=` form, which is what
+  nearly every use is.
 - **Array equality**, `a == b` and `a != b`, comparing element by element. Works for
   any comparable element type — scalars, strings, structs — and at any rank.
 

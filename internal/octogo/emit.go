@@ -5806,25 +5806,86 @@ func (e *emitter) isFallthroughStmt(stmt []int32) bool {
 
 // emitIf emits an if statement (the IfStmt node):
 //
-//	IfStmt = "if" Expression Block [ "else" ( IfStmt | Block ) ] .
+//	IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
+//
+// An init statement -- `if v := f(); v > 0` -- becomes a C block around the whole
+// if, holding the variable's declaration. The block is what scopes v to the
+// statement, as Go scopes it: visible in the condition and every branch, gone
+// afterwards, and free to shadow a name from outside without disturbing it.
 //
 // It indents the leading `if`, then defers to emitIfBody, which handles the
 // condition, the branch, and any `else`/`else if` continuation.
 func (e *emitter) emitIf(ast []int32) {
+	name, initExpr, cond, ok := e.ifInitParts(ast)
+	if !ok {
+		e.ind()
+		e.emitIfBody(ast)
+		return
+	}
 	e.ind()
-	e.emitIfBody(ast)
+	e.emit("{\n")
+	e.indent++
+	e.emitInferredLocal(name, initExpr)
+	e.ind()
+	e.emitIfBodyWithCond(ast, cond) // ends its own line
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+}
+
+// ifInitParts decomposes an `if` that carries an init statement, returning the
+// declared name, its initializer and the condition. ok is false for a plain `if`,
+// whose sole expression is the condition itself.
+func (e *emitter) ifInitParts(ast []int32) (name string, initExpr, cond []int32, ok bool) {
+	var lhs, init []int32
+	for n := range it(ast) {
+		switch n.sym {
+		case Expression:
+			if lhs == nil {
+				lhs = n.ast
+			}
+		case IfInit:
+			init = n.ast
+		}
+	}
+	if init == nil {
+		return "", nil, nil, false
+	}
+	var exprs [][]int32
+	for n := range it(init) {
+		if n.sym == Expression {
+			exprs = append(exprs, n.ast)
+		}
+	}
+	if len(exprs) != 2 || lhs == nil {
+		e.fail("malformed if init statement")
+		return "", nil, nil, false
+	}
+	if name, ok = e.exprIdent(lhs); !ok {
+		e.fail("an if init statement declares a single name")
+		return "", nil, nil, false
+	}
+	return name, exprs[0], exprs[1], true
 }
 
 // emitIfBody emits `if (cond) { ... }` and its optional else branch, assuming the
 // cursor is already positioned — an initial indent for a top-level if, or the
 // `} else ` written by an enclosing call for an `else if`. It recurses on an
 // `else if` continuation so the C reads `} else if (c) {` on one line.
-func (e *emitter) emitIfBody(ast []int32) {
+func (e *emitter) emitIfBody(ast []int32) { e.emitIfBodyWithCond(ast, nil) }
+
+// emitIfBodyWithCond is emitIfBody with the condition supplied, which the init
+// form needs: there the statement's own expression is the declared name and the
+// condition lives inside the IfInit.
+func (e *emitter) emitIfBodyWithCond(ast []int32, condOverride []int32) {
 	var cond, thenBody, elseBody, elseIf []int32
 	for n := range it(ast) {
 		switch n.sym {
 		case Expression:
 			cond = n.ast
+		case IfInit:
+			// Its parts were read by ifInitParts; the condition arrives as
+			// condOverride.
 		case Block:
 			if thenBody == nil {
 				thenBody = n.ast
@@ -5839,6 +5900,9 @@ func (e *emitter) emitIfBody(ast []int32) {
 			e.fail("if clause %v is not supported yet", n.sym)
 			return
 		}
+	}
+	if condOverride != nil {
+		cond = condOverride
 	}
 	if cond == nil || thenBody == nil {
 		e.fail("malformed if statement")

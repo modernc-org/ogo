@@ -1847,6 +1847,45 @@ func main() {
 		want: "8 9\n2\n1 2\n1\n",
 	},
 	{
+		// An "if" with an init statement. The variable is scoped to the whole
+		// statement -- the condition, the "then" block and every "else" branch --
+		// and gone afterwards, which is what lets it shadow an outer name of the
+		// same type without disturbing it. That scoping is a C block wrapped around
+		// the if.
+		name: "if with an init statement",
+		src: `func f() int { return 5 }
+
+func main() {
+	if v := f(); v > 10 {
+		println("big", v)
+	} else if v > 3 {
+		println("mid", v)
+	} else {
+		println("small", v)
+	}
+
+	v := 1
+	if v := f(); v > 0 {
+		println("inner", v)
+	}
+	println("outer", v)
+
+	for i := 0; i < 3; i++ {
+		if d := i * 2; d > 1 {
+			println(d)
+		}
+	}
+
+	if a := 1; a > 0 {
+		if b := a + 1; b > 1 {
+			println(a, b)
+		}
+	}
+}
+`,
+		want: "mid 5\ninner 5\nouter 1\n2\n4\n1 2\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

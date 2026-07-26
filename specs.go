@@ -1051,7 +1051,18 @@
 // executed. An "else" may be followed by another "if" statement, forming an
 // "else if" chain, or by a block.
 //
-//	IfStmt = "if" HeaderExpression Block [ "else" ( IfStmt | Block ) ] .
+//	IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
+//	IfInit = ":=" HeaderExpression ";" HeaderExpression .
+//
+// An "if" may carry an init statement, "if v := f(); v > 0". The name it declares
+// is scoped to the whole statement -- the condition, the "then" block and every
+// branch of an "else if" chain -- and not beyond it, so it may shadow a name from
+// outside without disturbing it. Only a ":=" init is provided, which is the form
+// nearly every use takes; Go also admits an assignment or an increment there.
+//
+// The grammar reaches the form by left-factoring, as the "for" header does: what
+// follows "if" is parsed as an expression, and the next token decides what it was
+// -- "{" makes it the condition, ":=" makes it the target of an init statement.
 //
 // # For Statements
 //
