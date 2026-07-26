@@ -894,10 +894,24 @@
 // That holds however many calls separate the two, across package boundaries, and
 // through mutual recursion.
 //
-// One shape is accepted that this cannot see: a pointer or slice wrapped in a
-// struct. "b.data = a[:]" and then "go g(b)" compiles, because provenance is tracked
-// per variable and not per field, and keeping such a struct alive is the writer's
-// responsibility.
+// A reference wrapped in a struct counts as one. Assigning a local's address or a
+// slice of a local array to a field -- or filling the field in a composite literal --
+// marks the variable, and a copy of it carries the mark, so returning it, storing it
+// in a package variable or handing it to another Cog is refused just as the bare
+// reference would be:
+//
+//	var a [4]int
+//	var b buf
+//	b.data = a[:]
+//	go work(b)                          // refused: b holds a pointer into local a
+//
+// The mark is on the variable, not on the field, and it is never cleared. That is
+// what makes it safe without tracking each field separately -- a struct with one
+// field holding a frame reference and one not must stay marked -- and it is the one
+// place the rule refuses more than it strictly must: a variable whose only such field
+// is later overwritten with package-level storage stays marked. Using the
+// package-level storage from the start is the answer, and it is what the program
+// wanted anyway.
 //
 // A call that returns a struct may have a field selected from its result,
 // "mk().y", a method called on it, "mk().sum()", and its result indexed,

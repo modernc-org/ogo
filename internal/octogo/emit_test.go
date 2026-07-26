@@ -5644,9 +5644,10 @@ func main() {
 }
 `,
 		},
+		// Increment 5: a reference wrapped in a struct. The value handed on is the
+		// struct, so the variable carries the mark -- per variable, not per field,
+		// which is what keeps it sound without tracking fields.
 		{
-			// Accepted, and a known hole: the frame pointer is inside a struct, and
-			// provenance is tracked per variable, not per field.
 			name: "a frame-backed slice wrapped in a struct",
 			src: `type buf struct{ data []int }
 
@@ -5657,6 +5658,189 @@ func main() {
 	var b buf
 	b.data = a[:]
 	go work(b)
+}
+`,
+			want: "cannot pass local b, which holds a pointer into local a to a goroutine",
+		},
+		{
+			// A pointer field rather than a slice one. This is the shape that had to
+			// move both checks ahead of the target-specific paths: a scalar field
+			// assignment leaves through the access chain, so a check after it saw only
+			// slice fields.
+			name: "the address of a local wrapped in a struct",
+			src: `type node struct{ p *int }
+
+func take(n node) { println(*n.p) }
+
+func main() {
+	var x int = 4
+	var n node
+	n.p = &x
+	go take(n)
+}
+`,
+			want: "cannot pass local n, which holds a pointer into local x to a goroutine",
+		},
+		{
+			name: "a struct holding a frame reference, sent on a channel",
+			src: `type buf struct{ data []int }
+
+func main() {
+	var ch chan buf
+	var a [4]int
+	var b buf
+	b.data = a[:]
+	ch <- b
+}
+`,
+			want: "cannot send local b, which holds a pointer into local a",
+		},
+		{
+			// The field is filled by the composite literal rather than assigned after.
+			name: "a composite literal holding a frame reference",
+			src: `type buf struct{ data []int }
+
+func work(b buf) { println(b.data[0]) }
+
+func main() {
+	var a [4]int
+	b := buf{data: a[:]}
+	go work(b)
+}
+`,
+			want: "cannot pass local b, which holds a pointer into local a to a goroutine",
+		},
+		{
+			// A copy carries what it copied, as a copied slice header does.
+			name: "a copy of a struct holding a frame reference",
+			src: `type buf struct{ data []int }
+
+func work(b buf) { println(b.data[0]) }
+
+func main() {
+	var a [4]int
+	var b buf
+	b.data = a[:]
+	c := b
+	go work(c)
+}
+`,
+			want: "cannot pass local c, which holds a pointer into local a to a goroutine",
+		},
+		{
+			// The other three sinks see it too, the mark being on the variable rather
+			// than on the crossing.
+			name: "a struct holding a frame reference, returned",
+			src: `type buf struct{ data []int }
+
+func mk() buf {
+	var a [4]int
+	var b buf
+	b.data = a[:]
+	return b
+}
+
+func main() { println(mk().data[0]) }
+`,
+			want: "cannot return local b, which holds a pointer into local a",
+		},
+		{
+			name: "a struct holding a frame reference, stored in a package variable",
+			src: `type buf struct{ data []int }
+
+var g buf
+
+func fill() {
+	var a [4]int
+	var b buf
+	b.data = a[:]
+	g = b
+}
+
+func main() {
+	fill()
+	println(len(g.data))
+}
+`,
+			want: "cannot store local b, which holds a pointer into local a in package variable g",
+		},
+		{
+			name: "a struct holding a frame reference, passed to a spawning function",
+			src: `type buf struct{ data []int }
+
+func work(b buf) { println(b.data[0]) }
+
+func spawn(b buf) { go work(b) }
+
+func main() {
+	var a [4]int
+	var b buf
+	b.data = a[:]
+	spawn(b)
+}
+`,
+			want: "cannot pass local b, which holds a pointer into local a to spawn",
+		},
+		{
+			// A plain assignment, not a declaration, of a view of a local array. The
+			// declaration form was already refused; this one used to slip past.
+			name: "a slice variable assigned a view of a local",
+			src: `func mk() []int {
+	var a [4]int
+	var s []int
+	s = a[:]
+	return s
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local s",
+		},
+
+		// Accepted: the same shapes over storage that outlives every frame.
+		{
+			name: "a struct holding a slice of a package array",
+			src: `type buf struct{ data []int }
+
+var g [4]int
+
+func work(b buf) { println(b.data[0]) }
+
+func main() {
+	g[0] = 7
+	var b buf
+	b.data = g[:]
+	go work(b)
+}
+`,
+		},
+		{
+			name: "a struct holding the address of a package variable",
+			src: `type node struct{ p *int }
+
+var G int = 5
+
+func take(n node) { println(*n.p) }
+
+func main() {
+	var n node
+	n.p = &G
+	go take(n)
+}
+`,
+		},
+		{
+			// A struct that holds a frame reference and never leaves the frame is fine:
+			// what is refused is handing it somewhere the storage does not reach.
+			name: "a struct holding a frame reference that stays home",
+			src: `type buf struct{ data []int }
+
+func main() {
+	var a [4]int
+	a[0] = 3
+	var b buf
+	b.data = a[:]
+	println(b.data[0])
 }
 `,
 		},

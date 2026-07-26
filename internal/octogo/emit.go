@@ -508,10 +508,10 @@ func (e *emitter) emitGo(nodes []Node) {
 	}
 	site := goSite{callee: e.funcCallC(callee), id: len(e.goSites)}
 	args := e.callArgExprs(suffix[0].ast)
-	if x, name, bad := e.crossBackedByFrame(args); bad {
-		e.fail("%v: cannot pass a slice backed by local %s to a goroutine: its storage does not outlive "+
-			"the function, and the goroutine may; declare the backing array at package scope",
-			e.f.tok(x.Pos()).Position(), name)
+	if x, r, bad := e.frameRefIn(args); bad {
+		e.fail("%v: cannot pass %s to a goroutine: its storage does not outlive the function, and the "+
+			"goroutine may; declare the backing array at package scope",
+			e.f.tok(x.Pos()).Position(), r.what)
 		return
 	}
 	for _, a := range args {
@@ -1309,7 +1309,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1719,6 +1719,7 @@ type emitter struct {
 	crossParams        map[string][]bool        // per function, which parameters reach another cog -- as a go argument or a send value, directly or through a call (see collectCrossParams)
 	crossEdges         []crossEdge              // call sites passing a parameter straight on, the graph closeCrossParams walks
 	crossNames         map[string]string        // C function name -> the name it was declared with, for crossParams diagnostics
+	frameHolder        map[string]string        // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
 	chanCells          []string                 // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
 	chanCellN          int                      // counter minting unique cell names, program-wide like makeN
 	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
@@ -2933,6 +2934,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}
+	e.frameHolder = map[string]string{}
 	e.tmp = 0
 	e.defers = nil
 	e.deferReplay = -1
@@ -3158,6 +3160,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}
+	e.frameHolder = map[string]string{}
 	e.tmp = 0
 	e.defers = nil
 	e.deferReplay = -1
@@ -7631,6 +7634,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// leading star(s) so the assignment writes through the pointer, not to it. The
 	// only reachable case is a pointer receiver mutating its pointee (`*c = v`).
 	stars := e.derefStars(head.ast)
+	// Both provenance checks come before the shape-specific paths below, each of which
+	// returns: what a target is given matters wherever in the target it lands, and
+	// both need only the root variable and the operator. A pointer field is what made
+	// that necessary -- `n.p = &x` leaves through the access-chain path, so a check
+	// placed after it saw slice fields only.
+	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+	e.checkStoreBacking(base, op)
+	e.noteFrameHolder(base, op)
 	// Index target `a[i] = v` (single index; mixing indexes and fields is not
 	// modelled). The index is an expression, so it is emitted directly rather than
 	// built into the string lhs the field path uses.
@@ -7692,8 +7703,6 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 	}
 	lhs = stars + lhs
-	op := slices.Collect(it(postfix[len(postfix)-1].ast))
-	e.checkStoreBacking(base, op)
 
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
 	// extra targets as LhsItems ahead of the operator.
@@ -7764,10 +7773,10 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("a send statement needs a channel on the left")
 			return
 		}
-		if x, name, bad := e.crossBackedByFrame([]Node{op[1]}); bad {
-			e.fail("%v: cannot send a slice backed by local %s: its storage does not outlive the function, "+
-				"and the receiver keeps the value; declare the backing array at package scope",
-				e.f.tok(x.Pos()).Position(), name)
+		if x, r, bad := e.frameRefIn([]Node{op[1]}); bad {
+			e.fail("%v: cannot send %s: its storage does not outlive the function, and the receiver keeps "+
+				"the value; declare the backing array at package scope",
+				e.f.tok(x.Pos()).Position(), r.what)
 			return
 		}
 		e.ind()
@@ -7861,7 +7870,42 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 			e.frameBacked[name] = true
 		}
 	}
+	e.noteDeclFrameHolder(ct, name, initExpr)
 	e.emitVarDeclInit(ct, name, initExpr)
+}
+
+// noteDeclFrameHolder marks a declared variable that its initializer gives a
+// reference to this frame's storage: a struct literal with a local's address or a
+// slice of a local array in a field, `b := buf{data: a[:]}`, or a copy of a variable
+// already marked, `c := b`.
+//
+// Only a struct or pointer target is considered. An initializer is a whole
+// expression and a frame reference may appear anywhere inside one without the value
+// carrying it out -- `n := len(a[:])` is an int -- so the type is what says whether
+// there is anything to carry.
+func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
+	if _, isStruct := e.structs[methodBaseType(ctype)]; !isStruct && !e.isPointer(ctype) {
+		return
+	}
+	if r, ok := e.frameRefOf(initExpr); ok {
+		e.frameHolder[name] = r.origin
+		return
+	}
+	// A composite literal: each element is its own expression, and any one of them
+	// carrying a reference makes the whole value carry it.
+	for n := range it(initExpr) {
+		if n.sym == 0 {
+			continue
+		}
+		if r, ok := e.frameRefOf(n.ast); ok {
+			e.frameHolder[name] = r.origin
+			return
+		}
+		e.noteDeclFrameHolder(ctype, name, n.ast)
+		if e.frameHolder[name] != "" {
+			return
+		}
+	}
 }
 
 // emitVarDeclInit emits a local declaration of ctype with an initializer. A struct
@@ -9937,21 +9981,112 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	return base, e.frameBacked[base]
 }
 
-// checkReturnBacking refuses returning a slice whose backing array is a local of
-// this frame. The header would outlive the storage it points at, and with no heap
-// there is nowhere to promote that storage to, so it is a static error -- the slice
-// counterpart of the checker's refusal to return a local's address.
-func (e *emitter) checkReturnBacking(exprs []Node) {
+// frameRef describes a value that reaches storage of the current frame: which local
+// that storage belongs to, and how a diagnostic should name the value.
+//
+// Three kinds of value reach it and each needs its own words -- a slice viewing a
+// local array, the address of a local, and a variable that was handed one of those.
+// Everything a diagnostic has to say beyond the naming is the same for all three,
+// which is why the five sinks share one phrasing and substitute what.
+type frameRef struct {
+	origin string // the local whose storage the value reaches
+	what   string // how to name the value
+	view   bool   // the value is itself a slice over that storage
+}
+
+func sliceRef(name string) frameRef {
+	return frameRef{origin: name, what: "a slice backed by local " + name, view: true}
+}
+
+func addrRef(name string) frameRef {
+	return frameRef{origin: name, what: "the address of local variable " + name}
+}
+
+func holderRef(name, origin string) frameRef {
+	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into local " + origin}
+}
+
+// frameRefOf reports whether a single expression reaches this frame's storage.
+//
+// Three shapes do. A slice viewing a local array, which sliceBackingIsFrame resolves.
+// The address of a local. And a variable that was given one of those -- a struct
+// whose field was assigned a local's address or a slice of a local array, or a copy
+// of such a struct. The third is why frameHolder exists: a struct hands the reference
+// on without being one, and following it per field would mean tracking provenance
+// per field, so the variable carries the mark instead.
+func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
+	if name, frame := e.sliceBackingIsFrame(ast); frame {
+		return sliceRef(name), true
+	}
+	if name, ok := e.addrOfRoot(ast); ok && e.isFrameVar(name) {
+		return addrRef(name), true
+	}
+	if name, ok := e.exprIdent(ast); ok {
+		if origin := e.frameHolder[name]; origin != "" {
+			return holderRef(name, origin), true
+		}
+	}
+	return frameRef{}, false
+}
+
+// frameRefIn finds the first of several expressions that reaches this frame's storage.
+func (e *emitter) frameRefIn(exprs []Node) (Node, frameRef, bool) {
 	for _, x := range exprs {
-		if name, frame := e.sliceBackingIsFrame(x.ast); frame {
-			// Positioned, unlike most emitter diagnostics: this one refuses a program
-			// a user wrote rather than reporting a shape the emitter cannot lower, so
-			// it needs to say where.
-			e.fail("%v: cannot return a slice backed by local %s: its storage does not outlive the function; "+
-				"take the backing array from the caller or declare it at package scope",
-				e.f.tok(x.Pos()).Position(), name)
+		if r, ok := e.frameRefOf(x.ast); ok {
+			return x, r, true
+		}
+	}
+	return Node{}, frameRef{}, false
+}
+
+// noteFrameHolder records that a local was given a reference to this frame's storage,
+// so that handing the local on is refused as handing the reference would be. It fires
+// on a write into the variable or into a field of it -- `b.data = a[:]`, `n.p = &x` --
+// and on a copy of a variable already marked.
+//
+// The mark is per variable and is never cleared, which is what keeps it sound with no
+// per-field tracking: a struct with two fields, one holding a frame reference and one
+// not, must stay marked. The cost is a refusal of the program that overwrites the
+// only such field with package-level storage and then crosses -- rare, and the fix is
+// to use the package-level storage from the start.
+func (e *emitter) noteFrameHolder(base string, op []Node) {
+	if !e.isFrameVar(base) {
+		return
+	}
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return
+	}
+	for n := range it(op[1].ast) {
+		if n.sym != Expression {
+			continue
+		}
+		r, ok := e.frameRefOf(n.ast)
+		if !ok {
+			continue
+		}
+		if _, isSlice := e.sliceVars[base]; isSlice && r.view {
+			// A slice variable assigned a view of this frame is the shape frameBacked
+			// already models, and the one its wording fits.
+			e.frameBacked[base] = true
 			return
 		}
+		e.frameHolder[base] = r.origin
+		return
+	}
+}
+
+// checkReturnBacking refuses returning a value that reaches storage of this frame.
+// The reference would outlive the storage, and with no heap there is nowhere to
+// promote that storage to, so it is a static error -- the counterpart of the
+// checker's refusal to return a local's address.
+func (e *emitter) checkReturnBacking(exprs []Node) {
+	if x, r, ok := e.frameRefIn(exprs); ok {
+		// Positioned, unlike most emitter diagnostics: this one refuses a program a
+		// user wrote rather than reporting a shape the emitter cannot lower, so it
+		// needs to say where.
+		e.fail("%v: cannot return %s: its storage does not outlive the function; "+
+			"take the backing array from the caller or declare it at package scope",
+			e.f.tok(x.Pos()).Position(), r.what)
 	}
 }
 
@@ -9971,18 +10106,17 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 		return
 	}
 	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return // only a plain "=" carries a slice value here
+		return // only a plain "=" carries such a value here
 	}
+	var vals []Node
 	for n := range it(op[1].ast) {
-		if n.sym != Expression {
-			continue
+		if n.sym == Expression {
+			vals = append(vals, n)
 		}
-		if name, frame := e.sliceBackingIsFrame(n.ast); frame {
-			e.fail("%v: cannot store a slice backed by local %s in package variable %s: "+
-				"its storage does not outlive the function",
-				e.f.tok(n.Pos()).Position(), name, base)
-			return
-		}
+	}
+	if n, r, ok := e.frameRefIn(vals); ok {
+		e.fail("%v: cannot store %s in package variable %s: its storage does not outlive the function",
+			e.f.tok(n.Pos()).Position(), r.what, base)
 	}
 }
 
@@ -9997,19 +10131,9 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 // it themselves, each in its own words -- the two crossings dangle for different
 // reasons and a programmer fixing one is served by hearing which.
 //
-// This sees a slice the way sliceBackingIsFrame does: as a variable, a slice of a
-// local array, or a re-slice of either. A frame pointer wrapped in a struct is not
-// found -- `b.data = a[:]; go g(b)` still compiles -- because provenance is tracked
-// per variable and not per field. That is the next increment, along with the pointer
-// a parameter arrived through, whose backing belongs to a caller this cannot see.
-func (e *emitter) crossBackedByFrame(exprs []Node) (Node, string, bool) {
-	for _, x := range exprs {
-		if name, frame := e.sliceBackingIsFrame(x.ast); frame {
-			return x, name, true
-		}
-	}
-	return Node{}, "", false
-}
+// It sees the three shapes frameRefOf does: a slice viewing a local array, the
+// address of a local, and a variable that was handed either -- a struct with such a
+// field, or a copy of one.
 
 // checkCrossArgs refuses an argument backed by this frame where the callee lets that
 // parameter reach another cog. It is increment 3's rule applied one call further out:
@@ -10025,19 +10149,14 @@ func (e *emitter) checkCrossArgs(cname string, args []Node) {
 		if i >= len(crosses) || !crosses[i] {
 			continue
 		}
-		pos := e.f.tok(a.Pos()).Position()
-		if name, frame := e.sliceBackingIsFrame(a.ast); frame {
-			e.fail("%v: cannot pass a slice backed by local %s to %s: its parameter %d reaches another cog, "+
-				"which may outlive this function; declare the backing array at package scope",
-				pos, name, e.funcSourceName(cname), i+1)
-			return
+		r, ok := e.frameRefOf(a.ast)
+		if !ok {
+			continue
 		}
-		if name, ok := e.addrOfRoot(a.ast); ok && e.isFrameVar(name) {
-			e.fail("%v: cannot pass the address of local variable %s to %s: its parameter %d reaches "+
-				"another cog, which may outlive this function; declare %s at package scope",
-				pos, name, e.funcSourceName(cname), i+1, name)
-			return
-		}
+		e.fail("%v: cannot pass %s to %s: its parameter %d reaches another cog, which may outlive this "+
+			"function; declare the backing array at package scope",
+			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), i+1)
+		return
 	}
 }
 

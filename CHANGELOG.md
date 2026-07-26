@@ -68,9 +68,25 @@ Releases before v0.9.0 predate this file; see
   ```
 
   That holds however many calls separate the two, across package boundaries, and
-  through mutual recursion. One shape is still accepted and remains the programmer's
-  responsibility: a pointer or slice wrapped in a struct, since provenance is tracked
-  per variable and not per field.
+  through mutual recursion.
+
+  **A reference wrapped in a struct counts as one.** Assigning a local's address or a
+  slice of a local array to a field — or filling the field in a composite literal —
+  marks the variable, and a copy carries the mark, so all four sinks refuse it:
+
+  ```go
+  var a [4]int
+  var b buf
+  b.data = a[:]
+  go work(b)          // refused: b holds a pointer into local a
+  ```
+
+  The mark is per variable and never cleared, which is what makes it sound without
+  per-field tracking. It is also the one place the rule refuses more than it must: a
+  variable whose only such field is later overwritten with package-level storage stays
+  marked. Two smaller holes closed with it — `s = a[:]` by plain assignment (only the
+  declaration form was checked before), and any check on a scalar or pointer field
+  target, which used to leave through a path that ran neither.
 
 ### Fixed
 
