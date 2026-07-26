@@ -1949,10 +1949,18 @@ type rec struct {
 	i inner
 }
 
-func mk() rec           { return rec{1, 2, inner{9}} }
+func mk() rec             { return rec{1, 2, inner{9}} }
 func at(a int, b int) rec { return rec{a, b, inner{0}} }
 
 func (r rec) sum() int { return r.x + r.y }
+
+type box struct{ d []int }
+
+var gd = []int{7, 8}
+var gb box
+
+func pick() box            { return gb }
+func (b box) get() []int   { return b.d }
 
 func main() {
 	println(mk().x, mk().y)
@@ -1965,9 +1973,15 @@ func main() {
 	if mk().y > 1 {
 		println("yes")
 	}
+
+	// Indexing a call result needs the same temporary, and for a slice result it
+	// is also what gives the bounds check a base to form its ".len" from.
+	gb.d = gd
+	println(pick().d[1])
+	println(gb.get()[0], gb.get()[1])
 }
 `,
-		want: "1 2\n9\n4\n5\n2\n3\nyes\n",
+		want: "1 2\n9\n4\n5\n2\n3\nyes\n8\n7 8\n",
 	},
 	{
 		name: "append and cap",

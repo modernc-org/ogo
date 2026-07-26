@@ -29,6 +29,8 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A call's result may be indexed**, `mk()[1]`, including through a field,
+  `mk().d[1]`.
 - **A field may be read off a call's struct result**, `mk().y`. It was refused
   because the target's C compiler miscompiles that read directly; the result is now
   bound to a temporary first, which reads correctly.

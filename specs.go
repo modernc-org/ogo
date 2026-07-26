@@ -834,7 +834,8 @@
 //	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
 //
 // A call that returns a struct may have a field selected from its result,
-// "mk().y", and a method called on it, "mk().sum()".
+// "mk().y", a method called on it, "mk().sum()", and its result indexed,
+// "mk()[1]" or "mk().d[1]".
 //
 // A call's arguments are evaluated left to right, before the call. Where an
 // argument can change state -- it calls something, or receives from a channel --

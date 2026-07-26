@@ -6547,7 +6547,22 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			cur = next
 		case Index:
 			if !addr {
-				return "", "", false, false // indexing a call result: see the field case
+				// Indexing a call result, `mk()[1]`. Bound to a temporary for the
+				// same reason a field read is (see the Selector case), and with a
+				// second benefit for a slice result: the bounds check needs the base
+				// as text to form its ".len", and a temporary is exactly that.
+				if cur.ctype == "" && !cur.slice && len(cur.dims) == 0 {
+					return "", "", false, false
+				}
+				ct := cur.ctype
+				if cur.slice {
+					ct = sliceCName(cur.elem)
+				}
+				if ct == "" {
+					return "", "", false, false
+				}
+				inner := text
+				text, addr = e.hoist(ct, func() { e.emit(inner) }), true
 			}
 			low, _, isSlice := e.sliceParts(n.ast)
 			if isSlice || low == nil {
@@ -6578,11 +6593,10 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 // C type a call chain yields, for inferCType/callResultCType.
 func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 	var cur accessCur
-	pendingFn, addr := false, false
+	pendingFn := false
 	switch {
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
-		addr = true
 	case e.isChainFunc(base):
 		pendingFn = true
 	default:
@@ -6596,7 +6610,7 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 			if !pendingFn || !okr || len(rts) != 1 {
 				return "", false
 			}
-			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
+			cur, pendingFn = e.plainOrSlice(rts[0]), false
 		case Selector:
 			field := e.soleIdent(n.ast)
 			bt := methodBaseType(cur.ctype)
@@ -6610,7 +6624,6 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 				} else {
 					cur = accessCur{} // void method: no result type (a void chain yields none)
 				}
-				addr = false
 				i++
 				continue
 			}
@@ -6620,11 +6633,7 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 			if cur, oks = e.accessSelect(cur, field); !oks {
 				return "", false
 			}
-			addr = true
 		case Index:
-			if !addr {
-				return "", false
-			}
 			if _, _, isSlice := e.sliceParts(n.ast); isSlice {
 				return "", false
 			}
@@ -6634,7 +6643,6 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 			if cur, _, oki = e.accessIndex(cur, base); !oki {
 				return "", false
 			}
-			addr = true
 		default:
 			return "", false
 		}
