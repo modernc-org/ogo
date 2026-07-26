@@ -1543,6 +1543,15 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(gd)
 		out.WriteByte('\n')
 	}
+	// Cells for locally declared channels. Discovered while walking the bodies, so
+	// they can only be written now, and they must precede the package initializer
+	// that takes their locks.
+	if len(e.chanCells) != 0 {
+		for _, decl := range e.chanCells {
+			out.WriteString(decl + "\n")
+		}
+		out.WriteByte('\n')
+	}
 	// The package initializer likewise calls user functions, so it follows the
 	// prototypes too.
 	if pd := e.pkgInitDefs(); pd != "" {
@@ -1632,6 +1641,8 @@ type emitter struct {
 	eqArrays           map[string]arrDim        // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string                 // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
 	frameBacked        map[string]bool          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
+	chanCells          []string                 // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
+	chanCellN          int                      // counter minting unique cell names, program-wide like makeN
 	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode     bool                     // `for i, c := range s` appears: emit ogo_decode_rune
 	err                error
@@ -3592,15 +3603,8 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			// usable, and ties the lock's lifetime to the variable's.
 			if e.isChanCType(ctype) {
 				// The declaration owns the cell; the variable is a reference to it.
-				elem := e.chanElemByName[ctype]
-				cell := nm + "_cell"
 				e.ind()
-				e.emit(chanCellCName(elem) + " " + cell + " = {0};\n")
-				e.ind()
-				e.emit(nm + " = &" + cell + ";\n")
-				e.ind()
-				e.chanInitElems[elem] = true
-				e.emit(chanInitCName(elem) + "(" + nm + ");\n")
+				e.emit(nm + " = &" + e.localChanCell(e.chanElemByName[ctype]) + ";\n")
 			}
 		}
 	}
@@ -9625,4 +9629,31 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 			return
 		}
 	}
+}
+
+// localChanCell gives a locally declared channel its cell, and returns the cell's
+// C name. The cell is a file-scope static, one per declaration site, initialised
+// once at package init.
+//
+// It used to be an ordinary local, which put a channel's rendezvous state on the
+// declaring function's stack. Two things followed. Passing such a channel to a
+// goroutine -- `var ch chan int; go worker(ch)`, the ordinary way to write this --
+// handed another cog a pointer into a frame that the spawner was free to leave,
+// after which the goroutine's sends wrote over whatever reused that stack. And the
+// lock was acquired on every call and never released, so a function declaring a
+// channel could be called about fifteen times before the P2 ran out of locks.
+//
+// A static cell fixes both: the storage outlives every frame, and the lock is taken
+// once. The cost is that the cell belongs to the *site*, not to the call, so two
+// concurrent calls of the same function share one channel rather than getting one
+// each -- which is the trade the no-heap model asks for, and is why the cell can be
+// bounded at all: the P2 has 16 hardware locks, so a program cannot have more live
+// channels than sites anyway.
+func (e *emitter) localChanCell(elem string) string {
+	cell := fmt.Sprintf("ogo_chan_cell_%d", e.chanCellN)
+	e.chanCellN++
+	e.chanCells = append(e.chanCells, "static "+chanCellCName(elem)+" "+cell+";")
+	e.chanInitElems[elem] = true
+	e.deferPkgInit(chanInitCName(elem) + "(&" + cell + ");")
+	return cell
 }

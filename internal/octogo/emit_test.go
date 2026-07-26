@@ -4099,9 +4099,13 @@ func TestEmitCChannel(t *testing.T) {
 	for _, want := range []string{
 		"typedef struct { int lock; volatile int full; volatile int taken; volatile int val; } ogo_chan_int_cell;\n",
 		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
-		"\togo_chan_int_cell ch_cell = {0};\n",
-		"\tch = &ch_cell;\n",
-		"\togo_chan_init_int(ch);\n",
+		// A locally declared channel's cell is a file-scope static, one per
+		// declaration site, and its lock is taken once at package init -- not a
+		// local, which put the rendezvous state on the declaring frame's stack and
+		// leaked a lock per call.
+		"static ogo_chan_int_cell ogo_chan_cell_0;\n",
+		"\togo_chan_init_int(&ogo_chan_cell_0);\n",
+		"\tch = &ogo_chan_cell_0;\n",
 		"\togo_chan_send_int(ch, 2);\n",
 		"\tprintf(\"%d\\n\", ogo_chan_recv_int(ch));\n",
 		"#include <propeller2.h>\n",

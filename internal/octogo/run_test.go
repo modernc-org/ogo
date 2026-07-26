@@ -1990,6 +1990,52 @@ func main() {
 		want: "1 2\n9\n4\n5\n2\n3\nyes\n8\n7 8\n",
 	},
 	{
+		// A locally declared channel, used across cogs, from a function called
+		// repeatedly. Its cell is a file-scope static -- one per declaration site,
+		// its lock taken once at package init -- rather than a local of the
+		// declaring frame. Both halves of that mattered: the cell used to live on
+		// spawn's stack, so `go worker(ch)` handed another cog a pointer into a frame
+		// spawn was free to leave, and the lock was re-acquired on every call and
+		// never released, so the sixteenth call ran the P2 out of locks.
+		name: "local channel across cogs, called repeatedly",
+		src: `func worker(ch chan int, n int) { ch <- n }
+
+func spawn(n int) int {
+	var ch chan int
+	go worker(ch, n)
+	return <-ch
+}
+
+func decl(n int) int {
+	var unused chan int
+	if n < 0 {
+		<-unused
+	}
+	return n
+}
+
+func main() {
+	// Six spawns, not more: the cog pool has seven slots and does not recycle a
+	// finished one, so a loop past that panics "out of cogs" -- a separate defect,
+	// unrelated to where the cell lives.
+	sum := 0
+	for i := 0; i < 6; i++ {
+		sum = sum + spawn(i)
+	}
+	println(sum)
+
+	// A second site, exercised well past the lock budget. This one starts no cogs,
+	// so it is the leak that is under test here, not the pool.
+	total := 0
+	for i := 0; i < 20; i++ {
+		total = total + decl(i)
+	}
+	println(total)
+}
+`,
+		want: "15\n190\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)

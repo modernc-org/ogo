@@ -501,6 +501,15 @@
 // statically allocated Hub RAM buffers. They facilitate synchronous, lock-step
 // communication without a software scheduler.
 //
+// A channel's storage is static wherever it is declared. A local declaration binds
+// the variable to a cell belonging to that declaration *site*, not to the call, and
+// the cell's lock is taken once before the program starts. So a channel may be
+// passed to a goroutine or sent through another channel without any question of
+// whether the declaring function has returned -- which is what makes the ordinary
+// "var ch chan T; go worker(ch)" safe here. The consequence of a per-site cell is
+// that two concurrent calls of one function share its channel rather than each
+// having one; the hardware bounds channels to the 16 locks in any case.
+//
 // A receive may stand alone as a statement, "<-ch", discarding the value. The
 // receive still happens, so on a rendezvous channel that is how one goroutine
 // waits for another.
