@@ -650,8 +650,8 @@
 //	FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
 //	Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 //	Receiver       = "(" ParamDecl ")" .
-//	ParameterList  = ParamDecl { "," ParamDecl } .
-//	ResultList     = ParamDecl { "," ParamDecl } .
+//	ParameterList  = ParamDecl { "," ParamDecl } [ "," ] .
+//	ResultList     = ParamDecl { "," ParamDecl } [ "," ] .
 //	ParamDecl      = Type [ Type ] .
 //	IdentifierList = identifier { "," identifier } .
 //
@@ -701,9 +701,16 @@
 //		| "chan" Type
 //		| FuncLiteral .
 //	CompositeLit = "{" [ ElementList ] "}" .
-//	ElementList  = Element { "," Element } .
+//	ElementList  = Element { "," Element } [ "," ] .
 //	Element      = CompositeLit | Expression [ ":" ElementValue ] .
 //	ElementValue = CompositeLit | Expression .
+//
+// A list may end with a trailing comma, which is what lets it be written across
+// lines. The four that take one are the four Go allows it in -- a composite
+// literal's elements, a call's arguments, a parameter list and a result list --
+// and it is what the formatter writes for a list it spreads over lines, dropping
+// one whose list closes on the same line. The lists Go does not allow it in are
+// unchanged here: an assignment's right-hand side, a "return", a list of names.
 //
 // A composite literal "T{a, b}" builds a value of the named struct type from its
 // fields in declaration order. An Element may instead carry a key naming the field
@@ -969,7 +976,7 @@
 // the function is called.
 //
 //	CallSuffix = "(" [ ArgumentList ] ")" .
-//	ArgumentList = Expression { "," Expression } .
+//	ArgumentList = Expression { "," Expression } [ "," ] .
 //
 // # Built-in functions
 //

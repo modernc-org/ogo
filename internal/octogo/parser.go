@@ -4677,7 +4677,7 @@ state1:
 
 // ArgumentList grammar:
 //
-//	ArgumentList = Expression { "," Expression } .
+//	ArgumentList = Expression { "," Expression } [ "," ] .
 //
 //	State 0
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
@@ -4685,13 +4685,17 @@ state1:
 //	State 1
 //		Accept
 //		on  ','
-//			shift and goto state 0
+//			shift and goto state 2
+//	State 2
+//		Accept
+//		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//			call Expression and goto state 1
 //
 // ArgumentList is used internally from Parse.
 func (p *Parser) ArgumentList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ArgumentList), 0)
-state0:
+	// state0:
 	accept, errorSet = false, 36
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
@@ -4704,7 +4708,15 @@ state1:
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
-		goto state0
+		goto state2
+	}
+	return p.stop(r, accept, errorSet)
+state2:
+	accept, errorSet = true, 36
+	switch Symbol(p.tok.Ch) {
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+		r = p.add(r, p.Expression())
+		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 }
@@ -5453,7 +5465,7 @@ state3:
 
 // ElementList grammar:
 //
-//	ElementList  = Element { "," Element } .
+//	ElementList  = Element { "," Element } [ "," ] .
 //
 //	State 0
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
@@ -5461,13 +5473,17 @@ state3:
 //	State 1
 //		Accept
 //		on  ','
-//			shift and goto state 0
+//			shift and goto state 2
+//	State 2
+//		Accept
+//		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//			call Element and goto state 1
 //
 // ElementList is used internally from Parse.
 func (p *Parser) ElementList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ElementList), 0)
-state0:
+	// state0:
 	accept, errorSet = false, 25
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
@@ -5480,7 +5496,15 @@ state1:
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
-		goto state0
+		goto state2
+	}
+	return p.stop(r, accept, errorSet)
+state2:
+	accept, errorSet = true, 25
+	switch Symbol(p.tok.Ch) {
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+		r = p.add(r, p.Element())
+		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 }
@@ -7433,7 +7457,7 @@ state2:
 
 // ParameterList grammar:
 //
-//	ParameterList  = ParamDecl { "," ParamDecl } .
+//	ParameterList  = ParamDecl { "," ParamDecl } [ "," ] .
 //
 //	State 0
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
@@ -7441,13 +7465,17 @@ state2:
 //	State 1
 //		Accept
 //		on  ','
-//			shift and goto state 0
+//			shift and goto state 2
+//	State 2
+//		Accept
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
+//			call ParamDecl and goto state 1
 //
 // ParameterList is used internally from Parse.
 func (p *Parser) ParameterList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ParameterList), 0)
-state0:
+	// state0:
 	accept, errorSet = false, 55
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
@@ -7460,7 +7488,15 @@ state1:
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
-		goto state0
+		goto state2
+	}
+	return p.stop(r, accept, errorSet)
+state2:
+	accept, errorSet = true, 55
+	switch Symbol(p.tok.Ch) {
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
+		r = p.add(r, p.ParamDecl())
+		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 }
@@ -7821,7 +7857,7 @@ state1:
 
 // ResultList grammar:
 //
-//	ResultList     = ParamDecl { "," ParamDecl } .
+//	ResultList     = ParamDecl { "," ParamDecl } [ "," ] .
 //
 //	State 0
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
@@ -7829,13 +7865,17 @@ state1:
 //	State 1
 //		Accept
 //		on  ','
-//			shift and goto state 0
+//			shift and goto state 2
+//	State 2
+//		Accept
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
+//			call ParamDecl and goto state 1
 //
 // ResultList is used internally from Parse.
 func (p *Parser) ResultList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ResultList), 0)
-state0:
+	// state0:
 	accept, errorSet = false, 55
 	switch Symbol(p.tok.Ch) {
 	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
@@ -7848,7 +7888,15 @@ state1:
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
-		goto state0
+		goto state2
+	}
+	return p.stop(r, accept, errorSet)
+state2:
+	accept, errorSet = true, 55
+	switch Symbol(p.tok.Ch) {
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
+		r = p.add(r, p.ParamDecl())
+		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 }

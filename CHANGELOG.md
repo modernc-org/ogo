@@ -26,6 +26,21 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A list may end with a trailing comma**, which is what lets it be written across
+  lines — the form gofmt produces, and the only readable way to spell a table:
+
+  ```go
+  var table = []P{
+  	{1, 2},
+  	{3, 4},
+  }
+  ```
+
+  Go takes one in a composite literal, a call's arguments, a parameter list and a
+  result list, and so does this; the lists where Go does not — an assignment's
+  right-hand side, a `return`, a list of names — are unchanged. `ogo fmt` keeps a
+  trailing comma where it does that work and drops one whose list closes on the same
+  line, as gofmt does.
 - **An array literal may be a composite literal's element**, `P{1, [2]int{2, 3}}`,
   which is how a record holding a fixed array is written — and so how a lookup table
   of them is. It was refused with `a [2]int literal is only supported as a

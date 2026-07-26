@@ -51,8 +51,8 @@ TypeSpec = identifier [ "=" ] Type .
 FuncDecl       = "func" [ Receiver ] identifier Signature [ Block ] .
 Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 Receiver       = "(" ParamDecl ")" .
-ParameterList  = ParamDecl { "," ParamDecl } .
-ResultList     = ParamDecl { "," ParamDecl } .
+ParameterList  = ParamDecl { "," ParamDecl } [ "," ] .
+ResultList     = ParamDecl { "," ParamDecl } [ "," ] .
 ParamDecl      = Type [ Type ] .
 IdentifierList = identifier { "," identifier } .
 ExpressionList = Expression { "," Expression } .
@@ -70,7 +70,7 @@ Factor     = identifier [ CompositeLit | FactorSuffix ]
 	| "chan" Type
 	| FuncLiteral .
 CompositeLit = "{" [ ElementList ] "}" .
-ElementList  = Element { "," Element } .
+ElementList  = Element { "," Element } [ "," ] .
 Element      = CompositeLit | Expression [ ":" ElementValue ] .
 ElementValue = CompositeLit | Expression .
 HeaderExpression = HeaderSimpleExpr { RelOp HeaderSimpleExpr } .
@@ -96,7 +96,7 @@ RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
 AddOp = "+" | "-" | "|" | "^" .
 MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
 CallSuffix = "(" [ ArgumentList ] ")" .
-ArgumentList = Expression { "," Expression } .
+ArgumentList = Expression { "," Expression } [ "," ] .
 Statement = VarDecl
 	| ConstDecl
 	| TypeDecl

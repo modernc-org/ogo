@@ -765,6 +765,17 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 						f.prevTok = SEMICOLON
 						break outer
 					}
+				case COMMA:
+					// gofmt keeps a trailing comma only where it is what lets the list
+					// span lines, and drops one whose list closes on the same line. The
+					// token is not emitted and its separator travels to the delimiter,
+					// the way a synthetic semicolon's does; the token history is left
+					// alone, so the delimiter is spaced against the element before it.
+					if nx := f.p.Token(tokIdx + 1); (Symbol(nx.Ch) == RBRACE || Symbol(nx.Ch) == RPAREN) &&
+						nx.Position().Line == tok.Position().Line {
+						syntheticSep = append(syntheticSep[:0], sep...)
+						break outer
+					}
 				case LBRACE:
 					if n == c.undentLBraceIndex {
 						indentDelta = -1

@@ -2986,6 +2986,62 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A trailing comma, which is what lets a list be written across lines -- the
+		// form gofmt produces and the only readable way to spell a table. Go takes one
+		// in a composite literal, a call's arguments, a parameter list and a result
+		// list, and this covers all four.
+		name: "a trailing comma in a list",
+		src: `type P struct {
+	x int
+	y [2]int
+}
+
+var table = []P{
+	{1, [2]int{2, 3}},
+	{4, [2]int{5, 6}},
+}
+
+var keyed = P{
+	x: 7,
+	y: [2]int{8, 9},
+}
+
+func sum(
+	a int,
+	b int,
+	c int,
+) (
+	int,
+	int,
+) {
+	return a + b + c, a
+}
+
+func main() {
+	t, first := sum(
+		1,
+		2,
+		3,
+	)
+	println("call", t, first)
+	println("table", table[1].x, table[1].y[0], keyed.y[1])
+
+	xs := []int{
+		10,
+		20,
+	}
+	println("slice", len(xs), xs[1])
+
+	m := [2][2]int{
+		{1, 2},
+		{3, 4},
+	}
+	println("matrix", m[1][0])
+}
+`,
+		want: "call 6 1\ntable 4 5 9\nslice 2 20\nmatrix 3\n",
+	},
+	{
 		// An array literal as a struct literal's element, `P{1, [2]int{2, 3}}`. An
 		// array field's position implies its element type rather than its own, so
 		// neither the written form nor the elided one was recognised there, and the
