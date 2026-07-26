@@ -56,6 +56,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A goroutine argument wider than one word corrupted the goroutine's stack.** The
+  block a `go` statement marshals its arguments into was sized at one word per
+  argument, so a slice (three), an `int64` or `float64` (two), or a struct overflowed
+  it — and it sits directly above the stack the new cog is about to run on. `go
+  fill(buf[:], done)` produced a program that printed nothing and hung, with no
+  diagnostic from either compiler. The block is now a union of every `go` site's
+  arguments, so its size and alignment come from the types themselves.
 - **A program could only ever start seven goroutines.** The seven-cog limit is meant
   to bound how many run at one time, and a finished goroutine's slot to be reused,
   but a goroutine that has just handed its result to the receiver is a few

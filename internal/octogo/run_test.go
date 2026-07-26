@@ -2802,6 +2802,31 @@ func main() {
 		panics: true,
 	},
 	{
+		// The shape the crossing rule endorses: a goroutine writes into a buffer whose
+		// backing array is package-level, so it outlives every frame including the one
+		// that launched it, and a channel says when the writing is done. Passing a
+		// buffer this cog owns instead -- `var a [4]int; go fill(a[:], ch)` -- is
+		// refused, and this is what that refusal asks for.
+		name: "goroutine fills a package-level buffer",
+		src: `var buf [4]int
+
+func fill(s []int, ch chan int) {
+	for i := 0; i < len(s); i++ {
+		s[i] = i * 3
+	}
+	ch <- len(s)
+}
+
+func main() {
+	var ch chan int
+	go fill(buf[:], ch)
+	n := <-ch
+	println(n, buf[0], buf[1], buf[3])
+}
+`,
+		want: "4 0 3 9\n",
+	},
+	{
 		// Eight at once, none of them finished, so there is nothing to wait for and
 		// the panic is immediate. This is the other side of "goroutine slots are
 		// reused": waiting out a cog that is stopping must not turn genuine

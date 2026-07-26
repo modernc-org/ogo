@@ -406,11 +406,13 @@ func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
 // directly, in the rare order where the reissue happens between two claims.
 const ogoCogPool = `#define OGO_COGS 8
 #define OGO_STACK_LONGS 256
+// The argument block is a union of every go site's arguments (see goDefs), so it is
+// exactly as wide and as aligned as the widest of them.
 // A backstop, not a timeout: a cog stops within a few instructions of setting done,
 // so this many spins cannot elapse legitimately. It turns a state this protocol did
 // not anticipate into a diagnosable panic instead of a silent hang.
 #define OGO_STOP_SPINS 100000
-typedef struct { int ogo_used; int ogo_done; int ogo_cog; long ogo_args[OGO_ARG_LONGS]; long ogo_stack[OGO_STACK_LONGS]; } ogo_cog_slot;
+typedef struct { int ogo_used; int ogo_done; int ogo_cog; ogo_go_args ogo_args; long ogo_stack[OGO_STACK_LONGS]; } ogo_cog_slot;
 static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
 static int ogo_cog_lock = -1;
 static void ogo_cog_sweep(void) { // frees every finished slot; caller holds ogo_cog_lock
@@ -534,7 +536,7 @@ func (e *emitter) emitGo(nodes []Node) {
 	e.ind()
 	e.emit("if (" + slot + " < 0) { ogo_panic(\"out of cogs\"); }\n")
 	e.ind()
-	e.emit(goArgsCName(site.id) + "* " + ap + " = (void*)ogo_cog_pool[" + slot + "].ogo_args;\n")
+	e.emit(goArgsCName(site.id) + "* " + ap + " = (void*)&ogo_cog_pool[" + slot + "].ogo_args;\n")
 	e.ind()
 	e.emit(ap + "->ogo_slot = " + slot + ";\n")
 	for i, a := range args {
@@ -562,41 +564,51 @@ func (e *emitter) emitGo(nodes []Node) {
 }
 
 // goDefs renders the argument struct and trampoline for every launched goroutine,
-// plus the pool sized to the widest argument block. The trampoline releases the
-// slot when the goroutine returns, which is where the cog is freed too.
+// plus the pool, whose argument block is a union of every site's struct. The
+// trampoline releases the slot when the goroutine returns, which is where the cog is
+// freed too.
+//
+// The union is what sizes and aligns the block, rather than any arithmetic here.
+// Counting one long per argument is what it replaced, and that undercounts every
+// argument wider than one: a slice is three longs, an int64 or float64 two, a struct
+// as many as it has. The block sat directly above the goroutine's stack in the same
+// slot, so a `go` statement passing a slice overflowed into the stack the cog was
+// about to run on -- with no diagnostic anywhere, on either compiler.
 func (e *emitter) goDefs() string {
 	if len(e.goSites) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	widest := 1 // the slot field alone
+	var b, tramps strings.Builder
 	for _, s := range e.goSites {
 		fmt.Fprintf(&b, "typedef struct { int ogo_slot;")
 		for i, a := range s.args {
 			fmt.Fprintf(&b, " %s a%d;", a, i)
 		}
 		fmt.Fprintf(&b, " } %s;\n", goArgsCName(s.id))
-		if n := 1 + len(s.args); n > widest {
-			widest = n
-		}
 	}
+	b.WriteString("typedef union {")
+	for i, s := range e.goSites {
+		fmt.Fprintf(&b, " %s s%d;", goArgsCName(s.id), i)
+	}
+	b.WriteString(" } ogo_go_args;\n")
 	for _, s := range e.goSites {
-		fmt.Fprintf(&b, "static void %s(void* p) {\n\t%s* a = p;\n\t%s(",
+		fmt.Fprintf(&tramps, "static void %s(void* p) {\n\t%s* a = p;\n\t%s(",
 			goTrampolineCName(s.id), goArgsCName(s.id), s.callee)
 		for i := range s.args {
 			if i != 0 {
-				b.WriteString(", ")
+				tramps.WriteString(", ")
 			}
-			fmt.Fprintf(&b, "a->a%d", i)
+			fmt.Fprintf(&tramps, "a->a%d", i)
 		}
 		// Not ogo_cog_release: the goroutine is still on this slot's stack
 		// here, with the return through _cogstart's epilogue ahead of it. done
 		// only makes the slot a candidate; ogo_cog_sweep waits for _cogchk to
 		// confirm the cog stopped before the stack is handed to anyone else.
-		b.WriteString(");\n\togo_cog_done(a->ogo_slot);\n}\n")
+		tramps.WriteString(");\n\togo_cog_done(a->ogo_slot);\n}\n")
 	}
-	// The argument block is sized in longs to keep it aligned for any member.
-	return fmt.Sprintf("#define OGO_ARG_LONGS %d\n", widest) + ogoCogPool + b.String()
+	// The argument structs come before the pool that embeds them, the trampolines
+	// after it: they call ogo_cog_done.
+	return b.String() + ogoCogPool + tramps.String()
 }
 
 // selectCase is one CommClause of a select: the channel polled, where its value
