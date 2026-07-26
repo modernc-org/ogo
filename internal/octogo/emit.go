@@ -1630,6 +1630,7 @@ type emitter struct {
 	usesStringEq       bool                     // a string == / != appears: emit ogo_string_eq
 	eqStructs          map[string]bool          // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim        // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
+	prologue           []string                 // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
 	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode     bool                     // `for i, c := range s` appears: emit ogo_decode_rune
 	err                error
@@ -3212,6 +3213,84 @@ func (e *emitter) emitStatement(ast []int32) {
 	if len(nodes) == 0 {
 		return // EmptyStatement
 	}
+	// The statement is emitted into a buffer so anything inside it can ask for a
+	// line to be placed *before* it -- a temporary an expression needs hoisted out
+	// of itself, which C has nowhere to put mid-expression. With no such request
+	// this is a copy and nothing else, so every statement that needs no prologue
+	// emits exactly what it did before.
+	savedW, savedPro := e.w, e.prologue
+	var buf bytes.Buffer
+	e.w, e.prologue = &buf, nil
+	e.emitStatementInner(nodes, ast)
+	pro := e.prologue
+	e.w, e.prologue = savedW, savedPro
+	for _, line := range pro {
+		e.ind()
+		e.emit(line)
+	}
+	e.w.Write(buf.Bytes())
+}
+
+// hoist requests a line before the statement being emitted and returns the name of
+// a fresh temporary it declares. It is how an expression gets a temporary when C
+// gives it nowhere to put one.
+func (e *emitter) hoist(ctype string, emitValue func()) string {
+	tmp := e.newTmp()
+	savedW := e.w
+	var buf bytes.Buffer
+	e.w = &buf
+	emitValue()
+	e.w = savedW
+	e.prologue = append(e.prologue, ctype+" "+tmp+" = "+buf.String()+";\n")
+	return tmp
+}
+
+// exprHasEffect reports whether an expression can change state when evaluated: it
+// calls something, or receives from a channel. Nothing else in an expression can.
+//
+// A call to len, cap, min or max, or a type conversion, is spelled like a call but
+// cannot change anything, so it does not count -- its arguments still do, and are
+// reached by walking into it. Treating every call shape as an effect was the first
+// version and it was wrong in a visible way: `println(r[0], len(r))` stopped being
+// one printf.
+func (e *emitter) exprHasEffect(ast []int32) bool {
+	for n := range it(ast) {
+		switch {
+		case n.sym == 0:
+			if e.f.ch(n.tok) == ARROW {
+				return true // a channel receive
+			}
+		case n.sym == Factor:
+			if recv, _, isCall := e.factorCall(slices.Collect(it(n.ast))); isCall && !e.pureCall(recv) {
+				return true
+			}
+			if e.exprHasEffect(n.ast) {
+				return true // its arguments may still have effects
+			}
+		default:
+			if e.exprHasEffect(n.ast) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// pureCall reports whether a call to recv cannot change state: the builtins that
+// only read their arguments, and a type conversion, which is a cast.
+func (e *emitter) pureCall(recv string) bool {
+	if _, isUser := e.userFunc(recv); isUser {
+		return false // a user function of that name shadows the builtin
+	}
+	switch recv {
+	case "len", "cap", "min", "max":
+		return true
+	}
+	_, isConv := e.convType(recv)
+	return isConv
+}
+
+func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 	if label, inner, ok := e.stmtLabelParts(nodes); ok {
 		e.emitLabeledStatement(label, inner)
 		return
@@ -6997,6 +7076,20 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 			break
 		}
 	}
+	// An argument that can change state forces the one-per-printf path below, which
+	// evaluates the arguments in source order because it emits a separate statement
+	// for each. Packing them into a single printf would leave the order to the C
+	// compiler, and the two this targets disagree -- `println(f(), x)` where f
+	// writes x printed different things depending on which one built it. The bytes
+	// written are identical either way; only the number of printf calls differs.
+	if allScalar {
+		for _, arg := range args {
+			if e.exprHasEffect(arg.ast) {
+				allScalar = false
+				break
+			}
+		}
+	}
 	if allScalar {
 		e.ind()
 		e.emit("printf(\"")
@@ -7963,8 +8056,33 @@ func (e *emitter) emitDiscard(expr []int32) {
 // signature is not recorded) simply emits every argument as written.
 func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	sliceParams := e.funcSliceParams[cname]
+	args := e.callArgExprs(callSuffix)
+	// Go evaluates a call's arguments left to right. C leaves the order
+	// unspecified, and the two compilers this targets disagree: given
+	// `f(t(1), t(2), t(3))` the P2 backend evaluates left to right while the host's
+	// gcc goes right to left, so the same program answered differently depending on
+	// which one built it. When an argument can change state and there is more than
+	// one, each is evaluated into a temporary in source order and the call takes the
+	// temporaries, which pins the order rather than relying on either compiler's
+	// choice. A single argument, or arguments that cannot change state, are emitted
+	// in place as before.
+	if len(args) > 1 && e.deferReplay < 0 {
+		effect := false
+		for _, a := range args {
+			if e.exprHasEffect(a.ast) {
+				effect = true
+				break
+			}
+		}
+		if effect {
+			if names, ok := e.hoistArgs(cname, args); ok {
+				e.emit(strings.Join(names, ", "))
+				return
+			}
+		}
+	}
 	first := true
-	for i, arg := range e.callArgExprs(callSuffix) {
+	for i, arg := range args {
 		if !first {
 			e.emit(", ")
 		}
@@ -9369,4 +9487,28 @@ func (e *emitter) emitArrayCompareTriple(l, r Node, op string, a arrDim) {
 	e.emit(", ")
 	e.emitExprNode(r)
 	e.emit(")")
+}
+
+// hoistArgs evaluates each argument of a call into a temporary, in source order,
+// and returns the temporaries' names. It reports false when any argument's type
+// cannot be named in C -- an array, say -- in which case the caller emits the
+// arguments in place and the order stays whatever the C compiler chooses.
+func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
+	sliceParams := e.funcSliceParams[cname]
+	names := make([]string, 0, len(args))
+	for i, a := range args {
+		// A bare nil at a slice parameter has no type of its own; it takes the
+		// parameter's, exactly as it does when emitted in place.
+		if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(a.ast) {
+			ct := sliceParams[i]
+			names = append(names, e.hoist(ct, func() { e.emit("(" + ct + "){0}") }))
+			continue
+		}
+		ct, ok := e.inferCType(a.ast)
+		if !ok {
+			return nil, false
+		}
+		names = append(names, e.hoist(ct, func() { e.emitExpr(a.ast) }))
+	}
+	return names, true
 }

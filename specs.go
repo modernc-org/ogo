@@ -833,6 +833,11 @@
 //	AddOp = "+" | "-" | "|" | "^" .
 //	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
 //
+// A call's arguments are evaluated left to right, before the call. Where an
+// argument can change state -- it calls something, or receives from a channel --
+// each argument is evaluated into a temporary in that order, because C leaves the
+// order unspecified and the compilers this passes through do not agree on it.
+//
 // # Function Calls
 //
 // Given an expression f of function type, f(a1, a2, … an) calls f with

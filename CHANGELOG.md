@@ -29,6 +29,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A call's arguments are now evaluated left to right**, as Go specifies. C leaves
+  the order unspecified and the two compilers disagreed: the P2 backend went left to
+  right, the host's gcc right to left, so a program whose arguments had side effects
+  answered differently depending on which built it.
 - **A deferred call in `main` could not capture an argument.** `defer f(x)` there
   failed to build with `Unknown symbol '_ogo_defer0_a0'`: the capture was emitted
   and the temporary it assigned to never declared. `main` was the only function

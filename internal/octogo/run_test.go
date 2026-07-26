@@ -1886,6 +1886,52 @@ func main() {
 		want: "mid 5\ninner 5\nouter 1\n2\n4\n1 2\n",
 	},
 	{
+		// Go evaluates a call's arguments left to right. C leaves the order
+		// unspecified and the two compilers here disagree -- the P2 backend went left
+		// to right, the host's gcc right to left -- so the same program answered
+		// differently depending on which built it. An argument that can change state
+		// is now evaluated into a temporary in source order.
+		//
+		// The log variable records the order: each call folds its number into it, so
+		// 123 means left to right and 321 means right to left.
+		name: "call argument evaluation order",
+		src: `var log int
+var shared int
+
+func t(n int) int {
+	log = log*10 + n
+	return n
+}
+
+func bump() int {
+	shared = 9
+	return 1
+}
+
+func three(a int, b int, c int) int { return a + b + c }
+func two(a int, b int) int          { return a*10 + b }
+
+func main() {
+	println(three(t(1), t(2), t(3)), log)
+
+	// A pure argument must still see what an earlier one wrote.
+	shared = 0
+	println(two(bump(), shared))
+
+	// println's own arguments are ordered too.
+	log = 0
+	println(t(7), log)
+
+	// len and a conversion are calls in shape only, so they change nothing and
+	// leave the packed single-printf form alone.
+	a := [3]int{4, 5, 6}
+	var u uint8 = 7
+	println(a[0], len(a), int(u))
+}
+`,
+		want: "6 123\n19\n7 7\n4 3 7\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)
