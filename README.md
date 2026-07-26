@@ -169,11 +169,14 @@ broken.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
   functions and methods with value or pointer receivers.
 * Named and unnamed parameters and results, multiple return values, naked returns.
-* `if`/`else`, all `for` forms including `range`, `switch` with or without a guard,
-  `fallthrough`, `break` and `continue` (including labeled), `defer` (including in
-  nested blocks, capturing its arguments).
-* The full operator set, compound assignment, multiple assignment, struct and
-  string comparison.
+* `if`/`else` including an init statement (`if v := f(); v > 0`), all `for` forms
+  including `range`, `switch` with or without a guard, `fallthrough`, `break` and
+  `continue` (including labeled), `defer` (including in nested blocks, capturing its
+  arguments).
+* The full operator set, compound assignment, multiple assignment, and equality on
+  strings, structs and arrays.
+* A call's result may be used directly: a field read off it (`mk().y`), a method
+  called on it, or an index into it (`mk()[1]`, `mk().d[1]`).
 * `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
   fixed-capacity slice, `panic`, `print`/`println`.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. Channels may be
@@ -206,6 +209,25 @@ compatibility but carries no extra precision.
 **Not planned**, because the target does not permit them: a garbage collector, a
 heap, maps, closures that capture their environment, and runtime string
 concatenation. Constant string concatenation folds at compile time.
+
+Having no heap has one consequence worth knowing before you meet it: a reference
+must not outlive what it refers to. Where Go would move the referent to the heap and
+say nothing, there is nowhere to move it to, so the program is refused instead —
+returning a local's address or a slice backed by a local, storing either in a package
+variable, or handing either to another cog as a `go` argument or through a channel. A
+struct holding such a reference counts as one, and the requirement follows a
+parameter back to the call sites that chose the storage. Declare the buffer at
+package scope and pass a slice of it, which is what the diagnostics ask for:
+
+```
+var buf [64]byte
+
+func main() {
+	var done chan int
+	go fill(buf[:], done)   // buf outlives every frame
+	<-done
+}
+```
 
 Everything else Go has is meant to be here eventually — anything missing above is
 work not yet done rather than a decision taken. Generics are the one open question:

@@ -11,7 +11,7 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
-## Unreleased
+## v0.10.0
 
 ### Language
 

@@ -67,10 +67,11 @@
 //     slice one, maps, run-time string concatenation, and a function literal that
 //     captures its surrounding scope. It is also why a reference must not outlive
 //     what it refers to: where Go moves a referent to the heap and says nothing,
-//     there is nowhere to move it to, so the program is refused instead. That is
-//     one rule met in four places -- returning a local's address or a slice backed
-//     by a local, storing either in a package variable, and handing either to
-//     another cog.
+//     there is nowhere to move it to, so the program is refused instead. One rule,
+//     met wherever a reference could leave its referent behind -- returning a
+//     local's address or a slice backed by a local, storing either in a package
+//     variable, handing either to another cog, and calling a function that hands the
+//     argument on. A struct holding such a reference counts as one.
 //   - A goroutine is a physical cog, of which the P2 has eight. There is no
 //     scheduler and no preemption, so "go" starts a real core, not a task.
 //   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
