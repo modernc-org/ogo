@@ -53,6 +53,15 @@ Releases before v0.9.0 predate this file; see
   compiled to a comparison against a C variable named `_`. What a switch switches on
   is now resolved like any other expression, which reports it.
 
+### Behaviour changes
+
+- **A package array's element may no longer be given a reference to a local.**
+  `table[1] = local[:]`, where `table` is a package-level array, left it pointing at
+  storage the function was free to reuse — the rule that refuses this for every other
+  package variable was asking one environment for the target and arrays live in
+  another, so every array target went unchecked. Declare the buffer at package scope
+  and slice that, which is what the diagnostic asks for.
+
 ### Fixed
 
 - **A string byte is unsigned.** `s[i]` is a `byte` in Go, but it was read straight

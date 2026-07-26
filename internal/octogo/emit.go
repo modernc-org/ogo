@@ -5430,6 +5430,28 @@ func (e *emitter) sliceParts(indexAST []int32) (low, high, max []int32, isSlice 
 	return low, high, max, isSlice
 }
 
+// isPackageVar reports whether name reaches a package-level variable of this
+// package -- one that outlives every call -- rather than something local.
+//
+// A local of that name shadows the package one, so the local environments are asked
+// first, and both of them: an array lives in its own, not in locals. The same split
+// is why the package side asks twice, and asking only the plain one is what let a
+// package array take a reference that dies before it does.
+func (e *emitter) isPackageVar(name string) bool {
+	if _, ok := e.locals[name]; ok {
+		return false
+	}
+	if _, ok := e.arrays[name]; ok {
+		return false
+	}
+	gc := e.globalC(name)
+	if _, ok := e.globals[gc]; ok {
+		return true
+	}
+	_, ok := e.globalArrays[gc]
+	return ok
+}
+
 // varType returns a variable's C type from the local then the package environment.
 func (e *emitter) varType(name string) (string, bool) {
 	if ct, ok := e.locals[name]; ok {
@@ -10512,11 +10534,8 @@ func (e *emitter) checkReturnBacking(exprs []Node) {
 // door: a reference that does not provably outlive the frame, but leaves its
 // control.
 func (e *emitter) checkStoreBacking(base string, op []Node) {
-	if _, isLocal := e.locals[base]; isLocal {
+	if !e.isPackageVar(base) {
 		return // a local target dies with the frame, like the backing
-	}
-	if _, isGlobal := e.globals[e.globalC(base)]; !isGlobal {
-		return
 	}
 	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
 		return // only a plain "=" carries such a value here

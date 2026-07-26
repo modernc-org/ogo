@@ -5660,6 +5660,39 @@ func main() {
 			want: "cannot store a slice backed by local a in package variable gb",
 		},
 		{
+			// A package array is a package variable too, and outlives a call exactly
+			// as one holding a slice does. It lives in its own environment though, and
+			// asking only the plain one -- which is what the rule used to do -- meant
+			// every array target went unchecked, whether the element took the
+			// reference or a field of it did.
+			name: "stored in a package array's element",
+			src: `var table [2][]int
+
+func fill() {
+	var local [4]int
+	table[1] = local[:]
+}
+
+func main() {
+	fill()
+	println(len(table[1]))
+}
+`,
+			want: "cannot store a slice backed by local local in package variable table",
+		},
+		{
+			// A local array's element dies with the backing it is given, so it takes
+			// one -- the rule is about outliving, not about indexing.
+			name: "stored in a local array's element",
+			src: `func main() {
+	var table [2][]int
+	var local [4]int
+	table[1] = local[:]
+	println(len(table[1]))
+}
+`,
+		},
+		{
 			name: "package variable stored in another",
 			src: `var g []int
 var h = []int{1, 2, 3}
