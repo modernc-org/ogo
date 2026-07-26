@@ -987,12 +987,12 @@ func (e *emitter) pkgInitAssign(target string, initExpr []int32) {
 // from a compound literal, which flexcc cannot lower.
 func (e *emitter) staticInitOK(initExpr []int32) bool {
 	if _, lit, ok := e.soleCompositeLit(initExpr); ok {
-		for _, el := range compositeLitElements(lit) {
-			if !e.staticInitOK(el.value.ast) {
-				return false
-			}
-		}
-		return true
+		return e.staticLitElementsOK(lit)
+	}
+	// An array or slice literal, which a struct literal may hold as an element and
+	// which is as constant as what is inside it.
+	if _, lit, ok := e.soleArrayLit(initExpr); ok {
+		return e.staticLitElementsOK(lit)
 	}
 	tok, ok := e.soleToken(initExpr)
 	if !ok {
@@ -1009,6 +1009,25 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 		return s == "true" || s == "false"
 	}
 	return false
+}
+
+// staticLitElementsOK reports whether every element of a composite literal is
+// itself a constant expression. An element that elides its type arrives as a bare
+// CompositeLit node rather than as an initializer's nodes, so it is recognised here
+// rather than by staticInitOK.
+func (e *emitter) staticLitElementsOK(lit Node) bool {
+	for _, el := range compositeLitElements(lit) {
+		if el.value.sym == CompositeLit {
+			if !e.staticLitElementsOK(el.value) {
+				return false
+			}
+			continue
+		}
+		if !e.staticInitOK(el.value.ast) {
+			return false
+		}
+	}
+	return true
 }
 
 // pkgInitDefs renders the synthesized initializer, or "" when there is nothing to
@@ -4110,9 +4129,9 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 			e.emit(e.zeroFieldC(fields[i])) // a field this keyed literal omits
 			continue
 		}
-		expect := ""
+		var expect structField
 		if i < len(fields) {
-			expect = fields[i].ctype // the field's type, for a type-elided element
+			expect = fields[i] // the field, for a type-elided or nested element
 		}
 		e.emitLitElement(*v, expect, brace)
 	}
@@ -4124,12 +4143,26 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 // which is C's spelling for a nested aggregate and the only one flexcc lowers for
 // a struct that holds an array (see emitCompositeLit).
 //
-// expectType is the C type this element's position implies -- the array/slice
-// element type, or the struct field type. A type-elided element (`{1}` for `P{1}`)
-// arrives as a bare CompositeLit node with no type of its own, so it is emitted
-// against expectType, which must be a struct (a nested array or slice element type
-// is not yet supported and is refused rather than mis-emitted).
-func (e *emitter) emitLitElement(v Node, expectType string, brace bool) {
+// expect describes what this element's position implies -- the array/slice element
+// type, or the struct field. A type-elided element (`{1}` for `P{1}`) arrives as a
+// bare CompositeLit node with no type of its own, so it is emitted against expect,
+// which must name something a brace can fill.
+func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
+	expectType := expect.ctype
+	// An array-typed field takes a nested aggregate, `P{1, [2]int{2, 3}}` or its
+	// type-elided form `P{1, {2, 3}}`. Both are the same values in braces, and the
+	// field's own extents say how deep they nest -- the literal's written type, when
+	// there is one, describes what the field already declares.
+	if expect.dim.bound != "" {
+		if lit, ok := e.arrayLitElement(v); ok {
+			values, _, ok := e.litPositions(lit)
+			if !ok {
+				return
+			}
+			e.emitArrayValues(values, expect.dim)
+			return
+		}
+	}
 	if v.sym == CompositeLit {
 		if !e.isStruct(expectType) {
 			e.fail("a type-elided composite literal element is only supported for a struct element type yet")
@@ -4250,7 +4283,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 			e.emit(e.zeroInitC(elemCType))
 			continue
 		}
-		e.emitLitElement(*v, elemCType, true)
+		e.emitLitElement(*v, structField{ctype: elemCType}, true)
 	}
 	e.emit("}")
 }
@@ -4467,6 +4500,17 @@ func (e *emitter) soleArrayLit(initExpr []int32) (typeAST []int32, lit Node, ok 
 		return nil, Node{}, false
 	}
 	return e.factorArrayLit(fac)
+}
+
+// arrayLitElement matches a composite-literal element that fills an array-typed
+// position: a written array literal, `[2]int{2, 3}`, or the type-elided form the
+// position allows, `{2, 3}`, which arrives as a bare CompositeLit.
+func (e *emitter) arrayLitElement(v Node) (Node, bool) {
+	if v.sym == CompositeLit {
+		return v, true
+	}
+	_, lit, ok := e.soleArrayLit(v.ast)
+	return lit, ok
 }
 
 // factorArrayLit matches a Factor that is an array or slice literal: the bracketed

@@ -5025,6 +5025,55 @@ func main() {
 	}
 }
 
+// TestEmitCNestedArrayLit pins an array literal standing as a struct literal's
+// element. It becomes a nested brace group exactly where it is written, which is C's
+// own spelling and the only one flexcc lowers for a struct holding an array -- and
+// being constant, the package-scope one is laid out statically rather than assigned
+// in the package initializer, where a compound literal of such a struct is what
+// flexcc refuses outright.
+//
+// `b` writes the type-elided form. Go allows eliding only inside an array, slice or
+// map literal, not for a struct field, so this is OctoGo's own -- consistent with
+// the elided struct-typed field it has always taken, and noted in specs.go.
+func TestEmitCNestedArrayLit(t *testing.T) {
+	src := `type P struct {
+	x int
+	y [2]int
+}
+
+var one = P{7, [2]int{1, 2}}
+
+func main() {
+	a := P{1, [2]int{2, 3}}
+	b := P{4, {5, 6}}
+	println(a.y[1], b.y[0], one.y[1])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	want := "static P one = {7, {1, 2}};\n" +
+		"\n" +
+		"int main(void) {\n" +
+		"\tP a = {1, {2, 3}};\n" +
+		"\tP b = {4, {5, 6}};\n" +
+		"\tprintf(\"%d %d %d\\n\", a.y[1], b.y[0], one.y[1]);\n" +
+		"\treturn 0;\n" +
+		"}\n"
+	if !bytes.Contains(buf.Bytes(), []byte(want)) {
+		t.Errorf("nested array literal:\n got %q\nwant it to contain %q", buf.String(), want)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("ogo_pkg_init")) {
+		t.Errorf("a constant nested literal should need no package initializer:\n%s", buf.String())
+	}
+}
+
 // TestEmitCIndexedSliceField pins the temporary that a slice reached past an index
 // is bound to. An index writes its result rather than leaving a string that can be
 // appended to, so the field's header has nothing left to form a `.len` from and is

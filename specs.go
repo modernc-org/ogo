@@ -715,18 +715,28 @@
 // An element value that is itself a composite literal may elide its type when that
 // type is implied by position -- the element type of an array or slice literal, or
 // a field's type in a struct literal -- so "[]P{{1}, {2}}" means "[]P{P{1}, P{2}}"
-// and "Outer{{5}}" means "Outer{Inner{5}}", as in Go. Because a "{" cannot begin an
+// and "Outer{{5}}" means "Outer{Inner{5}}". Because a "{" cannot begin an
 // Expression, the elided form is distinguished from a keyed or ordinary element with
 // one token of lookahead, keeping the grammar LL(1).
+//
+// (OctoGo Specific): Go admits the elision only inside an array, slice or map
+// literal, and reports "missing type in composite literal" for a struct literal's
+// field value. OctoGo takes it there too, for a struct-typed field and an
+// array-typed one alike. The written form is what both languages accept, so a
+// program that spells the type out is portable.
 //
 // A bracketed type may carry one too, giving an array literal "[N]T{a, b}" or a
 // slice literal "[]T{a, b}". Elements may be positional, indexed ("[5]int{0: 1,
 // 4: 9}", "[]int{2: 5}") or a mixture ("[]int{1, 4: 9}"); an index must be a
 // constant, and the elements it skips are zeroed. An array literal may supply
 // fewer values than its length, zeroing the rest, and no more; a slice literal's
-// length and capacity are its highest index plus one. Both are a variable's
-// initializer and nothing else: an array cannot be assigned, and a slice
-// literal's backing storage belongs to the declaration it initializes.
+// length and capacity are its highest index plus one.
+//
+// An array literal may stand as an element of a composite literal too, filling an
+// array-typed field or an element of an array of arrays, since a nested aggregate
+// is written where it stands. Anywhere else both are a variable's initializer and
+// nothing else: an array cannot be assigned, and a slice literal's backing storage
+// belongs to the declaration it initializes.
 //
 // That declaration may be at package scope as well as inside a function, with the
 // type written or inferred, which is how a program states a lookup table:

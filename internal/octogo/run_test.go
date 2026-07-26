@@ -2986,6 +2986,48 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// An array literal as a struct literal's element, `P{1, [2]int{2, 3}}`. An
+		// array field's position implies its element type rather than its own, so
+		// neither the written form nor the elided one was recognised there, and the
+		// refusal said the literal belonged to a variable's initializer -- which is
+		// true of a bare one and not of a nested aggregate, whose values C writes in
+		// braces exactly where they stand.
+		//
+		// This is what a lookup table of records looks like, so the package-scope
+		// forms matter as much as the local ones: both are laid out statically.
+		name: "an array literal inside a struct literal",
+		src: `type P struct {
+	x int
+	y [2]int
+	m [2][2]int
+}
+
+type Q struct {
+	n int
+	a [3]int
+}
+
+var table = []P{{1, [2]int{2, 3}, [2][2]int{{9, 8}, {7, 6}}}, {4, [2]int{5, 6}, [2][2]int{{1, 2}, {3, 4}}}}
+
+var one = Q{7, [3]int{1}}
+
+func main() {
+	a := P{1, [2]int{2, 3}, [2][2]int{{9, 8}, {7, 6}}}
+	println("local", a.x, a.y[1], a.m[1][0])
+
+	b := Q{5, [3]int{8, 9}}
+	println("partial", b.n, b.a[0], b.a[1], b.a[2])
+
+	println("table", table[0].y[1], table[1].x, table[1].m[0][1])
+	println("pkg", one.n, one.a[0], one.a[2])
+
+	c := P{y: [2]int{4, 5}}
+	println("keyed", c.x, c.y[0], c.m[0][0])
+}
+`,
+		want: "local 1 3 7\npartial 5 8 9 0\ntable 3 4 2\npkg 7 1 0\nkeyed 0 4 0\n",
+	},
+	{
 		// Reading and writing through a slice-typed field of an indexed element,
 		// `s[i].v[j]`. The index before it consumes the prefix -- what an index
 		// produces is written, not a string that can be appended to -- so the field's

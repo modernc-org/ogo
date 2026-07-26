@@ -26,6 +26,11 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **An array literal may be a composite literal's element**, `P{1, [2]int{2, 3}}`,
+  which is how a record holding a fixed array is written — and so how a lookup table
+  of them is. It was refused with `a [2]int literal is only supported as a
+  variable's initializer`, true of a bare one but not of a nested aggregate. A
+  package-level one is laid out statically, costing no start-up work.
 - **A slice reached through an index may be read and written**, `s[i].v[j]`, and
   sliced again, `s[i].v[1:]`. The index before it left the field's header with
   nothing to measure a bounds check against, so the whole shape was refused; it is
