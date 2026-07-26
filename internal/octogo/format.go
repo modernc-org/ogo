@@ -452,6 +452,11 @@ func sliceColonNeedsBlanks(indexKids []int32) bool {
 	return len(bounds) > 1 && slices.ContainsFunc(bounds, isBinaryBound)
 }
 
+// beginsLine reports whether the token at idx is the first on its source line.
+func (f *formatter) beginsLine(idx int32) bool {
+	return idx > 0 && f.p.Token(idx-1).Position().Line != f.p.Token(idx).Position().Line
+}
+
 type formatterCtx struct {
 	indentLevel       int32
 	undentLBraceIndex int32
@@ -610,6 +615,19 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.inLiteralBraces = false
 				case ParameterList, CallSuffix:
 					c.inParams = true
+					if Symbol(-n) == ParameterList && f.beginsLine(firstIndex(ast[:next])) {
+						c.indentLevel++
+					}
+				case ResultList, ArgumentList:
+					// A list whose first element starts a line of its own indents what
+					// follows it. The parentheses are not part of these productions, so
+					// the closing one is emitted at the level outside them with nothing
+					// to undo. Asking about the first element rather than the list's span
+					// is what keeps a nested call from adding a level of its own: in
+					// "println(f(\n1,\n))" only the inner list starts a line.
+					if f.beginsLine(firstIndex(ast[:next])) {
+						c.indentLevel++
+					}
 				case Receiver:
 					c.inReceiver = true
 				case ImportSpec:
@@ -631,6 +649,15 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.sliceColonBlanks = sliceColonNeedsBlanks(ast[2:next])
 				case CompositeLit:
 					c.inLiteralBraces = true
+					// A literal written across lines indents what stands between its
+					// braces, as gofmt does, the braces themselves staying at the level
+					// of what they belong to -- the same shape a block and a struct type
+					// take, and the same test for whether the body is multi-line.
+					if lb, rb := firstIndex(ast[:next]), lastIndex(ast[:next]); f.p.Token(lb).Position().Line != f.p.Token(rb).Position().Line {
+						c.indentLevel++
+						c.undentLBraceIndex = lb
+						c.undentRBraceIndex = rb
+					}
 				case StructType, InterfaceType:
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])

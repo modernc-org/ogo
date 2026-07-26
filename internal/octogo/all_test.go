@@ -986,6 +986,108 @@ func TestFormatSliceColon(t *testing.T) {
 	}
 }
 
+// TestFormatMultilineList pins the indentation of a list written across lines: a
+// composite literal, a parameter or result list, and a call's arguments. gofmt
+// indents what stands between the delimiters and leaves the delimiters themselves
+// at the level of what they belong to, which is what a block and a struct type
+// already did here and what these did not -- every continuation line came out at
+// column zero, so formatting a table destroyed it.
+//
+// The nested call is the case that says why the test is "does the first element
+// start a line" rather than "does the list span lines": in `g(h(\n1))` both lists
+// span lines and gofmt indents once, for the inner one.
+func TestFormatMultilineList(t *testing.T) {
+	const in = `type P struct {
+	x int
+	y int
+}
+
+var table = []P{
+{1, 2},
+{3, 4}}
+
+var m = [2][2]int{
+{1, 2},
+{3, 4}}
+
+func f(
+a int,
+b int) (
+int,
+int) {
+	return a, b
+}
+
+func g(a int) int { return a }
+
+func main() {
+	x, y := f(
+1,
+2)
+	println(x, y, g(
+3))
+	if x > 0 {
+		q := []P{
+{5, 6}}
+		println(q[0].x)
+	}
+	println(len(table), len(m))
+}
+`
+	const want = `type P struct {
+	x int
+	y int
+}
+
+var table = []P{
+	{1, 2},
+	{3, 4}}
+
+var m = [2][2]int{
+	{1, 2},
+	{3, 4}}
+
+func f(
+	a int,
+	b int) (
+	int,
+	int) {
+	return a, b
+}
+
+func g(a int) int { return a }
+
+func main() {
+	x, y := f(
+		1,
+		2)
+	println(x, y, g(
+		3))
+	if x > 0 {
+		q := []P{
+			{5, 6}}
+		println(q[0].x)
+	}
+	println(len(table), len(m))
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("multi-line list indentation:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatDotImport pins a dot-import spacing its "." on both sides
 // ("import . \"p2\""), while a selector's "." stays tight ("a.b"). The formatter's
 // blanket "." rule used to tighten the dot-import to `import."p2"`.
