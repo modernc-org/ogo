@@ -5321,6 +5321,68 @@ func main() { println(len(mk(g)), len(cut(g))) }
 func main() { println(mk()) }
 `,
 		},
+		// The other door out of the frame: a package variable outlives every call, so
+		// storing frame storage in one dangles just as returning it does.
+		{
+			name: "stored in a package variable",
+			src: `var g []int
+
+func fill() {
+	s := []int{1, 2, 3}
+	g = s
+}
+
+func main() {
+	fill()
+	println(g[1])
+}
+`,
+			want: "cannot store a slice backed by local s in package variable g",
+		},
+		{
+			name: "stored in a field of a package variable",
+			src: `type box struct{ d []int }
+
+var gb box
+
+func fill() {
+	a := [3]int{1, 2, 3}
+	gb.d = a[:]
+}
+
+func main() {
+	fill()
+	println(gb.d[1])
+}
+`,
+			want: "cannot store a slice backed by local a in package variable gb",
+		},
+		{
+			name: "package variable stored in another",
+			src: `var g []int
+var h = []int{1, 2, 3}
+
+func fill() { g = h }
+
+func main() {
+	fill()
+	println(g[1])
+}
+`,
+		},
+		{
+			name: "a parameter stored in a package variable",
+			src: `var g []int
+var h = []int{1, 2, 3}
+
+func fill(p []int) { g = p }
+
+func main() {
+	fill(h)
+	println(g[1])
+}
+`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}

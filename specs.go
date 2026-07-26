@@ -833,12 +833,18 @@
 //	AddOp = "+" | "-" | "|" | "^" .
 //	MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
 //
-// A slice returned from a function must view storage that outlives the call: a
-// package-level array or slice, or one reached through a parameter, which is the
-// caller's. Returning a slice whose backing array is a local of the frame is
-// refused -- the header would outlive the storage it views, and there is no heap to
-// promote that storage to. It is the slice counterpart of refusing to return a
-// local variable's address.
+// A slice must not outlive the storage it views. Returning one whose backing array
+// is a local of the frame is refused, as is storing one in a package-level variable
+// or a field of one, which outlives every call: the header would point at the
+// frame's storage long after it is gone, and there is no heap to promote that
+// storage to. These are the slice counterparts of the same two refusals for a local
+// variable's address. A slice over a package-level array or slice, or one reached
+// through a parameter -- the caller's -- travels freely.
+//
+// Sending such a slice on a channel or passing it to a goroutine is not refused.
+// Either may well read it while the frame is still alive, and usually does, so
+// refusing them would reject correct programs; keeping the frame alive until the
+// reader is done is the writer's responsibility there.
 //
 // A call that returns a struct may have a field selected from its result,
 // "mk().y", a method called on it, "mk().sum()", and its result indexed,

@@ -7340,6 +7340,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	lhs = stars + lhs
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+	e.checkStoreBacking(base, op)
 
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
 	// extra targets as LhsItems ahead of the operator.
@@ -9589,6 +9590,38 @@ func (e *emitter) checkReturnBacking(exprs []Node) {
 			e.fail("%v: cannot return a slice backed by local %s: its storage does not outlive the function; "+
 				"take the backing array from the caller or declare it at package scope",
 				e.f.tok(x.Pos()).Position(), name)
+			return
+		}
+	}
+}
+
+// checkStoreBacking refuses storing a slice whose backing array is a local of this
+// frame into a package-level variable, or a field of one.
+//
+// A package variable outlives every call, so the header would still point at the
+// frame's storage long after it is gone -- the same error checkReturnBacking
+// catches at a return, through the other door. This needs no reasoning about
+// lifetimes, which is why it is refused where a send on a channel or an argument to
+// a goroutine is not: those may well be read while the frame is still alive, and
+// often are.
+func (e *emitter) checkStoreBacking(base string, op []Node) {
+	if _, isLocal := e.locals[base]; isLocal {
+		return // a local target dies with the frame, like the backing
+	}
+	if _, isGlobal := e.globals[e.globalC(base)]; !isGlobal {
+		return
+	}
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return // only a plain "=" carries a slice value here
+	}
+	for n := range it(op[1].ast) {
+		if n.sym != Expression {
+			continue
+		}
+		if name, frame := e.sliceBackingIsFrame(n.ast); frame {
+			e.fail("%v: cannot store a slice backed by local %s in package variable %s: "+
+				"its storage does not outlive the function",
+				e.f.tok(n.Pos()).Position(), name, base)
 			return
 		}
 	}
