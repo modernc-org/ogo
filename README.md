@@ -188,7 +188,8 @@ broken.
 * Runtime traps for out-of-range indexing and slicing, division by zero and cog
   exhaustion.
 * A package is a directory: `ogo build` compiles every `.ogo` file in it together,
-  and a program may span several packages.
+  and a program may span several packages. A value of an imported package's struct
+  type is written the way you would expect, `geo.Point{1, 2}`.
 
 **Does not work yet**, in rough order of how likely you are to hit it:
 

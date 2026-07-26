@@ -26,6 +26,13 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A composite literal's type may be qualified**, `geo.Point{1, 2}`, so a value of
+  an imported package's struct type can be written directly instead of only through
+  a constructor that package supplies. Positional, keyed and empty forms all work,
+  including nested and at package scope, where the value is laid out statically. The
+  export rules apply inside: the type must be exported, a key must name an exported
+  field, and a positional literal is refused for a struct with an unexported field,
+  which it would be assigning to.
 - **A list may end with a trailing comma**, which is what lets it be written across
   lines — the form gofmt produces, and the only readable way to spell a table:
 
@@ -82,9 +89,6 @@ Releases before v0.9.0 predate this file; see
   declared `_` and then switched on it — reading a name Go says cannot be read — and
   compiled to a comparison against a C variable named `_`. What a switch switches on
   is now resolved like any other expression, which reports it.
-
-### Behaviour changes
-
 - **A package array's element may no longer be given a reference to a local.**
   `table[1] = local[:]`, where `table` is a package-level array, left it pointing at
   storage the function was free to reuse — the rule that refuses this for every other

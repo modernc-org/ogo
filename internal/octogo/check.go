@@ -3708,7 +3708,8 @@ func compositeLitElements(lit Node) (r []litElement) {
 // are either all positional -- one per field, in declaration order, so their count
 // must match -- or all keyed by field name, which may name any subset of the fields
 // in any order. "T{}" supplies none and zeroes every field.
-func (f *File) checkCompositeLit(s *Scope, id Token, hasID bool, lit Node) {
+func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
+	id := t.name
 	elements := compositeLitElements(lit)
 	// Resolve the names the values use whatever the literal's type turns out to
 	// be, so an undefined name inside is reported even for a bad type. A key names
@@ -3722,9 +3723,9 @@ func (f *File) checkCompositeLit(s *Scope, id Token, hasID bool, lit Node) {
 	}
 	// The type is checked even for "T{}", which supplies no values: naming a
 	// non-struct type is wrong however few values follow it.
-	st, ok := f.structTypeOf(s, id)
+	st, ok := f.litStructType(s, t)
 	if !ok {
-		f.err(id.Position(), "invalid composite literal type: %s is not a struct type", id.Src())
+		f.err(id.Position(), "invalid composite literal type: %s is not a struct type", t)
 		return
 	}
 	if len(elements) == 0 {
@@ -3738,15 +3739,31 @@ func (f *File) checkCompositeLit(s *Scope, id Token, hasID bool, lit Node) {
 		return // mixed forms say nothing reliable about which value is which field
 	}
 	if elements[0].keyed {
-		f.checkKeyedLit(id, names, elements)
+		f.checkKeyedLit(t, names, elements)
 		return
+	}
+	// A positional literal fills every field in order, including any this package
+	// may not name. Go reports the first such field at the value that would land in
+	// it, since that value is the assignment.
+	if t.qual.IsValid() {
+		for i, nm := range names {
+			if token.IsExported(nm.Src()) {
+				continue
+			}
+			at := id
+			if i < len(elements) {
+				at = f.tok(elements[i].value.Pos())
+			}
+			f.err(at.Position(), "implicit assignment to unexported field %s in struct literal of type %s", nm.Src(), t)
+			return
+		}
 	}
 	if len(elements) != len(names) {
 		what := "not enough"
 		if len(elements) > len(names) {
 			what = "too many"
 		}
-		f.err(id.Position(), "%s values in %s{...}: %s but %s", what, id.Src(), countUnits(len(elements), "value"), countUnits(len(names), "field"))
+		f.err(id.Position(), "%s values in %s{...}: %s but %s", what, t, countUnits(len(elements), "value"), countUnits(len(names), "field"))
 	}
 }
 
@@ -3774,7 +3791,7 @@ func (f *File) checkLitUniform(elements []litElement) bool {
 // struct's field names. A key is a field name, not an expression: anything else is
 // refused rather than resolved, and each field may be named at most once. Fields
 // left unnamed take their zero value, so there is no count to check.
-func (f *File) checkKeyedLit(id Token, names []Token, elements []litElement) {
+func (f *File) checkKeyedLit(t litType, names []Token, elements []litElement) {
 	seen := map[string]bool{}
 	for _, el := range elements {
 		key, ok := f.exprSoleIdent(el.key)
@@ -3784,15 +3801,51 @@ func (f *File) checkKeyedLit(id Token, names []Token, elements []litElement) {
 		}
 		name := key.Src()
 		if !slices.ContainsFunc(names, func(n Token) bool { return n.Src() == name }) {
-			f.err(key.Position(), "unknown field %s in struct literal of type %s", name, id.Src())
+			f.err(key.Position(), "unknown field %s in struct literal of type %s", name, t)
 			continue
 		}
 		if seen[name] {
 			f.err(key.Position(), "duplicate field name %s in struct literal", name)
 			continue
 		}
+		// Another package's unexported field is not nameable here, whatever the
+		// struct declares -- the same rule a field read follows.
+		if t.qual.IsValid() && !token.IsExported(name) {
+			f.err(key.Position(), "cannot refer to unexported field %s of type %s", name, t)
+			continue
+		}
 		seen[name] = true
 	}
+}
+
+// litType names a composite literal's type: the identifier naming it and, for a
+// type from another package, the import qualifier in front of it. It prints the way
+// the source spells it, which is what a diagnostic should say.
+type litType struct {
+	name Token
+	qual Token // invalid for a type of this package
+}
+
+func (t litType) String() string {
+	if t.qual.IsValid() {
+		return t.qual.Src() + "." + t.name.Src()
+	}
+	return t.name.Src()
+}
+
+// litStructType resolves a composite literal's type to the struct it names, from
+// this package or, for a qualified one, from the imported package the qualifier
+// names. An unexported type of another package is not nameable here and so resolves
+// to nothing, as an undefined name would.
+func (f *File) litStructType(s *Scope, t litType) (*TypeNodeStruct, bool) {
+	if !t.qual.IsValid() {
+		return f.structTypeOf(s, t.name)
+	}
+	if !token.IsExported(t.name.Src()) {
+		return nil, false
+	}
+	_, st, ok := f.importedStruct(t.qual, t.name)
+	return st, ok
 }
 
 // structTypeOf resolves a name to the struct type it declares. It reports false
@@ -4939,7 +4992,19 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		}
 	}
 	if hasLit {
-		f.checkCompositeLit(s, id, hasID, lit)
+		// "pkg.T{...}": the leading identifier is the import qualifier and the type is
+		// the single selector after it. Anything else in front of a literal -- an
+		// index, a call, a longer selector run -- names no type at all.
+		t := litType{name: id}
+		if hasSuffix {
+			sel, ok := f.fieldSelector(suffix)
+			if !ok {
+				f.err(id.Position(), "invalid composite literal type: %s", f.exprSource(n))
+				return
+			}
+			t = litType{name: sel, qual: id}
+		}
+		f.checkCompositeLit(s, t, hasID, lit)
 	}
 	// Reading the blank identifier -- as an operand, argument, initializer,
 	// condition or return value, whether bare or with a call, selector or index

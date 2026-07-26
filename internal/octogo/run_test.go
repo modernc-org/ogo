@@ -3664,6 +3664,80 @@ func TestEmitCRun(t *testing.T) {
 	}
 }
 
+// TestCrossPkgCompositeLit pins what a composite literal of another package's type
+// may say. The type has to be one, and it has to be exported -- an unexported name
+// of another package is not nameable at all -- and a keyed element names an exported
+// field of it, which is the rule a field read already followed. The positional and
+// count checks are the same ones a same-package literal gets; that they report the
+// qualified spelling rather than just the type's own name is what is worth pinning.
+func TestCrossPkgCompositeLit(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "unexported type",
+			src:  "h := geo.hidden{}\nprintln(h.n)",
+			want: "cannot refer to unexported name geo.hidden",
+		},
+		{
+			name: "not a struct type",
+			src:  "p := geo.Count{1}\nprintln(p)",
+			want: "invalid composite literal type: geo.Count is not a struct type",
+		},
+		{
+			name: "unknown field",
+			src:  "p := geo.Point{Z: 1}\nprintln(p.X)",
+			want: "unknown field Z in struct literal of type geo.Point",
+		},
+		{
+			name: "unexported field",
+			src:  "p := geo.Point{tag: 1}\nprintln(p.X)",
+			want: "cannot refer to unexported field tag of type geo.Point",
+		},
+		{
+			name: "positional fills an unexported field",
+			src:  "p := geo.Point{1, 2, 3}\nprintln(p.X)",
+			want: "implicit assignment to unexported field tag in struct literal of type geo.Point",
+		},
+		{
+			name: "too many values",
+			src:  "p := geo.Vec{1, 2, 3}\nprintln(p.A)",
+			want: "too many values in geo.Vec{...}: 3 values but 2 fields",
+		},
+		{
+			name: "mixed forms",
+			src:  "p := geo.Point{1, Y: 2}\nprintln(p.X)",
+			want: "mixture of field:value and value elements in struct literal",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{
+				"main.ogo": &fstest.MapFile{Data: []byte("import \"geo\"\n\nfunc main() {\n" + test.src + "\n}\n")},
+				"geo/geo.ogo": &fstest.MapFile{Data: []byte(`type Point struct {
+	X   int
+	Y   int
+	tag int
+}
+
+type Count int
+
+type Vec struct {
+	A int
+	B int
+}
+
+type hidden struct{ n int }
+`)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				t.Fatalf("Build accepted %q", test.src)
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("Build error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCMultiPackage builds a program spread over two packages -- a main package
 // importing a local "greet" package -- and runs it on the host shim. It checks that
 // import resolution, cross-package calls (greet.Hello(...)), and a package function's
@@ -3729,7 +3803,23 @@ func main() {
 	v.A = 4
 	v.B = 5
 	println(v.A, v.Sum())
+	// A composite literal of an imported package's type, which is the other way to
+	// make one of those values: positional, keyed, and empty, plus a nested one and
+	// a table of them at package scope.
+	w := greet.Vec{6, 7}
+	println(w.A, w.Sum())
+	k := greet.Vec{B: 8}
+	println(k.A, k.B)
+	e := greet.Vec{}
+	println(e.A, e.B)
+	pair := greet.Pair{greet.Vec{1, 2}, greet.Vec{3, 4}}
+	println(pair.Lo.B, pair.Hi.Sum())
+	println(unit.Sum(), vecs[1].A)
 }
+
+// Package-scope values of an imported type, laid out statically.
+var unit = greet.Vec{A: 1, B: 1}
+var vecs = []greet.Vec{{9, 9}, {8, 8}}
 `)},
 		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`type Point struct{ x, y int }
 
@@ -3756,6 +3846,12 @@ type Vec struct {
 }
 
 func (v Vec) Sum() int { return v.A + v.B }
+
+// Pair holds two Vecs, so a literal of it nests literals of another package's type.
+type Pair struct {
+	Lo Vec
+	Hi Vec
+}
 
 func Base() int { return base }
 
@@ -3799,7 +3895,8 @@ func scale(n int) int { return n }
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
-	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n"
+	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
+		"6 13\n0 8\n0 0\n2 7\n2 8\n"
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
 	}

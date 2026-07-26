@@ -4051,15 +4051,29 @@ func (e *emitter) emitVarDecl(ast []int32) {
 // the type, followed by the literal. Nothing else may follow, so a suffixed factor
 // (a call, selector or index) is not one.
 func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok bool) {
-	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != CompositeLit {
+	if len(kids) < 2 || len(kids) > 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT ||
+		kids[len(kids)-1].sym != CompositeLit {
 		return "", Node{}, false
 	}
-	// The composite literal names a same-package struct type; return its mangled C
-	// name so both the value's inferred type and its emission (the (T){...} cast and
-	// the structs lookup) use the same package-namespaced typedef. A qualified type
-	// "pkg.T{...}" is not reachable here: the grammar attaches a composite literal
-	// only to a bare identifier, not a qualified name (see the cross-package note).
-	return mangle(e.curPkgPrefix, e.src(kids[0].tok)), kids[1], true
+	// The name returned is the mangled C one, so that the value's inferred type and
+	// its emission -- the (T){...} cast and the structs lookup -- use the same
+	// package-namespaced typedef.
+	if len(kids) == 2 {
+		return mangle(e.curPkgPrefix, e.src(kids[0].tok)), kids[1], true // a type of this package
+	}
+	// A qualified type, "pkg.T{...}": the leading identifier is the import qualifier,
+	// so the typedef carries the prefix of the package it names rather than this
+	// one's. Everything else in front of a literal -- an index, a call, a longer
+	// selector run -- names no type, and the checker has said so already.
+	if kids[1].sym != FactorSuffix {
+		return "", Node{}, false
+	}
+	prefix, isImport := e.importQualifiers[e.src(kids[0].tok)]
+	fields, okFields := e.selectorFields(slices.Collect(it(kids[1].ast)))
+	if !isImport || !okFields || len(fields) != 1 {
+		return "", Node{}, false
+	}
+	return mangle(prefix, fields[0]), kids[2], true
 }
 
 // soleCompositeLit reports whether an expression is nothing but a composite

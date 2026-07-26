@@ -691,7 +691,7 @@
 // variable, or function, or a parenthesized expression.
 //
 //	UnaryExpr  = { UnaryOp } Factor .
-//	Factor     = identifier [ CompositeLit | FactorSuffix ]
+//	Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
 //		| int_lit
 //		| float_lit
 //		| string_lit
@@ -711,6 +711,12 @@
 // and it is what the formatter writes for a list it spreads over lines, dropping
 // one whose list closes on the same line. The lists Go does not allow it in are
 // unchanged here: an assignment's right-hand side, a "return", a list of names.
+//
+// A composite literal's type may be qualified, "pkg.T{a, b}", naming an exported
+// struct type of an imported package. The rules another package's names follow
+// apply inside it: the type has to be exported to be named at all, a key has to
+// name an exported field, and a positional literal, which fills every field in
+// order, is refused outright for a struct that has an unexported one.
 //
 // A composite literal "T{a, b}" builds a value of the named struct type from its
 // fields in declaration order. An Element may instead carry a key naming the field
