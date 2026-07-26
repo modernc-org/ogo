@@ -795,6 +795,10 @@
 // result's capacity is the operand's capacity less low. Slicing a string yields a
 // string (a string has no capacity).
 //
+// The bounds must satisfy 0 <= low <= high <= capacity, and one that does not is a
+// runtime panic, as an out-of-range index is. Bounds a compile-time extent already
+// settles carry no check. Each bound is evaluated once.
+//
 // # Function Literals
 //
 // A function literal represents an anonymous function.

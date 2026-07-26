@@ -35,6 +35,25 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A slice expression's bounds are now checked.** Slicing was the one indexing
+  form that trapped on nothing: over a `[4]int`, `a[1:9]` produced a length-8 view
+  of storage the array does not own and `a[3:1]` a length of −2, and both compiled
+  quietly. On a part with no memory protection, writing through either is a write
+  into whatever sits next in Hub RAM. The rule is Go's, `0 <= low <= high <= cap`,
+  and a bound outside it panics with `slice bounds out of range`. Bounds a
+  compile-time extent already settles — `a[:]`, or constants within an array's
+  length — carry no check, and `--unchecked` and `--release` omit them as they do
+  for indexing.
+- **A slice bound is now evaluated once.** The header names the low bound in all
+  three of its fields, so `a[next():5]` called `next` three times and built a
+  header whose pointer, length and capacity were each computed from a different
+  value. Go evaluates each bound once. This one is fixed in unchecked builds too.
+- **A package variable could not be initialized from a call's field.** `var corner
+  = mk().y` needs the result bound to a temporary first, and at package scope the
+  line declaring that temporary was dropped — the emitted C named a variable it
+  never declared, and the build failed. Package initialization runs from a
+  synthesized function rather than from a statement, which is where the temporary
+  used to be placed.
 - **A switch guard is now declared like the variable it is.** The emitter wrote its
   declaration out by hand instead, and three things went wrong. A `switch v := v + 1`
   whose initializer names the variable it shadows read the new, uninitialized one

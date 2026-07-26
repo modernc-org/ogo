@@ -953,6 +953,25 @@ func (e *emitter) exprC(ast []int32) string {
 // deferPkgInit records a statement to run at package initialization.
 func (e *emitter) deferPkgInit(stmt string) { e.pkgInit = append(e.pkgInit, stmt) }
 
+// pkgInitAssign records a package variable's initialization at run time, the
+// assignment C forbids in a file-scope initializer.
+//
+// A temporary the initializer hoists out of itself becomes a package-init statement
+// of its own, placed ahead of the assignment. Here there is no enclosing statement
+// for emitStatement to put it before, and without this the temporary is referenced
+// and never declared -- which is what `var g = mk().y` did.
+func (e *emitter) pkgInitAssign(target string, initExpr []int32) {
+	saved := e.prologue
+	e.prologue = nil
+	text := e.exprC(initExpr)
+	pro := e.prologue
+	e.prologue = saved
+	for _, line := range pro {
+		e.deferPkgInit(strings.TrimSuffix(line, "\n"))
+	}
+	e.deferPkgInit(target + " = " + text + ";")
+}
+
 // staticInitOK reports whether a package variable's initializer is a constant
 // expression, which C requires of a file-scope initializer. An integer literal is,
 // and so is a name the checker folded to one. Anything else -- a call, a reference
@@ -1192,6 +1211,15 @@ func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(
 // copyCName names the per-element helper for the copy builtin, ogo_copy_<T>.
 func copyCName(elem string) string { return "ogo_copy_" + sanitizeElem(elem) }
 
+// resliceCName names the per-element bounds-checking slice-expression helper,
+// ogo_reslice_<T>. It is not ogo_slice_<T>, which is the header type itself.
+func resliceCName(elem string) string { return "ogo_reslice_" + sanitizeElem(elem) }
+
+// sliceBoundsCheck is the test both reslice helpers make: Go requires 0 <= lo <=
+// hi <= c, and each unsigned compare folds one pair's low and high tests, since a
+// negative bound wraps past the limit it is compared with.
+const sliceBoundsCheck = "\tif ((unsigned)hi > (unsigned)c || (unsigned)lo > (unsigned)hi) ogo_panic(\"slice bounds out of range\");\n"
+
 // clearCName names the per-element helper for the clear builtin, ogo_clear_<T>.
 func clearCName(elem string) string { return "ogo_clear_" + sanitizeElem(elem) }
 
@@ -1309,7 +1337,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1539,6 +1567,26 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\treturn n;\n}\n",
 			copyCName(el), sliceCName(el), sliceCName(el))
 	}
+	// x[lo:hi]: check the bounds, then build the header from them. A call, rather
+	// than the inline compound literal, so each bound is evaluated exactly once
+	// however many of the three fields it appears in -- which is why the helper is
+	// reached by a side-effecting bound even with the check itself compiled out.
+	check := ""
+	if e.checks {
+		check = sliceBoundsCheck
+	}
+	for _, el := range sortedKeys(e.resliceElems) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s* p, int c, int lo, int hi) {\n"+
+			check+
+			"\treturn (%s){p + lo, hi - lo, c - lo};\n}\n",
+			sliceCName(el), resliceCName(el), el, sliceCName(el))
+	}
+	// The same for a string, whose header has no capacity field: c is its length.
+	if e.usesResliceStr {
+		helperDefs.WriteString("static ogo_string ogo_reslice_str(const char* p, int c, int lo, int hi) {\n" +
+			check +
+			"\treturn (ogo_string){p + lo, hi - lo};\n}\n")
+	}
 	// copy(dst []byte, src string): copy the string's bytes into the byte slice,
 	// min(len) of them, returning the count. The bytes are text, so a plain memcpy.
 	if e.usesCopyStr {
@@ -1671,6 +1719,9 @@ type emitter struct {
 	appendElems        map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems     map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
+	resliceElems       map[string]bool          // element C types needing the ogo_reslice_<T> helper, a bounds-checked slice expression
+	usesResliceStr     bool                     // a string is sliced through the helper: emit ogo_reslice_str
+	resliceCalled      bool                     // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
 	usesCopyStr        bool                     // copy(dst []byte, src string) is used: emit the ogo_copystr helper
 	usesBuilder        bool                     // the Builder type is used: emit its typedef and method helpers
 	importQualifiers   map[string]string        // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
@@ -2253,7 +2304,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				continue
 			}
 			e.emit("static " + ct + " " + gn + " = " + e.zeroInitC(ct) + ";\n")
-			e.deferPkgInit(gn + " = " + e.exprC(initExpr) + ";")
+			e.pkgInitAssign(gn, initExpr)
 			continue
 		}
 		if len(names) != 1 && initExpr != nil {
@@ -4539,7 +4590,7 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 			continue
 		}
 		e.emit("static " + ctype + " " + gn + " = " + e.zeroInitC(ctype) + ";\n")
-		e.deferPkgInit(gn + " = " + e.exprC(inits[i]) + ";")
+		e.pkgInitAssign(gn, inits[i])
 	}
 }
 
@@ -5366,8 +5417,22 @@ func (e *emitter) accessChainCText(base string, steps []Node) (string, bool) {
 // the decayed array and its compile-time bound), and a slice (-> the same header
 // over .ptr/.len). In a static initializer a brace is used, not a compound literal
 // (not a constant expression there; see declInit).
+//
+// With checks on, bounds that are not provably in range go through the reslice
+// helper instead, which panics rather than yielding a header over storage the base
+// does not own.
 func (e *emitter) emitSliceExpr(src sliceSource, low, high []int32) {
 	cname, ptr, baseLen, baseCap := src.cname, src.ptr, src.baseLen, src.baseCap
+	// A string has no capacity, so its length is the limit a bound may reach; for
+	// an array the two are the same compile-time extent.
+	capExpr := baseCap
+	if capExpr == "" {
+		capExpr = baseLen
+	}
+	if e.sliceNeedsHelper(low, high, baseLen, capExpr) {
+		e.emitHelperSliceExpr(cname, ptr, baseLen, capExpr, low, high)
+		return
+	}
 	if e.declInit {
 		e.emit("{")
 	} else {
@@ -5400,6 +5465,98 @@ func (e *emitter) emitSliceExpr(src sliceSource, low, high []int32) {
 		}
 	}
 	e.emit("}")
+}
+
+// sliceNeedsHelper reports whether a slice expression goes through its reslice
+// helper rather than being spelled inline. A static initializer never does, a call
+// not being a constant expression there; its bounds are constants anyway.
+//
+// Two things send an expression to the helper. A bound that can change state has
+// to, whatever the checks say, because the inline form names low in all three
+// header fields and would evaluate it three times -- Go evaluates each bound once,
+// and three different values do not even agree with each other. Otherwise it is the
+// bounds check: on, and not already settled at compile time. `x[:]` is always
+// settled -- 0 <= 0 <= len <= cap holds for any base -- as are bounds a compile-time
+// extent bounds.
+func (e *emitter) sliceNeedsHelper(low, high []int32, lenExpr, capExpr string) bool {
+	if e.declInit {
+		return false
+	}
+	if e.exprHasEffect(low) || e.exprHasEffect(high) {
+		return true
+	}
+	if !e.checks || (low == nil && high == nil) {
+		return false
+	}
+	return !e.constSliceInRange(low, high, lenExpr, capExpr)
+}
+
+// constSliceInRange reports whether both written bounds fold to constants that
+// satisfy 0 <= low <= high <= cap, the base's length and capacity being known at
+// compile time. An omitted low is 0 and an omitted high the base's length, which is
+// a decimal literal only for an array or a string constant -- a slice's ".len" is a
+// run-time value and never parses, so such a slice keeps its check.
+func (e *emitter) constSliceInRange(low, high []int32, lenExpr, capExpr string) bool {
+	lo := int64(0)
+	if low != nil {
+		v, ok := e.foldConstInt(low)
+		if !ok {
+			return false
+		}
+		lo = v
+	}
+	hi, ok := e.foldBoundOrLiteral(high, lenExpr)
+	if !ok {
+		return false
+	}
+	c, err := strconv.ParseInt(capExpr, 10, 64)
+	if err != nil {
+		return false
+	}
+	return 0 <= lo && lo <= hi && hi <= c
+}
+
+// foldBoundOrLiteral folds a written slice bound, or parses the expression standing
+// in for an omitted one.
+func (e *emitter) foldBoundOrLiteral(bound []int32, omitted string) (int64, bool) {
+	if bound != nil {
+		return e.foldConstInt(bound)
+	}
+	v, err := strconv.ParseInt(omitted, 10, 64)
+	return v, err == nil
+}
+
+// emitHelperSliceExpr emits a slice expression as a call to its reslice helper,
+// ogo_reslice_<T>(ptr, cap, low, high), which builds the header and, in a checked
+// build, panics on bounds that are out of range. Being a call, it evaluates each
+// bound exactly once whether or not the check is there.
+func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, high []int32) {
+	if e.checks {
+		e.needPanic()
+	}
+	e.resliceCalled = true
+	if cname == cString {
+		e.usesResliceStr = true
+		e.emit("ogo_reslice_str(")
+	} else {
+		elem := sliceElemFromCName(cname)
+		e.needSlice(elem)
+		e.resliceElems[elem] = true
+		e.emit(resliceCName(elem) + "(")
+	}
+	e.emit(ptr + ", " + capExpr + ", ")
+	if low != nil {
+		e.emitExpr(low)
+	} else {
+		e.emit("0")
+	}
+	e.emit(", ")
+	if high != nil {
+		e.emitExpr(high)
+	} else {
+		e.emit(baseLen)
+	}
+	e.emit(")")
 }
 
 // isStringVarName reports whether base names a string-typed variable.
@@ -7034,9 +7191,7 @@ func (e *emitter) emitLen(callSuffix []int32) {
 	}
 	// A string and a slice both carry their length in a `.len` header field.
 	if ct, ok := e.inferCType(arg); ok && (ct == cString || e.isSliceCType(ct)) {
-		e.emit("(")
-		e.emitExpr(arg)
-		e.emit(").len")
+		e.emitHeaderField(arg, ct, "len")
 		return
 	}
 	e.fail("len is only supported for strings, arrays and slices yet")
@@ -7078,12 +7233,32 @@ func (e *emitter) emitCap(callSuffix []int32) {
 		}
 	}
 	if ct, ok := e.inferCType(arg); ok && e.isSliceCType(ct) {
-		e.emit("(")
-		e.emitExpr(arg)
-		e.emit(").cap")
+		e.emitHeaderField(arg, ct, "cap")
 		return
 	}
 	e.fail("cap is only supported for arrays and slices yet")
+}
+
+// emitHeaderField emits a read of a string's or a slice's header field off arg.
+//
+// The expression is bound to a temporary first when emitting it produced a call
+// returning that header by value: flexcc miscompiles a field read at a nonzero
+// offset applied straight to a function's struct return value, yielding garbage
+// rather than the field, and both `len` and `cap` read one. It is the defect
+// emitAccessChain hoists around for `mk().y`, and a slice expression whose bounds
+// are checked is exactly such a call. Everything else keeps the parenthesised read
+// it had, so nothing that used to work moved.
+func (e *emitter) emitHeaderField(arg []int32, ctype, field string) {
+	saved := e.resliceCalled
+	e.resliceCalled = false
+	text := e.captureC(func() { e.emitExpr(arg) })
+	call := e.resliceCalled
+	e.resliceCalled = saved
+	if !call {
+		e.emit("(" + text + ")." + field)
+		return
+	}
+	e.emit(e.hoist(ctype, func() { e.emit(text) }) + "." + field)
 }
 
 // appendParts validates an append call suffix -- a slice followed by one or more

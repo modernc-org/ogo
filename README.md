@@ -182,7 +182,8 @@ broken.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. Channels may be
   declared at package level as well as locally, and the P2's locks are reachable
   directly through the `p2` package.
-* Runtime traps for out-of-range indexing, division by zero and cog exhaustion.
+* Runtime traps for out-of-range indexing and slicing, division by zero and cog
+  exhaustion.
 * A package is a directory: `ogo build` compiles every `.ogo` file in it together,
   and a program may span several packages.
 

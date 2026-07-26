@@ -2918,6 +2918,103 @@ func main() {
 		panics: true,
 	},
 	{
+		// Slicing was the one indexing form that trapped on nothing: `a[1:9]` over a
+		// four-element array produced a length-8 view of storage the array does not
+		// own, and `a[3:1]` a length of -2. On a part with no memory protection that
+		// is a write into whatever sits next in Hub RAM.
+		name: "slice bounds out of range trap",
+		src: `func main() {
+	var a [4]int
+	i := 9
+	s := a[1:i]
+	println(len(s))
+}
+`,
+		panics: true,
+	},
+	{
+		// The bounds that are legal, which the check must leave alone: the whole
+		// range, either end omitted, a run-time bound, a re-slice reaching past the
+		// length up to the capacity (which Go allows and the check therefore measures
+		// against cap, not len), a string, an array row, and a package-level view.
+		//
+		// The last line is why the bounds go through a helper rather than being
+		// checked in place: they are its arguments, so each is evaluated once. The
+		// header names low in all three of its fields, and spelled inline that read
+		// the counter three times and built a header whose pointer, length and
+		// capacity did not agree with each other.
+		name: "slice bounds that are in range",
+		src: `var arr [6]int
+var view = arr[1:3]
+var n int
+
+func next() int {
+	n++
+	return n
+}
+
+func main() {
+	for i := 0; i < 6; i++ {
+		arr[i] = i * 10
+	}
+	println(len(view), cap(view), view[0], view[1])
+
+	s := make([]int, 3, 5)
+	s[0] = 1
+	s[2] = 3
+	println(len(s[:]), len(s[1:]), len(s[:2]))
+
+	u := s[0:5]
+	println(len(u), cap(u))
+
+	i, j := 1, 4
+	v := arr[i:j]
+	println(len(v), cap(v), v[0])
+
+	str := "hello"
+	println(str[1:4], len(str[2:]))
+
+	var m [2][3]int
+	m[1][2] = 7
+	r := m[1][:]
+	println(len(r), r[2])
+
+	w := arr[next():5]
+	println(len(w), w[0], n)
+}
+`,
+		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
+	},
+	{
+		// A package variable initialized from something that needs a temporary. The
+		// temporary is requested by the expression and placed before the statement
+		// that uses it, which at package scope had nowhere to go: the initializer is
+		// run from the synthesized package initializer, not from a statement, so the
+		// line declaring it was dropped and the C named a variable it never declared.
+		// `var corner = mk().y` -- the field read off a struct return that has to be
+		// bound first -- has been broken since that hoisting was introduced.
+		name: "package variable initialized through a temporary",
+		src: `type point struct {
+	x int
+	y int
+}
+
+var arr [6]int
+
+func mk() point { return point{4, 5} }
+
+func lo() int { return 2 }
+
+var corner = mk().y
+var tail = len(arr[lo():5])
+
+func main() {
+	println(corner, tail)
+}
+`,
+		want: "5 3\n",
+	},
+	{
 		// The shape the crossing rule endorses: a goroutine writes into a buffer whose
 		// backing array is package-level, so it outlives every frame including the one
 		// that launched it, and a channel says when the writing is done. Passing a
