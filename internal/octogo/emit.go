@@ -6518,19 +6518,26 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				i++ // consumed the CallSuffix
 				continue
 			}
-			// flexcc miscompiles a field read at a nonzero offset directly off a
-			// function's struct return value -- `f(...).y` yields garbage (the return
-			// temporary is not materialised before the offset is applied) -- while a
-			// method call on that same result, which passes the whole struct, is fine.
-			// A non-addressable base (a call result) is therefore refused for a field
-			// read; it would need a hoisted temporary, not synthesised here. Method
-			// calls are recognised above and never reach this branch.
-			if !addr {
-				return "", "", false, false
-			}
 			next, oks := e.accessSelect(cur, field)
 			if !oks {
 				return "", "", false, false
+			}
+			// flexcc miscompiles a field read at a nonzero offset directly off a
+			// function's struct return value -- `f(...).y` yields garbage, the return
+			// temporary not being materialised before the offset is applied -- while
+			// a method call on that same result, which passes the whole struct, is
+			// fine. So a non-addressable base is bound to a temporary first, which
+			// makes it an ordinary variable that reads correctly and is addressable
+			// for whatever the chain does next. The temporary is declared before the
+			// statement (see emitStatement); until that was possible this shape had
+			// to be refused. Hoisting comes after accessSelect so a chain that is
+			// going to fail anyway leaves no declaration behind.
+			if !addr {
+				if cur.ctype == "" {
+					return "", "", false, false
+				}
+				inner := text
+				text, addr = e.hoist(cur.ctype, func() { e.emit(inner) }), true
 			}
 			sep := "."
 			if e.isPointer(cur.ctype) {
@@ -6607,13 +6614,13 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 				i++
 				continue
 			}
-			if !addr {
-				return "", false // field of a call result: chainCText refuses it too
-			}
+			// A field of a call result types like any other field; chainCText binds
+			// the result to a temporary so it can be read at all.
 			var oks bool
 			if cur, oks = e.accessSelect(cur, field); !oks {
 				return "", false
 			}
+			addr = true
 		case Index:
 			if !addr {
 				return "", false

@@ -29,6 +29,9 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A field may be read off a call's struct result**, `mk().y`. It was refused
+  because the target's C compiler miscompiles that read directly; the result is now
+  bound to a temporary first, which reads correctly.
 - **A call's arguments are now evaluated left to right**, as Go specifies. C leaves
   the order unspecified and the two compilers disagreed: the P2 backend went left to
   right, the host's gcc right to left, so a program whose arguments had side effects

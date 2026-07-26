@@ -1932,6 +1932,44 @@ func main() {
 		want: "6 123\n19\n7 7\n4 3 7\n",
 	},
 	{
+		// Reading a field off a call's struct result, `mk().y`. This was refused
+		// rather than emitted, because the target's C compiler miscompiles a field
+		// read at a nonzero offset directly off a function's struct return value --
+		// the return temporary is not materialised before the offset is applied, and
+		// the read yields garbage. Binding the result to a temporary first makes it
+		// an ordinary variable, which reads correctly; the temporary is declared
+		// before the statement. A method call on the same result always worked,
+		// since it passes the whole struct, and still does.
+		name: "field of a call result",
+		src: `type inner struct{ v int }
+
+type rec struct {
+	x int
+	y int
+	i inner
+}
+
+func mk() rec           { return rec{1, 2, inner{9}} }
+func at(a int, b int) rec { return rec{a, b, inner{0}} }
+
+func (r rec) sum() int { return r.x + r.y }
+
+func main() {
+	println(mk().x, mk().y)
+	println(mk().i.v)
+	println(at(3, 4).y)
+	println(mk().x + mk().y*2)
+	q := mk().y
+	println(q)
+	println(mk().sum())
+	if mk().y > 1 {
+		println("yes")
+	}
+}
+`,
+		want: "1 2\n9\n4\n5\n2\n3\nyes\n",
+	},
+	{
 		name: "append and cap",
 		src: `func main() {
 	s := make([]int, 0, 4)
