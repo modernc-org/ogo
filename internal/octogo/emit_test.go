@@ -4368,7 +4368,7 @@ func main() {
 		"\tc = five();\n",
 		"\tch = &ch_cell;\n",
 		"\togo_chan_init_int(ch);\n",
-		"\tinit();\n",
+		"\togo_init0();\n", // a package may declare several, so each is numbered
 		"int main(void) {\n\togo_pkg_init();\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {

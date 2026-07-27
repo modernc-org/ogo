@@ -1605,7 +1605,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1981,6 +1981,7 @@ type emitter struct {
 	globalSliceVars    map[string]string        // package-level slice name -> element C type (persists across functions)
 	pkgInit            []string                 // C statements for the synthesized package initializer, in source order
 	initFuncs          []string                 // user init() functions, called after the variable initializers
+	initNames          map[string]string        // init declaration position -> its numbered C name, so both passes agree
 	goSites            []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
 	chanElems          map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
 	chanInitElems      map[string]bool          // element types whose channel init helper is reached
@@ -3208,6 +3209,36 @@ func (e *emitter) eachFuncDeclAST(ast []int32, fn func(d []int32)) {
 	}
 }
 
+// funcDefCName is the C name a top-level function is defined and prototyped under.
+//
+// Every function but init takes its mangled source name. A package may declare
+// several init functions, and Go treats each as its own -- so they cannot all be
+// called init in C, which would be a redefinition. Each takes a numbered name from
+// the reserved prefix instead, assigned when the prototype pass first sees the
+// declaration and looked up by that declaration's position afterwards, so the two
+// passes agree on which init is which.
+func (e *emitter) funcDefCName(name string, decl []int32) string {
+	if name != "init" {
+		return mangle(e.curPkgPrefix, name)
+	}
+	key := e.declKey(decl)
+	if cname, ok := e.initNames[key]; ok {
+		return cname
+	}
+	cname := fmt.Sprintf("ogo_init%d", len(e.initNames))
+	e.initNames[key] = cname
+	return cname
+}
+
+// declKey identifies a declaration by where its first token stands, which is the
+// one thing the prototype pass and the definition pass see alike.
+func (e *emitter) declKey(decl []int32) string {
+	for n := range it(decl) {
+		return e.f.tok(n.Pos()).Position().String()
+	}
+	return ""
+}
+
 // retStructName is the C typedef name of a multi-result function's result struct.
 func (e *emitter) retStructName(fn string) string { return "ogo_ret_" + fn }
 
@@ -3222,7 +3253,7 @@ func (e *emitter) emitPrototypes(ast []int32) {
 		}
 		var proto string
 		if recv == nil {
-			proto = e.funcSignatureC(mangle(e.curPkgPrefix, name), sig)
+			proto = e.funcSignatureC(e.funcDefCName(name, d), sig)
 		} else {
 			rn, rct, _ := e.receiverInfo(recv)
 			proto = e.methodSignatureC(methodCName(methodBaseType(rct), name), rn, rct, sig)
@@ -3231,10 +3262,9 @@ func (e *emitter) emitPrototypes(ast []int32) {
 			e.emit(proto + ";\n")
 		}
 		// Go runs each package's init() before main, imports first. Recorded here, in
-		// the prototype pass, by mangled name so every package's init is distinct and
-		// callable in dependency order.
+		// the prototype pass, in the order they will be called.
 		if recv == nil && name == "init" {
-			e.initFuncs = append(e.initFuncs, mangle(e.curPkgPrefix, name))
+			e.initFuncs = append(e.initFuncs, e.funcDefCName(name, d))
 		}
 	})
 }
@@ -3274,7 +3304,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	var proto string
 	var emptyRecvName string // receiver of an empty-struct method: nothing to access, so (void) it
 	if recv == nil {
-		cname := mangle(e.curPkgPrefix, name)
+		cname := e.funcDefCName(name, ast)
 		proto = e.funcSignatureC(cname, sig)
 		e.curFunc = cname
 	} else {

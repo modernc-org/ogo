@@ -2482,6 +2482,43 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A package may declare several init functions. Go runs them in the order
+		// they are written, each on the state the ones before it left, and none of
+		// them is in scope under the name -- so they cannot all be called init in
+		// the emitted C, which would be a redefinition. Two of them used to emit
+		// two C functions both named init and the program did not compile at all.
+		name: "several init functions run in order",
+		src: `var order [3]int
+var next int
+var n int
+
+func mark(k int) {
+	order[next] = k
+	next++
+}
+
+func init() {
+	mark(1)
+	n = 1
+}
+
+func init() {
+	mark(2)
+	n = n * 3
+}
+
+func init() {
+	mark(3)
+	n = n + 4
+}
+
+func main() {
+	println(order[0], order[1], order[2], n)
+}
+`,
+		want: "1 2 3 7\n",
+	},
+	{
 		// A receive in call-argument position, over a channel that is a local
 		// rather than a package-level var. Both halves matter: this is the shape
 		// that deadlocked on hardware while the assignment form `v := <-ch` and

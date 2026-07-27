@@ -473,6 +473,8 @@ func (f *File) funcDecl(s *Scope, n Node) {
 	// seenRPar := false
 
 	var fd *FuncDeclNode
+	var nameTok Token // the declared name, for the init rule below
+	isInit := false
 
 	defer func() {
 		if fd == nil {
@@ -490,6 +492,19 @@ func (f *File) funcDecl(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Signature:
+			// init is not an ordinary function: it is never called by a name, it is
+			// called by the program's startup, which has nothing to pass it and
+			// nowhere to put what it returns. Go says so, and so do we. It is also
+			// not in the package scope (declareFunc collects it apart, so a second
+			// one is no redeclaration), which is why fd is nil here and the check
+			// stands on its own.
+			if isInit {
+				if sig := f.signature(block, n); !sig.empty() {
+					f.err(nameTok.Position(), "func init must have no arguments and no return values")
+				}
+				return
+			}
+
 			fd.Type.Signature = f.signature(block, n)
 		case Receiver:
 			// A method. It is not entered into the package scope (declareFunc skips
@@ -506,6 +521,12 @@ func (f *File) funcDecl(s *Scope, n Node) {
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
+				nameTok = tok
+				if tok.Src() == "init" {
+					isInit = true
+					continue
+				}
+
 				switch x := s.Declarations[tok.Src()].(type) {
 				case nil:
 					return
@@ -5503,6 +5524,11 @@ func (f *File) exprIdent(n Node) (Token, bool) {
 type SignatureNode struct {
 	Params  *ParameterListNode
 	Results *ParameterListNode
+}
+
+// empty reports whether the signature takes nothing and returns nothing.
+func (n *SignatureNode) empty() bool {
+	return (n.Params == nil || len(n.Params.List) == 0) && (n.Results == nil || len(n.Results.List) == 0)
 }
 
 func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {

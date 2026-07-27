@@ -1,0 +1,17 @@
+// init is called by the program's startup, which has nothing to pass it and
+// nowhere to put what it returns, so it takes neither.
+
+// ERROR "func init must have no arguments and no return values"
+func init(n int) { println(n) }
+
+// ERROR "func init must have no arguments and no return values"
+func init() int { return 1 }
+
+// ERROR "func init must have no arguments and no return values"
+func init(n int) int { return n }
+
+// A package may declare several init functions and each is its own; none of them
+// is in scope under that name, so a second one is no redeclaration.
+func init() { println("a") }
+
+func init() { println("b") }

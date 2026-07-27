@@ -1491,14 +1491,20 @@
 //
 //	func init() { … }
 //
+// A signature that takes or returns anything is an error: an init function is
+// called by the program's startup, which has nothing to pass it and nowhere to
+// put what it returns.
+//
 // Multiple such functions may be defined per package, even within a single
 // source file. In the package block, the init identifier can be used only to
 // declare init functions, yet the identifier itself is not declared. Thus
-// init functions cannot be referred to from anywhere in a program.
+// init functions cannot be referred to from anywhere in a program, and a second
+// one is no redeclaration of the first.
 //
 // All init functions across all files in the directory are gathered and
-// executed sequentially by the transpiled runtime before the package is
-// considered fully initialized.
+// executed sequentially, in the order they are written, by the transpiled
+// runtime before the package is considered fully initialized. Each therefore
+// runs on the state the ones before it left.
 //
 // # Program initialization
 //

@@ -15,6 +15,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **Several `init` functions in one package did not compile.** A package may declare
+  as many as it likes and Go runs each in turn, but two of them emitted two C
+  functions both named `init`, which the backend rejected as a redefinition. Each now
+  takes its own name and they run in the order they are written, each on the state
+  the ones before it left. A `func init` with a parameter emitted broken C, and one
+  with a result was accepted silently; both are now refused with Go's message,
+  `func init must have no arguments and no return values`.
 - **A `select` over more than one channel did not compile.** Multiplexing several
   channels is the whole point of the statement, and the emitted C put each clause's
   value declaration between the previous clause's closing brace and this clause's
