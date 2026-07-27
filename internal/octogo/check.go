@@ -2905,7 +2905,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 				// channel types (so a send/receive on the variable is checked),
 				// reporting undefined types. Slices are left unresolved for now:
 				// their element expressions are not yet checked.
-				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) || f.funcType(c) {
+				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) || f.funcType(c) || f.sliceType(c) {
 					if tn := f.typ(s, c); tn != nil {
 						kind, hasKind = f.typeKind(s, tn)
 						_, isPtr = tn.(*TypeNodePointer)
@@ -2927,6 +2927,11 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkNames(s, e)
 			f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 			f.checkFuncAssign(s, funcSig, e, "variable declaration")
+			if len(names) == len(initExprs) {
+				// One initializer per name; a multi-result call feeding several
+				// names pairs up with none of them and is left alone.
+				f.checkDeclType(s, kind, hasKind, typeName, e)
+			}
 			if hasKind {
 				f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
 				continue
@@ -2966,6 +2971,27 @@ func (f *File) arrayType(n Node) bool {
 	for c := range it(n.ast) {
 		if c.sym == Expression {
 			return true
+		}
+	}
+	return false
+}
+
+// sliceType reports whether a Type node is a slice "[]T" -- a "[" with nothing
+// between it and the "]", which is what tells it from an array. It is the shape
+// test that lets a slice variable's element kind be recorded, so writing the wrong
+// type into an element is reported here rather than by the C backend.
+func (f *File) sliceType(n Node) bool {
+	seenLBrack := false
+	for c := range it(n.ast) {
+		switch {
+		case c.sym == Expression:
+			return false // an array bound
+		case c.sym != 0:
+			// a nested type
+		case f.ch(c.tok) == LBRACK:
+			seenLBrack = true
+		case f.ch(c.tok) == RBRACK:
+			return seenLBrack
 		}
 	}
 	return false
@@ -3334,6 +3360,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 						vd.typeName, vd.typeQual = nm, ql
 					}
 				}
+			} else if ek, ok := f.exprLitElemKind(s, rhs[i]); ok {
+				// `xs := []int{1, 2}` / `a := [2]int{1, 2}`: xs carries int, so
+				// writing into an element is checked as an explicitly typed
+				// container's is.
+				vd.elemKind, vd.hasElemKind = ek, true
 			} else if nm, ql, ptr, ok := f.exprNamedType(s, rhs[i]); ok {
 				// `p := P{1, 2}` / `p := &P{1, 2}` / `q := p` / `p := mk()`: p
 				// carries P, so its fields and methods are checked as an explicitly
@@ -4797,6 +4828,31 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 	}
 }
 
+// checkDeclType reports a type mismatch between a variable declaration's written
+// type and its initializer, "var n int = \"a\"". It is checkAssignType for the
+// declaration form, which had no such check at all: an assignment was checked and a
+// call argument was checked, but the initializer of a declaration was left to the C
+// backend, which reported it as "incompatible types when initializing".
+//
+// Conservative in the same way its neighbours are: an initializer whose type cannot
+// be determined, or one of a type category the Kind model does not carry (a struct,
+// a slice, nil), yields no report rather than a wrong one.
+func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, init Node) {
+	if !hasKind {
+		return
+	}
+	rk, rok := f.exprType(s, init)
+	lc, rc := kindCategory(kind), kindCategory(rk)
+	if !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+		return
+	}
+	name := kindName(kind)
+	if typeName.IsValid() {
+		name = typeName.Src() // a named type reads as itself, not as its underlying
+	}
+	f.err(f.tok(init.Pos()).Position(), "cannot use %s of type %s as type %s in variable declaration", f.exprSource(init), kindName(rk), name)
+}
+
 // checkFieldAssign reports a type mismatch in a field assignment "head.field =
 // rhs": the right-hand side's type category must match the struct field's. It is
 // the struct-field analogue of checkAssignType.
@@ -5148,6 +5204,46 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	}
 	_, resIsPtr := tn.(*TypeNodePointer)
 	return nm, namedTypeQual(tn), isPtr || resIsPtr, true
+}
+
+// exprLitElemKind returns the element kind of an array or slice literal standing as
+// an initializer -- the "int" of "[2]int{1, 2}" or "[]int{1, 2}". A short
+// declaration from one then carries the element type, so writing the wrong type
+// into an element is reported here rather than by the C backend.
+func (f *File) exprLitElemKind(s *Scope, n Node) (Kind, bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return 0, false
+	}
+	var fac Node
+	facSet := false
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+		case UnaryOp:
+			return 0, false // "&[2]int{...}" is not a form the language takes
+		}
+	}
+	if !facSet {
+		return 0, false
+	}
+	// Factor = "[" [ Expression ] "]" Type [ CompositeLit ]: the element type is the
+	// Type, and the CompositeLit is what makes it a value rather than a written type.
+	var elem Node
+	hasElem, hasLit := false, false
+	for c := range it(fac.ast) {
+		switch c.sym {
+		case Type:
+			elem, hasElem = c, true
+		case CompositeLit:
+			hasLit = true
+		}
+	}
+	if !hasElem || !hasLit {
+		return 0, false
+	}
+	return f.typeKind(s, f.typ(s, elem))
 }
 
 // factorRoot returns a Factor's leading identifier (the base a suffix reads from)
@@ -7210,6 +7306,9 @@ func (f *File) varSpec(s *Scope, n Node) {
 			for _, e := range exprs {
 				f.checkNames(s, e)
 				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
+				if len(names) == len(exprs) {
+					f.checkDeclType(s, kind, hasKind, typeName, e)
+				}
 				if hasKind {
 					f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
 					continue

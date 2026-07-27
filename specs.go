@@ -600,6 +600,11 @@
 //	VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .
 //	VarSpec = IdentifierList ( Type [ "=" ExpressionList ] | "=" ExpressionList ) .
 //
+// An initializer must have the declared type, exactly as an assignment's right-hand
+// side must; an untyped constant takes the declared type, and is bounded by it. The
+// element type of an array or a slice is part of this, so writing the wrong type
+// into an element is reported wherever the container was declared.
+//
 // # Short Variable Declarations (:=)
 //
 // To satisfy the LL(1) constraints of the OctoGo parser, short variable

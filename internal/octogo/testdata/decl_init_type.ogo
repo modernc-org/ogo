@@ -1,0 +1,86 @@
+// A variable declaration's initializer must have the declared type's type, exactly
+// as an assignment's right-hand side must. The declaration form had no such check
+// at all -- an assignment was checked and a call argument was checked, so "n = x"
+// and "f(x)" were reported while "var n int = x" was left to the C backend.
+//
+// The element type of an array or a slice is part of this: it is now recorded for a
+// slice variable, and for a short declaration from an array or slice literal, so
+// writing the wrong type into an element is reported wherever the container was
+// declared.
+
+type Celsius int
+
+var gs []int
+
+// ERROR "cannot use .a. of type string as type int in variable declaration"
+var packageLevel int = "a"
+
+func written() {
+	// ERROR "cannot use .a. of type string as type int in variable declaration"
+	var n int = "a"
+	// ERROR "cannot use 1 of type int as type string in variable declaration"
+	var s string = 1
+	// ERROR "cannot use 2 of type int as type bool in variable declaration"
+	var b bool = 2
+	println(n, s, b)
+}
+
+// A variable of a NAMED type carries no kind anywhere in the checker -- typeKind
+// resolves only the predeclared types -- so neither this nor the assignment form of
+// it is reported yet. It is left here to say so, and compiles.
+func namedTypeGap() {
+	var c Celsius = 20
+	c = 30
+	println(int(c))
+}
+
+func fromVariable() {
+	var s string = "x"
+	// ERROR "cannot use s of type string as type int in variable declaration"
+	var n int = s
+	println(n)
+}
+
+// A slice variable's element type is recorded now, so an element assignment is
+// checked whether the container was written out or short-declared.
+func sliceElem() {
+	var xs []int = gs
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	xs[0] = "oops"
+	ys := []int{1, 2}
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	ys[0] = "oops"
+	zs := []string{"a"}
+	// ERROR "cannot use 1 of type int as type string in assignment"
+	zs[0] = 1
+}
+
+func arrayElem() {
+	a := [2]int{1, 2}
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	a[0] = "oops"
+	b := [2]string{"a", "b"}
+	// ERROR "cannot use 1 of type int as type string in assignment"
+	b[0] = 1
+}
+
+// Every legitimate form still compiles: an untyped constant takes the declared
+// type, a named type reads as its underlying one, and an initializer whose type
+// cannot be determined is left alone rather than misreported.
+func ok() {
+	var c Celsius = 20
+	var b byte = 'a'
+	var f float64 = 1
+	var g float32 = 1.5
+	var bl bool = 1 < 2
+	var s string = "a" + "b"
+	var n int = len(gs)
+	var xs []int = gs
+	var a [2]int = [2]int{1, 2}
+	var e int = a[0]
+	xs = ys()
+	a[1] = 7
+	println(int(c), int(b), f, g, bl, s, n, len(xs), a[1], e)
+}
+
+func ys() []int { return gs }

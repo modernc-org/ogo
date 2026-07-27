@@ -15,6 +15,21 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **`var n int = "a"` was not reported.** A variable declaration's initializer was
+  checked for nothing but constant overflow — an assignment was checked and a call
+  argument was checked, so `n = "a"` and `f("a")` were caught while the declaration
+  form was left to the C backend, which said `incompatible types when initializing`.
+  Both the local and the package-level form now report it, in the same words the
+  assignment does.
+
+  Two container gaps in the same family closed with it: a **slice** variable never
+  recorded its element type at all, so `xs[0] = "oops"` was unchecked however `xs`
+  was declared; and a short declaration from an **array or slice literal**,
+  `a := [2]int{1, 2}`, recorded none either. Both do now.
+
+  A variable of a *named* type still carries no type category, so neither
+  `var c Celsius = "a"` nor `c = "a"` is reported yet — that is the checker's
+  predeclared-only type model, and is separate work.
 - **`p := P{1, 2}` was not type-checked.** A short declaration recorded no named
   type, so every check that keys on one — the type of a field assignment, an unknown
   field, an unknown method — was silently skipped for the ordinary way of writing it,
