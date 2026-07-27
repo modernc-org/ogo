@@ -15,6 +15,17 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **The most negative value divided by −1 crashed.** Go defines it to be itself, with
+  a remainder of 0 — the quotient is not representable, so the two's-complement
+  overflow stands. C leaves it undefined, and the host traps on it with SIGFPE, which
+  is a crash where Go prints a number. Signed `/` and `%` now go through a guard,
+  alongside the divide-by-zero check the divisor already carried; unsigned division
+  and a constant divisor that is neither 0 nor −1 are untouched.
+- **A conversion to a 64-bit type of a 64-bit expression was miscompiled** by the
+  target's C compiler, yielding a value that varied from run to run — `int64(a - b)`
+  on `uint64` operands. The same cast applied to a *variable* is correct, so the
+  operand is now bound to one first. Only the board shows this; the host compiler
+  computes either form correctly.
 - **A shift by a count at or past the operand's width gave C's answer, not Go's.**
   `x << 40` on an `int32` was `x << 8` — both compilers take the count modulo the
   width, where Go defines the result as 0 (or −1 for a right shift of a negative

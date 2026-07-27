@@ -2483,6 +2483,53 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// The other two operands C and Go disagree on. Go defines the most negative
+		// value divided by -1 to be itself, with a remainder of 0 -- the quotient is
+		// not representable, so the two's-complement overflow stands. C leaves it
+		// undefined, and the host traps on it (SIGFPE), which is a crash where Go
+		// prints a number. Guarded per signed value type, alongside the divide-by-
+		// zero check the divisor already carried.
+		name: "the most negative value divided by minus one",
+		src: `func main() {
+	var a int32 = -2147483648
+	var b int32 = -1
+	println(a/b, a%b)
+
+	var c int64 = -9223372036854775808
+	var d int64 = -1
+	println(c/d, c%d)
+
+	var e int32 = -2147483648
+	e /= b
+	println(e)
+	var f int32 = -2147483648
+	f %= b
+	println(f)
+
+	var g [2]int32
+	g[0] = -2147483648
+	i := 0
+	g[i] /= b
+	println(g[0])
+
+	// A 64-bit conversion of a 64-bit expression is bound to a variable first: the
+	// target's C compiler miscompiles the cast otherwise, and only the board shows
+	// it.
+	var p uint64 = 0
+	var q uint64 = 12345678901
+	println(int64(p-q), uint64(c/d))
+
+	// Unsigned division has no such case and is untouched, and so is a constant
+	// divisor that is neither zero nor -1.
+	var u uint32 = 8
+	var v uint32 = 3
+	var w int32 = -7
+	println(u/v, u%v, w/2, w%2)
+}
+`,
+		want: "-2147483648 0\n-9223372036854775808 0\n-2147483648\n0\n-2147483648\n-12345678901 9223372036854775808\n2 2 -3 -1\n",
+	},
+	{
 		// Go defines a shift by a count at least as wide as the value's type: the
 		// result is 0, or -1 for an arithmetic right shift of a negative value. C
 		// leaves it undefined and both this project's compilers take the count

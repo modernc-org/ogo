@@ -1699,6 +1699,55 @@ func shiftHelperDef(op, ctype string) string {
 	return fmt.Sprintf("static %s %s(%s v, int64_t n) {\n%s}\n", ctype, name, ctype, body)
 }
 
+// divHelperName is the C name of the guarded division helper for a value type.
+func divHelperName(op, ctype string) string {
+	dir := "div"
+	if op == "%" {
+		dir = "mod"
+	}
+	return "ogo_" + dir + "_" + cIdent(ctype)
+}
+
+// divHelperDef defines a guarded signed division or remainder.
+//
+// Two operands are wrong in C and defined in Go. A zero divisor is a run-time panic
+// in Go and undefined in C, which is what ogo_nonzero already answered. The other is
+// the most negative value divided by -1: its quotient is not representable, so C
+// leaves it undefined and traps on some hosts (SIGFPE), while Go defines the result
+// to be that same most negative value, with a remainder of 0. Both need the dividend
+// as well as the divisor, which is why this replaces the divisor-only guard.
+//
+// The negation is done in the unsigned counterpart: negating the most negative value
+// overflows, which C does not define either.
+func divHelperDef(op, ctype string, checks bool) string {
+	name := divHelperName(op, ctype)
+	u := cUnsignedOf[ctype]
+	body := ""
+	if checks {
+		body += "\tif (b == 0) ogo_panic(\"integer divide by zero\");\n"
+	}
+	switch op {
+	case "%":
+		body += "\tif (b == -1) return 0;\n\treturn a % b;\n"
+	default:
+		// The negation is bound to a variable before it is converted back. The
+		// target's C compiler miscompiles a cast to int64_t applied to a 64-bit
+		// EXPRESSION -- the same cast of a variable is fine -- and yields a value
+		// that varies from run to run.
+		body += fmt.Sprintf("\tif (b == -1) { %s t = (%s)0 - (%s)a; return (%s)t; }\n\treturn a / b;\n", u, u, u, ctype)
+	}
+	return fmt.Sprintf("static %s %s(%s a, %s b) {\n%s}\n", ctype, name, ctype, ctype, body)
+}
+
+// needDiv records that a guarded division helper is used, so it is defined.
+func (e *emitter) needDiv(op, ctype string) string {
+	e.divHelpers[divHelperName(op, ctype)] = [2]string{op, ctype}
+	if e.checks {
+		e.needPanic()
+	}
+	return divHelperName(op, ctype)
+}
+
 // needShift records that a guarded shift helper is used, so it is defined.
 func (e *emitter) needShift(op, ctype string) string {
 	e.shiftHelpers[shiftHelperName(op, ctype)] = [2]string{op, ctype}
@@ -1772,7 +1821,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1998,6 +2047,15 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		oc := e.shiftHelpers[name]
 		helperDefs.WriteString(shiftHelperDef(oc[0], oc[1]))
 	}
+	divNames := make([]string, 0, len(e.divHelpers))
+	for name := range e.divHelpers {
+		divNames = append(divNames, name)
+	}
+	slices.Sort(divNames)
+	for _, name := range divNames {
+		oc := e.divHelpers[name]
+		helperDefs.WriteString(divHelperDef(oc[0], oc[1], e.checks))
+	}
 	// A channel's helpers call ogo_panic (out of locks) and the P2 lock and wait
 	// intrinsics, so they follow the panic definition and pull in propeller2.h.
 	for _, el := range sortedKeys(e.chanElems) {
@@ -2216,6 +2274,7 @@ type emitter struct {
 	usesNonzero        bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesNonzero64      bool                     // ogo_nonzero64 (64-bit divisor guard) is called
 	shiftHelpers       map[string][2]string     // guarded shift helper name -> {operator, value C type}
+	divHelpers         map[string][2]string     // guarded signed division helper name -> {operator, value C type}
 	release            bool                     // release build: a panic reboots (_reboot) instead of halting the cog
 	checks             bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals             map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
@@ -5422,6 +5481,16 @@ func (e *emitter) convType(recv string) (string, bool) {
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
 	if isScalarCType(e.underlyingCType(ct)) {
+		// The target's C compiler miscompiles a cast to a 64-bit type applied to a
+		// 64-bit EXPRESSION, yielding a value that varies from run to run; the same
+		// cast of a variable is right. So the operand is bound to one first. Only
+		// the board shows this -- gcc computes either form correctly.
+		if src, ok := e.exprReprCType(arg.ast); ok && cIntWidths[e.underlyingCType(ct)] == 64 && cIntWidths[src] == 64 {
+			if _, isName := e.exprIdent(arg.ast); !isName {
+				e.emit("(" + ct + ")" + e.hoist(src, func() { e.emitExpr(arg.ast) }))
+				return
+			}
+		}
 		e.emit("(" + ct + ")(")
 		e.emitExpr(arg.ast)
 		e.emit(")")
@@ -8168,7 +8237,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 	needed := false
 	for i := 1; i+1 < len(kids); i += 2 {
-		if kids[i].sym == MulOp && e.shiftNeedsGuard(kids[i], kids[i-1], kids[i+1]) {
+		if kids[i].sym == MulOp && (e.shiftNeedsGuard(kids[i], kids[i-1], kids[i+1]) || e.divNeedsGuard(kids[i], kids[i-1], kids[i+1])) {
 			needed = true
 			break
 		}
@@ -8184,16 +8253,46 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 			return "", false
 		}
 		rhsText := e.captureC(func() { e.emitExprNode(rhs) })
-		if haveType && e.shiftNeedsGuard(op, kids[i-1], rhs) {
+		switch {
+		case haveType && e.shiftNeedsGuard(op, kids[i-1], rhs):
 			fn := e.needShift(e.opText(op.ast), e.underlyingCType(ctype))
 			text = fn + "(" + text + ", " + rhsText + ")"
-			continue
+		case haveType && e.divNeedsGuard(op, kids[i-1], rhs):
+			fn := e.needDiv(e.opText(op.ast), e.underlyingCType(ctype))
+			text = fn + "(" + text + ", " + rhsText + ")"
+		default:
+			// A step the chain does not guard leaves the result's type as it was:
+			// the value type of a shift, a quotient and a remainder alike is the
+			// left operand's.
+			text = "(" + text + " " + e.opText(op.ast) + " " + rhsText + ")"
 		}
-		// A step the chain does not guard leaves the result's type as it was, the
-		// value type of a shift being its left operand's either way.
-		text = "(" + text + " " + e.opText(op.ast) + " " + rhsText + ")"
 	}
 	return text, true
+}
+
+// divNeedsGuard reports whether a division step must go through the guarded helper:
+// it is "/" or "%" on a signed integer, and the divisor is not a constant already
+// known to be neither 0 nor -1.
+//
+// An unsigned division needs no guard beyond the zero one ogo_nonzero gives it: it
+// has no most-negative value to overflow, and its divisor is never -1.
+func (e *emitter) divNeedsGuard(op, lhs, rhs Node) bool {
+	switch e.opText(op.ast) {
+	case "/", "%":
+	default:
+		return false
+	}
+	ctype, ok := e.inferCType(lhs.ast)
+	if !ok {
+		return false
+	}
+	if _, signed := cUnsignedOf[e.underlyingCType(ctype)]; !signed {
+		return false
+	}
+	if v, ok := e.foldConstInt(rhs.ast); ok && v != 0 && v != -1 {
+		return false
+	}
+	return true
 }
 
 // shiftNeedsGuard reports whether a shift step must go through the guarded helper:
@@ -9707,7 +9806,7 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 		}
 	}
 	e.ind()
-	if text, ok := e.shiftAssignC(target, t); ok {
+	if text, ok := e.guardedAssignC(target, t); ok {
 		e.emit(text + ";\n")
 		return
 	}
@@ -9715,18 +9814,20 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 	e.emitAssignTail(t)
 }
 
-// shiftAssignC rewrites a compound shift assignment that needs guarding, "x <<= n",
-// into the guarded form "x = ogo_shl_<T>(x, n)". It reports false for any other
-// assignment, which the ordinary path then emits unchanged.
+// guardedAssignC rewrites a compound assignment whose operator needs a guard --
+// "x <<= n", "x /= n" -- into the guarded form "x = ogo_shl_<T>(x, n)". It reports
+// false for any other assignment, which the ordinary path then emits unchanged.
 //
 // The target is written twice, so only one that is a plain name or a field path
-// through one qualifies -- naming it again costs nothing and repeats no evaluation.
-// A target that indexes or calls is refused rather than emitted wrong: repeating it
-// would repeat its index expression, and leaving the shift unguarded would give C's
+// through one qualifies, or one the caller says repeats no evaluation. A target that
+// is itself evaluated is refused rather than emitted wrong: repeating it would
+// repeat its index expression, and leaving the operator unguarded would give C's
 // answer instead of Go's, which is what this whole path exists to stop.
-func (e *emitter) shiftAssignC(target func(), t assignTail) (string, bool) {
+func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 	op := strings.TrimSuffix(t.op, "=")
-	if t.rhs == nil || (op != "<<" && op != ">>") || t.complement {
+	isShift := op == "<<" || op == ">>"
+	isDiv := op == "/" || op == "%"
+	if t.rhs == nil || t.complement || !(isShift || isDiv) {
 		return "", false
 	}
 	text := e.captureC(target)
@@ -9737,15 +9838,36 @@ func (e *emitter) shiftAssignC(target func(), t assignTail) (string, bool) {
 			return "", false
 		}
 	}
-	if !e.shiftNeedsGuard1(ctype, t.rhs) {
+	var fn string
+	switch {
+	case isShift && e.shiftNeedsGuard1(ctype, t.rhs):
+		fn = shiftHelperName(op, e.underlyingCType(ctype))
+	case isDiv && e.divNeedsGuard1(ctype, t.rhs):
+		fn = divHelperName(op, e.underlyingCType(ctype))
+	default:
 		return "", false
 	}
 	if !t.targetRepeatable && !plainTargetText(text) {
-		e.fail("a shift assignment by a value that may reach the operand's width needs a target that can be named twice; this one is evaluated")
+		e.fail("a %s= assignment whose operands C and Go disagree on needs a target that can be named twice; this one is evaluated", op)
 		return "", false
 	}
-	fn := e.needShift(op, e.underlyingCType(ctype))
+	if isShift {
+		e.needShift(op, e.underlyingCType(ctype))
+	} else {
+		e.needDiv(op, e.underlyingCType(ctype))
+	}
 	return text + " = " + fn + "(" + text + ", " + e.captureC(func() { e.emitExpr(t.rhs) }) + ")", true
+}
+
+// divNeedsGuard1 is divNeedsGuard for a value whose C type is already known.
+func (e *emitter) divNeedsGuard1(ctype string, rhs []int32) bool {
+	if _, signed := cUnsignedOf[e.underlyingCType(ctype)]; !signed {
+		return false
+	}
+	if v, ok := e.foldConstInt(rhs); ok && v != 0 && v != -1 {
+		return false
+	}
+	return true
 }
 
 // plainTargetText reports whether a target's C text is a name or a field path

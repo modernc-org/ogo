@@ -1962,16 +1962,17 @@ func TestEmitCChecks(t *testing.T) {
 		"\tif ((unsigned)i >= (unsigned)n) ogo_panic(\"index out of range\");\n" +
 		"\treturn i;\n" +
 		"}\n" +
-		"static int ogo_nonzero(int b) {\n" +
+		"static int ogo_div_int(int a, int b) {\n" +
 		"\tif (b == 0) ogo_panic(\"integer divide by zero\");\n" +
-		"\treturn b;\n" +
+		"\tif (b == -1) { unsigned t = (unsigned)0 - (unsigned)a; return (int)t; }\n" +
+		"\treturn a / b;\n" +
 		"}\n" +
 		"\n" +
 		"int main(void) {\n" +
 		"\tint a[4] = {0};\n" +
 		"\tint i = 0;\n" +
 		"\ta[ogo_bound(i, 4)] = 9;\n" +
-		"\tint x = (a[ogo_bound(i, 4)] / ogo_nonzero(i));\n" +
+		"\tint x = ogo_div_int(a[ogo_bound(i, 4)], i);\n" +
 		"\tprintf(\"%d\\n\", x);\n" +
 		"\treturn 0;\n" +
 		"}\n"
@@ -1993,7 +1994,7 @@ func TestEmitCChecks(t *testing.T) {
 	if err := EmitC(pkg, &un); err != nil {
 		t.Fatalf("EmitC unchecked: %v", err)
 	}
-	if bytes.Contains(un.Bytes(), []byte("ogo_bound")) || bytes.Contains(un.Bytes(), []byte("ogo_nonzero")) {
+	if bytes.Contains(un.Bytes(), []byte("ogo_bound")) || bytes.Contains(un.Bytes(), []byte("integer divide by zero")) {
 		t.Errorf("default build should emit no checks:\n%s", un.String())
 	}
 }
@@ -3372,7 +3373,7 @@ func TestEmitCRem(t *testing.T) {
 
 	for _, want := range []string{
 		"\tprintf(\"%d\\n\", (x % 5));\n",
-		"\tprintf(\"%d\\n\", (x % ogo_nonzero(d)));\n",
+		"\tprintf(\"%d\\n\", ogo_mod_int(x, d));\n",
 		"\tx %= 5;\n",
 		"\tprintf(\"%d\\n\", (x + 2 + (17 % 5 * 2)));\n",
 	} {
@@ -4843,7 +4844,7 @@ func main() {
 		"typedef struct { int _0; int _1; } ogo_ret_divmod;\n",
 		"typedef struct { int _0; _Bool _1; } ogo_ret_flags;\n",
 		"ogo_ret_divmod divmod(int a, int b) {\n",
-		"return (ogo_ret_divmod){(a / b), (a % b)};\n",
+		"return (ogo_ret_divmod){ogo_div_int(a, b), ogo_mod_int(a, b)};\n",
 		"return (ogo_ret_flags){n, n > 0};\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {

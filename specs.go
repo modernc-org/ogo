@@ -376,6 +376,9 @@
 //     right shift of a negative value, as in Go -- not C's count-modulo-the-width. A
 //     negative count is a run-time panic. A count that is a constant already inside
 //     the width costs nothing extra; any other goes through a guard.
+//   - The most negative value of a signed type divided by -1 is itself, with a
+//     remainder of 0, as in Go: the quotient is not representable, so the two's-
+//     complement overflow stands rather than being undefined as it is in C.
 //   - Explicit conversions are required when different numeric types are mixed in
 //     an expression or assignment.
 //
