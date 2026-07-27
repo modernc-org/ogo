@@ -157,7 +157,9 @@ broken.
 * Integers (sized and unsized, including 64-bit), `byte`, `rune`, `bool`, `string`,
   structs, fixed arrays including multi-dimensional, slices, named types, channels.
   Structs may refer to themselves, to each other, and to a type declared later, so
-  linked lists, trees and graphs build.
+  linked lists, trees and graphs build. A named type behaves as what it is defined
+  over — `type Name string` indexes, slices, ranges and compares as a string, `type
+  List []int` as a slice — and carries its own methods.
 * A slice literal stands wherever a value may — `sum([]int{1, 2, 3})` — its backing
   array a local of the function that wrote it, with the lifetime that implies.
 * Slicing, including the capacity bound: `pool[0:0:64]` hands out a region of a

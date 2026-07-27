@@ -677,6 +677,15 @@
 //	TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 //	TypeSpec = identifier [ "=" ] Type .
 //
+// A defined type is a distinct type that may carry methods, and it has the
+// representation of the type it is defined over -- so a value of "type Name string"
+// prints as a string, carries a length, indexes to a byte, slices, ranges over its
+// runes and compares as one, and a value of "type List []int" is a slice in every
+// one of those ways. Only its identity differs: which methods it has, and that it
+// is not the same type as what it is defined over.
+//
+// A defined type over a struct is written and used as that struct is.
+//
 // # Function and Method Declarations
 //
 // A function declaration binds an identifier to a function. If a Receiver is

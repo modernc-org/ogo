@@ -1700,7 +1700,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2074,6 +2074,7 @@ type emitter struct {
 	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	namedTypes         map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	namedUnderlying    map[string]string        // that typedef -> the C type it stands for, so a value of it is represented as what it is
 	namedArrays        map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
 	constInt           map[string]string        // integer-constant name -> its C literal value, for array bounds
 	constStr           map[string]string        // string-constant name -> its decoded value, for folding string concatenation
@@ -2480,6 +2481,7 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			return // cType has latched the failure
 		}
 		e.namedTypes[mn] = true
+		e.namedUnderlying[mn] = underlying
 		e.emit("typedef " + underlying + " " + mn + ";\n")
 	}
 }
@@ -5257,6 +5259,37 @@ func (e *emitter) cType(ast []int32) string {
 	return ""
 }
 
+// underlyingCType resolves a named type to the C type it stands for, following a
+// chain of them ("type A B; type B int" -> int). Anything else is returned as it is.
+//
+// A named type is a distinct type to the checker but the same representation to C,
+// and every decision about how a value is REPRESENTED -- how it prints, whether it
+// carries a length, whether it is a bool word -- has to see through the name. Only
+// the decisions about identity (which method set, what to call the C variable) use
+// the name itself.
+func (e *emitter) underlyingCType(ctype string) string {
+	// Bounded rather than cycle-tracked: a type cycle is refused by the checker
+	// long before this runs, and the bound costs nothing.
+	for range 16 {
+		u, ok := e.namedUnderlying[ctype]
+		if !ok {
+			return ctype
+		}
+		ctype = u
+	}
+	return ctype
+}
+
+// exprReprCType is inferCType with the name resolved away: the C type that decides
+// how a value is represented, rather than the one it is declared as.
+func (e *emitter) exprReprCType(ast []int32) (string, bool) {
+	ct, ok := e.inferCType(ast)
+	if !ok {
+		return "", false
+	}
+	return e.underlyingCType(ct), true
+}
+
 // isUserType reports whether a C type name denotes a user-defined type that may
 // carry methods -- a struct or a non-struct named type -- as opposed to a
 // predeclared type or an imported package qualifier.
@@ -6471,10 +6504,24 @@ func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, 
 	e.emit(")")
 }
 
-// isStringVarName reports whether base names a string-typed variable.
+// isStringVarName reports whether base names a string-typed variable, a named type
+// over string included -- what it is asked for is the representation, and a value of
+// `type Name string` is a string.
 func (e *emitter) isStringVarName(base string) bool {
 	ct, ok := e.varType(base)
-	return ok && ct == cString
+	return ok && e.underlyingCType(ct) == cString
+}
+
+// varReprType is varType with the name resolved away: the C type that decides how a
+// variable's value is represented, rather than the one it is declared as. The
+// declared name is what a C declaration and a method lookup want; this is what every
+// question about the value's shape wants.
+func (e *emitter) varReprType(name string) (string, bool) {
+	ct, ok := e.varType(name)
+	if !ok {
+		return "", false
+	}
+	return e.underlyingCType(ct), true
 }
 
 // hasArrayVar reports whether base names a fixed-array variable.
@@ -6963,7 +7010,9 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 // two-variable form copies the element into the value variable at the top of each
 // iteration.
 func (e *emitter) emitRange(h *forHeader, body []int32) {
-	ct, _ := e.inferCType(h.rangeExpr)
+	// The representation decides what ranging means -- a value of `type Name string`
+	// is a string and yields its runes -- so the name is resolved away here.
+	ct, _ := e.exprReprCType(h.rangeExpr)
 	key := "_"
 	if h.keyVar != nil {
 		key = e.exprC(h.keyVar)
@@ -7315,7 +7364,8 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 	cname, stringGuard := "", false
 	if guardVar != "" {
 		cname = e.varRef(guardVar)
-		stringGuard = e.locals[guardVar] == cString || e.globals[e.globalC(guardVar)] == cString
+		ct, _ := e.varReprType(guardVar)
+		stringGuard = ct == cString
 	}
 	e.emit("(")
 	for i, ex := range exprs {
@@ -8230,7 +8280,7 @@ func (e *emitter) emitLen(callSuffix []int32) {
 		}
 	}
 	// A string and a slice both carry their length in a `.len` header field.
-	if ct, ok := e.inferCType(arg); ok && (ct == cString || e.isSliceCType(ct)) {
+	if ct, ok := e.exprReprCType(arg); ok && (ct == cString || e.isSliceCType(ct)) {
 		e.emitHeaderField(arg, ct, "len")
 		return
 	}
@@ -8249,7 +8299,7 @@ func (e *emitter) emitPanic(callSuffix []int32) {
 		e.fail("panic takes exactly one argument")
 		return
 	}
-	if ct, ok := e.inferCType(args[0].ast); !ok || ct != cString {
+	if ct, ok := e.exprReprCType(args[0].ast); !ok || ct != cString {
 		e.fail("panic is supported only with a string argument yet")
 		return
 	}
@@ -8272,7 +8322,7 @@ func (e *emitter) emitCap(callSuffix []int32) {
 			return
 		}
 	}
-	if ct, ok := e.inferCType(arg); ok && e.isSliceCType(ct) {
+	if ct, ok := e.exprReprCType(arg); ok && e.isSliceCType(ct) {
 		e.emitHeaderField(arg, ct, "cap")
 		return
 	}
@@ -8580,7 +8630,9 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 // the compact printf("%d\n", x) / ogo_println_str(x) forms); slices and arrays go
 // through their per-element print helper.
 func (e *emitter) emitPrintOne(newline bool, arg Node) {
-	if ct, ok := e.inferCType(arg.ast); ok {
+	// How a value prints follows its representation, not its name: a value of
+	// `type Name string` is a string and prints as one.
+	if ct, ok := e.exprReprCType(arg.ast); ok {
 		if ct == cString {
 			e.usesStringPrint = true
 			e.ind()
@@ -8609,7 +8661,7 @@ func (e *emitter) emitPrintOne(newline bool, arg Node) {
 		}
 	}
 	// A bool prints as the word true or false, as in Go.
-	if ct, ok := e.inferCType(arg.ast); ok && ct == cBool {
+	if ct, ok := e.exprReprCType(arg.ast); ok && ct == cBool {
 		e.ind()
 		nl := ""
 		if newline {
@@ -8727,7 +8779,7 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 
 // isBoolPrint reports whether an argument prints as a bool word.
 func (e *emitter) isBoolPrint(arg Node) bool {
-	ct, ok := e.inferCType(arg.ast)
+	ct, ok := e.exprReprCType(arg.ast)
 	return ok && ct == cBool
 }
 
@@ -8787,7 +8839,7 @@ func sliceElemPrintf(el string) string {
 // scalarPrintVerbOf returns the print conversion for an argument, defaulting to %d
 // when its type cannot be inferred (an integer expression).
 func (e *emitter) scalarPrintVerbOf(arg Node) string {
-	if ct, ok := e.inferCType(arg.ast); ok {
+	if ct, ok := e.exprReprCType(arg.ast); ok {
 		return scalarPrintVerb(ct)
 	}
 	return "%d"
@@ -8796,7 +8848,7 @@ func (e *emitter) scalarPrintVerbOf(arg Node) string {
 // isScalarPrint reports whether arg prints via printf %d (an integer or integer-
 // typed expression) -- i.e. it is neither a string, a slice nor an array.
 func (e *emitter) isScalarPrint(arg Node) bool {
-	if ct, ok := e.inferCType(arg.ast); ok {
+	if ct, ok := e.exprReprCType(arg.ast); ok {
 		if ct == cString || e.isSliceCType(ct) {
 			return false
 		}
@@ -9397,7 +9449,7 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 	// field and access-chain target paths, rather than emitted as "+=" on a struct,
 	// which flexcc rejects as "Expected integer type".
 	if t.rhs != nil && t.op != "=" {
-		if ct, ok := e.inferCType(t.rhs); ok && ct == cString {
+		if ct, ok := e.exprReprCType(t.rhs); ok && ct == cString {
 			e.fail("string concatenation with a non-constant operand needs allocation, which the target does not have")
 			return
 		}
@@ -9833,8 +9885,16 @@ func (e *emitter) sliceElem(name string) (string, bool) {
 	if el, ok := e.sliceVars[name]; ok {
 		return el, true
 	}
-	el, ok := e.globalSliceVars[e.globalC(name)]
-	return el, ok
+	if el, ok := e.globalSliceVars[e.globalC(name)]; ok {
+		return el, true
+	}
+	// A named type over a slice is a slice, `type List []int`: it is not in the two
+	// registries above, which are filled where a slice type is written out, but its
+	// representation says what it is.
+	if ct, ok := e.varReprType(name); ok && e.isSliceCType(ct) {
+		return sliceElemFromCName(ct), true
+	}
+	return "", false
 }
 
 // factorFieldAccess recognises a Factor that is a field access `base.f` (or a
@@ -10288,7 +10348,7 @@ func (e *emitter) stringCompareAt(kids []Node, i int) (op string, ok bool) {
 	default:
 		return "", false
 	}
-	if ct, ok := e.inferCType(kids[i].ast); !ok || ct != cString {
+	if ct, ok := e.exprReprCType(kids[i].ast); !ok || ct != cString {
 		return "", false
 	}
 	return op, true
@@ -10575,7 +10635,7 @@ func (e *emitter) emitExprNode(n Node) {
 		// ogo_string structs, and the target has no heap to build a new one at
 		// runtime, so a concatenation of constants is folded to a single literal and
 		// anything with a runtime operand is rejected.
-		if ct, ok := e.inferCType(n.ast); ok && ct == cString {
+		if ct, ok := e.exprReprCType(n.ast); ok && ct == cString {
 			if v, ok := e.foldConstString(n.ast); ok {
 				e.emitFoldedString(v)
 				return

@@ -2482,6 +2482,60 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A named type is a distinct type, but the same representation as the one it
+		// is defined over -- so a value of it prints, indexes, ranges, compares and
+		// carries a length exactly as that one does. Every such decision used to read
+		// the typedef's name instead, so `type Name string` printed as %d of the
+		// first word of its header: a silent wrong answer, the only kind that runs.
+		name: "a named type is represented as what it is over",
+		src: `type Name string
+type Celsius int
+type Flag bool
+type Ratio float64
+type List []int
+
+func (c Celsius) f() int  { return int(c)*9/5 + 32 }
+func (n Name) size() int  { return len(n) }
+func (l List) total() int {
+	t := 0
+	for _, v := range l {
+		t += v
+	}
+	return t
+}
+
+var back [3]int
+var pkgName Name = "pkg"
+
+func main() {
+	var n Name = "hello"
+	var c Celsius = 20
+	var f Flag = true
+	var r Ratio = 1.5
+	println(n, c, f, r, pkgName)
+	println(len(n), n[1], n[1:3])
+	println(n == "hello", n != "x", n < "z")
+	for i, ch := range n {
+		println(i, ch)
+	}
+	switch n {
+	case "hello":
+		println("hit")
+	default:
+		println("miss")
+	}
+
+	var l List = back[:]
+	l[0] = 1
+	l[2] = 9
+	println(len(l), cap(l), l[2], l.total())
+
+	println(c.f(), n.size())
+}
+`,
+		want: "hello 20 true 1.5 pkg\n5 101 el\ntrue true true\n0 104\n1 101\n2 108\n3 108\n4 111\nhit\n3 3 9 10\n68 5\n",
+	},
+	{
 		// A short declaration carries over the named type of what initializes it, so
 		// the ordinary `p := P{...}` is checked exactly as `var p P = P{...}` is.
 		// The four provenances -- a literal, the address of one, a copy, and a call's

@@ -15,6 +15,18 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A value of a named type printed as a meaningless number.** `type Name string`
+  printed `1428869128` — the first word of the string header read as `%d` — and
+  `type Flag bool` printed `1` rather than `true`. Every decision about how a value
+  is *represented* read the typedef's name instead of the type it stands for. This
+  was the worst kind of bug: a silent wrong answer in a program that ran.
+
+  Fixing it made the rest of a named type work as well. A value of `type Name string`
+  now carries a length, indexes to a byte, slices, ranges over its runes, compares
+  and switches as a string does; a value of `type List []int` indexes, ranges, and
+  answers `len`/`cap` as a slice does. What stays keyed on the name is identity —
+  which methods the type has, and what its C declaration is called — which is the
+  distinction the language draws.
 - **`var n int = "a"` was not reported.** A variable declaration's initializer was
   checked for nothing but constant overflow — an assignment was checked and a call
   argument was checked, so `n = "a"` and `f("a")` were caught while the declaration
