@@ -611,6 +611,17 @@
 // It is shorthand for a regular variable declaration with initializer
 // expressions but no types.
 //
+// The variable takes the type of its initializer, and a named one is carried over
+// in full, so "p := P{1, 2}" is checked exactly as "var p P = P{1, 2}" is -- its
+// fields, its methods and the types they take. The four forms that name a type are
+// a composite literal, the address of one, a copy of a variable that has one, and
+// a call whose single result has one:
+//
+//	p := P{1, 2}      // P
+//	p := &P{1, 2}     // *P
+//	q := p            // P
+//	p := mk()         // whatever mk returns
+//
 // # Redeclaration Rules
 //
 // Unlike regular variable declarations, a short variable declaration may

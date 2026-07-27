@@ -1,0 +1,82 @@
+// A short declaration carries over the named type of what it is initialized from,
+// so a variable written "p := P{1, 2}" is checked exactly as one written
+// "var p P = P{1, 2}" is. It was not, and every check that keys on a type -- a field
+// assignment's, an unknown field, an unknown method -- was silently skipped for the
+// ordinary way of writing it.
+
+type P struct {
+	x int
+	s string
+}
+
+func (p P) get() int { return p.x }
+func (p *P) bump()   { p.x++ }
+
+func mk() P   { return P{1, "a"} }
+func mkp() *P { return nil }
+
+func fromLit() {
+	p := P{1, "a"}
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	p.x = "oops"
+	// ERROR "type P has no field nosuch"
+	println(p.nosuch)
+	// ERROR "type P has no method absent"
+	println(p.absent())
+}
+
+func fromAddressOfLit() {
+	p := &P{1, "a"}
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	p.x = "oops"
+	// ERROR "type P has no field nosuch"
+	println(p.nosuch)
+}
+
+func fromCopy() {
+	p := P{1, "a"}
+	q := p
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	q.x = "oops"
+}
+
+func fromCall() {
+	p := mk()
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	p.x = "oops"
+	q := mkp()
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	q.x = "oops"
+}
+
+// The address of a variable still records what it always did -- the pointed-to
+// kind, which is what admits and checks a "*p" write -- and a scalar initializer is
+// untouched by any of this.
+func unchanged() {
+	var n int = 1
+	p := &n
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	*p = "oops"
+	m := 2
+	// ERROR "cannot use .oops. of type string as type int in assignment"
+	m = "oops"
+	println(m)
+}
+
+// All the legitimate forms still compile.
+func ok() {
+	p := P{1, "a"}
+	q := p
+	r := &q
+	r.bump()
+	println(p.get(), q.get(), r.get(), q.s)
+
+	s := mk()
+	s.bump()
+	println(s.get())
+
+	var n int = 1
+	t := &n
+	*t = 2
+	println(n, *t)
+}

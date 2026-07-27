@@ -15,6 +15,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **`p := P{1, 2}` was not type-checked.** A short declaration recorded no named
+  type, so every check that keys on one — the type of a field assignment, an unknown
+  field, an unknown method — was silently skipped for the ordinary way of writing it,
+  while `var p P = P{1, 2}` was checked. The errors were not lost, only misplaced:
+  they surfaced from the C backend instead, as `incompatible types when assigning`
+  or an implicit declaration of a method that does not exist. The type is now carried
+  over from a composite literal, the address of one, a copy of a variable that has
+  one, and a call whose single result has one.
 - **Several `init` functions in one package did not compile.** A package may declare
   as many as it likes and Go runs each in turn, but two of them emitted two C
   functions both named `init`, which the backend rejected as a redefinition. Each now

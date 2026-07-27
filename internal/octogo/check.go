@@ -3326,6 +3326,22 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
 				// `*p` reads and writes are admitted and checked.
 				vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName = true, ek, hasEk, tn
+				if !tn.IsValid() {
+					// `p := &P{1, 2}`: the operand is a literal, not a variable, so
+					// there was no declaration to read the type off -- it is the
+					// literal's own.
+					if nm, ql, _, ok := f.exprNamedType(s, rhs[i]); ok {
+						vd.typeName, vd.typeQual = nm, ql
+					}
+				}
+			} else if nm, ql, ptr, ok := f.exprNamedType(s, rhs[i]); ok {
+				// `p := P{1, 2}` / `p := &P{1, 2}` / `q := p` / `p := mk()`: p
+				// carries P, so its fields and methods are checked as an explicitly
+				// typed variable's are.
+				vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
+				if k, ok := f.exprType(s, rhs[i]); ok {
+					vd.kind, vd.hasKind = k, true
+				}
 			} else if sig := f.exprFuncSig(s, rhs[i]); sig != nil {
 				// `g := dbl` / `g := pick()` / `g := o.fn`: g holds a function, so a
 				// call through it is a call and is checked against that signature.
@@ -5035,6 +5051,103 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 		}
 	}
 	return 0, false, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
+}
+
+// exprNamedType returns the named type an initializer's value has, when the
+// initializer plainly names one: a composite literal "T{...}" or "pkg.T{...}", the
+// address of one, a variable already carrying a named type, or a call whose single
+// result is one.
+//
+// It exists because "p := P{1, 2}" -- the ordinary way to write it -- left the
+// variable with no recorded type at all, so every check that keys on one (a field
+// assignment's type, an unknown field, an unknown method) was silently skipped for
+// it while "var p P = P{1, 2}" was checked. Neither the emitter's C nor the target's
+// compiler was fooled; the errors simply surfaced there instead, as C diagnostics.
+func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return Token{}, Token{}, false, false
+	}
+	var fac Node
+	var ops []Node
+	facSet := false
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+		case UnaryOp:
+			ops = append(ops, c)
+		}
+	}
+	if !facSet {
+		return Token{}, Token{}, false, false
+	}
+	switch {
+	case len(ops) == 0:
+		// the value itself
+	case len(ops) == 1 && f.unaryOp(s, ops[0]) == AND:
+		isPtr = true // "&T{...}" / "&p"
+	default:
+		return Token{}, Token{}, false, false
+	}
+	var id, sel Token
+	hasLit, hasSuffix := false, false
+	for c := range it(fac.ast) {
+		switch c.sym {
+		case CompositeLit:
+			hasLit = true
+		case FactorSuffix:
+			hasSuffix = true
+			if m, ok := f.fieldSelector(c); ok {
+				sel = m
+			}
+		case 0:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !id.IsValid() {
+				id = tok
+			}
+		}
+	}
+	if !id.IsValid() {
+		return Token{}, Token{}, false, false
+	}
+	if hasLit {
+		// "T{...}", or "pkg.T{...}" where the leading identifier is the qualifier
+		// and the type is the single selector after it.
+		if !hasSuffix {
+			return id, Token{}, isPtr, true
+		}
+		if sel.IsValid() {
+			return sel, id, isPtr, true
+		}
+		return Token{}, Token{}, false, false
+	}
+	if !hasSuffix {
+		// A plain name: "q := p" carries p's type over.
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.typeName.IsValid() {
+			return d.typeName, d.typeQual, isPtr || d.isPtr, true
+		}
+		return Token{}, Token{}, false, false
+	}
+	// A call "p := mk()": the callee's single result, when it names a type.
+	callee, ok := f.exprCallee(n)
+	if !ok {
+		return Token{}, Token{}, false, false
+	}
+	d, ok := s.find(callee.Src()).(*FuncDeclaration)
+	if !ok || d.FuncDecl == nil || d.FuncDecl.Type == nil || d.FuncDecl.Type.Signature == nil {
+		return Token{}, Token{}, false, false
+	}
+	res := d.FuncDecl.Type.Signature.Results
+	if res == nil || len(res.List) != 1 || len(res.List[0].Names) > 1 {
+		return Token{}, Token{}, false, false
+	}
+	tn := res.List[0].TypeNode
+	nm, ok := namedTypeToken(tn)
+	if !ok {
+		return Token{}, Token{}, false, false
+	}
+	_, resIsPtr := tn.(*TypeNodePointer)
+	return nm, namedTypeQual(tn), isPtr || resIsPtr, true
 }
 
 // factorRoot returns a Factor's leading identifier (the base a suffix reads from)

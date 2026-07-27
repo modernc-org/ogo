@@ -2482,6 +2482,50 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A short declaration carries over the named type of what initializes it, so
+		// the ordinary `p := P{...}` is checked exactly as `var p P = P{...}` is.
+		// The four provenances -- a literal, the address of one, a copy, and a call's
+		// result -- all reach the same methods and fields here, which is what pins
+		// that recording the type did not change what is emitted.
+		name: "a short declaration carries a named type",
+		src: `type P struct {
+	x int
+	s string
+}
+
+func (p P) get() int { return p.x }
+func (p *P) bump()   { p.x++ }
+
+var store = P{40, "store"}
+
+func mk() P   { return P{1, "mk"} }
+func mkp() *P { return &store }
+
+func main() {
+	a := P{1, "lit"}
+	a.bump()
+	println(a.get(), a.s)
+
+	b := &P{2, "addr"}
+	b.bump()
+	println(b.get(), b.s)
+
+	c := a
+	c.bump()
+	println(a.get(), c.get())
+
+	d := mk()
+	d.bump()
+	println(d.get(), d.s)
+
+	e := mkp()
+	e.bump()
+	println(e.get(), store.get(), e.s)
+}
+`,
+		want: "2 lit\n3 addr\n2 3\n2 mk\n41 41 store\n",
+	},
+	{
 		// A named function used as a value: assigned to a variable, passed as an
 		// argument, returned as a result, held in an array and in a struct field,
 		// and called through every one of them. It lowers to a C function pointer,
