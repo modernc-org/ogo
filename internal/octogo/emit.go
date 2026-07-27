@@ -568,11 +568,26 @@ func (e *emitter) emitGo(nodes []Node) {
 		crossed(r.what, x)
 		return
 	}
-	for _, a := range args {
-		ct, ok := e.inferCType(a.ast)
-		if !ok {
-			e.fail("cannot infer the type of a go argument")
-			return
+	// The argument block holds each value as its PARAMETER's type, not as the type
+	// the argument expression happens to have. A goroutine argument is assigned to
+	// the parameter, and Go converts there: storing 1234567890123 as the "int" its
+	// literal defaults to truncated it to 1912276171 before the cog ever started.
+	// A receiver, when there is one, is already site.args[0], so the parameters line
+	// up after it.
+	// The receiver, when there is one, is site.args[0] already; cParamTypes excludes
+	// it, so the parameters line up with the arguments one for one either way.
+	params := e.funcParams[site.callee]
+	for i, a := range args {
+		ct := ""
+		if i < len(params) {
+			ct = params[i]
+		}
+		if ct == "" {
+			var ok bool
+			if ct, ok = e.inferCType(a.ast); !ok {
+				e.fail("cannot infer the type of a go argument")
+				return
+			}
 		}
 		site.args = append(site.args, ct)
 	}
@@ -600,10 +615,20 @@ func (e *emitter) emitGo(nodes []Node) {
 		first = 1
 	}
 	for i, a := range args {
+		// A composite literal is built in a variable of its own first. The target's
+		// C compiler refuses one as the right-hand side of an assignment -- "global
+		// initializers are evaluated at compile time and therefore must be
+		// constant", wherever the assignment stands -- while it takes the same
+		// braces in a declaration.
+		rhs := e.captureC(func() { e.emitExpr(a.ast) })
+		if strings.HasPrefix(rhs, "(") && strings.Contains(rhs, "){") {
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(site.args[i+first] + " " + tmp + " = " + rhs[strings.Index(rhs, "){")+1:] + ";\n")
+			rhs = tmp
+		}
 		e.ind()
-		e.emit(fmt.Sprintf("%s->a%d = ", ap, i+first))
-		e.emitExpr(a.ast)
-		e.emit(";\n")
+		e.emit(fmt.Sprintf("%s->a%d = %s;\n", ap, i+first, rhs))
 	}
 	e.ind()
 	e.emit("ogo_cog_pool[" + slot + "].ogo_cog = _cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
@@ -1821,7 +1846,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2209,6 +2234,7 @@ type emitter struct {
 	includes           map[string]bool
 	funcRet            map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
 	funcSliceParams    map[string][]string      // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
+	funcParams         map[string][]string      // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	methodPtr          map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
@@ -3148,6 +3174,7 @@ func (e *emitter) collectResults(ast []int32) {
 			e.funcValueTypes[cname] = e.funcSigCParts(sig)
 		}
 		e.funcSliceParams[cname] = e.paramSliceTypes(sig)
+		e.funcParams[cname] = e.cParamTypes(sig)
 		if len(resTypes) > 1 {
 			e.emit("typedef struct { ")
 			for i, ct := range resTypes {
@@ -11187,6 +11214,15 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit("(")
 			e.emitExprNode(kids[1])
 			e.emit(")")
+			return
+		}
+		// A negated wide literal, "-987654321098". It reaches no binary level, so it
+		// is folded here as well: written out as C source it is a unary minus, which
+		// the target's compiler folds in no aggregate initializer at all. The fold
+		// is over the NODE, not its children: a prefix operator belongs to the node
+		// and foldIntSeq would read it as the first operand of a sequence.
+		if v, ok := e.foldIntNode(n); ok && !fitsCInt(v) {
+			e.emit(intCLit(v))
 			return
 		}
 		// A receive `<-ch` wraps its operand in the channel's recv helper, so it

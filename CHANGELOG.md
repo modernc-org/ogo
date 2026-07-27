@@ -15,6 +15,18 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A 64-bit `go` argument was silently truncated.** A goroutine's arguments travel
+  through a per-site block whose fields took the type of each *argument expression*
+  rather than of the parameter it is assigned to, so `go sender(1234567890123)`
+  stored the literal as the `int` it defaults to and the cog received 1912276171.
+  The block now holds each value as its parameter's type. `defer`, which marshals
+  arguments too, was already correct.
+
+  Two things found alongside it, both needed to make a `go` of a 64-bit struct work
+  at all: a composite literal is built in a variable before it is stored into the
+  block, the target's C compiler refusing one as an assignment's right-hand side;
+  and a negated wide constant is folded in that literal too, which needed the fold to
+  run over the whole unary expression rather than its operands.
 - **The most negative value divided by −1 crashed.** Go defines it to be itself, with
   a remainder of 0 — the quotient is not representable, so the two's-complement
   overflow stands. C leaves it undefined, and the host traps on it with SIGFPE, which

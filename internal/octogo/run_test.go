@@ -2483,6 +2483,120 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A goroutine's arguments are marshalled through a per-site block, whose
+		// fields took the type of each ARGUMENT EXPRESSION rather than of the
+		// parameter it is assigned to. So `go sender(1234567890123)` stored the
+		// literal as the int it defaults to and the cog received 1912276171 -- a
+		// silent truncation of every 64-bit goroutine argument.
+		name: "64-bit values across cogs",
+		src: `type pair struct {
+	x int64
+	y uint64
+}
+
+var ch chan int64
+var uch chan uint64
+var pch chan pair
+
+func sender(v int64) { ch <- v }
+
+func usender(v uint64) { uch <- v }
+
+func psender(p pair) { pch <- p }
+
+func worker(v int64, out chan int64) { out <- v * 3 }
+
+func main() {
+	go sender(1234567890123)
+	println(<-ch)
+	go usender(12345678901234567890)
+	println(<-uch)
+	go psender(pair{-987654321098, 18446744073709551615})
+	p := <-pch
+	println(p.x, p.y)
+	go worker(1234567890123, ch)
+	println(<-ch)
+	select {
+	case v := <-ch:
+		println("recv", v)
+	default:
+		println("none")
+	}
+	go sender(-1)
+	select {
+	case v := <-ch:
+		println("recv", v)
+	}
+}
+`,
+		want: "1234567890123\n12345678901234567890\n-987654321098 18446744073709551615\n3703703670369\nnone\nrecv -1\n",
+	},
+	{
+		// A sweep of 64-bit arithmetic, since a flexcc miscompile of a 64-bit cast
+		// was found by accident (see "the most negative value divided by minus
+		// one") and only the board shows that class at all. Every value here is
+		// wider than 32 bits, so a lowering that quietly works in 32 shows up.
+		name: "64-bit arithmetic",
+		src: `type Big int64
+
+type rec struct {
+	a int64
+	b uint64
+}
+
+var gs int64 = 1234567890123
+var gu uint64 = 12345678901234567890
+
+func add(x int64, y int64) int64    { return x + y }
+func mul(x uint64, y uint64) uint64 { return x * y }
+
+func main() {
+	var a int64 = 1234567890123
+	var b int64 = -987654321098
+	println(a+b, a-b, a*3, a/7, a%7)
+	println(-a, a>>10, a<<10)
+
+	var u uint64 = 12345678901234567890
+	var v uint64 = 1234567890
+	println(u+v, u-v, u/v, u%v, u>>13, u<<3)
+
+	println(a > b, a < b, a == b, a != b, u > v)
+	println(add(a, b), mul(v, v))
+
+	var r rec = rec{a, u}
+	println(r.a, r.b)
+	r.a = r.a * 2
+	println(r.a)
+
+	var arr [3]int64
+	arr[0] = a
+	arr[1] = b
+	arr[2] = arr[0] + arr[1]
+	println(arr[0], arr[1], arr[2])
+
+	var c Big = 9007199254740993
+	println(int64(c), int64(c)+1)
+
+	println(int32(a), uint32(u), int64(int32(-5)), uint64(v))
+	println(gs, gu, gs*2)
+	s := []int64{a, b}
+	println(len(s), s[0]+s[1])
+}
+`,
+		want: "246913569025 2222222211221 3703703670369 176366841446 1\n" +
+			"-1234567890123 1205632705 1264197519485952\n" +
+			"12345678902469135780 12345678900000000000 10000000001 0 1507040881498360 6531710841328785040\n" +
+			"true false false true true\n" +
+			"246913569025 1524157875019052100\n" +
+			"1234567890123 12345678901234567890\n" +
+			"2469135780246\n" +
+			"1234567890123 -987654321098 246913569025\n" +
+			"9007199254740993 9007199254740994\n" +
+			"1912276171 3944680146 -5 1234567890\n" +
+			"1234567890123 12345678901234567890 2469135780246\n" +
+			"2 246913569025\n",
+	},
+	{
 		// The other two operands C and Go disagree on. Go defines the most negative
 		// value divided by -1 to be itself, with a remainder of 0 -- the quotient is
 		// not representable, so the two's-complement overflow stands. C leaves it
