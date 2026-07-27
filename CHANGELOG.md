@@ -15,6 +15,17 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A defined type is now type-checked.** A variable of one — `type Celsius int` —
+  carried no type category at all, so *every* check keyed on one was skipped for it:
+  `var c Celsius = "a"`, `c = "a"`, `f("a")` for a `Celsius` parameter and
+  `var s Small = 300` for a `type Small uint8` all went unreported and were left to
+  the C backend. The type is now followed to the one it is defined over, through a
+  chain of definitions if need be, and reads as itself in the message rather than as
+  its underlying type.
+
+  Known gap, unchanged: a defined type over a *channel* is not usable as a channel —
+  a send or receive on one is refused. A defined type over a struct, slice, array or
+  function is unaffected, having no type category to gain.
 - **A conversion between two types of the same representation now works.**
   `bool(f)` emitted a call to a function named `bool` — invalid C — and
   `string(n)` where `n` is a defined type over string was refused as needing an

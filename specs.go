@@ -693,6 +693,14 @@
 //
 // A defined type over a struct is written and used as that struct is.
 //
+// It is also type-checked as the type it is defined over, following a chain of
+// definitions to reach it: a value of one is bounded, converted, compared and passed
+// as that type's values are. Its own name is what a diagnostic says and what carries
+// its methods, so "var c Celsius = \"a\"" reads as Celsius, not as int.
+//
+// A defined type over a channel is not usable as a channel yet: a send or a receive
+// on one is refused.
+//
 // # Function and Method Declarations
 //
 // A function declaration binds an identifier to a function. If a Receiver is

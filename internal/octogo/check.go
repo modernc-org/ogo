@@ -774,11 +774,36 @@ func (f *File) resultType(s *Scope, tn TypeNode) (r retResult) {
 }
 
 // typeKind resolves a TypeNode to a predeclared Kind. It reports false for
-// composite, named (non-predeclared) or unresolved types.
+// composite and unresolved types.
+//
+// A defined type resolves to the kind of the type it is defined over, following a
+// chain of them ("type A B; type B int" -> int). Its own name is not lost: every
+// caller that names a type in a diagnostic carries the written name alongside (see
+// sizedTarget, nilTarget, checkDeclType), so "Celsius" is what a message says while
+// "int" is what the check compares. Without this a variable of a defined type
+// carried no type at all, and every check keyed on one -- assignment, declaration,
+// argument, condition, operator, overflow -- was skipped for it.
+//
+// A defined type over a composite (a struct, slice, array, channel, function) has no
+// Kind, as a written one of those does not either.
 func (f *File) typeKind(s *Scope, tn TypeNode) (Kind, bool) {
-	if id, ok := tn.(*TypeNodeIdent); ok {
-		if pt, ok := s.find(id.Name.Src()).(*PredeclaredType); ok {
-			return pt.Kind(), true
+	// Bounded rather than cycle-tracked: a type cycle is reported by its own pass,
+	// and the bound costs nothing here.
+	for range 16 {
+		id, ok := tn.(*TypeNodeIdent)
+		if !ok {
+			return 0, false
+		}
+		switch d := s.find(id.Name.Src()).(type) {
+		case *PredeclaredType:
+			return d.Kind(), true
+		case *TypeDeclaration:
+			if d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+				return 0, false
+			}
+			tn = d.TypeSpec.TypeNode
+		default:
+			return 0, false
 		}
 	}
 	return 0, false
@@ -4816,7 +4841,13 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 		return
 	}
 	if lc != rc {
-		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), kindName(lk))
+		// A defined type reads as itself, not as the type it is defined over, which
+		// is what its declaration's diagnostic says too.
+		name := kindName(lk)
+		if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok && d.typeName.IsValid() {
+			name = d.typeName.Src()
+		}
+		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), name)
 		return
 	}
 	// Same type class: a constant assigned to a sized integer variable may still

@@ -25,13 +25,27 @@ func written() {
 	println(n, s, b)
 }
 
-// A variable of a NAMED type carries no kind anywhere in the checker -- typeKind
-// resolves only the predeclared types -- so neither this nor the assignment form of
-// it is reported yet. It is left here to say so, and compiles.
-func namedTypeGap() {
-	var c Celsius = 20
-	c = 30
+// A defined type is checked as the type it is defined over, and reads as itself in
+// the diagnostic.
+func definedType() {
+	// ERROR "cannot use .a. of type string as type Celsius in variable declaration"
+	var c Celsius = "a"
+	// ERROR "cannot use .b. of type string as type Celsius in assignment"
+	c = "b"
 	println(int(c))
+}
+
+// Following the definition through is what bounds a constant by the type it will
+// actually be stored in, and what a chain of definitions resolves to.
+type Small uint8
+type Chain Small
+
+func definedTypeBounds() {
+	// ERROR "constant 300 overflows Small"
+	var s Small = 300
+	// ERROR "constant 300 overflows Chain"
+	var t Chain = 300
+	println(int(s), int(t))
 }
 
 func fromVariable() {

@@ -2483,6 +2483,47 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A defined type is checked as the type it is defined over -- following a
+		// chain of definitions to reach it -- so its values are bounded, converted
+		// and compared like that type's, while its own name is what a diagnostic
+		// says and what carries its methods. Nothing here used to be checked at all:
+		// a variable of a defined type carried no type category, so every check
+		// keyed on one was skipped for it.
+		name: "a defined type is checked as what it is defined over",
+		src: `type Celsius int
+type Fahrenheit int
+type Chain Celsius
+type Name string
+type Flag bool
+type Small uint8
+
+const room Celsius = 20
+
+func (c Celsius) f() Fahrenheit { return Fahrenheit(int(c)*9/5 + 32) }
+
+func conv(f Fahrenheit) Celsius { return Celsius((int(f) - 32) * 5 / 9) }
+
+func main() {
+	var c Celsius = room
+	var d Chain = 5
+	var s Small = 255
+	var n Name = "lab"
+	var f Flag = true
+	println(int(c), int(d), int(s), n, f)
+	println(int(c.f()), int(conv(212)))
+	c = c*2 + 1
+	s = s - 5
+	f = !f
+	n = "done"
+	println(int(c), int(s), f, n, len(n))
+	if !f && n == "done" {
+		println("ok")
+	}
+}
+`,
+		want: "20 5 255 lab true\n68 100\n41 250 false done 4\nok\n",
+	},
+	{
 		// A conversion between two types of the one representation builds nothing and
 		// costs nothing: it is the operand itself. It must also emit no C cast, since
 		// C has no cast to a non-scalar type -- `(Name)(s)` on a string was one, which
