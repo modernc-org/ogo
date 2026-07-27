@@ -1663,6 +1663,7 @@ func TestEmitCAppend(t *testing.T) {
 		"\n" +
 		"static void ogo_panic(const char* msg) {\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
+		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
 		"}\n" +
@@ -1953,6 +1954,7 @@ func TestEmitCChecks(t *testing.T) {
 		"\n" +
 		"static void ogo_panic(const char* msg) {\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
+		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
 		"}\n" +
@@ -2109,6 +2111,7 @@ func TestEmitCSliceBounds(t *testing.T) {
 		"\n" +
 		"static void ogo_panic(const char* msg) {\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
+		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
 		"}\n" +
@@ -4028,6 +4031,7 @@ func main() {
 		"typedef struct Buf Buf;\nstruct Buf { ogo_slice_int data; };\n\n" +
 		"static void ogo_panic(const char* msg) {\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
+		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
 		"}\n" +

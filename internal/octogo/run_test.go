@@ -22,7 +22,8 @@ type emitRunCase struct {
 	src  string
 	want string
 	// panics marks a program expected to abort through ogo_panic rather than run
-	// to completion.
+	// to completion. want, when set, is then required to appear in the output
+	// rather than to be all of it -- the panic line plus whatever ran before it.
 	panics bool
 	// backendWarning is a substring of a diagnostic the C backend prints for this
 	// program and that has been examined and found harmless. TestTargetBuild fails
@@ -3143,6 +3144,7 @@ func main() {
 }
 `,
 		panics: true,
+		want:   "panic: index out of range\n",
 	},
 	{
 		// Slicing was the one indexing form that trapped on nothing: `a[1:9]` over a
@@ -3158,6 +3160,7 @@ func main() {
 }
 `,
 		panics: true,
+		want:   "panic: slice bounds out of range\n",
 	},
 	{
 		// The bounds that are legal, which the check must leave alone: the whole
@@ -3663,6 +3666,7 @@ func main() {
 }
 `,
 		panics: true,
+		want:   "panic: index out of range\n",
 	},
 	{
 		// Assigning a slice-typed field of an indexed element, `s[i].v = xs`. The
@@ -3800,6 +3804,7 @@ func main() {
 }
 `,
 		panics: true,
+		want:   "panic: index out of range\n",
 	},
 	{
 		// A loop condition that needs a temporary. An expression can ask for a line
@@ -3982,6 +3987,7 @@ func main() {
 }
 `,
 		panics: true,
+		want:   "panic: slice bounds out of range\n",
 	},
 	{
 		// A package variable initialized from something that needs a temporary. The
@@ -4038,10 +4044,10 @@ func main() {
 		want: "4 0 3 9\n",
 	},
 	{
-		// Eight at once, none of them finished, so there is nothing to wait for and
-		// the panic is immediate. This is the other side of "goroutine slots are
-		// reused": waiting out a cog that is stopping must not turn genuine
-		// exhaustion into a spin.
+		// Eight at once, every one of them blocked on a send nobody receives, so no
+		// slot is ever going to come free. This is the other side of "goroutine
+		// slots are reused": waiting for a slot must still end in the panic when
+		// there is genuinely no cog to be had, rather than spinning forever.
 		name: "more goroutines than cogs traps",
 		src: `func spin(ch chan int) {
 	ch <- 1
@@ -4061,6 +4067,7 @@ func main() {
 }
 `,
 		panics: true,
+		want:   "panic: out of cogs\n",
 	},
 	{
 		// A bare block statement introduces its own scope: each block's x is local
@@ -4088,6 +4095,7 @@ func main() {
 }
 `,
 		panics: true,
+		want:   "panic: boom\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
@@ -4160,6 +4168,15 @@ func TestEmitCRun(t *testing.T) {
 			if test.panics {
 				if runErr == nil {
 					t.Errorf("expected a panic, but the program exited cleanly with %q", got)
+					return
+				}
+				// The message matters as much as the abort: a panic that says
+				// nothing is a bare "signal: aborted", which is what it looked like
+				// for as long as ogo_panic did not flush stdout before abort --
+				// through a pipe, every buffered byte, the panic line included, was
+				// discarded.
+				if w := test.want; w != "" && !strings.Contains(strings.ReplaceAll(string(got), "\r\n", "\n"), w) {
+					t.Errorf("panic output:\n got %q\nwant it to contain %q", got, w)
 				}
 				return
 			}

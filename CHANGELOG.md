@@ -15,6 +15,20 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **`go` could panic `out of cogs` while a cog was in fact free.** A goroutine marks
+  its slot free in its epilogue, after the body ends — but the code that started it
+  can learn the body is over *before* that: a receive of the value the goroutine sent
+  last returns first. `go` then found every slot busy and gave up on the spot. It now
+  waits for a slot before declaring exhaustion, which is sound because a slot held by
+  a goroutine that really is running stays held, so the wait only delays a diagnosis
+  the program was going to get anyway. Measured on the host shim: a program that
+  starts seven goroutines, drains them and repeats failed 6 times in 400 runs before,
+  and 0 in 400 after.
+- **A panic printed nothing when its output was not a terminal.** `abort()` discards
+  a buffered stream, so through a pipe the panic line — and everything the program
+  had printed before it — was lost, leaving a bare `signal: aborted`. `ogo_panic`
+  now flushes first. The test suite's panicking cases assert the message from now on,
+  which is what would have caught this.
 - **A value of a named type printed as a meaningless number.** `type Name string`
   printed `1428869128` — the first word of the string header read as `%d` — and
   `type Flag bool` printed `1` rather than `true`. Every decision about how a value

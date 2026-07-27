@@ -1409,6 +1409,12 @@
 // _cogstart_C. There is a strict 1:1 hardware mapping to the Propeller 2's
 // physical Cogs. Exceeding the 8-cog limit is a runtime panic.
 //
+// A goroutine's slot comes free in its epilogue, after its body ends, so a "go"
+// that finds every slot busy waits for one before it panics: a caller can learn a
+// goroutine's body is over -- by receiving the value it sent last -- before the
+// epilogue has run. A slot held by a goroutine that really is running stays held,
+// so the wait ends in the same panic, only later.
+//
 // # Return Statements
 //
 // A "return" statement in a function F terminates the execution of F, and

@@ -408,9 +408,10 @@ const ogoCogPool = `#define OGO_COGS 8
 #define OGO_STACK_LONGS 256
 // The argument block is a union of every go site's arguments (see goDefs), so it is
 // exactly as wide and as aligned as the widest of them.
-// A backstop, not a timeout: a cog stops within a few instructions of setting done,
-// so this many spins cannot elapse legitimately. It turns a state this protocol did
-// not anticipate into a diagnosable panic instead of a silent hang.
+// A backstop, not a timeout: a goroutine reaches its epilogue and its cog stops
+// within a few instructions of the body ending, so this many spins cannot elapse
+// legitimately. It turns a state this protocol did not anticipate into a
+// diagnosable panic instead of a silent hang.
 #define OGO_STOP_SPINS 100000
 typedef struct { int ogo_used; int ogo_done; int ogo_cog; ogo_go_args ogo_args; long ogo_stack[OGO_STACK_LONGS]; } ogo_cog_slot;
 static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
@@ -470,11 +471,18 @@ static int ogo_cog_claim(void) {
 		if (got >= 0) {
 			return got;
 		}
-		if (!stopping) { // every slot is running a goroutine that has not finished
-			return -1;
-		}
+		// No slot is free. That is not yet proof there is no cog to be had: a
+		// goroutine whose body has just ended has not necessarily marked its slot,
+		// and the caller can learn the body is over before the epilogue runs -- a
+		// receive of the value the goroutine sent last returns first. So every slot
+		// busy is waited on, not just a slot already known to be finishing. A slot
+		// held by a goroutine that really is running stays held, so the wait only
+		// delays a diagnosis the program was going to get either way.
 		if (spin == OGO_STOP_SPINS) {
-			ogo_panic("cog failed to stop");
+			if (stopping) { // one finished, said so, and its cog never stopped
+				ogo_panic("cog failed to stop");
+			}
+			return -1; // every slot is running a goroutine that has not finished
 		}
 		_waitx(1);
 	}
@@ -1608,6 +1616,7 @@ func ogoPanicDef(release bool) string {
 	}
 	return "static void ogo_panic(const char* msg) {\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
+		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		tail +
 		"}\n"
