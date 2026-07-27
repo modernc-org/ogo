@@ -4533,6 +4533,39 @@ func (e *emitter) sameArrayType(want arrDim, litType []int32) bool {
 	return false
 }
 
+// hoistLit binds a slice literal to a local declared before the statement and
+// returns its name. It is emitArrayLitVar's output moved into the prologue, which is
+// where the backing array has to go: that declaration is two lines, so each becomes
+// a prologue line of its own rather than one hoist.
+//
+// It declines an array literal and a static initializer, whose refusals the caller
+// keeps -- an array has no C value type to bind, and a static initializer has no
+// statement to hang the declarations off.
+func (e *emitter) hoistLit(typeAST []int32, lit Node) (string, bool) {
+	if e.declInit {
+		return "", false
+	}
+	// Only a slice literal. A slice is a header, an ordinary C value that can stand
+	// wherever one can; an array is not -- C cannot assign it, and binding one here
+	// would turn a refusal into "assignment to expression with array type", which
+	// is the emitter writing C the user never did.
+	if _, ok := e.sliceType(typeAST); !ok {
+		return "", false
+	}
+	name := e.newTmp()
+	saved := e.indent
+	e.indent = 0
+	text := e.captureC(func() { e.emitArrayLitVar(name, typeAST, lit, false) })
+	e.indent = saved
+	if text == "" {
+		return "", false
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		e.prologue = append(e.prologue, line+"\n")
+	}
+	return name, true
+}
+
 // litTypeName renders a literal's bracketed type for a diagnostic, as the source
 // spells it rather than as C would.
 func (e *emitter) litTypeName(litType []int32) string {
@@ -9597,6 +9630,16 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		if elem, _, ok := e.recvOperand(n, kids); ok {
 			return elem, true
 		}
+		// A slice literal standing as a value is its header type. An array literal
+		// has no C value type, as an array never does, so it is left untyped here
+		// and reaches the places that know what to do with the extents themselves.
+		if litType, _, isLit := e.factorArrayLit(n); isLit {
+			if elem, ok := e.sliceType(litType); ok {
+				e.needSlice(elem)
+				return sliceCName(elem), true
+			}
+			return "", false
+		}
 		// Address-of `&x` adds a pointer level; deref `*p` removes one.
 		if n.sym == UnaryExpr && len(kids) >= 2 && kids[0].sym == UnaryOp {
 			if tok, ok := e.unaryOpTok(kids[0].ast); ok {
@@ -10209,12 +10252,21 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emitCompositeLit(name, lit, e.declInit)
 				return
 			}
-			// An array or slice literal is a declaration's initializer and nothing
-			// else: C cannot assign an array, and a slice literal needs a backing
-			// array hoisted beside the declaration it belongs to, which an
-			// expression position has nowhere to put.
-			if litType, _, ok := e.factorArrayLit(n); ok {
-				e.fail("a %s literal is only supported as a variable's initializer", e.litTypeName(litType))
+			// A slice literal standing as a value: bound to a local declared before
+			// the statement -- the same two declarations a variable's initializer
+			// emits -- with that local's name standing here. An array literal keeps
+			// the refusal below, C having no array value for it to become.
+			//
+			// The lifetime rules see the literal itself as reaching this frame's
+			// storage (frameRefOf), so returning one, storing one in a package
+			// variable and handing one to another cog are refused before this runs.
+			if litType, lit, ok := e.factorArrayLit(n); ok {
+				name, ok := e.hoistLit(litType, lit)
+				if !ok {
+					e.fail("a %s literal is only supported as a variable's initializer", e.litTypeName(litType))
+					return
+				}
+				e.emit(name)
 				return
 			}
 			if recv, suffix, ok := e.factorCall(kids); ok {
@@ -10776,21 +10828,32 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 // Everything a diagnostic has to say beyond the naming is the same for all three,
 // which is why the five sinks share one phrasing and substitute what.
 type frameRef struct {
-	origin string // the local whose storage the value reaches
+	origin string // how to name the storage the value reaches, after "a pointer into"
 	what   string // how to name the value
 	view   bool   // the value is itself a slice over that storage
 }
 
 func sliceRef(name string) frameRef {
-	return frameRef{origin: name, what: "a slice backed by local " + name, view: true}
+	return frameRef{origin: "local " + name, what: "a slice backed by local " + name, view: true}
 }
 
 func addrRef(name string) frameRef {
-	return frameRef{origin: name, what: "the address of local variable " + name}
+	return frameRef{origin: "local " + name, what: "the address of local variable " + name}
+}
+
+// litRef names a slice literal, whose backing array the emitter mints as a local of
+// this frame -- so the header views this frame's storage exactly as a slice of a
+// local array does, with no variable of its own to name.
+func litRef() frameRef {
+	return frameRef{
+		origin: "a slice literal's backing array",
+		what:   "a slice literal, whose backing array is this function's",
+		view:   true,
+	}
 }
 
 func holderRef(name, origin string) frameRef {
-	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into local " + origin}
+	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
 }
 
 // frameRefOf reports whether a single expression reaches this frame's storage.
@@ -10804,6 +10867,11 @@ func holderRef(name, origin string) frameRef {
 func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	if name, frame := e.sliceBackingIsFrame(ast); frame {
 		return sliceRef(name), true
+	}
+	// A slice literal is backed by an array this frame owns, so it reaches this
+	// frame's storage by construction -- there is no variable to have marked.
+	if elem, _, ok := e.soleSliceLit(ast); ok && elem != "" {
+		return litRef(), true
 	}
 	if name, ok := e.addrOfRoot(ast); ok && e.isFrameVar(name) {
 		return addrRef(name), true
@@ -10828,6 +10896,20 @@ func (e *emitter) receiverFrameRef(recv string, wantPtr bool) (frameRef, bool) {
 		return holderRef(recv, origin), true
 	}
 	return frameRef{}, false
+}
+
+// soleSliceLit matches an expression that is nothing but a slice literal, returning
+// its element C type. An array literal is not one: it is a value, copied where it is
+// used, and carries no reference to anything.
+func (e *emitter) soleSliceLit(ast []int32) (string, Node, bool) {
+	typeAST, lit, ok := e.soleArrayLit(ast)
+	if !ok {
+		return "", Node{}, false
+	}
+	if elem, ok := e.sliceType(typeAST); ok {
+		return elem, lit, true
+	}
+	return "", Node{}, false
 }
 
 // frameRefIn finds the first of several expressions that reaches this frame's storage.

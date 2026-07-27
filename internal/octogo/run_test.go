@@ -2986,6 +2986,45 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A slice literal standing as a value rather than as a variable's
+		// initializer: passed to a function, measured by len and cap, assigned, and
+		// nested inside another literal's element. It is bound to a local declared
+		// before the statement, which is where its backing array comes from -- the
+		// same two declarations `s := []int{...}` has always emitted.
+		//
+		// An array literal is not here: an array is not a C value, so binding one
+		// would only move "assignment to expression with array type" into the C.
+		name: "a slice literal as a value",
+		src: `type P struct {
+	x int
+	y int
+}
+
+func sum(xs []int) int {
+	t := 0
+	for _, v := range xs {
+		t += v
+	}
+	return t
+}
+
+func first(ps []P) int { return ps[0].x }
+
+func main() {
+	println("arg", sum([]int{1, 2, 3}))
+	println("struct elems", first([]P{{7, 8}, {9, 10}}))
+	println("len", len([]int{1, 2}), cap([]int{1, 2, 3}))
+
+	var s []int
+	s = []int{4, 5}
+	println("assign", len(s), s[1])
+
+	println("nested", sum([]int{sum([]int{1, 2}), 3}))
+}
+`,
+		want: "arg 6\nstruct elems 7\nlen 2 3\nassign 2 5\nnested 6\n",
+	},
+	{
 		// `go x.M(args)`, which was refused: only a plain function could be launched,
 		// so a worker with a method had to be wrapped in one. The receiver is simply
 		// the first argument -- the trampoline's block carries it like any other, and

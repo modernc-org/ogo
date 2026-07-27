@@ -14,10 +14,10 @@
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
-// TODO 20260727 Composite literals as general values: an array or slice literal
-// passed to a function or returned. It initializes a variable, fills a slot in
-// another literal, and is what a "range" walks; anywhere else a slice literal's
-// backing storage has nothing to belong to that outlives the header.
+// TODO 20260727 Array literals as general values: an array literal passed to a
+// function or assigned. A slice literal stands as a value now, being a header; an
+// array is not a C value, so it initializes a variable, fills a slot in another
+// literal, and is what a "range" walks, and nothing else.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
@@ -763,9 +763,15 @@
 // An array literal may stand as an element of a composite literal too, filling an
 // array-typed field or an element of an array of arrays, since a nested aggregate
 // is written where it stands, and either may be the operand of a "range", which
-// binds it to a local of its own. Anywhere else both are a variable's initializer
-// and nothing else: an array cannot be assigned, and a slice literal's backing
-// storage belongs to the declaration it initializes.
+// binds it to a local of its own.
+//
+// A slice literal may stand anywhere a value may, since a slice is a header: it is
+// bound to a local declared ahead of the statement, which is where its backing
+// array comes from, and so has that local's lifetime -- returning one, storing one
+// in a package variable, handing one to another cog or sending one on a channel is
+// refused, exactly as it is for a slice of a local array. An array literal may not:
+// C has no array value for it to become, so it stays an initializer, an element,
+// and a "range" operand.
 //
 // That declaration may be at package scope as well as inside a function, with the
 // type written or inferred, which is how a program states a lookup table:

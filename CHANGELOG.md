@@ -11,6 +11,25 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Language
+
+- **A slice literal may stand as a value**, not only as a variable's initializer:
+  passed to a function, measured by `len` and `cap`, assigned, and nested inside
+  another literal's element. It is bound to a local declared before the statement,
+  which is where its backing array comes from — the same two declarations `s :=
+  []int{...}` has always emitted.
+
+  Its lifetime is that local's, so the four rules that govern a reference leaving
+  its frame apply to it by name: returning one, storing one in a package variable,
+  handing one to another cog and sending one on a channel are each refused, since
+  the backing array belongs to the function that wrote the literal.
+
+  An *array* literal is unchanged. An array is not a C value — binding one would
+  only move `assignment to expression with array type` into the emitted C — so it
+  stays a variable's initializer, a slot in another literal, and a `range` operand.
+
 ## v0.11.0
 
 ### Language

@@ -5503,10 +5503,13 @@ func main() {
 }
 
 // TestEmitCArrayLitRefused pins the cases that are refused by name rather than
-// mis-emitted: an array literal outside a declaration (C cannot assign an array,
-// and a slice literal needs a backing array hoisted beside the declaration it
-// belongs to), a literal whose type is not the declared one, and more values than
-// the array is long -- which C only warns about while dropping the excess.
+// mis-emitted: an ARRAY literal outside a declaration (C cannot assign one, and
+// binding it to a temporary would only move the error into C), a literal whose type
+// is not the declared one, and more values than the array is long -- which C only
+// warns about while dropping the excess.
+//
+// A slice literal outside a declaration is no longer here: it is a header, an
+// ordinary C value, and stands wherever one can.
 func TestEmitCArrayLitRefused(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -5519,9 +5522,13 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 			want: "a [3]int literal is only supported as a variable's initializer",
 		},
 		{
+			// An array literal, which is the half that stays refused: a slice one is
+			// a header and stands as a value (see the emitRunCases), while an array
+			// has no C value type to become. Passing it would want the parameter's
+			// decay, which is a property of that position rather than of the literal.
 			name: "call argument",
-			src:  "func take(s []int) int { return s[0] }\n\nfunc main() {\n\tprintln(take([]int{1, 2}))\n}\n",
-			want: "a []int literal is only supported as a variable's initializer",
+			src:  "func take(a [2]int) int { return a[0] }\n\nfunc main() {\n\tprintln(take([2]int{1, 2}))\n}\n",
+			want: "a [2]int literal is only supported as a variable's initializer",
 		},
 		{
 			name: "length mismatch",
@@ -5948,6 +5955,55 @@ func main() {
 }
 `,
 			want: "cannot send a slice backed by local a",
+		},
+		{
+			// A slice literal is backed by an array the emitter mints as a local, so
+			// it reaches this frame's storage by construction -- there is no variable
+			// to have marked, which is why frameRefOf recognises the literal itself.
+			// All four sinks refuse it, and the four cases below are those sinks.
+			name: "slice literal returned",
+			src: `func mk() []int { return []int{1, 2} }
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal stored in a package variable",
+			src: `var g []int
+
+func fill() { g = []int{1, 2} }
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal handed to a goroutine",
+			src: `func work(s []int, ch chan int) { ch <- len(s) }
+
+func main() {
+	var ch chan int
+	go work([]int{1, 2}, ch)
+	println(<-ch)
+}
+`,
+			want: "cannot pass a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal sent on a channel",
+			src: `func work(ch chan []int) { println(len(<-ch)) }
+
+func main() {
+	var ch chan []int
+	go work(ch)
+	ch <- []int{1, 2}
+}
+`,
+			want: "cannot send a slice literal, whose backing array is this function's",
 		},
 		{
 			// A method launched on another cog takes its receiver across too. A

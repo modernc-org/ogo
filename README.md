@@ -158,6 +158,8 @@ broken.
   structs, fixed arrays including multi-dimensional, slices, named types, channels.
   Structs may refer to themselves, to each other, and to a type declared later, so
   linked lists, trees and graphs build.
+* A slice literal stands wherever a value may — `sum([]int{1, 2, 3})` — its backing
+  array a local of the function that wrote it, with the lifetime that implies.
 * Slicing, including the capacity bound: `pool[0:0:64]` hands out a region of a
   package-level buffer that appending cannot grow past, which is how you sub-divide
   storage with no heap to allocate from.
@@ -201,11 +203,10 @@ broken.
 * **Interfaces**, and with them type switches and type assertions. See below.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
-* An array or slice literal may not stand as a general value — it initializes a
-  variable, fills a slot in another composite literal, or is what a `range` walks,
-  and nothing else. Passing one to a function or returning one is out: C cannot
-  assign an array, and a slice literal's backing storage has to belong to something
-  that outlives the header pointing at it.
+* An **array** literal may not stand as a general value — it initializes a variable,
+  fills a slot in another composite literal, or is what a `range` walks, and nothing
+  else, C having no array value for it to become. A *slice* literal has no such
+  limit; its backing array is a local, so it carries that local's lifetime.
 * Send clauses in `select`, and `go` on a function of an imported package.
 * An array as a function result, a slice whose element is an array, and `goto`.
 
