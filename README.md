@@ -175,6 +175,11 @@ broken.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
   functions and methods with value or pointer receivers.
 * Named and unnamed parameters and results, multiple return values, naked returns.
+* A declared function used as a **value**: a variable, parameter, result, array
+  element or struct field of a function type holds one and a call through it is a
+  call, `chosen = add; chosen(1, 2)`. It becomes a C function pointer, so it costs
+  nothing and allocates nothing, and one is always safe to send to another cog — it
+  names code, not the frame it was made in.
 * `if`/`else` and `switch` including an init statement (`if v := f(); v > 0`,
   `switch v := f(); v`), all `for` forms including `range`, `switch` with or without
   a guard, `fallthrough`, `break` and `continue` (including labeled), `defer`
@@ -210,6 +215,9 @@ broken.
   limit; its backing array is a local, so it carries that local's lifetime.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
+* A **function literal** and a **method value** (`t.get`); a function with more than
+  one result used as a value; and `go` through a variable holding a function rather
+  than through the function's own name. A declared function used as a value works.
 * An array as a function result, a slice whose element is an array, and `goto`.
 
 Floating point (float32/float64) is supported: the P2's C toolchain provides it,
@@ -219,8 +227,8 @@ target has no double-precision hardware, so `float64` is 32-bit here, same as
 compatibility but carries no extra precision.
 
 **Not planned**, because the target does not permit them: a garbage collector, a
-heap, maps, closures that capture their environment, and runtime string
-concatenation. Constant string concatenation folds at compile time.
+heap, maps, closures that capture their environment (a function *value* is fine —
+it is a pointer to code, not to a frame), and runtime string concatenation. Constant string concatenation folds at compile time.
 
 Having no heap has one consequence worth knowing before you meet it: a reference
 must not outlive what it refers to. Where Go would move the referent to the heap and

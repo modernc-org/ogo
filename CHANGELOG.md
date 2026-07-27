@@ -31,6 +31,34 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A declared function may be used as a value.** A variable, parameter, result,
+  array element or struct field of a function type holds one, and a call through any
+  of them is a call:
+
+  ```go
+  func add(a int, b int) int { return a + b }
+
+  func run(f func(int, int) int, a int, b int) int { return f(a, b) }
+
+  var chosen func(int, int) int // the zero value is nil
+
+  func main() {
+      chosen = add
+      println(chosen != nil, chosen(1, 2), run(add, 3, 4))
+  }
+  ```
+
+  It lowers to a C function pointer: nothing is allocated and nothing costs anything
+  at run time, the function being already there and only its address travelling.
+  That is also why one is always safe to send to another cog — it names code, not the
+  frame it was made in. A function of another type is not assignable, and the check
+  is by signature, so it holds however the two were written; parameter names are no
+  part of a function type.
+
+  Four forms are refused, each named where it is written: a function literal, a
+  method value (`t.get`), a function with more than one result used as a value, and
+  `go` through a variable holding a function. All four are wanted; see the TODO list
+  at the top of `specs.go`.
 - **A `select` may carry a send clause**, `case ch <- v:`, so one statement can
   multiplex receiving and sending — the shape a worker loop wants. The clause offers
   its value and waits for a receiver to take it, so its body runs because the value

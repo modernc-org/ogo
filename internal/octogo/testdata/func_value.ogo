@@ -1,0 +1,85 @@
+// A named function may be used as a value: a variable, parameter, result, array
+// element or struct field of a function type holds one, and a call through it is a
+// call. Two function types are the same type when their parameters and results are,
+// parameter names being no part of a function type.
+
+type op struct {
+	fn   func(int, int) int
+	name string
+}
+
+func add(a int, b int) int { return a + b }
+func sq(n int) int         { return n * n }
+
+func run(f func(int, int) int, a int, b int) int { return f(a, b) }
+
+func pick() func(int, int) int { return add }
+
+var table [2]func(int) int
+var chosen func(int, int) int
+
+func ok() {
+	var g func(int, int) int = add
+	println(g(1, 2), run(add, 3, 4), run(g, 5, 6))
+
+	h := pick()
+	println(h(7, 8))
+
+	i := add
+	println(i(9, 10))
+
+	table[0] = sq
+	println(table[0](11))
+
+	println(chosen == nil)
+	chosen = add
+	println(chosen(12, 13))
+
+	var o op = op{add, "add"}
+	k := o.fn
+	println(o.fn(14, 15), k(16, 17))
+}
+
+// A function of another type is not assignable, wherever the assignment stands.
+func mismatch() {
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in variable declaration"
+	var g func(int, int) int = sq
+	println(g(1, 2))
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in assignment"
+	chosen = sq
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in argument to run"
+	println(run(sq, 1, 2))
+}
+
+// A call through a function value is checked against the type's signature, exactly
+// as a call of a named function is checked against its declaration's.
+func arity() {
+	var g func(int, int) int = add
+	// ERROR "too many arguments in call to g"
+	println(g(1, 2, 3))
+	// ERROR "not enough arguments in call to g"
+	println(g(1))
+}
+
+// A value that is not a function still cannot be called.
+func notAFunction() {
+	x := 5
+	// ERROR "cannot call non-function x"
+	x()
+}
+
+// The two function-valued forms the language does not model yet are refused where
+// they are written, rather than left to surface as a puzzling call error later.
+type T struct{ v int }
+
+func (t T) get() int { return t.v }
+
+func unsupported() {
+	// ERROR "a function literal is not supported yet"
+	f := func(n int) int { return n }
+	println(f(1))
+	var t T = T{5}
+	// ERROR "a method value is not supported yet"
+	m := t.get
+	println(m())
+}

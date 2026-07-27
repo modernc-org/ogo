@@ -2482,6 +2482,98 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A named function used as a value: assigned to a variable, passed as an
+		// argument, returned as a result, held in an array and in a struct field,
+		// and called through every one of them. It lowers to a C function pointer,
+		// which costs nothing at run time and allocates nothing -- the function is
+		// already there, only its address travels.
+		name: "a function used as a value",
+		src: `type op struct {
+	fn   func(int, int) int
+	name string
+}
+
+func add(a int, b int) int { return a + b }
+func mul(a int, b int) int { return a * b }
+func sq(n int) int         { return n * n }
+
+func run(f func(int, int) int, a int, b int) int { return f(a, b) }
+
+func pick(mulIt bool) func(int, int) int {
+	if mulIt {
+		return mul
+	}
+	return add
+}
+
+var table [2]func(int) int
+var chosen func(int, int) int
+
+func apply(f func(int) int, xs []int) {
+	for i := 0; i < len(xs); i++ {
+		xs[i] = f(xs[i])
+	}
+}
+
+func main() {
+	println(run(add, 3, 4), run(mul, 3, 4))
+	g := pick(true)
+	h := pick(false)
+	println(g(3, 4), h(3, 4))
+
+	table[0] = sq
+	table[1] = sq
+	println(table[0](5), table[1](6))
+
+	println(chosen == nil)
+	chosen = add
+	println(chosen != nil, chosen(1, 2))
+
+	var o op = op{mul, "mul"}
+	println(o.name, o.fn(6, 7))
+	k := o.fn
+	println(k(2, 3))
+
+	xs := []int{1, 2, 3}
+	apply(sq, xs)
+	println(xs[0], xs[1], xs[2])
+
+	ops := [2]func(int, int) int{add, mul}
+	for i := 0; i < 2; i++ {
+		println(run(ops[i], 10, 20))
+	}
+}
+`,
+		want: "7 12\n12 7\n25 36\ntrue\ntrue 3\nmul 42\n6\n1 4 9\n30\n200\n",
+	},
+	{
+		// A function value handed to another cog over a channel. A function pointer
+		// names code, not the frame it was made in, so unlike a slice or an address
+		// it is always safe to send -- the escape rules have nothing to say about it.
+		name: "a function value crosses a channel",
+		src: `var ch chan func(int) int
+var done chan int
+
+func sq(n int) int  { return n * n }
+func neg(n int) int { return -n }
+
+func worker() {
+	g := <-ch
+	done <- g(7)
+}
+
+func main() {
+	go worker()
+	ch <- sq
+	println(<-done)
+	go worker()
+	ch <- neg
+	println(<-done)
+}
+`,
+		want: "49\n-7\n",
+	},
+	{
 		// A package may declare several init functions. Go runs them in the order
 		// they are written, each on the state the ones before it left, and none of
 		// them is in scope under the name -- so they cannot all be called init in

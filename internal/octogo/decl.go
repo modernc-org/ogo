@@ -321,6 +321,17 @@ type VarDeclaration struct {
 	elemKind    Kind  // the predeclared element/pointed-to type of a pointer, array or slice variable, for deref/index assignment
 	hasElemKind bool  // elemKind is meaningful
 
+	// funcSig is the variable's function type "func Signature", when it has one. A
+	// call through the variable is checked against it, exactly as a call of a named
+	// function is checked against its declaration's.
+	//
+	// isFunc says the variable holds a function even where funcSig is nil, which is
+	// the case for the function-valued forms the language refuses: the refusal is
+	// reported once, where written, and calls through the variable are then admitted
+	// unchecked rather than each reporting a second, misleading error of its own.
+	funcSig *SignatureNode
+	isFunc  bool
+
 	isChan          bool // the variable's type is a channel "chan T"
 	chanElemKind    Kind // the predeclared element type of a channel variable, for send/receive type checks
 	hasChanElemKind bool // chanElemKind is meaningful

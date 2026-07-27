@@ -1264,6 +1264,101 @@ func (e *emitter) chanType(typeAST []int32) (elem string, ok bool) {
 	return "", false
 }
 
+// funcTypePrefix names the typedefs minted for function types.
+const funcTypePrefix = "ogo_functype"
+
+// funcType maps a Type subtree of the shape `func Signature` to the C typedef that
+// stands for it, minting one on first sight.
+//
+// C cannot spell a function pointer as a suffixable type string: the name goes in
+// the middle of the declarator, `int (*g)(int)`, which the emitter's ctype-is-a-
+// string model has nowhere to put. A typedef moves the declarator out of the way
+// once and for all, so a function value is thereafter an ordinary C type name and
+// every downstream form -- a local, a parameter, a result, a struct field, a slice
+// element -- works with no further special case.
+//
+// Distinct written types that render the same C signature share one typedef, which
+// is what makes `func(int) int` written twice mint once.
+func (e *emitter) funcType(typeAST []int32) (name string, ok bool) {
+	nodes := slices.Collect(it(typeAST))
+	if len(nodes) != 2 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != FUNC || nodes[1].sym != Signature {
+		return "", false
+	}
+	return e.funcTypeOfSig(nodes[1].ast)
+}
+
+// funcValueCType is the C type of a top-level function's name used as a value --
+// the typedef for the function's own signature, minted on demand.
+//
+// The signature is looked up as C text rather than re-read from the AST, since the
+// function may belong to another package, whose file the emitter has moved on from.
+func (e *emitter) funcValueCType(cname string) (string, bool) {
+	fv, ok := e.funcValueTypes[cname]
+	if !ok {
+		return "", false
+	}
+	if len(fv.res) > 1 {
+		e.fail("a function with more than one result cannot be used as a value yet")
+		return "", false
+	}
+	return e.funcTypeFor(fv.key, fv.res), true
+}
+
+// funcValueType is a function's type rendered as C: the key a typedef is minted
+// under, and the result types a call through it yields.
+type funcValueType struct {
+	key string
+	res []string
+}
+
+// funcSigCParts renders a Signature as the parts a function type is minted from.
+func (e *emitter) funcSigCParts(sig []int32) funcValueType {
+	_, resTypes := e.cSig(sig)
+	params := strings.Join(e.cParamTypes(sig), ", ")
+	if params == "" {
+		params = "void"
+	}
+	ret := "void"
+	if len(resTypes) == 1 {
+		ret = resTypes[0]
+	}
+	return funcValueType{key: ret + " (*)(" + params + ")", res: resTypes}
+}
+
+// funcTypeOfSig mints (or reuses) the typedef standing for a Signature, shared by
+// the written type `func(...)...` and by a function name used as a value, so the
+// two agree by construction.
+func (e *emitter) funcTypeOfSig(sig []int32) (string, bool) {
+	fv := e.funcSigCParts(sig)
+	if len(fv.res) > 1 {
+		// A multi-result function returns a struct named after the function, not
+		// after its signature, so two functions of one type would return two
+		// different C types. Reconciling that needs a per-signature result struct;
+		// until then, say so rather than emit a mismatch.
+		e.fail("a function with more than one result cannot be used as a value yet")
+		return "", false
+	}
+	return e.funcTypeFor(fv.key, fv.res), true
+}
+
+// funcTypeFor returns the typedef standing for a C function-pointer signature,
+// minting it on first sight. Distinct written types rendering the same C signature
+// share one typedef, which is what makes `func(int) int` written twice mint once.
+func (e *emitter) funcTypeFor(key string, res []string) string {
+	if name, ok := e.funcTypeNames[key]; ok {
+		return name
+	}
+	name := fmt.Sprintf("%s%d", funcTypePrefix, len(e.funcTypeNames))
+	e.funcTypeNames[key] = name
+	e.funcTypeRet[name] = res
+	// "ret (*)(params)" -> "typedef ret (*name)(params);"
+	e.funcTypeDefs = append(e.funcTypeDefs, "typedef "+strings.Replace(key, "(*)", "(*"+name+")", 1)+";\n")
+	return name
+}
+
+// isFuncCType reports whether a C type is one of the minted function-type typedefs.
+func (e *emitter) isFuncCType(ctype string) bool { return strings.HasPrefix(ctype, funcTypePrefix) }
+
 // needChan records that `chan elem` is used, so its typedef and helpers are
 // emitted.
 func (e *emitter) needChan(elem string) {
@@ -1605,7 +1700,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1721,6 +1816,12 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// (ogo_slice_int) has no struct dependency and is emitted before the struct
 	// typedefs, since a struct field may hold one; a struct-element slice
 	// (ogo_slice_Point) references its struct by pointer and so follows the structs.
+	// The function-type typedefs lead: a struct field, a slice element or a result
+	// may be one, and a function pointer's own parameter types are already spelled.
+	var funcTypeDefs bytes.Buffer
+	for _, def := range e.funcTypeDefs {
+		funcTypeDefs.WriteString(def)
+	}
 	var scalarSliceDefs, structSliceDefs bytes.Buffer
 	for _, el := range sortedKeys(e.sliceElems) {
 		if e.inlineSliceDefs[el] {
@@ -1743,10 +1844,11 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// field may be a string); scalar-element slice typedefs precede the struct
 	// typedefs (a struct field may hold one), struct-element slices and the append
 	// ok-form structs follow. The string print helpers follow the typedefs.
-	if e.usesString || typedefs.Len() != 0 || scalarSliceDefs.Len() != 0 || structSliceDefs.Len() != 0 || appendokDefs.Len() != 0 {
+	if e.usesString || typedefs.Len() != 0 || scalarSliceDefs.Len() != 0 || structSliceDefs.Len() != 0 || appendokDefs.Len() != 0 || funcTypeDefs.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
 		}
+		out.Write(funcTypeDefs.Bytes())
 		out.Write(scalarSliceDefs.Bytes())
 		out.Write(typedefs.Bytes())
 		out.Write(structSliceDefs.Bytes())
@@ -1990,6 +2092,10 @@ type emitter struct {
 	chanTryRecvElems   map[string]bool          // element types whose select tryrecv helper is reached
 	chanTrySendElems   map[string]bool          // element types whose select send helpers (offer/offered/withdraw) are reached
 	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
+	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
+	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
+	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
+	funcTypeDefs       []string                 // those typedefs, in mint order
 	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName    map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
 	inlineSliceDefs    map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
@@ -2882,6 +2988,13 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		_, resTypes := e.resultInfo(sig)
 		e.funcRet[cname] = resTypes
+		if recv == nil {
+			// Kept so the name used as a value can mint its function type on demand.
+			// Minting here instead would emit a typedef for every function in the
+			// program, nearly all of them unused. Rendered now, while this package's
+			// file is still the current one, since the use may be in another.
+			e.funcValueTypes[cname] = e.funcSigCParts(sig)
+		}
 		e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 		if len(resTypes) > 1 {
 			e.emit("typedef struct { ")
@@ -3683,6 +3796,29 @@ func (e *emitter) cParamList(ast []int32) []string {
 		e.refuseArrayStructABI(ct, "parameter "+name)
 		out = append(out, ct+" "+cIdent(name)) // a parameter name may be Unicode
 	})
+	return out
+}
+
+// cParamTypes renders a Signature's parameters as C types alone, with no names.
+// That is what a function-type typedef wants: the names are not part of the type,
+// so writing them would make `func(a int)` and `func(b int)` mint two typedefs for
+// what is one type.
+func (e *emitter) cParamTypes(sig []int32) []string {
+	var out []string
+	for n := range it(sig) {
+		if n.sym != ParameterList {
+			continue
+		}
+		e.forEachParam(n.ast, func(name string, ta []int32, _ bool) {
+			if elem, _, ok := e.arrayType(ta); ok {
+				out = append(out, elem+"*")
+				return
+			}
+			ct := e.cType(ta)
+			e.refuseArrayStructABI(ct, "parameter "+name)
+			out = append(out, ct)
+		})
+	}
 	return out
 }
 
@@ -5054,6 +5190,11 @@ func (e *emitter) cType(ast []int32) string {
 	if elem, ok := e.chanType(ast); ok {
 		e.needChan(elem)
 		return chanCName(elem)
+	}
+	// Function type: "func" Signature -> the typedef standing for that signature.
+	if len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == FUNC {
+		name, _ := e.funcType(ast)
+		return name
 	}
 	var toks []int32
 	nonTerminal := false
@@ -7707,6 +7848,17 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.fail("the %s builtin is not supported yet", recv)
 			return true
 		}
+		// A call through a variable holding a function -- a local, a parameter or a
+		// package variable. The variable names the callee, so it is emitted as the
+		// variable is, NOT mangled into the package's namespace the way a declared
+		// function's name is. (Mangling it silently worked in the main package,
+		// whose prefix is empty, and emitted a call to `<pkg>_f` in every other.)
+		if ct, ok := e.varType(recv); ok && e.isFuncCType(ct) {
+			e.emit(e.varRef(recv) + "(")
+			e.emitCallArgs("", suffix[0].ast)
+			e.emit(")")
+			return true
+		}
 		cname := e.funcCallC(recv)
 		e.emit(cname + "(")
 		e.emitCallArgs(cname, suffix[0].ast)
@@ -7718,6 +7870,16 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// named, value or pointer) lowers to `<T>_M(recv, args)`, with the receiver
 		// adjusted to match the method's value or pointer receiver. Distinguished from
 		// a package call (`p2.F(...)`) by recv naming a typed variable, not an import.
+		// A struct field holding a function is called through, not dispatched to: it
+		// is a value the caller put there, so the call names the field. Checked ahead
+		// of the method lookup, since a field and a method are told apart by which
+		// one the type actually has, and only a field can be a function value.
+		if ft, ok := e.fieldType(recv, []string{method}); ok && e.isFuncCType(ft) {
+			e.emit(e.fieldAccessC(recv, []string{method}) + "(")
+			e.emitCallArgs("", suffix[1].ast)
+			e.emit(")")
+			return true
+		}
 		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
 			cname := methodCName(methodBaseType(rct), method)
 			e.emit(cname + "(")
@@ -7864,8 +8026,22 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		n := steps[i]
 		switch n.sym {
 		case CallSuffix:
-			// A call reaches here only on the pending leading function; a method
-			// call is recognised at its Selector and consumes the CallSuffix there.
+			// A call through a value the chain has already reached -- an array or
+			// slice element holding a function, `table[0](5)`, or such a field one
+			// step further in. The value names the callee, so the call is just the
+			// text so far applied to the arguments.
+			if !pendingFn && e.isFuncCType(cur.ctype) {
+				text += "(" + e.argsCText("", n.ast) + ")"
+				rts := e.funcTypeRet[cur.ctype]
+				if len(rts) != 1 {
+					return "", "", false, false
+				}
+				cur, addr = e.plainOrSlice(rts[0]), false
+				continue
+			}
+			// Otherwise a call reaches here only on the pending leading function; a
+			// method call is recognised at its Selector and consumes the CallSuffix
+			// there.
 			rts, okr := e.userFunc(base)
 			if !pendingFn || !okr || len(rts) != 1 {
 				return "", "", false, false
@@ -9709,6 +9885,13 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 	}
 	ct, ok := e.globals[gn]
 	if !ok {
+		// An exported function of that package named as a value, `mathy.Double`.
+		// The C name is the same one a call of it resolves to; only its type is new.
+		if len(fields) == 1 {
+			if ft, isFn := e.funcValueCType(gn); isFn {
+				return gn, ft, true
+			}
+		}
 		return "", "", false
 	}
 	text, ctype = gn, ct
@@ -9997,8 +10180,12 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if ct, ok := e.locals[nm]; ok {
 				return ct, true
 			}
-			ct, ok := e.globals[e.globalC(nm)]
-			return ct, ok
+			if ct, ok := e.globals[e.globalC(nm)]; ok {
+				return ct, true
+			}
+			// A top-level function's name standing as a value has that function's
+			// own type, which is what lets `g := dbl` infer one.
+			return e.funcValueCType(mangle(e.curPkgPrefix, nm))
 		}
 	}
 	return "", false

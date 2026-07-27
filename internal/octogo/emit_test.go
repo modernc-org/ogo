@@ -5050,6 +5050,86 @@ func main() {
 	}
 }
 
+// TestEmitCFuncValueRefused pins the two function-value shapes the emitter refuses,
+// both because a C function pointer cannot express them.
+//
+// A multi-result function returns a struct named after the function, not after its
+// signature, so two functions of one type would return two different C types; the
+// typedef standing for a function type has nowhere to put that. Starting a cog needs
+// the callee's name, since a goroutine's C entry point is generated per function, so
+// `go` through a variable has nothing to generate against.
+func TestEmitCFuncValueRefused(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "multi-result function as a value",
+			src: `func two(n int) (int, int) { return n, n * 2 }
+
+func main() {
+	var g func(int) (int, int) = two
+	a, b := g(3)
+	println(a, b)
+}
+`,
+			want: "more than one result",
+		},
+		{
+			name: "go through a function value",
+			src: `var done chan int
+
+func work(n int) { done <- n * 2 }
+
+func main() {
+	var g func(int) = work
+	go g(21)
+	println(<-done)
+}
+`,
+			want: "only `go f(args)` on a package function",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf); err == nil {
+				t.Fatalf("EmitC accepted %s:\n%s", test.name, buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCFuncTypeSharing pins that two written function types rendering the same C
+// signature mint one typedef -- parameter names are no part of a function type, so
+// `func(a int) int` and `func(b int) int` are one type and must not become two.
+func TestEmitCFuncTypeSharing(t *testing.T) {
+	src := `func dbl(n int) int { return n * 2 }
+
+func run(f func(a int) int, n int) int { return f(n) }
+
+func main() {
+	var g func(b int) int = dbl
+	println(run(g, 21))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	if got, want := strings.Count(buf.String(), "typedef int (*ogo_functype"), 1; got != want {
+		t.Errorf("EmitC minted %d function typedefs, want %d:\n%s", got, want, buf.String())
+	}
+}
+
 // TestEmitCArrayResultABI pins the refusal of a fixed-array result. C cannot return
 // an array by value, and a result -- unlike a parameter, which decays to a pointer
 // -- has nowhere to decay to. It is refused with an actionable message rather than an

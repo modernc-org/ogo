@@ -733,10 +733,11 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 
 // retResult describes one of a function's result values for return checking.
 type retResult struct {
-	name  string // source type name, for messages (e.g. "int")
-	kind  Kind
-	known bool // kind is a predeclared type we can check literals against
-	named bool // the result has a name, so a bare "return" can supply it
+	name     string   // source type name, for messages (e.g. "int")
+	typeNode TypeNode // the written type, for the checks a Kind cannot express
+	kind     Kind
+	known    bool // kind is a predeclared type we can check literals against
+	named    bool // the result has a name, so a bare "return" can supply it
 }
 
 // flattenResults expands a signature's result list into one retResult per
@@ -762,6 +763,7 @@ func (f *File) flattenResults(s *Scope, sig *SignatureNode) (r []retResult) {
 // resultType classifies a result's type for return checking. Only predeclared
 // types are resolved to a Kind; anything else is left unchecked (known=false).
 func (f *File) resultType(s *Scope, tn TypeNode) (r retResult) {
+	r.typeNode = tn
 	id, ok := tn.(*TypeNodeIdent)
 	if !ok {
 		return r
@@ -812,6 +814,29 @@ func (f *File) chanType(n Node) bool {
 	return false
 }
 
+// funcType reports whether a Type node denotes a function type "func Signature" at
+// its top level. It mirrors chanType: a shallow shape test deciding whether the
+// declaration resolves the type, whose signature is then read by funcSig.
+func (f *File) funcType(n Node) bool {
+	for c := range it(n.ast) {
+		if c.sym == 0 && f.ch(c.tok) == FUNC {
+			return true
+		}
+	}
+	return false
+}
+
+// funcSig returns a resolved type's signature when it is a function type. Recorded
+// on the variable so a call through a package variable, a local and a parameter
+// alike is checked the same way.
+func (f *File) funcSig(tn TypeNode) *SignatureNode {
+	ft, ok := tn.(*FunctionType)
+	if !ok {
+		return nil
+	}
+	return ft.Signature
+}
+
 // chanElem reports whether a resolved type is a channel "chan T" and, if so, T's
 // predeclared Kind (unknown for an unmodelled element such as a struct). It is the
 // channel analogue of elemTypeKind, recorded on a variable so send and receive
@@ -844,8 +869,9 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		typeQual := namedTypeQual(p.TypeNode)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
+		funcSig := f.funcSig(p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -2866,6 +2892,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var kind, elemKind, chanElemKind Kind
 		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
 		var typeName, typeQual Token
+		var funcSig *SignatureNode
 		var initExprs []Node
 		for c := range it(n.ast) {
 			switch c.sym {
@@ -2878,7 +2905,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 				// channel types (so a send/receive on the variable is checked),
 				// reporting undefined types. Slices are left unresolved for now:
 				// their element expressions are not yet checked.
-				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) {
+				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) || f.funcType(c) {
 					if tn := f.typ(s, c); tn != nil {
 						kind, hasKind = f.typeKind(s, tn)
 						_, isPtr = tn.(*TypeNodePointer)
@@ -2886,6 +2913,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						typeQual = namedTypeQual(tn)
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
+						funcSig = f.funcSig(tn)
 					}
 				}
 			case ExpressionList:
@@ -2898,6 +2926,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		for _, e := range initExprs {
 			f.checkNames(s, e)
 			f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
+			f.checkFuncAssign(s, funcSig, e, "variable declaration")
 			if hasKind {
 				f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
 				continue
@@ -2907,7 +2936,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkInferredOverflow(s, e)
 		}
 		for _, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, funcSig: funcSig, isFunc: funcSig != nil}
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue
@@ -3297,6 +3326,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
 				// `*p` reads and writes are admitted and checked.
 				vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName = true, ek, hasEk, tn
+			} else if sig := f.exprFuncSig(s, rhs[i]); sig != nil {
+				// `g := dbl` / `g := pick()` / `g := o.fn`: g holds a function, so a
+				// call through it is a call and is checked against that signature.
+				vd.funcSig, vd.isFunc = sig, true
+			} else if f.reportUnsupportedFuncValue(s, rhs[i]) {
+				vd.isFunc = true
+				// A function-valued form the language does not model yet, named
+				// where it stands rather than left to surface as a puzzling
+				// "cannot call non-function" at the variable's first use.
 			} else if k, ok := f.exprType(s, rhs[i]); ok {
 				vd.kind, vd.hasKind = k, true
 				// ":=" writes no type, so the initializer's own type bounds a
@@ -3311,6 +3349,265 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if newCount == 0 {
 		f.errNoNewVars(f.tok(head.Pos()))
 	}
+}
+
+// exprFuncSig returns the function type an expression has, when it has one: a bare
+// function name, a variable already holding a function, or a call whose single
+// result is a function type. It is what lets ":=" infer a function-typed variable,
+// the same way addressOfInfo lets it infer a pointer.
+func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
+	if id, ok := f.exprIdent(n); ok {
+		switch d := s.find(id.Src()).(type) {
+		case *FuncDeclaration:
+			if d.FuncDecl != nil && d.FuncDecl.Type != nil && d.FuncDecl.Type.Receiver == nil {
+				return d.FuncDecl.Type.Signature
+			}
+		case *VarDeclaration:
+			return d.funcSig
+		}
+		return nil
+	}
+	if head, field, ok := f.exprFieldRead(n); ok {
+		return f.funcSig(f.fieldTypeNode(s, head, field))
+	}
+	callee, ok := f.exprCallee(n)
+	if !ok {
+		return nil
+	}
+	d, ok := s.find(callee.Src()).(*FuncDeclaration)
+	if !ok || d.FuncDecl == nil || d.FuncDecl.Type == nil || d.FuncDecl.Type.Signature == nil {
+		return nil
+	}
+	res := d.FuncDecl.Type.Signature.Results
+	if res == nil || len(res.List) != 1 {
+		return nil
+	}
+	return f.funcSig(res.List[0].TypeNode)
+}
+
+// typeNodeString renders a resolved type as canonical OctoGo source. It exists so
+// two function types can be compared for identity, which the Kind-based checks
+// cannot express: a Kind says "numeric", a signature needs "func(int) int".
+//
+// A type it cannot render yields the empty string, and every caller treats that as
+// "do not know" rather than "not equal", so an unmodelled type never produces a
+// false mismatch.
+func (f *File) typeNodeString(tn TypeNode, withNames bool) string {
+	switch x := tn.(type) {
+	case nil:
+		return ""
+	case *TypeNodeIdent:
+		if x.Qualifier.IsValid() {
+			return x.Qualifier.Src() + "." + x.Name.Src()
+		}
+		return x.Name.Src()
+	case *TypeNodePointer:
+		if inner := f.typeNodeString(x.TypeNode, withNames); inner != "" {
+			return "*" + inner
+		}
+	case *TypeNodeChan:
+		if inner := f.typeNodeString(x.TypeNode, withNames); inner != "" {
+			return "chan " + inner
+		}
+	case *TypeNodeSlice:
+		if inner := f.typeNodeString(x.TypeNode, withNames); inner != "" {
+			return "[]" + inner
+		}
+	case *FunctionType:
+		return f.sigString(x.Signature, withNames)
+	}
+	// An array (its length is an expression), a struct or interface literal: not
+	// rendered, so no comparison is made rather than a wrong one.
+	return ""
+}
+
+// sigString renders a signature as "func(T, U) V", the form typeNodeString gives a
+// function type. It returns the empty string when any part of it cannot be
+// rendered, so an unmodelled parameter type suppresses the comparison entirely.
+//
+// withNames keeps the parameter names, which is what a diagnostic wants (Go names
+// a value's type as its declaration writes it, "func(n int) int") and what an
+// identity comparison must not have, names being no part of a function type.
+func (f *File) sigString(sig *SignatureNode, withNames bool) string {
+	if sig == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("func(")
+	if sig.Params != nil {
+		first := true
+		for _, p := range sig.Params.List {
+			ts := f.typeNodeString(p.TypeNode, withNames)
+			if ts == "" {
+				return ""
+			}
+			for i := range max(len(p.Names), 1) {
+				if !first {
+					b.WriteString(", ")
+				}
+				first = false
+				if withNames && i < len(p.Names) {
+					b.WriteString(p.Names[i].Src() + " ")
+				}
+				b.WriteString(ts)
+			}
+		}
+	}
+	b.WriteString(")")
+	var res []string
+	if sig.Results != nil {
+		for _, r := range sig.Results.List {
+			ts := f.typeNodeString(r.TypeNode, withNames)
+			if ts == "" {
+				return ""
+			}
+			for i := range max(len(r.Names), 1) {
+				if withNames && i < len(r.Names) {
+					res = append(res, r.Names[i].Src()+" "+ts)
+					continue
+				}
+				res = append(res, ts)
+			}
+		}
+	}
+	switch len(res) {
+	case 0:
+	case 1:
+		b.WriteString(" " + res[0])
+	default:
+		b.WriteString(" (" + strings.Join(res, ", ") + ")")
+	}
+	return b.String()
+}
+
+// checkFuncAssign reports assigning a function of one type where another is wanted.
+// Both sides must render (see typeNodeString), so a type the renderer does not
+// model yields no report rather than a false one.
+func (f *File) checkFuncAssign(s *Scope, want *SignatureNode, value Node, what string) {
+	if want == nil {
+		return
+	}
+	have := f.exprFuncSig(s, value)
+	if have == nil {
+		return
+	}
+	ws, hs := f.sigString(want, false), f.sigString(have, false)
+	if ws == "" || hs == "" || ws == hs {
+		return
+	}
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s", f.exprSource(value), f.sigString(have, true), ws, what)
+}
+
+// reportUnsupportedFuncValue reports the two function-valued expressions the
+// language admits nowhere yet: a function literal and a method value. Both are
+// wanted, and both need more than a C function pointer -- a literal that captures
+// nothing is still a function this compiler does not name, and a method value must
+// carry its receiver alongside the code. Reported where written, so the message
+// names what was asked for.
+func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
+	if tok, ok := f.exprFuncLit(n); ok {
+		f.err(tok.Position(), "a function literal is not supported yet")
+		return true
+	}
+	head, field, ok := f.exprFieldRead(n)
+	if !ok {
+		return false
+	}
+	d, ok := s.find(head.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() {
+		return false
+	}
+	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !ok || td.methods[field.Src()] == nil {
+		return false
+	}
+	f.err(field.Position(), "a method value is not supported yet")
+	return true
+}
+
+// exprFuncLit returns the "func" keyword of an expression containing a function
+// literal. It keys on the FuncLiteral node rather than on the "func" token, which
+// also stands at the head of a written function type -- the one in
+// "[2]func(int) int{f, g}" opens a composite literal's type, not a literal.
+func (f *File) exprFuncLit(n Node) (Token, bool) {
+	for c := range it(n.ast) {
+		if c.sym == 0 {
+			continue
+		}
+		if c.sym == FuncLiteral {
+			return f.tok(c.Pos()), true
+		}
+		if tok, ok := f.exprFuncLit(c); ok {
+			return tok, true
+		}
+	}
+	return Token{}, false
+}
+
+// exprFieldRead returns the base and field of an expression that is exactly one
+// field read, "o.fn" and nothing more.
+func (f *File) exprFieldRead(n Node) (head, field Token, ok bool) {
+	var ids []Token
+	sawSelector, extra := false, false
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			switch c.sym {
+			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix:
+				walk(c.ast)
+			case Selector:
+				sawSelector = true
+				walk(c.ast)
+			case 0:
+				switch f.ch(c.tok) {
+				case IDENT:
+					ids = append(ids, f.tok(c.tok))
+				case PERIOD:
+					// the selector's own separator
+				default:
+					extra = true
+				}
+			default:
+				extra = true
+			}
+		}
+	}
+	walk(n.ast)
+	if extra || !sawSelector || len(ids) != 2 {
+		return Token{}, Token{}, false
+	}
+	return ids[0], ids[1], true
+}
+
+// exprCallee returns the bare name an expression calls, when the expression is
+// exactly one such call -- "f()" and nothing more.
+func (f *File) exprCallee(n Node) (Token, bool) {
+	var id Token
+	found, sawCall, extra := false, false, false
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			switch c.sym {
+			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix:
+				walk(c.ast)
+			case CallSuffix:
+				sawCall = true
+			case 0:
+				if f.ch(c.tok) == IDENT && !found {
+					id, found = f.tok(c.tok), true
+					continue
+				}
+				extra = true
+			default:
+				extra = true
+			}
+		}
+	}
+	walk(n.ast)
+	if !found || !sawCall || extra {
+		return Token{}, false
+	}
+	return id, true
 }
 
 // errNoNewVars reports a short declaration that introduces nothing. Every form of
@@ -4079,26 +4376,33 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token) {
 // of a struct type whose field has such a type; ok is false otherwise (an
 // unknown head, non-struct type, missing field, or non-predeclared field type).
 func (f *File) fieldKind(s *Scope, head, field Token) (Kind, bool) {
+	return f.typeKind(s, f.fieldTypeNode(s, head, field))
+}
+
+// fieldTypeNode returns the written type of a struct variable's field, or nil when
+// the head is not a variable of a known struct type or has no such field. It is
+// what fieldKind reduces to a Kind and what the function-type checks read whole.
+func (f *File) fieldTypeNode(s *Scope, head, field Token) TypeNode {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok || !d.typeName.IsValid() {
-		return 0, false
+		return nil
 	}
 	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
 	if !ok || td.TypeSpec == nil {
-		return 0, false
+		return nil
 	}
 	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
 	if !ok {
-		return 0, false
+		return nil
 	}
 	for _, fld := range st.Fields {
 		for _, nm := range fld.Names {
 			if nm.Src() == field.Src() {
-				return f.typeKind(s, fld.TypeNode)
+				return fld.TypeNode
 			}
 		}
 	}
-	return 0, false
+	return nil
 }
 
 // receiverTypeName returns the base type name of a method Receiver
@@ -4456,6 +4760,7 @@ func binaryAllowed(op Symbol, c int) bool {
 func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
 	if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok {
 		f.checkNilAssignable(s, nilTarget(d.kind, d.hasKind, d.typeName), rhsNode, "assignment")
+		f.checkFuncAssign(s, d.funcSig, rhsNode, "assignment")
 	}
 	lk, lok := f.identKind(s, lhsTok)
 	rk, rok := f.exprType(s, rhsNode)
@@ -5372,11 +5677,29 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		if callee.Src() == "string" {
 			f.err(callee.Position(), "a string conversion needs allocation, which the target does not have")
 		}
-	case *VarDeclaration, *ConstDeclaration:
-		// The callee is a value, not a function: "x()" where x is a variable or a
-		// constant. (A type callee -- "T(x)" -- is an explicit conversion, which
-		// the language requires for mixed numeric types and which is left to its
-		// own, separate check.)
+	case *VarDeclaration:
+		// A variable of a function type holds a function, so calling it is a call --
+		// checked against the type's signature, exactly as a named function's call is
+		// checked against its declaration's.
+		if d.isFunc {
+			if d.funcSig != nil {
+				f.checkArgs(s, callee, d.funcSig, args)
+			}
+			return
+		}
+
+		// Only when the variable's type is actually known. A ":=" from an
+		// expression the checker cannot type records nothing at all, and calling
+		// what it holds is then not something to call non-callable -- saying so
+		// would assert a type nobody determined. The emitter, which types more,
+		// has the last word on those.
+		if d.hasKind || d.isPtr || d.isChan || d.hasElemKind || d.typeName.IsValid() {
+			f.err(callee.Position(), "cannot call non-function %s", callee.Src())
+		}
+	case *ConstDeclaration:
+		// The callee is a value, not a function: "x()" where x is a constant. (A type
+		// callee -- "T(x)" -- is an explicit conversion, which the language requires
+		// for mixed numeric types and which is left to its own, separate check.)
 		f.err(callee.Position(), "cannot call non-function %s", callee.Src())
 	case nil:
 		// A direct call to a name that resolves to nothing. The predeclared
@@ -5418,6 +5741,9 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 	default:
 		for i, arg := range args {
 			p := params[i]
+			// A function-typed parameter has no predeclared Kind, so this stands
+			// ahead of the known-kind guard below.
+			f.checkFuncAssign(s, f.funcSig(p.typeNode), arg, "argument to "+name.Src())
 			if !p.known {
 				continue
 			}
@@ -6691,6 +7017,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		typeName, _ := namedTypeToken(typ)
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
+		funcSig := f.funcSig(typ)
 		for _, vd := range varDecls {
 			if vd == nil {
 				continue
@@ -6698,6 +7025,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			vd.kind, vd.hasKind, vd.isPtr, vd.typeName = kind, hasKind, isPtr, typeName
 			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
 			vd.isChan, vd.chanElemKind, vd.hasChanElemKind = isChan, chanElemKind, hasChanElemKind
+			vd.funcSig, vd.isFunc = funcSig, funcSig != nil
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:
 				vs.TypeNode = typ

@@ -16,6 +16,9 @@
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
+// TODO 20260727 Function values: a function literal, a method value, a function with
+// more than one result as a value, and "go" through a variable holding one. The
+// named function used as a value works (see Function types and function values).
 // TODO 20260727 Array literals as general values: an array literal passed to a
 // function or assigned. A slice literal stands as a value now, being a header; an
 // array is not a C value, so it initializes a variable, fills a slot in another
@@ -872,6 +875,47 @@
 // named before the steps after it can be written, and an array is the one value
 // with no C type to name it by. "m[0][:]" on its own is fine.
 //
+// # Function types and function values
+//
+// A function type "func" Signature denotes the set of functions with that
+// signature. Parameter and result names are no part of it, so "func(a int) int"
+// and "func(b int) int" are one type.
+//
+// A declared function's name used as a value has the function's own type. It may be
+// assigned to a variable, passed as an argument, returned as a result, or stored in
+// an array element or a struct field, and a call through any of them is a call:
+//
+//	func add(a int, b int) int { return a + b }
+//
+//	type op struct {
+//		fn   func(int, int) int
+//		name string
+//	}
+//
+//	func run(f func(int, int) int, a int, b int) int { return f(a, b) }
+//
+//	var chosen func(int, int) int   // the zero value is nil
+//
+//	func main() {
+//		chosen = add
+//		println(chosen != nil, chosen(1, 2), run(add, 3, 4))
+//		o := op{add, "add"}
+//		println(o.fn(5, 6))
+//	}
+//
+// The zero value is nil and may be compared with nil. A function of another type is
+// not assignable; the check is by signature, so it holds however the two were
+// written. A function value transpiles to a C function pointer -- it costs nothing
+// at run time and allocates nothing, the function being already there and only its
+// address travelling -- which is also why it is always safe to send one to another
+// cog: it names code, not the frame it was made in.
+//
+// Three forms are not supported yet. A function with more than one result cannot be
+// used as a value, C having no way to name the result struct by the signature alone.
+// A "go" statement's callee must be a declared function, not a variable holding one,
+// since a cog's entry point is generated per function. And a method value, "t.get",
+// must carry its receiver alongside the code, which a function pointer does not.
+//
 // # Function Literals
 //
 // A function literal represents an anonymous function.
@@ -881,8 +925,11 @@
 // (OctoGo Specific): Because OctoGo strictly enforces a zero-allocation memory
 // model without a Garbage Collector, function literals cannot act as dynamic
 // closures. They may not capture or reference variables from their surrounding
-// lexical scope. In the transpiled C code, function literals are treated
+// lexical scope. In the transpiled C code, function literals are to be treated
 // strictly as statically allocated, pure function pointers.
+//
+// They are not implemented yet: a literal is refused where it is written. What
+// works today is the named function used as a value, above.
 //
 // # Operators
 //
