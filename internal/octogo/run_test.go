@@ -2483,6 +2483,40 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// Division of two integer constants is integer division, as in Go: 7 / 2 is
+		// 3, not 3.5. go/constant's token.QUO is float division whatever the operands
+		// are, so every such constant became a float -- which is how a perfectly
+		// ordinary "[MB / KB]int" came to be an "invalid array bound".
+		name: "constant integer division",
+		src: `const (
+	_  = iota
+	KB = 1 << (10 * iota)
+	MB
+	GB
+)
+
+const half = 7 / 2
+const rem = 7 % 2
+const exact = 7.0 / 2
+const back = GB / MB / KB
+
+func main() {
+	println(KB, MB, GB)
+	println(half, rem, back)
+	println(exact == 3.5, exact > 3)
+
+	var a [MB / KB]int
+	a[0] = 5
+	println(len(a), a[0])
+
+	var b [half]int
+	b[2] = 9
+	println(len(b), b[2])
+}
+`,
+		want: "1024 1048576 1073741824\n3 1 1\ntrue true\n1024 5\n3 9\n",
+	},
+	{
 		// Go evaluates a return's expressions, assigns them to the results, and only
 		// then runs the defers. They used to run first, so an expression reading what
 		// a defer had changed saw the changed value. Binding first is also what gives

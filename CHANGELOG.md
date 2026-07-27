@@ -15,6 +15,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **Division of two integer constants produced a float.** `7 / 2` was 3.5 rather than
+  3, as Go has it, so a perfectly ordinary `[MB / KB]int` was rejected with
+  `invalid array bound` and any constant reached through a division carried the wrong
+  type. Float constant division is unaffected: `7.0 / 2` is still 3.5.
 - **Deferred calls ran before a return's expressions were evaluated.** Go evaluates
   the expressions, assigns them to the results, and only then runs the defers — so a
   `return n + 1` alongside a deferred call that multiplies `n` by 10 gave 11 where Go

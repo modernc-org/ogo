@@ -8252,6 +8252,14 @@ func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs
 	if t == token.ILLEGAL {
 		return nil, false
 	}
+	// Division of two integer constants is integer division, as in Go: 7 / 2 is 3,
+	// not 3.5. go/constant's token.QUO is float division whatever the operands are
+	// -- QUO_ASSIGN is its integer form -- so an integer pair takes that instead.
+	// Without it every such constant became a float, which is how "[MB / KB]int"
+	// came to be an "invalid array bound".
+	if t == token.QUO && lhs.Kind() == constant.Int && rhs.Kind() == constant.Int {
+		t = token.QUO_ASSIGN
+	}
 	return f.constBinaryOp(opTok, lhs, rhs, t), true
 }
 
