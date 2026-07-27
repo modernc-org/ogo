@@ -1644,6 +1644,69 @@ const ogoNonzero64 = "static long long ogo_nonzero64(long long b) {\n" +
 	"\treturn b;\n" +
 	"}\n"
 
+// cIntWidths is the bit width of each integer C type this target emits, which is
+// what a shift count is measured against.
+var cIntWidths = map[string]int{
+	"int8_t": 8, "uint8_t": 8,
+	"int16_t": 16, "uint16_t": 16,
+	"int": 32, "unsigned": 32, "int32_t": 32, "uint32_t": 32,
+	"int64_t": 64, "uint64_t": 64, "uintptr_t": 32,
+}
+
+// cUnsignedOf is the unsigned counterpart of a signed integer C type. A left shift
+// is done in it, C leaving a signed overflow undefined where Go defines it to wrap.
+var cUnsignedOf = map[string]string{
+	"int8_t": "uint8_t", "int16_t": "uint16_t", "int": "unsigned",
+	"int32_t": "uint32_t", "int64_t": "uint64_t",
+}
+
+// shiftHelperName is the C name of the guarded shift helper for a value type.
+func shiftHelperName(op, ctype string) string {
+	dir := "shl"
+	if op == ">>" {
+		dir = "shr"
+	}
+	return "ogo_" + dir + "_" + cIdent(ctype)
+}
+
+// shiftHelperDef defines a guarded shift, which is what makes a shift mean in the
+// emitted C what it means in Go.
+//
+// Go defines a shift by a count at least as wide as the value's type: the result is
+// 0, or -1 for an arithmetic right shift of a negative value. C leaves it undefined,
+// and this target's compilers take the count modulo the width -- so `x << 40` on an
+// int32 yielded `x << 8`. Go also panics on a negative count, where C is undefined
+// again. Both are decided here, once per value type.
+//
+// A left shift is performed in the unsigned counterpart: Go defines the overflow to
+// wrap, and C does not define a signed one at all.
+func shiftHelperDef(op, ctype string) string {
+	bits := cIntWidths[ctype]
+	name := shiftHelperName(op, ctype)
+	body := "\tif (n < 0) ogo_panic(\"negative shift amount\");\n"
+	switch {
+	case op == "<<":
+		u := ctype
+		if v, ok := cUnsignedOf[ctype]; ok {
+			u = v
+		}
+		body += fmt.Sprintf("\tif (n >= %d) return 0;\n\treturn (%s)((%s)v << n);\n", bits, ctype, u)
+	case cUnsignedOf[ctype] != "": // a signed right shift keeps the sign
+		body += fmt.Sprintf("\tif (n >= %d) return v < 0 ? -1 : 0;\n\treturn v >> n;\n", bits)
+	default:
+		body += fmt.Sprintf("\tif (n >= %d) return 0;\n\treturn v >> n;\n", bits)
+	}
+	return fmt.Sprintf("static %s %s(%s v, int64_t n) {\n%s}\n", ctype, name, ctype, body)
+}
+
+// needShift records that a guarded shift helper is used, so it is defined.
+func (e *emitter) needShift(op, ctype string) string {
+	e.shiftHelpers[shiftHelperName(op, ctype)] = [2]string{op, ctype}
+	e.needPanic()
+	e.includes["stdint.h"] = true
+	return shiftHelperName(op, ctype)
+}
+
 // sortedKeys returns the keys of a set in deterministic (sorted) order, for stable
 // emission of per-element-type typedefs and helpers.
 func sortedKeys(m map[string]bool) []string {
@@ -1709,7 +1772,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1925,6 +1988,15 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	}
 	if e.usesNonzero {
 		helperDefs.WriteString(ogoNonzero)
+	}
+	shiftNames := make([]string, 0, len(e.shiftHelpers))
+	for name := range e.shiftHelpers {
+		shiftNames = append(shiftNames, name)
+	}
+	slices.Sort(shiftNames)
+	for _, name := range shiftNames {
+		oc := e.shiftHelpers[name]
+		helperDefs.WriteString(shiftHelperDef(oc[0], oc[1]))
 	}
 	// A channel's helpers call ogo_panic (out of locks) and the P2 lock and wait
 	// intrinsics, so they follow the panic definition and pull in propeller2.h.
@@ -2143,6 +2215,7 @@ type emitter struct {
 	usesBound          bool                     // ogo_bound is called: emit the index bounds-check helper
 	usesNonzero        bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesNonzero64      bool                     // ogo_nonzero64 (64-bit divisor guard) is called
+	shiftHelpers       map[string][2]string     // guarded shift helper name -> {operator, value C type}
 	release            bool                     // release build: a panic reboots (_reboot) instead of halting the cog
 	checks             bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals             map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
@@ -8085,6 +8158,67 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	return false
 }
 
+// shiftChainC renders a Term containing a shift that needs guarding, folding the
+// chain left-associatively into helper calls. It reports false for a Term with no
+// such shift, which the ordinary streaming path then emits unchanged.
+//
+// A shift by an in-range constant needs no guard: its count is known to be one C
+// shifts the way Go does. Everything else -- a variable count, or a constant at or
+// past the width -- goes through the helper.
+func (e *emitter) shiftChainC(kids []Node) (string, bool) {
+	needed := false
+	for i := 1; i+1 < len(kids); i += 2 {
+		if kids[i].sym == MulOp && e.shiftNeedsGuard(kids[i], kids[i-1], kids[i+1]) {
+			needed = true
+			break
+		}
+	}
+	if !needed {
+		return "", false
+	}
+	text := e.captureC(func() { e.emitExprNode(kids[0]) })
+	ctype, haveType := e.inferCType(kids[0].ast)
+	for i := 1; i+1 < len(kids); i += 2 {
+		op, rhs := kids[i], kids[i+1]
+		if op.sym != MulOp {
+			return "", false
+		}
+		rhsText := e.captureC(func() { e.emitExprNode(rhs) })
+		if haveType && e.shiftNeedsGuard(op, kids[i-1], rhs) {
+			fn := e.needShift(e.opText(op.ast), e.underlyingCType(ctype))
+			text = fn + "(" + text + ", " + rhsText + ")"
+			continue
+		}
+		// A step the chain does not guard leaves the result's type as it was, the
+		// value type of a shift being its left operand's either way.
+		text = "(" + text + " " + e.opText(op.ast) + " " + rhsText + ")"
+	}
+	return text, true
+}
+
+// shiftNeedsGuard reports whether a shift step must go through the guarded helper:
+// it is a shift at all, the value's C type is a known integer, and the count is not
+// a constant already inside that type's width.
+func (e *emitter) shiftNeedsGuard(op, lhs, rhs Node) bool {
+	switch e.opText(op.ast) {
+	case "<<", ">>":
+	default:
+		return false
+	}
+	ctype, ok := e.inferCType(lhs.ast)
+	if !ok {
+		return false
+	}
+	bits, ok := cIntWidths[e.underlyingCType(ctype)]
+	if !ok {
+		return false // not an integer this target measures a shift against
+	}
+	if v, ok := e.foldConstInt(rhs.ast); ok && v >= 0 && v < int64(bits) {
+		return false
+	}
+	return true
+}
+
 // emitMethodReceiver emits a method call's receiver argument, bridging the receiver
 // the caller holds and the one the method declares: it takes the address of a value
 // passed to a pointer method (&x), dereferences a pointer passed to a value method
@@ -9517,6 +9651,14 @@ type assignTail struct {
 	op         string
 	rhs        []int32
 	complement bool
+	// targetCType is the C type written through, when the caller knows it. Only a
+	// shift assignment reads it, to decide the width its count is measured against;
+	// a target that is a plain name needs no help, its type being on the variable.
+	targetCType string
+	// targetRepeatable says the target's C text may be written a second time --
+	// evaluating it twice repeats no side effect. A shift assignment needs that,
+	// since it becomes "t = f(t, n)".
+	targetRepeatable bool
 }
 
 // cAssignOps maps each compound assignment token to the C operator that applies
@@ -9565,8 +9707,83 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 		}
 	}
 	e.ind()
+	if text, ok := e.shiftAssignC(target, t); ok {
+		e.emit(text + ";\n")
+		return
+	}
 	target()
 	e.emitAssignTail(t)
+}
+
+// shiftAssignC rewrites a compound shift assignment that needs guarding, "x <<= n",
+// into the guarded form "x = ogo_shl_<T>(x, n)". It reports false for any other
+// assignment, which the ordinary path then emits unchanged.
+//
+// The target is written twice, so only one that is a plain name or a field path
+// through one qualifies -- naming it again costs nothing and repeats no evaluation.
+// A target that indexes or calls is refused rather than emitted wrong: repeating it
+// would repeat its index expression, and leaving the shift unguarded would give C's
+// answer instead of Go's, which is what this whole path exists to stop.
+func (e *emitter) shiftAssignC(target func(), t assignTail) (string, bool) {
+	op := strings.TrimSuffix(t.op, "=")
+	if t.rhs == nil || (op != "<<" && op != ">>") || t.complement {
+		return "", false
+	}
+	text := e.captureC(target)
+	ctype := t.targetCType
+	if ctype == "" {
+		var ok bool
+		if ctype, ok = e.varType(plainTargetRoot(text)); !ok {
+			return "", false
+		}
+	}
+	if !e.shiftNeedsGuard1(ctype, t.rhs) {
+		return "", false
+	}
+	if !t.targetRepeatable && !plainTargetText(text) {
+		e.fail("a shift assignment by a value that may reach the operand's width needs a target that can be named twice; this one is evaluated")
+		return "", false
+	}
+	fn := e.needShift(op, e.underlyingCType(ctype))
+	return text + " = " + fn + "(" + text + ", " + e.captureC(func() { e.emitExpr(t.rhs) }) + ")", true
+}
+
+// plainTargetText reports whether a target's C text is a name or a field path
+// through one, so that writing it a second time repeats no evaluation.
+func plainTargetText(text string) bool {
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_', c == '.':
+		case c == '-' && i+1 < len(text) && text[i+1] == '>':
+			i++
+		default:
+			return false
+		}
+	}
+	return text != ""
+}
+
+// plainTargetRoot is the leading name of such a target, whose type is the shift's.
+func plainTargetRoot(text string) string {
+	for i := 0; i < len(text); i++ {
+		if c := text[i]; !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
+			return text[:i]
+		}
+	}
+	return text
+}
+
+// shiftNeedsGuard1 is shiftNeedsGuard for a value whose C type is already known.
+func (e *emitter) shiftNeedsGuard1(ctype string, rhs []int32) bool {
+	bits, ok := cIntWidths[e.underlyingCType(ctype)]
+	if !ok {
+		return false
+	}
+	if v, ok := e.foldConstInt(rhs); ok && v >= 0 && v < int64(bits) {
+		return false
+	}
+	return true
 }
 
 // emitAssignTail writes the classified tail after a target has been emitted. The
@@ -9607,6 +9824,7 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 		e.fail("unsupported indexed field assignment target")
 		return
 	}
+	t.targetCType = elem
 	e.emitAssignTailOrCopy(func() { e.emitIndexSelect(expr, lenExpr, low, elem, nil) }, t)
 }
 
@@ -9630,22 +9848,28 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	// A slice element is addressed through its backing pointer; an array directly.
 	// The index is bounds-checked against the container length.
 	lhs := base
-	lenExpr := ""
-	if e.hasSliceVar(base) {
+	lenExpr, elem := "", ""
+	if el, ok := e.sliceElem(base); ok {
 		lhs = base + ".ptr"
 		lenExpr = base + ".len"
+		elem = el
 	} else if a, ok := e.arrayVar(base); ok {
 		if a.dims() > 1 {
 			e.fail("a multi-dimensional array must be indexed in every dimension")
 			return
 		}
-		lenExpr = a.bound
+		lenExpr, elem = a.bound, a.elem
 	}
 	t, ok := e.assignTailOf(opNode)
 	if !ok {
 		e.fail("unsupported assignment form for an indexed target")
 		return
 	}
+	t.targetCType = elem
+	// The index is evaluated twice by a guarded shift assignment (see shiftAssignC),
+	// which is only sound when evaluating it has no effect. It usually has none: an
+	// index is a name or a literal far more often than it is a call.
+	t.targetRepeatable = !e.exprHasEffect(idx)
 	e.emitAssignTailOrCopy(func() {
 		e.emit(lhs + "[")
 		e.emitIndex(idx, lenExpr)
@@ -10777,6 +11001,10 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		if lit, ok := e.wideConstLit(n.ast); ok {
 			e.emit(lit)
+			return
+		}
+		if text, ok := e.shiftChainC(kids); ok {
+			e.emit(text)
 			return
 		}
 		e.emit("(")

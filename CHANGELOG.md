@@ -15,6 +15,16 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A shift by a count at or past the operand's width gave C's answer, not Go's.**
+  `x << 40` on an `int32` was `x << 8` — both compilers take the count modulo the
+  width, where Go defines the result as 0 (or −1 for a right shift of a negative
+  value). Silent wrong answers. A count that is not a constant already inside the
+  width now goes through a guarded helper; one that is stays a plain C shift, so
+  ordinary code costs nothing. A negative count is a run-time panic, as in Go.
+
+  The compound form `x <<= n` is guarded the same way, on a plain variable and on an
+  element whose index can be named twice. An element whose index is itself a call is
+  refused rather than emitted wrong — the guarded form names its target twice.
 - **A constant too wide for a 32-bit int was computed wrong.** `var x int64 = 1 << 40`
   gave **0**, and `2000000000 * 3` gave 1705032704. Go computes a constant expression
   in arbitrary precision and then converts; the emitter wrote the expression out as C

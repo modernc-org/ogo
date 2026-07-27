@@ -2483,6 +2483,48 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// Go defines a shift by a count at least as wide as the value's type: the
+		// result is 0, or -1 for an arithmetic right shift of a negative value. C
+		// leaves it undefined and both this project's compilers take the count
+		// modulo the width, so "x << 40" on an int32 was "x << 8" -- a silent wrong
+		// answer. A count that is not a constant already inside the width now goes
+		// through a guarded helper; one that is stays a plain C shift.
+		name: "a shift by a count at or past the width",
+		src: `func main() {
+	var x int32 = 1
+	var s uint32 = 40
+	println(x<<s, x>>s)
+
+	var y int32 = -1024
+	println(y>>s, y<<s)
+
+	var u uint32 = 0xF0000000
+	println(u>>s, u<<s)
+
+	var v int64 = 1
+	var w uint32 = 70
+	println(v<<w, v<<40)
+
+	// The compound form is guarded the same way, on a plain variable and on an
+	// element whose index can be named twice.
+	var a int32 = 1
+	a <<= s
+	println(a)
+	var b [2]int32
+	b[0] = -1024
+	i := 0
+	b[i] >>= s
+	println(b[0])
+
+	// A constant count inside the width is left as written.
+	var c int32 = 3
+	c <<= 2
+	println(c, c>>1, c<<29)
+}
+`,
+		want: "0 0\n-1 0\n0 0\n0 1099511627776\n0\n-1\n12 6 -2147483648\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a
@@ -4197,6 +4239,19 @@ func main() {
 }
 `,
 		want: "1\n2\n",
+	},
+	{
+		// Go panics on a negative shift count, where C is undefined. The guarded
+		// shift helper is where that is decided.
+		name: "a negative shift count traps",
+		src: `func main() {
+	var x int32 = 1
+	var n int32 = -1
+	println(x << n)
+}
+`,
+		panics: true,
+		want:   "panic: negative shift amount\n",
 	},
 	{
 		// panic("msg") aborts through ogo_panic. smith's oracle relies on this: a

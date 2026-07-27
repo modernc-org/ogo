@@ -372,6 +372,10 @@
 //   - A constant expression is computed in arbitrary precision and then converted to
 //     the type it is used at, as in Go, so "var x int64 = 1 << 40" is 1099511627776
 //     and not what a 32-bit shift would give.
+//   - A shift by a count at least as wide as the value's type yields 0, or -1 for a
+//     right shift of a negative value, as in Go -- not C's count-modulo-the-width. A
+//     negative count is a run-time panic. A count that is a constant already inside
+//     the width costs nothing extra; any other goes through a guard.
 //   - Explicit conversions are required when different numeric types are mixed in
 //     an expression or assignment.
 //
