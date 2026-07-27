@@ -5054,6 +5054,55 @@ func main() {
 	}
 }
 
+// TestEmitCStringConvRefused pins the string conversions the emitter refuses: the
+// ones that would have to BUILD a string, whose bytes need somewhere to go. The
+// checker reports string(rune) early (see string_conversion.ogo) but carries no
+// slice type, so string([]byte) is refused here, where the representation is known.
+//
+// The free ones are in the same file's `free`: a conversion between two types of the
+// one representation is the operand itself, and emits no cast at all -- C has no
+// cast to a non-scalar type, which is what `(Name)(s)` on a string was.
+func TestEmitCStringConvRefused(t *testing.T) {
+	for _, test := range []struct{ name, src string }{
+		{
+			name: "from a byte slice",
+			src: `var back [2]uint8
+
+func main() {
+	b := back[:]
+	println(string(b))
+}
+`,
+		},
+		{
+			name: "from a byte",
+			src: `func main() {
+	var b uint8 = 104
+	println(string(b))
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				// The checker reaches the byte form; either place may report it.
+				if !strings.Contains(err.Error(), "needs allocation") {
+					t.Fatalf("Build: %v", err)
+				}
+				return
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf); err == nil {
+				t.Fatalf("EmitC accepted a string conversion from %s:\n%s", test.name, buf.String())
+			} else if !strings.Contains(err.Error(), "needs allocation") {
+				t.Errorf("EmitC error %q is not the string-conversion refusal", err)
+			}
+		})
+	}
+}
+
 // TestEmitCFuncValueRefused pins the two function-value shapes the emitter refuses,
 // both because a C function pointer cannot express them.
 //

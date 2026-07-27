@@ -5310,8 +5310,11 @@ func (e *emitter) isUserType(ctype string) bool { return e.isStruct(ctype) || e.
 // arithmetic source and a string conversion would need a copy -- so they are left
 // to the generic call path, which fails honestly.
 func (e *emitter) convType(recv string) (string, bool) {
-	if recv == "bool" || recv == "string" {
-		return "", false
+	if recv == "bool" {
+		return cBool, true
+	}
+	if recv == "string" {
+		return cString, true
 	}
 	if ct, ok := cTypes[recv]; ok {
 		if strings.HasSuffix(ct, "_t") {
@@ -5323,6 +5326,50 @@ func (e *emitter) convType(recv string) (string, bool) {
 		return mn, true // `type Celsius int` used as Celsius(x)
 	}
 	return "", false
+}
+
+// emitConversion emits a conversion `T(x)`.
+//
+// A scalar target is a C cast, which is what makes a narrowing one truncate as Go
+// says. A target that is not scalar -- a string, a slice, a struct, or a named type
+// over one of them -- cannot be cast in C at all (a cast names a scalar type), and
+// needs no conversion either: a named type is a typedef of what it stands for, so
+// the value is already of the target's representation and the operand alone is the
+// conversion. What is left is a conversion that would have to BUILD a value --
+// string(rune), string([]byte) -- which needs the allocation this target does not
+// have, and is refused.
+func (e *emitter) emitConversion(ct string, arg Node) {
+	if isScalarCType(e.underlyingCType(ct)) {
+		e.emit("(" + ct + ")(")
+		e.emitExpr(arg.ast)
+		e.emit(")")
+		return
+	}
+	src, ok := e.exprReprCType(arg.ast)
+	if !ok || src != e.underlyingCType(ct) {
+		if e.underlyingCType(ct) == cString {
+			e.fail("a string conversion needs allocation, which the target does not have")
+			return
+		}
+		e.fail("cannot convert to %s", ct)
+		return
+	}
+	e.emitExpr(arg.ast)
+}
+
+// isScalarCType reports whether a C type is one a cast may name: the arithmetic
+// types and a pointer. A string, a slice, a channel and a struct are not, C having
+// no cast to a non-scalar type.
+func isScalarCType(ct string) bool {
+	switch {
+	case ct == cBool, ct == "double", ct == "float":
+		return true
+	case isIntCType(ct):
+		return true
+	case strings.HasSuffix(ct, "*"):
+		return true
+	}
+	return false
 }
 
 // arrayType recognises a fixed-array type `[N]T`, returning the element C type and
@@ -7888,12 +7935,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			return true
 		}
 		if ct, ok := e.convType(recv); ok {
-			// A conversion `T(x)` -> a C cast `(T)(x)`.
 			args := e.callArgExprs(suffix[0].ast)
 			if len(args) == 1 {
-				e.emit("(" + ct + ")(")
-				e.emitExpr(args[0].ast)
-				e.emit(")")
+				e.emitConversion(ct, args[0])
 				return true
 			}
 		}

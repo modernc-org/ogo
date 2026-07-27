@@ -2483,6 +2483,39 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A conversion between two types of the one representation builds nothing and
+		// costs nothing: it is the operand itself. It must also emit no C cast, since
+		// C has no cast to a non-scalar type -- `(Name)(s)` on a string was one, which
+		// gcc took as an extension and the target's compiler need not have. A scalar
+		// conversion keeps its cast, which is what makes a narrowing one truncate.
+		name: "a conversion between one representation is free",
+		src: `type Name string
+type Flag bool
+type Celsius int
+type List []int
+
+var back [2]int
+
+func main() {
+	var s string = "hi"
+	var n Name = Name(s)
+	println(n, string(n), string(s), len(string(n)))
+
+	var b bool = true
+	var f Flag = Flag(b)
+	println(f, bool(f), bool(b))
+
+	var c Celsius = 300
+	println(int(c), uint8(c), Celsius(7))
+
+	var xs []int = back[:]
+	var l List = List(xs)
+	println(len(l), cap(l))
+}
+`,
+		want: "hi hi hi 2\ntrue true true\n300 44 7\n2 2\n",
+	},
+	{
 		// A named type is a distinct type, but the same representation as the one it
 		// is defined over -- so a value of it prints, indexes, ranges, compares and
 		// carries a length exactly as that one does. Every such decision used to read

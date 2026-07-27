@@ -5734,6 +5734,12 @@ func (f *File) callResultKind(s *Scope, callee Token, hasCallee bool, suffix Nod
 	if _, direct, isCall := f.callInfo(suffix); !hasCallee || !direct || !isCall {
 		return 0, false
 	}
+	// A conversion "T(x)" is a call in shape only: its type is T, and there is no
+	// declaration to read a result off. Typing it is what lets the conversion that
+	// feeds another one -- "string(rune(r))" -- be judged by what it converts from.
+	if pt, ok := s.find(callee.Src()).(*PredeclaredType); ok {
+		return pt.Kind(), true
+	}
 	return f.funcSingleResultKind(s, callee)
 }
 
@@ -5878,13 +5884,20 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		}
 	case *PredeclaredType:
 		// A type callee "T(x)" is an explicit conversion. Numeric ones are lowered
-		// to a C cast by the emitter; a string conversion -- string(r) from a rune,
-		// string(b) from a byte slice -- builds a new string, which needs the copy
-		// this allocation-free target cannot make (as runtime string concatenation
-		// does). Refused here with a clear message rather than at the emitter, where
-		// it surfaces as "cannot infer a type".
-		if callee.Src() == "string" {
-			f.err(callee.Position(), "a string conversion needs allocation, which the target does not have")
+		// to a C cast by the emitter; a string conversion that BUILDS a string --
+		// string(r) from a rune, string(b) from a byte slice -- needs the copy this
+		// allocation-free target cannot make (as runtime string concatenation does).
+		// Refused here with a clear message rather than at the emitter, where it
+		// surfaces as "cannot infer a type".
+		//
+		// Only when the argument is known not to be a string already: string(s) is
+		// the same bytes and costs nothing, and so is a conversion from a named type
+		// over string, whose type this checker does not carry at all. Those reach the
+		// emitter, which knows the representation and refuses what it must.
+		if callee.Src() == "string" && len(args) == 1 {
+			if k, ok := f.exprType(s, args[0]); ok && kindCategory(k) != catString {
+				f.err(callee.Position(), "a string conversion needs allocation, which the target does not have")
+			}
 		}
 	case *VarDeclaration:
 		// A variable of a function type holds a function, so calling it is a call --

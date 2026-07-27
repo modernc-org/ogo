@@ -400,7 +400,14 @@
 // (OctoGo Specific): Concatenation with "+" is limited to compile-time constants,
 // which fold to a single literal. A concatenation with a non-constant operand is
 // rejected, since building a new string at run time needs allocation and the
-// target has no heap.
+// target has no heap. For the same reason a conversion that would BUILD a string --
+// string(r) from a rune, string(b) from a byte slice -- is rejected. A conversion
+// that builds nothing is free and is allowed: string(s) of a string, and one to or
+// from a defined type over string, are the same bytes.
+//
+// That holds of conversions generally: one between two types of the same
+// representation costs nothing and is the operand itself, while one between scalar
+// types is a conversion of the value and truncates as Go says.
 //
 // To build a string at run time without allocation, use the predeclared Builder
 // over a caller-owned backing array -- the allocation-free counterpart to Go's

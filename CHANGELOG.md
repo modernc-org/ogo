@@ -15,6 +15,18 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A conversion between two types of the same representation now works.**
+  `bool(f)` emitted a call to a function named `bool` — invalid C — and
+  `string(n)` where `n` is a defined type over string was refused as needing an
+  allocation it does not need. Such a conversion builds nothing: it is the operand
+  itself, and now emits no C cast at all, which also removes a cast to a non-scalar
+  type that C does not have and only gcc was accepting. A scalar conversion keeps
+  its cast, so a narrowing one still truncates as Go says.
+
+  The conversions that would have to *build* a string, `string(r)` from a rune and
+  `string(b)` from a byte slice, are still refused — the checker reports the first
+  (it now types a conversion, so `string(rune(r))` is judged by what it converts
+  from) and the emitter the second, where the representation is known.
 - **`go` could panic `out of cogs` while a cog was in fact free.** A goroutine marks
   its slot free in its epilogue, after the body ends — but the code that started it
   can learn the body is over *before* that: a receive of the value the goroutine sent
