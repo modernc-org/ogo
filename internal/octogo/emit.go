@@ -2903,6 +2903,15 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 			if !ok {
 				ct = "int" // an untyped constant defaults to int
 			}
+			// An untyped constant whose value does not fit an int takes the width it
+			// needs: Go's default type for it is int, which is 64-bit there, and
+			// "static const int" would store 1 << 40 as 0.
+			e.iota = curIota
+			if v, ok := e.foldConstInt(initExpr); ok && ct == "int" && !fitsCInt(v) {
+				ct = "int64_t"
+				e.includes["stdint.h"] = true
+			}
+			e.iota = -1
 			ctype = ct
 		}
 		if pkg {
@@ -2916,7 +2925,7 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		// fold as this spec's index for the duration.
 		e.iota = curIota
 		if v, ok := e.foldConstInt(initExpr); ok {
-			e.constInt[cname] = strconv.FormatInt(v, 10)
+			e.constInt[cname] = intCLit(v)
 		}
 		e.iota = -1
 		// A constant string -- a literal or a concatenation of constants -- is
@@ -5485,6 +5494,45 @@ func (e *emitter) foldConstInt(ast []int32) (int64, bool) {
 	return e.foldIntSeq(slices.Collect(it(ast)))
 }
 
+// fitsCInt reports whether a constant value fits C's int, which is 32 bits on this
+// target. One that does not may not be written as a plain decimal: C would compute
+// and store it in int.
+func fitsCInt(v int64) bool { return v >= math.MinInt32 && v <= math.MaxInt32 }
+
+// intCLit renders a folded integer constant as a C literal, widening the ones that
+// do not fit an int. Go computes a constant expression in arbitrary precision and
+// then converts; C computes it in the type of its operands, so "1 << 40" written out
+// as C source is a shift of an int by 40 -- undefined, and 0 in practice. The folded
+// value with a width suffix is what the expression actually denotes.
+//
+// A negative wide value is spelled as its bit pattern rather than as a negation.
+// The target's C compiler folds no unary minus in a global initializer at all
+// ("global initializers ... must be constant" on "-1099511627776LL"), and the most
+// negative value has no negation that is a literal in any C: 9223372036854775808
+// does not fit the signed type the minus would apply to. The hex form says the value
+// exactly, on a two's-complement target, and folds wherever a literal does.
+func intCLit(v int64) string {
+	switch {
+	case fitsCInt(v):
+		return strconv.FormatInt(v, 10)
+	case v >= 0:
+		return strconv.FormatInt(v, 10) + "LL"
+	default:
+		return fmt.Sprintf("0x%016XULL", uint64(v))
+	}
+}
+
+// wideConstLit renders an expression that folds to a constant too wide for a C int,
+// or reports false for anything else -- an expression that does not fold, or one
+// whose value C computes the same way Go does, which is left as written.
+func (e *emitter) wideConstLit(ast []int32) (string, bool) {
+	v, ok := e.foldConstInt(ast)
+	if !ok || fitsCInt(v) {
+		return "", false
+	}
+	return intCLit(v), true
+}
+
 // foldIntSeq folds a flat "operand (op operand)*" list left-associatively.
 func (e *emitter) foldIntSeq(kids []Node) (int64, bool) {
 	if len(kids) == 0 {
@@ -5519,8 +5567,17 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.foldIntNode(kids[1]) // "(" Expression ")"
 		}
+		// A prefix operator, either as a bare token or wrapped in a UnaryOp node --
+		// the shape the parser actually builds for "-1", and the reason "-1 << 40"
+		// used to reach the C compiler as written and shift a negative int.
+		op, hasOp := int32(0), false
 		if len(kids) >= 2 && kids[0].sym == 0 {
-			switch e.f.ch(kids[0].tok) {
+			op, hasOp = kids[0].tok, true
+		} else if len(kids) >= 2 && kids[0].sym == UnaryOp {
+			op, hasOp = e.unaryOpTok(kids[0].ast)
+		}
+		if hasOp {
+			switch e.f.ch(op) {
 			case SUB:
 				v, ok := e.foldIntSeq(kids[1:])
 				return -v, ok
@@ -10684,6 +10741,12 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[0])
 			return
 		}
+		// A constant expression whose value does not fit a C int is emitted as that
+		// value: C would compute it in int and get a different answer (see intCLit).
+		if lit, ok := e.wideConstLit(n.ast); ok {
+			e.emit(lit)
+			return
+		}
 		// A string-typed additive expression is concatenation. C cannot add two
 		// ogo_string structs, and the target has no heap to build a new one at
 		// runtime, so a concatenation of constants is folded to a single literal and
@@ -10710,6 +10773,10 @@ func (e *emitter) emitExprNode(n Node) {
 		kids := slices.Collect(it(n.ast))
 		if len(kids) == 1 {
 			e.emitExprNode(kids[0])
+			return
+		}
+		if lit, ok := e.wideConstLit(n.ast); ok {
+			e.emit(lit)
 			return
 		}
 		e.emit("(")

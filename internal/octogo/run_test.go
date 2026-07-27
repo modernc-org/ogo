@@ -2483,6 +2483,44 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// Go computes a constant expression in arbitrary precision and then converts;
+		// C computes it in the type of its operands. Written out as C source, "1 <<
+		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a
+		// constant whose value does not fit a C int is emitted as that value with a
+		// width suffix instead. It printed 0 before, silently.
+		name: "a constant too wide for a C int",
+		src: `const shift = 1 << 40
+const product = 2000000000 * 3
+
+var g int64 = 1 << 40
+var h uint64 = 1 << 63
+var neg int64 = -1 << 62
+
+func take(v int64) int64 { return v }
+
+func main() {
+	var a int64 = 1 << 40
+	var b int64 = 2000000000 * 3
+	var c uint64 = 1 << 63
+	println(a, b, c, g, h)
+	println(neg)
+	println(int64(shift), int64(product))
+	println(take(1 << 40))
+	a = 1 << 41
+	println(a, a>>1)
+	// A negative wide value is spelled as its bit pattern: the target's C compiler
+	// folds no unary minus in a global initializer.
+	var d int64 = -1 << 40
+	var i int64 = -6000000000
+	println(d, i, d>>4, -d)
+	// The ones C computes the same way are left as written.
+	var e int = 1 << 30
+	println(e, e/2)
+}
+`,
+		want: "1099511627776 6000000000 9223372036854775808 1099511627776 9223372036854775808\n-4611686018427387904\n1099511627776 6000000000\n1099511627776\n2199023255552 1099511627776\n-1099511627776 -6000000000 -68719476736 1099511627776\n1073741824 536870912\n",
+	},
+	{
 		// A defined type is checked as the type it is defined over -- following a
 		// chain of definitions to reach it -- so its values are bounded, converted
 		// and compared like that type's, while its own name is what a diagnostic

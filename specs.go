@@ -369,6 +369,9 @@
 //
 //   - The value of an n-bit integer is n bits wide and represented using two's
 //     complement arithmetic.
+//   - A constant expression is computed in arbitrary precision and then converted to
+//     the type it is used at, as in Go, so "var x int64 = 1 << 40" is 1099511627776
+//     and not what a 32-bit shift would give.
 //   - Explicit conversions are required when different numeric types are mixed in
 //     an expression or assignment.
 //

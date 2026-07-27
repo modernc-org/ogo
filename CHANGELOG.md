@@ -15,6 +15,16 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A constant too wide for a 32-bit int was computed wrong.** `var x int64 = 1 << 40`
+  gave **0**, and `2000000000 * 3` gave 1705032704. Go computes a constant expression
+  in arbitrary precision and then converts; the emitter wrote the expression out as C
+  source, where it is a shift or a multiply of an `int`. A constant whose value does
+  not fit an int is now emitted as that value. `const big = 1 << 40` takes the width
+  it needs too, instead of `static const int`.
+
+  A negative one is written as its bit pattern rather than as a negation, because the
+  target's C compiler folds no unary minus in a global initializer — and because the
+  most negative value has no negation that is a literal in any C.
 - **A defined type is now type-checked.** A variable of one — `type Celsius int` —
   carried no type category at all, so *every* check keyed on one was skipped for it:
   `var c Celsius = "a"`, `c = "a"`, `f("a")` for a `Celsius` parameter and
