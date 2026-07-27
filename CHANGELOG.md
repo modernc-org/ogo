@@ -15,6 +15,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **Deferred calls ran before a return's expressions were evaluated.** Go evaluates
+  the expressions, assigns them to the results, and only then runs the defers — so a
+  `return n + 1` alongside a deferred call that multiplies `n` by 10 gave 11 where Go
+  gives 20. Binding the results first also gives a *named* result its point: a defer
+  may still change it, and that change is what the caller receives.
+- **A `string`, slice or struct named result, or defer argument, emitted invalid C.**
+  Both were zeroed with `= 0`, which C accepts for a scalar and rejects for an
+  aggregate, so `func f() (s string)` and `defer g("x")` did not compile at all.
 - **A 64-bit `go` argument was silently truncated.** A goroutine's arguments travel
   through a per-site block whose fields took the type of each *argument expression*
   rather than of the parameter it is assigned to, so `go sender(1234567890123)`

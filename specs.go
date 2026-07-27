@@ -1236,6 +1236,11 @@
 // Deferred functions are executed in LIFO (last-in, first-out) order
 // immediately before the surrounding function returns.
 //
+// A return evaluates its expressions and assigns them to the results first, and the
+// deferred calls run after that -- so a deferred call cannot change what a return
+// expression computed, and it can still change a NAMED result, which is what the
+// caller then receives.
+//
 // (OctoGo Specific): To maintain deterministic memory usage and comply with
 // the language's zero-allocation model, defer statements are resolved
 // statically at compile time and transpiled into direct C "goto" cleanup

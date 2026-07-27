@@ -3695,7 +3695,9 @@ func (e *emitter) declareNamedResults(sig, body []int32) {
 			continue
 		}
 		e.ind()
-		e.emit(types[i] + " " + nm + " = 0;\n")
+		// A struct, a string or a slice result zeroes with braces: C has no scalar
+		// zero for an aggregate, and "= 0" is an invalid initializer there.
+		e.emit(types[i] + " " + nm + " = " + e.zeroInitC(types[i]) + ";\n")
 	}
 }
 
@@ -7972,7 +7974,10 @@ func (e *emitter) emitDeferDecls() {
 				continue
 			}
 			e.ind()
-			e.emit(a.ctype + " " + deferArgName(d.slot, i) + " = 0;\n")
+			// A struct, a string or a slice zeroes with braces, not with 0: C has
+			// no scalar zero for an aggregate, and "= 0" is an invalid initializer
+			// there rather than a warning.
+			e.emit(a.ctype + " " + deferArgName(d.slot, i) + " = " + e.zeroInitC(a.ctype) + ";\n")
 		}
 	}
 }
@@ -8014,8 +8019,44 @@ func (e *emitter) emitReturn(nodes []Node) {
 		}
 	}
 	e.checkReturnBacking(exprs)
+	// Go evaluates a return's expressions, assigns them to the results, and only
+	// then runs the defers. The defers used to run first, so an expression reading
+	// what a defer had changed saw the changed value -- "return n + 1" with a defer
+	// that multiplies n by 10 gave 11 where Go gives 20. Binding first also gives a
+	// named result the one thing it is for: a defer may still change it, and that
+	// change is what the caller sees.
+	var bound []string
+	if len(e.defers) != 0 && len(exprs) != 0 && len(exprs) == len(e.curResultTypes) {
+		for i, ex := range exprs {
+			// A result nothing can change needs no binding: a literal expression
+			// reads no variable, so a defer cannot reach it.
+			if name := e.curResultNames[i]; name == "0" && e.exprIsLiteral(ex.ast) {
+				bound = append(bound, e.captureC(func() { e.emitReturnValue(i, ex) }))
+				continue
+			}
+			value := e.captureC(func() { e.emitReturnValue(i, ex) })
+			if name := e.curResultNames[i]; name != "0" {
+				e.ind()
+				e.emit(name + " = " + value + ";\n")
+				bound = append(bound, name)
+				continue
+			}
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(e.curResultTypes[i] + " " + tmp + " = " + value + ";\n")
+			bound = append(bound, tmp)
+		}
+	}
 	e.emitDeferred()
 	e.ind()
+	if bound != nil {
+		if len(bound) == 1 {
+			e.emit("return " + bound[0] + ";\n")
+			return
+		}
+		e.emit("return (" + e.retStructName(e.curFunc) + "){" + strings.Join(bound, ", ") + "};\n")
+		return
+	}
 	switch len(exprs) {
 	case 0:
 		// A bare "return": main returns 0, a void function returns nothing, and a
@@ -8039,13 +8080,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 		}
 	case 1:
 		e.emit("return ")
-		// `return nil` in a slice-returning function yields the zero slice header,
-		// not the integer 0 (which is only nil's pointer form).
-		if e.isNilExpr(exprs[0].ast) && len(e.curResultTypes) == 1 && e.isSliceCType(e.curResultTypes[0]) {
-			e.emit("(" + e.curResultTypes[0] + "){0}")
-		} else {
-			e.emitExpr(exprs[0].ast)
-		}
+		e.emitReturnValue(0, exprs[0])
 		e.emit(";\n")
 	default:
 		e.emit("return (" + e.retStructName(e.curFunc) + "){")
@@ -8053,10 +8088,46 @@ func (e *emitter) emitReturn(nodes []Node) {
 			if i != 0 {
 				e.emit(", ")
 			}
-			e.emitExpr(ex.ast)
+			e.emitReturnValue(i, ex)
 		}
 		e.emit("};\n")
 	}
+}
+
+// exprIsLiteral reports whether an expression is built entirely from literals and
+// operators, so that its value depends on nothing a deferred call could change. The
+// predeclared constant names count as literals; any other name does not.
+func (e *emitter) exprIsLiteral(ast []int32) bool {
+	for n := range it(ast) {
+		if n.sym != 0 {
+			if !e.exprIsLiteral(n.ast) {
+				return false
+			}
+			continue
+		}
+		switch e.f.ch(n.tok) {
+		case INT, FLOAT, STRING, CHAR:
+		case IDENT:
+			switch e.src(n.tok) {
+			case "true", "false", "nil":
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// emitReturnValue emits one of a return's expressions as the i-th result.
+//
+// `return nil` in a slice-returning function yields the zero slice header, not the
+// integer 0, which is only nil's pointer form.
+func (e *emitter) emitReturnValue(i int, ex Node) {
+	if e.isNilExpr(ex.ast) && i < len(e.curResultTypes) && e.isSliceCType(e.curResultTypes[i]) {
+		e.emit("(" + e.curResultTypes[i] + "){0}")
+		return
+	}
+	e.emitExpr(ex.ast)
 }
 
 // emitAssignHeadStmt handles the `AssignHead Postfix` statement family: a call

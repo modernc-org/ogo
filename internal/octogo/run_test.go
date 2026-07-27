@@ -2483,6 +2483,72 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// Go evaluates a return's expressions, assigns them to the results, and only
+		// then runs the defers. They used to run first, so an expression reading what
+		// a defer had changed saw the changed value. Binding first is also what gives
+		// a named result its point: a defer may still change it, and that change is
+		// what the caller sees.
+		//
+		// A named result of an aggregate type, and a defer's captured argument of
+		// one, are zeroed with braces: C has no scalar zero for an aggregate, and
+		// "= 0" there is an invalid initializer rather than a warning.
+		name: "defers run after the results are bound",
+		src: `func mul10(p *int) { *p = *p * 10 }
+
+func show(tag string, v int) { println(tag, v) }
+
+func named() (n int) {
+	defer mul10(&n)
+	n = 1
+	return n + 1
+}
+
+func unnamed() int {
+	x := 1
+	defer mul10(&x)
+	return x + 1
+}
+
+func two() (a int, b string) {
+	defer mul10(&a)
+	a = 3
+	b = "hi"
+	return a + 1, b
+}
+
+func naked() (n int) {
+	defer mul10(&n)
+	n = 7
+	return
+}
+
+func literal() int {
+	x := 1
+	defer mul10(&x)
+	return 100
+}
+
+func tagged(k int) {
+	defer show("outer", k)
+	if k > 0 {
+		defer show("inner", k)
+		show("body", k)
+	}
+}
+
+func main() {
+	println(named())
+	println(unnamed())
+	p, q := two()
+	println(p, q)
+	println(naked())
+	println(literal())
+	tagged(3)
+}
+`,
+		want: "20\n2\n40 hi\n70\n100\nbody 3\ninner 3\nouter 3\n",
+	},
+	{
 		// A goroutine's arguments are marshalled through a per-site block, whose
 		// fields took the type of each ARGUMENT EXPRESSION rather than of the
 		// parameter it is assigned to. So `go sender(1234567890123)` stored the
