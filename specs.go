@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Reconciled with the implementation 20260725. What landed in each release,
+// Reconciled with the implementation 20260727. What landed in each release,
 // including the changes that reject a program an earlier one accepted, is in
 // CHANGELOG.md; this list is only what is still owed.
 //
@@ -14,6 +14,10 @@
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
+// TODO 20260727 Composite literals as general values: an array or slice literal
+// passed to a function or returned. It initializes a variable, fills a slot in
+// another literal, and is what a "range" walks; anywhere else a slice literal's
+// backing storage has nothing to belong to that outlives the header.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

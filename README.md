@@ -22,37 +22,36 @@ The repository you are currently viewing might be a mirror. Please review the gu
 Forget manual state machines and timer interrupts. In OctoGo, spawning a parallel hardware process is as simple as calling go myfunc(). Channel communication uses the familiar \<- operator, allowing you to synchronize hardware locks seamlessly.
 
 ```
-
 import "p2"
 
 // blinkWorker runs independently on its own dedicated Cog
 func blinkWorker(pin int, rateChan chan int) {
-    delay := 500
-    for {
-        // Non-blocking hardware poll via select
-        select {
-        case delay = <-rateChan:
-        default:
-        }
+	delay := 500
+	for {
+		// Non-blocking hardware poll via select
+		select {
+		case delay = <-rateChan:
+		default:
+		}
 
-        p2.PinHigh(pin)
-        p2.WaitMs(delay)
-        p2.PinLow(pin)
-        p2.WaitMs(delay)
-    }
+		p2.PinHigh(pin)
+		p2.WaitMs(delay)
+		p2.PinLow(pin)
+		p2.WaitMs(delay)
+	}
 }
 
 func main() {
-    // A channel is created by its declaration. OctoGo has no allocator, so
-    // make(chan int) is rejected: the declaration is what allocates the
-    // rendezvous cell and acquires its hardware lock.
-    var rateChan chan int
+	// A channel is created by its declaration. OctoGo has no allocator, so
+	// make(chan int) is rejected: the declaration is what allocates the
+	// rendezvous cell and acquires its hardware lock.
+	var rateChan chan int
 
-    // Spawns directly to a new hardware Cog!
-    go blinkWorker(56, rateChan)
+	// Spawns directly to a new hardware Cog!
+	go blinkWorker(56, rateChan)
 
-    // Update the blink rate from the main Cog via hardware-locked channel
-    rateChan <- 100
+	// Update the blink rate from the main Cog via hardware-locked channel
+	rateChan <- 100
 }
 ```
 
@@ -186,9 +185,8 @@ broken.
   fixed-capacity slice, `panic`, `print`/`println`.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
   launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
-  stands. Channels may be
-  declared at package level as well as locally, and the P2's locks are reachable
-  directly through the `p2` package.
+  stands. Channels may be declared at package level as well as locally, and the
+  P2's locks are reachable directly through the `p2` package.
 * Runtime traps for out-of-range indexing and slicing, division by zero and cog
   exhaustion.
 * A package is a directory: `ogo build` compiles every `.ogo` file in it together,
@@ -203,9 +201,11 @@ broken.
 * **Interfaces**, and with them type switches and type assertions. See below.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
-* An array or slice literal is a variable's initializer and nothing else: C cannot
-  assign an array, and a slice literal's backing storage belongs beside the
-  declaration it initializes.
+* An array or slice literal may not stand as a general value — it initializes a
+  variable, fills a slot in another composite literal, or is what a `range` walks,
+  and nothing else. Passing one to a function or returning one is out: C cannot
+  assign an array, and a slice literal's backing storage has to belong to something
+  that outlives the header pointing at it.
 * Send clauses in `select`, and `go` on a function of an imported package.
 * An array as a function result, a slice whose element is an array, and `goto`.
 
