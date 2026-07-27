@@ -668,10 +668,12 @@ func (e *emitter) goDefs() string {
 // channel.
 type selectCase struct {
 	def     bool
+	send    bool   // `case ch <- v:` rather than a receive
 	ch      string // channel variable
 	elem    string // its element C type
 	target  string // variable receiving the value, empty for a bare `case <-ch:`
 	declare bool   // ":=", so the target is introduced in the clause
+	val     Node   // the value being sent, for a send clause
 	body    []Node
 }
 
@@ -703,11 +705,31 @@ func (e *emitter) emitSelect(ast []int32) {
 		e.fail("an empty select blocks forever and is not supported yet")
 		return
 	}
-	hasDefault := false
+	hasDefault, sends := false, 0
 	for _, c := range cases {
 		if c.def {
 			hasDefault = true
 		}
+		if c.send {
+			sends++
+		}
+	}
+	// A send clause offers its value and waits for it to be taken, which is what
+	// leaves the other clauses reachable: the offer can be taken back. Two offers
+	// cannot both stand -- a receiver taking each would send twice where Go sends
+	// once -- and offering them by turns would let a receiver polling one miss it
+	// while the other is up, so that shape is refused rather than made unfair.
+	//
+	// A default cannot be answered at all. It asks whether a receiver is ready
+	// *now*, and a receiver here reveals itself only by taking a value: the cell
+	// carries no "waiting" state, and both sides poll, so there is nowhere to look.
+	switch {
+	case sends > 1:
+		e.fail("a select may have at most one send clause yet")
+		return
+	case sends != 0 && hasDefault:
+		e.fail("a select with a send clause may not have a default yet: whether a receiver is ready cannot be known without offering the value")
+		return
 	}
 	// A break in a comm clause leaves the select. Both lowerings below are C loop
 	// constructs -- a polling "while", or a "do { } while (0)" for the
@@ -723,6 +745,25 @@ func (e *emitter) emitSelect(ast []int32) {
 	e.ind()
 	e.emit("{\n")
 	e.indent++
+	// A send clause's value is evaluated once, where the select stands, as Go
+	// evaluates it -- not afresh on every round of the poll.
+	var send *selectCase
+	var valTmp, offered, mine string
+	for i := range cases {
+		if cases[i].send {
+			send = &cases[i]
+		}
+	}
+	if send != nil {
+		e.chanTrySendElems[send.elem] = true
+		valTmp, offered, mine = e.newTmp(), e.newTmp(), e.newTmp()
+		e.ind()
+		e.emit(send.elem + " " + valTmp + " = ")
+		e.emitExpr(send.val.ast)
+		e.emit(";\n")
+		e.ind()
+		e.emit("int " + offered + " = 0, " + mine + " = 0;\n")
+	}
 	if hasDefault {
 		// One pass, so no loop and no flag to test: a default clause makes the
 		// select non-blocking, and the clauses are a plain if/else chain.
@@ -741,26 +782,65 @@ func (e *emitter) emitSelect(ast []int32) {
 	// more than one clause did not compile at all until these moved up here.
 	tmps := make([]string, len(cases))
 	for i, c := range cases {
-		if c.def {
+		if c.def || c.send {
 			continue
 		}
 		tmps[i] = e.newTmp()
 		e.ind()
 		e.emit(c.elem + " " + tmps[i] + ";\n")
 	}
+	// The offer stands across rounds, taken back only when some receive clause looks
+	// ready -- because taking a value commits to that clause, and the offer must be
+	// gone by then or the round would communicate twice. A withdrawal that fails
+	// means a receiver got there first, and the send clause's own test runs it, so
+	// racing the receiver costs nothing.
+	tryRecv := ""
+	if send != nil {
+		e.ind()
+		e.emit("if (!" + offered + ") { " + offered + " = " +
+			chanOfferCName(send.elem) + "(" + send.ch + ", " + valTmp + ", &" + mine + "); }\n")
+		if peek := peekReady(cases); peek != "" {
+			tryRecv = e.newTmp()
+			e.ind()
+			e.emit("int " + tryRecv + " = !" + offered + ";\n")
+			e.ind()
+			e.emit("if (" + offered + " && (" + peek + ")) { " + tryRecv + " = " +
+				chanWithdrawCName(send.elem) + "(" + send.ch + ", " + mine + "); " +
+				offered + " = !" + tryRecv + "; }\n")
+		}
+	}
 	first := true
 	for i, c := range cases {
 		if c.def {
 			continue // emitted last, as the else
 		}
-		tmp := tmps[i]
 		e.ind()
 		if !first {
 			e.emit("else ")
 		}
 		first = false
+		if c.send {
+			e.emit("if (" + offered + " && " + chanOfferedCName(c.elem) + "(" + c.ch + ", " + mine + ")) {\n")
+			e.indent++
+			e.ind()
+			e.emit(offered + " = 0;\n")
+			e.ind()
+			e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
+			for _, st := range c.body {
+				e.emitStatement(st.ast)
+			}
+			e.indent--
+			e.ind()
+			e.emit("}\n")
+			continue
+		}
+		tmp := tmps[i]
 		e.chanTryRecvElems[c.elem] = true
-		e.emit("if (" + chanTryRecvCName(c.elem) + "(" + c.ch + ", &" + tmp + ")) {\n")
+		guard := ""
+		if tryRecv != "" {
+			guard = tryRecv + " && "
+		}
+		e.emit("if (" + guard + chanTryRecvCName(c.elem) + "(" + c.ch + ", &" + tmp + ")) {\n")
 		e.indent++
 		if !hasDefault {
 			e.ind()
@@ -815,6 +895,31 @@ func (e *emitter) emitSelect(ast []int32) {
 	e.emit("}\n")
 }
 
+// chanOfferCName, chanOfferedCName and chanWithdrawCName name the three helpers a
+// select's send clause needs: offer a value, ask whether it was taken, take it back.
+func chanOfferCName(elem string) string    { return "ogo_chan_offer_" + sanitizeElem(elem) }
+func chanOfferedCName(elem string) string  { return "ogo_chan_offered_" + sanitizeElem(elem) }
+func chanWithdrawCName(elem string) string { return "ogo_chan_withdraw_" + sanitizeElem(elem) }
+
+// peekReady tests whether any receive clause has a value waiting, as a bare read of
+// each cell's flag. It only decides whether to take the offer back and try, so being
+// wrong costs a round rather than correctness: a false positive withdraws and offers
+// again, a false negative waits one more turn. It is empty when a send clause stands
+// alone, where there is nothing an offer could be in the way of.
+func peekReady(cases []selectCase) string {
+	var b strings.Builder
+	for _, c := range cases {
+		if c.def || c.send {
+			continue
+		}
+		if b.Len() != 0 {
+			b.WriteString(" || ")
+		}
+		b.WriteString(c.ch + "->full")
+	}
+	return b.String()
+}
+
 // selectClause reads one CommClause into a selectCase.
 func (e *emitter) selectClause(n Node) (selectCase, bool) {
 	var c selectCase
@@ -838,34 +943,61 @@ func (e *emitter) selectClause(n Node) (selectCase, bool) {
 	return c, true
 }
 
-// selectCommOp reads a CommOp: a bare `<-ch`, or `x = <-ch` / `x := <-ch`.
+// selectCommOp reads a CommOp: a bare `<-ch`, a receive into a target (`x = <-ch`
+// or `x := <-ch`), or a send (`ch <- v`).
+//
+// All three are a head, an arrow and an expression, and the assignment operator is
+// what tells them apart: with one, the head is the target and the expression names
+// the channel; without one, the head names the channel and the expression is the
+// value.
 func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
+	var head, post, bare Node
+	hasHead, hasPost, hasBare := false, false, false
 	for k := range it(n.ast) {
 		switch k.sym {
 		case AssignHead:
-			c.target = e.soleIdent(k.ast)
+			head, hasHead = k, true
 		case PostfixComm:
-			for q := range it(k.ast) {
-				switch {
-				case q.sym == 0 && e.f.ch(q.tok) == DEFINE:
-					c.declare = true
-				case q.sym == Expression:
-					if !e.selectChan(q, c) {
-						return false
-					}
-				}
-			}
+			post, hasPost = k, true
 		case Expression:
-			if !e.selectChan(k, c) {
-				return false
-			}
+			bare, hasBare = k, true
 		}
 	}
-	if c.ch == "" {
-		e.fail("only a receive or default clause is supported in select yet")
+	if !hasHead && hasBare {
+		return e.selectChan(bare, c) // `case <-ch:`
+	}
+	if !hasHead || !hasPost {
+		e.fail("only a receive, send or default clause is supported in select yet")
 		return false
 	}
-	return true
+	var value Node
+	assigns, suffixed, hasValue := false, false, false
+	for q := range it(post.ast) {
+		switch {
+		case q.sym == Selector, q.sym == Index:
+			suffixed = true
+		case q.sym == 0 && e.f.ch(q.tok) == DEFINE:
+			assigns, c.declare = true, true
+		case q.sym == 0 && e.f.ch(q.tok) == ASSIGN:
+			assigns = true
+		case q.sym == Expression:
+			value, hasValue = q, true
+		}
+	}
+	if !hasValue {
+		e.fail("only a receive, send or default clause is supported in select yet")
+		return false
+	}
+	if assigns {
+		c.target = e.soleIdent(head.ast)
+		return e.selectChan(value, c)
+	}
+	if suffixed {
+		e.fail("a select send clause needs a plain channel operand")
+		return false
+	}
+	c.send, c.val = true, value
+	return e.selectChan(head, c)
 }
 
 // selectChan resolves the channel a clause polls.
@@ -1227,6 +1359,53 @@ typedef %[6]s* %[1]s;
 }
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 	}
+	if e.chanTrySendElems[elem] {
+		// The three halves a select's send clause needs, which the blocking send does
+		// in one go: offer a value, ask whether it was taken, take it back.
+		//
+		// An offer is the blocking send's first phase without the wait -- it fails
+		// when the cell is occupied, and the select simply tries again next round.
+		// `mine` is the taken-count at the moment of the offer, and it is what makes
+		// the two later questions answerable: after an offer the cell is in exactly
+		// one of two states, ours-still-there (full, taken unchanged) or consumed
+		// (not full, taken moved), so a withdrawal cannot race a receiver -- under
+		// the lock it sees one or the other, never a middle.
+		fmt.Fprintf(&b, `static int ogo_chan_offer_%[7]s(%[1]s ch, %[2]s v, int* mine) {
+	if (!ch->full && _locktry(ch->lock)) {
+		if (!ch->full) {
+			*mine = ch->taken;
+			ch->val = v;
+			ch->full = 1;
+			_lockrel(ch->lock);
+			return 1;
+		}
+		_lockrel(ch->lock);
+	}
+	return 0;
+}
+static int ogo_chan_offered_%[7]s(%[1]s ch, int mine) {
+	int done = 0;
+	if (ch->taken != mine && _locktry(ch->lock)) {
+		done = ch->taken != mine;
+		_lockrel(ch->lock);
+	}
+	return done;
+}
+static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
+	while (1) {
+		if (_locktry(ch->lock)) {
+			int ours = ch->full && ch->taken == mine;
+			if (ours) {
+				ch->full = 0;
+			}
+			_lockrel(ch->lock);
+			return ours;
+		}
+		_waitx(1);
+	}
+}
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+	}
 	if e.chanTryRecvElems[elem] {
 		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[2]s* out) {
 	if (ch->full && _locktry(ch->lock)) {
@@ -1426,7 +1605,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -1808,6 +1987,7 @@ type emitter struct {
 	chanSendElems      map[string]bool          // element types whose channel send helper is reached
 	chanRecvElems      map[string]bool          // element types whose blocking receive helper is reached
 	chanTryRecvElems   map[string]bool          // element types whose select tryrecv helper is reached
+	chanTrySendElems   map[string]bool          // element types whose select send helpers (offer/offered/withdraw) are reached
 	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
 	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName    map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived

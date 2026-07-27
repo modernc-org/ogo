@@ -5502,6 +5502,60 @@ func main() {
 	}
 }
 
+// TestEmitCSelectSendRefused pins the two send shapes a select cannot express, and
+// why -- both are protocol limits of the rendezvous cell, not omissions.
+//
+// Two offers cannot stand at once: a receiver taking each would send twice where Go
+// sends once, and offering them by turns would let a receiver polling one miss it
+// while the other is up. And a default asks whether a receiver is ready *now*, which
+// a receiver here reveals only by taking a value -- the cell has no waiting state
+// and both sides poll, so there is nothing to read.
+func TestEmitCSelectSendRefused(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "two send clauses",
+			src: `func main() {
+	var a chan int
+	var b chan int
+	select {
+	case a <- 1:
+	case b <- 2:
+	}
+}
+`,
+			want: "a select may have at most one send clause yet",
+		},
+		{
+			name: "send with a default",
+			src: `func main() {
+	var ch chan int
+	select {
+	case ch <- 1:
+		println("sent")
+	default:
+		println("nobody")
+	}
+}
+`,
+			want: "a select with a send clause may not have a default yet",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted it:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCArrayLitRefused pins the cases that are refused by name rather than
 // mis-emitted: an ARRAY literal outside a declaration (C cannot assign one, and
 // binding it to a temporary would only move the error into C), a literal whose type

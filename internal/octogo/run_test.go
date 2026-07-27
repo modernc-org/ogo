@@ -2986,6 +2986,63 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A send clause in a select. It offers its value and waits for a receiver to
+		// take it, which is what a send means -- the body runs because the value was
+		// delivered, not because it was deposited somewhere.
+		//
+		// The offer stands across rounds and is taken back only when the receive
+		// clause looks ready, since taking a value commits to that clause. The
+		// hammer loop drives that path twenty times in both directions, which is
+		// where a rendezvous protocol goes wrong if it is going to.
+		name: "select with a send clause",
+		src: `func drain(ch chan int, done chan int) {
+	t := 0
+	for i := 0; i < 3; i++ {
+		t += <-ch
+	}
+	done <- t
+}
+
+func peer(in chan int, out chan int, done chan int) {
+	t := 0
+	for i := 0; i < 6; i++ {
+		t += <-in
+		out <- i
+	}
+	done <- t
+}
+
+func main() {
+	var ch chan int
+	var done chan int
+	go drain(ch, done)
+	for i := 1; i <= 3; i++ {
+		select {
+		case ch <- i:
+		}
+	}
+	println("single", <-done)
+
+	var in chan int
+	var out chan int
+	var pdone chan int
+	go peer(in, out, pdone)
+	sent := 0
+	got := 0
+	for sent < 6 || got < 6 {
+		select {
+		case in <- 1:
+			sent++
+		case <-out:
+			got++
+		}
+	}
+	println("hammer", sent, got, <-pdone)
+}
+`,
+		want: "single 6\nhammer 6 6 6\n",
+	},
+	{
 		// A select over more than one channel, which is the whole point of the
 		// statement and had never been compiled: every case here used a single
 		// clause, and the emitted C put each clause's value declaration between the

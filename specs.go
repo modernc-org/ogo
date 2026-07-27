@@ -9,7 +9,9 @@
 // TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
 // and Continue Statements); "goto" itself stays out (Keywords), pending the
 // jump-over-declaration safety analysis its unrestricted form needs.
-// TODO 20260719 Select: send clauses, and smart-pin clauses
+// TODO 20260719 Select: smart-pin clauses; a send clause with a default, and more
+// than one send clause, both of which need a "receiver ready" signal the rendezvous
+// cell does not carry (see Select Statements)
 // TODO 20260719 Go statements: per-goroutine stack size
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
@@ -1311,6 +1313,19 @@
 // to prevent Hub RAM bus starvation. Because OctoGo reaches Propeller 2 Smart
 // Pins through the standard library, the same loop can multiplex channels and
 // zero-overhead Smart Pin state checks (e.g. _pinr(pin)).
+//
+// A send clause offers its value to the channel and waits for a receiver to take
+// it, so its body runs because the value was delivered and not merely deposited.
+// The offer stands between rounds and is taken back whenever another clause is
+// ready to proceed, since proceeding there would otherwise communicate twice.
+//
+// Two limits follow from the rendezvous having no scheduler behind it, and both
+// are refused rather than approximated. A select may carry at most one send
+// clause: two offers cannot stand at once, because a receiver taking each would
+// send twice, and offering them by turns would let a receiver polling one miss it
+// while the other is up. And a send clause may not be combined with a default,
+// which asks whether a receiver is ready at this instant -- a receiver here
+// reveals itself only by taking a value, so there is nothing to ask.
 //
 // # Go Statements (Concurrency)
 //

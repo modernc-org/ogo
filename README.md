@@ -187,7 +187,8 @@ broken.
   fixed-capacity slice, `panic`, `print`/`println`.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
   launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
-  stands, as may an imported package's function, `go driver.Poll(ch)`. Channels may be declared at package level as well as locally, and the
+  stands, as may an imported package's function, `go driver.Poll(ch)`. A `select`
+  multiplexes receives and one send, `case ch <- v:`. Channels may be declared at package level as well as locally, and the
   P2's locks are reachable directly through the `p2` package.
 * Runtime traps for out-of-range indexing and slicing, division by zero and cog
   exhaustion.
@@ -207,7 +208,8 @@ broken.
   fills a slot in another composite literal, or is what a `range` walks, and nothing
   else, C having no array value for it to become. A *slice* literal has no such
   limit; its backing array is a local, so it carries that local's lifetime.
-* Send clauses in `select`.
+* A `select` may carry at most one send clause, and none alongside a `default` —
+  both need a "receiver is ready" signal the rendezvous does not carry.
 * An array as a function result, a slice whose element is an array, and `goto`.
 
 Floating point (float32/float64) is supported: the P2's C toolchain provides it,

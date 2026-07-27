@@ -24,6 +24,17 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A `select` may carry a send clause**, `case ch <- v:`, so one statement can
+  multiplex receiving and sending — the shape a worker loop wants. The clause offers
+  its value and waits for a receiver to take it, so its body runs because the value
+  was *delivered*, not merely deposited; the offer stands between polling rounds and
+  is taken back whenever another clause is ready to proceed.
+
+  Two shapes are refused rather than approximated, both because the rendezvous has
+  no scheduler behind it. **At most one send clause**: two offers cannot stand at
+  once, since a receiver taking each would send twice where Go sends once. **No send
+  alongside a `default`**: that asks whether a receiver is ready at this instant, and
+  a receiver here reveals itself only by taking a value, so there is nothing to ask.
 - **A goroutine may be launched on an imported package's function**, `go
   driver.Poll(ch)`. It resolves to the same mangled name an ordinary call into that
   package does, and the rule that refuses handing a reference to a local across to
