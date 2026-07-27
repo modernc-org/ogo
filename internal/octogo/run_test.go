@@ -2986,6 +2986,55 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// `go x.M(args)`, which was refused: only a plain function could be launched,
+		// so a worker with a method had to be wrapped in one. The receiver is simply
+		// the first argument -- the trampoline's block carries it like any other, and
+		// the cog calls <T>_M(recv, ...).
+		//
+		// The "copied" line is what says the receiver is evaluated where the go
+		// statement stands, as Go evaluates it: the write afterwards is not what the
+		// goroutine sees, which makes the answer deterministic rather than a race.
+		name: "go on a method",
+		src: `type worker struct {
+	n    int
+	data []int
+}
+
+type counter int
+
+var backing [3]int
+var shared worker
+
+func (w worker) twice(ch chan int) { ch <- w.n * 2 }
+
+func (w *worker) size(ch chan int) { ch <- len(w.data) }
+
+func (c counter) add(ch chan int, k int) { ch <- int(c) + k }
+
+func main() {
+	var ch chan int
+
+	w := worker{21, backing[:]}
+	go w.twice(ch)
+	println("value", <-ch)
+
+	w.n = 1
+	go w.twice(ch)
+	w.n = 99
+	println("copied", <-ch, w.n)
+
+	shared.data = backing[:]
+	go shared.size(ch)
+	println("pointer", <-ch)
+
+	var c counter = 5
+	go c.add(ch, 3)
+	println("named", <-ch)
+}
+`,
+		want: "value 42\ncopied 2 99\npointer 3\nnamed 8\n",
+	},
+	{
 		// A receiver or parameter the body never uses. Go allows both -- an unused
 		// parameter is not an unused variable -- and C warns about both, which the
 		// harness fails on, so this case tests itself: without the "(void)name;" the

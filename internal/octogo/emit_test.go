@@ -5950,6 +5950,58 @@ func main() {
 			want: "cannot send a slice backed by local a",
 		},
 		{
+			// A method launched on another cog takes its receiver across too. A
+			// pointer receiver hands out the address of the receiver itself, so a
+			// local one is refused exactly as `go f(&x)` is.
+			name: "pointer receiver of a local launched on a cog",
+			src: `type worker struct{ n int }
+
+func (w *worker) run(ch chan int) { ch <- w.n }
+
+func main() {
+	var ch chan int
+	var w worker
+	go w.run(ch)
+	println(<-ch)
+}
+`,
+			want: "cannot pass the address of local variable w to a goroutine",
+		},
+		{
+			// A value receiver is copied and carries nothing -- unless the value
+			// itself holds a reference to the frame, which the copy carries with it.
+			name: "value receiver holding a local slice launched on a cog",
+			src: `type worker struct{ data []int }
+
+func (w worker) run(ch chan int) { ch <- len(w.data) }
+
+func main() {
+	var ch chan int
+	var buf [4]int
+	var w worker
+	w.data = buf[:]
+	go w.run(ch)
+	println(<-ch)
+}
+`,
+			want: "cannot pass local w, which holds a pointer into local buf to a goroutine",
+		},
+		{
+			// The same receiver by value, holding nothing: a copy crosses nothing.
+			name: "value receiver of a local launched on a cog",
+			src: `type worker struct{ n int }
+
+func (w worker) run(ch chan int) { ch <- w.n }
+
+func main() {
+	var ch chan int
+	var w worker
+	go w.run(ch)
+	println(<-ch)
+}
+`,
+		},
+		{
 			// Accepted: the backing outlives every frame, which is the whole of what
 			// the rule asks. A goroutine reading g's storage cannot outlive it.
 			name: "package backing passed to a goroutine",

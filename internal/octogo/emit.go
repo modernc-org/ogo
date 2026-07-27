@@ -497,21 +497,56 @@ func (e *emitter) emitGo(nodes []Node) {
 			suffix = append(suffix, n)
 		}
 	}
-	callee := e.soleIdent(head.ast)
-	if callee == "" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
-		e.fail("only `go f(args)` on a plain function is supported yet")
-		return
-	}
-	if _, ok := e.userFunc(callee); !ok {
-		e.fail("only `go f(args)` on a package function is supported yet")
-		return
-	}
-	site := goSite{callee: e.funcCallC(callee), id: len(e.goSites)}
-	args := e.callArgExprs(suffix[0].ast)
-	if x, r, bad := e.frameRefIn(args); bad {
+	base := e.soleIdent(head.ast)
+	crossed := func(what string, at Node) {
 		e.fail("%v: cannot pass %s to a goroutine: its storage does not outlive the function, and the "+
 			"goroutine may; declare the backing array at package scope",
-			e.f.tok(x.Pos()).Position(), r.what)
+			e.f.tok(at.Pos()).Position(), what)
+	}
+	// `go x.M(args)` is `go f(args)` with the receiver in front: the trampoline's
+	// struct carries it like any other argument, so the cog calls <T>_M(recv, ...)
+	// with a receiver evaluated here, at the `go` statement, as Go evaluates it.
+	var site goSite
+	var callSuffix Node
+	var recvText, recvCType string
+	switch {
+	case base != "" && len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		if _, ok := e.userFunc(base); !ok {
+			e.fail("only `go f(args)` on a package function is supported yet")
+			return
+		}
+		site = goSite{callee: e.funcCallC(base), id: len(e.goSites)}
+		callSuffix = suffix[0]
+	case base != "" && len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		rct, ok := e.varType(base)
+		if !ok || !e.isUserType(methodBaseType(rct)) {
+			e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
+			return
+		}
+		cname := methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
+		wantPtr := e.methodPtr[cname]
+		// A pointer receiver hands the goroutine the address of the receiver, which
+		// is a reference leaving this frame's control exactly as `go f(&x)` is. A
+		// value receiver is a copy and crosses nothing, unless the value itself holds
+		// a reference to the frame.
+		if r, bad := e.receiverFrameRef(base, wantPtr); bad {
+			crossed(r.what, head)
+			return
+		}
+		recvCType = methodBaseType(rct)
+		if wantPtr {
+			recvCType += "*"
+		}
+		recvText = e.captureC(func() { e.emitMethodReceiver(e.varRef(base), rct, wantPtr) })
+		site = goSite{callee: cname, args: []string{recvCType}, id: len(e.goSites)}
+		callSuffix = suffix[1]
+	default:
+		e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
+		return
+	}
+	args := e.callArgExprs(callSuffix.ast)
+	if x, r, bad := e.frameRefIn(args); bad {
+		crossed(r.what, x)
 		return
 	}
 	for _, a := range args {
@@ -539,9 +574,15 @@ func (e *emitter) emitGo(nodes []Node) {
 	e.emit(goArgsCName(site.id) + "* " + ap + " = (void*)&ogo_cog_pool[" + slot + "].ogo_args;\n")
 	e.ind()
 	e.emit(ap + "->ogo_slot = " + slot + ";\n")
+	first := 0
+	if recvText != "" {
+		e.ind()
+		e.emit(ap + "->a0 = " + recvText + ";\n")
+		first = 1
+	}
 	for i, a := range args {
 		e.ind()
-		e.emit(fmt.Sprintf("%s->a%d = ", ap, i))
+		e.emit(fmt.Sprintf("%s->a%d = ", ap, i+first))
 		e.emitExpr(a.ast)
 		e.emit(";\n")
 	}
@@ -10771,6 +10812,20 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		if origin := e.frameHolder[name]; origin != "" {
 			return holderRef(name, origin), true
 		}
+	}
+	return frameRef{}, false
+}
+
+// receiverFrameRef reports a method receiver that reaches this frame's storage when
+// the method is launched on another cog. A pointer receiver hands out the address of
+// the receiver itself; a value receiver is copied, and carries a reference only if
+// the value holds one.
+func (e *emitter) receiverFrameRef(recv string, wantPtr bool) (frameRef, bool) {
+	if wantPtr && e.isFrameVar(recv) {
+		return addrRef(recv), true
+	}
+	if origin := e.frameHolder[recv]; origin != "" {
+		return holderRef(recv, origin), true
 	}
 	return frameRef{}, false
 }

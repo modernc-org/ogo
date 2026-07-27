@@ -26,6 +26,15 @@ Releases before v0.9.0 predate this file; see
   This is the portable spelling of OctoGo's own `switch v := f()`, which Go rejects
   as a syntax error. That form still works and means the same thing.
 
+- **A method may be launched as a goroutine**, `go w.run(ch)`. Only a plain function
+  could be before, so a worker with a method had to be wrapped in one. The receiver
+  is evaluated and copied where the `go` statement stands, as Go evaluates it, so a
+  write to it afterwards is not what the goroutine sees.
+
+  The lifetime rule reaches the receiver like any other value crossing to a cog: a
+  *pointer* receiver hands out the address of the receiver itself, so a local one is
+  refused exactly as `go f(&x)` is, while a value receiver is a copy and crosses
+  nothing unless the value itself holds a reference to the frame.
 - **A composite literal may be ranged over**, `for _, v := range []int{1, 2, 3}`,
   which is how the idiom is written in Go. A literal is kept out of an `if`, `for`
   or `switch` header because its `{` would be the block's — but only when its type

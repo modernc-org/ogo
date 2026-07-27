@@ -184,7 +184,9 @@ broken.
   called on it, or an index into it (`mk()[1]`, `mk().d[1]`).
 * `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
   fixed-capacity slice, `panic`, `print`/`println`.
-* `go`, `chan` and `select`, mapped to cogs and hardware locks. Channels may be
+* `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
+  launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
+  stands. Channels may be
   declared at package level as well as locally, and the P2's locks are reachable
   directly through the `p2` package.
 * Runtime traps for out-of-range indexing and slicing, division by zero and cog
@@ -204,7 +206,7 @@ broken.
 * An array or slice literal is a variable's initializer and nothing else: C cannot
   assign an array, and a slice literal's backing storage belongs beside the
   declaration it initializes.
-* `go` on a method, and send clauses in `select`.
+* Send clauses in `select`, and `go` on a function of an imported package.
 * An array as a function result, a slice whose element is an array, and `goto`.
 
 Floating point (float32/float64) is supported: the P2's C toolchain provides it,
