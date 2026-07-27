@@ -2986,6 +2986,62 @@ func main() {
 		want: "2 5 10 20\n3 2 2\n5 5\n3 5 10\nell 3\n3 7\n4 10 1\n",
 	},
 	{
+		// A select over more than one channel, which is the whole point of the
+		// statement and had never been compiled: every case here used a single
+		// clause, and the emitted C put each clause's value declaration between the
+		// previous clause's closing brace and this one's `else`, which is not C.
+		//
+		// The first loop multiplexes two feeders until both are drained; the second
+		// takes the default with three channels idle.
+		name: "select over several channels",
+		src: `func feedA(a chan int) {
+	a <- 1
+	a <- 3
+}
+
+func feedB(b chan int) {
+	b <- 10
+	b <- 30
+}
+
+func main() {
+	var a chan int
+	var b chan int
+	go feedA(a)
+	go feedB(b)
+
+	sum := 0
+	n := 0
+	for n < 4 {
+		select {
+		case x := <-a:
+			sum += x
+			n++
+		case y := <-b:
+			sum += y
+			n++
+		}
+	}
+	println("mux", sum, n)
+
+	var c chan int
+	got := 0
+	select {
+	case <-a:
+		got = 1
+	case <-b:
+		got = 2
+	case <-c:
+		got = 3
+	default:
+		got = 9
+	}
+	println("default", got)
+}
+`,
+		want: "mux 44 4\ndefault 9\n",
+	},
+	{
 		// A slice literal standing as a value rather than as a variable's
 		// initializer: passed to a function, measured by len and cap, assigned, and
 		// nested inside another literal's element. It is bound to a local declared

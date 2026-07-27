@@ -13,6 +13,15 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Fixed
+
+- **A `select` over more than one channel did not compile.** Multiplexing several
+  channels is the whole point of the statement, and the emitted C put each clause's
+  value declaration between the previous clause's closing brace and this clause's
+  `else` — which is not C, so the backend rejected it outright. The declarations now
+  stand ahead of the chain. Every `select` test had used a single clause, which is
+  how a shipped feature's headline use went uncompiled.
+
 ### Language
 
 - **A goroutine may be launched on an imported package's function**, `go

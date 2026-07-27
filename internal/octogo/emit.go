@@ -735,14 +735,25 @@ func (e *emitter) emitSelect(ast []int32) {
 		e.emit("while (!" + done + ") {\n")
 	}
 	e.indent++
+	// Every clause's received value is declared ahead of the chain, not beside its
+	// own test. A declaration between one clause's closing brace and the next
+	// clause's "else" is not C -- the else has no if before it -- so a select with
+	// more than one clause did not compile at all until these moved up here.
+	tmps := make([]string, len(cases))
+	for i, c := range cases {
+		if c.def {
+			continue
+		}
+		tmps[i] = e.newTmp()
+		e.ind()
+		e.emit(c.elem + " " + tmps[i] + ";\n")
+	}
 	first := true
-	for _, c := range cases {
+	for i, c := range cases {
 		if c.def {
 			continue // emitted last, as the else
 		}
-		tmp := e.newTmp()
-		e.ind()
-		e.emit(c.elem + " " + tmp + ";\n")
+		tmp := tmps[i]
 		e.ind()
 		if !first {
 			e.emit("else ")
