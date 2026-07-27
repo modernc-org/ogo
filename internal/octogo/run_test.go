@@ -3984,6 +3984,11 @@ func main() {
 	pair := greet.Pair{greet.Vec{1, 2}, greet.Vec{3, 4}}
 	println(pair.Lo.B, pair.Hi.Sum())
 	println(unit.Sum(), vecs[1].A)
+	// A goroutine launched on an imported package's function: it resolves to the
+	// same mangled name an ordinary call into that package does.
+	var ch chan int
+	go greet.Send(ch, 20)
+	println(<-ch)
 }
 
 // Package-scope values of an imported type, laid out statically.
@@ -4021,6 +4026,9 @@ type Pair struct {
 	Lo Vec
 	Hi Vec
 }
+
+// Send is launched as a goroutine from main, which is the qualified callee form.
+func Send(ch chan int, n int) { ch <- n * 2 }
 
 func Base() int { return base }
 
@@ -4065,7 +4073,7 @@ func scale(n int) int { return n }
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
 	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
-		"6 13\n0 8\n0 0\n2 7\n2 8\n"
+		"6 13\n0 8\n0 0\n2 7\n2 8\n40\n"
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
 	}

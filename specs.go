@@ -10,7 +10,7 @@
 // and Continue Statements); "goto" itself stays out (Keywords), pending the
 // jump-over-declaration safety analysis its unrestricted form needs.
 // TODO 20260719 Select: send clauses, and smart-pin clauses
-// TODO 20260719 Go statements: qualified callees, per-goroutine stack size
+// TODO 20260719 Go statements: per-goroutine stack size
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.

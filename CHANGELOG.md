@@ -15,6 +15,11 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A goroutine may be launched on an imported package's function**, `go
+  driver.Poll(ch)`. It resolves to the same mangled name an ordinary call into that
+  package does, and the rule that refuses handing a reference to a local across to
+  another cog applies to its arguments unchanged. With this and `go w.run(ch)`, every
+  callee an ordinary call accepts may be launched.
 - **A slice literal may stand as a value**, not only as a variable's initializer:
   passed to a function, measured by `len` and `cap`, assigned, and nested inside
   another literal's element. It is bound to a local declared before the statement,

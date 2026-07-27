@@ -518,12 +518,24 @@ func (e *emitter) emitGo(nodes []Node) {
 		site = goSite{callee: e.funcCallC(base), id: len(e.goSites)}
 		callSuffix = suffix[0]
 	case base != "" && len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
-		rct, ok := e.varType(base)
-		if !ok || !e.isUserType(methodBaseType(rct)) {
-			e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
-			return
+		callSuffix = suffix[1]
+		name := e.soleIdent(suffix[0].ast)
+		rct, isVar := e.varType(base)
+		// A variable of a user type is a method call; an import qualifier is a
+		// function of that package. The variable is asked about first, since a local
+		// of the qualifier's name shadows the import, as it does at an ordinary call.
+		if !isVar || !e.isUserType(methodBaseType(rct)) {
+			prefix, isImport := e.importQualifiers[base]
+			if !isImport {
+				e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
+				return
+			}
+			// The imported function is emitted in its own package's namespace, so the
+			// launch resolves to the same mangled name an ordinary call would.
+			site = goSite{callee: mangle(prefix, name), id: len(e.goSites)}
+			break
 		}
-		cname := methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
+		cname := methodCName(methodBaseType(rct), name)
 		wantPtr := e.methodPtr[cname]
 		// A pointer receiver hands the goroutine the address of the receiver, which
 		// is a reference leaving this frame's control exactly as `go f(&x)` is. A
@@ -539,7 +551,6 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 		recvText = e.captureC(func() { e.emitMethodReceiver(e.varRef(base), rct, wantPtr) })
 		site = goSite{callee: cname, args: []string{recvCType}, id: len(e.goSites)}
-		callSuffix = suffix[1]
 	default:
 		e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
 		return
