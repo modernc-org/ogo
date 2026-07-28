@@ -852,6 +852,63 @@ func main() {
 		want: "10 5 10 10 63\n",
 	},
 	{
+		// Arithmetic on a type narrower than C's int, which C promotes to int and
+		// computes there while Go computes in the operand's own type. `a * 3` with
+		// `var a uint8 = 200` is 88 in Go and 600 in C.
+		//
+		// Storing the result back into a narrow variable truncated it anyway, which
+		// is why this only showed for a value that was used without being stored --
+		// printed, passed, compared -- and why it went unnoticed: the corpus assigned
+		// before it printed. Every operator that can carry a value out of the type is
+		// here, on a local, an array element, a struct field, a defined type and a
+		// function result.
+		name: "arithmetic narrower than int",
+		src: `type Byte uint8
+
+type pair struct {
+	lo uint8
+	hi int16
+}
+
+func scale(v uint8) uint8 { return v * 3 }
+
+func main() {
+	var a uint8 = 200
+	var b uint8 = 100
+	println(a+b, b-a, a*3, a<<2, -a, ^a)
+	var c int8 = 100
+	println(c+c, c*3, c<<2, -c, ^c)
+	var u uint16 = 60000
+	println(u+u, u*3, -u, ^u)
+	var s int16 = 30000
+	println(s+s, -s, ^s)
+
+	var arr [2]uint8
+	arr[0] = 200
+	println(arr[0]*3, -arr[0], ^arr[0])
+
+	var p pair
+	p.lo = 200
+	p.hi = 30000
+	println(p.lo*3, -p.lo, p.hi+p.hi)
+
+	var n Byte = 200
+	println(n*3, -n, ^n)
+
+	println(scale(200))
+
+	// Converting to a wider type first computes in the wider one, as in Go.
+	println(int32(a)*3, int16(c)*3)
+
+	// A narrow value in a wider context keeps its own arithmetic.
+	var w int32 = 1000
+	println(w + int32(a*3))
+}
+`,
+		want: "44 156 88 32 56 55\n-56 44 -112 -100 -101\n54464 48928 5536 5535\n" +
+			"-5536 -30000 -30001\n88 56 55\n88 56 -5536\n88 56 55\n88\n600 300\n1088\n",
+	},
+	{
 		// Clearing bits in a variable from that same variable -- `x = mask &^ x`,
 		// the shape a driver writes -- and the complement's other spellings, across
 		// a local, a parameter, a struct field, an array element and a package

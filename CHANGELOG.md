@@ -25,6 +25,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Bug fixes
 
+- **Arithmetic on `int8`, `uint8`, `int16` and `uint16` did not stay in the type.**
+  Go computes in the operands' own type; C promotes anything narrower than `int` to
+  `int` and keeps the extra bits, so with `var a uint8 = 200`, `a * 3` printed 600
+  where Go says 88, and `-a` printed 4294967096 where Go says 56. Every operator
+  that can carry a value out of a narrow type was affected — `+`, `-`, `*`, `<<`
+  and unary `-` — on locals, array elements, struct fields, defined types and
+  function results. Storing the result back into a narrow variable truncated it,
+  which is why this only showed for a value that was used without being stored, and
+  why the corpus missed it: it assigned before it printed.
 - **`x = mask &^ x` gave 0 on the board.** Clearing bits in a variable from that
   same variable — the shape a driver writes — was miscompiled by the backend to a
   constant zero, whatever the operands were: it computes the left operand into the

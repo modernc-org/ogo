@@ -1742,6 +1742,39 @@ var cIntWidths = map[string]int{
 	"int64_t": 64, "uint64_t": 64, "uintptr_t": 32,
 }
 
+// narrowCType returns the C type an arithmetic expression's value has to be
+// truncated to after C has computed it, or "" when none is needed.
+//
+// Go computes in the operands' own type; C promotes anything narrower than int to
+// int and computes there, keeping the extra bits. So with `var a uint8 = 200`,
+// `a * 3` is 88 in Go and 600 in C, and `-a` is 56 in Go and 4294967096 in C.
+// Storing the result back into a narrow variable truncated it, which is why this
+// only ever showed for a value that was used without being stored -- printed,
+// passed, compared.
+//
+// Only a type narrower than 32 bits needs it: at 32 and above the C type is its own
+// promoted type and wraps exactly where Go says it does.
+func (e *emitter) narrowCType(ast []int32) string {
+	ct, _ := e.inferCType(ast)
+	return narrowOf(e.underlyingCType(ct), ct)
+}
+
+// narrowCTypeNode is narrowCType for a single expression node. The two differ in
+// how they reach a type: an expression's ast is a LEVEL, whose children are typed
+// as a sequence, while a node like the Factor `b[i]` has to be typed as a whole --
+// typing its children instead reads `b`, the array, rather than its element.
+func (e *emitter) narrowCTypeNode(n Node) string {
+	ct, _ := e.inferNode(n)
+	return narrowOf(e.underlyingCType(ct), ct)
+}
+
+func narrowOf(underlying, ct string) string {
+	if w, ok := cIntWidths[underlying]; !ok || w >= 32 {
+		return ""
+	}
+	return ct
+}
+
 // cUnsignedOf is the unsigned counterpart of a signed integer C type. A left shift
 // is done in it, C leaving a signed overflow undefined where Go defines it to wrap.
 var cUnsignedOf = map[string]string{
@@ -5880,7 +5913,7 @@ func (e *emitter) constExpr(ast []int32) bool {
 	return len(args) == 1 && e.constExpr(args[0].ast)
 }
 
-func (e *emitter) emitComplement(ast []int32, emitOperand func()) {
+func (e *emitter) emitComplement(ast []int32, ct string, emitOperand func()) {
 	// A constant operand is never the destination of the assignment it sits in, so
 	// the bug below cannot reach it and it keeps the short spelling. That is not
 	// only tidiness: written the long way, a wide constant made flexcc type the
@@ -5893,7 +5926,7 @@ func (e *emitter) emitComplement(ast []int32, emitOperand func()) {
 		return
 	}
 	ones := "-1" // an unknown type keeps the plain int -1, which is what ~ promotes to
-	if ct, known := e.inferCType(ast); known && ct != "" {
+	if ct != "" {
 		ones = "(" + ct + ")-1"
 	}
 	e.emit("(" + ones + " ^ (")
@@ -10264,7 +10297,8 @@ func (e *emitter) emitAssignTail(t assignTail) {
 	}
 	e.emit(" " + t.op + " ")
 	if t.complement {
-		e.emitComplement(t.rhs, func() { e.emitExpr(t.rhs) })
+		ct, _ := e.inferCType(t.rhs)
+		e.emitComplement(t.rhs, ct, func() { e.emitExpr(t.rhs) })
 	} else {
 		e.emitExpr(t.rhs)
 	}
@@ -11485,6 +11519,11 @@ func (e *emitter) emitExprNode(n Node) {
 		if e.emitStringCompare(kids) {
 			return
 		}
+		// C computed this in int if the operands are narrower than one; Go computes
+		// in their own type. See narrowCType.
+		if nc := e.narrowCType(n.ast); nc != "" {
+			e.emit("(" + nc + ")")
+		}
 		e.emit("(")
 		e.emitLogicalKids(kids)
 		e.emit(")")
@@ -11500,9 +11539,16 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(lit)
 			return
 		}
+		narrow := e.narrowCType(n.ast) // see narrowCType
 		if text, ok := e.shiftChainC(kids); ok {
+			if narrow != "" {
+				e.emit("(" + narrow + ")")
+			}
 			e.emit(text)
 			return
+		}
+		if narrow != "" {
+			e.emit("(" + narrow + ")")
 		}
 		e.emit("(")
 		guardNext, complementNext := false, false
@@ -11525,7 +11571,8 @@ func (e *emitter) emitExprNode(n Node) {
 				guardNext = e.checks && (op == "/" || op == "%")
 			case complementNext:
 				complementNext = false
-				e.emitComplement(c.ast, func() { e.emitExprNode(c) })
+				ct, _ := e.inferNode(c)
+				e.emitComplement(c.ast, ct, func() { e.emitExprNode(c) })
 			case guardNext && !e.isIntLiteral(c):
 				guardNext = false
 				ct, _ := e.inferCType(c.ast)
@@ -11696,12 +11743,24 @@ func (e *emitter) emitExprNode(n Node) {
 				return
 			}
 		}
-		// Go's unary ^ is a bitwise complement, emitted the same way "&^" emits
-		// its right operand rather than as C's "~" -- see complementC.
 		if len(kids) == 2 && kids[0].sym == UnaryOp {
-			if tok, ok := e.unaryOpTok(kids[0].ast); ok && e.f.ch(tok) == XOR {
-				e.emitComplement(kids[1].ast, func() { e.emitExprNode(kids[1]) })
+			tok, haveOp := e.unaryOpTok(kids[0].ast)
+			switch {
+			// Go's unary ^ is a bitwise complement, emitted the same way "&^" emits
+			// its right operand rather than as C's "~" -- see emitComplement.
+			case haveOp && e.f.ch(tok) == XOR:
+				ct, _ := e.inferNode(kids[1])
+				e.emitComplement(kids[1].ast, ct, func() { e.emitExprNode(kids[1]) })
 				return
+			// Unary minus on a narrow type: C negates the promoted int, Go negates
+			// in the type. See narrowCType.
+			case haveOp && e.f.ch(tok) == SUB:
+				if nc := e.narrowCTypeNode(kids[1]); nc != "" {
+					e.emit("(" + nc + ")(-(")
+					e.emitExprNode(kids[1])
+					e.emit("))")
+					return
+				}
 			}
 		}
 		for _, c := range kids {
