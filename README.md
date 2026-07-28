@@ -215,6 +215,10 @@ broken.
   (pin control, smart pins, timing, the hardware locks) and is the whole of it.
   Your own packages do import and build; there is just nothing to import yet.
 * **Interfaces**, and with them type switches and type assertions. See below.
+* A **goroutine's stack is a fixed 256 longs** and cannot be sized per `go`
+  statement. Recursion works — `main` runs on the cog's own stack and a goroutine on
+  its pool slot's — but a deep enough call chain in a goroutine overruns that slot
+  with no diagnostic, this part having no memory protection.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
 * A **channel held in a struct field**: a send or a receive on one is refused,

@@ -25,6 +25,11 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **Recursion has a test, and it runs on the board.** Nothing exercised it before,
+  which matters most on the target: `main` runs on the cog's own stack and a
+  goroutine on its pool slot's fixed 256 longs, so a recursive call chain is bounded
+  by something the program cannot see. A quicksort and `fib(15)` stay well inside it.
+  A bit-banged SPI driver joins them, for the pin intrinsics driving a protocol.
 - **Two more realistic programs are run cases**: a CRC-16 over a byte slice with a
   256-entry table and Q8.8 fixed-point arithmetic, and formatting into a
   caller-owned buffer through a `*Builder` parameter. Both are the kind of thing the

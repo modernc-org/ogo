@@ -12,7 +12,11 @@
 // TODO 20260719 Select: smart-pin clauses; a send clause with a default, and more
 // than one send clause, both of which need a "receiver ready" signal the rendezvous
 // cell does not carry (see Select Statements)
-// TODO 20260719 Go statements: per-goroutine stack size
+// TODO 20260719 Go statements: per-goroutine stack size. Every goroutine gets the
+// same fixed stack in its pool slot (OGO_STACK_LONGS, 256 longs), which a deep call
+// chain can overrun with no diagnostic -- there is no guard page on this part. A
+// recursive function is the way to reach it, and neither the compiler nor the
+// runtime says how close a program is.
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.

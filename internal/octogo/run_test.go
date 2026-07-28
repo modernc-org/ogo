@@ -2483,6 +2483,171 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// Sorting and searching a table in place. Recursion had no test at all until
+		// this one, which matters most on the target: a cog's stack is a fixed 256
+		// longs in its pool slot, so a recursive call chain is bounded by something
+		// the program cannot see. A quicksort over seven rows and fib(15) stay well
+		// inside it, and the board run is what says so.
+		name: "recursive quicksort and binary search",
+		src: `type row struct {
+	key  int
+	name string
+}
+
+var tbl [7]row
+
+func less(a row, b row) bool { return a.key < b.key }
+
+func swap(rs []row, i int, j int) {
+	t := rs[i]
+	rs[i] = rs[j]
+	rs[j] = t
+}
+
+func partition(rs []row, lo int, hi int) int {
+	pivot := rs[hi]
+	i := lo
+	for j := lo; j < hi; j++ {
+		if less(rs[j], pivot) {
+			swap(rs, i, j)
+			i++
+		}
+	}
+	swap(rs, i, hi)
+	return i
+}
+
+func quicksort(rs []row, lo int, hi int) {
+	if lo >= hi {
+		return
+	}
+	p := partition(rs, lo, hi)
+	quicksort(rs, lo, p-1)
+	quicksort(rs, p+1, hi)
+}
+
+func search(rs []row, key int) (int, bool) {
+	lo := 0
+	hi := len(rs) - 1
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		switch {
+		case rs[mid].key == key:
+			return mid, true
+		case rs[mid].key < key:
+			lo = mid + 1
+		default:
+			hi = mid - 1
+		}
+	}
+	return 0, false
+}
+
+func fib(n int) int {
+	if n < 2 {
+		return n
+	}
+	return fib(n-1) + fib(n-2)
+}
+
+func main() {
+	tbl[0] = row{5, "e"}
+	tbl[1] = row{3, "c"}
+	tbl[2] = row{9, "i"}
+	tbl[3] = row{1, "a"}
+	tbl[4] = row{7, "g"}
+	tbl[5] = row{2, "b"}
+	tbl[6] = row{8, "h"}
+	rs := tbl[:]
+	quicksort(rs, 0, len(rs)-1)
+	for i := 0; i < len(rs); i++ {
+		println(rs[i].key, rs[i].name)
+	}
+	i, ok := search(rs, 7)
+	println(i, ok)
+	j, missing := search(rs, 4)
+	println(j, missing)
+	println(fib(15))
+}
+`,
+		want: "1 a\n2 b\n3 c\n5 e\n7 g\n8 h\n9 i\n4 true\n0 false\n610\n",
+	},
+	{
+		// A bit-banged SPI transmitter and a moving average over a ring of readings:
+		// the pin intrinsics driving a protocol, which is what the p2 package is for
+		// and what nothing but a board can really judge.
+		name: "a bit-banged SPI driver",
+		src: `import "p2"
+
+type spi struct {
+	clk  int
+	mosi int
+	cs   int
+}
+
+func (s spi) begin() { p2.PinLow(s.cs) }
+
+func (s spi) end() { p2.PinHigh(s.cs) }
+
+func (s spi) writeByte(b byte) {
+	for i := 7; i >= 0; i-- {
+		if b&(1<<uint(i)) != 0 {
+			p2.PinHigh(s.mosi)
+		} else {
+			p2.PinLow(s.mosi)
+		}
+		p2.PinHigh(s.clk)
+		p2.WaitCycles(1)
+		p2.PinLow(s.clk)
+	}
+}
+
+func (s spi) write(data []byte) int {
+	s.begin()
+	for i := 0; i < len(data); i++ {
+		s.writeByte(data[i])
+	}
+	s.end()
+	return len(data)
+}
+
+type avg struct {
+	ring  []int
+	head  int
+	count int
+	total int
+}
+
+func (a *avg) add(v int) int {
+	if a.count == len(a.ring) {
+		a.total -= a.ring[a.head]
+	} else {
+		a.count++
+	}
+	a.total += v
+	a.ring[a.head] = v
+	a.head = (a.head + 1) % len(a.ring)
+	return a.total / a.count
+}
+
+var samples [4]int
+var payload [3]byte
+
+func main() {
+	bus := spi{0, 1, 2}
+	payload[0] = 0xA5
+	payload[1] = 0x5A
+	payload[2] = 0xFF
+	println(bus.write(payload[:]))
+
+	var mean avg = avg{samples[:], 0, 0, 0}
+	println(mean.add(10), mean.add(20), mean.add(30))
+	println(mean.add(40), mean.add(50), mean.add(60))
+}
+`,
+		want: "3\n10 15 20\n25 35 45\n",
+	},
+	{
 		// A CRC over a byte slice and a little fixed-point arithmetic: the table, bit
 		// and unsigned work a protocol or a sensor driver is made of, and a defined
 		// type over int32 carrying the arithmetic as methods.
