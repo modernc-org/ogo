@@ -726,9 +726,33 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 	if tok.Src() == "_" {
 		return
 	}
-	if err := s.add(&VarDeclaration{declaration: declaration{token: tok}}); err != nil {
+	// The receiver carries its type like any other parameter. It used to be added
+	// with none at all, so every check that keys on one was skipped for it -- and
+	// the escape check, which asks whether the root of "&p.nodes[i]" is an inline
+	// value, read a POINTER receiver as one and refused a perfectly safe return.
+	vd := &VarDeclaration{declaration: declaration{token: tok}}
+	if tn := f.receiverTypeNode(s, decls[0].TypeAST); tn != nil {
+		vd.kind, vd.hasKind = f.typeKind(s, tn)
+		_, vd.isPtr = tn.(*TypeNodePointer)
+		vd.typeName, _ = namedTypeToken(tn)
+		vd.typeQual = namedTypeQual(tn)
+		vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
+		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
+	}
+	if err := s.add(vd); err != nil {
 		f.err(tok.Position(), "%v", err)
 	}
+}
+
+// receiverTypeNode resolves a receiver's written type, which is a named type or a
+// pointer to one -- the only forms a receiver may take. Anything else is left
+// unresolved rather than reported: the receiver's base type is checked where the
+// method is registered, and reporting it again here would say it twice.
+func (f *File) receiverTypeNode(s *Scope, t Node) TypeNode {
+	if !f.simpleNamedType(t) {
+		return nil
+	}
+	return f.typ(s, t)
 }
 
 // retResult describes one of a function's result values for return checking.

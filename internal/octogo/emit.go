@@ -3555,9 +3555,22 @@ func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
 	}
 	// The operand is a Factor: its base identifier is the variable whose storage the
 	// address reaches, whatever field or index suffix follows.
-	for n := range it(kids[len(kids)-1].ast) {
+	fac := kids[len(kids)-1]
+	suffixed := containsSym(slices.Collect(it(fac.ast)), FactorSuffix)
+	for n := range it(fac.ast) {
 		if n.sym == 0 && e.f.ch(n.tok) == IDENT {
-			return e.src(n.tok), true
+			// "&p.f" and "&p[i]" through a POINTER reach what the pointer points at,
+			// which is the caller's storage, not this frame's. Only "&p" itself takes
+			// this frame's -- the pointer variable's own cell. A slice root is not a
+			// frame reference either; where its backing came from is what decides
+			// that, and sliceBackingIsFrame has already asked.
+			name := e.src(n.tok)
+			if suffixed {
+				if ct, ok := e.varType(name); ok && (e.isPointer(ct) || e.isSliceCType(ct)) {
+					return "", false
+				}
+			}
+			return name, true
 		}
 	}
 	return "", false

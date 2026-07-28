@@ -40,6 +40,17 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A method's receiver now carries its type.** It was declared with none at all, so
+  every check that keys on one was skipped for it — and the escape rule, which asks
+  whether the root of `&p.nodes[i]` is an inline value whose address dies with the
+  frame, read a *pointer* receiver as one. That refused `return &p.nodes[i]`, which
+  is how a fixed node pool hands out a node, and with it the whole no-heap way of
+  building a linked structure.
+
+  The emitter's half of the rule learned the same distinction: through a pointer,
+  `&p.f` and `&p[i]` reach what the pointer points at, which is the caller's storage.
+  A bare `&p` still takes this frame's, and a value receiver or local is refused as
+  before.
 - **A string held in a struct field may be sliced**, `l.line[a:b]`. The slice paths
   had an answer for a slice field and an array field and none for a string one, so
   the whole of a tokenizer was `cannot infer a type`.

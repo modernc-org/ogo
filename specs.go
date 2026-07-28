@@ -30,6 +30,9 @@
 // of it, and an array of it then share.
 // TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
 // literals).
+// TODO 20260728 Escape analysis: returning the address of an element of a LOCAL
+// ARRAY, "return &a[i]", is not refused. The rule asks whether the root of a
+// suffixed address is an inline value, and an array root is not one it recognises.
 // TODO 20260728 A local variable, parameter or struct field whose name is a C
 // KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
 // moved out of C's way; a local one is not, several emission paths writing a local's

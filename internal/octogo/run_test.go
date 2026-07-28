@@ -2483,6 +2483,154 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A linked structure over a fixed node pool, which is how one is built with
+		// no heap. It needs "return &p.nodes[i]" from a POINTER receiver, which the
+		// escape rules refused: the receiver was declared with no type at all, so it
+		// read as an inline value whose address does not outlive the frame. Through a
+		// pointer it reaches what the pointer points at, which is the caller's.
+		name: "a linked list over a node pool",
+		src: `type node struct {
+	value int
+	next  *node
+	used  bool
+}
+
+type pool struct {
+	nodes []node
+	head  *node
+}
+
+func (p *pool) alloc(v int) *node {
+	for i := 0; i < len(p.nodes); i++ {
+		if !p.nodes[i].used {
+			p.nodes[i].used = true
+			p.nodes[i].value = v
+			p.nodes[i].next = nil
+			return &p.nodes[i]
+		}
+	}
+	return nil
+}
+
+func (p *pool) push(v int) bool {
+	n := p.alloc(v)
+	if n == nil {
+		return false
+	}
+	n.next = p.head
+	p.head = n
+	return true
+}
+
+func (p *pool) sum() int {
+	t := 0
+	for n := p.head; n != nil; n = n.next {
+		t += n.value
+	}
+	return t
+}
+
+func (p *pool) length() int {
+	k := 0
+	for n := p.head; n != nil; n = n.next {
+		k++
+	}
+	return k
+}
+
+var storage [4]node
+
+func main() {
+	var p pool = pool{storage[:], nil}
+	for i := 1; i <= 5; i++ {
+		if !p.push(i) {
+			println("pool full at", i)
+			break
+		}
+	}
+	println(p.length(), p.sum())
+	for n := p.head; n != nil; n = n.next {
+		println(n.value)
+	}
+}
+`,
+		want: "pool full at 5\n4 10\n4\n3\n2\n1\n",
+	},
+	{
+		// A state machine driven by two channels, which is what a controller is: a
+		// defined type over int with iota constants and a method of its own, a struct
+		// sent to another cog, and a select loop that runs until one of the inputs
+		// says to stop.
+		name: "a state machine over select",
+		src: `type state int
+
+const (
+	idle state = iota
+	running
+	stopped
+)
+
+type cmd struct {
+	op  int
+	arg int
+}
+
+var cmds chan cmd
+var ticks chan int
+
+func (s state) name() string {
+	switch s {
+	case idle:
+		return "idle"
+	case running:
+		return "running"
+	}
+	return "stopped"
+}
+
+func driver() {
+	cmds <- cmd{1, 7}
+	ticks <- 1
+	ticks <- 2
+	cmds <- cmd{2, 0}
+	ticks <- 3
+	cmds <- cmd{3, 0}
+}
+
+func step(s state, c cmd) (state, string) {
+	switch {
+	case c.op == 1 && s == idle:
+		return running, "start"
+	case c.op == 2 && s == running:
+		return idle, "pause"
+	case c.op == 3:
+		return stopped, "halt"
+	}
+	return s, "ignored"
+}
+
+func main() {
+	go driver()
+	s := idle
+	count := 0
+	for s != stopped {
+		select {
+		case c := <-cmds:
+			next, what := step(s, c)
+			println(what, s.name(), "->", next.name())
+			s = next
+		case n := <-ticks:
+			count += n
+			println("tick", n, s.name())
+		}
+	}
+	println("done", count, s.name())
+}
+`,
+		want: "start idle -> running\ntick 1 running\ntick 2 running\npause running -> idle\n" +
+			"tick 3 idle\nhalt idle -> stopped\ndone 6 stopped\n",
+	},
+	{
 		// A string held in a struct field slices like one held in a variable. It did
 		// not: the slice paths had an answer for a slice field and an array field and
 		// none for a string one, so "l.line[a:b]" -- the whole of a tokenizer -- was
