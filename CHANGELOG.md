@@ -25,6 +25,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **The fuzzer generates booleans, and with them `&&`, `||` and `!`.** Every
+  generated condition used to be a single comparison, so short-circuit evaluation —
+  where the operand on the right is not evaluated at all — was never fuzzed. Bool
+  variables are declared, combined, negated and used as conditions of their own, and
+  an unused one folds into the checksum through what it selects. Generating a
+  short-circuit is safe because nothing inside a generated expression has an effect:
+  a generated function is a pure expression over its parameters.
 - **The fuzzer generates `switch` statements.** The oracle only checks that whatever
   was generated matches the VM's prediction, so a construct it never emits is a
   construct it never tests — and `switch` was one, despite being in the language from

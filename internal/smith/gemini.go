@@ -212,6 +212,32 @@ func (f *Fuzzer) flushUnused(vm Machine, mem Memory) []Node {
 		// length -- len is defined even for the empty slice, whose element 0 is not;
 		// a scalar folds directly.
 		currentChecksum := mem.Load(f.ChecksumName)
+
+		// A bool is not an operand of "^", so fold it by what it selects: the
+		// checksum takes a constant when the variable is true. That is also the
+		// only way a bool reaches the generated program as a condition of its
+		// own, without a comparison wrapped around it.
+		if bt, ok := sym.Type.(BasicType); ok && bt.Kind == KindBool {
+			k := Int32(f.Rand.Int31())
+			if mem.Load(name).Value().(bool) {
+				newChecksum, _ := vm.Eval("^", currentChecksum, k)
+				mem.Store(f.ChecksumName, newChecksum)
+			}
+			flushNodes = append(flushNodes, &IfStmtNode{
+				Cond: &IdentNode{Name: name},
+				Body: &BlockNode{Statements: []Node{&AssignStmtNode{
+					Lhs: f.ChecksumName,
+					Op:  "=",
+					Rhs: &BinaryExprNode{
+						Left:  &IdentNode{Name: f.ChecksumName},
+						Op:    "^",
+						Right: &IntLitNode{Value: k.Literal()},
+					},
+				}}},
+			})
+			continue
+		}
+
 		var varVal Value
 		var right Node
 		switch sym.Type.(type) {
@@ -257,6 +283,8 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genIfStmt(vm, mem) // 12% chance for an if
 	case r < 0.25:
 		return f.genSwitchStmt(vm, mem) // 3% chance for a switch
+	case r < 0.28:
+		return f.genBoolVarDecl(vm, mem) // 3% chance for a bool variable
 	case r < 0.37:
 		return f.genVarDecl(vm, mem) // 12% chance for var
 	case r < 0.44:
@@ -363,54 +391,76 @@ func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
 
 // genIfStmt generates an if statement, forcing the condition to be true
 // to avoid desynchronizing the fuzzer's VM memory with dead code for now.
-func (f *Fuzzer) genIfStmt(vm Machine, mem Memory) Node {
-	leftNode, leftVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
-	rightNode, rightVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+// relOps are the comparisons a boolean expression is ultimately built from.
+var relOps = []string{"==", "!=", "<", "<=", ">", ">="}
 
-	ops := []string{"==", "!=", "<", "<=", ">", ">="}
-	op := ops[f.Rand.Intn(len(ops))]
-
-	condVal, _ := vm.Eval(op, leftVal, rightVal)
-	isTrue := condVal.Value().(bool)
-
-	// Force the condition to be true to evaluate the inner block
-	if !isTrue {
-		switch op {
-		case "==":
-			op = "!="
-		case "!=":
-			op = "=="
-		case "<":
-			op = ">="
-		case "<=":
-			op = ">"
-		case ">":
-			op = "<="
-		case ">=":
-			op = "<"
+// genBoolExpr builds a boolean expression together with the value it has, so a
+// caller can place it where the outcome must be known.
+//
+// Short-circuiting is safe to generate because nothing the generator emits inside
+// an expression has an effect the VM would have to take back: a generated function
+// is a pure expression over its parameters (genPureExpr), and everything else is a
+// read. So the operand "&&" skips at run time can still be evaluated here.
+func (f *Fuzzer) genBoolExpr(vm Machine, mem Memory, depth int) (Node, bool) {
+	if depth < 2 {
+		switch r := f.Rand.Float32(); {
+		case r < 0.15: // !x
+			x, v := f.genBoolExpr(vm, mem, depth+1)
+			return &UnaryExprNode{Op: "!", X: x}, !v
+		case r < 0.35: // x && y, x || y
+			left, lv := f.genBoolExpr(vm, mem, depth+1)
+			right, rv := f.genBoolExpr(vm, mem, depth+1)
+			op, val := "&&", lv && rv
+			if f.Rand.Float32() < 0.5 {
+				op, val = "||", lv || rv
+			}
+			return &BinaryExprNode{Left: left, Op: op, Right: right}, val
 		}
 	}
 
-	condNode := &BinaryExprNode{
-		Left:  leftNode,
-		Op:    op,
-		Right: rightNode,
+	// An existing bool variable, when there is one.
+	if syms := f.CurrentEnv.GetSymbolsOfType(BasicType{Kind: KindBool}); len(syms) != 0 && f.Rand.Float32() < 0.4 {
+		sym := syms[f.Rand.Intn(len(syms))]
+		sym.Used = true
+		return &IdentNode{Name: sym.Name}, mem.Load(sym.Name).Value().(bool)
 	}
 
-	// Push Scope for the block
+	leftNode, leftVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	rightNode, rightVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	op := relOps[f.Rand.Intn(len(relOps))]
+	val, _ := vm.Eval(op, leftVal, rightVal)
+	return &BinaryExprNode{Left: leftNode, Op: op, Right: rightNode}, val.Value().(bool)
+}
+
+// genBoolVarDecl generates: var <name> bool = <bool expression>
+func (f *Fuzzer) genBoolVarDecl(vm Machine, mem Memory) Node {
+	name := f.newVarName("b")
+	node, val := f.genBoolExpr(vm, mem, 0)
+	mem.Store(name, Bool(val))
+	f.CurrentEnv.Declare(name, BasicType{Kind: KindBool}, false)
+	return &VarDeclNode{Name: name, Type: "bool", Expr: node}
+}
+
+func (f *Fuzzer) genIfStmt(vm Machine, mem Memory) Node {
+	condNode, isTrue := f.genBoolExpr(vm, mem, 0)
+
+	// The condition is forced to true so the body always runs and the VM's state
+	// after the statement is the body's. Negating is what makes an arbitrary
+	// boolean expression usable here: flipping a comparison operator only works
+	// when the condition IS one, and it no longer always is.
+	if !isTrue {
+		condNode = &UnaryExprNode{Op: "!", X: condNode}
+	}
+
 	mem.PushScope()
 	f.CurrentEnv = NewScope(f.CurrentEnv)
 
 	var stmts []Node
-	numStmts := 1 + f.Rand.Intn(3) // Generate 1-3 statements inside the block
-	for i := 0; i < numStmts; i++ {
+	for i := 0; i < 1+f.Rand.Intn(3); i++ {
 		stmts = append(stmts, f.genStatement(vm, mem))
 	}
-
-	// Flush any unused variables created strictly within this if-block
 	stmts = append(stmts, f.flushUnused(vm, mem)...)
 
-	// Pop Scope
 	mem.PopScope()
 	f.CurrentEnv = f.CurrentEnv.Parent
 
@@ -740,6 +790,20 @@ func (n *AssignStmtNode) Write(w io.Writer, indent int) {
 	writeIndent(w, indent)
 	fmt.Fprintf(w, "%s %s ", n.Lhs, n.Op)
 	n.Rhs.Write(w, 0)
+}
+
+// UnaryExprNode is a prefix operator applied to an expression. The operand is
+// always parenthesised: it can be a binary expression, and "!" binds tighter.
+type UnaryExprNode struct {
+	Op string
+	X  Node
+}
+
+func (n *UnaryExprNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s(", n.Op)
+	n.X.Write(w, 0)
+	fmt.Fprint(w, ")")
 }
 
 type BinaryExprNode struct {
