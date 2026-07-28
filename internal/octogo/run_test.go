@@ -2483,6 +2483,65 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// The P2's own facilities, which nothing else here exercises: a hardware lock
+		// held across three cogs contending for one counter, and the millisecond
+		// clock a driver paces itself by. There is no Go to compare against for
+		// these, so what the case asserts is what the hardware guarantees -- that
+		// every increment lands under the lock, and that waiting moves the clock.
+		//
+		// It is also what made the host shim's waits and clocks real: they used to
+		// return at once and to read CPU time, so a program that paces itself said
+		// one thing here and another on the board.
+		name: "hardware locks and the millisecond clock",
+		src: `import "p2"
+
+type guard struct {
+	id int
+}
+
+func (g guard) acquire() {
+	for !p2.TryLock(g.id) {
+		p2.WaitCycles(1)
+	}
+}
+
+func (g guard) release() { p2.Unlock(g.id) }
+
+var lk guard
+var shared int
+var done chan int
+
+func bump(n int) {
+	for i := 0; i < n; i++ {
+		lk.acquire()
+		shared = shared + 1
+		lk.release()
+	}
+	done <- 1
+}
+
+func main() {
+	lk = guard{p2.NewLock()}
+	if lk.id < 0 {
+		println("no lock")
+		return
+	}
+	start := p2.GetMs()
+	go bump(50)
+	go bump(50)
+	go bump(50)
+	for i := 0; i < 3; i++ {
+		<-done
+	}
+	println(shared)
+	p2.WaitMs(2)
+	println(p2.GetMs()-start >= 2)
+	p2.FreeLock(lk.id)
+}
+`,
+		want: "150\ntrue\n",
+	},
+	{
 		// The address of an element of PACKAGE storage outlives every frame, so it is
 		// handed out freely -- which is the other side of the refusal a local array's
 		// element now gets, and what the refusal's message points the writer at.

@@ -10,8 +10,21 @@
 #include <stdlib.h>
 #include <time.h>
 
-static inline void _waitms(int ms) { (void)ms; }
-static inline void _waitus(uint32_t us) { (void)us; }
+/* _waitms and _waitus really wait. They used to return at once, so a program that
+   paces itself -- which is most of what a driver does -- behaved one way here and
+   another on the board: _getms is a real clock in both, so "wait 2ms, then check the
+   clock moved" was true on hardware and false here. Waiting for real is what makes
+   the shim answer the same question the board does. */
+static inline void _waitms(int ms) {
+	if (ms <= 0) { return; }
+	struct timespec t = {ms / 1000, (long)(ms % 1000) * 1000000};
+	nanosleep(&t, 0);
+}
+static inline void _waitus(uint32_t us) {
+	if (us == 0) { return; }
+	struct timespec t = {us / 1000000, (long)(us % 1000000) * 1000};
+	nanosleep(&t, 0);
+}
 static inline void _waitx(int cycles) { (void)cycles; struct timespec t = {0, 1000}; nanosleep(&t, 0); }
 
 /* Pin and misc intrinsics. Off-target there is no hardware, so the pin ops are
@@ -28,9 +41,20 @@ static inline uint32_t _rdpin(int pin) { (void)pin; return 0; }
 static inline void _wrpin(int pin, uint32_t val) { (void)pin; (void)val; }
 static inline void _wxpin(int pin, uint32_t val) { (void)pin; (void)val; }
 static inline void _wypin(int pin, uint32_t val) { (void)pin; (void)val; }
-static inline uint32_t _cnt(void) { return (uint32_t)clock(); }
-static inline uint32_t _getms(void) { return (uint32_t)((uint64_t)clock() * 1000 / CLOCKS_PER_SEC); }
-static inline uint32_t _getsec(void) { return (uint32_t)(clock() / CLOCKS_PER_SEC); }
+/* The P2's counter and clocks measure elapsed time, so these do too. They used to
+   read clock(), which measures CPU time consumed -- a program that waits consumes
+   none, so "wait, then check the clock moved" was true on the board and false here.
+   A monotonic wall clock answers the same question the hardware does. */
+static inline uint64_t _ogo_host_nanos(void) {
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+}
+/* _cnt is the P2's 200 MHz system counter; the same rate here keeps a cycle count
+   meaning roughly what it means there. */
+static inline uint32_t _cnt(void) { return (uint32_t)(_ogo_host_nanos() / 5); }
+static inline uint32_t _getms(void) { return (uint32_t)(_ogo_host_nanos() / 1000000); }
+static inline uint32_t _getsec(void) { return (uint32_t)(_ogo_host_nanos() / 1000000000); }
 static inline uint32_t _rnd(void) { return (uint32_t)rand(); }
 static inline uint32_t _rev(uint32_t v) {
 	uint32_t r = 0;

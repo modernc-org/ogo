@@ -23,6 +23,17 @@ Releases before v0.9.0 predate this file; see
   other. All three sinks refuse it now, and the address of *package* storage is
   handed out as freely as before.
 
+### Testing
+
+- **The `p2` package's locks and clocks are now exercised**, on the host and on real
+  cogs: a hardware lock held while three cogs contend for one counter, and the
+  millisecond clock a driver paces itself by. Neither had a test of any kind.
+- **The host shim's waits and clocks are real.** `_waitms` and `_waitus` returned at
+  once, and `_getms`/`_getsec`/`_cnt` read *CPU* time — which a waiting program does
+  not consume. So "wait two milliseconds, then check the clock moved" was true on the
+  board and false on the host: the shim disagreed with the hardware about the one
+  thing a driver does most. They wait, and read a monotonic clock, now.
+
 ### Diagnostics
 
 - **Three messages now read as Go's do.** `break is not in a loop, switch or select`
