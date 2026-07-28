@@ -225,7 +225,6 @@ broken.
   allocates, and what a copy of it then shares.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
-* A float literal has no hexadecimal form (`0x1p-2`).
 * An **array** literal may not stand as a general value — it initializes a variable,
   fills a slot in another composite literal, or is what a `range` walks, and nothing
   else, C having no array value for it to become. A *slice* literal has no such

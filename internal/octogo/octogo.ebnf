@@ -18,8 +18,14 @@ octal_digits   = octal_digit { [ "_" ] octal_digit } .
 hex_digits     = hex_digit { [ "_" ] hex_digit } .
 float_lit = decimal_digits "." [ decimal_digits ] [ exponent ]
 	| decimal_digits exponent
-	| "." decimal_digits [ exponent ] .
+	| "." decimal_digits [ exponent ]
+	| hex_float_lit .
 exponent  = ( "e" | "E" ) [ "+" | "-" ] decimal_digits .
+hex_float_lit = "0" ( "x" | "X" ) hex_mantissa hex_exponent .
+hex_mantissa  = [ "_" ] hex_digits "." [ hex_digits ]
+	| [ "_" ] hex_digits
+	| "." hex_digits .
+hex_exponent  = ( "p" | "P" ) [ "+" | "-" ] decimal_digits .
 rune_lit         = '\'' ( `[^'\\\n\r]` | unicode_value | byte_value ) '\'' .
 unicode_value    = little_u_value | big_u_value | escaped_char .
 byte_value       = octal_byte_value | hex_byte_value .

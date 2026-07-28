@@ -3275,6 +3275,25 @@ line	tab\n` + "`" + `
 			"97 10 9 92 39 65 65 233 128512\n13\n14 0\n",
 	},
 	{
+		// The hexadecimal form of a float literal, whose exponent is a power of two
+		// and is required. C has the same syntax, so the text passes through -- but
+		// only after the digit separators come out, which is what "0x_1p4" checks.
+		name: "hexadecimal float literals",
+		src: `const q = 0x1p-2
+
+func main() {
+	var a float64 = 0x1p-2
+	var b float64 = 0x1.8p1
+	var c float64 = 0X2p+3
+	var d float64 = 0x_1p4
+	println(a == 0.25, b == 3.0, c == 16.0, d == 16.0)
+	println(a, b, c, d, q == 0.25)
+	println(0x10, 0x1p0 == 1.0)
+}
+`,
+		want: "true true true true\n0.25 3 16 16 true\n16 true\n",
+	},
+	{
 		// The exponent form of a float literal, which the scanner did not recognize
 		// at all: "1e3" was a syntax error, and one syntax error made every name in
 		// the file read as undefined afterwards. The forms with an empty side, "1."

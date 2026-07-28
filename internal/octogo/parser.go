@@ -375,7 +375,7 @@ type Symbol int32
 //	id  67: \|
 //	id  68: \}
 //	id  69: ~
-//	id  70: (((([0-9]))(((_))?(([0-9])))*)(\.)(((([0-9]))(((_))?(([0-9])))*))?(((((e)|(E)))(((\+)|(-)))?((([0-9]))(((_))?(([0-9])))*)))?|((([0-9]))(((_))?(([0-9])))*)((((e)|(E)))(((\+)|(-)))?((([0-9]))(((_))?(([0-9])))*))|(\.)((([0-9]))(((_))?(([0-9])))*)(((((e)|(E)))(((\+)|(-)))?((([0-9]))(((_))?(([0-9])))*)))?)
+//	id  70: (((([0-9]))(((_))?(([0-9])))*)(\.)(((([0-9]))(((_))?(([0-9])))*))?(((((e)|(E)))(((\+)|(-)))?((([0-9]))(((_))?(([0-9])))*)))?|((([0-9]))(((_))?(([0-9])))*)((((e)|(E)))(((\+)|(-)))?((([0-9]))(((_))?(([0-9])))*))|(\.)((([0-9]))(((_))?(([0-9])))*)(((((e)|(E)))(((\+)|(-)))?((([0-9]))(((_))?(([0-9])))*)))?|((0)(((x)|(X)))((((_))?((([0-9A-Fa-f]))(((_))?(([0-9A-Fa-f])))*)(\.)(((([0-9A-Fa-f]))(((_))?(([0-9A-Fa-f])))*))?|((_))?((([0-9A-Fa-f]))(((_))?(([0-9A-Fa-f])))*)|(\.)((([0-9A-Fa-f]))(((_))?(([0-9A-Fa-f])))*)))((((p)|(P)))(((\+)|(-)))?((([0-9]))(((_))?(([0-9])))*))))
 //	id  71: ((((\pL))|(_)))((((((\pL))|(_)))|((\p{Nd}))))*
 //	id  72: ((((0)|(([1-9]))(((_))?((([0-9]))(((_))?(([0-9])))*))?))|((0)(((b)|(B)))((_))?((((0)|(1)))(((_))?(((0)|(1))))*))|((0)(((o)|(O)))?((_))?((([0-7]))(((_))?(([0-7])))*))|((0)(((x)|(X)))((_))?((([0-9A-Fa-f]))(((_))?(([0-9A-Fa-f])))*)))
 //	id  73: (')((([^'\\\n\r])|((((\\)(u)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(U)(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f]))(([0-9A-Fa-f])))|((\\)(((a)|(b)|(f)|(n)|(r)|(t)|(v)|(\\)|(')|("))))))|((((\\)(([0-7]))(([0-7]))(([0-7])))|((\\)(x)(([0-9A-Fa-f]))(([0-9A-Fa-f])))))))(')
@@ -485,93 +485,93 @@ func (*Parser) scan(s []byte) (id, length int) {
 		goto l587
 	}
 	if accept(':') {
-		goto l930
+		goto l1033
 	}
 	if accept(';') {
-		goto l936
+		goto l1039
 	}
 	if accept('<') {
-		goto l938
+		goto l1041
 	}
 	if accept('=') {
-		goto l956
+		goto l1059
 	}
 	if accept('>') {
-		goto l962
+		goto l1065
 	}
 	if accept('[') {
-		goto l976
+		goto l1079
 	}
 	if accept(']') {
-		goto l978
+		goto l1081
 	}
 	if accept('^') {
-		goto l980
+		goto l1083
 	}
 	if accept('_') {
-		goto l986
+		goto l1089
 	}
 	if accept('`') {
-		goto l1018
+		goto l1121
 	}
 	if accept('b') {
-		goto l1030
+		goto l1133
 	}
 	if accept('c') {
-		goto l1078
+		goto l1181
 	}
 	if accept('d') {
-		goto l1236
+		goto l1339
 	}
 	if accept('e') {
-		goto l1324
+		goto l1427
 	}
 	if accept('f') {
-		goto l1362
+		goto l1465
 	}
 	if accept('g') {
-		goto l1520
+		goto l1623
 	}
 	if accept('i') {
-		goto l1538
+		goto l1641
 	}
 	if accept('r') {
-		goto l1686
+		goto l1789
 	}
 	if accept('s') {
-		goto l1784
+		goto l1887
 	}
 	if accept('t') {
-		goto l1942
+		goto l2045
 	}
 	if accept('v') {
-		goto l1980
+		goto l2083
 	}
 	if accept('{') {
-		goto l2008
+		goto l2111
 	}
 	if accept('|') {
-		goto l2010
+		goto l2113
 	}
 	if accept('}') {
-		goto l2020
+		goto l2123
 	}
 	if accept('~') {
-		goto l2022
+		goto l2125
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l2024
+		goto l2127
 	}
 	if r < '1' {
 		goto l88out
 	}
 	if accept2('9') {
-		goto l888
+		goto l991
 	}
 l88out:
 	if r == endOfText {
-		goto l2032
+		goto l2135
 	}
 	return id, length
 l93:
@@ -2366,19 +2366,19 @@ l587:
 		goto l841
 	}
 	if accept('_') {
-		goto l864
+		goto l965
 	}
 	if accept('b') {
-		goto l871
+		goto l972
 	}
 	if accept('e') {
 		goto l755
 	}
 	if accept('o') {
-		goto l878
+		goto l979
 	}
 	if accept('x') {
-		goto l883
+		goto l984
 	}
 	if r < '0' {
 		goto l612out
@@ -2850,122 +2850,436 @@ l838:
 l838out:
 	return id, length
 l841:
+	if accept('.') {
+		goto l848
+	}
 	if accept('_') {
-		goto l861
+		goto l962
 	}
 	if r < '0' {
-		goto l843out
+		goto l845out
 	}
 	if accept2('9') {
-		goto l846
+		goto l907
 	}
 	if r < 'A' {
-		goto l843out
+		goto l845out
 	}
 	if accept2('F') {
-		goto l846
+		goto l907
 	}
 	if r < 'a' {
-		goto l843out
+		goto l845out
 	}
 	if accept2('f') {
-		goto l846
+		goto l907
 	}
-l843out:
+l845out:
 	return id, length
-l846:
+l848:
+	if r < '0' {
+		goto l848out
+	}
+	if accept2('9') {
+		goto l851
+	}
+	if r < 'A' {
+		goto l848out
+	}
+	if accept2('F') {
+		goto l851
+	}
+	if r < 'a' {
+		goto l848out
+	}
+	if accept2('f') {
+		goto l851
+	}
+l848out:
+	return id, length
+l851:
+	if accept('P') {
+		goto l869
+	}
+	if accept('_') {
+		goto l897
+	}
+	if accept('p') {
+		goto l900
+	}
+	if r < '0' {
+		goto l857out
+	}
+	if accept2('9') {
+		goto l860
+	}
+	if r < 'A' {
+		goto l857out
+	}
+	if accept2('F') {
+		goto l860
+	}
+	if r < 'a' {
+		goto l857out
+	}
+	if accept2('f') {
+		goto l860
+	}
+l857out:
+	return id, length
+l860:
+	if accept('P') {
+		goto l869
+	}
+	if accept('_') {
+		goto l897
+	}
+	if accept('p') {
+		goto l900
+	}
+	if r < '0' {
+		goto l866out
+	}
+	if accept2('9') {
+		goto l860
+	}
+	if r < 'A' {
+		goto l866out
+	}
+	if accept2('F') {
+		goto l860
+	}
+	if r < 'a' {
+		goto l866out
+	}
+	if accept2('f') {
+		goto l860
+	}
+l866out:
+	return id, length
+l869:
+	if accept('+') {
+		goto l876
+	}
+	if accept('-') {
+		goto l894
+	}
+	if r < '0' {
+		goto l873out
+	}
+	if accept2('9') {
+		goto l879
+	}
+l873out:
+	return id, length
+l876:
+	if r < '0' {
+		goto l876out
+	}
+	if accept2('9') {
+		goto l879
+	}
+l876out:
+	return id, length
+l879:
+	id, length = 70, pos
+	if accept('_') {
+		goto l891
+	}
+	if r < '0' {
+		goto l882out
+	}
+	if accept2('9') {
+		goto l885
+	}
+l882out:
+	return id, length
+l885:
+	id, length = 70, pos
+	if accept('_') {
+		goto l891
+	}
+	if r < '0' {
+		goto l888out
+	}
+	if accept2('9') {
+		goto l885
+	}
+l888out:
+	return id, length
+l891:
+	if r < '0' {
+		goto l891out
+	}
+	if accept2('9') {
+		goto l885
+	}
+l891out:
+	return id, length
+l894:
+	if r < '0' {
+		goto l894out
+	}
+	if accept2('9') {
+		goto l879
+	}
+l894out:
+	return id, length
+l897:
+	if r < '0' {
+		goto l897out
+	}
+	if accept2('9') {
+		goto l860
+	}
+	if r < 'A' {
+		goto l897out
+	}
+	if accept2('F') {
+		goto l860
+	}
+	if r < 'a' {
+		goto l897out
+	}
+	if accept2('f') {
+		goto l860
+	}
+l897out:
+	return id, length
+l900:
+	if accept('+') {
+		goto l876
+	}
+	if accept('-') {
+		goto l894
+	}
+	if r < '0' {
+		goto l904out
+	}
+	if accept2('9') {
+		goto l879
+	}
+l904out:
+	return id, length
+l907:
 	id, length = 72, pos
+	if accept('.') {
+		goto l919
+	}
+	if accept('P') {
+		goto l869
+	}
 	if accept('_') {
-		goto l858
+		goto l959
+	}
+	if accept('p') {
+		goto l900
 	}
 	if r < '0' {
-		goto l849out
+		goto l916out
 	}
 	if accept2('9') {
-		goto l852
+		goto l947
 	}
 	if r < 'A' {
-		goto l849out
+		goto l916out
 	}
 	if accept2('F') {
-		goto l852
+		goto l947
 	}
 	if r < 'a' {
-		goto l849out
+		goto l916out
 	}
 	if accept2('f') {
-		goto l852
+		goto l947
 	}
-l849out:
+l916out:
 	return id, length
-l852:
+l919:
+	if accept('P') {
+		goto l869
+	}
+	if accept('p') {
+		goto l900
+	}
+	if r < '0' {
+		goto l923out
+	}
+	if accept2('9') {
+		goto l926
+	}
+	if r < 'A' {
+		goto l923out
+	}
+	if accept2('F') {
+		goto l926
+	}
+	if r < 'a' {
+		goto l923out
+	}
+	if accept2('f') {
+		goto l926
+	}
+l923out:
+	return id, length
+l926:
+	if accept('P') {
+		goto l869
+	}
+	if accept('_') {
+		goto l944
+	}
+	if accept('p') {
+		goto l900
+	}
+	if r < '0' {
+		goto l932out
+	}
+	if accept2('9') {
+		goto l935
+	}
+	if r < 'A' {
+		goto l932out
+	}
+	if accept2('F') {
+		goto l935
+	}
+	if r < 'a' {
+		goto l932out
+	}
+	if accept2('f') {
+		goto l935
+	}
+l932out:
+	return id, length
+l935:
+	if accept('P') {
+		goto l869
+	}
+	if accept('_') {
+		goto l944
+	}
+	if accept('p') {
+		goto l900
+	}
+	if r < '0' {
+		goto l941out
+	}
+	if accept2('9') {
+		goto l935
+	}
+	if r < 'A' {
+		goto l941out
+	}
+	if accept2('F') {
+		goto l935
+	}
+	if r < 'a' {
+		goto l941out
+	}
+	if accept2('f') {
+		goto l935
+	}
+l941out:
+	return id, length
+l944:
+	if r < '0' {
+		goto l944out
+	}
+	if accept2('9') {
+		goto l935
+	}
+	if r < 'A' {
+		goto l944out
+	}
+	if accept2('F') {
+		goto l935
+	}
+	if r < 'a' {
+		goto l944out
+	}
+	if accept2('f') {
+		goto l935
+	}
+l944out:
+	return id, length
+l947:
 	id, length = 72, pos
+	if accept('.') {
+		goto l919
+	}
+	if accept('P') {
+		goto l869
+	}
 	if accept('_') {
-		goto l858
+		goto l959
+	}
+	if accept('p') {
+		goto l900
 	}
 	if r < '0' {
-		goto l855out
+		goto l956out
 	}
 	if accept2('9') {
-		goto l852
+		goto l947
 	}
 	if r < 'A' {
-		goto l855out
+		goto l956out
 	}
 	if accept2('F') {
-		goto l852
+		goto l947
 	}
 	if r < 'a' {
-		goto l855out
+		goto l956out
 	}
 	if accept2('f') {
-		goto l852
+		goto l947
 	}
-l855out:
+l956out:
 	return id, length
-l858:
+l959:
 	if r < '0' {
-		goto l858out
+		goto l959out
 	}
 	if accept2('9') {
-		goto l852
+		goto l947
 	}
 	if r < 'A' {
-		goto l858out
+		goto l959out
 	}
 	if accept2('F') {
-		goto l852
+		goto l947
 	}
 	if r < 'a' {
-		goto l858out
+		goto l959out
 	}
 	if accept2('f') {
-		goto l852
+		goto l947
 	}
-l858out:
+l959out:
 	return id, length
-l861:
+l962:
 	if r < '0' {
-		goto l861out
+		goto l962out
 	}
 	if accept2('9') {
-		goto l846
+		goto l907
 	}
 	if r < 'A' {
-		goto l861out
+		goto l962out
 	}
 	if accept2('F') {
-		goto l846
+		goto l907
 	}
 	if r < 'a' {
-		goto l861out
+		goto l962out
 	}
 	if accept2('f') {
-		goto l846
+		goto l907
 	}
-l861out:
+l962out:
 	return id, length
-l864:
+l965:
 	if accept('8') {
 		goto l713
 	}
@@ -2973,14 +3287,14 @@ l864:
 		goto l713
 	}
 	if r < '0' {
-		goto l868out
+		goto l969out
 	}
 	if accept2('7') {
 		goto l681
 	}
-l868out:
+l969out:
 	return id, length
-l871:
+l972:
 	if accept('0') {
 		goto l776
 	}
@@ -2991,2005 +3305,2008 @@ l871:
 		goto l813
 	}
 	return id, length
-l878:
+l979:
 	if accept('_') {
 		goto l838
 	}
 	if r < '0' {
-		goto l880out
+		goto l981out
 	}
 	if accept2('7') {
 		goto l823
 	}
-l880out:
-	return id, length
-l883:
-	if accept('_') {
-		goto l861
-	}
-	if r < '0' {
-		goto l885out
-	}
-	if accept2('9') {
-		goto l846
-	}
-	if r < 'A' {
-		goto l885out
-	}
-	if accept2('F') {
-		goto l846
-	}
-	if r < 'a' {
-		goto l885out
-	}
-	if accept2('f') {
-		goto l846
-	}
-l885out:
-	return id, length
-l888:
-	id, length = 72, pos
-	if accept('.') {
-		goto l615
-	}
-	if accept('E') {
-		goto l724
-	}
-	if accept('_') {
-		goto l927
-	}
-	if accept('e') {
-		goto l755
-	}
-	if r < '0' {
-		goto l897out
-	}
-	if accept2('9') {
-		goto l900
-	}
-l897out:
-	return id, length
-l900:
-	id, length = 72, pos
-	if accept('.') {
-		goto l615
-	}
-	if accept('E') {
-		goto l724
-	}
-	if accept('_') {
-		goto l924
-	}
-	if accept('e') {
-		goto l755
-	}
-	if r < '0' {
-		goto l909out
-	}
-	if accept2('9') {
-		goto l912
-	}
-l909out:
-	return id, length
-l912:
-	id, length = 72, pos
-	if accept('.') {
-		goto l615
-	}
-	if accept('E') {
-		goto l724
-	}
-	if accept('_') {
-		goto l924
-	}
-	if accept('e') {
-		goto l755
-	}
-	if r < '0' {
-		goto l921out
-	}
-	if accept2('9') {
-		goto l912
-	}
-l921out:
-	return id, length
-l924:
-	if r < '0' {
-		goto l924out
-	}
-	if accept2('9') {
-		goto l912
-	}
-l924out:
-	return id, length
-l927:
-	if r < '0' {
-		goto l927out
-	}
-	if accept2('9') {
-		goto l900
-	}
-l927out:
-	return id, length
-l930:
-	id, length = 58, pos
-	if accept('=') {
-		goto l934
-	}
-	return id, length
-l934:
-	id, length = 13, pos
-	return id, length
-l936:
-	id, length = 59, pos
-	return id, length
-l938:
-	id, length = 60, pos
-	if accept('-') {
-		goto l946
-	}
-	if accept('<') {
-		goto l948
-	}
-	if accept('=') {
-		goto l954
-	}
-	return id, length
-l946:
-	id, length = 14, pos
-	return id, length
-l948:
-	id, length = 15, pos
-	if accept('=') {
-		goto l952
-	}
-	return id, length
-l952:
-	id, length = 16, pos
-	return id, length
-l954:
-	id, length = 17, pos
-	return id, length
-l956:
-	id, length = 61, pos
-	if accept('=') {
-		goto l960
-	}
-	return id, length
-l960:
-	id, length = 18, pos
-	return id, length
-l962:
-	id, length = 62, pos
-	if accept('=') {
-		goto l968
-	}
-	if accept('>') {
-		goto l970
-	}
-	return id, length
-l968:
-	id, length = 19, pos
-	return id, length
-l970:
-	id, length = 20, pos
-	if accept('=') {
-		goto l974
-	}
-	return id, length
-l974:
-	id, length = 21, pos
-	return id, length
-l976:
-	id, length = 63, pos
-	return id, length
-l978:
-	id, length = 64, pos
-	return id, length
-l980:
-	id, length = 65, pos
-	if accept('=') {
-		goto l984
-	}
+l981out:
 	return id, length
 l984:
-	id, length = 22, pos
-	return id, length
-l986:
-	id, length = 71, pos
+	if accept('.') {
+		goto l848
+	}
 	if accept('_') {
-		goto l994
+		goto l962
 	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l1002
+	if r < '0' {
+		goto l988out
 	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l1010
+	if accept2('9') {
+		goto l907
 	}
-	return id, length
-l994:
-	id, length = 71, pos
-	if accept('_') {
-		goto l994
+	if r < 'A' {
+		goto l988out
 	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l1002
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l1010
-	}
-	return id, length
-l1002:
-	id, length = 71, pos
-	if accept('_') {
-		goto l994
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l1002
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l1010
-	}
-	return id, length
-l1010:
-	id, length = 71, pos
-	if accept('_') {
-		goto l994
-	}
-	if unicode.Is(unicode.L, r) {
-		move()
-		goto l1002
-	}
-	if unicode.Is(unicode.Nd, r) {
-		move()
-		goto l1010
-	}
-	return id, length
-l1018:
-	if accept('`') {
-		goto l1023
-	}
-	if accept2('_') {
-		goto l1025
+	if accept2('F') {
+		goto l907
 	}
 	if r < 'a' {
-		goto l1020out
+		goto l988out
 	}
-	if accept2('\U0010ffff') {
-		goto l1025
+	if accept2('f') {
+		goto l907
 	}
-l1020out:
+l988out:
 	return id, length
-l1023:
-	id, length = 74, pos
+l991:
+	id, length = 72, pos
+	if accept('.') {
+		goto l615
+	}
+	if accept('E') {
+		goto l724
+	}
+	if accept('_') {
+		goto l1030
+	}
+	if accept('e') {
+		goto l755
+	}
+	if r < '0' {
+		goto l1000out
+	}
+	if accept2('9') {
+		goto l1003
+	}
+l1000out:
 	return id, length
-l1025:
-	if accept('`') {
-		goto l1023
+l1003:
+	id, length = 72, pos
+	if accept('.') {
+		goto l615
 	}
-	if accept2('_') {
-		goto l1025
+	if accept('E') {
+		goto l724
 	}
-	if r < 'a' {
+	if accept('_') {
+		goto l1027
+	}
+	if accept('e') {
+		goto l755
+	}
+	if r < '0' {
+		goto l1012out
+	}
+	if accept2('9') {
+		goto l1015
+	}
+l1012out:
+	return id, length
+l1015:
+	id, length = 72, pos
+	if accept('.') {
+		goto l615
+	}
+	if accept('E') {
+		goto l724
+	}
+	if accept('_') {
+		goto l1027
+	}
+	if accept('e') {
+		goto l755
+	}
+	if r < '0' {
+		goto l1024out
+	}
+	if accept2('9') {
+		goto l1015
+	}
+l1024out:
+	return id, length
+l1027:
+	if r < '0' {
 		goto l1027out
 	}
-	if accept2('\U0010ffff') {
-		goto l1025
+	if accept2('9') {
+		goto l1015
 	}
 l1027out:
 	return id, length
 l1030:
+	if r < '0' {
+		goto l1030out
+	}
+	if accept2('9') {
+		goto l1003
+	}
+l1030out:
+	return id, length
+l1033:
+	id, length = 58, pos
+	if accept('=') {
+		goto l1037
+	}
+	return id, length
+l1037:
+	id, length = 13, pos
+	return id, length
+l1039:
+	id, length = 59, pos
+	return id, length
+l1041:
+	id, length = 60, pos
+	if accept('-') {
+		goto l1049
+	}
+	if accept('<') {
+		goto l1051
+	}
+	if accept('=') {
+		goto l1057
+	}
+	return id, length
+l1049:
+	id, length = 14, pos
+	return id, length
+l1051:
+	id, length = 15, pos
+	if accept('=') {
+		goto l1055
+	}
+	return id, length
+l1055:
+	id, length = 16, pos
+	return id, length
+l1057:
+	id, length = 17, pos
+	return id, length
+l1059:
+	id, length = 61, pos
+	if accept('=') {
+		goto l1063
+	}
+	return id, length
+l1063:
+	id, length = 18, pos
+	return id, length
+l1065:
+	id, length = 62, pos
+	if accept('=') {
+		goto l1071
+	}
+	if accept('>') {
+		goto l1073
+	}
+	return id, length
+l1071:
+	id, length = 19, pos
+	return id, length
+l1073:
+	id, length = 20, pos
+	if accept('=') {
+		goto l1077
+	}
+	return id, length
+l1077:
+	id, length = 21, pos
+	return id, length
+l1079:
+	id, length = 63, pos
+	return id, length
+l1081:
+	id, length = 64, pos
+	return id, length
+l1083:
+	id, length = 65, pos
+	if accept('=') {
+		goto l1087
+	}
+	return id, length
+l1087:
+	id, length = 22, pos
+	return id, length
+l1089:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l1105
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l1113
+	}
+	return id, length
+l1097:
+	id, length = 71, pos
+	if accept('_') {
+		goto l1097
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l1105
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l1113
+	}
+	return id, length
+l1105:
+	id, length = 71, pos
+	if accept('_') {
+		goto l1097
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l1105
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l1113
+	}
+	return id, length
+l1113:
+	id, length = 71, pos
+	if accept('_') {
+		goto l1097
+	}
+	if unicode.Is(unicode.L, r) {
+		move()
+		goto l1105
+	}
+	if unicode.Is(unicode.Nd, r) {
+		move()
+		goto l1113
+	}
+	return id, length
+l1121:
+	if accept('`') {
+		goto l1126
+	}
+	if accept2('_') {
+		goto l1128
+	}
+	if r < 'a' {
+		goto l1123out
+	}
+	if accept2('\U0010ffff') {
+		goto l1128
+	}
+l1123out:
+	return id, length
+l1126:
+	id, length = 74, pos
+	return id, length
+l1128:
+	if accept('`') {
+		goto l1126
+	}
+	if accept2('_') {
+		goto l1128
+	}
+	if r < 'a' {
+		goto l1130out
+	}
+	if accept2('\U0010ffff') {
+		goto l1128
+	}
+l1130out:
+	return id, length
+l1133:
+	id, length = 71, pos
+	if accept('_') {
+		goto l1097
 	}
 	if accept('r') {
-		goto l1040
+		goto l1143
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1040:
+l1143:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1050
+		goto l1153
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1050:
+l1153:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1060
+		goto l1163
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1060:
+l1163:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('k') {
-		goto l1070
+		goto l1173
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1070:
+l1173:
 	id, length = 23, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1078:
+l1181:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1092
+		goto l1195
 	}
 	if accept('h') {
-		goto l1120
+		goto l1223
 	}
 	if accept('o') {
-		goto l1148
+		goto l1251
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1092:
+l1195:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('s') {
-		goto l1102
+		goto l1205
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1102:
+l1205:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1112
+		goto l1215
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1112:
+l1215:
 	id, length = 24, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1120:
+l1223:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1130
+		goto l1233
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1130:
+l1233:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('n') {
-		goto l1140
+		goto l1243
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1140:
+l1243:
 	id, length = 25, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1148:
+l1251:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('n') {
-		goto l1158
+		goto l1261
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1158:
+l1261:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('s') {
-		goto l1170
+		goto l1273
 	}
 	if accept('t') {
-		goto l1188
+		goto l1291
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1170:
+l1273:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1180
+		goto l1283
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1180:
+l1283:
 	id, length = 26, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1188:
+l1291:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('i') {
-		goto l1198
+		goto l1301
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1198:
+l1301:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('n') {
-		goto l1208
+		goto l1311
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1208:
+l1311:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('u') {
-		goto l1218
+		goto l1321
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1218:
+l1321:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1228
+		goto l1331
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1228:
+l1331:
 	id, length = 27, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1236:
+l1339:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1246
+		goto l1349
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1246:
+l1349:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('f') {
-		goto l1256
+		goto l1359
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1256:
+l1359:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1268
+		goto l1371
 	}
 	if accept('e') {
-		goto l1306
+		goto l1409
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1268:
+l1371:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('u') {
-		goto l1278
+		goto l1381
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1278:
+l1381:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('l') {
-		goto l1288
+		goto l1391
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1288:
+l1391:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1298
+		goto l1401
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1298:
+l1401:
 	id, length = 28, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1306:
+l1409:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l1316
+		goto l1419
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1316:
+l1419:
 	id, length = 29, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1324:
+l1427:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('l') {
-		goto l1334
+		goto l1437
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1334:
+l1437:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('s') {
-		goto l1344
+		goto l1447
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1344:
+l1447:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1354
+		goto l1457
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1354:
+l1457:
 	id, length = 30, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1362:
+l1465:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1376
+		goto l1479
 	}
 	if accept('o') {
-		goto l1474
+		goto l1577
 	}
 	if accept('u') {
-		goto l1492
+		goto l1595
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1376:
+l1479:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('l') {
-		goto l1386
+		goto l1489
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1386:
+l1489:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('l') {
-		goto l1396
+		goto l1499
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1396:
+l1499:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1406
+		goto l1509
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1406:
+l1509:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('h') {
-		goto l1416
+		goto l1519
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1416:
+l1519:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l1426
+		goto l1529
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1426:
+l1529:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('o') {
-		goto l1436
+		goto l1539
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1436:
+l1539:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('u') {
-		goto l1446
+		goto l1549
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1446:
+l1549:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('g') {
-		goto l1456
+		goto l1559
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1456:
+l1559:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('h') {
-		goto l1466
+		goto l1569
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1466:
+l1569:
 	id, length = 31, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1474:
+l1577:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l1484
+		goto l1587
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1484:
+l1587:
 	id, length = 32, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1492:
+l1595:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('n') {
-		goto l1502
+		goto l1605
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1502:
+l1605:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('c') {
-		goto l1512
+		goto l1615
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1512:
+l1615:
 	id, length = 33, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1520:
+l1623:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('o') {
-		goto l1530
+		goto l1633
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1530:
+l1633:
 	id, length = 34, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1538:
+l1641:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('f') {
-		goto l1552
+		goto l1655
 	}
 	if accept('m') {
-		goto l1560
+		goto l1663
 	}
 	if accept('n') {
-		goto l1608
+		goto l1711
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1552:
+l1655:
 	id, length = 35, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1560:
+l1663:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('p') {
-		goto l1570
+		goto l1673
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1570:
+l1673:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('o') {
-		goto l1580
+		goto l1683
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1580:
+l1683:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l1590
+		goto l1693
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1590:
+l1693:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1600
+		goto l1703
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1600:
+l1703:
 	id, length = 36, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1608:
+l1711:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1618
+		goto l1721
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1618:
+l1721:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1628
+		goto l1731
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1628:
+l1731:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l1638
+		goto l1741
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1638:
+l1741:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('f') {
-		goto l1648
+		goto l1751
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1648:
+l1751:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1658
+		goto l1761
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1658:
+l1761:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('c') {
-		goto l1668
+		goto l1771
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1668:
+l1771:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1678
+		goto l1781
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1678:
+l1781:
 	id, length = 37, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1686:
+l1789:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1698
+		goto l1801
 	}
 	if accept('e') {
-		goto l1736
+		goto l1839
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1698:
+l1801:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('n') {
-		goto l1708
+		goto l1811
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1708:
+l1811:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('g') {
-		goto l1718
+		goto l1821
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1718:
+l1821:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1728
+		goto l1831
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1728:
+l1831:
 	id, length = 38, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1736:
+l1839:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1746
+		goto l1849
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1746:
+l1849:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('u') {
-		goto l1756
+		goto l1859
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1756:
+l1859:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l1766
+		goto l1869
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1766:
+l1869:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('n') {
-		goto l1776
+		goto l1879
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1776:
+l1879:
 	id, length = 39, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1784:
+l1887:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1798
+		goto l1901
 	}
 	if accept('t') {
-		goto l1846
+		goto l1949
 	}
 	if accept('w') {
-		goto l1894
+		goto l1997
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1798:
+l1901:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('l') {
-		goto l1808
+		goto l1911
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1808:
+l1911:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1818
+		goto l1921
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1818:
+l1921:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('c') {
-		goto l1828
+		goto l1931
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1828:
+l1931:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1838
+		goto l1941
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1838:
+l1941:
 	id, length = 40, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1846:
+l1949:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l1856
+		goto l1959
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1856:
+l1959:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('u') {
-		goto l1866
+		goto l1969
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1866:
+l1969:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('c') {
-		goto l1876
+		goto l1979
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1876:
+l1979:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1886
+		goto l1989
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1886:
+l1989:
 	id, length = 41, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1894:
+l1997:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('i') {
-		goto l1904
+		goto l2007
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1904:
+l2007:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('t') {
-		goto l1914
+		goto l2017
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1914:
+l2017:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('c') {
-		goto l1924
+		goto l2027
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1924:
+l2027:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('h') {
-		goto l1934
+		goto l2037
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1934:
+l2037:
 	id, length = 42, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1942:
+l2045:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('y') {
-		goto l1952
+		goto l2055
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1952:
+l2055:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('p') {
-		goto l1962
+		goto l2065
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1962:
+l2065:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('e') {
-		goto l1972
+		goto l2075
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1972:
+l2075:
 	id, length = 43, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1980:
+l2083:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('a') {
-		goto l1990
+		goto l2093
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l1990:
+l2093:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if accept('r') {
-		goto l2000
+		goto l2103
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l2000:
+l2103:
 	id, length = 44, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l2008:
+l2111:
 	id, length = 66, pos
 	return id, length
-l2010:
+l2113:
 	id, length = 67, pos
 	if accept('=') {
-		goto l2016
+		goto l2119
 	}
 	if accept('|') {
-		goto l2018
+		goto l2121
 	}
 	return id, length
-l2016:
+l2119:
 	id, length = 45, pos
 	return id, length
-l2018:
+l2121:
 	id, length = 46, pos
 	return id, length
-l2020:
+l2123:
 	id, length = 68, pos
 	return id, length
-l2022:
+l2125:
 	id, length = 69, pos
 	return id, length
-l2024:
+l2127:
 	id, length = 71, pos
 	if accept('_') {
-		goto l994
+		goto l1097
 	}
 	if unicode.Is(unicode.L, r) {
 		move()
-		goto l1002
+		goto l1105
 	}
 	if unicode.Is(unicode.Nd, r) {
 		move()
-		goto l1010
+		goto l1113
 	}
 	return id, length
-l2032:
+l2135:
 	id, length = 0, pos
 	return id, length
 }

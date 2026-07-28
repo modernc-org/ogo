@@ -115,6 +115,9 @@ Releases before v0.9.0 predate this file; see
   `extra init expr 2`. The first replaces `missing constant value for b`, which said
   the same thing in different words and reached the same condition from the other
   side.
+- **A float literal has a hexadecimal form**, `0x1p-2`, `0x1.8p1`, `0X2p+3`, whose
+  exponent is a power of two and is required, as in Go. It is how an exact value is
+  written on a target whose `float64` is 32 bits wide.
 - **A defined type over a channel is a channel**, `type Ch chan int`: a send, a
   receive and a `select` clause all reach it, through a chain of definitions if there
   is one. It was the one kind left out when a defined type gained the behaviour of

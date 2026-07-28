@@ -28,8 +28,6 @@
 // and initialized before main, which a field cannot have without deciding what a
 // declaration of the struct allocates -- and what a copy of it, a composite literal
 // of it, and an array of it then share.
-// TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
-// literals).
 // TODO 20260728 A local variable, parameter or struct field whose name is a C
 // KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
 // moved out of C's way; a local one is not, several emission paths writing a local's
@@ -272,13 +270,20 @@
 // # Floating-point literals
 //
 // A floating-point literal is an untyped floating-point constant. It has a decimal
-// integer part, a decimal fraction, and a decimal exponent part, in the forms below.
-// Go's hexadecimal form ("0x1p-2") is not recognized.
+// form -- an integer part, a fraction and an exponent -- and a hexadecimal one,
+// whose exponent is a power of two and is required, as in Go.
 //
 //	float_lit = decimal_digits "." [ decimal_digits ] [ exponent ]
 //		| decimal_digits exponent
-//		| "." decimal_digits [ exponent ] .
+//		| "." decimal_digits [ exponent ]
+//		| hex_float_lit .
 //	exponent  = ( "e" | "E" ) [ "+" | "-" ] decimal_digits .
+//
+//	hex_float_lit = "0" ( "x" | "X" ) hex_mantissa hex_exponent .
+//	hex_mantissa  = [ "_" ] hex_digits "." [ hex_digits ]
+//		| [ "_" ] hex_digits
+//		| "." hex_digits .
+//	hex_exponent  = ( "p" | "P" ) [ "+" | "-" ] decimal_digits .
 //
 // # Rune literals
 //
