@@ -25,6 +25,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Bug fixes
 
+- **A struct field's array bound could not name a constant.** `buf [maxFrame]uint8`
+  inside a struct did not compile, failing as `unsupported type ""`: struct typedefs
+  are emitted before the constants they might mention, so the bound was out of
+  reach. A local or package-level array of the same shape always worked, which is
+  why nothing noticed — no test had put one in a struct. Constant *values* are now
+  collected ahead of the typedefs; their types still are not, and an array bound has
+  no use for one.
 - **Arithmetic on `int8`, `uint8`, `int16` and `uint16` did not stay in the type.**
   Go computes in the operands' own type; C promotes anything narrower than `int` to
   `int` and keeps the extra bits, so with `var a uint8 = 200`, `a * 3` printed 600
@@ -49,6 +56,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **A byte-oriented framing receiver is a run case** — SLIP-style escaping around a
+  payload with a CRC-8 trailer, driven by a state machine — and it is what found the
+  array bound above. It is the first thing a P2 program that talks to anything
+  needs, and its output matches real Go byte for byte.
 - **The fuzzer's programs are compiled for the target and run on the board.** The
   oracle checked a running checksum the generator computed as it emitted the code,
   but only ever against the host C compiler — so it said nothing about the machine

@@ -1999,6 +1999,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// to a mutually-recursive one.
 	var typedefs bytes.Buffer
 	e.w = &typedefs
+	// Constant VALUES first: a struct field's array bound may name one, and the
+	// typedefs below are emitted before the constants themselves.
+	forEachFile(func() { e.collectConstValues(e.f.AST) })
 	forEachFile(func() { e.collectStructForwards(e.f.AST) })
 	forEachFile(func() { e.collectStructs(e.f.AST) })
 
@@ -2336,8 +2339,11 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 }
 
 type emitter struct {
-	w                  io.Writer // body buffer during the walk
-	f                  *File     // file currently being emitted, for token access
+	w io.Writer // body buffer during the walk
+	f *File     // file currently being emitted, for token access
+	// constPreScan runs emitConstDecl for its folded VALUES only -- no C emitted,
+	// no types resolved. See collectConstValues.
+	constPreScan       bool
 	indent             int
 	includes           map[string]bool
 	funcRet            map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
@@ -2867,6 +2873,25 @@ func (e *emitter) emitPackageConsts(ast []int32) {
 	}
 }
 
+// collectConstValues records every package-level constant that folds to an integer,
+// before any type is collected.
+//
+// A struct field's array bound may name a constant -- `buf [maxFrame]uint8` -- and C
+// cannot use a `static const` as a bound, so the emitter has to spell the value.
+// Struct typedefs are emitted first of all (a signature or a variable of struct type
+// has to resolve), which put the bound's constant out of reach: the field fell
+// through to the plain named-type path and failed as `unsupported type ""`. A local
+// or package-level array of the same shape worked, being emitted after the constants.
+//
+// Only values are collected here. Resolving a constant's TYPE cannot move this early
+// -- `const c Celsius = 5` names a type this pass runs ahead of -- and an array bound
+// has no use for one.
+func (e *emitter) collectConstValues(ast []int32) {
+	e.constPreScan = true
+	defer func() { e.constPreScan = false }()
+	e.emitPackageConsts(ast)
+}
+
 // emitPackageVars emits the file's package-level variable declarations as C
 // file-scope `static` definitions and records each in the global type environment.
 func (e *emitter) emitPackageVars(ast []int32) {
@@ -3134,6 +3159,13 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		for s := range it(n.ast) {
 			switch s.sym {
 			case Type:
+				// The pre-scan runs before any type is collected, so a named type
+				// would fail to resolve. It records values, not types: hasType still
+				// carries forward to the next spec, ownType is simply unused.
+				if e.constPreScan {
+					ownType, hasType = "", true
+					continue
+				}
 				ownType, hasType = e.cType(s.ast), true
 			case IdentifierList:
 				for d := range it(s.ast) {
@@ -3192,6 +3224,15 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		cname := name
 		if pkg {
 			cname = mangle(e.curPkgPrefix, name)
+		}
+		if e.constPreScan {
+			// Values only: what an array bound needs, and all it can use.
+			e.iota = curIota
+			if v, ok := e.foldConstInt(initExpr); ok {
+				e.constInt[cname] = intCLit(v)
+			}
+			e.iota = -1
+			return
 		}
 		ctype := ownType
 		if !hasType {

@@ -852,6 +852,238 @@ func main() {
 		want: "10 5 10 10 63\n",
 	},
 	{
+		// A byte-oriented framing receiver: SLIP-style escaping around a payload
+		// with a CRC-8 trailer, driven by a state machine over a method value
+		// receiver. The first thing a P2 program that talks to anything needs, and
+		// the shape that found the array bound below.
+		//
+		// A struct field's array bound naming a CONSTANT (`buf [maxFrame]uint8`)
+		// did not compile: struct typedefs are emitted before the constants, so the
+		// bound was out of reach and the field failed as `unsupported type ""`. A
+		// local or package-level array of the same shape worked, which is why it
+		// went unnoticed -- nothing in the corpus put one in a struct.
+		//
+		// Output matches real Go, including the CRC vector.
+		name: "framing receiver with escaping and CRC",
+		src: `// A byte-oriented framing receiver: SLIP-style escaping around a payload, a
+// length byte, and a CRC-8 trailer. This is the first thing a P2 program that
+// talks to anything needs.
+
+const (
+	frameEnd  uint8 = 0xC0
+	frameEsc  uint8 = 0xDB
+	escEnd    uint8 = 0xDC
+	escEsc    uint8 = 0xDD
+	maxFrame        = 16
+)
+
+const (
+	stIdle = iota
+	stData
+	stEscape
+)
+
+type Receiver struct {
+	state   int
+	buf     [maxFrame]uint8
+	n       int
+	frames  int
+	dropped int
+	crc     uint8
+}
+
+// crc8 is the Dallas/Maxim polynomial, the one a 1-Wire or sensor bus uses.
+func crc8(sum uint8, b uint8) uint8 {
+	sum ^= b
+	for i := 0; i < 8; i++ {
+		if sum&0x80 != 0 {
+			sum = sum<<1 ^ 0x07
+		} else {
+			sum = sum << 1
+		}
+	}
+	return sum
+}
+
+func (r *Receiver) reset() {
+	r.state = stData
+	r.n = 0
+	r.crc = 0
+}
+
+func (r *Receiver) store(b uint8) {
+	if r.n >= maxFrame {
+		r.dropped++
+		r.state = stIdle
+		return
+	}
+	r.buf[r.n] = b
+	r.n++
+	r.crc = crc8(r.crc, b)
+}
+
+// feed advances the machine by one byte and reports whether a frame completed.
+func (r *Receiver) feed(b uint8) bool {
+	switch r.state {
+	case stIdle:
+		if b == frameEnd {
+			r.reset()
+		}
+		return false
+	case stEscape:
+		r.state = stData
+		switch b {
+		case escEnd:
+			r.store(frameEnd)
+		case escEsc:
+			r.store(frameEsc)
+		default:
+			r.dropped++
+			r.state = stIdle
+		}
+		return false
+	}
+	switch b {
+	case frameEnd:
+		if r.n == 0 {
+			return false // a repeated delimiter, not an empty frame
+		}
+		r.state = stIdle
+		// The last stored byte is the CRC over the ones before it, so folding it
+		// in leaves zero when the frame is intact.
+		if r.crc != 0 {
+			r.dropped++
+			return false
+		}
+		r.frames++
+		return true
+	case frameEsc:
+		r.state = stEscape
+		return false
+	}
+	r.store(b)
+	return false
+}
+
+// encode wraps payload in a frame, escaping as it goes, and returns the length
+// written into out.
+func encode(out []uint8, payload []uint8, corrupt bool) int {
+	n := 0
+	out[n] = frameEnd
+	n++
+	var sum uint8 = 0
+	for i := 0; i < len(payload); i++ {
+		b := payload[i]
+		sum = crc8(sum, b)
+		if b == frameEnd || b == frameEsc {
+			out[n] = frameEsc
+			n++
+			if b == frameEnd {
+				b = escEnd
+			} else {
+				b = escEsc
+			}
+		}
+		out[n] = b
+		n++
+	}
+	if corrupt {
+		sum++
+	}
+	if sum == frameEnd || sum == frameEsc {
+		out[n] = frameEsc
+		n++
+		if sum == frameEnd {
+			sum = escEnd
+		} else {
+			sum = escEsc
+		}
+	}
+	out[n] = sum
+	n++
+	out[n] = frameEnd
+	n++
+	return n
+}
+
+func main() {
+	var r Receiver
+	r.state = stIdle
+
+	var wire [64]uint8
+	var payload [8]uint8
+
+	// A plain payload.
+	payload[0] = 1
+	payload[1] = 2
+	payload[2] = 3
+	n := encode(wire[:], payload[0:3], false)
+	got := 0
+	for i := 0; i < n; i++ {
+		if r.feed(wire[i]) {
+			got++
+		}
+	}
+	println("plain", n, got, r.n, r.buf[0], r.buf[1], r.buf[2])
+
+	// A payload holding both reserved bytes, so the escaping is exercised.
+	payload[0] = frameEnd
+	payload[1] = 0x42
+	payload[2] = frameEsc
+	n = encode(wire[:], payload[0:3], false)
+	got = 0
+	for i := 0; i < n; i++ {
+		if r.feed(wire[i]) {
+			got++
+		}
+	}
+	println("escaped", n, got, r.n, r.buf[0], r.buf[1], r.buf[2])
+
+	// A corrupted CRC is rejected.
+	payload[0] = 9
+	payload[1] = 8
+	n = encode(wire[:], payload[0:2], true)
+	got = 0
+	for i := 0; i < n; i++ {
+		if r.feed(wire[i]) {
+			got++
+		}
+	}
+	println("corrupt", got, r.dropped)
+
+	// A frame longer than the buffer is dropped, and the receiver resynchronises.
+	var big [24]uint8
+	for i := 0; i < 20; i++ {
+		big[i] = uint8(i + 1)
+	}
+	n = encode(wire[:], big[0:20], false)
+	got = 0
+	for i := 0; i < n; i++ {
+		if r.feed(wire[i]) {
+			got++
+		}
+	}
+	payload[0] = 7
+	n = encode(wire[:], payload[0:1], false)
+	for i := 0; i < n; i++ {
+		if r.feed(wire[i]) {
+			got++
+		}
+	}
+	println("overrun", got, r.frames, r.dropped, r.buf[0])
+
+	// The CRC itself, over a known vector.
+	var sum uint8 = 0
+	for i := 0; i < 9; i++ {
+		sum = crc8(sum, uint8(48+i))
+	}
+	println("crc", sum)
+}
+`,
+		want: "plain 6 1 4 1 2 3\nescaped 8 1 4 192 66 219\ncorrupt 0 1\n" +
+			"overrun 1 3 2 7\ncrc 79\n",
+	},
+	{
 		// Arithmetic on a type narrower than C's int, which C promotes to int and
 		// computes there while Go computes in the operand's own type. `a * 3` with
 		// `var a uint8 = 200` is 88 in Go and 600 in C.
