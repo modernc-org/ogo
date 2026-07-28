@@ -852,6 +852,48 @@ func main() {
 		want: "10 5 10 10 63\n",
 	},
 	{
+		// The clause shapes a switch is built from, all in one program: a case
+		// listing several values, an empty clause (which selects nothing to run
+		// rather than falling into the next one), a default that runs, and a
+		// default that is skipped because a later case matched -- Go lets the
+		// default sit anywhere, so the if/else lowering cannot assume it is last.
+		//
+		// The smith fuzzer generates exactly these shapes, so the corpus documents
+		// what it relies on.
+		name: "switch clause shapes",
+		src: `func f(n int) int {
+	switch n {
+	case 1:
+		return 10
+	default:
+		return 99
+	case 2, 3:
+		return 20
+	}
+}
+
+func main() {
+	println(f(1), f(2), f(3), f(7))
+	x := 5
+	switch x {
+	case 4:
+		println("no")
+	case 5:
+		println("yes")
+	default:
+		println("default")
+	}
+	switch x {
+	case 5:
+	default:
+		println("not reached")
+	}
+	println("done")
+}
+`,
+		want: "10 20 20 99\nyes\ndone\n",
+	},
+	{
 		// break exits the switch: the rest of the case is skipped and execution
 		// resumes after the switch. The if/else lowering makes it a forward goto.
 		name: "break exits a switch case",

@@ -25,6 +25,16 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **The fuzzer generates `switch` statements.** The oracle only checks that whatever
+  was generated matches the VM's prediction, so a construct it never emits is a
+  construct it never tests — and `switch` was one, despite being in the language from
+  the start. Generated switches carry the clause shapes that make the statement more
+  than an `if`: a case listing several values, an empty clause, and a `default` that
+  is sometimes taken and sometimes skipped. Only one clause has a body, so the VM's
+  prediction stays exact; the others exist to be stepped over. 800 seeds agree.
+- **The clause shapes a `switch` is built from are a run case**, including a
+  `default` written before a later `case` — Go allows it anywhere, so the if/else
+  lowering cannot assume it is last. Output matches real Go.
 - **Recursion has a test, and it runs on the board.** Nothing exercised it before,
   which matters most on the target: `main` runs on the cog's own stack and a
   goroutine on its pool slot's fixed 256 longs, so a recursive call chain is bounded

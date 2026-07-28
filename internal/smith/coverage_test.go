@@ -22,6 +22,10 @@ var generatedConstructs = []struct {
 }{
 	{"for loop", `\n\s*for \(`},
 	{"if statement", `\n\s*if \(`},
+	{"switch statement", `\n\s*switch `},
+	{"switch skipped case", `\n\s*case -?\d+:\n\s*case `},
+	{"switch multi-value case", `\n\s*case -?\d+, -?\d+:`},
+	{"switch default", `\n\s*default:`},
 	{"int variable", `\n\s*var v_\d+ int`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},

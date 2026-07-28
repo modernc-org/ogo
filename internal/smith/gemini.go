@@ -253,8 +253,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 	switch r := f.Rand.Float32(); {
 	case r < 0.10:
 		return f.genForStmt(vm, mem) // 10% chance for a loop
+	case r < 0.22:
+		return f.genIfStmt(vm, mem) // 12% chance for an if
 	case r < 0.25:
-		return f.genIfStmt(vm, mem) // 15% chance for an if
+		return f.genSwitchStmt(vm, mem) // 3% chance for a switch
 	case r < 0.37:
 		return f.genVarDecl(vm, mem) // 12% chance for var
 	case r < 0.44:
@@ -416,6 +418,51 @@ func (f *Fuzzer) genIfStmt(vm Machine, mem Memory) Node {
 		Cond: condNode,
 		Body: &BlockNode{Statements: stmts},
 	}
+}
+
+// genSwitchStmt generates a switch over an integer expression whose value the
+// generator already knows. Exactly one clause carries the body, so the VM's state
+// after the statement is that body's -- the same bargain genIfStmt makes by forcing
+// its condition true. Every other clause is empty.
+//
+// The clauses that do NOT run are what makes this worth generating: a switch with a
+// single case says nothing about how the guard is compared, how a skipped clause is
+// stepped over, or that control leaves at the end of a clause instead of falling
+// through. The body lands in a "case" or in the "default" by coin flip, so both the
+// default-taken and the default-skipped paths are covered, and the matching case is
+// sometimes written with two values.
+func (f *Fuzzer) genSwitchStmt(vm Machine, mem Memory) Node {
+	tagNode, tagVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	match := tagVal.Value().(int32)
+
+	// Values the tag is not. Adding wraps at the extreme, which still yields
+	// distinct values, so no clause can accidentally match twice.
+	miss1, miss2, miss3 := match+1, match+2, match+3
+
+	mem.PushScope()
+	f.CurrentEnv = NewScope(f.CurrentEnv)
+	var stmts []Node
+	for i := 0; i < 1+f.Rand.Intn(3); i++ {
+		stmts = append(stmts, f.genStatement(vm, mem))
+	}
+	stmts = append(stmts, f.flushUnused(vm, mem)...)
+	mem.PopScope()
+	f.CurrentEnv = f.CurrentEnv.Parent
+	body := &BlockNode{Statements: stmts}
+
+	n := &SwitchStmtNode{Tag: tagNode}
+	n.Clauses = append(n.Clauses, SwitchClause{Values: []int32{miss1}})
+	switch {
+	case f.Rand.Float32() < 0.34: // the body is the default clause
+		n.Clauses = append(n.Clauses,
+			SwitchClause{Values: []int32{miss2, miss3}},
+			SwitchClause{Body: body})
+	default: // the body is a case, with the default skipped after it
+		n.Clauses = append(n.Clauses,
+			SwitchClause{Values: []int32{miss2, match}, Body: body},
+			SwitchClause{})
+	}
+	return n
 }
 
 // genVarDecl generates: var <name> int = <expr>
@@ -782,6 +829,53 @@ func (n *IfStmtNode) Write(w io.Writer, indent int) {
 	n.Cond.Write(w, 0)
 	fmt.Fprint(w, " ")
 	n.Body.Write(w, indent)
+}
+
+// SwitchClause is one clause of a SwitchStmtNode. An empty Values means "default";
+// a nil Body means the clause does nothing when selected.
+type SwitchClause struct {
+	Values []int32
+	Body   Node // Expected to be a BlockNode or nil
+}
+
+// SwitchStmtNode is a switch over Tag in which at most one clause has a body. The
+// non-matching clauses come first, so a guard compared wrongly lands somewhere that
+// does nothing and the checksum comes out wrong, rather than in the body by luck.
+type SwitchStmtNode struct {
+	Tag     Node
+	Clauses []SwitchClause
+}
+
+func (n *SwitchStmtNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprint(w, "switch ")
+	n.Tag.Write(w, 0)
+	fmt.Fprint(w, " {\n")
+	for _, c := range n.Clauses {
+		writeIndent(w, indent)
+		switch {
+		case len(c.Values) == 0:
+			fmt.Fprint(w, "default:\n")
+		default:
+			fmt.Fprint(w, "case ")
+			for i, v := range c.Values {
+				if i != 0 {
+					fmt.Fprint(w, ", ")
+				}
+				fmt.Fprintf(w, "%d", v)
+			}
+			fmt.Fprint(w, ":\n")
+		}
+		if c.Body == nil {
+			continue
+		}
+		for _, stmt := range c.Body.(*BlockNode).Statements {
+			stmt.Write(w, indent+1)
+			fmt.Fprint(w, "\n")
+		}
+	}
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}")
 }
 
 type BlockNode struct {
