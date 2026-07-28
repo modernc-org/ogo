@@ -38,7 +38,7 @@ func reachable_after_break() {
 }
 
 func misplaced() {
-	// ERROR "break is not in a loop, switch or select"
+	// ERROR "break is not in a loop, switch, or select"
 	break
 }
 

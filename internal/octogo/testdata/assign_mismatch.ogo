@@ -28,14 +28,14 @@ func tooFewDefine() {
 }
 
 func callReturnsFewer() {
-	// ERROR "assignment mismatch: 2 variables but 1 value"
+	// ERROR "assignment mismatch: 2 variables but one returns 1 value"
 	a, b := one()
 	_ = a
 	_ = b
 }
 
 func callReturnsMore() {
-	// ERROR "assignment mismatch: 1 variable but 2 values"
+	// ERROR "assignment mismatch: 1 variable but two returns 2 values"
 	x := two()
 	_ = x
 }

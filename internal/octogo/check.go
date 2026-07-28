@@ -1424,14 +1424,14 @@ func (f *File) checkLabeledStatement(s *Scope, results []retResult, head, postfi
 func (f *File) checkBreak(breakTok Token, label Token, hasLabel bool) {
 	if !hasLabel {
 		if f.loopDepth == 0 && f.switchDepth == 0 && f.selectDepth == 0 {
-			f.err(breakTok.Position(), "break is not in a loop, switch or select")
+			f.err(breakTok.Position(), "break is not in a loop, switch, or select")
 		}
 		return
 	}
 	fr, ok := f.findLabel(label.Src())
 	switch {
 	case !ok:
-		f.err(label.Position(), "undefined label %s", label.Src())
+		f.err(label.Position(), "break label not defined: %s", label.Src())
 	case fr.kind != labelLoop && fr.kind != labelSwitch:
 		f.err(label.Position(), "invalid break label %s: not a for or switch", label.Src())
 	}
@@ -1449,7 +1449,7 @@ func (f *File) checkContinue(continueTok Token, label Token, hasLabel bool) {
 	fr, ok := f.findLabel(label.Src())
 	switch {
 	case !ok:
-		f.err(label.Position(), "undefined label %s", label.Src())
+		f.err(label.Position(), "continue label not defined: %s", label.Src())
 	case fr.kind != labelLoop:
 		f.err(label.Position(), "invalid continue label %s: not a for", label.Src())
 	}
@@ -2911,7 +2911,7 @@ func (f *File) checkVarSpecArity(s *Scope, names []Token, exprs []Node) {
 		return
 	}
 	if v, ok := f.rhsValueCount(s, exprs); ok && v != len(names) {
-		f.err(names[0].Position(), "assignment mismatch: %s but %s", countUnits(len(names), "variable"), countUnits(v, "value"))
+		f.err(names[0].Position(), "assignment mismatch: %s but %s", countUnits(len(names), "variable"), f.valueSource(s, exprs, v))
 	}
 }
 
@@ -3277,7 +3277,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// must match. The targets are the head plus each LhsItem.
 	if op == ASSIGN || op == DEFINE {
 		if v, ok := f.rhsValueCount(s, rhs); ok && v != 1+lhsItems {
-			f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but %s", countUnits(1+lhsItems, "variable"), countUnits(v, "value"))
+			f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but %s", countUnits(1+lhsItems, "variable"), f.valueSource(s, rhs, v))
 		}
 	}
 
@@ -3693,6 +3693,20 @@ func (f *File) exprCallee(n Node) (Token, bool) {
 		return Token{}, false
 	}
 	return id, true
+}
+
+// valueSource phrases the right-hand side of an assignment-mismatch diagnostic. A
+// single call is named -- "f returns 1 value", as Go words it, which says where the
+// count came from -- and anything else is just counted.
+func (f *File) valueSource(s *Scope, rhs []Node, v int) string {
+	if len(rhs) == 1 {
+		if callee, ok := f.exprCallee(rhs[0]); ok {
+			if _, isFunc := s.find(callee.Src()).(*FuncDeclaration); isFunc {
+				return fmt.Sprintf("%s returns %s", callee.Src(), countUnits(v, "value"))
+			}
+		}
+	}
+	return countUnits(v, "value")
 }
 
 // errNoNewVars reports a short declaration that introduces nothing. Every form of

@@ -1,0 +1,32 @@
+// Three diagnostics that said the same thing as Go's in different words. The
+// compiler's messages are Go's wherever the two report the same condition, so that
+// what a reader knows from Go carries over -- and so that a search for the text
+// finds the same answers.
+
+func one() int { return 1 }
+
+func outside() {
+	// ERROR "break is not in a loop, switch, or select"
+	break
+}
+
+func labels() {
+	for i := 0; i < 2; i++ {
+		// ERROR "break label not defined: nope"
+		break nope
+	}
+	for i := 0; i < 2; i++ {
+		// ERROR "continue label not defined: gone"
+		continue gone
+	}
+}
+
+// A mismatch whose values come from a single call names it, which is what says
+// where the count came from. One that does not just counts.
+func mismatch() {
+	// ERROR "assignment mismatch: 2 variables but one returns 1 value"
+	a, b := one()
+	// ERROR "assignment mismatch: 2 variables but 1 value"
+	c, d := 1
+	println(a, b, c, d)
+}

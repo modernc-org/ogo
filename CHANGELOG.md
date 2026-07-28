@@ -13,6 +13,18 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Diagnostics
+
+- **Three messages now read as Go's do.** `break is not in a loop, switch or select`
+  gains Go's comma; `undefined label nope` becomes `break label not defined: nope`
+  (or `continue label not defined:`, as Go words each); and an assignment mismatch
+  whose values come from a single call names it — `2 variables but f returns 1 value`
+  — which is what says where the count came from.
+
+  A message that says the same thing as Go's in different words is worse than it
+  looks: what a reader knows from Go stops carrying over, and a search for the text
+  finds nothing.
+
 ### Tooling
 
 - **`ogo fmt` indented a comment one level too deep** when it stood before a `case`

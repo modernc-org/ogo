@@ -3,14 +3,14 @@
 
 func undefinedBreak() {
 	for i := 0; i < 3; i++ {
-		// ERROR "undefined label nope"
+		// ERROR "break label not defined: nope"
 		break nope
 	}
 }
 
 func undefinedContinue() {
 	for i := 0; i < 3; i++ {
-		// ERROR "undefined label gone"
+		// ERROR "continue label not defined: gone"
 		continue gone
 	}
 }

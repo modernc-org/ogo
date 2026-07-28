@@ -18,7 +18,7 @@ func tooMany() {
 }
 
 func callWrongArity() {
-	// ERROR "assignment mismatch: 3 variables but 2 values"
+	// ERROR "assignment mismatch: 3 variables but two returns 2 values"
 	var a, b, c = two()
 	println(a, b, c)
 }
