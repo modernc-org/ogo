@@ -852,6 +852,172 @@ func main() {
 		want: "10 5 10 10 63\n",
 	},
 	{
+		// A goroutine that starts goroutines. Every other case spawns from main
+		// alone, so nothing had two cogs claiming pool slots at the same time --
+		// and the claim takes a hardware lock precisely because they might.
+		name: "a goroutine starts goroutines",
+		src: `// A supervisor cog that starts workers of its own, so the cog pool's bookkeeping
+// is reached from more than one cog at a time rather than from main alone.
+//
+// Two supervisors and two leaves each is six goroutines beside main, which fits
+// the pool of seven with one to spare. A leaf blocks until main takes its value,
+// so a program needing more than the pool holds at once would depend on the
+// claim's bounded wait outlasting the drain -- a race to lose one run in ten,
+// not a test.
+
+func leaf(id int, out chan int) {
+	out <- id * 10
+}
+
+func supervisor(base int, out chan int, done chan int) {
+	for i := 0; i < 2; i++ {
+		go leaf(base+i, out)
+	}
+	done <- base
+}
+
+func main() {
+	var out chan int
+	var done chan int
+
+	go supervisor(1, out, done)
+	go supervisor(3, out, done)
+
+	total := 0
+	seen := 0
+	for i := 0; i < 4; i++ {
+		v := <-out
+		total += v
+		seen |= 1 << (v / 10)
+	}
+	a := <-done
+	b := <-done
+	println("total", total)
+	println("seen", seen)
+	println("bases", a+b)
+}
+`,
+		want: "total 100\nseen 30\nbases 4\n",
+	},
+	{
+		// A work-queue scheduler over the WHOLE cog pool, retired and restarted:
+		// seven workers, three rounds, twenty-one goroutines started and stopped.
+		// The dispatcher multiplexes handing out the next job against taking a
+		// result back, because sending them all first deadlocks -- a worker holding
+		// a finished result cannot take another job. That is what select is for, and
+		// it is the shape a user writes rather than the one a feature test writes.
+		//
+		// What it covers that the contention cases do not: the pool FULL (main plus
+		// seven), every slot recycled twice, a struct crossing a channel as the
+		// result type, and a 64-bit field inside it wide enough that a truncated one
+		// would show.
+		//
+		// Every assertion is order-independent -- which cog takes which job is
+		// unspecified. The bitmask says each job ran exactly once per round, and
+		// "bad" counts results naming a worker outside the pool.
+		name: "work-queue scheduler over the cog pool",
+		src: `const (
+	workers = 7
+	perRound = 9
+	rounds  = 3
+	stop    = -1
+)
+
+type result struct {
+	job int
+	sum int
+	tag int64
+}
+
+func work(n int) int {
+	acc := 0
+	for i := 1; i <= n; i++ {
+		acc += i * i
+	}
+	return acc
+}
+
+func worker(id int, in chan int, out chan result) {
+	for {
+		j := <-in
+		if j == stop {
+			return
+		}
+		var r result
+		r.job = j
+		r.sum = work(j)
+		r.tag = int64(id) << 40 // wide enough that a truncated field would show
+		out <- r
+	}
+}
+
+// run dispatches perRound jobs over a freshly started pool and retires it. Every
+// round starts and stops every cog in the pool, so the slots have to come back.
+//
+// It returns the total, a bitmask of the jobs it saw, and how many results named
+// a worker outside the pool -- which no scheduling order may change.
+func run(in chan int, out chan result) (int, int, int) {
+	for i := 0; i < workers; i++ {
+		go worker(i, in, out)
+	}
+	sent := 0
+	got := 0
+	total := 0
+	seen := 0
+	bad := 0
+	for sent < perRound || got < perRound {
+		if sent < perRound {
+			select {
+			case in <- sent + 1:
+				sent++
+			case r := <-out:
+				got++
+				total += r.sum
+				seen |= 1 << r.job
+				if r.tag>>40 < 0 || r.tag>>40 >= workers {
+					bad++
+				}
+			}
+			continue
+		}
+		r := <-out
+		got++
+		total += r.sum
+		seen |= 1 << r.job
+		if r.tag>>40 < 0 || r.tag>>40 >= workers {
+			bad++
+		}
+	}
+	for i := 0; i < workers; i++ {
+		in <- stop
+	}
+	return total, seen, bad
+}
+
+func main() {
+	var in chan int
+	var out chan result
+
+	grand := 0
+	allSeen := 0
+	bad := 0
+	for round := 0; round < rounds; round++ {
+		t, s, b := run(in, out)
+		grand += t
+		allSeen |= s
+		if s != 1023-1 {
+			bad += 100 // every job 1..9 exactly once, whatever the order
+		}
+		bad += b
+	}
+	println("grand", grand)
+	println("seen", allSeen)
+	println("bad", bad)
+}
+`,
+		want: "grand 2475\nseen 1022\nbad 0\n",
+	},
+	{
 		// len and cap of a struct's ARRAY field, which were refused outright: both
 		// resolved an array only through a bare variable name, so `len(r.buf)` fell
 		// through to the string/slice header path and failed. The bound is a

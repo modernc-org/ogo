@@ -62,6 +62,16 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **A work-queue scheduler over the whole cog pool is a run case**, and a
+  goroutine that starts goroutines is another. Seven workers over three rounds is
+  twenty-one cogs started and retired, with the dispatcher multiplexing "hand out
+  the next job" against "take a result back" — sending them all first deadlocks, a
+  worker holding a finished result cannot take another job. Between them they cover
+  the pool full rather than partly used, every slot recycled twice, a struct
+  crossing a channel with a 64-bit field in it, and two cogs claiming pool slots at
+  once, which nothing had done: every other case spawns from main alone. Both agree
+  with real Go and run correctly on a P2, repeatedly. No bug behind them — the
+  concurrency layer took the load as built.
 - **A byte-oriented framing receiver is a run case** — SLIP-style escaping around a
   payload with a CRC-8 trailer, driven by a state machine — and it is what found the
   array bound above. It is the first thing a P2 program that talks to anything
