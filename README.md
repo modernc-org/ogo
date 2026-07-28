@@ -218,7 +218,9 @@ broken.
 * A **goroutine's stack is a fixed 256 longs** and cannot be sized per `go`
   statement. Recursion works — `main` runs on the cog's own stack and a goroutine on
   its pool slot's — but a deep enough call chain in a goroutine overruns that slot
-  with no diagnostic, this part having no memory protection.
+  with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
+  goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
+  all.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
 * A **channel held in a struct field**: a send or a receive on one is refused,

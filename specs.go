@@ -15,8 +15,15 @@
 // TODO 20260719 Go statements: per-goroutine stack size. Every goroutine gets the
 // same fixed stack in its pool slot (OGO_STACK_LONGS, 256 longs), which a deep call
 // chain can overrun with no diagnostic -- there is no guard page on this part. A
-// recursive function is the way to reach it, and neither the compiler nor the
-// runtime says how close a program is.
+// recursive function is the way to reach it: measured on a P2-EDGE, a goroutine
+// recursing 200 deep returns normally and one recursing 2000 deep prints nothing at
+// all, having overrun the slot before it could report anything.
+//
+// A guard word at each end of the slot, checked when the slot is reclaimed, was
+// tried and abandoned: it costs little, but the case it was built for -- the deep
+// recursion above -- dies before the check is ever reached, so it could not be shown
+// to catch anything. What would work is a depth check at function entry, or a stack
+// whose size the "go" statement can choose, which is what this TODO is really for.
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
