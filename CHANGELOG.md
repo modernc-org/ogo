@@ -11,220 +11,10 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
-## Unreleased
-
-### Fixed
-
-- **A shadowing declaration outlived its scope.** The emitter keeps a variable's
-  type, extents and provenance in maps keyed by source name and had no scopes of its
-  own, so after `{ s := 5 }` shadowing a package-level string, `s` was still recorded
-  as an int — and the next read of the real `s` printed the first word of its header
-  as a number. The same held for a name declared in an `if`, `for`, `switch`,
-  `range` or `select` header. Every one of those now ends where it should.
-- **A `for` loop's condition was compiled against the wrong `s`** when its own
-  variable shadowed one of a different type: the condition was rendered before the
-  loop variable's type was recorded, so `for s := 0; s < 2; s++` inside the scope of
-  a string `s` compared two ints as strings.
-- **A digit separator in a float literal did not compile.** `1_0.5` reached the C
-  backend as written, where it is not a float at all but an integer with an invalid
-  suffix. The integer forms had been normalized all along; the float one had not.
-- **`--unchecked` left a negative shift count undefined.** The guarded shift kept its
-  Go panic in a checked build, but an unchecked one has no panic to raise and fell
-  through to a C shift by a negative count. It now compares the count unsigned, so a
-  negative one yields what an enormous one does — 0 — rather than anything undefined.
-- **Division of two integer constants produced a float.** `7 / 2` was 3.5 rather than
-  3, as Go has it, so a perfectly ordinary `[MB / KB]int` was rejected with
-  `invalid array bound` and any constant reached through a division carried the wrong
-  type. Float constant division is unaffected: `7.0 / 2` is still 3.5.
-- **Deferred calls ran before a return's expressions were evaluated.** Go evaluates
-  the expressions, assigns them to the results, and only then runs the defers — so a
-  `return n + 1` alongside a deferred call that multiplies `n` by 10 gave 11 where Go
-  gives 20. Binding the results first also gives a *named* result its point: a defer
-  may still change it, and that change is what the caller receives.
-- **A `string`, slice or struct named result, or defer argument, emitted invalid C.**
-  Both were zeroed with `= 0`, which C accepts for a scalar and rejects for an
-  aggregate, so `func f() (s string)` and `defer g("x")` did not compile at all.
-- **A 64-bit `go` argument was silently truncated.** A goroutine's arguments travel
-  through a per-site block whose fields took the type of each *argument expression*
-  rather than of the parameter it is assigned to, so `go sender(1234567890123)`
-  stored the literal as the `int` it defaults to and the cog received 1912276171.
-  The block now holds each value as its parameter's type. `defer`, which marshals
-  arguments too, was already correct.
-
-  Two things found alongside it, both needed to make a `go` of a 64-bit struct work
-  at all: a composite literal is built in a variable before it is stored into the
-  block, the target's C compiler refusing one as an assignment's right-hand side;
-  and a negated wide constant is folded in that literal too, which needed the fold to
-  run over the whole unary expression rather than its operands.
-- **The most negative value divided by −1 crashed.** Go defines it to be itself, with
-  a remainder of 0 — the quotient is not representable, so the two's-complement
-  overflow stands. C leaves it undefined, and the host traps on it with SIGFPE, which
-  is a crash where Go prints a number. Signed `/` and `%` now go through a guard,
-  alongside the divide-by-zero check the divisor already carried; unsigned division
-  and a constant divisor that is neither 0 nor −1 are untouched.
-- **A conversion to a 64-bit type of a 64-bit expression was miscompiled** by the
-  target's C compiler, yielding a value that varied from run to run — `int64(a - b)`
-  on `uint64` operands. The same cast applied to a *variable* is correct, so the
-  operand is now bound to one first. Only the board shows this; the host compiler
-  computes either form correctly.
-- **A shift by a count at or past the operand's width gave C's answer, not Go's.**
-  `x << 40` on an `int32` was `x << 8` — both compilers take the count modulo the
-  width, where Go defines the result as 0 (or −1 for a right shift of a negative
-  value). Silent wrong answers. A count that is not a constant already inside the
-  width now goes through a guarded helper; one that is stays a plain C shift, so
-  ordinary code costs nothing. A negative count is a run-time panic, as in Go.
-
-  The compound form `x <<= n` is guarded the same way, on a plain variable and on an
-  element whose index can be named twice. An element whose index is itself a call is
-  refused rather than emitted wrong — the guarded form names its target twice.
-- **A constant too wide for a 32-bit int was computed wrong.** `var x int64 = 1 << 40`
-  gave **0**, and `2000000000 * 3` gave 1705032704. Go computes a constant expression
-  in arbitrary precision and then converts; the emitter wrote the expression out as C
-  source, where it is a shift or a multiply of an `int`. A constant whose value does
-  not fit an int is now emitted as that value. `const big = 1 << 40` takes the width
-  it needs too, instead of `static const int`.
-
-  A negative one is written as its bit pattern rather than as a negation, because the
-  target's C compiler folds no unary minus in a global initializer — and because the
-  most negative value has no negation that is a literal in any C.
-- **A defined type is now type-checked.** A variable of one — `type Celsius int` —
-  carried no type category at all, so *every* check keyed on one was skipped for it:
-  `var c Celsius = "a"`, `c = "a"`, `f("a")` for a `Celsius` parameter and
-  `var s Small = 300` for a `type Small uint8` all went unreported and were left to
-  the C backend. The type is now followed to the one it is defined over, through a
-  chain of definitions if need be, and reads as itself in the message rather than as
-  its underlying type.
-
-  Known gap, unchanged: a defined type over a *channel* is not usable as a channel —
-  a send or receive on one is refused. A defined type over a struct, slice, array or
-  function is unaffected, having no type category to gain.
-- **A conversion between two types of the same representation now works.**
-  `bool(f)` emitted a call to a function named `bool` — invalid C — and
-  `string(n)` where `n` is a defined type over string was refused as needing an
-  allocation it does not need. Such a conversion builds nothing: it is the operand
-  itself, and now emits no C cast at all, which also removes a cast to a non-scalar
-  type that C does not have and only gcc was accepting. A scalar conversion keeps
-  its cast, so a narrowing one still truncates as Go says.
-
-  The conversions that would have to *build* a string, `string(r)` from a rune and
-  `string(b)` from a byte slice, are still refused — the checker reports the first
-  (it now types a conversion, so `string(rune(r))` is judged by what it converts
-  from) and the emitter the second, where the representation is known.
-- **`go` could panic `out of cogs` while a cog was in fact free.** A goroutine marks
-  its slot free in its epilogue, after the body ends — but the code that started it
-  can learn the body is over *before* that: a receive of the value the goroutine sent
-  last returns first. `go` then found every slot busy and gave up on the spot. It now
-  waits for a slot before declaring exhaustion, which is sound because a slot held by
-  a goroutine that really is running stays held, so the wait only delays a diagnosis
-  the program was going to get anyway. Measured on the host shim: a program that
-  starts seven goroutines, drains them and repeats failed 6 times in 400 runs before,
-  and 0 in 400 after.
-- **A panic printed nothing when its output was not a terminal.** `abort()` discards
-  a buffered stream, so through a pipe the panic line — and everything the program
-  had printed before it — was lost, leaving a bare `signal: aborted`. `ogo_panic`
-  now flushes first. The test suite's panicking cases assert the message from now on,
-  which is what would have caught this.
-- **A value of a named type printed as a meaningless number.** `type Name string`
-  printed `1428869128` — the first word of the string header read as `%d` — and
-  `type Flag bool` printed `1` rather than `true`. Every decision about how a value
-  is *represented* read the typedef's name instead of the type it stands for. This
-  was the worst kind of bug: a silent wrong answer in a program that ran.
-
-  Fixing it made the rest of a named type work as well. A value of `type Name string`
-  now carries a length, indexes to a byte, slices, ranges over its runes, compares
-  and switches as a string does; a value of `type List []int` indexes, ranges, and
-  answers `len`/`cap` as a slice does. What stays keyed on the name is identity —
-  which methods the type has, and what its C declaration is called — which is the
-  distinction the language draws.
-- **`var n int = "a"` was not reported.** A variable declaration's initializer was
-  checked for nothing but constant overflow — an assignment was checked and a call
-  argument was checked, so `n = "a"` and `f("a")` were caught while the declaration
-  form was left to the C backend, which said `incompatible types when initializing`.
-  Both the local and the package-level form now report it, in the same words the
-  assignment does.
-
-  Two container gaps in the same family closed with it: a **slice** variable never
-  recorded its element type at all, so `xs[0] = "oops"` was unchecked however `xs`
-  was declared; and a short declaration from an **array or slice literal**,
-  `a := [2]int{1, 2}`, recorded none either. Both do now.
-
-  A variable of a *named* type still carries no type category, so neither
-  `var c Celsius = "a"` nor `c = "a"` is reported yet — that is the checker's
-  predeclared-only type model, and is separate work.
-- **`p := P{1, 2}` was not type-checked.** A short declaration recorded no named
-  type, so every check that keys on one — the type of a field assignment, an unknown
-  field, an unknown method — was silently skipped for the ordinary way of writing it,
-  while `var p P = P{1, 2}` was checked. The errors were not lost, only misplaced:
-  they surfaced from the C backend instead, as `incompatible types when assigning`
-  or an implicit declaration of a method that does not exist. The type is now carried
-  over from a composite literal, the address of one, a copy of a variable that has
-  one, and a call whose single result has one.
-- **Several `init` functions in one package did not compile.** A package may declare
-  as many as it likes and Go runs each in turn, but two of them emitted two C
-  functions both named `init`, which the backend rejected as a redefinition. Each now
-  takes its own name and they run in the order they are written, each on the state
-  the ones before it left. A `func init` with a parameter emitted broken C, and one
-  with a result was accepted silently; both are now refused with Go's message,
-  `func init must have no arguments and no return values`.
-- **A `select` over more than one channel did not compile.** Multiplexing several
-  channels is the whole point of the statement, and the emitted C put each clause's
-  value declaration between the previous clause's closing brace and this clause's
-  `else` — which is not C, so the backend rejected it outright. The declarations now
-  stand ahead of the chain. Every `select` test had used a single clause, which is
-  how a shipped feature's headline use went uncompiled.
-
-### Tooling
-
-- **`ogo fmt` dropped the space after a comma before a nested composite literal**,
-  writing `{{1, 2},{3, 4}}` where gofmt writes `{{1, 2}, {3, 4}}`. The rule that
-  binds a literal's braces to what they enclose fired on the brace after the comma
-  too.
-- **`ogo fmt` indented a label** with the statements it labels. gofmt stands it one
-  level out, as `case` already did here — including a label that opens a `case`
-  clause's body.
-
-  Two gofmt behaviours remain unimplemented and are noted rather than fixed: binary
-  operators inside a call argument are rendered tight by gofmt (`println(a+b)`), and
-  consecutive one-line declarations have their bodies aligned.
-
-### Testing
-
-- **Every runtime trap now has a run case.** Divide by zero, remainder by zero and
-  appending past a slice's capacity were emitted by the compiler and exercised by
-  nothing, so the messages and the conditions that raise them were unverified. Divide
-  by zero is covered through each of its four lowerings — signed division and
-  remainder, which carry the check inside their guarded helper, and the unsigned and
-  64-bit forms, whose divisor goes through a separate one.
-- **Channels are now tested under contention**, on the host and on real cogs: two
-  consumers drawing from one producer through a shared channel, a `select` over two
-  channels fed by two more cogs at once, and a `select` whose send and receive
-  clauses have to make progress against another cog doing the mirror image. Every
-  other channel case has one sender and one receiver, so nothing pinned what happens
-  when several cogs reach the same rendezvous together — which on this target is a
-  hardware lock and a spin, with no scheduler to arbitrate. All of it passes.
-- **A multi-package program is now compiled for the target and run on hardware.** It
-  was exercised only by the host C compiler, so the one program shape whose lowering
-  is about nothing but names crossing a package boundary — every top-level symbol
-  mangled into its package's namespace, the whole program emitted as one translation
-  unit — had never been through flexcc or onto a board. The program, and what it
-  prints, are now shared by all three.
-- **`ogo fmt` is run over the whole run-case corpus** and its output re-formatted, so
-  a rule that chokes on, or churns, a real program fails a test. That is how the two
-  formatter bugs above were found.
-- **The `--unchecked` and `--release` builds are now tested.** Every run test built
-  with the checks on, so a whole configuration of `ogo build` was pinned by two
-  emission goldens and nothing else — a lowering that is correct only because a check
-  stands in front of it would not have been noticed. The run corpus is now executed
-  unchecked as well, and compiled for the target under each flag. All of it passes as
-  it stood; the coverage is the point.
+## v0.12.0
 
 ### Language
 
-- **A float literal may carry an exponent**, `1e3`, `1.5e-3`, `2E+10`. The scanner did
-  not recognize the form at all, so it was a syntax error — and one syntax error made
-  every name in the file read as undefined afterwards, which is how it first looked
-  like something else. The forms with an empty side, `1.` and `.5`, come with it.
-  Go's hexadecimal form, `0x1p-2`, is still not recognized.
 - **A declared function may be used as a value.** A variable, parameter, result,
   array element or struct field of a function type holds one, and a call through any
   of them is a call:
@@ -283,6 +73,219 @@ Releases before v0.9.0 predate this file; see
   An *array* literal is unchanged. An array is not a C value — binding one would
   only move `assignment to expression with array type` into the emitted C — so it
   stays a variable's initializer, a slot in another literal, and a `range` operand.
+- **A float literal may carry an exponent**, `1e3`, `1.5e-3`, `2E+10`. The scanner did
+  not recognize the form at all, so it was a syntax error — and one syntax error made
+  every name in the file read as undefined afterwards, which is how it first looked
+  like something else. The forms with an empty side, `1.` and `.5`, come with it.
+  Go's hexadecimal form, `0x1p-2`, is still not recognized.
+### Behaviour changes
+
+Each of these changes what a program that already compiled does, or reports
+something the last release let through to the C backend. Every one is the compiler
+agreeing with Go where it had not.
+
+- **Division of two integer constants produced a float.** `7 / 2` was 3.5 rather than
+  3, as Go has it, so a perfectly ordinary `[MB / KB]int` was rejected with
+  `invalid array bound` and any constant reached through a division carried the wrong
+  type. Float constant division is unaffected: `7.0 / 2` is still 3.5.
+- **A shift by a count at or past the operand's width gave C's answer, not Go's.**
+  `x << 40` on an `int32` was `x << 8` — both compilers take the count modulo the
+  width, where Go defines the result as 0 (or −1 for a right shift of a negative
+  value). Silent wrong answers. A count that is not a constant already inside the
+  width now goes through a guarded helper; one that is stays a plain C shift, so
+  ordinary code costs nothing. A negative count is a run-time panic, as in Go.
+
+  The compound form `x <<= n` is guarded the same way, on a plain variable and on an
+  element whose index can be named twice. An element whose index is itself a call is
+  refused rather than emitted wrong — the guarded form names its target twice.
+- **A constant too wide for a 32-bit int was computed wrong.** `var x int64 = 1 << 40`
+  gave **0**, and `2000000000 * 3` gave 1705032704. Go computes a constant expression
+  in arbitrary precision and then converts; the emitter wrote the expression out as C
+  source, where it is a shift or a multiply of an `int`. A constant whose value does
+  not fit an int is now emitted as that value. `const big = 1 << 40` takes the width
+  it needs too, instead of `static const int`.
+
+  A negative one is written as its bit pattern rather than as a negation, because the
+  target's C compiler folds no unary minus in a global initializer — and because the
+  most negative value has no negation that is a literal in any C.
+- **A value of a named type printed as a meaningless number.** `type Name string`
+  printed `1428869128` — the first word of the string header read as `%d` — and
+  `type Flag bool` printed `1` rather than `true`. Every decision about how a value
+  is *represented* read the typedef's name instead of the type it stands for. This
+  was the worst kind of bug: a silent wrong answer in a program that ran.
+
+  Fixing it made the rest of a named type work as well. A value of `type Name string`
+  now carries a length, indexes to a byte, slices, ranges over its runes, compares
+  and switches as a string does; a value of `type List []int` indexes, ranges, and
+  answers `len`/`cap` as a slice does. What stays keyed on the name is identity —
+  which methods the type has, and what its C declaration is called — which is the
+  distinction the language draws.
+- **Deferred calls ran before a return's expressions were evaluated.** Go evaluates
+  the expressions, assigns them to the results, and only then runs the defers — so a
+  `return n + 1` alongside a deferred call that multiplies `n` by 10 gave 11 where Go
+  gives 20. Binding the results first also gives a *named* result its point: a defer
+  may still change it, and that change is what the caller receives.
+- **A shadowing declaration outlived its scope.** The emitter keeps a variable's
+  type, extents and provenance in maps keyed by source name and had no scopes of its
+  own, so after `{ s := 5 }` shadowing a package-level string, `s` was still recorded
+  as an int — and the next read of the real `s` printed the first word of its header
+  as a number. The same held for a name declared in an `if`, `for`, `switch`,
+  `range` or `select` header. Every one of those now ends where it should.
+- **A defined type is now type-checked.** A variable of one — `type Celsius int` —
+  carried no type category at all, so *every* check keyed on one was skipped for it:
+  `var c Celsius = "a"`, `c = "a"`, `f("a")` for a `Celsius` parameter and
+  `var s Small = 300` for a `type Small uint8` all went unreported and were left to
+  the C backend. The type is now followed to the one it is defined over, through a
+  chain of definitions if need be, and reads as itself in the message rather than as
+  its underlying type.
+
+  Known gap, unchanged: a defined type over a *channel* is not usable as a channel —
+  a send or receive on one is refused. A defined type over a struct, slice, array or
+  function is unaffected, having no type category to gain.
+- **`var n int = "a"` was not reported.** A variable declaration's initializer was
+  checked for nothing but constant overflow — an assignment was checked and a call
+  argument was checked, so `n = "a"` and `f("a")` were caught while the declaration
+  form was left to the C backend, which said `incompatible types when initializing`.
+  Both the local and the package-level form now report it, in the same words the
+  assignment does.
+
+  Two container gaps in the same family closed with it: a **slice** variable never
+  recorded its element type at all, so `xs[0] = "oops"` was unchecked however `xs`
+  was declared; and a short declaration from an **array or slice literal**,
+  `a := [2]int{1, 2}`, recorded none either. Both do now.
+
+  A variable of a *named* type still carries no type category, so neither
+  `var c Celsius = "a"` nor `c = "a"` is reported yet — that is the checker's
+  predeclared-only type model, and is separate work.
+- **`p := P{1, 2}` was not type-checked.** A short declaration recorded no named
+  type, so every check that keys on one — the type of a field assignment, an unknown
+  field, an unknown method — was silently skipped for the ordinary way of writing it,
+  while `var p P = P{1, 2}` was checked. The errors were not lost, only misplaced:
+  they surfaced from the C backend instead, as `incompatible types when assigning`
+  or an implicit declaration of a method that does not exist. The type is now carried
+  over from a composite literal, the address of one, a copy of a variable that has
+  one, and a call whose single result has one.
+### Fixed
+
+- **The most negative value divided by −1 crashed.** Go defines it to be itself, with
+  a remainder of 0 — the quotient is not representable, so the two's-complement
+  overflow stands. C leaves it undefined, and the host traps on it with SIGFPE, which
+  is a crash where Go prints a number. Signed `/` and `%` now go through a guard,
+  alongside the divide-by-zero check the divisor already carried; unsigned division
+  and a constant divisor that is neither 0 nor −1 are untouched.
+- **A 64-bit `go` argument was silently truncated.** A goroutine's arguments travel
+  through a per-site block whose fields took the type of each *argument expression*
+  rather than of the parameter it is assigned to, so `go sender(1234567890123)`
+  stored the literal as the `int` it defaults to and the cog received 1912276171.
+  The block now holds each value as its parameter's type. `defer`, which marshals
+  arguments too, was already correct.
+
+  Two things found alongside it, both needed to make a `go` of a 64-bit struct work
+  at all: a composite literal is built in a variable before it is stored into the
+  block, the target's C compiler refusing one as an assignment's right-hand side;
+  and a negated wide constant is folded in that literal too, which needed the fold to
+  run over the whole unary expression rather than its operands.
+- **A conversion to a 64-bit type of a 64-bit expression was miscompiled** by the
+  target's C compiler, yielding a value that varied from run to run — `int64(a - b)`
+  on `uint64` operands. The same cast applied to a *variable* is correct, so the
+  operand is now bound to one first. Only the board shows this; the host compiler
+  computes either form correctly.
+- **A `for` loop's condition was compiled against the wrong `s`** when its own
+  variable shadowed one of a different type: the condition was rendered before the
+  loop variable's type was recorded, so `for s := 0; s < 2; s++` inside the scope of
+  a string `s` compared two ints as strings.
+- **`go` could panic `out of cogs` while a cog was in fact free.** A goroutine marks
+  its slot free in its epilogue, after the body ends — but the code that started it
+  can learn the body is over *before* that: a receive of the value the goroutine sent
+  last returns first. `go` then found every slot busy and gave up on the spot. It now
+  waits for a slot before declaring exhaustion, which is sound because a slot held by
+  a goroutine that really is running stays held, so the wait only delays a diagnosis
+  the program was going to get anyway. Measured on the host shim: a program that
+  starts seven goroutines, drains them and repeats failed 6 times in 400 runs before,
+  and 0 in 400 after.
+- **Several `init` functions in one package did not compile.** A package may declare
+  as many as it likes and Go runs each in turn, but two of them emitted two C
+  functions both named `init`, which the backend rejected as a redefinition. Each now
+  takes its own name and they run in the order they are written, each on the state
+  the ones before it left. A `func init` with a parameter emitted broken C, and one
+  with a result was accepted silently; both are now refused with Go's message,
+  `func init must have no arguments and no return values`.
+- **A `select` over more than one channel did not compile.** Multiplexing several
+  channels is the whole point of the statement, and the emitted C put each clause's
+  value declaration between the previous clause's closing brace and this clause's
+  `else` — which is not C, so the backend rejected it outright. The declarations now
+  stand ahead of the chain. Every `select` test had used a single clause, which is
+  how a shipped feature's headline use went uncompiled.
+- **A `string`, slice or struct named result, or defer argument, emitted invalid C.**
+  Both were zeroed with `= 0`, which C accepts for a scalar and rejects for an
+  aggregate, so `func f() (s string)` and `defer g("x")` did not compile at all.
+- **A conversion between two types of the same representation now works.**
+  `bool(f)` emitted a call to a function named `bool` — invalid C — and
+  `string(n)` where `n` is a defined type over string was refused as needing an
+  allocation it does not need. Such a conversion builds nothing: it is the operand
+  itself, and now emits no C cast at all, which also removes a cast to a non-scalar
+  type that C does not have and only gcc was accepting. A scalar conversion keeps
+  its cast, so a narrowing one still truncates as Go says.
+
+  The conversions that would have to *build* a string, `string(r)` from a rune and
+  `string(b)` from a byte slice, are still refused — the checker reports the first
+  (it now types a conversion, so `string(rune(r))` is judged by what it converts
+  from) and the emitter the second, where the representation is known.
+- **A digit separator in a float literal did not compile.** `1_0.5` reached the C
+  backend as written, where it is not a float at all but an integer with an invalid
+  suffix. The integer forms had been normalized all along; the float one had not.
+- **`--unchecked` left a negative shift count undefined.** The guarded shift kept its
+  Go panic in a checked build, but an unchecked one has no panic to raise and fell
+  through to a C shift by a negative count. It now compares the count unsigned, so a
+  negative one yields what an enormous one does — 0 — rather than anything undefined.
+- **A panic printed nothing when its output was not a terminal.** `abort()` discards
+  a buffered stream, so through a pipe the panic line — and everything the program
+  had printed before it — was lost, leaving a bare `signal: aborted`. `ogo_panic`
+  now flushes first. The test suite's panicking cases assert the message from now on,
+  which is what would have caught this.
+### Tooling
+
+- **`ogo fmt` dropped the space after a comma before a nested composite literal**,
+  writing `{{1, 2},{3, 4}}` where gofmt writes `{{1, 2}, {3, 4}}`. The rule that
+  binds a literal's braces to what they enclose fired on the brace after the comma
+  too.
+- **`ogo fmt` indented a label** with the statements it labels. gofmt stands it one
+  level out, as `case` already did here — including a label that opens a `case`
+  clause's body.
+
+  Two gofmt behaviours remain unimplemented and are noted rather than fixed: binary
+  operators inside a call argument are rendered tight by gofmt (`println(a+b)`), and
+  consecutive one-line declarations have their bodies aligned.
+### Testing
+
+- **Every runtime trap now has a run case.** Divide by zero, remainder by zero and
+  appending past a slice's capacity were emitted by the compiler and exercised by
+  nothing, so the messages and the conditions that raise them were unverified. Divide
+  by zero is covered through each of its four lowerings — signed division and
+  remainder, which carry the check inside their guarded helper, and the unsigned and
+  64-bit forms, whose divisor goes through a separate one.
+- **Channels are now tested under contention**, on the host and on real cogs: two
+  consumers drawing from one producer through a shared channel, a `select` over two
+  channels fed by two more cogs at once, and a `select` whose send and receive
+  clauses have to make progress against another cog doing the mirror image. Every
+  other channel case has one sender and one receiver, so nothing pinned what happens
+  when several cogs reach the same rendezvous together — which on this target is a
+  hardware lock and a spin, with no scheduler to arbitrate. All of it passes.
+- **A multi-package program is now compiled for the target and run on hardware.** It
+  was exercised only by the host C compiler, so the one program shape whose lowering
+  is about nothing but names crossing a package boundary — every top-level symbol
+  mangled into its package's namespace, the whole program emitted as one translation
+  unit — had never been through flexcc or onto a board. The program, and what it
+  prints, are now shared by all three.
+- **`ogo fmt` is run over the whole run-case corpus** and its output re-formatted, so
+  a rule that chokes on, or churns, a real program fails a test. That is how the two
+  formatter bugs above were found.
+- **The `--unchecked` and `--release` builds are now tested.** Every run test built
+  with the checks on, so a whole configuration of `ogo build` was pinned by two
+  emission goldens and nothing else — a lowering that is correct only because a check
+  stands in front of it would not have been noticed. The run corpus is now executed
+  unchecked as well, and compiled for the target under each flag. All of it passes as
+  it stood; the coverage is the point.
 
 ## v0.11.0
 

@@ -188,7 +188,9 @@ The binary is written beside the package and named after its directory, except
 when a single file is named, which keeps that file's name: ogo build x.ogo writes
 x.binary. -o overrides the path.
 
-Runtime checks for out-of-range indexing and division by zero are on by default.
+Runtime checks are on by default: out-of-range indexing and slicing, division and
+remainder by zero, a shift by a negative count, and appending past a slice's
+capacity. Each prints "panic: <what>" and halts the offending cog.
 
 	-o output     write the binary here
 	--unchecked   omit the runtime checks

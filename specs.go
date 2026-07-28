@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Reconciled with the implementation 20260727. What landed in each release,
+// Reconciled with the implementation 20260728. What landed in each release,
 // including the changes that reject a program an earlier one accepted, is in
 // CHANGELOG.md; this list is only what is still owed.
 //
@@ -19,6 +19,13 @@
 // TODO 20260727 Function values: a function literal, a method value, a function with
 // more than one result as a value, and "go" through a variable holding one. The
 // named function used as a value works (see Function types and function values).
+// TODO 20260728 Defined types over a channel: a send or a receive on a value of one
+// is refused, chanElem keying on the written "chan T" rather than on what the type
+// stands for (see Type Declarations).
+// TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
+// literals).
+// TODO 20260728 Constant declarations: an identifier list, "const a, b = 1, 2"
+// (see Constant Declarations).
 // TODO 20260727 Array literals as general values: an array literal passed to a
 // function or assigned. A slice literal stands as a value now, being a header; an
 // array is not a C value, so it initializes a variable, fills a slot in another

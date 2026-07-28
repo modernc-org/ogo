@@ -175,7 +175,8 @@ broken.
   only for a literal whose type is a bare name; `for _, v := range []int{1, 2, 3}`
   needs nothing, a `[` not being able to begin a block.
 * `var` (including several names and a value list), `const` with `iota`, `type`,
-  functions and methods with value or pointer receivers.
+  functions and methods with value or pointer receivers. A package may declare
+  several `init` functions; they run in the order they are written, before `main`.
 * Named and unnamed parameters and results, multiple return values, naked returns.
 * A declared function used as a **value**: a variable, parameter, result, array
   element or struct field of a function type holds one and a call through it is a
@@ -195,8 +196,9 @@ broken.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
   launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
   stands, as may an imported package's function, `go driver.Poll(ch)`. A `select`
-  multiplexes receives and one send, `case ch <- v:`. Channels may be declared at package level as well as locally, and the
-  P2's locks are reachable directly through the `p2` package.
+  multiplexes receives and one send, `case ch <- v:`. Channels may be declared at
+  package level as well as locally, and the P2's locks are reachable directly through
+  the `p2` package.
 * Runtime traps for out-of-range indexing and slicing, division and remainder by
   zero, a shift by a negative count, appending past a slice's capacity, and cog
   exhaustion. Each prints `panic: <what>` and halts the offending cog; `--release`
@@ -213,6 +215,11 @@ broken.
 * **Interfaces**, and with them type switches and type assertions. See below.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
+* A **defined type over a channel**, `type Ch chan int`, is not usable as a channel:
+  a send or a receive on a value of one is refused. Defined types over every other
+  kind work.
+* A `const` declaration binds one name, so `const a, b = 1, 2` does not parse; write
+  two. A float literal has no hexadecimal form (`0x1p-2`).
 * An **array** literal may not stand as a general value — it initializes a variable,
   fills a slot in another composite literal, or is what a `range` walks, and nothing
   else, C having no array value for it to become. A *slice* literal has no such
