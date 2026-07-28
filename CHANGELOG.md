@@ -25,6 +25,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Bug fixes
 
+- **`len` and `cap` of a struct's array field were refused.** Both resolved an array
+  only through a bare variable name, so `len(r.buf)` fell through to the
+  string/slice header path and failed with "len is only supported for strings,
+  arrays and slices yet" — about an array. A plain field, one reached through a
+  pointer receiver, a nested one and a multi-dimensional one all work now, and the
+  bound stays a compile-time constant, so nothing is read to produce it.
 - **A struct field's array bound could not name a constant.** `buf [maxFrame]uint8`
   inside a struct did not compile, failing as `unsupported type ""`: struct typedefs
   are emitted before the constants they might mention, so the bound was out of

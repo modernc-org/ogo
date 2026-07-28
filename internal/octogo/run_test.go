@@ -852,6 +852,59 @@ func main() {
 		want: "10 5 10 10 63\n",
 	},
 	{
+		// len and cap of a struct's ARRAY field, which were refused outright: both
+		// resolved an array only through a bare variable name, so `len(r.buf)` fell
+		// through to the string/slice header path and failed. The bound is a
+		// compile-time constant, so nothing is read to produce it.
+		//
+		// Covered here: a plain field, one reached through a pointer receiver, a
+		// nested one, and a multi-dimensional one (whose len is the outer extent, as
+		// for a variable). The slice and string fields beside them already worked and
+		// are here so the new path cannot swallow them.
+		//
+		// Because the bound folds, a parameter or a constant whose ONLY use is a len
+		// or a cap is a name the emitted C never mentions, and the host compiler
+		// warns -- which this harness fails on. Go counts such a use as a use, C has
+		// nothing to count. So `total` also reads a field and `n` is also printed.
+		// The real backend is silent either way; this shapes the program, not the
+		// language.
+		name: "len and cap of an array field",
+		src: `const n = 4
+
+type Inner struct {
+	small [2]uint8
+}
+
+type T struct {
+	buf   [n]int
+	grid  [2][3]int
+	data  []int
+	txt   string
+	inner Inner
+}
+
+// total reads a field as well as measuring one: len and cap fold to compile-time
+// constants, so a parameter measured but never read is a parameter the emitted C
+// does not mention, and the host compiler says so.
+func total(t *T) int { return len(t.buf) + cap(t.buf) + t.buf[3] }
+
+func main() {
+	var t T
+	t.data = make([]int, 2, 5)
+	t.txt = "hey"
+	println(len(t.buf), cap(t.buf), n)
+	println(len(t.grid), len(t.inner.small), cap(t.inner.small))
+	println(len(t.data), cap(t.data), len(t.txt))
+	for i := 0; i < len(t.buf); i++ {
+		t.buf[i] = i * i
+	}
+	println(t.buf[0], t.buf[1], t.buf[2], t.buf[3])
+	println(total(&t))
+}
+`,
+		want: "4 4 4\n2 2 2\n2 5 3\n0 1 4 9\n17\n",
+	},
+	{
 		// A byte-oriented framing receiver: SLIP-style escaping around a payload
 		// with a CRC-8 trailer, driven by a state machine over a method value
 		// receiver. The first thing a P2 program that talks to anything needs, and

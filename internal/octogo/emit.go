@@ -5932,6 +5932,18 @@ func fitsCInt(v int64) bool { return v >= math.MinInt32 && v <= math.MaxInt32 }
 //
 // The cast is not cosmetic either: a bare `-1 ^ (x)` would widen an unsigned
 // operand's expression to int, which is not what C's ~ does.
+// factorKids descends an expression through its single-child levels to the
+// children of the Factor it consists of, for a caller that matches a Factor shape
+// (factorCall, factorFieldAccess). An expression that is not a single factor
+// yields whatever level it stops at, which those matchers then reject.
+func (e *emitter) factorKids(ast []int32) []Node {
+	kids := slices.Collect(it(ast))
+	for len(kids) == 1 && kids[0].sym != 0 {
+		kids = slices.Collect(it(kids[0].ast))
+	}
+	return kids
+}
+
 // constExpr reports whether an expression is a compile-time constant. It sees
 // through a conversion of one, `uint32(0xFF00FF00)`, which foldConstInt does not:
 // the fold works on operator sequences, and a conversion is a call shape.
@@ -5939,11 +5951,7 @@ func (e *emitter) constExpr(ast []int32) bool {
 	if _, ok := e.foldConstInt(ast); ok {
 		return true
 	}
-	kids := slices.Collect(it(ast))
-	for len(kids) == 1 && kids[0].sym != 0 {
-		kids = slices.Collect(it(kids[0].ast))
-	}
-	recv, suffix, ok := e.factorCall(kids)
+	recv, suffix, ok := e.factorCall(e.factorKids(ast))
 	if !ok || len(suffix) != 1 {
 		return false
 	}
@@ -9029,6 +9037,24 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 
 // emitLen emits the builtin `len(x)`: an array's length is its compile-time bound;
 // a string's and a slice's is its header's `len` field.
+// arrayFieldBound returns the declared extent of an array-typed struct field named
+// by an expression, `r.buf` or `r.inner.buf`. It is the length and the capacity
+// alike, and it is a compile-time constant, so no storage is read to produce it.
+//
+// A field reached through an index, `rs[i].buf`, is not matched here: that is a
+// chain rather than a selector list, and it has never been asked for.
+func (e *emitter) arrayFieldBound(arg []int32) (string, bool) {
+	base, fields, ok := e.factorFieldAccess(e.factorKids(arg))
+	if !ok {
+		return "", false
+	}
+	a, ok := e.fieldArray(base, fields)
+	if !ok {
+		return "", false
+	}
+	return a.bound, true // the OUTER extent, as for a multi-dimensional variable
+}
+
 func (e *emitter) emitLen(callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {
@@ -9041,6 +9067,13 @@ func (e *emitter) emitLen(callSuffix []int32) {
 			e.emit(a.bound)
 			return
 		}
+	}
+	// An array-typed struct field, `len(r.buf)`: its length is the declared extent,
+	// exactly as for an array variable. A slice-typed field carries a header and
+	// falls through to it below.
+	if b, ok := e.arrayFieldBound(arg); ok {
+		e.emit(b)
+		return
 	}
 	// A string and a slice both carry their length in a `.len` header field.
 	if ct, ok := e.exprReprCType(arg); ok && (ct == cString || e.isSliceCType(ct)) {
@@ -9084,6 +9117,10 @@ func (e *emitter) emitCap(callSuffix []int32) {
 			e.emit(a.bound)
 			return
 		}
+	}
+	if b, ok := e.arrayFieldBound(arg); ok {
+		e.emit(b) // an array's capacity is its length: see the len case
+		return
 	}
 	if ct, ok := e.exprReprCType(arg); ok && e.isSliceCType(ct) {
 		e.emitHeaderField(arg, ct, "cap")
