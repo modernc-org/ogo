@@ -400,6 +400,34 @@ func (f *formatter) b(b []byte) {
 }
 
 // containsNode does a shallow search of the immediate child nodes
+// declGroupParens returns the parentheses of a grouped declaration -- the "(" and
+// ")" that stand as the declaration's own direct tokens, which only the grouped form
+// has -- and whether they span more than one line. A single-spec declaration has
+// none, and one written across lines without them indents nothing.
+func (f *formatter) declGroupParens(ast []int32) (lp, rp int32, ok bool) {
+	lp, rp = -1, -1
+	for len(ast) > 0 {
+		n := ast[0]
+		if n < 0 {
+			ast = ast[2+ast[1]:]
+			continue
+		}
+		switch Symbol(f.p.Token(n).Ch) {
+		case LPAREN:
+			if lp < 0 {
+				lp = n
+			}
+		case RPAREN:
+			rp = n
+		}
+		ast = ast[1:]
+	}
+	if lp < 0 || rp < 0 {
+		return -1, -1, false
+	}
+	return lp, rp, f.p.Token(lp).Position().Line != f.p.Token(rp).Position().Line
+}
+
 func containsNode(ast []int32, target Symbol) bool {
 	for len(ast) > 0 {
 		n := ast[0]
@@ -466,6 +494,13 @@ type formatterCtx struct {
 	indentLevel       int32
 	undentLBraceIndex int32
 	undentRBraceIndex int32
+	// The two tokens of a grouped declaration that stay at the keyword's own level
+	// while its specs indent: the keyword itself and the closing ")". A brace cannot
+	// stand for these -- the same production has the parenthesized forms of a
+	// signature and a call inside it -- and the keyword rather than the opening "("
+	// is what has to be undented, the "(" merely following it on the same line.
+	undentDeclOpen    int32
+	undentDeclClose   int32
 	indentSepForIndex int32
 	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
@@ -612,6 +647,15 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					// A block resets subscript depth, so the tight-operator rule for an
 					// index does not reach into a statement body nested inside one.
 					c.inIndex = false
+				case ConstDecl, VarDecl, TypeDecl, ImportDecl:
+					// A grouped declaration indents its specs, as gofmt does, with the
+					// parentheses staying at the level of the keyword -- the same shape
+					// a block takes, and it had none at all: every spec of a
+					// "const ( ... )" came back at the level of the "const".
+					if _, rp, ok := f.declGroupParens(ast[2:next]); ok {
+						c.indentLevel++
+						c.undentDeclOpen, c.undentDeclClose = firstIndex(ast[:next]), rp
+					}
 				case CaseClause, CommClause:
 					c.indentLevel++
 				case SwitchStmt, SelectStmt:
@@ -757,6 +801,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				sep := tok.SepBytes()
 				src := tok.SrcBytes()
 				var indentDelta int32
+				if n == c.undentDeclOpen || n == c.undentDeclClose {
+					indentDelta = -1 // a grouped declaration's keyword and closing ")"
+				}
 
 				switch Symbol(tok.Ch) {
 				case SEMICOLON:

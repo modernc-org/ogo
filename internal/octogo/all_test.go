@@ -661,6 +661,87 @@ outer:
 	formatCheck(t, in, want)
 }
 
+// TestFormatGroupedDecl pins a grouped declaration indenting its specs, with the
+// keyword and the closing ")" staying at the level around it. There was no rule for
+// it at all, so every spec of a "const ( ... )" came back at the keyword's level --
+// the shape gofmt writes, mangled by the tool meant to produce it. It went unseen
+// because no .ogo source in the repo outside testdata has a grouped declaration, and
+// the fmt check excludes testdata.
+//
+// The keyword rather than the "(" is what stays put: the "(" merely follows it on
+// the same line, and undenting that would have moved the keyword instead.
+func TestFormatGroupedDecl(t *testing.T) {
+	const in = `import (
+"p2"
+)
+
+const (
+A = iota
+B
+)
+
+const single = 1
+
+var (
+x int
+y string
+)
+
+type (
+P struct {
+a int
+}
+Q int
+)
+
+func f() {
+const (
+L = 1
+M = 2
+)
+var (
+u int
+)
+println(A, B, single, x, y, L, M, u, p2.GetMs() > 0)
+}
+`
+	const want = `import (
+	"p2"
+)
+
+const (
+	A = iota
+	B
+)
+
+const single = 1
+
+var (
+	x int
+	y string
+)
+
+type (
+	P struct {
+		a int
+	}
+	Q int
+)
+
+func f() {
+	const (
+		L = 1
+		M = 2
+	)
+	var (
+		u int
+	)
+	println(A, B, single, x, y, L, M, u, p2.GetMs() > 0)
+}
+`
+	formatCheck(t, in, want)
+}
+
 // TestFormatCorpus formats every run-case program and formats the result again.
 // The corpus is the widest body of OctoGo source there is, so it is the best answer
 // available to "does the formatter choke on, or churn, real programs" -- and it is

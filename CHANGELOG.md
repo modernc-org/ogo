@@ -13,6 +13,15 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Tooling
+
+- **`ogo fmt` outdented every spec of a grouped declaration.** A `const ( … )`,
+  `var ( … )`, `type ( … )` or `import ( … )` written the gofmt way came back with
+  its specs at the keyword's own level — the tool meant to produce that shape was
+  the one destroying it. There was no indent rule for a grouped declaration at all.
+  It went unseen because no `.ogo` source in the repo outside `testdata` has one, and
+  the formatting check excludes `testdata`.
+
 ### Language
 
 - **A `const` declaration may bind a list**, `const a, b = 1, 2`, as Go's does. A
