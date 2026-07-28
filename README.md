@@ -222,7 +222,8 @@ broken.
   than through the function's own name. A declared function used as a value works.
 * An array as a function result, a slice whose element is an array, and `goto`.
 
-Floating point (float32/float64) is supported: the P2's C toolchain provides it,
+Floating point (float32/float64) is supported, exponent literals included
+(`1e3`, `1.5e-3`): the P2's C toolchain provides it,
 so float arithmetic, comparison, int conversions and printing all work. Note the
 target has no double-precision hardware, so `float64` is 32-bit here, same as
 `float32` (~7 significant digits, not ~15) -- the name is kept for Go source

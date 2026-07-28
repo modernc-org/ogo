@@ -2483,6 +2483,44 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// The exponent form of a float literal, which the scanner did not recognize
+		// at all: "1e3" was a syntax error, and one syntax error made every name in
+		// the file read as undefined afterwards. The forms with an empty side, "1."
+		// and ".5", come with it -- ".5" being the one that has to be told from a
+		// selector's dot, which it is by what follows.
+		name: "float literal exponents",
+		src: `const big = 1e3
+const small = 1.5e-3
+
+type P struct {
+	x float64
+}
+
+func (p P) get() float64 { return p.x }
+
+func main() {
+	var a float64 = 1e3
+	var b float64 = 1.5e-3
+	var c float64 = 2.5E2
+	var d float64 = 1.
+	var e float64 = .5
+	println(a == 1000.0, b < 0.01, c == 250.0, d == 1.0, e == 0.5)
+	println(a, c, d, e)
+	println(big == 1000.0, small < 0.01)
+
+	// The shapes a leading dot has to be told from.
+	p := P{1.5}
+	println(p.x, p.get())
+	xs := []float64{.5, 1., 1e1}
+	println(xs[0], xs[1], xs[2], xs[0]+.5)
+
+	var f float32 = 1e2
+	println(f == 100.0)
+}
+`,
+		want: "true true true true true\n1000 250 1 0.5\ntrue true\n1.5 1.5\n0.5 1 10 1\ntrue\n",
+	},
+	{
 		// Division of two integer constants is integer division, as in Go: 7 / 2 is
 		// 3, not 3.5. go/constant's token.QUO is float division whatever the operands
 		// are, so every such constant became a float -- which is how a perfectly

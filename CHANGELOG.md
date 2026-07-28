@@ -194,6 +194,11 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A float literal may carry an exponent**, `1e3`, `1.5e-3`, `2E+10`. The scanner did
+  not recognize the form at all, so it was a syntax error — and one syntax error made
+  every name in the file read as undefined afterwards, which is how it first looked
+  like something else. The forms with an empty side, `1.` and `.5`, come with it.
+  Go's hexadecimal form, `0x1p-2`, is still not recognized.
 - **A declared function may be used as a value.** A variable, parameter, result,
   array element or struct field of a function type holds one, and a call through any
   of them is a call:

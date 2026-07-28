@@ -255,10 +255,14 @@
 //
 // # Floating-point literals
 //
-// A floating-point literal is an untyped floating-point constant. It has the
-// decimal form below; the exponent form ("1e3") is not recognized by the scanner.
+// A floating-point literal is an untyped floating-point constant. It has a decimal
+// integer part, a decimal fraction, and a decimal exponent part, in the forms below.
+// Go's hexadecimal form ("0x1p-2") is not recognized.
 //
-//	float_lit = decimal_digits "." decimal_digits .
+//	float_lit = decimal_digits "." [ decimal_digits ] [ exponent ]
+//		| decimal_digits exponent
+//		| "." decimal_digits [ exponent ] .
+//	exponent  = ( "e" | "E" ) [ "+" | "-" ] decimal_digits .
 //
 // # Rune literals
 //
