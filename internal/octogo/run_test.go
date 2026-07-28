@@ -2483,6 +2483,83 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// The emitter has no scopes of its own: it records a variable's type,
+		// extents and provenance in maps keyed by SOURCE name. A declaration inside
+		// a block, or in a statement's header, therefore outlived it -- after
+		// `{ s := 5 }` shadowing a package-level string, s was still recorded as an
+		// int, and the next read of the real s printed the first word of its header
+		// as a number. Every shadow here changes the type, which is what makes a
+		// stale record show.
+		name: "shadowing across scopes",
+		src: `var s string = "pkg"
+var n int = 7
+
+func param(x int) int {
+	{
+		x := x * 2
+		println("inner", x)
+	}
+	return x
+}
+
+func send(ch chan int) { ch <- 3 }
+
+func main() {
+	{
+		s := 5
+		println(s)
+	}
+	println(s)
+
+	if s := 1; s > 0 {
+		println("if", s)
+	}
+	println(s)
+
+	for s := 0; s < 2; s++ {
+		println("for", s)
+	}
+	println(s)
+
+	switch s := 42; s {
+	case 42:
+		println("switch", s)
+	}
+	println(s)
+
+	xs := []int{1, 2}
+	for _, s := range xs {
+		println("range", s)
+	}
+	println(s)
+
+	var ch chan int
+	go send(ch)
+	select {
+	case s := <-ch:
+		println("select", s)
+	}
+	println(s)
+
+	// The other direction, and a container shadowing a scalar.
+	{
+		n := "inner"
+		println(n)
+	}
+	println(n, n+1)
+	{
+		n := []int{9, 9}
+		println(len(n), n[0])
+	}
+	println(n)
+
+	println(param(4))
+}
+`,
+		want: "5\npkg\nif 1\npkg\nfor 0\nfor 1\npkg\nswitch 42\npkg\nrange 1\nrange 2\npkg\n" +
+			"select 3\npkg\ninner\n7 8\n2 9\n7\ninner 8\n4\n",
+	},
+	{
 		// Every literal form the scanner accepts, together: the integer bases and
 		// both octal spellings, digit separators in each of them, the rune escapes,
 		// and a raw string. A digit separator in a FLOAT reached the backend as

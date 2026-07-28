@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -725,6 +726,9 @@ type selectCase struct {
 // that has not happened yet; that needs a two-phase handshake the cell does not
 // carry. Receive and default are what the spec's own example uses.
 func (e *emitter) emitSelect(ast []int32) {
+	// A name a select header declares belongs to the statement, not to the block
+	// around it (see enterScope).
+	defer e.enterScope()()
 	var cases []selectCase
 	for n := range it(ast) {
 		if n.sym != CommClause {
@@ -4179,7 +4183,28 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 }
 
 // emitBlockStmts emits the statements of a Block (skipping its braces).
+// enterScope snapshots the per-name state a block may shadow, returning the restore
+// that ends the scope. The emitter has no scopes of its own -- it records a
+// variable's type, extents and provenance in maps keyed by SOURCE name -- so a
+// declaration inside a block used to outlive it: after `{ s := 5 }` shadowing a
+// package-level string, s was still recorded as an int, and the next read of the
+// real s printed the first word of its header as a number.
+//
+// The maps are small (one entry per name in scope), so copying them per block costs
+// nothing measurable and needs no analysis of what the block declares.
+func (e *emitter) enterScope() func() {
+	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
+	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
+	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
+	return func() {
+		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
+		e.frameBacked, e.frameHolder = frameBacked, frameHolder
+		e.constInt, e.constStr = constInt, constStr
+	}
+}
+
 func (e *emitter) emitBlockStmts(ast []int32) {
+	defer e.enterScope()()
 	for n := range it(ast) {
 		switch n.sym {
 		case 0:
@@ -7139,6 +7164,9 @@ func (e *emitter) parseForPost(n Node, h *forHeader) bool {
 }
 
 func (e *emitter) emitFor(nodes []Node) {
+	// A name a for header declares belongs to the statement, not to the block
+	// around it (see enterScope).
+	defer e.enterScope()()
 	var body []int32
 	var h forHeader
 	for _, n := range nodes[1:] {
@@ -7173,6 +7201,22 @@ func (e *emitter) emitFor(nodes []Node) {
 	// temporary is rebuilt each time round; when there is none, which is every loop
 	// until such an expression appears in a condition, nothing about the emitted loop
 	// changes.
+	// The loop variable's type is recorded before the condition is rendered: the
+	// condition names that variable, and how it is compared follows its type. It
+	// used to be recorded further down, where the init clause is written, and the
+	// condition was rendered against whatever the name meant OUTSIDE the loop --
+	// which was the same thing in every loop that shadows nothing, and a string
+	// comparison of two ints in one that shadows a string.
+	initName, initCType := "", ""
+	if h.hasClause && h.initLHS != nil && h.initOp == DEFINE {
+		initName = e.exprC(h.initLHS)
+		var ok bool
+		if initCType, ok = e.inferCType(h.initRHS); !ok {
+			e.fail("cannot infer the type of a for-loop init variable")
+			return
+		}
+		e.locals[initName] = initCType
+	}
 	var condText string
 	var condPro []string
 	if h.cond != nil {
@@ -7215,13 +7259,7 @@ func (e *emitter) emitFor(nodes []Node) {
 			lhs := e.exprC(h.initLHS)
 			switch h.initOp {
 			case DEFINE:
-				ct, ok := e.inferCType(h.initRHS)
-				if !ok {
-					e.fail("cannot infer the type of a for-loop init variable")
-					return
-				}
-				e.locals[lhs] = ct
-				e.emit(ct + " " + lhs + " = " + e.exprC(h.initRHS))
+				e.emit(initCType + " " + initName + " = " + e.exprC(h.initRHS))
 			case ASSIGN:
 				e.emit(lhs + " = " + e.exprC(h.initRHS))
 			default:
@@ -7468,6 +7506,9 @@ func (e *emitter) rangeArray(expr []int32) *arrDim {
 // non-trivial value), so it is not re-run per case. The default clause, wherever
 // it appears in source, becomes the trailing else.
 func (e *emitter) emitSwitch(ast []int32) {
+	// A name a switch header declares belongs to the statement, not to the block
+	// around it (see enterScope).
+	defer e.enterScope()()
 	var guardAST []int32
 	var cases []Node
 	for n := range it(ast) {
@@ -7767,6 +7808,9 @@ func (e *emitter) isFallthroughStmt(stmt []int32) bool {
 // It indents the leading `if`, then defers to emitIfBody, which handles the
 // condition, the branch, and any `else`/`else if` continuation.
 func (e *emitter) emitIf(ast []int32) {
+	// A name an "if" header declares belongs to the statement, not to the block
+	// around it (see enterScope).
+	defer e.enterScope()()
 	name, initExpr, cond, ok := e.ifInitParts(ast)
 	if !ok {
 		e.ind()

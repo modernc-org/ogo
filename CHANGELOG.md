@@ -15,6 +15,16 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A shadowing declaration outlived its scope.** The emitter keeps a variable's
+  type, extents and provenance in maps keyed by source name and had no scopes of its
+  own, so after `{ s := 5 }` shadowing a package-level string, `s` was still recorded
+  as an int — and the next read of the real `s` printed the first word of its header
+  as a number. The same held for a name declared in an `if`, `for`, `switch`,
+  `range` or `select` header. Every one of those now ends where it should.
+- **A `for` loop's condition was compiled against the wrong `s`** when its own
+  variable shadowed one of a different type: the condition was rendered before the
+  loop variable's type was recorded, so `for s := 0; s < 2; s++` inside the scope of
+  a string `s` compared two ints as strings.
 - **A digit separator in a float literal did not compile.** `1_0.5` reached the C
   backend as written, where it is not a float at all but an integer with an invalid
   suffix. The integer forms had been normalized all along; the float one had not.
