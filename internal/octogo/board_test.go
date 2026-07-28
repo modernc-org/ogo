@@ -57,6 +57,47 @@ func TestTargetBuild(t *testing.T) {
 	}
 }
 
+// TestTargetBuildMultiPkg compiles a program that spans packages with the real
+// backend. The single-file corpus says nothing about a package boundary, and that
+// boundary is where the lowering is about nothing but names: every top-level symbol
+// is mangled into its package's namespace and the whole program becomes one
+// translation unit.
+func TestTargetBuildMultiPkg(t *testing.T) {
+	ogo := buildOgoCLI(t)
+	dir := t.TempDir()
+	if err := boardBuildTree(ogo, dir, multiPkgProgram, filepath.Join(dir, "prog.binary"), ""); err != nil {
+		t.Errorf("%v", err)
+	}
+}
+
+// TestOnBoardMultiPkg runs the multi-package program on real hardware, which
+// TestTargetBuildMultiPkg only compiles. The two are the pair TestTargetBuild and
+// TestOnBoard are: compiling proves flexcc accepts the emitted C, running proves it
+// lowered it to what the program means.
+func TestOnBoardMultiPkg(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	ogo := buildOgoCLI(t)
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "prog.binary")
+	if err := boardBuildTree(ogo, dir, multiPkgProgram, bin, ""); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	for attempt := 1; ; attempt++ {
+		out, matched := boardLoad(ogo, port, bin, multiPkgWant)
+		if matched {
+			return
+		}
+		if attempt == boardAttempts {
+			t.Errorf("board output did not contain %q after %d attempts\ngot:\n%s", multiPkgWant, boardAttempts, out)
+			return
+		}
+		t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+	}
+}
+
 // TestTargetBuildFlags compiles the same corpus in the other two configurations
 // `ogo build` offers. --unchecked emits different C -- an index, a divisor and a
 // shift count lose their guards, and a helper that carried one loses that branch --
@@ -176,8 +217,30 @@ func boardBuild(ogo, dir, name, src, out, allowWarning string, flags ...string) 
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		return err
 	}
+	return boardBuildPaths(ogo, out, allowWarning, flags, srcFile)
+}
+
+// boardBuildTree writes a whole program -- a main package plus the packages it
+// imports, keyed by path relative to dir -- and builds the directory, which is how
+// `ogo build` is given a multi-package program.
+func boardBuildTree(ogo, dir string, files map[string]string, out, allowWarning string, flags ...string) error {
+	for name, src := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			return err
+		}
+	}
+	return boardBuildPaths(ogo, out, allowWarning, flags, dir)
+}
+
+// boardBuildPaths runs `ogo build` over the given source argument and holds it to
+// the same standard either way: a successful build must also be silent.
+func boardBuildPaths(ogo, out, allowWarning string, flags []string, src string) error {
 	args := append([]string{"build", "-o", out}, flags...)
-	b, err := exec.Command(ogo, append(args, srcFile)...).CombinedOutput()
+	b, err := exec.Command(ogo, append(args, src)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ogo build: %v\n%s", err, b)
 	}

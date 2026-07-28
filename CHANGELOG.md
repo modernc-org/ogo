@@ -162,6 +162,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **A multi-package program is now compiled for the target and run on hardware.** It
+  was exercised only by the host C compiler, so the one program shape whose lowering
+  is about nothing but names crossing a package boundary — every top-level symbol
+  mangled into its package's namespace, the whole program emitted as one translation
+  unit — had never been through flexcc or onto a board. The program, and what it
+  prints, are now shared by all three.
 - **The `--unchecked` and `--release` builds are now tested.** Every run test built
   with the checks on, so a whole configuration of `ogo build` was pinned by two
   emission goldens and nothing else — a lowering that is correct only because a check

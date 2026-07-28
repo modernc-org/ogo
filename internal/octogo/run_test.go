@@ -4715,23 +4715,18 @@ type hidden struct{ n int }
 // importing a local "greet" package -- and runs it on the host shim. It checks that
 // import resolution, cross-package calls (greet.Hello(...)), and a package function's
 // result type all work when the whole program is emitted into one translation unit.
-func TestEmitCMultiPackage(t *testing.T) {
-	cc := ""
-	for _, c := range []string{"cc", "gcc", "clang"} {
-		if p, err := exec.LookPath(c); err == nil {
-			cc = p
-			break
-		}
-	}
-	if cc == "" {
-		t.Skip("no C compiler found")
-	}
-	shim, err := filepath.Abs(filepath.Join("testdata", "hostp2"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fsys := fstest.MapFS{
-		"main.ogo": &fstest.MapFile{Data: []byte(`import "greet"
+// multiPkgProgram is the multi-package program every layer of the pipeline is run
+// over: the host C compiler (TestEmitCMultiPackage), the real backend
+// (TestTargetBuildMultiPkg) and the board (TestOnBoardMultiPkg). It used to be
+// inline in the first of those, so a program spanning packages was never compiled
+// by flexcc and never ran on hardware -- and a package boundary is exactly where
+// the lowering is about nothing but names.
+// multiPkgWant is what that program prints, on every one of the three.
+const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
+	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n"
+
+var multiPkgProgram = map[string]string{
+	"main.ogo": `import "greet"
 
 // A private helper of main's, same name as one in greet: with per-package name
 // mangling the two do not collide in the single translation unit.
@@ -4751,61 +4746,61 @@ var base int = 5
 const K = 3
 
 func main() {
-	println(greet.Hello(3))
-	msg := greet.Loud("hi")
-	println(msg)
-	println(greet.Twice(21) + 8)
-	println(scale(5))
-	p := Point{2, 3}
-	println(p.sum())
-	println(greet.PointSum())
-	base = base + 1
-	println(base, greet.Base())
-	// A direct read and write of another package's exported variable, resolved to
-	// its mangled global -- not routed through a getter/setter.
-	println(greet.Total)
-	greet.Total = greet.Total + 7
-	println(greet.Total)
-	// A same-named constant in each package, and a cross-package read of greet's
-	// (a folded integer constant inlines its value).
-	println(K, greet.K)
-	// A variable of an imported package's type: declared, its exported fields
-	// written and read, and its exported method called -- all resolving to greet's
-	// mangled typedef greet_Vec.
-	var v greet.Vec
-	v.A = 4
-	v.B = 5
-	println(v.A, v.Sum())
-	// A composite literal of an imported package's type, which is the other way to
-	// make one of those values: positional, keyed, and empty, plus a nested one and
-	// a table of them at package scope.
-	w := greet.Vec{6, 7}
-	println(w.A, w.Sum())
-	k := greet.Vec{B: 8}
-	println(k.A, k.B)
-	e := greet.Vec{}
-	println(e.A, e.B)
-	pair := greet.Pair{greet.Vec{1, 2}, greet.Vec{3, 4}}
-	println(pair.Lo.B, pair.Hi.Sum())
-	println(unit.Sum(), vecs[1].A)
-	// A goroutine launched on an imported package's function: it resolves to the
-	// same mangled name an ordinary call into that package does.
-	var ch chan int
-	go greet.Send(ch, 20)
-	println(<-ch)
+println(greet.Hello(3))
+msg := greet.Loud("hi")
+println(msg)
+println(greet.Twice(21) + 8)
+println(scale(5))
+p := Point{2, 3}
+println(p.sum())
+println(greet.PointSum())
+base = base + 1
+println(base, greet.Base())
+// A direct read and write of another package's exported variable, resolved to
+// its mangled global -- not routed through a getter/setter.
+println(greet.Total)
+greet.Total = greet.Total + 7
+println(greet.Total)
+// A same-named constant in each package, and a cross-package read of greet's
+// (a folded integer constant inlines its value).
+println(K, greet.K)
+// A variable of an imported package's type: declared, its exported fields
+// written and read, and its exported method called -- all resolving to greet's
+// mangled typedef greet_Vec.
+var v greet.Vec
+v.A = 4
+v.B = 5
+println(v.A, v.Sum())
+// A composite literal of an imported package's type, which is the other way to
+// make one of those values: positional, keyed, and empty, plus a nested one and
+// a table of them at package scope.
+w := greet.Vec{6, 7}
+println(w.A, w.Sum())
+k := greet.Vec{B: 8}
+println(k.A, k.B)
+e := greet.Vec{}
+println(e.A, e.B)
+pair := greet.Pair{greet.Vec{1, 2}, greet.Vec{3, 4}}
+println(pair.Lo.B, pair.Hi.Sum())
+println(unit.Sum(), vecs[1].A)
+// A goroutine launched on an imported package's function: it resolves to the
+// same mangled name an ordinary call into that package does.
+var ch chan int
+go greet.Send(ch, 20)
+println(<-ch)
 }
 
 // Package-scope values of an imported type, laid out statically.
 var unit = greet.Vec{A: 1, B: 1}
 var vecs = []greet.Vec{{9, 9}, {8, 8}}
-`)},
-		"greet/greet.ogo": &fstest.MapFile{Data: []byte(`type Point struct{ x, y int }
+`,
+	"greet/greet.ogo": `type Point struct{ x, y int }
 
 func (p Point) sum() int { return p.x*10 + p.y }
 
 func PointSum() int {
-	p := Point{4, 5}
-	return p.sum()
+p := Point{4, 5}
+return p.sum()
 }
 
 var base int = 1000
@@ -4819,16 +4814,16 @@ const K = 100
 // Vec is an exported type with exported fields and an exported method, used from
 // main through a var declaration (var v greet.Vec).
 type Vec struct {
-	A int
-	B int
+A int
+B int
 }
 
 func (v Vec) Sum() int { return v.A + v.B }
 
 // Pair holds two Vecs, so a literal of it nests literals of another package's type.
 type Pair struct {
-	Lo Vec
-	Hi Vec
+Lo Vec
+Hi Vec
 }
 
 // Send is launched as a goroutine from main, which is the qualified callee form.
@@ -4841,14 +4836,34 @@ func Hello(n int) int { return scale(n) * 100 }
 func Twice(n int) int { return n * 2 }
 
 func scale(n int) int { return n }
-`)},
-		"greet/loud.ogo": &fstest.MapFile{Data: []byte(`func Loud(s string) string {
-	if len(s) > 0 {
-		return "LOUD"
-	}
-	return s
+`,
+	"greet/loud.ogo": `func Loud(s string) string {
+if len(s) > 0 {
+	return "LOUD"
 }
-`)},
+return s
+}
+`,
+}
+
+func TestEmitCMultiPackage(t *testing.T) {
+	cc := ""
+	for _, c := range []string{"cc", "gcc", "clang"} {
+		if p, err := exec.LookPath(c); err == nil {
+			cc = p
+			break
+		}
+	}
+	if cc == "" {
+		t.Skip("no C compiler found")
+	}
+	shim, err := filepath.Abs(filepath.Join("testdata", "hostp2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys := fstest.MapFS{}
+	for name, src := range multiPkgProgram {
+		fsys[name] = &fstest.MapFile{Data: []byte(src)}
 	}
 	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 	if err != nil {
@@ -4876,9 +4891,7 @@ func scale(n int) int { return n }
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, got)
 	}
-	const want = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
-		"6 13\n0 8\n0 0\n2 7\n2 8\n40\n"
-	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != want {
-		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, want, buf.String())
+	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != multiPkgWant {
+		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, multiPkgWant, buf.String())
 	}
 }
