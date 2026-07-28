@@ -30,6 +30,10 @@
 // of it, and an array of it then share.
 // TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
 // literals).
+// TODO 20260728 Pointer-ness in an ASSIGNMENT is not checked, "q = v" where q is a
+// *P. It is checked for an argument, a variable declaration and a return; the
+// assignment check sees only the target's BASE name, so a field or indexed target
+// would be compared against the base's type (see checkAssignType).
 // TODO 20260728 A local variable, parameter or struct field whose name is a C
 // KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
 // moved out of C's way; a local one is not, several emission paths writing a local's

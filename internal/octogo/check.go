@@ -1811,6 +1811,10 @@ func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 // expression) by type category. A non-predeclared result, or an operand of
 // undetermined type, is left unchecked.
 func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
+	// Pointer-ness first: a *P result has no predeclared Kind, so the guard below
+	// would return before ever asking.
+	_, wantPtr := rt.typeNode.(*TypeNodePointer)
+	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	if !rt.known {
 		return
 	}
@@ -2955,6 +2959,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
 		var typeName, typeQual Token
 		var funcSig *SignatureNode
+		var declType TypeNode
 		var initExprs []Node
 		for c := range it(n.ast) {
 			switch c.sym {
@@ -2969,6 +2974,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 				// their element expressions are not yet checked.
 				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) || f.funcType(c) || f.sliceType(c) {
 					if tn := f.typ(s, c); tn != nil {
+						declType = tn
 						kind, hasKind = f.typeKind(s, tn)
 						_, isPtr = tn.(*TypeNodePointer)
 						typeName, _ = namedTypeToken(tn)
@@ -2990,6 +2996,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 			f.checkFuncAssign(s, funcSig, e, "variable declaration")
 			if len(names) == len(initExprs) {
+				f.checkPointerValue(s, isPtr, f.typeNodeString(declType, false), e, "variable declaration")
 				// One initializer per name; a multi-result call feeding several
 				// names pairs up with none of them and is left alone.
 				f.checkDeclType(s, kind, hasKind, typeName, e)
@@ -4878,6 +4885,37 @@ func binaryAllowed(op Symbol, c int) bool {
 	return c == catNumeric
 }
 
+// targetIsSuffixed reports whether an assignment's target carries anything past its
+// base name: a selector, an index, or a leading "*". Only a bare name is of its own
+// declared type.
+func (f *File) targetIsSuffixed(head, postfix Node) bool {
+	for c := range it(head.ast) {
+		if c.sym == 0 && f.ch(c.tok) == MUL {
+			return true
+		}
+	}
+	return f.hasSelectorOrIndex(postfix.ast)
+}
+
+// hasSelectorOrIndex reports whether a subtree contains a selector or an index. The
+// scan is recursive: an assignment's postfix wraps them a level or two down, and a
+// direct-children test quietly answered "no" for "bf.b[bf.n] = c".
+func (f *File) hasSelectorOrIndex(ast []int32) bool {
+	for c := range it(ast) {
+		switch c.sym {
+		case Selector, Index:
+			return true
+		case 0:
+			// a terminal
+		default:
+			if f.hasSelectorOrIndex(c.ast) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // checkAssignType reports when the right-hand side of an assignment is of a
 // different type class than the target variable. Both must be known.
 func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
@@ -6076,12 +6114,24 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 // guess, which is the same rule its neighbours follow.
 func (f *File) checkPointerArg(s *Scope, p retResult, arg Node, name Token) {
 	_, want := p.typeNode.(*TypeNodePointer)
-	have, known := f.exprPointerness(s, arg)
+	f.checkPointerValue(s, want, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
+}
+
+// checkPointerValue is that check for every other place a value is assigned to
+// something of a known type: a variable declaration, an assignment and a return.
+// wantName is the target type as written, for the message; an empty one means the
+// type could not be rendered, and nothing is reported rather than a message naming
+// no type.
+func (f *File) checkPointerValue(s *Scope, want bool, wantName string, e Node, what string) {
+	if wantName == "" {
+		return
+	}
+	have, known := f.exprPointerness(s, e)
 	if !known || have == want {
 		return
 	}
-	f.err(f.tok(arg.Pos()).Position(), "cannot use %s (%s) as %s value in argument to %s",
-		f.exprSource(arg), pointerDesc(have), f.typeNodeString(p.typeNode, false), name.Src())
+	f.err(f.tok(e.Pos()).Position(), "cannot use %s (%s) as %s value in %s",
+		f.exprSource(e), pointerDesc(have), wantName, what)
 }
 
 // pointerDesc names what an argument is, for the diagnostic above.
@@ -7447,10 +7497,12 @@ func (f *File) varSpec(s *Scope, n Node) {
 			// constant initializer is bounded by the type it infers instead.
 			kind, hasKind := f.typeKind(s, typ)
 			typeName, _ := namedTypeToken(typ)
+			_, typIsPtr := typ.(*TypeNodePointer)
 			for _, e := range exprs {
 				f.checkNames(s, e)
 				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 				if len(names) == len(exprs) {
+					f.checkPointerValue(s, typIsPtr, f.typeNodeString(typ, false), e, "variable declaration")
 					f.checkDeclType(s, kind, hasKind, typeName, e)
 				}
 				if hasKind {

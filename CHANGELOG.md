@@ -40,11 +40,16 @@ Releases before v0.9.0 predate this file; see
 
 ### Diagnostics
 
-- **An argument's pointer-ness is checked.** `f(p)` where `f` wants a `*P`, and
-  `f(&p)` where it wants a `P`, were both accepted and left to the C compiler — so
-  the most common mistake in the language came back as a complaint about C the
-  program never wrote. Reported now as Go reports it, naming what was passed and
-  what was wanted.
+- **Pointer-ness is checked** where a value is assigned to something of a known
+  type: an argument, a variable declaration and a return. `f(p)` where `f` wants a
+  `*P`, `var q *P = p`, and `return p` from a `*P` result were all accepted and left
+  to the C compiler — so the most common mistake in the language came back as a
+  complaint about C the program never wrote. Reported now as Go reports it, naming
+  what was passed and what was wanted.
+
+  An *assignment* is not among them yet: its check sees only the target's base name,
+  so a field or indexed target would be compared against the base's type. See the
+  TODO list in `specs.go`.
 
 
 - **Three messages now read as Go's do.** `break is not in a loop, switch or select`

@@ -1,12 +1,30 @@
-// An argument's pointer-ness must match the parameter's. It was checked nowhere, so
+// Pointer-ness must match wherever a value is assigned to something of a known
+// type: an argument, a variable declaration and a return. It was checked nowhere, so
 // the most common mistake in the language -- f(p) where f wants *P -- reached the C
 // compiler, which then complained about C the program never wrote.
+//
+// An ASSIGNMENT is not among them. Its check sees only the target's base name, so a
+// field or an indexed target ("bf.b[i] = c") would be compared against the base's
+// type; separating the two is a change to that check rather than an addition to it.
 
 type P struct{ n int }
 
 func byVal(p P) int  { return p.n }
 func byPtr(p *P) int { return p.n }
 func viaInt(p *int) int { return *p }
+
+var g P
+
+func badReturn() *P { 
+	// ERROR "cannot use g \(a value\) as \*P value in return statement"
+	return g
+}
+
+func badDecl() {
+	// ERROR "cannot use g \(a value\) as \*P value in variable declaration"
+	var q *P = g
+	println(q.n)
+}
 
 func bad() {
 	var p P = P{1}
