@@ -863,7 +863,12 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					seps = append(seps, whiteSpace(0))
 				}
 
-				sepIndent := c.indentLevel
+				// A separator's comments stand with the token they precede, so they
+				// take its indent delta too. Without that, a comment before a "case"
+				// clause or a grouped declaration's keyword -- the tokens that stand
+				// one level out from what surrounds them -- was indented with the body
+				// instead, which is not where gofmt puts it.
+				sepIndent := c.indentLevel + indentDelta
 				if n == c.indentSepForIndex {
 					sepIndent++
 				}

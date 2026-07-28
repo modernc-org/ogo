@@ -15,6 +15,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Tooling
 
+- **`ogo fmt` indented a comment one level too deep** when it stood before a `case`
+  clause — and, once grouped declarations began indenting, before a `const ( … )`
+  keyword. A separator's indent did not take the token's indent delta, so a comment
+  went with the body rather than with the token it precedes.
 - **`ogo fmt` outdented every spec of a grouped declaration.** A `const ( … )`,
   `var ( … )`, `type ( … )` or `import ( … )` written the gofmt way came back with
   its specs at the keyword's own level — the tool meant to produce that shape was

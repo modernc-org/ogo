@@ -742,6 +742,56 @@ func f() {
 	formatCheck(t, in, want)
 }
 
+// TestFormatCommentIndent pins a comment standing with the token it precedes, for
+// the two tokens that sit one level out from what surrounds them: a "case" clause
+// and a grouped declaration's keyword. A separator's indent did not take the token's
+// indent delta, so such a comment was indented with the body instead -- one level too
+// deep before a "case", and, once grouped declarations began indenting at all, one
+// level too deep before a "const".
+func TestFormatCommentIndent(t *testing.T) {
+	const in = `// Before a grouped declaration.
+const (
+// Before a spec.
+A = iota
+B
+)
+
+func main() {
+n := 1
+switch n {
+// Before a case clause.
+case 1:
+println("one")
+// Before the default clause.
+default:
+println("other")
+}
+println(A, B)
+}
+`
+	const want = `// Before a grouped declaration.
+const (
+	// Before a spec.
+	A = iota
+	B
+)
+
+func main() {
+	n := 1
+	switch n {
+	// Before a case clause.
+	case 1:
+		println("one")
+	// Before the default clause.
+	default:
+		println("other")
+	}
+	println(A, B)
+}
+`
+	formatCheck(t, in, want)
+}
+
 // TestFormatCorpus formats every run-case program and formats the result again.
 // The corpus is the widest body of OctoGo source there is, so it is the best answer
 // available to "does the formatter choke on, or churn, real programs" -- and it is
