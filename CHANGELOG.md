@@ -40,6 +40,19 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A string held in a struct field may be sliced**, `l.line[a:b]`. The slice paths
+  had an answer for a slice field and an array field and none for a string one, so
+  the whole of a tokenizer was `cannot infer a type`.
+- **A top-level name that C has already spoken for moves out of its way.** A program
+  is entitled to a function called `atoi` or `abs`, a variable called `index` or a
+  type called `union` — every one of which is declared by a header the emitted C
+  includes, or is a C keyword — and each used to be a C compile error naming a
+  collision the program never made. Only the colliding names move, so everything
+  else in the output reads as it did.
+
+  A local, a parameter or a struct field needs no such help against a *library*
+  name, shadowing being enough. One against a C *keyword* still emits invalid C; see
+  the TODO list in `specs.go`.
 - **A method or an imported package's function may yield several values into a
   destructuring assignment**, `b, ok := r.pop()` and `q, r := mathy.Divmod(17, 5)`.
   Only a plain function of the same package could before, so the `(value, ok)` shape

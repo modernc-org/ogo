@@ -30,6 +30,11 @@
 // of it, and an array of it then share.
 // TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
 // literals).
+// TODO 20260728 A local variable, parameter or struct field whose name is a C
+// KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
+// moved out of C's way; a local one is not, several emission paths writing a local's
+// name directly rather than through the one funnel. A C library function's name is
+// fine as a local, shadowing being enough.
 // TODO 20260727 Array literals as general values: an array literal passed to a
 // function or assigned. A slice literal stands as a value now, being a header; an
 // array is not a C value, so it initializes a variable, fills a slot in another

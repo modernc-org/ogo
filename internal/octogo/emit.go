@@ -38,6 +38,47 @@ func cIdent(name string) string {
 	return b.String()
 }
 
+// cReserved is the set of names the emitted C has already spoken for: C's own
+// keywords, and the library functions and macros declared by the headers the output
+// includes -- <stdio.h>, <stdlib.h>, <string.h> and propeller2.h. A user symbol of
+// one of these names is emitted with the ogo_ prefix instead.
+//
+// It does not need to be exhaustive to be worth having: it covers what a program is
+// plausibly going to name, and a name missing from it fails the way it does today,
+// as a C compile error naming the collision.
+var cReserved = map[string]bool{}
+
+func init() {
+	for _, name := range []string{
+		// C keywords that are valid OctoGo identifiers. The ones that are also C
+		// TYPE names -- int, char, float, long and the rest -- are left out on
+		// purpose: the emitter writes them as types itself, and every identifier it
+		// emits comes through here.
+		"auto", "enum", "extern", "register", "sizeof", "static", "typedef",
+		"union", "volatile", "inline", "restrict",
+		// <stdio.h>
+		"printf", "fprintf", "sprintf", "snprintf", "puts", "putchar", "getchar",
+		"fopen", "fclose", "fread", "fwrite", "fseek", "ftell", "rewind", "remove",
+		"rename", "perror", "stdin", "stdout", "stderr", "EOF",
+		// <stdlib.h>
+		"abort", "abs", "atexit", "atof", "atoi", "atol", "bsearch", "calloc",
+		"div", "exit", "free", "getenv", "labs", "ldiv", "malloc", "qsort", "rand",
+		"realloc", "srand", "strtod", "strtol", "strtoul", "system",
+		// <string.h>
+		"memchr", "memcmp", "memcpy", "memmove", "memset", "strcat", "strchr",
+		"strcmp", "strcoll", "strcpy", "strcspn", "strerror", "strlen", "strncat",
+		"strncmp", "strncpy", "strpbrk", "strrchr", "strspn", "strstr", "strtok",
+		"strxfrm", "index", "rindex",
+		// propeller2.h and the P2 intrinsics it declares.
+		"cnt", "clkfreq", "clkmode", "waitcnt", "waitx", "getcnt", "getms",
+		"getsec", "reboot", "cogid", "coginit", "cogstop", "locknew", "lockret",
+		"locktry", "lockrel", "pinh", "pinl", "pinnot", "pinf", "pinr", "pinw",
+		"rdpin", "akpin", "wrpin", "wxpin", "wypin", "rev", "rnd",
+	} {
+		cReserved[name] = true
+	}
+}
+
 // isCIdent reports whether name is already a valid, non-empty C identifier: ASCII
 // letters, digits and underscore, not starting with a digit.
 func isCIdent(name string) bool {
@@ -71,6 +112,19 @@ func pkgPrefix(importPath string) string {
 // name in the main package, or prefix_name in an imported one.
 func mangle(prefix, name string) string {
 	if prefix == "" {
+		// A top-level name C has already spoken for moves out of its way. The main
+		// package's symbols keep their own names in the emitted C, which reads far
+		// better -- but a program is entitled to a function called atoi or abs, and
+		// C's declaration of one is already in scope through the headers the output
+		// includes. Only the colliding names move.
+		//
+		// Only top-level names: a local, a parameter or a struct field of such a name
+		// shadows or qualifies whatever C declared and needs no help. That is also the
+		// safe boundary, since a top-level name is reached through this one funnel
+		// while a local's is written in several places.
+		if cReserved[name] {
+			return "ogo_" + cIdent(name)
+		}
 		return cIdent(name)
 	}
 	return prefix + "_" + cIdent(name)
@@ -6554,7 +6608,17 @@ func (e *emitter) sliceableField(base string, fields []string) (sliceSource, boo
 		return sliceSource{sliceCName(a.elem), lv, a.bound, a.bound}, true
 	}
 	ct, ok := e.fieldType(base, fields)
-	if !ok || !e.isSliceCType(ct) {
+	if !ok {
+		return sliceSource{}, false
+	}
+	// A string field slices like a string variable: the result is a string over the
+	// same bytes, with no capacity of its own. sliceableVar has always done this for
+	// a name; a field reached the slice paths with nothing to answer for it.
+	if e.underlyingCType(ct) == cString {
+		e.usesString = true
+		return sliceSource{cString, lv + ".str", lv + ".len", ""}, true
+	}
+	if !e.isSliceCType(ct) {
 		return sliceSource{}, false
 	}
 	if elem, ok := e.sliceElemByName[ct]; ok {

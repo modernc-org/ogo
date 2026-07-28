@@ -2483,6 +2483,94 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A string held in a struct field slices like one held in a variable. It did
+		// not: the slice paths had an answer for a slice field and an array field and
+		// none for a string one, so "l.line[a:b]" -- the whole of a tokenizer -- was
+		// "cannot infer a type".
+		//
+		// Top-level names that C has already spoken for move out of its way. This
+		// program has a function called atoi, one called abs, a package variable
+		// called index and a type called union, every one of which is declared by a
+		// header the output includes or is a C keyword; before, each was a C compile
+		// error naming a collision the program never made.
+		name: "a string field slices, and C's names are avoided",
+		src: `type union struct{ n int }
+
+type lexer struct {
+	line string
+	toks []int
+	n    int
+}
+
+func (l *lexer) split() int {
+	i := 0
+	l.n = 0
+	for i < len(l.line) {
+		for i < len(l.line) && l.line[i] == ' ' {
+			i++
+		}
+		if i == len(l.line) {
+			break
+		}
+		start := i
+		for i < len(l.line) && l.line[i] != ' ' {
+			i++
+		}
+		if l.n == len(l.toks) {
+			return l.n
+		}
+		l.toks[l.n] = start*100 + i
+		l.n++
+	}
+	return l.n
+}
+
+func (l *lexer) text(k int) string {
+	t := l.toks[k]
+	return l.line[t/100 : t%100]
+}
+
+func atoi(s string) (int, bool) {
+	if len(s) == 0 {
+		return 0, false
+	}
+	n := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, true
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+var tokbuf [4]int
+var index int = 3
+
+func main() {
+	var l lexer = lexer{"set pin 17", tokbuf[:], 0}
+	n := l.split()
+	println(n, l.text(0), l.text(1), l.text(2))
+	v, ok := atoi(l.text(2))
+	println(v, ok)
+	w, bad := atoi("12x")
+	println(w, bad)
+	println(abs(-5), index)
+	var u union = union{7}
+	println(u.n, l.line[:3], l.line[4:])
+}
+`,
+		want: "3 set pin 17\n17 true\n0 false\n5 3\n7 set pin 17\n",
+	},
+	{
 		// A multi-result call on the right of a destructuring assignment could only
 		// be a plain function of this package. A METHOD returning "(value, ok)" is
 		// the shape a container wants -- a ring buffer's pop, a lookup -- and it was
