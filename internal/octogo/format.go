@@ -207,6 +207,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// which are spaced off the header they follow: "P{Q{1}, 2}" and "P{x: 1}", not
 	// "P { Q { 1 }, 2 }". This covers the brace against the type name before it,
 	// and against the first and last element within.
+	// ... but a comma still takes its space: gofmt writes "{{1, 2}, {3, 4}}", the
+	// separator between two elements being no different for a nested literal than
+	// for anything else.
+	case prev == COMMA && curr == LBRACE && c.inLiteralBraces:
+		return true
 	case (curr == LBRACE || prev == LBRACE || curr == RBRACE) && c.inLiteralBraces:
 		return false
 	// A struct or interface type's opening brace binds tight to the keyword unless
@@ -786,6 +791,17 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					}
 				case CASE, DEFAULT:
 					indentDelta = -1
+				case IDENT:
+					// A label stands one level out from the statements it labels, as
+					// gofmt writes it and as "case" does here. It is an identifier
+					// followed by ":" where a statement may begin -- after a ";", the
+					// "{" that opens a block, or the ":" of a case clause, whose body
+					// a label may open -- which tells it from a composite literal's
+					// key, whose "{" is a literal's (inLiteralBraces).
+					if Symbol(f.p.Token(tokIdx+1).Ch) == COLON && !c.inLiteralBraces &&
+						(f.prevTok == SEMICOLON || f.prevTok == LBRACE || f.prevTok == COLON) {
+						indentDelta = -1
+					}
 				}
 
 				if len(syntheticSep) != 0 {

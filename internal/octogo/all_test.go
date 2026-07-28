@@ -562,6 +562,150 @@ func main() {
 	}
 }
 
+// TestFormatNestedLitComma pins the space after a comma that separates two nested
+// composite literals. The rule that binds a literal's braces to what they enclose
+// fired on the "{" after the comma too, so "{{1, 2}, {3, 4}}" came out
+// "{{1, 2},{3, 4}}" -- the separator between two elements is no different for a
+// nested literal than for anything else, and gofmt writes the space.
+func TestFormatNestedLitComma(t *testing.T) {
+	const in = `type pt struct {
+x int
+y int
+}
+
+var corners = []pt{{1,2},{3,4}}
+var grid = [2][3]int{{1,2,3},{4,5,6}}
+
+func main() {
+a := []pt{{1,2},{3,4}}
+b := [2]pt{{x:1,y:2},{x:3,y:4}}
+println(a[1].x, b[0].y, corners[0].x, grid[1][2])
+}
+`
+	const want = `type pt struct {
+	x int
+	y int
+}
+
+var corners = []pt{{1, 2}, {3, 4}}
+var grid = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+
+func main() {
+	a := []pt{{1, 2}, {3, 4}}
+	b := [2]pt{{x: 1, y: 2}, {x: 3, y: 4}}
+	println(a[1].x, b[0].y, corners[0].x, grid[1][2])
+}
+`
+	formatCheck(t, in, want)
+}
+
+// TestFormatLabel pins a label standing one level out from the statements it
+// labels, as gofmt writes it and as "case" already did here. It was indented with
+// them. A label is told from a composite literal's key by where it stands: an
+// identifier and ":" where a statement may begin, which a key never is.
+func TestFormatLabel(t *testing.T) {
+	const in = `type P struct {
+n int
+}
+
+func main() {
+outer:
+for i := 0; i < 3; i++ {
+inner:
+for j := 0; j < 3; j++ {
+if j == 1 {
+continue inner
+}
+if i == 2 {
+break outer
+}
+}
+}
+p := P{n: 1}
+switch p.n {
+case 1:
+done:
+for {
+break done
+}
+}
+}
+`
+	const want = `type P struct {
+	n int
+}
+
+func main() {
+outer:
+	for i := 0; i < 3; i++ {
+	inner:
+		for j := 0; j < 3; j++ {
+			if j == 1 {
+				continue inner
+			}
+			if i == 2 {
+				break outer
+			}
+		}
+	}
+	p := P{n: 1}
+	switch p.n {
+	case 1:
+	done:
+		for {
+			break done
+		}
+	}
+}
+`
+	formatCheck(t, in, want)
+}
+
+// TestFormatCorpus formats every run-case program and formats the result again.
+// The corpus is the widest body of OctoGo source there is, so it is the best answer
+// available to "does the formatter choke on, or churn, real programs" -- and it is
+// how the two rules above were found. It does not require the sources to be in
+// canonical form: gofmt's depth rule for binary operators inside a call, and its
+// alignment of consecutive one-line declarations, are not implemented here yet, so
+// many of them are not.
+func TestFormatCorpus(t *testing.T) {
+	for _, c := range emitRunCases {
+		t.Run(c.name, func(t *testing.T) {
+			var once bytes.Buffer
+			if err := FormatFile("t.ogo", []byte(c.src), &once); err != nil {
+				t.Fatalf("FormatFile: %v", err)
+			}
+			var twice bytes.Buffer
+			if err := FormatFile("t.ogo", once.Bytes(), &twice); err != nil {
+				t.Fatalf("FormatFile round 2: %v\n%s", err, once.String())
+			}
+			if g, e := twice.String(), once.String(); g != e {
+				t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+			}
+		})
+	}
+}
+
+// formatCheck formats in, compares it with want, and formats the result again to
+// pin idempotence -- the property every one of these rules has to keep.
+func formatCheck(t *testing.T, in, want string) {
+	t.Helper()
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("format:\n got %q\nwant %q", g, want)
+	}
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatIncDec pins "++" and "--" binding to their operand. The formatter had
 // no rule for them, so they fell through to the default space and every increment
 // came out as "i ++". They are statements in this language, never expressions, so

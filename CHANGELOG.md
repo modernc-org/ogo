@@ -160,6 +160,20 @@ Releases before v0.9.0 predate this file; see
   stand ahead of the chain. Every `select` test had used a single clause, which is
   how a shipped feature's headline use went uncompiled.
 
+### Tooling
+
+- **`ogo fmt` dropped the space after a comma before a nested composite literal**,
+  writing `{{1, 2},{3, 4}}` where gofmt writes `{{1, 2}, {3, 4}}`. The rule that
+  binds a literal's braces to what they enclose fired on the brace after the comma
+  too.
+- **`ogo fmt` indented a label** with the statements it labels. gofmt stands it one
+  level out, as `case` already did here — including a label that opens a `case`
+  clause's body.
+
+  Two gofmt behaviours remain unimplemented and are noted rather than fixed: binary
+  operators inside a call argument are rendered tight by gofmt (`println(a+b)`), and
+  consecutive one-line declarations have their bodies aligned.
+
 ### Testing
 
 - **A multi-package program is now compiled for the target and run on hardware.** It
@@ -168,6 +182,9 @@ Releases before v0.9.0 predate this file; see
   mangled into its package's namespace, the whole program emitted as one translation
   unit — had never been through flexcc or onto a board. The program, and what it
   prints, are now shared by all three.
+- **`ogo fmt` is run over the whole run-case corpus** and its output re-formatted, so
+  a rule that chokes on, or churns, a real program fails a test. That is how the two
+  formatter bugs above were found.
 - **The `--unchecked` and `--release` builds are now tested.** Every run test built
   with the checks on, so a whole configuration of `ogo build` was pinned by two
   emission goldens and nothing else — a lowering that is correct only because a check
