@@ -3168,7 +3168,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	var lhsSuffixed []bool
 	if id, ok := f.assignHeadIdent(head); ok {
 		lhs = append(lhs, id)
-		lhsSuffixed = append(lhsSuffixed, hasSelectorOrIndex(postfix))
+		// A leading "*" makes the head a dereference, so the base is not the assigned
+		// value either -- the same thing a selector or index means.
+		lhsSuffixed = append(lhsSuffixed, hasSelectorOrIndex(postfix) || f.headIsDeref(head))
 	}
 
 	var op Symbol
@@ -3271,7 +3273,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			f.checkNames(s, e)
 		}
 		if !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 {
-			f.checkAssignType(s, lhs[0], rhs[0])
+			f.checkAssignType(s, lhs[0], rhs[0], !lhsSuffixed[0])
 		}
 		return
 	}
@@ -3375,7 +3377,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for i, e := range rhs {
 			if i < len(lhs) {
 				f.checkRecvAssign(s, lhs[i], e)
-				f.checkAssignType(s, lhs[i], e)
+				// Only a bare target is of its own declared type: with a selector,
+				// an index or a leading "*", lhs[i] is the target's BASE, and what is
+				// assigned belongs to the field, element or pointee -- which the
+				// field, index and deref checks above are the ones to judge.
+				f.checkAssignType(s, lhs[i], e, !lhsSuffixed[i])
 			}
 		}
 	}
@@ -4916,12 +4922,31 @@ func (f *File) hasSelectorOrIndex(ast []int32) bool {
 	return false
 }
 
+// headIsDeref reports whether an assignment's head is a dereference, "*p = v". The
+// stars are the head's own leading tokens.
+func (f *File) headIsDeref(head Node) bool {
+	for c := range it(head.ast) {
+		if c.sym == 0 && f.ch(c.tok) == MUL {
+			return true
+		}
+		break
+	}
+	return false
+}
+
 // checkAssignType reports when the right-hand side of an assignment is of a
 // different type class than the target variable. Both must be known.
-func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node) {
+func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget bool) {
 	if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok {
 		f.checkNilAssignable(s, nilTarget(d.kind, d.hasKind, d.typeName), rhsNode, "assignment")
 		f.checkFuncAssign(s, d.funcSig, rhsNode, "assignment")
+		if plainTarget && d.typeName.IsValid() {
+			want := d.typeName.Src()
+			if d.isPtr {
+				want = "*" + want
+			}
+			f.checkPointerValue(s, d.isPtr, want, rhsNode, "assignment")
+		}
 	}
 	lk, lok := f.identKind(s, lhsTok)
 	rk, rok := f.exprType(s, rhsNode)

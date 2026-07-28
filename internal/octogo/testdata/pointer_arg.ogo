@@ -2,10 +2,10 @@
 // type: an argument, a variable declaration and a return. It was checked nowhere, so
 // the most common mistake in the language -- f(p) where f wants *P -- reached the C
 // compiler, which then complained about C the program never wrote.
-//
-// An ASSIGNMENT is not among them. Its check sees only the target's base name, so a
-// field or an indexed target ("bf.b[i] = c") would be compared against the base's
-// type; separating the two is a change to that check rather than an addition to it.
+// An assignment is among them, but only a BARE target: with a selector, an index or
+// a leading "*" the name the check sees is the target's base, and what is assigned
+// belongs to the field, element or pointee -- which the field, index and deref
+// checks are the ones to judge.
 
 type P struct{ n int }
 
@@ -24,6 +24,27 @@ func badDecl() {
 	// ERROR "cannot use g \(a value\) as \*P value in variable declaration"
 	var q *P = g
 	println(q.n)
+}
+
+var q *P
+var v P
+
+func badAssign() {
+	// ERROR "cannot use g \(a value\) as \*P value in assignment"
+	q = g
+	// ERROR "cannot use &g \(an address\) as P value in assignment"
+	v = &g
+}
+
+// A target with a suffix is left to the checks that know what it holds.
+func suffixedTargets() {
+	var p P
+	var pp *P = &p
+	var n int
+	var pn *int = &n
+	pp.n = 1
+	*pn = 2
+	println(p.n, n)
 }
 
 func bad() {
