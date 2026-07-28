@@ -19,9 +19,10 @@
 // TODO 20260727 Function values: a function literal, a method value, a function with
 // more than one result as a value, and "go" through a variable holding one. The
 // named function used as a value works (see Function types and function values).
-// TODO 20260728 Defined types over a channel: a send or a receive on a value of one
-// is refused, chanElem keying on the written "chan T" rather than on what the type
-// stands for (see Type Declarations).
+// TODO 20260728 Defined types over a channel: a method on one (see Type
+// Declarations). Sends, receives and select clauses work.
+// TODO 20260728 Channels held in a struct field: a send or a receive on one is
+// refused, for a written "chan T" as much as for a defined type over one.
 // TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
 // literals).
 // TODO 20260728 Constant declarations: an identifier list, "const a, b = 1, 2"
@@ -721,8 +722,10 @@
 // as that type's values are. Its own name is what a diagnostic says and what carries
 // its methods, so "var c Celsius = \"a\"" reads as Celsius, not as int.
 //
-// A defined type over a channel is not usable as a channel yet: a send or a receive
-// on one is refused.
+// A defined type over a channel is a channel too: a send, a receive and a select
+// clause all reach it. The one thing such a type gives up is a method of its own,
+// which is refused where it is written -- it is answered for by the channel cell's
+// own name in the emitted C, and so has no type there to hang a method on.
 //
 // # Function and Method Declarations
 //

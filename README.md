@@ -215,9 +215,11 @@ broken.
 * **Interfaces**, and with them type switches and type assertions. See below.
 * **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
   of a build, but nothing runs them yet.
-* A **defined type over a channel**, `type Ch chan int`, is not usable as a channel:
-  a send or a receive on a value of one is refused. Defined types over every other
-  kind work.
+* A **channel held in a struct field**: a send or a receive on one is refused,
+  whether the field is written `chan T` or a defined type over one. A channel in a
+  variable, a parameter or a package-level declaration is fine.
+* A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
+  receives and select clauses on such a type all work.
 * A `const` declaration binds one name, so `const a, b = 1, 2` does not parse; write
   two. A float literal has no hexadecimal form (`0x1p-2`).
 * An **array** literal may not stand as a general value — it initializes a variable,

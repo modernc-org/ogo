@@ -2483,6 +2483,52 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A defined type over a channel is a channel: a send, a receive and a select
+		// clause all reach it, through a chain of definitions if there is one. It was
+		// the one kind left out when a defined type gained the behaviour of what it
+		// is defined over -- chanElem keyed on the written "chan T" and found a name
+		// instead, so every send on one was "cannot send to non-channel".
+		name: "a defined type over a channel",
+		src: `type Ch chan int
+type Sig chan bool
+type Alias Ch
+
+var gch Ch
+var sig Sig
+var ali Alias
+
+func send(c Ch, n int) { c <- n }
+
+func flag(c Sig) { c <- true }
+
+func viaAlias(c Alias) { c <- 5 }
+
+func main() {
+	go send(gch, 7)
+	println(<-gch)
+
+	go flag(sig)
+	println(<-sig)
+
+	go viaAlias(ali)
+	println(<-ali)
+
+	go send(gch, 3)
+	select {
+	case x := <-gch:
+		println("sel", x)
+	}
+	select {
+	case x := <-gch:
+		println("sel2", x)
+	default:
+		println("none")
+	}
+}
+`,
+		want: "7\ntrue\n5\nsel 3\nnone\n",
+	},
+	{
 		// A select whose send clause and receive clause both belong to a loop that
 		// keeps going until each has fired its share, with the other cog doing the
 		// mirror image. The send clause offers a value and waits for it to be taken,

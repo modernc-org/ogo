@@ -867,12 +867,25 @@ func (f *File) funcSig(tn TypeNode) *SignatureNode {
 // channel analogue of elemTypeKind, recorded on a variable so send and receive
 // operations on package, local and parameter channels alike are checked uniformly.
 func (f *File) chanElem(s *Scope, tn TypeNode) (elem Kind, hasElem, isChan bool) {
-	ct, ok := tn.(*TypeNodeChan)
-	if !ok {
-		return 0, false, false
+	// A defined type over a channel is a channel, "type Ch chan int", so the
+	// definition is followed to reach it -- bounded, as typeKind is, a type cycle
+	// having its own pass.
+	for range 16 {
+		switch x := tn.(type) {
+		case *TypeNodeChan:
+			elem, hasElem = f.typeKind(s, x.TypeNode)
+			return elem, hasElem, true
+		case *TypeNodeIdent:
+			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
+			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+				return 0, false, false
+			}
+			tn = d.TypeSpec.TypeNode
+		default:
+			return 0, false, false
+		}
 	}
-	elem, hasElem = f.typeKind(s, ct.TypeNode)
-	return elem, hasElem, true
+	return 0, false, false
 }
 
 // declareParamList declares the named parameters or results in list into scope s.

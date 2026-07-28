@@ -11,6 +11,20 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Language
+
+- **A defined type over a channel is a channel**, `type Ch chan int`: a send, a
+  receive and a `select` clause all reach it, through a chain of definitions if there
+  is one. It was the one kind left out when a defined type gained the behaviour of
+  what it is defined over — the element lookup keyed on a written `chan T` and found
+  a name instead, so every send on one was `cannot send to non-channel`.
+
+  Such a type gives up one thing: a method of its own, refused where it is written.
+  It is answered for by the channel cell's own name in the emitted C, so it has no C
+  type there to hang a method namespace on.
+
 ## v0.12.0
 
 ### Language

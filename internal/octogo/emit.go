@@ -1405,8 +1405,12 @@ func (e *emitter) needChan(elem string) {
 	e.chanElemByName[chanCName(elem)] = elem
 }
 
-// isChanCType reports whether a C type is a channel cell.
-func (e *emitter) isChanCType(ctype string) bool { return strings.HasPrefix(ctype, chanTypePrefix) }
+// isChanCType reports whether a C type is a channel cell, a defined type over one
+// included -- what it is asked for is the representation, and a value of
+// `type Ch chan int` is a channel.
+func (e *emitter) isChanCType(ctype string) bool {
+	return strings.HasPrefix(e.underlyingCType(ctype), chanTypePrefix)
+}
 
 // chanRuntimeDefs returns the typedef for `chan elem` plus the helpers the
 // program actually reaches for: a send-only program never sees the receive, and
@@ -2666,6 +2670,17 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		}
 		e.namedTypes[mn] = true
 		e.namedUnderlying[mn] = underlying
+		if strings.HasPrefix(underlying, chanTypePrefix) {
+			// A defined type over a channel takes no typedef of its own and is
+			// answered for by the cell's name (see cType). The cell's typedef is
+			// emitted with the channel helpers, after this section, so a typedef
+			// naming it here would name a type C has not seen -- and the emitter
+			// reaches a channel through its C type name everywhere (the cell, the
+			// helpers, the element), so a second name for it would have to be
+			// resolved at each of those. The type keeps its identity to the checker;
+			// what it gives up is a method of its own, which is refused by name.
+			continue
+		}
 		e.emit("typedef " + underlying + " " + mn + ";\n")
 	}
 }
@@ -3806,6 +3821,14 @@ func (e *emitter) receiverInfo(recv []int32) (name, ctype string, named bool) {
 	}
 	d := decls[0]
 	ctype = e.cType(d.TypeAST.ast)
+	if e.isChanCType(methodBaseType(ctype)) {
+		// A defined type over a channel is answered for by the channel cell's own C
+		// name (see collectTypeDecl), so it has no C type of its own to hang a
+		// method namespace on. Refused where the method is written rather than at
+		// the call, where it reads as an unknown package.
+		e.fail("a method on a defined type over a channel is not supported yet")
+		return recvSynthName, "", false
+	}
 	if len(d.Names) != 0 && d.Names[0].Src() != "_" {
 		return d.Names[0].Src(), ctype, true
 	}
@@ -5470,6 +5493,9 @@ func (e *emitter) cType(ast []int32) string {
 		return mn
 	}
 	if e.namedTypes[mn] {
+		if u := e.namedUnderlying[mn]; strings.HasPrefix(u, chanTypePrefix) {
+			return u // see collectTypeDecl: a defined channel type is its cell
+		}
 		return mn
 	}
 	e.fail("unsupported type %q", name)

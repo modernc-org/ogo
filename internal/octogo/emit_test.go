@@ -5055,6 +5055,35 @@ func main() {
 	}
 }
 
+// TestEmitCChanMethodRefused pins the one thing a defined type over a channel gives
+// up. It is answered for by the channel cell's own C name, the emitter reaching a
+// channel through that name everywhere -- the cell, the helpers, the element type --
+// so it has no C type of its own to hang a method namespace on. Refused where the
+// method is written; at the call it reads as an unknown package.
+func TestEmitCChanMethodRefused(t *testing.T) {
+	src := `type Ch chan int
+
+func (c Ch) tag() int { return 7 }
+
+var gch Ch
+
+func main() {
+	println(gch.tag())
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err == nil {
+		t.Fatalf("EmitC accepted a method on a defined channel type:\n%s", buf.String())
+	} else if !strings.Contains(err.Error(), "method on a defined type over a channel") {
+		t.Errorf("EmitC error %q is not the channel-method refusal", err)
+	}
+}
+
 // TestEmitCStringConvRefused pins the string conversions the emitter refuses: the
 // ones that would have to BUILD a string, whose bytes need somewhere to go. The
 // checker reports string(rune) early (see string_conversion.ogo) but carries no
