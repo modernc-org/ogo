@@ -5668,7 +5668,7 @@ func (p *Parser) ConstDecl() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 83
+	accept, errorSet = false, 82
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -5679,7 +5679,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 88
+	accept, errorSet = false, 87
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -5707,11 +5707,11 @@ state4:
 
 // ConstSpec grammar:
 //
-//	ConstSpec = identifier [ Type ] [ "=" Expression ] .
+//	ConstSpec = IdentifierList [ Type ] [ "=" ExpressionList ] .
 //
 //	State 0
 //		on  identifier
-//			shift and goto state 1
+//			call IdentifierList and goto state 1
 //	State 1
 //		Accept
 //		on  '='
@@ -5720,7 +5720,7 @@ state4:
 //			call Type and goto state 4
 //	State 2
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
-//			call Expression and goto state 3
+//			call ExpressionList and goto state 3
 //	State 3
 //		Accept
 //	State 4
@@ -5736,7 +5736,7 @@ func (p *Parser) ConstSpec() (r []int32) {
 	accept, errorSet = false, 107
 	switch Symbol(p.tok.Ch) {
 	case identifier:
-		r = append(r, p.shift())
+		r = p.add(r, p.IdentifierList())
 		goto state1
 	}
 	return p.stop(r, accept, errorSet)
@@ -5752,10 +5752,10 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 36
+	accept, errorSet = false, 35
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
-		r = p.add(r, p.Expression())
+		r = p.add(r, p.ExpressionList())
 		goto state3
 	}
 	return p.stop(r, accept, errorSet)

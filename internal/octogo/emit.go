@@ -3033,50 +3033,71 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 	// spec's expression and type forward for a spec that omits its own, mirroring
 	// the checker's declareConst.
 	iotaVal := 0
-	var lastExpr []int32
+	var lastExprs [][]int32
 	var lastType string
 	haveLastType := false
 	for n := range it(ast) {
 		if n.sym != ConstSpec {
 			continue
 		}
-		var name, ownType string
-		var initExpr []int32
+		var names []string
+		var initExprs [][]int32
+		var ownType string
 		hasType := false
 		for s := range it(n.ast) {
 			switch s.sym {
 			case Type:
 				ownType, hasType = e.cType(s.ast), true
-			case Expression:
-				initExpr = s.ast
-			case 0:
-				if e.f.ch(s.tok) == IDENT {
-					name = e.src(s.tok)
+			case IdentifierList:
+				for d := range it(s.ast) {
+					if d.sym == 0 && e.f.ch(d.tok) == IDENT {
+						names = append(names, e.src(d.tok))
+					}
+				}
+			case ExpressionList:
+				for d := range it(s.ast) {
+					if d.sym == Expression {
+						initExprs = append(initExprs, d.ast)
+					}
 				}
 			}
 		}
-		if name == "" {
+		if len(names) == 0 {
 			e.fail("malformed const declaration")
 			return
 		}
-		// A spec omitting its expression repeats the previous spec's expression and
-		// type together; one with its own carries that forward.
-		if initExpr != nil {
-			lastExpr = initExpr
+		// A spec omitting its expression list repeats the previous spec's,
+		// positionally, together with its type; one with a list of its own carries
+		// that list forward.
+		if len(initExprs) != 0 {
+			lastExprs = initExprs
 			lastType, haveLastType = ownType, hasType
 		} else {
-			initExpr = lastExpr
+			initExprs = lastExprs
 			ownType, hasType = lastType, haveLastType
 		}
-		if initExpr == nil {
+		if len(initExprs) != len(names) {
 			e.fail("malformed const declaration")
 			return
 		}
+		// iota counts specs, not names: every name on one line sees the same value.
 		curIota := iotaVal
 		iotaVal++
-		if name == "_" {
-			continue // a blank const declares nothing; skip it, but it still advances iota
+		for i, name := range names {
+			initExpr := initExprs[i]
+			if name == "_" {
+				continue // a blank const declares nothing
+			}
+			e.emitConstSpecName(name, ownType, hasType, initExpr, curIota, pkg)
 		}
+	}
+}
+
+// emitConstSpecName emits one name of a const spec. A spec binds a list, and every
+// name on it shares the spec's iota and its written type while taking the
+// expression standing in its own position.
+func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr []int32, curIota int, pkg bool) {
+	{
 		// A package-level constant is namespaced by its package, exactly like a
 		// package variable (see globalC), so same-named constants in different
 		// packages neither collide in the single translation unit nor cross-pollute
@@ -3125,7 +3146,7 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		// only ever folded into a concatenation (which does not name it).
 		if v, ok := e.foldConstString(initExpr); ok {
 			e.constStr[cname] = v
-			continue
+			return
 		}
 		e.iota = curIota // substitute iota with its value while emitting the expression
 		e.ind()

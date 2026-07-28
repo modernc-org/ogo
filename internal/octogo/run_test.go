@@ -2483,6 +2483,35 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A const spec binds a list, "const a, b = 1, 2". A spec that omits its
+		// expression list repeats the previous spec's positionally, and iota counts
+		// SPECS rather than names, so every name on one line sees the same value --
+		// which is what makes "h, i = iota, iota * 10" mean what it says.
+		name: "const identifier lists",
+		src: `const a, b = 1, 2
+const s, t = "x", "y"
+
+const (
+	c, d = 3, 4
+	e, f
+	g    = 9
+	h, i = iota, iota * 10
+	j, k
+)
+
+func main() {
+	println(a, b, s, t)
+	println(c, d, e, f, g)
+	println(h, i, j, k)
+	const p, q = 5, 6
+	println(p, q)
+	var arr [b]int
+	println(len(arr), arr[0])
+}
+`,
+		want: "1 2 x y\n3 4 3 4 9\n3 30 4 40\n5 6\n2 0\n",
+	},
+	{
 		// A defined type over a channel is a channel: a send, a receive and a select
 		// clause all reach it, through a chain of definitions if there is one. It was
 		// the one kind left out when a defined type gained the behaviour of what it

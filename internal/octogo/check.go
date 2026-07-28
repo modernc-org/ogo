@@ -7771,29 +7771,44 @@ func (f *File) declareConst(s *Scope, n Node) {
 	// "C" in "const ( A = iota; B; C )" -- repeats them, each evaluated at its own
 	// iota. hasLast guards the first spec, which must have an expression of its own.
 	iotaVal := 0
-	var lastExpr, lastType Node
+	var lastExprs []Node
+	var lastType Node
 	var hasLast bool
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ConstSpec:
-			cs := f.declareConstSpec(s, n)
-			cs.iota = iotaVal
+			specs := f.declareConstSpec(s, n)
+			// A spec omitting its expression list repeats the previous spec's,
+			// positionally, together with its type; one with a list of its own
+			// carries that list and its (possibly absent) type forward instead.
+			switch {
+			case len(specs) != 0 && specs[0].hasExpr:
+				lastExprs, hasLast, lastType = nil, true, specs[0].rawType
+				for _, cs := range specs {
+					lastExprs = append(lastExprs, cs.exprNode)
+				}
+			default:
+				for i, cs := range specs {
+					if i < len(lastExprs) {
+						cs.exprNode, cs.hasExpr = lastExprs[i], hasLast
+					}
+					cs.rawType = lastType
+				}
+			}
+			for _, cs := range specs {
+				// iota counts specs, not names, so every name on one line sees the
+				// same value -- which is what makes "a, b = iota, iota*2" mean what
+				// it says.
+				cs.iota = iotaVal
+				var valid int32
+				if s.Kind != PackageScope {
+					valid = n.End() + 1
+				}
+				if err := s.add(&ConstDeclaration{declaration: declaration{token: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
+					f.err(cs.Name.Position(), "%v", err)
+				}
+			}
 			iotaVal++
-			// A spec omitting its expression repeats the previous spec's expression
-			// and type together; one with an expression of its own carries that
-			// expression and its (possibly absent) type forward instead.
-			if cs.hasExpr {
-				lastExpr, hasLast, lastType = cs.exprNode, true, cs.rawType
-			} else {
-				cs.exprNode, cs.hasExpr, cs.rawType = lastExpr, hasLast, lastType
-			}
-			var valid int32
-			if s.Kind != PackageScope {
-				valid = n.End() + 1
-			}
-			if err := s.add(&ConstDeclaration{declaration: declaration{token: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
-				f.err(cs.Name.Position(), "%v", err)
-			}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case CONST, LPAREN, RPAREN, SEMICOLON:
@@ -7847,28 +7862,48 @@ type ConstSpecNode struct {
 	hasExpr  bool
 }
 
-func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
-	r = &ConstSpecNode{node: n}
+// declareConstSpec builds one ConstSpecNode per name a spec declares. A spec binds
+// a list, "const a, b = 1, 2", and each name takes the expression standing in its
+// own position; everything past this point is per name, as it was when a spec could
+// declare only one.
+func (f *File) declareConstSpec(s *Scope, n Node) (r []*ConstSpecNode) {
+	var names []Token
+	var exprs []Node
+	var rawType Node
 	for c := range it(n.ast) {
 		switch c.sym {
-		case 0:
-			switch f.ch(c.tok) {
-			case IDENT:
-				r.Name = f.tok(c.tok)
-			case ASSIGN:
-				// ok
-			default:
-				panic(todo("", f.tok(c.tok).Position(), f.ch(c.tok)))
-			}
+		case IdentifierList:
+			names = f.identifierList(s, c)
+		case ExpressionList:
+			exprs = expressionListItems(c)
 		case Type:
 			// A typed const's declared type is resolved later, in constSpec;
 			// the declaration pass only binds the name (like declareVarSpec).
-			r.rawType = c
-		case Expression:
-			r.exprNode, r.hasExpr = c, true
+			rawType = c
+		case 0:
+			switch f.ch(c.tok) {
+			case IDENT, ASSIGN, COMMA:
+				// the names and the separators, read through the lists above
+			default:
+				panic(todo("", f.tok(c.tok).Position(), f.ch(c.tok)))
+			}
 		default:
 			panic(todo("", f.tok(c.Pos()).Position(), c.sym))
 		}
+	}
+	// An expression with no name to bind is reported here; a name with no expression
+	// is reported by resolveConst, which reaches the same condition from the spec
+	// that inherits nothing. Go names the offending side either way rather than
+	// counting both.
+	for i := len(names); i < len(exprs); i++ {
+		f.err(f.tok(exprs[i].Pos()).Position(), "extra init expr %s", f.exprSource(exprs[i]))
+	}
+	for i, nm := range names {
+		cs := &ConstSpecNode{node: n, Name: nm, rawType: rawType}
+		if i < len(exprs) {
+			cs.exprNode, cs.hasExpr = exprs[i], true
+		}
+		r = append(r, cs)
 	}
 	return r
 }
@@ -7878,21 +7913,30 @@ func (f *File) declareConstSpec(s *Scope, n Node) (r *ConstSpecNode) {
 // later in source; a name that resolved to something else is a redeclaration,
 // already reported.
 func (f *File) constSpec(s *Scope, n Node) {
-	if cd, ok := s.find(f.constSpecName(n).Src()).(*ConstDeclaration); ok {
-		f.resolveConst(s, cd)
+	for _, nm := range f.constSpecNames(n) {
+		if cd, ok := s.find(nm.Src()).(*ConstDeclaration); ok {
+			f.resolveConst(s, cd)
+		}
 	}
 }
 
-// constSpecName returns the identifier a ConstSpec declares.
-func (f *File) constSpecName(n Node) (name Token) {
+// constSpecNames returns the identifiers a ConstSpec declares. A spec binds a list,
+// so every one of them is resolved; the Type and the expressions that follow carry
+// their own identifiers, which is why only the IdentifierList is read.
+func (f *File) constSpecNames(n Node) (names []Token) {
 	for c := range it(n.ast) {
-		if c.sym == 0 {
-			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
-				return tok
+		if c.sym != IdentifierList {
+			continue
+		}
+		for d := range it(c.ast) {
+			if d.sym == 0 {
+				if tok := f.tok(d.tok); Symbol(tok.Ch) == IDENT {
+					names = append(names, tok)
+				}
 			}
 		}
 	}
-	return name
+	return names
 }
 
 // resolveConst evaluates a constant's value on demand. It is idempotent (a
@@ -7931,7 +7975,7 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 		// A source const spec with no expression (and none to inherit). The
 		// predeclared true/false/nil carry no source node and already have a value,
 		// so they are not flagged.
-		f.err(cs.Name.Position(), "missing constant value for %s", cs.Name.Src())
+		f.err(cs.Name.Position(), "missing init expr for %s", cs.Name.Src())
 	}
 	f.iota = savedIota
 	if cs.Value == nil {

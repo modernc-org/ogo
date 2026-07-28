@@ -30,7 +30,7 @@ func outside() {
 }
 
 // A source const spec with nothing to inherit has no value.
-// ERROR "missing constant value for alone"
+// ERROR "missing init expr for alone"
 const alone int
 
 func missing() {

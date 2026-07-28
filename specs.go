@@ -30,8 +30,6 @@
 // of it, and an array of it then share.
 // TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
 // literals).
-// TODO 20260728 Constant declarations: an identifier list, "const a, b = 1, 2"
-// (see Constant Declarations).
 // TODO 20260727 Array literals as general values: an array literal passed to a
 // function or assigned. A slice literal stands as a value now, being a header; an
 // array is not a C value, so it initializes a variable, fills a slot in another
@@ -694,15 +692,16 @@
 // A constant declaration binds an identifier to the value of a constant
 // expression.
 //
-// (Note: In OctoGo's EBNF, ConstSpec binds a single identifier to a single
-// expression, unlike Go which allows identifier lists. Within a parenthesized
-// group a ConstSpec may omit its expression, in which case it repeats the
-// previous spec's expression and type. iota is a predeclared integer constant
-// equal to the zero-based index of the ConstSpec in its group, so a repeated
-// expression takes a new value at each spec).
+// A ConstSpec binds a list of identifiers to a list of expressions, which must be
+// of equal length. Within a parenthesized group a ConstSpec may omit its expression
+// list, in which case it repeats the previous spec's, positionally, together with
+// its type. iota is a predeclared integer constant equal to the zero-based index of
+// the ConstSpec in its group -- of the spec, not of the name, so every name on one
+// line sees the same iota -- and a repeated expression therefore takes a new value
+// at each spec.
 //
 //	ConstDecl = "const" ( ConstSpec | "(" { ConstSpec ";" } [ ConstSpec ] ")" ) .
-//	ConstSpec = identifier [ Type ] [ "=" Expression ] .
+//	ConstSpec = IdentifierList [ Type ] [ "=" ExpressionList ] .
 //
 // # Type Declarations
 //

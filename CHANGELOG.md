@@ -15,6 +15,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A `const` declaration may bind a list**, `const a, b = 1, 2`, as Go's does. A
+  spec that omits its expression list repeats the previous spec's positionally, and
+  `iota` counts specs rather than names — so every name on one line sees the same
+  value, which is what makes `h, i = iota, iota * 10` mean what it says.
+
+  The two arity diagnostics now read as Go's do: `missing init expr for b` and
+  `extra init expr 2`. The first replaces `missing constant value for b`, which said
+  the same thing in different words and reached the same condition from the other
+  side.
 - **A defined type over a channel is a channel**, `type Ch chan int`: a send, a
   receive and a `select` clause all reach it, through a chain of definitions if there
   is one. It was the one kind left out when a defined type gained the behaviour of
