@@ -994,7 +994,9 @@ func TestEmitCUnary(t *testing.T) {
 		"int main(void) {\n" +
 		"\tint x = 5;\n" +
 		"\tint y = -x;\n" +
-		"\tint z = ~x;\n" +
+		// Go's ^x is emitted as an explicit XOR with all ones, not C's ~x: see
+		// emitComplement for the backend miscompile that spelling routes around.
+		"\tint z = ((int)-1 ^ (x));\n" +
 		"\tprintf(\"%d\\n\", (y + z));\n" +
 		"\treturn 0;\n" +
 		"}\n"

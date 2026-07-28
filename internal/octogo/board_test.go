@@ -98,6 +98,102 @@ func TestOnBoardMultiPkg(t *testing.T) {
 	}
 }
 
+// smithSeeds is how many fuzzer-generated programs the target tests take. Each is
+// a full flexcc build (and, on a board, a load), so this is a sample of the corpus
+// TestOracle runs on the host, not the whole of it.
+//
+// Widening it to hunt for new bugs eventually runs into a target limit rather than
+// a compiler one: seed 44 does not build, the backend refusing it with "fit 480
+// failed: pc is 488". The generated program is one very long main, and past some
+// size a function no longer fits the cog's code window. That is a real constraint
+// on the hardware, not a miscompile.
+const smithSeeds = 12
+
+// smithProgram generates one fuzzer program by running the `ogo smith` subcommand.
+//
+// Going through the CLI rather than importing the generator is what keeps this
+// test here at all: internal/smith imports this package, so an import of it from
+// package octogo's own tests would be a cycle.
+func smithProgram(t *testing.T, ogo string, seed int) string {
+	t.Helper()
+	var out, errb bytes.Buffer
+	cmd := exec.Command(ogo, "smith", "-seed", strconv.Itoa(seed))
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("ogo smith -seed %d: %v\n%s", seed, err, errb.String())
+	}
+	return out.String()
+}
+
+// TestTargetBuildSmith compiles fuzzer-generated programs with the real backend.
+//
+// TestOracle proves the generated program computes what the generator predicted,
+// but it compiles with the host C compiler, which is not flexcc: the two have been
+// observed to disagree on what they accept, not just on what they warn about. A
+// generated program is also unlike anything in the hand-written corpus -- deeply
+// nested, wide expressions, many names -- so it is the one thing likely to find a
+// backend limit nobody wrote a case for.
+func TestTargetBuildSmith(t *testing.T) {
+	ogo := buildOgoCLI(t)
+	for seed := 1; seed <= smithSeeds; seed++ {
+		t.Run(strconv.Itoa(seed), func(t *testing.T) {
+			t.Parallel()
+			src := smithProgram(t, ogo, seed)
+			dir := t.TempDir()
+			if err := boardBuild(ogo, dir, "prog", src, filepath.Join(dir, "prog.binary"), ""); err != nil {
+				t.Errorf("%v\n--- program ---\n%s", err, src)
+			}
+		})
+	}
+}
+
+// TestOnBoardSmith runs fuzzer-generated programs on real hardware.
+//
+// This is the oracle closing its last gap. A generated program self-checks a
+// running checksum the generator computed as it emitted the code, so a wrong
+// answer anywhere in the chain -- this compiler, flexcc, or the P2 itself --
+// panics instead of printing OctoSmith OK. Until now that check only ever ran
+// against the host shim, so it said nothing about the target, which is the only
+// machine the language is for.
+func TestOnBoardSmith(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	ogo := buildOgoCLI(t)
+	const want = "OctoSmith OK"
+	for seed := 1; seed <= smithSeeds; seed++ {
+		t.Run(strconv.Itoa(seed), func(t *testing.T) {
+			src := smithProgram(t, ogo, seed)
+			dir := t.TempDir()
+			bin := filepath.Join(dir, "prog.binary")
+			if err := boardBuild(ogo, dir, "prog", src, bin, ""); err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			for attempt := 1; ; attempt++ {
+				out, matched := boardLoad(ogo, port, bin, want)
+				if matched {
+					return
+				}
+				// A checksum failure is a miscompile, not a flaky serial line, so
+				// report it at once rather than retrying it boardAttempts times.
+				if strings.Contains(out, "Checksum Failure") {
+					t.Errorf("the generated program's checksum did not hold ON THE BOARD "+
+						"(it holds on the host, so this is the backend or the target)\ngot:\n%s"+
+						"\n--- program ---\n%s", out, src)
+					return
+				}
+				if attempt == boardAttempts {
+					t.Errorf("board output did not contain %q after %d attempts\ngot:\n%s"+
+						"\n--- program ---\n%s", want, boardAttempts, out, src)
+					return
+				}
+				t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+			}
+		})
+	}
+}
+
 // TestTargetBuildFlags compiles the same corpus in the other two configurations
 // `ogo build` offers. --unchecked emits different C -- an index, a divisor and a
 // shift count lose their guards, and a helper that carried one loses that branch --

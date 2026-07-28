@@ -82,6 +82,12 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	writeIndent(f.Out, 1)
 	fmt.Fprint(f.Out, "}\n")
 
+	// 8. Say so. On the host a clean exit is enough, but a program running on a
+	// board has no exit status: reaching the end and a hang look identical over a
+	// serial line. So success is printed, and the board oracle waits for it.
+	writeIndent(f.Out, 1)
+	fmt.Fprintf(f.Out, "println(%q)\n", OKMarker)
+
 	mem.PopScope()
 	f.CurrentEnv = f.CurrentEnv.Parent // Sync scope pop
 	fmt.Fprint(f.Out, "}\n")           // Close main()

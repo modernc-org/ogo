@@ -5834,6 +5834,73 @@ func fitsCInt(v int64) bool { return v >= math.MinInt32 && v <= math.MaxInt32 }
 // negative value has no negation that is a literal in any C: 9223372036854775808
 // does not fit the signed type the minus would apply to. The hex form says the value
 // exactly, on a two's-complement target, and folds wherever a literal does.
+// emitComplement writes the bitwise complement of an expression: `-1 ^ (x)`, with
+// the -1 cast to the operand's own type, rather than C's `~(x)`.
+//
+// The two mean the same thing on a two's-complement target -- C defines ~ as XOR
+// with all ones -- and the cast keeps the operand's type, so the usual arithmetic
+// conversions land where they did before. The long spelling routes around a
+// backend bug: flexcc miscompiles
+//
+//	x = <anything> & ~x
+//
+// -- an AND with the complement of the very variable being assigned -- to a
+// constant 0, whatever the operands are. It computes the left operand into the
+// destination register and then reads that register back as the complemented
+// operand, so what it evaluates is `A & ~A`. Found by the smith oracle running on
+// a real P2 (seed 10), where `a[0] = 96 &^ a[0]` gave 0 instead of 96 while the
+// host C compiler gave the right answer.
+//
+// A local, a parameter, a struct field and an array element indexed by a constant
+// all reproduce it; an array element indexed by a variable, and a package-level
+// variable, do not. The whole family is emitted the long way regardless: the
+// distinction is the backend's, not the language's.
+//
+// The cast is not cosmetic either: a bare `-1 ^ (x)` would widen an unsigned
+// operand's expression to int, which is not what C's ~ does.
+// constExpr reports whether an expression is a compile-time constant. It sees
+// through a conversion of one, `uint32(0xFF00FF00)`, which foldConstInt does not:
+// the fold works on operator sequences, and a conversion is a call shape.
+func (e *emitter) constExpr(ast []int32) bool {
+	if _, ok := e.foldConstInt(ast); ok {
+		return true
+	}
+	kids := slices.Collect(it(ast))
+	for len(kids) == 1 && kids[0].sym != 0 {
+		kids = slices.Collect(it(kids[0].ast))
+	}
+	recv, suffix, ok := e.factorCall(kids)
+	if !ok || len(suffix) != 1 {
+		return false
+	}
+	if _, isConv := e.convType(recv); !isConv {
+		return false
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	return len(args) == 1 && e.constExpr(args[0].ast)
+}
+
+func (e *emitter) emitComplement(ast []int32, emitOperand func()) {
+	// A constant operand is never the destination of the assignment it sits in, so
+	// the bug below cannot reach it and it keeps the short spelling. That is not
+	// only tidiness: written the long way, a wide constant made flexcc type the
+	// whole expression 64 bits wide and then REFUSE the printf it fed, so the
+	// workaround for a miscompile broke a build that had worked.
+	if e.constExpr(ast) {
+		e.emit("~(")
+		emitOperand()
+		e.emit(")")
+		return
+	}
+	ones := "-1" // an unknown type keeps the plain int -1, which is what ~ promotes to
+	if ct, known := e.inferCType(ast); known && ct != "" {
+		ones = "(" + ct + ")-1"
+	}
+	e.emit("(" + ones + " ^ (")
+	emitOperand()
+	e.emit("))")
+}
+
 func intCLit(v int64) string {
 	switch {
 	case fitsCInt(v):
@@ -10197,9 +10264,7 @@ func (e *emitter) emitAssignTail(t assignTail) {
 	}
 	e.emit(" " + t.op + " ")
 	if t.complement {
-		e.emit("~(")
-		e.emitExpr(t.rhs)
-		e.emit(")")
+		e.emitComplement(t.rhs, func() { e.emitExpr(t.rhs) })
 	} else {
 		e.emitExpr(t.rhs)
 	}
@@ -11448,9 +11513,10 @@ func (e *emitter) emitExprNode(n Node) {
 				guardNext, complementNext = false, false
 				if op == "&^" {
 					// C has no "&^". Go defines "a &^ b" as "a AND NOT b", so it
-					// lowers to "a & ~(b)" -- the same rewrite "&^=" uses. The
-					// operand is parenthesised because it may be an expression and
-					// "~" binds tighter than anything inside one.
+					// lowers to an AND with the complement of b -- the same rewrite
+					// "&^=" uses. The operand is parenthesised because it may be an
+					// expression and the complement binds tighter than anything
+					// inside one. See complementC for why the complement is not "~".
 					e.emit(" & ")
 					complementNext = true
 					continue
@@ -11459,9 +11525,7 @@ func (e *emitter) emitExprNode(n Node) {
 				guardNext = e.checks && (op == "/" || op == "%")
 			case complementNext:
 				complementNext = false
-				e.emit("~(")
-				e.emitExprNode(c)
-				e.emit(")")
+				e.emitComplement(c.ast, func() { e.emitExprNode(c) })
 			case guardNext && !e.isIntLiteral(c):
 				guardNext = false
 				ct, _ := e.inferCType(c.ast)
@@ -11629,6 +11693,14 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 				e.emitIndex(low, lenExpr)
 				e.emit(closing)
+				return
+			}
+		}
+		// Go's unary ^ is a bitwise complement, emitted the same way "&^" emits
+		// its right operand rather than as C's "~" -- see complementC.
+		if len(kids) == 2 && kids[0].sym == UnaryOp {
+			if tok, ok := e.unaryOpTok(kids[0].ast); ok && e.f.ch(tok) == XOR {
+				e.emitComplement(kids[1].ast, func() { e.emitExprNode(kids[1]) })
 				return
 			}
 		}

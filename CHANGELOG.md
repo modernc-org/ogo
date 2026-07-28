@@ -23,8 +23,30 @@ Releases before v0.9.0 predate this file; see
   other. All three sinks refuse it now, and the address of *package* storage is
   handed out as freely as before.
 
+### Bug fixes
+
+- **`x = mask &^ x` gave 0 on the board.** Clearing bits in a variable from that
+  same variable — the shape a driver writes — was miscompiled by the backend to a
+  constant zero, whatever the operands were: it computes the left operand into the
+  destination register and then reads that register back as the complemented
+  operand, so what runs is `A &^ A`. A local, a parameter, a struct field and an
+  array element indexed by a constant all reproduced it. Every host C compiler gets
+  it right, so nothing on the host could have caught it; the fuzzer's oracle running
+  on a real P2 did, on its tenth seed. Go's `^x` is now emitted as an explicit XOR
+  with all ones rather than C's `~x`, which steps around it.
+- **`^x` on a sized unsigned type had the wrong width.** `^uint8(200)` gave
+  4294967095 instead of Go's 55, C's `~` having promoted the operand to `int` and
+  kept it there. The all-ones constant carries the operand's own type now.
+
 ### Testing
 
+- **The fuzzer's programs are compiled for the target and run on the board.** The
+  oracle checked a running checksum the generator computed as it emitted the code,
+  but only ever against the host C compiler — so it said nothing about the machine
+  the language is for, and that is exactly where it found the `&^` miscompile above
+  on its first run. A generated program prints that it finished, since a board has
+  no exit status and a program that ran to the end is otherwise as silent as one
+  that hung.
 - **The fuzzer generates booleans, and with them `&&`, `||` and `!`.** Every
   generated condition used to be a single comparison, so short-circuit evaluation —
   where the operand on the right is not evaluated at all — was never fuzzed. Bool

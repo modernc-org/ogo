@@ -18,6 +18,12 @@ import (
 )
 
 // SubCommand implements "ogo smith".
+// OKMarker is the last line a generated program prints, once its checksum
+// assertion has held. It is what tells a test driving a real board -- where there
+// is no exit status and a finished program is as silent as a hung one -- that the
+// program ran to the end.
+const OKMarker = "OctoSmith OK"
+
 func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc int, err error) {
 	set := opt.NewSet()
 	var args2 []string

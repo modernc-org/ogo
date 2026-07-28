@@ -852,6 +852,72 @@ func main() {
 		want: "10 5 10 10 63\n",
 	},
 	{
+		// Clearing bits in a variable from that same variable -- `x = mask &^ x`,
+		// the shape a driver writes -- and the complement's other spellings, across
+		// a local, a parameter, a struct field, an array element and a package
+		// variable.
+		//
+		// The target's C compiler miscompiles an AND with the complement of the
+		// very variable being assigned to a constant 0, so the emitter spells the
+		// complement as an explicit XOR with all ones (emitComplement). Only the
+		// board shows it -- every host C compiler gets it right -- which is how it
+		// survived until the fuzzer's oracle ran on real hardware.
+		//
+		// The sized cases pin the other half of that spelling: the all-ones
+		// constant carries the operand's own type, so ^uint8(200) is 55 as in Go
+		// and not the int -201 a C "~" would leave.
+		name: "complement of the variable being assigned",
+		src: `type P struct{ f int }
+
+var g int
+
+func clear(x int) int {
+	x = 96 &^ x
+	return x
+}
+
+func main() {
+	var x int
+	x = 96 &^ x
+	println(x)
+	x = 3
+	x = 5 & ^x
+	println(x)
+	println(clear(3))
+
+	var a [2]int
+	a[0] = 96 &^ a[0]
+	println(a[0])
+	a[1] = 3
+	i := 1
+	a[i] = 5 &^ a[i]
+	println(a[1])
+
+	var p P
+	p.f = 3
+	p.f = 5 &^ p.f
+	println(p.f)
+
+	g = 3
+	g = 5 &^ g
+	println(g)
+
+	y := 12
+	y &^= 5
+	println(y)
+
+	var u8 uint8 = 200
+	println(^u8)
+	var u uint32 = 0xF0F0F0F0
+	var v uint32 = 0xFF00FF00
+	println(^u, u&^v, u&^uint32(0xFF00FF00))
+	var s16 int16 = 100
+	println(^s16, s16&^int16(12))
+}
+`,
+		want: "96\n4\n96\n96\n4\n4\n4\n8\n55\n252645135 15728880 15728880\n-101 96\n",
+	},
+	{
 		// The clause shapes a switch is built from, all in one program: a case
 		// listing several values, an empty clause (which selects nothing to run
 		// rather than falling into the next one), a default that runs, and a
