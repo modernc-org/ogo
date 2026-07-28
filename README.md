@@ -197,8 +197,10 @@ broken.
   stands, as may an imported package's function, `go driver.Poll(ch)`. A `select`
   multiplexes receives and one send, `case ch <- v:`. Channels may be declared at package level as well as locally, and the
   P2's locks are reachable directly through the `p2` package.
-* Runtime traps for out-of-range indexing and slicing, division by zero and cog
-  exhaustion.
+* Runtime traps for out-of-range indexing and slicing, division and remainder by
+  zero, a shift by a negative count, appending past a slice's capacity, and cog
+  exhaustion. Each prints `panic: <what>` and halts the offending cog; `--release`
+  reboots the board instead, and `--unchecked` omits the checks.
 * A package is a directory: `ogo build` compiles every `.ogo` file in it together,
   and a program may span several packages. A value of an imported package's struct
   type is written the way you would expect, `geo.Point{1, 2}`.

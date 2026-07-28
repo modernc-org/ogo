@@ -189,6 +189,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **Every runtime trap now has a run case.** Divide by zero, remainder by zero and
+  appending past a slice's capacity were emitted by the compiler and exercised by
+  nothing, so the messages and the conditions that raise them were unverified. Divide
+  by zero is covered through each of its four lowerings — signed division and
+  remainder, which carry the check inside their guarded helper, and the unsigned and
+  64-bit forms, whose divisor goes through a separate one.
 - **Channels are now tested under contention**, on the host and on real cogs: two
   consumers drawing from one producer through a shared channel, a `select` over two
   channels fed by two more cogs at once, and a `select` whose send and receive

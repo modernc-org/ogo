@@ -4749,6 +4749,72 @@ func main() {
 		want: "1\n2\n",
 	},
 	{
+		// Divide by zero, through each of the four lowerings it has: a signed
+		// division and remainder, which carry the check inside their guarded helper
+		// (ogo_div_<T> / ogo_mod_<T>), and an unsigned one and a 64-bit one, whose
+		// divisor goes through ogo_nonzero / ogo_nonzero64 instead. The message was
+		// emitted by all of them and exercised at run time by none.
+		name: "divide by zero traps",
+		src: `func main() {
+	var a int = 6
+	var b int = 0
+	println(a / b)
+}
+`,
+		panics: true,
+		want:   "panic: integer divide by zero\n",
+	},
+	{
+		name: "remainder by zero traps",
+		src: `func main() {
+	var a int = 6
+	var b int = 0
+	println(a % b)
+}
+`,
+		panics: true,
+		want:   "panic: integer divide by zero\n",
+	},
+	{
+		name: "unsigned divide by zero traps",
+		src: `func main() {
+	var a uint32 = 6
+	var b uint32 = 0
+	println(a / b)
+}
+`,
+		panics: true,
+		want:   "panic: integer divide by zero\n",
+	},
+	{
+		name: "64-bit divide by zero traps",
+		src: `func main() {
+	var a int64 = 6
+	var b int64 = 0
+	println(a / b)
+}
+`,
+		panics: true,
+		want:   "panic: integer divide by zero\n",
+	},
+	{
+		// append past a slice's capacity. Without a heap there is nowhere to grow
+		// into, so it traps rather than reallocating -- the one place OctoGo's append
+		// parts company with Go's, and the trap that says so had no run case.
+		name: "append past capacity traps",
+		src: `func main() {
+	var back [2]int
+	s := back[:0]
+	s = append(s, 1)
+	s = append(s, 2)
+	s = append(s, 3)
+	println(len(s))
+}
+`,
+		panics: true,
+		want:   "panic: append: out of capacity\n",
+	},
+	{
 		// Go panics on a negative shift count, where C is undefined. The guarded
 		// shift helper is where that is decided.
 		name: "a negative shift count traps",
