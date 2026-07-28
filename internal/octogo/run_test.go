@@ -2483,6 +2483,71 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A multi-result call on the right of a destructuring assignment could only
+		// be a plain function of this package. A METHOD returning "(value, ok)" is
+		// the shape a container wants -- a ring buffer's pop, a lookup -- and it was
+		// refused, as was a multi-result call into an imported package. Both are the
+		// same two-step callee: a Selector followed by the CallSuffix.
+		name: "a method or package call yields several values",
+		src: `type ring struct {
+	buf   []byte
+	head  int
+	tail  int
+	count int
+}
+
+func (r *ring) push(b byte) bool {
+	if r.count == len(r.buf) {
+		return false
+	}
+	r.buf[r.tail] = b
+	r.tail = (r.tail + 1) % len(r.buf)
+	r.count++
+	return true
+}
+
+func (r *ring) pop() (byte, bool) {
+	if r.count == 0 {
+		return 0, false
+	}
+	b := r.buf[r.head]
+	r.head = (r.head + 1) % len(r.buf)
+	r.count--
+	return b, true
+}
+
+type T struct{ n int }
+
+func (t T) pair() (int, int)   { return t.n, t.n * 2 }
+func (t *T) bump() (int, bool) { t.n++; return t.n, true }
+
+var storage [4]byte
+
+func main() {
+	var r ring = ring{storage[:], 0, 0, 0}
+	for i := 0; i < 6; i++ {
+		if !r.push(byte('a' + i)) {
+			println("full at", i)
+			break
+		}
+	}
+	for {
+		b, ok := r.pop()
+		if !ok {
+			break
+		}
+		println(int(b))
+	}
+
+	var t T = T{5}
+	c, d := t.pair()
+	e, ok := t.bump()
+	println(c, d, e, ok, t.n)
+}
+`,
+		want: "full at 4\n97\n98\n99\n100\n5 10 6 true 6\n",
+	},
+	{
 		// A const spec binds a list, "const a, b = 1, 2". A spec that omits its
 		// expression list repeats the previous spec's positionally, and iota counts
 		// SPECS rather than names, so every name on one line sees the same value --

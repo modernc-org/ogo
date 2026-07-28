@@ -178,6 +178,8 @@ broken.
   functions and methods with value or pointer receivers. A package may declare
   several `init` functions; they run in the order they are written, before `main`.
 * Named and unnamed parameters and results, multiple return values, naked returns.
+  Several values may be destructured out of a plain call, a method call or an
+  imported package's call alike, `b, ok := r.pop()`.
 * A declared function used as a **value**: a variable, parameter, result, array
   element or struct field of a function type holds one and a call through it is a
   call, `chosen = add; chosen(1, 2)`. It becomes a C function pointer, so it costs

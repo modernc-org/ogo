@@ -10334,14 +10334,14 @@ func (e *emitter) emitDestructure(targets []string, declare []bool, rhs []int32)
 		e.emitTryAppend(targets, declare, suffix[0].ast)
 		return
 	}
-	resTypes, ok := e.userFunc(callee)
+	cname, resTypes, ok := e.callResultInfo(callee, suffix)
 	if !ok || len(resTypes) != len(targets) {
 		e.fail("multiple-assignment target/result count mismatch")
 		return
 	}
 	tmp := e.newTmp()
 	e.ind()
-	e.emit(e.retStructName(e.funcCallC(callee)) + " " + tmp + " = ")
+	e.emit(e.retStructName(cname) + " " + tmp + " = ")
 	if !e.emitCallExpr(callee, suffix) {
 		e.fail("unsupported call on the right-hand side of a multiple assignment")
 		return
@@ -10360,6 +10360,29 @@ func (e *emitter) emitDestructure(targets []string, declare []bool, rhs []int32)
 			e.emit(e.varRef(tgt) + " = " + field + ";\n")
 		}
 	}
+}
+
+// callResultInfo resolves a call's C name and result types, for the three callees a
+// multi-result call can have: a function of this package, a method, and a function
+// of an imported one. The C name is what names the result struct, so it has to be
+// the same one emitCallExpr will call -- a method's is namespaced by its receiver
+// type, an imported function's by its package.
+func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resTypes []string, ok bool) {
+	if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
+		member := e.soleIdent(suffix[0].ast)
+		if rct, isVar := e.varType(recv); isVar && e.isUserType(methodBaseType(rct)) {
+			cname = methodCName(methodBaseType(rct), member)
+		} else if prefix, isPkg := e.importQualifiers[recv]; isPkg {
+			cname = mangle(prefix, member)
+		} else {
+			return "", nil, false
+		}
+		resTypes, ok = e.funcRet[cname]
+		return cname, resTypes, ok
+	}
+	cname = e.funcCallC(recv)
+	resTypes, ok = e.funcRet[cname]
+	return cname, resTypes, ok
 }
 
 // lhsItemIdent returns the single bare identifier of an LhsItem
@@ -10386,8 +10409,16 @@ func (e *emitter) directCall(ast []int32) (recv string, suffix []Node, ok bool) 
 			nodes = slices.Collect(it(nodes[0].ast))
 		case Factor:
 			kids := slices.Collect(it(nodes[0].ast))
-			if r, s, ok := e.factorCall(kids); ok && len(s) == 1 && s[0].sym == CallSuffix {
-				return r, s, true
+			// A plain call "f(...)", and the two-step forms a multi-result call also
+			// takes: a method call "x.m(...)" and a call into an imported package
+			// "pkg.F(...)", both of which are a Selector followed by the CallSuffix.
+			if r, sfx, ok := e.factorCall(kids); ok {
+				switch {
+				case len(sfx) == 1 && sfx[0].sym == CallSuffix:
+					return r, sfx, true
+				case len(sfx) == 2 && sfx[0].sym == Selector && sfx[1].sym == CallSuffix:
+					return r, sfx, true
+				}
 			}
 			return "", nil, false
 		default:

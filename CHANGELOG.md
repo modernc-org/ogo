@@ -40,6 +40,11 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A method or an imported package's function may yield several values into a
+  destructuring assignment**, `b, ok := r.pop()` and `q, r := mathy.Divmod(17, 5)`.
+  Only a plain function of the same package could before, so the `(value, ok)` shape
+  a container wants — a ring buffer's `pop`, a lookup — had to be written as a
+  function taking the receiver by hand.
 - **A `const` declaration may bind a list**, `const a, b = 1, 2`, as Go's does. A
   spec that omits its expression list repeats the previous spec's positionally, and
   `iota` counts specs rather than names — so every name on one line sees the same
