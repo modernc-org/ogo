@@ -2483,6 +2483,114 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A select whose send clause and receive clause both belong to a loop that
+		// keeps going until each has fired its share, with the other cog doing the
+		// mirror image. The send clause offers a value and waits for it to be taken,
+		// so the two sides have to make progress against each other; a select that
+		// only ever receives never exercises that.
+		name: "a select that both sends and receives",
+		src: `var out chan int
+var in chan int
+var quit chan int
+
+func consumer() {
+	for i := 0; i < 4; i++ {
+		v := <-out
+		in <- v + 1
+	}
+	quit <- 1
+}
+
+func main() {
+	go consumer()
+	sent := 0
+	got := 0
+	sum := 0
+	for sent < 4 || got < 4 {
+		select {
+		case out <- sent:
+			sent++
+		case v := <-in:
+			sum += v
+			got++
+		}
+	}
+	println(sent, got, sum, <-quit)
+}
+`,
+		want: "4 4 10 1\n",
+	},
+	{
+		// Channels under contention: two consumers drawing from one producer, and a
+		// select over two channels fed by two more cogs at once. Every other channel
+		// case has one sender and one receiver, so nothing pinned what happens when
+		// several cogs reach the same rendezvous together -- which on this target is
+		// a hardware lock and a spin, with no scheduler to arbitrate.
+		//
+		// The totals are order-independent on purpose: which cog wins a rendezvous,
+		// and which select case fires when both are ready, are not specified. What
+		// is specified is that every value is delivered exactly once.
+		name: "channels under contention",
+		src: `var work chan int
+var done chan int
+var a chan int
+var b chan int
+
+func worker() {
+	for i := 0; i < 3; i++ {
+		v := <-work
+		done <- v * 2
+	}
+}
+
+func feed() {
+	for i := 1; i <= 6; i++ {
+		work <- i
+	}
+}
+
+func feedA() {
+	for i := 0; i < 3; i++ {
+		a <- i
+	}
+}
+
+func feedB() {
+	for i := 0; i < 3; i++ {
+		b <- 100 + i
+	}
+}
+
+func main() {
+	go worker()
+	go worker()
+	go feed()
+	total := 0
+	for i := 0; i < 6; i++ {
+		total += <-done
+	}
+	println("pool", total)
+
+	go feedA()
+	go feedB()
+	sum := 0
+	count := 0
+	for count < 6 {
+		select {
+		case v := <-a:
+			sum += v
+			count++
+		case v := <-b:
+			sum += v
+			count++
+		}
+	}
+	println("select", sum, count)
+}
+`,
+		want: "pool 42\nselect 306 6\n",
+	},
+	{
 		// The emitter has no scopes of its own: it records a variable's type,
 		// extents and provenance in maps keyed by SOURCE name. A declaration inside
 		// a block, or in a statement's header, therefore outlived it -- after

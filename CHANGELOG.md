@@ -189,6 +189,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **Channels are now tested under contention**, on the host and on real cogs: two
+  consumers drawing from one producer through a shared channel, a `select` over two
+  channels fed by two more cogs at once, and a `select` whose send and receive
+  clauses have to make progress against another cog doing the mirror image. Every
+  other channel case has one sender and one receiver, so nothing pinned what happens
+  when several cogs reach the same rendezvous together — which on this target is a
+  hardware lock and a spin, with no scheduler to arbitrate. All of it passes.
 - **A multi-package program is now compiled for the target and run on hardware.** It
   was exercised only by the host C compiler, so the one program shape whose lowering
   is about nothing but names crossing a package boundary — every top-level symbol
