@@ -13,6 +13,16 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Behaviour changes
+
+- **The address of a local array's element no longer escapes its frame.**
+  `return &a[i]`, storing one in a package variable, and handing one to a goroutine
+  were all accepted, leaving a reference to storage that is gone — the shape the
+  lifetime rules exist to stop. The question "is this a variable of this frame" asked
+  only one of the two environments a local can be in, and a local array is in the
+  other. All three sinks refuse it now, and the address of *package* storage is
+  handed out as freely as before.
+
 ### Diagnostics
 
 - **Three messages now read as Go's do.** `break is not in a loop, switch or select`
@@ -155,8 +165,6 @@ Releases before v0.9.0 predate this file; see
   every name in the file read as undefined afterwards, which is how it first looked
   like something else. The forms with an empty side, `1.` and `.5`, come with it.
   Go's hexadecimal form, `0x1p-2`, is still not recognized.
-### Behaviour changes
-
 Each of these changes what a program that already compiled does, or reports
 something the last release let through to the C backend. Every one is the compiler
 agreeing with Go where it had not.

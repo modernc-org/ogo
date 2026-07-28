@@ -2483,6 +2483,42 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// The address of an element of PACKAGE storage outlives every frame, so it is
+		// handed out freely -- which is the other side of the refusal a local array's
+		// element now gets, and what the refusal's message points the writer at.
+		name: "the address of package storage",
+		src: `type P struct{ n int }
+
+var arr [3]int
+var g P
+var pool [2]P
+
+func fromPackageArray() *int { return &arr[1] }
+
+func fromPackageStruct() *P { return &g }
+
+func fromPackagePool(i int) *P { return &pool[i] }
+
+func viaPointer(p *P) *int { return &p.n }
+
+func main() {
+	q := fromPackageArray()
+	*q = 5
+	println(arr[1])
+	r := fromPackageStruct()
+	r.n = 7
+	println(g.n)
+	s := fromPackagePool(1)
+	s.n = 9
+	println(pool[1].n)
+	t := viaPointer(&g)
+	*t = 11
+	println(g.n)
+}
+`,
+		want: "5\n7\n9\n11\n",
+	},
+	{
 		// A linked structure over a fixed node pool, which is how one is built with
 		// no heap. It needs "return &p.nodes[i]" from a POINTER receiver, which the
 		// escape rules refused: the receiver was declared with no type at all, so it

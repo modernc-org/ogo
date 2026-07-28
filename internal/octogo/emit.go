@@ -12311,9 +12311,17 @@ func (e *emitter) checkCrossArgs(cname string, args []Node) {
 // isFrameVar reports whether a name is a variable of the frame being emitted, as
 // opposed to a package-level one. A parameter counts: its own storage is this
 // frame's, whatever it may point at.
+//
+// It asks BOTH local environments. A local array is in arrays and nowhere else, so a
+// one-map question answered "no" for it -- and "return &a[i]" over a local array went
+// unrefused, which is the shape the whole rule exists to stop. The same split has
+// caught isPackageVar before.
 func (e *emitter) isFrameVar(name string) bool {
-	_, local := e.locals[name]
-	return local
+	if _, local := e.locals[name]; local {
+		return true
+	}
+	_, arr := e.arrays[name]
+	return arr
 }
 
 // funcSourceName gives the name a function was declared with, for a diagnostic that

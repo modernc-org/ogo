@@ -5055,6 +5055,70 @@ func main() {
 	}
 }
 
+// TestEmitCLocalArrayAddrRefused pins the address of a local ARRAY's element being
+// refused at each of the three sinks a reference can leave a frame by. It was
+// refused at none of them: the question "is this a variable of this frame" asked
+// only the locals environment, and a local array is in the arrays one and nowhere
+// else -- so the shape the whole rule exists to stop walked straight through.
+func TestEmitCLocalArrayAddrRefused(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "returned",
+			src: `func bad() *int {
+	var a [3]int
+	return &a[1]
+}
+
+func main() { println(*bad()) }
+`,
+			want: "cannot return the address of local variable a",
+		},
+		{
+			name: "stored in a package variable",
+			src: `var g *int
+
+func bad() {
+	var a [3]int
+	g = &a[1]
+}
+
+func main() { bad(); println(*g) }
+`,
+			want: "cannot store the address of local variable a",
+		},
+		{
+			name: "handed to a goroutine",
+			src: `var done chan int
+
+func use(p *int) { done <- *p }
+
+func bad() {
+	var a [3]int
+	go use(&a[1])
+	<-done
+}
+
+func main() { bad() }
+`,
+			want: "cannot pass the address of local variable a to a goroutine",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted the address of a local array's element:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCChanMethodRefused pins the one thing a defined type over a channel gives
 // up. It is answered for by the channel cell's own C name, the emitter reaching a
 // channel through that name everywhere -- the cell, the helpers, the element type --
