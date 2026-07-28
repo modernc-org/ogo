@@ -2483,6 +2483,30 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// Every literal form the scanner accepts, together: the integer bases and
+		// both octal spellings, digit separators in each of them, the rune escapes,
+		// and a raw string. A digit separator in a FLOAT reached the backend as
+		// written -- "1_0.5" is not a C float at all, but an integer with an invalid
+		// suffix -- while the integer forms had been normalized all along.
+		name: "literal forms",
+		src: `func main() {
+	println(0b1010, 0B1010)
+	println(0o17, 0O17, 017)
+	println(0xff, 0XFF)
+	println(1_000_000, 0b1010_1010, 0x_ff, 1_0.5)
+	println(0, 00, 0x0)
+	println('a', '\n', '\t', '\\', '\'', '\x41', '\101', 'é', '\U0001F600')
+	s := "a\tb\nc\\d\"e\x41\101é"
+	println(len(s))
+	r := ` + "`" + `raw
+line	tab\n` + "`" + `
+	println(len(r), len(""))
+}
+`,
+		want: "10 10\n15 15 15\n255 255\n1000000 170 255 10.5\n0 0 0\n" +
+			"97 10 9 92 39 65 65 233 128512\n13\n14 0\n",
+	},
+	{
 		// The exponent form of a float literal, which the scanner did not recognize
 		// at all: "1e3" was a syntax error, and one syntax error made every name in
 		// the file read as undefined afterwards. The forms with an empty side, "1."

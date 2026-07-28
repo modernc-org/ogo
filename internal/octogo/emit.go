@@ -84,9 +84,11 @@ func cIntLit(src string) string {
 }
 
 // cFloatLit renders a Go float literal as C. Go and C float syntax overlap for the
-// decimal forms OctoGo's scanner accepts ("3.14", "1.0", ".5", "1."), so the text
-// is valid C as written; it is passed through unchanged.
-func cFloatLit(src string) string { return src }
+// decimal forms OctoGo's scanner accepts -- "3.14", "1.0", ".5", "1.", and the
+// exponent forms -- so the text is valid C as written except for one thing: Go's
+// digit separators. C has none, and "1_0.5" is not a C float at all but an integer
+// with an invalid suffix, so they are stripped, exactly as normalizeIntLit does.
+func cFloatLit(src string) string { return strings.ReplaceAll(src, "_", "") }
 
 // runeLitValue decodes a rune literal's source ('A', '\n', '\x41', 'é', 'é')
 // to its Unicode code point. strconv.Unquote handles every Go rune escape and, for

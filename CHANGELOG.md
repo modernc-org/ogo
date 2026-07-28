@@ -15,6 +15,9 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A digit separator in a float literal did not compile.** `1_0.5` reached the C
+  backend as written, where it is not a float at all but an integer with an invalid
+  suffix. The integer forms had been normalized all along; the float one had not.
 - **`--unchecked` left a negative shift count undefined.** The guarded shift kept its
   Go panic in a checked build, but an unchecked one has no panic to raise and fell
   through to a C shift by a negative count. It now compares the count unsigned, so a
