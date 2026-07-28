@@ -1,0 +1,29 @@
+// An argument's pointer-ness must match the parameter's. It was checked nowhere, so
+// the most common mistake in the language -- f(p) where f wants *P -- reached the C
+// compiler, which then complained about C the program never wrote.
+
+type P struct{ n int }
+
+func byVal(p P) int  { return p.n }
+func byPtr(p *P) int { return p.n }
+func viaInt(p *int) int { return *p }
+
+func bad() {
+	var p P = P{1}
+	var n int = 1
+	// ERROR "cannot use p \(a value\) as \*P value in argument to byPtr"
+	println(byPtr(p))
+	// ERROR "cannot use &p \(an address\) as P value in argument to byVal"
+	println(byVal(&p))
+	// ERROR "cannot use n \(a value\) as \*int value in argument to viaInt"
+	println(viaInt(n))
+}
+
+// Every matching call, including one through a pointer variable rather than a
+// literal address.
+func ok() {
+	var p P = P{1}
+	var q *P = &p
+	var n int = 1
+	println(byVal(p), byPtr(&p), byPtr(q), viaInt(&n))
+}

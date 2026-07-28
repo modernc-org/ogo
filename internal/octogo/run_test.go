@@ -2483,6 +2483,118 @@ func main() {
 		want: "12\n",
 	},
 	{
+		// A CRC over a byte slice and a little fixed-point arithmetic: the table, bit
+		// and unsigned work a protocol or a sensor driver is made of, and a defined
+		// type over int32 carrying the arithmetic as methods.
+		name: "a CRC table and fixed-point arithmetic",
+		src: `const poly uint16 = 0xA001
+
+var table [256]uint16
+var built bool
+
+func buildTable() {
+	for i := 0; i < 256; i++ {
+		var c uint16 = uint16(i)
+		for b := 0; b < 8; b++ {
+			if c&1 != 0 {
+				c = (c >> 1) ^ poly
+			} else {
+				c = c >> 1
+			}
+		}
+		table[i] = c
+	}
+	built = true
+}
+
+func crc16(data []byte) uint16 {
+	if !built {
+		buildTable()
+	}
+	var c uint16 = 0xFFFF
+	for i := 0; i < len(data); i++ {
+		c = (c >> 8) ^ table[(c^uint16(data[i]))&0xFF]
+	}
+	return c
+}
+
+type fixed int32
+
+func fromInt(n int) fixed          { return fixed(n << 8) }
+func (f fixed) mul(g fixed) fixed  { return fixed((int32(f) * int32(g)) >> 8) }
+func (f fixed) whole() int         { return int(int32(f) >> 8) }
+func (f fixed) frac() int          { return int(int32(f) & 0xFF) }
+
+var msg [5]byte
+
+func main() {
+	msg[0] = '1'
+	msg[1] = '2'
+	msg[2] = '3'
+	msg[3] = '4'
+	msg[4] = '5'
+	println(crc16(msg[:]))
+	println(crc16(msg[:1]), crc16(msg[:0]))
+
+	a := fromInt(3)
+	b := fromInt(2)
+	c := a.mul(b)
+	println(c.whole(), c.frac())
+	d := a.mul(fixed(128))
+	println(d.whole(), d.frac())
+}
+`,
+		want: "42097\n38014 65535\n6 0\n1 128\n",
+	},
+	{
+		// Formatting into a caller-owned buffer with the predeclared Builder, which
+		// is how a program without a heap builds a line of output. A *Builder handed
+		// to a helper is the shape that makes it useful.
+		name: "formatting through a Builder parameter",
+		src: `var digits [12]byte
+
+func itoa(sb *Builder, n int) {
+	if n == 0 {
+		sb.WriteByte('0')
+		return
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	i := 0
+	for n > 0 {
+		digits[i] = byte('0' + n%10)
+		n = n / 10
+		i++
+	}
+	if neg {
+		sb.WriteByte('-')
+	}
+	for i > 0 {
+		i--
+		sb.WriteByte(digits[i])
+	}
+}
+
+var back [64]byte
+
+func main() {
+	sb := NewBuilder(back[:])
+	sb.WriteString("t=")
+	itoa(&sb, 1234)
+	sb.WriteString("ms rc=")
+	itoa(&sb, -7)
+	println(sb.String())
+	sb.Reset()
+	itoa(&sb, 0)
+	sb.WriteRune('!')
+	println(sb.String())
+}
+`,
+		want: "t=1234ms rc=-7\n0!\n",
+	},
+	{
 		// The P2's own facilities, which nothing else here exercises: a hardware lock
 		// held across three cogs contending for one counter, and the millisecond
 		// clock a driver paces itself by. There is no Go to compare against for

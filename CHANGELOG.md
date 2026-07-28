@@ -25,6 +25,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **Two more realistic programs are run cases**: a CRC-16 over a byte slice with a
+  256-entry table and Q8.8 fixed-point arithmetic, and formatting into a
+  caller-owned buffer through a `*Builder` parameter. Both are the kind of thing the
+  target is for, and the second is what found the missing pointer check above.
 - **The `p2` package's locks and clocks are now exercised**, on the host and on real
   cogs: a hardware lock held while three cogs contend for one counter, and the
   millisecond clock a driver paces itself by. Neither had a test of any kind.
@@ -35,6 +39,13 @@ Releases before v0.9.0 predate this file; see
   thing a driver does most. They wait, and read a monotonic clock, now.
 
 ### Diagnostics
+
+- **An argument's pointer-ness is checked.** `f(p)` where `f` wants a `*P`, and
+  `f(&p)` where it wants a `P`, were both accepted and left to the C compiler — so
+  the most common mistake in the language came back as a complaint about C the
+  program never wrote. Reported now as Go reports it, naming what was passed and
+  what was wanted.
+
 
 - **Three messages now read as Go's do.** `break is not in a loop, switch or select`
   gains Go's comma; `undefined label nope` becomes `break label not defined: nope`

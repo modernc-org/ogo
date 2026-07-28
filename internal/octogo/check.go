@@ -6048,6 +6048,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 			// A function-typed parameter has no predeclared Kind, so this stands
 			// ahead of the known-kind guard below.
 			f.checkFuncAssign(s, f.funcSig(p.typeNode), arg, "argument to "+name.Src())
+			f.checkPointerArg(s, p, arg, name)
 			if !p.known {
 				continue
 			}
@@ -6062,6 +6063,54 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 			f.checkValueOverflow(s, p, arg)
 		}
 	}
+}
+
+// checkPointerArg reports an argument whose pointer-ness does not match the
+// parameter's: a value where an address is wanted, "f(p)" for "f(*P)", and an
+// address where a value is wanted. It was checked nowhere, so the most common
+// mistake in the language went to the C compiler, which then complained about C the
+// program never wrote.
+//
+// Both sides must be known before anything is said. An argument whose shape this
+// does not model -- a call, an index, a field -- reports nothing rather than a
+// guess, which is the same rule its neighbours follow.
+func (f *File) checkPointerArg(s *Scope, p retResult, arg Node, name Token) {
+	_, want := p.typeNode.(*TypeNodePointer)
+	have, known := f.exprPointerness(s, arg)
+	if !known || have == want {
+		return
+	}
+	f.err(f.tok(arg.Pos()).Position(), "cannot use %s (%s) as %s value in argument to %s",
+		f.exprSource(arg), pointerDesc(have), f.typeNodeString(p.typeNode, false), name.Src())
+}
+
+// pointerDesc names what an argument is, for the diagnostic above.
+func pointerDesc(isPtr bool) string {
+	if isPtr {
+		return "an address"
+	}
+	return "a value"
+}
+
+// exprPointerness reports whether an expression is a pointer, and whether that is
+// known at all. An address-of and a plainly-named variable answer; anything else
+// does not.
+func (f *File) exprPointerness(s *Scope, n Node) (isPtr, known bool) {
+	if _, _, ok := f.addressOperandRoot(s, n); ok {
+		return true, true
+	}
+	if id, ok := f.exprIdent(n); ok {
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			// Only a variable whose type was resolved says anything: one declared by
+			// a ":=" from an expression the checker cannot type records nothing, and
+			// silence is not the same as "not a pointer".
+			if d.isPtr {
+				return true, true
+			}
+			return false, d.hasKind || d.typeName.IsValid() || d.hasElemKind || d.isChan || d.isFunc
+		}
+	}
+	return false, false
 }
 
 // flattenParams expands a signature's parameters into one retResult per
