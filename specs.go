@@ -22,7 +22,12 @@
 // TODO 20260728 Defined types over a channel: a method on one (see Type
 // Declarations). Sends, receives and select clauses work.
 // TODO 20260728 Channels held in a struct field: a send or a receive on one is
-// refused, for a written "chan T" as much as for a defined type over one.
+// refused, for a written "chan T" as much as for a defined type over one. The
+// operand plumbing is the small half; the question to settle first is where the
+// rendezvous cell lives. A channel VARIABLE gets one statically allocated beside it
+// and initialized before main, which a field cannot have without deciding what a
+// declaration of the struct allocates -- and what a copy of it, a composite literal
+// of it, and an array of it then share.
 // TODO 20260728 Float literals: Go's hexadecimal form, "0x1p-2" (see Floating-point
 // literals).
 // TODO 20260728 Constant declarations: an identifier list, "const a, b = 1, 2"

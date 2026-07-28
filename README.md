@@ -217,7 +217,10 @@ broken.
   of a build, but nothing runs them yet.
 * A **channel held in a struct field**: a send or a receive on one is refused,
   whether the field is written `chan T` or a defined type over one. A channel in a
-  variable, a parameter or a package-level declaration is fine.
+  variable, a parameter or a package-level declaration is fine. What has to be
+  settled first is where the rendezvous cell lives — a channel variable gets one
+  allocated beside it, and a field cannot without deciding what declaring the struct
+  allocates, and what a copy of it then shares.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
 * A `const` declaration binds one name, so `const a, b = 1, 2` does not parse; write
