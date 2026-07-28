@@ -4537,7 +4537,22 @@ func main() {
 // inspecting the generated code proves nothing about whether two of them meet.
 //
 // Skipped when no C compiler is available, so the suite still runs anywhere.
+// TestEmitCRunUnchecked runs the same corpus with the run-time checks off, which is
+// what `ogo build --unchecked` emits. Every other run test builds checked, so the
+// whole unchecked configuration was only ever pinned by a couple of emission
+// goldens -- a lowering that is correct only because a check happens to stand in
+// front of it would have gone unnoticed.
+//
+// A panicking case is skipped: without the checks there is nothing to panic.
+func TestEmitCRunUnchecked(t *testing.T) {
+	runCorpus(t, nil)
+}
+
 func TestEmitCRun(t *testing.T) {
+	runCorpus(t, []EmitOption{Checked()})
+}
+
+func runCorpus(t *testing.T, opts []EmitOption) {
 	cc := ""
 	for _, c := range []string{"cc", "gcc", "clang"} {
 		if p, err := exec.LookPath(c); err == nil {
@@ -4553,7 +4568,11 @@ func TestEmitCRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	checked := len(opts) != 0
 	for _, test := range emitRunCases {
+		if test.panics && !checked {
+			continue // the panic is the check; with none, there is nothing to expect
+		}
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
@@ -4561,7 +4580,7 @@ func TestEmitCRun(t *testing.T) {
 				t.Fatalf("Build: %v", err)
 			}
 			var buf bytes.Buffer
-			if err := EmitC(pkg, &buf, Checked()); err != nil {
+			if err := EmitC(pkg, &buf, opts...); err != nil {
 				t.Fatalf("EmitC: %v", err)
 			}
 

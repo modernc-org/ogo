@@ -15,6 +15,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **`--unchecked` left a negative shift count undefined.** The guarded shift kept its
+  Go panic in a checked build, but an unchecked one has no panic to raise and fell
+  through to a C shift by a negative count. It now compares the count unsigned, so a
+  negative one yields what an enormous one does — 0 — rather than anything undefined.
 - **Division of two integer constants produced a float.** `7 / 2` was 3.5 rather than
   3, as Go has it, so a perfectly ordinary `[MB / KB]int` was rejected with
   `invalid array bound` and any constant reached through a division carried the wrong
@@ -155,6 +159,15 @@ Releases before v0.9.0 predate this file; see
   `else` — which is not C, so the backend rejected it outright. The declarations now
   stand ahead of the chain. Every `select` test had used a single clause, which is
   how a shipped feature's headline use went uncompiled.
+
+### Testing
+
+- **The `--unchecked` and `--release` builds are now tested.** Every run test built
+  with the checks on, so a whole configuration of `ogo build` was pinned by two
+  emission goldens and nothing else — a lowering that is correct only because a check
+  stands in front of it would not have been noticed. The run corpus is now executed
+  unchecked as well, and compiled for the target under each flag. All of it passes as
+  it stood; the coverage is the point.
 
 ### Language
 

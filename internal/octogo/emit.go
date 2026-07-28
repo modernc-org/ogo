@@ -1705,21 +1705,30 @@ func shiftHelperName(op, ctype string) string {
 //
 // A left shift is performed in the unsigned counterpart: Go defines the overflow to
 // wrap, and C does not define a signed one at all.
-func shiftHelperDef(op, ctype string) string {
+func shiftHelperDef(op, ctype string, checks bool) string {
 	bits := cIntWidths[ctype]
 	name := shiftHelperName(op, ctype)
-	body := "\tif (n < 0) ogo_panic(\"negative shift amount\");\n"
+	// A negative count is a run-time panic in Go, so a checked build says so. An
+	// unchecked one has no panic to raise and must still not shift by a negative
+	// count, which C leaves undefined: comparing unsigned puts every negative count
+	// past the width, so it yields what an enormous one does.
+	body, cmp := "", fmt.Sprintf("n >= %d", bits)
+	if checks {
+		body = "\tif (n < 0) ogo_panic(\"negative shift amount\");\n"
+	} else {
+		cmp = fmt.Sprintf("(uint64_t)n >= %d", bits)
+	}
 	switch {
 	case op == "<<":
 		u := ctype
 		if v, ok := cUnsignedOf[ctype]; ok {
 			u = v
 		}
-		body += fmt.Sprintf("\tif (n >= %d) return 0;\n\treturn (%s)((%s)v << n);\n", bits, ctype, u)
+		body += fmt.Sprintf("\tif (%s) return 0;\n\treturn (%s)((%s)v << n);\n", cmp, ctype, u)
 	case cUnsignedOf[ctype] != "": // a signed right shift keeps the sign
-		body += fmt.Sprintf("\tif (n >= %d) return v < 0 ? -1 : 0;\n\treturn v >> n;\n", bits)
+		body += fmt.Sprintf("\tif (%s) return v < 0 ? -1 : 0;\n\treturn v >> n;\n", cmp)
 	default:
-		body += fmt.Sprintf("\tif (n >= %d) return 0;\n\treturn v >> n;\n", bits)
+		body += fmt.Sprintf("\tif (%s) return 0;\n\treturn v >> n;\n", cmp)
 	}
 	return fmt.Sprintf("static %s %s(%s v, int64_t n) {\n%s}\n", ctype, name, ctype, body)
 }
@@ -1776,7 +1785,9 @@ func (e *emitter) needDiv(op, ctype string) string {
 // needShift records that a guarded shift helper is used, so it is defined.
 func (e *emitter) needShift(op, ctype string) string {
 	e.shiftHelpers[shiftHelperName(op, ctype)] = [2]string{op, ctype}
-	e.needPanic()
+	if e.checks {
+		e.needPanic()
+	}
 	e.includes["stdint.h"] = true
 	return shiftHelperName(op, ctype)
 }
@@ -2070,7 +2081,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	slices.Sort(shiftNames)
 	for _, name := range shiftNames {
 		oc := e.shiftHelpers[name]
-		helperDefs.WriteString(shiftHelperDef(oc[0], oc[1]))
+		helperDefs.WriteString(shiftHelperDef(oc[0], oc[1], e.checks))
 	}
 	divNames := make([]string, 0, len(e.divHelpers))
 	for name := range e.divHelpers {

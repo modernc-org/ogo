@@ -57,6 +57,28 @@ func TestTargetBuild(t *testing.T) {
 	}
 }
 
+// TestTargetBuildFlags compiles the same corpus in the other two configurations
+// `ogo build` offers. --unchecked emits different C -- an index, a divisor and a
+// shift count lose their guards, and a helper that carried one loses that branch --
+// and --release changes what a panic does. Each can break on its own, and every
+// other target test builds with neither.
+func TestTargetBuildFlags(t *testing.T) {
+	ogo := buildOgoCLI(t)
+	for _, flag := range []string{"--unchecked", "--release"} {
+		t.Run(flag, func(t *testing.T) {
+			for _, test := range emitRunCases {
+				t.Run(test.name, func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					if err := boardBuild(ogo, dir, "prog", test.src, filepath.Join(dir, "prog.binary"), test.backendWarning, flag); err != nil {
+						t.Errorf("%v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
 // buildOgoCLI builds the ogo command once for a test to shell out to.
 func buildOgoCLI(t *testing.T) string {
 	t.Helper()
@@ -149,12 +171,13 @@ func TestOnBoard(t *testing.T) {
 // second and builds -- so a diagnostic it emits is the only sign that the emitted
 // C is wrong in a way the exit status will not show. A clean build is silent, so
 // anything at all is worth reading.
-func boardBuild(ogo, dir, name, src, out, allowWarning string) error {
+func boardBuild(ogo, dir, name, src, out, allowWarning string, flags ...string) error {
 	srcFile := filepath.Join(dir, name+".ogo")
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		return err
 	}
-	b, err := exec.Command(ogo, "build", "-o", out, srcFile).CombinedOutput()
+	args := append([]string{"build", "-o", out}, flags...)
+	b, err := exec.Command(ogo, append(args, srcFile)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ogo build: %v\n%s", err, b)
 	}
