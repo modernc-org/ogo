@@ -1,3 +1,11 @@
+// WORKED AROUND since this was written: `ogo build` passes -Ono-inline-small, and
+// with that pass off the program is right. Both passes behind the bug -- the
+// small-function inliner and the register allocator -- have to cooperate for it,
+// so turning either off is enough; the inliner is the cheaper one to lose. See
+// internal/build for the flags and what they cost. This file stays as the check
+// that the workaround is still needed: compile it WITHOUT the flag, and if it
+// prints 0 the backend has been fixed and the flag can go.
+//
 // This is valid C that the target's compiler gets wrong. It is kept here as the
 // reproducer for a backend bug the compiler has no workaround for, found by the
 // smith oracle running on a P2-EDGE (seed 28 of a widened board sample) and

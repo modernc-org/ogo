@@ -1,3 +1,9 @@
+// WORKED AROUND since this was written: `ogo build` passes -Ono-peephole, and with
+// that pass off the program assembles. See internal/build for the flags and what
+// they cost. This file stays as the check that the workaround is still needed:
+// compile it WITHOUT the flag, and if it assembles the backend has been fixed and
+// the flag can go.
+//
 // Valid C that the target's assembler refuses: flexcc emits a branch to a label it
 // then does not define.
 //

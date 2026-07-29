@@ -106,7 +106,33 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	// the flag before asking for the lock (see chanRuntimeDefs), and the whole
 	// on-board suite passes with FCACHE on, so the flag is gone and loop caching
 	// is back for every program, not just the ones with channels.
-	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-o", out, cFile}); err != nil {
+	//
+	// Two of the backend's optimizer passes are turned off, which is not a
+	// preference but the only known way to avoid two defects in them. Both are
+	// reduced to a dozen lines of C in doc/ and both are live at upstream's tip --
+	// flexprop's master IS the pinned v7.7.0, and a flexcc built from spin2cpp's
+	// current master reproduces each one identically -- so there is no version to
+	// upgrade to and nothing this compiler can emit differently to dodge them:
+	//
+	//	inline-small  the optimizer stores a value the program never computed into
+	//	              a file-scope int (doc/optimizer-miscompile.c). SILENT: gcc is
+	//	              right, the build says nothing, and a plain integer comes out
+	//	              wrong.
+	//	peephole      the optimizer emits a branch to a label it then does not
+	//	              define, and the assembler refuses the program
+	//	              (doc/optimizer-dangling-label.c). Loud, at least.
+	//
+	// Each defect needs both passes' cooperation, so turning either one off is
+	// enough for it; these two together cover both. -Ono-regs also covers both and
+	// was rejected: it costs 68% more code where this pair costs between nothing
+	// and 15%, depending on the program -- measured 13360 -> 13232 bytes on the
+	// framing-receiver test case and 10292 -> 11792 on a fuzzer-generated one.
+	//
+	// The whole test corpus, the on-board suite and all 40 seeds of the widened
+	// fuzzer sample pass with these, including the two seeds that reproduce the
+	// defects. Take them off again when a backend that does not need them lands --
+	// the two reproducers are the check.
+	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-Ono-inline-small", "-Ono-peephole", "-o", out, cFile}); err != nil {
 		return "", 1, fmt.Errorf("flexcc: %v", err)
 	}
 	return out, 0, nil

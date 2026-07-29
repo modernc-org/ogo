@@ -13,27 +13,26 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
-### Known issues
+### Fixed
 
-- **The backend's optimizer emits a branch to a label it does not define**, so the
-  assembler refuses the program: `Unknown symbol 'L__0579'`. gcc compiles the same C
-  without a warning and flexcc assembles it at `-O0`, so the emitted C is not at
-  fault; the default and `-O1` both fail, and `ogo build` takes the default. Unlike
-  the miscompile below it this one is loud — nothing is silently wrong, the build
-  simply fails — which is the better of the two failures to have. Reproducer in
-  `doc/optimizer-dangling-label.c`.
-- **The backend's optimizer miscompiles one narrow shape**, silently: an element of
-  a local `[4]int` that was never written, read at index 2, passed to a call, the
-  result multiplied by something that is not a power of two, and assigned to a
-  file-scope `int`. The global ends up holding a value the local never had. It is
-  right at `-O0` and wrong at every other setting — the default, `-O1`, `-O2`,
-  `-Os` — each with a different wrong value, and `ogo build` takes the default.
-  The host compiler is right, so nothing off-target sees it, and nothing in the
-  build says a word. Found by the fuzzer's oracle on a real P2 and reduced to a
-  dozen lines of C in `doc/optimizer-miscompile.c`, with the sixteen variants that
-  pin what each ingredient contributes. No workaround: computing into a local
-  first does not help, and it is the optimizer rather than anything the emitter
-  chooses.
+- **Two defects in the backend's optimizer are worked around**, and `ogo build`
+  turns off the two passes behind them. One stored a value the program never
+  computed into a package-level variable — silently, with the host compiler right
+  and the build saying nothing — and the other emitted a branch to a label it did
+  not define, so the assembler refused the program. Both are reduced to a dozen
+  lines of C in `doc/`, and both are live at upstream's tip: flexprop's master *is*
+  the pinned v7.7.0, and a flexcc built from spin2cpp's current master reproduces
+  each identically, so there is no version to upgrade to.
+
+  Each defect needs two passes cooperating, so turning either one off is enough;
+  `-Ono-inline-small -Ono-peephole` covers both. The cost runs between nothing and
+  about 15% more code depending on the program — 13360 → 13232 bytes on the
+  framing-receiver test case, 10292 → 11792 on a fuzzer-generated one. Turning off
+  the register allocator instead would have covered both too, at 68%.
+
+  The whole corpus, the on-board suite and all forty seeds of the widened fuzzer
+  sample now pass, including the two seeds that reproduce the defects and used to
+  be skipped. The skip is gone with them: a recurrence has to fail loudly.
 
 ### Testing
 

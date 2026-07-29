@@ -113,6 +113,11 @@ const smithSeeds = 12
 // outgrewCog reports whether a build failed because the program does not fit the
 // cog's code window -- "fit 480 failed: pc is 493" from the assembler.
 //
+// It is the ONLY build failure a generated program may be excused. A backend
+// defect used to be excused here too, until the optimizer passes behind it were
+// turned off (see internal/build); with them off a recurrence has to fail loudly,
+// which is the point of not keeping the excuse around.
+//
 // That is a property of the target, not a defect: a generated program is one very
 // long main, and past some size it no longer fits. It bounds how much the
 // generator may add rather than saying anything is wrong, so a seed that hits it
@@ -120,20 +125,6 @@ const smithSeeds = 12
 // is why this is not in boardBuild.
 func outgrewCog(err error) bool {
 	return strings.Contains(err.Error(), "fit 480 failed")
-}
-
-// backendRefused reports whether a build failed because of a backend defect this
-// compiler cannot do anything about, as opposed to something wrong with the
-// emitted C.
-//
-// There is one so far: the optimizer emits a branch to a label it then does not
-// define, and the assembler says "Unknown symbol 'L__0579'". gcc compiles the same
-// C without a warning and flexcc assembles it at -O0, so the C is not at fault --
-// see doc/optimizer-dangling-label.c. A seed that hits it is skipped and says so,
-// for the same reason a seed that outgrows the cog is: the fuzzer's job is to
-// report what it found, not to fail on a defect that is already written down.
-func backendRefused(err error) bool {
-	return strings.Contains(err.Error(), "Unknown symbol 'L__")
 }
 
 // smithProgram generates one fuzzer program by running the `ogo smith` subcommand.
@@ -168,7 +159,7 @@ func TestTargetBuildSmith(t *testing.T) {
 			src := smithProgram(t, ogo, seed)
 			dir := t.TempDir()
 			if err := boardBuild(ogo, dir, "prog", src, filepath.Join(dir, "prog.binary"), ""); err != nil {
-				if outgrewCog(err) || backendRefused(err) {
+				if outgrewCog(err) {
 					t.Skip(err.Error())
 				}
 				t.Errorf("%v\n--- program ---\n%s", err, src)
@@ -198,7 +189,7 @@ func TestOnBoardSmith(t *testing.T) {
 			dir := t.TempDir()
 			bin := filepath.Join(dir, "prog.binary")
 			if err := boardBuild(ogo, dir, "prog", src, bin, ""); err != nil {
-				if outgrewCog(err) || backendRefused(err) {
+				if outgrewCog(err) {
 					t.Skip(err.Error())
 				}
 				t.Fatalf("build: %v", err)
