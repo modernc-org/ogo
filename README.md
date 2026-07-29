@@ -195,6 +195,12 @@ broken.
   called on it, or an index into it (`mk()[1]`, `mk().d[1]`).
 * `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
   fixed-capacity slice, `panic`, `print`/`println`.
+* A predeclared **`Builder`** for assembling a string at run time without a heap:
+  `NewBuilder(back[:])` puts a write cursor over a byte array you own, and
+  `WriteString`, `WriteByte`, `WriteRune`, `Write`, `String`, `Len` and `Reset`
+  behave as `strings.Builder`'s do, except that a write past the backing is
+  truncated rather than growing it — you chose the size. It is meant to become
+  `strings.Builder` once there is a standard library to put it in.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
   launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
   stands, as may an imported package's function, `go driver.Poll(ch)`. A `select`
@@ -251,7 +257,9 @@ compatibility but carries no extra precision.
 
 **Not planned**, because the target does not permit them: a garbage collector, a
 heap, maps, closures that capture their environment (a function *value* is fine —
-it is a pointer to code, not to a frame), and runtime string concatenation. Constant string concatenation folds at compile time.
+it is a pointer to code, not to a frame), and runtime string concatenation.
+Constant string concatenation folds at compile time; to assemble one at run time,
+write into a `Builder` over storage you own.
 
 Having no heap has one consequence worth knowing before you meet it: a reference
 must not outlive what it refers to. Where Go would move the referent to the heap and

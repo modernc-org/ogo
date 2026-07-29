@@ -11,7 +11,60 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
-## Unreleased
+## v0.13.0
+
+### Language
+
+- **A method's receiver now carries its type.** It was declared with none at all, so
+  every check that keys on one was skipped for it — and the escape rule, which asks
+  whether the root of `&p.nodes[i]` is an inline value whose address dies with the
+  frame, read a *pointer* receiver as one. That refused `return &p.nodes[i]`, which
+  is how a fixed node pool hands out a node, and with it the whole no-heap way of
+  building a linked structure.
+
+  The emitter's half of the rule learned the same distinction: through a pointer,
+  `&p.f` and `&p[i]` reach what the pointer points at, which is the caller's storage.
+  A bare `&p` still takes this frame's, and a value receiver or local is refused as
+  before.
+- **A string held in a struct field may be sliced**, `l.line[a:b]`. The slice paths
+  had an answer for a slice field and an array field and none for a string one, so
+  the whole of a tokenizer was `cannot infer a type`.
+- **A top-level name that C has already spoken for moves out of its way.** A program
+  is entitled to a function called `atoi` or `abs`, a variable called `index` or a
+  type called `union` — every one of which is declared by a header the emitted C
+  includes, or is a C keyword — and each used to be a C compile error naming a
+  collision the program never made. Only the colliding names move, so everything
+  else in the output reads as it did.
+
+  A local, a parameter or a struct field needs no such help against a *library*
+  name, shadowing being enough. One against a C *keyword* still emits invalid C; see
+  the TODO list in `specs.go`.
+- **A method or an imported package's function may yield several values into a
+  destructuring assignment**, `b, ok := r.pop()` and `q, r := mathy.Divmod(17, 5)`.
+  Only a plain function of the same package could before, so the `(value, ok)` shape
+  a container wants — a ring buffer's `pop`, a lookup — had to be written as a
+  function taking the receiver by hand.
+- **A `const` declaration may bind a list**, `const a, b = 1, 2`, as Go's does. A
+  spec that omits its expression list repeats the previous spec's positionally, and
+  `iota` counts specs rather than names — so every name on one line sees the same
+  value, which is what makes `h, i = iota, iota * 10` mean what it says.
+
+  The two arity diagnostics now read as Go's do: `missing init expr for b` and
+  `extra init expr 2`. The first replaces `missing constant value for b`, which said
+  the same thing in different words and reached the same condition from the other
+  side.
+- **A float literal has a hexadecimal form**, `0x1p-2`, `0x1.8p1`, `0X2p+3`, whose
+  exponent is a power of two and is required, as in Go. It is how an exact value is
+  written on a target whose `float64` is 32 bits wide.
+- **A defined type over a channel is a channel**, `type Ch chan int`: a send, a
+  receive and a `select` clause all reach it, through a chain of definitions if there
+  is one. It was the one kind left out when a defined type gained the behaviour of
+  what it is defined over — the element lookup keyed on a written `chan T` and found
+  a name instead, so every send on one was `cannot send to non-channel`.
+
+  Such a type gives up one thing: a method of its own, refused where it is written.
+  It is answered for by the channel cell's own name in the emitted C, so it has no C
+  type there to hang a method namespace on.
 
 ### Behaviour changes
 
@@ -23,8 +76,18 @@ Releases before v0.9.0 predate this file; see
   other. All three sinks refuse it now, and the address of *package* storage is
   handed out as freely as before.
 
-### Bug fixes
+### Fixed
 
+- **The target's `printf` truncates `%.*s` at 62 characters**, so `print` of any
+  longer string silently lost its tail — on the board only, the host being exact.
+  A string is not null-terminated, so `%s` is not an option either; the bytes go
+  out one at a time now, which is right at any length and costs nothing next to a
+  serial line. Found by a console command loop whose output is 102 characters.
+- **A field read off a struct-returning call needed a temporary and only got one
+  after a reslice.** `len(b.String())` printed −251214335 on the board and 102 on
+  the host: the backend reads a field at a nonzero offset off a return value as
+  garbage, and the workaround was keyed on one specific helper rather than on
+  there being a call at all.
 - **A string constant could not be indexed or sliced.** `digits[9]` and `lit[1:3]`
   emitted C naming something no declaration had ever produced: a string constant is
   folded to its literal at every use — a Go constant has no address, so there is
@@ -98,18 +161,45 @@ Releases before v0.9.0 predate this file; see
   4294967095 instead of Go's 55, C's `~` having promoted the operand to `int` and
   kept it there. The all-ones constant carries the operand's own type now.
 
+### Diagnostics
+
+- **Pointer-ness is checked** wherever a value is assigned to something of a known
+  type: an argument, a variable declaration, a return and an assignment. `f(p)` where
+  `f` wants a `*P`, `var q *P = p`, `return p` from a `*P` result and `q = p` were all
+  accepted and left to the C compiler — so the most common mistake in the language
+  came back as a complaint about C the program never wrote. Reported now as Go
+  reports it, naming what was passed and what was wanted.
+
+  An assignment whose target carries a selector, an index or a leading `*` is left to
+  the field, index and deref checks: the name in hand there is the target's *base*,
+  and what is assigned belongs to the field, element or pointee.
+
+
+- **Three messages now read as Go's do.** `break is not in a loop, switch or select`
+  gains Go's comma; `undefined label nope` becomes `break label not defined: nope`
+  (or `continue label not defined:`, as Go words each); and an assignment mismatch
+  whose values come from a single call names it — `2 variables but f returns 1 value`
+  — which is what says where the count came from.
+
+  A message that says the same thing as Go's in different words is worse than it
+  looks: what a reader knows from Go stops carrying over, and a search for the text
+  finds nothing.
+
+### Tooling
+
+- **`ogo fmt` indented a comment one level too deep** when it stood before a `case`
+  clause — and, once grouped declarations began indenting, before a `const ( … )`
+  keyword. A separator's indent did not take the token's indent delta, so a comment
+  went with the body rather than with the token it precedes.
+- **`ogo fmt` outdented every spec of a grouped declaration.** A `const ( … )`,
+  `var ( … )`, `type ( … )` or `import ( … )` written the gofmt way came back with
+  its specs at the keyword's own level — the tool meant to produce that shape was
+  the one destroying it. There was no indent rule for a grouped declaration at all.
+  It went unseen because no `.ogo` source in the repo outside `testdata` has one, and
+  the formatting check excludes `testdata`.
+
 ### Testing
 
-- **The target's `printf` truncates `%.*s` at 62 characters**, so `print` of any
-  longer string silently lost its tail — on the board only, the host being exact.
-  A string is not null-terminated, so `%s` is not an option either; the bytes go
-  out one at a time now, which is right at any length and costs nothing next to a
-  serial line. Found by a console command loop whose output is 102 characters.
-- **A field read off a struct-returning call needed a temporary and only got one
-  after a reslice.** `len(b.String())` printed −251214335 on the board and 102 on
-  the host: the backend reads a field at a nonzero offset off a return value as
-  garbage, and the workaround was keyed on one specific helper rather than on
-  there being a call at all.
 - **A console command loop is a run case** — a dispatch table of name/handler
   pairs, a tokenizer over a fixed line buffer, an integer parser, and replies
   formatted into a caller-owned Builder. It is what found six of the entries
@@ -176,96 +266,6 @@ Releases before v0.9.0 predate this file; see
   not consume. So "wait two milliseconds, then check the clock moved" was true on the
   board and false on the host: the shim disagreed with the hardware about the one
   thing a driver does most. They wait, and read a monotonic clock, now.
-
-### Diagnostics
-
-- **Pointer-ness is checked** wherever a value is assigned to something of a known
-  type: an argument, a variable declaration, a return and an assignment. `f(p)` where
-  `f` wants a `*P`, `var q *P = p`, `return p` from a `*P` result and `q = p` were all
-  accepted and left to the C compiler — so the most common mistake in the language
-  came back as a complaint about C the program never wrote. Reported now as Go
-  reports it, naming what was passed and what was wanted.
-
-  An assignment whose target carries a selector, an index or a leading `*` is left to
-  the field, index and deref checks: the name in hand there is the target's *base*,
-  and what is assigned belongs to the field, element or pointee.
-
-
-- **Three messages now read as Go's do.** `break is not in a loop, switch or select`
-  gains Go's comma; `undefined label nope` becomes `break label not defined: nope`
-  (or `continue label not defined:`, as Go words each); and an assignment mismatch
-  whose values come from a single call names it — `2 variables but f returns 1 value`
-  — which is what says where the count came from.
-
-  A message that says the same thing as Go's in different words is worse than it
-  looks: what a reader knows from Go stops carrying over, and a search for the text
-  finds nothing.
-
-### Tooling
-
-- **`ogo fmt` indented a comment one level too deep** when it stood before a `case`
-  clause — and, once grouped declarations began indenting, before a `const ( … )`
-  keyword. A separator's indent did not take the token's indent delta, so a comment
-  went with the body rather than with the token it precedes.
-- **`ogo fmt` outdented every spec of a grouped declaration.** A `const ( … )`,
-  `var ( … )`, `type ( … )` or `import ( … )` written the gofmt way came back with
-  its specs at the keyword's own level — the tool meant to produce that shape was
-  the one destroying it. There was no indent rule for a grouped declaration at all.
-  It went unseen because no `.ogo` source in the repo outside `testdata` has one, and
-  the formatting check excludes `testdata`.
-
-### Language
-
-- **A method's receiver now carries its type.** It was declared with none at all, so
-  every check that keys on one was skipped for it — and the escape rule, which asks
-  whether the root of `&p.nodes[i]` is an inline value whose address dies with the
-  frame, read a *pointer* receiver as one. That refused `return &p.nodes[i]`, which
-  is how a fixed node pool hands out a node, and with it the whole no-heap way of
-  building a linked structure.
-
-  The emitter's half of the rule learned the same distinction: through a pointer,
-  `&p.f` and `&p[i]` reach what the pointer points at, which is the caller's storage.
-  A bare `&p` still takes this frame's, and a value receiver or local is refused as
-  before.
-- **A string held in a struct field may be sliced**, `l.line[a:b]`. The slice paths
-  had an answer for a slice field and an array field and none for a string one, so
-  the whole of a tokenizer was `cannot infer a type`.
-- **A top-level name that C has already spoken for moves out of its way.** A program
-  is entitled to a function called `atoi` or `abs`, a variable called `index` or a
-  type called `union` — every one of which is declared by a header the emitted C
-  includes, or is a C keyword — and each used to be a C compile error naming a
-  collision the program never made. Only the colliding names move, so everything
-  else in the output reads as it did.
-
-  A local, a parameter or a struct field needs no such help against a *library*
-  name, shadowing being enough. One against a C *keyword* still emits invalid C; see
-  the TODO list in `specs.go`.
-- **A method or an imported package's function may yield several values into a
-  destructuring assignment**, `b, ok := r.pop()` and `q, r := mathy.Divmod(17, 5)`.
-  Only a plain function of the same package could before, so the `(value, ok)` shape
-  a container wants — a ring buffer's `pop`, a lookup — had to be written as a
-  function taking the receiver by hand.
-- **A `const` declaration may bind a list**, `const a, b = 1, 2`, as Go's does. A
-  spec that omits its expression list repeats the previous spec's positionally, and
-  `iota` counts specs rather than names — so every name on one line sees the same
-  value, which is what makes `h, i = iota, iota * 10` mean what it says.
-
-  The two arity diagnostics now read as Go's do: `missing init expr for b` and
-  `extra init expr 2`. The first replaces `missing constant value for b`, which said
-  the same thing in different words and reached the same condition from the other
-  side.
-- **A float literal has a hexadecimal form**, `0x1p-2`, `0x1.8p1`, `0X2p+3`, whose
-  exponent is a power of two and is required, as in Go. It is how an exact value is
-  written on a target whose `float64` is 32 bits wide.
-- **A defined type over a channel is a channel**, `type Ch chan int`: a send, a
-  receive and a `select` clause all reach it, through a chain of definitions if there
-  is one. It was the one kind left out when a defined type gained the behaviour of
-  what it is defined over — the element lookup keyed on a written `chan T` and found
-  a name instead, so every send on one was `cannot send to non-channel`.
-
-  Such a type gives up one thing: a method of its own, refused where it is written.
-  It is answered for by the channel cell's own name in the emitted C, so it has no C
-  type there to hang a method namespace on.
 
 ## v0.12.0
 
