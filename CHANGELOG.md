@@ -15,14 +15,18 @@ Releases before v0.9.0 predate this file; see
 
 ### Known issues
 
-- **A multiply of a call's result miscompiles on the target** in one narrow shape:
-  the call's argument reads an element of a local `[4]int` that was never written,
-  at index 2, and the result is multiplied by anything that is not a power of two.
-  The answer is wrong, deterministically, and nothing says so — the host compiler
-  is right and the build is silent. Found by the fuzzer's oracle on a real P2 and
-  reduced to a dozen lines of C in `doc/mul-after-call-miscompile.c`, together with
-  the twelve variants that pin what each ingredient contributes. Binding the call
-  to a variable first does not help, so there is no workaround to apply yet.
+- **The backend's optimizer miscompiles one narrow shape**, silently: an element of
+  a local `[4]int` that was never written, read at index 2, passed to a call, the
+  result multiplied by something that is not a power of two, and assigned to a
+  file-scope `int`. The global ends up holding a value the local never had. It is
+  right at `-O0` and wrong at every other setting — the default, `-O1`, `-O2`,
+  `-Os` — each with a different wrong value, and `ogo build` takes the default.
+  The host compiler is right, so nothing off-target sees it, and nothing in the
+  build says a word. Found by the fuzzer's oracle on a real P2 and reduced to a
+  dozen lines of C in `doc/optimizer-miscompile.c`, with the sixteen variants that
+  pin what each ingredient contributes. No workaround: computing into a local
+  first does not help, and it is the optimizer rather than anything the emitter
+  chooses.
 
 ### Testing
 
