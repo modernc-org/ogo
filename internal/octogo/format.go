@@ -34,6 +34,24 @@ type formatter struct {
 	targetCol2          map[int32]int // token index -> absolute target column for Col2 (Types)
 	targetComment       map[int32]int // token index -> absolute target column for inline comments
 	activeCommentTarget int           // Handed down to formatSep to align lineComment
+
+	// Trailing line comments that no target column already governs, recorded as
+	// they are written so alignRuns can pad them afterwards. A statement's comment
+	// cannot be measured the way a field's is -- that measurement re-derives the
+	// renderer's spacing token by token, which no arbitrary statement affords -- so
+	// these are aligned from where they actually landed.
+	outLine   int // newlines written so far, i.e. the current output line
+	lineByte  int // bytes written on the current output line
+	lineCells int // mid-line general comments written on it, each of which is a cell
+	trailing  []trailingComment
+}
+
+// trailingComment is one "// ..." written after code on its line.
+type trailingComment struct {
+	line   int // output line index
+	offset int // byte offset within that line where the comment begins
+	col    int // column it begins at, tabs expanded
+	cells  int // mid-line general comments before it; see alignRuns
 }
 
 func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) {
@@ -158,6 +176,9 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 					f.activeCommentTarget = 0
 				} else {
 					f.b(sp) // Ensure at least one space before unaligned inline comments
+					// No column governs this one, so record where it landed and let
+					// alignRuns line it up with its neighbours afterwards.
+					f.trailing = append(f.trailing, trailingComment{f.outLine, f.lineByte, f.col, f.lineCells})
 				}
 			} else {
 				f.tabs(true, indentLevel)
@@ -171,6 +192,10 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				f.b(bytes.TrimRight(b, " \t\r"))
 			}
 		case generalComment:
+			// A /* */ comment that shares its line with code is a cell of its own,
+			// whether it leads the line or sits inside it. A line whose comment ends
+			// it records nothing, so counting one there costs nothing.
+			f.lineCells++
 			if !f.nl {
 				if f.activeCommentTarget > 0 {
 					for f.col < f.activeCommentTarget {
@@ -387,7 +412,13 @@ func (f *formatter) b(b []byte) {
 		if c == '\n' {
 			f.col = 0
 			f.nl = true
-		} else if c == '\t' {
+			f.outLine++
+			f.lineByte = 0
+			f.lineCells = 0
+			continue
+		}
+		f.lineByte++
+		if c == '\t' {
 			// standard 8-space tab expansion mapping
 			f.col += 8 - (f.col % 8)
 			f.nl = false
@@ -788,16 +819,71 @@ func (f *formatter) trailsLineComment(idx int32) bool {
 
 // FormatFile writes the formatted version of 'b' to 'w', assuming it comes
 // from file named 'fn' and returns an error, if any.
+// alignRuns lines up the trailing comments f recorded, in maximal runs of
+// CONSECUTIVE output lines that carry one -- which is how gofmt groups them: a line
+// without a comment ends a run, as does a blank line (which is a line without one).
+//
+// It works on the finished text rather than on a measurement of the source. A
+// field's comment can be placed by measuring its declaration, because a field is
+// two names and a type; a statement is anything at all, and re-deriving the
+// renderer's spacing for one is the renderer. Where the comment actually landed is
+// the same number, already computed.
+func alignRuns(out []byte, cs []trailingComment) []byte {
+	if len(cs) == 0 {
+		return out
+	}
+	lines := bytes.Split(out, nl)
+	indent := func(i int) int {
+		if i >= len(lines) {
+			return -1
+		}
+		return len(lines[i]) - len(bytes.TrimLeft(lines[i], "\t"))
+	}
+	for i := 0; i < len(cs); {
+		j, max := i, cs[i].col
+		// Adjacent lines at the SAME indent. A nested block is a table of its own to
+		// gofmt, so the statement opening one does not align with the statements
+		// inside it.
+		// Adjacent, same indent, and the same number of cells before the comment: a
+		// tabwriter column spans only rows built the same way, so a line carrying a
+		// mid-line /* comment */ -- an extra cell -- puts its trailing comment in a
+		// different column from a line without one.
+		for j+1 < len(cs) && cs[j+1].line == cs[j].line+1 &&
+			indent(cs[j+1].line) == indent(cs[j].line) && cs[j+1].cells == cs[j].cells {
+			j++
+			if cs[j].col > max {
+				max = cs[j].col
+			}
+		}
+		for _, c := range cs[i : j+1] {
+			if pad := max - c.col; pad > 0 && c.line < len(lines) {
+				l := lines[c.line]
+				lines[c.line] = append(append(append([]byte{}, l[:c.offset]...),
+					bytes.Repeat(sp, pad)...), l[c.offset:]...)
+			}
+		}
+		i = j + 1
+	}
+	return bytes.Join(lines, nl)
+}
+
 func FormatFile(fn string, b []byte, w io.Writer) (err error) {
-	f, err := newFormatter(fn, b, w)
+	// The output is buffered rather than streamed: aligning a run of trailing
+	// comments needs the whole run written before the width is known.
+	var buf bytes.Buffer
+	f, err := newFormatter(fn, b, &buf)
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		if err == nil && !f.nl {
-			_, err = w.Write(nl)
+		if err != nil {
+			return
 		}
+		if !f.nl {
+			buf.Write(nl)
+		}
+		_, err = w.Write(alignRuns(buf.Bytes(), f.trailing))
 	}()
 
 	var seps []any

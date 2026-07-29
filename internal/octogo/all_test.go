@@ -510,6 +510,70 @@ c bool // trailing
 	}
 }
 
+// TestFormatStatementComments pins the alignment of trailing comments on
+// statements, which had none: each sat one space after its line.
+//
+// gofmt aligns maximal runs of CONSECUTIVE lines that carry one. Three things end
+// a run, and all three are here: a line with no comment, a change of indentation
+// (a nested block is a table of its own), and a line built from a different number
+// of cells -- the "/* general */" line carries an extra one, so its trailing
+// comment is in a different column and does not align with the line above it.
+//
+// Every expectation below is gofmt's actual output for the same source.
+func TestFormatStatementComments(t *testing.T) {
+	const in = `func main() {
+p := 1 // one
+qq := 2 // two
+println(p, qq)
+a := 1 // first
+bbbbbb := 2 // second
+
+rrr := 3 // three
+if p > 0 { // condition
+s := 4 // inner
+tt := 5 // inner two
+println(s, tt)
+}
+println(p, qq, rrr) // after
+/* general */ u := 6 // mixed
+println(u)
+}
+`
+	const want = `func main() {
+	p := 1  // one
+	qq := 2 // two
+	println(p, qq)
+	a := 1      // first
+	bbbbbb := 2 // second
+
+	rrr := 3   // three
+	if p > 0 { // condition
+		s := 4  // inner
+		tt := 5 // inner two
+		println(s, tt)
+	}
+	println(p, qq, rrr) // after
+	/* general */ u := 6 // mixed
+	println(u)
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("statement comment alignment:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatIndexSpacing pins the two spacings a '[' can take. A '[' opening an
 // array or slice *type* is spaced off the name it follows ("var a [3]int"), while
 // one opening an *index* binds tight to its base ("a[1]"). needsSpace had no case

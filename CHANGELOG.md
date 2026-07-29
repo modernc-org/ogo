@@ -24,6 +24,21 @@ Releases before v0.9.0 predate this file; see
 
 ### Tooling
 
+- **`ogo fmt` aligns runs of trailing comments on statements**, which it did not
+  align at all — each sat one space after its line:
+
+  ```
+  id := 1             // the id
+  sequenceNumber := 2 // the sequence
+  ```
+
+  A run is a maximal group of consecutive lines carrying one, and three things end
+  it, exactly as in gofmt: a line without a comment, a change of indentation (a
+  nested block is a table of its own), and a line built from a different number of
+  cells — a `/* … */` sharing the line adds one, which puts its trailing comment in
+  a different column. A statement's comment cannot be placed by measuring the
+  source the way a struct field's is, so these are aligned from where they actually
+  landed, in a pass over the finished text.
 - **`ogo fmt` aligns the specs of a grouped `const ( … )` or `var ( … )`**, in
   gofmt's three columns — names, type, `= value`:
 
