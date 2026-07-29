@@ -24,12 +24,27 @@ Releases before v0.9.0 predate this file; see
 
 ### Tooling
 
-- **`ogo fmt` put a struct's trailing comments one column too far right.** gofmt
-  aligns through a tabwriter, where a cell that ends its line is not part of an
-  aligned column — so a long type on a comment-less row does not push its
-  neighbours' comments right. Every row used to set that width here. Grouped
-  `const ( … )` and `var ( … )` specs are still not aligned at all, which is the
-  larger remaining gap.
+- **`ogo fmt` aligns the specs of a grouped `const ( … )` or `var ( … )`**, in
+  gofmt's three columns — names, type, `= value`:
+
+  ```
+  const (
+  	frameEnd uint8 = 0xC0
+  	frameEsc uint8 = 0xDB
+  	maxFrame       = 16
+  )
+  ```
+
+  There was no alignment of these at all, so every `=` in a const block wandered
+  with the length of its name.
+- **`ogo fmt` put a struct's trailing comments one column too far right**, and
+  ignored blank lines when deciding what to align together. Both come from the same
+  rule, which gofmt gets from its tabwriter: a cell that ends its line is not part
+  of an aligned column, and the blank line that ends an alignment block arrives as
+  *one* newline rather than two — a field or spec ends at an inserted semicolon,
+  which carries its own line's newline away. The blank-line test looked for two and
+  so never matched: a struct with a blank line in it was aligned as though it had
+  none.
 
 ### Fixed
 

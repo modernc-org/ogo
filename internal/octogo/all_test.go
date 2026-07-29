@@ -398,6 +398,118 @@ n int // how many bytes
 	}
 }
 
+// TestFormatGroupedAlign pins the three-column layout of a grouped declaration's
+// specs -- names, type, "= value" -- against what gofmt produces for the same
+// source. There was no alignment of these at all: every spec came out with single
+// spaces, so a const block's "=" signs wandered.
+//
+// The widths follow the tabwriter rule (see TestFormatCommentColumn): a cell that
+// ends its line is not part of an aligned column. That is what leaves the iota run
+// alone -- its specs are bare names, one cell each, so there is nothing to align --
+// and what stops "maxFrame", which has no type, from widening the type column.
+func TestFormatGroupedAlign(t *testing.T) {
+	const in = `const (
+a = 1
+longerName = 2
+c uint8 = 3
+d = 4 // trailing
+)
+
+const (
+p = iota
+q
+rrrr
+)
+
+const (
+first = 1
+
+afterBlank = 2
+x = 3
+)
+
+var (
+w, v int
+single = 1
+both int64 = 2
+arr [4]int
+)
+`
+	const want = `const (
+	a                = 1
+	longerName       = 2
+	c          uint8 = 3
+	d                = 4 // trailing
+)
+
+const (
+	p = iota
+	q
+	rrrr
+)
+
+const (
+	first = 1
+
+	afterBlank = 2
+	x          = 3
+)
+
+var (
+	w, v   int
+	single       = 1
+	both   int64 = 2
+	arr    [4]int
+)
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("grouped declaration alignment:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
+// TestFormatBlankLineBreaksAlignment pins that a blank line ends an alignment
+// block, in a struct as in a grouped declaration.
+//
+// The test for it looked for TWO newlines in the separator and so never matched: a
+// field or spec ends at an inserted semicolon, which carries its own line's newline
+// away, leaving only the blank line's. Every struct was aligned as though it had no
+// blank lines in it.
+func TestFormatBlankLineBreaksAlignment(t *testing.T) {
+	const in = `type T struct {
+a int
+
+bb string
+c bool // trailing
+}
+`
+	const want = `type T struct {
+	a int
+
+	bb string
+	c  bool // trailing
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("blank line in a struct:\n got %q\nwant %q", g, want)
+	}
+}
+
 // TestFormatIndexSpacing pins the two spacings a '[' can take. A '[' opening an
 // array or slice *type* is spaced off the name it follows ("var a [3]int"), while
 // one opening an *index* binds tight to its base ("a[1]"). needsSpace had no case

@@ -529,6 +529,157 @@ type formatterCtx struct {
 	inImport bool
 }
 
+// specMeasurement holds the three columns of one spec of a grouped declaration:
+// the names, the type, and the "= value". Either of the last two may be absent.
+type specMeasurement struct {
+	startTokIdx  int32
+	namesWidth   int
+	typeWidth    int
+	typeStartIdx int32 // -1 when the spec writes no type
+	eqIdx        int32 // -1 when the spec has no value
+}
+
+// alignSpecs lays out the specs of a grouped "const ( ... )" or "var ( ... )" in
+// three columns, the way gofmt does:
+//
+//	frameEnd uint8 = 0xC0
+//	frameEsc uint8 = 0xDB
+//	maxFrame       = 16
+//
+// The widths follow the tabwriter rule the struct alignment follows (see
+// measureField): a cell that ENDS ITS LINE is not part of an aligned column. So a
+// spec with no value does not widen the names column past what the specs with one
+// need, and a type with nothing after it does not widen the type column -- which
+// is what leaves an `iota` run, whose specs are bare names, unaligned rather than
+// padded out to the longest of them.
+//
+// A blank line ends a block, as it does between struct fields.
+func (f *formatter) alignSpecs(ast []int32, kind Symbol, c formatterCtx) {
+	child := ConstSpec
+	if kind == VarDecl {
+		child = VarSpec
+	}
+	var blocks [][]specMeasurement
+	var current []specMeasurement
+	isFirst := true
+	for len(ast) > 0 {
+		n := ast[0]
+		if n >= 0 {
+			ast = ast[1:]
+			continue
+		}
+		size := ast[1]
+		next := 2 + size
+		if Symbol(-n) == child {
+			m := f.measureSpec(ast[2:next], c)
+			if m.startTokIdx != -1 {
+				blank := false
+				if !isFirst {
+					// One newline, not two, unlike the struct fields above: a spec
+					// ends at an inserted semicolon, which carries its line's own
+					// newline away with it, so what reaches the next spec is the
+					// BLANK line alone.
+					for _, sep := range f.parseSep(f.p.Token(m.startTokIdx).SepBytes(), nil) {
+						if ws, ok := sep.(whiteSpace); ok && ws >= 1 {
+							blank = true
+							break
+						}
+					}
+				}
+				isFirst = false
+				if blank && len(current) != 0 {
+					blocks = append(blocks, current)
+					current = nil
+				}
+				current = append(current, m)
+			}
+		}
+		ast = ast[next:]
+	}
+	if len(current) != 0 {
+		blocks = append(blocks, current)
+	}
+
+	baseCol := int(c.indentLevel) * 8
+	for _, b := range blocks {
+		maxNames, maxType := 0, 0
+		for _, m := range b {
+			// Only a spec with something after its names widens the names column.
+			if (m.typeStartIdx != -1 || m.eqIdx != -1) && m.namesWidth > maxNames {
+				maxNames = m.namesWidth
+			}
+			// Only a type with a value after it widens the type column.
+			if m.typeStartIdx != -1 && m.eqIdx != -1 && m.typeWidth > maxType {
+				maxType = m.typeWidth
+			}
+		}
+		for _, m := range b {
+			if m.typeStartIdx != -1 {
+				f.targetCol2[m.typeStartIdx] = baseCol + maxNames + 1
+			}
+			if m.eqIdx != -1 {
+				col := baseCol + maxNames + 1
+				if maxType > 0 {
+					col += maxType + 1
+				}
+				f.targetCol2[m.eqIdx] = col
+			}
+		}
+	}
+}
+
+// measureSpec measures one ConstSpec or VarSpec into its three columns.
+func (f *formatter) measureSpec(ast []int32, c formatterCtx) specMeasurement {
+	m := specMeasurement{startTokIdx: -1, typeStartIdx: -1, eqIdx: -1}
+	col := 0 // 0 names, 1 type, 2 value
+	first := true
+	var prevPrev, prev Symbol
+	var walk func([]int32)
+	walk = func(a []int32) {
+		for len(a) > 0 {
+			n := a[0]
+			if n < 0 {
+				if Symbol(-n) == Type && col == 0 {
+					col = 1
+				}
+				walk(a[2 : 2+a[1]])
+				a = a[2+a[1]:]
+				continue
+			}
+			tok := f.p.Token(n)
+			curr := Symbol(tok.Ch)
+			if curr == ASSIGN && col < 2 {
+				col, m.eqIdx = 2, n
+			}
+			if m.startTokIdx == -1 {
+				m.startTokIdx = n
+			}
+			if col == 1 && m.typeStartIdx == -1 {
+				m.typeStartIdx = n
+			}
+			if src := tok.SrcBytes(); len(src) > 0 && col < 2 {
+				space := 0
+				if !first && needsSpace(prevPrev, prev, curr, c) {
+					space = 1
+				}
+				switch {
+				case col == 0:
+					m.namesWidth += len(src) + space
+				case m.typeStartIdx == n: // the gap before the type is the column's
+					m.typeWidth += len(src)
+				default:
+					m.typeWidth += len(src) + space
+				}
+			}
+			first = false
+			prevPrev, prev = prev, curr
+			a = a[1:]
+		}
+	}
+	walk(ast)
+	return m
+}
+
 // fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
 type fieldMeasurement struct {
 	startTokIdx  int32
@@ -680,6 +831,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					if _, rp, ok := f.declGroupParens(ast[2:next]); ok {
 						c.indentLevel++
 						c.undentDeclOpen, c.undentDeclClose = firstIndex(ast[:next]), rp
+						f.alignSpecs(ast[2:next], Symbol(-n), c)
 					}
 				case CaseClause, CommClause:
 					c.indentLevel++
@@ -764,12 +916,19 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 								if m.startTokIdx != -1 {
 									startTok := f.p.Token(m.startTokIdx)
 
-									// Safely detect true blank lines to break the block
+									// A blank line ends the block, as it does between
+									// the specs of a grouped declaration. ONE newline
+									// is what to look for, not two: a field ends at an
+									// inserted semicolon, which carries its own line's
+									// newline away, so what reaches the next field is
+									// the blank line alone. Looking for two never
+									// matched, and a struct with a blank line in it was
+									// aligned as though it had none.
 									hasBlankLine := false
 									if !isFirst {
 										seps := f.parseSep(startTok.SepBytes(), nil)
 										for _, sep := range seps {
-											if ws, ok := sep.(whiteSpace); ok && ws >= 2 {
+											if ws, ok := sep.(whiteSpace); ok && ws >= 1 {
 												hasBlankLine = true
 												break
 											}
