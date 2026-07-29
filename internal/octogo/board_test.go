@@ -100,7 +100,13 @@ func TestOnBoardMultiPkg(t *testing.T) {
 
 // smithSeeds is how many fuzzer-generated programs the target tests take. Each is
 // a full flexcc build (and, on a board, a load), so this is a sample of the corpus
-// TestOracle runs on the host, not the whole of it.
+// TestOracle runs on the host, not the whole of it. A board seed costs about 1.3 s,
+// which is what bounds this: the rest of the on-board suite takes about 3.5 min and
+// this should stay a small part of that.
+//
+// Swept to 160 seeds on a P2-EDGE after the two optimizer passes behind the backend
+// defects were turned off (see internal/build): 320 subtests, no failure and no
+// skip. Widen it again to hunt -- that sweep is how both defects were found.
 //
 // Widening it to hunt for new bugs eventually runs into a target limit rather than
 // a compiler one: a generated program is one very long main, and past some size it
@@ -108,7 +114,7 @@ func TestOnBoardMultiPkg(t *testing.T) {
 // not failed -- see outgrewCog. Generated programs sit close enough to that ceiling
 // that adding to the generator pushes some seed over it, so this must not be a
 // failure or the fuzzer's coverage becomes hostage to program size.
-const smithSeeds = 12
+const smithSeeds = 24
 
 // outgrewCog reports whether a build failed because the program does not fit the
 // cog's code window -- "fit 480 failed: pc is 493" from the assembler.
