@@ -25,6 +25,30 @@ Releases before v0.9.0 predate this file; see
 
 ### Bug fixes
 
+- **`for ; cond; post` was broken twice over.** A three-clause loop with an empty
+  init clause was read as a conditionless one — a loop that never ends — so
+  everything after it was reported as unreachable code; and once that no longer
+  stopped the build, the emitter dropped the post clause and the loop ran forever.
+  Such a header carries both semicolons and the post as its own children rather
+  than in the tail node, which neither walk read.
+- **A function value in a struct field could not be called through an index.**
+  `table[i].run(arg)` — a dispatch table, which is what a command loop is built
+  from — was refused with "unsupported call in expression". The chain walk took any
+  selector-then-call for a method and gave up when the type had no method of that
+  name, instead of falling through to the field, which the unindexed `x.run(arg)`
+  had always done.
+- **The Builder's method set was not checked, and `var b Builder` did not work.**
+  A misspelled method (`b.WriteInt(5)`) reached the C compiler as a call to a
+  function nothing declares, while a Builder held in a variable of written type had
+  *every* method rejected — the compiler knows this one type's methods rather than
+  reading them from a declaration, and neither path knew that. A zero Builder also
+  emitted `= 0`, which is not C's zero for a struct, and named a type whose
+  definition was only pulled in by a `NewBuilder` call.
+- **A partly-hoisted argument list left a stray temporary.** When a call's
+  arguments are evaluated into temporaries to pin Go's left-to-right order, an
+  argument whose type the emitter cannot infer abandons the attempt — and the
+  temporaries already emitted stayed, at best as a variable nothing reads and at
+  worst as a second evaluation of an argument that changes something.
 - **A conversion could not appear in a constant expression.** `const one = int32(1)
   << 16` — the ordinary way to write a fixed-point scale — was rejected with "int32
   is not a constant", package-level or local, for every target type. Such a
@@ -69,6 +93,20 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **The target's `printf` truncates `%.*s` at 62 characters**, so `print` of any
+  longer string silently lost its tail — on the board only, the host being exact.
+  A string is not null-terminated, so `%s` is not an option either; the bytes go
+  out one at a time now, which is right at any length and costs nothing next to a
+  serial line. Found by a console command loop whose output is 102 characters.
+- **A field read off a struct-returning call needed a temporary and only got one
+  after a reslice.** `len(b.String())` printed −251214335 on the board and 102 on
+  the host: the backend reads a field at a nonzero offset off a return value as
+  garbage, and the workaround was keyed on one specific helper rather than on
+  there being a call at all.
+- **A console command loop is a run case** — a dispatch table of name/handler
+  pairs, a tokenizer over a fixed line buffer, an integer parser, and replies
+  formatted into a caller-owned Builder. It is what found six of the entries
+  above.
 - **A fixed-point PID controller is a run case** — Q16.16 throughout, with a scaled
   multiply through a 64-bit intermediate, saturation on both rails, integral
   anti-windup and a derivative over a signed difference. It is what found the

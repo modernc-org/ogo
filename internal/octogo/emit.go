@@ -279,10 +279,13 @@ const builderHelpers = "static ogo_builder ogo_builder_new(ogo_slice_uint8_t bac
 	"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
 	"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
 
-// stringHelpers print a string header's exact bytes (a slice need not be
-// null-terminated, so %.*s, not %s).
-const stringHelpers = "static inline void ogo_print_str(ogo_string s) { printf(\"%.*s\", s.len, s.str); }\n" +
-	"static inline void ogo_println_str(ogo_string s) { printf(\"%.*s\\n\", s.len, s.str); }\n"
+// stringHelpers print a string header's exact bytes. A string is not
+// null-terminated, so %s is wrong; and the target's printf TRUNCATES "%.*s" at 62
+// characters -- silently, so a 63-character line printed 62 of it and nothing said
+// so. The bytes go out one at a time instead, which is exact at any length and
+// costs nothing next to a serial line.
+const stringHelpers = "static inline void ogo_print_str(ogo_string s) { for (int _i = 0; _i < s.len; _i++) { putchar(s.str[_i]); } }\n" +
+	"static inline void ogo_println_str(ogo_string s) { ogo_print_str(s); putchar('\\n'); }\n"
 
 // stringEqHelper compares two ogo_string values by content, as Go's == does. The
 // byte loop avoids a memcmp (and its <string.h>); a string here is never long
@@ -1117,7 +1120,11 @@ const pkgInitCName = "ogo_pkg_init"
 // zeroInitC is the C initializer for a zero value of ctype: a brace for anything
 // aggregate, 0 otherwise.
 func (e *emitter) zeroInitC(ctype string) string {
-	if e.isStruct(ctype) || ctype == cString || e.isSliceCType(ctype) {
+	// The Builder is an aggregate the emitter builds rather than reads from a
+	// declaration, so it is in no struct table; `var b Builder` is a zero Builder,
+	// which writes nowhere until it is given a backing, and needs braces like any
+	// other struct.
+	if e.isStruct(ctype) || ctype == cString || e.isSliceCType(ctype) || ctype == "ogo_builder" {
 		return "{0}"
 	}
 	return "0"
@@ -5649,6 +5656,13 @@ func (e *emitter) cType(ast []int32) string {
 		if ct == cString {
 			e.usesString = true
 		}
+		if name == "Builder" {
+			// Naming the type is enough to need its typedef and helpers: they used to
+			// be pulled in only by a NewBuilder call, so `var b Builder` -- a zero
+			// Builder, writing nowhere until it is given a backing -- emitted a
+			// variable of a type nothing declared.
+			e.needBuilder()
+		}
 		return ct
 	}
 	// A user type resolves to its mangled C name, matching how collectTypeDecl
@@ -7370,6 +7384,24 @@ func (e *emitter) parseForHeader(n Node) (h forHeader, ok bool) {
 		}
 		return h, true
 	}
+	// A header opening with ";" is the three-clause form with an EMPTY init,
+	// `for ; cond ; post`. It carries both semicolons and the post clause as its own
+	// children rather than in a ForRest, which the walk below does not read: the
+	// post was dropped, so the loop never advanced and ran forever.
+	if len(kids) >= 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == SEMICOLON {
+		h.hasClause = true
+		for _, c := range kids {
+			switch c.sym {
+			case Expression:
+				h.cond = c.ast // there is no init to mistake it for
+			case ForPost:
+				if !e.parseForPost(c, &h) {
+					return h, false
+				}
+			}
+		}
+		return h, true
+	}
 	for _, c := range kids {
 		switch c.sym {
 		case Expression:
@@ -8921,14 +8953,23 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		case Selector:
 			field := e.soleIdent(n.ast)
 			bt := methodBaseType(cur.ctype)
-			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
-				cname := methodCName(bt, field)
-				rts, okm := e.funcRet[cname]
+			cname := methodCName(bt, field)
+			rts, okm := e.funcRet[cname]
+			// A name the type has no method for is not a dispatch: it is a FIELD,
+			// and a field holding a function value is called through rather than
+			// dispatched to -- `table[i].run(arg)`, the dispatch table every command
+			// loop is built from. Falling through leaves the field read to
+			// accessSelect below, after which the CallSuffix is handled as a call on
+			// a function value, the case that already exists for `table[i](arg)`.
+			// The two-step shape `x.run(arg)` makes the same distinction the same
+			// way round; this chain used to take any Selector-then-CallSuffix for a
+			// method and fail when the lookup came up empty.
+			if okm && i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
 				// A void method (no result) is valid as the final step of a call
 				// statement -- `xs[i].update()` mutating an element in place -- so 0
 				// results is admitted; a further step then fails on the empty type. A
 				// multi-result method is not a single value and cannot continue a chain.
-				if !okm || len(rts) > 1 {
+				if len(rts) > 1 {
 					return "", "", false, false
 				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
@@ -9192,11 +9233,30 @@ func (e *emitter) emitHeaderField(arg []int32, ctype, field string) {
 	text := e.captureC(func() { e.emitExpr(arg) })
 	call := e.resliceCalled
 	e.resliceCalled = saved
-	if !call {
+	// Any call, not only a reslice helper: the target's C compiler reads a field at
+	// a nonzero offset off a struct RETURN VALUE as garbage, the temporary never
+	// having been materialised. The reslice helper was simply the first shape that
+	// reached here; `len(b.String())` is another, and it printed -251214335 on the
+	// board while the host was right.
+	if !call && !e.exprHasCall(arg) {
 		e.emit("(" + text + ")." + field)
 		return
 	}
 	e.emit(e.hoist(ctype, func() { e.emit(text) }) + "." + field)
+}
+
+// exprHasCall reports whether an expression contains a call anywhere. A field read
+// off one has to go through a temporary; see emitHeaderField.
+func (e *emitter) exprHasCall(ast []int32) bool {
+	for n := range it(ast) {
+		if n.sym == CallSuffix {
+			return true
+		}
+		if n.sym != 0 && e.exprHasCall(n.ast) {
+			return true
+		}
+	}
+	return false
 }
 
 // appendParts validates an append call suffix -- a slice followed by one or more
@@ -9679,7 +9739,10 @@ func sliceElemPrintf(el string) string {
 	case cBool:
 		return `printf("%s", s.ptr[_i] ? "true" : "false");`
 	case cString:
-		return `printf("%.*s", s.ptr[_i].len, s.ptr[_i].str);`
+		// Written out rather than calling ogo_print_str: the slice printers are
+		// emitted ahead of the string helpers. Not "%.*s" -- the target's printf
+		// truncates that at 62 characters.
+		return `for (int _j = 0; _j < s.ptr[_i].len; _j++) { putchar(s.ptr[_i].str[_j]); }`
 	}
 	return fmt.Sprintf(`printf("%s", s.ptr[_i]);`, scalarPrintVerb(el))
 }
@@ -12293,6 +12356,15 @@ func (e *emitter) emitArrayCompareTriple(l, r Node, op string, a arrDim) {
 func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
 	sliceParams := e.funcSliceParams[cname]
 	names := make([]string, 0, len(args))
+	// Every hoist appends a declaration to the statement's prologue, so giving up
+	// part way has to take those back: the caller then emits the arguments in
+	// place, and a temporary left standing is at best a variable nothing reads and
+	// at worst a second evaluation of an argument that changes something.
+	mark := len(e.prologue)
+	fail := func() ([]string, bool) {
+		e.prologue = e.prologue[:mark]
+		return nil, false
+	}
 	for i, a := range args {
 		// A bare nil at a slice parameter has no type of its own; it takes the
 		// parameter's, exactly as it does when emitted in place.
@@ -12303,7 +12375,7 @@ func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
 		}
 		ct, ok := e.inferCType(a.ast)
 		if !ok {
-			return nil, false
+			return fail()
 		}
 		names = append(names, e.hoist(ct, func() { e.emitExpr(a.ast) }))
 	}

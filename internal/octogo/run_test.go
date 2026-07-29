@@ -900,6 +900,271 @@ func main() {
 		want: "total 100\nseen 30\nbases 4\n",
 	},
 	{
+		// A console command loop: a dispatch table of name/handler pairs, a
+		// tokenizer over a fixed line buffer, an integer parser, and replies
+		// formatted into a caller-owned Builder. The shape of every serial-port
+		// monitor on this part, and it found four separate bugs -- the for header
+		// and the function-field call below, the Builder's unchecked method set,
+		// and a target printf that truncated at 62 characters.
+		//
+		// Its output is 102 characters, which is what makes the last of those show:
+		// print of anything longer used to lose the tail, on the board only and
+		// without a word.
+		name: "console command loop",
+		src: `// A console command loop: a dispatch table of name/handler pairs, a tokenizer
+// over a fixed line buffer, an integer parser, and replies formatted into a
+// caller-owned buffer. The shape of every serial-port monitor on this part.
+
+type command struct {
+	name string
+	help string
+	run  func(int) int
+}
+
+var reg [4]int32
+
+func cmdSet(v int) int {
+	reg[0] = int32(v)
+	return v
+}
+
+func cmdAdd(v int) int {
+	reg[0] += int32(v)
+	return int(reg[0])
+}
+
+func cmdShift(v int) int {
+	reg[0] <<= uint(v)
+	return int(reg[0])
+}
+
+func cmdGet(v int) int { return int(reg[0]) }
+
+// split finds the first space, returning the verb and the rest. A line with no
+// space is all verb.
+func split(line string) (string, string) {
+	for i := 0; i < len(line); i++ {
+		if line[i] == ' ' {
+			return line[0:i], line[i+1:]
+		}
+	}
+	return line, ""
+}
+
+// parseInt reads a decimal integer, optionally signed, reporting whether the
+// whole argument was consumed.
+func parseInt(s string) (int, bool) {
+	if len(s) == 0 {
+		return 0, false
+	}
+	i := 0
+	neg := false
+	if s[0] == '-' {
+		neg = true
+		i = 1
+	}
+	if i == len(s) {
+		return 0, false
+	}
+	n := 0
+	for ; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	if neg {
+		n = -n
+	}
+	return n, true
+}
+
+// writeInt formats a decimal into the builder, digits high to low out of a
+// fixed scratch array -- there is no allocation to grow one.
+func writeInt(out *Builder, v int) {
+	if v < 0 {
+		out.WriteByte('-')
+		v = -v
+	}
+	var digits [12]byte
+	n := 0
+	for {
+		digits[n] = byte('0' + v%10)
+		n++
+		v /= 10
+		if v == 0 {
+			break
+		}
+	}
+	for ; n > 0; n-- {
+		out.WriteByte(digits[n-1])
+	}
+}
+
+func dispatch(table []command, line string, out *Builder) {
+	verb, rest := split(line)
+	if verb == "" {
+		return
+	}
+	if verb == "help" {
+		for i := 0; i < len(table); i++ {
+			out.WriteString(table[i].name)
+			out.WriteString(":")
+			out.WriteString(table[i].help)
+			out.WriteString(" ")
+		}
+		out.WriteString("\n")
+		return
+	}
+	for i := 0; i < len(table); i++ {
+		if table[i].name != verb {
+			continue
+		}
+		arg := 0
+		if rest != "" {
+			v, ok := parseInt(rest)
+			if !ok {
+				out.WriteString("bad number: ")
+				out.WriteString(rest)
+				out.WriteString("\n")
+				return
+			}
+			arg = v
+		}
+		out.WriteString(verb)
+		out.WriteString(" -> ")
+		writeInt(out, table[i].run(arg))
+		out.WriteString("\n")
+		return
+	}
+	out.WriteString("unknown: ")
+	out.WriteString(verb)
+	out.WriteString("\n")
+}
+
+func main() {
+	var table [4]command
+	table[0].name = "set"
+	table[0].help = "v"
+	table[0].run = cmdSet
+	table[1].name = "add"
+	table[1].help = "v"
+	table[1].run = cmdAdd
+	table[2].name = "shl"
+	table[2].help = "n"
+	table[2].run = cmdShift
+	table[3].name = "get"
+	table[3].help = ""
+	table[3].run = cmdGet
+
+	var back [256]byte
+	out := NewBuilder(back[:])
+
+	var script [8]string
+	script[0] = "set 7"
+	script[1] = "add 5"
+	script[2] = "shl 2"
+	script[3] = "get"
+	script[4] = "add -50"
+	script[5] = "nope 1"
+	script[6] = "add x9"
+	script[7] = "help"
+
+	for i := 0; i < len(script); i++ {
+		dispatch(table[:], script[i], &out)
+	}
+	print(out.String())
+	println("len", len(out.String()))
+}
+`,
+		want: "set -> 7\nadd -> 12\nshl -> 48\nget -> 48\nadd -> -2\nunknown: nope\n" +
+			"bad number: x9\nset:v add:v shl:n get: \nlen 102\n",
+	},
+	{
+		// A three-clause "for" with an EMPTY init clause, `for ; i < n; i++`, which
+		// was broken twice over: the checker took it for a conditionless loop -- one
+		// that never ends -- and reported everything after it as unreachable, and
+		// the emitter dropped the post clause, so once it compiled it looped
+		// forever. Such a header carries both semicolons and the post as its own
+		// children rather than in a ForRest, which neither walk read.
+		name: "for with an empty init clause",
+		src: `func main() {
+	i := 0
+	for ; i < 3; i++ {
+	}
+	println(i)
+
+	j := 0
+	for ; j < 10; j = j + 3 {
+	}
+	println(j)
+
+	k := 5
+	for ; k > 0; k-- {
+	}
+	println(k)
+
+	sum := 0
+	n := 0
+	for ; n < 6; n++ {
+		if n%2 == 0 {
+			continue
+		}
+		if n == 5 {
+			break
+		}
+		sum += n
+	}
+	println(sum, n)
+
+	total := 0
+	a := 0
+	for ; a < 3; a++ {
+		for b := 0; b < 2; b++ {
+			total += a * b
+		}
+	}
+	println(total, a)
+}
+`,
+		want: "3\n12\n0\n4 5\n3 3\n",
+	},
+	{
+		// A function value held in a struct field, called through an INDEXED
+		// element: `table[i].run(arg)`, which is what a dispatch table is. The chain
+		// walk took any selector-then-call for a method and gave up when the type
+		// had no method of that name, instead of falling through to the field --
+		// which the two-step shape `x.run(arg)` had always done.
+		name: "calling a function field through an index",
+		src: `type command struct {
+	name string
+	run  func(int) int
+}
+
+func dbl(v int) int { return v * 2 }
+
+func neg(v int) int { return -v }
+
+func main() {
+	var table [2]command
+	table[0].name = "dbl"
+	table[0].run = dbl
+	table[1].name = "neg"
+	table[1].run = neg
+
+	total := 0
+	s := table[:]
+	for i := 0; i < len(s); i++ {
+		total += s[i].run(5)
+	}
+	println(total)
+	println(table[0].run(3), table[1].run(3))
+}
+`,
+		want: "5\n6 -3\n",
+	},
+	{
 		// A fixed-point PID controller driving a first-order plant, Q16.16
 		// throughout: a scaled multiply through a 64-bit intermediate, a signed
 		// shift back down, saturation on both rails, integral anti-windup, and a

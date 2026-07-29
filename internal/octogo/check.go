@@ -1205,8 +1205,16 @@ func (f *File) parseForInfo(hdr Node) forInfo {
 		case c.sym == Expression && seenSemi:
 			fi.cond, fi.hasCond = c, true // the `for ; cond ; post` condition
 		case c.sym == 0 && f.ch(c.tok) == SEMICOLON:
+			// Only the FIRST semicolon reclassifies: it says the leading expression,
+			// if there was one, was an init rather than a condition. A header with an
+			// EMPTY init carries both semicolons as its own children, and the second
+			// one used to clear the condition it had just read -- so `for ; i < n;
+			// i++` was taken for a conditionless loop, i.e. one that never ends, and
+			// everything after it was reported unreachable.
+			if !seenSemi {
+				fi.hasCond = false
+			}
 			seenSemi = true
-			fi.hasCond = false // the leading expr, if any, was not a condition
 		case c.sym == ForPost:
 			fi.postNode, fi.hasPost = c, true
 		case c.sym == ForRest:
@@ -3435,6 +3443,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 						vd.typeName, vd.typeQual = nm, ql
 					}
 				}
+			} else if f.isNewBuilderCall(s, rhs[i]) {
+				// `sb := NewBuilder(back[:])`: sb holds a Builder, whose method set
+				// the compiler knows. The callee is predeclared, so exprNamedType --
+				// which reads a result type off a FuncDeclaration -- cannot answer,
+				// and without this the variable carried no type and every method call
+				// on it went unchecked to the C compiler.
+				vd.builderVar = true
 			} else if ek, ok := f.exprLitElemKind(s, rhs[i]); ok {
 				// `xs := []int{1, 2}` / `a := [2]int{1, 2}`: xs carries int, so
 				// writing into an element is checked as an explicitly typed
@@ -3471,6 +3486,17 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if newCount == 0 {
 		f.errNoNewVars(f.tok(head.Pos()))
 	}
+}
+
+// isNewBuilderCall reports whether an initializer is a call of the predeclared
+// NewBuilder, which yields a Builder.
+func (f *File) isNewBuilderCall(s *Scope, n Node) bool {
+	callee, ok := f.exprCallee(n)
+	if !ok || callee.Src() != "NewBuilder" {
+		return false
+	}
+	_, ok = s.find(callee.Src()).(*PredeclaredFunc)
+	return ok
 }
 
 // exprFuncSig returns the function type an expression has, when it has one: a bare
@@ -4632,6 +4658,19 @@ func (f *File) methodCallMember(n Node) (member Token, ok bool) {
 	return member, selectors == 1 && hasCall && !disqualify
 }
 
+// builderMethods is the method set of the predeclared Builder, mirroring the
+// helpers registerBuilder wires up in the emitter. Keep the two in step: a name
+// here with no helper there emits a call to a function that does not exist.
+var builderMethods = map[string]bool{
+	"Write":       true,
+	"WriteByte":   true,
+	"WriteRune":   true,
+	"WriteString": true,
+	"String":      true,
+	"Len":         true,
+	"Reset":       true,
+}
+
 // checkMethodCall checks a call "head.member(...)" when head is a variable of a
 // named type. It reports a member that is no method of the type (and, for a
 // struct, no field either -- a field of function type is not modelled, so it is
@@ -4639,7 +4678,22 @@ func (f *File) methodCallMember(n Node) (member Token, ok bool) {
 // the method's signature.
 func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
-	if !ok || !d.typeName.IsValid() {
+	if !ok {
+		return
+	}
+	// The predeclared Builder, whose method set the compiler knows rather than
+	// reads from a declaration: it resolves to no TypeDeclaration, so the branches
+	// below cannot answer for it. Until this ran, a Builder held in a variable of
+	// written type had EVERY method rejected, and one inferred from NewBuilder had
+	// none checked at all -- a misspelling reached the C compiler as a call to a
+	// function nothing declares.
+	if d.builderVar || d.typeName.Src() == "Builder" {
+		if !builderMethods[member.Src()] {
+			f.err(member.Position(), "type Builder has no method %s", member.Src())
+		}
+		return
+	}
+	if !d.typeName.IsValid() {
 		return
 	}
 	if d.typeQual.IsValid() {

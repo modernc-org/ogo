@@ -332,6 +332,12 @@ type VarDeclaration struct {
 	funcSig *SignatureNode
 	isFunc  bool
 
+	// builderVar says the variable holds the predeclared Builder, inferred from a
+	// NewBuilder call rather than from a written type. The Builder is the one type
+	// whose methods the compiler knows instead of reading them from a declaration,
+	// so a receiver of it resolves to no TypeDeclaration and has to be recognised.
+	builderVar bool
+
 	isChan          bool // the variable's type is a channel "chan T"
 	chanElemKind    Kind // the predeclared element type of a channel variable, for send/receive type checks
 	hasChanElemKind bool // chanElemKind is meaningful
