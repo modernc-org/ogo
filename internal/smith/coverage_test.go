@@ -43,6 +43,15 @@ var generatedConstructs = []struct {
 	// The one that matters: a value folded into the checksum WITHOUT being stored
 	// back first. A store truncates to the type, so a stored result cannot tell a
 	// compiler that computed in the wrong width from one that did not.
+	{"string variable", `\n\s*var t_\d+ string = `},
+	{"string len", `len\(t_\d+\)`},
+	{"string byte index", `int\(t_\d+\[\d+\]\)`},
+	{"string slice", `len\(t_\d+\[\d+:\d+\]\)`},
+	{"string comparison", `t_\d+ == "`},
+	{"string range, index and rune", `range t_\d+ \{`},
+	// strconv.Quote leaves a printable rune as itself, so a multibyte literal is
+	// spotted by its bytes rather than by an escape.
+	{"multibyte string literal", `var t_\d+ string = "[^"]*[^\x00-\x7f]`},
 	{"sized fold of an unstored expression", `int\((\(z_\d+ |-\(z_\d+|\^\(z_\d+)`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},

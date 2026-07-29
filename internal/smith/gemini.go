@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 )
 
 // newVarName returns a unique variable name (see Fuzzer.VarSeq for why a counter
@@ -293,6 +294,8 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genBoolVarDecl(vm, mem) // 3% chance for a bool variable
 	case r < 0.32:
 		return f.genSizedStmt(vm, mem) // 4% chance for sized-integer arithmetic
+	case r < 0.34:
+		return f.genStringStmt(vm, mem) // 2% chance for string reads
 	case r < 0.37:
 		return f.genVarDecl(vm, mem) // 12% chance for var
 	case r < 0.44:
@@ -521,6 +524,111 @@ func (f *Fuzzer) genSwitchStmt(vm Machine, mem Memory) Node {
 			SwitchClause{})
 	}
 	return n
+}
+
+// stringCorpus is what a generated string variable is drawn from. The multibyte
+// entries are the point of having a corpus at all rather than random ASCII: they
+// put the UTF-8 decode behind `range` and the byte-vs-rune distinction behind
+// indexing under the oracle, where an off-by-one in either shows as a wrong
+// checksum rather than as mojibake nobody is reading.
+var stringCorpus = []string{
+	"",
+	"a",
+	"hello",
+	"0123456789",
+	"the quick brown fox",
+	"caf\u00e9",                   // 2-byte
+	"\u00e4\u00f6\u00fc\u00df",    // 2-byte throughout
+	"na\u00efve r\u00e9sum\u00e9", // mixed
+	"\u4e16\u754c",                // 3-byte
+	"\U0001f680go",                // 4-byte, then ASCII
+	"a\u00e9\u4e16\U0001f680z",    // one of each width
+}
+
+// genStringStmt generates a block that declares a string and folds what can be
+// read out of it into the checksum: its length, a byte at an index, the length of
+// a slice of it, a comparison, and a range over it.
+//
+// A string is immutable and has no arithmetic, so every one of those is exactly
+// predictable -- the VM computes them with Go's own string operations over the
+// same literal, which is the same definition OctoGo's are meant to have. `range`
+// in particular yields a BYTE offset and a rune, and the VM gets that from ranging
+// over the Go string, so a decoder that disagreed would show up immediately.
+func (f *Fuzzer) genStringStmt(vm Machine, mem Memory) Node {
+	lit := stringCorpus[f.Rand.Intn(len(stringCorpus))]
+	name := f.newVarName("t")
+	stmts := []Node{&VarDeclNode{
+		Name: name,
+		Type: "string",
+		Expr: &StringLitNode{Value: lit},
+	}}
+	fold := func(n Node, v Int32) {
+		newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, newChecksum)
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: n},
+		})
+	}
+
+	// len is defined for the empty string, so it always goes in.
+	fold(&BuiltinCallNode{Fn: "len", Arg: name}, Int32(len(lit)))
+
+	if len(lit) != 0 {
+		if f.Rand.Float32() < 0.5 { // a byte at an index: s[i] is a byte, not a rune
+			i := f.Rand.Intn(len(lit))
+			fold(&ConvNode{Type: "int", X: &IndexNode{Name: name, Index: i}}, Int32(lit[i]))
+		}
+		if f.Rand.Float32() < 0.5 { // the length of a byte slice of it
+			a := f.Rand.Intn(len(lit) + 1)
+			b := a + f.Rand.Intn(len(lit)+1-a)
+			fold(&BuiltinCallNode{Fn: "len", Arg: fmt.Sprintf("%s[%d:%d]", name, a, b)}, Int32(b-a))
+		}
+	}
+
+	// A comparison, against the same literal as often as against another: both
+	// outcomes are worth emitting, and a wrong answer either way is a wrong
+	// checksum.
+	other := stringCorpus[f.Rand.Intn(len(stringCorpus))]
+	if f.Rand.Float32() < 0.5 {
+		other = lit
+	}
+	eq := Int32(0)
+	if lit == other {
+		eq = Int32(f.Rand.Int31())
+	}
+	k := eq
+	if k == 0 {
+		k = Int32(f.Rand.Int31())
+	}
+	if lit == other {
+		newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), k)
+		mem.Store(f.ChecksumName, newChecksum)
+	}
+	stmts = append(stmts, &IfStmtNode{
+		Cond: &BinaryExprNode{Left: &IdentNode{Name: name}, Op: "==", Right: &StringLitNode{Value: other}},
+		Body: &BlockNode{Statements: []Node{&AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: &IntLitNode{Value: k.Literal()}},
+		}}},
+	})
+
+	// A range over it, whose index is a byte offset and whose value is a rune.
+	if len(lit) != 0 && f.Rand.Float32() < 0.3 {
+		acc := Int32(0)
+		for i, r := range lit {
+			acc = Int32(int32(acc) ^ int32(i) ^ int32(r))
+		}
+		newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), acc)
+		mem.Store(f.ChecksumName, newChecksum)
+		iv, rv := f.newVarName("i"), f.newVarName("r")
+		stmts = append(stmts, &RangeFoldNode{
+			Index: iv, Value: rv, Over: name, Checksum: f.ChecksumName,
+		})
+	}
+	return &BlockNode{Statements: stmts}
 }
 
 // genSizedStmt generates a block that declares a variable of a sized integer type,
@@ -1109,6 +1217,30 @@ func (n *SwitchStmtNode) Write(w io.Writer, indent int) {
 			fmt.Fprint(w, "\n")
 		}
 	}
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}")
+}
+
+// StringLitNode is a string literal, quoted the way Go quotes one -- which is what
+// the scanner reads.
+type StringLitNode struct{ Value string }
+
+func (n *StringLitNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprint(w, strconv.Quote(n.Value))
+}
+
+// RangeFoldNode is `for i, r := range s { checksum = checksum ^ i ^ int(r) }`: the
+// one shape that reads a string as runes rather than as bytes.
+type RangeFoldNode struct {
+	Index, Value, Over, Checksum string
+}
+
+func (n *RangeFoldNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "for %s, %s := range %s {\n", n.Index, n.Value, n.Over)
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "%s = ((%s ^ %s) ^ int(%s))\n", n.Checksum, n.Checksum, n.Index, n.Value)
 	writeIndent(w, indent)
 	fmt.Fprint(w, "}")
 }

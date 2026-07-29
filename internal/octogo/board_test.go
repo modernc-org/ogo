@@ -103,11 +103,24 @@ func TestOnBoardMultiPkg(t *testing.T) {
 // TestOracle runs on the host, not the whole of it.
 //
 // Widening it to hunt for new bugs eventually runs into a target limit rather than
-// a compiler one: seed 44 does not build, the backend refusing it with "fit 480
-// failed: pc is 488". The generated program is one very long main, and past some
-// size a function no longer fits the cog's code window. That is a real constraint
-// on the hardware, not a miscompile.
+// a compiler one: a generated program is one very long main, and past some size it
+// no longer fits the cog's code window ("fit 480 failed"). Such a seed is SKIPPED,
+// not failed -- see outgrewCog. Generated programs sit close enough to that ceiling
+// that adding to the generator pushes some seed over it, so this must not be a
+// failure or the fuzzer's coverage becomes hostage to program size.
 const smithSeeds = 12
+
+// outgrewCog reports whether a build failed because the program does not fit the
+// cog's code window -- "fit 480 failed: pc is 493" from the assembler.
+//
+// That is a property of the target, not a defect: a generated program is one very
+// long main, and past some size it no longer fits. It bounds how much the
+// generator may add rather than saying anything is wrong, so a seed that hits it
+// is skipped and reported as skipped. A hand-written case must never hit it, which
+// is why this is not in boardBuild.
+func outgrewCog(err error) bool {
+	return strings.Contains(err.Error(), "fit 480 failed")
+}
 
 // smithProgram generates one fuzzer program by running the `ogo smith` subcommand.
 //
@@ -141,6 +154,9 @@ func TestTargetBuildSmith(t *testing.T) {
 			src := smithProgram(t, ogo, seed)
 			dir := t.TempDir()
 			if err := boardBuild(ogo, dir, "prog", src, filepath.Join(dir, "prog.binary"), ""); err != nil {
+				if outgrewCog(err) {
+					t.Skip(err.Error())
+				}
 				t.Errorf("%v\n--- program ---\n%s", err, src)
 			}
 		})
@@ -168,6 +184,9 @@ func TestOnBoardSmith(t *testing.T) {
 			dir := t.TempDir()
 			bin := filepath.Join(dir, "prog.binary")
 			if err := boardBuild(ogo, dir, "prog", src, bin, ""); err != nil {
+				if outgrewCog(err) {
+					t.Skip(err.Error())
+				}
 				t.Fatalf("build: %v", err)
 			}
 			for attempt := 1; ; attempt++ {

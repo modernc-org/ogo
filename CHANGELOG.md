@@ -30,6 +30,19 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **The fuzzer generates strings.** A string is immutable and has no arithmetic, so
+  everything readable out of one is exactly predictable: its length, a byte at an
+  index, the length of a slice of it, a comparison, and a `range` yielding a byte
+  offset and a rune. The corpus it draws from is deliberately not random ASCII — it
+  carries 2-, 3- and 4-byte characters, so the UTF-8 decode behind `range` and the
+  byte-versus-rune distinction behind indexing are under the oracle, where an
+  off-by-one shows as a wrong checksum rather than as mojibake nobody is reading.
+- **A generated program that outgrows the cog's code window is skipped, not
+  failed.** One very long `main` eventually will not fit ("fit 480 failed"), which
+  is a property of the target rather than a defect — and generated programs sit
+  close enough to that ceiling that anything added to the generator pushes some
+  seed over it. Failing there would make the fuzzer's coverage hostage to program
+  size. A hand-written case must still never hit it.
 - **The fuzzer generates the sized integer types.** `int8`, `uint8`, `int16`,
   `uint16` and `uint32` are declared, put through every operator that can carry a
   value out of the type, and folded into the checksum — starting from the type's
