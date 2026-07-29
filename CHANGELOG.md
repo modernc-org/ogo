@@ -25,6 +25,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Bug fixes
 
+- **A string constant could not be indexed or sliced.** `digits[9]` and `lit[1:3]`
+  emitted C naming something no declaration had ever produced: a string constant is
+  folded to its literal at every use — a Go constant has no address, so there is
+  nothing to point at — while both paths read `.str` and `.len` off the name as
+  though a variable stood there. A constant string is the natural place to keep a
+  digit table or a prompt, and `len()` and `range` over one always worked, which is
+  why nothing had noticed.
 - **`for ; cond; post` was broken twice over.** A three-clause loop with an empty
   init clause was read as a conditionless one — a loop that never ends — so
   everything after it was reported as unreachable code; and once that no longer

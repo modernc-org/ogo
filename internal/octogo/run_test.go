@@ -900,6 +900,56 @@ func main() {
 		want: "total 100\nseen 30\nbases 4\n",
 	},
 	{
+		// Indexing and slicing a string CONSTANT, which emitted C naming something
+		// no declaration had ever produced. A string constant is folded to its
+		// literal at every use -- a Go constant has no address, so there is nothing
+		// to point at -- and both paths read ".str" and ".len" off the name as
+		// though a variable stood there.
+		//
+		// A constant string is the natural place to keep a digit table or a prompt,
+		// so this is ordinary code, and len() and range over one always worked --
+		// which is exactly why it went unnoticed.
+		name: "index and slice a string constant",
+		src: `const lit = "hello"
+const joined = lit + ", world"
+
+const (
+	prompt = "> "
+	digits = "0123456789"
+)
+
+// atoiPrefix reads leading digits of s, using a constant as a lookup table.
+func atoiPrefix(s string) (int, int) {
+	n := 0
+	i := 0
+	for ; i < len(s); i++ {
+		c := s[i]
+		if c < digits[0] || c > digits[9] {
+			break
+		}
+		n = n*10 + int(c-digits[0])
+	}
+	return n, i
+}
+
+func main() {
+	println(lit[0], lit[1], lit[4])
+	println(lit[1:3], lit[2:], lit[:2], lit[:])
+	i := 3
+	println(lit[1:i], lit[i:])
+	println(joined[5:12], len(joined))
+	println(prompt, prompt[0], digits[9:])
+
+	v, k := atoiPrefix("407x")
+	println(v, k)
+
+	const local = "world"
+	println(local[0], local[1:3], len(local))
+}
+`,
+		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
+	},
+	{
 		// A console command loop: a dispatch table of name/handler pairs, a
 		// tokenizer over a fixed line buffer, an integer parser, and replies
 		// formatted into a caller-owned Builder. The shape of every serial-port

@@ -6279,6 +6279,13 @@ type accessCur struct {
 // accessBase resolves the start of a chain: a slice variable, an array variable,
 // or a plain local/global.
 func (e *emitter) accessBase(base string) (accessCur, bool) {
+	// A folded string constant is not a variable: there is nothing named to walk a
+	// chain from, and the chain's steps read ".str"/".len" off the name. Refusing
+	// it here sends `lit[i]` and `lit[i:j]` to the single-step shapes, which stand
+	// the literal in for the variable (stringConstParts).
+	if e.isStringConstName(base) {
+		return accessCur{}, false
+	}
 	if el, ok := e.sliceElem(base); ok {
 		return accessCur{elem: el, slice: true}, true
 	}
@@ -6796,6 +6803,13 @@ type sliceSource struct{ cname, ptr, baseLen, baseCap string }
 // slice.
 func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 	switch {
+	case e.isStringConstName(base):
+		// A string constant has no C variable: every use folds to its literal, so
+		// there is nothing named to take ".str" and ".len" off. The pieces stand in
+		// directly. (See stringConstParts.)
+		ptr, n, _ := e.stringConstParts(base)
+		e.usesString = true
+		return sliceSource{cString, ptr, n, ""}, true
 	case e.isStringVarName(base):
 		e.usesString = true
 		return sliceSource{cString, base + ".str", base + ".len", ""}, true
@@ -7164,6 +7178,27 @@ func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, 
 // isStringVarName reports whether base names a string-typed variable, a named type
 // over string included -- what it is asked for is the representation, and a value of
 // `type Name string` is a string.
+// isStringConstName reports whether a name is a folded string constant.
+func (e *emitter) isStringConstName(base string) bool {
+	_, ok := e.foldedStr(base)
+	return ok
+}
+
+// stringConstParts renders a folded string constant as the two pieces an
+// ogo_string is made of: the C string literal and its length.
+//
+// A string constant is emitted as its literal at every use -- a Go constant has no
+// address, so there is nothing to point at -- which means an index or a slice of
+// one cannot read ".str" and ".len" off a variable, there being no variable. It
+// used to emit them anyway, naming something no C declaration had ever produced.
+func (e *emitter) stringConstParts(base string) (ptr, length string, ok bool) {
+	v, ok := e.foldedStr(base)
+	if !ok {
+		return "", "", false
+	}
+	return strconv.Quote(v), strconv.Itoa(len(v)), true
+}
+
 func (e *emitter) isStringVarName(base string) bool {
 	ct, ok := e.varType(base)
 	return ok && e.underlyingCType(ct) == cString
@@ -11914,6 +11949,12 @@ func (e *emitter) emitExprNode(n Node) {
 				case e.hasSliceVar(base):
 					e.emit(base + ".ptr[")
 					lenExpr = base + ".len"
+				case e.isStringConstName(base):
+					// See stringConstParts: the literal stands where the variable
+					// would, since a string constant never becomes one.
+					ptr, n, _ := e.stringConstParts(base)
+					e.emit(e.byteReadOpen() + ptr + "[")
+					lenExpr, closing = n, "])"
 				case e.isStringVarName(base):
 					e.emit(e.byteReadOpen() + base + ".str[")
 					lenExpr, closing = base+".len", "])"
