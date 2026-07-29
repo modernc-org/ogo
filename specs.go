@@ -39,14 +39,16 @@
 // and initialized before main, which a field cannot have without deciding what a
 // declaration of the struct allocates -- and what a copy of it, a composite literal
 // of it, and an array of it then share.
-// TODO 20260729 Defined types over a struct, a pointer or a function are not
-// modelled: `type Q P` for a struct P gives up field access, literals, conversions
-// and methods ("unsupported expression node FactorSuffix"); `type PP *P` is not
-// recognised as a pointer, so `var q PP = &p` is refused; and `type Fn func(int) int`
-// is not recognised as a function, so a call through a variable of it is "cannot
-// call non-function". A defined type over a scalar, a string, an array, a slice or
-// a channel behaves as what it is defined over, which is what these three are
-// missing from.
+// TODO 20260729 Defined types over a pointer or a function are not modelled:
+// `type PP *P` is not recognised as a pointer, so `var q PP = &p` is refused, and
+// `type Fn func(int) int` is not recognised as a function, so a call through a
+// variable of it is "cannot call non-function". A defined type over a scalar, a
+// string, an array, a slice, a struct or a channel behaves as what it is defined
+// over, which is what these two are missing from.
+// TODO 20260729 A method on the result of a CONVERSION, `C(5).twice()`, is
+// "unsupported call in expression" -- the chain walk does not take a conversion as
+// its base. Independent of what the type is defined over. The workaround is a
+// variable: `c := C(5); c.twice()`.
 // TODO 20260728 A local variable, parameter or struct field whose name is a C
 // KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
 // moved out of C's way; a local one is not, several emission paths writing a local's

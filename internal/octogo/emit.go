@@ -2011,6 +2011,20 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	forEachFile(func() { e.collectConstValues(e.f.AST) })
 	forEachFile(func() { e.collectStructForwards(e.f.AST) })
 	forEachFile(func() { e.collectStructs(e.f.AST) })
+	// A defined type over a struct is that struct: `type Q P` indexes, is written as
+	// a literal, converts and carries methods exactly as P does. Every one of those
+	// asks e.structs for the fields, keyed by C type name, and Q was not in it --
+	// which cost the whole family at once, field access included. Resolving here
+	// rather than at each of those sites is also what makes declaration ORDER
+	// irrelevant: `type Q P` may be written before P.
+	for _, mn := range sortedKeys(e.namedTypes) {
+		if _, ok := e.structs[mn]; ok {
+			continue
+		}
+		if flds, ok := e.structs[e.underlyingCType(mn)]; ok {
+			e.structs[mn] = flds
+		}
+	}
 
 	// Pass 0: record each function's C result types in funcRet (for typing calls
 	// in `x := f()` and destructuring `a, b := f()`), and emit a result-struct
@@ -5788,8 +5802,16 @@ func (e *emitter) convType(recv string) (string, bool) {
 		}
 		return ct, true // int, uint, byte, rune, the fixed-width names
 	}
-	if mn := mangle(e.curPkgPrefix, recv); e.namedTypes[mn] {
+	mn := mangle(e.curPkgPrefix, recv)
+	if e.namedTypes[mn] {
 		return mn, true // `type Celsius int` used as Celsius(x)
+	}
+	// A struct type names a conversion too: `Point(n)` for a Named defined over
+	// Point, which is how a value comes back from the defined type. Only the name
+	// changes -- the representation is the same struct -- so it is the cast C
+	// already writes for the other direction.
+	if _, ok := e.structs[mn]; ok {
+		return mn, true
 	}
 	return "", false
 }

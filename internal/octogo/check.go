@@ -4424,12 +4424,24 @@ func (f *File) litElemType(s *Scope, t litType) bool {
 // structTypeOf resolves a name to the struct type it declares. It reports false
 // for a name that is not a type at all, or names one that is not a struct.
 func (f *File) structTypeOf(s *Scope, name Token) (*TypeNodeStruct, bool) {
-	td, ok := s.find(name.Src()).(*TypeDeclaration)
-	if !ok || td.TypeSpec == nil {
-		return nil, false
+	nm := name.Src()
+	// Through a chain of definitions: `type Q P` for a struct P is that struct, so a
+	// literal of it, and a field of it, are P's.
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		td, ok := s.find(nm).(*TypeDeclaration)
+		if !ok || td.TypeSpec == nil {
+			return nil, false
+		}
+		switch tn := td.TypeSpec.TypeNode.(type) {
+		case *TypeNodeStruct:
+			return tn, true
+		case *TypeNodeIdent:
+			nm = tn.Name.Src()
+		default:
+			return nil, false
+		}
 	}
-	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
-	return st, ok
+	return nil, false
 }
 
 // structFields returns the set of field names of a named struct type; ok is

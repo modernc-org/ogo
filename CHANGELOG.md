@@ -15,6 +15,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A defined type over a struct now behaves as that struct.** `type Named Point`
+  was not modelled at all: field access, literals, conversions and methods failed
+  together, the first of them as "unsupported expression node FactorSuffix". One
+  cause lay behind all four — each asks the emitter's struct table for the fields,
+  keyed by C type name, and a defined type was not in it. Resolving the name once,
+  after every type is collected, fixes the family and makes declaration order
+  irrelevant, so a type may be defined over a struct declared below it. A conversion
+  *back*, `Point(n)`, needed the struct's own name admitted as a conversion type as
+  well.
 - **A slice whose element is a defined type did not compile.** `[]Celsius` for
   `type Celsius int` emitted its header typedef ahead of the typedef declaring
   `Celsius`, so C refused the program with "unknown type name". Slice headers were

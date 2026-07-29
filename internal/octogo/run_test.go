@@ -950,6 +950,108 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A defined type over a STRUCT, `type Named Point`, which was not modelled at
+		// all: field access, literals, conversions and methods failed together, the
+		// first of them as "unsupported expression node FactorSuffix".
+		//
+		// One cause behind all four. Every one of them asks the emitter's struct
+		// table for the fields, keyed by C type name, and a defined type was not in
+		// it. Resolving the name once, after every type is collected, fixes the
+		// family and makes declaration ORDER irrelevant -- "Early" here is defined
+		// over a struct declared below it.
+		//
+		// The conversion back, `Point(n)`, needed the struct's own name admitted as a
+		// conversion type as well; only the name changes, the representation being
+		// the same struct.
+		name: "a defined type over a struct",
+		src: `// Early is defined over a struct declared further down, so the resolution cannot
+// depend on declaration order.
+type Early Point
+
+type Point struct {
+	x int
+	y int
+}
+
+type Named Point
+
+type Again Named
+
+type Holder struct {
+	p Named
+	n int
+}
+
+func (n Named) sum() int { return n.x + n.y }
+
+func (n *Named) scale(k int) {
+	n.x *= k
+	n.y *= k
+}
+
+func take(n Named) int { return n.x }
+
+func makeOne(v int) Named { return Named{v, v + 1} }
+
+var pkgNamed = Named{3, 4}
+
+func main() {
+	var n Named
+	n.x = 1
+	n.y = 2
+	println("fields", n.x, n.y, n.sum())
+
+	n.scale(3)
+	println("scaled", n.x, n.y)
+
+	lit := Named{5, 6}
+	keyed := Named{y: 9}
+	println("literals", lit.x, lit.y, keyed.x, keyed.y)
+
+	p := Point{7, 8}
+	conv := Named(p)
+	back := Point(conv)
+	println("conv", conv.sum(), back.x)
+
+	var a Again
+	a.x = 10
+	an := Named(a)
+	println("chain", a.x, an.sum())
+
+	var e Early
+	e.x = 11
+	println("early", e.x)
+
+	println("call", take(lit), makeOne(20).sum())
+
+	var h Holder
+	h.p.x = 2
+	h.p.y = 3
+	h.n = 1
+	println("field of struct", h.p.sum(), h.n)
+
+	var arr [2]Named
+	arr[1] = lit
+	println("array", arr[1].x, len(arr))
+
+	var backing [2]Named
+	s := backing[:]
+	s[0] = keyed
+	println("slice", s[0].y, len(s))
+
+	copyOf := n
+	copyOf.x = 99
+	println("copy", n.x, copyOf.x)
+
+	println("equal", lit == Named{5, 6}, lit == keyed)
+	println("pkg", pkgNamed.sum())
+}
+`,
+		want: "fields 1 2 3\nscaled 3 6\nliterals 5 6 0 9\nconv 15 7\nchain 10 10\n" +
+			"early 11\ncall 5 41\nfield of struct 5 1\narray 5 2\nslice 9 2\n" +
+			"copy 3 99\nequal true false\npkg 7\n",
+	},
+	{
 		// A slice whose ELEMENT is a defined type. Its header typedef names that
 		// type, and was emitted ahead of the typedef declaring it -- C refused the
 		// program with "unknown type name 'Celsius'". Slice headers were already
