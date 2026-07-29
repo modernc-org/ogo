@@ -32,6 +32,18 @@ var generatedConstructs = []struct {
 	{"short-circuit &&", ` && `},
 	{"short-circuit ||", ` \|\| `},
 	{"bool as a condition", `\n\s*if b_\d+ \{`},
+	{"sized int8/uint8", `\n\s*var z_\d+ u?int8 = `},
+	{"sized int16/uint16", `\n\s*var z_\d+ u?int16 = `},
+	{"sized uint32", `\n\s*var z_\d+ uint32 = `},
+	{"sized unary minus", `= -\(z_\d+\)`},
+	{"sized complement", `= \^\(z_\d+\)`},
+	{"sized shift", `z_\d+ (<<|>>) `},
+	{"sized compound assignment", `z_\d+ (\+|-|\*|/|%|<<|>>|&|\||\^|&\^)= `},
+	{"sized conversion to int", `int\(-?\^?\(?z_\d+`},
+	// The one that matters: a value folded into the checksum WITHOUT being stored
+	// back first. A store truncates to the type, so a stored result cannot tell a
+	// compiler that computed in the wrong width from one that did not.
+	{"sized fold of an unstored expression", `int\((\(z_\d+ |-\(z_\d+|\^\(z_\d+)`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
 	{"slice make", `make\(\[\]int`},

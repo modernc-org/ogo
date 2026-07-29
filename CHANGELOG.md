@@ -11,6 +11,23 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Testing
+
+- **The fuzzer generates the sized integer types.** `int8`, `uint8`, `int16`,
+  `uint16` and `uint32` are declared, put through every operator that can carry a
+  value out of the type, and folded into the checksum — starting from the type's
+  extremes, where the wrapping happens. That is the family v0.13.0 found wrong in
+  every operator at once, and the generator had no way to reach it.
+
+  The fold is over an expression rather than over the variable, `int(z * 7)` rather
+  than `int(z)`, and that distinction is the whole point: storing a result back into
+  a narrow variable truncates it, in C as in Go, so a generator that only ever read
+  the variable would agree with a compiler that had lost the type. Checked by
+  reverting the v0.13.0 fix, at which the oracle fails on its second seed; with the
+  fold written the easy way it passes all 800.
+
 ## v0.13.0
 
 ### Language

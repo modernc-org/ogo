@@ -22,7 +22,58 @@ const (
 	KindBool
 	KindString
 	KindRune
+	// The sized integer types. Go computes in the operands' own type while C
+	// promotes anything narrower than int, so these are where the two languages
+	// part company -- which is why the generator has them at all.
+	KindInt8
+	KindUint8
+	KindInt16
+	KindUint16
+	KindUint32
 )
+
+// sizedKinds are the integer types genSizedStmt exercises, narrowest first.
+var sizedKinds = []BasicKind{KindInt8, KindUint8, KindInt16, KindUint16, KindUint32}
+
+// sizedInfo is a sized integer type's width and signedness.
+func sizedInfo(k BasicKind) (bits int, signed, ok bool) {
+	switch k {
+	case KindInt8:
+		return 8, true, true
+	case KindUint8:
+		return 8, false, true
+	case KindInt16:
+		return 16, true, true
+	case KindUint16:
+		return 16, false, true
+	case KindUint32:
+		return 32, false, true
+	}
+	return 0, false, false
+}
+
+// sizedRange is a sized integer type's inclusive bounds.
+func sizedRange(k BasicKind) (lo, hi int64) {
+	bits, signed, _ := sizedInfo(k)
+	if signed {
+		return -1 << (bits - 1), 1<<(bits-1) - 1
+	}
+	return 0, 1<<bits - 1
+}
+
+// wrapSized reduces v to what the type k holds, which is what Go's arithmetic does
+// and what C does only after the emitter truncates.
+func wrapSized(v int64, k BasicKind) int64 {
+	bits, signed, ok := sizedInfo(k)
+	if !ok {
+		return v
+	}
+	u := uint64(v) & (1<<uint(bits) - 1)
+	if signed && u&(1<<uint(bits-1)) != 0 {
+		return int64(u) - 1<<uint(bits)
+	}
+	return int64(u)
+}
 
 type BasicType struct {
 	Kind BasicKind
@@ -38,12 +89,25 @@ func (b BasicType) String() string {
 		return "string" // String types
 	case KindRune:
 		return "rune"
+	case KindInt8:
+		return "int8"
+	case KindUint8:
+		return "uint8"
+	case KindInt16:
+		return "int16"
+	case KindUint16:
+		return "uint16"
+	case KindUint32:
+		return "uint32"
 	default:
 		return "unknown"
 	}
 }
 
 func (b BasicType) IsNumeric() bool {
+	if _, _, ok := sizedInfo(b.Kind); ok {
+		return true
+	}
 	return b.Kind == KindInt || b.Kind == KindRune
 }
 

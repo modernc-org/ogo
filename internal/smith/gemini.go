@@ -291,6 +291,8 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genSwitchStmt(vm, mem) // 3% chance for a switch
 	case r < 0.28:
 		return f.genBoolVarDecl(vm, mem) // 3% chance for a bool variable
+	case r < 0.32:
+		return f.genSizedStmt(vm, mem) // 4% chance for sized-integer arithmetic
 	case r < 0.37:
 		return f.genVarDecl(vm, mem) // 12% chance for var
 	case r < 0.44:
@@ -519,6 +521,169 @@ func (f *Fuzzer) genSwitchStmt(vm Machine, mem Memory) Node {
 			SwitchClause{})
 	}
 	return n
+}
+
+// genSizedStmt generates a block that declares a variable of a sized integer type,
+// puts it through a few operations, and folds the result into the checksum.
+//
+// It is self-contained rather than woven into genExpression because the point is
+// the TYPE: Go computes in the operands' own type while C promotes anything
+// narrower than int, so `var a uint8 = 200; a * 3` is 88 in Go and was 600 here
+// until v0.13.0. Every operator that can carry a value out of its type is offered,
+// and the starting value is drawn from the type's extremes, where wrapping happens.
+//
+// The fold is through `int(z)`, which is also the conversion a program writes to
+// get such a value into an ordinary integer -- and, being a conversion of a
+// variable rather than a constant, is the shape that truncates rather than the one
+// the checker range-checks.
+func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
+	k := sizedKinds[f.Rand.Intn(len(sizedKinds))]
+	lo, hi := sizedRange(k)
+	name := f.newVarName("z")
+
+	// Start at an extreme as often as anywhere: that is where an operation leaves
+	// the type, which is the whole question being asked.
+	var start int64
+	switch f.Rand.Intn(5) {
+	case 0:
+		start = lo
+	case 1:
+		start = hi
+	case 2:
+		start = hi / 2
+	default:
+		start = lo + f.Rand.Int63n(hi-lo+1)
+	}
+	cur := NewSized(start, k)
+
+	stmts := []Node{&VarDeclNode{
+		Name: name,
+		Type: BasicType{Kind: k}.String(),
+		Expr: &IntLitNode{Value: fmt.Sprint(cur.v)},
+	}}
+
+	bits, _, _ := sizedInfo(k)
+	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
+		node, next, ok := f.genSizedStep(name, cur, bits)
+		if !ok {
+			continue // an operator the emitted C leaves undefined; skip this step
+		}
+		stmts = append(stmts, node)
+		cur = next
+	}
+
+	// The fold is over an expression, not over the variable, whenever one can be
+	// built. That distinction is the whole point: storing a result back into a
+	// narrow variable TRUNCATES it, in C as in Go, so a generator that only ever
+	// reads the variable agrees with a compiler that has lost the type -- which is
+	// exactly the blind spot the hand-written corpus had, and why `a * 3` printing
+	// 600 instead of 88 went unnoticed for so long. Only a value used WITHOUT being
+	// stored can tell the two apart.
+	folded, foldNode := cur.Int32(), Node(&IdentNode{Name: name})
+	if node, v, ok := f.genSizedFold(name, cur, bits); ok {
+		folded, foldNode = v.Int32(), node
+	}
+	newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), folded)
+	mem.Store(f.ChecksumName, newChecksum)
+	stmts = append(stmts, &AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{
+			Left:  &IdentNode{Name: f.ChecksumName},
+			Op:    "^",
+			Right: &ConvNode{Type: "int", X: foldNode},
+		},
+	})
+	return &BlockNode{Statements: stmts}
+}
+
+// genSizedFold builds an expression over the sized variable whose value is never
+// stored back -- `z * 7`, `-z`, `^z`, `z << 3` -- for the checksum to take. See the
+// note at its caller: a stored result is truncated by the store, so only an
+// unstored one can show a compiler computing in the wrong width.
+func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bool) {
+	id := &IdentNode{Name: name}
+	lit := func(v int64) Node { return &IntLitNode{Value: fmt.Sprint(v)} }
+	switch f.Rand.Intn(6) {
+	case 0:
+		return &UnaryExprNode{Op: "-", X: id}, cur.neg(), true
+	case 1:
+		return &UnaryExprNode{Op: "^", X: id}, cur.not(), true
+	case 2: // a shift, whose result leaves the type at the top end
+		n := int64(f.Rand.Intn(bits))
+		r, err := cur.binOp("<<", NewSized(n, cur.k))
+		if err != nil {
+			return nil, cur, false
+		}
+		return &BinaryExprNode{Left: id, Op: "<<", Right: lit(n)}, r.(Sized), true
+	default: // z <op> <literal in range>, the arithmetic that overflows the width
+		lo, hi := sizedRange(cur.k)
+		v := lo + f.Rand.Int63n(hi-lo+1)
+		ops := []string{"+", "-", "*"}
+		op := ops[f.Rand.Intn(len(ops))]
+		r, err := cur.binOp(op, NewSized(v, cur.k))
+		if err != nil {
+			return nil, cur, false
+		}
+		return &BinaryExprNode{Left: id, Op: op, Right: lit(v)}, r.(Sized), true
+	}
+}
+
+// genSizedStep is one operation on a sized variable, `z = z * 7` or `z = ^z`,
+// returning the statement and the value it leaves behind. ok is false when the
+// operands would reach something the emitted C leaves undefined, which the caller
+// skips rather than papering over.
+func (f *Fuzzer) genSizedStep(name string, cur Sized, bits int) (Node, Sized, bool) {
+	assign := func(rhs Node, v Value, err error) (Node, Sized, bool) {
+		if err != nil {
+			return nil, cur, false
+		}
+		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: rhs}, v.(Sized), true
+	}
+	lit := func(v int64) Node { return &IntLitNode{Value: fmt.Sprint(v)} }
+	switch f.Rand.Intn(9) {
+	case 0: // z = -z
+		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &UnaryExprNode{Op: "-", X: &IdentNode{Name: name}}}, cur.neg(), true
+	case 1: // z = ^z
+		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &UnaryExprNode{Op: "^", X: &IdentNode{Name: name}}}, cur.not(), true
+	case 2, 3: // z = z <op> <literal in range>
+		lo, hi := sizedRange(cur.k)
+		v := lo + f.Rand.Int63n(hi-lo+1)
+		ops := []string{"+", "-", "*", "&", "|", "^", "&^"}
+		op := ops[f.Rand.Intn(len(ops))]
+		r, err := cur.binOp(op, NewSized(v, cur.k))
+		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(v)}, r, err)
+	case 4: // z = z / <nonzero literal>, z = z % <nonzero literal>
+		lo, hi := sizedRange(cur.k)
+		v := lo + f.Rand.Int63n(hi-lo+1)
+		if v == 0 {
+			v = 1
+		}
+		op := "/"
+		if f.Rand.Float32() < 0.5 {
+			op = "%"
+		}
+		r, err := cur.binOp(op, NewSized(v, cur.k))
+		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(v)}, r, err)
+	case 5, 6: // z = z << n, z = z >> n
+		n := int64(f.Rand.Intn(bits))
+		op := "<<"
+		if f.Rand.Float32() < 0.5 {
+			op = ">>"
+		}
+		r, err := cur.binOp(op, NewSized(n, cur.k))
+		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(n)}, r, err)
+	default: // a compound assignment, the other spelling of the same operation
+		lo, hi := sizedRange(cur.k)
+		v := lo + f.Rand.Int63n(hi-lo+1)
+		ops := []string{"+=", "-=", "*=", "&=", "|=", "^=", "&^="}
+		op := ops[f.Rand.Intn(len(ops))]
+		r, err := cur.binOp(op[:len(op)-1], NewSized(v, cur.k))
+		if err != nil {
+			return nil, cur, false
+		}
+		return &AssignStmtNode{Lhs: name, Op: op, Rhs: lit(v)}, r.(Sized), true
+	}
 }
 
 // genVarDecl generates: var <name> int = <expr>
@@ -946,6 +1111,19 @@ func (n *SwitchStmtNode) Write(w io.Writer, indent int) {
 	}
 	writeIndent(w, indent)
 	fmt.Fprint(w, "}")
+}
+
+// ConvNode is a conversion, `int(x)`.
+type ConvNode struct {
+	Type string
+	X    Node
+}
+
+func (n *ConvNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s(", n.Type)
+	n.X.Write(w, 0)
+	fmt.Fprint(w, ")")
 }
 
 type BlockNode struct {

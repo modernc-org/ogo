@@ -13,6 +13,7 @@ import (
 var (
 	_ Value = (Int32)(0)
 	_ Value = (Bool)(false)
+	_ Value = (Sized)(Sized{})
 	_ Value = (*ArrayVal)(nil)
 	_ Value = (*SliceVal)(nil)
 	_ Value = (*StructVal)(nil)
@@ -227,6 +228,100 @@ func (n Int32) binOp(op string, rhs Value) (Value, error) {
 		panic(todo("%q %v", op, b))
 	}
 }
+
+// Sized is a value of a sized integer type in the generation-time VM. Its
+// arithmetic wraps at the type's width, which is what Go does and what C does only
+// once the emitter truncates -- the divergence that made every operator on int8,
+// uint8, int16 and uint16 wrong until v0.13.0, and the reason these are generated.
+type Sized struct {
+	v int64
+	k BasicKind
+}
+
+// NewSized builds a value of kind k, wrapped into range.
+func NewSized(v int64, k BasicKind) Sized { return Sized{wrapSized(v, k), k} }
+
+func (n Sized) Literal() string { return fmt.Sprint(n.v) }
+
+func (n Sized) Type() Type { return BasicType{Kind: n.k} }
+
+func (n Sized) Value() any { return n.v }
+
+// Int32 is the value as the checksum sees it: the type's own value converted to
+// int, which is what `int(z)` does in the generated program.
+func (n Sized) Int32() Int32 { return Int32(int32(n.v)) }
+
+func (n Sized) binOp(op string, rhs Value) (Value, error) {
+	r, ok := rhs.(Sized)
+	if !ok || r.k != n.k {
+		return nil, fmt.Errorf("mixed types in %q", op)
+	}
+	a, b := n.v, r.v
+	bits, signed, _ := sizedInfo(n.k)
+	wrap := func(v int64) (Value, error) { return NewSized(v, n.k), nil }
+	switch op {
+	case "+":
+		return wrap(a + b)
+	case "-":
+		return wrap(a - b)
+	case "*":
+		return wrap(a * b)
+	case "/", "%":
+		// Division by zero is undefined in C and panics through the emitter's guard.
+		// The most negative value over -1 is fine at these widths: C computes it in
+		// int, where it fits, and the truncation back is what Go's wrap already says.
+		if b == 0 {
+			return nil, fmt.Errorf("undefined %s: %d %s %d", op, a, op, b)
+		}
+		if op == "/" {
+			return wrap(a / b)
+		}
+		return wrap(a % b)
+	case "<<", ">>":
+		// Go defines a shift by any count; C leaves one at or past the width
+		// undefined, and the emitter guards only what it must. Keep to counts the
+		// emitted C computes directly.
+		if b < 0 || b >= int64(bits) {
+			return nil, fmt.Errorf("shift amount out of range: %d", b)
+		}
+		if op == ">>" {
+			if signed {
+				return wrap(a >> uint(b))
+			}
+			return wrap(int64(uint64(a) >> uint(b)))
+		}
+		return wrap(a << uint(b))
+	case "&":
+		return wrap(a & b)
+	case "|":
+		return wrap(a | b)
+	case "&^":
+		return wrap(a &^ b)
+	case "^":
+		return wrap(a ^ b)
+	case "==":
+		return Bool(a == b), nil
+	case "!=":
+		return Bool(a != b), nil
+	case "<":
+		return Bool(a < b), nil
+	case "<=":
+		return Bool(a <= b), nil
+	case ">":
+		return Bool(a > b), nil
+	case ">=":
+		return Bool(a >= b), nil
+	default:
+		panic(todo("%q %v", op, b))
+	}
+}
+
+// neg and not are the unary operators, which wrap like the binary ones: -x on an
+// unsigned type is its two's complement, and ^x is the complement at the type's
+// width, not at C's int.
+func (n Sized) neg() Sized { return NewSized(-n.v, n.k) }
+
+func (n Sized) not() Sized { return NewSized(^n.v, n.k) }
 
 type Bool bool
 
