@@ -13,6 +13,17 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Known issues
+
+- **A multiply of a call's result miscompiles on the target** in one narrow shape:
+  the call's argument reads an element of a local `[4]int` that was never written,
+  at index 2, and the result is multiplied by anything that is not a power of two.
+  The answer is wrong, deterministically, and nothing says so — the host compiler
+  is right and the build is silent. Found by the fuzzer's oracle on a real P2 and
+  reduced to a dozen lines of C in `doc/mul-after-call-miscompile.c`, together with
+  the twelve variants that pin what each ingredient contributes. Binding the call
+  to a variable first does not help, so there is no workaround to apply yet.
+
 ### Testing
 
 - **The fuzzer generates the sized integer types.** `int8`, `uint8`, `int16`,
