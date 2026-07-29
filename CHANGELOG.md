@@ -15,6 +15,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A slice whose element is a defined type did not compile.** `[]Celsius` for
+  `type Celsius int` emitted its header typedef ahead of the typedef declaring
+  `Celsius`, so C refused the program with "unknown type name". Slice headers were
+  already split into those that may precede the typedef section and those that must
+  follow it, and a defined type belonged on the second side of that split. An
+  *array* of the same element always worked, which is why nothing noticed.
 - **A composite literal may name a defined array or slice type**, `Row{1, 2, 3}`
   for `type Row [3]int`, which was refused as "Row is not a struct type" — the
   literal's type had to be written out in full. A defined type behaves as what it

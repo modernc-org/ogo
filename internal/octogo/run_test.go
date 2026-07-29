@@ -950,6 +950,79 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A slice whose ELEMENT is a defined type. Its header typedef names that
+		// type, and was emitted ahead of the typedef declaring it -- C refused the
+		// program with "unknown type name 'Celsius'". Slice headers were already
+		// split into those that may precede the typedef section and those that must
+		// follow it; a defined type is written in that section too, and belonged on
+		// the second side of that split.
+		//
+		// An ARRAY of the same element always worked, which is why nothing noticed.
+		name: "a slice of a defined element type",
+		src: `type Celsius int
+
+type Name string
+
+type Flag bool
+
+type Row [2]Celsius
+
+var pkgBacking [2]Celsius
+
+var pkgSlice []Celsius
+
+func warmest(xs []Celsius) Celsius {
+	m := Celsius(0)
+	for i := 0; i < len(xs); i++ {
+		if xs[i] > m {
+			m = xs[i]
+		}
+	}
+	return m
+}
+
+func main() {
+	var back [3]Celsius
+	s := back[:]
+	s[0] = 7
+	s[1] = 21
+	s[2] = 14
+	println("slice", int(s[0]), len(s), cap(s))
+	println("warmest", int(warmest(s)))
+
+	lit := []Celsius{1, 30, 2}
+	println("literal", int(lit[1]), len(lit))
+
+	var names [2]Name
+	names[0] = "ab"
+	ns := names[:]
+	println("names", len(ns), len(ns[0]), ns[0] == "ab")
+
+	var flags [2]Flag
+	fs := flags[:]
+	fs[1] = true
+	println("flags", fs[0], fs[1])
+
+	var r Row
+	r[1] = 9
+	rs := r[:]
+	println("row", int(rs[1]), len(rs))
+
+	pkgSlice = pkgBacking[:]
+	pkgSlice[0] = 5
+	println("pkg", int(pkgSlice[0]), len(pkgSlice))
+
+	total := Celsius(0)
+	for _, v := range s {
+		total += v
+	}
+	println("range", int(total))
+}
+`,
+		want: "slice 7 3 3\nwarmest 21\nliteral 30 3\nnames 2 2 true\nflags false true\n" +
+			"row 9 2\npkg 5 2\nrange 42\n",
+	},
+	{
 		// A composite literal of a DEFINED array or slice type, `Row{1, 2, 3}` for
 		// `type Row [3]int`, which was refused as "Row is not a struct type" -- the
 		// literal type had to be written out. A defined type behaves as what it is

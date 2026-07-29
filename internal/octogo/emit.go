@@ -2092,7 +2092,12 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			continue // already emitted inline, ahead of the struct field holding it
 		}
 		def := sliceTypedefDef(el)
-		if e.isStruct(el) {
+		// A slice header NAMES its element type, so it can only precede the typedef
+		// section when that name is one C already has. A struct's is written there,
+		// and so is a defined type's -- `type Celsius int` becomes `typedef int
+		// Celsius;` among the typedefs -- so a slice of either has to follow them.
+		// []Celsius used to be emitted first and named a type nothing had declared.
+		if e.isStruct(el) || e.namedTypes[el] {
 			structSliceDefs.WriteString(def)
 		} else {
 			scalarSliceDefs.WriteString(def)
