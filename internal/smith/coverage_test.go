@@ -43,6 +43,13 @@ var generatedConstructs = []struct {
 	// The one that matters: a value folded into the checksum WITHOUT being stored
 	// back first. A store truncates to the type, so a stored result cannot tell a
 	// compiler that computed in the wrong width from one that did not.
+	{"method declaration, value receiver", `\nfunc \(r S_\d+\) `},
+	{"method declaration, pointer receiver", `\nfunc \(r \*S_\d+\) `},
+	{"method call, value-receiver getter", `\.get_\d+\(\)`},
+	{"method call, pointer-receiver setter", `\.set_\d+\(`},
+	// The one that pins the receiver rule: a value receiver writes to a COPY, so
+	// the caller's field must be unchanged after this call.
+	{"method call, value-receiver shadow", `\.shadow_\d+\(`},
 	{"string variable", `\n\s*var t_\d+ string = `},
 	{"string len", `len\(t_\d+\)`},
 	{"string byte index", `int\(t_\d+\[\d+\]\)`},

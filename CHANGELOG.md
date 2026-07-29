@@ -15,6 +15,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Known issues
 
+- **The backend's optimizer emits a branch to a label it does not define**, so the
+  assembler refuses the program: `Unknown symbol 'L__0579'`. gcc compiles the same C
+  without a warning and flexcc assembles it at `-O0`, so the emitted C is not at
+  fault; the default and `-O1` both fail, and `ogo build` takes the default. Unlike
+  the miscompile below it this one is loud — nothing is silently wrong, the build
+  simply fails — which is the better of the two failures to have. Reproducer in
+  `doc/optimizer-dangling-label.c`.
 - **The backend's optimizer miscompiles one narrow shape**, silently: an element of
   a local `[4]int` that was never written, read at index 2, passed to a call, the
   result multiplied by something that is not a power of two, and assigned to a
@@ -30,6 +37,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **The fuzzer generates methods, with both receiver kinds.** Every generated
+  struct type gets three: a value-receiver getter, a pointer-receiver setter, and a
+  value-receiver method with the setter's body. The third is the point — a value
+  receiver writes to a *copy*, so the caller's field must be unchanged after it,
+  while the pointer receiver's must not be. The field is read back after every call,
+  so a wrong receiver adjustment is a wrong checksum either way round.
 - **The fuzzer generates strings.** A string is immutable and has no arithmetic, so
   everything readable out of one is exactly predictable: its length, a byte at an
   index, the length of a slice of it, a comparison, and a `range` yielding a byte

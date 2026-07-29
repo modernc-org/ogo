@@ -297,25 +297,27 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 	case r < 0.34:
 		return f.genStringStmt(vm, mem) // 2% chance for string reads
 	case r < 0.37:
-		return f.genVarDecl(vm, mem) // 12% chance for var
-	case r < 0.44:
-		return f.genArrayDecl(vm, mem) // 7% chance for a fixed array declaration
-	case r < 0.53:
-		return f.genArrayWrite(vm, mem) // 9% chance for an array element write
+		return f.genMethodCall(vm, mem) // 3% chance for a method call
+	case r < 0.46:
+		return f.genVarDecl(vm, mem) // 9% chance for var
+	case r < 0.52:
+		return f.genArrayDecl(vm, mem) // 6% chance for a fixed array declaration
 	case r < 0.60:
-		return f.genSliceDecl(vm, mem) // 7% chance for a slice declaration
-	case r < 0.69:
-		return f.genSliceWrite(vm, mem) // 9% chance for a slice element write
-	case r < 0.76:
-		return f.genAppend(vm, mem) // 7% chance for an append
-	case r < 0.82:
-		return f.genStructDecl(vm, mem) // 6% chance for a struct declaration
-	case r < 0.89:
-		return f.genFieldWrite(vm, mem) // 7% chance for a struct field write
-	case r < 0.93:
-		return f.genStructCopy(vm, mem) // 4% chance for a by-value struct copy
+		return f.genArrayWrite(vm, mem) // 8% chance for an array element write
+	case r < 0.66:
+		return f.genSliceDecl(vm, mem) // 6% chance for a slice declaration
+	case r < 0.74:
+		return f.genSliceWrite(vm, mem) // 8% chance for a slice element write
+	case r < 0.80:
+		return f.genAppend(vm, mem) // 6% chance for an append
+	case r < 0.85:
+		return f.genStructDecl(vm, mem) // 5% chance for a struct declaration
+	case r < 0.91:
+		return f.genFieldWrite(vm, mem) // 6% chance for a struct field write
+	case r < 0.94:
+		return f.genStructCopy(vm, mem) // 3% chance for a by-value struct copy
 	case r < 0.97:
-		return f.genCompoundAssign(vm, mem) // 4% chance for a compound assignment
+		return f.genCompoundAssign(vm, mem) // 3% chance for a compound assignment
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -1339,10 +1341,75 @@ func (f *Fuzzer) genStructType() *StructDef {
 	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
 		def.Fields = append(def.Fields, f.newVarName("f"))
 	}
+	def.Get = f.newVarName("get")
+	def.Set = f.newVarName("set")
+	def.Shadow = f.newVarName("shadow")
 	f.Structs = append(f.Structs, def)
 	(&StructTypeNode{Def: def}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
+	(&MethodsNode{Def: def}).Write(f.Out, 0)
+	fmt.Fprint(f.Out, "\n")
 	return def
+}
+
+// genMethodCall calls one of a struct variable's three methods and folds what it
+// returns into the checksum.
+//
+// The three exist to pin the receiver rule, which is the part of a method that
+// codegen can get wrong: a POINTER receiver reaches the caller's struct and a
+// VALUE receiver reaches a copy of it. So the same body -- write the argument into
+// the first field, return it -- is generated with each, and after the call the
+// field is read back: through the pointer receiver it changed, through the value
+// receiver it did not. A wrong receiver adjustment shows as a wrong checksum
+// either way round.
+func (f *Fuzzer) genMethodCall(vm Machine, mem Memory) Node {
+	structs := f.CurrentEnv.GetStructSymbols()
+	if len(structs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	sym := structs[f.Rand.Intn(len(structs))]
+	sym.Used = true
+	sv := mem.Load(sym.Name).(*StructVal)
+	f0 := sv.Def.Fields[0]
+
+	var call Node
+	var result Int32
+	switch f.Rand.Intn(3) {
+	case 0: // v.get()
+		call = &MethodCallNode{Recv: sym.Name, Method: sv.Def.Get}
+		result = sv.Fields[f0]
+	case 1: // v.set(e) -- through a pointer receiver, so the field really changes
+		argNode, argVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+		call = &MethodCallNode{Recv: sym.Name, Method: sv.Def.Set, Arg: argNode}
+		result = argVal.(Int32)
+		sv.Fields[f0] = result
+	default: // v.shadow(e) -- through a value receiver, so the field does NOT change
+		argNode, argVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+		call = &MethodCallNode{Recv: sym.Name, Method: sv.Def.Shadow, Arg: argNode}
+		result = argVal.(Int32)
+	}
+
+	stmts := []Node{&AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: call},
+	}}
+	newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), result)
+	mem.Store(f.ChecksumName, newChecksum)
+
+	// Read the field back: this is what tells the two receivers apart.
+	stmts = append(stmts, &AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{
+			Left:  &IdentNode{Name: f.ChecksumName},
+			Op:    "^",
+			Right: &FieldNode{Name: sym.Name, Field: f0},
+		},
+	})
+	newChecksum, _ = vm.Eval("^", mem.Load(f.ChecksumName), sv.Fields[f0])
+	mem.Store(f.ChecksumName, newChecksum)
+	return &BlockNode{Statements: stmts}
 }
 
 // genStructDecl declares a struct variable, `var v S`, zero-initialized as the
@@ -1404,6 +1471,32 @@ func (n *StructTypeNode) Write(w io.Writer, indent int) {
 		fmt.Fprintf(w, "%s int\n", f)
 	}
 	fmt.Fprint(w, "}\n")
+}
+
+// MethodsNode writes a struct's three methods. Their bodies are fixed; see
+// StructDef and genMethodCall for what each is for.
+type MethodsNode struct{ Def *StructDef }
+
+func (n *MethodsNode) Write(w io.Writer, indent int) {
+	d, f0 := n.Def, n.Def.Fields[0]
+	fmt.Fprintf(w, "func (r %s) %s() int { return r.%s }\n\n", d.Name, d.Get, f0)
+	fmt.Fprintf(w, "func (r *%s) %s(v int) int {\n\tr.%s = v\n\treturn r.%s\n}\n\n", d.Name, d.Set, f0, f0)
+	fmt.Fprintf(w, "func (r %s) %s(v int) int {\n\tr.%s = v\n\treturn r.%s\n}\n", d.Name, d.Shadow, f0, f0)
+}
+
+// MethodCallNode is `v.m()` or `v.m(arg)`.
+type MethodCallNode struct {
+	Recv, Method string
+	Arg          Node
+}
+
+func (n *MethodCallNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s.%s(", n.Recv, n.Method)
+	if n.Arg != nil {
+		n.Arg.Write(w, 0)
+	}
+	fmt.Fprint(w, ")")
 }
 
 // StructDeclNode is `var v S`, zero-initialized.

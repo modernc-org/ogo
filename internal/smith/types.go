@@ -150,6 +150,13 @@ func (c ChanType) IsNumeric() bool { return false }
 type StructDef struct {
 	Name   string
 	Fields []string
+	// Methods are generated alongside the type, three per struct, one of each
+	// shape below. They are named rather than modelled: what each does to the
+	// receiver is fixed, so the VM applies it directly (see genMethodCall).
+	Get    string // value receiver, returns Field0
+	Set    string // POINTER receiver, writes its argument into Field0 and returns it
+	Shadow string // VALUE receiver, writes its argument into Field0 and returns it --
+	// the caller's struct must be untouched, a copy being what a value receiver gets
 }
 
 // StructType names a generated struct. Only the name distinguishes it, so
