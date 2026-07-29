@@ -13,6 +13,15 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Language
+
+- **A composite literal may name a defined array or slice type**, `Row{1, 2, 3}`
+  for `type Row [3]int`, which was refused as "Row is not a struct type" — the
+  literal's type had to be written out in full. A defined type behaves as what it
+  is defined over everywhere else, and this was the hole in that. It works through
+  a chain of definitions, at package scope, with index-keyed values, and passed
+  straight to a call.
+
 ### Diagnostics
 
 - **A `go` or `defer` whose operand the parser cannot read was reported at line 1,

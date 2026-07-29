@@ -950,6 +950,73 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A composite literal of a DEFINED array or slice type, `Row{1, 2, 3}` for
+		// `type Row [3]int`, which was refused as "Row is not a struct type" -- the
+		// literal type had to be written out. A defined type behaves as what it is
+		// defined over everywhere else, and this was the hole in that.
+		//
+		// Covered: an array and a slice form, index-keyed values, a chain of
+		// definitions (`type Alias List`), a defined byte slice, package scope, an
+		// empty literal, and one passed straight to a call -- the shape that needs
+		// the backing array hoisted rather than brace-initialized in place.
+		name: "composite literal of a defined array or slice type",
+		src: `type Row [3]int
+
+type List []int
+
+type Bytes []byte
+
+type Alias List
+
+type Grid [2][3]int
+
+var table = Row{7, 8, 9}
+
+var pkgList = List{4, 5}
+
+func sum(l List) int {
+	t := 0
+	for i := 0; i < len(l); i++ {
+		t += l[i]
+	}
+	return t
+}
+
+func main() {
+	r := Row{1, 2, 3}
+	println("row", r[0], r[2], len(r))
+
+	var r2 Row = Row{4, 5, 6}
+	println("row2", r2[1], len(r2))
+
+	sparse := Row{2: 9}
+	println("sparse", sparse[0], sparse[2])
+
+	l := List{1, 2, 3}
+	println("list", len(l), cap(l), l[2])
+
+	println("sum", sum(List{10, 20, 30}), sum(l))
+
+	b := Bytes{65, 66}
+	println("bytes", len(b), b[0])
+
+	a := Alias{1, 2}
+	println("alias", len(a), a[1])
+
+	var g Grid
+	g[1][2] = 5
+	println("grid", g[1][2], len(g))
+
+	println("pkg", table[0], len(table), pkgList[1], len(pkgList))
+
+	empty := List{}
+	println("empty", len(empty))
+}
+`,
+		want: "row 1 3 3\nrow2 5 3\nsparse 0 9\nlist 3 3 3\nsum 60 6\nbytes 2 65\n" +
+			"alias 2 2\ngrid 5 2\npkg 7 3 5 2\nempty 0\n",
+	},
+	{
 		// A priority scheduler over a fixed node pool: the no-heap way to keep an
 		// ordered queue on this part. Nodes live in a package-level array, a free
 		// list threads through them, and the ready queue is a singly linked list in

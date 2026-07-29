@@ -5268,7 +5268,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		e.emit(";\n")
 		return
 	}
-	elem, ok := e.sliceType(typeAST)
+	elem, ok := e.litSliceType(typeAST)
 	if !ok {
 		e.fail("unsupported array or slice literal type")
 		return
@@ -5332,7 +5332,7 @@ func (e *emitter) hoistLit(typeAST []int32, lit Node) (string, bool) {
 	// wherever one can; an array is not -- C cannot assign it, and binding one here
 	// would turn a refusal into "assignment to expression with array type", which
 	// is the emitter writing C the user never did.
-	if _, ok := e.sliceType(typeAST); !ok {
+	if _, ok := e.litSliceType(typeAST); !ok {
 		return "", false
 	}
 	name := e.newTmp()
@@ -5347,6 +5347,40 @@ func (e *emitter) hoistLit(typeAST []int32, lit Node) (string, bool) {
 		e.prologue = append(e.prologue, line+"\n")
 	}
 	return name, true
+}
+
+// litSliceType is sliceType for the type of a composite LITERAL, where a defined
+// slice type stands in for what it is defined over: `type List []int` used as
+// `List{1, 2, 3}` is the same literal as `[]int{1, 2, 3}`.
+//
+// It is deliberately not sliceType itself. That one also answers for the type of a
+// VARIABLE, and a variable of a defined slice type is not a plain slice: it keeps
+// its own name, which is what its methods hang off. Teaching sliceType to resolve
+// the name cost `var l List = back[:]` its `l.total()`.
+func (e *emitter) litSliceType(typeAST []int32) (elem string, ok bool) {
+	if elem, ok := e.sliceType(typeAST); ok {
+		return elem, true
+	}
+	nodes := slices.Collect(it(typeAST))
+	if len(nodes) != 1 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != IDENT {
+		return "", false
+	}
+	// Through a chain of definitions: `type Alias List` over `type List []int` is
+	// still a slice literal's type.
+	u, ok := e.namedUnderlying[mangle(e.curPkgPrefix, e.src(nodes[0].tok))]
+	if !ok {
+		return "", false
+	}
+	if u = e.underlyingCType(u); !e.isSliceCType(u) {
+		return "", false
+	}
+	return sliceElemFromCName(u), true
+}
+
+// isNamedLitType reports whether a factor's children are a bare type name followed
+// by a composite literal -- `Row{1, 2, 3}` rather than `[3]int{1, 2, 3}`.
+func (e *emitter) isNamedLitType(kids []Node) bool {
+	return len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == CompositeLit
 }
 
 // litTypeName renders a literal's bracketed type for a diagnostic, as the source
@@ -5399,6 +5433,19 @@ func (e *emitter) arrayLitElement(v Node) (Node, bool) {
 // type followed by a composite literal.
 func (e *emitter) factorArrayLit(fac Node) (typeAST []int32, lit Node, ok bool) {
 	kids := slices.Collect(it(fac.ast))
+	// `Row{1, 2, 3}` for a defined array or slice type is the same literal as the
+	// bracketed form it is defined over. The type is the bare name, which arrayDim
+	// and sliceType both resolve, so the rest of the path needs no further help.
+	if len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == CompositeLit {
+		name := []int32{kids[0].tok}
+		if _, ok := e.arrayDim(name); ok {
+			return name, kids[1], true
+		}
+		if _, ok := e.litSliceType(name); ok {
+			return name, kids[1], true
+		}
+		return nil, Node{}, false
+	}
 	if len(kids) == 0 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LBRACK {
 		return nil, Node{}, false
 	}
@@ -11851,6 +11898,18 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		if n.sym == Factor {
+			// A literal of a DEFINED array or slice type is matched first: its
+			// factor looks exactly like a struct literal's -- a name and a
+			// CompositeLit -- and the struct path would brace-initialize it, which
+			// for a slice means writing its first element where its backing pointer
+			// goes. factorArrayLit only claims a name it resolves to one of those
+			// two, so a struct's name still falls through.
+			if litType, lit, ok := e.factorArrayLit(n); ok && e.isNamedLitType(kids) {
+				if name, ok := e.hoistLit(litType, lit); ok {
+					e.emit(name)
+					return
+				}
+			}
 			if name, lit, ok := e.factorCompositeLit(kids); ok {
 				e.emitCompositeLit(name, lit, e.declInit)
 				return

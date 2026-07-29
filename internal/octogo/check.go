@@ -4262,6 +4262,14 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 	if !hasID {
 		return
 	}
+	// A defined array or slice type, `type Row [3]int` used as `Row{1, 2, 3}`, is
+	// as good a literal type as the written `[3]int{1, 2, 3}` -- a defined type
+	// behaves as what it is defined over. The values of such a literal are checked
+	// where the written form's are (the emitter, which knows the bound), so there
+	// is nothing more to do here.
+	if f.litElemType(s, t) {
+		return
+	}
 	// The type is checked even for "T{}", which supplies no values: naming a
 	// non-struct type is wrong however few values follow it.
 	st, ok := f.litStructType(s, t)
@@ -4387,6 +4395,30 @@ func (f *File) litStructType(s *Scope, t litType) (*TypeNodeStruct, bool) {
 	}
 	_, st, ok := f.importedStruct(t.qual, t.name)
 	return st, ok
+}
+
+// litElemType reports whether a composite literal's type names a defined array or
+// slice type, following a chain of definitions to reach one.
+func (f *File) litElemType(s *Scope, t litType) bool {
+	if t.qual.IsValid() {
+		return false // a cross-package type: only its struct form is modelled
+	}
+	name := t.name.Src()
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		td, ok := s.find(name).(*TypeDeclaration)
+		if !ok || td.TypeSpec == nil {
+			return false
+		}
+		switch tn := td.TypeSpec.TypeNode.(type) {
+		case *TypeNodeArray, *TypeNodeSlice:
+			return true
+		case *TypeNodeIdent:
+			name = tn.Name.Src()
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // structTypeOf resolves a name to the struct type it declares. It reports false
