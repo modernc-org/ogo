@@ -950,6 +950,182 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A priority scheduler over a fixed node pool: the no-heap way to keep an
+		// ordered queue on this part. Nodes live in a package-level array, a free
+		// list threads through them, and the ready queue is a singly linked list in
+		// priority order — so every pointer aims at storage that outlives every
+		// frame, which is what makes handing one out legal here.
+		//
+		// It reaches three things the fuzzer cannot generate and the rest of the
+		// corpus barely touches: pointers into a package array, threaded and
+		// re-threaded through struct fields; a labeled break leaving a nested
+		// search; and a deferred call that runs after the result is fixed and must
+		// not change it. Output matches real Go, on the host and on the board.
+		name: "priority scheduler over a node pool",
+		src: `// A priority scheduler over a fixed node pool: the no-heap way to keep an ordered
+// queue on this part. Nodes live in a package-level array, a free list threads
+// through them, and the ready queue is a singly linked list kept in priority
+// order. Everything is a pointer into storage that outlives every frame, which is
+// what makes handing one out legal here.
+
+const poolSize = 8
+
+type task struct {
+	id   int
+	prio int
+	next *task
+}
+
+var pool [poolSize]task
+var free *task
+var ready *task
+var allocs int
+var frees int
+
+// initPool threads every node onto the free list, highest index first so alloc
+// hands them out in order.
+func initPool() {
+	free = nil
+	for i := poolSize - 1; i >= 0; i-- {
+		pool[i].id = 0
+		pool[i].prio = 0
+		pool[i].next = free
+		free = &pool[i]
+	}
+}
+
+func alloc() *task {
+	if free == nil {
+		return nil
+	}
+	t := free
+	free = t.next
+	t.next = nil
+	allocs++
+	return t
+}
+
+func release(t *task) {
+	t.next = free
+	free = t
+	frees++
+}
+
+// push inserts in priority order, highest first, stable among equals.
+func push(t *task) {
+	if ready == nil || t.prio > ready.prio {
+		t.next = ready
+		ready = t
+		return
+	}
+	p := ready
+	for p.next != nil && p.next.prio >= t.prio {
+		p = p.next
+	}
+	t.next = p.next
+	p.next = t
+}
+
+func pop() (*task, bool) {
+	if ready == nil {
+		return nil, false
+	}
+	t := ready
+	ready = t.next
+	t.next = nil
+	return t, true
+}
+
+// admit allocates a node and queues it, reporting whether the pool had room.
+func admit(id int, prio int) bool {
+	t := alloc()
+	if t == nil {
+		return false
+	}
+	t.id = id
+	t.prio = prio
+	push(t)
+	return true
+}
+
+// findFirst returns the id of the first queued task whose priority is in
+// [lo, hi], or -1. The labeled break leaves the search from inside the inner
+// scan.
+func findFirst(lo int, hi int) int {
+	found := -1
+search:
+	for p := ready; p != nil; p = p.next {
+		for r := lo; r <= hi; r++ {
+			if p.prio == r {
+				found = p.id
+				break search
+			}
+		}
+	}
+	return found
+}
+
+// sweep returns whatever is still queued to the pool.
+func sweep() {
+	for {
+		t, ok := pop()
+		if !ok {
+			return
+		}
+		release(t)
+	}
+}
+
+// drain moves as much of the queue into out as fits, returning how many. The
+// deferred sweep reclaims the rest, so a caller's short buffer cannot leak nodes
+// -- and it runs after the result has been fixed, so it cannot change it.
+func drain(out []int) int {
+	defer sweep()
+	n := 0
+	for n < len(out) {
+		t, ok := pop()
+		if !ok {
+			break
+		}
+		out[n] = t.id
+		n++
+		release(t)
+	}
+	return n
+}
+
+func main() {
+	initPool()
+
+	println("admit", admit(1, 5), admit(2, 9), admit(3, 5), admit(4, 1))
+	println("order", ready.id, ready.next.id, ready.next.next.id, ready.next.next.next.id)
+	println("find", findFirst(5, 5), findFirst(1, 1), findFirst(6, 8))
+
+	var out [3]int
+	moved := drain(out[:])
+	println("drain", moved, out[0], out[1], out[2])
+	println("counts", allocs, frees, ready == nil)
+
+	// Fill the pool exactly, then one too many.
+	initPool()
+	ok := true
+	for i := 0; i < poolSize; i++ {
+		if !admit(i, i) {
+			ok = false
+		}
+	}
+	println("full", ok, admit(99, 99))
+
+	// Highest priority first out.
+	var all [poolSize]int
+	got := drain(all[:])
+	println("popped", got, all[0], all[1], all[poolSize-1])
+}
+`,
+		want: "admit true true true true\norder 2 1 3 4\nfind 1 4 -1\ndrain 3 2 1 3\n" +
+			"counts 4 4 true\nfull true false\npopped 8 7 6 0\n",
+	},
+	{
 		// A console command loop: a dispatch table of name/handler pairs, a
 		// tokenizer over a fixed line buffer, an integer parser, and replies
 		// formatted into a caller-owned Builder. The shape of every serial-port

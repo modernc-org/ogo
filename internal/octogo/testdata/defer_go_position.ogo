@@ -1,0 +1,23 @@
+// A "go" or "defer" whose operand the parser cannot read is reported AT THE
+// KEYWORD, not at the top of the file.
+//
+// Such an operand -- a function literal, which the grammar has no rule for --
+// leaves a head holding no token of its own, and that head's position is the
+// file's FIRST token. Every one of these used to be reported at line 1, column 1,
+// which sends the reader to the wrong end of the program.
+//
+// The unparseable case comes last: it ends the parse, so nothing after it is
+// checked -- and a name used after it reads as undefined, which is why there is
+// nothing after it here.
+
+var x int
+
+func main() {
+	// ERROR defer statement must be a function call
+	defer x
+	// ERROR go statement must be a function call
+	go x
+	// ERROR defer statement must be a function call
+	defer func() {
+	}()
+}

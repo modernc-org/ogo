@@ -13,6 +13,15 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Diagnostics
+
+- **A `go` or `defer` whose operand the parser cannot read was reported at line 1,
+  column 1.** `defer func() {}()` — a function literal, which the grammar has no
+  rule for — leaves a head holding no token of its own, and that head's position is
+  the file's *first* token, so the reader was sent to the wrong end of the program.
+  It is reported at the keyword now. The operand of such a statement always follows
+  its keyword, which is what tells a real position from an inherited one.
+
 ### Fixed
 
 - **Two defects in the backend's optimizer are worked around**, and `ogo build`
@@ -259,6 +268,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **A priority scheduler over a fixed node pool is a run case** — nodes in a
+  package-level array, a free list threaded through them, and a ready queue kept in
+  priority order. It reaches three things the fuzzer cannot generate: pointers into
+  a package array threaded through struct fields, a labeled break leaving a nested
+  search, and a deferred call that runs after the result is fixed and must not
+  change it.
 - **A console command loop is a run case** — a dispatch table of name/handler
   pairs, a tokenizer over a fixed line buffer, an integer parser, and replies
   formatted into a caller-owned Builder. It is what found six of the entries

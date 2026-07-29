@@ -1504,6 +1504,10 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	// A "break"/"continue" and its optional label operand, validated after the loop
 	// once both the keyword and any label token have been seen.
 	var breakContinueTok, labelTok Token
+	// The "go"/"defer" keyword and its index, so a statement whose operand did not
+	// parse can be reported somewhere real. See checkCallStmt.
+	var kwTok Token
+	kwIdx := int32(-1)
 	isBreak, isContinue, hasLabel := false, false, false
 	condKw := ""
 	var forScope *Scope // a three-clause for's own scope, holding its init variable // "if"/"for" while the next Expression child is that condition
@@ -1585,7 +1589,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			case RETURN:
 				isReturn = true
 			case GO:
-				isGo = true
+				isGo, kwTok, kwIdx = true, f.tok(c.tok), c.tok
 			case ARROW:
 				isRecv = true
 			case FOR:
@@ -1619,7 +1623,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				// "defer" is resolved statically at compile time (no runtime defer
 				// stack), so it is supported -- except inside a "for" loop, where the
 				// number of deferred calls is not statically bounded.
-				isDefer = true
+				isDefer, kwTok, kwIdx = true, f.tok(c.tok), c.tok
 				if f.loopDepth > 0 {
 					f.err(f.tok(c.tok).Position(), "defer is not allowed inside a for loop")
 				}
@@ -1630,10 +1634,10 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 		f.checkReturn(s, results, stmt)
 	}
 	if isGo {
-		f.checkGoStmt(s, head, stmt)
+		f.checkGoStmt(s, head, stmt, kwTok, kwIdx)
 	}
 	if isDefer {
-		f.checkDeferStmt(s, head, stmt)
+		f.checkDeferStmt(s, head, stmt, kwTok, kwIdx)
 	}
 	if isBreak {
 		f.checkBreak(breakContinueTok, labelTok, hasLabel)
@@ -1663,8 +1667,8 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 // An argument crosses to the launched cog, so it is checked for a reference into
 // this frame -- which a deferred call's argument, evaluated here and read on the way
 // out of the same frame, does not need.
-func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
-	f.checkCallStmt(s, head, stmt, "go")
+func (f *File) checkGoStmt(s *Scope, head, stmt Node, kwTok Token, kwIdx int32) {
+	f.checkCallStmt(s, head, stmt, "go", kwTok, kwIdx)
 	argList, _, isCall := f.callInfo(stmt)
 	if !isCall {
 		return
@@ -1679,16 +1683,29 @@ func (f *File) checkGoStmt(s *Scope, head, stmt Node) {
 // checkDeferStmt checks a "defer" statement's call, exactly as checkGoStmt does for
 // "go" (identical grammar: a keyword followed by a call). The for-loop restriction
 // is reported separately at the "defer" keyword (see checkStatement).
-func (f *File) checkDeferStmt(s *Scope, head, stmt Node) {
-	f.checkCallStmt(s, head, stmt, "defer")
+func (f *File) checkDeferStmt(s *Scope, head, stmt Node, kwTok Token, kwIdx int32) {
+	f.checkCallStmt(s, head, stmt, "defer", kwTok, kwIdx)
 }
 
 // checkCallStmt checks the call carried by a "go" or "defer" statement (kw names it
 // in diagnostics): the statement must be a function or method call, whose callee and
 // arguments are then checked like any call.
-func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string) {
+func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, kwIdx int32) {
 	if !endsInCall(stmt) {
-		f.err(f.tok(head.Pos()).Position(), "%s statement must be a function call", kw)
+		// The operand's own position, when it has one, and the keyword's otherwise.
+		//
+		// A statement the parser could not read -- `defer func() {}()`, the grammar
+		// having no function literal -- leaves a head holding no token of its own,
+		// whose Pos is the file's FIRST token index rather than anything to do with
+		// this statement. Every such defer was reported at line 1, column 1, which
+		// sends the reader to the top of the file. The operand of a "go" or "defer"
+		// always follows its keyword, so a head that does not is not this
+		// statement's.
+		pos := kwTok.Position()
+		if head.Pos() > kwIdx {
+			pos = f.tok(head.Pos()).Position()
+		}
+		f.err(pos, "%s statement must be a function call", kw)
 		return
 	}
 	f.checkSelectors(s, head, stmt)
