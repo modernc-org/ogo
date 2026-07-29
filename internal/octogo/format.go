@@ -536,6 +536,7 @@ type fieldMeasurement struct {
 	col1Width    int
 	col2Width    int
 	lastTokIdx   int32 // Used to attach inline comment alignment
+	hasComment   bool  // a line comment trails this field, so its type cell is not last
 }
 
 // alignmentBlock represents a contiguous block of fields without blank lines
@@ -607,7 +608,31 @@ func (f *formatter) measureField(ast []int32, sym Symbol, c formatterCtx) fieldM
 		}
 	}
 	walk(ast)
+	m.hasComment = f.trailsLineComment(m.lastTokIdx)
 	return m
+}
+
+// trailsLineComment reports whether a line comment follows the token at idx on the
+// same source line -- the "// ..." of `n int // how many`.
+//
+// It reads the NEXT token's separator, which is where the bytes between the two
+// live: a comment appearing there before any newline is on this token's line.
+func (f *formatter) trailsLineComment(idx int32) bool {
+	if idx < 0 {
+		return false
+	}
+	next := f.p.Token(idx + 1)
+	for _, sep := range f.parseSep(next.SepBytes(), nil) {
+		switch x := sep.(type) {
+		case lineComment:
+			return true
+		case whiteSpace:
+			if x >= 1 {
+				return false // the line ended before any comment
+			}
+		}
+	}
+	return false
 }
 
 // FormatFile writes the formatted version of 'b' to 'w', assuming it comes
@@ -762,7 +787,13 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 									if m.col1Width > current.maxCol1 {
 										current.maxCol1 = m.col1Width
 									}
-									if m.col2Width > current.maxCol2 {
+									// Only a row whose type is FOLLOWED by something --
+									// a trailing comment -- sets the type column's
+									// width. gofmt aligns through a tabwriter, where a
+									// cell that ends its line is not part of an aligned
+									// column, so a long type on a comment-less row does
+									// not push the comments of its neighbours right.
+									if m.hasComment && m.col2Width > current.maxCol2 {
 										current.maxCol2 = m.col2Width
 									}
 

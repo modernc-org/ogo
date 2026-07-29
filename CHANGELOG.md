@@ -22,6 +22,15 @@ Releases before v0.9.0 predate this file; see
   It is reported at the keyword now. The operand of such a statement always follows
   its keyword, which is what tells a real position from an inherited one.
 
+### Tooling
+
+- **`ogo fmt` put a struct's trailing comments one column too far right.** gofmt
+  aligns through a tabwriter, where a cell that ends its line is not part of an
+  aligned column — so a long type on a comment-less row does not push its
+  neighbours' comments right. Every row used to set that width here. Grouped
+  `const ( … )` and `var ( … )` specs are still not aligned at all, which is the
+  larger remaining gap.
+
 ### Fixed
 
 - **Two defects in the backend's optimizer are worked around**, and `ogo build`

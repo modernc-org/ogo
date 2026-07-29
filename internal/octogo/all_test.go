@@ -357,6 +357,47 @@ func f() {
 	}
 }
 
+// TestFormatCommentColumn pins which rows set the width of the type column: only
+// those whose type is followed by something.
+//
+// gofmt aligns through a tabwriter, where a cell that ends its line is not part of
+// an aligned column. So a long type on a comment-less row does not push its
+// neighbours' comments right -- here "int32" is longer than "bool" and "int", and
+// the comments sit one past "bool" rather than one past "int32", which is what
+// gofmt does with the same input. Every row used to set the width, so every
+// comment came out a column too far right.
+func TestFormatCommentColumn(t *testing.T) {
+	const in = `type packet struct {
+id int
+sequenceNumber int32
+ok bool // whether it checksummed
+n int // how many bytes
+}
+`
+	const want = `type packet struct {
+	id             int
+	sequenceNumber int32
+	ok             bool // whether it checksummed
+	n              int  // how many bytes
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("comment column:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatIndexSpacing pins the two spacings a '[' can take. A '[' opening an
 // array or slice *type* is spaced off the name it follows ("var a [3]int"), while
 // one opening an *index* binds tight to its base ("a[1]"). needsSpace had no case
