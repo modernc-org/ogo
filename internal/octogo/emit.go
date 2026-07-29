@@ -2343,7 +2343,11 @@ type emitter struct {
 	f *File     // file currently being emitted, for token access
 	// constPreScan runs emitConstDecl for its folded VALUES only -- no C emitted,
 	// no types resolved. See collectConstValues.
-	constPreScan       bool
+	constPreScan bool
+	// foldConv lets the integer fold see through a conversion, `int32(4)`. Off for
+	// the fold that RENDERS an expression, where a conversion's cast is part of the
+	// emitted type. See constIntValue.
+	foldConv           bool
 	indent             int
 	includes           map[string]bool
 	funcRet            map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
@@ -3228,7 +3232,7 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		if e.constPreScan {
 			// Values only: what an array bound needs, and all it can use.
 			e.iota = curIota
-			if v, ok := e.foldConstInt(initExpr); ok {
+			if v, ok := e.constIntValue(initExpr); ok {
 				e.constInt[cname] = intCLit(v)
 			}
 			e.iota = -1
@@ -3263,7 +3267,7 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		// rejects a `static const` there); record its value. iota is visible to the
 		// fold as this spec's index for the duration.
 		e.iota = curIota
-		if v, ok := e.foldConstInt(initExpr); ok {
+		if v, ok := e.constIntValue(initExpr); ok {
 			e.constInt[cname] = intCLit(v)
 		}
 		e.iota = -1
@@ -5874,7 +5878,7 @@ func (e *emitter) arrayBoundC(sizeAST []int32) (string, bool) {
 	// Not a bare literal or named constant: a constant expression like "[2+1]int"
 	// or "[W*H]int". Fold it -- C cannot use a `const int` (or a nested const) as an
 	// array bound, so the value must be spelled as a literal.
-	if v, ok := e.foldConstInt(sizeAST); ok && v >= 0 {
+	if v, ok := e.constIntValue(sizeAST); ok && v >= 0 {
 		return strconv.FormatInt(v, 10), true
 	}
 	return "", false
@@ -5994,6 +5998,45 @@ func intCLit(v int64) string {
 	}
 }
 
+// constIntValue is foldConstInt for a caller that wants a constant's VALUE rather
+// than a rendering of it: it also sees through a conversion, `int32(4)`, whose
+// value is the operand's -- the checker has already range-checked it against the
+// target.
+//
+// The fold used for EMISSION deliberately does not do this. A conversion's cast is
+// part of the emitted expression's type, and dropping it retypes what surrounds it:
+// `u &^ uint32(0xFF00FF00)` written without the cast is a long long to the target's
+// C compiler, which then refuses the printf it feeds.
+func (e *emitter) constIntValue(ast []int32) (int64, bool) {
+	prev := e.foldConv
+	e.foldConv = true
+	defer func() { e.foldConv = prev }()
+	return e.foldConstInt(ast)
+}
+
+// convFold folds `T(x)` to x's value when T is an integer type, for the value-only
+// walk constIntValue turns on. Being part of the walk rather than wrapped around
+// it, a conversion nested anywhere in the expression is reached -- which is what
+// `const one = int32(1) << 16` needs.
+func (e *emitter) convFold(kids []Node) (int64, bool) {
+	recv, suffix, ok := e.factorCall(kids)
+	if !ok || len(suffix) != 1 {
+		return 0, false
+	}
+	ct, isConv := e.convType(recv)
+	if !isConv {
+		return 0, false
+	}
+	if _, isInt := cIntWidths[e.underlyingCType(ct)]; !isInt {
+		return 0, false
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	if len(args) != 1 {
+		return 0, false
+	}
+	return e.foldConstInt(args[0].ast)
+}
+
 // wideConstLit renders an expression that folds to a constant too wide for a C int,
 // or reports false for anything else -- an expression that does not fold, or one
 // whose value C computes the same way Go does, which is left as written.
@@ -6038,6 +6081,11 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 		kids := slices.Collect(it(n.ast))
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.foldIntNode(kids[1]) // "(" Expression ")"
+		}
+		if e.foldConv {
+			if v, ok := e.convFold(kids); ok {
+				return v, true
+			}
 		}
 		// A prefix operator, either as a bare token or wrapped in a UnaryOp node --
 		// the shape the parser actually builds for "-1", and the reason "-1 << 40"

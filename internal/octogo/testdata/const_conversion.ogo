@@ -1,0 +1,43 @@
+// A conversion of a constant is a constant expression, as in Go: the ordinary way
+// to write a scale factor, and usable everywhere a constant is.
+
+type Q int32
+
+const (
+	fracBits      = 16
+	one           = int32(1) << fracBits
+	half          = float64(1) / 2
+	exact         = int32(4.0)
+	viaDefined    = Q(7) * 2
+	sizedUnsigned = uint8(255)
+	n             = int32(3)
+)
+
+type Buf struct {
+	data [n]int
+}
+
+var v int32 = 3
+
+func f() int { return 1 }
+
+func main() {
+	var arr [n]int
+	var b Buf
+	_ = arr
+	_ = b
+	println(one, half, exact, viaDefined, sizedUnsigned)
+
+	// A conversion at run time is unaffected.
+	x := 5
+	println(int32(x) * 2)
+
+	// ERROR constant 200 overflows int8
+	const tooBig = int8(200)
+	// ERROR constant 2.5 truncated to integer
+	const notWhole = int32(2.5)
+	// ERROR int32 is not a constant
+	const notConst = int32(v)
+	// ERROR f is not a constant
+	const notCall = f()
+}

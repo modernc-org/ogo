@@ -337,6 +337,11 @@
 //   - The predeclared identifier iota denotes an integer constant.
 //   - Numeric constants represent exact values of arbitrary precision and do not
 //     overflow.
+//   - A conversion of a constant to a numeric type is itself a constant, so
+//     "const one = int32(1) << 16" is a constant expression and may be used
+//     wherever one is, an array bound included. The value must be representable in
+//     the target type ("int8(200)" overflows) and a float converted to an integer
+//     type must be whole ("int32(2.5)" is truncated, and refused).
 //
 // # Variables and Memory Scoping
 //

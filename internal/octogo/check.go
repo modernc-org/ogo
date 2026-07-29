@@ -8702,6 +8702,120 @@ func (f *File) foldUnary(op Symbol, opTok Token, e ExpressionNode) ExpressionNod
 	return &UnaryExprNode{List: []Symbol{op}, Factor: e}
 }
 
+// constConversion folds `T(x)` where T names a numeric type and x is a constant.
+// It reports false for every other Factor shape, including a conversion of a
+// non-constant operand -- that one is not a constant expression, which the walk's
+// FactorSuffix case already says.
+//
+// The value is range-checked against the target exactly as a declared type would
+// range-check it, so `int8(200)` reads "constant 200 overflows int8" rather than
+// silently becoming -56. A float operand converted to an integer type must be
+// exactly representable, as in Go: `int32(2.5)` is an error, `int32(4.0)` is 4.
+func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return nil, false
+	}
+	nameTok := f.tok(kids[0].tok)
+	k, ok := f.nameKind(s, nameTok.Src())
+	if !ok {
+		return nil, false
+	}
+	arg, ok := soleCallArg(kids[1])
+	if !ok {
+		return nil, false
+	}
+	v := f.expression(s, arg)
+	uc, ok := v.(untypedConst)
+	if !ok || uc.cv == nil || uc.cv.Kind() == constant.Unknown {
+		// Not a constant operand: not a constant expression either. Fall through to
+		// the walk, which reports it in the one voice used everywhere else.
+		return nil, false
+	}
+	cv := uc.cv
+	switch {
+	case isFloatKind(k):
+		cv = constant.ToFloat(cv)
+		if cv.Kind() == constant.Unknown {
+			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to %s", uc.cv, nameTok.Src())
+			return untypedConst{constant.MakeUnknown()}, true
+		}
+	default:
+		if _, _, ok := intKindRange(k); !ok {
+			return nil, false // not a numeric conversion this folds
+		}
+		if cv.Kind() == constant.Float {
+			iv := constant.ToInt(cv)
+			if iv.Kind() == constant.Unknown {
+				f.err(f.tok(arg.Pos()).Position(), "constant %s truncated to integer", cv)
+				return untypedConst{constant.MakeUnknown()}, true
+			}
+			cv = iv
+		}
+		f.reportOverflow(f.tok(arg.Pos()).Position(), cv, k, nameTok.Src())
+	}
+	return untypedConst{cv}, true
+}
+
+// nameKind is typeKind for a type written as a bare name, following a chain of
+// definitions to the predeclared type underneath.
+func (f *File) nameKind(s *Scope, name string) (Kind, bool) {
+	for range 16 {
+		switch d := s.find(name).(type) {
+		case *PredeclaredType:
+			return d.Kind(), true
+		case *TypeDeclaration:
+			if d.TypeSpec == nil {
+				return 0, false
+			}
+			id, ok := d.TypeSpec.TypeNode.(*TypeNodeIdent)
+			if !ok {
+				return 0, false
+			}
+			name = id.Name.Src()
+		default:
+			return 0, false
+		}
+	}
+	return 0, false
+}
+
+// soleCallArg returns the single argument expression of a FactorSuffix that is
+// exactly one call -- no selector, no index, one value. Anything else is not a
+// conversion.
+func soleCallArg(suffix Node) (Node, bool) {
+	var call Node
+	for c := range it(suffix.ast) {
+		if c.sym != CallSuffix {
+			return Node{}, false
+		}
+		if call.sym != 0 {
+			return Node{}, false
+		}
+		call = c
+	}
+	if call.sym != CallSuffix {
+		return Node{}, false
+	}
+	var args []Node
+	for c := range it(call.ast) {
+		switch c.sym {
+		case ArgumentList:
+			for a := range it(c.ast) {
+				if a.sym == Expression {
+					args = append(args, a)
+				}
+			}
+		case Expression:
+			args = append(args, c)
+		}
+	}
+	if len(args) != 1 {
+		return Node{}, false
+	}
+	return args[0], true
+}
+
 // constUnaryOp evaluates a constant unary operation. go/constant panics when the
 // operator is not defined for the operand's kind (negating a string,
 // complementing a float, "!" on a number); recover from that and report it as a
@@ -8742,6 +8856,14 @@ type FactorNodeParen struct {
 //		| rune_lit
 //		| "(" Expression ")" .
 func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
+	// A conversion of a constant, `int32(1)` or `float64(n)`, which Go folds like
+	// any other constant expression -- and which is how a scale factor is written:
+	// `const one = int32(1) << 16`. Checked before the walk below, where the type
+	// name would resolve to a type rather than a constant and be reported as "not a
+	// constant".
+	if v, ok := f.constConversion(s, n); ok {
+		return v
+	}
 	//TODO 	var ident *FactorNodeIdent
 	for n := range it(n.ast) {
 		switch n.sym {

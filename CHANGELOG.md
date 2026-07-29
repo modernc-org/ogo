@@ -25,6 +25,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Bug fixes
 
+- **A conversion could not appear in a constant expression.** `const one = int32(1)
+  << 16` — the ordinary way to write a fixed-point scale — was rejected with "int32
+  is not a constant", package-level or local, for every target type. Such a
+  conversion is now folded like any other constant expression and is usable
+  wherever a constant is, an array bound included. The value must be representable
+  in the target (`int8(200)` overflows) and a float converted to an integer type
+  must be whole (`int32(2.5)` is refused), both worded as Go words them.
 - **`len` and `cap` of a struct's array field were refused.** Both resolved an array
   only through a bare variable name, so `len(r.buf)` fell through to the
   string/slice header path and failed with "len is only supported for strings,
@@ -62,6 +69,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **A fixed-point PID controller is a run case** — Q16.16 throughout, with a scaled
+  multiply through a 64-bit intermediate, saturation on both rails, integral
+  anti-windup and a derivative over a signed difference. It is what found the
+  constant conversion above, on its first line. The tail pins the arithmetic the
+  loop rests on: `mul` over negatives and the extremes, an int32 product that
+  overflows coming back down, and that a signed shift of a negative value rounds
+  toward minus infinity where a division by the same power of two does not.
 - **A work-queue scheduler over the whole cog pool is a run case**, and a
   goroutine that starts goroutines is another. Seven workers over three rounds is
   twenty-one cogs started and retired, with the dispatcher multiplexing "hand out

@@ -900,6 +900,121 @@ func main() {
 		want: "total 100\nseen 30\nbases 4\n",
 	},
 	{
+		// A fixed-point PID controller driving a first-order plant, Q16.16
+		// throughout: a scaled multiply through a 64-bit intermediate, a signed
+		// shift back down, saturation on both rails, integral anti-windup, and a
+		// derivative over a signed difference. What a motor loop on this part is.
+		//
+		// `const one = int32(1) << fracBits` is how the scale is written, and it did
+		// not compile: a conversion was not accepted in a constant expression at
+		// all, package-level or local, for any target type.
+		//
+		// The tail checks the arithmetic the loop rests on rather than the loop:
+		// mul over negatives and the extremes, an int32 product that overflows on
+		// the way back down, and that a signed shift of a negative value rounds
+		// toward minus infinity while a division by the same power of two does not.
+		// Every line matches real Go.
+		name: "fixed-point PID controller",
+		src: `// A fixed-point PID controller driving a first-order plant, Q16.16 throughout.
+// Everything a motor loop does: a scaled multiply through a wider intermediate,
+// a signed shift back down, saturation both ways, integral anti-windup, and a
+// derivative over a signed difference.
+
+const (
+	fracBits = 16
+	one      = int32(1) << fracBits
+	outMax   = 100 * one
+	outMin   = -outMax
+)
+
+type PID struct {
+	kp, ki, kd int32
+	integral   int32
+	prevErr    int32
+	saturated  int32
+}
+
+// mul multiplies two Q16.16 values. The product needs 64 bits before it comes
+// back down, which is the whole reason a controller like this is written in
+// int64 on a 32-bit part.
+func mul(a int32, b int32) int32 {
+	p := int64(a) * int64(b)
+	return int32(p >> fracBits)
+}
+
+func clamp(v int32, lo int32, hi int32) int32 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func (c *PID) step(setpoint int32, measured int32) int32 {
+	err := setpoint - measured
+
+	// Anti-windup: the integral only accumulates while the output is off its rail
+	// or the error would bring it back.
+	if c.saturated == 0 || (err < 0) != (c.integral < 0) {
+		c.integral += err
+		c.integral = clamp(c.integral, -400*one, 400*one)
+	}
+
+	d := err - c.prevErr
+	c.prevErr = err
+
+	raw := mul(c.kp, err) + mul(c.ki, c.integral) + mul(c.kd, d)
+	out := clamp(raw, outMin, outMax)
+	if out != raw {
+		c.saturated = 1
+	} else {
+		c.saturated = 0
+	}
+	return out
+}
+
+func main() {
+	var c PID
+	c.kp = one / 4       // 0.25
+	c.ki = one / 512     // ~0.002
+	c.kd = one * 2       // 2.0
+	setpoint := 50 * one // the plant should settle here
+
+	plant := int32(0)
+	sumOut := int64(0)
+	for i := 0; i < 200; i++ {
+		u := c.step(setpoint, plant)
+		// A first-order plant: it moves a thirty-second of the way toward u.
+		plant += (u - plant) >> 5
+		sumOut += int64(u)
+	}
+	println("settled", plant>>fracBits)
+	println("error", (setpoint-plant)>>fracBits)
+	println("sum", sumOut>>fracBits)
+
+	// The rails, reached from both sides.
+	var s PID
+	s.kp = 100 * one
+	println("hi", s.step(50*one, 0)>>fracBits, s.saturated)
+	println("lo", s.step(0, 50*one)>>fracBits, s.saturated)
+
+	// mul over the awkward values: negative, the extremes, and a rounding case.
+	println("mul", mul(-one/2, one*3), mul(one/3, one/3), mul(-one, -one))
+	var big int32 = 1 << 30
+	println("wide", mul(big, one*2), int32(int64(big)*4>>fracBits))
+
+	// A signed shift of a negative value rounds toward minus infinity in both
+	// languages, which is not what dividing by a power of two does.
+	var n int32 = -33
+	println("shift", n>>5, n/32, -33>>5)
+}
+`,
+		want: "settled 10\nerror 39\nsum 2243\nhi 100 1\nlo -100 1\n" +
+			"mul -98304 7281 65536\nwide -2147483648 65536\nshift -2 -1 -2\n",
+	},
+	{
 		// A work-queue scheduler over the WHOLE cog pool, retired and restarted:
 		// seven workers, three rounds, twenty-one goroutines started and stopped.
 		// The dispatcher multiplexes handing out the next job against taking a
