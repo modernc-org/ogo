@@ -2010,12 +2010,18 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// struct's forward declaration (`typedef struct T T;`) is emitted first, across
 	// all files, before any body, so a field may point to a struct declared later or
 	// to a mutually-recursive one.
-	var typedefs bytes.Buffer
-	e.w = &typedefs
+	// The struct forward declarations go in their own buffer so they can be emitted
+	// ahead of the function typedefs, which may name a struct: `func(m *Machine)
+	// bool` becomes `typedef _Bool (*ogo_functype0)(Machine*);`, and a POINTER to a
+	// struct needs only the forward declaration, which is what this ordering gives
+	// it. Written after them, it named a type C had not seen.
+	var forwards, typedefs bytes.Buffer
+	e.w = &forwards
 	// Constant VALUES first: a struct field's array bound may name one, and the
 	// typedefs below are emitted before the constants themselves.
 	forEachFile(func() { e.collectConstValues(e.f.AST) })
 	forEachFile(func() { e.collectStructForwards(e.f.AST) })
+	e.w = &typedefs
 	forEachFile(func() { e.collectStructs(e.f.AST) })
 	// A defined type over a struct is that struct: `type Q P` indexes, is written as
 	// a literal, converts and carries methods exactly as P does. Every one of those
@@ -2133,10 +2139,11 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// field may be a string); scalar-element slice typedefs precede the struct
 	// typedefs (a struct field may hold one), struct-element slices and the append
 	// ok-form structs follow. The string print helpers follow the typedefs.
-	if e.usesString || typedefs.Len() != 0 || scalarSliceDefs.Len() != 0 || structSliceDefs.Len() != 0 || appendokDefs.Len() != 0 || funcTypeDefs.Len() != 0 {
+	if e.usesString || forwards.Len() != 0 || typedefs.Len() != 0 || scalarSliceDefs.Len() != 0 || structSliceDefs.Len() != 0 || appendokDefs.Len() != 0 || funcTypeDefs.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
 		}
+		out.Write(forwards.Bytes())
 		out.Write(funcTypeDefs.Bytes())
 		out.Write(scalarSliceDefs.Bytes())
 		out.Write(typedefs.Bytes())
@@ -10845,7 +10852,22 @@ func (e *emitter) emitDestructure(targets []string, declare []bool, rhs []int32)
 	tmp := e.newTmp()
 	e.ind()
 	e.emit(e.retStructName(cname) + " " + tmp + " = ")
-	if !e.emitCallExpr(callee, suffix) {
+	// A method reached through fields is emitted here rather than by emitCallExpr,
+	// which knows the two fixed call shapes and not this one: the receiver is the
+	// field chain, taken by address when the method wants a pointer.
+	if fields, cn, wantPtr, isField := e.methodOnField(callee, suffix); isField {
+		lv := e.fieldAccessC(callee, fields)
+		ct, _ := e.fieldType(callee, fields)
+		recv, ok := e.chainReceiver(lv, ct, true, wantPtr)
+		if !ok {
+			e.fail("cannot take the address of %s for a pointer-receiver method", lv)
+			return
+		}
+		if args := e.argsCText(cn, suffix[len(suffix)-1].ast); args != "" {
+			recv += ", " + args
+		}
+		e.emit(cn + "(" + recv + ")")
+	} else if !e.emitCallExpr(callee, suffix) {
 		e.fail("unsupported call on the right-hand side of a multiple assignment")
 		return
 	}
@@ -10870,7 +10892,40 @@ func (e *emitter) emitDestructure(targets []string, declare []bool, rhs []int32)
 // of an imported one. The C name is what names the result struct, so it has to be
 // the same one emitCallExpr will call -- a method's is namespaced by its receiver
 // type, an imported function's by its package.
+// allSelectors reports whether every step is a Selector.
+func allSelectors(steps []Node) bool {
+	for _, n := range steps {
+		if n.sym != Selector {
+			return false
+		}
+	}
+	return true
+}
+
+// methodOnField resolves a call whose receiver is reached through struct fields,
+// `m.st.pop()`: the fields leading to the receiver, the method's C name, and
+// whether that method takes a pointer receiver.
+func (e *emitter) methodOnField(recv string, suffix []Node) (fields []string, cname string, wantPtr, ok bool) {
+	if len(suffix) < 3 || suffix[len(suffix)-1].sym != CallSuffix || !allSelectors(suffix[:len(suffix)-1]) {
+		return nil, "", false, false
+	}
+	sels := suffix[:len(suffix)-1]
+	for _, n := range sels[:len(sels)-1] {
+		fields = append(fields, e.soleIdent(n.ast))
+	}
+	ct, ok := e.fieldType(recv, fields)
+	if !ok || !e.isUserType(methodBaseType(ct)) {
+		return nil, "", false, false
+	}
+	cname = methodCName(methodBaseType(ct), e.soleIdent(sels[len(sels)-1].ast))
+	return fields, cname, e.methodPtr[cname], true
+}
+
 func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resTypes []string, ok bool) {
+	if _, cn, _, isField := e.methodOnField(recv, suffix); isField {
+		resTypes, ok = e.funcRet[cn]
+		return cn, resTypes, ok
+	}
 	if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 		member := e.soleIdent(suffix[0].ast)
 		if rct, isVar := e.varType(recv); isVar && e.isUserType(methodBaseType(rct)) {
@@ -10919,7 +10974,11 @@ func (e *emitter) directCall(ast []int32) (recv string, suffix []Node, ok bool) 
 				switch {
 				case len(sfx) == 1 && sfx[0].sym == CallSuffix:
 					return r, sfx, true
-				case len(sfx) == 2 && sfx[0].sym == Selector && sfx[1].sym == CallSuffix:
+				case len(sfx) >= 2 && sfx[len(sfx)-1].sym == CallSuffix && allSelectors(sfx[:len(sfx)-1]):
+					// `x.m(...)`, and a method on a FIELD: `m.st.pop()`. Only the
+					// two-step form was taken, so a multi-result method reached
+					// through a field was "multiple assignment requires a single
+					// function call on the right-hand side" -- of a call.
 					return r, sfx, true
 				}
 			}

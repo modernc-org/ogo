@@ -15,6 +15,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A multi-result method may be called on a struct field**, `m.st.pop()`, which
+  was "multiple assignment requires a single function call on the right-hand side"
+  — of a call. Only a method on a plain variable was recognized, so a container
+  held as a field could not hand back its `(value, ok)`.
+- **A function type naming a struct did not compile.** `func(m *Machine) bool`
+  emitted its typedef ahead of the struct's forward declaration, so C had not seen
+  the name — which is every callback that takes a pointer to your own type. The
+  forward declarations are emitted first now, which is all a pointer to a struct
+  needs.
 - **A call through a function-valued variable has a type.** `b := a(0)`, where `a`
   holds a function that returns a function, was "cannot infer a type for the
   declaration of b" — only a call of a *named* function had its result type read,

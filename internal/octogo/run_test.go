@@ -950,6 +950,188 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A stack machine: opcodes dispatched through a table of function values,
+		// operands in a fixed stack, a defined type for each thing that has a unit.
+		// The shape a P2 program takes when it interprets anything, and it leans on
+		// the whole defined-type family at once.
+		//
+		// It found two things. A multi-result method whose receiver is a FIELD --
+		// `m.st.pop()` -- was "multiple assignment requires a single function call
+		// on the right-hand side", of a call: only a method on a plain variable was
+		// taken. And a function type naming a struct, `func(m *Machine) bool`, put
+		// its typedef ahead of the struct's forward declaration, so C had not seen
+		// the name; the forwards are emitted first now, which is all a pointer to a
+		// struct needs.
+		name: "a stack machine with a dispatch table",
+		src: `// A stack machine: opcodes dispatched through a table of function values, operands
+// in a fixed stack, and a defined type for each thing that has a unit. The shape a
+// P2 program takes when it interprets anything -- a command set, a bytecode, a
+// sequencer -- and it leans on the whole defined-type family at once.
+
+type Opcode int
+
+type Word int32
+
+type Stack struct {
+	data [16]Word
+	sp   int
+}
+
+type Op func(m *Machine) bool
+
+type Machine struct {
+	st    Stack
+	steps int
+	fault bool
+}
+
+const (
+	opPush Opcode = iota
+	opAdd
+	opMul
+	opDup
+	opDrop
+	opNeg
+	opCount
+)
+
+var program [12]Opcode
+
+var operand [12]Word
+
+var table [opCount]Op
+
+func (s *Stack) push(v Word) bool {
+	if s.sp == len(s.data) {
+		return false
+	}
+	s.data[s.sp] = v
+	s.sp++
+	return true
+}
+
+func (s *Stack) pop() (Word, bool) {
+	if s.sp == 0 {
+		return 0, false
+	}
+	s.sp--
+	return s.data[s.sp], true
+}
+
+func (s *Stack) top() Word {
+	if s.sp == 0 {
+		return 0
+	}
+	return s.data[s.sp-1]
+}
+
+var pending Word
+
+func doPush(m *Machine) bool { return m.st.push(pending) }
+
+func doAdd(m *Machine) bool {
+	b, ok1 := m.st.pop()
+	a, ok2 := m.st.pop()
+	if !ok1 || !ok2 {
+		return false
+	}
+	return m.st.push(a + b)
+}
+
+func doMul(m *Machine) bool {
+	b, ok1 := m.st.pop()
+	a, ok2 := m.st.pop()
+	if !ok1 || !ok2 {
+		return false
+	}
+	return m.st.push(a * b)
+}
+
+func doDup(m *Machine) bool {
+	v, ok := m.st.pop()
+	if !ok {
+		return false
+	}
+	return m.st.push(v) && m.st.push(v)
+}
+
+func doDrop(m *Machine) bool {
+	_, ok := m.st.pop()
+	return ok
+}
+
+func doNeg(m *Machine) bool {
+	v, ok := m.st.pop()
+	if !ok {
+		return false
+	}
+	return m.st.push(-v)
+}
+
+func install() {
+	table[opPush] = doPush
+	table[opAdd] = doAdd
+	table[opMul] = doMul
+	table[opDup] = doDup
+	table[opDrop] = doDrop
+	table[opNeg] = doNeg
+}
+
+func (m *Machine) run(n int) {
+	for i := 0; i < n; i++ {
+		op := program[i]
+		if int(op) < 0 || int(op) >= int(opCount) {
+			m.fault = true
+			return
+		}
+		pending = operand[i]
+		// The backend refuses a call written directly on an array element of
+		// function type, so the handler is bound first.
+		h := table[op]
+		if !h(m) {
+			m.fault = true
+			return
+		}
+		m.steps++
+	}
+}
+
+func main() {
+	install()
+
+	// 3 4 + 5 * dup + neg   ->  -70
+	program[0] = opPush
+	operand[0] = 3
+	program[1] = opPush
+	operand[1] = 4
+	program[2] = opAdd
+	program[3] = opPush
+	operand[3] = 5
+	program[4] = opMul
+	program[5] = opDup
+	program[6] = opAdd
+	program[7] = opNeg
+
+	var m Machine
+	m.run(8)
+	println("result", int(m.st.top()), m.steps, m.fault)
+
+	// Underflow faults rather than running off the end of the stack.
+	var u Machine
+	program[0] = opAdd
+	u.run(1)
+	println("underflow", u.fault, u.steps)
+
+	// An opcode outside the table faults too.
+	var b Machine
+	program[0] = Opcode(99)
+	b.run(1)
+	println("bad opcode", b.fault)
+}
+`,
+		want: "result -70 8 false\nunderflow true 0\nbad opcode true\n",
+	},
+	{
 		// A call through a VARIABLE holding a function was typed nowhere, so
 		// `b := a(0)` -- where a holds a function that returns a function -- was
 		// "cannot infer a type for the declaration of b". Only a call of a NAMED
