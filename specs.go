@@ -39,10 +39,6 @@
 // and initialized before main, which a field cannot have without deciding what a
 // declaration of the struct allocates -- and what a copy of it, a composite literal
 // of it, and an array of it then share.
-// TODO 20260729 A defined type over a POINTER is not modelled: `type PP *P` is not
-// recognised as a pointer, so `var q PP = &p` is refused. Over a scalar, a string,
-// an array, a slice, a struct, a function or a channel it behaves as what it is
-// defined over, which is what this one is missing from.
 // TODO 20260730 Calling the result of a call, `pick()(3)`, is "too many arguments
 // in call to pick" -- the call checker reads the second argument list as the first
 // call's. Independent of whether the function type is written or defined. The

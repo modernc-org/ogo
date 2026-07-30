@@ -15,6 +15,10 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A defined pointer type is a pointer**, `type PP *Point` — `var q PP = &p` was
+  refused as "cannot use &p (an address) as PP value", the check believing PP wanted
+  a value. With this, a defined type behaves as what it is defined over for *every*
+  kind: scalar, string, array, slice, struct, channel, function and now pointer.
 - **A defined function type is a function**, `type Fn func(int) int` — a call
   through a variable, parameter, struct field or package variable of one was
   "cannot call non-function". A callback named once and used everywhere is the

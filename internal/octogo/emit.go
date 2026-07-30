@@ -11162,10 +11162,21 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 }
 
 // isPointer reports whether a C type is a pointer (spelled "T*").
-func (e *emitter) isPointer(ctype string) bool { return strings.HasSuffix(ctype, "*") }
+// isPointer reports whether a C type is a pointer, following a chain of definitions
+// to reach one: `type PP *P` emits `typedef P* PP;`, and a variable of PP takes an
+// address and reaches fields through "->" exactly as a *P does.
+func (e *emitter) isPointer(ctype string) bool {
+	return strings.HasSuffix(e.underlyingCType(ctype), "*")
+}
 
-// elemType strips one pointer level from a C type ("T*" -> "T").
-func (e *emitter) elemType(ctype string) string { return strings.TrimSuffix(ctype, "*") }
+// elemType strips one pointer level from a C type ("T*" -> "T"), resolving a
+// defined pointer type first so its element is reached as well.
+func (e *emitter) elemType(ctype string) string {
+	if u := e.underlyingCType(ctype); strings.HasSuffix(u, "*") {
+		return strings.TrimSuffix(u, "*")
+	}
+	return strings.TrimSuffix(ctype, "*")
+}
 
 // structFieldType returns the C type of a struct's field. ctype may be a struct
 // value or a pointer to one (a field access auto-dereferences, like Go's).

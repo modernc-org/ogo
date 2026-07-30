@@ -950,6 +950,79 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A defined POINTER type, `type PP *Point`, which was not recognized as a
+		// pointer: `var q PP = &p` was refused as "cannot use &p (an address) as PP
+		// value", the check believing PP wanted a value. Every site that asked the
+		// question asked it as a type assertion, which a defined type fails, so the
+		// answer had to come from following the definition instead -- in the checker
+		// at six of them, and in the emitter where "->" is chosen over "." and where
+		// a pointer's element type is read.
+		//
+		// Covered: a variable, a parameter written through, a package variable, a
+		// function result, a chain of definitions, a pointer to a scalar
+		// dereferenced, and comparison against nil.
+		name: "a defined pointer type",
+		src: `type Point struct {
+	x int
+	y int
+}
+
+type PP *Point
+
+type IP *int
+
+type Chain PP
+
+var pool [3]Point
+
+var head PP
+
+func get(q PP) int { return q.x }
+
+func set(q PP, v int) { q.x = v }
+
+func first() PP { return &pool[0] }
+
+func bump(p IP) { *p = *p + 1 }
+
+func main() {
+	var p Point
+	p.x = 3
+	p.y = 4
+
+	var q PP = &p
+	println("read", q.x, q.y)
+
+	q.x = 30
+	println("write", p.x)
+
+	println("param", get(&p), get(q))
+	set(q, 7)
+	println("via param", p.x)
+
+	head = &pool[1]
+	head.y = 5
+	println("pkg", pool[1].y, head.y)
+
+	r := first()
+	r.x = 8
+	println("result", pool[0].x, r.x)
+
+	var c Chain = &p
+	println("chain", c.x)
+
+	v := 10
+	var ip IP = &v
+	bump(ip)
+	println("scalar", *ip, v)
+
+	println("nil", head == nil, PP(nil) == nil)
+}
+`,
+		want: "read 3 4\nwrite 30\nparam 30 30\nvia param 7\npkg 5 5\nresult 8 8\n" +
+			"chain 7\nscalar 11 11\nnil false true\n",
+	},
+	{
 		// A defined FUNCTION type, `type Fn func(int) int`, which was not recognized
 		// as a function at all: a call through a variable, parameter or field of one
 		// was "cannot call non-function". A callback named once and used everywhere

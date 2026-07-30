@@ -733,7 +733,7 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 	vd := &VarDeclaration{declaration: declaration{token: tok}}
 	if tn := f.receiverTypeNode(s, decls[0].TypeAST); tn != nil {
 		vd.kind, vd.hasKind = f.typeKind(s, tn)
-		_, vd.isPtr = tn.(*TypeNodePointer)
+		vd.isPtr = f.isPointerType(s, tn)
 		vd.typeName, _ = namedTypeToken(tn)
 		vd.typeQual = namedTypeQual(tn)
 		vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
@@ -939,7 +939,7 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		// a predeclared Kind, whether it is a pointer, and its named (possibly
 		// pointed-to) type for field access.
 		kind, hasKind := f.typeKind(s, p.TypeNode)
-		_, isPtr := p.TypeNode.(*TypeNodePointer)
+		isPtr := f.isPointerType(s, p.TypeNode)
 		typeName, _ := namedTypeToken(p.TypeNode)
 		typeQual := namedTypeQual(p.TypeNode)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
@@ -1851,7 +1851,7 @@ func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	// Pointer-ness first: a *P result has no predeclared Kind, so the guard below
 	// would return before ever asking.
-	_, wantPtr := rt.typeNode.(*TypeNodePointer)
+	wantPtr := f.isPointerType(s, rt.typeNode)
 	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	if !rt.known {
 		return
@@ -3014,7 +3014,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 					if tn := f.typ(s, c); tn != nil {
 						declType = tn
 						kind, hasKind = f.typeKind(s, tn)
-						_, isPtr = tn.(*TypeNodePointer)
+						isPtr = f.isPointerType(s, tn)
 						typeName, _ = namedTypeToken(tn)
 						typeQual = namedTypeQual(tn)
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
@@ -5482,7 +5482,7 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	if !ok {
 		return Token{}, Token{}, false, false
 	}
-	_, resIsPtr := tn.(*TypeNodePointer)
+	resIsPtr := f.isPointerType(s, tn)
 	return nm, namedTypeQual(tn), isPtr || resIsPtr, true
 }
 
@@ -6273,7 +6273,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 // does not model -- a call, an index, a field -- reports nothing rather than a
 // guess, which is the same rule its neighbours follow.
 func (f *File) checkPointerArg(s *Scope, p retResult, arg Node, name Token) {
-	_, want := p.typeNode.(*TypeNodePointer)
+	want := f.isPointerType(s, p.typeNode)
 	f.checkPointerValue(s, want, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
 }
 
@@ -6292,6 +6292,31 @@ func (f *File) checkPointerValue(s *Scope, want bool, wantName string, e Node, w
 	}
 	f.err(f.tok(e.Pos()).Position(), "cannot use %s (%s) as %s value in %s",
 		f.exprSource(e), pointerDesc(have), wantName, what)
+}
+
+// isPointerType reports whether a type node is a pointer, following a chain of
+// definitions to reach one: `type PP *P` is a pointer wherever it is written, so a
+// variable, parameter, result or field of it takes an address and dereferences.
+//
+// Every site that asked this asked it as a type assertion, which a defined type
+// fails -- so `var q PP = &p` was refused as "cannot use &p (an address) as PP
+// value", the check believing PP wanted a value.
+func (f *File) isPointerType(s *Scope, tn TypeNode) bool {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		switch x := tn.(type) {
+		case *TypeNodePointer:
+			return true
+		case *TypeNodeIdent:
+			td, ok := s.find(x.Name.Src()).(*TypeDeclaration)
+			if !ok || td.TypeSpec == nil {
+				return false
+			}
+			tn = td.TypeSpec.TypeNode
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // pointerDesc names what an argument is, for the diagnostic above.
@@ -7576,7 +7601,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		// a predeclared Kind, whether it is a pointer, and its named type for
 		// field access. typ is nil for an inferred type ("var x = expr").
 		kind, hasKind := f.typeKind(s, typ)
-		_, isPtr := typ.(*TypeNodePointer)
+		isPtr := f.isPointerType(s, typ)
 		typeName, _ := namedTypeToken(typ)
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
@@ -7657,7 +7682,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			// constant initializer is bounded by the type it infers instead.
 			kind, hasKind := f.typeKind(s, typ)
 			typeName, _ := namedTypeToken(typ)
-			_, typIsPtr := typ.(*TypeNodePointer)
+			typIsPtr := f.isPointerType(s, typ)
 			for _, e := range exprs {
 				f.checkNames(s, e)
 				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
