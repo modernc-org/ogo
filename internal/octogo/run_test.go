@@ -950,6 +950,76 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// Two silent wrong answers, both from a target that is not a plain variable.
+		//
+		// `*p++` emitted `*p++`, which C reads as `*(p++)`: the POINTER moves and the
+		// load is thrown away, where Go means `(*p)++`. Everything after it in the
+		// function then wrote through a pointer one past its variable. C's "++" binds
+		// tighter than its unary "*"; "=" and the compound operators do not, which is
+		// why only this one shape was wrong.
+		//
+		// `for i, v = range xs` -- the assigning clause, no ":=" -- declared fresh C
+		// variables that shadowed i and v for the loop's length, so the loop ran and
+		// the variables it named came out untouched. The counter stays the loop's own
+		// now and the clause's variables are written from it at the top of each
+		// iteration, which is where Go assigns them: after the loop they hold the last
+		// index and element, and a `break` leaves them at the iteration it broke on.
+		// A ":=" clause still declares, and still shadows an outer name of its own.
+		//
+		// `for _, v = range xs` was refused outright ("cannot use _ as value or type"):
+		// a blank there is the same discard it is on the left of an "=", not a read.
+		name: "increment through a pointer, and an assigning range clause",
+		src: `func main() {
+	n := 0
+	p := &n
+	*p++
+	*p += 4
+	*p--
+	println(n)
+
+	xs := []int{5, 6, 7}
+	var k, v int
+	for k, v = range xs {
+	}
+	println(k, v)
+
+	for k = range xs {
+	}
+	println(k)
+
+	var a [3]int
+	a[0], a[1], a[2] = 8, 9, 10
+	for k, v = range a {
+	}
+	println(k, v)
+
+	s := "héllo"
+	var r rune
+	for k, r = range s {
+	}
+	println(k, int(r))
+
+	for k = range 4 {
+	}
+	println(k)
+
+	sum := 0
+	for k, v = range xs {
+		sum += k * v
+		if k == 1 {
+			break
+		}
+	}
+	println(k, v, sum)
+
+	for _, v = range xs {
+	}
+	println(v)
+}
+`,
+		want: "4\n2 7\n2\n2 10\n5 111\n3\n1 6 6\n7\n",
+	},
+	{
 		// A struct member named after a type. `type logger struct{...}` beside
 		// `type app struct{ logger logger }` is ordinary Go -- C keeps member names
 		// in a namespace of their own, and gcc agrees -- but the target's C compiler

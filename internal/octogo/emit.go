@@ -7505,6 +7505,7 @@ type forHeader struct {
 	keyVar    []int32 // the index variable, nil for `for range x`
 	valVar    []int32 // the value variable, for `for i, v := range x`
 	rangeDef  bool    // ":=" rather than "="
+	keyStore  string  // emit-time: for an assigning clause, the variable the loop's counter is copied into each iteration
 }
 
 // parseForHeader reads a ForHeader node.
@@ -7837,9 +7838,31 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 	// The representation decides what ranging means -- a value of `type Name string`
 	// is a string and yields its runes -- so the name is resolved away here.
 	ct, _ := e.exprReprCType(h.rangeExpr)
+	// An assigning clause, `for i, v = range xs`, writes variables that already
+	// exist rather than declaring new ones. Only a variable can be one: rendering an
+	// element or a field as an assignment target is what the assignment paths do,
+	// and a range clause does not reach them.
+	if !h.rangeDef {
+		for _, v := range [][]int32{h.keyVar, h.valVar} {
+			if v == nil {
+				continue
+			}
+			if _, ok := e.exprIdent(v); !ok {
+				e.fail("a range target that is not a variable is not supported yet")
+				return
+			}
+		}
+	}
 	key := "_"
 	if h.keyVar != nil {
 		key = e.exprC(h.keyVar)
+		if !h.rangeDef && key != "_" {
+			// The counter stays the loop's own, and the clause's variable is written
+			// from it at the top of each iteration -- which is where Go assigns it, so
+			// after the loop it holds the last index, as Go leaves it.
+			h.keyStore = key
+			key = e.newTmp()
+		}
 	}
 	if key == "_" {
 		key = e.newTmp() // `for range x`, or `for _ := range x`: a hidden counter
@@ -7889,7 +7912,14 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		if h.valVar != nil {
 			val = e.exprC(h.valVar)
 		}
+		if h.rangeDef && val != "_" {
+			e.locals[val] = "int" // a rune is int32, i.e. int on the P2
+		}
 		inject := func() {
+			if h.keyStore != "" {
+				e.ind()
+				e.emit(h.keyStore + " = " + key + ";\n")
+			}
 			e.ind()
 			if val == "_" {
 				// No rune variable (`for range s` or `for i := range s`): decode only
@@ -7897,8 +7927,11 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 				e.emit("ogo_decode_rune(" + hdr + ", " + key + ", &" + width + ");\n")
 				return
 			}
-			e.locals[val] = "int" // a rune is int32, i.e. int on the P2
-			e.emit("int " + val + " = ogo_decode_rune(" + hdr + ", " + key + ", &" + width + ");\n")
+			decl := ""
+			if h.rangeDef {
+				decl = "int "
+			}
+			e.emit(decl + val + " = ogo_decode_rune(" + hdr + ", " + key + ", &" + width + ");\n")
 		}
 		e.emitLoopBody(body, inject)
 	default:
@@ -7914,25 +7947,38 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.locals[key] = "int"
 		e.ind()
 		e.emit("for (int " + key + " = 0; " + key + " < " + n + "; " + key + "++) {\n")
-		e.emitLoopBody(body, nil)
+		e.emitLoopBody(body, e.rangeValueInject(h, key, "int", ""))
 	}
 }
 
-// rangeValueInject returns a closure declaring the value variable of a
-// two-variable range, or nil for the index-only form. elem is the element C type
-// and access the C expression reading the current element.
-func (e *emitter) rangeValueInject(h *forHeader, elem, access string) func() {
-	if h.valVar == nil {
+// rangeValueInject returns the closure that opens each iteration of a range loop:
+// the value variable of a two-variable form, declared by a ":=" clause and merely
+// assigned by an "=" one, and -- for an "=" clause -- the key variable, copied from
+// the loop's own counter. It is nil when there is nothing to write. elem is the
+// element C type and access the C expression reading the current element.
+func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func() {
+	var lines []func()
+	if h.keyStore != "" {
+		store := h.keyStore
+		lines = append(lines, func() { e.ind(); e.emit(store + " = " + key + ";\n") })
+	}
+	if h.valVar != nil {
+		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
+			decl := ""
+			if h.rangeDef {
+				e.locals[val] = elem
+				decl = elem + " "
+			}
+			lines = append(lines, func() { e.ind(); e.emit(decl + val + " = " + access + ";\n") })
+		}
+	}
+	if len(lines) == 0 {
 		return nil
 	}
-	val := e.exprC(h.valVar)
-	if val == "_" {
-		return nil // the value is discarded
-	}
-	e.locals[val] = elem
 	return func() {
-		e.ind()
-		e.emit(elem + " " + val + " = " + access + ";\n")
+		for _, line := range lines {
+			line()
+		}
 	}
 }
 
@@ -7942,7 +7988,7 @@ func (e *emitter) emitRangeSlice(h *forHeader, body []int32, key, ct, hdr string
 	e.locals[key] = "int"
 	e.ind()
 	e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
-	e.emitLoopBody(body, e.rangeValueInject(h, e.sliceElemByName[ct], hdr+".ptr["+key+"]"))
+	e.emitLoopBody(body, e.rangeValueInject(h, key, e.sliceElemByName[ct], hdr+".ptr["+key+"]"))
 }
 
 // emitRangeArray emits the counting loop over an array named by base, bounded by
@@ -7951,7 +7997,7 @@ func (e *emitter) emitRangeArray(h *forHeader, body []int32, key string, a arrDi
 	e.locals[key] = "int"
 	e.ind()
 	e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
-	e.emitLoopBody(body, e.rangeValueInject(h, a.elem, base+"["+key+"]"))
+	e.emitLoopBody(body, e.rangeValueInject(h, key, a.elem, base+"["+key+"]"))
 }
 
 // rangeLitVar binds a range operand that is an array or slice literal to a fresh
@@ -10035,7 +10081,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			lhs = e.fieldAccessC(base, fields) // a field target, "->" through pointers
 		}
 	}
-	lhs = stars + lhs
+	if stars != "" {
+		// Parenthesised, because C's "++" binds tighter than its unary "*": `*p++`
+		// there is `*(p++)`, which increments the POINTER and throws the load away,
+		// where Go's is `(*p)++`. The other tails do not need it -- "=" and the
+		// compound operators bind looser -- but writing one form keeps the target
+		// from depending on which tail follows it.
+		lhs = "(" + stars + lhs + ")"
+	}
 
 	// Increment/decrement: PostfixOp = "++" | "--" (no operand of its own).
 	if len(op) == 1 && op[0].sym == 0 {

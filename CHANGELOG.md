@@ -63,6 +63,18 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **`*p++` incremented the pointer, not the pointee.** It emitted `*p++`, which C
+  reads as `*(p++)`: the pointer moved and the load was thrown away, so everything
+  after it wrote one past the variable. C's `++` binds tighter than its unary `*`
+  where Go's does not; `*p = v` and `*p += v` were always right.
+- **An assigning range clause did not assign.** `for i, v = range xs` — no `:=` —
+  declared fresh variables that shadowed `i` and `v` for the loop's length, so the
+  loop ran and the variables it named came out untouched. They are written at the
+  top of each iteration now, which is where Go assigns them: after the loop they
+  hold the last index and element, and a `break` leaves them at the iteration it
+  broke on. A `:=` clause is unaffected.
+- **`for _, v = range xs` was refused** with "cannot use _ as value or type". A blank
+  in an assigning range clause is the same discard it is on the left of an `=`.
 - **A struct field named after a type did not compile.** `type logger
   struct{...}` beside `type app struct{ logger logger }` is ordinary Go, and C keeps
   member names in a namespace of their own — but the backend refuses one, with

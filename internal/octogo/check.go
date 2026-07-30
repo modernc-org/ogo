@@ -2133,7 +2133,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	if fi.hasKey && fi.rangeDefine {
 		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt32, true)
 	} else if fi.hasKey {
-		f.checkNames(s, fi.keyVar)
+		f.checkRangeTarget(s, fi.keyVar)
 	}
 	if fi.hasVal {
 		if isInt {
@@ -2144,7 +2144,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		if fi.rangeDefine {
 			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt) || declared
 		} else {
-			f.checkNames(s, fi.valVar)
+			f.checkRangeTarget(s, fi.valVar)
 		}
 	}
 	// "for _ := range x" and "for _, _ := range x" write a ":=" that introduces
@@ -2152,6 +2152,17 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	if fi.rangeDefine && !declared && fi.hasKey {
 		f.errNoNewVars(f.tok(fi.keyVar.Pos()))
 	}
+}
+
+// checkRangeTarget resolves a target of an assigning range clause, `for i, _ =
+// range xs`. It is an assignment target, so "_" there is the same legal discard it
+// is on the left of an "=" -- not the read of the blank identifier that resolving
+// it as an ordinary name would report.
+func (f *File) checkRangeTarget(s *Scope, v Node) {
+	if id, ok := f.exprSoleIdent(v); ok && id.Src() == "_" {
+		return
+	}
+	f.checkNames(s, v)
 }
 
 // rangeElem classifies a range operand: an aggregate (slice or array) yields its

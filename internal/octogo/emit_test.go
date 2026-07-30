@@ -2963,7 +2963,7 @@ func main() {
 		"void Counter_Set(Counter* c, int v);\n" +
 		"int Counter_Get(Counter c);\n\n" +
 		"void Counter_Set(Counter* c, int v) {\n" +
-		"\t*c = v;\n" +
+		"\t(*c) = v;\n" +
 		"}\n\n" +
 		"int Counter_Get(Counter c) {\n" +
 		"\treturn (c + 0);\n" +
