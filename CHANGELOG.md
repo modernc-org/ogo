@@ -11,7 +11,7 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
-## Unreleased
+## v0.14.0
 
 ### Language
 
@@ -42,6 +42,29 @@ Releases before v0.9.0 predate this file; see
   is defined over everywhere else, and this was the hole in that. It works through
   a chain of definitions, at package scope, with index-keyed values, and passed
   straight to a call.
+
+### Fixed
+
+- **Two defects in the backend's optimizer are worked around**, and `ogo build`
+  turns off the two passes behind them. One stored a value the program never
+  computed into a package-level variable — silently, with the host compiler right
+  and the build saying nothing — and the other emitted a branch to a label it did
+  not define, so the assembler refused the program. Both are reduced to a dozen
+  lines of C in `doc/`, and both are live at upstream's tip: flexprop's master *is*
+  the pinned v7.7.0, and a flexcc built from spin2cpp's current master reproduces
+  each identically, so there is no version to upgrade to.
+
+  Each defect needs two passes cooperating, so turning either one off is enough;
+  `-Ono-inline-small -Ono-peephole` covers both. The cost runs between nothing and
+  about 15% more code depending on the program — 13360 → 13232 bytes on the
+  framing-receiver test case, 10292 → 11792 on a fuzzer-generated one. Turning off
+  the register allocator instead would have covered both too, at 68%.
+
+  The whole corpus, the on-board suite and all forty seeds of the widened fuzzer
+  sample now pass, including the two seeds that reproduce the defects and used to
+  be skipped. The skip is gone with them: a recurrence has to fail loudly. A sweep
+  to 160 seeds on a P2-EDGE — 320 builds and runs — turned up no failure and no
+  skip at all, so the routine sample is doubled to 24.
 
 ### Diagnostics
 
@@ -90,29 +113,6 @@ Releases before v0.9.0 predate this file; see
   which carries its own line's newline away. The blank-line test looked for two and
   so never matched: a struct with a blank line in it was aligned as though it had
   none.
-
-### Fixed
-
-- **Two defects in the backend's optimizer are worked around**, and `ogo build`
-  turns off the two passes behind them. One stored a value the program never
-  computed into a package-level variable — silently, with the host compiler right
-  and the build saying nothing — and the other emitted a branch to a label it did
-  not define, so the assembler refused the program. Both are reduced to a dozen
-  lines of C in `doc/`, and both are live at upstream's tip: flexprop's master *is*
-  the pinned v7.7.0, and a flexcc built from spin2cpp's current master reproduces
-  each identically, so there is no version to upgrade to.
-
-  Each defect needs two passes cooperating, so turning either one off is enough;
-  `-Ono-inline-small -Ono-peephole` covers both. The cost runs between nothing and
-  about 15% more code depending on the program — 13360 → 13232 bytes on the
-  framing-receiver test case, 10292 → 11792 on a fuzzer-generated one. Turning off
-  the register allocator instead would have covered both too, at 68%.
-
-  The whole corpus, the on-board suite and all forty seeds of the widened fuzzer
-  sample now pass, including the two seeds that reproduce the defects and used to
-  be skipped. The skip is gone with them: a recurrence has to fail loudly. A sweep
-  to 160 seeds on a P2-EDGE — 320 builds and runs — turned up no failure and no
-  skip at all, so the routine sample is doubled to 24.
 
 ### Testing
 

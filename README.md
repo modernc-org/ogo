@@ -159,7 +159,9 @@ broken.
   Structs may refer to themselves, to each other, and to a type declared later, so
   linked lists, trees and graphs build. A named type behaves as what it is defined
   over — `type Name string` indexes, slices, ranges and compares as a string, `type
-  List []int` as a slice — and carries its own methods.
+  List []int` as a slice, `type Named Point` has Point's fields and takes Point's
+  literals — and carries its own methods. A literal may name such a type,
+  `Row{1, 2, 3}` for `type Row [3]int`.
 * A slice literal stands wherever a value may — `sum([]int{1, 2, 3})` — its backing
   array a local of the function that wrote it, with the lifetime that implies.
 * Slicing, including the capacity bound: `pool[0:0:64]` hands out a region of a
@@ -235,6 +237,11 @@ broken.
   settled first is where the rendezvous cell lives — a channel variable gets one
   allocated beside it, and a field cannot without deciding what declaring the struct
   allocates, and what a copy of it then shares.
+* A **defined type over a pointer or a function**: `type PP *P` is not recognized as
+  a pointer, so `var q PP = &p` is refused, and `type Fn func(int) int` is not
+  recognized as a function, so a call through a variable of it is "cannot call
+  non-function". Over a scalar, string, array, slice, struct or channel it behaves as
+  what it is defined over.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
 * An **array** literal may not stand as a general value — it initializes a variable,
