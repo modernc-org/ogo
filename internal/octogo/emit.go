@@ -1967,7 +1967,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2402,6 +2402,7 @@ type emitter struct {
 	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
 	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	namedTypes         map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	typeNames          map[string]bool          // every C type name this program declares, struct or not, for fieldIdent's collision check
 	namedUnderlying    map[string]string        // that typedef -> the C type it stands for, so a value of it is represented as what it is
 	namedArrays        map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
 	constInt           map[string]string        // integer-constant name -> its C literal value, for array bounds
@@ -2719,10 +2720,17 @@ func (e *emitter) collectStructForwards(ast []int32) {
 							typeAST = s.ast
 						}
 					}
-					if name == "" || typeAST == nil || e.structTypeAST(typeAST) == nil {
+					if name == "" || typeAST == nil {
 						continue
 					}
+					// Every type name is registered, struct or not: fieldIdent needs
+					// the whole set, and this pass is the one that has seen every file
+					// before a struct body is emitted.
 					mn := mangle(e.curPkgPrefix, name)
+					e.typeNames[mn] = true
+					if e.structTypeAST(typeAST) == nil {
+						continue
+					}
 					e.structs[mn] = nil
 					e.emit("typedef struct " + mn + " " + mn + ";\n")
 				}
@@ -2777,10 +2785,10 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 				// paths). The structs map still stores the source name, so the type
 				// lookups (structFieldType etc.) compare source names.
 				if fld.dim.bound != "" {
-					e.emit(" " + fld.ctype + " " + cIdent(fld.name) + fld.dim.declSuffix() + ";")
+					e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fld.dim.declSuffix() + ";")
 					continue
 				}
-				e.emit(" " + fld.ctype + " " + cIdent(fld.name) + ";")
+				e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + ";")
 			}
 			if len(fields) == 0 {
 				// C rejects a struct with no members; Go's empty struct is a
@@ -6555,9 +6563,9 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 				sep = "->"
 			}
 			if prefix != "" {
-				prefix += sep + cIdent(f)
+				prefix += sep + e.fieldIdent(f)
 			} else {
-				e.emit(sep + cIdent(f))
+				e.emit(sep + e.fieldIdent(f))
 			}
 			cur = next
 		case Index:
@@ -9159,7 +9167,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if e.isPointer(cur.ctype) {
 				sep = "->"
 			}
-			text += sep + cIdent(field)
+			text += sep + e.fieldIdent(field)
 			cur = next
 		case Index:
 			if !addr {
@@ -10373,9 +10381,9 @@ func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string
 	ct := elem
 	for _, f := range post {
 		if e.isPointer(ct) {
-			e.emit("->" + cIdent(f))
+			e.emit("->" + e.fieldIdent(f))
 		} else {
-			e.emit("." + cIdent(f))
+			e.emit("." + e.fieldIdent(f))
 		}
 		ct, _ = e.structFieldType(ct, f) // validated by the caller via chainFieldType
 	}
@@ -11243,7 +11251,7 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 		if e.isPointer(ctype) {
 			sep = "->"
 		}
-		text += sep + cIdent(f)
+		text += sep + e.fieldIdent(f)
 		if ctype, ok = e.structFieldType(ctype, f); !ok {
 			return "", "", false
 		}
@@ -11333,6 +11341,25 @@ func (e *emitter) fieldType(base string, fields []string) (string, bool) {
 	return ctype, true
 }
 
+// fieldIdent names a struct member in C. It is cIdent plus one thing C does not
+// need and the backend does: flexcc refuses a member whose name is also a type
+// name -- "Unable to combine types", or "Internal error, confusing type
+// declaration", pointed at the line before -- where C keeps member names in a
+// namespace of their own and gcc accepts it.
+//
+// `type logger struct{ ... }` beside `type app struct{ logger logger }` is
+// ordinary Go, so the member is renamed rather than the program refused. The
+// suffix goes on wherever a member is written, which is every caller of this
+// function, and nowhere else: a program with no such collision emits exactly the C
+// it emitted before.
+func (e *emitter) fieldIdent(name string) string {
+	id := cIdent(name)
+	for e.typeNames[id] {
+		id += "_"
+	}
+	return id
+}
+
 // fieldAccessC renders a field access chain `base.f.g...` in C, choosing "->" for
 // each pointer step (an auto-dereferenced Go field access) and "." otherwise.
 func (e *emitter) fieldAccessC(base string, fields []string) string {
@@ -11344,7 +11371,7 @@ func (e *emitter) fieldAccessC(base string, fields []string) string {
 		} else {
 			s += "."
 		}
-		s += cIdent(f) // the emitted field name matches the (cIdent'd) typedef
+		s += e.fieldIdent(f) // the emitted field name matches the (cIdent'd) typedef
 		ctype, _ = e.structFieldType(ctype, f)
 	}
 	return s
@@ -11797,7 +11824,7 @@ func (e *emitter) structEqDef(ctype string) string {
 		if i > 0 {
 			b.WriteString(" && ")
 		}
-		nm := cIdent(fld.name)
+		nm := e.fieldIdent(fld.name)
 		b.WriteString(e.fieldEqCmp(fld.ctype, "_ogo_l."+nm, "_ogo_r."+nm))
 	}
 	b.WriteString(";\n}\n")

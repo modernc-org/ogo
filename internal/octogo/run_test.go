@@ -950,6 +950,66 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A struct member named after a type. `type logger struct{...}` beside
+		// `type app struct{ logger logger }` is ordinary Go -- C keeps member names
+		// in a namespace of their own, and gcc agrees -- but the target's C compiler
+		// refuses it: "Unable to combine types", pointed at the line before, with
+		// nothing in the OctoGo source to connect it to. It hit a field named after
+		// a struct, a defined type, or (worst) any type declared anywhere in the
+		// program, which is a name a reader has every reason to pick.
+		//
+		// The member is renamed in the emitted C instead, and only when it does
+		// collide, so a program without one emits exactly what it emitted before.
+		// Everything that writes a member name goes through the one function that
+		// decides, which is what keeps the declaration and every read agreeing.
+		name: "a struct field named after a type",
+		src: `type logger struct {
+	n int
+}
+
+func (l *logger) bump() { l.n++ }
+
+type word int32
+
+type entry struct {
+	word word
+	tag  string
+}
+
+type app struct {
+	logger  logger
+	entries []entry
+}
+
+func main() {
+	var back [2]entry
+	back[0] = entry{word: 5, tag: "a"}
+	back[1] = entry{word: 6, tag: "b"}
+	a := app{entries: back[:]}
+
+	a.logger.bump()
+	a.logger.bump()
+	println(a.logger.n)
+
+	for i := 0; i < len(a.entries); i++ {
+		println(int(a.entries[i].word), a.entries[i].tag)
+	}
+
+	a.entries[0].word, a.entries[1].word = a.entries[1].word, a.entries[0].word
+	println(int(a.entries[0].word), int(a.entries[1].word))
+
+	x := entry{word: 5, tag: "a"}
+	y := entry{word: 5, tag: "a"}
+	println(x == y, x == a.entries[0])
+
+	p := &a.logger
+	p.bump()
+	println(a.logger.n)
+}
+`,
+		want: "2\n5 a\n6 b\n6 5\ntrue false\n3\n",
+	},
+	{
 		// Every target shape a multiple assignment can take. Only a bare name was
 		// modelled before, so `xs[0], xs[2] = xs[2], xs[0]` -- the swap every sort is
 		// written with, and the reason this was found -- did not compile, nor did a

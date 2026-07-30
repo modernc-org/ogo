@@ -63,6 +63,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A struct field named after a type did not compile.** `type logger
+  struct{...}` beside `type app struct{ logger logger }` is ordinary Go, and C keeps
+  member names in a namespace of their own — but the backend refuses one, with
+  `Unable to combine types` pointed at the line before and nothing in the OctoGo
+  source to tie it to. Any field named after any type declared anywhere in the
+  program hit it. Such a field is renamed in the emitted C now, and only when it
+  does collide, so every other program emits exactly what it did before.
+  `doc/field-named-like-a-type.c` is the reproducer.
 - **A dereferenced target in a multiple assignment wrote the pointer, not the
   pointee.** `*p, *q = *q, *p` compiled and assigned to `p` and `q` themselves: the
   leading star was read off the target and then dropped. The target's C compiler
