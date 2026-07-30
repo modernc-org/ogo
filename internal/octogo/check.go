@@ -3561,15 +3561,24 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 	if !ok {
 		return nil
 	}
-	d, ok := s.find(callee.Src()).(*FuncDeclaration)
-	if !ok || d.FuncDecl == nil || d.FuncDecl.Type == nil || d.FuncDecl.Type.Signature == nil {
+	// The callee may be a named function or a VARIABLE holding one -- `a(0)` where
+	// a is `func(int) func(int) int` yields a function as much as `pick()` does.
+	// Only the named form was recognised, so breaking a call chain up into
+	// variables, the workaround for a chain the backend cannot compile, was itself
+	// "cannot infer a type".
+	var sig *SignatureNode
+	switch d := s.find(callee.Src()).(type) {
+	case *FuncDeclaration:
+		if d.FuncDecl != nil && d.FuncDecl.Type != nil {
+			sig = d.FuncDecl.Type.Signature
+		}
+	case *VarDeclaration:
+		sig = d.funcSig
+	}
+	if sig == nil || sig.Results == nil || len(sig.Results.List) != 1 {
 		return nil
 	}
-	res := d.FuncDecl.Type.Signature.Results
-	if res == nil || len(res.List) != 1 {
-		return nil
-	}
-	return f.funcSig(s, res.List[0].TypeNode)
+	return f.funcSig(s, sig.Results.List[0].TypeNode)
 }
 
 // typeNodeString renders a resolved type as canonical OctoGo source. It exists so

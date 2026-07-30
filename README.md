@@ -240,7 +240,7 @@ broken.
   allocates, and what a copy of it then shares.
 * **Three calls deep**, `chooser()(0)(6)`: the target computes 0 where the host is
   right, at every optimization level, so this is the backend rather than a flag. Two
-  deep works. A call written directly on an **array element** of function type,
+  deep works, and the chain may be broken up — `a := chooser(); b := a(0); b(6)`. A call written directly on an **array element** of function type,
   `fns[0](8)`, is refused by the same compiler; bind it first, `f := fns[0]; f(8)`.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.

@@ -15,6 +15,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A call through a function-valued variable has a type.** `b := a(0)`, where `a`
+  holds a function that returns a function, was "cannot infer a type for the
+  declaration of b" — only a call of a *named* function had its result type read,
+  in the checker and the emitter alike. This is also the workaround the three-deep
+  call chain lacked: that chain miscompiles on the target and, until now, could not
+  be broken into variables either.
 - **Calling the result of a call now checks the right arguments.** `choose(0)(5)`
   was "too many arguments in call to choose": the call walk took the *last* argument
   list as the named callee's, so `choose` was checked against `(5)`. The first list

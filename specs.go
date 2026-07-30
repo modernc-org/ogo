@@ -42,9 +42,8 @@
 // TODO 20260730 Three calls deep, `chooser()(0)(6)`, computes 0 on the target. The
 // emitted C is valid and the host computes it correctly; the backend gets it wrong
 // at every optimization level, -O0 included, so it is a codegen limit rather than
-// the optimizer defects worked around in internal/build. Two deep is fine. There is
-// no workaround yet: `b := a(0)` where a is a function-valued variable returning a
-// function is "cannot infer a type", so the chain cannot be broken up either.
+// the optimizer defects worked around in internal/build. Two deep is fine, and the
+// chain may be broken up -- `a := chooser(); b := a(0); b(6)` is right on the board.
 // TODO 20260730 The target's C compiler refuses a call written directly on an array
 // element of function type, `fns[0](8)` -- "fns is not a function but is called like
 // one" -- though the same C compiles elsewhere. Bind it first: `f := fns[0]; f(8)`.

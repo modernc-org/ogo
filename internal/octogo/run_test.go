@@ -950,6 +950,58 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A call through a VARIABLE holding a function was typed nowhere, so
+		// `b := a(0)` -- where a holds a function that returns a function -- was
+		// "cannot infer a type for the declaration of b". Only a call of a NAMED
+		// function had its result type read, in the checker and in the emitter
+		// alike.
+		//
+		// This is also the workaround the three-deep chain lacked: `chooser()(0)(6)`
+		// computes 0 on the target, and until now it could not be broken up either.
+		// Bound to variables, as here, it is right on the board.
+		name: "a call through a function-valued variable",
+		src: `type Fn func(int) int
+
+func dbl(v int) int { return v * 2 }
+
+func neg(v int) int { return -v }
+
+func choose(w int) func(int) int {
+	if w == 0 {
+		return dbl
+	}
+	return neg
+}
+
+func chooser() func(int) func(int) int { return choose }
+
+func twice(f Fn, v int) int { return f(f(v)) }
+
+func main() {
+	// A call through a variable holding a function, one level.
+	f := dbl
+	n := f(5)
+	println("one", n)
+
+	// Two levels: the variable's call yields another function, which is what the
+	// inference could not name -- and what a chain the backend refuses has to be
+	// broken up into.
+	a := chooser()
+	b := a(0)
+	c := a(1)
+	println("two", b(6), c(6))
+
+	// The same through a defined function type.
+	var g Fn = choose(0)
+	println("named", g(7))
+
+	// A function-valued variable passed on, and called twice inside.
+	println("arg", twice(f, 3))
+}
+`,
+		want: "one 10\ntwo 12 -6\nnamed 14\narg 12\n",
+	},
+	{
 		// Calling the result of a call, `choose(0)(5)`, which was "too many arguments
 		// in call to choose": the call walk took the LAST argument list as the named
 		// callee's, so `choose` was checked against `(5)` rather than against `(0)`.

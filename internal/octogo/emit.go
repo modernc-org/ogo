@@ -11490,6 +11490,14 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		if rts, ok := e.userFunc(recv); ok && len(rts) == 1 {
 			return rts[0], true
 		}
+		// A call through a VARIABLE holding a function: its result type is the one
+		// recorded for that function typedef. Only a named function was typed here,
+		// so `b := a(0)` had no type to give b.
+		if ct, ok := e.varType(recv); ok {
+			if rts := e.funcTypeRet[e.underlyingCType(ct)]; len(rts) == 1 {
+				return rts[0], true
+			}
+		}
 		return "", false
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		// A single-result method call `x.M()` carries its recorded result type,
