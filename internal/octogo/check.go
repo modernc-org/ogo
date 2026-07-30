@@ -3206,11 +3206,23 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// postfix; an LhsItem's are children of the item.
 	var lhs []Token
 	var lhsSuffixed []bool
+	// nonNames holds a token of each target that is not a bare name: a field, an
+	// element, a dereferenced pointer, a parenthesized expression. Only ":=" cares,
+	// having nothing to declare for one; the base is not in lhs at all when a "*" or
+	// a "(" kept assignHeadIdent from reading a name off it, so the two are tracked
+	// apart.
+	var nonNames []Token
 	if id, ok := f.assignHeadIdent(head); ok {
 		lhs = append(lhs, id)
 		// A leading "*" makes the head a dereference, so the base is not the assigned
 		// value either -- the same thing a selector or index means.
-		lhsSuffixed = append(lhsSuffixed, hasSelectorOrIndex(postfix) || f.headIsDeref(head))
+		suffixed := hasSelectorOrIndex(postfix) || f.headIsDeref(head)
+		lhsSuffixed = append(lhsSuffixed, suffixed)
+		if suffixed {
+			nonNames = append(nonNames, id)
+		}
+	} else if tok := f.tok(head.Pos()); tok.IsValid() {
+		nonNames = append(nonNames, tok)
 	}
 
 	var op Symbol
@@ -3227,11 +3239,17 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				f.checkIndexExprs(s, n) // the "k" in a "a, b[k] = ..." target
 				suffixed := hasSelectorOrIndex(n)
 				for c := range it(n.ast) {
-					if c.sym == AssignHead {
-						if id, ok := f.assignHeadIdent(c); ok {
-							lhs = append(lhs, id)
-							lhsSuffixed = append(lhsSuffixed, suffixed)
+					if c.sym != AssignHead {
+						continue
+					}
+					if id, ok := f.assignHeadIdent(c); ok {
+						lhs = append(lhs, id)
+						lhsSuffixed = append(lhsSuffixed, suffixed)
+						if suffixed {
+							nonNames = append(nonNames, id)
 						}
+					} else if tok := f.tok(c.Pos()); tok.IsValid() {
+						nonNames = append(nonNames, tok)
 					}
 				}
 			case ExpressionList:
@@ -3342,6 +3360,16 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			if !lhsSuffixed[i] {
 				f.writeTargets[tok.Position().String()] = true
 			}
+		}
+	}
+
+	// ":=" declares names, so a target that is not one -- an element, a field, a
+	// dereferenced pointer -- is not something it can declare. The grammar admits
+	// them (an LhsItem carries selectors and indexes, which "=" needs), so the rule
+	// is a check rather than a parse error. "=" accepts every one of them.
+	if op == DEFINE {
+		for _, tok := range nonNames {
+			f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
 		}
 	}
 

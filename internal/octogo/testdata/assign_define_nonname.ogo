@@ -1,0 +1,34 @@
+// ":=" declares names, so a target that is not one has nothing for it to declare.
+// The grammar admits them -- an LhsItem carries selectors and indexes, which "="
+// needs -- so the rule is a check. Each of these is legal with "=".
+
+type point struct {
+	x int
+}
+
+func two() (int, int) { return 1, 2 }
+
+func main() {
+	var p point
+	var xs [2]int
+	s := xs[:]
+	n := 0
+	q := &n
+
+	// ERROR non-name target on the left side of :=
+	s[0], a := two()
+	// ERROR non-name target on the left side of :=
+	p.x, b := two()
+	// ERROR non-name target on the left side of :=
+	*q, c := two()
+	// ERROR non-name target on the left side of :=
+	d, s[1] := two()
+	// ERROR non-name target on the left side of :=
+	e, *q := two()
+
+	// The same targets with "=" are all fine.
+	s[0], p.x = two()
+	*q, n = two()
+
+	_, _, _, _, _ = a, b, c, d, e
+}

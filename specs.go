@@ -1357,6 +1357,11 @@
 // As a special case, the right-hand side may be a single call returning as many
 // values as there are targets, which distributes its results: "a, b = f()".
 //
+// A target may be anything a single assignment can write to -- a variable, a
+// struct field, an element, a dereferenced pointer -- so "xs[i], xs[j] = xs[j],
+// xs[i]" swaps two elements. A ":=" is the exception: it declares names, so every
+// target of one must be a name.
+//
 // The AssignOp forms are the compound assignments. "x op= y" is equivalent to
 // "x = x op y", except that the target is evaluated only once -- which is
 // observable when the target contains an index expression, as in "a[i()] += 1".

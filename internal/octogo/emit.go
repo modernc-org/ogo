@@ -4745,7 +4745,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				return
 			}
 			if len(names) != 1 {
-				e.emitDestructure(names, allTrue(len(names)), initExpr)
+				e.emitDestructure(plainTargets(names), allTrue(len(names)), initExpr)
 				continue
 			}
 			if names[0] == "_" {
@@ -4887,7 +4887,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 		if len(names) != 1 && initExpr != nil {
 			// A multi-name initializer destructures a multi-result call, declaring
 			// each name -- the var form of `a, b := f()`.
-			e.emitDestructure(names, allTrue(len(names)), initExpr)
+			e.emitDestructure(plainTargets(names), allTrue(len(names)), initExpr)
 			continue
 		}
 		for _, nm := range names {
@@ -9604,7 +9604,7 @@ func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
 // binds the ok-form helper's { slice, ok } result to a temporary, then assigns (or,
 // for `:=`, declares) the slice and ok targets. A blank target is skipped. This
 // form never traps -- an overflow leaves the slice unchanged and reports ok == 0.
-func (e *emitter) emitTryAppend(targets []string, declare []bool, callSuffix []int32) {
+func (e *emitter) emitTryAppend(targets []assignTarget, declare []bool, callSuffix []int32) {
 	if len(targets) != 2 {
 		e.fail("the two-result append form is `s, ok = append(s, x)`")
 		return
@@ -9626,25 +9626,11 @@ func (e *emitter) emitTryAppend(targets []string, declare []bool, callSuffix []i
 	e.emitExpr(args[1].ast)
 	e.emit(");\n")
 	// The slice target, then the ok target (int).
-	if targets[0] != "_" {
-		e.ind()
-		if declare[0] {
-			e.sliceVars[targets[0]] = elem
-			e.locals[targets[0]] = sliceCName(elem)
-			e.emit(sliceCName(elem) + " " + targets[0] + " = " + tmp + ".slice;\n")
-		} else {
-			e.emit(targets[0] + " = " + tmp + ".slice;\n")
-		}
+	if declare[0] && targets[0].plain() {
+		e.sliceVars[targets[0].name] = elem
 	}
-	if targets[1] != "_" {
-		e.ind()
-		if declare[1] {
-			e.locals[targets[1]] = "int"
-			e.emit("int " + targets[1] + " = " + tmp + ".ok;\n")
-		} else {
-			e.emit(targets[1] + " = " + tmp + ".ok;\n")
-		}
-	}
+	e.emitStore(targets[0], declare[0], sliceCName(elem), tmp+".slice")
+	e.emitStore(targets[1], declare[1], "int", tmp+".ok")
 }
 
 // arrayVar looks a name up in the local then the package array environment.
@@ -9965,6 +9951,15 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
 	e.checkStoreBacking(base, op)
 	e.noteFrameHolder(base, op)
+	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
+	// extra targets as LhsItems ahead of the operator. Recognised here, ahead of the
+	// target shapes below, because the head of a multiple assignment may take any of
+	// those shapes itself -- `b[i], b[j] = b[j], b[i]` -- and each of them ends in
+	// assignTailOf, which a multiple assignment's PostfixOp is not.
+	if containsSym(op, LhsItem) {
+		e.emitMultiAssign(head, base, stars, postfix[:len(postfix)-1], op)
+		return
+	}
 	// Index target `a[i] = v` (single index; mixing indexes and fields is not
 	// modelled). The index is an expression, so it is emitted directly rather than
 	// built into the string lhs the field path uses.
@@ -10034,16 +10029,6 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	lhs = stars + lhs
 
-	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
-	// extra targets as LhsItems ahead of the operator.
-	if containsSym(op, LhsItem) {
-		if len(fields) != 0 {
-			e.fail("a field target in a multiple assignment is not supported yet")
-			return
-		}
-		e.emitMultiAssign(head, base, op)
-		return
-	}
 	// Increment/decrement: PostfixOp = "++" | "--" (no operand of its own).
 	if len(op) == 1 && op[0].sym == 0 {
 		switch e.f.ch(op[0].tok) {
@@ -10711,34 +10696,120 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	}, t)
 }
 
+// assignTarget is one target of a multiple assignment: the root variable, the
+// pointer indirections written ahead of it, and the chain of selectors and indexes
+// that reaches the storage written. A plain variable has neither of the latter two,
+// which was the only shape these paths modelled at first.
+type assignTarget struct {
+	name  string
+	stars string
+	chain []Node
+	tok   int32
+}
+
+// plain reports a target that is a bare variable name -- the only shape a `:=` can
+// declare, and the only one a declaration path ever passes.
+func (t assignTarget) plain() bool { return t.stars == "" && len(t.chain) == 0 }
+
+// plainTargets wraps bare names as targets, for the `var a, b = f()` paths, whose
+// targets are declarations and so are always names.
+func plainTargets(names []string) []assignTarget {
+	targets := make([]assignTarget, len(names))
+	for i, name := range names {
+		targets[i] = assignTarget{name: name, tok: -1}
+	}
+	return targets
+}
+
+// emitStore writes val -- a C expression, in practice a temporary already holding
+// the value -- to one target of a multiple assignment. A plain name is declared or
+// assigned; anything else is emitted as the lvalue it names, which is what lets a
+// field, an element or a pointee be a target. ctype is the value's C type, read
+// only where the target is being declared. A blank target drops the value.
+func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
+	if t.name == "_" {
+		return
+	}
+	if t.plain() {
+		e.ind()
+		if declare {
+			e.locals[t.name] = ctype
+			e.emit(ctype + " " + cIdent(t.name) + " = " + val + ";\n")
+		} else {
+			e.emit(e.varRef(t.name) + " = " + val + ";\n")
+		}
+		return
+	}
+	if declare {
+		e.fail("non-name %s on the left side of :=", t.name)
+		return
+	}
+	if t.stars != "" && len(t.chain) != 0 {
+		e.fail("a dereferenced target with a field or index is not supported yet")
+		return
+	}
+	// Typed before anything is emitted, so an unsupported chain fails without
+	// leaving a half-written statement behind.
+	if len(t.chain) != 0 {
+		if _, ok := e.accessChainType(t.name, t.chain); !ok {
+			e.fail("unsupported target in a multiple assignment")
+			return
+		}
+	}
+	e.ind()
+	if len(t.chain) == 0 {
+		e.emit(t.stars + e.varRef(t.name))
+	} else {
+		e.emitAccessChain(t.name, t.chain)
+	}
+	e.emit(" = " + val + ";\n")
+}
+
+// lhsItemTarget reads one LhsItem (LhsItem = AssignHead { Selector | Index }) as a
+// target, the counterpart of the head target emitMultiAssign is handed.
+func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
+	nodes := slices.Collect(it(ast))
+	if len(nodes) == 0 || nodes[0].sym != AssignHead {
+		return assignTarget{}, false
+	}
+	name := e.soleIdent(nodes[0].ast)
+	if name == "" || (len(nodes) > 1 && !isAccessChain(nodes[1:])) {
+		return assignTarget{}, false
+	}
+	t := assignTarget{name: name, stars: e.derefStars(nodes[0].ast), chain: nodes[1:], tok: -1}
+	if tok, ok := e.soleToken(nodes[0].ast); ok {
+		t.tok = tok
+	}
+	return t, true
+}
+
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
 // (any target may be the blank identifier). C has no multiple assignment, so the
 // multi-result call's struct is bound to a temporary and each target reads its
 // field: a `:=` target is declared with its result type, a `=` target is assigned,
-// and a blank target is skipped. first is the head identifier; op holds the
-// PostfixOp children (the remaining LhsItem targets, the operator, and the call).
-func (e *emitter) emitMultiAssign(head Node, first string, op []Node) {
-	targets := []string{first}
-	toks := []int32{-1}
+// and a blank target is skipped. first is the head identifier, stars and headChain
+// what the head writes around it; op holds the PostfixOp children (the remaining
+// LhsItem targets, the operator, and the call).
+func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []Node, op []Node) {
+	if len(headChain) != 0 && !isAccessChain(headChain) {
+		e.fail("unsupported target in a multiple assignment")
+		return
+	}
+	targets := []assignTarget{{name: first, stars: stars, chain: headChain, tok: -1}}
 	if tok, ok := e.soleToken(head.ast); ok {
-		toks[0] = tok
+		targets[0].tok = tok
 	}
 	define := false
 	var rhs []Node
 	for _, n := range op {
 		switch n.sym {
 		case LhsItem:
-			id := e.lhsItemIdent(n.ast)
-			if id == "" {
-				e.fail("only simple variable targets are supported in multiple assignment")
+			t, ok := e.lhsItemTarget(n.ast)
+			if !ok {
+				e.fail("unsupported target in a multiple assignment")
 				return
 			}
-			targets = append(targets, id)
-			tok := int32(-1)
-			if inner, ok := e.lhsItemToken(n.ast); ok {
-				tok = inner
-			}
-			toks = append(toks, tok)
+			targets = append(targets, t)
 		case ExpressionList:
 			rhs = e.rhsExprs(n)
 		case 0:
@@ -10747,7 +10818,7 @@ func (e *emitter) emitMultiAssign(head Node, first string, op []Node) {
 			}
 		}
 	}
-	declare := e.declareTargets(define, toks)
+	declare := e.declareTargets(define, targets)
 	// One expression for several targets distributes a multi-result call; a matching
 	// count is a value list assigned pairwise.
 	if len(rhs) == 1 {
@@ -10773,31 +10844,21 @@ func (e *emitter) emitMultiAssign(head Node, first string, op []Node) {
 // cases emitted a second C declaration of the same name in the same block, which the
 // target's C compiler accepts with a warning and then ignores, leaving the variable
 // holding its old value.
-func (e *emitter) declareTargets(define bool, toks []int32) []bool {
-	declare := make([]bool, len(toks))
-	for i, tok := range toks {
+func (e *emitter) declareTargets(define bool, targets []assignTarget) []bool {
+	declare := make([]bool, len(targets))
+	for i, t := range targets {
 		declare[i] = define
-		if define && tok >= 0 && e.f.defineRedeclares[e.f.tok(tok).Position().String()] {
+		if define && t.tok >= 0 && e.f.defineRedeclares[e.f.tok(t.tok).Position().String()] {
 			declare[i] = false
 		}
 	}
 	return declare
 }
 
-// lhsItemToken returns the identifier token of a multiple-assignment LhsItem, the
-// token counterpart of lhsItemIdent.
-func (e *emitter) lhsItemToken(ast []int32) (int32, bool) {
-	nodes := slices.Collect(it(ast))
-	if len(nodes) != 1 || nodes[0].sym != AssignHead {
-		return 0, false
-	}
-	return e.soleToken(nodes[0].ast)
-}
-
 // emitValueList lowers `a, b = c, d` (or `:=`). Every value is evaluated into a
 // temporary first, then each target takes its temporary, so all right-hand sides
 // see the pre-assignment values -- which is what makes `a, b = b, a` a swap.
-func (e *emitter) emitValueList(targets []string, declare []bool, rhs []Node) {
+func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []Node) {
 	tmps := make([]string, len(rhs))
 	types := make([]string, len(rhs))
 	for i, r := range rhs {
@@ -10814,16 +10875,7 @@ func (e *emitter) emitValueList(targets []string, declare []bool, rhs []Node) {
 		e.emit(";\n")
 	}
 	for i, tgt := range targets {
-		if tgt == "_" {
-			continue
-		}
-		e.ind()
-		if declare[i] {
-			e.locals[tgt] = types[i]
-			e.emit(types[i] + " " + tgt + " = " + tmps[i] + ";\n")
-		} else {
-			e.emit(tgt + " = " + tmps[i] + ";\n")
-		}
+		e.emitStore(tgt, declare[i], types[i], tmps[i])
 	}
 }
 
@@ -10833,7 +10885,7 @@ func (e *emitter) emitValueList(targets []string, declare []bool, rhs []Node) {
 // target reads its field: a defined target is declared with its result type, an
 // assigned target is assigned, and a blank target is skipped. rhs is the call
 // expression; define selects declaration (`:=` / `var`) over plain assignment.
-func (e *emitter) emitDestructure(targets []string, declare []bool, rhs []int32) {
+func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []int32) {
 	callee, suffix, ok := e.directCall(rhs)
 	if !ok {
 		e.fail("multiple assignment requires a single function call on the right-hand side")
@@ -10873,17 +10925,7 @@ func (e *emitter) emitDestructure(targets []string, declare []bool, rhs []int32)
 	}
 	e.emit(";\n")
 	for i, tgt := range targets {
-		if tgt == "_" {
-			continue
-		}
-		e.ind()
-		field := fmt.Sprintf("%s._%d", tmp, i)
-		if declare[i] {
-			e.locals[tgt] = resTypes[i]
-			e.emit(resTypes[i] + " " + cIdent(tgt) + " = " + field + ";\n")
-		} else {
-			e.emit(e.varRef(tgt) + " = " + field + ";\n")
-		}
+		e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
 	}
 }
 
@@ -10941,17 +10983,6 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 	cname = e.funcCallC(recv)
 	resTypes, ok = e.funcRet[cname]
 	return cname, resTypes, ok
-}
-
-// lhsItemIdent returns the single bare identifier of an LhsItem
-// (LhsItem = AssignHead { Selector | Index }), or "" when the item carries a
-// selector or index — an unsupported multiple-assignment target.
-func (e *emitter) lhsItemIdent(ast []int32) string {
-	nodes := slices.Collect(it(ast))
-	if len(nodes) != 1 || nodes[0].sym != AssignHead {
-		return ""
-	}
-	return e.soleIdent(nodes[0].ast)
 }
 
 // directCall reports the callee name and call suffix of an expression that is

@@ -950,6 +950,71 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// Every target shape a multiple assignment can take. Only a bare name was
+		// modelled before, so `xs[0], xs[2] = xs[2], xs[0]` -- the swap every sort is
+		// written with, and the reason this was found -- did not compile, nor did a
+		// field, a pointee, or an element of a slice held in a struct.
+		//
+		// The values are already bound to temporaries in order, which is what makes a
+		// swap a swap; what was missing was the other half, a target that is an
+		// lvalue rather than a name. Each target now emits the storage it names, so
+		// the shapes the single-target paths already reached are reached here too.
+		//
+		// `*p, *q = *q, *p` used to compile and write the POINTERS, silently: the
+		// leading star was read off the head and then dropped, leaving `p = tmp`.
+		name: "multiple assignment to elements, fields and pointees",
+		src: `type item struct {
+	key  int
+	name string
+}
+
+type table struct {
+	es []item
+}
+
+func (t *table) swap(i, j int) { t.es[i], t.es[j] = t.es[j], t.es[i] }
+
+func two() (int, int) { return 6, 7 }
+
+var g, h int
+
+func main() {
+	xs := []int{1, 2, 3}
+	xs[0], xs[2] = xs[2], xs[0]
+	println(xs[0], xs[1], xs[2])
+
+	var back [2]item
+	back[0].key, back[0].name = 1, "a"
+	back[1].key, back[1].name = 2, "b"
+	t := &table{es: back[:]}
+	t.swap(0, 1)
+	println(t.es[0].key, t.es[0].name, t.es[1].key, t.es[1].name)
+
+	g, h = 3, 4
+	g, h = h, g
+	println(g, h)
+
+	n, m := 0, 0
+	p, q := &n, &m
+	*p, *q = 8, 9
+	*p, *q = *q, *p
+	println(n, m)
+
+	var mat [2][2]int
+	mat[0][0], mat[1][1] = 5, 6
+	mat[0][0], mat[1][1] = mat[1][1], mat[0][0]
+	println(mat[0][0], mat[1][1])
+
+	xs[1], g = two()
+	println(xs[1], g)
+
+	xs[0], _ = two()
+	println(xs[0])
+}
+`,
+		want: "3 2 1\n2 b 1 a\n4 3\n9 8\n6 5\n6 7\n6\n",
+	},
+	{
 		// A stack machine: opcodes dispatched through a table of function values,
 		// operands in a fixed stack, a defined type for each thing that has a unit.
 		// The shape a P2 program takes when it interprets anything, and it leans on

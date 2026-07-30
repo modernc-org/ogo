@@ -15,6 +15,11 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A multiple assignment may write to anything an assignment can.** `xs[i],
+  xs[j] = xs[j], xs[i]` — the swap every sort is written with — did not compile, nor
+  did a field, a pointee, or an element of a slice held in a struct: only a bare
+  variable name was a target. Every shape the single-target paths already reached is
+  reached here now.
 - **A multi-result method may be called on a struct field**, `m.st.pop()`, which
   was "multiple assignment requires a single function call on the right-hand side"
   — of a call. Only a method on a plain variable was recognized, so a container
@@ -49,8 +54,19 @@ Releases before v0.9.0 predate this file; see
   stands for), and a `:=` copy, which took the type's name and left the signature
   behind.
 
+### Behaviour changes
+
+- **A non-name target on the left of `:=` is refused.** `xs[0], y := f()` was
+  accepted and quietly assigned to the element instead of declaring anything. `:=`
+  declares names; the element, field and pointee targets it used to swallow are all
+  legal with `=`.
+
 ### Fixed
 
+- **A dereferenced target in a multiple assignment wrote the pointer, not the
+  pointee.** `*p, *q = *q, *p` compiled and assigned to `p` and `q` themselves: the
+  leading star was read off the target and then dropped. The target's C compiler
+  warns about it, which is the only reason it was not silent.
 - **A package variable initialized with a function did not compile.** `var tick Fn
   = onTick` emitted the variable before the function's prototype, so C reported
   `'onTick' undeclared here (not in a function)` — whichever order the source
