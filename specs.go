@@ -39,10 +39,15 @@
 // and initialized before main, which a field cannot have without deciding what a
 // declaration of the struct allocates -- and what a copy of it, a composite literal
 // of it, and an array of it then share.
-// TODO 20260730 Calling the result of a call, `pick()(3)`, is "too many arguments
-// in call to pick" -- the call checker reads the second argument list as the first
-// call's. Independent of whether the function type is written or defined. The
-// workaround is a variable: `f := pick(); f(3)`.
+// TODO 20260730 Three calls deep, `chooser()(0)(6)`, computes 0 on the target. The
+// emitted C is valid and the host computes it correctly; the backend gets it wrong
+// at every optimization level, -O0 included, so it is a codegen limit rather than
+// the optimizer defects worked around in internal/build. Two deep is fine. There is
+// no workaround yet: `b := a(0)` where a is a function-valued variable returning a
+// function is "cannot infer a type", so the chain cannot be broken up either.
+// TODO 20260730 The target's C compiler refuses a call written directly on an array
+// element of function type, `fns[0](8)` -- "fns is not a function but is called like
+// one" -- though the same C compiles elsewhere. Bind it first: `f := fns[0]; f(8)`.
 // TODO 20260730 A conversion to a defined ARRAY type cannot be indexed or measured
 // where it stands: `Row(r)[1]` and `len(Row(r))` for `type Row [3]int`. C has no
 // cast to an array type, so such a conversion has to emit its operand rather than a

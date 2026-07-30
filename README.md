@@ -238,8 +238,10 @@ broken.
   settled first is where the rendezvous cell lives — a channel variable gets one
   allocated beside it, and a field cannot without deciding what declaring the struct
   allocates, and what a copy of it then shares.
-* **Calling the result of a call**, `pick()(3)`, whether the function type is written
-  or defined. Bind it first: `f := pick(); f(3)`.
+* **Three calls deep**, `chooser()(0)(6)`: the target computes 0 where the host is
+  right, at every optimization level, so this is the backend rather than a flag. Two
+  deep works. A call written directly on an **array element** of function type,
+  `fns[0](8)`, is refused by the same compiler; bind it first, `f := fns[0]; f(8)`.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
 * An **array** literal may not stand as a general value — it initializes a variable,

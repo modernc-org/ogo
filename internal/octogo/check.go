@@ -1723,10 +1723,11 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	}
 	f.checkSelectors(s, head, stmt)
 	f.checkIndexExprs(s, stmt) // the "i" in a "go a[i].m()" callee
-	argList, direct, isCall := f.callInfo(stmt)
+	argList, later, direct, isCall := f.callInfoAll(stmt)
 	if !isCall {
 		return
 	}
+	f.resolveArgNames(s, later)
 	id, ok := f.assignHeadIdent(head)
 	f.checkCall(s, id, direct && ok, argList)
 	if !direct && ok {
@@ -3186,8 +3187,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A statement that is a bare call ("h(1, 2)") has its CallSuffix directly in
 	// the Postfix; an assignment/send carries its call inside a right-hand
 	// Expression, which is name-checked (and so call-checked) separately below.
-	argList, direct, isCall := f.callInfo(postfix)
+	argList, later, direct, isCall := f.callInfoAll(postfix)
 	if isCall {
+		f.resolveArgNames(s, later)
 		id, ok := f.assignHeadIdent(head)
 		f.checkCall(s, id, direct && ok, argList)
 		if !direct && ok {
@@ -5875,7 +5877,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if hasSuffix {
 		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
 		hasSelector = hasSelectorChild(suffix)
-		if argList, direct, isCall := f.callInfo(suffix); isCall {
+		if argList, later, direct, isCall := f.callInfoAll(suffix); isCall {
+			f.resolveArgNames(s, later)
 			directCall = direct
 			f.checkCall(s, id, direct && hasID, argList)
 			if !direct && hasID {
@@ -6042,22 +6045,58 @@ func (f *File) funcSingleResultKind(s *Scope, callee Token) (Kind, bool) {
 // (so the operand is itself the callee); argList is the call's ArgumentList
 // node (a zero Node for an empty argument list).
 func (f *File) callInfo(n Node) (argList Node, direct, isCall bool) {
+	argList, _, direct, isCall = f.callInfoAll(n)
+	return argList, direct, isCall
+}
+
+// callInfoAll is callInfo plus the argument lists of any FURTHER calls in the
+// chain, whose names still have to be resolved even though their arities belong to
+// signatures the checker does not carry.
+func (f *File) callInfoAll(n Node) (argList Node, later []Node, direct, isCall bool) {
 	direct = true
+	calls := 0
+	take := func(c Node) {
+		// The FIRST call suffix is the named callee's. `pick()(3)` calls pick with
+		// no arguments and then calls what it returned with 3, so a later suffix
+		// belongs to a different callee -- the previous call's RESULT -- and says
+		// nothing about this signature. Taking the last one instead checked `pick`
+		// against `(3)` and reported "too many arguments in call to pick".
+		//
+		// The first one is still checked, so `pick(1)(3)` where pick takes none is
+		// still reported; only the arguments of the later call go unchecked, that
+		// being a signature the checker does not carry.
+		if calls++; calls > 1 {
+			later = append(later, f.callArgList(c))
+			return
+		}
+		isCall, argList = true, f.callArgList(c)
+	}
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Selector, Index:
 			direct = false
 		case CallSuffix:
-			isCall, argList = true, f.callArgList(c)
+			take(c)
 		case PostfixOp:
 			for pc := range it(c.ast) {
 				if pc.sym == CallSuffix {
-					isCall, argList = true, f.callArgList(pc)
+					take(pc)
 				}
 			}
 		}
 	}
-	return argList, direct, isCall
+	return argList, later, direct, isCall
+}
+
+// resolveArgNames resolves the names in argument lists nothing else will reach.
+func (f *File) resolveArgNames(s *Scope, lists []Node) {
+	for _, l := range lists {
+		for a := range it(l.ast) {
+			if a.sym == Expression {
+				f.checkNames(s, a)
+			}
+		}
+	}
 }
 
 // callArgList returns the ArgumentList of a CallSuffix, or a zero Node when the

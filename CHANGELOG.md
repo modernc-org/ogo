@@ -15,6 +15,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **Calling the result of a call now checks the right arguments.** `choose(0)(5)`
+  was "too many arguments in call to choose": the call walk took the *last* argument
+  list as the named callee's, so `choose` was checked against `(5)`. The first list
+  is the named callee's; a later one belongs to the previous call's result. A
+  genuine arity error is still reported, and the names in later lists are still
+  resolved.
 - **A defined pointer type is a pointer**, `type PP *Point` — `var q PP = &p` was
   refused as "cannot use &p (an address) as PP value", the check believing PP wanted
   a value. With this, a defined type behaves as what it is defined over for *every*

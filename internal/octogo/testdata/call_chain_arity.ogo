@@ -1,0 +1,21 @@
+// The FIRST argument list of a call chain is the named callee's, and is still
+// checked. Taking the last one instead reported the second call's arguments
+// against the first call's signature.
+
+func dbl(v int) int { return v * 2 }
+
+func pick() func(int) int { return dbl }
+
+func one(w int) func(int) int { return dbl }
+
+func main() {
+	// A correct chain says nothing.
+	println(pick()(3), one(1)(4))
+
+	// ERROR too many arguments in call to pick
+	println(pick(1)(3))
+	// ERROR not enough arguments in call to one
+	println(one()(3))
+	// ERROR undefined: nope
+	println(pick()(nope))
+}

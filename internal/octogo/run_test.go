@@ -950,6 +950,68 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// Calling the result of a call, `choose(0)(5)`, which was "too many arguments
+		// in call to choose": the call walk took the LAST argument list as the named
+		// callee's, so `choose` was checked against `(5)` rather than against `(0)`.
+		//
+		// The first list is the named callee's; a later one belongs to a different
+		// callee -- the previous call's result -- and says nothing about this
+		// signature. The first is still checked, so a genuine arity error is still
+		// reported; the names in the later lists are resolved separately, since
+		// nothing else reaches them.
+		//
+		// Two calls deep only. THREE -- `chooser()(0)(6)` -- compiles to valid C that
+		// gcc computes correctly and the target computes as 0, at every optimization
+		// level including -O0, so it is a backend codegen limit rather than the
+		// optimizer defects worked around elsewhere. See specs.go.
+		name: "calling the result of a call",
+		src: `type Fn func(int) int
+
+type Table struct{ pick func(int) func(int) int }
+
+func dbl(v int) int { return v * 2 }
+
+func neg(v int) int { return -v }
+
+func choose(which int) Fn {
+	if which == 0 {
+		return dbl
+	}
+	return neg
+}
+
+func choose2(which int) func(int) int {
+	if which == 0 {
+		return dbl
+	}
+	return neg
+}
+
+func main() {
+	println("direct", choose(0)(5), choose(1)(5))
+
+	var t Table
+	t.pick = choose2
+	println("field", t.pick(0)(7))
+
+	// Through a variable: the target's C compiler refuses a call written directly
+	// on an array element of function type ("fns is not a function but is called
+	// like one"), though gcc takes it.
+	var fns [2]Fn
+	fns[0] = dbl
+	fns[1] = neg
+	f0 := fns[0]
+	f1 := fns[1]
+	println("array", f0(8), f1(8))
+
+	// The first call's own arguments are still checked and still work.
+	f := choose(1)
+	println("via var", f(9))
+}
+`,
+		want: "direct 10 -5\nfield 14\narray 16 -8\nvia var -9\n",
+	},
+	{
 		// A defined POINTER type, `type PP *Point`, which was not recognized as a
 		// pointer: `var q PP = &p` was refused as "cannot use &p (an address) as PP
 		// value", the check believing PP wanted a value. Every site that asked the
