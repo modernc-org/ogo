@@ -950,6 +950,56 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A method or a field on the result of a CONVERSION, `Celsius(5).f()`, which
+		// was "unsupported call in expression": the chain walk took its base to be a
+		// variable or a function, and a conversion is neither -- it looks like a call
+		// of the type's own name. A converted value had to be put in a variable
+		// first.
+		//
+		// The conversion consumes the first step of the chain; what it leaves is a
+		// value of that type, which the steps after it walk like any other. Covered
+		// here on a defined scalar and a defined struct, over an expression rather
+		// than a literal, and nested inside another conversion.
+		name: "a method on a conversion result",
+		src: `type Celsius int
+
+type Point struct {
+	x int
+	y int
+}
+
+type Named Point
+
+func (c Celsius) f() int { return int(c) + 1 }
+
+func (n Named) sum() int { return n.x + n.y }
+
+func main() {
+	println("scalar", Celsius(5).f(), Celsius(0).f())
+
+	var p Point
+	p.x = 3
+	p.y = 4
+	println("struct", Named(p).sum(), Named(p).x, Named(p).y)
+
+	// A conversion of an expression, not just a name.
+	v := 6
+	println("expr", Celsius(v*2).f())
+
+	// Nested: the argument is itself a conversion.
+	println("nested", Celsius(int(Celsius(4))).f())
+
+	// Still fine through a variable, the old spelling.
+	c := Celsius(7)
+	println("via var", c.f())
+
+	// A conversion that is not a chain base at all.
+	println("plain", int(Celsius(9)), int(c))
+}
+`,
+		want: "scalar 6 1\nstruct 7 3 4\nexpr 13\nnested 5\nvia var 8\nplain 9 7\n",
+	},
+	{
 		// A defined type over a STRUCT, `type Named Point`, which was not modelled at
 		// all: field access, literals, conversions and methods failed together, the
 		// first of them as "unsupported expression node FactorSuffix".

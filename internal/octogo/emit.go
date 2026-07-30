@@ -9030,7 +9030,21 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	case e.isChainFunc(base):
 		pendingFn, text = true, base
 	default:
-		return "", "", false, false
+		// A CONVERSION opening the chain, `C(5).twice()`. It looks like a call of
+		// the type's name and was neither of the two above, so a method on a
+		// converted value had to be written through a variable. The conversion
+		// consumes the first step; what it leaves is a value of that type, which the
+		// steps after it walk like any other.
+		ct, isConv := e.convType(base)
+		if !isConv || len(steps) < 2 || steps[0].sym != CallSuffix {
+			return "", "", false, false
+		}
+		args := e.callArgExprs(steps[0].ast)
+		if len(args) != 1 {
+			return "", "", false, false
+		}
+		text = e.captureC(func() { e.emitConversion(ct, args[0]) })
+		cur, steps = e.plainOrSlice(ct), steps[1:]
 	}
 	for i := 0; i < len(steps); i++ {
 		n := steps[i]

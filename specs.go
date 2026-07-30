@@ -45,10 +45,11 @@
 // variable of it is "cannot call non-function". A defined type over a scalar, a
 // string, an array, a slice, a struct or a channel behaves as what it is defined
 // over, which is what these two are missing from.
-// TODO 20260729 A method on the result of a CONVERSION, `C(5).twice()`, is
-// "unsupported call in expression" -- the chain walk does not take a conversion as
-// its base. Independent of what the type is defined over. The workaround is a
-// variable: `c := C(5); c.twice()`.
+// TODO 20260730 A conversion to a defined ARRAY type cannot be indexed or measured
+// where it stands: `Row(r)[1]` and `len(Row(r))` for `type Row [3]int`. C has no
+// cast to an array type, so such a conversion has to emit its operand rather than a
+// cast, which is a different lowering from every other conversion. The workaround is
+// a variable: `q := Row(r); q[1]`.
 // TODO 20260728 A local variable, parameter or struct field whose name is a C
 // KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
 // moved out of C's way; a local one is not, several emission paths writing a local's

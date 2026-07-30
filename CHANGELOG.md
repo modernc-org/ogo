@@ -15,6 +15,12 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A method or a field may be reached on the result of a conversion**,
+  `Celsius(5).f()`, which was "unsupported call in expression": the chain walk took
+  its base to be a variable or a function, and a conversion is neither — it looks
+  like a call of the type's own name. A converted value had to be put in a variable
+  first. Still not reachable: a conversion to a defined *array* type indexed where
+  it stands, C having no cast to an array type.
 - **A defined type over a struct now behaves as that struct.** `type Named Point`
   was not modelled at all: field access, literals, conversions and methods failed
   together, the first of them as "unsupported expression node FactorSuffix". One
