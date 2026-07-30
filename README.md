@@ -237,11 +237,11 @@ broken.
   settled first is where the rendezvous cell lives — a channel variable gets one
   allocated beside it, and a field cannot without deciding what declaring the struct
   allocates, and what a copy of it then shares.
-* A **defined type over a pointer or a function**: `type PP *P` is not recognized as
-  a pointer, so `var q PP = &p` is refused, and `type Fn func(int) int` is not
-  recognized as a function, so a call through a variable of it is "cannot call
-  non-function". Over a scalar, string, array, slice, struct or channel it behaves as
-  what it is defined over.
+* A **defined type over a pointer**: `type PP *P` is not recognized as a pointer, so
+  `var q PP = &p` is refused. Over a scalar, string, array, slice, struct, function
+  or channel it behaves as what it is defined over.
+* **Calling the result of a call**, `pick()(3)`, whether the function type is written
+  or defined. Bind it first: `f := pick(); f(3)`.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
 * An **array** literal may not stand as a general value — it initializes a variable,

@@ -878,12 +878,25 @@ func (f *File) funcType(n Node) bool {
 // funcSig returns a resolved type's signature when it is a function type. Recorded
 // on the variable so a call through a package variable, a local and a parameter
 // alike is checked the same way.
-func (f *File) funcSig(tn TypeNode) *SignatureNode {
-	ft, ok := tn.(*FunctionType)
-	if !ok {
-		return nil
+func (f *File) funcSig(s *Scope, tn TypeNode) *SignatureNode {
+	// Through a chain of definitions: `type Fn func(int) int` is that function
+	// type, so a variable, parameter, result or field of it is callable and is
+	// checked against the same signature.
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		switch x := tn.(type) {
+		case *FunctionType:
+			return x.Signature
+		case *TypeNodeIdent:
+			td, ok := s.find(x.Name.Src()).(*TypeDeclaration)
+			if !ok || td.TypeSpec == nil {
+				return nil
+			}
+			tn = td.TypeSpec.TypeNode
+		default:
+			return nil
+		}
 	}
-	return ft.Signature
+	return nil
 }
 
 // chanElem reports whether a resolved type is a channel "chan T" and, if so, T's
@@ -931,7 +944,7 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		typeQual := namedTypeQual(p.TypeNode)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
-		funcSig := f.funcSig(p.TypeNode)
+		funcSig := f.funcSig(s, p.TypeNode)
 		for _, nm := range p.Names {
 			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
 				f.err(nm.Position(), "%v", err)
@@ -3006,7 +3019,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						typeQual = namedTypeQual(tn)
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
-						funcSig = f.funcSig(tn)
+						funcSig = f.funcSig(s, tn)
 					}
 				}
 			case ExpressionList:
@@ -3480,6 +3493,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				if k, ok := f.exprType(s, rhs[i]); ok {
 					vd.kind, vd.hasKind = k, true
 				}
+				// A named type may also be a function type: `type Fn func(int) int`
+				// carried over by `g := f` is still callable, and is checked against
+				// the same signature. Taking the name alone left g with a type and no
+				// signature, so the call through it was "cannot call non-function".
+				if sig := f.exprFuncSig(s, rhs[i]); sig != nil {
+					vd.funcSig, vd.isFunc = sig, true
+				}
 			} else if sig := f.exprFuncSig(s, rhs[i]); sig != nil {
 				// `g := dbl` / `g := pick()` / `g := o.fn`: g holds a function, so a
 				// call through it is a call and is checked against that signature.
@@ -3533,7 +3553,7 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		return nil
 	}
 	if head, field, ok := f.exprFieldRead(n); ok {
-		return f.funcSig(f.fieldTypeNode(s, head, field))
+		return f.funcSig(s, f.fieldTypeNode(s, head, field))
 	}
 	callee, ok := f.exprCallee(n)
 	if !ok {
@@ -3547,7 +3567,7 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 	if res == nil || len(res.List) != 1 {
 		return nil
 	}
-	return f.funcSig(res.List[0].TypeNode)
+	return f.funcSig(s, res.List[0].TypeNode)
 }
 
 // typeNodeString renders a resolved type as canonical OctoGo source. It exists so
@@ -6225,7 +6245,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 			p := params[i]
 			// A function-typed parameter has no predeclared Kind, so this stands
 			// ahead of the known-kind guard below.
-			f.checkFuncAssign(s, f.funcSig(p.typeNode), arg, "argument to "+name.Src())
+			f.checkFuncAssign(s, f.funcSig(s, p.typeNode), arg, "argument to "+name.Src())
 			f.checkPointerArg(s, p, arg, name)
 			if !p.known {
 				continue
@@ -7560,7 +7580,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		typeName, _ := namedTypeToken(typ)
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
-		funcSig := f.funcSig(typ)
+		funcSig := f.funcSig(s, typ)
 		for _, vd := range varDecls {
 			if vd == nil {
 				continue

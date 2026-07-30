@@ -1457,7 +1457,13 @@ func (e *emitter) funcTypeFor(key string, res []string) string {
 }
 
 // isFuncCType reports whether a C type is one of the minted function-type typedefs.
-func (e *emitter) isFuncCType(ctype string) bool { return strings.HasPrefix(ctype, funcTypePrefix) }
+// isFuncCType reports whether a C type name is one of the emitted function-type
+// typedefs, following a chain of definitions to reach one: `type Fn func(int) int`
+// is a function type wherever it is written, so a variable, parameter or field of
+// it is called through rather than dispatched to.
+func (e *emitter) isFuncCType(ctype string) bool {
+	return strings.HasPrefix(e.underlyingCType(ctype), funcTypePrefix)
+}
 
 // needChan records that `chan elem` is used, so its typedef and helpers are
 // emitted.
@@ -2329,12 +2335,18 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.Write(helperDefs.Bytes())
 		out.WriteByte('\n')
 	}
-	if globals.Len() != 0 {
-		out.Write(globals.Bytes())
-		out.WriteByte('\n')
-	}
+	// The prototypes precede the globals: a package variable may be initialized
+	// with a function, `var tick Fn = onTick`, and C wants that function declared
+	// before the initializer names it. The other way round it was "'onTick'
+	// undeclared here (not in a function)" whichever order the source wrote them
+	// in. Nothing in a prototype can name a global -- a signature is types only --
+	// so this direction has no counterpart to break.
 	if protos.Len() != 0 {
 		out.Write(protos.Bytes())
+		out.WriteByte('\n')
+	}
+	if globals.Len() != 0 {
+		out.Write(globals.Bytes())
 		out.WriteByte('\n')
 	}
 	// The goroutine pool and trampolines go after the prototypes -- a trampoline
@@ -9056,7 +9068,10 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			// text so far applied to the arguments.
 			if !pendingFn && e.isFuncCType(cur.ctype) {
 				text += "(" + e.argsCText("", n.ast) + ")"
-				rts := e.funcTypeRet[cur.ctype]
+				// Keyed by the function typedef, which a DEFINED function type is
+				// only a name for: `type Fn func(int) int` reaches its results
+				// through what it is defined over.
+				rts := e.funcTypeRet[e.underlyingCType(cur.ctype)]
 				if len(rts) != 1 {
 					return "", "", false, false
 				}

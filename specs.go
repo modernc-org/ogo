@@ -39,12 +39,14 @@
 // and initialized before main, which a field cannot have without deciding what a
 // declaration of the struct allocates -- and what a copy of it, a composite literal
 // of it, and an array of it then share.
-// TODO 20260729 Defined types over a pointer or a function are not modelled:
-// `type PP *P` is not recognised as a pointer, so `var q PP = &p` is refused, and
-// `type Fn func(int) int` is not recognised as a function, so a call through a
-// variable of it is "cannot call non-function". A defined type over a scalar, a
-// string, an array, a slice, a struct or a channel behaves as what it is defined
-// over, which is what these two are missing from.
+// TODO 20260729 A defined type over a POINTER is not modelled: `type PP *P` is not
+// recognised as a pointer, so `var q PP = &p` is refused. Over a scalar, a string,
+// an array, a slice, a struct, a function or a channel it behaves as what it is
+// defined over, which is what this one is missing from.
+// TODO 20260730 Calling the result of a call, `pick()(3)`, is "too many arguments
+// in call to pick" -- the call checker reads the second argument list as the first
+// call's. Independent of whether the function type is written or defined. The
+// workaround is a variable: `f := pick(); f(3)`.
 // TODO 20260730 A conversion to a defined ARRAY type cannot be indexed or measured
 // where it stands: `Row(r)[1]` and `len(Row(r))` for `type Row [3]int`. C has no
 // cast to an array type, so such a conversion has to emit its operand rather than a

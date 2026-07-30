@@ -11,6 +11,28 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Language
+
+- **A defined function type is a function**, `type Fn func(int) int` — a call
+  through a variable, parameter, struct field or package variable of one was
+  "cannot call non-function". A callback named once and used everywhere is the
+  reason to write such a type. Four lookups now follow the definition to what it is
+  defined over: the checker's signature, the emitter's is-it-a-function test, the
+  result type behind a chain (keyed by the function typedef a defined name only
+  stands for), and a `:=` copy, which took the type's name and left the signature
+  behind.
+
+### Fixed
+
+- **A package variable initialized with a function did not compile.** `var tick Fn
+  = onTick` emitted the variable before the function's prototype, so C reported
+  `'onTick' undeclared here (not in a function)` — whichever order the source
+  declared them in, and for a written `func(int) int` as much as a defined type.
+  The prototypes precede the globals now; nothing in a prototype can name a global,
+  a signature being types only, so the reverse cannot break.
+
 ## v0.14.0
 
 ### Language

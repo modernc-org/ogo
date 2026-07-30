@@ -950,6 +950,101 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A defined FUNCTION type, `type Fn func(int) int`, which was not recognized
+		// as a function at all: a call through a variable, parameter or field of one
+		// was "cannot call non-function". A callback named once and used everywhere
+		// is the reason to write such a type.
+		//
+		// Four resolutions, each following the definition to what it is defined
+		// over: the checker's signature lookup, so the call is checked; the
+		// emitter's is-it-a-function test, so a field is called through rather than
+		// dispatched to; the result-type lookup behind a chain, keyed by the
+		// function typedef that a defined name only stands for; and a `:=` copy,
+		// which took the type's name and left the signature behind.
+		//
+		// The package-level variable exercises a fifth thing, which was wrong for an
+		// INLINE function type too: prototypes now precede the globals, so a
+		// variable initialized with a function has it declared.
+		name: "a defined function type",
+		src: `type Fn func(int) int
+
+type Pred func(int) bool
+
+type Chain Fn
+
+type Cmd struct {
+	name string
+	run  Fn
+}
+
+var pkgFn Fn = dbl
+
+func dbl(v int) int { return v * 2 }
+
+func neg(v int) int { return -v }
+
+func even(v int) bool { return v%2 == 0 }
+
+func apply(f Fn, v int) int { return f(v) }
+
+func pick(which int) Fn {
+	if which == 0 {
+		return dbl
+	}
+	return neg
+}
+
+func count(xs []int, p Pred) int {
+	n := 0
+	for i := 0; i < len(xs); i++ {
+		if p(xs[i]) {
+			n++
+		}
+	}
+	return n
+}
+
+func main() {
+	var f Fn = dbl
+	println("var", f(4))
+
+	println("param", apply(neg, 5))
+
+	p0 := pick(0)
+	p1 := pick(1)
+	println("result", p0(3), p1(3))
+
+	var c Cmd
+	c.name = "dbl"
+	c.run = dbl
+	println("field", c.run(6), c.name)
+
+	var table [2]Cmd
+	table[0].run = dbl
+	table[1].run = neg
+	println("table", table[0].run(7), table[1].run(7))
+
+	var ch Chain = neg
+	println("chain", ch(8))
+
+	println("pkg", pkgFn(9))
+
+	var back [4]int
+	back[0] = 1
+	back[1] = 2
+	back[2] = 3
+	back[3] = 4
+	println("pred", count(back[:], even))
+
+	g := f
+	f = neg
+	println("copy", g(2), f(2))
+}
+`,
+		want: "var 8\nparam -5\nresult 6 -3\nfield 12 dbl\ntable 14 -7\nchain -8\n" +
+			"pkg 18\npred 2\ncopy 4 -2\n",
+	},
+	{
 		// A method or a field on the result of a CONVERSION, `Celsius(5).f()`, which
 		// was "unsupported call in expression": the chain walk took its base to be a
 		// variable or a function, and a conversion is neither -- it looks like a call
