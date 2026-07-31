@@ -54,6 +54,18 @@ Releases before v0.9.0 predate this file; see
   local `b` did not compile at all — `unknown package "b"` — while the same call on a
   package-level variable worked.
 
+### Diagnostics
+
+- **A comparison the language does not define is refused by the compiler**, not by
+  the C compiler behind it. `p < q` on structs, `s == t` on slices, and equality on
+  an array or struct with a slice inside it all reached the backend, which said
+  `Expected integer type for parameter of comparison` about generated C the reader
+  never wrote. Each is now reported where it stands, in Go's words: `operator < not
+  defined on struct`, `slice can only be compared to nil`, `struct containing []int
+  cannot be compared`, `[2][]int cannot be compared`. The array messages gained a
+  position too, and name the type as OctoGo spells it rather than as the emitted C
+  does.
+
 ### Behaviour changes
 
 - **A non-name target on the left of `:=` in a `select` clause is refused**,

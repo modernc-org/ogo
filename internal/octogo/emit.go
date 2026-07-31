@@ -12037,6 +12037,112 @@ func (e *emitter) stringCompareAt(kids []Node, i int) (op string, ok bool) {
 // structEqName is the C name of a struct type's generated equality helper.
 func structEqName(ctype string) string { return "ogo_eq_" + ctype }
 
+// goArrayTypeName renders an array's type in OctoGo's spelling, `[2][]int` rather
+// than the `[2]ogo_slice_int` the emitted C calls it.
+func (e *emitter) goArrayTypeName(a arrDim) string {
+	s := ""
+	for _, b := range a.bounds() {
+		s += "[" + b + "]"
+	}
+	return s + e.goTypeName(a.elem)
+}
+
+// goTypeName renders a C type back in OctoGo's spelling, for a diagnostic that has
+// to name a type the reader wrote rather than the one emitted for it.
+func (e *emitter) goTypeName(ct string) string {
+	if e.isSliceCType(ct) {
+		return "[]" + e.goTypeName(sliceElemFromCName(ct))
+	}
+	if a, ok := e.namedArrays[ct]; ok {
+		return arrayTypeName(a)
+	}
+	return ct
+}
+
+// comparableCType reports whether values of a C type may be compared with == and
+// !=, and names what makes one that cannot. It is Go's rule: a slice compares only
+// with nil, a function not at all, an array is comparable when its element is, and
+// a struct when every field is.
+func (e *emitter) comparableCType(ct string) (string, bool) {
+	switch {
+	case e.isSliceCType(ct), e.isFuncCType(ct):
+		return e.goTypeName(ct), false
+	}
+	if a, ok := e.namedArrays[ct]; ok {
+		if what, ok := e.comparableCType(a.elem); !ok {
+			return what, false
+		}
+	}
+	for _, fld := range e.structs[ct] {
+		if what, ok := e.comparableCType(fld.ctype); !ok {
+			return what, false
+		}
+	}
+	return "", true
+}
+
+// checkCompareAt refuses a comparison the language does not define, ahead of the
+// lowerings below -- each of which would otherwise emit C that means something else
+// or nothing at all, and leave the reader a complaint about generated C.
+//
+// Ordering is defined on the numeric types and on strings; a struct or a slice has
+// none. Equality reaches further: a struct compares field by field and an array
+// element by element, but only when everything inside is itself comparable, and a
+// slice compares with nil alone. The wording is Go's, so what a reader knows from
+// Go carries over and a search for the text finds something.
+func (e *emitter) checkCompareAt(kids []Node, i int) bool {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return true
+	}
+	op := e.opText(kids[i+1].ast)
+	ordering := false
+	switch op {
+	case "==", "!=":
+	case "<", "<=", ">", ">=":
+		ordering = true
+	default:
+		return true // "&&" and "||", which group the chain rather than compare
+	}
+	// A comparison with nil is legal wherever it is modelled and is lowered below.
+	if e.isNilExpr(kids[i].ast) || e.isNilExpr(kids[i+2].ast) {
+		return true
+	}
+	pos := e.f.tok(kids[i+1].Pos()).Position()
+	for _, n := range []Node{kids[i], kids[i+2]} {
+		ct, ok := e.inferCType(n.ast)
+		if !ok {
+			continue
+		}
+		what := ""
+		switch {
+		case e.isStruct(ct):
+			what = "struct"
+		case e.isSliceCType(ct):
+			what = "slice"
+		}
+		if ordering && what != "" {
+			e.fail("%v: invalid operation: operator %s not defined on %s", pos, op, what)
+			return false
+		}
+		if ordering {
+			continue
+		}
+		if what == "slice" {
+			e.fail("%v: invalid operation: slice can only be compared to nil", pos)
+			return false
+		}
+		if inner, ok := e.comparableCType(ct); !ok {
+			if what == "struct" {
+				e.fail("%v: invalid operation: struct containing %s cannot be compared", pos, inner)
+			} else {
+				e.fail("%v: invalid operation: %s cannot be compared", pos, e.goTypeName(ct))
+			}
+			return false
+		}
+	}
+	return true
+}
+
 // structCompareAt reports whether kids[i..i+2] is a struct equality "a == b" or
 // inequality "a != b" -- the operands being of the same struct C type -- and, if so,
 // that type. Structs are comparable only for equality in Go, not ordering, so only
@@ -12232,6 +12338,9 @@ func (e *emitter) emitStringCompare(kids []Node) bool {
 // string comparison is identical to emitting the kids in order.
 func (e *emitter) emitKidsStringCompare(kids []Node) {
 	for i := 0; i < len(kids); {
+		if !e.checkCompareAt(kids, i) {
+			return
+		}
 		if op, sn, ok := e.sliceNilCompareAt(kids, i); ok {
 			e.emitSliceNilTriple(sn, op)
 			i += 3
@@ -12952,18 +13061,26 @@ func (e *emitter) arrayCompareAt(kids []Node, i int) (op string, a arrDim, ok bo
 		if !lok {
 			known = r
 		}
-		e.fail("cannot compare %s with a value of another type", arrayTypeName(known))
+		e.fail("cannot compare %s with a value of another type", e.goArrayTypeName(known))
 		return "", arrDim{}, false
 	}
+	pos := e.f.tok(kids[i+1].Pos()).Position()
 	switch op = e.opText(kids[i+1].ast); op {
 	case "==", "!=":
 		// Go compares arrays for equality only.
 	default:
-		e.fail("invalid operation: operator %s is not defined on %s", op, arrayTypeName(l))
+		e.fail("%v: invalid operation: operator %s not defined on %s", pos, op, e.goArrayTypeName(l))
 		return "", arrDim{}, false
 	}
 	if l.elem != r.elem || !slices.Equal(l.bounds(), r.bounds()) {
-		e.fail("cannot compare %s with %s", arrayTypeName(l), arrayTypeName(r))
+		e.fail("%v: cannot compare %s with %s", pos, e.goArrayTypeName(l), e.goArrayTypeName(r))
+		return "", arrDim{}, false
+	}
+	// An array is comparable when its element is. A slice element is what the
+	// per-element helper would have compared with C's "==", which asks whether two
+	// headers are the same bytes rather than refusing.
+	if _, ok := e.comparableCType(l.elem); !ok {
+		e.fail("%v: invalid operation: %s cannot be compared", pos, e.goArrayTypeName(l))
 		return "", arrDim{}, false
 	}
 	return op, l, true

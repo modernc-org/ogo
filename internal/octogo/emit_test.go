@@ -6758,3 +6758,77 @@ func main() {
 		})
 	}
 }
+
+// TestEmitCompareRules pins the comparisons the language does not define. Each used
+// to reach the C compiler, which refused the emitted code in its own words
+// ("Expected integer type for parameter of comparison") with nothing in the OctoGo
+// source to tie it to -- so what is checked here is the wording as much as the
+// refusal. It is Go's, so what a reader knows from Go carries over.
+//
+// These live in the emitter rather than the checker because the C type is what
+// answers the question -- whether a value is a slice, a struct, or an array of
+// either -- so this runs EmitC rather than Build.
+func TestEmitCompareRules(t *testing.T) {
+	const decls = `type point struct {
+	x, y int
+}
+
+type holder struct {
+	xs []int
+}
+
+`
+	for _, test := range []struct{ name, src, want string }{
+		{"struct ordering", "var p, q point\n_ = p < q", "invalid operation: operator < not defined on struct"},
+		{"slice ordering", "var s, t []int\n_ = s < t", "invalid operation: operator < not defined on slice"},
+		{"slice equality", "var s, t []int\n_ = s == t", "invalid operation: slice can only be compared to nil"},
+		{"struct with a slice field", "var h, k holder\n_ = h == k", "invalid operation: struct containing []int cannot be compared"},
+		{"array ordering", "var a, b [2]int\n_ = a <= b", "invalid operation: operator <= not defined on [2]int"},
+		{"array of slices", "var a, b [2][]int\n_ = a == b", "invalid operation: [2][]int cannot be compared"},
+		{"array of uncomparable structs", "var a, b [2]holder\n_ = a == b", "invalid operation: [2]holder cannot be compared"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := decls + "func main() {\n" + test.src + "\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			if err == nil {
+				t.Fatalf("EmitC accepted %q", test.src)
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitComparableStillCompare pins what stays comparable, so a refusal cannot
+// quietly widen: a struct of scalars, an array of them, an array of comparable
+// structs, and a slice against nil.
+func TestEmitComparableStillCompare(t *testing.T) {
+	src := `type point struct {
+	x, y int
+}
+
+func main() {
+	var p, q point
+	var a, b [2]int
+	var c, d [2]point
+	var s []int
+	println(p == q, a == b, c != d, s == nil, a[0] < b[1])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+}
