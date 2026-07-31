@@ -950,6 +950,71 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A compound literal inside a cast, which the target's C compiler cannot do.
+		// int(total(xs[:])) is the ordinary spelling: a slice expression handed to a
+		// call becomes a compound literal in C, and a conversion becomes a cast
+		// around it. flexcc warns "Bad number of parameters in call to total:
+		// expected 3 found 1" and generates a call that does not pass the value;
+		// through a function pointer, or when the literal is a slice header, it
+		// refuses the program, and (int)((S){1, 2, 3}.a) crashes it outright. The
+		// literal alone is fine and the cast alone is fine.
+		//
+		// The operand is bound to a temporary, which puts the literal outside the
+		// cast. See doc/complit-arg-in-cast.c, which says how to tell whether the
+		// workaround is still needed. Nothing else moved: no program in the corpus
+		// emitted the shape, which is why this survived to be found by writing one.
+		name: "a compound literal inside a conversion",
+		src: `type Word int32
+
+type Point struct {
+	x, y int
+}
+
+type Sum func([]Word) Word
+
+func total(ws []Word) Word {
+	var t Word
+	for _, w := range ws {
+		t += w
+	}
+	return t
+}
+
+func manhattan(p Point) int {
+	n := p.x
+	if n < 0 {
+		n = -n
+	}
+	m := p.y
+	if m < 0 {
+		m = -m
+	}
+	return n + m
+}
+
+func main() {
+	var xs [3]Word
+	xs[0], xs[1], xs[2] = 10, 20, 30
+
+	// A slice expression handed to a call, inside a conversion.
+	println(int(total(xs[:])))
+	println(int(total(xs[1:])))
+	println(int64(total(xs[:])))
+
+	// A composite literal handed to a call, inside a conversion.
+	println(int32(manhattan(Point{-3, 4})))
+
+	// The same through a function value, and a conversion to a defined type.
+	var f Sum = total
+	println(int(Word(f(xs[:]))))
+
+	// A conversion whose operand only contains the call, deeper in an expression.
+	println(int(total(xs[:]) + 1))
+}
+`,
+		want: "60\n50\n60\n7\n60\n61\n",
+	},
+	{
 		// The typedef section in dependency order. It used to be fixed groups --
 		// struct forwards, function typedefs, scalar slice headers, the named and
 		// struct typedefs, struct slice headers -- and real dependencies cut across

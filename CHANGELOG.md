@@ -33,6 +33,17 @@ Releases before v0.9.0 predate this file; see
   wants declared first. That rule replaces the hand-written scalar/struct split of
   the slice headers, and the inline emission a struct-element slice field needed.
 
+### Fixed
+
+- **A conversion applied to a call taking a slice expression did not compile.**
+  `int(total(xs[:]))` — a slice expression handed to a call becomes a compound
+  literal in C, and the conversion becomes a cast around it, which the backend
+  cannot do: it warns `Bad number of parameters` and generates a call that passes
+  nothing, refuses the program outright once the call goes through a function value,
+  and crashes on a field read straight off a literal. The cast alone is fine and the
+  literal alone is fine. The operand is bound to a temporary now, which puts the
+  literal outside the cast. `doc/complit-arg-in-cast.c` is the reproducer.
+
 ## v0.15.0
 
 ### Language

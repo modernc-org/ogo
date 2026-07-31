@@ -5940,9 +5940,28 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 				return
 			}
 		}
-		e.emit("(" + ct + ")(")
-		e.emitExpr(arg.ast)
-		e.emit(")")
+		// A COMPOUND LITERAL inside a cast is the second thing that target's C
+		// compiler cannot do. `(int)(f((S){1, 2, 3}))` warns "Bad number of
+		// parameters in call to f: expected 3 found 1" and generates a call that
+		// does not pass the value; through a function pointer, or with a slice
+		// header for the literal, it refuses the program outright, and
+		// `(int)((S){1, 2, 3}.a)` crashes it. The literal alone is fine, the cast
+		// alone is fine. Binding the operand to a temporary puts the literal outside
+		// the cast, which is all it takes.
+		//
+		// The test is on the emitted text rather than on the source shape: a "){" in
+		// an expression is a compound literal and nothing else, and it catches every
+		// way one can get there -- a slice expression handed to a call, a composite
+		// literal argument, or one standing on its own. `int(total(xs[:]))` is the
+		// ordinary spelling that hits it.
+		text := e.captureC(func() { e.emitExpr(arg.ast) })
+		if strings.Contains(text, "){") {
+			if src, ok := e.exprReprCType(arg.ast); ok && src != "" {
+				e.emit("(" + ct + ")" + e.hoist(src, func() { e.emit(text) }))
+				return
+			}
+		}
+		e.emit("(" + ct + ")(" + text + ")")
 		return
 	}
 	src, ok := e.exprReprCType(arg.ast)
