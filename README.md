@@ -193,7 +193,8 @@ broken.
   a guard, `fallthrough`, `break` and `continue` (including labeled), `defer`
   (including in nested blocks, capturing its arguments).
 * The full operator set, compound assignment, multiple assignment, and equality on
-  strings, structs and arrays.
+  strings, structs and arrays. A multiple assignment writes to anything a single one
+  can — an element, a field, a pointee — so `xs[i], xs[j] = xs[j], xs[i]` swaps.
 * A call's result may be used directly: a field read off it (`mk().y`), a method
   called on it, or an index into it (`mk()[1]`, `mk().d[1]`).
 * `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
@@ -254,6 +255,8 @@ broken.
   one result used as a value; and `go` through a variable holding a function rather
   than through the function's own name. A declared function used as a value works.
 * An array as a function result, a slice whose element is an array, and `goto`.
+* A `range` clause written with `=` accepts only variables, not an element or a
+  field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,

@@ -1254,12 +1254,19 @@
 //	for i := range n { ... }       // i = 0, 1, ... n-1  (n an integer)
 //	for i := range xs { ... }      // i indexes the slice or array
 //	for i, v := range xs { ... }   // i is the index, v a copy of each element
+//	for i, v = range xs { ... }    // the same, into variables that already exist
 //	for range n { ... }            // repeat n times, no variable
 //
 // Ranging an integer yields only the index; the two-variable form is available
-// for a slice or an array, where the second variable is a copy of the element.
-// Ranging a channel or a string is not provided: a channel has no close, and
-// string iteration would require decoding.
+// for a slice, an array or a string, where the second variable is a copy of the
+// element -- for a string, the rune (see the range clause below). Ranging a
+// channel is not provided: it has no close.
+//
+// A clause written with "=" rather than ":=" assigns variables that already
+// exist instead of declaring new ones. They are written at the top of each
+// iteration, so after the loop they hold the last index and element, and a
+// "break" leaves them at the iteration it broke on. Each such variable must be a
+// name; an element or a field target is not supported yet.
 //
 // (OctoGo Specific): To stay LL(1), a header is parsed as an expression first
 // and what follows it decides how to read it: a "{" makes it the condition, and
