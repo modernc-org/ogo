@@ -72,6 +72,12 @@ Releases before v0.9.0 predate this file; see
   operand would leave both elements equal: an ordinary-looking answer and a wrong
   checksum. It appears in about a quarter of seeds; 1000 seeds agree, and the corpus
   still builds with the real backend and runs on the board.
+- **The fuzzer generates a two-result function and destructures its call**,
+  `a, b := fn(x)`. Every multiple-value form in the language lowers through that one
+  path — the header declaration, a `select` clause's receive and the plain statement
+  alike — and none of it was under the oracle. Both results are predicted, so a
+  compiler that mixed them up or dropped one answers with a wrong checksum. About
+  two seeds in five carry one.
 
 ### Diagnostics
 

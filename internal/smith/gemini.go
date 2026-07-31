@@ -104,6 +104,19 @@ type FuncDef struct {
 	Name   string
 	Params []string
 	Body   Node // over Params and literals only; see genFuncDecl for why it is total
+	// Body2 makes this a two-result function, `func f(p int) (int, int)`. It is a
+	// second expression over the same parameters, so the VM predicts both results
+	// the same way it predicts one. Such a function is not usable in expression
+	// position, so genCall skips it and genDestructure is what calls it.
+	Body2 Node
+}
+
+// results reports how many values a generated function returns.
+func (d *FuncDef) results() int {
+	if d.Body2 != nil {
+		return 2
+	}
+	return 1
 }
 
 // pureOps are the operators a generated function's body may use.
@@ -127,8 +140,13 @@ func (f *Fuzzer) genFuncDecl() *FuncDef {
 		fn.Params = append(fn.Params, f.newVarName("p"))
 	}
 	fn.Body = f.genPureExpr(fn.Params, 0)
+	if f.Rand.Float32() < 0.3 {
+		// A two-result function, for the destructuring call sites. The second body
+		// is generated the same way and is total for the same reason.
+		fn.Body2 = f.genPureExpr(fn.Params, 0)
+	}
 	f.Funcs = append(f.Funcs, fn)
-	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body}).Write(f.Out, 0)
+	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
 	return fn
 }
@@ -158,6 +176,12 @@ func (f *Fuzzer) genPureExpr(params []string, depth int) Node {
 // property of the arguments but a broken invariant -- a body built from something
 // outside that set -- and panics rather than being papered over.
 func (f *Fuzzer) evalCall(fn *FuncDef, args map[string]Int32, vm Machine) Int32 {
+	return f.evalBody(fn, fn.Body, args, vm)
+}
+
+// evalBody is evalCall over one of a function's result expressions, so a two-result
+// function's second result is predicted the same way its first is.
+func (f *Fuzzer) evalBody(fn *FuncDef, body Node, args map[string]Int32, vm Machine) Int32 {
 	var eval func(Node) Int32
 	eval = func(n Node) Int32 {
 		switch x := n.(type) {
@@ -176,7 +200,20 @@ func (f *Fuzzer) evalCall(fn *FuncDef, args map[string]Int32, vm Machine) Int32 
 			panic(todo("%s: unexpected body node %T", fn.Name, n))
 		}
 	}
-	return eval(fn.Body)
+	return eval(body)
+}
+
+// funcsWithResults returns the generated functions returning exactly n values. A
+// two-result function is not a value, so it may only be called where two names
+// receive it -- which is what keeps the two call sites apart.
+func (f *Fuzzer) funcsWithResults(n int) []*FuncDef {
+	var out []*FuncDef
+	for _, fn := range f.Funcs {
+		if fn.results() == n {
+			out = append(out, fn)
+		}
+	}
+	return out
 }
 
 // genCall generates a call to an already-declared function, its arguments being
@@ -185,7 +222,8 @@ func (f *Fuzzer) evalCall(fn *FuncDef, args map[string]Int32, vm Machine) Int32 
 // call -- which is what puts argument passing, parameter binding and the returned
 // value under test.
 func (f *Fuzzer) genCall(vm Machine, mem Memory, depth int) (Node, Value) {
-	fn := f.Funcs[f.Rand.Intn(len(f.Funcs))]
+	one := f.funcsWithResults(1)
+	fn := one[f.Rand.Intn(len(one))]
 	args := map[string]Int32{}
 	var argNodes []Node
 	for _, p := range fn.Params {
@@ -306,8 +344,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genArrayWrite(vm, mem) // 8% chance for an array element write
 	case r < 0.60:
 		return f.genElementSwap(vm, mem) // 2% chance for an element swap
+	case r < 0.63:
+		return f.genDestructure(vm, mem) // 3% chance for a two-result call
 	case r < 0.66:
-		return f.genSliceDecl(vm, mem) // 6% chance for a slice declaration
+		return f.genSliceDecl(vm, mem) // 3% chance for a slice declaration
 	case r < 0.74:
 		return f.genSliceWrite(vm, mem) // 8% chance for a slice element write
 	case r < 0.80:
@@ -884,6 +924,32 @@ func (f *Fuzzer) genElementSwap(vm Machine, mem Memory) Node {
 	}
 }
 
+// genDestructure calls a two-result function and binds both results to new names,
+// `a, b := fn(x)`. It is the shape every multiple-value form in the language shares
+// -- the header declaration, a select clause's receive and the plain statement all
+// lower through it -- and the oracle predicts both results, so a compiler that
+// mixed them up, or dropped one, answers with a wrong checksum.
+func (f *Fuzzer) genDestructure(vm Machine, mem Memory) Node {
+	two := f.funcsWithResults(2)
+	if len(two) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	fn := two[f.Rand.Intn(len(two))]
+	args := map[string]Int32{}
+	var argNodes []Node
+	for _, p := range fn.Params {
+		node, val, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+		argNodes = append(argNodes, node)
+		args[p] = val.(Int32)
+	}
+	a, b := f.newVarName("d"), f.newVarName("d")
+	mem.Store(a, f.evalBody(fn, fn.Body, args, vm))
+	mem.Store(b, f.evalBody(fn, fn.Body2, args, vm))
+	f.CurrentEnv.Declare(a, BasicType{Kind: KindInt}, false)
+	f.CurrentEnv.Declare(b, BasicType{Kind: KindInt}, false)
+	return &DestructureNode{A: a, B: b, Call: &CallNode{Fn: fn.Name, Args: argNodes}}
+}
+
 // genSliceDecl declares an integer slice over a backing array of fixed capacity,
 // `var s []int = make([]int, L, C)`. The length may be zero -- the empty slice is
 // worth exercising -- but the capacity is always strictly greater, so every live
@@ -1037,7 +1103,7 @@ func (f *Fuzzer) genExpression(targetType Type, vm Machine, mem Memory, depth in
 		// Call one of the generated functions. Its arguments are themselves
 		// generated expressions, and the VM re-evaluates the callee's body against
 		// their values, so the whole call is predicted by the oracle.
-		if len(f.Funcs) != 0 && f.Rand.Float32() < 0.2 {
+		if len(f.funcsWithResults(1)) != 0 && f.Rand.Float32() < 0.2 {
 			node, val := f.genCall(vm, mem, depth)
 			return node, val, nil
 		}
@@ -1347,6 +1413,7 @@ type FuncDeclNode struct {
 	Name   string
 	Params []string
 	Body   Node
+	Body2  Node // non-nil for a two-result function
 }
 
 func (n *FuncDeclNode) Write(w io.Writer, indent int) {
@@ -1358,13 +1425,33 @@ func (n *FuncDeclNode) Write(w io.Writer, indent int) {
 		}
 		fmt.Fprintf(w, "%s int", p)
 	}
-	fmt.Fprint(w, ") int {\n")
+	if n.Body2 != nil {
+		fmt.Fprint(w, ") (int, int) {\n")
+	} else {
+		fmt.Fprint(w, ") int {\n")
+	}
 	writeIndent(w, indent+1)
 	fmt.Fprint(w, "return ")
 	n.Body.Write(w, 0)
+	if n.Body2 != nil {
+		fmt.Fprint(w, ", ")
+		n.Body2.Write(w, 0)
+	}
 	fmt.Fprint(w, "\n")
 	writeIndent(w, indent)
 	fmt.Fprint(w, "}\n")
+}
+
+// DestructureNode is a two-result call bound to two new names, `a, b := fn(x)`.
+type DestructureNode struct {
+	A, B string
+	Call Node
+}
+
+func (n *DestructureNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s, %s := ", n.A, n.B)
+	n.Call.Write(w, 0)
 }
 
 // CallNode is a call to a generated function in expression position.

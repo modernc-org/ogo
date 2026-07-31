@@ -74,6 +74,8 @@ var generatedConstructs = []struct {
 	{"compound assignment", `\w+ (\+|-|\*|/|%|<<|>>|&|\||\^|&\^)= `},
 	{"function declaration", `\nfunc fn_\d+\(`},
 	{"function call", `fn_\d+\(`},
+	{"two-result function", `\) \(int, int\) \{`},
+	{"two-result destructuring", `\n\s*d_\d+, d_\d+ := fn_\d+\(`},
 }
 
 // TestGeneratorCoverage asserts that the generator still emits every construct it
