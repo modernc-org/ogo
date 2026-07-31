@@ -32,3 +32,24 @@ func main() {
 
 	_, _, _, _, _ = a, b, c, d, e
 }
+
+// A select clause's receive target is the same rule: the grammar's PostfixComm
+// carries selectors and indexes, which the "=" form needs, so ":=" has to check.
+func recv(ch chan int) {
+	var p point
+	var xs [2]int
+	q := &xs[0]
+
+	select {
+	// ERROR non-name target on the left side of :=
+	case p.x := <-ch:
+	// ERROR non-name target on the left side of :=
+	case xs[0] := <-ch:
+	// ERROR non-name target on the left side of :=
+	case *q := <-ch:
+	// The same targets with "=" are fine.
+	case p.x = <-ch:
+	case xs[1] = <-ch:
+	case *q = <-ch:
+	}
+}

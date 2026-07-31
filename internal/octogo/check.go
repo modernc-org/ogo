@@ -2908,6 +2908,14 @@ func (f *File) commOp(s *Scope, op Node) {
 		f.checkReceiveOperand(s, operand)
 		if assignOp == ASSIGN {
 			f.commRecvAssignTarget(s, assignHead, postfixComm, operand)
+			break
+		}
+		// ":=" declares a name, here as much as in an ordinary short declaration, so
+		// a target that is not one has nothing for it to declare. The grammar admits
+		// them -- PostfixComm carries selectors and indexes, which the "=" form needs
+		// -- so the rule is a check.
+		if hasSelectorOrIndex(postfixComm) || f.headIsDeref(assignHead) {
+			f.err(f.tok(assignHead.Pos()).Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
 		}
 	default:
 		// "case ch <- v": the AssignHead is the channel, the Expression the value.

@@ -33,6 +33,17 @@ Releases before v0.9.0 predate this file; see
   wants declared first. That rule replaces the hand-written scalar/struct split of
   the slice headers, and the inline emission a struct-element slice field needed.
 
+- **A `select` clause may receive into anything an assignment can write to**,
+  `case s.last = <-a:`. The clause read only the head identifier off its target, so
+  the received value was assigned to the *struct*, and the C compiler is what caught
+  it. The plain `s.last = <-a` outside a select always worked.
+
+### Behaviour changes
+
+- **A non-name target on the left of `:=` in a `select` clause is refused**,
+  `case p.x := <-ch:`, as it already is in an ordinary short declaration. Those
+  targets are all legal with `=`.
+
 ### Fixed
 
 - **A conversion applied to a call taking a slice expression did not compile.**

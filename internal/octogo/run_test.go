@@ -950,6 +950,78 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A select clause may receive into anything an assignment can write to. The
+		// clause read only the head identifier off its target, so `case s.last =
+		// <-a:` assigned the received int to s -- the whole struct -- and the C
+		// compiler is what caught it, "incompatible types in assignment". An element
+		// target said the same about the array. The plain `s.last = <-a` outside a
+		// select always worked, which is what makes this a clause bug rather than a
+		// receive one; the grammar has carried the selectors and indexes all along
+		// (PostfixComm), and only this path dropped them.
+		//
+		// It writes through the same store a multiple assignment does, so the target
+		// shapes are the same set. A ":=" clause still declares, still shadows, and
+		// now says so when given a target it cannot declare.
+		name: "a select clause receiving into a field or an element",
+		src: `type sink struct {
+	last  int
+	slots []int
+}
+
+func produce(ch chan int, v int) { ch <- v }
+
+var back [3]int
+
+func main() {
+	var a chan int
+	var b chan int
+	s := sink{slots: back[:]}
+	n := 0
+	p := &n
+
+	go produce(a, 10)
+	select {
+	case s.last = <-a:
+	}
+	println(s.last)
+
+	go produce(b, 20)
+	select {
+	case s.slots[1] = <-b:
+	}
+	println(s.slots[0], s.slots[1], s.slots[2])
+
+	go produce(a, 30)
+	select {
+	case *p = <-a:
+	}
+	println(n)
+
+	// A declaring clause is unaffected, and still shadows.
+	last := 99
+	go produce(b, 40)
+	select {
+	case last := <-b:
+		println(last)
+	}
+	println(last)
+
+	// Several clauses, one of which stores through a chain.
+	go produce(a, 50)
+	for done := false; !done; {
+		select {
+		case s.slots[2] = <-a:
+			done = true
+		case s.last = <-b:
+			done = true
+		}
+	}
+	println(s.last, s.slots[2])
+}
+`,
+		want: "10\n0 20 0\n30\n40\n99\n10 50\n",
+	},
+	{
 		// A compound literal inside a cast, which the target's C compiler cannot do.
 		// int(total(xs[:])) is the ordinary spelling: a slice expression handed to a
 		// call becomes a compound literal in C, and a conversion becomes a cast

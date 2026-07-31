@@ -761,12 +761,12 @@ func (e *emitter) goDefs() string {
 // channel.
 type selectCase struct {
 	def     bool
-	send    bool   // `case ch <- v:` rather than a receive
-	ch      string // channel variable
-	elem    string // its element C type
-	target  string // variable receiving the value, empty for a bare `case <-ch:`
-	declare bool   // ":=", so the target is introduced in the clause
-	val     Node   // the value being sent, for a send clause
+	send    bool         // `case ch <- v:` rather than a receive
+	ch      string       // channel variable
+	elem    string       // its element C type
+	target  assignTarget // what receives the value; its name is empty for a bare `case <-ch:`
+	declare bool         // ":=", so the target is introduced in the clause
+	val     Node         // the value being sent, for a send clause
 	body    []Node
 }
 
@@ -942,14 +942,11 @@ func (e *emitter) emitSelect(ast []int32) {
 			e.ind()
 			e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
 		}
-		switch {
-		case c.declare:
-			e.locals[c.target] = c.elem
-			e.ind()
-			e.emit(c.elem + " " + c.target + " = " + tmp + ";\n")
-		case c.target != "":
-			e.ind()
-			e.emit(c.target + " = " + tmp + ";\n")
+		if c.target.name != "" {
+			// The same store a multiple assignment writes, so a clause may receive
+			// into a field or an element -- `case b.v = <-ch:` -- as the plain
+			// assignment `b.v = <-ch` always could.
+			e.emitStore(c.target, c.declare, c.elem, tmp)
 		}
 		for _, st := range c.body {
 			e.emitStatement(st.ast)
@@ -1067,11 +1064,12 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 		return false
 	}
 	var value Node
-	assigns, suffixed, hasValue := false, false, false
+	var chain []Node
+	assigns, hasValue := false, false
 	for q := range it(post.ast) {
 		switch {
 		case q.sym == Selector, q.sym == Index:
-			suffixed = true
+			chain = append(chain, q)
 		case q.sym == 0 && e.f.ch(q.tok) == DEFINE:
 			assigns, c.declare = true, true
 		case q.sym == 0 && e.f.ch(q.tok) == ASSIGN:
@@ -1085,10 +1083,10 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 		return false
 	}
 	if assigns {
-		c.target = e.soleIdent(head.ast)
+		c.target = assignTarget{name: e.soleIdent(head.ast), stars: e.derefStars(head.ast), chain: chain}
 		return e.selectChan(value, c)
 	}
-	if suffixed {
+	if len(chain) != 0 {
 		e.fail("a select send clause needs a plain channel operand")
 		return false
 	}
