@@ -950,6 +950,183 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// Value-receiver methods returning structs, chained: `p.add(v).scale(2)`,
+		// and a method whose receiver is an element of a slice held in a struct,
+		// assigned back to itself. It is what an integrator looks like, and it is
+		// the shape where a copy has to stay a copy -- the last line steps a body
+		// and reads the original, which must not have moved.
+		name: "chained value-receiver methods over structs",
+		src: `type vec struct {
+	x, y int
+}
+
+type body struct {
+	pos vec
+	vel vec
+}
+
+type world struct {
+	bodies []body
+}
+
+func (v vec) add(o vec) vec { return vec{v.x + o.x, v.y + o.y} }
+
+func (v vec) scale(k int) vec { return vec{v.x * k, v.y * k} }
+
+func (b body) step(dt int) body {
+	return body{pos: b.pos.add(b.vel.scale(dt)), vel: b.vel}
+}
+
+func (w *world) step(dt int) {
+	for i := 0; i < len(w.bodies); i++ {
+		w.bodies[i] = w.bodies[i].step(dt)
+	}
+}
+
+func (w *world) at(i int) vec { return w.bodies[i].pos }
+
+func mkWorld(bs []body) world { return world{bodies: bs} }
+
+var back [3]body
+
+func main() {
+	back[0] = body{pos: vec{0, 0}, vel: vec{1, 2}}
+	back[1] = body{pos: vec{10, 10}, vel: vec{-1, 0}}
+	back[2] = body{pos: vec{5, 5}, vel: vec{0, -1}}
+	w := mkWorld(back[:])
+
+	w.step(2)
+	println(w.at(0).x, w.at(0).y, w.at(1).x, w.at(2).y)
+
+	w.step(3)
+	println(w.at(0).x, w.at(0).y, w.at(1).x, w.at(2).y)
+
+	// A method on the result of a method, and on the result of a call.
+	v := back[0].pos.add(back[0].vel).scale(2)
+	println(v.x, v.y)
+	w2 := mkWorld(back[:])
+	println(w2.at(2).x)
+
+	// A struct returned by value is a copy: stepping the copy leaves the world.
+	c := back[0].step(10)
+	println(c.pos.x, back[0].pos.x)
+}
+`,
+		want: "2 4 8 3\n5 10 5 0\n12 24\n5\n15 5\n",
+	},
+	{
+		// A binary heap over a caller's array: sift up, sift down, a struct payload
+		// and a capacity the pushes are refused at. It is what a priority queue on
+		// this target looks like, and it leans on most of what this release changed
+		// at once -- element swaps through a slice held in a struct field, a
+		// two-result method on that field, an `if r := l + 1; r < h.n && ...` header
+		// declaration, and the zero value of a struct returned on the empty path.
+		//
+		// It found nothing, which is the point of writing it down: every one of
+		// those paths was fixed or added this week, and this is the program that
+		// says they compose.
+		name: "a binary heap over a fixed array",
+		src: `type job struct {
+	pri int
+	id  int
+}
+
+type heap struct {
+	a []job
+	n int
+}
+
+func (h *heap) less(i, j int) bool {
+	if h.a[i].pri != h.a[j].pri {
+		return h.a[i].pri < h.a[j].pri
+	}
+	return h.a[i].id < h.a[j].id
+}
+
+func (h *heap) push(j job) bool {
+	if h.n == len(h.a) {
+		return false
+	}
+	h.a[h.n] = j
+	i := h.n
+	h.n++
+	for i > 0 {
+		p := (i - 1) / 2
+		if !h.less(i, p) {
+			break
+		}
+		h.a[i], h.a[p] = h.a[p], h.a[i]
+		i = p
+	}
+	return true
+}
+
+func (h *heap) pop() (job, bool) {
+	var zero job
+	if h.n == 0 {
+		return zero, false
+	}
+	top := h.a[0]
+	h.n--
+	h.a[0] = h.a[h.n]
+	i := 0
+	for {
+		l := 2*i + 1
+		if l >= h.n {
+			break
+		}
+		m := l
+		if r := l + 1; r < h.n && h.less(r, l) {
+			m = r
+		}
+		if !h.less(m, i) {
+			break
+		}
+		h.a[i], h.a[m] = h.a[m], h.a[i]
+		i = m
+	}
+	return top, true
+}
+
+var back [8]job
+
+func main() {
+	h := &heap{a: back[:]}
+
+	pri := [7]int{5, 3, 9, 1, 3, 7, 2}
+	for i := 0; i < 7; i++ {
+		if ok := h.push(job{pri: pri[i], id: i}); !ok {
+			println("full at", i)
+		}
+	}
+	println("n", h.n)
+
+	for {
+		j, ok := h.pop()
+		if !ok {
+			break
+		}
+		print(j.pri, ":", j.id, " ")
+	}
+	println()
+
+	// Popping an empty heap reports it and yields the zero job.
+	j, ok := h.pop()
+	println(ok, j.pri, j.id)
+
+	// Refill past capacity: the ninth push is refused.
+	for i := 0; i < 9; i++ {
+		if ok := h.push(job{pri: 9 - i, id: i}); !ok {
+			println("refused", i)
+		}
+	}
+	k, _ := h.pop()
+	println("min", k.pri, k.id, h.n)
+}
+`,
+		want: "n 7\n1:3 2:6 3:1 3:4 5:0 7:5 9:2 \nfalse 0 0\nrefused 8\nmin 2 7 7\n",
+	},
+	{
 		// A conversion to a defined ARRAY type, `row(a)` for `type row [3]int`. It
 		// was the one kind of defined type whose name did not name a conversion, so
 		// `r := row(a)` was "cannot infer a type" and `sum(row(a))` put the type NAME

@@ -65,6 +65,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Testing
 
+- **Two realistic programs are run cases.** A binary heap over a caller's array —
+  sift up, sift down, a struct payload, pushes refused at capacity — and an
+  integrator built from value-receiver methods returning structs, chained. Between
+  them they cover most of what this release changed: element swaps through a slice
+  held in a struct field, a two-result method on that field, an `if r := l + 1;
+  r < h.n && …` header declaration, and a struct copy that has to stay a copy.
+  Neither found a bug, which is what makes them worth keeping: they say those paths
+  compose.
 - **The fuzzer generates an element swap**, `a[i], a[j] = a[j], a[i]` — the one
   statement shape whose targets are lvalues rather than names, and the path most of
   this release's assignment work rests on. The VM swaps the same two values, so a
