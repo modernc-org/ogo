@@ -80,6 +80,11 @@ Releases before v0.9.0 predate this file; see
   operand would leave both elements equal: an ordinary-looking answer and a wrong
   checksum. It appears in about a quarter of seeds; 1000 seeds agree, and the corpus
   still builds with the real backend and runs on the board.
+- **The fuzzer generates `min` and `max`**, over two to four arguments. The builtin
+  is lowered as a two-argument helper applied left to right, so `min(a, b, c)` is
+  `min(min(a, b), c)` — an argument evaluated twice, or folded in the wrong order,
+  would still look like an ordinary number. The VM picks the smallest of the same
+  values, so it does not.
 - **The fuzzer generates a deferred call**, in two shapes — a plain call and a
   method on a value receiver — and pins the one thing about `defer` a reader cannot
   see: the argument, and the receiver, are evaluated where the `defer` stands, not

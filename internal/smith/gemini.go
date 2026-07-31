@@ -352,8 +352,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genArrayWrite(vm, mem) // 8% chance for an array element write
 	case r < 0.60:
 		return f.genElementSwap(vm, mem) // 2% chance for an element swap
+	case r < 0.615:
+		return f.genDestructure(vm, mem) // 1.5% chance for a two-result call
 	case r < 0.62:
-		return f.genDestructure(vm, mem) // 2% chance for a two-result call
+		return f.genMinMax(vm, mem) // 0.5% chance for a min or max
 	case r < 0.63:
 		return f.genDeferCall(vm, mem) // 1% chance for a call that defers
 	case r < 0.66:
@@ -1038,6 +1040,38 @@ func (f *Fuzzer) genDestructure(vm Machine, mem Memory) Node {
 	f.CurrentEnv.Declare(a, BasicType{Kind: KindInt}, false)
 	f.CurrentEnv.Declare(b, BasicType{Kind: KindInt}, false)
 	return &DestructureNode{A: a, B: b, Call: &CallNode{Fn: fn.Name, Args: argNodes}}
+}
+
+// genMinMax declares a variable holding min or max over two to four generated
+// integer expressions.
+//
+// It is worth generating for the same reason the variadic fold exists: the builtin
+// is lowered as a two-argument helper applied left to right, so `min(a, b, c)` is
+// `min(min(a, b), c)`, and an argument evaluated twice or folded in the wrong order
+// would still look like an ordinary number. The VM picks the smallest of the same
+// values, so it does not.
+func (f *Fuzzer) genMinMax(vm Machine, mem Memory) Node {
+	name := f.newVarName("v")
+	which := "min"
+	if f.Rand.Intn(2) == 0 {
+		which = "max"
+	}
+	var args []Node
+	var best Int32
+	for i, n := 0, 2+f.Rand.Intn(3); i < n; i++ {
+		node, val, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
+		args = append(args, node)
+		v := val.(Int32)
+		switch {
+		case i == 0:
+			best = v
+		case which == "min" && v < best, which == "max" && v > best:
+			best = v
+		}
+	}
+	mem.Store(name, best)
+	f.CurrentEnv.Declare(name, BasicType{Kind: KindInt}, false)
+	return &VarDeclNode{Name: name, Type: "int", Expr: &CallNode{Fn: which, Args: args}}
 }
 
 // genSliceDecl declares an integer slice over a backing array of fixed capacity,
