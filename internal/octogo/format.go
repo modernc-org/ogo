@@ -237,6 +237,12 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// for anything else.
 	case prev == COMMA && curr == LBRACE && c.inLiteralBraces:
 		return true
+	// A keyed element whose value is an elided composite literal keeps the space
+	// after its ":": gofmt writes "box{p: {13, 14}}". The colon is a key's, not a
+	// slice bound's -- those are inside an index, which this is not -- and the rule
+	// below would otherwise bind every "{" in a literal tight to what precedes it.
+	case prev == COLON && curr == LBRACE && c.inLiteralBraces && !c.inIndex:
+		return true
 	case (curr == LBRACE || prev == LBRACE || curr == RBRACE) && c.inLiteralBraces:
 		return false
 	// A struct or interface type's opening brace binds tight to the keyword unless
@@ -288,6 +294,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// of the bracket tight even so -- there is no bound there to separate from --
 	// which is how gofmt writes "a[: j+1 : k]".
 	case c.inIndex && c.sliceColonBlanks && (curr == COLON || prev == COLON) && prev != LBRACK:
+		return true
+	// A three-clause "for" whose init clause is empty keeps a space before the
+	// first ";": gofmt writes "for ; i < n; i++", since there is no init statement
+	// for the semicolon to bind to.
+	case prev == FOR && curr == SEMICOLON:
 		return true
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false

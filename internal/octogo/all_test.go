@@ -291,6 +291,45 @@ func main() {
 }
 `
 
+// TestFormatGofmtAgreement pins the two spacings a differential run against gofmt
+// caught: a three-clause "for" with no init statement keeps the space before its
+// first ";", and a keyed element whose value is an elided composite literal keeps
+// the space after its ":". Both were written tight, which gofmt does not do.
+//
+// The run that found them is worth repeating rather than describing: extract every
+// emitRunCases source, prepend a package clause, format one copy with gofmt and one
+// with FormatFile, and diff. 150 of 193 agree exactly; what is left is operator
+// spacing at depth (go/printer's cutoff rule) and gofmt's alignment of consecutive
+// one-line function declarations, neither of which this formatter implements.
+func TestFormatGofmtAgreement(t *testing.T) {
+	const src = `type pair struct {
+	a int
+	b int
+}
+
+type box struct {
+	p pair
+}
+
+func main() {
+	k := box{p: {13, 14}}
+	s := "abc"
+	i := 0
+	for ; i < len(s); i++ {
+		println(s[i])
+	}
+	println(k.p.a)
+}
+`
+	var b bytes.Buffer
+	if err := FormatFile("main.ogo", []byte(src), &b); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if got := b.String(); got != src {
+		t.Errorf("FormatFile is not idempotent on the gofmt-canonical form:\n got %q\nwant %q", got, src)
+	}
+}
+
 func TestFormat(t *testing.T) {
 	var out bytes.Buffer
 	if err := FormatFile("test.go", []byte(testInput), &out); err != nil {

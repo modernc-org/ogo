@@ -89,6 +89,15 @@ Releases before v0.9.0 predate this file; see
   compiler that mixed them up or dropped one answers with a wrong checksum. About
   two seeds in five carry one.
 
+### Tooling
+
+- **`ogo fmt` writes `for ; i < n; i++`**, not `for; i < n; i++`. A three-clause
+  loop with no init statement had its first `;` bound tight, as a separator after a
+  statement would be — but there is no statement there.
+- **`ogo fmt` writes `box{p: {13, 14}}`**, not `box{p:{13, 14}}`. A keyed element
+  whose value is an elided composite literal lost the space after its `:`, every
+  brace inside a literal having been bound tight to what precedes it.
+
 ### Documentation
 
 - **`p2.NewLock` does not report exhaustion**, and the docs said it did. The
