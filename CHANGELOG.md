@@ -63,6 +63,16 @@ Releases before v0.9.0 predate this file; see
   variable whose *type* must be inferred from a variable declared below it is still
   refused, by name.
 
+### Testing
+
+- **The fuzzer generates an element swap**, `a[i], a[j] = a[j], a[i]` — the one
+  statement shape whose targets are lvalues rather than names, and the path most of
+  this release's assignment work rests on. The VM swaps the same two values, so a
+  compiler that assigned the first target before evaluating the second right-hand
+  operand would leave both elements equal: an ordinary-looking answer and a wrong
+  checksum. It appears in about a quarter of seeds; 1000 seeds agree, and the corpus
+  still builds with the real backend and runs on the board.
+
 ### Diagnostics
 
 - **A parse error is no longer hidden behind a checker error on the same line.**
