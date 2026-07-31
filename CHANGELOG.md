@@ -57,6 +57,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **`print` separated its arguments with a space; only `println` should.**
+  `print(n, " ")` in a loop wrote three spaces between values instead of one, and
+  `print("a", "b")` wrote `a b`. Go's `print` writes its arguments adjacently — which
+  is the whole reason to reach for it rather than `println` — and `specs.go` said so
+  already; only the emitter disagreed. `println` was and is space-separated and
+  newline-terminated.
+- **A zero-length array declared an element it does not have.** `var e [0]byte`
+  emitted `= {0}`, which the target's C compiler accepts silently and a host compiler
+  warns about. It is declared without an initializer now, having nothing to zero.
 - **A deferred call evaluated its receiver, and its callee, at the wrong time.**
   Go evaluates both where the `defer` stands — they are arguments, and the arguments
   were already captured there — but they were read again at the return, so

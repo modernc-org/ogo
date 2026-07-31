@@ -950,6 +950,133 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A packet codec: a header of sized fields packed into a byte buffer the
+		// caller owns, a payload VIEWED rather than copied out of the wire, and a
+		// short buffer refused rather than overrun. The first thing a P2 program
+		// that talks to anything needs after framing.
+		//
+		// It is what found print's spacing: `print(n, " ")` in a loop wrote three
+		// spaces between values, because print separated its arguments the way
+		// println does. Go's print writes them adjacently -- which is the whole
+		// reason to reach for print rather than println -- and specs.go said so
+		// already; only the emitter disagreed.
+		name: "a packet codec over a caller's buffer",
+		src: `type opcode uint8
+
+const (
+	opPing opcode = iota + 1
+	opRead
+	opWrite
+)
+
+type header struct {
+	op    opcode
+	flags uint8
+	seq   uint16
+}
+
+type packet struct {
+	hdr     header
+	payload []byte
+}
+
+const headerLen = 4
+
+// encode writes p into dst and returns how many bytes it used, and whether it fit.
+func encode(dst []byte, p packet) (int, bool) {
+	n := headerLen + len(p.payload)
+	if n > len(dst) {
+		return 0, false
+	}
+	dst[0] = byte(p.hdr.op)
+	dst[1] = p.hdr.flags
+	dst[2] = byte(p.hdr.seq >> 8)
+	dst[3] = byte(p.hdr.seq)
+	for i := 0; i < len(p.payload); i++ {
+		dst[headerLen+i] = p.payload[i]
+	}
+	return n, true
+}
+
+// decode reads a packet out of src, viewing rather than copying the payload.
+func decode(src []byte) (packet, bool) {
+	var p packet
+	if len(src) < headerLen {
+		return p, false
+	}
+	p.hdr.op = opcode(src[0])
+	p.hdr.flags = src[1]
+	p.hdr.seq = uint16(src[2])<<8 | uint16(src[3])
+	p.payload = src[headerLen:]
+	return p, true
+}
+
+func (h header) String(dst []byte) int {
+	n := 0
+	names := "?PRW"
+	if int(h.op) < len(names) {
+		dst[n] = names[h.op]
+	} else {
+		dst[n] = '?'
+	}
+	n++
+	dst[n] = byte('0' + h.flags)
+	n++
+	dst[n] = byte('0' + h.seq/1000%10)
+	n++
+	dst[n] = byte('0' + h.seq/100%10)
+	n++
+	dst[n] = byte('0' + h.seq/10%10)
+	n++
+	dst[n] = byte('0' + h.seq%10)
+	n++
+	return n
+}
+
+var wire [32]byte
+var body [4]byte
+var text [8]byte
+
+func main() {
+	body[0], body[1], body[2], body[3] = 'a', 'b', 'c', 'd'
+	p := packet{hdr: header{op: opWrite, flags: 3, seq: 4097}, payload: body[:]}
+
+	n, ok := encode(wire[:], p)
+	println(n, ok)
+	println(int(wire[0]), int(wire[1]), int(wire[2]), int(wire[3]))
+	println(int(wire[4]), int(wire[7]))
+
+	q, ok := decode(wire[:n])
+	println(ok, int(q.hdr.op), int(q.hdr.flags), int(q.hdr.seq), len(q.payload))
+	println(int(q.payload[0]), int(q.payload[3]))
+
+	m := q.hdr.String(text[:])
+	println(m, text[0] == 'W')
+	for i := 0; i < m; i++ {
+		print(int(text[i]), " ")
+	}
+	println()
+
+	// A packet with no payload at all, and the opcode compared against the
+	// constants rather than a number.
+	var empty [0]byte
+	ping := packet{hdr: header{op: opPing, seq: 1}, payload: empty[:]}
+	n, ok = encode(wire[:], ping)
+	println(n, ok)
+	r, ok := decode(wire[:n])
+	println(ok, r.hdr.op == opPing, r.hdr.op == opRead, len(r.payload))
+
+	// A short buffer is refused, and a truncated wire does not decode.
+	var small [2]byte
+	_, ok = encode(small[:], p)
+	println(ok)
+	_, ok = decode(wire[:2])
+	println(ok)
+}
+`,
+		want: "8 true\n3 3 16 1\n97 100\ntrue 3 3 4097 4\n97 100\n6 true\n87 51 52 48 57 55 \n4 true\ntrue true false 0\nfalse\nfalse\n",
+	},
+	{
 		// One cog per element: `go ws[i].run(ch)` and `go p.ws[i].run(ch)`, which is
 		// the shape a worker pool takes on this target and was refused -- only a
 		// method on a plain VARIABLE could be launched, so a pool had to be copied

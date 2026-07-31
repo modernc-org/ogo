@@ -4905,6 +4905,14 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.arrays[nm] = a
 				if initExpr == nil {
 					e.ind()
+					// A zero-length array has nothing to zero, and "{0}" names an
+					// element it does not have -- valid to the target's C compiler,
+					// which says nothing, and a warning from the host's. `[0]T` is a
+					// legal Go type, so it is declared without an initializer instead.
+					if a.bound == "0" {
+						e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+						continue
+					}
 					e.emit(elem + " " + nm + a.declSuffix() + " = {0};\n")
 					continue
 				}
@@ -9965,8 +9973,12 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 
 // emitPrint maps print/println to serial output. Each argument prints by type: an
 // integer via printf %d, a string via the ogo_string helper (exact byte length),
-// and a slice or array as "[e0 e1 ...]". Multiple arguments are separated by a
-// single space; println appends a trailing newline.
+// and a slice or array as "[e0 e1 ...]".
+//
+// println separates its arguments with a single space and appends a newline; print
+// does NEITHER, writing its arguments adjacently, which is what Go's two do and what
+// makes print the one that composes a line -- `print(n, " ")` in a loop puts one
+// space between values rather than three.
 func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	e.includes["stdio.h"] = true
@@ -10100,7 +10112,7 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 		e.ind()
 		e.emit("printf(\"")
 		for i, arg := range args {
-			if i > 0 {
+			if i > 0 && newline {
 				e.emit(" ")
 			}
 			if e.isBoolPrint(arg) {
@@ -10125,7 +10137,7 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 		return
 	}
 	for i, arg := range args {
-		if i > 0 {
+		if i > 0 && newline {
 			e.ind()
 			e.emit("printf(\" \");\n")
 		}

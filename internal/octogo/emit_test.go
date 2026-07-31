@@ -2243,7 +2243,7 @@ func TestEmitCPrintMulti(t *testing.T) {
 		"\tint a = 1;\n" +
 		"\tint b = 2;\n" +
 		"\tprintf(\"%d %d\\n\", a, b);\n" +
-		"\tprintf(\"%d %d\", a, b);\n" +
+		"\tprintf(\"%d%d\", a, b);\n" + // print separates nothing; only println does
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
