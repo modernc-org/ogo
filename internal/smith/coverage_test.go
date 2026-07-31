@@ -62,6 +62,7 @@ var generatedConstructs = []struct {
 	{"sized fold of an unstored expression", `int\((\(z_\d+ |-\(z_\d+|\^\(z_\d+)`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
+	{"element swap", `\w+\[\d+\], \w+\[\d+\] = `},
 	{"slice make", `make\(\[\]int`},
 	{"append", `append\(`},
 	{"len", `len\(`},

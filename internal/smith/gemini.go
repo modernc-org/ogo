@@ -302,8 +302,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genVarDecl(vm, mem) // 9% chance for var
 	case r < 0.52:
 		return f.genArrayDecl(vm, mem) // 6% chance for a fixed array declaration
-	case r < 0.60:
+	case r < 0.58:
 		return f.genArrayWrite(vm, mem) // 8% chance for an array element write
+	case r < 0.60:
+		return f.genElementSwap(vm, mem) // 2% chance for an element swap
 	case r < 0.66:
 		return f.genSliceDecl(vm, mem) // 6% chance for a slice declaration
 	case r < 0.74:
@@ -842,6 +844,46 @@ func (f *Fuzzer) genArrayWrite(vm Machine, mem Memory) Node {
 	return &AssignStmtNode{Lhs: fmt.Sprintf("%s[%d]", arr.Name, idx), Op: "=", Rhs: exprNode}
 }
 
+// genElementSwap exchanges two elements of one array or slice through a multiple
+// assignment, `a[i], a[j] = a[j], a[i]` -- the swap every sort is written with, and
+// the one statement shape whose targets are LVALUES rather than names.
+//
+// The oracle earns its keep here: a compiler that assigned the first target before
+// evaluating the second right-hand operand would leave both elements holding the
+// same value, which is an ordinary-looking answer and a wrong checksum.
+func (f *Fuzzer) genElementSwap(vm Machine, mem Memory) Node {
+	type candidate struct {
+		sym  *Symbol
+		vals []Int32
+	}
+	var cands []candidate
+	for _, s := range f.CurrentEnv.GetArraySymbols() {
+		if av := mem.Load(s.Name).(*ArrayVal); len(av.Elems) >= 2 {
+			cands = append(cands, candidate{s, av.Elems})
+		}
+	}
+	for _, s := range f.CurrentEnv.GetSliceSymbols() {
+		if sv := mem.Load(s.Name).(*SliceVal); len(sv.Elems) >= 2 {
+			cands = append(cands, candidate{s, sv.Elems})
+		}
+	}
+	if len(cands) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	c := cands[f.Rand.Intn(len(cands))]
+	c.sym.Used = true
+	i := f.Rand.Intn(len(c.vals))
+	j := f.Rand.Intn(len(c.vals) - 1)
+	if j >= i {
+		j++ // a distinct index: swapping one with itself proves nothing
+	}
+	c.vals[i], c.vals[j] = c.vals[j], c.vals[i]
+	return &SwapStmtNode{
+		A: fmt.Sprintf("%s[%d]", c.sym.Name, i),
+		B: fmt.Sprintf("%s[%d]", c.sym.Name, j),
+	}
+}
+
 // genSliceDecl declares an integer slice over a backing array of fixed capacity,
 // `var s []int = make([]int, L, C)`. The length may be zero -- the empty slice is
 // worth exercising -- but the capacity is always strictly greater, so every live
@@ -1104,6 +1146,16 @@ func (n *BinaryExprNode) Write(w io.Writer, indent int) {
 type IntLitNode struct{ Value string }
 
 func (n *IntLitNode) Write(w io.Writer, indent int) { fmt.Fprint(w, n.Value) }
+
+// SwapStmtNode is a two-target multiple assignment exchanging two element values,
+// `a[i], a[j] = a[j], a[i]`. Both targets are lvalues rather than names, and every
+// right-hand operand is read before either is written.
+type SwapStmtNode struct{ A, B string }
+
+func (n *SwapStmtNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s, %s = %s, %s", n.A, n.B, n.B, n.A)
+}
 
 type IdentNode struct{ Name string }
 
