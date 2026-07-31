@@ -950,6 +950,60 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A conversion to a defined ARRAY type, `row(a)` for `type row [3]int`. It
+		// was the one kind of defined type whose name did not name a conversion, so
+		// `r := row(a)` was "cannot infer a type" and `sum(row(a))` put the type NAME
+		// in the emitted C as though it were a function -- a syntax error from the C
+		// compiler about code the reader never wrote.
+		//
+		// Such a conversion is the operand: a defined type is a typedef of what it
+		// stands for, so there is nothing to convert. The declaration unwraps it and
+		// becomes the array copy it already knew how to emit, which it has to do by
+		// hand because an array is the one representation C has no value type for --
+		// every path that reads an array operand reads a NAME and would not see
+		// through the conversion otherwise.
+		//
+		// Still refused, and said so in the source: indexing the conversion where it
+		// stands, `row(g)[2]`. C has no cast to an array type, so the value needs a
+		// name first.
+		name: "a conversion to a defined array type",
+		src: `type row [3]int
+
+type line row
+
+func sum(r row) int { return r[0] + r[1] + r[2] }
+
+func sumPlain(a [3]int) int { return a[0] + a[1] + a[2] }
+
+var g [3]int
+
+func main() {
+	var a [3]int
+	a[0], a[1], a[2] = 1, 2, 3
+
+	// A conversion to a defined array type is the operand: nothing to convert.
+	r := row(a)
+	println(r[0], r[2], len(r), sum(r))
+
+	// In an argument, where the name used to reach the C compiler as a function.
+	println(sum(row(a)))
+
+	// Through a chain of definitions, and from a package array.
+	l := line(a)
+	println(l[1])
+	g[2] = 9
+	// Indexing the conversion where it stands, row(g)[2], is still refused: C has
+	// no cast to an array type, so the value needs a name first.
+	gr := row(g)
+	println(gr[2], sum(row(g)))
+
+	// And back to the underlying, which always worked.
+	println(sumPlain(r))
+}
+`,
+		want: "1 3 3 6\n6\n2\n9 9\n6\n",
+	},
+	{
 		// `if v, ok := t.get(k); ok` -- the two-value header declaration, which is
 		// how Go asks a container whether it has something. The grammar admitted one
 		// name before the ":=", so the comma was a parse error and the idiom had to

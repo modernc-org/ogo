@@ -147,6 +147,12 @@ Releases before v0.9.0 predate this file; see
   refused as "cannot use &p (an address) as PP value", the check believing PP wanted
   a value. With this, a defined type behaves as what it is defined over for *every*
   kind: scalar, string, array, slice, struct, channel, function and now pointer.
+- **A conversion to a defined array type works**, `row(a)` for `type row [3]int`.
+  It was the one kind of defined type whose name did not name a conversion, so
+  `r := row(a)` was "cannot infer a type" and `sum(row(a))` put the type name in the
+  emitted C as though it were a function. Indexing the conversion where it stands,
+  `row(g)[2]`, is still refused — C has no cast to an array type, so the value needs
+  a name first.
 - **An `if` or `switch` header may declare several names from one call**,
   `if v, ok := m.get(k); ok` — how a two-result call is usually asked, and it did not
   parse: the grammar admitted a single name before the `:=`, so the comma was a parse

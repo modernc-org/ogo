@@ -6074,7 +6074,36 @@ func (e *emitter) convType(recv string) (string, bool) {
 	if _, ok := e.structs[mn]; ok {
 		return mn, true
 	}
+	// A defined ARRAY type, `row(a)` for `type row [3]int`. It was the one kind of
+	// defined type whose name did not name a conversion, so the name reached the
+	// output as though it were a function and the C compiler reported a syntax
+	// error about generated code.
+	if _, ok := e.namedArrays[mn]; ok {
+		return mn, true
+	}
 	return "", false
+}
+
+// arrayConvOperand recognises a conversion to a defined ARRAY type, `row(a)`, and
+// returns the operand. Such a conversion is the operand itself: the two types have
+// one representation, so there is nothing to convert.
+func (e *emitter) arrayConvOperand(ast []int32) ([]int32, bool) {
+	recv, suffix, ok := e.directCall(ast)
+	if !ok || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return nil, false
+	}
+	ct, isType := e.convType(recv)
+	if !isType {
+		return nil, false
+	}
+	if _, isArray := e.namedArrays[ct]; !isArray {
+		return nil, false
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	if len(args) != 1 {
+		return nil, false
+	}
+	return args[0].ast, true
 }
 
 // emitConversion emits a conversion `T(x)`.
@@ -6121,6 +6150,14 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 			}
 		}
 		e.emit("(" + ct + ")(" + text + ")")
+		return
+	}
+	if _, isArray := e.namedArrays[ct]; isArray {
+		// A defined array type and its underlying are one representation, so the
+		// conversion is the operand. Without this the type NAME reached the output
+		// as though it were a function, and the C compiler reported a syntax error
+		// about generated code.
+		e.emitExpr(arg.ast)
 		return
 	}
 	src, ok := e.exprReprCType(arg.ast)
@@ -10649,6 +10686,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 // slice-typed result records its element type so later indexing / len / cap /
 // append on name resolve.
 func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
+	// `r := row(a)` for `type row [3]int`: the conversion changes nothing about the
+	// value -- a defined type is a typedef of what it stands for -- so what is
+	// declared is a copy of the operand, which is the branch below. Unwrapped here
+	// because an array is the one representation C has no value type for, so the
+	// paths that read an array operand all read a NAME and would not see through it.
+	if operand, ok := e.arrayConvOperand(initExpr); ok {
+		initExpr = operand
+	}
 	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
 		e.emitArrayLitVar(name, typeAST, lit, false)
 		return
