@@ -89,6 +89,17 @@ Releases before v0.9.0 predate this file; see
   compiler that mixed them up or dropped one answers with a wrong checksum. About
   two seeds in five carry one.
 
+### Documentation
+
+- **`p2.NewLock` does not report exhaustion**, and the docs said it did. The
+  toolchain's `_locknew` hands out locks 0..15 and then returns 15 for every further
+  call rather than -1, measured on a P2-EDGE — so a caller cannot detect it, and two
+  logically distinct locks alias. Harmless where sharing only costs contention, as in
+  the channel rendezvous (twenty-four channels each completing one run correctly);
+  a hang where a program nests two locks it believes are independent, `_locktry`
+  not being reentrant. `doc/locknew-never-fails.c` is the reproducer, and the
+  channel runtime's "out of hardware locks" panic is documented as unreachable.
+
 ### Diagnostics
 
 - **A parse error is no longer hidden behind a checker error on the same line.**

@@ -407,7 +407,12 @@ via the `testdata/hostp2` shim which now stubs these):
 | `p2.Unlock(l)` | `_lockrel` | `p2.FreeLock(l)` | `_lockret` |
 
 The four lock entries are the P2's 16 hardware locks, the same pool the channel
-runtime draws from -- `NewLock` returns -1 when none is left. There is no blocking
+runtime draws from. **`NewLock` does not report exhaustion**: after handing out
+0..15 the toolchain's `_locknew` returns 15 for every further call rather than -1,
+measured on a P2-EDGE (`doc/locknew-never-fails.c`). So a caller cannot detect it,
+and two logically distinct locks alias -- harmless where sharing only costs
+contention, as in the channel rendezvous, and a hang where a program nests two
+locks it believes are independent, `_locktry` not being reentrant. There is no blocking
 acquire in the hardware, so waiting is a spin on `TryLock`, which is why it is the
 one intrinsic typed `bool`. They are what lets user code write a multi-producer
 structure; a single-producer/single-consumer ring buffer needs no lock and already

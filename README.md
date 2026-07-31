@@ -128,7 +128,7 @@ OctoGo is designed to be a zero-cost abstraction over the Propeller 2's unique 8
 
 * **Native Hardware Concurrency:** The go keyword transpiles to a scoped block that claims a pooled slot holding the goroutine's stack and its arguments, then invokes \_cogstart\_C. The pool has one slot per available Cog, so the P2's 8-cog limit is enforced by construction; exceeding it is a runtime panic.
 
-* **Hardware-Backed Channels:** Channels (chan) are not software queues. Each is a rendezvous cell in Hub RAM guarded by one of the P2's native hardware locks (0-15), giving atomic, lock-step transfer. A channel is created by its declaration, not by make: there is no allocator to make it with.  
+* **Hardware-Backed Channels:** Channels (chan) are not software queues. Each is a rendezvous cell in Hub RAM guarded by one of the P2's native hardware locks (0-15), giving atomic, lock-step transfer. A channel is created by its declaration, not by make: there is no allocator to make it with. Past the sixteenth channel the locks are shared rather than exhausted, which costs contention and nothing else — twenty-four channels each completing a rendezvous run correctly on a P2-EDGE.  
 * **Zero-Allocation & No GC:** OctoGo operates without a Garbage Collector. Memory scoping is strict (Hub RAM vs. Cog RAM), and slices are implemented as non-escaping views over fixed arrays.  
 * **Select Statements:** The select statement is transpiled into an efficient polling loop, utilizing flexprop's \_waitx yield instructions to prevent bus starvation during non-blocking hardware polling.
 

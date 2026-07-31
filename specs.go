@@ -1581,8 +1581,12 @@
 //   - Hardware Representation: A channel is a reference to a rendezvous cell in
 //     Hub RAM, synchronized by one of the P2's native hardware locks (0-15).
 //     Because a channel is a reference, passing one to a goroutine shares the
-//     cell rather than copying it. Acquiring a lock can fail once all 16 are in
-//     use, which is a runtime panic.
+//     cell rather than copying it. Past the sixteenth channel the locks are
+//     shared rather than exhausted -- the toolchain's _locknew hands out lock 15
+//     repeatedly instead of reporting failure (see doc/locknew-never-fails.c) --
+//     which costs contention and nothing else, a lock being needed only for
+//     atomicity around the cell. Twenty-four channels each completing a
+//     rendezvous have been run on a P2-EDGE and are correct.
 //   - Zero-Allocation: OctoGo has no dynamic memory allocator, and channels are
 //     not created with make -- doing so is rejected as a dynamic allocation. A
 //     channel is created by its declaration, which is what allocates its cell and
