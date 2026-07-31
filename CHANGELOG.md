@@ -147,6 +147,13 @@ Releases before v0.9.0 predate this file; see
   refused as "cannot use &p (an address) as PP value", the check believing PP wanted
   a value. With this, a defined type behaves as what it is defined over for *every*
   kind: scalar, string, array, slice, struct, channel, function and now pointer.
+- **An `if` or `switch` header may declare several names from one call**,
+  `if v, ok := m.get(k); ok` — how a two-result call is usually asked, and it did not
+  parse: the grammar admitted a single name before the `:=`, so the comma was a parse
+  error and the idiom had to be written as two statements, which also leaked the
+  names into the enclosing scope. They are scoped to the statement, so they shadow;
+  the `else` branch sees them; a blank is allowed. The three-clause `for` init still
+  takes one name.
 - **A `range` clause may write to variables that already exist**, `for i, v = range
   xs`. The `=` form parsed and ran, and left the variables it named untouched — it is
   listed under Fixed below; what is new here is that it works at all, in every range

@@ -950,6 +950,86 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// `if v, ok := t.get(k); ok` -- the two-value header declaration, which is
+		// how Go asks a container whether it has something. The grammar admitted one
+		// name before the ":=", so the comma was a parse error and the idiom had to
+		// be written as two statements, which also leaked the names into the
+		// enclosing scope.
+		//
+		// IfInit and SwitchGuard take the further names as LhsItems now, the checker
+		// declares them into the statement's own scope, and the emitter reuses the
+		// destructuring the statement form already had. So they shadow, the else
+		// branch sees them, a blank is allowed, and the switch takes both the form
+		// with an expression and the one without.
+		name: "a two-value declaration in an if or switch header",
+		src: `type table struct {
+	keys []int
+	vals []int
+}
+
+func (t *table) get(k int) (int, bool) {
+	for i := 0; i < len(t.keys); i++ {
+		if t.keys[i] == k {
+			return t.vals[i], true
+		}
+	}
+	return 0, false
+}
+
+func split(n int) (int, int) { return n / 10, n % 10 }
+
+var kb [3]int
+
+var vb [3]int
+
+func main() {
+	kb[0], kb[1], kb[2] = 1, 2, 3
+	vb[0], vb[1], vb[2] = 10, 20, 30
+	t := &table{keys: kb[:], vals: vb[:]}
+
+	// The idiom, on a method.
+	if v, ok := t.get(2); ok {
+		println("found", v)
+	} else {
+		println("missing", v)
+	}
+	if v, ok := t.get(9); ok {
+		println("found", v)
+	} else {
+		println("missing", v)
+	}
+
+	// The names are scoped to the statement, so they may shadow.
+	v := 99
+	if v, ok := t.get(1); ok {
+		println("inner", v)
+	}
+	println("outer", v)
+
+	// A blank is allowed, and the else branch sees the names.
+	if _, ok := t.get(3); ok {
+		println("has 3")
+	}
+
+	// The same in a switch, both with the expression and without.
+	switch q, r := split(37); q {
+	case 3:
+		println("q3", r)
+	default:
+		println("other", q, r)
+	}
+
+	switch q, r := split(48); {
+	case q > 3:
+		println("big", q, r)
+	default:
+		println("small", q, r)
+	}
+}
+`,
+		want: "found 20\nmissing 0\ninner 10\nouter 99\nhas 3\nq3 7\nbig 4 8\n",
+	},
+	{
 		// Package variables are initialized in DEPENDENCY order, which is what Go
 		// does and what specs.go already claimed. They ran in source order, so a
 		// variable whose initializer named one declared below it read a zero:

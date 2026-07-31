@@ -1770,10 +1770,13 @@ func (f *File) checkIf(s *Scope, results []retResult, n Node) {
 		}
 	}
 	if hasInit {
-		var exprs []Node
+		var exprs, items []Node
 		for c := range it(init.ast) {
-			if c.sym == Expression {
+			switch c.sym {
+			case Expression:
 				exprs = append(exprs, c)
+			case LhsItem:
+				items = append(items, c)
 			}
 		}
 		if len(exprs) != 2 {
@@ -1782,7 +1785,11 @@ func (f *File) checkIf(s *Scope, results []retResult, n Node) {
 		}
 		s = s.child()
 		f.checkNames(s, exprs[0])
-		f.declareForInitVar(s, lhs, exprs[0], true)
+		if len(items) != 0 {
+			f.declareHeaderVars(s, lhs, items)
+		} else {
+			f.declareForInitVar(s, lhs, exprs[0], true)
+		}
 		cond = exprs[1]
 	} else if hasCond {
 		cond = lhs
@@ -2249,6 +2256,45 @@ func (f *File) declareForInitVar(s *Scope, lhs, rhs Node, define bool) {
 	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
 }
 
+// declareHeaderVars introduces the names of a header's multi-value short
+// declaration -- the head plus each LhsItem of `if v, ok := f(); ok` -- into the
+// statement's own scope, so they are visible to the condition, the case
+// expressions and every block, and nowhere else.
+//
+// A multi-result initializer gives no per-name kind, exactly as the statement form
+// `v, ok := f()` does not: the count is what is known here, and the emitter reads
+// the result types off the callee. Each name is still subject to the
+// unused-variable rule, and a left side that is all blanks introduces nothing.
+func (f *File) declareHeaderVars(s *Scope, head Node, items []Node) {
+	ids := make([]Token, 0, len(items)+1)
+	if id, ok := f.exprSoleIdent(head); ok {
+		ids = append(ids, id)
+	}
+	for _, item := range items {
+		for c := range it(item.ast) {
+			if c.sym != AssignHead {
+				continue
+			}
+			if id, ok := f.assignHeadIdent(c); ok {
+				ids = append(ids, id)
+			} else if tok := f.tok(c.Pos()); tok.IsValid() {
+				f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
+			}
+		}
+	}
+	newCount := 0
+	for _, id := range ids {
+		if id.Src() == "_" {
+			continue
+		}
+		f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}})
+		newCount++
+	}
+	if newCount == 0 && len(ids) != 0 {
+		f.errNoNewVars(ids[0])
+	}
+}
+
 // declareLocal adds a variable to s and records it for the unused-variable report.
 //
 // Recording is what subjects the name to the rule every other short declaration
@@ -2623,7 +2669,12 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration")
 		return 0, false
 	}
-	if g.hasName {
+	if g.hasName && len(g.items) != 0 {
+		// `switch v, ok := f(); ok`: several names, none of which carries a kind of
+		// its own -- the same as the statement form.
+		f.checkNames(s, g.value)
+		f.declareHeaderVars(ss, g.name, g.items)
+	} else if g.hasName {
 		f.checkNames(s, g.value)
 		kind, hasKind := f.exprType(s, g.value)
 		if id, ok := f.exprIdent(g.name); ok && id.Src() == "_" {
@@ -2664,9 +2715,10 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 // second is OctoGo's own -- Go has no ":=" guard without an init statement -- and
 // switching on the name it declares is what makes it mean the same as the third.
 type switchGuard struct {
-	name  Node // the name a ":=" declares
-	value Node // that name's initializer
-	tag   Node // the expression switched on
+	name  Node   // the name a ":=" declares
+	items []Node // the further names of `switch v, ok := f(); ok`, as LhsItems
+	value Node   // that name's initializer
+	tag   Node   // the expression switched on
 
 	hasName bool
 	hasTag  bool
@@ -2691,6 +2743,8 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 					g.tag, g.hasTag = t, true
 				}
 			}
+		case LhsItem:
+			g.items = append(g.items, c)
 		case 0:
 			if f.ch(c.tok) == DEFINE {
 				hasDefine = true

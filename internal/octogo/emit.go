@@ -8410,6 +8410,25 @@ func (e *emitter) emitSwitch(ast []int32) {
 // so the guard is evaluated once rather than per case. The name returned is the
 // source one, which the type lookups are keyed by; emitCaseCond spells it in C
 // through varRef.
+// guardNames reads the names a multi-value switch guard declares, head first.
+func (e *emitter) guardNames(g switchGuard) ([]string, bool) {
+	head, ok := e.exprIdent(g.name.ast)
+	if !ok {
+		e.fail("a switch init statement declares names")
+		return nil, false
+	}
+	names := []string{head}
+	for _, item := range g.items {
+		t, ok := e.lhsItemTarget(item.ast)
+		if !ok || !t.plain() {
+			e.fail("a switch init statement declares names")
+			return nil, false
+		}
+		names = append(names, t.name)
+	}
+	return names, true
+}
+
 func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
 	if !ok || (g.semi && !g.hasName) {
@@ -8424,7 +8443,16 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 			block = true
 		}
 	}
-	if g.hasName {
+	if g.hasName && len(g.items) != 0 {
+		// `switch v, ok := f(); ok`: the same destructuring the statement form uses,
+		// inside the block that scopes the names to this statement.
+		names, ok := e.guardNames(g)
+		if !ok {
+			return "", false, false
+		}
+		openBlock()
+		e.emitDestructure(plainTargets(names), allTrue(len(names)), g.value.ast)
+	} else if g.hasName {
 		vtok, isID := e.soleToken(g.name.ast)
 		if !isID || e.f.ch(vtok) != IDENT {
 			e.fail("unsupported switch guard variable")
@@ -8599,7 +8627,7 @@ func (e *emitter) emitIf(ast []int32) {
 	// A name an "if" header declares belongs to the statement, not to the block
 	// around it (see enterScope).
 	defer e.enterScope()()
-	name, initExpr, cond, ok := e.ifInitParts(ast)
+	names, initExpr, cond, ok := e.ifInitParts(ast)
 	if !ok {
 		e.ind()
 		e.emitIfBody(ast)
@@ -8608,7 +8636,13 @@ func (e *emitter) emitIf(ast []int32) {
 	e.ind()
 	e.emit("{\n")
 	e.indent++
-	e.emitInferredLocal(name, initExpr)
+	if len(names) > 1 {
+		// `if v, ok := f(); ok`: the same destructuring the statement form uses,
+		// inside the brace block that scopes the names to this statement.
+		e.emitDestructure(plainTargets(names), allTrue(len(names)), initExpr)
+	} else {
+		e.emitInferredLocal(names[0], initExpr)
+	}
 	e.ind()
 	e.emitIfBodyWithCond(ast, cond) // ends its own line
 	e.indent--
@@ -8619,7 +8653,7 @@ func (e *emitter) emitIf(ast []int32) {
 // ifInitParts decomposes an `if` that carries an init statement, returning the
 // declared name, its initializer and the condition. ok is false for a plain `if`,
 // whose sole expression is the condition itself.
-func (e *emitter) ifInitParts(ast []int32) (name string, initExpr, cond []int32, ok bool) {
+func (e *emitter) ifInitParts(ast []int32) (names []string, initExpr, cond []int32, ok bool) {
 	var lhs, init []int32
 	for n := range it(ast) {
 		switch n.sym {
@@ -8632,23 +8666,37 @@ func (e *emitter) ifInitParts(ast []int32) (name string, initExpr, cond []int32,
 		}
 	}
 	if init == nil {
-		return "", nil, nil, false
+		return nil, nil, nil, false
 	}
 	var exprs [][]int32
+	var items []Node
 	for n := range it(init) {
-		if n.sym == Expression {
+		switch n.sym {
+		case Expression:
 			exprs = append(exprs, n.ast)
+		case LhsItem:
+			items = append(items, n)
 		}
 	}
 	if len(exprs) != 2 || lhs == nil {
 		e.fail("malformed if init statement")
-		return "", nil, nil, false
+		return nil, nil, nil, false
 	}
-	if name, ok = e.exprIdent(lhs); !ok {
-		e.fail("an if init statement declares a single name")
-		return "", nil, nil, false
+	head, ok := e.exprIdent(lhs)
+	if !ok {
+		e.fail("an if init statement declares names")
+		return nil, nil, nil, false
 	}
-	return name, exprs[0], exprs[1], true
+	names = []string{head}
+	for _, item := range items {
+		t, ok := e.lhsItemTarget(item.ast)
+		if !ok || !t.plain() {
+			e.fail("an if init statement declares names")
+			return nil, nil, nil, false
+		}
+		names = append(names, t.name)
+	}
+	return names, exprs[0], exprs[1], true
 }
 
 // emitIfBody emits `if (cond) { ... }` and its optional else branch, assuming the

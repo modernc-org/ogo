@@ -1393,7 +1393,7 @@
 // "else if" chain, or by a block.
 //
 //	IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
-//	IfInit = ":=" HeaderExpression ";" HeaderExpression .
+//	IfInit = { "," LhsItem } ":=" HeaderExpression ";" HeaderExpression .
 //
 // An "if" may carry an init statement, "if v := f(); v > 0". The name it declares
 // is scoped to the whole statement -- the condition, the "then" block and every
@@ -1429,7 +1429,7 @@
 // to the "cases" inside the "switch" to determine which branch to execute.
 //
 //	SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
-//	SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] [ SwitchTag ] .
+//	SwitchGuard = HeaderExpression [ { "," LhsItem } ":=" HeaderExpression ] [ SwitchTag ] .
 //	SwitchTag  = ";" [ HeaderExpression ] .
 //	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 //	CaseHead   = "case" ExpressionList | "default" .
@@ -1440,6 +1440,8 @@
 // the associated case.
 //
 // A switch may carry an init statement, "switch v := f(); v", as an "if" may.
+// Either may declare SEVERAL names from one call, "if v, ok := m.get(k); ok" and
+// "switch q, r := split(n); q", which is how a two-result call is usually asked.
 // The name it declares is scoped to the whole statement -- the expression
 // switched on, every case expression and every clause body -- and not beyond it,
 // so it may shadow a name from outside without disturbing it. The expression may

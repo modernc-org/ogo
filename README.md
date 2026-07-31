@@ -189,7 +189,8 @@ broken.
   nothing and allocates nothing, and one is always safe to send to another cog — it
   names code, not the frame it was made in.
 * `if`/`else` and `switch` including an init statement (`if v := f(); v > 0`,
-  `switch v := f(); v`), all `for` forms including `range`, `switch` with or without
+  `switch v := f(); v`), which may declare several names from one call
+  (`if v, ok := m.get(k); ok`), all `for` forms including `range`, `switch` with or without
   a guard, `fallthrough`, `break` and `continue` (including labeled), `defer`
   (including in nested blocks, capturing its arguments).
 * The full operator set, compound assignment, multiple assignment, and equality on
@@ -259,10 +260,8 @@ broken.
 * An array as a function result, a slice whose element is an array, and `goto`.
 * A `range` clause written with `=` accepts only variables, not an element or a
   field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.
-* An `if`, `switch` or three-clause `for` header declares **one** variable, so the
-  two-value idiom `if v, ok := f(); ok` does not parse — the grammar admits a single
-  name before the `:=`. Declare ahead of the statement instead: `v, ok := f()` then
-  `if ok`. The multi-value form outside a header works everywhere.
+* A three-clause `for` header declares **one** variable: `for a, b := f(); a < b;`
+  does not parse. `if` and `switch` headers take several, `if v, ok := f(); ok`.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,

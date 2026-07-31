@@ -184,11 +184,11 @@ var errorSets = [...][]Symbol{
 	{Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_003c002d, TOK_003a003d},
 	{TOK_005b, TOK_003d, TOK_002e, TOK_003c002d, TOK_003a003d},
 	{TOK_003d, TOK_003b, TOK_002c, TOK_003a003d},
+	{TOK_003b, TOK_002c, TOK_003a003d},
 	{TOK_003d, TOK_002c, TOK_003a003d},
-	{TOK_003b, TOK_003a003d},
+	{TOK_007b, TOK_002c, TOK_003a003d},
+	{TOK_002c, TOK_003a003d},
 	{TOK_003d, TOK_003a003d},
-	{TOK_007b, TOK_003a003d},
-	{TOK_003a003d},
 	{SelectStmt, SwitchStmt, IfStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, Block, identifier, TOK_007d, TOK_007b, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_fallthrough, TOK_defer, TOK_continue, TOK_const, TOK_break, TOK_003c002d},
 	{SelectStmt, SwitchStmt, IfStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, Block, identifier, TOK_007b, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_fallthrough, TOK_defer, TOK_continue, TOK_const, TOK_break, TOK_003c002d},
 	{SelectStmt, SwitchStmt, IfStmt, AssignHead, EmptyStatement, TypeDecl, ConstDecl, VarDecl, Block, identifier, TOK_007b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_go, TOK_for, TOK_fallthrough, TOK_defer, TOK_continue, TOK_const, TOK_break, TOK_003c002d},
@@ -6968,7 +6968,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 7
+	accept, errorSet = false, 9
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a003d, TOK_003d:
 		r = append(r, p.shift())
@@ -7487,11 +7487,13 @@ state1:
 
 // IfInit grammar:
 //
-//	IfInit = ":=" HeaderExpression ";" HeaderExpression .
+//	IfInit = { "," LhsItem } ":=" HeaderExpression ";" HeaderExpression .
 //
 //	State 0
 //		on  ":="
 //			shift and goto state 1
+//		on  ','
+//			shift and goto state 5
 //	State 1
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
@@ -7503,17 +7505,28 @@ state1:
 //			call HeaderExpression and goto state 4
 //	State 4
 //		Accept
+//	State 5
+//		on  '(', '*', identifier
+//			call LhsItem and goto state 6
+//	State 6
+//		on  ":="
+//			shift and goto state 1
+//		on  ','
+//			shift and goto state 5
 //
 // IfInit is used internally from Parse.
 func (p *Parser) IfInit() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(IfInit), 0)
 	// state0:
-	accept, errorSet = false, 9
+	accept, errorSet = false, 8
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a003d:
 		r = append(r, p.shift())
 		goto state1
+	case TOK_002c:
+		r = append(r, p.shift())
+		goto state5
 	}
 	return p.stop(r, accept, errorSet)
 state1:
@@ -7543,6 +7556,25 @@ state3:
 state4:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
+state5:
+	accept, errorSet = false, 76
+	switch Symbol(p.tok.Ch) {
+	case TOK_0028, TOK_002a, identifier:
+		r = p.add(r, p.LhsItem())
+		goto state6
+	}
+	return p.stop(r, accept, errorSet)
+state6:
+	accept, errorSet = false, 8
+	switch Symbol(p.tok.Ch) {
+	case TOK_003a003d:
+		r = append(r, p.shift())
+		goto state1
+	case TOK_002c:
+		r = append(r, p.shift())
+		goto state5
+	}
+	return p.stop(r, accept, errorSet)
 }
 
 // IfStmt grammar:
@@ -7556,7 +7588,7 @@ state4:
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
 //	State 2
-//		on  ":="
+//		on  ":=", ','
 //			call IfInit and goto state 6
 //		on  '{'
 //			call Block and goto state 3
@@ -7596,9 +7628,9 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 8
+	accept, errorSet = false, 7
 	switch Symbol(p.tok.Ch) {
-	case TOK_003a003d:
+	case TOK_003a003d, TOK_002c:
 		r = p.add(r, p.IfInit())
 		goto state6
 	case TOK_007b:
@@ -8463,7 +8495,7 @@ state4:
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 5
+	accept, errorSet = false, 6
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a003d, TOK_003d:
 		r = append(r, p.shift())
@@ -9236,7 +9268,7 @@ state4:
 
 // SwitchGuard grammar:
 //
-//	SwitchGuard = HeaderExpression [ ":=" HeaderExpression ] [ SwitchTag ] .
+//	SwitchGuard = HeaderExpression [ { "," LhsItem } ":=" HeaderExpression ] [ SwitchTag ] .
 //
 //	State 0
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
@@ -9245,6 +9277,8 @@ state4:
 //		Accept
 //		on  ":="
 //			shift and goto state 2
+//		on  ','
+//			shift and goto state 5
 //		on  ';'
 //			call SwitchTag and goto state 4
 //	State 2
@@ -9256,6 +9290,14 @@ state4:
 //			call SwitchTag and goto state 4
 //	State 4
 //		Accept
+//	State 5
+//		on  '(', '*', identifier
+//			call LhsItem and goto state 6
+//	State 6
+//		on  ":="
+//			shift and goto state 2
+//		on  ','
+//			shift and goto state 5
 //
 // SwitchGuard is used internally from Parse.
 func (p *Parser) SwitchGuard() (r []int32) {
@@ -9270,11 +9312,14 @@ func (p *Parser) SwitchGuard() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 6
+	accept, errorSet = true, 5
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a003d:
 		r = append(r, p.shift())
 		goto state2
+	case TOK_002c:
+		r = append(r, p.shift())
+		goto state5
 	case TOK_003b:
 		r = p.add(r, p.SwitchTag())
 		goto state4
@@ -9298,6 +9343,25 @@ state3:
 	return p.stop(r, accept, errorSet)
 state4:
 	accept, errorSet = true, 0
+	return p.stop(r, accept, errorSet)
+state5:
+	accept, errorSet = false, 76
+	switch Symbol(p.tok.Ch) {
+	case TOK_0028, TOK_002a, identifier:
+		r = p.add(r, p.LhsItem())
+		goto state6
+	}
+	return p.stop(r, accept, errorSet)
+state6:
+	accept, errorSet = false, 8
+	switch Symbol(p.tok.Ch) {
+	case TOK_003a003d:
+		r = append(r, p.shift())
+		goto state2
+	case TOK_002c:
+		r = append(r, p.shift())
+		goto state5
+	}
 	return p.stop(r, accept, errorSet)
 }
 
