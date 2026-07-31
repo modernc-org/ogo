@@ -38,6 +38,13 @@ Releases before v0.9.0 predate this file; see
   the received value was assigned to the *struct*, and the C compiler is what caught
   it. The plain `s.last = <-a` outside a select always worked.
 
+- **A goroutine may be launched on a method whose receiver is reached through
+  fields and indexes**, `go ws[i].run(ch)` and `go p.ws[i].run(ch)` — one cog per
+  element, which is what a worker pool looks like here. Only a method on a plain
+  variable could be launched, so a pool had to be copied out to a variable one
+  worker at a time. The receiver is evaluated where the `go` stands, as Go says, and
+  the lifetime rule reads it as before: a pointer receiver on a *local* array's
+  element is still refused, the cog outliving the frame.
 - **A deferred method may be called on a local receiver.** `defer b.show()` for a
   local `b` did not compile at all — `unknown package "b"` — while the same call on a
   package-level variable worked.

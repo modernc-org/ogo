@@ -950,6 +950,75 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// One cog per element: `go ws[i].run(ch)` and `go p.ws[i].run(ch)`, which is
+		// the shape a worker pool takes on this target and was refused -- only a
+		// method on a plain VARIABLE could be launched, so a pool had to be copied
+		// out to a variable one worker at a time.
+		//
+		// The receiver is walked here and the value it reaches is what the
+		// trampoline carries, so it is evaluated where the go stands, as Go says: the
+		// last block writes the element after launching and the cog still reports the
+		// old value. A pointer receiver takes the address instead, and the lifetime
+		// rule reads it the same way it always did -- the address of a LOCAL array's
+		// element is still refused, since the cog may outlive the frame.
+		name: "a goroutine per element of a worker pool",
+		src: `type worker struct {
+	id    int
+	base  int
+	count int
+}
+
+// A value receiver: the cog gets a copy taken where the go statement stands.
+func (w worker) run(ch chan int) {
+	sum := 0
+	for i := 0; i < w.count; i++ {
+		sum += w.base + i
+	}
+	ch <- w.id*1000 + sum
+}
+
+type pool struct {
+	ws []worker
+}
+
+var back [3]worker
+
+func main() {
+	var ch chan int
+
+	for i := 0; i < 3; i++ {
+		back[i].id = i + 1
+		back[i].base = (i + 1) * 10
+		back[i].count = i + 2
+	}
+
+	// One cog per element of a package array.
+	go back[0].run(ch)
+	println(<-ch)
+
+	// One cog per element of a slice held in a struct -- a worker pool, which is
+	// what this shape is for.
+	p := pool{ws: back[:]}
+	for i := 1; i < 3; i++ {
+		go p.ws[i].run(ch)
+	}
+	a := <-ch
+	b := <-ch
+	if a > b {
+		a, b = b, a
+	}
+	println(a, b)
+
+	// The receiver is copied where the go stands, so a later write does not reach
+	// the cog that already has it.
+	go p.ws[0].run(ch)
+	back[0].base = 999
+	println(<-ch)
+}
+`,
+		want: "1021\n2063 3126\n1021\n",
+	},
+	{
 		// A deferred method call evaluates its receiver where the defer stands, as
 		// Go does -- the receiver is an argument, and the arguments were already
 		// captured there. It was read again at the return instead, so

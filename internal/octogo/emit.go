@@ -585,9 +585,50 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 		site = goSite{callee: e.funcCallC(base), id: len(e.goSites)}
 		callSuffix = suffix[0]
-	case base != "" && len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
-		callSuffix = suffix[1]
-		name := e.soleIdent(suffix[0].ast)
+	case base != "" && len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix &&
+		suffix[len(suffix)-2].sym == Selector && isAccessChain(suffix[:len(suffix)-1]):
+		callSuffix = suffix[len(suffix)-1]
+		steps := suffix[:len(suffix)-1]
+		name := e.soleIdent(steps[len(steps)-1].ast)
+		// The receiver may be reached through fields and indexes -- `go ws[i].run(ch)`
+		// is a worker per cog, which is what this target is for. The chain is walked
+		// here and the value it reaches is what the trampoline carries; a plain
+		// variable is the same path with an empty chain.
+		if chain := steps[:len(steps)-1]; len(chain) != 0 {
+			cur, ok := e.accessChainType(base, chain)
+			if !ok {
+				e.fail("unsupported receiver in a go statement")
+				return
+			}
+			rct, ok := e.chainValueCType(cur)
+			if !ok || !e.isUserType(methodBaseType(rct)) {
+				e.fail("unsupported receiver in a go statement")
+				return
+			}
+			cname := methodCName(methodBaseType(rct), name)
+			wantPtr := e.methodPtr[cname]
+			if r, bad := e.receiverFrameRef(base, wantPtr); bad {
+				crossed(r.what, head)
+				return
+			}
+			text, pro := e.capturePrologue(func() { e.emitAccessChain(base, chain) })
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
+			recv, ok := e.chainReceiver(text, rct, true, wantPtr)
+			if !ok {
+				e.fail("cannot take the address of %s for a pointer-receiver method", text)
+				return
+			}
+			recvCType = methodBaseType(rct)
+			if wantPtr {
+				recvCType += "*"
+			}
+			recvText = recv
+			site = goSite{callee: cname, args: []string{recvCType}, id: len(e.goSites)}
+			break
+		}
 		rct, isVar := e.varType(base)
 		// A variable of a user type is a method call; an import qualifier is a
 		// function of that package. The variable is asked about first, since a local
