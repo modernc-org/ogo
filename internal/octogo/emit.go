@@ -2415,11 +2415,19 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			clearCName(el), sliceCName(el))
 	}
 	// The two-argument min and max helpers a variadic call folds over.
+	// A string is ordered by the same helper "s < t" uses; everything else by C's
+	// own comparison, which is why the helper is one line either way.
+	minMaxCmp := func(ct, op string) string {
+		if ct == cString {
+			return "ogo_string_cmp(a, b) " + op + " 0"
+		}
+		return "a " + op + " b"
+	}
 	for _, ct := range sortedKeys(e.minElems) {
-		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return a < b ? a : b; }\n", ct, minCName(ct), ct, ct)
+		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return %s ? a : b; }\n", ct, minCName(ct), ct, ct, minMaxCmp(ct, "<"))
 	}
 	for _, ct := range sortedKeys(e.maxElems) {
-		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return a > b ? a : b; }\n", ct, maxCName(ct), ct, ct)
+		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return %s ? a : b; }\n", ct, maxCName(ct), ct, ct, minMaxCmp(ct, ">"))
 	}
 	for _, el := range sortedKeys(e.tryappendElems) {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
@@ -9892,7 +9900,15 @@ func (e *emitter) emitClear(callSuffix []int32) {
 	e.emit(")")
 }
 
-// emitMinMax emits the builtin min or max over one or more integer arguments. It
+// isOrderedCType reports whether a C type is one min and max can order: the
+// arithmetic types, which C's "<" compares directly, and a string, which needs the
+// comparison helper. Go orders exactly these -- its min and max take any ordered
+// type -- and a bool, a slice, a struct and a pointer are ordered by neither.
+func isOrderedCType(ct string) bool {
+	return isIntCType(ct) || ct == "float" || ct == "double" || ct == cString
+}
+
+// emitMinMax emits the builtin min or max over one or more ordered arguments. It
 // folds a two-argument helper left over the arguments -- min(a, b, c) is
 // min(min(a, b), c) -- through a helper (not an inline a<b?a:b) so each argument is
 // evaluated exactly once, even one with a side effect. A single argument is itself.
@@ -9903,13 +9919,17 @@ func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
 		return
 	}
 	ct, ok := e.inferCType(args[0].ast)
-	if !ok || !isIntCType(ct) {
-		e.fail("%s is only supported on integer arguments yet", recv)
+	if !ok || !isOrderedCType(e.underlyingCType(ct)) {
+		e.fail("%s is only supported on ordered arguments -- an integer, a float or a string", recv)
 		return
 	}
+	ct = e.underlyingCType(ct)
 	if len(args) == 1 {
 		e.emitExpr(args[0].ast) // min(x) / max(x) is x
 		return
+	}
+	if ct == cString {
+		e.usesStringCmp = true // the helper orders through ogo_string_cmp
 	}
 	fn := minCName(ct)
 	if recv == "max" {

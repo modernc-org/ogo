@@ -950,6 +950,56 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// min and max over what Go orders, not only over integers. specs.go called
+		// them "the smallest of its ordered arguments" and the emitter took integers
+		// alone, so a control loop could not clamp a float with them -- which is the
+		// reason most programs reach for min and max at all.
+		//
+		// The helper is one line either way: C's own "<" for the arithmetic types,
+		// and for a string the same byte comparison "s < t" already used. Folding a
+		// two-argument helper left over the arguments is what keeps each argument
+		// evaluated exactly once, which the bump() line pins.
+		name: "min and max over ordered arguments",
+		src: `type volt float32
+
+func clamp(v, lo, hi float32) float32 { return min(max(v, lo), hi) }
+
+var names [3]string
+
+func main() {
+	// Integers, as before, including the variadic fold.
+	println(min(4, 2, 7, 1), max(4, 2, 7, 1))
+	println(min(-1), max(-1))
+
+	// Floats, which is what a control loop clamps with.
+	println(int(clamp(2.5, 0.0, 1.0)*10), int(clamp(-3.0, 0.0, 1.0)*10), int(clamp(0.5, 0.0, 1.0)*10))
+	var a float32 = 1.25
+	var b float32 = 1.5
+	println(int(min(a, b)*100), int(max(a, b)*100))
+
+	// A defined type over a float is a float here too.
+	var lo volt = 0.5
+	var hi volt = 2.0
+	println(int(min(lo, hi)*10), int(max(lo, hi)*10))
+
+	// Strings, ordered by the same byte comparison "<" uses.
+	names[0], names[1], names[2] = "pin", "cog", "hub"
+	println(min(names[0], names[1], names[2]), max(names[0], names[1], names[2]))
+	println(min("", "a"), max("ab", "b"))
+
+	// Each argument is evaluated exactly once, even one that changes something.
+	n := 0
+	println(min(bump(&n), bump(&n), bump(&n)), n)
+}
+
+func bump(p *int) int {
+	*p++
+	return *p
+}
+`,
+		want: "1 7\n-1 -1\n10 0 5\n125 150\n5 20\ncog pin\n b\n1 3\n",
+	},
+	{
 		// A packet codec: a header of sized fields packed into a byte buffer the
 		// caller owns, a payload VIEWED rather than copied out of the wire, and a
 		// short buffer refused rather than overrun. The first thing a P2 program

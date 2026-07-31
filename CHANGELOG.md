@@ -38,6 +38,11 @@ Releases before v0.9.0 predate this file; see
   the received value was assigned to the *struct*, and the C compiler is what caught
   it. The plain `s.last = <-a` outside a select always worked.
 
+- **`min` and `max` order what Go orders**, not integers alone: a float and a
+  string are ordered too, so a control loop can clamp with `min(max(v, lo), hi)` —
+  which is the reason most programs reach for them at all. `specs.go` already said
+  "ordered arguments"; the emitter took integers. A string is ordered by the same
+  byte comparison `s < t` uses. Each argument is still evaluated exactly once.
 - **A goroutine may be launched on a method whose receiver is reached through
   fields and indexes**, `go ws[i].run(ch)` and `go p.ws[i].run(ch)` — one cog per
   element, which is what a worker pool looks like here. Only a method on a plain

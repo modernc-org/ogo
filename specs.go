@@ -1179,7 +1179,8 @@
 //	copy(dst, src)      copy elements between two slices, returning the count
 //	clear(s)            set every element of a slice to its zero value
 //	min(x, y, …)        the smallest of its ordered arguments
-//	max(x, y, …)        the largest of its ordered arguments
+//	max(x, y, …)        the largest of its ordered arguments (ordered: an
+//	                    integer, a float or a string)
 //	panic(s)            abort with a string message
 //	print(args…)        write the arguments to the serial console
 //	println(args…)      like print, but space-separated and newline-terminated
