@@ -1659,12 +1659,18 @@
 // # Package initialization
 //
 // Within a package (which in OctoGo maps strictly to a single directory),
-// package-level variable initialization proceeds sequentially.
+// package-level variables are initialized in a deterministic topological order
+// based on their dependencies, as Go initializes them: a variable whose
+// initializer reads another is initialized after it, wherever the two are written.
+// Variables that depend on nothing keep their source order.
 //
-// Because OctoGo intentionally omits the package clause and merges all source
-// files within a directory into a single Abstract Syntax Tree,
-// global variables are initialized in a deterministic topological order based
-// on their dependencies.
+// An initializer that is a constant expression is folded into the variable's own
+// definition; anything else -- a reference to another variable, arithmetic over
+// one, a call -- is assigned by the synthesized initializer that runs before main,
+// which is where the ordering applies.
+//
+// A cycle among the initializers is not yet reported; the order such a program
+// ends up with is the order it was written in.
 //
 // Variables may also be initialized using functions named init declared in
 // the package block, with no arguments and no result parameters:

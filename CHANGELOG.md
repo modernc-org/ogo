@@ -53,6 +53,15 @@ Releases before v0.9.0 predate this file; see
 - **A deferred method may be called on a local receiver.** `defer b.show()` for a
   local `b` did not compile at all — `unknown package "b"` — while the same call on a
   package-level variable worked.
+- **Package variables are initialized in dependency order**, as Go does and as
+  `specs.go` already claimed. They ran in source order, so a variable whose
+  initializer named one declared below it read a zero — `var top int = mid + 1` was
+  1 rather than 11, silently. Written-out variables also kept a non-constant
+  initializer where C evaluates one at compile time, so the backend refused the
+  program with a message about generated C; such an initializer is assigned at
+  package initialization now, which is where the inferred form already went. A
+  variable whose *type* must be inferred from a variable declared below it is still
+  refused, by name.
 
 ### Diagnostics
 

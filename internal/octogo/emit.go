@@ -1284,8 +1284,26 @@ func (e *emitter) exprC(ast []int32) string {
 	return e.captureC(func() { e.emitExpr(ast) })
 }
 
-// deferPkgInit records a statement to run at package initialization.
-func (e *emitter) deferPkgInit(stmt string) { e.pkgInit = append(e.pkgInit, stmt) }
+// pkgInitStep is one variable's worth of package initialization: the statements
+// that run for it, what it initializes, and the package variables its initializer
+// reads. The steps are ordered by those dependencies before they are emitted, which
+// is what makes `var a = b + 1` work with b declared below it -- Go initializes a
+// package's variables in dependency order, not in source order.
+//
+// The statements of a step travel together: an initializer that hoists a temporary
+// out of itself puts the temporary in the same step as the assignment that reads
+// it, so ordering cannot separate the two.
+type pkgInitStep struct {
+	target string
+	deps   []string
+	stmts  []string
+}
+
+// deferPkgInit records a statement to run at package initialization, as a step of
+// its own that depends on nothing and so keeps its place.
+func (e *emitter) deferPkgInit(stmt string) {
+	e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: []string{stmt}})
+}
 
 // pkgInitAssign records a package variable's initialization at run time, the
 // assignment C forbids in a file-scope initializer.
@@ -1300,10 +1318,39 @@ func (e *emitter) pkgInitAssign(target string, initExpr []int32) {
 	text := e.exprC(initExpr)
 	pro := e.prologue
 	e.prologue = saved
+	step := pkgInitStep{target: target, deps: e.globalRefs(initExpr)}
 	for _, line := range pro {
-		e.deferPkgInit(strings.TrimSuffix(line, "\n"))
+		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
 	}
-	e.deferPkgInit(target + " = " + text + ";")
+	step.stmts = append(step.stmts, target+" = "+text+";")
+	e.pkgInit = append(e.pkgInit, step)
+}
+
+// globalRefs names every package-level variable an initializer could read, as the
+// C names they are emitted under. It is deliberately generous -- every identifier
+// in the expression, mangled into this package -- because a name that turns out not
+// to be a package variable of this package matches no step and is ignored by the
+// ordering. Mangling has to happen here, while the file being emitted says which
+// package that is.
+func (e *emitter) globalRefs(ast []int32) []string {
+	var out []string
+	var walk func([]int32)
+	walk = func(a []int32) {
+		for n := range it(a) {
+			if n.sym != 0 {
+				walk(n.ast)
+				continue
+			}
+			if e.f.ch(n.tok) != IDENT {
+				continue
+			}
+			if gn := e.globalC(e.src(n.tok)); !slices.Contains(out, gn) {
+				out = append(out, gn)
+			}
+		}
+	}
+	walk(ast)
+	return out
 }
 
 // staticInitOK reports whether a package variable's initializer is a constant
@@ -1372,8 +1419,15 @@ func (e *emitter) pkgInitDefs() string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "static void %s(void) {\n", pkgInitCName)
-	for _, st := range e.pkgInit {
-		fmt.Fprintf(&b, "\t%s\n", st)
+	names := make([]string, len(e.pkgInit))
+	deps := make([][]string, len(e.pkgInit))
+	for i, st := range e.pkgInit {
+		names[i], deps[i] = st.target, st.deps
+	}
+	for _, i := range stableTopoOrder(names, deps) {
+		for _, stmt := range e.pkgInit[i].stmts {
+			fmt.Fprintf(&b, "\t%s\n", stmt)
+		}
 	}
 	// The variable initializers run first, then init(), which is Go's order.
 	for _, fn := range e.initFuncs {
@@ -1554,32 +1608,62 @@ func (e *emitter) typedefDeps(ctypes []string) []string {
 // order rather than dropped, so the C compiler reports it and the program does not
 // quietly lose a type.
 func orderTypedefs(units []typedefUnit) []typedefUnit {
-	declares := make(map[string]bool, len(units))
-	for _, u := range units {
-		declares[u.name] = true
+	names := make([]string, len(units))
+	deps := make([][]string, len(units))
+	for i, u := range units {
+		names[i], deps[i] = u.name, u.deps
 	}
-	declared := make(map[string]bool, len(units))
 	out := make([]typedefUnit, 0, len(units))
-	rest := units
+	for _, i := range stableTopoOrder(names, deps) {
+		out = append(out, units[i])
+	}
+	return out
+}
+
+// stableTopoOrder returns an ordering of the items in which each follows what it
+// depends on, keeping the given order wherever the dependencies allow: an item only
+// ever moves later, never earlier, so a list that already ordered itself comes back
+// unchanged. names[i] is what item i provides (empty if it provides nothing);
+// deps[i] what it needs.
+//
+// A dependency on a name no item provides is satisfied from the start -- it is
+// something that exists already. A cycle leaves its items in their original order
+// rather than dropping them, so whatever reads the result reports the problem
+// instead of quietly losing them.
+func stableTopoOrder(names []string, deps [][]string) []int {
+	provides := make(map[string]bool, len(names))
+	for _, n := range names {
+		if n != "" {
+			provides[n] = true
+		}
+	}
+	done := make(map[string]bool, len(names))
+	out := make([]int, 0, len(names))
+	rest := make([]int, len(names))
+	for i := range rest {
+		rest[i] = i
+	}
 	for len(rest) != 0 {
-		var deferred []typedefUnit
-		for _, u := range rest {
+		var deferred []int
+		for _, i := range rest {
 			ready := true
-			for _, d := range u.deps {
-				if declares[d] && !declared[d] {
+			for _, d := range deps[i] {
+				if provides[d] && !done[d] {
 					ready = false
 					break
 				}
 			}
 			if !ready {
-				deferred = append(deferred, u)
+				deferred = append(deferred, i)
 				continue
 			}
-			out = append(out, u)
-			declared[u.name] = true
+			out = append(out, i)
+			if names[i] != "" {
+				done[names[i]] = true
+			}
 		}
 		if len(deferred) == len(rest) {
-			return append(out, deferred...) // a cycle: leave it to the C compiler
+			return append(out, deferred...) // a cycle
 		}
 		rest = deferred
 	}
@@ -2536,7 +2620,7 @@ type emitter struct {
 	globalArrays       map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
 	sliceVars          map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars    map[string]string        // package-level slice name -> element C type (persists across functions)
-	pkgInit            []string                 // C statements for the synthesized package initializer, in source order
+	pkgInit            []pkgInitStep            // the synthesized package initializer, emitted in dependency order
 	initFuncs          []string                 // user init() functions, called after the variable initializers
 	initNames          map[string]string        // init declaration position -> its numbered C name, so both passes agree
 	goSites            []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
@@ -3283,9 +3367,21 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			gn := e.globalC(nm)
 			e.globals[gn] = ctype
 			e.emit("static " + ctype + " " + gn)
-			if initExpr != nil {
+			switch {
+			case initExpr == nil:
+			case e.staticInitOK(initExpr):
 				e.emit(" = ")
 				e.emitGlobalInit(initExpr)
+			default:
+				// C evaluates a file-scope initializer at compile time, so anything
+				// that is not a constant expression is done at package
+				// initialization instead -- which is where the inferred-type form
+				// beside this one already puts it. Written out, the variable used to
+				// keep the initializer and the backend refused the program: "global
+				// initializers are evaluated at compile time and therefore must be
+				// constant", about C the reader never wrote.
+				e.emit(" = " + e.zeroInitC(ctype))
+				defer e.pkgInitAssign(gn, initExpr)
 			}
 			e.emit(";\n")
 			if e.isChanCType(ctype) {

@@ -950,6 +950,59 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// Package variables are initialized in DEPENDENCY order, which is what Go
+		// does and what specs.go already claimed. They ran in source order, so a
+		// variable whose initializer named one declared below it read a zero:
+		// `var top int = mid + 1` printed 1 rather than 11. Silent, and the shape is
+		// ordinary -- a table's size derived from a base, a scale derived from it.
+		//
+		// Written out, the variable also used to keep its initializer where C
+		// evaluates one at compile time, so the backend refused the program: "global
+		// initializers are evaluated at compile time and therefore must be constant",
+		// about C the reader never wrote. Anything that is not a constant expression
+		// is assigned at package initialization now, which is where the inferred
+		// form beside it already went.
+		//
+		// The order is the same stable sort the typedef section uses: a step only
+		// moves later, never earlier, so a program whose declarations already
+		// ordered themselves emits what it emitted before. init() still runs after
+		// every variable, and several run in the order written.
+		name: "package variables initialize in dependency order",
+		src: `// Written in an order that is not the order they must be initialized in: each
+// reads one declared below it, and Go initializes them in dependency order.
+var top int = mid + 1
+
+var mid int = base * 2
+
+var base int = 5
+
+var scaled int = twice(base)
+
+var sum int = top + mid + scaled
+
+func twice(n int) int { return n * 2 }
+
+var log [4]int
+
+func init() {
+	log[0] = top
+	log[1] = sum
+}
+
+func init() {
+	// A second init runs on what the first left.
+	log[2] = log[0] + log[1]
+	log[3] = 1
+}
+
+func main() {
+	println(base, mid, top, scaled, sum)
+	println(log[0], log[1], log[2], log[3])
+}
+`,
+		want: "5 10 11 10 31\n11 31 42 1\n",
+	},
+	{
 		// min and max over what Go orders, not only over integers. specs.go called
 		// them "the smallest of its ordered arguments" and the emitter took integers
 		// alone, so a control loop could not clamp a float with them -- which is the
