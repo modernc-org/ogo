@@ -65,6 +65,11 @@ Releases before v0.9.0 predate this file; see
 
 ### Diagnostics
 
+- **A parse error is no longer hidden behind a checker error on the same line.**
+  Only one error per line is reported, and the checker's came first — so `if v, ok
+  := f(); ok`, which the grammar does not admit, was reported as `undefined: v`:
+  true of the tree that got built, and no help at all. The parse error describes the
+  cause and now outranks every other error on its line.
 - **A comparison the language does not define is refused by the compiler**, not by
   the C compiler behind it. `p < q` on structs, `s == t` on slices, and equality on
   an array or struct with a slice inside it all reached the backend, which said

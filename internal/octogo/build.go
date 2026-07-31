@@ -199,7 +199,11 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 		errs = consolidateErrors(errs, c.errList)
 		// Establish stable order
 		sort.Slice(errs, func(i, j int) bool { return errs[i].less(errs[j]) })
-		// Remove multiple errors for the same line
+		// Remove multiple errors for the same line, keeping the parser's where there
+		// is one: a checker error on a line the parser could not read is derived from
+		// a tree that is not what was written, so it reports a consequence and hides
+		// the cause. `if v, ok := f(); ok` said "undefined: v" and swallowed the
+		// parse error at the comma that explains why v was never declared.
 		w := 0
 		for _, v := range errs {
 			if w == 0 {
@@ -211,6 +215,10 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 			if !v.sameFileAndLine(errs[w-1]) {
 				errs[w] = v
 				w++
+				continue
+			}
+			if v.Parse && !errs[w-1].Parse {
+				errs[w-1] = v
 			}
 		}
 		errs = errs[:w]

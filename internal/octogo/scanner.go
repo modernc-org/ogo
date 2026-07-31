@@ -122,6 +122,13 @@ const (
 type ErrWithPosition struct {
 	Pos token.Position
 	Err error
+	// Parse marks an error the parser raised. Only one error per line is reported,
+	// and a parse error outranks every other on its line: what the checker has to
+	// say about a line it could not parse is derived from a tree that is not what
+	// was written, so it describes a consequence where the parse error describes the
+	// cause. `if v, ok := f(); ok` came out as "undefined: v" -- true of the tree
+	// that was built, and no help at all.
+	Parse bool
 }
 
 // Error implements error.
@@ -221,9 +228,9 @@ func (e *ErrList) AddErr(pos token.Position, msg string, args ...interface{}) {
 	// trc("%v: %s", pos, fmt.Sprintf(msg, args...))
 	switch {
 	case len(args) == 0:
-		*e = append(*e, ErrWithPosition{pos, fmt.Errorf("%s", msg)})
+		*e = append(*e, ErrWithPosition{Pos: pos, Err: fmt.Errorf("%s", msg)})
 	default:
-		*e = append(*e, ErrWithPosition{pos, fmt.Errorf(msg, args...)})
+		*e = append(*e, ErrWithPosition{Pos: pos, Err: fmt.Errorf(msg, args...)})
 	}
 }
 
@@ -466,13 +473,16 @@ func NewRecScanner(name string, buf []byte, scan func(s []byte) (id, length int)
 	return r
 }
 
-// AddErr registers an error.
+// AddErr registers an error. Every error from here is the parser's, and is marked
+// as such so it outranks a checker error on the same line (see ErrWithPosition).
 func (s *RecScanner) AddErr(pos token.Position, msg string, args ...interface{}) {
 	switch {
 	case s.errBudget > 0:
 		s.errList.AddErr(pos, msg, args...)
+		s.errList[len(s.errList)-1].Parse = true
 	case s.errBudget == 0:
 		s.errList.AddErr(token.Position{}, "too many errors")
+		s.errList[len(s.errList)-1].Parse = true
 	}
 	s.errBudget--
 }
