@@ -77,6 +77,7 @@ var generatedConstructs = []struct {
 	{"two-result function", `\) \(int, int\) \{`},
 	{"two-result destructuring", `\n\s*d_\d+, d_\d+ := fn_\d+\(`},
 	{"deferred call", `\n\s*defer sink_\d+\(v\)`},
+	{"deferred method call, value receiver", `\n\s*defer dr_\d+\.emit_\d+\(\)`},
 	{"call of a defer-carrying procedure", `\n\s*dp_\d+\(\)`},
 }
 

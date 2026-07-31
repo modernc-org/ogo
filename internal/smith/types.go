@@ -157,6 +157,10 @@ type StructDef struct {
 	Set    string // POINTER receiver, writes its argument into Field0 and returns it
 	Shadow string // VALUE receiver, writes its argument into Field0 and returns it --
 	// the caller's struct must be untouched, a copy being what a value receiver gets
+	Emit string // VALUE receiver, folds Field0 into the checksum -- the only method
+	// whose running is observable without reading its result, which is what lets a
+	// DEFERRED method call be checked (see genDeferProc)
+	Checksum string // the checksum variable's name, which Emit's body writes
 }
 
 // StructType names a generated struct. Only the name distinguishes it, so

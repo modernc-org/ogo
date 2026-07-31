@@ -880,11 +880,31 @@ func (f *Fuzzer) genVarDecl(vm Machine, mem Memory) Node {
 // The sink is a procedure of its own because a deferred call's result is discarded:
 // the only way its running is observable is a write to a package variable.
 func (f *Fuzzer) genDeferProc() {
-	sink := f.newVarName("sink")
 	proc := f.newVarName("dp")
 	captured := int32(f.Rand.Intn(1 << 20))
 	changed := int32(f.Rand.Intn(1 << 20))
 
+	if len(f.Structs) != 0 && f.Rand.Float32() < 0.5 {
+		// A deferred METHOD call on a value receiver. Go evaluates the receiver
+		// where the defer stands and copies it, so the method runs on the struct as
+		// it was THEN -- the field is changed afterwards and folded in by the body,
+		// so a compiler that re-read the receiver at the return folds the same value
+		// twice. That is the bug this release fixed for a receiver reached through a
+		// chain, and nothing generated could reach it.
+		def := f.Structs[f.Rand.Intn(len(f.Structs))]
+		recv := f.newVarName("dr")
+		fmt.Fprintf(f.Out, "var %s %s\n\n", recv, def.Name)
+		fmt.Fprintf(f.Out, "func %s() {\n", proc)
+		fmt.Fprintf(f.Out, "\t%s.%s = %d\n", recv, def.Fields[0], captured)
+		fmt.Fprintf(f.Out, "\tdefer %s.%s()\n", recv, def.Emit)
+		fmt.Fprintf(f.Out, "\t%s.%s = %d\n", recv, def.Fields[0], changed)
+		fmt.Fprintf(f.Out, "\t%s = %s ^ %s.%s\n", f.ChecksumName, f.ChecksumName, recv, def.Fields[0])
+		fmt.Fprint(f.Out, "}\n\n")
+		f.DeferProcs = append(f.DeferProcs, deferProc{name: proc, folds: []int32{changed, captured}})
+		return
+	}
+
+	sink := f.newVarName("sink")
 	fmt.Fprintf(f.Out, "func %s(v int) { %s = %s ^ v }\n\n", sink, f.ChecksumName, f.ChecksumName)
 	fmt.Fprintf(f.Out, "func %s() {\n", proc)
 	fmt.Fprintf(f.Out, "\tv := %d\n", captured)
@@ -1553,6 +1573,8 @@ func (f *Fuzzer) genStructType() *StructDef {
 	def.Get = f.newVarName("get")
 	def.Set = f.newVarName("set")
 	def.Shadow = f.newVarName("shadow")
+	def.Emit = f.newVarName("emit")
+	def.Checksum = f.ChecksumName
 	f.Structs = append(f.Structs, def)
 	(&StructTypeNode{Def: def}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
@@ -1690,7 +1712,8 @@ func (n *MethodsNode) Write(w io.Writer, indent int) {
 	d, f0 := n.Def, n.Def.Fields[0]
 	fmt.Fprintf(w, "func (r %s) %s() int { return r.%s }\n\n", d.Name, d.Get, f0)
 	fmt.Fprintf(w, "func (r *%s) %s(v int) int {\n\tr.%s = v\n\treturn r.%s\n}\n\n", d.Name, d.Set, f0, f0)
-	fmt.Fprintf(w, "func (r %s) %s(v int) int {\n\tr.%s = v\n\treturn r.%s\n}\n", d.Name, d.Shadow, f0, f0)
+	fmt.Fprintf(w, "func (r %s) %s(v int) int {\n\tr.%s = v\n\treturn r.%s\n}\n\n", d.Name, d.Shadow, f0, f0)
+	fmt.Fprintf(w, "func (r %s) %s() { %s = %s ^ r.%s }\n", d.Name, d.Emit, d.Checksum, d.Checksum, f0)
 }
 
 // MethodCallNode is `v.m()` or `v.m(arg)`.
