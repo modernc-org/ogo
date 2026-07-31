@@ -11,6 +11,28 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Language
+
+- **The typedef section is emitted in dependency order.** It was fixed groups —
+  struct forward declarations, function typedefs, scalar slice headers, the named
+  and struct typedefs, struct slice headers — and real dependencies cut across them,
+  so each of these named a type C had not seen: a function type naming a defined
+  type by value (`type Scale func(Word) Word`) or a slice of one, a struct field
+  whose struct is declared further down the file, a struct holding a slice of such a
+  struct, and a multi-result function whose results are defined types. A further
+  group could not have fixed it — a struct holding a function type needs that
+  typedef *between* two entries of the group it is in.
+
+  Each declaration now carries the names it must see first, and the section is
+  sorted on that, moving a declaration later and never earlier: a program whose
+  declarations already ordered themselves emits what it emitted before. A pointer to
+  a struct is the one use that depends on nothing, since every struct's forward
+  declaration leads the section; a pointer to anything else names a typedef, which C
+  wants declared first. That rule replaces the hand-written scalar/struct split of
+  the slice headers, and the inline emission a struct-element slice field needed.
+
 ## v0.15.0
 
 ### Language

@@ -1401,20 +1401,24 @@ func (e *emitter) funcValueCType(cname string) (string, bool) {
 		e.fail("a function with more than one result cannot be used as a value yet")
 		return "", false
 	}
-	return e.funcTypeFor(fv.key, fv.res), true
+	return e.funcTypeFor(fv), true
 }
 
 // funcValueType is a function's type rendered as C: the key a typedef is minted
-// under, and the result types a call through it yields.
+// under, the result types a call through it yields, and the parameter types. The
+// last two are what the typedef depends on -- a function type may name a defined
+// type, whose own typedef has to come first (see typedefUnit).
 type funcValueType struct {
-	key string
-	res []string
+	key    string
+	res    []string
+	params []string
 }
 
 // funcSigCParts renders a Signature as the parts a function type is minted from.
 func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 	_, resTypes := e.cSig(sig)
-	params := strings.Join(e.cParamTypes(sig), ", ")
+	paramTypes := e.cParamTypes(sig)
+	params := strings.Join(paramTypes, ", ")
 	if params == "" {
 		params = "void"
 	}
@@ -1422,7 +1426,7 @@ func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 	if len(resTypes) == 1 {
 		ret = resTypes[0]
 	}
-	return funcValueType{key: ret + " (*)(" + params + ")", res: resTypes}
+	return funcValueType{key: ret + " (*)(" + params + ")", res: resTypes, params: paramTypes}
 }
 
 // funcTypeOfSig mints (or reuses) the typedef standing for a Signature, shared by
@@ -1438,22 +1442,109 @@ func (e *emitter) funcTypeOfSig(sig []int32) (string, bool) {
 		e.fail("a function with more than one result cannot be used as a value yet")
 		return "", false
 	}
-	return e.funcTypeFor(fv.key, fv.res), true
+	return e.funcTypeFor(fv), true
 }
 
 // funcTypeFor returns the typedef standing for a C function-pointer signature,
 // minting it on first sight. Distinct written types rendering the same C signature
 // share one typedef, which is what makes `func(int) int` written twice mint once.
-func (e *emitter) funcTypeFor(key string, res []string) string {
-	if name, ok := e.funcTypeNames[key]; ok {
+func (e *emitter) funcTypeFor(fv funcValueType) string {
+	if name, ok := e.funcTypeNames[fv.key]; ok {
 		return name
 	}
 	name := fmt.Sprintf("%s%d", funcTypePrefix, len(e.funcTypeNames))
-	e.funcTypeNames[key] = name
-	e.funcTypeRet[name] = res
+	e.funcTypeNames[fv.key] = name
+	e.funcTypeRet[name] = fv.res
 	// "ret (*)(params)" -> "typedef ret (*name)(params);"
-	e.funcTypeDefs = append(e.funcTypeDefs, "typedef "+strings.Replace(key, "(*)", "(*"+name+")", 1)+";\n")
+	e.addTypedef(name, "typedef "+strings.Replace(fv.key, "(*)", "(*"+name+")", 1)+";\n",
+		append(slices.Clone(fv.res), fv.params...)...)
 	return name
+}
+
+// typedefUnit is one declaration of the typedef section: the C name it declares,
+// the text declaring it, and the names that must be declared before it. The section
+// is emitted in dependency order rather than in fixed groups (see orderTypedefs),
+// which is what lets a function type name a defined type, a struct hold a slice of
+// one, and a struct field be a struct declared further down the file.
+type typedefUnit struct {
+	name string
+	text string
+	deps []string
+}
+
+// addTypedef records one declaration of the typedef section. The variadic arguments
+// are the C types the declaration writes, as it writes them; typedefDeps reduces
+// them to the names whose own declaration has to come first.
+func (e *emitter) addTypedef(name, text string, ctypes ...string) {
+	e.typedefUnits = append(e.typedefUnits, typedefUnit{name: name, text: text, deps: e.typedefDeps(ctypes)})
+}
+
+// typedefDeps reduces C type texts to the names whose declaration must precede
+// them.
+//
+// A pointer to a struct is the one use that does not depend on anything: every
+// struct's forward declaration leads the section, and that is all `P*` needs. A
+// pointer to anything else names a typedef, and C wants a typedef declared before
+// even a pointer to it can be written -- which is why `[]Celsius` could not be
+// emitted ahead of `typedef int Celsius;` and a struct-element slice could.
+func (e *emitter) typedefDeps(ctypes []string) []string {
+	var deps []string
+	for _, ct := range ctypes {
+		name := strings.TrimRight(ct, "* ")
+		if name == "" || name == "void" {
+			continue
+		}
+		if _, isStruct := e.structs[name]; isStruct && strings.Contains(ct, "*") {
+			continue
+		}
+		if !slices.Contains(deps, name) {
+			deps = append(deps, name)
+		}
+	}
+	return deps
+}
+
+// orderTypedefs returns the units in an order where each follows what it depends
+// on, keeping the order it was given wherever the dependencies allow: a unit only
+// ever moves later, never earlier, so a program whose declarations already ordered
+// themselves emits exactly the bytes it emitted before.
+//
+// A dependency on a name no unit declares is a name C already has -- int, int32_t,
+// a struct reached through its forward declaration -- and is satisfied from the
+// start. A cycle leaves units nothing can place; they are emitted in their original
+// order rather than dropped, so the C compiler reports it and the program does not
+// quietly lose a type.
+func orderTypedefs(units []typedefUnit) []typedefUnit {
+	declares := make(map[string]bool, len(units))
+	for _, u := range units {
+		declares[u.name] = true
+	}
+	declared := make(map[string]bool, len(units))
+	out := make([]typedefUnit, 0, len(units))
+	rest := units
+	for len(rest) != 0 {
+		var deferred []typedefUnit
+		for _, u := range rest {
+			ready := true
+			for _, d := range u.deps {
+				if declares[d] && !declared[d] {
+					ready = false
+					break
+				}
+			}
+			if !ready {
+				deferred = append(deferred, u)
+				continue
+			}
+			out = append(out, u)
+			declared[u.name] = true
+		}
+		if len(deferred) == len(rest) {
+			return append(out, deferred...) // a cycle: leave it to the C compiler
+		}
+		rest = deferred
+	}
+	return out
 }
 
 // isFuncCType reports whether a C type is one of the minted function-type typedefs.
@@ -1967,7 +2058,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, inlineSliceDefs: map[string]bool{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2015,13 +2106,18 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// bool` becomes `typedef _Bool (*ogo_functype0)(Machine*);`, and a POINTER to a
 	// struct needs only the forward declaration, which is what this ordering gives
 	// it. Written after them, it named a type C had not seen.
-	var forwards, typedefs bytes.Buffer
+	// Every declaration of the typedef section is collected as a unit and emitted in
+	// dependency order (see typedefUnit); the struct FORWARD declarations are the one
+	// thing that always leads it, and depend on nothing, so they keep a buffer of
+	// their own. e.w points at a scratch buffer while the units are collected, each
+	// capturing its own text.
+	var forwards, scratch bytes.Buffer
 	e.w = &forwards
 	// Constant VALUES first: a struct field's array bound may name one, and the
 	// typedefs below are emitted before the constants themselves.
 	forEachFile(func() { e.collectConstValues(e.f.AST) })
 	forEachFile(func() { e.collectStructForwards(e.f.AST) })
-	e.w = &typedefs
+	e.w = &scratch
 	forEachFile(func() { e.collectStructs(e.f.AST) })
 	// A defined type over a struct is that struct: `type Q P` indexes, is written as
 	// a literal, converts and carries methods exactly as P does. Every one of those
@@ -2101,54 +2197,36 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if len(incs) != 0 {
 		out.WriteByte('\n')
 	}
-	// Slice header typedefs follow the struct typedefs (a slice's element may be a
-	// one per distinct element type, split by element type. A scalar-element slice
-	// (ogo_slice_int) has no struct dependency and is emitted before the struct
-	// typedefs, since a struct field may hold one; a struct-element slice
-	// (ogo_slice_Point) references its struct by pointer and so follows the structs.
-	// The function-type typedefs lead: a struct field, a slice element or a result
-	// may be one, and a function pointer's own parameter types are already spelled.
-	var funcTypeDefs bytes.Buffer
-	for _, def := range e.funcTypeDefs {
-		funcTypeDefs.WriteString(def)
-	}
-	var scalarSliceDefs, structSliceDefs bytes.Buffer
+	// One slice header typedef per distinct element type, and append's ok-form
+	// result struct { slice, ok } per element type. Both are units of the typedef
+	// section like the struct bodies and the function typedefs, and the dependency
+	// order below is what places them: a header names its element, by pointer, so a
+	// struct element needs only its forward declaration while a defined type needs
+	// its typedef -- which is the split that used to be written out by hand here,
+	// and got `[]Celsius` emitted ahead of `typedef int Celsius;` when the name in
+	// hand was neither.
 	for _, el := range sortedKeys(e.sliceElems) {
-		if e.inlineSliceDefs[el] {
-			continue // already emitted inline, ahead of the struct field holding it
-		}
-		def := sliceTypedefDef(el)
-		// A slice header NAMES its element type, so it can only precede the typedef
-		// section when that name is one C already has. A struct's is written there,
-		// and so is a defined type's -- `type Celsius int` becomes `typedef int
-		// Celsius;` among the typedefs -- so a slice of either has to follow them.
-		// []Celsius used to be emitted first and named a type nothing had declared.
-		if e.isStruct(el) || e.namedTypes[el] {
-			structSliceDefs.WriteString(def)
-		} else {
-			scalarSliceDefs.WriteString(def)
-		}
+		e.addTypedef(sliceCName(el), sliceTypedefDef(el), el+"*")
 	}
-	// append's ok-form result struct { slice, ok }, per element type; it references
-	// the slice typedef emitted above.
-	var appendokDefs bytes.Buffer
 	for _, el := range sortedKeys(e.tryappendElems) {
-		fmt.Fprintf(&appendokDefs, "typedef struct { %s slice; int ok; } %s;\n", sliceCName(el), appendokCName(el))
+		e.addTypedef(appendokCName(el),
+			fmt.Sprintf("typedef struct { %s slice; int ok; } %s;\n", sliceCName(el), appendokCName(el)),
+			sliceCName(el))
+	}
+	var typedefUnits bytes.Buffer
+	for _, u := range orderTypedefs(e.typedefUnits) {
+		typedefUnits.WriteString(u.text)
 	}
 	// The ogo_string typedef leads the typedef section (a struct, array, or result
 	// field may be a string); scalar-element slice typedefs precede the struct
 	// typedefs (a struct field may hold one), struct-element slices and the append
 	// ok-form structs follow. The string print helpers follow the typedefs.
-	if e.usesString || forwards.Len() != 0 || typedefs.Len() != 0 || scalarSliceDefs.Len() != 0 || structSliceDefs.Len() != 0 || appendokDefs.Len() != 0 || funcTypeDefs.Len() != 0 {
+	if e.usesString || forwards.Len() != 0 || typedefUnits.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
 		}
 		out.Write(forwards.Bytes())
-		out.Write(funcTypeDefs.Bytes())
-		out.Write(scalarSliceDefs.Bytes())
-		out.Write(typedefs.Bytes())
-		out.Write(structSliceDefs.Bytes())
-		out.Write(appendokDefs.Bytes())
+		out.Write(typedefUnits.Bytes())
 		// The Builder typedef follows the string and byte-slice types it embeds.
 		if e.usesBuilder {
 			out.WriteString(builderTypedef)
@@ -2425,10 +2503,9 @@ type emitter struct {
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
 	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
-	funcTypeDefs       []string                 // those typedefs, in mint order
+	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
 	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName    map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
-	inlineSliceDefs    map[string]bool          // struct element C types whose slice typedef was already emitted inline, between the element struct and the struct field that holds it
 	appendElems        map[string]bool          // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems     map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
 	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
@@ -2778,26 +2855,31 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			// name a type inside its own anonymous typedef.
 			fields := e.structFieldsOf(structAST)
 			e.structs[mn] = fields
-			e.emit("struct " + mn + " {")
-			for _, fld := range fields {
-				// A field name may be Unicode; cIdent it in the typedef and, to match,
-				// wherever a field is selected (see fieldAccessC and the chain/selector
-				// paths). The structs map still stores the source name, so the type
-				// lookups (structFieldType etc.) compare source names.
-				if fld.dim.bound != "" {
-					e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fld.dim.declSuffix() + ";")
-					continue
+			deps := make([]string, 0, len(fields))
+			text := e.captureC(func() {
+				e.emit("struct " + mn + " {")
+				for _, fld := range fields {
+					// A field name may be Unicode; cIdent it in the typedef and, to match,
+					// wherever a field is selected (see fieldAccessC and the chain/selector
+					// paths). The structs map still stores the source name, so the type
+					// lookups (structFieldType etc.) compare source names.
+					deps = append(deps, fld.ctype)
+					if fld.dim.bound != "" {
+						e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fld.dim.declSuffix() + ";")
+						continue
+					}
+					e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + ";")
 				}
-				e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + ";")
-			}
-			if len(fields) == 0 {
-				// C rejects a struct with no members; Go's empty struct is a
-				// legal, zero-information type (markers, chan struct{} signals).
-				// Give it one hidden byte so the C type is well-formed. OctoGo
-				// code cannot name the field, so it stays invisible.
-				e.emit(" char _ogo_empty;")
-			}
-			e.emit(" };\n")
+				if len(fields) == 0 {
+					// C rejects a struct with no members; Go's empty struct is a
+					// legal, zero-information type (markers, chan struct{} signals).
+					// Give it one hidden byte so the C type is well-formed. OctoGo
+					// code cannot name the field, so it stays invisible.
+					e.emit(" char _ogo_empty;")
+				}
+				e.emit(" };\n")
+			})
+			e.addTypedef(mn, text, deps...)
 			continue
 		}
 		// A named array type: `type Row [3]int` -> `typedef int Row[3];` (the extent
@@ -2809,7 +2891,7 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// valid C type should anything refer to it by name.
 		if a, ok := e.arrayDim(typeAST); ok {
 			e.namedArrays[mn] = a
-			e.emit("typedef " + a.elem + " " + mn + a.declSuffix() + ";\n")
+			e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";\n", a.elem)
 			continue
 		}
 		// A non-struct named type: `type Celsius int` -> `typedef int Celsius;`. The
@@ -2831,7 +2913,7 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			// what it gives up is a method of its own, which is refused by name.
 			continue
 		}
-		e.emit("typedef " + underlying + " " + mn + ";\n")
+		e.addTypedef(mn, "typedef "+underlying+" "+mn+";\n", underlying)
 	}
 }
 
@@ -2861,24 +2943,13 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 			switch c.sym {
 			case Type:
 				if elem, ok := e.sliceType(c.ast); ok {
-					// A scalar-element slice field (`data []int`) is a slice header
-					// whose typedef is emitted before this struct's (see EmitC).
-					//
-					// A struct-element slice field (`pts []Point`) inverts that: its
-					// header names Point, so it must follow Point's typedef, yet it is
-					// held by value here and so must precede this struct's. Emit it
-					// inline -- collectTypeDecl calls us before emitting this struct's
-					// typedef, and both write the same buffer, so it lands exactly
-					// between the two. Recorded so EmitC's typedef section skips it.
-					//
-					// A forward reference (`[]B` with B declared later) cannot reach
-					// here: sliceType resolves the element through cType, which fails
-					// on an unknown name. Declaration order is the rule for plain
-					// struct fields too.
-					if e.isStruct(elem) && !e.inlineSliceDefs[elem] {
-						e.inlineSliceDefs[elem] = true
-						e.emit(sliceTypedefDef(elem))
-					}
+					// A slice field is a header held by value, so this struct's
+					// typedef depends on the header's, which in turn names the element
+					// -- by pointer, so a struct element needs only its forward
+					// declaration. Both are units of the typedef section and the
+					// dependency order places them; a struct-element slice used to be
+					// emitted inline here, between the element's typedef and this
+					// one's, because the fixed groups could not express that.
 					e.needSlice(elem)
 					ctype = sliceCName(elem)
 					break
@@ -3414,11 +3485,15 @@ func (e *emitter) collectResults(ast []int32) {
 		e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 		e.funcParams[cname] = e.cParamTypes(sig)
 		if len(resTypes) > 1 {
-			e.emit("typedef struct { ")
-			for i, ct := range resTypes {
-				fmt.Fprintf(e.w, "%s _%d; ", ct, i)
-			}
-			e.emit("} " + e.retStructName(cname) + ";\n")
+			text := e.captureC(func() {
+				e.emit("typedef struct { ")
+				for i, ct := range resTypes {
+					fmt.Fprintf(e.w, "%s _%d; ", ct, i)
+				}
+				e.emit("} " + e.retStructName(cname) + ";\n")
+			})
+			// Each result is held by value, so every one of their typedefs comes first.
+			e.addTypedef(e.retStructName(cname), text, resTypes...)
 		}
 	})
 }

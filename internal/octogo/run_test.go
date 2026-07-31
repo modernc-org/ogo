@@ -950,6 +950,85 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// The typedef section in dependency order. It used to be fixed groups --
+		// struct forwards, function typedefs, scalar slice headers, the named and
+		// struct typedefs, struct slice headers -- and real dependencies cut across
+		// them, so each of these named a type C had not seen:
+		//
+		//	type Scale func(Word) Word     a function type naming a defined type
+		//	type Sum func([]Word) Word     ... or a slice of one
+		//	type head struct{ tail tail }  a field whose struct is declared below
+		//	type head struct{ rows []row } ... or a slice of one
+		//	func pair() (Word, Word)       a result struct of defined types
+		//
+		// A fourth group could not have expressed it: a struct holding a function
+		// type needs that typedef BETWEEN two entries of the group it is in. Each
+		// declaration now carries what it must see first, and the section is sorted
+		// on that -- moving a declaration later, never earlier, so a program whose
+		// declarations already ordered themselves emits what it emitted before.
+		//
+		// A pointer to a struct is the one use that depends on nothing, its forward
+		// declaration leading the section; a pointer to anything else names a typedef,
+		// which C wants declared first. That is the rule the old scalar/struct slice
+		// split was a hand-written approximation of.
+		name: "typedefs emitted in dependency order",
+		src: `type Word int32
+
+// A function type naming a defined type by value, in the result and in a
+// parameter, and one naming a slice of it.
+type Scale func(Word) Word
+type Sum func([]Word) Word
+
+// A struct whose field is a struct declared further down, and one holding a
+// slice of it.
+type head struct {
+	tail tail
+	rows []row
+}
+
+type tail struct{ n Word }
+
+type row struct{ v Word }
+
+func twice(w Word) Word { return w * 2 }
+
+func total(ws []Word) Word {
+	var t Word
+	for _, w := range ws {
+		t += w
+	}
+	return t
+}
+
+func pair() (Word, Word) { return 3, 4 }
+
+func main() {
+	var s Scale = twice
+	println(int(s(21)))
+
+	var ws [3]Word
+	ws[0], ws[1], ws[2] = 1, 2, 3
+	var f Sum = total
+	// Bound to a variable rather than written int(f(ws[:])): a compound literal
+	// handed to a call inside a cast is miscounted by the backend, which has
+	// nothing to do with the typedefs under test here.
+	sum := f(ws[:])
+	println(int(sum))
+
+	var rows [2]row
+	rows[0].v = 5
+	rows[1].v = 6
+	h := head{rows: rows[:]}
+	h.tail.n = 7
+	println(int(h.tail.n), int(h.rows[0].v), int(h.rows[1].v))
+
+	a, b := pair()
+	println(int(a), int(b))
+}
+`,
+		want: "42\n6\n7 5 6\n3 4\n",
+	},
+	{
 		// Two silent wrong answers, both from a target that is not a plain variable.
 		//
 		// `*p++` emitted `*p++`, which C reads as `*(p++)`: the POINTER moves and the
