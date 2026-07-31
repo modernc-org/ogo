@@ -76,6 +76,8 @@ var generatedConstructs = []struct {
 	{"function call", `fn_\d+\(`},
 	{"two-result function", `\) \(int, int\) \{`},
 	{"two-result destructuring", `\n\s*d_\d+, d_\d+ := fn_\d+\(`},
+	{"deferred call", `\n\s*defer sink_\d+\(v\)`},
+	{"call of a defer-carrying procedure", `\n\s*dp_\d+\(\)`},
 }
 
 // TestGeneratorCoverage asserts that the generator still emits every construct it

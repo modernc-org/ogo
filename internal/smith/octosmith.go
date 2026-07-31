@@ -106,6 +106,12 @@ type Fuzzer struct {
 	// order, so a call site can pick one reproducibly.
 	Funcs []*FuncDef
 
+	// DeferProcs are the generated procedures that carry a deferred call, with the
+	// checksum folds calling one performs. A defer cannot be written in main -- its
+	// function's exit is after the checksum assertion -- so it lives in a procedure
+	// main calls.
+	DeferProcs []deferProc
+
 	// Structs are the generated struct types, in generation order.
 	Structs []*StructDef
 

@@ -49,6 +49,14 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		f.genFuncDecl()
 	}
 
+	// 4.5. A procedure carrying a deferred call, for main to call. It has to be a
+	// procedure rather than one of the functions above: a defer runs at its
+	// function's exit, and main's exit is after the checksum assertion, so a defer
+	// written there could not be observed by the oracle at all.
+	if f.Rand.Float32() < 0.5 {
+		f.genDeferProc()
+	}
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -344,8 +352,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genArrayWrite(vm, mem) // 8% chance for an array element write
 	case r < 0.60:
 		return f.genElementSwap(vm, mem) // 2% chance for an element swap
+	case r < 0.62:
+		return f.genDestructure(vm, mem) // 2% chance for a two-result call
 	case r < 0.63:
-		return f.genDestructure(vm, mem) // 3% chance for a two-result call
+		return f.genDeferCall(vm, mem) // 1% chance for a call that defers
 	case r < 0.66:
 		return f.genSliceDecl(vm, mem) // 3% chance for a slice declaration
 	case r < 0.74:
@@ -856,6 +866,66 @@ func (f *Fuzzer) genVarDecl(vm Machine, mem Memory) Node {
 		Type: "int", // OctoGo numeric type
 		Expr: exprNode,
 	}
+}
+
+// genDeferProc writes a procedure whose body defers a call, and records the effect
+// that call has on the checksum so a call site can predict it.
+//
+// What it pins is the one thing about defer a reader cannot see: the ARGUMENT is
+// evaluated where the defer stands, not where the deferred call runs. The body
+// changes the variable afterwards and folds the new value in itself, so the two
+// values are different and both reach the checksum -- a compiler that re-read the
+// variable at the return would fold the same one twice and answer wrong.
+//
+// The sink is a procedure of its own because a deferred call's result is discarded:
+// the only way its running is observable is a write to a package variable.
+func (f *Fuzzer) genDeferProc() {
+	sink := f.newVarName("sink")
+	proc := f.newVarName("dp")
+	captured := int32(f.Rand.Intn(1 << 20))
+	changed := int32(f.Rand.Intn(1 << 20))
+
+	fmt.Fprintf(f.Out, "func %s(v int) { %s = %s ^ v }\n\n", sink, f.ChecksumName, f.ChecksumName)
+	fmt.Fprintf(f.Out, "func %s() {\n", proc)
+	fmt.Fprintf(f.Out, "\tv := %d\n", captured)
+	fmt.Fprintf(f.Out, "\tdefer %s(v)\n", sink)
+	fmt.Fprintf(f.Out, "\tv = %d\n", changed)
+	fmt.Fprintf(f.Out, "\t%s = %s ^ v\n", f.ChecksumName, f.ChecksumName)
+	fmt.Fprint(f.Out, "}\n\n")
+
+	// In call order: the body's own fold, then the deferred one at the return.
+	f.DeferProcs = append(f.DeferProcs, deferProc{name: proc, folds: []int32{changed, captured}})
+}
+
+// genDeferCall calls one of the generated defer-carrying procedures, folding its
+// two checksum effects in the order the program will apply them.
+func (f *Fuzzer) genDeferCall(vm Machine, mem Memory) Node {
+	if len(f.DeferProcs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	dp := f.DeferProcs[f.Rand.Intn(len(f.DeferProcs))]
+	for _, fold := range dp.folds {
+		cur := mem.Load(f.ChecksumName)
+		v, _ := vm.Eval("int_lit", fmt.Sprint(fold))
+		next, _ := vm.Eval("^", cur, v)
+		mem.Store(f.ChecksumName, next)
+	}
+	return &CallStmtNode{Fn: dp.name}
+}
+
+// CallStmtNode is a call in statement position, its result (if any) discarded.
+type CallStmtNode struct{ Fn string }
+
+func (n *CallStmtNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s()", n.Fn)
+}
+
+// deferProc is a generated procedure carrying a deferred call, and the checksum
+// folds calling it performs, in the order they happen.
+type deferProc struct {
+	name  string
+	folds []int32
 }
 
 // genChecksumMutation generates: octosmith_checksum = octosmith_checksum ^ <expr>

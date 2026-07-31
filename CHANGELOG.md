@@ -72,6 +72,13 @@ Releases before v0.9.0 predate this file; see
   operand would leave both elements equal: an ordinary-looking answer and a wrong
   checksum. It appears in about a quarter of seeds; 1000 seeds agree, and the corpus
   still builds with the real backend and runs on the board.
+- **The fuzzer generates a deferred call**, and pins the one thing about `defer` a
+  reader cannot see: the argument is evaluated where the `defer` stands, not where
+  the deferred call runs. The generated procedure changes the variable afterwards and
+  folds the new value in itself, so both values reach the checksum — a compiler that
+  re-read the variable at the return would fold the same one twice. It lives in a
+  procedure `main` calls, because a `defer` in `main` runs after the checksum
+  assertion and could not be observed at all.
 - **The fuzzer generates a two-result function and destructures its call**,
   `a, b := fn(x)`. Every multiple-value form in the language lowers through that one
   path — the header declaration, a `select` clause's receive and the plain statement
