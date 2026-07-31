@@ -38,6 +38,10 @@ Releases before v0.9.0 predate this file; see
   the received value was assigned to the *struct*, and the C compiler is what caught
   it. The plain `s.last = <-a` outside a select always worked.
 
+- **A deferred method may be called on a local receiver.** `defer b.show()` for a
+  local `b` did not compile at all — `unknown package "b"` — while the same call on a
+  package-level variable worked.
+
 ### Behaviour changes
 
 - **A non-name target on the left of `:=` in a `select` clause is refused**,
@@ -46,6 +50,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A deferred call evaluated its receiver, and its callee, at the wrong time.**
+  Go evaluates both where the `defer` stands — they are arguments, and the arguments
+  were already captured there — but they were read again at the return, so
+  `defer ws[0].show()` reported what `ws[0]` held at the *end* of the function, and
+  `defer f()` through a function variable ran whatever `f` held by then. Silent:
+  ordinary values, printed at a plausible time. A value receiver captures a copy now
+  and a pointer receiver the address, which is the distinction Go draws.
 - **A conversion applied to a call taking a slice expression did not compile.**
   `int(total(xs[:]))` — a slice expression handed to a call becomes a compound
   literal in C, and the conversion becomes a cast around it, which the backend

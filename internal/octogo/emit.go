@@ -2723,6 +2723,12 @@ type deferredCall struct {
 	args   []deferArg
 	cond   bool
 	slot   int
+	// A method call's receiver, captured at the defer statement like an argument --
+	// which is what it is: Go evaluates it there, so a value receiver keeps the
+	// value it had then. Empty for a plain function call.
+	recvCType  string // the temporary's type, already pointer-adjusted for the method
+	cname      string // the method's C name, empty when the temporary IS the callee
+	callsValue bool   // the temporary holds a function value, so it is called rather than passed
 }
 
 // deferArg is one argument of a deferred call. A literal needs no temporary --
@@ -2738,6 +2744,8 @@ type deferArg struct {
 func deferFlagName(slot int) string { return fmt.Sprintf("_ogo_defer%d", slot) }
 
 func deferArgName(slot, arg int) string { return fmt.Sprintf("_ogo_defer%d_a%d", slot, arg) }
+
+func deferRecvName(slot int) string { return fmt.Sprintf("_ogo_defer%d_r", slot) }
 
 // collectStructs records each package-level struct type's fields in the struct
 // environment and emits a C typedef -- `typedef struct { <t0> f0; ... } T;`.
@@ -8615,6 +8623,20 @@ func (e *emitter) emitDefer(nodes []Node) {
 		e.fail("a defer statement must be a function call")
 		return
 	}
+	// A method call's receiver is captured too, ahead of the arguments, because Go
+	// evaluates it where the defer stands: `defer w.show()` on a value receiver shows
+	// what w held then, not what it holds at the return. It also has to be captured
+	// for the replay to resolve at all -- the replay is emitted after the body's
+	// block scope has been left, so a LOCAL receiver's name is no longer typed by
+	// then, which is why a defer of a method on a local did not compile.
+	recvText, ok := e.deferReceiver(&d, head, suffix)
+	if !ok {
+		return
+	}
+	if d.recvCType != "" {
+		e.ind()
+		e.emit(deferRecvName(d.slot) + " = " + recvText + ";\n")
+	}
 	for _, a := range e.callArgExprs(call.ast) {
 		if e.isIntLiteral(a) {
 			d.args = append(d.args, deferArg{expr: a.ast, inline: true})
@@ -8643,6 +8665,94 @@ func (e *emitter) emitDefer(nodes []Node) {
 	e.defers = append(e.defers, d)
 }
 
+// deferReceiver classifies a deferred call whose callee is a method, filling in the
+// slot's receiver type and the method's C name and returning the C text the receiver
+// is captured from. A plain function call, a call into an imported package and a
+// call through a struct field holding a function value are all left alone: they name
+// no receiver, so there is nothing to evaluate early.
+//
+// The pointer adjustment happens at the capture, not at the call: a pointer-receiver
+// method captures the address, so it sees later writes exactly as Go says, and a
+// value-receiver method captures a copy, so it does not.
+func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (string, bool) {
+	base := e.soleIdent(head.ast)
+	if base == "" {
+		return "", true
+	}
+	steps := suffix[:len(suffix)-1]
+	if len(steps) == 0 {
+		// `defer f(args)`. If f is a VARIABLE holding a function, what is called is
+		// the value it holds where the defer stands, so that value is captured like
+		// a receiver; a declared function's own name names one thing forever and
+		// needs nothing.
+		if ct, ok := e.varType(base); ok && e.isFuncCType(ct) {
+			d.recvCType = ct
+			d.callsValue = true
+			return e.varRef(base), true
+		}
+		return "", true
+	}
+	if steps[len(steps)-1].sym != Selector {
+		return "", true
+	}
+	if _, isPkg := e.importQualifiers[base]; isPkg && len(steps) == 1 {
+		return "", true // `defer pkg.F(args)`
+	}
+	method := e.soleIdent(steps[len(steps)-1].ast)
+	chain := steps[:len(steps)-1]
+	// The receiver's type, and the text reaching it. A chain is rendered through
+	// emitAccessChain, which is what admits `ws[i].M()` and `p.ws[i].M()`.
+	var ctype, text string
+	if len(chain) == 0 {
+		ct, ok := e.varType(base)
+		if !ok {
+			return "", true // not a variable: leave it to the call path to report
+		}
+		ctype, text = ct, e.varRef(base)
+	} else {
+		cur, ok := e.accessChainType(base, chain)
+		if !ok {
+			return "", true
+		}
+		if ctype, ok = e.chainValueCType(cur); !ok {
+			return "", true
+		}
+		var pro []string
+		text, pro = e.capturePrologue(func() { e.emitAccessChain(base, chain) })
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+	}
+	// A field holding a function value is not a method: what is called is the
+	// value the field holds, and Go evaluates that where the defer stands too --
+	// `defer b.run()` calls what b.run held then, not what it holds at the return.
+	// So it is captured the same way, into a temporary of the function type, and
+	// the replay calls through that rather than reading the field again.
+	if ft, ok := e.fieldType(base, []string{method}); ok && e.isFuncCType(ft) && len(chain) == 0 {
+		d.cname = ""
+		d.recvCType = ft
+		d.callsValue = true
+		return e.fieldAccessC(base, []string{method}), true
+	}
+	cname := methodCName(methodBaseType(ctype), method)
+	if _, isMethod := e.funcRet[cname]; !isMethod {
+		return "", true
+	}
+	wantPtr := e.methodPtr[cname]
+	recv, ok := e.chainReceiver(text, ctype, true, wantPtr)
+	if !ok {
+		e.fail("cannot take the address of %s for a pointer-receiver method", text)
+		return "", false
+	}
+	d.cname = cname
+	d.recvCType = methodBaseType(ctype)
+	if wantPtr {
+		d.recvCType += "*"
+	}
+	return recv, true
+}
+
 // emitDeferDecls declares the temporaries backing every defer slot in the function,
 // at function scope. They must outlive the block a defer was written in, so they
 // cannot be declared at the defer itself. The body is emitted into a buffer first,
@@ -8652,6 +8762,10 @@ func (e *emitter) emitDeferDecls() {
 		if d.cond {
 			e.ind()
 			e.emit("int " + deferFlagName(d.slot) + " = 0;\n")
+		}
+		if d.recvCType != "" {
+			e.ind()
+			e.emit(d.recvCType + " " + deferRecvName(d.slot) + " = " + e.zeroInitC(d.recvCType) + ";\n")
 		}
 		for i, a := range d.args {
 			if a.inline {
@@ -8675,6 +8789,26 @@ func (e *emitter) emitDeferred() {
 	for i := len(e.defers) - 1; i >= 0; i-- {
 		d := e.defers[i]
 		e.deferReplay, e.deferReplayArgs = d.slot, d.args
+		if d.recvCType != "" {
+			// The receiver is a temporary of this function, so the call is written
+			// here rather than through emitCall, which would resolve the receiver's
+			// name again -- in a scope that has already been left.
+			e.ind()
+			if d.cond {
+				e.emit("if (" + deferFlagName(d.slot) + ") ")
+			}
+			args := e.argsCText(d.cname, d.suffix[len(d.suffix)-1].ast)
+			if d.callsValue {
+				e.emit(deferRecvName(d.slot) + "(" + args + ");\n")
+			} else {
+				if args != "" {
+					args = ", " + args
+				}
+				e.emit(d.cname + "(" + deferRecvName(d.slot) + args + ");\n")
+			}
+			e.deferReplay, e.deferReplayArgs = -1, nil
+			continue
+		}
 		if d.cond {
 			// The flag is a statement prefix, so the call emitCall writes lands as
 			// the guarded statement: `if (_ogo_deferN) f(...);`.

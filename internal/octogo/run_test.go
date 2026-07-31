@@ -950,6 +950,95 @@ func main() {
 		want: "104 101 111\nel llo he hello\nel lo\n, world 12\n>  62 9\n407 3\n119 or 5\n",
 	},
 	{
+		// A deferred method call evaluates its receiver where the defer stands, as
+		// Go does -- the receiver is an argument, and the arguments were already
+		// captured there. It was read again at the return instead, so
+		// `defer ws[0].show()` reported what ws[0] held at the END of the function.
+		// Silent: an ordinary value, printed at a plausible time.
+		//
+		// A LOCAL receiver did not compile at all, "unknown package b". The replay is
+		// emitted after the body's block scope has been left, and leaving a scope
+		// restores the emitter's type environment, so by then the local's name was
+		// typed by nothing. A package-level receiver kept working, which is why the
+		// corpus missed both halves of this.
+		//
+		// The adjustment happens at the capture rather than at the call, which is
+		// what keeps the two receiver kinds apart: a value receiver captures a copy
+		// and shows the old value, a pointer receiver captures the address and sees
+		// the later write. Both are checked here, on one variable.
+		//
+		// What is CALLED is captured on the same rule when it is a value rather than
+		// a name -- a function held in a variable or in a struct field -- since Go
+		// evaluates that where the defer stands as well. `defer f()` ran whatever f
+		// held at the return, and the field form did not compile.
+		name: "a deferred method captures its receiver",
+		src: `type worker struct {
+	id int
+}
+
+func (w worker) show(tag string) { println(tag, w.id) }
+
+func (w *worker) bump() { w.id += 100 }
+
+type pool struct {
+	ws []worker
+}
+
+type box struct {
+	run func()
+}
+
+func hi() { println("hi") }
+
+func bye() { println("bye") }
+
+var ws [2]worker
+
+func run() {
+	// A local receiver: this did not compile at all, the replay being emitted
+	// after the body's scope had been left.
+	var b worker
+	b.id = 1
+	defer b.show("local")
+
+	// A value receiver copies at the defer statement; a pointer receiver keeps
+	// the address, so it sees the later write.
+	ws[0].id = 2
+	defer ws[0].show("array value")
+	defer ws[0].bump()
+
+	// A receiver reached through a chain.
+	p := pool{ws: ws[:]}
+	p.ws[1].id = 3
+	defer p.ws[1].show("chain")
+
+	// The argument is captured at the defer, as before.
+	tag := "arg"
+	defer b.show(tag)
+
+	// What is CALLED is captured too, when it is a value rather than a name: a
+	// function held in a variable, and one held in a struct field.
+	f := hi
+	defer f()
+	bx := box{run: hi}
+	defer bx.run()
+	f = bye
+	bx.run = bye
+
+	b.id = 11
+	ws[0].id = 22
+	p.ws[1].id = 33
+	tag = "changed"
+}
+
+func main() {
+	run()
+	println("after", ws[0].id, ws[1].id)
+}
+`,
+		want: "hi\nhi\narg 1\nchain 3\narray value 2\nlocal 1\nafter 122 33\n",
+	},
+	{
 		// A select clause may receive into anything an assignment can write to. The
 		// clause read only the head identifier off its target, so `case s.last =
 		// <-a:` assigned the received int to s -- the whole struct -- and the C
