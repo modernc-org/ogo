@@ -557,6 +557,16 @@
 //	FieldDecl = "*" [ identifier "." ] identifier
 //		| identifier [ "." identifier | { "," identifier } Type ] .
 //
+// A struct type may be written where a type is wanted rather than declared with a
+// name of its own -- an ANONYMOUS struct:
+//
+//	var p struct {
+//		x, y int
+//	}
+//
+// As in Go, two of them are the same type when their fields match, so a value of
+// one may be assigned to a variable of the other.
+//
 // Within a struct, non-blank field names must be unique.
 //
 // A field written as a bare type name is EMBEDDED: its own fields and methods are

@@ -1671,6 +1671,68 @@ func main() {
 		want: "2 5 5\n15\n16 100 16 100\n0\n",
 	},
 	{
+		// An anonymous struct type, written where a type is wanted rather than
+		// declared with a name of its own. Go gives two of them the same identity
+		// when their fields match, so the typedef is minted once per SHAPE -- which
+		// is what makes the assignment on the third line legal, and what stops a
+		// typedef per mention.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "anonymous struct types",
+		src: `// A package-level one, and a field of a named struct.
+var origin struct {
+	x, y int
+}
+
+type frame struct {
+	at struct {
+		x, y int
+	}
+	n int
+}
+
+var gf frame
+
+func shift(p *struct {
+	x, y int
+}, dx int) {
+	p.x += dx
+}
+
+func main() {
+	// A local, its fields written and read.
+	var p struct {
+		x, y int
+	}
+	p.x, p.y = 3, 4
+	println(p.x, p.y)
+
+	// Two anonymous structs with the same fields are the SAME type, so one is
+	// assignable to the other.
+	origin = p
+	println(origin.x, origin.y)
+
+	// As a struct field, at any depth.
+	gf.at.x = 7
+	gf.n = 1
+	println(gf.at.x, gf.n)
+
+	// Through a pointer parameter.
+	shift(&p, 10)
+	println(p.x)
+
+	// An array of them.
+	var pts [2]struct {
+		x, y int
+	}
+	pts[0].x = 1
+	pts[1].x = 2
+	println(pts[0].x + pts[1].x)
+}
+`,
+		want: "3 4\n3 4\n7 1\n13\n3\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

@@ -1570,6 +1570,52 @@ func (e *emitter) funcTypeFor(fv funcValueType) string {
 	return name
 }
 
+// fieldDeclSuffix is the C declarator suffix a field needs: the extents of a fixed
+// array field, and nothing at all otherwise. A zero arrDim's declSuffix is "[]",
+// which is a declaration C rejects in a struct.
+func fieldDeclSuffix(fld structField) string {
+	if fld.dim.bound == "" {
+		return ""
+	}
+	return fld.dim.declSuffix()
+}
+
+// anonStructType mints (or reuses) the typedef standing for an anonymous struct
+// type. Go gives two of them the same identity when their fields match, so the
+// typedef is keyed by the SHAPE and not by where it was written -- which is what
+// makes a value of one assignable to a variable of the other, and what stops a
+// program from minting a typedef per mention.
+func (e *emitter) anonStructType(structAST []int32) string {
+	fields := e.structFieldsOf(structAST)
+	var key strings.Builder
+	for _, fld := range fields {
+		key.WriteString(fld.ctype + " " + fld.name + fieldDeclSuffix(fld) + ";")
+	}
+	if name, ok := e.anonStructNames[key.String()]; ok {
+		return name
+	}
+	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anon%d", len(e.anonStructNames)))
+	e.anonStructNames[key.String()] = name
+	e.structs[name] = fields
+	e.typeNames[name] = true
+
+	deps := make([]string, 0, len(fields))
+	text := e.captureC(func() {
+		e.emit("typedef struct {")
+		for _, fld := range fields {
+			deps = append(deps, fld.ctype)
+			e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fieldDeclSuffix(fld) + ";")
+		}
+		if len(fields) == 0 {
+			// As for a named empty struct: C rejects a member-less one.
+			e.emit(" char _ogo_empty;")
+		}
+		e.emit(" } " + name + ";\n")
+	})
+	e.addTypedef(name, text, deps...)
+	return name
+}
+
 // typedefUnit is one declaration of the typedef section: the C name it declares,
 // the text declaring it, and the names that must be declared before it. The section
 // is emitted in dependency order rather than in fixed groups (see orderTypedefs),
@@ -2272,7 +2318,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2770,6 +2816,7 @@ type emitter struct {
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
 	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
+	anonStructNames    map[string]string        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
 	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName    map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
 	appendElems        map[string]bool          // element C types needing the trapping ogo_append_<T> helper
@@ -6913,6 +6960,11 @@ func (e *emitter) cType(ast []int32) string {
 	if len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == FUNC {
 		name, _ := e.funcType(ast)
 		return name
+	}
+	// An anonymous struct type, `struct{ x, y int }`, written where a type is
+	// wanted rather than declared with a name of its own.
+	if structAST := e.structTypeAST(ast); structAST != nil {
+		return e.anonStructType(structAST)
 	}
 	// An interface type written out. The checker admits it and its method set; the
 	// representation is settled (a data pointer beside a static vtable, see

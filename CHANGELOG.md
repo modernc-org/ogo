@@ -88,6 +88,11 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **Anonymous struct types.** `var p struct{ x, y int }`, written where a type is
+  wanted rather than declared with a name of its own — as a variable, a field of
+  another struct, a parameter, or an array's element. As in Go, two of them are the
+  same type when their fields match, so one is assignable to the other; the typedef
+  is minted once per *shape* rather than once per mention.
 - **`ogo test` runs tests, on the board.** It builds a package together with its
   `*_test.ogo` files and a generated runner, loads the result on a connected P2, and
   reports what the tests printed — Go's `--- PASS` / `--- FAIL` lines, and an exit
