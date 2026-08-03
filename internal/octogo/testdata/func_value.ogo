@@ -71,18 +71,40 @@ func notAFunction() {
 // A function literal is a value of the same kind: it is lifted to a file-scope
 // function and its name is what stands here. See func_literal.ogo for its own rule.
 //
-// A method value is the one function-valued form still refused where it is written,
-// rather than left to surface as a puzzling call error later: it must carry its
-// receiver alongside the code, which a function pointer does not.
+// A method value is taken with its receiver BOUND: it is lifted to a function of
+// its own, so it stays a one-word function pointer like any other function value.
+// What can be bound is a pointer-receiver method on a package-level variable; the
+// two things that cannot are refused where they are written.
+
 type T struct{ v int }
 
 func (t T) get() int { return t.v }
 
-func unsupported() {
+type P struct{ v int }
+
+func (p *P) bump(k int) int {
+	p.v += k
+	return p.v
+}
+
+var gp P
+
+func methodValues() {
 	f := func(n int) int { return n }
 	println(f(1))
+
+	// A pointer-receiver method on a package variable: bound, and usable as any
+	// function value is.
+	m := gp.bump
+	println(m(1))
+
 	var t T = T{5}
-	// ERROR "a method value is not supported yet"
-	m := t.get
-	println(m())
+	// ERROR cannot take t.get as a value: a method value copies its receiver
+	g := t.get
+	println(g())
+
+	var lp P
+	// ERROR cannot take lp.bump as a value: a method value binds the address of its receiver
+	h := lp.bump
+	println(h(1))
 }

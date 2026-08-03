@@ -88,6 +88,21 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **Method values**, with the receiver bound. `f := gp.bump` takes a method as a
+  value; the compiler lifts it to a function of its own naming the receiver, so the
+  value stays an ordinary one-word function pointer — usable in a variable, an
+  argument, a dispatch table — and costs nothing that any other function value pays.
+
+  Two forms are refused, with the reason: a *value*-receiver method, because Go
+  copies the receiver at the moment the value is made and there is no heap to copy
+  into (binding the address would alias, and diverge the moment anything wrote to
+  the variable); and a receiver that is not a package-level variable, whose address
+  does not outlive the value.
+
+  Go carries the receiver *in* the value, which handles any receiver. That
+  representation was measured on a P2-EDGE first: it costs about a quarter of the
+  time of **every** call through a function value, so it was declined and the bound
+  form built instead. `doc/funcval-cost.c` has the numbers and how to revisit it.
 - **Struct embedding.** A field written as a bare type name puts its own fields and
   methods on the outer type, at any depth, and is still reachable by that name when
   you want to be explicit. In C it is an ordinary member named after the type; what

@@ -1614,6 +1614,63 @@ func main() {
 		want: "21\n10\nbody done\nfirst deferred\nsecond deferred\n",
 	},
 	{
+		// A method value: a method taken as a value, with its receiver bound. Go
+		// carries the receiver in the value, which needs a representation that costs
+		// about a quarter of the time of EVERY call through a function value on this
+		// part (doc/funcval-cost.c). Here the receiver is bound at compile time
+		// instead -- the value is lifted to a function of its own -- so it stays an
+		// ordinary one-word function pointer and costs nothing that anything else
+		// pays. What cannot be bound is refused: a value receiver (Go copies it) and
+		// a receiver that is not a package-level variable.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a method value with its receiver bound",
+		src: `type counter struct {
+	n int
+}
+
+func (c *counter) Bump(k int) int {
+	c.n += k
+	return c.n
+}
+
+func (c *counter) Reset() { c.n = 0 }
+
+func (c counter) Get() int { return c.n }
+
+type Op func(int) int
+
+var gc counter
+
+var gd counter
+
+var table [2]Op
+
+func apply(f Op, k int) int { return f(k) }
+
+func main() {
+	// Bound to a variable and called through it: the receiver is bound, so it is
+	// the same object every call.
+	f := gc.Bump
+	println(f(2), f(3), gc.n)
+
+	// Handed to a parameter, and held in a dispatch table beside a plain function.
+	println(apply(gc.Bump, 10))
+	table[0] = gc.Bump
+	table[1] = gd.Bump
+	println(table[0](1), table[1](100), gc.n, gd.n)
+
+	// A method with no result, and the same value written twice.
+	r := gc.Reset
+	r()
+	r2 := gc.Reset
+	r2()
+	println(gc.n)
+}
+`,
+		want: "2 5 5\n15\n16 100 16 100\n0\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

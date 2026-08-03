@@ -2197,7 +2197,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2652,9 +2652,16 @@ type emitter struct {
 	// LIFTED to a file-scope function of a minted name and the expression becomes
 	// that name. Collected while walking a body, so they can only be written out
 	// once every body has been walked -- like the channel cells.
-	liftedProtos       []string
-	liftedDefs         []string
-	liftSeq            int
+	liftedProtos []string
+	liftedDefs   []string
+	liftSeq      int
+	// methodValueTypes: a method's C name -> its type AS A VALUE, which is its
+	// signature without the receiver. Recorded with the signatures, since the
+	// declaration may be in another package's file by the time a value is made.
+	methodValueTypes map[string]funcValueType
+	// methodValueOf: "<global>.<method>" -> the function already lifted for it, so
+	// the same method value written twice mints one function.
+	methodValueOf      map[string]string
 	funcParams         map[string][]string      // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	methodPtr          map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
@@ -4113,6 +4120,10 @@ func (e *emitter) collectResults(ast []int32) {
 			// program, nearly all of them unused. Rendered now, while this package's
 			// file is still the current one, since the use may be in another.
 			e.funcValueTypes[cname] = e.funcSigCParts(sig)
+		} else {
+			// A METHOD's type as a value is its signature without the receiver, which
+			// is what sig already is -- the receiver is a production of its own.
+			e.methodValueTypes[cname] = e.funcSigCParts(sig)
 		}
 		e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 		if _, at := e.variadicElem(sig); at >= 0 {
@@ -4845,6 +4856,95 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	}
 	e.liftedProtos = append(e.liftedProtos, proto)
 	e.liftedDefs = append(e.liftedDefs, def.String())
+	return cname, true
+}
+
+// factorMethodValue recognises "x.M" standing as a VALUE: an identifier and a
+// single Selector, with no call after it. A call is factorCall's, and a field read
+// resolves to a field rather than to a method, so neither reaches here.
+func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", "", false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return "", "", false
+	}
+	base = e.src(kids[0].tok)
+	method = e.soleIdent(steps[0].ast)
+	if base == "" || method == "" {
+		return "", "", false
+	}
+	rct, isVar := e.varType(base)
+	if !isVar || !e.isUserType(methodBaseType(rct)) {
+		return "", "", false
+	}
+	if _, isMethod := e.methodValueTypes[methodCName(methodBaseType(rct), method)]; !isMethod {
+		return "", "", false
+	}
+	return base, method, true
+}
+
+// liftMethodValue emits a method value as a function of its own with the receiver
+// bound, and returns that function's name -- which is what the expression becomes,
+// an ordinary one-word function pointer like any other function value.
+//
+// This is why a method value costs nothing that anything else pays. Go's
+// representation -- a value pointing at a struct whose first word is the code
+// pointer -- would carry ANY receiver, and was measured to cost about a quarter of
+// the time of every call through a function value on this part
+// (doc/funcval-cost.c). Binding the receiver at compile time instead needs no
+// representation at all, and the checker refuses what it cannot bind.
+func (e *emitter) liftMethodValue(base, method string) (string, bool) {
+	rct, _ := e.varType(base)
+	bt := methodBaseType(rct)
+	mcname := methodCName(bt, method)
+	if !e.methodPtr[mcname] {
+		e.fail("cannot take %s.%s as a value: only a pointer-receiver method may be taken here", base, method)
+		return "", false
+	}
+	key := e.varRef(base) + "." + method
+	if cn, done := e.methodValueOf[key]; done {
+		return cn, true
+	}
+	fv := e.methodValueTypes[mcname]
+	if len(fv.res) > 1 {
+		e.fail("a method with more than one result cannot be used as a value yet")
+		return "", false
+	}
+	ret := "void"
+	if len(fv.res) == 1 {
+		ret = fv.res[0]
+	}
+	cname := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_mv%d", e.liftSeq))
+	e.liftSeq++
+
+	var params, args []string
+	for i, pt := range fv.params {
+		nm := fmt.Sprintf("p%d", i)
+		params = append(params, pt+" "+nm)
+		args = append(args, nm)
+	}
+	sigText := "void"
+	if len(params) != 0 {
+		sigText = strings.Join(params, ", ")
+	}
+	call := mcname + "(&" + e.varRef(base)
+	if len(args) != 0 {
+		call += ", " + strings.Join(args, ", ")
+	}
+	call += ")"
+	proto := ret + " " + cname + "(" + sigText + ")"
+	body := "\t" + call + ";\n"
+	if ret != "void" {
+		body = "\treturn " + call + ";\n"
+	}
+	e.liftedProtos = append(e.liftedProtos, proto)
+	e.liftedDefs = append(e.liftedDefs, proto+" {\n"+body+"}\n")
+	e.funcValueTypes[cname] = fv
+	e.funcRet[cname] = fv.res
+	e.funcParams[cname] = fv.params
+	e.methodValueOf[key] = cname
 	return cname, true
 }
 
@@ -13473,6 +13573,15 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		if n.sym == Factor {
 			// A function literal has the type its signature mints, the same typedef
 			// a named function used as a value gets.
+			// "gq.Bump" has the method's type without its receiver.
+			if base, method, ok := e.factorMethodValue(kids); ok {
+				rct, _ := e.varType(base)
+				fv := e.methodValueTypes[methodCName(methodBaseType(rct), method)]
+				if len(fv.res) > 1 {
+					return "", false
+				}
+				return e.funcTypeFor(fv), true
+			}
 			if lit, suffix, ok := e.factorFuncLit(kids); ok {
 				var sig []int32
 				for c := range it(lit.ast) {
@@ -14260,6 +14369,14 @@ func (e *emitter) emitExprNode(n Node) {
 		if n.sym == Factor {
 			// A function literal becomes the file-scope function it is lifted to,
 			// named here as any function used as a value is.
+			// "gq.Bump" standing as a value: the function lifted for it, named here
+			// as any function used as a value is.
+			if base, method, ok := e.factorMethodValue(kids); ok {
+				if cname, ok := e.liftMethodValue(base, method); ok {
+					e.emit(cname)
+				}
+				return
+			}
 			if lit, suffix, ok := e.factorFuncLit(kids); ok {
 				cname, ok := e.liftFuncLit(lit)
 				if !ok {

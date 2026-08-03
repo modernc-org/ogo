@@ -1128,11 +1128,25 @@
 // A "go" statement's callee must be a declared function or a function literal, not
 // a variable holding one, since a cog's entry point is generated per function.
 //
-// A method value, "t.get", must carry its receiver alongside the code, which a
-// function pointer does not. The representation that would -- Go's own, where a
-// function value points at a struct whose first word is the code pointer -- costs
-// about a quarter of the time of every call through a function value on this
-// target. That was measured rather than guessed; see doc/funcval-cost.c.
+// A method value, "gp.bump", is taken with its receiver BOUND: the compiler lifts
+// it to a function of its own that names the receiver, so the value stays an
+// ordinary one-word function pointer and costs nothing that any other function
+// value pays.
+//
+// Two forms are refused, and neither is an omission:
+//
+//   - a VALUE-receiver method. Go copies the receiver at the moment the value is
+//     made, and there is no heap to copy into; binding the address instead would
+//     alias the variable, so the program would answer differently the moment
+//     anything wrote to it.
+//   - a receiver that is not a package-level variable, whose address does not
+//     outlive the value.
+//
+// Go carries the receiver IN the value instead, which handles any receiver. The
+// representation that would do that here -- a function value pointing at a struct
+// whose first word is the code pointer -- costs about a quarter of the time of every
+// call through a function value on this target, measured rather than guessed. See
+// doc/funcval-cost.c, which also records how to revisit it.
 //
 // # Function Literals
 //

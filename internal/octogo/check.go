@@ -3948,6 +3948,19 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		return nil
 	}
 	if head, field, ok := f.exprFieldRead(n); ok {
+		// A METHOD VALUE, `f := gq.Bump`, has the method's signature -- the receiver
+		// is bound, not a parameter -- so a call through the variable is checked
+		// against it exactly as a call on the receiver would be.
+		//
+		// Only one this compiler can bind answers here. Answering for the others too
+		// would make the variable look well typed and leave the refusal to the C
+		// compiler, which is what "Unknown symbol 'lc'" was.
+		if fd, ptrRecv, atPkg, isMV := f.methodValueParts(s, head, field); isMV {
+			if ptrRecv && atPkg && fd.Type != nil {
+				return fd.Type.Signature
+			}
+			return nil
+		}
 		return f.funcSig(s, f.fieldTypeNode(s, head, field))
 	}
 	callee, ok := f.exprCallee(n)
@@ -4087,26 +4100,60 @@ func (f *File) checkFuncAssign(s *Scope, want *SignatureNode, value Node, what s
 	f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s", f.exprSource(value), f.sigString(have, true), ws, what)
 }
 
-// reportUnsupportedFuncValue reports the two function-valued expressions the
-// language admits nowhere yet: a function literal and a method value. Both are
-// wanted, and both need more than a C function pointer -- a literal that captures
-// nothing is still a function this compiler does not name, and a method value must
-// carry its receiver alongside the code. Reported where written, so the message
-// names what was asked for.
+// methodValueParts resolves "x.M" used as a VALUE: the method's declaration,
+// whether its receiver is a pointer, and whether x is a package-level variable. It
+// answers only for a name that is a method at all, so an ordinary field read falls
+// through it.
+func (f *File) methodValueParts(s *Scope, head, field Token) (fd *FuncDeclNode, ptrRecv, atPackageScope bool, ok bool) {
+	d, isVar := s.find(head.Src()).(*VarDeclaration)
+	if !isVar || !d.typeName.IsValid() {
+		return nil, false, false, false
+	}
+	td, isType := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !isType {
+		return nil, false, false, false
+	}
+	m := td.methods[field.Src()]
+	if m == nil {
+		return nil, false, false, false
+	}
+	sc, _ := s.find2(head.Src())
+	return m, td.ptrRecv[field.Src()], sc != nil && sc.Kind == PackageScope, true
+}
+
+// reportUnsupportedFuncValue reports a method value this compiler cannot give a
+// meaning to. What it CAN give one to is narrow and deliberate: a pointer-receiver
+// method on a package-level variable, which is lifted to a function of its own with
+// the receiver bound -- so a method value costs nothing that anything else pays.
+//
+// The two refusals are not omissions:
+//
+//   - a VALUE-receiver method: Go copies the receiver at the moment the value is
+//     made, and there is no heap to copy into. Binding the address instead would
+//     alias the variable, and the program would answer differently the moment
+//     anything wrote to it -- the same divergence the pointer-only interface rule
+//     exists to prevent.
+//   - a receiver that is not a package-level variable: what the lifted function
+//     binds is an address, and a local's does not outlive the value.
 func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	head, field, ok := f.exprFieldRead(n)
 	if !ok {
 		return false
 	}
-	d, ok := s.find(head.Src()).(*VarDeclaration)
-	if !ok || !d.typeName.IsValid() {
+	_, ptrRecv, atPkg, isMV := f.methodValueParts(s, head, field)
+	if !isMV {
 		return false
 	}
-	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
-	if !ok || td.methods[field.Src()] == nil {
-		return false
+	switch {
+	case !ptrRecv:
+		f.err(field.Position(), "cannot take %s.%s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here",
+			head.Src(), field.Src())
+	case !atPkg:
+		f.err(field.Position(), "cannot take %s.%s as a value: a method value binds the address of its receiver, so %s must be a package-level variable",
+			head.Src(), field.Src(), head.Src())
+	default:
+		return false // supported: lifted with the receiver bound
 	}
-	f.err(field.Position(), "a method value is not supported yet")
 	return true
 }
 
@@ -5529,6 +5576,11 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token) {
 		return
 	}
 	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {
+		// A METHOD name here is a method value, not a missing field. Whether this
+		// one can be given a meaning is reportUnsupportedFuncValue's question.
+		if _, _, _, isMV := f.methodValueParts(s, head, field); isMV {
+			return
+		}
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 	}
 }

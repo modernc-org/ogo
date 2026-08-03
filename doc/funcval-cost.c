@@ -51,6 +51,12 @@
 // four-way switch over direct calls (D) here. A dispatch table is already the right
 // shape on this target, which is what makes slowing it down the wrong trade.
 //
+// What was built instead: a method value whose receiver is BOUND AT COMPILE TIME.
+// `f := gp.bump` for a package-level gp lifts to a function of its own that names
+// gp, so the value stays a one-word function pointer and nothing else pays. It
+// handles a pointer-receiver method on a package-level variable and refuses the
+// rest -- which is the subset where binding an address means exactly what Go means.
+//
 // The decision recorded with this: not adopted. If it is revisited, the way to
 // avoid a non-local cliff -- one method value making an unrelated dispatch table
 // 24% slower -- is to choose the representation PER SIGNATURE rather than per

@@ -422,6 +422,14 @@
 // -- which this measurement shows is already faster here than a switch over direct
 // calls -- is exactly what it slows down.
 //
+// What was built instead is the subset that needs no representation: a method value
+// whose receiver is BOUND AT COMPILE TIME, lifted to a function of its own that
+// names the receiver. It handles a pointer-receiver method on a package-level
+// variable, which is where binding an address means exactly what Go means, and
+// refuses the rest -- a value receiver, whose receiver Go copies, and a local one,
+// whose address does not outlive the value. So the cost lands only on the feature's
+// users, and only as the one extra frame a lifted function is.
+//
 // If it is revisited: choose the representation PER SIGNATURE, not per program. The
 // whole program is one translation unit, so the compiler can see which function
 // types a method value is ever made of, and only those need pay. Choosing per
