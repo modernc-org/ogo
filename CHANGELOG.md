@@ -88,6 +88,23 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **Variadic parameters.** `func sum(xs ...int) int` takes the rest of a call's
+  arguments, however many — none included — and inside the body the parameter *is* a
+  `[]int`, so `len`, `cap`, `range` and indexing all ask a slice. A call may spread
+  an existing one instead, `sum(xs...)`. Functions and methods both.
+
+  Go allocates the pack a call builds. There is no heap here, so it is an array of
+  the *calling* function, and the lifetime rules see it exactly as they see a slice
+  literal's backing: a callee that lets its variadic parameter outlive the call is
+  refused, and told to pass a slice of a package array instead. The spread form is
+  judged by where its slice came from, as any slice argument is.
+
+  Refused with the reason: a `...` that is not the final parameter, one shared by
+  several names, one in a result list, a call missing the fixed arguments before it,
+  and a trailing argument of the wrong element type.
+
+  `ogo fmt` writes `xs ...int` and `sum(xs...)`, which is what gofmt writes — the
+  same token spaced two ways, told apart by whether it sits in a parameter.
 - **A type switch**, `switch v := s.(type)`, switches on an interface value's
   dynamic type. Each clause binds the name at the type that clause proved — the
   concrete pointer where one type was named, the interface value where several were

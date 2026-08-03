@@ -1,0 +1,46 @@
+// A variadic parameter takes the rest of a call's arguments, however many. It IS a
+// []T inside the function -- len, cap, range and indexing all ask a slice -- and
+// what makes it different is only the call site, where the values are packed.
+//
+// Go allocates that pack. There is no heap here, so it is an array of the CALLING
+// function, which is why a callee that lets it outlive the call is refused, and why
+// the refusal names the fix.
+
+func sum(xs ...int) int {
+	t := 0
+	for i := 0; i < len(xs); i++ {
+		t += xs[i]
+	}
+	return t
+}
+
+func tagged(tag string, xs ...int) int { return len(tag) + cap(xs) }
+
+func main() {
+	println(sum(), sum(1), sum(1, 2, 3))
+	println(tagged("t"), tagged("t", 1, 2))
+
+	// A value of the wrong type is one of the rest, so it is checked against the
+	// element type rather than against the slice.
+	// ERROR cannot use "a" of type string as type int in argument to sum
+	println(sum("a"))
+
+	// The fixed parameters before it still have to be supplied.
+	// ERROR not enough arguments in call to tagged
+	println(tagged())
+}
+
+// Only the final parameter may be variadic, and only one name may share it: "a, b
+// ...int" would make both of them so.
+
+// ERROR can only use \.\.\. with final parameter in list
+func early(xs ...int, k int) int { return k }
+
+// ERROR can only use \.\.\. with final parameter in list
+func shared(a, b ...int) int { return a }
+
+// A result is one value, so it is never variadic. The grammar admits the spelling
+// only because results and parameters share a production.
+
+// ERROR cannot use \.\.\. in receiver or result parameter list
+func results() (xs ...int) { return }

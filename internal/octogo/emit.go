@@ -2181,7 +2181,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2618,6 +2618,7 @@ type emitter struct {
 	includes           map[string]bool
 	funcRet            map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
 	funcSliceParams    map[string][]string      // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
+	funcVariadic       map[string]int           // same key -> the position of a "...T" parameter, for the pack a call has to build
 	funcParams         map[string][]string      // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	methodPtr          map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
@@ -4051,6 +4052,9 @@ func (e *emitter) collectResults(ast []int32) {
 			e.funcValueTypes[cname] = e.funcSigCParts(sig)
 		}
 		e.funcSliceParams[cname] = e.paramSliceTypes(sig)
+		if _, at := e.variadicElem(sig); at >= 0 {
+			e.funcVariadic[cname] = at
+		}
 		e.funcParams[cname] = e.cParamTypes(sig)
 		if len(resTypes) > 1 {
 			text := e.captureC(func() {
@@ -4475,7 +4479,11 @@ func (e *emitter) paramSliceTypes(sig []int32) []string {
 		if n.sym != ParameterList {
 			continue // parameters are the only ParameterList; results are ResultList/Type
 		}
-		e.forEachParam(n.ast, func(_ string, ta []int32, _ bool) {
+		e.forEachParamV(n.ast, func(_ string, ta []int32, _, variadic bool) {
+			if variadic {
+				out = append(out, sliceCName(e.cType(ta)))
+				return
+			}
 			elem, ok := e.sliceType(ta)
 			if !ok {
 				out = append(out, "")
@@ -4982,7 +4990,14 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 // entry (see emitParamCopies) to restore the value semantics.
 func (e *emitter) cParamList(ast []int32) []string {
 	var out []string
-	e.forEachParam(ast, func(name string, ta []int32, _ bool) {
+	e.forEachParamV(ast, func(name string, ta []int32, _, variadic bool) {
+		if variadic {
+			// "...T" is received as the []T it means; the caller builds the header.
+			elem := e.cType(ta)
+			e.needSlice(elem)
+			out = append(out, sliceCName(elem)+" "+cIdent(name))
+			return
+		}
 		if elem, _, ok := e.arrayType(ta); ok {
 			out = append(out, elem+"* "+paramArgName(name))
 			return
@@ -5004,7 +5019,13 @@ func (e *emitter) cParamTypes(sig []int32) []string {
 		if n.sym != ParameterList {
 			continue
 		}
-		e.forEachParam(n.ast, func(name string, ta []int32, _ bool) {
+		e.forEachParamV(n.ast, func(name string, ta []int32, _, variadic bool) {
+			if variadic {
+				elem := e.cType(ta)
+				e.needSlice(elem)
+				out = append(out, sliceCName(elem))
+				return
+			}
 			if elem, _, ok := e.arrayType(ta); ok {
 				out = append(out, elem+"*")
 				return
@@ -5052,23 +5073,53 @@ func (e *emitter) resultCType(ta []int32) string {
 // calls). It underlies both the C parameter rendering (cParamList) and the local
 // type environment (bindParams).
 func (e *emitter) forEachParam(ast []int32, fn func(name string, typeAST []int32, synthetic bool)) {
+	e.forEachParamV(ast, func(name string, typeAST []int32, synthetic, _ bool) {
+		fn(name, typeAST, synthetic)
+	})
+}
+
+// forEachParamV is forEachParam with the fourth thing a caller may need: whether
+// the entry was written "...T". Its type AST is T, since that is what the source
+// wrote; what the parameter IS, in the signature and in the body alike, is a []T.
+func (e *emitter) forEachParamV(ast []int32, fn func(name string, typeAST []int32, synthetic, variadic bool)) {
 	i := 0
 	for _, d := range e.f.paramDecls(ast) {
 		if len(d.Names) == 0 {
-			fn(unnamedParamName(i), d.TypeAST.ast, true)
+			fn(unnamedParamName(i), d.TypeAST.ast, true, d.Variadic)
 			i++
 			continue
 		}
 		for _, nm := range d.Names {
 			name := nm.Src()
 			if name == "_" {
-				fn(unnamedParamName(i), d.TypeAST.ast, true)
+				fn(unnamedParamName(i), d.TypeAST.ast, true, d.Variadic)
 			} else {
-				fn(name, d.TypeAST.ast, false)
+				fn(name, d.TypeAST.ast, false, d.Variadic)
 			}
 			i++
 		}
 	}
+}
+
+// variadicElem names the element type of a signature's variadic parameter, and
+// which position it is at, or -1. The pack a call builds is a slice over that
+// element, so both are needed at the call site.
+func (e *emitter) variadicElem(sig []int32) (elem string, at int) {
+	at = -1
+	for n := range it(sig) {
+		if n.sym != ParameterList {
+			continue
+		}
+		i := 0
+		e.forEachParamV(n.ast, func(_ string, ta []int32, _, variadic bool) {
+			if variadic {
+				elem, at = e.cType(ta), i
+			}
+			i++
+		})
+		break
+	}
+	return elem, at
 }
 
 // unnamedParamName is the synthetic C name of the i-th parameter when it is
@@ -5093,9 +5144,16 @@ func (e *emitter) bindParams(sig []int32) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
-				e.forEachParam(n.ast, func(name string, ta []int32, synthetic bool) {
+				e.forEachParamV(n.ast, func(name string, ta []int32, synthetic, variadic bool) {
 					if synthetic {
 						return // an unnamed parameter binds nothing; the body cannot name it
+					}
+					if variadic {
+						elem := e.cType(ta)
+						e.needSlice(elem)
+						e.sliceVars[name] = elem
+						e.locals[name] = sliceCName(elem)
+						return
 					}
 					if elem, bound, ok := e.arrayType(ta); ok {
 						e.arrays[name] = arrDim{elem: elem, bound: bound}
@@ -10169,7 +10227,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			cname := methodCName(methodBaseType(rct), method)
 			e.emit(cname + "(")
 			e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
-			if len(e.callArgExprs(suffix[1].ast)) > 0 {
+			// A variadic parameter is passed even when the call wrote no arguments
+			// for it: the callee takes a []T either way, and an empty one is the
+			// zero header rather than nothing at all.
+			if _, at := e.variadicPack(cname); len(e.callArgExprs(suffix[1].ast)) > 0 || at >= 0 {
 				e.emit(", ")
 				e.emitCallArgs(cname, suffix[1].ast)
 			}
@@ -12421,6 +12482,55 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	}
 }
 
+// variadicPack names the element type of a callee's variadic parameter and the
+// position it sits at, or -1. It reads the recorded slice-parameter types rather
+// than the signature, so it answers for a method and an imported function too.
+func (e *emitter) variadicPack(cname string) (elem string, at int) {
+	i, ok := e.funcVariadic[cname]
+	if !ok {
+		return "", -1
+	}
+	sliceParams := e.funcSliceParams[cname]
+	if i >= len(sliceParams) || sliceParams[i] == "" {
+		return "", -1
+	}
+	return sliceElemFromCName(sliceParams[i]), i
+}
+
+// spreadCall reports whether a call wrote "f(xs...)", handing an existing slice to
+// a variadic parameter rather than values to pack.
+func (e *emitter) spreadCall(callSuffix []int32) bool {
+	for n := range it(callSuffix) {
+		if n.sym != ArgumentList {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym == 0 && e.f.ch(c.tok) == ELLIPSIS {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// packVariadic renders the []T a variadic call passes: an array of this frame
+// holding the trailing arguments, and a header over it. No arguments is the zero
+// header, which is Go's nil slice -- len 0, and nothing allocated for it.
+func (e *emitter) packVariadic(elem string, args []Node) string {
+	e.needSlice(elem)
+	if len(args) == 0 {
+		return "(" + sliceCName(elem) + "){0}"
+	}
+	var vals []string
+	for _, a := range args {
+		vals = append(vals, e.captureC(func() { e.emitExpr(a.ast) }))
+	}
+	tmp := e.newTmp()
+	n := strconv.Itoa(len(vals))
+	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"] = {"+strings.Join(vals, ", ")+"};\n")
+	return "(" + sliceCName(elem) + "){" + tmp + ", " + n + ", " + n + "}"
+}
+
 // callResultInfo resolves a call's C name and result types, for the three callees a
 // multi-result call can have: a function of this package, a method, and a function
 // of an imported one. The C name is what names the result struct, so it has to be
@@ -12551,7 +12661,29 @@ func (e *emitter) emitDiscard(expr []int32) {
 func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	sliceParams := e.funcSliceParams[cname]
 	args := e.callArgExprs(callSuffix)
-	e.checkCrossArgs(cname, args)
+	e.checkCrossArgs(cname, args, e.spreadCall(callSuffix))
+	// A variadic callee takes one []T where the call wrote however many values.
+	// They are packed into an array of this frame, which is what Go allocates for
+	// and this target cannot -- so the lifetime rules see it as a slice literal's
+	// backing, and a callee that keeps it is refused by them.
+	if elem, at := e.variadicPack(cname); at >= 0 && !e.spreadCall(callSuffix) {
+		if len(args) < at {
+			e.fail("not enough arguments in call to %s", cname)
+			return
+		}
+		pack := e.packVariadic(elem, args[at:])
+		for i, arg := range args[:at] {
+			if i != 0 {
+				e.emit(", ")
+			}
+			e.emitExpr(arg.ast)
+		}
+		if at != 0 {
+			e.emit(", ")
+		}
+		e.emit(pack)
+		return
+	}
 	// Go evaluates a call's arguments left to right. C leaves the order
 	// unspecified, and the two compilers this targets disagree: given
 	// `f(t(1), t(2), t(3))` the P2 backend evaluates left to right while the host's
@@ -14611,8 +14743,27 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 // The diagnostic has to carry that, because the line it points at contains no `go`
 // and no send -- so it names the callee and the parameter, which is what the reader
 // needs to find the crossing for themselves.
-func (e *emitter) checkCrossArgs(cname string, args []Node) {
+func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 	crosses := e.crossParams[cname]
+	// The pack a variadic call builds is an array of THIS frame, so a callee that
+	// lets its variadic parameter outlive the call is handed a reference that does
+	// not. Go allocates the pack and has no such problem; here it is the rule a
+	// slice literal already obeys, asked of an argument list the source did not
+	// write as a slice at all. A spread passes an existing slice instead, and is
+	// judged by where THAT came from, in the loop below.
+	if _, at := e.variadicPack(cname); !spread && at >= 0 && at < len(crosses) && crosses[at] != 0 {
+		why := "is stored where it outlives every frame"
+		if crosses[at]&leakCog != 0 {
+			why = "reaches another cog, which may outlive this function"
+		}
+		pos := e.f.tok(args[0].Pos()).Position()
+		if at < len(args) {
+			pos = e.f.tok(args[at].Pos()).Position()
+		}
+		e.fail("%v: cannot pass these values to %s: they are packed into an array of this function, and its parameter %d %s; pack them into a package array and pass a slice of it",
+			pos, e.funcSourceName(cname), at+1, why)
+		return
+	}
 	for i, a := range args {
 		if i >= len(crosses) || crosses[i] == 0 {
 			continue

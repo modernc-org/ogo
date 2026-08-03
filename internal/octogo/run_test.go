@@ -1410,6 +1410,62 @@ func main() {
 		want: "3 10 12\nrect\nnil\n",
 	},
 	{
+		// A variadic parameter, packed at the call and spread from a slice. Inside
+		// the function it IS a []T -- len, cap, range and index all ask a slice --
+		// so what the feature costs is the pack, which Go allocates and this target
+		// builds as an array of the CALLING function.
+		//
+		// Every line of this prints what real Go prints for the same program,
+		// including cap() of the pack and the empty call.
+		name: "variadic parameters, packed and spread",
+		src: `func sum(xs ...int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func tagged(tag string, xs ...int) int {
+	println(tag, len(xs), cap(xs))
+	return sum(xs...)
+}
+
+type acc struct {
+	n int
+}
+
+func (a *acc) add(xs ...int) int {
+	a.n += sum(xs...)
+	return a.n
+}
+
+var pool [4]int
+
+var ga acc
+
+func main() {
+	println(sum(1, 2, 3), sum(), sum(7))
+
+	// A fixed parameter before the variadic one, and forwarding with a spread.
+	println(tagged("three", 1, 2, 3))
+	println(tagged("none"))
+
+	// A slice over a package array, spread into the call.
+	pool[0], pool[1], pool[2], pool[3] = 1, 2, 3, 4
+	println(sum(pool[:]...))
+
+	// A method takes one too, and takes its empty pack when none is written.
+	println(ga.add(1, 2), ga.add(), ga.add(3))
+
+	// The arguments are ordinary expressions, evaluated where they stand.
+	k := 5
+	println(sum(k, k*2, sum(1, 1)))
+}
+`,
+		want: "6 0 7\nthree 3 3\n6\nnone 0 0\n0\n10\n3 3 6\n17\n",
+	},
+	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload
 		// and a capacity the pushes are refused at. It is what a priority queue on
 		// this target looks like, and it leans on most of what this release changed

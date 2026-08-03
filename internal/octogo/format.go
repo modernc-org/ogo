@@ -251,6 +251,13 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// distinguishing it from a block's or a composite literal's brace.
 	case curr == LBRACE && (prev == STRUCT || prev == INTERFACE):
 		return c.structBraceMultiline
+	// "..." binds tight to the type it introduces in a parameter, "xs ...int", and
+	// tight to the slice it follows in a call, "sum(xs...)". gofmt writes both that
+	// way, and the token appears nowhere else, so the two rules are the whole of it.
+	case prev == ELLIPSIS:
+		return false
+	case curr == ELLIPSIS:
+		return c.inParamDecl
 	case prev == ARROW:
 		if prevPrev == IDENT || prevPrev == RBRACK || prevPrev == RPAREN {
 			return true
@@ -546,8 +553,13 @@ type formatterCtx struct {
 	indentSepForIndex int32
 	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
-	inType            bool
-	inIndex           bool // True inside an Index, where ':' binds tight ("s[0:1]")
+	// inParamDecl is true inside one entry of a parameter or result list, which is
+	// what tells a variadic parameter's "..." from a call's spread: gofmt spaces
+	// the first off the name ("xs ...int") and binds the second to the slice
+	// ("sum(xs...)"), and the two are the same token in the same inParams context.
+	inParamDecl bool
+	inType      bool
+	inIndex     bool // True inside an Index, where ':' binds tight ("s[0:1]")
 	// sliceColonBlanks is true inside a multi-bound slice whose ":" gofmt spaces
 	// because one of the bounds is a binary expression ("xs[i+1 : j-1]").
 	sliceColonBlanks bool
@@ -964,6 +976,8 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				case Expression:
 					c.inType = false
 					c.inParams = false
+				case ParamDecl:
+					c.inParamDecl = true
 				case Type, FieldDecl:
 					c.inType = true
 				case Index:

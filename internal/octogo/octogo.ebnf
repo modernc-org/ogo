@@ -62,7 +62,7 @@ Signature      = "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
 Receiver       = "(" ParamDecl ")" .
 ParameterList  = ParamDecl { "," ParamDecl } [ "," ] .
 ResultList     = ParamDecl { "," ParamDecl } [ "," ] .
-ParamDecl      = Type [ Type ] .
+ParamDecl      = "..." Type | Type [ "..." ] [ Type ] .
 IdentifierList = identifier { "," identifier } .
 ExpressionList = Expression { "," Expression } .
 Expression     = SimpleExpr { RelOp SimpleExpr } .
@@ -105,7 +105,7 @@ RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=" | "&&" | "||" .
 AddOp = "+" | "-" | "|" | "^" .
 MulOp = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
 CallSuffix = "(" [ ArgumentList ] ")" .
-ArgumentList = Expression { "," Expression } [ "," ] .
+ArgumentList = Expression { "," Expression } [ "..." ] [ "," ] .
 Statement = VarDecl
 	| ConstDecl
 	| TypeDecl

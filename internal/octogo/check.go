@@ -7039,6 +7039,35 @@ func isBuiltinFuncName(name string) bool {
 // name) or a parameter of a non-predeclared type is left unchecked.
 func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) {
 	params := f.flattenParams(s, sig)
+	// A variadic parameter takes the rest of the arguments, however many -- none
+	// included -- so only the fixed ones before it are counted, and only they are
+	// checked pairwise. What the rest have to be is the element type, which needs
+	// the parameter's element rather than the slice flattenParams reports.
+	if f.isVariadicSig(sig) {
+		fixed := len(params) - 1
+		if len(args) < fixed {
+			f.err(name.Position(), "not enough arguments in call to %s", name.Src())
+			return
+		}
+		// Each of the rest has to be one element of the []T, so they are checked
+		// against T rather than against the slice flattenParams reports.
+		last := sig.Params.List[len(sig.Params.List)-1]
+		if sl, isSlice := last.TypeNode.(*TypeNodeSlice); isSlice {
+			elem := f.resultType(s, sl.TypeNode)
+			for _, arg := range args[fixed:] {
+				f.checkNilAssignable(s, elem, arg, "argument to "+name.Src())
+				if !elem.known {
+					continue
+				}
+				ak, aok := f.exprType(s, arg)
+				if aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(elem.kind) {
+					f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s",
+						f.exprSource(arg), kindName(ak), elem.name, name.Src())
+				}
+			}
+		}
+		args, params = args[:fixed], params[:fixed]
+	}
 	switch {
 	case len(args) < len(params):
 		f.err(name.Position(), "not enough arguments in call to %s", name.Src())
@@ -7179,6 +7208,54 @@ func (f *File) flattenParams(s *Scope, sig *SignatureNode) (r []retResult) {
 	return r
 }
 
+// isVariadicSig reports whether a signature's last parameter was written "...T".
+func (f *File) isVariadicSig(sig *SignatureNode) bool {
+	if sig == nil || sig.Params == nil || len(sig.Params.List) == 0 {
+		return false
+	}
+	return sig.Params.List[len(sig.Params.List)-1].Variadic
+}
+
+// checkVariadicPlacement reports a "...T" that is not the final parameter, and one
+// shared by several names -- "func f(a, b ...int)", which would make both variadic.
+// Go's words for each, since a reader arrives here from Go.
+func (f *File) checkVariadicPlacement(s *Scope, list *ParameterListNode) {
+	if list == nil {
+		return
+	}
+	for i, p := range list.List {
+		if !p.Variadic {
+			continue
+		}
+		switch {
+		case i != len(list.List)-1, len(p.Names) > 1:
+			at := f.tok(0)
+			if len(p.Names) != 0 {
+				at = p.Names[0]
+			}
+			f.err(at.Position(), "can only use ... with final parameter in list")
+		}
+	}
+}
+
+// checkVariadicResults reports a "...T" in a result list, which the grammar admits
+// only because results and parameters share it. A result is one value.
+func (f *File) checkVariadicResults(list *ParameterListNode, at Token) {
+	if list == nil {
+		return
+	}
+	for _, p := range list.List {
+		if !p.Variadic {
+			continue
+		}
+		pos := at
+		if len(p.Names) != 0 {
+			pos = p.Names[0]
+		}
+		f.err(pos.Position(), "cannot use ... in receiver or result parameter list")
+	}
+}
+
 // exprSource returns the source text of expression node n, from its first token
 // through its last, so a multi-token operand ("p.x", "a[i]", "c.M()") is named in
 // full in a diagnostic rather than by its leading token alone -- naming just the
@@ -7265,8 +7342,10 @@ func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 		switch n.sym {
 		case ParameterList:
 			r.Params = f.parameterList(s, n)
+			f.checkVariadicPlacement(s, r.Params)
 		case ResultList:
 			r.Results = f.parameterList(s, n)
+			f.checkVariadicResults(r.Results, f.tok(n.Pos()))
 		case Type:
 			// A single unnamed result: Signature = "(" [...] ")" Type .
 			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
@@ -7287,8 +7366,9 @@ func (f *File) signature(s *Scope, n Node) (r *SignatureNode) {
 // paramDecl is one reconciled entry of a ParameterList or ResultList: an unnamed
 // entry (Names empty) or one or more names sharing a type.
 type paramDecl struct {
-	Names   []Token // empty => an unnamed parameter or result
-	TypeAST Node    // the Type subtree for this entry's type
+	Names    []Token // empty => an unnamed parameter or result
+	TypeAST  Node    // the Type subtree for this entry's type
+	Variadic bool    // written "...T": the entry takes the rest of the arguments, as a []T
 }
 
 // paramDecls reconciles a ParameterList or ResultList AST into declarations,
@@ -7300,8 +7380,9 @@ type paramDecl struct {
 // and errors only on a malformed mix.
 func (f *File) paramDecls(ast []int32) (out []paramDecl) {
 	type group struct {
-		t1, t2 Node
-		has2   bool
+		t1, t2   Node
+		has2     bool
+		variadic bool
 	}
 	var groups []group
 	for c := range it(ast) {
@@ -7311,7 +7392,11 @@ func (f *File) paramDecls(ast []int32) (out []paramDecl) {
 		var g group
 		i := 0
 		for d := range it(c.ast) {
-			if d.sym != Type {
+			switch {
+			case d.sym == 0 && f.ch(d.tok) == ELLIPSIS:
+				g.variadic = true
+				continue
+			case d.sym != Type:
 				continue
 			}
 			switch i {
@@ -7333,7 +7418,7 @@ func (f *File) paramDecls(ast []int32) (out []paramDecl) {
 	}
 	if !named {
 		for _, g := range groups {
-			out = append(out, paramDecl{TypeAST: g.t1})
+			out = append(out, paramDecl{TypeAST: g.t1, Variadic: g.variadic})
 		}
 		return out
 	}
@@ -7348,7 +7433,7 @@ func (f *File) paramDecls(ast []int32) (out []paramDecl) {
 		}
 		pending = append(pending, name)
 		if g.has2 {
-			out = append(out, paramDecl{Names: pending, TypeAST: g.t2})
+			out = append(out, paramDecl{Names: pending, TypeAST: g.t2, Variadic: g.variadic})
 			pending = nil
 		}
 	}
@@ -8142,6 +8227,7 @@ type AssignHeadNode struct {
 type ParameterDeclNode struct {
 	Names    []Token
 	TypeNode TypeNode
+	Variadic bool // written "...T"; TypeNode is the []T it means
 }
 
 // ParameterListNode describes the ParameterList production. Results reuse it too,
@@ -8158,7 +8244,14 @@ type ParameterListNode struct {
 func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
 	r = &ParameterListNode{}
 	for _, d := range f.paramDecls(n.ast) {
-		r.List = append(r.List, ParameterDeclNode{Names: d.Names, TypeNode: f.typ(s, d.TypeAST)})
+		tn := f.typ(s, d.TypeAST)
+		if d.Variadic {
+			// "...T" IS a []T everywhere but the call site, so it becomes one here
+			// and every check downstream -- len, range, index, assignability --
+			// asks about a slice without knowing this was written differently.
+			tn = &TypeNodeSlice{TypeNode: tn}
+		}
+		r.List = append(r.List, ParameterDeclNode{Names: d.Names, TypeNode: tn, Variadic: d.Variadic})
 	}
 	return r
 }
@@ -8862,8 +8955,10 @@ func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
 		switch n.sym {
 		case ParameterList:
 			r.Params = f.parameterList(s, n)
+			f.checkVariadicPlacement(s, r.Params)
 		case ResultList:
 			r.Results = f.parameterList(s, n)
+			f.checkVariadicResults(r.Results, f.tok(n.Pos()))
 		case Type:
 			r.Results = &ParameterListNode{List: []ParameterDeclNode{{TypeNode: f.typ(s, n)}}}
 		case 0:

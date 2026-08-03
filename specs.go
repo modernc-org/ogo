@@ -843,8 +843,22 @@
 //	Receiver       = "(" ParamDecl ")" .
 //	ParameterList  = ParamDecl { "," ParamDecl } [ "," ] .
 //	ResultList     = ParamDecl { "," ParamDecl } [ "," ] .
-//	ParamDecl      = Type [ Type ] .
+//	ParamDecl      = "..." Type | Type [ "..." ] [ Type ] .
 //	IdentifierList = identifier { "," identifier } .
+//
+// The final parameter may be written "...T", which makes the function variadic: it
+// takes the rest of the call's arguments, however many, and inside the body the
+// parameter IS a []T -- len, cap, range and indexing all ask a slice. A call may
+// supply none of them. Only the final parameter may be one, only one name may share
+// it ("a, b ...int" would make both variadic), and a result never is.
+//
+// A call passes an existing slice instead of values by writing "f(xs...)".
+//
+// (OctoGo Specific): Go allocates the pack a call builds. There is no heap here, so
+// it is an array of the CALLING function, which the lifetime rules see exactly as
+// they see a slice literal's backing: a callee that lets its variadic parameter
+// outlive the call is refused, and told to take a slice of a package array instead.
+// The spread form is judged by where its slice came from, as any slice argument is.
 //
 // A parameter or result list may name its entries or leave them unnamed, but not
 // both: "(a, b int)" and "(int, int)" are the two-entry forms, while
@@ -1226,7 +1240,11 @@
 // the function is called.
 //
 //	CallSuffix = "(" [ ArgumentList ] ")" .
-//	ArgumentList = Expression { "," Expression } [ "," ] .
+//	ArgumentList = Expression { "," Expression } [ "..." ] [ "," ] .
+//
+// The trailing "..." spreads a slice into a variadic parameter, "sum(xs...)",
+// instead of packing the arguments written. It is legal only in a call to a
+// variadic function, and the slice's element type is the parameter's.
 //
 // # Built-in functions
 //
