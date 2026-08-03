@@ -307,6 +307,11 @@ type TypeDeclaration struct {
 	declaration
 	TypeSpec *TypeSpecNode
 	methods  map[string]*FuncDeclNode // methods declared with this type as receiver, by name
+	// ptrRecv marks the methods declared with a POINTER receiver. It is what Go's
+	// method-set rule turns on: a value of T carries the value-receiver methods,
+	// and *T carries all of them, so an interface a pointer method belongs to is
+	// satisfied by &x and not by x.
+	ptrRecv map[string]bool
 }
 
 // VarDeclaration represents a named run time value.

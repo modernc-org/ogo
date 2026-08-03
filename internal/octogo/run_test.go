@@ -1015,6 +1015,107 @@ func main() {
 		want: "2 4 8 3\n5 10 5 0\n12 24\n5\n15 5\n",
 	},
 	{
+		// Interfaces, on the hardware. An interface value is a data pointer beside a
+		// pointer to a static vtable; a call through it is indirect; a concrete value
+		// meeting an interface parameter is wrapped where it stands; and one
+		// interface value assigned to another is the two words, copied.
+		//
+		// There is no heap, so the data pointer is the address of the caller's
+		// variable rather than a boxed copy -- which is why the interface is a
+		// REFERENCE and the variable it was made from has to outlive it.
+		//
+		// Go's method-set rule is kept: a value of T carries the value-receiver
+		// methods and *T carries all of them, so Mutable is satisfied by &gc and not
+		// by gc. That rule earns its keep here even though nothing is boxed -- the
+		// "&" is where a reference into the caller's storage becomes visible, which
+		// is what the lifetime rules are trying to keep legible.
+		name: "interfaces dispatched through a static vtable",
+		src: `type Shape interface {
+	Area() int
+	Name() string
+}
+
+// Mutable adds a method with a POINTER receiver, so only *counter satisfies it.
+type Mutable interface {
+	Bump(k int) int
+}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+func (s sq) Name() string { return "sq" }
+
+type rect struct {
+	w, h int
+}
+
+func (r rect) Area() int { return r.w * r.h }
+
+func (r rect) Name() string { return "rect" }
+
+type counter struct {
+	n int
+}
+
+func (c *counter) Bump(k int) int {
+	c.n = c.n + k
+	return c.n
+}
+
+var gq sq
+
+var gr rect
+
+var gc counter
+
+func describe(s Shape) int { return s.Area() }
+
+func bigger(a Shape, b Shape) string {
+	if a.Area() >= b.Area() {
+		return a.Name()
+	}
+	return b.Name()
+}
+
+func main() {
+	gq.n = 3
+	gr.w, gr.h = 2, 5
+
+	// A variable of interface type, and a call through it.
+	var s Shape = gq
+	println(s.Name(), s.Area())
+
+	// The same variable, another concrete type: the table changes with it.
+	s = gr
+	println(s.Name(), s.Area())
+
+	// A concrete value handed to an interface parameter, wrapped where it stands.
+	println(describe(gq), describe(gr))
+	println(bigger(gq, gr), bigger(gr, gq))
+
+	// An interface value passed on as an interface: the two words, copied.
+	println(describe(s))
+
+	// A local concrete value works as well as a package one, as long as the
+	// interface does not outlive it.
+	var lq sq
+	lq.n = 4
+	var t Shape = lq
+	println(t.Name(), t.Area(), describe(lq))
+
+	// A pointer-receiver method is in *counter's method set, not counter's, so
+	// the address is what satisfies Mutable -- and what it mutates is the
+	// variable, not a copy.
+	var m Mutable = &gc
+	println(m.Bump(2), m.Bump(3), gc.n)
+}
+`,
+		want: "sq 9\nrect 10\n9 10\nrect rect\n10\nsq 16 16\n2 5 5\n",
+	},
+	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload
 		// and a capacity the pushes are refused at. It is what a priority queue on
 		// this target looks like, and it leans on most of what this release changed

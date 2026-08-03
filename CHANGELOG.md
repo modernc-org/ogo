@@ -15,6 +15,24 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **Interfaces work.** An interface value is a data pointer beside a pointer to a
+  statically emitted vtable; a method call through it is an indirect call; a concrete
+  value meeting an interface parameter is wrapped where it stands; and one interface
+  value assigned to another is the two words, copied. One vtable is emitted per
+  (concrete type, interface) pair, with a thunk per method — that is where the
+  receiver difference is spent, so the call site never has to know whether it reached
+  a value or a pointer receiver.
+
+  There is no heap, so the data pointer is the address of the caller's variable
+  rather than a boxed copy. An interface value is therefore a *reference*, and the
+  variable it was made from must outlive it — recorded as the ordinary provenance
+  mark, so every lifetime sink already asks about it.
+
+  Go's method-set rule is kept: a value of `T` carries the methods declared on `T`
+  and `*T` carries all of them, so an interface holding a pointer-receiver method is
+  satisfied by `&x` and not by `x`. Type switches, type assertions and
+  devirtualization are not part of this; nor is an interface value in a struct field
+  or on a channel, nor a value whose address cannot be taken.
 - **An interface's method set is checked.** The declaration was already accepted and
   its duplicate methods caught, but nothing read the set: a call through a variable
   of interface type was "type Shape has no method Area" — true of the methods

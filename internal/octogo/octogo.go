@@ -307,6 +307,31 @@
 // result reached through another call -- and they are the same question, so they are
 // worth answering once for both.
 //
+// # Status
+//
+// Implemented and running on hardware: the interface value and its vtable struct as
+// typedefs, one static vtable per (concrete type, interface) pair with a thunk per
+// method, a method call as an indirect call through the table, a concrete value
+// wrapped where it meets an interface parameter, and one interface value assigned
+// to another as the two words copied.
+//
+// The data pointer is the address of the caller's variable, there being no heap to
+// box a copy into. That makes an interface value a REFERENCE, so the variable it
+// was made from must outlive it -- recorded as the ordinary provenance mark, which
+// is why every sink already asks about it.
+//
+// Go's method-set rule is kept: a value of T carries the methods declared on T and
+// *T carries all of them, so an interface holding a pointer-receiver method is
+// satisfied by &x and not by x. It earns its keep here even though nothing is
+// boxed, because the "&" is where a reference into the caller's storage becomes
+// visible -- which is what the lifetime rules exist to keep legible.
+//
+// Not done yet: type switches and assertions (deferred, see below);
+// devirtualization; an interface value stored in a struct field or sent on a
+// channel; a value whose address cannot be taken -- a literal, a call's result --
+// which is refused rather than copied to a temporary, there being nowhere for the
+// interface to own a copy.
+//
 // # Checker status
 //
 // An interface's method set is read and used: a call through a variable of one is

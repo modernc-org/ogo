@@ -144,3 +144,30 @@ func fields() {
 
 	_, _, _, _ = ok1, bad1, ok2, bad2
 }
+
+// Go's method set: a value of T carries the methods declared ON T, and *T carries
+// all of them. So an interface holding a pointer-receiver method is satisfied by
+// the address and not by the value.
+
+type Mutable interface {
+	Bump(k int) int
+}
+
+type counter struct {
+	n int
+}
+
+func (c *counter) Bump(k int) int {
+	c.n = c.n + k
+	return c.n
+}
+
+var gc counter
+
+func methodSets() {
+	var m1 Mutable = &gc
+	// ERROR counter does not implement Mutable \(method Bump has pointer receiver\)
+	var m2 Mutable = gc
+
+	_, _ = m1, m2
+}

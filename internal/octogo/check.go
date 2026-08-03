@@ -4663,10 +4663,10 @@ func methodSpecSig(m *MethodSpecNode) *SignatureNode {
 // A method is compared by rendered signature. Anything that does not render -- a
 // type the renderer does not model -- compares equal rather than unequal, so an
 // unmodelled corner accepts instead of inventing a mismatch.
-func (f *File) implements(s *Scope, concrete, iface string) (missing string, wrongType string, have, want string, ok bool) {
+func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface string) (missing, ptrRecv, wrongType, have, want string, ok bool) {
 	set, isIface := f.interfaceMethodsNamed(s, iface)
 	if !isIface {
-		return "", "", "", "", true
+		return "", "", "", "", "", true
 	}
 	// An interface value satisfies another interface when its own method set
 	// contains it -- the same question, asked of a set rather than of a type's
@@ -4675,30 +4675,38 @@ func (f *File) implements(s *Scope, concrete, iface string) (missing string, wro
 		for _, name := range sortedNames(set) {
 			m, has := from[name]
 			if !has {
-				return name, "", "", "", false
+				return name, "", "", "", "", false
 			}
 			w := f.sigString(methodSpecSig(set[name]), false)
 			h := f.sigString(methodSpecSig(m), false)
 			if w == "" || h == "" || w == h {
 				continue
 			}
-			return "", name, h, w, false
+			return "", "", name, h, w, false
 		}
-		return "", "", "", "", true
+		return "", "", "", "", "", true
 	}
 	td, isNamed := s.find(concrete).(*TypeDeclaration)
 	if !isNamed {
 		// Not a named type: it carries no methods at all, so any non-empty
 		// interface is unsatisfied. An empty one is satisfied by everything.
 		for name := range set {
-			return name, "", "", "", false
+			return name, "", "", "", "", false
 		}
-		return "", "", "", "", true
+		return "", "", "", "", "", true
 	}
 	for _, name := range sortedNames(set) {
 		fd := td.methods[name]
 		if fd == nil {
-			return name, "", "", "", false
+			return name, "", "", "", "", false
+		}
+		// Go's method set: a value of T carries only the value-receiver methods,
+		// while *T carries all of them. The rule is why an interface holding a
+		// mutating method is satisfied by &x and not by x, and this target keeps it
+		// -- the "&" is where a reference into the caller's storage becomes visible,
+		// which is what the lifetime rules are trying to keep legible.
+		if td.ptrRecv[name] && !valueIsPtr {
+			return "", name, "", "", "", false
 		}
 		if fd.Type == nil {
 			continue
@@ -4708,9 +4716,9 @@ func (f *File) implements(s *Scope, concrete, iface string) (missing string, wro
 		if w == "" || h == "" || w == h {
 			continue
 		}
-		return "", name, h, w, false
+		return "", "", name, h, w, false
 	}
-	return "", "", "", "", true
+	return "", "", "", "", "", true
 }
 
 // sortedNames keeps a diagnostic deterministic: which missing method is reported
@@ -4739,7 +4747,15 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	if _, isIface := f.interfaceMethodsNamed(s, ifaceName); !isIface {
 		return
 	}
+	// `&x` names the same variable as `x` and a different method set: the pointer
+	// carries every method, the value only those declared on it.
+	valueIsPtr := false
 	id, ok := f.exprIdent(value)
+	if !ok {
+		if root, suffixed, isAddr := f.addressOperandRoot(s, value); isAddr && !suffixed {
+			id, valueIsPtr, ok = root, true, true
+		}
+	}
 	if !ok {
 		return
 	}
@@ -4747,20 +4763,32 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	if !ok || !d.typeName.IsValid() || d.typeName.Src() == ifaceName {
 		return
 	}
+	if d.isPtr {
+		valueIsPtr = true // a variable already of pointer type
+	}
 	from := d.typeName.Src()
-	missing, wrong, have, want, ok := f.implements(s, from, ifaceName)
+	shown := id.Src()
+	kind := "variable of type " + from
+	if valueIsPtr && !d.isPtr {
+		shown = "&" + shown
+		kind = "variable of type *" + from
+	}
+	missing, ptrRecv, wrong, have, want, ok := f.implements(s, from, valueIsPtr, ifaceName)
 	if ok {
 		return
 	}
 	pos := f.tok(value.Pos()).Position()
-	if missing != "" {
-		f.err(pos, "cannot use %s (variable of type %s) as %s value in %s: %s does not implement %s (missing method %s)",
-			id.Src(), from, ifaceName, what, from, ifaceName, missing)
-		return
+	head := fmt.Sprintf("cannot use %s (%s) as %s value in %s: %s does not implement %s",
+		shown, kind, ifaceName, what, from, ifaceName)
+	switch {
+	case missing != "":
+		f.err(pos, "%s (missing method %s)", head, missing)
+	case ptrRecv != "":
+		f.err(pos, "%s (method %s has pointer receiver)", head, ptrRecv)
+	default:
+		f.err(pos, "%s (wrong type for method %s)\n\thave %s%s\n\twant %s%s", head, wrong,
+			wrong, strings.TrimPrefix(have, "func"), wrong, strings.TrimPrefix(want, "func"))
 	}
-	f.err(pos, "cannot use %s (variable of type %s) as %s value in %s: %s does not implement %s (wrong type for method %s)\n\thave %s%s\n\twant %s%s",
-		id.Src(), from, ifaceName, what, from, ifaceName, wrong,
-		wrong, strings.TrimPrefix(have, "func"), wrong, strings.TrimPrefix(want, "func"))
 }
 
 // fieldSelector reports whether a FactorSuffix or Postfix is a single field
@@ -4946,6 +4974,24 @@ func (f *File) receiverTypeName(recv Node) (name Token) {
 	return name
 }
 
+// receiverIsPtr reports a method declared with a pointer receiver, "(p *T)". The
+// star is a token of the Receiver subtree, wherever the parameter declaration puts
+// it, so finding one anywhere in it is the question.
+func (f *File) receiverIsPtr(recv Node) bool {
+	for c := range it(recv.ast) {
+		if c.sym == 0 {
+			if Symbol(f.tok(c.tok).Ch) == MUL {
+				return true
+			}
+			continue
+		}
+		if f.receiverIsPtr(c) {
+			return true
+		}
+	}
+	return false
+}
+
 // registerMethod records a method against its receiver type, with its signature
 // resolved so a method call can be checked. A non-method declaration is ignored.
 // It runs in phase 3, when every type is in the package scope. The signature is
@@ -4954,11 +5000,12 @@ func (f *File) receiverTypeName(recv Node) (name Token) {
 func (f *File) registerMethod(s *Scope, n Node) {
 	var recvType, method Token
 	var sig Node
-	hasRecv, hasSig := false, false
+	hasRecv, hasSig, ptrRecv := false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Receiver:
 			recvType, hasRecv = f.receiverTypeName(c), true
+			ptrRecv = f.receiverIsPtr(c)
 		case Signature:
 			sig, hasSig = c, true
 		case 0:
@@ -4976,7 +5023,9 @@ func (f *File) registerMethod(s *Scope, n Node) {
 	}
 	if td.methods == nil {
 		td.methods = map[string]*FuncDeclNode{}
+		td.ptrRecv = map[string]bool{}
 	}
+	td.ptrRecv[method.Src()] = ptrRecv
 	if prev := td.methods[method.Src()]; prev != nil {
 		// A second method of the same name on the same receiver type (a value and
 		// a pointer receiver share the base type, so they collide too). Report it
@@ -6621,6 +6670,12 @@ func (f *File) checkPointerArg(s *Scope, p retResult, arg Node, name Token) {
 // no type.
 func (f *File) checkPointerValue(s *Scope, want bool, wantName string, e Node, what string) {
 	if wantName == "" {
+		return
+	}
+	// An interface takes a pointer or a value depending on which method set
+	// satisfies it, so pointer-ness is not the question here -- checkImplements is,
+	// and it says which of the two was needed.
+	if _, isIface := f.interfaceMethodsNamed(s, wantName); isIface {
 		return
 	}
 	have, known := f.exprPointerness(s, e)

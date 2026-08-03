@@ -2181,7 +2181,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2570,6 +2570,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.Write(globals.Bytes())
 		out.WriteByte('\n')
 	}
+	// The thunks and the static vtables. They follow the prototypes, which is all a
+	// thunk needs of the method it calls, and precede the bodies, which is where the
+	// tables are taken the address of.
+	if e.vtables.Len() != 0 {
+		out.Write(e.vtables.Bytes())
+		out.WriteByte('\n')
+	}
 	// The goroutine pool and trampolines go after the prototypes -- a trampoline
 	// calls a user function -- and before the bodies, whose `go` statements name
 	// the argument structs declared here.
@@ -2617,7 +2624,10 @@ type emitter struct {
 	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	namedTypes         map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
 	typeNames          map[string]bool          // every C type name this program declares, struct or not, for fieldIdent's collision check
-	interfaceTypes     map[string]bool          // source names declared as an interface type, so a use of one is refused by name rather than as an unsupported type
+	interfaceTypes     map[string]bool          // source names declared as an interface type
+	ifaceMethods       map[string][]ifaceMethod // mangled interface name -> its methods, in declaration order: the vtable's slot order
+	ifaceVTables       map[string]bool          // "<interface>|<concrete>" pairs a static vtable has been emitted for
+	vtables            bytes.Buffer             // the thunks and static vtables those pairs produced
 	namedUnderlying    map[string]string        // that typedef -> the C type it stands for, so a value of it is represented as what it is
 	namedArrays        map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
 	constInt           map[string]string        // integer-constant name -> its C literal value, for array bounds
@@ -2955,8 +2965,14 @@ func (e *emitter) collectStructForwards(ast []int32) {
 					e.typeNames[mn] = true
 					if e.isInterfaceTypeAST(typeAST) {
 						// Recorded by SOURCE name: a use of it reaches cType as the
-						// name written, and the point is to refuse it by that name.
+						// name written. Both the value and its table are tagged
+						// structs, so both take a forward declaration -- the value
+						// names the table by pointer.
 						e.interfaceTypes[name] = true
+						e.emit("typedef struct " + mn + " " + mn + ";\n")
+						e.emit("typedef struct " + ifaceVTName(mn) + " " + ifaceVTName(mn) + ";\n")
+						e.structs[mn] = nil
+						e.structs[ifaceVTName(mn)] = nil
 					}
 					if e.structTypeAST(typeAST) == nil {
 						continue
@@ -3000,6 +3016,10 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// type. cType returns the same mangled name for a reference to it, so every
 		// use resolves to the same typedef and the same structs/namedTypes map key.
 		mn := mangle(e.curPkgPrefix, name)
+		if ifaceAST := e.interfaceTypeAST(typeAST); ifaceAST != nil {
+			e.collectInterfaceType(mn, ifaceAST)
+			continue
+		}
 		if structAST := e.structTypeAST(typeAST); structAST != nil {
 			// The name was registered and forward-declared by collectStructForwards,
 			// so a self-referential or forward/mutually-referential pointer field
@@ -3070,14 +3090,249 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 	}
 }
 
-// isInterfaceTypeAST reports whether a Type subtree is an interface type.
-func (e *emitter) isInterfaceTypeAST(typeAST []int32) bool {
-	for n := range it(typeAST) {
-		if n.sym == InterfaceType {
+// ifaceMethod is one method of an interface, as the vtable slot it becomes: the
+// source name, the C result type, and the C parameter types beside the receiver.
+// Declaration order is slot order, which is why this is a slice and not a map.
+type ifaceMethod struct {
+	name   string
+	res    string
+	params []string
+}
+
+// ifaceVTName names the vtable STRUCT of an interface -- the table's shape, one
+// function pointer per method.
+func ifaceVTName(iface string) string { return iface + "_vt" }
+
+// ifaceVTVar names the static vtable of a concrete type viewed as an interface, and
+// ifaceThunkName the function that adapts one of its methods to the slot's
+// signature. Both are keyed by the pair, since the same method may fill a slot in
+// more than one interface and each slot has its own position.
+func ifaceVTVar(iface, concrete string) string { return iface + "_vt_" + concrete }
+
+func ifaceThunkName(iface, concrete, method string) string {
+	return iface + "_" + concrete + "_" + cIdent(method)
+}
+
+// collectInterfaceType records an interface's methods in declaration order and
+// emits the two typedefs it becomes: the value -- a data pointer beside a pointer
+// to a table -- and the table's shape. The value is what a variable of the type is,
+// and the table is what tells a call which function to make.
+func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
+	var methods []ifaceMethod
+	for n := range it(structAST) {
+		if n.sym != MethodSpec {
+			continue
+		}
+		name := e.soleIdent(n.ast)
+		if name == "" {
+			continue
+		}
+		_, resTypes := e.cSig(n.ast)
+		res := "void"
+		switch len(resTypes) {
+		case 0:
+		case 1:
+			res = resTypes[0]
+		default:
+			e.fail("an interface method with more than one result is not supported yet")
+			return
+		}
+		methods = append(methods, ifaceMethod{name: name, res: res, params: e.cParamTypes(n.ast)})
+	}
+	e.ifaceMethods[mn] = methods
+
+	vt := ifaceVTName(mn)
+	var b strings.Builder
+	fmt.Fprintf(&b, "struct %s {", vt)
+	for _, m := range methods {
+		fmt.Fprintf(&b, " %s (*%s)(void*", m.res, cIdent(m.name))
+		for _, p := range m.params {
+			b.WriteString(", " + p)
+		}
+		b.WriteString(");")
+	}
+	if len(methods) == 0 {
+		b.WriteString(" char _ogo_empty;") // C rejects a struct with no members
+	}
+	b.WriteString(" };\n")
+	var deps []string
+	for _, m := range methods {
+		deps = append(deps, m.res)
+		deps = append(deps, m.params...)
+	}
+	e.addTypedef(vt, b.String(), deps...)
+	e.addTypedef(mn, "struct "+mn+" { void* data; const "+vt+"* vt; };\n", vt+"*")
+}
+
+// ifaceStoreC renders writing a concrete value into an interface value named by
+// target: the data pointer is the value's address, and the table is the one for that
+// pair. It returns "" when the right-hand side is not something whose address can be
+// taken -- a literal, a call's result -- which is refused rather than copied to a
+// temporary, there being nowhere for the interface to own a copy.
+//
+// The value's storage is the caller's, which is what makes an interface a REFERENCE:
+// the variable it was made from must outlive it. That is recorded where the ordinary
+// provenance mark is, so every sink already asks about it.
+func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
+	if name, ok := e.exprIdent(rhs); ok {
+		if ct, ok := e.varType(name); ok && e.isIfaceCType(ct) {
+			// Interface to interface: the same two words, copied.
+			if origin := e.frameHolder[name]; origin != "" {
+				e.frameHolder[target] = origin
+			}
+			return target + " = " + e.varRef(name) + ";\n"
+		}
+	}
+	concrete, data, ok := e.ifaceOperand(rhs)
+	if !ok {
+		e.fail("only a variable, or the address of one, may be stored in an interface yet")
+		return ""
+	}
+	if !e.needVTable(iface, concrete) {
+		return ""
+	}
+	if root, isRoot := e.addrOfRoot(rhs); isRoot && e.isFrameVar(root) {
+		e.frameHolder[target] = "local " + root
+	} else if name, isName := e.exprIdent(rhs); isName {
+		if e.isFrameVar(name) {
+			e.frameHolder[target] = "local " + name
+		} else if origin := e.frameHolder[name]; origin != "" {
+			e.frameHolder[target] = origin
+		}
+	}
+	return target + ".data = " + data + "; " + target + ".vt = &" + ifaceVTVar(iface, concrete) + ";\n"
+}
+
+// hasIfaceMethod reports whether an interface declares a method by that name.
+func (e *emitter) hasIfaceMethod(iface, method string) bool {
+	for _, m := range e.ifaceMethods[iface] {
+		if m.name == method {
 			return true
 		}
 	}
 	return false
+}
+
+// ifaceOperand resolves what is being put into an interface: the concrete type it
+// is a value of, and the C expression for the data pointer.
+//
+// `x` and `&x` name the same storage and differ only in which method set satisfies
+// the interface -- a question the checker has already settled -- so both arrive
+// here as the address of the variable, which is what the table's thunks unpack.
+func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, ok bool) {
+	name, isName := e.exprIdent(rhs)
+	if !isName {
+		if root, isAddr := e.addrOfRoot(rhs); isAddr {
+			name, isName = root, true
+		}
+	}
+	if !isName {
+		return "", "", false
+	}
+	ct, ok := e.varType(name)
+	if !ok {
+		return "", "", false
+	}
+	if e.isPointer(ct) {
+		// A variable already of pointer type points at the value itself.
+		return e.elemType(ct), e.varRef(name), true
+	}
+	return ct, "&" + e.varRef(name), true
+}
+
+// ifaceValueC renders a concrete value as an interface value, for the positions
+// that need one expression rather than two statements: an argument, and a return.
+// An operand that is already of the interface type is itself.
+func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
+	if name, ok := e.exprIdent(rhs); ok {
+		if ct, ok := e.varType(name); ok && e.isIfaceCType(ct) {
+			return e.varRef(name), true
+		}
+	}
+	concrete, data, ok := e.ifaceOperand(rhs)
+	if !ok || !e.needVTable(iface, concrete) {
+		return "", false
+	}
+	return "(" + iface + "){" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
+}
+
+// isIfaceCType reports whether a C type name is one of the interface value structs.
+func (e *emitter) isIfaceCType(ct string) bool {
+	_, ok := e.ifaceMethods[ct]
+	return ok
+}
+
+// needVTable emits, once per (interface, concrete type) pair, the static table that
+// makes a value of that type usable as that interface: one thunk per method, and the
+// table naming them.
+//
+// A thunk exists because the slot's receiver is a void* -- the table has to have one
+// shape for every concrete type -- while the method's is its own type, by value or
+// by pointer. The thunk is where that difference is spent, so the call site does not
+// have to know which kind of receiver it reached.
+func (e *emitter) needVTable(iface, concrete string) bool {
+	key := iface + "|" + concrete
+	if e.ifaceVTables[key] {
+		return true
+	}
+	methods, ok := e.ifaceMethods[iface]
+	if !ok {
+		return false
+	}
+	e.ifaceVTables[key] = true
+	var b strings.Builder
+	for _, m := range methods {
+		cname := methodCName(concrete, m.name)
+		if _, has := e.funcRet[cname]; !has {
+			e.fail("%s does not implement %s: missing method %s", concrete, iface, m.name)
+			return false
+		}
+		thunk := ifaceThunkName(iface, concrete, m.name)
+		fmt.Fprintf(&b, "static %s %s(void* _ogo_r", m.res, thunk)
+		var args []string
+		for i, p := range m.params {
+			fmt.Fprintf(&b, ", %s _ogo_a%d", p, i)
+			args = append(args, fmt.Sprintf("_ogo_a%d", i))
+		}
+		recv := "*(" + concrete + "*)_ogo_r"
+		if e.methodPtr[cname] {
+			recv = "(" + concrete + "*)_ogo_r"
+		}
+		b.WriteString(") { ")
+		if m.res != "void" {
+			b.WriteString("return ")
+		}
+		b.WriteString(cname + "(" + strings.Join(append([]string{recv}, args...), ", ") + "); }\n")
+	}
+	fmt.Fprintf(&b, "static const %s %s = {", ifaceVTName(iface), ifaceVTVar(iface, concrete))
+	for i, m := range methods {
+		if i != 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(" " + ifaceThunkName(iface, concrete, m.name))
+	}
+	if len(methods) == 0 {
+		b.WriteString(" 0")
+	}
+	b.WriteString(" };\n")
+	e.vtables.WriteString(b.String())
+	return true
+}
+
+// isInterfaceTypeAST reports whether a Type subtree is an interface type.
+func (e *emitter) isInterfaceTypeAST(typeAST []int32) bool {
+	return e.interfaceTypeAST(typeAST) != nil
+}
+
+// interfaceTypeAST returns the InterfaceType node's children within a Type subtree,
+// or nil if the type is not an interface.
+func (e *emitter) interfaceTypeAST(typeAST []int32) []int32 {
+	for n := range it(typeAST) {
+		if n.sym == InterfaceType {
+			return n.ast
+		}
+	}
+	return nil
 }
 
 // structTypeAST returns the StructType node's children within a Type subtree, or
@@ -6085,10 +6340,7 @@ func (e *emitter) cType(ast []int32) string {
 	// octogo.go) and not emitted yet. Said by name, because the tokens below hold no
 	// identifier for the generic message to report and it would name the empty
 	// string.
-	if e.isInterfaceTypeAST(ast) {
-		e.fail("%v: interface types are not emitted yet", e.f.tok(firstIndex(ast)).Position())
-		return ""
-	}
+
 	var toks []int32
 	nonTerminal := false
 	for _, n := range nodes {
@@ -6155,10 +6407,6 @@ func (e *emitter) cType(ast []int32) string {
 			return u // see collectTypeDecl: a defined channel type is its cell
 		}
 		return mn
-	}
-	if e.interfaceTypes[name] {
-		e.fail("%v: interface types are not emitted yet", e.f.tok(toks[0]).Position())
-		return ""
 	}
 	e.fail("unsupported type %q", name)
 	return ""
@@ -9477,6 +9725,20 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		return true
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		method := e.soleIdent(suffix[0].ast)
+		// A call through an interface value: the table says which function, and the
+		// data pointer is the receiver the thunk unpacks.
+		if ct, ok := e.varType(recv); ok && e.isIfaceCType(ct) {
+			if !e.hasIfaceMethod(ct, method) {
+				e.fail("type %s has no method %s", ct, method)
+				return false
+			}
+			e.emit(e.varRef(recv) + ".vt->" + cIdent(method) + "(" + e.varRef(recv) + ".data")
+			if args := e.argsCText("", suffix[1].ast); args != "" {
+				e.emit(", " + args)
+			}
+			e.emit(")")
+			return true
+		}
 		// A method call `x.M(args)` on a variable of a user-defined type (struct or
 		// named, value or pointer) lowers to `<T>_M(recv, args)`, with the receiver
 		// adjusted to match the method's value or pointer receiver. Distinguished from
@@ -9770,6 +10032,32 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
 		case Selector:
 			field := e.soleIdent(n.ast)
+			// A method reached through an interface: the slot's declared result is
+			// the call's type, the concrete function behind it being unknown here
+			// and its result being the same one anyway.
+			if ms, isIface := e.ifaceMethods[cur.ctype]; isIface && i+1 < len(steps) && steps[i+1].sym == CallSuffix {
+				slot := -1
+				for k, m := range ms {
+					if m.name == field {
+						slot = k
+					}
+				}
+				if slot < 0 {
+					return "", "", false, false
+				}
+				call := text + ".vt->" + cIdent(field) + "(" + text + ".data"
+				if args := e.argsCText("", steps[i+1].ast); args != "" {
+					call += ", " + args
+				}
+				text, addr = call+")", false
+				if ms[slot].res == "void" {
+					cur = accessCur{}
+				} else {
+					cur = e.plainOrSlice(ms[slot].res)
+				}
+				i++ // consumed the CallSuffix
+				continue
+			}
 			bt := methodBaseType(cur.ctype)
 			cname := methodCName(bt, field)
 			rts, okm := e.funcRet[cname]
@@ -10648,6 +10936,19 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			}
 		}
 	}
+	// A concrete value written into an interface variable: two words rather than one
+	// assignment, and the pair decides which table.
+	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+		if ct, ok := e.varType(base); ok && e.isIfaceCType(ct) {
+			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 && !e.isNilExpr(rhs[0].ast) {
+				if text := e.ifaceStoreC(e.varRef(base), ct, rhs[0].ast); text != "" {
+					e.ind()
+					e.emit(text)
+				}
+				return
+			}
+		}
+	}
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
 	// extra targets as LhsItems ahead of the operator. Recognised here, ahead of the
 	// target shapes below, because the head of a multiple assignment may take any of
@@ -10943,6 +11244,16 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 // it stays on the ordinary path.
 func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	e.bindFuncValue(name, initExpr)
+	if e.isIfaceCType(ctype) {
+		e.locals[name] = ctype
+		e.ind()
+		e.emit(ctype + " " + name + " = {0};\n")
+		if text := e.ifaceStoreC(name, ctype, initExpr); text != "" {
+			e.ind()
+			e.emit(text)
+		}
+		return
+	}
 	// A self-referential initializer -- `var x = x + 5` where an outer x is in scope
 	// and this declaration shadows it -- reads the *outer* binding in Go, because a
 	// var initializer is evaluated before the new name comes into scope. C, however,
@@ -11684,6 +11995,20 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 	}
 	if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 		member := e.soleIdent(suffix[0].ast)
+		// A call through an interface takes its result from the method's slot: the
+		// concrete function behind it is not known here, and its result type is the
+		// one the interface declared anyway.
+		if rct, isVar := e.varType(recv); isVar && e.isIfaceCType(rct) {
+			for _, m := range e.ifaceMethods[rct] {
+				if m.name == member {
+					if m.res == "void" {
+						return "", nil, true
+					}
+					return "", []string{m.res}, true
+				}
+			}
+			return "", nil, false
+		}
 		if rct, isVar := e.varType(recv); isVar && e.isUserType(methodBaseType(rct)) {
 			cname = methodCName(methodBaseType(rct), member)
 		} else if prefix, isPkg := e.importQualifiers[recv]; isPkg {
@@ -11799,6 +12124,17 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(arg.ast) {
 			e.emit("(" + sliceParams[i] + "){0}")
 			continue
+		}
+		// A concrete value handed to an interface parameter is wrapped where it
+		// stands: the two words the parameter is, made of the value's address and
+		// the table for that pair. The same thing the assignment writes in two
+		// statements, as one value, because a parameter has no name here to write
+		// them into.
+		if params := e.funcParams[cname]; i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
+			if text, ok := e.ifaceValueC(params[i], arg.ast); ok {
+				e.emit(text)
+				continue
+			}
 		}
 		// Replaying a deferred call reads the temporaries captured at the defer
 		// statement rather than re-evaluating the expressions, which may name a
@@ -12323,6 +12659,18 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		}
 		return "", false
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		// A call through an interface takes the result its slot declares. Which
+		// concrete function answers is not known here and does not matter: every
+		// type filling the slot returns what the interface said it would.
+		if rct, ok := e.varType(recv); ok && e.isIfaceCType(rct) {
+			method := e.soleIdent(suffix[0].ast)
+			for _, m := range e.ifaceMethods[rct] {
+				if m.name == method {
+					return m.res, m.res != "void"
+				}
+			}
+			return "", false
+		}
 		// A single-result method call `x.M()` carries its recorded result type,
 		// keyed by the receiver type's mangled method name.
 		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
