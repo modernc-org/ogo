@@ -27,9 +27,9 @@ Releases before v0.9.0 predate this file; see
   The rule is asked wherever a value meets an interface type — an assignment, a
   variable declaration, an argument and a return, the four positions the pointer-ness
   rule already covers — and an interface satisfies another when its own method set
-  contains it. A struct field, a field assignment and a channel send do not ask it
-  yet; they need the field's or the element's declared type where these four have a
-  variable's or a signature's.
+  contains it, and a struct field of interface type asks it as well — filled by a
+  keyed literal, by a positional one, or assigned afterwards. A channel send does not
+  ask it yet: `chan Shape` does not retain its element type by name.
 
   This is the checker half. The representation is settled (a data pointer beside a
   static vtable) and not emitted yet, so a program that passes these checks stops at

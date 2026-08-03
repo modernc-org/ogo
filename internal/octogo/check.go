@@ -4415,15 +4415,26 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 		return // "T{}" zeroes every field
 	}
 	var names []Token
+	var types []TypeNode
 	for _, fld := range st.Fields {
 		names = append(names, fld.Names...)
+		for range fld.Names {
+			types = append(types, fld.TypeNode)
+		}
 	}
 	if !f.checkLitUniform(elements) {
 		return // mixed forms say nothing reliable about which value is which field
 	}
 	if elements[0].keyed {
-		f.checkKeyedLit(t, names, elements)
+		f.checkKeyedLit(s, t, names, types, elements)
 		return
+	}
+	// A positional value lands in the field at its own index, so an interface field
+	// asks the same question of it that an assignment to that field would.
+	for i, el := range elements {
+		if i < len(types) {
+			f.checkImplements(s, f.typeNodeString(types[i], false), el.value, "struct literal")
+		}
 	}
 	// A positional literal fills every field in order, including any this package
 	// may not name. Go reports the first such field at the value that would land in
@@ -4474,7 +4485,15 @@ func (f *File) checkLitUniform(elements []litElement) bool {
 // struct's field names. A key is a field name, not an expression: anything else is
 // refused rather than resolved, and each field may be named at most once. Fields
 // left unnamed take their zero value, so there is no count to check.
-func (f *File) checkKeyedLit(t litType, names []Token, elements []litElement) {
+func (f *File) checkKeyedLit(s *Scope, t litType, names []Token, types []TypeNode, elements []litElement) {
+	fieldType := func(name string) TypeNode {
+		for i, nm := range names {
+			if nm.Src() == name && i < len(types) {
+				return types[i]
+			}
+		}
+		return nil
+	}
 	seen := map[string]bool{}
 	for _, el := range elements {
 		key, ok := f.exprSoleIdent(el.key)
@@ -4498,6 +4517,7 @@ func (f *File) checkKeyedLit(t litType, names []Token, elements []litElement) {
 			continue
 		}
 		seen[name] = true
+		f.checkImplements(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
 	}
 }
 
@@ -5415,6 +5435,7 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 // rhs": the right-hand side's type category must match the struct field's. It is
 // the struct-field analogue of checkAssignType.
 func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
+	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)

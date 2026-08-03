@@ -115,3 +115,32 @@ func sets() {
 
 	_, _ = s1, s2
 }
+
+// A struct field of interface type asks it too, filled by a keyed literal, by a
+// positional one, or assigned afterwards. The field's declared type is what
+// answers, where the positions above have a variable's or a signature's.
+
+type box struct {
+	s Shape
+	k int
+}
+
+func fields() {
+	var q sq
+	var t tri
+
+	ok1 := box{s: q}
+	// ERROR tri does not implement Shape \(missing method Area\)
+	bad1 := box{s: t}
+
+	ok2 := box{q, 1}
+	// ERROR tri does not implement Shape \(missing method Area\)
+	bad2 := box{t, 1}
+
+	var b box
+	b.s = q
+	// ERROR tri does not implement Shape \(missing method Area\)
+	b.s = t
+
+	_, _, _, _ = ok1, bad1, ok2, bad2
+}

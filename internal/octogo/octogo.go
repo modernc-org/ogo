@@ -316,10 +316,14 @@
 // pointer-ness rule already covers. An interface satisfies another when its own set
 // contains it, which is the same question asked of a set.
 //
-// Three positions do not ask it yet: a struct field filled by a composite literal,
-// a field assignment, and a channel send. Each needs the FIELD's or the element's
-// declared type where the four above have a variable's or a signature's, and that
-// is the next piece of checker work rather than a different rule.
+// A struct field of interface type asks it too -- filled by a keyed literal, by a
+// positional one, or assigned afterwards -- the field's declared type answering
+// where those four have a variable's or a signature's.
+//
+// One position does not ask it: a channel send. The element type of `chan Shape` is
+// not retained by name on the declaration the way a variable's type is, only as a
+// predeclared Kind, which a named interface has none of. Retaining it is the piece
+// of work, not the rule.
 //
 // A value whose type cannot be named -- a literal, a call's result -- is left
 // unjudged rather than guessed at, in every position.
