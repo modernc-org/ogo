@@ -37,9 +37,18 @@ Releases before v0.9.0 predate this file; see
   provenance predicate consults it, so all five sinks see it at once rather than each
   growing a case.
 
-  A reference bound to a local first (`q := id(&x); return q`) is still not followed,
-  and a callee that cannot be resolved to a name still yields no summary. Both err
-  toward accepting, as the rest of the analysis does.
+- **A call through a function value is judged by the function it holds.**
+  `f := keep; f(&x)` was accepted where `keep(&x)` was refused, because the call site
+  resolves to a variable and there was no summary to consult — a package-level
+  function variable and a slice argument the same. The variable is bound where it is
+  given a function outright, and rebinding it rebinds which summary answers; anything
+  else clears the binding rather than leaving a stale one. A method is now resolved
+  for the result half too, so `return r.id(&x)` is refused as the plain-function shape
+  is.
+
+  Three shapes remain open, all of them the callee this cannot name: a function value
+  in a struct field, one arriving as a parameter, and a method result reached through
+  another call. They are listed in `octogo.go`.
 
 ## v0.16.0
 

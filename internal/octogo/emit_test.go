@@ -6811,6 +6811,105 @@ func main() {
 }
 `,
 		},
+		// Increment 8: the two callees the summaries could not name. A call through a
+		// function VALUE resolves to a variable, and the result half stopped at a
+		// one-name callee, so `f := keep; f(&x)` and `return r.id(&x)` both admitted a
+		// dangling reference. The variable is bound to the function it was given, and
+		// the result lookup resolves a method the way the call itself does.
+		{
+			name: "a local function value that leaks its parameter",
+			src: `var g *int
+
+func keep(p *int) { g = p }
+
+func main() {
+	var x int
+	f := keep
+	f(&x)
+	println(*g)
+}
+`,
+			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a package function variable that leaks its parameter",
+			src: `var g *int
+
+func keep(p *int) { g = p }
+
+var f = keep
+
+func main() {
+	var x int
+	f(&x)
+	println(*g)
+}
+`,
+			want: "cannot pass the address of local variable x to keep",
+		},
+		{
+			name: "a frame-backed slice through a function value",
+			src: `var gs []int
+
+func keep(s []int) { gs = s }
+
+func main() {
+	var a [4]int
+	f := keep
+	f(a[:])
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a to keep",
+		},
+		{
+			name: "returning a local address through a method",
+			src: `type idr struct{ n int }
+
+func (i *idr) id(p *int) *int { return p }
+
+func mk() *int {
+	var x int
+	var r idr
+	return r.id(&x)
+}
+
+func main() { println(*mk()) }
+`,
+			want: "cannot return the address of local variable x",
+		},
+		{
+			// A function value bound to a callee that leaks nothing is the ordinary
+			// case and must stay ordinary.
+			name: "a function value that leaks nothing",
+			src: `func plain(p *int) int { return *p }
+
+func main() {
+	var x int
+	x = 3
+	f := plain
+	println(f(&x))
+}
+`,
+		},
+		{
+			// Rebinding the variable rebinds which summary answers for it: the
+			// leaking function is no longer what f holds.
+			name: "a function value rebound to a harmless function",
+			src: `var g *int
+
+func keep(p *int) { g = p }
+
+func plain(p *int) { println(*p) }
+
+func main() {
+	var x int
+	f := keep
+	f = plain
+	f(&x)
+}
+`,
+		},
 		// Increment 5: a reference wrapped in a struct. The value handed on is the
 		// struct, so the variable carries the mark -- per variable, not per field,
 		// which is what keeps it sound without tracking fields.

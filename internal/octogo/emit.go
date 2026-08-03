@@ -2181,7 +2181,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2698,6 +2698,7 @@ type emitter struct {
 	frameBacked        map[string]bool          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
 	crossParams        map[string][]leak        // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
 	retParams          map[string][]bool        // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
+	funcValueOf        map[string]string        // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
 	crossEdges         []crossEdge              // call sites passing a parameter straight on, the graph closeCrossParams walks
 	retEdges           []crossEdge              // returns of a call taking a parameter, the graph the result summary is closed over
 	crossNames         map[string]string        // C function name -> the name it was declared with, for crossParams diagnostics
@@ -3265,6 +3266,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			gn := e.globalC(names[0])
 			e.globals[gn] = ct
+			e.bindFuncValue(names[0], initExpr)
 			if e.isSliceCType(ct) {
 				e.globalSliceVars[gn] = sliceElemFromCName(ct)
 			}
@@ -3373,6 +3375,9 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			gn := e.globalC(nm)
 			e.globals[gn] = ctype
+			if initExpr != nil {
+				e.bindFuncValue(nm, initExpr)
+			}
 			e.emit("static " + ctype + " " + gn)
 			switch {
 			case initExpr == nil:
@@ -4783,10 +4788,12 @@ func (e *emitter) enterScope() func() {
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
+	funcValueOf := maps.Clone(e.funcValueOf)
 	return func() {
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
+		e.funcValueOf = funcValueOf
 	}
 }
 
@@ -9430,7 +9437,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// whose prefix is empty, and emitted a call to `<pkg>_f` in every other.)
 		if ct, ok := e.varType(recv); ok && e.isFuncCType(ct) {
 			e.emit(e.varRef(recv) + "(")
-			e.emitCallArgs("", suffix[0].ast)
+			e.emitCallArgs(e.funcValueOf[recv], suffix[0].ast)
 			e.emit(")")
 			return true
 		}
@@ -10604,6 +10611,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
 	e.checkStoreBacking(base, op)
 	e.noteFrameHolder(base, op)
+	// `f = keep` rebinds which function f holds; anything else clears the binding.
+	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+		if ct, ok := e.varType(base); ok && e.isFuncCType(ct) {
+			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				e.bindFuncValue(base, rhs[0].ast)
+			}
+		}
+	}
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
 	// extra targets as LhsItems ahead of the operator. Recognised here, ahead of the
 	// target shapes below, because the head of a multiple assignment may take any of
@@ -10805,6 +10820,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 // slice-typed result records its element type so later indexing / len / cap /
 // append on name resolve.
 func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
+	e.bindFuncValue(name, initExpr)
 	// `r := row(a)` for `type row [3]int`: the conversion changes nothing about the
 	// value -- a defined type is a typedef of what it stands for -- so what is
 	// declared is a copy of the operand, which is the branch below. Unwrapped here
@@ -10897,6 +10913,7 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 // literal is not a copy -- it is the aggregate initialization that does work -- so
 // it stays on the ordinary path.
 func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
+	e.bindFuncValue(name, initExpr)
 	// A self-referential initializer -- `var x = x + 5` where an outer x is in scope
 	// and this declaration shadows it -- reads the *outer* binding in Go, because a
 	// var initializer is evaluated before the new name comes into scope. C, however,
@@ -13561,9 +13578,19 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// provenance back out: `id(&x)` reaches x's storage exactly as `&x` does. Without
 	// this a single call launders a reference past every sink -- `return id(&x)`
 	// compiled, and so did storing or sending one.
-	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) == 1 && suffix[0].sym == CallSuffix {
-		derives := e.retParams[e.funcCallC(recv)]
-		args := e.callArgExprs(suffix[0].ast)
+	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+		cname := e.calleeSummaryName(recv)
+		if len(suffix) != 1 {
+			// A method or an imported package's function: the same resolution the
+			// call itself uses, so `return r.id(&x)` follows the receiver's method.
+			if n, _, ok := e.callResultInfo(recv, suffix); ok {
+				cname = n
+			} else {
+				cname = ""
+			}
+		}
+		derives := e.retParams[cname]
+		args := e.callArgExprs(suffix[len(suffix)-1].ast)
 		for i, a := range args {
 			if i < len(derives) && derives[i] {
 				if r, ok := e.frameRefOf(a.ast); ok {
@@ -13732,6 +13759,36 @@ func (e *emitter) checkCrossArgs(cname string, args []Node) {
 			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), i+1, why, r.advice())
 		return
 	}
+}
+
+// bindFuncValue records which function a variable holds, when the initializer or
+// right-hand side names one outright -- `f := keep`, `var f Fn = keep`, `f = other`.
+// A call through the variable is then judged by that function's escape summaries,
+// which is the only way the requirement reaches a call site naming a variable.
+//
+// Anything else CLEARS the binding rather than leaving a stale one: a variable
+// reassigned from a parameter, a field or another variable holds a function this
+// cannot name, and answering with the previous one would be worse than not knowing.
+func (e *emitter) bindFuncValue(name string, initExpr []int32) {
+	if fn, ok := e.exprIdent(initExpr); ok {
+		if _, isFunc := e.userFunc(fn); isFunc {
+			e.funcValueOf[name] = e.funcCallC(fn)
+			return
+		}
+	}
+	delete(e.funcValueOf, name)
+}
+
+// calleeSummaryName is the C name whose summaries a call through recv should be
+// judged by. It is recv's own mangled name for a declared function, and the bound
+// function for a variable holding one; a variable holding a function this cannot
+// name yields "", which consults nothing and accepts, as the rest of the analysis
+// does with what it cannot see.
+func (e *emitter) calleeSummaryName(recv string) string {
+	if ct, ok := e.varType(recv); ok && e.isFuncCType(ct) {
+		return e.funcValueOf[recv]
+	}
+	return e.funcCallC(recv)
 }
 
 // isFrameVar reports whether a name is a variable of the frame being emitted, as
