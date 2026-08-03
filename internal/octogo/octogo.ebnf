@@ -96,7 +96,7 @@ HeaderFactor     = identifier [ FactorSuffix ]
 	| "chan" Type
 	| FuncLiteral .
 FactorSuffix = { Selector | Index | CallSuffix } .
-Selector     = "." ( identifier | "(" "type" ")" ) .
+Selector     = "." ( identifier | "(" ( "type" | Type ) ")" ) .
 Index        = "[" ( Expression [ ":" [ Expression ] [ ":" [ Expression ] ] ]
 	| ":" [ Expression ] [ ":" [ Expression ] ] ) "]" .
 FuncLiteral = "func" Signature Block .

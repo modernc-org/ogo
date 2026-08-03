@@ -322,8 +322,14 @@
 // has to be wrapped. A method call reached through a chain -- sc.first.Name(),
 // shapes[1].Area() -- is typed by the slot the interface declares.
 //
-// Not done yet: type switches and assertions (deferred, see below), and
-// devirtualization.
+// A type assertion, "x.(*T)", recovers the pointer the value carries, in both of
+// Go's forms. One table per (concrete type, interface) pair is what makes the test
+// a pointer comparison of the second word: there is no type id to read and no name
+// to compare, and no per-type registry to keep in step. The one-value form panics
+// when it does not hold, as Go's does, from the prologue -- so the panic precedes
+// every position an assertion can stand in, not only a declaration.
+//
+// Not done yet: type switches, and devirtualization.
 //
 // # Only a pointer goes in, and why
 //
@@ -391,8 +397,11 @@
 //
 // # Deferred, deliberately
 //
-// Type switches and type assertions are reachable under this representation -- a
-// type id in the vtable answers both -- and are not implemented yet.
+// A type switch is not implemented yet. Its rule is the assertion's, asked several
+// times, so what it needs is the statement rather than anything of the
+// representation. An assertion between two INTERFACE types is not implemented
+// either: the table it would have to find is the one for (the dynamic type, the
+// target interface), which the source table does not name.
 // Variadic parameters are a separate question that the earlier design folded in
 // here; they are not an interface feature and do not belong in this section.
 package octogo

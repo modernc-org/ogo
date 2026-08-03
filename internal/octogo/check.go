@@ -3076,6 +3076,15 @@ func (f *File) checkVarSpecArity(s *Scope, names []Token, exprs []Node) {
 	if len(names) == 0 || len(exprs) == 0 {
 		return
 	}
+	if len(exprs) == 1 && f.isTypeAssertion(exprs[0]) {
+		// A type assertion yields the asserted value, or that value and whether the
+		// assertion held. Both arities are legal, so neither is what rhsValueCount
+		// reports; anything else is not.
+		if len(names) > 2 {
+			f.err(names[0].Position(), "assignment mismatch: %s but a type assertion yields one value, or two in the comma-ok form", countUnits(len(names), "variable"))
+		}
+		return
+	}
 	if v, ok := f.rhsValueCount(s, exprs); ok && v != len(names) {
 		f.err(names[0].Position(), "assignment mismatch: %s but %s", countUnits(len(names), "variable"), f.valueSource(s, exprs, v))
 	}
@@ -3478,8 +3487,16 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// single right-hand expression (the grammar admits no value list); their counts
 	// must match. The targets are the head plus each LhsItem.
 	if op == ASSIGN || op == DEFINE {
-		if v, ok := f.rhsValueCount(s, rhs); ok && v != 1+lhsItems {
-			f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but %s", countUnits(1+lhsItems, "variable"), f.valueSource(s, rhs, v))
+		switch {
+		case len(rhs) == 1 && f.isTypeAssertion(rhs[0]):
+			// One value, or that value and whether the assertion held; both legal.
+			if 1+lhsItems > 2 {
+				f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but a type assertion yields one value, or two in the comma-ok form", countUnits(1+lhsItems, "variable"))
+			}
+		default:
+			if v, ok := f.rhsValueCount(s, rhs); ok && v != 1+lhsItems {
+				f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but %s", countUnits(1+lhsItems, "variable"), f.valueSource(s, rhs, v))
+			}
 		}
 	}
 
@@ -3572,6 +3589,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// just like an explicitly-typed variable's. A multi-result initializer (fewer
 	// initializers than operands) is not modelled, so those kinds stay unknown.
 	inferKinds := len(lhs) == len(rhs)
+	// "v, ok := x.(T)" is two names from one expression, which inferKinds does not
+	// cover: v carries the asserted type and ok is a bool.
+	assertBase, assertOK := Token{}, false
+	if len(rhs) == 1 && len(lhs) == 2 {
+		if _, tn, isAssert := f.typeAssertion(rhs[0]); isAssert {
+			assertBase, assertOK = namedTypeToken(tn)
+			assertOK = assertOK && f.isPointerType(s, tn)
+		}
+	}
 	newCount := 0
 	for i, id := range lhs {
 		nm := id.Src()
@@ -3591,6 +3617,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			continue
 		}
 		vd := &VarDeclaration{declaration: declaration{token: id}}
+		if assertOK {
+			switch i {
+			case 0:
+				vd.typeName, vd.isPtr = assertBase, true
+			case 1:
+				vd.kind, vd.hasKind = PredeclaredBool, true
+			}
+		}
 		if inferKinds {
 			if ek, hasEk, tn, isPtr := f.addressOfInfo(s, rhs[i]); isPtr {
 				// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
@@ -4029,6 +4063,102 @@ func (f *File) directCallResultCount(s *Scope, e Node) (int, bool) {
 // Term with no multiplicative one and a UnaryExpr with no unary one -- i.e. a bare
 // operand such as a literal, a name or a call. Any operator (including a unary "-",
 // "*" or "<-") yields ok == false.
+// typeAssertion recognises "x.(T)" -- a Factor that is an identifier followed by a
+// single Selector holding a Type rather than a field name -- and returns the
+// operand's name with the asserted type. The grammar admits the same Selector for
+// ".(type)", which belongs to a type switch and carries no Type child, so the child
+// is what tells the two apart.
+func (f *File) typeAssertion(n Node) (recv Token, typ TypeNode, ok bool) {
+	fac, isFac := f.soleFactor(n)
+	if !isFac {
+		return recv, nil, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return recv, nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return recv, nil, false
+	}
+	for c := range it(steps[0].ast) {
+		if c.sym == Type {
+			return f.tok(kids[0].tok), f.typ(f.Scope, c), true
+		}
+	}
+	return recv, nil, false
+}
+
+// assertedType returns the Type a FactorSuffix asserts, for the "x.(T)" whose
+// suffix is exactly one Selector carrying a type rather than a field name.
+func (f *File) assertedType(suffix Node) (TypeNode, bool) {
+	steps := slices.Collect(it(suffix.ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return nil, false
+	}
+	for c := range it(steps[0].ast) {
+		if c.sym == Type {
+			return f.typ(f.Scope, c), true
+		}
+	}
+	return nil, false
+}
+
+// checkTypeAssertion checks "x.(T)". The operand must be of interface type; the
+// asserted type must be a pointer, an interface holding one and nothing else; and
+// *T must supply the interface's method set, which is Go's "impossible type
+// assertion" when it cannot -- the assertion could never hold, so the program says
+// something it cannot have meant.
+func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
+	tn, ok := f.assertedType(suffix)
+	if !ok {
+		return false
+	}
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar || !d.typeName.IsValid() {
+		return true // an unresolved operand: its own check reports it
+	}
+	iface := d.typeName.Src()
+	if _, isIface := f.interfaceMethodsNamed(s, iface); !isIface {
+		f.err(id.Position(), "invalid operation: %s (variable of type %s) is not an interface", id.Src(), iface)
+		return true
+	}
+	base, hasBase := namedTypeToken(tn)
+	if !hasBase {
+		return true // an unnamed asserted type: nothing to check it against
+	}
+	if !f.isPointerType(s, tn) {
+		f.err(base.Position(), "an interface holds a pointer here; assert *%s", base.Src())
+		return true
+	}
+	if _, isIface := f.interfaceMethodsNamed(s, base.Src()); isIface {
+		return true // interface to interface, which the emitter reports for now
+	}
+	missing, _, wrong, have, want, ok := f.implements(s, base.Src(), true, iface)
+	if ok {
+		return true
+	}
+	head := fmt.Sprintf("impossible type assertion: %s.(*%s): *%s does not implement %s",
+		id.Src(), base.Src(), base.Src(), iface)
+	switch {
+	case missing != "":
+		f.err(base.Position(), "%s (missing method %s)", head, missing)
+	case wrong != "":
+		f.err(base.Position(), "%s (wrong type for method %s)\n\thave %s\n\twant %s", head, wrong, have, want)
+	default:
+		f.err(base.Position(), "%s", head)
+	}
+	return true
+}
+
+// isTypeAssertion reports whether an expression is "x.(T)". Such an expression
+// yields one value, or two in the comma-ok form, which is why the arity checks ask
+// separately rather than through rhsValueCount.
+func (f *File) isTypeAssertion(n Node) bool {
+	_, _, ok := f.typeAssertion(n)
+	return ok
+}
+
 func (f *File) soleFactor(n Node) (Node, bool) {
 	switch n.sym {
 	case Expression, SimpleExpr, Term:
@@ -5795,6 +5925,15 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 // it while "var p P = P{1, 2}" was checked. Neither the emitter's C nor the target's
 // compiler was fooled; the errors simply surfaced there instead, as C diagnostics.
 func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool) {
+	// "v := x.(*T)" carries *T, so v's fields and methods are checked as an
+	// explicitly typed pointer's are. Without this v had no type and a field read
+	// off it reached the emitter as a puzzle.
+	if _, tn, isAssert := f.typeAssertion(n); isAssert {
+		if base, hasBase := namedTypeToken(tn); hasBase && f.isPointerType(s, tn) {
+			return base, Token{}, true, true
+		}
+		return Token{}, Token{}, false, false
+	}
 	ue, ok := f.soleUnaryExpr(n)
 	if !ok {
 		return Token{}, Token{}, false, false
@@ -6279,6 +6418,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 					f.checkMethodCall(s, id, m, argList)
 				}
 			}
+		} else if hasID && f.checkTypeAssertion(s, id, suffix) {
+			// "x.(T)": a Selector carrying a type, not a field name.
 		} else if field, ok := f.fieldSelector(suffix); ok && hasID {
 			f.checkFieldAccess(s, id, field)
 		}

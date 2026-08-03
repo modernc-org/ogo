@@ -131,8 +131,9 @@
 //     "&x" puts a pointer in the interface in both languages, and mutations through
 //     x are visible through the interface in both. "&T{...}" works too, its storage
 //     being a temporary of the frame rather than an allocation, and so subject to
-//     the lifetime rule above. See internal/octogo/octogo.go. Type switches and
-//     type assertions are reachable under this model and are not implemented yet.
+//     the lifetime rule above. A type assertion "x.(*T)" recovers the concrete
+//     pointer; a type switch is not implemented yet. See
+//     internal/octogo/octogo.go.
 //
 // # Introduction
 //
@@ -602,8 +603,19 @@
 // address is therefore never the thing that makes a type fail to implement an
 // interface, only the thing that makes it succeed.
 //
-// Type switches and type assertions are reachable under this model and are not
-// implemented yet. Generic interface constraints, unions and the underlying-type
+// A type assertion recovers the pointer an interface value carries:
+//
+//	q, ok := s.(*sq)   // ok reports whether it held; q is nil when it did not
+//	q := s.(*sq)       // panics when it does not hold, as Go's does
+//
+// The asserted type is a pointer type, since a pointer is what went in. It has to
+// supply the interface's method set, or the assertion could never hold and the
+// program says something it cannot have meant: that is Go's "impossible type
+// assertion", reported here as one. One vtable is emitted per (concrete type,
+// interface) pair, so the test is a pointer comparison of the second word -- there
+// is no type id to read and no name to compare.
+//
+// A type switch is not implemented yet. Generic interface constraints, unions and the underlying-type
 // "~" operator belong to generics, which is a separate question entirely; an
 // interface here strictly defines a method set.
 //
@@ -975,7 +987,7 @@
 // with a constant capacity (see Slice types).
 //
 //	FactorSuffix = { Selector | Index | CallSuffix } .
-//	Selector     = "." ( identifier | "(" "type" ")" ) .
+//	Selector     = "." ( identifier | "(" ( "type" | Type ) ")" ) .
 //	Index        = "[" ( Expression [ ":" [ Expression ] [ ":" [ Expression ] ] ]
 //		| ":" [ Expression ] [ ":" [ Expression ] ] ) "]" .
 //
@@ -1499,8 +1511,8 @@
 // for the switch's own termination, since control continues into the next clause
 // rather than out of the bottom of the switch.
 //
-// A type switch is not implemented, and waits on the interface model -- see
-// Relationship to Go.
+// A type switch is not implemented yet. The type assertion it generalizes is; see
+// Interface types.
 //
 // # Select Statements & Smart Pin Hardware Polling
 //

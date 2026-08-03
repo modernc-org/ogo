@@ -1,0 +1,62 @@
+// A type assertion recovers the pointer an interface value carries. What is
+// asserted is a pointer type, a pointer being what went in; the concrete type has
+// to supply the interface's method set, or the assertion could never hold.
+
+type Shape interface {
+	Area() int
+}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+// tri has no methods, so no interface value can ever carry it as a Shape.
+type tri struct {
+	m int
+}
+
+// wrong has the name and not the signature.
+type wrong struct {
+	m int
+}
+
+func (w wrong) Area(k int) int { return w.m * k }
+
+var gq sq
+
+func main() {
+	var s Shape = &gq
+	var plain sq
+
+	// Both forms: the value alone, and the value with whether it held.
+	q1 := s.(*sq)
+	q2, ok := s.(*sq)
+
+	// The result carries the asserted type, so its fields are checked.
+	println(q1.n, q2.n, ok)
+
+	// ERROR type sq has no field zzz
+	println(q1.zzz)
+
+	// An interface holds a pointer, so a pointer is what is asserted.
+	// ERROR an interface holds a pointer here; assert \*sq
+	q3 := s.(sq)
+
+	// The operand has to be an interface in the first place.
+	// ERROR invalid operation: plain \(variable of type sq\) is not an interface
+	q4 := plain.(*sq)
+
+	// A type that cannot supply the set could never be in there.
+	// ERROR impossible type assertion: s.\(\*tri\): \*tri does not implement Shape \(missing method Area\)
+	q5 := s.(*tri)
+	// ERROR impossible type assertion: s.\(\*wrong\): \*wrong does not implement Shape \(wrong type for method Area\)
+	q6 := s.(*wrong)
+
+	// One value, or two, and nothing else.
+	// ERROR assignment mismatch: 3 variables but a type assertion yields one value, or two in the comma-ok form
+	a, b, c := s.(*sq)
+
+	_, _, _, _, _, _, _ = q3, q4, q5, q6, a, b, c
+}

@@ -3313,6 +3313,68 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 	return "(" + iface + "){" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
 }
 
+// typeAssertion recognises "x.(T)" and resolves the three names its lowering needs:
+// the operand, the interface type it holds, and the asserted concrete type. Only
+// "*T" is asserted, an interface holding a pointer and nothing else, so the star is
+// required here as it is at every other position.
+//
+// The grammar admits the same Selector for ".(type)", which carries no Type child;
+// that is a type switch and is not this.
+func (e *emitter) typeAssertion(ast []int32) (operand, iface, concrete string, ok bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != Factor {
+		return "", "", "", false
+	}
+	return e.typeAssertionKids(slices.Collect(it(nodes[0].ast)))
+}
+
+// typeAssertionKids is typeAssertion given a Factor's children, which is what the
+// expression emitter and the type inference each already hold.
+func (e *emitter) typeAssertionKids(kids []Node) (operand, iface, concrete string, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", "", "", false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return "", "", "", false
+	}
+	var typeAST []int32
+	for c := range it(steps[0].ast) {
+		if c.sym == Type {
+			typeAST = c.ast
+		}
+	}
+	if typeAST == nil {
+		return "", "", "", false
+	}
+	operand = e.src(kids[0].tok)
+	if iface, ok = e.varType(operand); !ok || !e.isIfaceCType(iface) {
+		return "", "", "", false
+	}
+	ct := e.cType(typeAST)
+	if !e.isPointer(ct) {
+		return "", "", "", false
+	}
+	return operand, iface, e.elemType(ct), true
+}
+
+// assertOKC renders the test an assertion asks: the value carries this concrete
+// type exactly when its table is the one emitted for that (type, interface) pair.
+// One table per pair is what makes a pointer comparison the whole of it -- there is
+// no type id to read and no name to compare.
+func (e *emitter) assertOKC(operand, iface, concrete string) string {
+	return e.varRef(operand) + ".vt == &" + ifaceVTVar(iface, concrete)
+}
+
+// assertValueC renders the asserted value: the data word, read back as the pointer
+// that was put in.
+func (e *emitter) assertValueC(operand, concrete string) string {
+	return "(" + concrete + "*)" + e.varRef(operand) + ".data"
+}
+
 // isIfaceCType reports whether a C type name is one of the interface value structs.
 func (e *emitter) isIfaceCType(ct string) bool {
 	_, ok := e.ifaceMethods[ct]
@@ -12064,6 +12126,24 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 // assigned target is assigned, and a blank target is skipped. rhs is the call
 // expression; define selects declaration (`:=` / `var`) over plain assignment.
 func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []int32) {
+	// "v, ok := x.(T)": no call, and the two values are a cast and a comparison.
+	// The order matters -- v is the zero value when the assertion does not hold, as
+	// in Go -- so ok is computed first and v reads it.
+	if operand, iface, concrete, isAssert := e.typeAssertion(rhs); isAssert {
+		if len(targets) != 2 {
+			e.fail("a type assertion yields one value, or two in the comma-ok form")
+			return
+		}
+		if !e.needVTable(iface, concrete) {
+			return
+		}
+		okTmp := e.newTmp()
+		e.ind()
+		e.emit("int " + okTmp + " = " + e.assertOKC(operand, iface, concrete) + ";\n")
+		e.emitStore(targets[0], declare[0], concrete+"*", okTmp+" ? "+e.assertValueC(operand, concrete)+" : 0")
+		e.emitStore(targets[1], declare[1], cBool, okTmp)
+		return
+	}
 	callee, suffix, ok := e.directCall(rhs)
 	if !ok {
 		e.fail("multiple assignment requires a single function call on the right-hand side")
@@ -12648,6 +12728,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 		}
 		if n.sym == Factor {
+			// "x.(T)" is the pointer that was put in, read back out.
+			if _, _, concrete, ok := e.typeAssertionKids(kids); ok {
+				return concrete + "*", true
+			}
 			// "T{...}" is a value of T, and a struct's C type is the typedef named
 			// after it, so the literal types itself.
 			if name, _, ok := e.factorCompositeLit(kids); ok {
@@ -13406,6 +13490,20 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		if n.sym == Factor {
+			// "x.(T)" standing as one value panics when it does not hold, as Go's
+			// does. The check is a statement, so it goes in the prologue and the
+			// expression is left as the cast -- which puts the panic ahead of every
+			// position an assertion can stand in, not just a declaration.
+			if operand, iface, concrete, ok := e.typeAssertionKids(kids); ok {
+				if !e.needVTable(iface, concrete) {
+					return
+				}
+				e.needPanic()
+				e.prologue = append(e.prologue, "if (!("+e.assertOKC(operand, iface, concrete)+")) "+
+					"ogo_panic(\"interface conversion: "+e.goTypeName(iface)+" is not *"+e.goTypeName(concrete)+"\");\n")
+				e.emit(e.assertValueC(operand, concrete))
+				return
+			}
 			// A literal of a DEFINED array or slice type is matched first: its
 			// factor looks exactly like a struct literal's -- a name and a
 			// CompositeLit -- and the struct path would brace-initialize it, which

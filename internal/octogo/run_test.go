@@ -1262,6 +1262,76 @@ func main() {
 		want: "4 sq\n16 36\n25 25\n",
 	},
 	{
+		// A type assertion recovers the pointer the interface carries, in both of
+		// Go's forms. One vtable is emitted per (concrete type, interface) pair, so
+		// the test is a pointer comparison of the second word -- there is no type id
+		// to read and no name to compare, and the whole of it folds to one compare.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a type assertion, in both forms",
+		src: `type Shape interface {
+	Area() int
+	Name() string
+}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+func (s sq) Name() string { return "sq" }
+
+type rect struct {
+	w, h int
+}
+
+func (r rect) Area() int { return r.w * r.h }
+
+func (r rect) Name() string { return "rect" }
+
+var gq sq
+
+var gr rect
+
+func widthOf(s Shape) int {
+	// The comma-ok form: the value, and whether the assertion held. On failure the
+	// value is the zero of its type, as in Go.
+	r, ok := s.(*rect)
+	if !ok {
+		return 0
+	}
+	return r.w
+}
+
+func main() {
+	gq.n = 3
+	gr.w, gr.h = 2, 5
+
+	var s Shape = &gq
+	println(widthOf(s), widthOf(&gr))
+
+	// The one-value form, where the assertion is known to hold.
+	q := s.(*sq)
+	println(q.n, q.Area())
+
+	// Reaching the concrete type recovers what the interface hid: a field the
+	// interface never declared.
+	s = &gr
+	r, ok := s.(*rect)
+	println(ok, r.w, r.h)
+
+	// And the negative case, on the same variable.
+	q2, ok2 := s.(*sq)
+	if ok2 {
+		println(q2.n)
+	}
+	println(ok2)
+}
+`,
+		want: "0 2\n3 9\ntrue 2 5\nfalse\n",
+	},
+	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload
 		// and a capacity the pushes are refused at. It is what a priority queue on
 		// this target looks like, and it leans on most of what this release changed

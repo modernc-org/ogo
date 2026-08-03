@@ -74,6 +74,20 @@ Releases before v0.9.0 predate this file; see
   C constant expression, so its two words are written at package initialization
   instead. `&T{...}` is refused there, a temporary at package scope being a local of
   the synthesized init function.
+- **A type assertion**, `x.(*T)`, recovers the pointer an interface value carries,
+  in both of Go's forms — `q, ok := s.(*sq)` reports whether it held and leaves `q`
+  nil when it did not, and `q := s.(*sq)` panics when it does not, as Go's does.
+  The asserted type is a pointer type, a pointer being what went in.
+
+  One vtable is emitted per (concrete type, interface) pair, so the whole test is a
+  pointer comparison of the value's second word: no type id to read, no name to
+  compare, no registry to keep in step.
+
+  Four things are refused with the reason: asserting a type that could not supply
+  the interface's method set (Go's *impossible type assertion*, which says the
+  program means something it cannot have meant), asserting on an operand that is not
+  an interface, writing the value form `s.(sq)`, and binding more than two names.
+  The asserted value carries its type, so a field read off it is checked too.
 - **A channel send checks the interface it sends to.** `ch <- t` where `t` does not
   implement `chan Shape`'s element type came back from the emitter, in the emitter's
   words, rather than from the checker in Go's. It is now the same diagnostic every
