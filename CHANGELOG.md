@@ -44,6 +44,13 @@ Releases before v0.9.0 predate this file; see
   the slot the interface declares. Before this it went untyped and fell back to the
   base identifier's type, so a `string` result printed as the two integers of its
   header and a short declaration off one was refused outright.
+- **A channel send checks the interface it sends to.** `ch <- t` where `t` does not
+  implement `chan Shape`'s element type came back from the emitter, in the emitter's
+  words, rather than from the checker in Go's. It is now the same diagnostic every
+  other position gives — a send statement and a `select` send clause alike, and
+  through a defined type over a channel. What that took was retaining the element
+  type's *name* on the declaration: a predeclared kind was all it kept, and a named
+  interface has none.
 - **An interface's method set is checked.** The declaration was already accepted and
   its duplicate methods caught, but nothing read the set: a call through a variable
   of interface type was "type Shape has no method Area" — true of the methods

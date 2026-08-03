@@ -343,9 +343,10 @@ type VarDeclaration struct {
 	// so a receiver of it resolves to no TypeDeclaration and has to be recognised.
 	builderVar bool
 
-	isChan          bool // the variable's type is a channel "chan T"
-	chanElemKind    Kind // the predeclared element type of a channel variable, for send/receive type checks
-	hasChanElemKind bool // chanElemKind is meaningful
+	isChan          bool  // the variable's type is a channel "chan T"
+	chanElemKind    Kind  // the predeclared element type of a channel variable, for send/receive type checks
+	hasChanElemKind bool  // chanElemKind is meaningful
+	chanElemName    Token // the element type's NAME, for a check a Kind cannot answer
 }
 
 // FuncDeclaration represents a named function.

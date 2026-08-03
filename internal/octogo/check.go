@@ -738,6 +738,7 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 		vd.typeQual = namedTypeQual(tn)
 		vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
 		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
+		vd.chanElemName = f.chanElemTypeName(s, tn)
 	}
 	if err := s.add(vd); err != nil {
 		f.err(tok.Position(), "%v", err)
@@ -925,6 +926,29 @@ func (f *File) chanElem(s *Scope, tn TypeNode) (elem Kind, hasElem, isChan bool)
 	return 0, false, false
 }
 
+// chanElemTypeName names a channel type's element -- the "Shape" in chan Shape --
+// for the checks that need the type itself rather than its predeclared Kind, of
+// which a named interface has none. It follows a defined channel type the way
+// chanElem does, and yields an invalid token for an element that is not a name.
+func (f *File) chanElemTypeName(s *Scope, tn TypeNode) (nm Token) {
+	for range 16 {
+		switch x := tn.(type) {
+		case *TypeNodeChan:
+			nm, _ = namedTypeToken(x.TypeNode)
+			return nm
+		case *TypeNodeIdent:
+			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
+			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+				return nm
+			}
+			tn = d.TypeSpec.TypeNode
+		default:
+			return nm
+		}
+	}
+	return nm
+}
+
 // declareParamList declares the named parameters or results in list into scope s.
 // A named result shares the body scope with the parameters and locals, so it may
 // be referenced and assigned in the body; an unnamed entry (an unnamed result)
@@ -944,9 +968,10 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		typeQual := namedTypeQual(p.TypeNode)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
+		chanElemName := f.chanElemTypeName(s, p.TypeNode)
 		funcSig := f.funcSig(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -3070,7 +3095,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var names []Token
 		var kind, elemKind, chanElemKind Kind
 		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
-		var typeName, typeQual Token
+		var typeName, typeQual, chanElemName Token
 		var funcSig *SignatureNode
 		var declType TypeNode
 		var initExprs []Node
@@ -3094,6 +3119,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						typeQual = namedTypeQual(tn)
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
+						chanElemName = f.chanElemTypeName(s, tn)
 						funcSig = f.funcSig(s, tn)
 					}
 				}
@@ -3124,7 +3150,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkInferredOverflow(s, e)
 		}
 		for _, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, funcSig: funcSig, isFunc: funcSig != nil}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, funcSig: funcSig, isFunc: funcSig != nil}
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue
@@ -4092,6 +4118,12 @@ func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
 		return
 	}
 	f.checkEscapeCross(s, valNode, true)
+	// A channel of interface type asks implements, as every other position a value
+	// meets a named type does. The element's Kind cannot answer it -- a named
+	// interface has none -- so the element's NAME is what the declaration retains.
+	if d.chanElemName.IsValid() {
+		f.checkImplements(s, d.chanElemName.Src(), valNode, "send")
+	}
 	vk, vok := f.exprType(s, valNode)
 	if !hasElem || !vok {
 		return
@@ -7997,6 +8029,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		typeName, _ := namedTypeToken(typ)
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
+		chanElemName := f.chanElemTypeName(s, typ)
 		funcSig := f.funcSig(s, typ)
 		for _, vd := range varDecls {
 			if vd == nil {
@@ -8005,6 +8038,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			vd.kind, vd.hasKind, vd.isPtr, vd.typeName = kind, hasKind, isPtr, typeName
 			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
 			vd.isChan, vd.chanElemKind, vd.hasChanElemKind = isChan, chanElemKind, hasChanElemKind
+			vd.chanElemName = chanElemName
 			vd.funcSig, vd.isFunc = funcSig, funcSig != nil
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:

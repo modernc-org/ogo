@@ -171,3 +171,29 @@ func methodSets() {
 
 	_, _ = m1, m2
 }
+
+// A channel of interface type asks it as well, in a send statement and in a
+// select's send clause alike, and through a defined type over one. The element's
+// Kind cannot answer this -- a named interface has none -- so the element's NAME is
+// what the declaration retains.
+
+type Ch chan Shape
+
+func sends(ch chan Shape, dc Ch) {
+	var q sq
+	var t tri
+
+	ch <- q
+	dc <- q
+
+	// ERROR tri does not implement Shape \(missing method Area\)
+	ch <- t
+	// ERROR tri does not implement Shape \(missing method Area\)
+	dc <- t
+
+	select {
+	case ch <- q:
+	// ERROR tri does not implement Shape \(missing method Area\)
+	case ch <- t:
+	}
+}
