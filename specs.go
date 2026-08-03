@@ -1125,8 +1125,8 @@
 //
 // Three forms are not supported yet. A function with more than one result cannot be
 // used as a value, C having no way to name the result struct by the signature alone.
-// A "go" statement's callee must be a declared function, not a variable holding one,
-// since a cog's entry point is generated per function. And a method value, "t.get",
+// A "go" statement's callee must be a declared function or a function literal, not
+// a variable holding one, since a cog's entry point is generated per function. And a method value, "t.get",
 // must carry its receiver alongside the code, which a function pointer does not.
 //
 // # Function Literals
@@ -1155,7 +1155,14 @@
 //
 //	println(func() int { return 7 }())
 //
-// A literal is not admitted after "go" or "defer", which take a declared function.
+// A literal may stand as the callee of "go" or "defer" -- both take a declared
+// function, and a lifted literal is one:
+//
+//	defer func() { ... }()
+//	go func() { ... }()
+//
+// Neither takes arguments yet. A cog usually wants none: what it shares, it shares
+// through a channel.
 //
 // # Operators
 //
@@ -1348,12 +1355,12 @@
 //		| "continue" [ identifier ]
 //		| "fallthrough"
 //		| "return" [ ExpressionList ]
-//		| "go" AssignHead { Selector | Index | CallSuffix }
+//		| "go" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
 //		| SwitchStmt
 //		| SelectStmt
 //		| "<-" Expression
 //		| AssignHead Postfix
-//		| "defer" AssignHead { Selector | Index | CallSuffix }
+//		| "defer" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
 //		| Block
 //		| EmptyStatement .
 //

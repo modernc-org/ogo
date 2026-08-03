@@ -49,6 +49,30 @@ func params() {
 	println(inner(1))
 }
 
+// A literal may also stand as the callee of "go" or "defer", where it is lifted the
+// same way and reads the same rule. Both take no arguments yet.
+
+var ch chan int
+
+func goDefer() {
+	defer func() {
+		println("done")
+	} ()
+	go func() {
+		ch <- 1
+	} ()
+	println(<-ch)
+}
+
+func goDeferCaptures() {
+	k := 5
+
+	defer func() {
+		// ERROR a function literal may not capture k from the surrounding function
+		println(k)
+	} ()
+}
+
 func withParam(n int) {
 	// ERROR a function literal may not capture n from the surrounding function
 	h := func() int { return n }

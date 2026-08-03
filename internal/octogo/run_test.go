@@ -1571,6 +1571,49 @@ func main() {
 		want: "1 2 3\n7 7\n7 9 9\n5 5\n",
 	},
 	{
+		// A function literal after "go" and after "defer". Both take a declared
+		// function -- a cog's entry point is generated per function, and a deferred
+		// call is replayed by name at every return -- and a lifted literal IS one, so
+		// what this needed was the grammar line admitting it and the lift.
+		//
+		// Every line of this prints what real Go prints for the same program,
+		// deferred order included.
+		name: "a function literal after go and defer",
+		src: `var ch chan int
+
+var done chan int
+
+func work(k int) {
+	ch <- k * 2
+}
+
+func main() {
+	// A deferred literal runs at every return, in LIFO order.
+	defer func() {
+		println("second deferred")
+	}()
+	defer func() {
+		println("first deferred")
+	}()
+
+	// A cog started from a literal: what it shares, it shares through a channel.
+	go func() {
+		ch <- 21
+		done <- 1
+	}()
+	println(<-ch)
+	<-done
+
+	// The named form still works beside it.
+	go work(5)
+	println(<-ch)
+
+	println("body done")
+}
+`,
+		want: "21\n10\nbody done\nfirst deferred\nsecond deferred\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

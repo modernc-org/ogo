@@ -1609,6 +1609,12 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			condKw = ""
 		case SelectStmt:
 			f.checkSelect(s, results, c)
+		case FuncLiteral:
+			// A literal standing as a statement's own child is the callee of a "go"
+			// or a "defer". It is checked exactly as one in an expression is, which
+			// is what makes reading a local of the surrounding function the capture
+			// it is here too.
+			f.checkFuncLiterals(s, stmt)
 		case Expression:
 			// A statement's bare Expression child is either an "if"/"for" guard
 			// (a boolean condition) or the operand of a "<-ch" receive statement,

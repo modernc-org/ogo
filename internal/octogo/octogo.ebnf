@@ -115,12 +115,12 @@ Statement = VarDecl
 	| "continue" [ identifier ]
 	| "fallthrough"
 	| "return" [ ExpressionList ]
-	| "go" AssignHead { Selector | Index | CallSuffix }
+	| "go" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
 	| SwitchStmt
 	| SelectStmt
 	| "<-" Expression
 	| AssignHead Postfix
-	| "defer" AssignHead { Selector | Index | CallSuffix }
+	| "defer" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
 	| Block
 	| EmptyStatement .
 EmptyStatement = .

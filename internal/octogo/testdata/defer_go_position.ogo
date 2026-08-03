@@ -22,7 +22,8 @@ func main() {
 	defer x
 	// ERROR go statement must be a function call
 	go x
-	// ERROR "func" \["func"\]: expected \[identifier '\*' '\('\]
+	// A function literal IS admitted here: it is lifted to a declared function,
+	// which is what defer and go take.
 	defer func() {
-	}()
+	} ()
 }

@@ -555,12 +555,14 @@ static void ogo_cog_done(int slot) { ogo_cog_pool[slot].ogo_done = 1; }
 // and hand the trampoline, the argument block and the slot's stack to _cogstart.
 // Exceeding the cogs panics at runtime, which is what the spec prescribes.
 func (e *emitter) emitGo(nodes []Node) {
-	var head Node
+	var head, lit Node
 	var suffix []Node
 	for _, n := range nodes {
 		switch n.sym {
 		case AssignHead:
 			head = n
+		case FuncLiteral:
+			lit = n
 		case Selector, Index, CallSuffix:
 			suffix = append(suffix, n)
 		}
@@ -578,6 +580,20 @@ func (e *emitter) emitGo(nodes []Node) {
 	var callSuffix Node
 	var recvText, recvCType string
 	switch {
+	case lit.sym == FuncLiteral:
+		// `go func() { ... }()`: a cog's entry point is generated per function, and a
+		// lifted literal IS one. It takes no arguments for now, which is what a cog
+		// entry usually wants anyway -- what it shares, it shares through a channel.
+		if len(suffix) != 1 || suffix[0].sym != CallSuffix || len(e.callArgExprs(suffix[0].ast)) != 0 {
+			e.fail("a function literal started with go takes no arguments yet")
+			return
+		}
+		cname, ok := e.liftFuncLit(lit)
+		if !ok {
+			return
+		}
+		site = goSite{callee: cname, id: len(e.goSites)}
+		callSuffix = suffix[0]
 	case base != "" && len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		if _, ok := e.userFunc(base); !ok {
 			e.fail("only `go f(args)` on a package function is supported yet")
@@ -2577,17 +2593,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.Write(e.vtables.Bytes())
 		out.WriteByte('\n')
 	}
-	// The goroutine pool and trampolines go after the prototypes -- a trampoline
-	// calls a user function -- and before the bodies, whose `go` statements name
-	// the argument structs declared here.
-	if gd := e.goDefs(); gd != "" {
-		out.WriteString(gd)
-		out.WriteByte('\n')
-	}
 	// The functions lifted out of function literals. Discovered while walking the
-	// bodies, like the cells below, and written before them: a lifted function may
-	// hold a channel of its own, and its prototypes let one literal name another
-	// whatever order they were found in.
+	// bodies, so they can only be written now -- and before the goroutine
+	// trampolines, one of which may be the cog entry point of a lifted literal.
 	if len(e.liftedDefs) != 0 {
 		for _, p := range e.liftedProtos {
 			out.WriteString(p + ";\n")
@@ -2597,6 +2605,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			out.WriteString(d)
 			out.WriteByte('\n')
 		}
+	}
+	// The goroutine pool and trampolines go after the prototypes -- a trampoline
+	// calls a user function -- and before the bodies, whose `go` statements name
+	// the argument structs declared here.
+	if gd := e.goDefs(); gd != "" {
+		out.WriteString(gd)
+		out.WriteByte('\n')
 	}
 	// Cells for locally declared channels. Discovered while walking the bodies, so
 	// they can only be written now, and they must precede the package initializer
@@ -2905,6 +2920,10 @@ type deferredCall struct {
 	recvCType  string // the temporary's type, already pointer-adjusted for the method
 	cname      string // the method's C name, empty when the temporary IS the callee
 	callsValue bool   // the temporary holds a function value, so it is called rather than passed
+	// litName is the file-scope function a deferred FUNCTION LITERAL was lifted to.
+	// There is no head node naming it -- the source wrote no name -- so the replay
+	// calls it directly.
+	litName string
 }
 
 // deferArg is one argument of a deferred call. A literal needs no temporary --
@@ -9864,15 +9883,37 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 // return and at a fall-through function end. A defer in a nested block also arms a
 // flag, so the replay can tell whether the block ran.
 func (e *emitter) emitDefer(nodes []Node) {
-	var head Node
+	var head, lit Node
 	var suffix []Node
 	for _, n := range nodes {
 		switch n.sym {
 		case AssignHead:
 			head = n
+		case FuncLiteral:
+			lit = n
 		case Selector, Index, CallSuffix:
 			suffix = append(suffix, n)
 		}
+	}
+	// `defer func() { ... }()`: the literal is lifted here, where the defer
+	// statement is written, and the replay calls the lifted function by name. It
+	// takes no arguments for now -- there is nothing to capture, which is what
+	// makes this the whole of it.
+	if lit.sym == FuncLiteral {
+		if len(suffix) != 1 || suffix[0].sym != CallSuffix || len(e.callArgExprs(suffix[0].ast)) != 0 {
+			e.fail("a deferred function literal takes no arguments yet")
+			return
+		}
+		cname, ok := e.liftFuncLit(lit)
+		if !ok {
+			return
+		}
+		e.defers = append(e.defers, deferredCall{litName: cname, cond: e.deferBlockDepth > 0, slot: len(e.defers)})
+		if e.deferBlockDepth > 0 {
+			e.ind()
+			e.emit(deferFlagName(len(e.defers)-1) + " = 1;\n")
+		}
+		return
 	}
 	if head.sym != AssignHead || len(suffix) == 0 {
 		e.fail("a defer statement must be a function call")
@@ -10059,6 +10100,16 @@ func (e *emitter) emitDeferDecls() {
 func (e *emitter) emitDeferred() {
 	for i := len(e.defers) - 1; i >= 0; i-- {
 		d := e.defers[i]
+		if d.litName != "" {
+			// A lifted function literal: no name in the source to resolve again, and
+			// no arguments to replay.
+			e.ind()
+			if d.cond {
+				e.emit("if (" + deferFlagName(d.slot) + ") ")
+			}
+			e.emit(d.litName + "();\n")
+			continue
+		}
 		e.deferReplay, e.deferReplayArgs = d.slot, d.args
 		if d.recvCType != "" {
 			// The receiver is a temporary of this function, so the call is written

@@ -114,7 +114,10 @@ Releases before v0.9.0 predate this file; see
   pointer would be the only honest part of a closure; the attempt is refused where
   it is written, naming what was captured. A package-level name is not a capture.
 
-  Not admitted after `go` or `defer`, which take a declared function.
+  A literal may also stand as the callee of `go` or `defer` — `go func() { ... }()`
+  and `defer func() { ... }()`. Both take a declared function, and a lifted literal
+  is one. Neither takes arguments yet; a cog usually wants none, since what it
+  shares it shares through a channel.
 - **Fixed, on the hardware: a dispatch table did not dispatch.** A call made
   directly through an array element of function-pointer type reached the *wrong
   function* on the P2 — every element called whatever the first one held, with a
