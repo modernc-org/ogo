@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing/fstest"
 )
 
 var (
@@ -24,6 +25,51 @@ var (
 // directory: their symbols are provided by the emitter (p2's hardware intrinsics),
 // so an import of one resolving to noPkg is expected, not a missing-package error.
 var intrinsicImports = map[string]bool{"p2": true}
+
+// embeddedPkgs are packages whose source the compiler carries rather than reads
+// from a directory. They are ORDINARY OctoGo, compiled and mangled like any other
+// package -- nothing about them is intrinsic -- so the day one of them ships as
+// source on disk, the only change is where it is read from.
+var embeddedPkgs = map[string]string{"testing": testingSrc}
+
+// testingSrc is the testing package: what a test needs, and no more than this
+// target can provide. There is no heap and no formatting, so there is no Errorf --
+// println is a builtin that already prints mixed types, and duplicating it in a
+// package that cannot allocate would be worse than pointing at it.
+const testingSrc = `// Package testing provides the state a test reports its outcome through. A test is
+// a function named Test<Something> taking a *testing.T, in a file whose name ends
+// _test.ogo; "ogo test" builds them into a program of their own and runs it.
+//
+// A failure is reported by calling Fail, and what went wrong is printed with the
+// builtin println, which takes mixed types:
+//
+//	func TestPop(t *testing.T) {
+//		if got := pop(); got != 3 {
+//			println("pop:", got, "want 3")
+//			t.Fail()
+//		}
+//	}
+//
+// There is no Errorf: formatting needs allocation this target does not have.
+
+type T struct {
+	failed  bool
+	skipped bool
+}
+
+// Fail marks the test as failed and lets it keep running.
+func (t *T) Fail() { t.failed = true }
+
+// Failed reports whether Fail has been called.
+func (t *T) Failed() bool { return t.failed }
+
+// Skip marks the test as skipped. It does NOT stop the test: there is no panic to
+// unwind with, so a skipping test returns on its own.
+func (t *T) Skip() { t.skipped = true }
+
+// Skipped reports whether Skip has been called.
+func (t *T) Skipped() bool { return t.skipped }
+`
 
 type importTask struct {
 	sync.Mutex
@@ -121,6 +167,12 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 		task.ready = make(chan struct{})
 		go func() {
 			defer close(task.ready)
+
+			if src, embedded := embeddedPkgs[importPath]; embedded {
+				fn := path.Join(importPath, importPath+".ogo")
+				task.p = c.NewPackage(importPath, []string{fn}, fstest.MapFS{fn: &fstest.MapFile{Data: []byte(src)}})
+				return
+			}
 
 			dirEntries, err := fs.ReadDir(c.fsys, importPath)
 			if err != nil {

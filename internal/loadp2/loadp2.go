@@ -20,7 +20,12 @@
 package loadp2
 
 import (
+	"bytes"
+	"os"
+	"os/exec"
 	"strconv"
+	"strings"
+	"time"
 
 	loadp2lib "modernc.org/loadp2/lib"
 )
@@ -105,4 +110,91 @@ func buildArgs(o Options) []string {
 		args = append(args, o.Binary)
 	}
 	return append(args, o.Extra...)
+}
+
+// Capture loads a program, reads what it prints over the serial line until the
+// output contains stop, and returns it. It is what `ogo test` reports: the board
+// returns no exit status, so the verdict travels back as text.
+//
+// The loader runs as a SUBPROCESS of this same executable rather than in-process.
+// loadp2's terminal mode owns the real serial port and does not return on its own,
+// and the only clean way to end it is Ctrl-] (0x1d) on its stdin -- which needs a
+// stdin this program can write to. Killing it instead leaves the port in a state
+// that wedges the board until it is physically reset, so SIGKILL is a last resort
+// and not the mechanism.
+func Capture(o Options, stop string, timeout time.Duration) (out string, ok bool) {
+	self, err := os.Executable()
+	if err != nil {
+		return "exec: " + err.Error(), false
+	}
+	args := buildArgs(o)
+	cmd := exec.Command(self, append([]string{"loadp2", "-t", "-NOEOF"}, args[1:]...)...)
+	stdinR, stdinW, err := os.Pipe()
+	if err != nil {
+		return "pipe: " + err.Error(), false
+	}
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		stdinR.Close()
+		stdinW.Close()
+		return "pipe: " + err.Error(), false
+	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinR, outW, outW
+	if err := cmd.Start(); err != nil {
+		stdinR.Close()
+		stdinW.Close()
+		outR.Close()
+		outW.Close()
+		return "start: " + err.Error(), false
+	}
+	stdinR.Close()
+	outW.Close()
+
+	type result struct {
+		out string
+		ok  bool
+	}
+	resc := make(chan result, 1)
+	go func() {
+		var buf bytes.Buffer
+		tmp := make([]byte, 4096)
+		matched := false
+		for {
+			n, rerr := outR.Read(tmp)
+			if n > 0 {
+				buf.Write(tmp[:n])
+				if !matched && strings.Contains(buf.String(), stop) {
+					matched = true
+					stdinW.Write([]byte{0x1d}) // leave terminal mode, close the port
+				}
+			}
+			if rerr != nil {
+				break
+			}
+		}
+		resc <- result{buf.String(), matched}
+	}()
+
+	select {
+	case r := <-resc:
+		cmd.Wait()
+		stdinW.Close()
+		outR.Close()
+		return r.out, r.ok
+	case <-time.After(timeout):
+		stdinW.Write([]byte{0x1d})
+		select {
+		case r := <-resc:
+			cmd.Wait()
+			stdinW.Close()
+			outR.Close()
+			return r.out, r.ok
+		case <-time.After(3 * time.Second):
+			cmd.Process.Kill()
+			cmd.Wait()
+			stdinW.Close()
+			outR.Close()
+			return "", false
+		}
+	}
 }

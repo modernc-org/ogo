@@ -143,7 +143,11 @@ func main() {
 			fail(2, "unknown command %q. Run %q.", args[0], os.Args[0]+" help")
 		}
 	case "test":
-		fail(1, "TODO: %v", subCommand)
+		rc, err := build.Test(args, os.Stdin, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(rc)
 	default:
 		usage(os.Stderr)
 		os.Exit(2)
@@ -248,10 +252,35 @@ that assertion implicates the compiler.
 
 Note: generation is not yet reproducible from a seed.
 `,
-	"test": `usage: ogo test [package]
+	"test": `usage: ogo test [-c] [-p port] [package]
 
-Test is not implemented yet. Files ending in _test.ogo are recognized as test
-files and excluded from a build, but nothing runs them.
+Test builds the package together with its _test.ogo files and a generated runner,
+loads the result on a connected Propeller 2, and reports what the tests printed.
+
+A test is a function named Test<Something> taking a *testing.T, in a file whose
+name ends _test.ogo. The testing package is imported by name and needs nothing on
+disk. There is no Errorf -- formatting needs allocation this target does not have
+-- so a test prints with the builtin println and calls t.Fail():
+
+	import "testing"
+
+	func TestPop(t *testing.T) {
+		if got, ok := pop(); !ok || got != 3 {
+			println("pop:", got, ok, "want 3 true")
+			t.Fail()
+		}
+	}
+
+Tests run ON THE BOARD and nowhere else. A host emulation would be faster and
+would sometimes be wrong -- the two C compilers disagree about semantics, not only
+about warnings -- and a test reporting "ok" from somewhere the program will never
+run is worse than a test that did not run.
+
+	-c        build the tests and do not run them, leaving <pkg>.test.binary
+	          beside the package. It is what CI without a board can honestly do.
+	-p port   serial port to load through; omitted lets the loader find one.
+
+Exit status is 0 when every test passed and 1 when any failed.
 `,
 	"version": `usage: ogo version
 

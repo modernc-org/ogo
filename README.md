@@ -103,6 +103,25 @@ example `ogo help build` — for one command's flags and detail. A typical sessi
 1. Write your `.ogo` code.
 2. Run `ogo build blinky/` to compile and generate your P2 binary.
 3. Run `ogo run blinky/` to compile it, load it onto a connected board and open a terminal.
+4. Run `ogo test blinky/` to run that package's `_test.ogo` tests, on the board.
+
+Tests run on the board and nowhere else. A test is `func TestSomething(t
+*testing.T)`, and `testing` is imported by name with nothing on disk:
+
+```go
+import "testing"
+
+func TestPop(t *testing.T) {
+	if got, ok := pop(); !ok || got != 3 {
+		println("pop:", got, ok, "want 3 true")
+		t.Fail()
+	}
+}
+```
+
+There is no `Errorf` — formatting needs allocation this target does not have — so a
+test prints with the builtin `println` and calls `t.Fail()`. `ogo test -c` builds
+the tests without running them, for a machine with no board attached.
 
 > **Seeing garbled serial output?** `ogo run` sets a precise 200 MHz clock and
 > reads at 230400 baud, so `println` output is readable out of the box. If you
@@ -225,17 +244,15 @@ broken.
 **Does not work yet**, in rough order of how likely you are to hit it:
 
 * **There is no standard library.** The `p2` package wraps twenty-four intrinsics
-  (pin control, smart pins, timing, the hardware locks) and is the whole of it.
-  Your own packages do import and build; there is just nothing to import yet.
-* **Interfaces**, and with them type switches and type assertions. See below.
+  (pin control, smart pins, timing, the hardware locks), and `testing` carries the
+  state a test reports through. That is the whole of it. Your own packages do import
+  and build; there is just nothing else to import yet.
 * A **goroutine's stack is a fixed 256 longs** and cannot be sized per `go`
   statement. Recursion works — `main` runs on the cog's own stack and a goroutine on
   its pool slot's — but a deep enough call chain in a goroutine overruns that slot
   with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
-* **`ogo test`** is not implemented. `_test.ogo` files are recognized and kept out
-  of a build, but nothing runs them yet.
 * A **channel held in a struct field**: a send or a receive on one is refused,
   whether the field is written `chan T` or a defined type over one. A channel in a
   variable, a parameter or a package-level declaration is fine. What has to be
@@ -302,5 +319,9 @@ Everything else Go has is meant to be here eventually — anything missing above
 work not yet done rather than a decision taken. Generics are the one open question:
 not supported, not planned, and not ruled out either.
 
-Interfaces are designed but not implemented; the whole-program-optimization
-strategy behind them is still an open question, and opinions are welcome.
+Interfaces work: an interface value is a pointer to what it carries beside a
+pointer to a statically emitted vtable, with type assertions and type switches on
+top. A pointer is what goes into one -- `var s Shape = &q`, never `= q` -- because
+there is no heap to copy into and a silently aliasing value form would mean
+something Go does not. The whole-program-optimization pass that would devirtualize
+the calls is still an open question, and opinions are welcome.

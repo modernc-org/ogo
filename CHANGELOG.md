@@ -88,6 +88,23 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **`ogo test` runs tests, on the board.** It builds a package together with its
+  `*_test.ogo` files and a generated runner, loads the result on a connected P2, and
+  reports what the tests printed — Go's `--- PASS` / `--- FAIL` lines, and an exit
+  status of 1 if any failed. The last CLI stub is gone.
+
+  A test is `func TestSomething(t *testing.T)`, and `testing` is imported by name
+  with nothing on disk: the compiler carries its source and compiles it like any
+  other package, so the day a real one ships the only change is where it is read
+  from. There is no `Errorf` — formatting needs allocation this target does not have
+  — so a test prints with the builtin `println` and calls `t.Fail()`.
+
+  **Tests run on the board and nowhere else.** A host emulation would be faster and
+  would sometimes be wrong: the two C compilers disagree about semantics and not
+  only about warnings, and this compiler has already shipped a feature that passed
+  on the host and failed on hardware. A test reporting "ok" from somewhere the
+  program will never run is worse than a test that did not run. `ogo test -c` builds
+  without running, which is what CI without a board can honestly claim.
 - **Method values**, with the receiver bound. `f := gp.bump` takes a method as a
   value; the compiler lifts it to a function of its own naming the receiver, so the
   value stays an ordinary one-word function pointer — usable in a variable, an

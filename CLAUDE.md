@@ -88,8 +88,8 @@ go test ./internal/octogo/ -run 'TestOctoGoSpecs/05_scope_shadowing.ogo' -v
 go test ./internal/octogo/ -re '05_' -run TestOctoGoSpecs -v   # -re is a custom flag filtering which .ogo files run
 ```
 
-CLI subcommands (`ogo <cmd>`): `build`, `run`, `fmt`, `loadp2`, `smith`, `help`
-and `version` all work. Only `test` is still a stub that prints `TODO`.
+CLI subcommands (`ogo <cmd>`): `build`, `run`, `test`, `fmt`, `loadp2`, `smith`,
+`help` and `version` all work. There is no stub left.
 
 ```sh
 ogo fmt -l -w --exclude='\/testdata\/' .   # gofmt-style reformat of .ogo sources in place
@@ -279,7 +279,15 @@ still design-only.
   `// ERROR <regexp>`; all currently pass, but the checker is still partial, so a
   green spec is not proof a whole feature is finished — the testdata covers only
   what has been wired up.
-- `ogo test` is the one unimplemented CLI stub.
+- `ogo test` runs a package's `*_test.ogo` tests **on the board** and nowhere else:
+  it builds them with a generated runner, loads the result, and reads the verdict
+  back over the serial line (the P2 returns no exit status). `-c` builds without
+  running, which is what CI with no board can honestly do. A host mode was
+  considered and rejected -- see `internal/build/test.go`.
+  The `testing` package is EMBEDDED SOURCE, not an intrinsic: `embeddedPkgs` in
+  `internal/octogo/build.go` maps the import path to ordinary OctoGo that is
+  compiled and mangled like any other package. The day it ships on disk, the only
+  change is where it is read from.
 - Composite literals cover positional and keyed structs (`P{1, 2}`, `P{x: 1}`),
   positional array/slice literals (`[3]int{1, 2, 3}`, `[]int{1, 2, 3}`), and
   indexed array/slice literals (`[]int{2: 5}`, `[5]int{0: 1, 4: 9}`, mixed

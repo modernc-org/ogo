@@ -2169,6 +2169,81 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 // an unattended device self-heals. Diagnostics and checks are unaffected.
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
+// TestEntry makes the named function the program's entry point instead of main,
+// which is what a test binary is: the tests and the code under test, entered
+// through a generated runner. A "main" the package under test declares is not
+// emitted at all -- a test binary replaces it, and emitting it would collide.
+func TestEntry(name string) EmitOption { return func(e *emitter) { e.testEntry = name } }
+
+// TestFuncs names the test functions of a package: a function called Test<Name>
+// taking one parameter and no results, which is the shape "ogo test" generates a
+// runner for. Order is the source order of the files, so a run is reproducible.
+func TestFuncs(p *Package) (out []string) {
+	for _, f := range p.Files {
+		if f == nil {
+			continue
+		}
+		for n := range it(f.AST) {
+			if n.sym != SourceFile {
+				continue
+			}
+			for c := range it(n.ast) {
+				if c.sym != TopLevelDecl {
+					continue
+				}
+				for d := range it(c.ast) {
+					if d.sym != FuncDecl {
+						continue
+					}
+					if nm, ok := testFuncName(f, d); ok {
+						out = append(out, nm)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// testFuncName reports whether a FuncDecl is a test function, and its name. It must
+// be a plain function (no receiver) called Test<Something> with exactly one
+// parameter and no results; the parameter's type is checked by the compiler, which
+// sees the generated runner pass a *testing.T.
+func testFuncName(f *File, decl Node) (string, bool) {
+	name := ""
+	var sig Node
+	for c := range it(decl.ast) {
+		switch {
+		case c.sym == Receiver:
+			return "", false
+		case c.sym == Signature:
+			sig = c
+		case c.sym == 0 && Symbol(f.tok(c.tok).Ch) == IDENT && name == "":
+			name = f.tok(c.tok).Src()
+		}
+	}
+	if !strings.HasPrefix(name, "Test") || len(name) == len("Test") || sig.sym != Signature {
+		return "", false
+	}
+	params, results := 0, false
+	for c := range it(sig.ast) {
+		switch c.sym {
+		case ParameterList:
+			for d := range it(c.ast) {
+				if d.sym == ParamDecl {
+					params++
+				}
+			}
+		case ResultList, Type:
+			results = true
+		}
+	}
+	if params != 1 || results {
+		return "", false
+	}
+	return name, true
+}
+
 // reachableFiles returns the files of the main package and every package reachable
 // through its imports, in dependency order: a package's imports precede it, and the
 // main package's files come last. Each package appears once. This flattens the whole
@@ -2728,6 +2803,7 @@ type emitter struct {
 	iota               int                      // the current iota value while emitting a const spec's expression, or -1 outside one
 	deferReplayArgs    []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
 	usesPanic          bool                     // ogo_panic is called: emit its definition and pull in its includes
+	testEntry          string                   // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                     // ogo_bound is called: emit the index bounds-check helper
 	usesNonzero        bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesNonzero64      bool                     // ogo_nonzero64 (64-bit divisor guard) is called
@@ -4664,7 +4740,18 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.wroteDecl = true
 
-	if recv == nil && name == "main" {
+	switch {
+	case e.testEntry != "":
+		// A test binary is entered through its generated runner. The package's own
+		// main, if it has one, is not part of it -- go test does not run it either.
+		if recv == nil && name == e.testEntry {
+			e.emitMain(sig, body)
+			return
+		}
+		if recv == nil && name == "main" {
+			return
+		}
+	case recv == nil && name == "main":
 		e.emitMain(sig, body)
 		return
 	}
