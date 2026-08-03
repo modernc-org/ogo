@@ -1126,8 +1126,13 @@
 // Three forms are not supported yet. A function with more than one result cannot be
 // used as a value, C having no way to name the result struct by the signature alone.
 // A "go" statement's callee must be a declared function or a function literal, not
-// a variable holding one, since a cog's entry point is generated per function. And a method value, "t.get",
-// must carry its receiver alongside the code, which a function pointer does not.
+// a variable holding one, since a cog's entry point is generated per function.
+//
+// A method value, "t.get", must carry its receiver alongside the code, which a
+// function pointer does not. The representation that would -- Go's own, where a
+// function value points at a struct whose first word is the code pointer -- costs
+// about a quarter of the time of every call through a function value on this
+// target. That was measured rather than guessed; see doc/funcval-cost.c.
 //
 // # Function Literals
 //

@@ -402,6 +402,34 @@
 // unjudged rather than guessed at, in every position; the emitter is what admits
 // the first and refuses the second.
 //
+// # Method values, and the funcval design that would carry them
+//
+// A method value, "f := q.Area", has to carry its receiver beside the code, which a
+// bare C function pointer cannot -- so ogo has none. The representation that would
+// carry one is Go's own: a function value is a single word pointing at a struct
+// whose first word is the code pointer. It keeps a value one word, so a dispatch
+// table does not grow, and a plain function's struct is static, so nothing is
+// allocated for it.
+//
+// It was PRICED rather than argued about, on a P2-EDGE: ~24% on every call through
+// a function value, and ~0 on everything else. The cost is not the extra word and
+// not the hidden context argument (4 cycles); it is that reaching the code is a
+// second DEPENDENT hub read, which no arrangement of the C removes. The naive form,
+// with a thunk per function, doubles that to ~46% by making every indirect call two
+// calls. doc/funcval-cost.c has the variants, the numbers and the attribution.
+//
+// Not adopted. Method values are the only thing it buys today, and a dispatch table
+// -- which this measurement shows is already faster here than a switch over direct
+// calls -- is exactly what it slows down.
+//
+// If it is revisited: choose the representation PER SIGNATURE, not per program. The
+// whole program is one translation unit, so the compiler can see which function
+// types a method value is ever made of, and only those need pay. Choosing per
+// program would mean one method value anywhere making an unrelated dispatch table
+// 24% slower, which is a cliff a reader cannot see. And revisit after
+// devirtualization, which is what removes the indirection where the target is
+// provable.
+//
 // # Deferred, deliberately
 //
 // An assertion between two INTERFACE types is not implemented: the table it would
