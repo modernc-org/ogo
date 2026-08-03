@@ -99,9 +99,11 @@
 // Defers: defer statements are verified to ensure they do not appear inside
 // for loops or unbounded control flow blocks.
 //
-// Interfaces: If using the Monomorphization WPO strategy, interface
-// assignments are checked to ensure a single concrete type per variable
-// lifetime.
+// Interfaces: an assignment into an interface variable is checked for the one
+// thing the representation cannot express -- a data pointer into storage that does
+// not outlive the interface value. Which concrete type it holds is not a
+// constraint: the vtable answers dispatch, and proving the type is an
+// optimization (see the interfaces section below).
 //
 // Annotation: Function and method bodies are annotated with a list of the TLDs
 // (excluding imports) they mention or mutate.
@@ -236,106 +238,87 @@
 // call graph WPO uses, and before or as the opening sub-pass of WPO: lifetime
 // facts are an input to devirtualization, not an output of it.
 //
-// # Whole Program Optimization (WPO) & Devirtualization ====
+// # Interfaces: Representation and Dispatch ====
 //
-// The WPO phase runs after the AST has passed all static and semantic checks and
-// the escape analysis above (whose lifetime facts it consumes). Its primary
-// objective is to enforce OctoGo's zero-allocation model by completely eliminating
-// interface types, type assertions, and type switches before emitting C code.
+// DECIDED 2026-08-03, after the escape analysis was completed: an interface value
+// is a FAT POINTER -- a data pointer beside a pointer to a statically emitted
+// vtable -- and devirtualization is an optimization applied on top of it, not the
+// rule that makes it work. This section replaces an earlier design that erased
+// interfaces entirely by requiring each interface variable to hold one concrete
+// type ("strict monomorphization"); the reasoning for the change is below, because
+// it decides what the implementation may and may not assume.
 //
-// To achieve this uniformly, the WPO treats all polymorphic and variadic
-// function calls as accepting a "Type Vector" or "Conceptual Tuple.
+// Three strategies were on the table. Bounded tagged unions compute the closed set
+// of concrete types a variable can hold and emit a tag plus a union: it needs the
+// whole-program analysis to SUCCEED, wastes padding sized to the largest member in
+// a machine with 2 KB of Cog RAM, and brings the lifetime question straight back
+// for any pointer member. Strict monomorphization erases interfaces by forbidding a
+// variable to hold more than one concrete type: it costs nothing at run time and
+// forbids the canonical use -- a heterogeneous collection -- even where the
+// compiler can prove the set exactly. Static vtables cost two words and an indirect
+// call, and express everything.
 //
-// # Phase 1: Global Call Graph & Type Vector Extraction
+// The governing rule is that what the compiler cannot PROVE safe may be rejected,
+// and that the set of handled cases may grow over time. That rule is what rules out
+// monomorphization as a language rule rather than as an optimization: it rejects
+// programs whose concrete types ARE provable, because its representation cannot
+// hold two of them, and growing past that is not an increment but a change of
+// representation. Deriving an interface's dynamic type everywhere is not achievable
+// in general, which is precisely why the representation must not depend on the
+// analysis succeeding.
 //
-// Before specializing code, we trace how concrete types flow into interface
-// variables and variadic parameters.
+// So rejection is spent where proof genuinely fails, and that is LIFETIME, not
+// dispatch. An interface value holding a pointer into storage that does not outlive
+// it is the one thing this target cannot express and has nowhere to promote to; the
+// escape analysis above is what answers it, and an interface value carrying a
+// pointer is a reference like any other -- the shared provenance predicate has to
+// see it.
 //
-//   - Entry Points: The analysis begins at main(), accumulated init() blocks,
-//     and any function invoked via a go statement.
-//   - The Tuple Concept: Every function invocation is conceptually treated as
-//     passing a Type Vector.
+// # Representation
 //
-// Examples
+// An interface type I becomes a two-word struct: the data pointer, and a pointer to
+// a vtable holding one function pointer per method of I, in a fixed order. For each
+// concrete type T assigned to an I, one static vtable is emitted, its slots filled
+// with the C names the method emitter already mints (T_M). Both ingredients exist
+// today: per-signature function-pointer typedefs, and a per-type method namespace.
+// A vtable naming those typedefs orders itself, the typedef section being sorted by
+// dependency.
 //
-//	foo(42) $\rightarrow$ [int]
-//	foo(42, "x") $\rightarrow$ [int, string]
-//	Printf("%v %v", 42, true) $\rightarrow$ [string, int, bool]
+// A method call through an interface is an indirect call: i.vt->m(i.data, args...).
+// The receiver reaches the method as the pointer it was stored as, so a value
+// receiver takes a copy at the point the value entered the interface, and a pointer
+// receiver reaches the caller's storage -- which is the distinction the deferred and
+// go paths already draw, and the reason the lifetime question is about the data
+// pointer rather than about the call.
 //
-// ---
-//   - The Monomorphization Rule: If a single lexical interface variable (e.g.,
-//     an element in an array) is assigned different concrete types across
-//     dynamic control flow branches, the WPO throws a strict compile-time error.
-//     This guarantees 100% compile-time devirtualization.
+// # Devirtualization
 //
-// # Phase 2: Signature Specialization
+// Where the concrete type behind an interface value is provable at a call site, the
+// indirect call is replaced by the direct one. This is the monomorphization idea
+// applied per call site rather than as a language rule: it makes the common case on
+// this target -- one implementation, chosen at build time -- cost exactly what a
+// direct call costs, and it can be strengthened over time without any program
+// changing meaning. A site it cannot prove keeps the indirect call and stays
+// correct. Nothing is rejected for failing to devirtualize.
 //
-// Using the Type Vectors extracted in Phase 1, we clone and specialize the AST
-// nodes for functions accepting any or ...any.
+// The analysis it needs is the one the escape summaries already want: a callee
+// identity where the call site has only a value. Three shapes are open there today
+// -- a function value in a struct field, one arriving as a parameter, and a method
+// result reached through another call -- and they are the same question, so they are
+// worth answering once for both.
 //
-//   - Cloning: If func Printf(s string, args ...any) is called with [string,
-//     int, bool], the AST is cloned to create Printf_int_bool.
-//   - Parameter Flattening: The ...any slice is erased. The signature is
-//     rewritten to accept discrete, statically typed parameters based on the
-//     vector.
+// # What the checker needs first, and it is the bulk of the work
 //
-// Example
+// None of the three strategies is the expensive part. The checker has no notion of
+// an interface type, a method set, or whether a concrete type implements an
+// interface, and every strategy needs all three. That work is the same whichever
+// representation is chosen, which is why the choice was not urgent and the checker
+// work is.
 //
-//	func Printf_int_bool(s string, _0 int, _1 bool)
+// # Deferred, deliberately
 //
-// ---
-//   - Call Site Patching: The original generic call sites are updated to point
-//     directly to these newly generated, concretely typed signatures.
-//
-// # Phase 3: Variadic Loop Rewriting (The Runtime Switch)
-//
-// Because the ...any slice was flattened into discrete parameters, any for i,
-// arg := range args loops inside the specialized function must be rewritten to
-// access the conceptual tuple safely at runtime.
-//
-//   - Length Resolution: The len(args) is statically known for this
-//     specialization (e.g., 2). The range loop is rewritten as a standard
-//     bounded integer loop: for i := 0; i < 2; i++.
-//   - Index Dispatching: The slice index access (args[i]) is replaced by a
-//     compiler-generated switch statement on i.
-//   - Body Duplication: To satisfy C's static typing, the AST nodes
-//     representing the body of the loop are duplicated inside each case, binding
-//     to the specific concrete parameter.Go
-//
-// Example
-//
-//	// Conceptual WPO AST transformation for Printf_int_bool:
-//	for i := 0; i < 2; i++ {
-//		switch i {
-//		case 0:
-//			// original loop body using _0 (int)
-//		case 1:
-//			// original loop body using _1 (bool)
-//		}
-//	}
-//
-// # Phase 4: Type Switch & Assertion Erasure
-//
-// With functions specialized and interfaces replaced by concrete types,
-// dynamic type checks are statically resolved and erased.
-//
-//   - Type Assertions (val.(T)): Since val is now a known concrete type, the
-//     compiler statically evaluates the assertion. If it matches, the assertion
-//     node is replaced by the underlying value. If it fails, it is replaced by a
-//     compiler-injected panic (if reachable).
-//   - Type Switches (switch v := i.(type)): The compiler identifies the single
-//     case matching the newly specialized concrete type. The entire switch AST
-//     node is discarded and replaced only by the statements of the matching
-//     case.
-//
-// # Phase 5: Devirtualization & Dead Code Elimination (DCE)
-//
-// The final cleanup stage before handing the AST to the backend.
-//
-//   - Direct Method Dispatch: Interface method calls (e.g., i.DoWork()) are
-//     rewritten as direct, static function calls to the concrete type's method
-//     (e.g., ConcreteType_DoWork(&i)). This ensures no VTables exist at runtime.
-//   - Pruning: The original generic functions containing any or ...any are
-//     pruned from the AST. Any unused methods or interface definitions are
-//     stripped to conserve Propeller 2 ROM space.
+// Type switches and type assertions are reachable under this representation -- a
+// type id in the vtable answers both -- and are not part of the first increment.
+// Variadic parameters are a separate question that the earlier design folded in
+// here; they are not an interface feature and do not belong in this section.
 package octogo

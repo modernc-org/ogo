@@ -123,10 +123,14 @@
 //     scheduler and no preemption, so "go" starts a real core, not a task.
 //   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
 //     synchronous rendezvous with no scheduler behind it.
-//   - Interface types are not implemented yet. They are wanted, but the model --
-//     how a method set dispatches with no heap and no run-time vtable -- is not
-//     settled; the candidate strategies are in internal/octogo/octogo.go. Type
-//     switches and type assertions wait on that choice.
+//   - Interface types are not implemented yet, but the model is now settled: an
+//     interface value is a data pointer beside a pointer to a statically emitted
+//     vtable, and a call through it is direct wherever the concrete type can be
+//     proven and indirect otherwise. Nothing is refused for failing to prove one;
+//     what is refused is an interface value holding a pointer into storage that
+//     does not outlive it, which is the same lifetime rule everything else obeys.
+//     See internal/octogo/octogo.go. Type switches and type assertions are
+//     reachable under it and are not part of the first increment.
 //
 // # Introduction
 //
@@ -569,8 +573,11 @@
 //   - The value of an uninitialized variable of interface type is nil.
 //
 // (Interface types are not implemented yet: the grammar admits the declaration
-// below, but the checker and the emitter reject it. What is undecided is the
-// dispatch model, not whether to have them -- see Relationship to Go. Generic
+// below, but the checker and the emitter reject it. The dispatch model is settled
+// -- a fat pointer over a static vtable, devirtualized where the concrete type is
+// provable -- and what is left is the work, which begins in the checker: an
+// interface type, a method set, and whether a concrete type implements one are all
+// notions it does not have yet. See Relationship to Go. Generic
 // interface constraints, unions and the underlying-type "~" operator belong to
 // generics, which is a separate question entirely; an interface here strictly
 // defines a method set).

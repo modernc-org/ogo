@@ -39,12 +39,13 @@ The deliberate exceptions, all rooted in the Propeller 2 hardware:
   preemption; `go` starts a real core, not a task.
 - **A channel is a P2 hardware lock** over statically allocated Hub RAM -- a
   synchronous rendezvous with no scheduler behind it.
-- **Interface types are not implemented yet.** They *are* wanted; what is unsettled
-  is the dispatch model with no heap and no runtime vtable (the candidate
-  strategies are in `internal/octogo/octogo.go` and the appendix below). Type
-  switches and type assertions wait on that choice -- these are the one place where
-  "not supported" means "blocked on a design decision" rather than either of the
-  above.
+- **Interface types are not implemented yet**, but they are no longer blocked on a
+  decision. Settled 2026-08-03: an interface value is a **fat pointer** -- a data
+  pointer beside a pointer to a statically emitted vtable -- with devirtualization
+  applied per call site wherever the concrete type is provable, and rejection spent
+  on lifetime rather than on dispatch. The reasoning, and what the checker needs
+  first, are in `internal/octogo/octogo.go`. Type switches and type assertions are
+  reachable under it and are deferred, not blocked.
 
 **Generics are a separate category: not supported, not planned, not ruled out.**
 A question for after v1 -- whether an LL(1) grammar can describe them at all,
@@ -366,20 +367,22 @@ helpers (guarded with `//lint:ignore U1000`); prefer them for temporary tracing.
 > any of this, and delete each item from here once it has been folded into the
 > real spec or implemented.
 
-### 1. Open decision — WPO interface handling (leaning B, never finalized)
+### 1. ~~Open decision — WPO interface handling~~ — SETTLED 2026-08-03
 
-The zero-runtime-interface goal was an unsettled choice among three strategies.
-`octogo.go` currently describes **Option B** ("Monomorphization Rule", Type-Vector
-specialization, "no VTables exist at runtime") but hedges ("*If* using the
-Monomorphization WPO strategy…"). The alternatives and their rationale survive only here:
+Resolved in favour of **static vtables** (the old option C), with monomorphization
+kept as a per-call-site optimization rather than a language rule. The reasoning, the
+representation, and what the checker needs first are now in
+`internal/octogo/octogo.go`, which was rewritten rather than amended -- it had
+described option B in detail, and two documents disagreeing about a design is how
+this repository has produced bugs before.
 
-| Strategy | Interfaces at runtime? | Go compat | Memory | Dispatch | Compiler complexity |
-| --- | --- | --- | --- | --- | --- |
-| **A. Bounded tagged unions** — WPO computes the closed set of concrete types a given interface var can hold → static C `struct { int tag; union{…} }` | Yes (unions) | High | High (union padding waste) | Fast (`switch` on tag) | High |
-| **B. Strict monomorphization** — an interface var may hold only ONE concrete type per lifetime; otherwise a compile-time error | No (fully erased) | Low | Zero | Fastest (direct call) | Low |
-| **C. Static VTables** — interface = fat pointer (data ptr + static vtable ptr) | Yes (fat ptrs) | High | Low (pointers) | Slower (indirection; bad for P2 Hub RAM) | Medium |
-
-Option C's catch: with no heap/GC, WPO must prove the pointed-to data stays in scope.
+The deciding argument, worth keeping because it generalizes: the governing rule is
+that what the compiler cannot **prove** safe may be rejected, and the handled set may
+grow over time. Monomorphization rejects programs whose concrete types ARE provable,
+because its representation cannot hold two of them -- rejecting what it can prove is
+the opposite of that rule, and growing past it is not an increment but a change of
+representation. So the representation must not depend on the analysis succeeding;
+rejection is spent on lifetime, where proof genuinely fails.
 
 ### 2. `p2` standard library — 1:1 mapping to flexprop C intrinsics (PARTLY BUILT)
 
