@@ -120,9 +120,7 @@ func main() {
 	const nFrames = 8
 	var fr [][][]pt
 	for i := 0; i < nFrames; i++ {
-		f := gopher(float64(i) / float64(nFrames))
-		render(f, fmt.Sprintf("frame%d.png", i))
-		fr = append(fr, f)
+		fr = append(fr, gopher(float64(i)/float64(nFrames)))
 	}
 	// Every frame has the same strokes and the same points per stroke -- only the
 	// coordinates move -- so the shape table is written once and the frames are a
@@ -145,6 +143,35 @@ func main() {
 		}
 	}
 	fmt.Println("strokes", nStrokes, "points per frame", total)
+
+	// Scale the whole animation to fill the 0..255 square. The scope's screen is
+	// what it is, and a figure using 70% of the DAC range is a figure 30% smaller
+	// than it needed to be. One transform for every frame, so the dance does not
+	// wobble in scale.
+	lo, hi := 1e9, -1e9
+	for _, f := range fr {
+		for _, st := range f {
+			for _, p := range st {
+				lo = math.Min(lo, math.Min(float64(p.x), float64(p.y)))
+				hi = math.Max(hi, math.Max(float64(p.x), float64(p.y)))
+			}
+		}
+	}
+	const margin = 6.0
+	k := (255 - 2*margin) / (hi - lo)
+	for _, f := range fr {
+		for _, st := range f {
+			for i := range st {
+				st[i].x = int(math.Round(margin + (float64(st[i].x)-lo)*k))
+				st[i].y = int(math.Round(margin + (float64(st[i].y)-lo)*k))
+			}
+		}
+	}
+	fmt.Printf("scaled by %.2f from [%.0f,%.0f]\n", k, lo, hi)
+
+	for i, f := range fr {
+		render(f, fmt.Sprintf("frame%d.png", i))
+	}
 
 	var b []byte
 	out := func(f string, a ...any) { b = append(b, fmt.Sprintf(f, a...)...) }

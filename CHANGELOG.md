@@ -98,6 +98,14 @@ Releases before v0.9.0 predate this file; see
   and draws the same picture to a PNG, so the geometry can be checked without a
   scope.
 
+  Photographed working on an FNIRSI 2C53T handheld. Getting there took two fixes
+  worth knowing if you drive a scope from anything: the pin mode needs `P_OE` or the
+  DAC does not drive at all (~20 mV of dither ripple looks convincingly like a
+  signal), and a *digital* scope in X/Y mode still captures a window of samples — so
+  the figure only appears if a whole frame fits inside it, and each point must be
+  held long enough that the scope cannot miss it. Drawing fewer points and holding
+  each one longer gives a better picture than the reverse.
+
   Every `_examples` program is now built by the test suite, with the same
   no-output-from-a-successful-build rule the on-board suite uses.
 - **Anonymous struct types.** `var p struct{ x, y int }`, written where a type is

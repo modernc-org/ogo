@@ -19,14 +19,17 @@ const header = `// The Go gopher, drawn on an oscilloscope in X/Y mode by a Prop
 //   - X/Y mode on, one probe per channel.
 //   - 1 V/div on both channels, DC coupled. The DAC swings the full 0..3.3 V, so at
 //     10 mV/div the figure is 300 screens tall and you see nothing.
-//   - Timebase about 1 ms/div. This is the one that catches people out: a digital
+//   - Timebase about 2 ms/div. This is the one that catches people out: a digital
 //     scope in X/Y mode still captures a WINDOW of samples, and the figure only
-//     appears if a whole frame fits in it. One frame here takes about 10 ms
-//     (frameSamples * dwell), so a 14-division window at 1 ms/div holds one with
-//     room to spare. At 100 ns/div the scope captures 0.01% of a frame and shows a
-//     meaningless blob -- correctly.
-//   - Persistence off for the dance, or a fraction of a second. Long persistence
-//     piles the dance's frames on top of each other into a blur.
+//     appears if a whole frame fits in it. One frame here takes about 15 ms, so a
+//     14-division window at 2 ms/div holds one with room to spare. At 100 ns/div
+//     the scope captures 0.01% of a frame and shows a meaningless blob -- correctly.
+//   - Single-shot or STOP once it looks right, which is how you photograph it.
+//
+// The DANCE is a lot to ask of a handheld scope: it wants continuous capture fast
+// enough to refresh, and a frame here fills most of a capture window. Expect a
+// slideshow at best. An analog scope, or a faster DSO in roll mode, is where the
+// eight frames come to life.
 //
 // If the picture is a diagonal line, both probes are on the same pin or the scope
 // is not in X/Y mode. If it is a small fuzzy blob, the timebase is too short (see
@@ -50,19 +53,24 @@ const (
 	//	                             millivolts of dither ripple instead of a picture
 	dacMode = 0x140046
 
-	// dwell is how many clock cycles the beam rests on each sample. On a DIGITAL
-	// scope this sets whether the picture is possible at all: the scope samples the
-	// two channels at its own rate, and every point of the figure has to sit still
-	// long enough to be caught at least once. 2000 cycles is 10 us at 200 MHz, which
-	// puts one frame at about 10 ms -- a comfortable 1 ms/div.
+	// dwell is how many clock cycles the beam rests on each sample, and on a DIGITAL
+	// scope it is what decides whether the picture is any good. The scope samples
+	// the two channels at its own rate; a point it does not happen to sample is a
+	// point it draws a straight jump past. So hold each one long enough that missing
+	// it is impossible: 8000 cycles is 40 us at 200 MHz.
 	//
-	// An ANALOG scope wants the opposite: as fast as the beam will follow, so try 40
-	// there and turn the timebase down with it.
-	dwell = 2000
+	// This is counter-intuitive next to steps below. Drawing FEWER points and
+	// holding each LONGER gives a better picture than the reverse, because the
+	// figure is polygonal anyway and what matters is that every vertex lands.
+	//
+	// An ANALOG scope wants the opposite -- as fast as the beam will follow -- so
+	// try dwell 40, steps 5, and turn the timebase down with them.
+	dwell = 8000
 
-	// steps is how many samples a segment between two points is drawn with. More is
-	// a smoother line and a slower frame.
-	steps = 5
+	// steps is how many samples a segment between two points is drawn with. Two is
+	// enough when dwell is long: the scope joins what it caught with a straight
+	// line, and between two points of a polygon a straight line is the right answer.
+	steps = 2
 
 	// still selects one frame of the dance and holds it, which is what a photograph
 	// wants: the frames superimposed by a slow scope or a long persistence are a
