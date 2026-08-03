@@ -15,6 +15,20 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **An interface's method set is checked.** The declaration was already accepted and
+  its duplicate methods caught, but nothing read the set: a call through a variable
+  of interface type was "type Shape has no method Area" — true of the methods
+  declared *on* the name, of which there are none — and a concrete value assigned to
+  such a variable was not checked at all. A call is now resolved against the set and
+  checked against that method's signature, and an assignment reports a type that does
+  not implement the interface, in Go's words and with Go's `have`/`want` pair for a
+  method whose signature differs.
+
+  This is the checker half. The representation is settled (a data pointer beside a
+  static vtable) and not emitted yet, so a program that passes these checks stops at
+  `interface types are not emitted yet` — which is also what replaced the emitter's
+  `unsupported type ""`, a message that named the empty string for a type that has a
+  name.
 - **A reference to a local may no longer be laundered through a call.** The
   lifetime rules refused `g = &x` — storing a local's address where it outlives the
   frame — but `keep(&x)`, where `keep` does that store, was accepted, and so was the

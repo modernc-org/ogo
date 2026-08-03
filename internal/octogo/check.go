@@ -4597,6 +4597,127 @@ func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
 	return fields, true
 }
 
+// interfaceMethods returns the method set of a named interface type, keyed by name,
+// and whether the name is one. It is the interface counterpart of structFields:
+// where that answers "what may be selected", this answers "what may be called".
+func (f *File) interfaceMethods(s *Scope, typeName Token) (map[string]*MethodSpecNode, bool) {
+	td, ok := s.find(typeName.Src()).(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return nil, false
+	}
+	it, ok := td.TypeSpec.TypeNode.(*TypeNodeInterface)
+	if !ok {
+		return nil, false
+	}
+	set := map[string]*MethodSpecNode{}
+	for i := range it.Methods {
+		m := &it.Methods[i]
+		if m.Name.IsValid() && m.Name.Src() != "_" {
+			set[m.Name.Src()] = m
+		}
+	}
+	return set, true
+}
+
+// methodSpecSig reads a method spec as the signature it is. The two productions
+// carry the same two parts, so everything that judges a signature -- the argument
+// check, the renderer a diagnostic uses -- works on an interface's method without
+// knowing it came from one.
+func methodSpecSig(m *MethodSpecNode) *SignatureNode {
+	return &SignatureNode{Params: m.Params, Results: m.Results}
+}
+
+// implements reports whether the named concrete type satisfies the named interface,
+// and names the first method that stops it: missing, or present with another
+// signature. Both answers are what the diagnostic needs, which is why one function
+// gives them.
+//
+// A method is compared by rendered signature. Anything that does not render -- a
+// type the renderer does not model -- compares equal rather than unequal, so an
+// unmodelled corner accepts instead of inventing a mismatch.
+func (f *File) implements(s *Scope, concrete, iface Token) (missing string, wrongType string, have, want string, ok bool) {
+	set, isIface := f.interfaceMethods(s, iface)
+	if !isIface {
+		return "", "", "", "", true
+	}
+	td, isNamed := s.find(concrete.Src()).(*TypeDeclaration)
+	if !isNamed {
+		// Not a named type: it carries no methods at all, so any non-empty
+		// interface is unsatisfied. An empty one is satisfied by everything.
+		for name := range set {
+			return name, "", "", "", false
+		}
+		return "", "", "", "", true
+	}
+	for _, name := range sortedNames(set) {
+		fd := td.methods[name]
+		if fd == nil {
+			return name, "", "", "", false
+		}
+		if fd.Type == nil {
+			continue
+		}
+		w := f.sigString(methodSpecSig(set[name]), false)
+		h := f.sigString(fd.Type.Signature, false)
+		if w == "" || h == "" || w == h {
+			continue
+		}
+		return "", name, h, w, false
+	}
+	return "", "", "", "", true
+}
+
+// sortedNames keeps a diagnostic deterministic: which missing method is reported
+// must not depend on map iteration order.
+func sortedNames(set map[string]*MethodSpecNode) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// checkImplements reports a concrete value assigned where an interface is wanted
+// whose method set it does not satisfy, in the two ways that can happen: a method
+// missing, and a method present with another signature. The wording is Go's, down
+// to the have/want pair on their own lines, because a reader who knows Go's should
+// recognise this one.
+//
+// A value whose type this cannot name -- a literal, a call result, anything not a
+// variable of a named type -- is left alone rather than guessed at.
+func (f *File) checkImplements(s *Scope, ifaceName Token, value Node, what string) {
+	if _, isIface := f.interfaceMethods(s, ifaceName); !isIface {
+		return
+	}
+	id, ok := f.exprIdent(value)
+	if !ok {
+		return
+	}
+	d, ok := s.find(id.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() || d.typeName.Src() == ifaceName.Src() {
+		return
+	}
+	// An interface value assigned to an interface variable is a different question
+	// (is one method set a superset of the other), and is not this one.
+	if _, valueIsIface := f.interfaceMethods(s, d.typeName); valueIsIface {
+		return
+	}
+	missing, wrong, have, want, ok := f.implements(s, d.typeName, ifaceName)
+	if ok {
+		return
+	}
+	pos := f.tok(value.Pos()).Position()
+	if missing != "" {
+		f.err(pos, "cannot use %s (variable of type %s) as %s value in %s: %s does not implement %s (missing method %s)",
+			id.Src(), d.typeName.Src(), ifaceName.Src(), what, d.typeName.Src(), ifaceName.Src(), missing)
+		return
+	}
+	f.err(pos, "cannot use %s (variable of type %s) as %s value in %s: %s does not implement %s (wrong type for method %s)\n\thave %s%s\n\twant %s%s",
+		id.Src(), d.typeName.Src(), ifaceName.Src(), what, d.typeName.Src(), ifaceName.Src(), wrong,
+		wrong, strings.TrimPrefix(have, "func"), wrong, strings.TrimPrefix(want, "func"))
+}
+
 // fieldSelector reports whether a FactorSuffix or Postfix is a single field
 // selection "x.field" -- exactly one selector, no index and no call -- and
 // returns the selected field.
@@ -4910,6 +5031,25 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 		if fields, isStruct := f.structFields(s, d.typeName); isStruct && fields[member.Src()] {
 			return
 		}
+		// A variable of interface type dispatches to the interface's method set,
+		// not to methods declared on the interface name -- there are none. The set
+		// is what the call is checked against, and what a concrete value assigned
+		// to the variable had to supply.
+		if set, isIface := f.interfaceMethods(s, d.typeName); isIface {
+			m, has := set[member.Src()]
+			if !has {
+				f.err(member.Position(), "type %s has no method %s", d.typeName.Src(), member.Src())
+				return
+			}
+			var args []Node
+			for a := range it(argList.ast) {
+				if a.sym == Expression {
+					args = append(args, a)
+				}
+			}
+			f.checkArgs(s, member, methodSpecSig(m), args)
+			return
+		}
 		f.err(member.Position(), "type %s has no method %s", d.typeName.Src(), member.Src())
 		return
 	}
@@ -5193,6 +5333,7 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 				want = "*" + want
 			}
 			f.checkPointerValue(s, d.isPtr, want, rhsNode, "assignment")
+			f.checkImplements(s, d.typeName, rhsNode, "assignment")
 		}
 	}
 	lk, lok := f.identKind(s, lhsTok)

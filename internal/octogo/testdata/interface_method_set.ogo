@@ -1,0 +1,66 @@
+// An interface's method set is what a call through a variable of that type is
+// checked against, and what a concrete value assigned to one has to supply.
+//
+// The representation is settled -- a data pointer beside a static vtable, see
+// internal/octogo/octogo.go -- and not emitted yet, so these are checker rules
+// only. A program that passes them still stops at "interface types are not emitted
+// yet"; that is why this file is a spec test rather than a run case.
+
+type Shape interface {
+	Area() int
+	Name() string
+}
+
+type Empty interface{}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+func (s sq) Name() string { return "sq" }
+
+// tri has no methods at all.
+type tri struct {
+	n int
+}
+
+// wrong has both names, one with the wrong signature.
+type wrong struct {
+	n int
+}
+
+func (w wrong) Area(k int) int { return w.n * k }
+
+func (w wrong) Name() string { return "wrong" }
+
+func main() {
+	var s Shape
+	var q sq
+	var t tri
+	var w wrong
+	var e Empty
+
+	// A method of the set is called and checked against the set's signature.
+	println(s.Area(), s.Name())
+
+	// ERROR type Shape has no method Perimeter
+	println(s.Perimeter())
+	// ERROR too many arguments in call to Area
+	println(s.Area(1))
+
+	// A type supplying the whole set satisfies it.
+	s = q
+
+	// ERROR tri does not implement Shape \(missing method Area\)
+	s = t
+	// ERROR wrong does not implement Shape \(wrong type for method Area\)
+	s = w
+
+	// The empty interface is satisfied by everything.
+	e = q
+	e = t
+
+	_ = e
+}

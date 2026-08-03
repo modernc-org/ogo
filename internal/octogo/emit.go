@@ -2181,7 +2181,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2617,6 +2617,7 @@ type emitter struct {
 	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
 	namedTypes         map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
 	typeNames          map[string]bool          // every C type name this program declares, struct or not, for fieldIdent's collision check
+	interfaceTypes     map[string]bool          // source names declared as an interface type, so a use of one is refused by name rather than as an unsupported type
 	namedUnderlying    map[string]string        // that typedef -> the C type it stands for, so a value of it is represented as what it is
 	namedArrays        map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
 	constInt           map[string]string        // integer-constant name -> its C literal value, for array bounds
@@ -2952,6 +2953,11 @@ func (e *emitter) collectStructForwards(ast []int32) {
 					// before a struct body is emitted.
 					mn := mangle(e.curPkgPrefix, name)
 					e.typeNames[mn] = true
+					if e.isInterfaceTypeAST(typeAST) {
+						// Recorded by SOURCE name: a use of it reaches cType as the
+						// name written, and the point is to refuse it by that name.
+						e.interfaceTypes[name] = true
+					}
 					if e.structTypeAST(typeAST) == nil {
 						continue
 					}
@@ -3062,6 +3068,16 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		}
 		e.addTypedef(mn, "typedef "+underlying+" "+mn+";\n", underlying)
 	}
+}
+
+// isInterfaceTypeAST reports whether a Type subtree is an interface type.
+func (e *emitter) isInterfaceTypeAST(typeAST []int32) bool {
+	for n := range it(typeAST) {
+		if n.sym == InterfaceType {
+			return true
+		}
+	}
+	return false
 }
 
 // structTypeAST returns the StructType node's children within a Type subtree, or
@@ -6064,6 +6080,15 @@ func (e *emitter) cType(ast []int32) string {
 		name, _ := e.funcType(ast)
 		return name
 	}
+	// An interface type written out. The checker admits it and its method set; the
+	// representation is settled (a data pointer beside a static vtable, see
+	// octogo.go) and not emitted yet. Said by name, because the tokens below hold no
+	// identifier for the generic message to report and it would name the empty
+	// string.
+	if e.isInterfaceTypeAST(ast) {
+		e.fail("%v: interface types are not emitted yet", e.f.tok(firstIndex(ast)).Position())
+		return ""
+	}
 	var toks []int32
 	nonTerminal := false
 	for _, n := range nodes {
@@ -6130,6 +6155,10 @@ func (e *emitter) cType(ast []int32) string {
 			return u // see collectTypeDecl: a defined channel type is its cell
 		}
 		return mn
+	}
+	if e.interfaceTypes[name] {
+		e.fail("%v: interface types are not emitted yet", e.f.tok(toks[0]).Position())
+		return ""
 	}
 	e.fail("unsupported type %q", name)
 	return ""
