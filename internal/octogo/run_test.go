@@ -1208,6 +1208,61 @@ func main() {
 		want: "sq 9 rect 10\nsq 9 1\n28 rect\nrect 10\n",
 	},
 	{
+		// An interface value made from something that has no variable of its own: a
+		// composite literal and a call's result. There is no address to point at, so
+		// each is copied into a temporary of the frame -- which is also the one shape
+		// that matches Go exactly, an interface here otherwise REFERRING to the
+		// variable it was made from rather than copying it.
+		//
+		// A package variable of interface type is the fourth line's business: an
+		// address is not a C constant expression, so its two words are written at
+		// package initialization. Reading 4 rather than 0 for `var g Shape = gq` with
+		// gq set in main is that reference showing -- Go prints 0 -- and is the
+		// divergence octogo.go's Status section records.
+		name: "an interface over a literal, a call result and a package variable",
+		src: `type Shape interface {
+	Area() int
+	Name() string
+}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+func (s sq) Name() string { return "sq" }
+
+func mk(k int) sq {
+	var q sq
+	q.n = k
+	return q
+}
+
+func use(s Shape) int { return s.Area() }
+
+var gq sq
+
+var g Shape = gq
+
+func main() {
+	gq.n = 2
+	println(g.Area(), g.Name())
+
+	// A composite literal and a call's result: neither has a variable to point at,
+	// so each is copied into storage the compiler mints.
+	var a Shape = sq{4}
+	println(a.Area())
+
+	var b Shape = mk(5)
+	println(b.Area())
+
+	println(use(sq{6}), use(mk(7)))
+}
+`,
+		want: "4 sq\n16\n25\n36 49\n",
+	},
+	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload
 		// and a capacity the pushes are refused at. It is what a priority queue on
 		// this target looks like, and it leans on most of what this release changed

@@ -2693,6 +2693,7 @@ type emitter struct {
 	checks             bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals             map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc            string                   // name of the function whose body is being emitted (for its result-struct type)
+	pkgScope           bool                     // a package variable's initializer is being emitted, where this frame's storage does not exist
 	curResultNames     []string                 // current function's result C-variable names, for a bare "return" (naked return)
 	curResultTypes     []string                 // current function's result C types, for typing a `return nil` in a slice-returning function
 	tmp                int                      // per-function counter for generated temporaries (destructuring)
@@ -3185,13 +3186,24 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 		}
 		return target + " = " + e.captureC(func() { e.emitExpr(rhs) }) + ";\n"
 	}
-	concrete, data, ok := e.ifaceOperand(rhs)
+	concrete, data, temp, ok := e.ifaceOperand(rhs)
 	if !ok {
+		if e.pkgScope {
+			// A frame temporary is what gives an addressless value storage, and a
+			// package variable's initializer has no frame to put one in.
+			e.fail("a package variable of interface type needs a variable to point at: assign the value to one first")
+			return ""
+		}
 		e.fail("only a variable, or the address of one, may be stored in an interface yet")
 		return ""
 	}
 	if !e.needVTable(iface, concrete) {
 		return ""
+	}
+	if temp {
+		// The value lives in a temporary of this frame, so what holds it holds a
+		// reference into this frame, exactly as the address of a local does.
+		e.frameHolder[target] = tempOrigin
 	}
 	if root, isRoot := e.addrOfRoot(rhs); isRoot && e.isFrameVar(root) {
 		e.frameHolder[target] = "local " + root
@@ -3221,7 +3233,7 @@ func (e *emitter) hasIfaceMethod(iface, method string) bool {
 // `x` and `&x` name the same storage and differ only in which method set satisfies
 // the interface -- a question the checker has already settled -- so both arrive
 // here as the address of the variable, which is what the table's thunks unpack.
-func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, ok bool) {
+func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok bool) {
 	name, isName := e.exprIdent(rhs)
 	if !isName {
 		if root, isAddr := e.addrOfRoot(rhs); isAddr {
@@ -3229,17 +3241,35 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, ok bool) {
 		}
 	}
 	if !isName {
-		return "", "", false
+		return e.ifaceTempOperand(rhs)
 	}
 	ct, ok := e.varType(name)
 	if !ok {
-		return "", "", false
+		return e.ifaceTempOperand(rhs)
 	}
 	if e.isPointer(ct) {
 		// A variable already of pointer type points at the value itself.
-		return e.elemType(ct), e.varRef(name), true
+		return e.elemType(ct), e.varRef(name), false, true
 	}
-	return ct, "&" + e.varRef(name), true
+	return ct, "&" + e.varRef(name), false, true
+}
+
+// ifaceTempOperand gives storage to a value that has none of its own -- a composite
+// literal, a call's result -- so an interface has an address to point at. It is a
+// temporary of this frame, which is exactly what a local is, so the lifetime rules
+// treat it as one: an interface made from it may not outlive the frame.
+//
+// A package variable's initializer has no frame to put one in (its temporaries are
+// locals of ogo_pkg_init), so there the value is refused rather than pointed at.
+func (e *emitter) ifaceTempOperand(rhs []int32) (concrete, data string, temp, ok bool) {
+	if e.pkgScope {
+		return "", "", false, false
+	}
+	ct, ok := e.inferCType(rhs)
+	if !ok || ct == "" || e.isIfaceCType(ct) || !(e.isStruct(ct) || e.isUserType(ct)) {
+		return "", "", false, false
+	}
+	return ct, "&" + e.hoist(ct, func() { e.emitExpr(rhs) }), true, true
 }
 
 // ifaceValueC renders a concrete value as an interface value, for the positions
@@ -3251,7 +3281,7 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 	if ct, ok := e.inferCType(rhs); ok && ct == iface {
 		return e.captureC(func() { e.emitExpr(rhs) }), true
 	}
-	concrete, data, ok := e.ifaceOperand(rhs)
+	concrete, data, _, ok := e.ifaceOperand(rhs)
 	if !ok || !e.needVTable(iface, concrete) {
 		return "", false
 	}
@@ -3443,6 +3473,11 @@ func (e *emitter) collectConstValues(ast []int32) {
 // emitPackageVars emits the file's package-level variable declarations as C
 // file-scope `static` definitions and records each in the global type environment.
 func (e *emitter) emitPackageVars(ast []int32) {
+	// A package variable's initializer runs in ogo_pkg_init, so a temporary hoisted
+	// out of it is a local of THAT function -- storage a package variable must not
+	// be left pointing at. What needs one is refused here instead (ifaceOperand).
+	e.pkgScope = true
+	defer func() { e.pkgScope = false }()
 	for n := range it(ast) {
 		if n.sym != SourceFile {
 			continue
@@ -3654,6 +3689,16 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			e.emit("static " + ctype + " " + gn)
 			switch {
 			case initExpr == nil:
+			case e.isIfaceCType(ctype):
+				// An interface value is an address beside a table pointer, and an
+				// address is not a C constant expression, so the two words are
+				// written at package initialization. What it points at has to be a
+				// package variable too: a frame temporary would be a local of
+				// ogo_pkg_init, which is not storage a package variable may keep.
+				e.emit(" = " + e.zeroInitC(ctype))
+				if stmt := e.ifaceStoreC(gn, ctype, initExpr); stmt != "" {
+					defer e.deferPkgInit(strings.TrimSuffix(stmt, "\n"))
+				}
 			case e.staticInitOK(initExpr):
 				e.emit(" = ")
 				e.emitGlobalInit(initExpr)
@@ -6249,6 +6294,17 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 		e.globals[gn] = ctype
 		if e.isSliceCType(ctype) {
 			e.globalSliceVars[gn] = sliceElemFromCName(ctype)
+		}
+		// A package variable of interface type is zero until package init, where the
+		// two words are written -- an address is not a C constant expression, so it
+		// cannot be a file-scope initializer. What it points at has to be a package
+		// variable too, this function's temporaries being locals of ogo_pkg_init.
+		if e.isIfaceCType(ctype) && inits[i] != nil {
+			e.emit("static " + ctype + " " + gn + " = " + e.zeroInitC(ctype) + ";\n")
+			if stmt := e.ifaceStoreC(gn, ctype, inits[i]); stmt != "" {
+				e.deferPkgInit(strings.TrimSuffix(stmt, "\n"))
+			}
+			continue
 		}
 		if e.staticInitOK(inits[i]) {
 			e.emit("static " + ctype + " " + gn + " = ")
@@ -13984,6 +14040,11 @@ func litRef() frameRef {
 	}
 }
 
+// tempOrigin names the storage the emitter mints for a value that has none of its
+// own -- a literal or a call's result put into an interface. There is no variable a
+// reader could be told to move to package scope, so advice() answers differently.
+const tempOrigin = "a temporary of this function"
+
 func holderRef(name, origin string) frameRef {
 	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
 }
@@ -13992,8 +14053,11 @@ func holderRef(name, origin string) frameRef {
 // variable itself, and telling a reader to move a backing array that is not there
 // sends them looking for one.
 func (r frameRef) advice() string {
-	if r.view {
+	switch {
+	case r.view:
 		return "declare the backing array at package scope"
+	case r.origin == tempOrigin:
+		return "assign the value to a package variable and use that"
 	}
 	return "declare " + strings.TrimPrefix(r.origin, "local ") + " at package scope"
 }

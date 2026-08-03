@@ -320,6 +320,27 @@
 // was made from must outlive it -- recorded as the ordinary provenance mark, which
 // is why every sink already asks about it.
 //
+// It also DIVERGES FROM GO, and knowingly. Go copies into an interface value, so
+// assigning to the variable afterwards is not visible through it; here it is:
+//
+//	var q sq
+//	q.n = 3
+//	var s Shape = q
+//	q.n = 5
+//	println(s.Area()) // Go: 9. Here: 25.
+//
+// Matching Go would mean a copy per assignment, and per assignment is exactly what
+// a heap is for: one temporary per assignment SITE is not the same thing, since a
+// site that runs twice with both values still live needs two. So the reference is
+// not a shortcut to be closed later, it is what the no-heap rule leaves. What is
+// owed is that a reader be told, which specs.go's Interface types section does.
+//
+// A value with no variable of its own -- a composite literal, a call's result --
+// has nothing to alias, so it is copied into a temporary the emitter mints and
+// those forms match Go exactly. At package scope there is no frame to mint one in
+// (a temporary there would be a local of ogo_pkg_init), so an addressless value
+// meeting a package variable of interface type is refused.
+//
 // Go's method-set rule is kept: a value of T carries the methods declared on T and
 // *T carries all of them, so an interface holding a pointer-receiver method is
 // satisfied by &x and not by x. It earns its keep here even though nothing is

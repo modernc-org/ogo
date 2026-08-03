@@ -44,6 +44,26 @@ Releases before v0.9.0 predate this file; see
   the slot the interface declares. Before this it went untyped and fell back to the
   base identifier's type, so a `string` result printed as the two integers of its
   header and a short declaration off one was refused outright.
+- **A value with no variable of its own may meet an interface.** A composite
+  literal and a call's result were refused — "only a variable, or the address of
+  one, may be stored in an interface yet" — because an interface value needs an
+  address and neither has one. Each is now copied into a temporary of the frame,
+  which is exactly what a local is, so the lifetime rules already cover it. These
+  are also the one shape that matches Go exactly: there is nothing to alias.
+- **A package variable of interface type is initialized.** `var g Shape = gq` used
+  to reach the C compiler as invalid C, in the backend's words. An address is not a
+  C constant expression, so its two words are written at package initialization
+  instead. What it points at has to be a package variable too — a temporary there
+  would be a local of the synthesized init function — and an addressless value is
+  refused, with a diagnostic saying so.
+- **Documented, not fixed: an interface value refers, where Go copies.** There is no
+  heap to box into, so the data pointer is the address of the variable the value was
+  made from; assigning to that variable afterwards is visible through the interface,
+  where Go kept the old value. Matching Go would need a copy per *assignment*, which
+  is what a heap is for — one temporary per assignment site is not the same thing.
+  So this is what the no-heap rule leaves rather than a gap to close, and what is
+  owed is that a reader be told: `specs.go`'s **Interface types** section now says
+  it, with the two consequences spelled out.
 - **A channel send checks the interface it sends to.** `ch <- t` where `t` does not
   implement `chan Shape`'s element type came back from the emitter, in the emitter's
   words, rather than from the checker in Go's. It is now the same diagnostic every

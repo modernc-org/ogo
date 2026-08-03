@@ -123,14 +123,17 @@
 //     scheduler and no preemption, so "go" starts a real core, not a task.
 //   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
 //     synchronous rendezvous with no scheduler behind it.
-//   - Interface types are not implemented yet, but the model is now settled: an
-//     interface value is a data pointer beside a pointer to a statically emitted
-//     vtable, and a call through it is direct wherever the concrete type can be
-//     proven and indirect otherwise. Nothing is refused for failing to prove one;
-//     what is refused is an interface value holding a pointer into storage that
-//     does not outlive it, which is the same lifetime rule everything else obeys.
-//     See internal/octogo/octogo.go. Type switches and type assertions are
-//     reachable under it and are not part of the first increment.
+//   - An interface value REFERS to the variable it was made from; Go copies into
+//     it. There is no heap to box a copy into, so the value is a data pointer
+//     beside a pointer to a statically emitted vtable, and the data pointer is the
+//     variable's address. Assigning to that variable afterwards is therefore
+//     visible through the interface, where Go would have kept the old value. The
+//     same rule makes an interface value a reference for lifetime purposes: what it
+//     points at must outlive it, which is what everything else here obeys. A value
+//     with no variable of its own -- a literal, a call's result -- is copied to
+//     storage the compiler mints, and those match Go exactly, there being nothing
+//     to alias. See internal/octogo/octogo.go. Type switches and type assertions
+//     are reachable under this model and are not implemented yet.
 //
 // # Introduction
 //
@@ -572,15 +575,29 @@
 //     type set of the interface.
 //   - The value of an uninitialized variable of interface type is nil.
 //
-// (Interface types are not implemented yet: the grammar admits the declaration
-// below, but the checker and the emitter reject it. The dispatch model is settled
-// -- a fat pointer over a static vtable, devirtualized where the concrete type is
-// provable -- and what is left is the work, which begins in the checker: an
-// interface type, a method set, and whether a concrete type implements one are all
-// notions it does not have yet. See Relationship to Go. Generic
-// interface constraints, unions and the underlying-type "~" operator belong to
-// generics, which is a separate question entirely; an interface here strictly
-// defines a method set).
+// (OctoGo Specific): An interface value is a data pointer beside a pointer to a
+// statically emitted vtable, one table per (concrete type, interface) pair. There
+// is no heap, so what the data pointer holds is the ADDRESS of the variable the
+// value was made from rather than a copy of it -- an interface value refers to that
+// variable, where Go copies. Two consequences, both worth knowing before writing
+// one:
+//
+//   - Assigning to the variable afterwards is visible through the interface.
+//   - The variable must outlive the interface value, which is the lifetime rule
+//     everything else here obeys, and is enforced.
+//
+// A value with no variable of its own -- a composite literal, a call's result -- is
+// put in storage the compiler mints for it, so those two behave exactly as Go's do:
+// there is nothing to alias.
+//
+// Go's method-set rule is kept: a value of T carries the methods declared on T and
+// *T carries all of them, so an interface holding a pointer-receiver method is
+// satisfied by &x and not by x.
+//
+// Type switches and type assertions are reachable under this model and are not
+// implemented yet. Generic interface constraints, unions and the underlying-type
+// "~" operator belong to generics, which is a separate question entirely; an
+// interface here strictly defines a method set.
 //
 //	InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
 //	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
