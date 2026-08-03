@@ -184,6 +184,7 @@ var p2Intrinsics = map[string]p2Intrinsic{
 	"WaitCycles":   {"_waitx", ""},
 	"AckPin":       {"_akpin", ""},
 	"ReadPin":      {"_rdpin", "unsigned"},
+	"PinStart":     {"_pinstart", ""},
 	"WritePinMode": {"_wrpin", ""},
 	"WritePinX":    {"_wxpin", ""},
 	"WritePinY":    {"_wypin", ""},

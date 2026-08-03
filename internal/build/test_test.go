@@ -150,3 +150,33 @@ func write(t *testing.T, path, src string) {
 		t.Fatal(err)
 	}
 }
+
+// TestExamplesBuild builds every program under _examples with the real backend.
+// They are the code a reader meets first, so a language change that breaks one has
+// to fail here rather than in a photograph.
+func TestExamplesBuild(t *testing.T) {
+	des, err := os.ReadDir("../../_examples")
+	if err != nil {
+		t.Skip("no _examples")
+	}
+	for _, de := range des {
+		if !de.IsDir() {
+			continue
+		}
+		t.Run(de.Name(), func(t *testing.T) {
+			dir := filepath.Join("../../_examples", de.Name())
+			out := filepath.Join(t.TempDir(), de.Name()+".binary")
+			var buf bytes.Buffer
+			code, err := Build([]string{"-o", out, dir}, nil, &buf, &buf)
+			if err != nil || code != 0 {
+				t.Fatalf("code=%d err=%v\n%s", code, err, buf.String())
+			}
+			// The backend warns where it should refuse, so any output from a
+			// SUCCESSFUL build is treated as a failure -- the same rule the
+			// on-board suite applies.
+			if s := strings.TrimSpace(buf.String()); s != "" {
+				t.Fatalf("backend was not silent:\n%s", s)
+			}
+		})
+	}
+}

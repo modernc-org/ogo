@@ -88,6 +88,18 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **`p2.PinStart(pin, mode, x, y)`**, the canonical way to bring a smart pin up:
+  mode, X, Y and the direction bit in one call, where doing it by hand took four.
+- **A new example, `_examples/gopher`**, which draws the Go gopher on an
+  oscilloscope in X/Y mode — two smart pins as DACs, one X and one Y, and the beam
+  walking an outline that persistence turns into a picture. Eight frames of a dance:
+  the head leans, the ears wag and the eyes look about. There is no framebuffer;
+  the figure *is* the two voltages. `doc/gopher-gen.go` generates the point table
+  and draws the same picture to a PNG, so the geometry can be checked without a
+  scope.
+
+  Every `_examples` program is now built by the test suite, with the same
+  no-output-from-a-successful-build rule the on-board suite uses.
 - **Anonymous struct types.** `var p struct{ x, y int }`, written where a type is
   wanted rather than declared with a name of its own — as a variable, a field of
   another struct, a parameter, or an array's element. As in Go, two of them are the

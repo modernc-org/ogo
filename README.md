@@ -132,6 +132,17 @@ the tests without running them, for a machine with no board attached.
 > `200000000` assumes the usual 20 MHz P2 crystal — use your board's value if it
 > differs). This is a P2 clocking detail, not an ogo bug.
 
+### Drawing on an oscilloscope
+
+`_examples/gopher` puts the Go gopher on a scope in X/Y mode: two smart pins run as
+DACs, one X and one Y, and the beam walks the outline while persistence does the
+rest. There is no framebuffer and no display controller — the figure *is* the two
+voltages, redrawn about a thousand times a second. Eight frames make it dance.
+
+```sh
+ogo run _examples/gopher     # then probe the two pins it names, scope in X/Y mode
+```
+
 ## **Language Specification**
 
 The language is specified in the package documentation:
