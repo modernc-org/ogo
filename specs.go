@@ -131,9 +131,8 @@
 //     "&x" puts a pointer in the interface in both languages, and mutations through
 //     x are visible through the interface in both. "&T{...}" works too, its storage
 //     being a temporary of the frame rather than an allocation, and so subject to
-//     the lifetime rule above. A type assertion "x.(*T)" recovers the concrete
-//     pointer; a type switch is not implemented yet. See
-//     internal/octogo/octogo.go.
+//     the lifetime rule above. A type assertion "x.(*T)" and a type switch both
+//     recover the concrete pointer. See internal/octogo/octogo.go.
 //
 // # Introduction
 //
@@ -615,7 +614,26 @@
 // interface) pair, so the test is a pointer comparison of the second word -- there
 // is no type id to read and no name to compare.
 //
-// A type switch is not implemented yet. Generic interface constraints, unions and the underlying-type
+// A type switch asks that question several times, and each clause binds the name
+// at the type that clause proved:
+//
+//	switch v := s.(type) {
+//	case *sq:            // one type named, so v is that pointer
+//		println(v.n)
+//	case *rect, *circle: // several, so v keeps the interface type
+//		println(v.Area())
+//	case nil:            // the zero interface value, which carries no type
+//		println(0)
+//	default:
+//		println(v.Area())
+//	}
+//
+// That is Go's rule, and the reason a clause is a scope of its own. The name may be
+// left out, "switch s.(type)", when the clauses only need to select. A case naming
+// a type that could not supply the method set is Go's "impossible type switch
+// case", reported here as one, as is a case named twice.
+//
+// Generic interface constraints, unions and the underlying-type
 // "~" operator belong to generics, which is a separate question entirely; an
 // interface here strictly defines a method set.
 //
@@ -1511,8 +1529,9 @@
 // for the switch's own termination, since control continues into the next clause
 // rather than out of the bottom of the switch.
 //
-// A type switch is not implemented yet. The type assertion it generalizes is; see
-// Interface types.
+// A type switch, "switch v := s.(type)", switches on an interface value's dynamic
+// type rather than on a value. Its rule is the type assertion's, asked once per
+// clause; see Interface types.
 //
 // # Select Statements & Smart Pin Hardware Polling
 //

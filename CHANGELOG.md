@@ -88,6 +88,23 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **A type switch**, `switch v := s.(type)`, switches on an interface value's
+  dynamic type. Each clause binds the name at the type that clause proved — the
+  concrete pointer where one type was named, the interface value where several were
+  or none — which is Go's rule and the reason a clause is a scope of its own. `case
+  nil` takes the zero interface value. The name may be left out, `switch s.(type)`,
+  when the clauses only need to select.
+
+  It lowers to the chain of table comparisons it is, one per case, so it costs what
+  the assertion costs times the number of clauses tried.
+
+  Refused with the reason: a case naming a type that could not supply the
+  interface's method set (Go's *impossible type switch case*), a case named twice, a
+  switch on something that is not an interface, and a bound name no clause uses.
+- **A field read off an interface value is checked.** `s.n` on a variable of
+  interface type went unchecked and surfaced from the emitter as a puzzle about C.
+  An interface has methods and no fields; what it carries is reached by an assertion
+  or a type switch.
 - **A channel send checks the interface it sends to.** `ch <- t` where `t` does not
   implement `chan Shape`'s element type came back from the emitter, in the emitter's
   words, rather than from the checker in Go's. It is now the same diagnostic every

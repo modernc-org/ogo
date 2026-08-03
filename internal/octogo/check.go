@@ -2614,23 +2614,247 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	ss := s.child()
 	var guardKind Kind
 	guardOK := false
+	// A type switch is a different statement wearing a switch's clothes: its cases
+	// name types, not values, and the name it binds has a different type in each
+	// clause. Nothing below applies to it, so it is checked on its own.
+	var ts typeSwitchGuard
+	isTypeSwitch := false
+	seen := map[string]bool{}
 	// SwitchGuard precedes the CaseClauses, so the guard is processed first.
 	for c := range it(n.ast) {
 		switch c.sym {
 		case SwitchGuard:
+			if ts, isTypeSwitch = f.typeSwitchParts(c); isTypeSwitch {
+				f.checkTypeSwitchOperand(s, ss, ts)
+				break
+			}
 			guardKind, guardOK = f.checkSwitchGuard(s, ss, c)
 		case CaseClause:
-			if guardOK {
+			cs := ss.child()
+			switch {
+			case isTypeSwitch:
+				f.checkTypeCaseClause(cs, ts, c, seen)
+			case guardOK:
 				f.checkCaseExprs(ss, guardKind, c)
 			}
 			// A break inside a case names the switch, so the body is checked one
 			// switch level deeper.
 			f.switchDepth++
-			f.checkClauseBody(ss.child(), results, c)
+			f.checkClauseBody(cs, results, c)
 			f.switchDepth--
 		}
 	}
-	f.reportDuplicateCases(ss, n)
+	if !isTypeSwitch {
+		f.reportDuplicateCases(ss, n)
+	}
+}
+
+// typeSwitchGuard describes a "switch v := x.(type)": the name it binds (invalid
+// for the bare "switch x.(type)") and the operand whose dynamic type is switched on.
+type typeSwitchGuard struct {
+	name    Token
+	operand Token
+}
+
+// typeSwitchParts recognises a type switch's guard. The Selector spelling ".(type)"
+// carries the keyword and no Type child, which is what tells it from the assertion
+// ".(T)" that the same production admits.
+func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
+	g, ok := f.switchGuardParts(guard.ast)
+	if !ok {
+		return ts, false
+	}
+	value := g.tag
+	if g.hasName {
+		value = g.value
+	}
+	fac, isFac := f.soleFactor(value)
+	if !isFac {
+		return ts, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return ts, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return ts, false
+	}
+	isType := false
+	for c := range it(steps[0].ast) {
+		if c.sym == 0 && f.ch(c.tok) == TYPE {
+			isType = true
+		}
+	}
+	if !isType {
+		return ts, false
+	}
+	ts.operand = f.tok(kids[0].tok)
+	if g.hasName {
+		if ts.name, ok = f.exprIdent(g.name); !ok {
+			return ts, false
+		}
+	}
+	return ts, true
+}
+
+// checkTypeSwitchOperand requires the operand to be an interface -- nothing else
+// has a dynamic type to switch on -- and registers the bound name for the unused
+// rule. Go's rule there is that the name is unused only when no clause uses it,
+// which is what registering it once, rather than per clause, asks.
+func (f *File) checkTypeSwitchOperand(s, ss *Scope, ts typeSwitchGuard) {
+	if !ts.name.IsValid() {
+		return
+	}
+	vd := &VarDeclaration{declaration: declaration{token: ts.name}}
+	if err := ss.add(vd); err != nil {
+		f.err(ts.name.Position(), "%v", err)
+	}
+	f.localVars = append(f.localVars, vd)
+}
+
+// typeSwitchIface names the interface type a type switch's operand holds, reporting
+// an operand that is not one.
+func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
+	d, isVar := s.find(ts.operand.Src()).(*VarDeclaration)
+	if !isVar || !d.typeName.IsValid() {
+		return "", false // an unresolved operand: its own check reports it
+	}
+	iface := d.typeName.Src()
+	if _, isIface := f.interfaceMethodsNamed(s, iface); !isIface {
+		return "", false
+	}
+	return iface, true
+}
+
+// checkTypeCaseClause checks one clause of a type switch and declares the bound
+// name in it, at the type that clause proved: the concrete pointer where one type
+// was named, and the interface value where several were, or none. That is Go's
+// rule, and the reason a clause cannot share one declaration with the statement.
+//
+// A case naming a type that could not supply the interface's method set is Go's
+// "impossible type switch case": the clause could never be taken, so the program
+// says something it cannot have meant.
+func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, seen map[string]bool) {
+	iface, hasIface := f.typeSwitchIface(cs, ts)
+	if !hasIface {
+		if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar && d.typeName.IsValid() {
+			f.err(ts.operand.Position(), "invalid operation: %s (variable of type %s) is not an interface", ts.operand.Src(), d.typeName.Src())
+		}
+		return
+	}
+	exprs, isDefault := f.clauseCaseExprs(clause)
+	base, single := Token{}, len(exprs) == 1 && !isDefault
+	for _, ex := range exprs {
+		nm, isNil, ok := f.caseTypeName(cs, ex)
+		switch {
+		case !ok:
+			f.err(f.tok(ex.Pos()).Position(), "a type switch case names a pointer type, or nil")
+			continue
+		case isNil:
+			if seen["nil"] {
+				f.err(f.tok(ex.Pos()).Position(), "duplicate case nil in type switch")
+			}
+			seen["nil"], single = true, false
+			continue
+		}
+		if seen[nm.Src()] {
+			f.err(nm.Position(), "duplicate case *%s in type switch", nm.Src())
+		}
+		seen[nm.Src()] = true
+		base = nm
+		if _, isIface := f.interfaceMethodsNamed(cs, nm.Src()); isIface {
+			continue // interface to interface, which the emitter reports for now
+		}
+		missing, _, wrong, have, want, ok := f.implements(cs, nm.Src(), true, iface)
+		if ok {
+			continue
+		}
+		head := fmt.Sprintf("impossible type switch case: %s.(type) case *%s: *%s does not implement %s",
+			ts.operand.Src(), nm.Src(), nm.Src(), iface)
+		switch {
+		case missing != "":
+			f.err(nm.Position(), "%s (missing method %s)", head, missing)
+		case wrong != "":
+			f.err(nm.Position(), "%s (wrong type for method %s)\n\thave %s\n\twant %s", head, wrong, have, want)
+		default:
+			f.err(nm.Position(), "%s", head)
+		}
+	}
+	if !ts.name.IsValid() {
+		return
+	}
+	vd := &VarDeclaration{declaration: declaration{token: ts.name}}
+	switch {
+	case single && base.IsValid():
+		vd.typeName, vd.isPtr = base, true
+	default:
+		vd.typeName = f.tok(0)
+		if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar {
+			vd.typeName = d.typeName
+		}
+	}
+	// The clause scope is fresh, so this shadows the statement-scope declaration
+	// that the unused rule is keyed on rather than clashing with it.
+	if err := cs.add(vd); err != nil {
+		f.err(ts.name.Position(), "%v", err)
+	}
+}
+
+// clauseCaseExprs returns a case clause's expressions, and whether it is the
+// default clause, which has none.
+func (f *File) clauseCaseExprs(clause Node) (exprs []Node, isDefault bool) {
+	for head := range it(clause.ast) {
+		if head.sym != CaseHead {
+			continue
+		}
+		for h := range it(head.ast) {
+			switch h.sym {
+			case ExpressionList:
+				for e := range it(h.ast) {
+					if e.sym == Expression {
+						exprs = append(exprs, e)
+					}
+				}
+			case 0:
+				if f.ch(h.tok) == DEFAULT {
+					isDefault = true
+				}
+			}
+		}
+	}
+	return exprs, isDefault
+}
+
+// caseTypeName reads a type-switch case expression -- "*T", or "nil" -- as the type
+// it names. A case reads as an EXPRESSION, the grammar having no other place to put
+// one, so "*T" arrives as a deref of a name rather than as a type.
+func (f *File) caseTypeName(s *Scope, ex Node) (name Token, isNil, ok bool) {
+	if _, isNil := f.nilOperand(s, ex); isNil {
+		return name, true, true
+	}
+	ue, isUE := f.soleUnaryExpr(ex)
+	if !isUE {
+		return name, false, false
+	}
+	kids := slices.Collect(it(ue.ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return name, false, false
+	}
+	star := false
+	for c := range it(kids[0].ast) {
+		if c.sym == 0 && f.ch(c.tok) == MUL {
+			star = true
+		}
+	}
+	if !star {
+		return name, false, false
+	}
+	id, isID := f.exprIdent(kids[1])
+	if !isID {
+		return name, false, false
+	}
+	return id, false, true
 }
 
 // markClauseFallthroughs records every "fallthrough" that is legally placed --
@@ -5091,6 +5315,13 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token) {
 		// A cross-package type: resolve the field in the imported struct and enforce
 		// the export rule (another package's unexported field is inaccessible).
 		f.checkCrossPkgField(d.typeQual, d.typeName, field)
+		return
+	}
+	// An interface has methods and no fields at all: what it carries is reached by
+	// an assertion or a type switch, not by a selector. Without this the read went
+	// unchecked and surfaced from the emitter as a puzzle about C.
+	if _, isIface := f.interfaceMethodsNamed(s, d.typeName.Src()); isIface {
+		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 		return
 	}
 	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {

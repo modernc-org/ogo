@@ -1,0 +1,115 @@
+// A type switch asks the assertion's question several times. Each clause binds the
+// name at the type that clause proved: the concrete pointer where one type was
+// named, and the interface value where several were, or none -- which is Go's rule.
+
+type Shape interface {
+	Area() int
+}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+type rect struct {
+	w, h int
+}
+
+func (r rect) Area() int { return r.w * r.h }
+
+type circle struct {
+	r int
+}
+
+func (c circle) Area() int { return 3 * c.r * c.r }
+
+// tri has no methods, so no Shape can ever carry it.
+type tri struct {
+	m int
+}
+
+var gq sq
+
+func clauses() {
+	var s Shape = &gq
+
+	switch v := s.(type) {
+	case *sq:
+		// One type: v is that pointer, so a field the interface never had is here.
+		println(v.n)
+	case *rect, *circle:
+		// Several: v keeps the interface type, so only its methods are.
+		println(v.Area())
+	case nil:
+		println(0)
+	default:
+		println(v.Area())
+	}
+}
+
+func fieldOnTheInterface() {
+	var s Shape = &gq
+
+	switch v := s.(type) {
+	case *sq:
+		println(v.n)
+	default:
+		// ERROR type Shape has no field n
+		println(v.n)
+	}
+}
+
+func impossible() {
+	var s Shape = &gq
+
+	switch v := s.(type) {
+	// ERROR impossible type switch case: s.\(type\) case \*tri: \*tri does not implement Shape \(missing method Area\)
+	case *tri:
+		println(v.m)
+	}
+}
+
+func notAnInterface() {
+	var q sq
+
+	// ERROR invalid operation: q \(variable of type sq\) is not an interface
+	switch v := q.(type) {
+	case *sq:
+		println(v.n)
+	}
+}
+
+func duplicates() {
+	var s Shape = &gq
+
+	switch v := s.(type) {
+	case *sq:
+		println(v.n)
+	// ERROR duplicate case \*sq in type switch
+	case *sq:
+		println(1)
+	}
+}
+
+func unused() {
+	var s Shape = &gq
+
+	// ERROR declared and not used: v
+	switch v := s.(type) {
+	case *sq:
+		println(1)
+	}
+}
+
+func bare() {
+	var s Shape = &gq
+
+	// No name bound: the clauses still select, they just have nothing to read.
+	switch s.(type) {
+	case *sq:
+		println("sq")
+	case *rect:
+		println("rect")
+	}
+}

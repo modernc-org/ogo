@@ -329,7 +329,14 @@
 // when it does not hold, as Go's does, from the prologue -- so the panic precedes
 // every position an assertion can stand in, not only a declaration.
 //
-// Not done yet: type switches, and devirtualization.
+// A type switch is that assertion asked once per clause, lowered to the chain of
+// table comparisons it is. Each clause binds the name at the type it proved -- the
+// concrete pointer where one type was named, the interface value where several were
+// or none -- which is Go's rule and the reason a clause cannot share one
+// declaration with the statement, in C any more than in Go. A "case nil" tests for
+// no table at all.
+//
+// Not done yet: devirtualization.
 //
 // # Only a pointer goes in, and why
 //
@@ -397,11 +404,10 @@
 //
 // # Deferred, deliberately
 //
-// A type switch is not implemented yet. Its rule is the assertion's, asked several
-// times, so what it needs is the statement rather than anything of the
-// representation. An assertion between two INTERFACE types is not implemented
-// either: the table it would have to find is the one for (the dynamic type, the
-// target interface), which the source table does not name.
+// An assertion between two INTERFACE types is not implemented: the table it would
+// have to find is the one for (the dynamic type, the target interface), which the
+// source table does not name. Devirtualization is the other one open, and wants the
+// callee-identity analysis the escape summaries want.
 // Variadic parameters are a separate question that the earlier design folded in
 // here; they are not an interface feature and do not belong in this section.
 package octogo

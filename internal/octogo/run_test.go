@@ -1332,6 +1332,84 @@ func main() {
 		want: "0 2\n3 9\ntrue 2 5\nfalse\n",
 	},
 	{
+		// A type switch: the assertion's question asked several times. Each clause
+		// binds the name at the type that clause proved -- the concrete pointer where
+		// one type was named, the interface value where several were, or none -- so a
+		// clause cannot share one declaration with the statement, in C any more than
+		// in Go. It lowers to the chain of table comparisons it is.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a type switch over three concrete types",
+		src: `type Shape interface {
+	Area() int
+}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+type rect struct {
+	w, h int
+}
+
+func (r rect) Area() int { return r.w * r.h }
+
+type circle struct {
+	r int
+}
+
+func (c circle) Area() int { return 3 * c.r * c.r }
+
+var gq sq
+
+var gr rect
+
+var gc circle
+
+func describe(s Shape) int {
+	switch v := s.(type) {
+	case *sq:
+		// One type named, so v is that pointer: a field the interface never had.
+		return v.n
+	case *rect, *circle:
+		// Several, so v keeps the interface type, as in Go.
+		return v.Area()
+	default:
+		return -1
+	}
+}
+
+func main() {
+	gq.n = 3
+	gr.w, gr.h = 2, 5
+	gc.r = 2
+
+	println(describe(&gq), describe(&gr), describe(&gc))
+
+	// The bare form, with no name bound.
+	var s Shape = &gr
+	switch s.(type) {
+	case *sq:
+		println("sq")
+	case *rect:
+		println("rect")
+	}
+
+	// A nil interface takes the nil case.
+	var e Shape
+	switch e.(type) {
+	case nil:
+		println("nil")
+	case *sq:
+		println("sq")
+	}
+}
+`,
+		want: "3 10 12\nrect\nnil\n",
+	},
+	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload
 		// and a capacity the pushes are refused at. It is what a priority queue on
 		// this target looks like, and it leans on most of what this release changed

@@ -8916,6 +8916,17 @@ func (e *emitter) emitSwitch(ast []int32) {
 		}
 	}
 
+	// A TYPE switch is a different statement wearing a switch's clothes: its cases
+	// name types rather than values, and the name it binds has a different type in
+	// each clause. It is lowered on its own, sharing nothing below but the break
+	// label, which emitTypeSwitch mints for itself.
+	if guardAST != nil {
+		if ts, ok := e.typeSwitchGuard(guardAST); ok {
+			e.emitTypeSwitch(ts, cases)
+			return
+		}
+	}
+
 	// Resolve the guard variable to compare against ("" for an expression switch),
 	// emitting an enclosing block + declaration when it needs a scoped name.
 	guardVar, block := "", false
@@ -9001,6 +9012,229 @@ func (e *emitter) emitSwitch(ast []int32) {
 		e.ind()
 		e.emit("}\n")
 	}
+}
+
+// typeSwitch describes a "switch v := x.(type)" -- the name it binds (empty for the
+// bare "switch x.(type)"), the operand, and the interface type the operand holds,
+// which is what each case's type is looked up against.
+type typeSwitch struct {
+	name    string
+	operand string
+	iface   string
+}
+
+// typeSwitchGuard recognises a type switch's guard. The Selector that spells
+// ".(type)" carries the keyword and no Type child, which is exactly what tells it
+// from the assertion ".(T)" the same production admits.
+func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
+	g, ok := e.f.switchGuardParts(guardAST)
+	if !ok {
+		return ts, false
+	}
+	value := g.tag
+	if g.hasName {
+		value = g.value
+	}
+	operand, isTypeSwitch := e.typeSwitchOperand(value.ast)
+	if !isTypeSwitch {
+		return ts, false
+	}
+	if g.hasName {
+		if ts.name, ok = e.exprIdent(g.name.ast); !ok {
+			e.fail("a type switch binds a name")
+			return ts, false
+		}
+	}
+	ts.operand = operand
+	if ts.iface, ok = e.varType(operand); !ok || !e.isIfaceCType(ts.iface) {
+		e.fail("%s is not an interface, so it has no dynamic type to switch on", operand)
+		return ts, false
+	}
+	return ts, true
+}
+
+// typeSwitchOperand returns the operand of an "x.(type)" expression.
+func (e *emitter) typeSwitchOperand(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != Factor {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return "", false
+	}
+	for c := range it(steps[0].ast) {
+		if c.sym == 0 && e.f.ch(c.tok) == TYPE {
+			return e.src(kids[0].tok), true
+		}
+	}
+	return "", false
+}
+
+// caseTypeC resolves a type-switch case expression -- "*T", or "nil" -- to the
+// concrete C type it names. A nil case tests the zero interface value, which
+// carries no table at all.
+//
+// A case reads as an EXPRESSION, the grammar having no other place to put it, so
+// "*T" arrives as a deref of a name rather than as a Type. Reading it here is what
+// keeps the grammar out of it.
+func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
+	if e.isNilExpr(ex.ast) {
+		return "", true, true
+	}
+	nodes := slices.Collect(it(ex.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return "", false, false
+	}
+	if tok, isOp := e.unaryOpTok(kids[0].ast); !isOp || e.f.ch(tok) != MUL {
+		return "", false, false
+	}
+	name := e.soleIdent(kids[1].ast)
+	if name == "" {
+		return "", false, false
+	}
+	concrete = mangle(e.curPkgPrefix, name)
+	if !e.isStruct(concrete) && !e.isUserType(concrete) {
+		return "", false, false
+	}
+	return concrete, false, true
+}
+
+// emitTypeSwitch lowers a type switch to the chain of table comparisons it is. Each
+// clause binds the name at the type that clause proved: the concrete pointer where
+// one type was named, and the interface value itself where several were, or none --
+// which is Go's rule, and the reason a clause cannot share one declaration with the
+// statement.
+func (e *emitter) emitTypeSwitch(ts typeSwitch, cases []Node) {
+	label := fmt.Sprintf("ogo_break_%d", e.switchBreakSeq)
+	e.switchBreakSeq++
+	savedBreak := e.switchBreak
+	e.switchBreak = label
+	srcLabel := e.pendingSwitchLabel
+	e.pendingSwitchLabel = ""
+	if srcLabel != "" {
+		e.labelBreak[srcLabel] = label
+	}
+
+	// The bound name is declared inside each clause's block, so its type may differ
+	// per clause. The emitter has no scopes of its own, so what it records for the
+	// name is restored after the statement rather than after each clause.
+	savedType, hadType := e.locals[ts.name], e.locals[ts.name] != ""
+
+	defaultIdx, wrote := -1, false
+	for i, cc := range cases {
+		exprs, isDefault := e.caseHead(cc.ast)
+		if isDefault {
+			defaultIdx = i
+			continue
+		}
+		var conds []string
+		concrete, single := "", len(exprs) == 1
+		for _, ex := range exprs {
+			ct, isNil, ok := e.caseTypeC(ex)
+			if !ok {
+				e.fail("a type switch case names a pointer type, or nil")
+				return
+			}
+			switch {
+			case isNil:
+				conds = append(conds, e.varRef(ts.operand)+".vt == 0")
+				single = false // nil binds the interface value, not a concrete one
+			default:
+				if !e.needVTable(ts.iface, ct) {
+					return
+				}
+				conds = append(conds, e.assertOKC(ts.operand, ts.iface, ct))
+				concrete = ct
+			}
+		}
+		if !wrote {
+			e.ind()
+			e.emit("if (")
+			wrote = true
+		} else {
+			e.emit(" else if (")
+		}
+		e.emit(strings.Join(conds, " || ") + ") {\n")
+		e.indent++
+		e.bindTypeSwitchName(ts, concrete, single)
+		e.emitCaseFrom(cases, i)
+		e.indent--
+		e.ind()
+		e.emit("}")
+	}
+	emitDefault := func() {
+		e.bindTypeSwitchName(ts, "", false)
+		e.emitCaseFrom(cases, defaultIdx)
+	}
+	switch {
+	case defaultIdx >= 0 && wrote:
+		e.emit(" else {\n")
+		e.indent++
+		emitDefault()
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	case defaultIdx >= 0:
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		emitDefault()
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	case wrote:
+		e.emit("\n")
+	}
+
+	if hadType {
+		e.locals[ts.name] = savedType
+	} else {
+		delete(e.locals, ts.name)
+	}
+	e.switchBreak = savedBreak
+	if e.switchBreakUsed[label] || e.labelUsed[label] {
+		e.ind()
+		e.emit(label + ":;\n")
+	}
+	if srcLabel != "" {
+		delete(e.labelBreak, srcLabel)
+	}
+}
+
+// bindTypeSwitchName declares the name a type switch binds, inside the clause that
+// proved its type. A clause naming one type gets that pointer; every other clause
+// gets the interface value itself, as in Go.
+func (e *emitter) bindTypeSwitchName(ts typeSwitch, concrete string, single bool) {
+	if ts.name == "" || ts.name == "_" {
+		return
+	}
+	ct, init := ts.iface, e.varRef(ts.operand)
+	if single && concrete != "" {
+		ct, init = concrete+"*", e.assertValueC(ts.operand, concrete)
+	}
+	e.locals[ts.name] = ct
+	e.ind()
+	e.emit(ct + " " + e.varRef(ts.name) + " = " + init + ";\n")
+	// Go's rule is that the name is unused only when it is unused in EVERY clause,
+	// which the checker asks; the C compiler would warn per clause, so each
+	// declaration is used here.
+	e.ind()
+	e.emit("(void)" + e.varRef(ts.name) + ";\n")
 }
 
 // emitSwitchGuard emits the guard of a switch that has one, returning the name to
