@@ -1861,6 +1861,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	// would return before ever asking.
 	wantPtr := f.isPointerType(s, rt.typeNode)
 	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
+	f.checkImplements(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	if !rt.known {
 		return
 	}
@@ -3109,6 +3110,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkFuncAssign(s, funcSig, e, "variable declaration")
 			if len(names) == len(initExprs) {
 				f.checkPointerValue(s, isPtr, f.typeNodeString(declType, false), e, "variable declaration")
+				f.checkImplements(s, f.typeNodeString(declType, false), e, "variable declaration")
 				// One initializer per name; a multi-result call feeding several
 				// names pairs up with none of them and is left alone.
 				f.checkDeclType(s, kind, hasKind, typeName, e)
@@ -4601,7 +4603,13 @@ func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
 // and whether the name is one. It is the interface counterpart of structFields:
 // where that answers "what may be selected", this answers "what may be called".
 func (f *File) interfaceMethods(s *Scope, typeName Token) (map[string]*MethodSpecNode, bool) {
-	td, ok := s.find(typeName.Src()).(*TypeDeclaration)
+	return f.interfaceMethodsNamed(s, typeName.Src())
+}
+
+// interfaceMethodsNamed is interfaceMethods keyed by the name alone, for the
+// positions that have a written type rather than a variable's declaration.
+func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodSpecNode, bool) {
+	td, ok := s.find(name).(*TypeDeclaration)
 	if !ok || td.TypeSpec == nil {
 		return nil, false
 	}
@@ -4635,12 +4643,30 @@ func methodSpecSig(m *MethodSpecNode) *SignatureNode {
 // A method is compared by rendered signature. Anything that does not render -- a
 // type the renderer does not model -- compares equal rather than unequal, so an
 // unmodelled corner accepts instead of inventing a mismatch.
-func (f *File) implements(s *Scope, concrete, iface Token) (missing string, wrongType string, have, want string, ok bool) {
-	set, isIface := f.interfaceMethods(s, iface)
+func (f *File) implements(s *Scope, concrete, iface string) (missing string, wrongType string, have, want string, ok bool) {
+	set, isIface := f.interfaceMethodsNamed(s, iface)
 	if !isIface {
 		return "", "", "", "", true
 	}
-	td, isNamed := s.find(concrete.Src()).(*TypeDeclaration)
+	// An interface value satisfies another interface when its own method set
+	// contains it -- the same question, asked of a set rather than of a type's
+	// declared methods.
+	if from, fromIface := f.interfaceMethodsNamed(s, concrete); fromIface {
+		for _, name := range sortedNames(set) {
+			m, has := from[name]
+			if !has {
+				return name, "", "", "", false
+			}
+			w := f.sigString(methodSpecSig(set[name]), false)
+			h := f.sigString(methodSpecSig(m), false)
+			if w == "" || h == "" || w == h {
+				continue
+			}
+			return "", name, h, w, false
+		}
+		return "", "", "", "", true
+	}
+	td, isNamed := s.find(concrete).(*TypeDeclaration)
 	if !isNamed {
 		// Not a named type: it carries no methods at all, so any non-empty
 		// interface is unsatisfied. An empty one is satisfied by everything.
@@ -4686,8 +4712,11 @@ func sortedNames(set map[string]*MethodSpecNode) []string {
 //
 // A value whose type this cannot name -- a literal, a call result, anything not a
 // variable of a named type -- is left alone rather than guessed at.
-func (f *File) checkImplements(s *Scope, ifaceName Token, value Node, what string) {
-	if _, isIface := f.interfaceMethods(s, ifaceName); !isIface {
+func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what string) {
+	if ifaceName == "" {
+		return
+	}
+	if _, isIface := f.interfaceMethodsNamed(s, ifaceName); !isIface {
 		return
 	}
 	id, ok := f.exprIdent(value)
@@ -4695,26 +4724,22 @@ func (f *File) checkImplements(s *Scope, ifaceName Token, value Node, what strin
 		return
 	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
-	if !ok || !d.typeName.IsValid() || d.typeName.Src() == ifaceName.Src() {
+	if !ok || !d.typeName.IsValid() || d.typeName.Src() == ifaceName {
 		return
 	}
-	// An interface value assigned to an interface variable is a different question
-	// (is one method set a superset of the other), and is not this one.
-	if _, valueIsIface := f.interfaceMethods(s, d.typeName); valueIsIface {
-		return
-	}
-	missing, wrong, have, want, ok := f.implements(s, d.typeName, ifaceName)
+	from := d.typeName.Src()
+	missing, wrong, have, want, ok := f.implements(s, from, ifaceName)
 	if ok {
 		return
 	}
 	pos := f.tok(value.Pos()).Position()
 	if missing != "" {
 		f.err(pos, "cannot use %s (variable of type %s) as %s value in %s: %s does not implement %s (missing method %s)",
-			id.Src(), d.typeName.Src(), ifaceName.Src(), what, d.typeName.Src(), ifaceName.Src(), missing)
+			id.Src(), from, ifaceName, what, from, ifaceName, missing)
 		return
 	}
 	f.err(pos, "cannot use %s (variable of type %s) as %s value in %s: %s does not implement %s (wrong type for method %s)\n\thave %s%s\n\twant %s%s",
-		id.Src(), d.typeName.Src(), ifaceName.Src(), what, d.typeName.Src(), ifaceName.Src(), wrong,
+		id.Src(), from, ifaceName, what, from, ifaceName, wrong,
 		wrong, strings.TrimPrefix(have, "func"), wrong, strings.TrimPrefix(want, "func"))
 }
 
@@ -5333,7 +5358,7 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 				want = "*" + want
 			}
 			f.checkPointerValue(s, d.isPtr, want, rhsNode, "assignment")
-			f.checkImplements(s, d.typeName, rhsNode, "assignment")
+			f.checkImplements(s, d.typeName.Src(), rhsNode, "assignment")
 		}
 	}
 	lk, lok := f.identKind(s, lhsTok)
@@ -6565,6 +6590,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 func (f *File) checkPointerArg(s *Scope, p retResult, arg Node, name Token) {
 	want := f.isPointerType(s, p.typeNode)
 	f.checkPointerValue(s, want, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
+	f.checkImplements(s, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
 }
 
 // checkPointerValue is that check for every other place a value is assigned to

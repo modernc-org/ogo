@@ -24,6 +24,13 @@ Releases before v0.9.0 predate this file; see
   not implement the interface, in Go's words and with Go's `have`/`want` pair for a
   method whose signature differs.
 
+  The rule is asked wherever a value meets an interface type — an assignment, a
+  variable declaration, an argument and a return, the four positions the pointer-ness
+  rule already covers — and an interface satisfies another when its own method set
+  contains it. A struct field, a field assignment and a channel send do not ask it
+  yet; they need the field's or the element's declared type where these four have a
+  variable's or a signature's.
+
   This is the checker half. The representation is settled (a data pointer beside a
   static vtable) and not emitted yet, so a program that passes these checks stops at
   `interface types are not emitted yet` — which is also what replaced the emitter's

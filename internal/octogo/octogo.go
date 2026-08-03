@@ -307,6 +307,23 @@
 // result reached through another call -- and they are the same question, so they are
 // worth answering once for both.
 //
+// # Checker status
+//
+// An interface's method set is read and used: a call through a variable of one is
+// resolved against the set and checked against that method's signature, and a value
+// meeting an interface type is checked for implementing it -- at an assignment, a
+// variable declaration, an argument and a return, which are the four positions the
+// pointer-ness rule already covers. An interface satisfies another when its own set
+// contains it, which is the same question asked of a set.
+//
+// Three positions do not ask it yet: a struct field filled by a composite literal,
+// a field assignment, and a channel send. Each needs the FIELD's or the element's
+// declared type where the four above have a variable's or a signature's, and that
+// is the next piece of checker work rather than a different rule.
+//
+// A value whose type cannot be named -- a literal, a call's result -- is left
+// unjudged rather than guessed at, in every position.
+//
 // # What the checker needs first, and it is the bulk of the work
 //
 // None of the three strategies is the expensive part. The checker has no notion of

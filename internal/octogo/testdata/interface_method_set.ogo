@@ -64,3 +64,54 @@ func main() {
 
 	_ = e
 }
+
+// The same rule holds wherever a value meets an interface type, not only at an
+// assignment: a variable declaration, an argument and a return each ask it.
+
+func use(s Shape) int { return s.Area() }
+
+func mk(q sq) Shape { return q }
+
+func bad() Shape {
+	var t tri
+	// ERROR in return statement: tri does not implement Shape \(missing method Area\)
+	return t
+}
+
+func positions() {
+	var q sq
+	var t tri
+
+	var ok1 Shape = q
+	// ERROR tri does not implement Shape \(missing method Area\)
+	var bad1 Shape = t
+
+	println(use(q))
+	// ERROR tri does not implement Shape \(missing method Area\)
+	println(use(t))
+
+	_, _ = ok1, bad1
+}
+
+// An interface satisfies another when its own method set contains it, which is the
+// same question asked of a set rather than of a type's declared methods.
+
+type Named interface {
+	Area() int
+	Name() string
+}
+
+type OnlyName interface {
+	Name() string
+}
+
+func sets() {
+	var n Named
+	var o OnlyName
+
+	var s1 Shape = n
+	// ERROR OnlyName does not implement Shape \(missing method Area\)
+	var s2 Shape = o
+
+	_, _ = s1, s2
+}
