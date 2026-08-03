@@ -31,8 +31,19 @@ Releases before v0.9.0 predate this file; see
   Go's method-set rule is kept: a value of `T` carries the methods declared on `T`
   and `*T` carries all of them, so an interface holding a pointer-receiver method is
   satisfied by `&x` and not by `x`. Type switches, type assertions and
-  devirtualization are not part of this; nor is an interface value in a struct field
-  or on a channel, nor a value whose address cannot be taken.
+  devirtualization are not part of this, nor is a value whose address cannot be
+  taken.
+- **An interface value goes where a value goes**, not only into a variable of its
+  own: returned from a function, held in a struct field, held in an array or slice
+  element, and sent on a channel to another cog. Each is the same two-word copy —
+  there is nothing to box — but each asked a different part of the emitter to know
+  that the *target's* type is an interface, which is what says the concrete value
+  reaching it has to be wrapped.
+
+  A method call through a chain (`sc.first.Name()`, `shapes[1].Area()`) is typed by
+  the slot the interface declares. Before this it went untyped and fell back to the
+  base identifier's type, so a `string` result printed as the two integers of its
+  header and a short declaration off one was refused outright.
 - **An interface's method set is checked.** The declaration was already accepted and
   its duplicate methods caught, but nothing read the set: a call through a variable
   of interface type was "type Shape has no method Area" — true of the methods

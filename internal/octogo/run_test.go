@@ -1116,6 +1116,98 @@ func main() {
 		want: "sq 9\nrect 10\n9 10\nrect rect\n10\nsq 16 16\n2 5 5\n",
 	},
 	{
+		// An interface value in the places a value goes rather than only in a
+		// variable of its own: returned from a function, held in a struct field,
+		// held in an array walked as a slice, and sent to another cog. Each is a
+		// two-word copy of { data, vtable } -- there is nothing to box -- and each
+		// asked a different part of the emitter for the type of what a call through
+		// it yields. The chain-reached ones (`sc.first.Name()`, `shapes[1].Name()`)
+		// went untyped before this, so a string result printed as two integers.
+		//
+		// The data pointer is a reference, so what these hold are package variables:
+		// an interface over a local is what escape analysis already refuses to let
+		// outlive its frame.
+		name: "an interface value in a return, a field, an element and a channel",
+		src: `type Shape interface {
+	Area() int
+	Name() string
+}
+
+type sq struct {
+	n int
+}
+
+func (s sq) Area() int { return s.n * s.n }
+
+func (s sq) Name() string { return "sq" }
+
+type rect struct {
+	w, h int
+}
+
+func (r rect) Area() int { return r.w * r.h }
+
+func (r rect) Name() string { return "rect" }
+
+type scene struct {
+	first Shape
+	count int
+}
+
+var gq sq
+
+var gr rect
+
+var shapes [3]Shape
+
+func pick(k int) Shape {
+	if k == 0 {
+		return gq
+	}
+	return gr
+}
+
+func total(xs []Shape) int {
+	sum := 0
+	for i := 0; i < len(xs); i++ {
+		sum += xs[i].Area()
+	}
+	return sum
+}
+
+func feed(ch chan Shape) { ch <- gr }
+
+func main() {
+	gq.n = 3
+	gr.w, gr.h = 2, 5
+
+	// Returned from a function, and returned straight back out again.
+	a := pick(0)
+	b := pick(1)
+	println(a.Name(), a.Area(), b.Name(), b.Area())
+
+	// Held in a struct field.
+	var sc scene
+	sc.first = gq
+	sc.count = 1
+	println(sc.first.Name(), sc.first.Area(), sc.count)
+
+	// Held in an array, walked as a slice.
+	shapes[0] = gq
+	shapes[1] = gr
+	shapes[2] = pick(0)
+	println(total(shapes[:]), shapes[1].Name())
+
+	// Sent across a cog boundary.
+	var ch chan Shape
+	go feed(ch)
+	got := <-ch
+	println(got.Name(), got.Area())
+}
+`,
+		want: "sq 9 rect 10\nsq 9 1\n28 rect\nrect 10\n",
+	},
+	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload
 		// and a capacity the pushes are refused at. It is what a priority queue on
 		// this target looks like, and it leans on most of what this release changed

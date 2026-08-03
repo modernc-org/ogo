@@ -3174,14 +3174,16 @@ func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
 // the variable it was made from must outlive it. That is recorded where the ordinary
 // provenance mark is, so every sink already asks about it.
 func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
-	if name, ok := e.exprIdent(rhs); ok {
-		if ct, ok := e.varType(name); ok && e.isIfaceCType(ct) {
-			// Interface to interface: the same two words, copied.
+	if ct, ok := e.inferCType(rhs); ok && ct == iface {
+		// Already an interface value: the same two words, copied. A variable's
+		// provenance travels with them, since what the copy points at is what the
+		// original pointed at.
+		if name, isName := e.exprIdent(rhs); isName {
 			if origin := e.frameHolder[name]; origin != "" {
 				e.frameHolder[target] = origin
 			}
-			return target + " = " + e.varRef(name) + ";\n"
 		}
+		return target + " = " + e.captureC(func() { e.emitExpr(rhs) }) + ";\n"
 	}
 	concrete, data, ok := e.ifaceOperand(rhs)
 	if !ok {
@@ -3244,10 +3246,10 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, ok bool) {
 // that need one expression rather than two statements: an argument, and a return.
 // An operand that is already of the interface type is itself.
 func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
-	if name, ok := e.exprIdent(rhs); ok {
-		if ct, ok := e.varType(name); ok && e.isIfaceCType(ct) {
-			return e.varRef(name), true
-		}
+	// Already an interface value -- a variable of one, or a call returning one --
+	// so it is itself: the two words, copied.
+	if ct, ok := e.inferCType(rhs); ok && ct == iface {
+		return e.captureC(func() { e.emitExpr(rhs) }), true
 	}
 	concrete, data, ok := e.ifaceOperand(rhs)
 	if !ok || !e.needVTable(iface, concrete) {
@@ -7423,11 +7425,34 @@ func (e *emitter) accessChainTypeAt(cur accessCur, steps []Node, claimed bool) (
 	ok := true
 	named := true
 	sliced := claimed
-	for i, n := range steps {
+	for i := 0; i < len(steps); i++ {
+		n := steps[i]
 		last := i == len(steps)-1
 		switch n.sym {
 		case Selector:
 			f := e.soleIdent(n.ast)
+			// A method of an interface reached through the chain: the slot's result
+			// is what the chain has after it, and the CallSuffix that follows is
+			// part of the call rather than a step of its own.
+			if ms, isIface := e.ifaceMethods[cur.ctype]; isIface && i+1 < len(steps) && steps[i+1].sym == CallSuffix {
+				res, has := "", false
+				for _, m := range ms {
+					if m.name == f {
+						res, has = m.res, true
+					}
+				}
+				if !has {
+					return accessCur{}, false
+				}
+				if res == "void" {
+					cur = accessCur{}
+				} else {
+					cur = e.plainOrSlice(res)
+				}
+				named = false
+				i++ // consumed the CallSuffix
+				continue
+			}
 			if cur, ok = e.accessSelect(cur, f); !ok {
 				return accessCur{}, false
 			}
@@ -9582,9 +9607,19 @@ func (e *emitter) exprIsLiteral(ast []int32) bool {
 // `return nil` in a slice-returning function yields the zero slice header, not the
 // integer 0, which is only nil's pointer form.
 func (e *emitter) emitReturnValue(i int, ex Node) {
-	if e.isNilExpr(ex.ast) && i < len(e.curResultTypes) && e.isSliceCType(e.curResultTypes[i]) {
-		e.emit("(" + e.curResultTypes[i] + "){0}")
-		return
+	if i < len(e.curResultTypes) {
+		if e.isNilExpr(ex.ast) && e.isSliceCType(e.curResultTypes[i]) {
+			e.emit("(" + e.curResultTypes[i] + "){0}")
+			return
+		}
+		// A concrete value returned as an interface is wrapped here, the result
+		// being the target whose type says so.
+		if e.isIfaceCType(e.curResultTypes[i]) {
+			if text, ok := e.ifaceValueC(e.curResultTypes[i], ex.ast); ok {
+				e.emit(text)
+				return
+			}
+		}
 	}
 	e.emitExpr(ex.ast)
 }
@@ -10191,6 +10226,24 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 		case Selector:
 			field := e.soleIdent(n.ast)
 			bt := methodBaseType(cur.ctype)
+			// A call through an interface REACHED BY THE CHAIN -- `sc.first.Name()`,
+			// `shapes[1].Area()` -- takes what the slot declares, the same rule
+			// callResultCType applies to a plain interface variable. Without this the
+			// chain went untyped and a string result printed as two integers.
+			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && e.isIfaceCType(cur.ctype) {
+				slot := ""
+				for _, m := range e.ifaceMethods[cur.ctype] {
+					if m.name == field {
+						slot = m.res
+					}
+				}
+				if slot == "" || slot == "void" {
+					return "", false // no such slot, or one yielding nothing
+				}
+				cur = e.plainOrSlice(slot)
+				i++
+				continue
+			}
 			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
 				rts, okm := e.funcRet[methodCName(bt, field)]
 				if !okm || len(rts) > 1 {
@@ -10983,6 +11036,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				e.fail("unsupported assignment form for an access chain")
 				return
 			}
+			t.targetCType = cur.ctype
 			e.emitAssignTailOrCopy(func() { e.emitAccessChain(base, chain) }, t)
 			return
 		}
@@ -11101,8 +11155,15 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 		e.ind()
 		e.chanSendElems[e.chanElemByName[ct]] = true
-		e.emit(chanSendCName(e.chanElemByName[ct]) + "(" + lhs + ", ")
-		e.emitExpr(rhsAst)
+		elem := e.chanElemByName[ct]
+		e.emit(chanSendCName(elem) + "(" + lhs + ", ")
+		// A concrete value sent on a channel of interface type is wrapped, the
+		// element type being the target here.
+		if text, ok := e.ifaceValueC(elem, rhsAst); ok && e.isIfaceCType(elem) {
+			e.emit(text)
+		} else {
+			e.emitExpr(rhsAst)
+		}
 		e.emit(");\n")
 		return
 	case ASSIGN:
@@ -11508,6 +11569,17 @@ var cAssignOps = map[Symbol]string{
 // way, and not at all if the copy is refused, so a refusal leaves no half-written
 // statement.
 func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
+	// A concrete value written to a target of interface type -- a field, an element,
+	// anything a chain reaches -- is wrapped where it stands, the same two words the
+	// plain-variable assignment writes.
+	if t.op == "=" && e.isIfaceCType(t.targetCType) {
+		if text, ok := e.ifaceValueC(t.targetCType, t.rhs); ok {
+			e.ind()
+			target()
+			e.emit(" = " + text + ";\n")
+			return
+		}
+	}
 	if t.op == "=" {
 		if ct, ok := e.inferCType(t.rhs); ok && e.hasArrayField(ct) {
 			if !e.checkStructCopySrc(ct, t.rhs) {

@@ -326,11 +326,17 @@
 // boxed, because the "&" is where a reference into the caller's storage becomes
 // visible -- which is what the lifetime rules exist to keep legible.
 //
+// An interface value goes where a value goes: returned from a function, held in a
+// struct field, held in an array or slice element, and sent on a channel to another
+// cog. Each is the same two-word copy; what each needed was for the emitter to know
+// that the TARGET's type is an interface, which is what says the concrete value
+// reaching it has to be wrapped. A method call reached through a chain --
+// sc.first.Name(), shapes[1].Area() -- is typed by the slot the interface declares.
+//
 // Not done yet: type switches and assertions (deferred, see below);
-// devirtualization; an interface value stored in a struct field or sent on a
-// channel; a value whose address cannot be taken -- a literal, a call's result --
-// which is refused rather than copied to a temporary, there being nowhere for the
-// interface to own a copy.
+// devirtualization; a value whose address cannot be taken -- a literal, a call's
+// result -- which is refused rather than copied to a temporary, there being nowhere
+// for the interface to own a copy.
 //
 // # Checker status
 //
