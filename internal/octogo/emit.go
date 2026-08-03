@@ -2584,6 +2584,20 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(gd)
 		out.WriteByte('\n')
 	}
+	// The functions lifted out of function literals. Discovered while walking the
+	// bodies, like the cells below, and written before them: a lifted function may
+	// hold a channel of its own, and its prototypes let one literal name another
+	// whatever order they were found in.
+	if len(e.liftedDefs) != 0 {
+		for _, p := range e.liftedProtos {
+			out.WriteString(p + ";\n")
+		}
+		out.WriteByte('\n')
+		for _, d := range e.liftedDefs {
+			out.WriteString(d)
+			out.WriteByte('\n')
+		}
+	}
 	// Cells for locally declared channels. Discovered while walking the bodies, so
 	// they can only be written now, and they must precede the package initializer
 	// that takes their locks.
@@ -2613,12 +2627,19 @@ type emitter struct {
 	// foldConv lets the integer fold see through a conversion, `int32(4)`. Off for
 	// the fold that RENDERS an expression, where a conversion's cast is part of the
 	// emitted type. See constIntValue.
-	foldConv           bool
-	indent             int
-	includes           map[string]bool
-	funcRet            map[string][]string      // user function / mangled method name -> C result types (empty=void), for typing calls
-	funcSliceParams    map[string][]string      // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
-	funcVariadic       map[string]int           // same key -> the position of a "...T" parameter, for the pack a call has to build
+	foldConv        bool
+	indent          int
+	includes        map[string]bool
+	funcRet         map[string][]string // user function / mangled method name -> C result types (empty=void), for typing calls
+	funcSliceParams map[string][]string // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
+	funcVariadic    map[string]int      // same key -> the position of a "...T" parameter, for the pack a call has to build
+	// A function literal has no name, and C has no nested functions, so each one is
+	// LIFTED to a file-scope function of a minted name and the expression becomes
+	// that name. Collected while walking a body, so they can only be written out
+	// once every body has been walked -- like the channel cells.
+	liftedProtos       []string
+	liftedDefs         []string
+	liftSeq            int
 	funcParams         map[string][]string      // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	methodPtr          map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
@@ -4673,6 +4694,132 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.w.Write(bodyBuf.Bytes())
 	e.indent--
 	e.emit("}\n")
+}
+
+// liftFuncLit emits a function literal as a file-scope function of a minted name
+// and returns that name, which is what the expression becomes. C has no nested
+// functions, and this language has no closures to need one: a literal captures
+// nothing (the checker says so), so lifting it changes nothing about what it means.
+//
+// Everything the body emitter keeps about the function being emitted is saved and
+// restored around it, since the literal is met in the middle of another body.
+func (e *emitter) liftFuncLit(lit Node) (string, bool) {
+	var sig, body []int32
+	for n := range it(lit.ast) {
+		switch n.sym {
+		case Signature:
+			sig = n.ast
+		case Block:
+			body = n.ast
+		}
+	}
+	if sig == nil || body == nil {
+		e.fail("a function literal needs a signature and a body")
+		return "", false
+	}
+	// Named without a leading underscore, unlike the statement temporaries: the
+	// backend reserves that spelling for its own intrinsics at file scope, and a
+	// function taking it produced a binary the loader would not accept.
+	cname := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_lit%d", e.liftSeq))
+	e.liftSeq++
+
+	// Recorded before the body is walked, so a literal that calls itself through a
+	// variable, or another literal lifted after it, resolves.
+	e.funcRet[cname] = nil
+	e.funcValueTypes[cname] = e.funcSigCParts(sig)
+	e.funcSliceParams[cname] = e.paramSliceTypes(sig)
+	if _, at := e.variadicElem(sig); at >= 0 {
+		e.funcVariadic[cname] = at
+	}
+	e.funcParams[cname] = e.cParamTypes(sig)
+
+	type state struct {
+		locals                         map[string]string
+		arrays                         map[string]arrDim
+		sliceVars                      map[string]string
+		frameBacked                    map[string]bool
+		frameHolder                    map[string]string
+		tmp, indent, deferReplay       int
+		defers                         []deferredCall
+		curFunc                        string
+		curResultNames, curResultTypes []string
+		prologue                       []string
+		w                              io.Writer
+	}
+	saved := state{
+		locals: e.locals, arrays: e.arrays, sliceVars: e.sliceVars,
+		frameBacked: e.frameBacked, frameHolder: e.frameHolder,
+		tmp: e.tmp, indent: e.indent, deferReplay: e.deferReplay, defers: e.defers,
+		curFunc: e.curFunc, curResultNames: e.curResultNames, curResultTypes: e.curResultTypes,
+		prologue: e.prologue, w: e.w,
+	}
+	e.locals = map[string]string{}
+	e.arrays = map[string]arrDim{}
+	e.sliceVars = map[string]string{}
+	e.frameBacked = map[string]bool{}
+	e.frameHolder = map[string]string{}
+	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
+	e.curFunc = cname
+
+	var def bytes.Buffer
+	e.w = &def
+	proto := e.funcSignatureC(cname, sig)
+	if proto != "" {
+		e.bindParams(sig)
+		e.emit(proto + " {\n")
+		e.indent++
+		e.emitParamCopies(sig)
+		e.emitParamVoids(sig, body)
+		e.declareNamedResults(sig, body)
+		e.curResultNames, e.curResultTypes = e.resultInfo(sig)
+		for i, nm := range e.curResultNames {
+			if nm == "" || nm == "_" {
+				e.curResultNames[i] = "0"
+			}
+		}
+		var bodyBuf bytes.Buffer
+		inner := e.w
+		e.w = &bodyBuf
+		e.emitBlockStmts(body)
+		if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
+			e.emitDeferred()
+		}
+		e.w = inner
+		e.emitDeferDecls()
+		e.w.Write(bodyBuf.Bytes())
+		e.indent--
+		e.emit("}\n")
+	}
+	_, resTypes := e.cSig(sig)
+	e.funcRet[cname] = resTypes
+
+	e.locals, e.arrays, e.sliceVars = saved.locals, saved.arrays, saved.sliceVars
+	e.frameBacked, e.frameHolder = saved.frameBacked, saved.frameHolder
+	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
+	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
+	e.prologue, e.w = saved.prologue, saved.w
+	if proto == "" {
+		return "", false
+	}
+	e.liftedProtos = append(e.liftedProtos, proto)
+	e.liftedDefs = append(e.liftedDefs, def.String())
+	return cname, true
+}
+
+// factorFuncLit returns the FuncLiteral a Factor begins with, and the suffix that
+// follows it -- which is a call, "func() int { ... }()", and nothing else the
+// grammar admits there.
+func (e *emitter) factorFuncLit(kids []Node) (lit Node, suffix []Node, ok bool) {
+	if len(kids) == 0 || len(kids) > 2 || kids[0].sym != FuncLiteral {
+		return Node{}, nil, false
+	}
+	if len(kids) == 2 {
+		if kids[1].sym != FactorSuffix {
+			return Node{}, nil, false
+		}
+		suffix = slices.Collect(it(kids[1].ast))
+	}
+	return kids[0], suffix, true
 }
 
 // bodyEndsInReturn reports whether a function body's last top-level statement is a
@@ -10482,14 +10629,24 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			// step further in. The value names the callee, so the call is just the
 			// text so far applied to the arguments.
 			if !pendingFn && e.isFuncCType(cur.ctype) {
-				text += "(" + e.argsCText("", n.ast) + ")"
 				// Keyed by the function typedef, which a DEFINED function type is
 				// only a name for: `type Fn func(int) int` reaches its results
-				// through what it is defined over.
+				// through what it is defined over. Asked before anything is
+				// hoisted, so a chain this cannot type leaves no temporary behind.
 				rts := e.funcTypeRet[e.underlyingCType(cur.ctype)]
 				if len(rts) != 1 {
 					return "", "", false, false
 				}
+				// A call made DIRECTLY through an array element of function-pointer
+				// type reaches the wrong function on the P2: every element calls
+				// whatever the first one holds. Measured on a P2-EDGE, constant and
+				// variable index alike, and with the table filled at package
+				// initialization or by assignment -- see doc/call-through-array-element.c.
+				// Binding the element to a temporary first is correct, so that is
+				// what is emitted. gcc compiles the direct form correctly, which is
+				// why this needed the board to find.
+				text = e.hoist(cur.ctype, func() { e.emit(text) }) +
+					"(" + e.argsCText("", n.ast) + ")"
 				cur, addr = e.plainOrSlice(rts[0]), false
 				continue
 			}
@@ -13094,6 +13251,27 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 		}
 		if n.sym == Factor {
+			// A function literal has the type its signature mints, the same typedef
+			// a named function used as a value gets.
+			if lit, suffix, ok := e.factorFuncLit(kids); ok {
+				var sig []int32
+				for c := range it(lit.ast) {
+					if c.sym == Signature {
+						sig = c.ast
+					}
+				}
+				if sig == nil {
+					return "", false
+				}
+				// Called where it stands, the value is what the call yields.
+				if len(suffix) != 0 {
+					if _, res := e.cSig(sig); len(res) == 1 {
+						return res[0], true
+					}
+					return "", false
+				}
+				return e.funcTypeOfSig(sig)
+			}
 			// "x.(T)" is the pointer that was put in, read back out.
 			if _, _, concrete, ok := e.typeAssertionKids(kids); ok {
 				return concrete + "*", true
@@ -13856,6 +14034,27 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		if n.sym == Factor {
+			// A function literal becomes the file-scope function it is lifted to,
+			// named here as any function used as a value is.
+			if lit, suffix, ok := e.factorFuncLit(kids); ok {
+				cname, ok := e.liftFuncLit(lit)
+				if !ok {
+					return
+				}
+				// A literal called where it stands: the lifted name, then the call.
+				if len(suffix) == 1 && suffix[0].sym == CallSuffix {
+					e.emit(cname + "(")
+					e.emitCallArgs(cname, suffix[0].ast)
+					e.emit(")")
+					return
+				}
+				if len(suffix) != 0 {
+					e.fail("a function literal may only be called where it stands")
+					return
+				}
+				e.emit(cname)
+				return
+			}
 			// "x.(T)" standing as one value panics when it does not hold, as Go's
 			// does. The check is a statement, so it goes in the prologue and the
 			// expression is left as the cast -- which puts the panic ahead of every

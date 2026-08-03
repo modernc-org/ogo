@@ -904,7 +904,7 @@
 //		| "(" Expression ")"
 //		| "[" [ Expression ] "]" Type [ CompositeLit ]
 //		| "chan" Type
-//		| FuncLiteral .
+//		| FuncLiteral [ FactorSuffix ] .
 //	CompositeLit = "{" [ ElementList ] "}" .
 //	ElementList  = Element { "," Element } [ "," ] .
 //	Element      = CompositeLit | Expression [ ":" ElementValue ] .
@@ -1109,12 +1109,25 @@
 //
 // (OctoGo Specific): Because OctoGo strictly enforces a zero-allocation memory
 // model without a Garbage Collector, function literals cannot act as dynamic
-// closures. They may not capture or reference variables from their surrounding
-// lexical scope. In the transpiled C code, function literals are to be treated
-// strictly as statically allocated, pure function pointers.
+// closures. A literal MAY NOT read a local or a parameter of the surrounding
+// function -- there is no heap to hold a captured frame, and no frame that
+// outlives the call, so the pointer would be the only honest part of a closure.
+// Doing so is refused where it is written:
 //
-// They are not implemented yet: a literal is refused where it is written. What
-// works today is the named function used as a value, above.
+//	k := 5
+//	f := func(a int) int { return a * k }   // a function literal may not capture k
+//
+// A package-level name is not a capture: it is there for every function, and a
+// literal reads one as any function does.
+//
+// Each literal is lifted to a function of file scope with a name of the compiler's
+// choosing, and the expression becomes that name -- so what a literal costs is a
+// function pointer and nothing else. It may be bound to a variable, handed to a
+// parameter, returned, stored in a field or an element, and called where it stands:
+//
+//	println(func() int { return 7 }())
+//
+// A literal is not admitted after "go" or "defer", which take a declared function.
 //
 // # Operators
 //

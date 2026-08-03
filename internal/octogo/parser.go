@@ -6354,7 +6354,7 @@ state1:
 //		| "(" Expression ")"
 //		| "[" [ Expression ] "]" Type [ CompositeLit ]
 //		| "chan" Type
-//		| FuncLiteral .
+//		| FuncLiteral [ FactorSuffix ] .
 //
 //	State 0
 //		on  "chan"
@@ -6368,7 +6368,7 @@ state1:
 //		on  identifier
 //			shift and goto state 9
 //		on  "func"
-//			call FuncLiteral and goto state 2
+//			call FuncLiteral and goto state 10
 //	State 1
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
 //			call Type and goto state 2
@@ -6401,6 +6401,10 @@ state1:
 //			call CompositeLit and goto state 2
 //		on  '(', '.', '['
 //			call FactorSuffix and goto state 7
+//	State 10
+//		Accept
+//		on  '(', '.', '['
+//			call FactorSuffix and goto state 2
 //
 // Factor is used internally from Parse.
 func (p *Parser) Factor() (r []int32) {
@@ -6426,7 +6430,7 @@ func (p *Parser) Factor() (r []int32) {
 		goto state9
 	case TOK_func:
 		r = p.add(r, p.FuncLiteral())
-		goto state2
+		goto state10
 	}
 	return p.stop(r, accept, errorSet)
 state1:
@@ -6500,6 +6504,14 @@ state9:
 	case TOK_0028, TOK_002e, TOK_005b:
 		r = p.add(r, p.FactorSuffix())
 		goto state7
+	}
+	return p.stop(r, accept, errorSet)
+state10:
+	accept, errorSet = true, 81
+	switch Symbol(p.tok.Ch) {
+	case TOK_0028, TOK_002e, TOK_005b:
+		r = p.add(r, p.FactorSuffix())
+		goto state2
 	}
 	return p.stop(r, accept, errorSet)
 }

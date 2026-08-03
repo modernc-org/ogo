@@ -77,7 +77,7 @@ Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
 	| "(" Expression ")"
 	| "[" [ Expression ] "]" Type [ CompositeLit ]
 	| "chan" Type
-	| FuncLiteral .
+	| FuncLiteral [ FactorSuffix ] .
 CompositeLit = "{" [ ElementList ] "}" .
 ElementList  = Element { "," Element } [ "," ] .
 Element      = CompositeLit | Expression [ ":" ElementValue ] .

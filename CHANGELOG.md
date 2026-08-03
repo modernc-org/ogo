@@ -88,6 +88,31 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **Function literals.** `f := func(a int) int { return a * 2 }`, and the literal
+  handed to a parameter, returned, stored in a field or an element, or called where
+  it stands: `func() int { return 7 }()`. C has no nested functions and this
+  language has no closures to need them, so each literal is lifted to a function of
+  file scope and the expression becomes its name — a function pointer and nothing
+  else.
+
+  A literal may not read a local or a parameter of the surrounding function. There
+  is no heap to hold a captured frame and no frame that outlives the call, so the
+  pointer would be the only honest part of a closure; the attempt is refused where
+  it is written, naming what was captured. A package-level name is not a capture.
+
+  Not admitted after `go` or `defer`, which take a declared function.
+- **Fixed, on the hardware: a dispatch table did not dispatch.** A call made
+  directly through an array element of function-pointer type reached the *wrong
+  function* on the P2 — every element called whatever the first one held, with a
+  constant index and a variable one alike, whether the table was filled by
+  assignment or at package initialization. Silently, and since function values
+  shipped in v0.13.0.
+
+  The host C compiler gets the direct form right, which is why the emit-and-run
+  tests passed and only the board disagreed — the reason that second suite exists.
+  A call through an element now binds it to a temporary first, which is correct on
+  both. Reduced to a dozen lines of C in `doc/call-through-array-element.c`, and the
+  shape is now a run case in its own right.
 - **Variadic parameters.** `func sum(xs ...int) int` takes the rest of a call's
   arguments, however many — none included — and inside the body the parameter *is* a
   `[]int`, so `len`, `cap`, `range` and indexing all ask a slice. A call may spread

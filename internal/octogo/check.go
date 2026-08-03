@@ -4088,10 +4088,6 @@ func (f *File) checkFuncAssign(s *Scope, want *SignatureNode, value Node, what s
 // carry its receiver alongside the code. Reported where written, so the message
 // names what was asked for.
 func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
-	if tok, ok := f.exprFuncLit(n); ok {
-		f.err(tok.Position(), "a function literal is not supported yet")
-		return true
-	}
 	head, field, ok := f.exprFieldRead(n)
 	if !ok {
 		return false
@@ -4106,6 +4102,94 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	}
 	f.err(field.Position(), "a method value is not supported yet")
 	return true
+}
+
+// checkFuncLiterals checks every function literal in an expression: its body, in a
+// scope of its own, and the one rule this language adds to it -- a literal captures
+// nothing.
+//
+// There is no heap to hold a captured frame and no frame that outlives the call, so
+// a literal is a plain function pointer and can only be that. Reading a local of the
+// surrounding function is therefore refused where it is written, rather than left
+// to surface as a C compiler's "unknown symbol".
+func (f *File) checkFuncLiterals(s *Scope, n Node) {
+	for c := range it(n.ast) {
+		if c.sym == 0 {
+			continue
+		}
+		if c.sym != FuncLiteral {
+			f.checkFuncLiterals(s, c)
+			continue
+		}
+		var sigNode, body Node
+		for d := range it(c.ast) {
+			switch d.sym {
+			case Signature:
+				sigNode = d
+			case Block:
+				body = d
+			}
+		}
+		// The literal's scope hangs off the FILE scope, not off the enclosing
+		// function: package-level names are in scope inside it, locals are not, and
+		// that is the capture rule expressed as a scope rather than as a check.
+		ls := f.Scope.child()
+		sig := f.signature(ls, sigNode)
+		f.declareParamList(ls, sig.Params)
+		f.declareParamList(ls, sig.Results)
+		f.reportCaptures(s, ls, body)
+		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
+	}
+}
+
+// reportCaptures names every identifier in a literal's body that resolves to a
+// local of the surrounding function and to nothing the literal itself declares.
+// The test is by name, as the unused-variable rule's is, which over-reports only
+// where a literal declares a name the enclosing function also has -- and there the
+// two are the same name for different storage, which is worth saying anyway.
+func (f *File) reportCaptures(outer, lit *Scope, body Node) {
+	seen := map[string]bool{}
+	var walk func(n Node)
+	walk = func(n Node) {
+		for c := range it(n.ast) {
+			if c.sym != 0 {
+				walk(c)
+				continue
+			}
+			tok := f.tok(c.tok)
+			if Symbol(tok.Ch) != IDENT {
+				continue
+			}
+			nm := tok.Src()
+			if nm == "_" || seen[nm] || lit.find(nm) != nil {
+				continue
+			}
+			d, isVar := f.findLocal(outer, nm).(*VarDeclaration)
+			if !isVar || d == nil {
+				continue
+			}
+			seen[nm] = true
+			f.err(tok.Position(), "a function literal may not capture %s from the surrounding function: there is no heap to hold it", nm)
+		}
+	}
+	walk(body)
+}
+
+// findLocal resolves a name in the block scopes of the enclosing function only,
+// stopping before the file and package scopes. What it finds is what a literal
+// would have had to capture; what it does not find is either global or undefined,
+// and neither is this rule's business.
+func (f *File) findLocal(s *Scope, nm string) Declaration {
+	for ; s != nil; s = s.Parent {
+		switch s.Kind {
+		case FileScope, PackageScope, UniverseScope:
+			return nil
+		}
+		if d := s.Declarations[nm]; d != nil {
+			return d
+		}
+	}
+	return nil
 }
 
 // exprFuncLit returns the "func" keyword of an expression containing a function
@@ -6598,6 +6682,15 @@ func (f *File) checkSliceBounds(index Node) {
 // a package-qualified read or call "pkg.X"/"pkg.F()", whose qualifier resolves
 // through the file scope; a literal is left alone.
 func (f *File) checkFactorNames(s *Scope, n Node) {
+	// A function literal standing here is a function of its own: its body is
+	// checked in a scope hanging off the file's, which is what makes reading a
+	// local of the surrounding function the capture it is.
+	for c := range it(n.ast) {
+		if c.sym == FuncLiteral {
+			f.checkFuncLiterals(s, n)
+			return
+		}
+	}
 	var id Token
 	var suffix, lit Node
 	hasID, hasSuffix, hasLit := false, false, false

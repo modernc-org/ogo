@@ -1466,6 +1466,102 @@ func main() {
 		want: "6 0 7\nthree 3 3\n6\nnone 0 0\n0\n10\n3 3 6\n17\n",
 	},
 	{
+		// Function literals. C has no nested functions and this language has no
+		// closures to need them, so each literal is LIFTED to a file-scope function
+		// of a minted name and the expression becomes that name. What a literal may
+		// not do is read a local of the surrounding function: there is no heap to
+		// hold a captured frame, and the checker says so where it is written.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "function literals, lifted to file scope",
+		src: `type Op func(int, int) int
+
+var table [3]Op
+
+var gk = 10
+
+func apply(op Op, a int, b int) int { return op(a, b) }
+
+func pick(which int) Op {
+	if which == 0 {
+		return func(a int, b int) int { return a + b }
+	}
+	return func(a int, b int) int { return a * b }
+}
+
+func main() {
+	// Bound to a variable and called through it.
+	dbl := func(a int) int { return a * 2 }
+	println(dbl(21))
+
+	// Handed straight to a parameter, and returned from a function.
+	println(apply(func(a int, b int) int { return a - b }, 9, 4))
+	println(pick(0)(3, 4), pick(1)(3, 4))
+
+	// Held in an array: a dispatch table written where it is used.
+	table[0] = func(a int, b int) int { return a + b }
+	table[1] = func(a int, b int) int { return a - b }
+	table[2] = func(a int, b int) int { return a * b }
+	for i := 0; i < len(table); i++ {
+		println(i, table[i](6, 3))
+	}
+
+	// A package-level name is not a capture: it is there for every function.
+	println(func(a int) int { return a + gk }(5))
+
+	// Called immediately, taking no arguments.
+	println(func() int { return 7 }())
+}
+`,
+		want: "42\n5\n7 12\n0 9\n1 3\n2 18\n15\n7\n",
+	},
+	{
+		// A dispatch table: functions in an array, called through the index. It is
+		// most of the reason to put functions in an array at all, and it was BROKEN
+		// on the P2 until now -- every element called whatever the first one held,
+		// with a constant index and a variable one alike, whether the table was
+		// filled by assignment or at package initialization.
+		//
+		// The host C compiler gets the direct form right, so the emit-and-run tests
+		// passed and only the board disagreed. ogo now binds the element to a
+		// temporary before calling it; see doc/call-through-array-element.c.
+		name: "a dispatch table of functions in an array",
+		src: `type Op func(int, int) int
+
+func add(a int, b int) int { return a + b }
+
+func sub(a int, b int) int { return a - b }
+
+func mul(a int, b int) int { return a * b }
+
+var built [3]Op
+
+var initialized = [2]Op{add, sub}
+
+func main() {
+	built[0] = add
+	built[1] = sub
+	built[2] = mul
+
+	// A variable index, and a constant one.
+	for i := 0; i < len(built); i++ {
+		println(i, built[i](6, 3))
+	}
+	println(built[0](6, 3), built[1](6, 3), built[2](6, 3))
+
+	// A table filled at package initialization rather than by assignment.
+	for i := 0; i < len(initialized); i++ {
+		println(i, initialized[i](6, 3))
+	}
+
+	// Bound to a variable first, which always worked and still has to.
+	f := built[2]
+	println(f(6, 3))
+}
+`,
+		want: "0 9\n1 3\n2 18\n9 3 18\n0 9\n1 3\n18\n",
+	},
+	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload
 		// and a capacity the pushes are refused at. It is what a priority queue on
 		// this target looks like, and it leans on most of what this release changed

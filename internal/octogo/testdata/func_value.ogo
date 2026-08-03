@@ -9,7 +9,7 @@ type op struct {
 }
 
 func add(a int, b int) int { return a + b }
-func sq(n int) int         { return n * n }
+func sq(n int) int { return n * n }
 
 func run(f func(int, int) int, a int, b int) int { return f(a, b) }
 
@@ -68,14 +68,17 @@ func notAFunction() {
 	x()
 }
 
-// The two function-valued forms the language does not model yet are refused where
-// they are written, rather than left to surface as a puzzling call error later.
+// A function literal is a value of the same kind: it is lifted to a file-scope
+// function and its name is what stands here. See func_literal.ogo for its own rule.
+//
+// A method value is the one function-valued form still refused where it is written,
+// rather than left to surface as a puzzling call error later: it must carry its
+// receiver alongside the code, which a function pointer does not.
 type T struct{ v int }
 
 func (t T) get() int { return t.v }
 
 func unsupported() {
-	// ERROR "a function literal is not supported yet"
 	f := func(n int) int { return n }
 	println(f(1))
 	var t T = T{5}
