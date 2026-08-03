@@ -29,9 +29,17 @@ Releases before v0.9.0 predate this file; see
   callee that only reads its parameter — the requirement is on the leak, not on the
   pointer.
 
-  Still open, and named in `octogo.go`: a callee that *returns* what it was given
-  launders it, so `return id(&x)` compiles. That needs a per-result summary rather
-  than a leak flag.
+- **A reference may no longer be laundered through a call's result either.**
+  `func id(p *int) *int { return p }` made `return id(&x)` compile, and the same
+  single call carried a frame reference past every other sink — into a package
+  variable, to a goroutine, onto a channel. A second summary records, per parameter,
+  whether a result derives from it, closed over the same call graph; the shared
+  provenance predicate consults it, so all five sinks see it at once rather than each
+  growing a case.
+
+  A reference bound to a local first (`q := id(&x); return q`) is still not followed,
+  and a callee that cannot be resolved to a name still yields no summary. Both err
+  toward accepting, as the rest of the analysis does.
 
 ## v0.16.0
 

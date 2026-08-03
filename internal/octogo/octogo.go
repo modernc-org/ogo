@@ -140,12 +140,18 @@
 // every frame, and the mark is closed over the call graph, so a leak two or three
 // calls away is reported at the call that chose the storage.
 //
-// What is NOT implemented is the RESULT half: a function that returns what it was
-// given launders the reference, so `func id(p *int) *int { return p }` makes
-// `return id(&x)` compile. Catching it needs a per-result summary -- "this result
-// derives from parameter i" -- which is a different fact from a leak flag, since
-// returning a parameter is not a leak in the callee and is one only at some
-// callers. That is the next increment.
+// The RESULT half is implemented too: a function that returns what it was given
+// hands the argument's provenance back out, summarised per parameter as "a result
+// derives from this one" and closed over the same call graph. It is consulted by
+// the shared provenance predicate rather than by each sink, so `return id(&x)`,
+// `g = id(&x)`, `go f(id(&x))` and `ch <- id(&x)` are all refused by one rule.
+//
+// Two things it deliberately does not do. A reference bound to a local first --
+// `q := id(&x); return q` -- is not followed, because nothing marks q; the mark
+// machinery covers a struct field and a slice backing, not a plain pointer local.
+// And a callee this cannot resolve to a name -- a method, or a call through a
+// function value -- yields no summary, so the requirement is not propagated
+// through it. Both err the way the rest of the analysis does: towards accepting.
 //
 // Purpose. On a target with no heap and no GC, every reference -- a pointer, a
 // slice header, or a zero-copy string view -- borrows storage owned by some frame.

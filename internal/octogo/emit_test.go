@@ -6659,6 +6659,158 @@ func main() {
 }
 `,
 		},
+		// Increment 7: a callee that RETURNS what it was given hands the argument's
+		// provenance back out, so a single call used to launder a reference past
+		// every sink. The summary is per RESULT rather than per leak -- returning a
+		// parameter is not a leak in the callee, and is one only at some callers --
+		// and it is consulted by frameRefOf, which is why all five sinks see it at
+		// once rather than each growing a case.
+		{
+			name: "returning a local address through a call",
+			src: `func id(p *int) *int { return p }
+
+func mk() *int {
+	var x int
+	return id(&x)
+}
+
+func main() { println(*mk()) }
+`,
+			want: "cannot return the address of local variable x",
+		},
+		{
+			name: "returning it through two calls",
+			src: `func id(p *int) *int { return p }
+
+func mid(p *int) *int { return id(p) }
+
+func mk() *int {
+	var x int
+	return mid(&x)
+}
+
+func main() { println(*mk()) }
+`,
+			want: "cannot return the address of local variable x",
+		},
+		{
+			name: "storing a laundered address in a package variable",
+			src: `var g *int
+
+func id(p *int) *int { return p }
+
+func main() {
+	var x int
+	g = id(&x)
+	println(*g)
+}
+`,
+			want: "cannot store the address of local variable x in package variable g",
+		},
+		{
+			name: "handing a laundered address to a cog",
+			src: `var done chan int
+
+func id(p *int) *int { return p }
+
+func work(p *int) { done <- *p }
+
+func main() {
+	var x int
+	go work(id(&x))
+	println(<-done)
+}
+`,
+			want: "cannot pass the address of local variable x to a goroutine",
+		},
+		{
+			name: "returning a frame-backed slice through a call",
+			src: `func pass(s []int) []int { return s }
+
+func mk() []int {
+	var a [3]int
+	return pass(a[:])
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local a",
+		},
+		{
+			// The same callee handed PACKAGE storage returns something that outlives
+			// every frame, and must stay accepted.
+			name: "the same laundering callee, given package storage",
+			src: `var pkg int
+
+func id(p *int) *int { return p }
+
+func mk() *int { return id(&pkg) }
+
+func main() { println(*mk()) }
+`,
+		},
+		{
+			// A laundered reference that never leaves the frame is the ordinary case.
+			name: "a laundered address used in the same frame",
+			src: `func id(p *int) *int { return p }
+
+func main() {
+	var x int
+	x = 5
+	q := id(&x)
+	println(*q)
+}
+`,
+		},
+		{
+			// A callee whose result derives from nothing it was given carries no
+			// provenance, however it is called.
+			name: "a callee that returns none of its parameters",
+			src: `func first(p *int) int { return *p }
+
+func mk() int {
+	var x int
+	x = 3
+	return first(&x)
+}
+
+func main() { println(mk()) }
+`,
+		},
+		{
+			// A slice of the CALLER's storage passed through and handed back is the
+			// pattern a helper is written for.
+			name: "a parameter's slice passed through and returned",
+			src: `func pass(s []int) []int { return s }
+
+func mid(s []int) []int { return pass(s) }
+
+func main() {
+	var a [3]int
+	b := mid(a[:])
+	println(len(b))
+}
+`,
+		},
+		{
+			// Recursion closes to a fixed point rather than spinning: a flag only ever
+			// goes false to true.
+			name: "a recursive function returning its parameter",
+			src: `func rec(p *int, n int) *int {
+	if n == 0 {
+		return p
+	}
+	return rec(p, n-1)
+}
+
+func main() {
+	var x int
+	x = 4
+	q := rec(&x, 2)
+	println(*q)
+}
+`,
+		},
 		// Increment 5: a reference wrapped in a struct. The value handed on is the
 		// struct, so the variable carries the mark -- per variable, not per field,
 		// which is what keeps it sound without tracking fields.

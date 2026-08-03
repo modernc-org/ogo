@@ -2181,7 +2181,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2697,7 +2697,9 @@ type emitter struct {
 	prologue           []string                 // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
 	frameBacked        map[string]bool          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
 	crossParams        map[string][]leak        // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
+	retParams          map[string][]bool        // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
 	crossEdges         []crossEdge              // call sites passing a parameter straight on, the graph closeCrossParams walks
+	retEdges           []crossEdge              // returns of a call taking a parameter, the graph the result summary is closed over
 	crossNames         map[string]string        // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder        map[string]string        // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
 	chanCells          []string                 // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
@@ -3708,6 +3710,9 @@ func (e *emitter) collectCrossParams(ast []int32) {
 		if _, seen := e.crossParams[cname]; !seen {
 			e.crossParams[cname] = make([]leak, len(params))
 		}
+		if _, seen := e.retParams[cname]; !seen {
+			e.retParams[cname] = make([]bool, len(params))
+		}
 		e.crossNames[cname] = srcName
 		e.eachStmt(body, func(nodes []Node) {
 			switch {
@@ -3728,6 +3733,24 @@ func (e *emitter) collectCrossParams(ast []int32) {
 				for _, v := range e.storedInPackageVar(nodes) {
 					if i := at(e.leakRoot(v)); i >= 0 {
 						e.crossParams[cname][i] |= leakGlobal
+					}
+				}
+			}
+			// A return hands the value back to the caller: which parameter it came
+			// from is what lets the caller follow it to the storage it chose.
+			if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN {
+				for _, v := range e.returnedExprs(nodes) {
+					if i := at(e.leakRoot(v)); i >= 0 {
+						e.retParams[cname][i] = true
+					}
+				}
+				// `return g(p)`: whatever g hands back of its own parameter, this
+				// function hands back of the parameter it passed there.
+				for _, c := range e.stmtCalls(nodes) {
+					for j, a := range c.args {
+						if i := at(e.leakRoot(a.ast)); i >= 0 {
+							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
+						}
 					}
 				}
 			}
@@ -3759,7 +3782,31 @@ func (e *emitter) closeCrossParams() {
 			caller[g.from] |= callee[g.to]
 			changed = true
 		}
+		for _, g := range e.retEdges {
+			callee, caller := e.retParams[g.callee], e.retParams[g.caller]
+			if g.to >= len(callee) || g.from >= len(caller) || !callee[g.to] || caller[g.from] {
+				continue
+			}
+			caller[g.from] = true
+			changed = true
+		}
 	}
+}
+
+// returnedExprs returns the operands of a return statement.
+func (e *emitter) returnedExprs(nodes []Node) [][]int32 {
+	var out [][]int32
+	for _, n := range nodes {
+		if n.sym != ExpressionList {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym == Expression {
+				out = append(out, c.ast)
+			}
+		}
+	}
+	return out
 }
 
 // funcParamNames returns a function or method declaration's C name, the name it was
@@ -13508,6 +13555,21 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	if name, ok := e.exprIdent(ast); ok {
 		if origin := e.frameHolder[name]; origin != "" {
 			return holderRef(name, origin), true
+		}
+	}
+	// A call whose result derives from one of its arguments hands the argument's
+	// provenance back out: `id(&x)` reaches x's storage exactly as `&x` does. Without
+	// this a single call launders a reference past every sink -- `return id(&x)`
+	// compiled, and so did storing or sending one.
+	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) == 1 && suffix[0].sym == CallSuffix {
+		derives := e.retParams[e.funcCallC(recv)]
+		args := e.callArgExprs(suffix[0].ast)
+		for i, a := range args {
+			if i < len(derives) && derives[i] {
+				if r, ok := e.frameRefOf(a.ast); ok {
+					return r, true
+				}
+			}
 		}
 	}
 	return frameRef{}, false
