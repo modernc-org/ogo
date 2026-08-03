@@ -5085,8 +5085,119 @@ func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
 		for _, nm := range fld.Names {
 			fields[nm.Src()] = true
 		}
+		// An EMBEDDED field -- a bare type name, so one name and no type -- puts its
+		// own name in scope AND promotes what it holds. Go's rule is breadth-first,
+		// the shallowest winning; a name already at this level is not overwritten by
+		// a deeper one.
+		if emb, isEmb := embeddedFieldName(fld); isEmb {
+			inner, okInner := f.structFields(s, emb)
+			if !okInner {
+				continue
+			}
+			for nm := range inner {
+				if !fields[nm] {
+					fields[nm] = true
+				}
+			}
+		}
 	}
 	return fields, true
+}
+
+// embeddedFieldName returns the type name of an embedded field -- one written as a
+// bare type name, which is one name and no type of its own.
+func embeddedFieldName(fld ParameterDeclNode) (Token, bool) {
+	if fld.TypeNode != nil || len(fld.Names) != 1 {
+		return Token{}, false
+	}
+	return fld.Names[0], true
+}
+
+// embeddedFields names the types a struct embeds, in declaration order.
+func (f *File) embeddedFields(s *Scope, typeName Token) []Token {
+	td, ok := s.find(typeName.Src()).(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return nil
+	}
+	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	if !ok {
+		return nil
+	}
+	var out []Token
+	for _, fld := range st.Fields {
+		if emb, isEmb := embeddedFieldName(fld); isEmb {
+			out = append(out, emb)
+		}
+	}
+	return out
+}
+
+// selectorDepth counts, at the shallowest depth where the name is reachable at all,
+// how many ways it is reachable. Go's rule for a selector is one search over fields
+// AND methods together: the shallowest wins, and two at that depth make the
+// selector ambiguous rather than picking one.
+func (f *File) selectorDepth(s *Scope, typeName Token, name string) (count int) {
+	level := []Token{typeName}
+	for depth := 0; depth < 16 && len(level) != 0; depth++ {
+		count = 0
+		var next []Token
+		for _, t := range level {
+			td, ok := s.find(t.Src()).(*TypeDeclaration)
+			if !ok || td.TypeSpec == nil {
+				continue
+			}
+			if td.methods[name] != nil {
+				count++
+			}
+			st, isStruct := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+			if !isStruct {
+				continue
+			}
+			for _, fld := range st.Fields {
+				for _, nm := range fld.Names {
+					if nm.Src() == name {
+						count++
+					}
+				}
+				if emb, isEmb := embeddedFieldName(fld); isEmb && emb.Src() != name {
+					next = append(next, emb)
+				}
+			}
+		}
+		if count != 0 {
+			return count
+		}
+		level = next
+	}
+	return 0
+}
+
+// reportAmbiguousSelector reports a name reachable two ways at the same embedding
+// depth, which is Go's "ambiguous selector". It answers true when it reported, so
+// the caller stops rather than adding a second, wronger message.
+func (f *File) reportAmbiguousSelector(s *Scope, base Token, typeName Token, member Token) bool {
+	if f.selectorDepth(s, typeName, member.Src()) < 2 {
+		return false
+	}
+	f.err(member.Position(), "ambiguous selector %s.%s", base.Src(), member.Src())
+	return true
+}
+
+// methodOwner names the type whose declaration carries a method reachable on
+// typeName: typeName itself, or a type it embeds, breadth-first as Go promotes.
+func (f *File) methodOwner(s *Scope, typeName Token, method string) (Token, bool) {
+	level := []Token{typeName}
+	for depth := 0; depth < 16 && len(level) != 0; depth++ {
+		var next []Token
+		for _, t := range level {
+			if td, ok := s.find(t.Src()).(*TypeDeclaration); ok && td.methods[method] != nil {
+				return t, true
+			}
+			next = append(next, f.embeddedFields(s, t)...)
+		}
+		level = next
+	}
+	return Token{}, false
 }
 
 // interfaceMethods returns the method set of a named interface type, keyed by name,
@@ -5401,6 +5512,9 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token) {
 		f.checkCrossPkgField(d.typeQual, d.typeName, field)
 		return
 	}
+	if f.reportAmbiguousSelector(s, head, d.typeName, field) {
+		return
+	}
 	// An interface has methods and no fields at all: what it carries is reached by
 	// an assertion or a type switch, not by a selector. Without this the read went
 	// unchecked and surfaced from the emitter as a puzzle about C.
@@ -5612,7 +5726,19 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 		}
 		return
 	}
+	if f.reportAmbiguousSelector(s, head, d.typeName, member) {
+		return
+	}
 	fd := td.methods[member.Src()]
+	if fd == nil {
+		// A method PROMOTED from an embedded field is in this type's method set, and
+		// is checked against the signature the embedded type declared it with.
+		if owner, promoted := f.methodOwner(s, d.typeName, member.Src()); promoted {
+			if otd, ok := s.find(owner.Src()).(*TypeDeclaration); ok {
+				fd = otd.methods[member.Src()]
+			}
+		}
+	}
 	if fd == nil {
 		if fields, isStruct := f.structFields(s, d.typeName); isStruct && fields[member.Src()] {
 			return

@@ -1,0 +1,90 @@
+// A struct field written as a bare type name is EMBEDDED: its own fields and
+// methods are reachable on the outer type without naming it, and the field is
+// still reachable by that name when you want to be explicit.
+//
+// In C it is an ordinary member named after the type. What promotion costs is the
+// members the source did not write: `d.n` is `d.middle.base.n`, `d.Get()` is
+// `base_Get(&d.middle.base)`.
+
+type base struct {
+	n int
+}
+
+func (b base) Get() int { return b.n }
+
+func (b *base) Bump(k int) int {
+	b.n += k
+	return b.n
+}
+
+type middle struct {
+	base
+	m    int
+}
+
+type derived struct {
+	middle
+	d      int
+}
+
+var gd derived
+
+func promoted() {
+	// Through two levels, and by the explicit path.
+	gd.n = 1
+	gd.middle.base.n = 2
+	println(gd.n, gd.m, gd.d, gd.Get(), gd.Bump(1))
+
+	// ERROR type derived has no field zzz
+	println(gd.zzz)
+	// ERROR type derived has no method Zzz
+	println(gd.Zzz())
+}
+
+// Go's rule is one search over fields AND methods together: the shallowest wins,
+// and two at that depth make the selector ambiguous rather than picking one.
+
+type left struct {
+	v int
+}
+
+func (l left) M() int { return l.v }
+
+type right struct {
+	v int
+}
+
+func (r right) M() int { return r.v }
+
+type both struct {
+	left
+	right
+}
+
+var gb both
+
+func ambiguous() {
+	// ERROR ambiguous selector gb.v
+	println(gb.v)
+	// ERROR ambiguous selector gb.M
+	println(gb.M())
+
+	// Naming the embedded field resolves it, which is what a reader must do.
+	println(gb.left.v, gb.right.M())
+}
+
+// A field declared on the outer type is shallower than a promoted one, so it wins
+// and the promoted one is still reachable by its path.
+
+type shadow struct {
+	base
+	n    int
+}
+
+var gs shadow
+
+func shadowed() {
+	gs.n = 1
+	gs.base.n = 2
+	println(gs.n, gs.base.n)
+}

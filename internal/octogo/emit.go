@@ -2841,6 +2841,7 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 type structField struct {
 	name, ctype string
 	dim         arrDim // dim.bound != "" for a fixed-array field; ctype is then its element type
+	embedded    bool   // written as a bare type name; its own fields and methods are promoted
 }
 
 // arrDim describes an array variable: its element C type and its C bound (for
@@ -3497,8 +3498,12 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 		}
 		var names []string
 		ctype := ""
+		star := false
 		var dim arrDim // dim.bound non-empty for a fixed-size array field
 		for c := range it(n.ast) {
+			if c.sym == 0 && e.f.ch(c.tok) == MUL {
+				star = true
+			}
 			switch c.sym {
 			case Type:
 				if elem, ok := e.sliceType(c.ast); ok {
@@ -3528,8 +3533,26 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 				}
 			}
 		}
+		// An EMBEDDED field is written as a bare type name and nothing else. In C it
+		// is an ordinary member named after that type; what makes it embedding is
+		// that its own fields and methods are reachable without naming it (fieldPath,
+		// promotedMethod).
+		if ctype == "" && len(names) == 1 && !star {
+			mn := mangle(e.curPkgPrefix, names[0])
+			if _, isStruct := e.structs[mn]; isStruct {
+				out = append(out, structField{name: names[0], ctype: mn, embedded: true})
+				continue
+			}
+		}
+		if star {
+			// "*T" embedded: Go promotes through the pointer, and a nil one panics at
+			// the selector. Refused rather than silently embedded by value, which is
+			// what treating the name as the type would have done.
+			e.fail("an embedded pointer field is not supported yet; embed %s by value", strings.Join(names, ", "))
+			return out
+		}
 		if ctype == "" || len(names) == 0 {
-			e.fail("embedded or untyped struct fields are not supported yet")
+			e.fail("an embedded field must be a struct type of this package, and an untyped field is not a field")
 			return out
 		}
 		for _, nm := range names {
@@ -7601,14 +7624,14 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 			if !ok {
 				return accessCur{}, false
 			}
-			sep := "."
-			if e.isPointer(cur.ctype) {
-				sep = "->"
+			sel, okSel := e.selectC(cur.ctype, f)
+			if !okSel {
+				return accessCur{}, false
 			}
 			if prefix != "" {
-				prefix += sep + e.fieldIdent(f)
+				prefix += sel
 			} else {
-				e.emit(sep + e.fieldIdent(f))
+				e.emit(sel)
 			}
 			cur = next
 		case Index:
@@ -10372,6 +10395,21 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		}
 		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
 			cname := methodCName(methodBaseType(rct), method)
+			// A method PROMOTED from an embedded field is called on that field, which
+			// the source did not name and C requires: `d.Get()` is `base_Get(&d.base)`.
+			if cn, path, _, okp := e.promotedMethod(rct, method); okp && len(path) != 0 {
+				sub := e.varRef(recv) + e.embeddedPathC(rct, path)
+				recvArg := sub
+				if e.methodPtr[cn] {
+					recvArg = "&" + sub
+				}
+				e.emit(cn + "(" + recvArg)
+				if args := e.argsCText(cn, suffix[1].ast); args != "" {
+					e.emit(", " + args)
+				}
+				e.emit(")")
+				return true
+			}
 			e.emit(cname + "(")
 			e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
 			// A variadic parameter is passed even when the call wrote no arguments
@@ -10746,11 +10784,11 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				inner := text
 				text, addr = e.hoist(cur.ctype, func() { e.emit(inner) }), true
 			}
-			sep := "."
-			if e.isPointer(cur.ctype) {
-				sep = "->"
+			sel, okSel := e.selectC(cur.ctype, field)
+			if !okSel {
+				return "", "", false, false
 			}
-			text += sep + e.fieldIdent(field)
+			text += sel
 			cur = next
 		case Index:
 			if !addr {
@@ -12053,11 +12091,12 @@ func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string
 	e.emit("]")
 	ct := elem
 	for _, f := range post {
-		if e.isPointer(ct) {
-			e.emit("->" + e.fieldIdent(f))
-		} else {
-			e.emit("." + e.fieldIdent(f))
+		sel, ok := e.selectC(ct, f)
+		if !ok {
+			e.fail("no field %q on %s", f, ct)
+			return
 		}
+		e.emit(sel)
 		ct, _ = e.structFieldType(ct, f) // validated by the caller via chainFieldType
 	}
 }
@@ -13045,11 +13084,11 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 	text, ctype = gn, ct
 	// A further field chain selects into the global's struct value (or pointer).
 	for _, f := range fields[1:] {
-		sep := "."
-		if e.isPointer(ctype) {
-			sep = "->"
+		sel, okSel := e.selectC(ctype, f)
+		if !okSel {
+			return "", "", false
 		}
-		text += sep + e.fieldIdent(f)
+		text += sel
 		if ctype, ok = e.structFieldType(ctype, f); !ok {
 			return "", "", false
 		}
@@ -13076,7 +13115,138 @@ func (e *emitter) elemType(ctype string) string {
 
 // structFieldType returns the C type of a struct's field. ctype may be a struct
 // value or a pointer to one (a field access auto-dereferences, like Go's).
+// fieldPath resolves a selected name to the chain of C members that reaches it: the
+// name itself for a field declared on the type, and the embedded fields in front of
+// it for a promoted one. Go's rule is breadth-first -- the shallowest wins, and two
+// at the same depth are ambiguous rather than one of them -- so this searches by
+// depth and reports nothing when a depth holds two.
+func (e *emitter) fieldPath(ctype, field string) ([]string, bool) {
+	type step struct {
+		ctype string
+		path  []string
+	}
+	level := []step{{ctype: e.elemType(ctype)}}
+	for depth := 0; depth < 16 && len(level) != 0; depth++ {
+		var found []string
+		var next []step
+		for _, st := range level {
+			for _, fld := range e.structs[st.ctype] {
+				switch {
+				case fld.name == field:
+					if found != nil {
+						return nil, false // two at this depth: ambiguous, as in Go
+					}
+					found = append(append([]string{}, st.path...), field)
+				case fld.embedded:
+					next = append(next, step{ctype: e.elemType(fld.ctype), path: append(append([]string{}, st.path...), fld.name)})
+				}
+			}
+		}
+		if found != nil {
+			return found, true
+		}
+		level = next
+	}
+	return nil, false
+}
+
 func (e *emitter) structFieldType(ctype, field string) (string, bool) {
+	// A promoted field is reached through the embedded members in front of it, and
+	// its type is what stands at the end of that path. selectC renders the same
+	// path, so the two stay in step wherever a chain advances a step at a time.
+	if path, ok := e.fieldPath(ctype, field); ok && len(path) > 1 {
+		ct := ctype
+		for _, step := range path {
+			if ct, ok = e.structFieldDirect(ct, step); !ok {
+				return "", false
+			}
+		}
+		return ct, true
+	}
+	return e.structFieldDirect(ctype, field)
+}
+
+// promotedMethod resolves a method reachable on a C type through embedding: the C
+// name it is declared under, the member path from this type to the receiver it
+// wants, and the receiver's own C type. Breadth-first, as Go promotes, and nothing
+// is reported when a depth holds two of the same name.
+//
+// The type's OWN method comes back with an empty path, so one lookup answers both.
+func (e *emitter) promotedMethod(ctype, method string) (cname string, path []string, recvType string, ok bool) {
+	type step struct {
+		ctype string
+		path  []string
+	}
+	level := []step{{ctype: methodBaseType(ctype)}}
+	for depth := 0; depth < 16 && len(level) != 0; depth++ {
+		found := false
+		var next []step
+		for _, st := range level {
+			if cn := methodCName(st.ctype, method); e.funcRet[cn] != nil || e.funcHasName(cn) {
+				if found {
+					return "", nil, "", false // two at this depth: ambiguous, as in Go
+				}
+				cname, path, recvType, found = cn, st.path, st.ctype, true
+			}
+			for _, fld := range e.structs[st.ctype] {
+				if fld.embedded {
+					next = append(next, step{ctype: methodBaseType(fld.ctype), path: append(append([]string{}, st.path...), fld.name)})
+				}
+			}
+		}
+		if found {
+			return cname, path, recvType, true
+		}
+		level = next
+	}
+	return "", nil, "", false
+}
+
+// funcHasName reports whether a function or method of that C name was declared, for
+// the void ones funcRet records as an empty slice.
+func (e *emitter) funcHasName(cname string) bool {
+	_, ok := e.funcRet[cname]
+	return ok
+}
+
+// embeddedPathC renders a member path as C text, for reaching an embedded receiver.
+func (e *emitter) embeddedPathC(ctype string, path []string) string {
+	text := ""
+	for _, step := range path {
+		sep := "."
+		if e.isPointer(ctype) {
+			sep = "->"
+		}
+		text += sep + e.fieldIdent(step)
+		ctype, _ = e.structFieldDirect(ctype, step)
+	}
+	return text
+}
+
+// selectC renders the C member access for a selected field: one member for a field
+// the type declares, and the embedded members in front of it for a promoted one.
+func (e *emitter) selectC(ctype, field string) (string, bool) {
+	path, ok := e.fieldPath(ctype, field)
+	if !ok {
+		return "", false
+	}
+	text := ""
+	for _, step := range path {
+		sep := "."
+		if e.isPointer(ctype) {
+			sep = "->"
+		}
+		text += sep + e.fieldIdent(step)
+		if ctype, ok = e.structFieldDirect(ctype, step); !ok && step != path[len(path)-1] {
+			return "", false
+		}
+	}
+	return text, true
+}
+
+// structFieldDirect is structFieldType for a field the type declares itself, with
+// no promotion. It is what the two above walk a path with.
+func (e *emitter) structFieldDirect(ctype, field string) (string, bool) {
 	for _, fld := range e.structs[e.elemType(ctype)] {
 		if fld.name == field {
 			if fld.dim.bound != "" {
@@ -13164,12 +13334,11 @@ func (e *emitter) fieldAccessC(base string, fields []string) string {
 	ctype, _ := e.varType(base)
 	s := e.varRef(base) // a global base is mangled, a Unicode local base escaped
 	for _, f := range fields {
-		if e.isPointer(ctype) {
-			s += "->"
-		} else {
-			s += "."
+		sel, ok := e.selectC(ctype, f)
+		if !ok {
+			sel = "." + e.fieldIdent(f) // let the C compiler name what is missing
 		}
-		s += e.fieldIdent(f) // the emitted field name matches the (cIdent'd) typedef
+		s += sel
 		ctype, _ = e.structFieldType(ctype, f)
 	}
 	return s
@@ -13456,8 +13625,12 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		// keyed by the receiver type's mangled method name.
 		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
 			method := e.soleIdent(suffix[0].ast)
-			if rts, ok := e.funcRet[methodCName(methodBaseType(rct), method)]; ok && len(rts) == 1 {
-				return rts[0], true
+			// The type's own method, or one promoted from an embedded field: both
+			// resolve to the C name it was declared under.
+			if cn, _, _, okp := e.promotedMethod(rct, method); okp {
+				if rts := e.funcRet[cn]; len(rts) == 1 {
+					return rts[0], true
+				}
 			}
 			return "", false
 		}

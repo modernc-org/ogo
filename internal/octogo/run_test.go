@@ -1516,6 +1516,61 @@ func main() {
 		want: "42\n5\n7 12\n0 9\n1 3\n2 18\n15\n7\n",
 	},
 	{
+		// Struct embedding: a field written as a bare type name puts its own fields
+		// and methods in the outer type, without naming it. In C it is an ordinary
+		// member named after the type, and what promotion costs is the members the
+		// source did not write -- `d.n` is `d.middle.base.n`, `d.Get()` is
+		// `base_Get(&d.middle.base)`. Two levels deep here, since one level can be
+		// right by accident.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "struct embedding, fields and methods promoted",
+		src: `type base struct {
+	n int
+}
+
+func (b base) Get() int { return b.n }
+
+func (b *base) Bump(k int) int {
+	b.n += k
+	return b.n
+}
+
+type middle struct {
+	base
+	m int
+}
+
+type derived struct {
+	middle
+	d int
+}
+
+var gd derived
+
+func main() {
+	// A promoted field, at one level and at two.
+	gd.n = 1
+	gd.m = 2
+	gd.d = 3
+	println(gd.n, gd.m, gd.d)
+
+	// The embedded field may still be named explicitly.
+	gd.middle.base.n = 7
+	println(gd.n, gd.middle.base.n)
+
+	// A promoted method, by value and by pointer receiver.
+	println(gd.Get(), gd.Bump(2), gd.n)
+
+	// A local, not just a package variable.
+	var d derived
+	d.n = 5
+	println(d.Get(), d.n)
+}
+`,
+		want: "1 2 3\n7 7\n7 9 9\n5 5\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

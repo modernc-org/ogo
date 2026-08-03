@@ -559,6 +559,34 @@
 //
 // Within a struct, non-blank field names must be unique.
 //
+// A field written as a bare type name is EMBEDDED: its own fields and methods are
+// reachable on the outer type without naming it, and it is still reachable by that
+// name when you want to be explicit.
+//
+//	type base struct{ n int }
+//
+//	func (b base) Get() int { return b.n }
+//
+//	type derived struct {
+//		base
+//		d int
+//	}
+//
+//	var x derived
+//	x.n = 1        // the promoted field
+//	x.base.n = 1   // the same storage, named explicitly
+//	println(x.Get())
+//
+// Go's rule for a selector is one search over fields AND methods together: the
+// shallowest wins, so a field declared on the outer type shadows a promoted one of
+// the same name, and two reachable at the same depth make the selector ambiguous
+// rather than one of them being picked. Both are as in Go.
+//
+// (OctoGo Specific): the embedded type must be a struct of this package. An
+// embedded POINTER, "*base", is not supported yet -- Go promotes through it and
+// panics at the selector when it is nil -- nor is an embedded predeclared type,
+// "struct{ int }", nor one named through an import.
+//
 // # Pointer types
 //
 // A pointer type denotes the set of all pointers to variables of a given type,

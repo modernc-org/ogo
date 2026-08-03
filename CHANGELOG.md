@@ -88,6 +88,20 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **Struct embedding.** A field written as a bare type name puts its own fields and
+  methods on the outer type, at any depth, and is still reachable by that name when
+  you want to be explicit. In C it is an ordinary member named after the type; what
+  promotion costs is the members the source did not write — `d.n` becomes
+  `d.middle.base.n`, and `d.Get()` becomes `base_Get(&d.middle.base)`.
+
+  Go's selector rule is kept whole: one search over fields *and* methods together,
+  shallowest wins, so a field on the outer type shadows a promoted one — and two
+  reachable at the same depth are an **ambiguous selector**, refused rather than
+  resolved by picking one.
+
+  Not yet: an embedded pointer (`*base`), an embedded predeclared type
+  (`struct{ int }`), or one named through an import. Each is refused where it is
+  written rather than quietly embedded by value.
 - **Function literals.** `f := func(a int) int { return a * 2 }`, and the literal
   handed to a parameter, returned, stored in a field or an element, or called where
   it stands: `func() int { return 7 }()`. C has no nested functions and this
