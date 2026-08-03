@@ -6523,6 +6523,142 @@ func main() {
 }
 `,
 		},
+		// Increment 6: the same summary, for the other sink. A parameter the callee
+		// STORES where it outlives every frame puts the same requirement on its
+		// callers as one that reaches a cog, and the requirement travels the same
+		// call edges. Before this the whole family built silently into a dangling
+		// reference: only the direct `g = &x` was refused, and one call was enough
+		// to launder it.
+		{
+			name: "local address passed to a function that stores it globally",
+			src: `var g *int
+
+func keep(p *int) { g = p }
+
+func main() {
+	var x int
+	keep(&x)
+	println(*g)
+}
+`,
+			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame; declare x at package scope",
+		},
+		{
+			name: "the store is two calls away",
+			src: `var g *int
+
+func inner(p *int) { g = p }
+
+func outer(p *int) { inner(p) }
+
+func main() {
+	var x int
+	outer(&x)
+	println(*g)
+}
+`,
+			want: "cannot pass the address of local variable x to outer: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "local slice passed to a function that stores it globally",
+			src: `var gs []int
+
+func keep(s []int) { gs = s }
+
+func main() {
+	var a [4]int
+	keep(a[:])
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a to keep: its parameter 1 is stored where it outlives every frame; declare the backing array at package scope",
+		},
+		{
+			// The target is a FIELD of a package variable, which outlives every frame
+			// exactly as the variable does -- the root is what decides.
+			name: "stored into a field of a package struct",
+			src: `type box struct{ p *int }
+
+var g box
+
+func keep(p *int) { g.p = p }
+
+func main() {
+	var x int
+	keep(&x)
+	println(*g.p)
+}
+`,
+			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			// ... and an ELEMENT of a package array, which is where the local half of
+			// this rule was once holed (package arrays live in their own environment).
+			name: "stored into an element of a package array",
+			src: `var t [2][]int
+
+func keep(s []int) { t[0] = s }
+
+func main() {
+	var a [3]int
+	keep(a[:])
+	println(len(t[0]))
+}
+`,
+			want: "cannot pass a slice backed by local a to keep: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			// A struct carrying the reference reaches the same summary: the mark is on
+			// the variable, so the argument is a frame reference like any other.
+			name: "a struct holding a local address, stored globally by the callee",
+			src: `type box struct{ p *int }
+
+var g box
+
+func keep(b box) { g = b }
+
+func main() {
+	var x int
+	var b box
+	b.p = &x
+	keep(b)
+	println(*g.p)
+}
+`,
+			want: "which holds a pointer into local x to keep: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			// Storing PACKAGE storage through the same parameter is not a leak of the
+			// caller's frame, and must stay accepted.
+			name: "the same callee, given package storage",
+			src: `var g *int
+
+var pkg int
+
+func keep(p *int) { g = p }
+
+func main() {
+	keep(&pkg)
+	println(*g)
+}
+`,
+		},
+		{
+			// A callee that only reads its parameter stores nothing, so nothing is
+			// required of the caller.
+			name: "a callee that stores nothing",
+			src: `var g int
+
+func use(p *int) { g = *p }
+
+func main() {
+	var x int
+	x = 3
+	use(&x)
+	println(g)
+}
+`,
+		},
 		// Increment 5: a reference wrapped in a struct. The value handed on is the
 		// struct, so the variable carries the mark -- per variable, not per field,
 		// which is what keeps it sound without tracking fields.

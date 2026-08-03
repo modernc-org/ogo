@@ -2181,7 +2181,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]bool{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2263,13 +2263,6 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// function returning N>1 values returns a struct of N fields).
 	forEachFile(func() { e.collectResults(e.f.AST) })
 
-	// Pass 0.1: which parameters of which functions let a value reach another cog,
-	// closed over the call graph. A call site cannot be checked against a callee
-	// that has not been seen yet, so the whole program is summarised before any of
-	// it is emitted.
-	forEachFile(func() { e.collectCrossParams(e.f.AST) })
-	e.closeCrossParams()
-
 	// Pass 0.5: package-level constant declarations, emitted (in source order)
 	// before the functions that use them and recorded in the global type
 	// environment so a `x := CONST` short declaration can be typed.
@@ -2280,6 +2273,18 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// fold a constant), each a file-scope `static` recorded in the global type
 	// environment.
 	forEachFile(func() { e.emitPackageVars(e.f.AST) })
+
+	// Pass 0.6: which parameters of which functions let a value escape the frame it
+	// was chosen in -- by reaching another cog, or by being stored where the program
+	// outlives that frame -- closed over the call graph. A call site cannot be
+	// checked against a callee that has not been seen yet, so the whole program is
+	// summarised before any body is emitted.
+	//
+	// It runs AFTER the package variables, not before: asking whether an assignment
+	// targets one of them is what seeds the store half, and until they are emitted
+	// the global environment is empty and the answer is always no.
+	forEachFile(func() { e.collectCrossParams(e.f.AST) })
+	e.closeCrossParams()
 
 	// Pass 1: forward prototypes for user functions. C requires a declaration
 	// before use, but OctoGo (like Go) does not order top-level declarations, so
@@ -2691,7 +2696,7 @@ type emitter struct {
 	eqArrays           map[string]arrDim        // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string                 // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
 	frameBacked        map[string]bool          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
-	crossParams        map[string][]bool        // per function, which parameters reach another cog -- as a go argument or a send value, directly or through a call (see collectCrossParams)
+	crossParams        map[string][]leak        // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
 	crossEdges         []crossEdge              // call sites passing a parameter straight on, the graph closeCrossParams walks
 	crossNames         map[string]string        // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder        map[string]string        // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
@@ -3649,6 +3654,20 @@ func (e *emitter) collectResults(ast []int32) {
 	})
 }
 
+// leak says how a parameter lets what it was given escape the frame that chose the
+// storage. The kinds are bits so a parameter can do both and the propagation can
+// simply OR them together; the diagnostic names one, the cog crossing first,
+// because it is the one a reader is least likely to have thought about.
+type leak uint8
+
+const (
+	// leakCog: the value reaches another cog, which may outlive this function.
+	leakCog leak = 1 << iota
+	// leakGlobal: the value is stored where it outlives every frame -- a package
+	// variable, or a field or element of one.
+	leakGlobal
+)
+
 // crossEdge records that a call passes the caller's parameter `from` straight into
 // the callee's parameter `to`, so whatever the callee does with it, the caller does.
 type crossEdge struct {
@@ -3687,7 +3706,7 @@ func (e *emitter) collectCrossParams(ast []int32) {
 		}
 		at := func(name string) int { return slices.Index(params, name) }
 		if _, seen := e.crossParams[cname]; !seen {
-			e.crossParams[cname] = make([]bool, len(params))
+			e.crossParams[cname] = make([]leak, len(params))
 		}
 		e.crossNames[cname] = srcName
 		e.eachStmt(body, func(nodes []Node) {
@@ -3695,13 +3714,20 @@ func (e *emitter) collectCrossParams(ast []int32) {
 			case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
 				for _, a := range e.goStmtArgs(nodes) {
 					if i := at(e.crossRoot(a.ast)); i >= 0 {
-						e.crossParams[cname][i] = true
+						e.crossParams[cname][i] |= leakCog
 					}
 				}
 			default:
 				if v, ok := e.sendValue(nodes); ok {
 					if i := at(e.crossRoot(v)); i >= 0 {
-						e.crossParams[cname][i] = true
+						e.crossParams[cname][i] |= leakCog
+					}
+				}
+				// A store into a package variable, `g = p` or `g.f = p`: whatever
+				// the caller chose the storage for, it now outlives every frame.
+				for _, v := range e.storedInPackageVar(nodes) {
+					if i := at(e.leakRoot(v)); i >= 0 {
+						e.crossParams[cname][i] |= leakGlobal
 					}
 				}
 			}
@@ -3727,10 +3753,10 @@ func (e *emitter) closeCrossParams() {
 		changed = false
 		for _, g := range e.crossEdges {
 			callee, caller := e.crossParams[g.callee], e.crossParams[g.caller]
-			if g.to >= len(callee) || g.from >= len(caller) || !callee[g.to] || caller[g.from] {
+			if g.to >= len(callee) || g.from >= len(caller) || callee[g.to]&^caller[g.from] == 0 {
 				continue
 			}
-			caller[g.from] = true
+			caller[g.from] |= callee[g.to]
 			changed = true
 		}
 	}
@@ -3783,6 +3809,52 @@ func (e *emitter) crossRoot(ast []int32) string {
 	}
 	name, _ := e.sliceBackingIsFrame(ast)
 	return name
+}
+
+// storedInPackageVar returns the values a statement stores into a package variable,
+// `g = v`, `g.f = v` or `g[i] = v`. The target's ROOT is what decides: a field or an
+// element of a package variable outlives every frame exactly as the variable does.
+//
+// Only a plain "=" qualifies. A ":=" declares a local, and a compound assignment
+// reads what is there rather than storing what it is given.
+func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
+	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return nil
+	}
+	base := e.soleIdent(nodes[0].ast)
+	if base == "" || !e.isPackageVar(base) {
+		return nil
+	}
+	postfix := slices.Collect(it(nodes[1].ast))
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil
+	}
+	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return nil
+	}
+	var out [][]int32
+	for n := range it(op[1].ast) {
+		if n.sym == Expression {
+			out = append(out, n.ast)
+		}
+	}
+	return out
+}
+
+// leakRoot names the variable a stored value came from: the expression itself when
+// it is a bare name, and otherwise whatever crossRoot finds behind an address-of or
+// a slice.
+//
+// The bare name is what the cog seeds do not need and this one does: `go f(p)`
+// passes a slice or an address, while `g = p` stores a pointer parameter as it
+// stands. Naming a parameter that holds no reference at all costs nothing -- the
+// call site only refuses an argument that IS a frame reference.
+func (e *emitter) leakRoot(ast []int32) string {
+	if name, ok := e.exprIdent(ast); ok {
+		return name
+	}
+	return e.crossRoot(ast)
 }
 
 // goStmtArgs returns the argument expressions of a go statement.
@@ -13403,6 +13475,16 @@ func holderRef(name, origin string) frameRef {
 	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
 }
 
+// advice names the fix. A view has a backing array to move; anything else is the
+// variable itself, and telling a reader to move a backing array that is not there
+// sends them looking for one.
+func (r frameRef) advice() string {
+	if r.view {
+		return "declare the backing array at package scope"
+	}
+	return "declare " + strings.TrimPrefix(r.origin, "local ") + " at package scope"
+}
+
 // frameRefOf reports whether a single expression reaches this frame's storage.
 //
 // Three shapes do. A slice viewing a local array, which sliceBackingIsFrame resolves.
@@ -13573,16 +13655,19 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 func (e *emitter) checkCrossArgs(cname string, args []Node) {
 	crosses := e.crossParams[cname]
 	for i, a := range args {
-		if i >= len(crosses) || !crosses[i] {
+		if i >= len(crosses) || crosses[i] == 0 {
 			continue
 		}
 		r, ok := e.frameRefOf(a.ast)
 		if !ok {
 			continue
 		}
-		e.fail("%v: cannot pass %s to %s: its parameter %d reaches another cog, which may outlive this "+
-			"function; declare the backing array at package scope",
-			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), i+1)
+		why := "is stored where it outlives every frame"
+		if crosses[i]&leakCog != 0 {
+			why = "reaches another cog, which may outlive this function"
+		}
+		e.fail("%v: cannot pass %s to %s: its parameter %d %s; %s",
+			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), i+1, why, r.advice())
 		return
 	}
 }

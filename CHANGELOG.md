@@ -11,6 +11,28 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Language
+
+- **A reference to a local may no longer be laundered through a call.** The
+  lifetime rules refused `g = &x` — storing a local's address where it outlives the
+  frame — but `keep(&x)`, where `keep` does that store, was accepted, and so was the
+  same thing two calls away, through a slice, into a field or an element of a package
+  variable, or wrapped in a struct. Every one of those built and ran with a dangling
+  reference.
+
+  The per-parameter summary that already carried the *cog-crossing* requirement back
+  to the call sites now carries this one too: a parameter is marked when the callee
+  stores it where it outlives every frame, and the mark travels the same call edges to
+  a fixed point. Passing package storage to the same callee stays legal, as does a
+  callee that only reads its parameter — the requirement is on the leak, not on the
+  pointer.
+
+  Still open, and named in `octogo.go`: a callee that *returns* what it was given
+  launders it, so `return id(&x)` compiles. That needs a per-result summary rather
+  than a leak flag.
+
 ## v0.16.0
 
 ### Language

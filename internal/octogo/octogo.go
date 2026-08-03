@@ -129,14 +129,23 @@
 //
 // # Escape & Lifetime Analysis (Static Guarantees)
 //
-// Status: design intent, NOT YET IMPLEMENTED (2026-07-24). No escape analysis
-// exists today. The zero-heap model is currently enforced only at allocation
-// sites (make/new/slice literals reserve a compile-time-sized backing; a
-// value-recursive, infinite-size type is refused) plus a few syntactic lifetime
-// guards (a closure may not capture its surrounding scope; a defer may not sit in
-// a loop). Nothing tracks whether a reference outlives its referent, so return
-// &local, return localArray[:] and global = &local all compile silently into
-// dangling references. This section specifies the pass that closes that gap.
+// Status: largely implemented. A reference to this frame's storage -- the address
+// of a local, a slice over a local array or literal, or a variable holding either
+// in a field -- is refused at every sink that would outlive it: a return, a store
+// into a package variable, a go argument and a channel send. Each is checked where
+// the storage is known, which for the slice-backed forms is the emitter.
+//
+// The summaries below are implemented for both leaking sinks: a parameter is
+// marked when the callee lets it reach another cog or stores it where it outlives
+// every frame, and the mark is closed over the call graph, so a leak two or three
+// calls away is reported at the call that chose the storage.
+//
+// What is NOT implemented is the RESULT half: a function that returns what it was
+// given launders the reference, so `func id(p *int) *int { return p }` makes
+// `return id(&x)` compile. Catching it needs a per-result summary -- "this result
+// derives from parameter i" -- which is a different fact from a leak flag, since
+// returning a parameter is not a leak in the callee and is one only at some
+// callers. That is the next increment.
 //
 // Purpose. On a target with no heap and no GC, every reference -- a pointer, a
 // slice header, or a zero-copy string view -- borrows storage owned by some frame.
