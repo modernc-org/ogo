@@ -10159,15 +10159,6 @@ func (e *emitter) emitDefer(nodes []Node) {
 		e.fail("a defer statement must be a function call")
 		return
 	}
-	if recv := e.soleIdent(head.ast); recv == "print" || recv == "println" {
-		// emitPrint renders per-type printf calls and does not go through
-		// emitCallArgs, so a captured temporary would be ignored and the argument
-		// re-evaluated at the return. Reject rather than deviate silently.
-		if len(e.callArgExprs(suffix[len(suffix)-1].ast)) != 0 {
-			e.fail("deferring print with arguments is not supported yet")
-			return
-		}
-	}
 	d := deferredCall{head: head, suffix: suffix, cond: e.deferBlockDepth > 0, slot: len(e.defers)}
 	// The call suffix is last; its arguments are what get captured.
 	call := suffix[len(suffix)-1]
@@ -11600,6 +11591,39 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 // does NEITHER, writing its arguments adjacently, which is what Go's two do and what
 // makes print the one that composes a line -- `print(n, " ")` in a loop puts one
 // space between values rather than three.
+// emitPrintArg renders a print argument's VALUE. During a defer replay that is the
+// temporary captured at the defer statement, not the expression -- which may name a
+// variable that has since changed or gone out of scope, and which Go evaluated at
+// the defer. The expression is still what the format verb is chosen from; the
+// temporary has the same type by construction.
+// printArgCType is the C representation type a print argument's value has, which is
+// what chooses the format. During a defer replay it comes from the temporary
+// captured at the defer statement rather than from the expression: the replay is
+// emitted after the body's block scope has been left, so a local's name no longer
+// types there, and every argument would fall back to "%d" -- a string printed as
+// its header's first word, a bool as 1. That is the whole reason a deferred print
+// used to be refused instead of fixed.
+func (e *emitter) printArgCType(idx int, arg Node) (string, bool) {
+	if e.deferReplay >= 0 && idx < len(e.deferReplayArgs) {
+		if ct := e.deferReplayArgs[idx].ctype; ct != "" {
+			return e.underlyingCType(ct), true
+		}
+	}
+	return e.exprReprCType(arg.ast)
+}
+
+func (e *emitter) emitPrintArg(idx int, arg Node) {
+	if e.deferReplay >= 0 && idx < len(e.deferReplayArgs) {
+		if a := e.deferReplayArgs[idx]; a.inline {
+			e.emitExpr(a.expr)
+		} else {
+			e.emit(deferArgName(e.deferReplay, idx))
+		}
+		return
+	}
+	e.emitExpr(arg.ast)
+}
+
 func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	e.includes["stdio.h"] = true
@@ -11612,7 +11636,7 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 			e.emit("(void)0;\n")
 		}
 	case len(args) == 1:
-		e.emitPrintOne(newline, args[0])
+		e.emitPrintOne(newline, 0, args[0])
 	default:
 		e.emitPrintMulti(newline, args)
 	}
@@ -11622,10 +11646,10 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 // newline is set. Integer and string output are folded into one call (preserving
 // the compact printf("%d\n", x) / ogo_println_str(x) forms); slices and arrays go
 // through their per-element print helper.
-func (e *emitter) emitPrintOne(newline bool, arg Node) {
+func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	// How a value prints follows its representation, not its name: a value of
 	// `type Name string` is a string and prints as one.
-	if ct, ok := e.exprReprCType(arg.ast); ok {
+	if ct, ok := e.printArgCType(idx, arg); ok {
 		if ct == cString {
 			e.usesStringPrint = true
 			e.ind()
@@ -11634,12 +11658,12 @@ func (e *emitter) emitPrintOne(newline bool, arg Node) {
 			} else {
 				e.emit("ogo_print_str(")
 			}
-			e.emitExpr(arg.ast)
+			e.emitPrintArg(idx, arg)
 			e.emit(");\n")
 			return
 		}
 		if e.isSliceCType(ct) {
-			e.emitPrintSlice(newline, sliceElemFromCName(ct), func() { e.emitExpr(arg.ast) })
+			e.emitPrintSlice(newline, sliceElemFromCName(ct), func() { e.emitPrintArg(idx, arg) })
 			return
 		}
 	}
@@ -11654,28 +11678,28 @@ func (e *emitter) emitPrintOne(newline bool, arg Node) {
 		}
 	}
 	// A bool prints as the word true or false, as in Go.
-	if ct, ok := e.exprReprCType(arg.ast); ok && ct == cBool {
+	if ct, ok := e.printArgCType(idx, arg); ok && ct == cBool {
 		e.ind()
 		nl := ""
 		if newline {
 			nl = "\\n"
 		}
 		e.emit("printf(\"%s" + nl + "\", ")
-		e.emitBoolWord(arg)
+		e.emitBoolWord(idx, arg)
 		e.emit(");\n")
 		return
 	}
 	// Default: an integer, or an integer-typed expression. The conversion is %u for
 	// an unsigned type so a large value prints unsigned, as in Go, rather than
 	// wrapping negative.
-	verb := e.scalarPrintVerbOf(arg)
+	verb := e.scalarPrintVerbOf(idx, arg)
 	e.ind()
 	if newline {
 		e.emit("printf(\"" + verb + "\\n\", ")
 	} else {
 		e.emit("printf(\"" + verb + "\", ")
 	}
-	e.emitExpr(arg.ast)
+	e.emitPrintArg(idx, arg)
 	e.emit(");\n")
 }
 
@@ -11709,8 +11733,8 @@ func (e *emitter) emitPrintSlice(newline bool, elem string, emitArg func()) {
 // trailing newline for println.
 func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 	allScalar := true
-	for _, arg := range args {
-		if !e.isScalarPrint(arg) {
+	for i, arg := range args {
+		if !e.isScalarPrint(i, arg) {
 			allScalar = false
 			break
 		}
@@ -11736,22 +11760,22 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 			if i > 0 && newline {
 				e.emit(" ")
 			}
-			if e.isBoolPrint(arg) {
+			if e.isBoolPrint(i, arg) {
 				e.emit("%s")
 			} else {
-				e.emit(e.scalarPrintVerbOf(arg))
+				e.emit(e.scalarPrintVerbOf(i, arg))
 			}
 		}
 		if newline {
 			e.emit("\\n")
 		}
 		e.emit("\"")
-		for _, arg := range args {
+		for i, arg := range args {
 			e.emit(", ")
-			if e.isBoolPrint(arg) {
-				e.emitBoolWord(arg)
+			if e.isBoolPrint(i, arg) {
+				e.emitBoolWord(i, arg)
 			} else {
-				e.emitExpr(arg.ast)
+				e.emitPrintArg(i, arg)
 			}
 		}
 		e.emit(");\n")
@@ -11762,7 +11786,7 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 			e.ind()
 			e.emit("printf(\" \");\n")
 		}
-		e.emitPrintOne(false, arg)
+		e.emitPrintOne(false, i, arg)
 	}
 	if newline {
 		e.ind()
@@ -11771,16 +11795,16 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 }
 
 // isBoolPrint reports whether an argument prints as a bool word.
-func (e *emitter) isBoolPrint(arg Node) bool {
-	ct, ok := e.exprReprCType(arg.ast)
+func (e *emitter) isBoolPrint(idx int, arg Node) bool {
+	ct, ok := e.printArgCType(idx, arg)
 	return ok && ct == cBool
 }
 
 // emitBoolWord renders a bool argument as the string "true" or "false" via a
 // ternary, so println(b) prints the word rather than 1 or 0.
-func (e *emitter) emitBoolWord(arg Node) {
+func (e *emitter) emitBoolWord(idx int, arg Node) {
 	e.emit("(")
-	e.emitExpr(arg.ast)
+	e.emitPrintArg(idx, arg)
 	e.emit(") ? \"true\" : \"false\"")
 }
 
@@ -11834,8 +11858,8 @@ func sliceElemPrintf(el string) string {
 
 // scalarPrintVerbOf returns the print conversion for an argument, defaulting to %d
 // when its type cannot be inferred (an integer expression).
-func (e *emitter) scalarPrintVerbOf(arg Node) string {
-	if ct, ok := e.exprReprCType(arg.ast); ok {
+func (e *emitter) scalarPrintVerbOf(idx int, arg Node) string {
+	if ct, ok := e.printArgCType(idx, arg); ok {
 		return scalarPrintVerb(ct)
 	}
 	return "%d"
@@ -11843,8 +11867,8 @@ func (e *emitter) scalarPrintVerbOf(arg Node) string {
 
 // isScalarPrint reports whether arg prints via printf %d (an integer or integer-
 // typed expression) -- i.e. it is neither a string, a slice nor an array.
-func (e *emitter) isScalarPrint(arg Node) bool {
-	if ct, ok := e.exprReprCType(arg.ast); ok {
+func (e *emitter) isScalarPrint(idx int, arg Node) bool {
+	if ct, ok := e.printArgCType(idx, arg); ok {
 		if ct == cString || e.isSliceCType(ct) {
 			return false
 		}

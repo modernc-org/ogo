@@ -11,6 +11,22 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+## Unreleased
+
+### Language
+
+- **A deferred print may take arguments.** `defer println("x:", x)` was refused;
+  Go evaluates a deferred call's arguments at the `defer` and runs the call at the
+  return, which is the whole point of deferring a print, and it is now what happens.
+
+  The refusal was hiding a real problem rather than a missing feature. The print
+  path renders per-type `printf` calls of its own and never consulted the
+  temporaries the defer machinery captures, so the arguments would have been
+  re-evaluated at the return — and worse, a deferred call is emitted *after* the
+  body's block scope has been left, where a local's name no longer types at all. A
+  string would have printed as the first word of its header and a bool as `1`. The
+  captured temporary carries its type, so that is now what chooses the format.
+
 ## v0.17.0
 
 The release interfaces landed in, and with them everything that was waiting behind

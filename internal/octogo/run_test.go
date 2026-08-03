@@ -1733,6 +1733,49 @@ func main() {
 		want: "3 4\n3 4\n7 1\n13\n3\n",
 	},
 	{
+		// A deferred print, with arguments. Go evaluates a deferred call's arguments
+		// AT THE DEFER and runs the call at the return, so the values printed are the
+		// ones that were there then -- which is the whole point of deferring a print
+		// and was exactly what could not be expressed before: the print path renders
+		// per-type printf calls of its own and did not consult the captured
+		// temporaries, so it was refused rather than made to lie.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a deferred print, with arguments",
+		src: `var g int
+
+func f() int {
+	g++
+	return g
+}
+
+func one() {
+	x := 1
+	// Go evaluates a deferred call's arguments AT THE DEFER, so this prints 1
+	// even though x is 99 by the time it runs.
+	defer println("one:", x)
+	x = 99
+	println("body:", x)
+}
+
+func two() {
+	s := "before"
+	b := true
+	defer println(s, b, f())
+	s = "after"
+	b = false
+	println("f is now", g)
+}
+
+func main() {
+	one()
+	two()
+	println("g", g)
+}
+`,
+		want: "body: 99\none: 1\nf is now 1\nbefore true 1\ng 1\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,
