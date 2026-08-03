@@ -389,9 +389,10 @@ Releases before v0.9.0 predate this file; see
   computed into a package-level variable — silently, with the host compiler right
   and the build saying nothing — and the other emitted a branch to a label it did
   not define, so the assembler refused the program. Both are reduced to a dozen
-  lines of C in `doc/`, and both are live at upstream's tip: flexprop's master *is*
-  the pinned v7.7.0, and a flexcc built from spin2cpp's current master reproduces
-  each identically, so there is no version to upgrade to.
+  lines of C in `doc/`, and both were live at upstream's tip when this was written:
+  flexprop's master *was* the pinned v7.7.0, and a flexcc built from spin2cpp's
+  master reproduced each identically. (Both were fixed upstream on 2026-08-03, after
+  this release; the flags stay until the transpiled backend is regenerated.)
 
   Each defect needs two passes cooperating, so turning either one off is enough;
   `-Ono-inline-small -Ono-peephole` covers both. The cost runs between nothing and

@@ -109,10 +109,17 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	//
 	// Two of the backend's optimizer passes are turned off, which is not a
 	// preference but the only known way to avoid two defects in them. Both are
-	// reduced to a dozen lines of C in doc/ and both are live at upstream's tip --
-	// flexprop's master IS the pinned v7.7.0, and a flexcc built from spin2cpp's
-	// current master reproduces each one identically -- so there is no version to
-	// upgrade to and nothing this compiler can emit differently to dodge them:
+	// reduced to a dozen lines of C in doc/, both were reported upstream, and both
+	// were FIXED upstream on 2026-08-03 (flexprop issues 103 and 104): the first
+	// was an optimization moving an instruction between a qmul and its getqx that
+	// the qmul indirectly depended on, the second was dead-code elimination
+	// removing labels that were still branched to.
+	//
+	// The flags stay on until the backend here is regenerated. It is a transpiled
+	// copy of flexcc pinned to v7.7.0, so the fixes are not in it: they are in
+	// spin2cpp's sources and will be in the next binary release. Regenerating
+	// against master would move this off a tagged pin, which is a decision rather
+	// than a chore -- see CLAUDE.md's code-generation section.
 	//
 	//	inline-small  the optimizer stores a value the program never computed into
 	//	              a file-scope int (doc/optimizer-miscompile.c). SILENT: gcc is
@@ -130,8 +137,10 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	//
 	// The whole test corpus, the on-board suite and all 40 seeds of the widened
 	// fuzzer sample pass with these, including the two seeds that reproduce the
-	// defects. Take them off again when a backend that does not need them lands --
-	// the two reproducers are the check.
+	// defects. Take them off when a regenerated backend no longer needs them --
+	// the two reproducers in doc/ are the check, and both have to come back clean
+	// before either flag goes, since each defect needs two passes cooperating and
+	// only one of the two was named in each report.
 	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-Ono-inline-small", "-Ono-peephole", "-o", out, cFile}); err != nil {
 		return "", 1, fmt.Errorf("flexcc: %v", err)
 	}

@@ -6,6 +6,12 @@
 // that the workaround is still needed: compile it WITHOUT the flag, and if it
 // prints 0 the backend has been fixed and the flag can go.
 //
+// FIXED UPSTREAM 2026-08-03 (flexprop issue 103): the root cause was an
+// optimization moving an instruction between a `qmul` and its `getqx` that the
+// `qmul` indirectly depended on. The fix is in spin2cpp's sources and will be in
+// the next binary release; the backend here is a transpiled copy pinned to v7.7.0,
+// so it is NOT in it yet and the flag stays until that is regenerated.
+//
 // This is valid C that the target's compiler gets wrong. It is kept here as the
 // reproducer for a backend bug the compiler has no workaround for, found by the
 // smith oracle running on a P2-EDGE (seed 28 of a widened board sample) and

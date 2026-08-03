@@ -4,6 +4,12 @@
 // compile it WITHOUT the flag, and if it assembles the backend has been fixed and
 // the flag can go.
 //
+// FIXED UPSTREAM 2026-08-03 (flexprop issue 104): dead-code elimination was
+// removing labels that were still branched to. The fix is in spin2cpp's sources
+// and will be in the next binary release; the backend here is a transpiled copy
+// pinned to v7.7.0, so it is NOT in it yet and the flag stays until that is
+// regenerated.
+//
 // Valid C that the target's assembler refuses: flexcc emits a branch to a label it
 // then does not define.
 //
