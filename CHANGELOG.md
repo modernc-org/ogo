@@ -11,7 +11,13 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
-## Unreleased
+## v0.17.0
+
+The release interfaces landed in, and with them everything that was waiting behind
+them: type assertions and type switches, and then the four language features that
+had been on the "not yet" list longest — variadic parameters, function literals,
+struct embedding and anonymous struct types. `ogo test` runs a package's tests on
+real hardware, which was the last CLI stub.
 
 ### Language
 
@@ -32,17 +38,6 @@ Releases before v0.9.0 predate this file; see
   method, the rule now rejects nothing — it is what makes the address correct rather
   than a source of diagnostics. Type switches, type assertions and devirtualization
   are not part of this.
-- **An interface value goes where a value goes**, not only into a variable of its
-  own: returned from a function, held in a struct field, held in an array or slice
-  element, and sent on a channel to another cog. Each is the same two-word copy —
-  there is nothing to box — but each asked a different part of the emitter to know
-  that the *target's* type is an interface, which is what says the concrete value
-  reaching it has to be wrapped.
-
-  A method call through a chain (`sc.first.Name()`, `shapes[1].Area()`) is typed by
-  the slot the interface declares. Before this it went untyped and fell back to the
-  base identifier's type, so a `string` result printed as the two integers of its
-  header and a short declaration off one was refused outright.
 - **Only a pointer goes into an interface.** `var s Shape = &q`, never `= q`. Go
   accepts both and copies the value in, allocating for it; there is no heap here to
   allocate into, so the value form would have had to be a *reference* to `q` — and
@@ -64,6 +59,17 @@ Releases before v0.9.0 predate this file; see
   the worst thing this compiler can produce. Refusing it costs a `&` that Go does not
   need and buys the property worth having: **a program that compiles here means
   exactly what it means in Go.** The diagnostic names the fix.
+- **An interface value goes where a value goes**, not only into a variable of its
+  own: returned from a function, held in a struct field, held in an array or slice
+  element, and sent on a channel to another cog. Each is the same two-word copy —
+  there is nothing to box — but each asked a different part of the emitter to know
+  that the *target's* type is an interface, which is what says the concrete value
+  reaching it has to be wrapped.
+
+  A method call through a chain (`sc.first.Name()`, `shapes[1].Area()`) is typed by
+  the slot the interface declares. Before this it went untyped and fell back to the
+  base identifier's type, so a `string` result printed as the two integers of its
+  header and a short declaration off one was refused outright.
 - **`&T{...}` may meet an interface**, and is how a fresh value gets into one. Go
   allocates for it; here it is a temporary of the enclosing function, which is
   exactly what a local is, so the lifetime rules already cover it — an interface made
@@ -88,6 +94,107 @@ Releases before v0.9.0 predate this file; see
   program means something it cannot have meant), asserting on an operand that is not
   an interface, writing the value form `s.(sq)`, and binding more than two names.
   The asserted value carries its type, so a field read off it is checked too.
+- **A type switch**, `switch v := s.(type)`, switches on an interface value's
+  dynamic type. Each clause binds the name at the type that clause proved — the
+  concrete pointer where one type was named, the interface value where several were
+  or none — which is Go's rule and the reason a clause is a scope of its own. `case
+  nil` takes the zero interface value. The name may be left out, `switch s.(type)`,
+  when the clauses only need to select.
+
+  It lowers to the chain of table comparisons it is, one per case, so it costs what
+  the assertion costs times the number of clauses tried.
+
+  Refused with the reason: a case naming a type that could not supply the
+  interface's method set (Go's *impossible type switch case*), a case named twice, a
+  switch on something that is not an interface, and a bound name no clause uses.
+
+- **Function literals.** `f := func(a int) int { return a * 2 }`, and the literal
+  handed to a parameter, returned, stored in a field or an element, or called where
+  it stands: `func() int { return 7 }()`. C has no nested functions and this
+  language has no closures to need them, so each literal is lifted to a function of
+  file scope and the expression becomes its name — a function pointer and nothing
+  else.
+
+  A literal may not read a local or a parameter of the surrounding function. There
+  is no heap to hold a captured frame and no frame that outlives the call, so the
+  pointer would be the only honest part of a closure; the attempt is refused where
+  it is written, naming what was captured. A package-level name is not a capture.
+
+  A literal may also stand as the callee of `go` or `defer` — `go func() { ... }()`
+  and `defer func() { ... }()`. Both take a declared function, and a lifted literal
+  is one. Neither takes arguments yet; a cog usually wants none, since what it
+  shares it shares through a channel.
+- **Method values**, with the receiver bound. `f := gp.bump` takes a method as a
+  value; the compiler lifts it to a function of its own naming the receiver, so the
+  value stays an ordinary one-word function pointer — usable in a variable, an
+  argument, a dispatch table — and costs nothing that any other function value pays.
+
+  Two forms are refused, with the reason: a *value*-receiver method, because Go
+  copies the receiver at the moment the value is made and there is no heap to copy
+  into (binding the address would alias, and diverge the moment anything wrote to
+  the variable); and a receiver that is not a package-level variable, whose address
+  does not outlive the value.
+
+  Go carries the receiver *in* the value, which handles any receiver. That
+  representation was measured on a P2-EDGE first: it costs about a quarter of the
+  time of **every** call through a function value, so it was declined and the bound
+  form built instead. `doc/funcval-cost.c` has the numbers and how to revisit it.
+- **Variadic parameters.** `func sum(xs ...int) int` takes the rest of a call's
+  arguments, however many — none included — and inside the body the parameter *is* a
+  `[]int`, so `len`, `cap`, `range` and indexing all ask a slice. A call may spread
+  an existing one instead, `sum(xs...)`. Functions and methods both.
+
+  Go allocates the pack a call builds. There is no heap here, so it is an array of
+  the *calling* function, and the lifetime rules see it exactly as they see a slice
+  literal's backing: a callee that lets its variadic parameter outlive the call is
+  refused, and told to pass a slice of a package array instead. The spread form is
+  judged by where its slice came from, as any slice argument is.
+
+  Refused with the reason: a `...` that is not the final parameter, one shared by
+  several names, one in a result list, a call missing the fixed arguments before it,
+  and a trailing argument of the wrong element type.
+
+  `ogo fmt` writes `xs ...int` and `sum(xs...)`, which is what gofmt writes — the
+  same token spaced two ways, told apart by whether it sits in a parameter.
+- **Struct embedding.** A field written as a bare type name puts its own fields and
+  methods on the outer type, at any depth, and is still reachable by that name when
+  you want to be explicit. In C it is an ordinary member named after the type; what
+  promotion costs is the members the source did not write — `d.n` becomes
+  `d.middle.base.n`, and `d.Get()` becomes `base_Get(&d.middle.base)`.
+
+  Go's selector rule is kept whole: one search over fields *and* methods together,
+  shallowest wins, so a field on the outer type shadows a promoted one — and two
+  reachable at the same depth are an **ambiguous selector**, refused rather than
+  resolved by picking one.
+
+  Not yet: an embedded pointer (`*base`), an embedded predeclared type
+  (`struct{ int }`), or one named through an import. Each is refused where it is
+  written rather than quietly embedded by value.
+- **Anonymous struct types.** `var p struct{ x, y int }`, written where a type is
+  wanted rather than declared with a name of its own — as a variable, a field of
+  another struct, a parameter, or an array's element. As in Go, two of them are the
+  same type when their fields match, so one is assignable to the other; the typedef
+  is minted once per *shape* rather than once per mention.
+
+### Tooling
+
+- **`ogo test` runs tests, on the board.** It builds a package together with its
+  `*_test.ogo` files and a generated runner, loads the result on a connected P2, and
+  reports what the tests printed — Go's `--- PASS` / `--- FAIL` lines, and an exit
+  status of 1 if any failed. The last CLI stub is gone.
+
+  A test is `func TestSomething(t *testing.T)`, and `testing` is imported by name
+  with nothing on disk: the compiler carries its source and compiles it like any
+  other package, so the day a real one ships the only change is where it is read
+  from. There is no `Errorf` — formatting needs allocation this target does not have
+  — so a test prints with the builtin `println` and calls `t.Fail()`.
+
+  **Tests run on the board and nowhere else.** A host emulation would be faster and
+  would sometimes be wrong: the two C compilers disagree about semantics and not
+  only about warnings, and this compiler has already shipped a feature that passed
+  on the host and failed on hardware. A test reporting "ok" from somewhere the
+  program will never run is worse than a test that did not run. `ogo test -c` builds
+  without running, which is what CI without a board can honestly claim.
 - **`p2.PinStart(pin, mode, x, y)`**, the canonical way to bring a smart pin up:
   mode, X, Y and the direction bit in one call, where doing it by hand took four.
 - **A new example, `_examples/gopher`**, which draws the Go gopher on an
@@ -108,73 +215,9 @@ Releases before v0.9.0 predate this file; see
 
   Every `_examples` program is now built by the test suite, with the same
   no-output-from-a-successful-build rule the on-board suite uses.
-- **Anonymous struct types.** `var p struct{ x, y int }`, written where a type is
-  wanted rather than declared with a name of its own — as a variable, a field of
-  another struct, a parameter, or an array's element. As in Go, two of them are the
-  same type when their fields match, so one is assignable to the other; the typedef
-  is minted once per *shape* rather than once per mention.
-- **`ogo test` runs tests, on the board.** It builds a package together with its
-  `*_test.ogo` files and a generated runner, loads the result on a connected P2, and
-  reports what the tests printed — Go's `--- PASS` / `--- FAIL` lines, and an exit
-  status of 1 if any failed. The last CLI stub is gone.
 
-  A test is `func TestSomething(t *testing.T)`, and `testing` is imported by name
-  with nothing on disk: the compiler carries its source and compiles it like any
-  other package, so the day a real one ships the only change is where it is read
-  from. There is no `Errorf` — formatting needs allocation this target does not have
-  — so a test prints with the builtin `println` and calls `t.Fail()`.
+### Fixed
 
-  **Tests run on the board and nowhere else.** A host emulation would be faster and
-  would sometimes be wrong: the two C compilers disagree about semantics and not
-  only about warnings, and this compiler has already shipped a feature that passed
-  on the host and failed on hardware. A test reporting "ok" from somewhere the
-  program will never run is worse than a test that did not run. `ogo test -c` builds
-  without running, which is what CI without a board can honestly claim.
-- **Method values**, with the receiver bound. `f := gp.bump` takes a method as a
-  value; the compiler lifts it to a function of its own naming the receiver, so the
-  value stays an ordinary one-word function pointer — usable in a variable, an
-  argument, a dispatch table — and costs nothing that any other function value pays.
-
-  Two forms are refused, with the reason: a *value*-receiver method, because Go
-  copies the receiver at the moment the value is made and there is no heap to copy
-  into (binding the address would alias, and diverge the moment anything wrote to
-  the variable); and a receiver that is not a package-level variable, whose address
-  does not outlive the value.
-
-  Go carries the receiver *in* the value, which handles any receiver. That
-  representation was measured on a P2-EDGE first: it costs about a quarter of the
-  time of **every** call through a function value, so it was declined and the bound
-  form built instead. `doc/funcval-cost.c` has the numbers and how to revisit it.
-- **Struct embedding.** A field written as a bare type name puts its own fields and
-  methods on the outer type, at any depth, and is still reachable by that name when
-  you want to be explicit. In C it is an ordinary member named after the type; what
-  promotion costs is the members the source did not write — `d.n` becomes
-  `d.middle.base.n`, and `d.Get()` becomes `base_Get(&d.middle.base)`.
-
-  Go's selector rule is kept whole: one search over fields *and* methods together,
-  shallowest wins, so a field on the outer type shadows a promoted one — and two
-  reachable at the same depth are an **ambiguous selector**, refused rather than
-  resolved by picking one.
-
-  Not yet: an embedded pointer (`*base`), an embedded predeclared type
-  (`struct{ int }`), or one named through an import. Each is refused where it is
-  written rather than quietly embedded by value.
-- **Function literals.** `f := func(a int) int { return a * 2 }`, and the literal
-  handed to a parameter, returned, stored in a field or an element, or called where
-  it stands: `func() int { return 7 }()`. C has no nested functions and this
-  language has no closures to need them, so each literal is lifted to a function of
-  file scope and the expression becomes its name — a function pointer and nothing
-  else.
-
-  A literal may not read a local or a parameter of the surrounding function. There
-  is no heap to hold a captured frame and no frame that outlives the call, so the
-  pointer would be the only honest part of a closure; the attempt is refused where
-  it is written, naming what was captured. A package-level name is not a capture.
-
-  A literal may also stand as the callee of `go` or `defer` — `go func() { ... }()`
-  and `defer func() { ... }()`. Both take a declared function, and a lifted literal
-  is one. Neither takes arguments yet; a cog usually wants none, since what it
-  shares it shares through a channel.
 - **Fixed, on the hardware: a dispatch table did not dispatch.** A call made
   directly through an array element of function-pointer type reached the *wrong
   function* on the P2 — every element called whatever the first one held, with a
@@ -187,47 +230,9 @@ Releases before v0.9.0 predate this file; see
   A call through an element now binds it to a temporary first, which is correct on
   both. Reduced to a dozen lines of C in `doc/call-through-array-element.c`, and the
   shape is now a run case in its own right.
-- **Variadic parameters.** `func sum(xs ...int) int` takes the rest of a call's
-  arguments, however many — none included — and inside the body the parameter *is* a
-  `[]int`, so `len`, `cap`, `range` and indexing all ask a slice. A call may spread
-  an existing one instead, `sum(xs...)`. Functions and methods both.
 
-  Go allocates the pack a call builds. There is no heap here, so it is an array of
-  the *calling* function, and the lifetime rules see it exactly as they see a slice
-  literal's backing: a callee that lets its variadic parameter outlive the call is
-  refused, and told to pass a slice of a package array instead. The spread form is
-  judged by where its slice came from, as any slice argument is.
+### Diagnostics
 
-  Refused with the reason: a `...` that is not the final parameter, one shared by
-  several names, one in a result list, a call missing the fixed arguments before it,
-  and a trailing argument of the wrong element type.
-
-  `ogo fmt` writes `xs ...int` and `sum(xs...)`, which is what gofmt writes — the
-  same token spaced two ways, told apart by whether it sits in a parameter.
-- **A type switch**, `switch v := s.(type)`, switches on an interface value's
-  dynamic type. Each clause binds the name at the type that clause proved — the
-  concrete pointer where one type was named, the interface value where several were
-  or none — which is Go's rule and the reason a clause is a scope of its own. `case
-  nil` takes the zero interface value. The name may be left out, `switch s.(type)`,
-  when the clauses only need to select.
-
-  It lowers to the chain of table comparisons it is, one per case, so it costs what
-  the assertion costs times the number of clauses tried.
-
-  Refused with the reason: a case naming a type that could not supply the
-  interface's method set (Go's *impossible type switch case*), a case named twice, a
-  switch on something that is not an interface, and a bound name no clause uses.
-- **A field read off an interface value is checked.** `s.n` on a variable of
-  interface type went unchecked and surfaced from the emitter as a puzzle about C.
-  An interface has methods and no fields; what it carries is reached by an assertion
-  or a type switch.
-- **A channel send checks the interface it sends to.** `ch <- t` where `t` does not
-  implement `chan Shape`'s element type came back from the emitter, in the emitter's
-  words, rather than from the checker in Go's. It is now the same diagnostic every
-  other position gives — a send statement and a `select` send clause alike, and
-  through a defined type over a channel. What that took was retaining the element
-  type's *name* on the declaration: a predeclared kind was all it kept, and a named
-  interface has none.
 - **An interface's method set is checked.** The declaration was already accepted and
   its duplicate methods caught, but nothing read the set: a call through a variable
   of interface type was "type Shape has no method Area" — true of the methods
@@ -249,6 +254,24 @@ Releases before v0.9.0 predate this file; see
   `interface types are not emitted yet` — which is also what replaced the emitter's
   `unsupported type ""`, a message that named the empty string for a type that has a
   name.
+- **A channel send checks the interface it sends to.** `ch <- t` where `t` does not
+  implement `chan Shape`'s element type came back from the emitter, in the emitter's
+  words, rather than from the checker in Go's. It is now the same diagnostic every
+  other position gives — a send statement and a `select` send clause alike, and
+  through a defined type over a channel. What that took was retaining the element
+  type's *name* on the declaration: a predeclared kind was all it kept, and a named
+  interface has none.
+- **A field read off an interface value is checked.** `s.n` on a variable of
+  interface type went unchecked and surfaced from the emitter as a puzzle about C.
+  An interface has methods and no fields; what it carries is reached by an assertion
+  or a type switch.
+
+### Behaviour changes
+
+Programs v0.16.0 accepted that this release refuses. All three are the lifetime
+rules reaching where they always meant to: a reference that does not outlive what
+holds it, found one call further away than before.
+
 - **A reference to a local may no longer be laundered through a call.** The
   lifetime rules refused `g = &x` — storing a local's address where it outlives the
   frame — but `keep(&x)`, where `keep` does that store, was accepted, and so was the
@@ -262,7 +285,6 @@ Releases before v0.9.0 predate this file; see
   a fixed point. Passing package storage to the same callee stays legal, as does a
   callee that only reads its parameter — the requirement is on the leak, not on the
   pointer.
-
 - **A reference may no longer be laundered through a call's result either.**
   `func id(p *int) *int { return p }` made `return id(&x)` compile, and the same
   single call carried a frame reference past every other sink — into a package
@@ -270,7 +292,6 @@ Releases before v0.9.0 predate this file; see
   whether a result derives from it, closed over the same call graph; the shared
   provenance predicate consults it, so all five sinks see it at once rather than each
   growing a case.
-
 - **A call through a function value is judged by the function it holds.**
   `f := keep; f(&x)` was accepted where `keep(&x)` was refused, because the call site
   resolves to a variable and there was no summary to consult — a package-level

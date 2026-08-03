@@ -27,9 +27,10 @@
 // TODO 20260720 Arrays: an array as a function result
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
-// TODO 20260727 Function values: a function literal, a method value, a function with
-// more than one result as a value, and "go" through a variable holding one. The
-// named function used as a value works (see Function types and function values).
+// TODO 20260727 Function values: a function with more than one result as a value,
+// and "go" through a variable holding one. A named function, a function literal and
+// a bound-receiver method value all work as values (see Function types and function
+// values, and Function literals).
 // TODO 20260728 Defined types over a channel: a method on one (see Type
 // Declarations). Sends, receives and select clauses work.
 // TODO 20260728 Channels held in a struct field: a send or a receive on one is

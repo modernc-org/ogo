@@ -285,9 +285,11 @@ broken.
   limit; its backing array is a local, so it carries that local's lifetime.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
-* A **function literal** and a **method value** (`t.get`); a function with more than
-  one result used as a value; and `go` through a variable holding a function rather
-  than through the function's own name. A declared function used as a value works.
+* A function with more than **one result used as a value**; `go` through a variable
+  holding a function rather than through the function's own name; and a **method
+  value whose receiver is not a package-level variable** — the receiver is bound at
+  compile time, which is what keeps a function value one word (`doc/funcval-cost.c`
+  prices the alternative).
 * An array as a function result, a slice whose element is an array, and `goto`.
 * A `range` clause written with `=` accepts only variables, not an element or a
   field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.

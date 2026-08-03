@@ -39,13 +39,14 @@ The deliberate exceptions, all rooted in the Propeller 2 hardware:
   preemption; `go` starts a real core, not a task.
 - **A channel is a P2 hardware lock** over statically allocated Hub RAM -- a
   synchronous rendezvous with no scheduler behind it.
-- **Interface types are not implemented yet**, but they are no longer blocked on a
-  decision. Settled 2026-08-03: an interface value is a **fat pointer** -- a data
-  pointer beside a pointer to a statically emitted vtable -- with devirtualization
-  applied per call site wherever the concrete type is provable, and rejection spent
-  on lifetime rather than on dispatch. The reasoning, and what the checker needs
-  first, are in `internal/octogo/octogo.go`. Type switches and type assertions are
-  reachable under it and are deferred, not blocked.
+- **An interface value holds a POINTER**, and only a pointer: `var s Shape = &q`,
+  never `= q`. Shipped 2026-08-03 -- a data pointer beside a pointer to a statically
+  emitted vtable, one table per (concrete type, interface) pair, with type
+  assertions and type switches on top. Go copies the value in and allocates for it;
+  there is no heap here, so the value form is refused rather than made a silently
+  aliasing reference. That is what keeps "a program that compiles here means what it
+  means in Go". Devirtualization is the piece still open. See
+  `internal/octogo/octogo.go`.
 
 **Generics are a separate category: not supported, not planned, not ruled out.**
 A question for after v1 -- whether an LL(1) grammar can describe them at all,
@@ -288,6 +289,15 @@ still design-only.
   `internal/octogo/build.go` maps the import path to ordinary OctoGo that is
   compiled and mangled like any other package. The day it ships on disk, the only
   change is where it is read from.
+- **Interfaces are done and devirtualization is not.** A method call through an
+  interface is an indirect call through a static vtable, always; the WPO pass that
+  would make it direct where the concrete type is provable is design-only. Nothing
+  is rejected for failing to prove one -- rejection is spent on lifetime.
+- **Method values bind their receiver at compile time**, which is why they cost
+  nothing that other function values pay. Go's representation (a value pointing at a
+  struct whose first word is the code pointer) was measured on hardware and declined:
+  `doc/funcval-cost.c` has the numbers, the attribution and how to revisit it. Do not
+  re-open that without re-reading it.
 - Composite literals cover positional and keyed structs (`P{1, 2}`, `P{x: 1}`),
   positional array/slice literals (`[3]int{1, 2, 3}`, `[]int{1, 2, 3}`), and
   indexed array/slice literals (`[]int{2: 5}`, `[5]int{0: 1, 4: 9}`, mixed
