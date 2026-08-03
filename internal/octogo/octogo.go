@@ -146,12 +146,24 @@
 // the shared provenance predicate rather than by each sink, so `return id(&x)`,
 // `g = id(&x)`, `go f(id(&x))` and `ch <- id(&x)` are all refused by one rule.
 //
-// Two things it deliberately does not do. A reference bound to a local first --
-// `q := id(&x); return q` -- is not followed, because nothing marks q; the mark
-// machinery covers a struct field and a slice backing, not a plain pointer local.
-// And a callee this cannot resolve to a name -- a method, or a call through a
-// function value -- yields no summary, so the requirement is not propagated
-// through it. Both err the way the rest of the analysis does: towards accepting.
+// Two holes are left, and both are live: each admits a program that compiles today
+// and leaves a dangling reference.
+//
+//   - A call through a function VALUE. `f := keep; f(&x)`, where keep stores its
+//     parameter in a package variable, is accepted: the call site resolves to a
+//     variable rather than to a function, so there is no summary to consult. The
+//     same holds for a package-level function variable and for a slice argument.
+//     Closing it needs the callee's identity where it can be had -- a variable
+//     whose initializer is a function name binds to that function -- and a decision
+//     about the case where it cannot.
+//   - The RESULT summary does not cover a method. `return r.id(&x)` is accepted,
+//     where the same shape on a plain function is refused. The leak summary does
+//     cover methods, so `r.keep(&x)` IS refused; only the result half stops at the
+//     one-name callee it resolves.
+//
+// A reference bound to a local first is NOT a hole: `q := id(&x); return q` is
+// refused, because the local carries the holder mark that the struct-field and
+// slice-backing forms carry.
 //
 // Purpose. On a target with no heap and no GC, every reference -- a pointer, a
 // slice header, or a zero-copy string view -- borrows storage owned by some frame.
