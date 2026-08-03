@@ -428,6 +428,17 @@ via the `testdata/hostp2` shim which now stubs these):
 | `p2.NewLock()` | `_locknew`→int | `p2.TryLock(l)` | `_locktry`→bool |
 | `p2.Unlock(l)` | `_lockrel` | `p2.FreeLock(l)` | `_lockret` |
 
+The package also exports the pin-configuration CONSTANTS a smart pin is brought up
+with -- `p2.DAC990R3V`, `p2.DACDitherPWM`, `p2.OutputEnable` and the rest of the DAC
+set -- in `p2Constants` (`internal/octogo/emit.go`), values from flexcc's
+`smartpins.h`. They are emitted as literals, since the p2 package has no source to
+define a symbol in. They exist because the hex is unforgiving in a way that looks
+like working code: `_examples/gopher` was written with `0x140006`, which is the DAC
+range and the mode and no OUTPUT ENABLE, and drives nothing. A `const` declaration
+cannot use them (`const m = p2.X` is "undefined: p2" -- the const evaluator does not
+resolve an import qualifier, which is a general gap, not a p2 one); `var` and `:=`
+both work.
+
 The four lock entries are the P2's 16 hardware locks, the same pool the channel
 runtime draws from. **`NewLock` does not report exhaustion**: after handing out
 0..15 the toolchain's `_locknew` returns 15 for every further call rather than -1,

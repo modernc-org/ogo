@@ -1776,6 +1776,28 @@ func main() {
 		want: "body: 99\none: 1\nf is now 1\nbefore true 1\ng 1\n",
 	},
 	{
+		// The p2 package's named pin-configuration constants. They exist because the
+		// hex they replace is unforgiving in a way that looks like working code: the
+		// gopher example was written with 0x140006, which is the DAC range and the
+		// mode and NO OUTPUT ENABLE -- it compiles, runs, and drives nothing.
+		// `p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable` cannot be written with a
+		// bit missing without the name of the missing bit being absent from the line.
+		name: "the p2 package's pin-configuration constants",
+		src: `import "p2"
+
+func main() {
+	println(p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable)
+	println(p2.DAC600R2V, p2.DAC124R3V, p2.DAC75R2V)
+	println(p2.DACNoise, p2.DACDitherRnd, p2.OutputEnable)
+
+	// Usable where a value is, which is what makes them worth having.
+	mode := p2.DAC990R3V | p2.OutputEnable
+	println(mode)
+}
+`,
+		want: "1310790\n1376256 1441792 1507328\n2 4 64\n1310784\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

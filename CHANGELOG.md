@@ -26,6 +26,22 @@ Releases before v0.9.0 predate this file; see
   body's block scope has been left, where a local's name no longer types at all. A
   string would have printed as the first word of its header and a bool as `1`. The
   captured temporary carries its type, so that is now what chooses the format.
+- **The `p2` package exports named pin-configuration constants** — `p2.DAC990R3V`,
+  `p2.DACDitherPWM`, `p2.OutputEnable` and the rest of the DAC set, values from
+  flexcc's `smartpins.h`.
+
+  They exist because the hex they replace is unforgiving in a way that looks like
+  working code. `_examples/gopher` was first written with the mode word `0x140006`
+  — the DAC range and the smart-pin mode, and no output enable — which compiles,
+  runs, drives nothing, and puts about twenty millivolts of dither ripple on the
+  pin. On a scope that reads as a bug in the drawing rather than as a pin that was
+  never switched on. `p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable` cannot be
+  written with a bit missing without the name of the missing bit being absent from
+  the line.
+
+  Usable wherever a value is, including `var` and `:=`. Not in a `const`
+  declaration: the constant evaluator does not resolve an import qualifier, which is
+  a general gap rather than a `p2` one.
 
 ## v0.17.0
 

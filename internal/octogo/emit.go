@@ -169,6 +169,39 @@ type p2Intrinsic struct {
 	ret string
 }
 
+// p2Constants are the p2 package's exported constants: the pin-configuration bits
+// a smart pin is brought up with, named rather than written as hex.
+//
+// They exist because the hex is unforgiving in a way that looks like working code.
+// _examples/gopher was written with the mode word 0x140006 -- the DAC range and the
+// smart-pin mode, and no OUTPUT ENABLE -- which compiles, runs, drives nothing, and
+// puts about twenty millivolts of dither ripple on the pin. On a scope that is a
+// small blob, which reads as a bug in the drawing rather than as a pin that was
+// never switched on. `p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable` cannot be
+// written with a bit missing without the name of the missing bit being absent from
+// the line.
+//
+// The values are from flexcc's smartpins.h, which is the authority and is embedded
+// in this repository (internal/flexcc/p2include.tar.gz). Only the DAC path is here;
+// the rest of the vocabulary is a table to grow, not a design to settle.
+var p2Constants = map[string]string{
+	// The DAC output ranges: drive strength and full-scale voltage.
+	"DAC990R3V": "0x140000", // P_DAC_990R_3V
+	"DAC600R2V": "0x150000", // P_DAC_600R_2V
+	"DAC124R3V": "0x160000", // P_DAC_124R_3V
+	"DAC75R2V":  "0x170000", // P_DAC_75R_2V
+
+	// The smart-pin DAC modes. Each takes its level from the pin's Y register, which
+	// is what p2.WritePinY writes; the dithered ones take a 16-bit level.
+	"DACNoise":     "0x02", // P_DAC_NOISE
+	"DACDitherRnd": "0x04", // P_DAC_DITHER_RND
+	"DACDitherPWM": "0x06", // P_DAC_DITHER_PWM
+
+	// OutputEnable is what makes the pin drive at all. A mode without it configures
+	// a pin that is switched off.
+	"OutputEnable": "0x40", // P_OE
+}
+
 // p2Intrinsics maps the p2 package's exported functions to their intrinsics (the
 // mapping documented in CLAUDE.md's appendix). The call `p2.PinHigh(56)` emits
 // `_pinh(56)`; `p2.Rnd()` emits `_rnd()` and types as unsigned.
@@ -13371,6 +13404,13 @@ func (e *emitter) factorFieldAccess(kids []Node) (base string, fields []string, 
 // is not an import qualifier or the member is not one of that package's globals (a
 // function or a type member, left to the caller's other shapes).
 func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype string, ok bool) {
+	// A p2 constant is a literal, not a symbol: the p2 package has no source and
+	// nothing to define one in.
+	if base == "p2" && len(fields) == 1 {
+		if v, isConst := p2Constants[fields[0]]; isConst {
+			return v, "unsigned", true
+		}
+	}
 	prefix, isQual := e.importQualifiers[base]
 	if !isQual || len(fields) == 0 {
 		return "", "", false

@@ -34,7 +34,7 @@ const header = `// The Go gopher, drawn on an oscilloscope in X/Y mode by a Prop
 // If the picture is a diagonal line, both probes are on the same pin or the scope
 // is not in X/Y mode. If it is a small fuzzy blob, the timebase is too short (see
 // above). If it is a tiny signal of a few tens of millivolts, the pin is not
-// driving: dacMode has lost its P_OE bit.
+// driving: the mode has lost its p2.OutputEnable.
 
 import "p2"
 
@@ -43,15 +43,6 @@ const (
 	// xPin and yPin drive the two DACs. Any two free pins.
 	xPin = 0
 	yPin = 1
-
-	// dacMode configures a pin as a DAC, from flexcc's smartpins.h:
-	//
-	//	P_DAC_990R_3V     0x140000   the 990-ohm, 3.3 V output range
-	//	P_DAC_DITHER_PWM  0x000006   the smart-pin mode that takes a 16-bit level
-	//	P_OE              0x000040   OUTPUT ENABLE -- without it the pin does not
-	//	                             drive at all, and a scope sees a few tens of
-	//	                             millivolts of dither ripple instead of a picture
-	dacMode = 0x140046
 
 	// dwell is how many clock cycles the beam rests on each sample, and on a DIGITAL
 	// scope it is what decides whether the picture is any good. The scope samples
@@ -122,8 +113,15 @@ func drawFrame(f int) {
 }
 
 func main() {
-	p2.PinStart(xPin, dacMode, 0, 0)
-	p2.PinStart(yPin, dacMode, 0, 0)
+	// The pin configuration, spelled out: the 990-ohm 3.3 V DAC range, the
+	// smart-pin mode that takes a 16-bit level, and OUTPUT ENABLE -- which is the
+	// one that is easy to leave out of a hex constant. Without it the pin does not
+	// drive at all, and a scope shows a few tens of millivolts of dither ripple,
+	// which looks like a bug in the drawing rather than a pin that was never
+	// switched on.
+	mode := p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable
+	p2.PinStart(xPin, mode, 0, 0)
+	p2.PinStart(yPin, mode, 0, 0)
 
 	if still >= 0 {
 		// One frame, drawn over and over. Nothing moves, which is what a still
