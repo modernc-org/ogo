@@ -4799,6 +4799,21 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		valueIsPtr = true // a variable already of pointer type
 	}
 	from := d.typeName.Src()
+	// An interface value holds a POINTER to what it carries. Go copies the value in,
+	// allocating for it; there is no heap here, so a value would have to be a
+	// reference to the variable it was made from -- and then assigning to that
+	// variable afterwards would be visible through the interface, where Go kept the
+	// old value. Refusing the value form is what keeps a program that compiles here
+	// mean what it means in Go. An interface satisfying another needs no address:
+	// it is already the two words.
+	if !valueIsPtr {
+		if _, fromIface := f.interfaceMethodsNamed(s, from); !fromIface {
+			f.err(f.tok(value.Pos()).Position(),
+				"cannot use %s (variable of type %s) as %s value in %s: an interface holds a pointer here; write &%s",
+				id.Src(), from, ifaceName, what, id.Src())
+			return
+		}
+	}
 	shown := id.Src()
 	kind := "variable of type " + from
 	if valueIsPtr && !d.isPtr {

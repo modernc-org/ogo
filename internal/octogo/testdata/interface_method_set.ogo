@@ -1,10 +1,12 @@
 // An interface's method set is what a call through a variable of that type is
-// checked against, and what a concrete value assigned to one has to supply.
+// checked against, and what a value put into one has to supply.
 //
-// The representation is settled -- a data pointer beside a static vtable, see
-// internal/octogo/octogo.go -- and not emitted yet, so these are checker rules
-// only. A program that passes them still stops at "interface types are not emitted
-// yet"; that is why this file is a spec test rather than a run case.
+// What an interface holds here is a POINTER. Go copies the value in, allocating for
+// it; there is no heap on this target, so a value form would have to be a reference
+// to the variable it was made from -- and assigning to that variable afterwards
+// would then be visible through the interface, where Go kept the old value.
+// Refusing the value form is what keeps a program that compiles here mean what it
+// means in Go. So `&x`, not `x`, at every position below.
 
 type Shape interface {
 	Area() int
@@ -51,16 +53,19 @@ func main() {
 	println(s.Area(1))
 
 	// A type supplying the whole set satisfies it.
+	s = &q
+
+	// ERROR an interface holds a pointer here; write &q
 	s = q
 
 	// ERROR tri does not implement Shape \(missing method Area\)
-	s = t
+	s = &t
 	// ERROR wrong does not implement Shape \(wrong type for method Area\)
-	s = w
+	s = &w
 
 	// The empty interface is satisfied by everything.
-	e = q
-	e = t
+	e = &q
+	e = &t
 
 	_ = e
 }
@@ -70,31 +75,42 @@ func main() {
 
 func use(s Shape) int { return s.Area() }
 
-func mk(q sq) Shape { return q }
+func mk(q *sq) Shape { return q }
 
 func bad() Shape {
 	var t tri
 	// ERROR in return statement: tri does not implement Shape \(missing method Area\)
-	return t
+	return &t
+}
+
+func badValue() Shape {
+	var q sq
+	// ERROR an interface holds a pointer here; write &q
+	return q
 }
 
 func positions() {
 	var q sq
 	var t tri
 
-	var ok1 Shape = q
+	var ok1 Shape = &q
 	// ERROR tri does not implement Shape \(missing method Area\)
-	var bad1 Shape = t
+	var bad1 Shape = &t
+	// ERROR an interface holds a pointer here; write &q
+	var bad2 Shape = q
 
+	println(use(&q))
+	// ERROR tri does not implement Shape \(missing method Area\)
+	println(use(&t))
+	// ERROR an interface holds a pointer here; write &q
 	println(use(q))
-	// ERROR tri does not implement Shape \(missing method Area\)
-	println(use(t))
 
-	_, _ = ok1, bad1
+	_, _, _ = ok1, bad1, bad2
 }
 
 // An interface satisfies another when its own method set contains it, which is the
-// same question asked of a set rather than of a type's declared methods.
+// same question asked of a set rather than of a type's declared methods. No address
+// is taken there: an interface value is already the two words.
 
 type Named interface {
 	Area() int
@@ -129,25 +145,62 @@ func fields() {
 	var q sq
 	var t tri
 
-	ok1 := box{s: q}
+	ok1 := box{s: &q}
 	// ERROR tri does not implement Shape \(missing method Area\)
-	bad1 := box{s: t}
+	bad1 := box{s: &t}
+	// ERROR an interface holds a pointer here; write &q
+	bad2 := box{s: q}
 
-	ok2 := box{q, 1}
+	ok2 := box{&q, 1}
 	// ERROR tri does not implement Shape \(missing method Area\)
-	bad2 := box{t, 1}
+	bad3 := box{&t, 1}
 
 	var b box
-	b.s = q
+	b.s = &q
 	// ERROR tri does not implement Shape \(missing method Area\)
-	b.s = t
+	b.s = &t
 
-	_, _, _, _ = ok1, bad1, ok2, bad2
+	_, _, _, _, _ = ok1, bad1, bad2, ok2, bad3
+}
+
+// A channel of interface type asks it as well, in a send statement and in a
+// select's send clause alike, and through a defined type over one. The element's
+// Kind cannot answer this -- a named interface has none -- so the element's NAME is
+// what the declaration retains.
+
+type Ch chan Shape
+
+// The receiver may outlive this frame, so what is sent is the address of a package
+// variable: the pointer rule and the lifetime rule compose, and a local would be
+// refused by the second one.
+
+var pq sq
+
+var pt tri
+
+func sends(ch chan Shape, dc Ch) {
+	ch <- &pq
+	dc <- &pq
+
+	// ERROR an interface holds a pointer here; write &pq
+	ch <- pq
+
+	// ERROR tri does not implement Shape \(missing method Area\)
+	ch <- &pt
+	// ERROR tri does not implement Shape \(missing method Area\)
+	dc <- &pt
+
+	select {
+	case ch <- &pq:
+	// ERROR tri does not implement Shape \(missing method Area\)
+	case ch <- &pt:
+	}
 }
 
 // Go's method set: a value of T carries the methods declared ON T, and *T carries
-// all of them. So an interface holding a pointer-receiver method is satisfied by
-// the address and not by the value.
+// all of them. The rule still governs which methods a type supplies -- it is what
+// makes the address correct -- but nothing is rejected by it any more, an interface
+// taking only the pointer form, whose method set is always the whole of it.
 
 type Mutable interface {
 	Bump(k int) int
@@ -166,34 +219,8 @@ var gc counter
 
 func methodSets() {
 	var m1 Mutable = &gc
-	// ERROR counter does not implement Mutable \(method Bump has pointer receiver\)
+	// ERROR an interface holds a pointer here; write &gc
 	var m2 Mutable = gc
 
 	_, _ = m1, m2
-}
-
-// A channel of interface type asks it as well, in a send statement and in a
-// select's send clause alike, and through a defined type over one. The element's
-// Kind cannot answer this -- a named interface has none -- so the element's NAME is
-// what the declaration retains.
-
-type Ch chan Shape
-
-func sends(ch chan Shape, dc Ch) {
-	var q sq
-	var t tri
-
-	ch <- q
-	dc <- q
-
-	// ERROR tri does not implement Shape \(missing method Area\)
-	ch <- t
-	// ERROR tri does not implement Shape \(missing method Area\)
-	dc <- t
-
-	select {
-	case ch <- q:
-	// ERROR tri does not implement Shape \(missing method Area\)
-	case ch <- t:
-	}
 }

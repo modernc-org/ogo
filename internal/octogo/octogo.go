@@ -315,49 +315,55 @@
 // wrapped where it meets an interface parameter, and one interface value assigned
 // to another as the two words copied.
 //
-// The data pointer is the address of the caller's variable, there being no heap to
-// box a copy into. That makes an interface value a REFERENCE, so the variable it
-// was made from must outlive it -- recorded as the ordinary provenance mark, which
-// is why every sink already asks about it.
+// An interface value goes where a value goes: returned from a function, held in a
+// struct field, held in an array or slice element, and sent on a channel to another
+// cog. Each is the same two-word copy; what each needed was for the emitter to know
+// that the TARGET's type is an interface, which is what says the pointer reaching it
+// has to be wrapped. A method call reached through a chain -- sc.first.Name(),
+// shapes[1].Area() -- is typed by the slot the interface declares.
 //
-// It also DIVERGES FROM GO, and knowingly. Go copies into an interface value, so
-// assigning to the variable afterwards is not visible through it; here it is:
+// Not done yet: type switches and assertions (deferred, see below), and
+// devirtualization.
+//
+// # Only a pointer goes in, and why
+//
+// The data pointer is an address, there being no heap to box a copy into. The
+// language therefore takes only the pointer form: "var s Shape = &q", never "= q".
+//
+// The value form was accepted for one day and it was wrong. With no allocation to
+// make, the data pointer had to be the address of q itself, so the interface
+// REFERRED to q where Go had copied:
 //
 //	var q sq
 //	q.n = 3
 //	var s Shape = q
 //	q.n = 5
-//	println(s.Area()) // Go: 9. Here: 25.
+//	println(s.Area()) // Go: 9. It printed 25.
 //
-// Matching Go would mean a copy per assignment, and per assignment is exactly what
-// a heap is for: one temporary per assignment SITE is not the same thing, since a
-// site that runs twice with both values still live needs two. So the reference is
-// not a shortcut to be closed later, it is what the no-heap rule leaves. What is
-// owed is that a reader be told, which specs.go's Interface types section does.
+// Matching Go would mean a copy per ASSIGNMENT, and per assignment is exactly what
+// a heap is for -- one temporary per assignment SITE is not the same thing, since a
+// site that runs twice with both values still live needs two. So there was no
+// version of the value form that meant what Go means, and a silently different
+// answer on a board is the worst thing this compiler can produce.
 //
-// A value with no variable of its own -- a composite literal, a call's result --
-// has nothing to alias, so it is copied into a temporary the emitter mints and
-// those forms match Go exactly. At package scope there is no frame to mint one in
-// (a temporary there would be a local of ogo_pkg_init), so an addressless value
-// meeting a package variable of interface type is refused.
+// Refusing it costs a "&" a Go program does not need, and buys the property worth
+// having: a program that compiles here means exactly what it means in Go. "&q" puts
+// a pointer in the interface in both languages, and what is written through q is
+// visible through the interface in both. The diagnostic names the fix.
 //
-// Go's method-set rule is kept: a value of T carries the methods declared on T and
-// *T carries all of them, so an interface holding a pointer-receiver method is
-// satisfied by &x and not by x. It earns its keep here even though nothing is
-// boxed, because the "&" is where a reference into the caller's storage becomes
-// visible -- which is what the lifetime rules exist to keep legible.
+// "&T{...}" is admitted and is how a fresh value gets in. Go allocates for it; here
+// it is a temporary of the frame, which is exactly what a local is, so the lifetime
+// rules already cover it. At package scope there is no frame to mint one in (a
+// temporary there would be a local of ogo_pkg_init), so it is refused there.
 //
-// An interface value goes where a value goes: returned from a function, held in a
-// struct field, held in an array or slice element, and sent on a channel to another
-// cog. Each is the same two-word copy; what each needed was for the emitter to know
-// that the TARGET's type is an interface, which is what says the concrete value
-// reaching it has to be wrapped. A method call reached through a chain --
-// sc.first.Name(), shapes[1].Area() -- is typed by the slot the interface declares.
+// A call's result has no address in Go either, so nothing is owed there: bind it to
+// a variable and take that.
 //
-// Not done yet: type switches and assertions (deferred, see below);
-// devirtualization; a value whose address cannot be taken -- a literal, a call's
-// result -- which is refused rather than copied to a temporary, there being nowhere
-// for the interface to own a copy.
+// The method-set rule earns its keep under this: it is what makes the address
+// correct. Since only "&x" is admitted and *T carries every method, the rule now
+// rejects nothing -- "counter does not implement Mutable (method Bump has pointer
+// receiver)" is unreachable -- but it is still the reason the thunks may assume a
+// pointer receiver's receiver.
 //
 // # Checker status
 //
@@ -365,8 +371,10 @@
 // resolved against the set and checked against that method's signature, and a value
 // meeting an interface type is checked for implementing it -- at an assignment, a
 // variable declaration, an argument and a return, which are the four positions the
-// pointer-ness rule already covers. An interface satisfies another when its own set
-// contains it, which is the same question asked of a set.
+// pointer-ness rule already covers. The same funnel refuses a value where a pointer
+// is wanted, so the "write &x" diagnostic reaches every position at once. An
+// interface satisfies another when its own set contains it, which is the same
+// question asked of a set, and needs no address: it is already the two words.
 //
 // A struct field of interface type asks it too -- filled by a keyed literal, by a
 // positional one, or assigned afterwards -- the field's declared type answering
@@ -377,21 +385,14 @@
 // the element type's NAME on the declaration: a predeclared Kind was all it kept,
 // and a named interface has none.
 //
-// A value whose type cannot be named -- a literal, a call's result -- is left
-// unjudged rather than guessed at, in every position.
-//
-// # What the checker needs first, and it is the bulk of the work
-//
-// None of the three strategies is the expensive part. The checker has no notion of
-// an interface type, a method set, or whether a concrete type implements an
-// interface, and every strategy needs all three. That work is the same whichever
-// representation is chosen, which is why the choice was not urgent and the checker
-// work is.
+// A value whose type cannot be named -- "&T{...}", a call's result -- is left
+// unjudged rather than guessed at, in every position; the emitter is what admits
+// the first and refuses the second.
 //
 // # Deferred, deliberately
 //
 // Type switches and type assertions are reachable under this representation -- a
-// type id in the vtable answers both -- and are not part of the first increment.
+// type id in the vtable answers both -- and are not implemented yet.
 // Variadic parameters are a separate question that the earlier design folded in
 // here; they are not an interface feature and do not belong in this section.
 package octogo

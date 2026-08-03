@@ -3189,12 +3189,12 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 	concrete, data, temp, ok := e.ifaceOperand(rhs)
 	if !ok {
 		if e.pkgScope {
-			// A frame temporary is what gives an addressless value storage, and a
-			// package variable's initializer has no frame to put one in.
-			e.fail("a package variable of interface type needs a variable to point at: assign the value to one first")
+			// A frame temporary is what gives `&T{...}` storage, and a package
+			// variable's initializer has no frame to put one in.
+			e.fail("a package variable of interface type needs a variable to point at: declare one and use &it")
 			return ""
 		}
-		e.fail("only a variable, or the address of one, may be stored in an interface yet")
+		e.fail("an interface holds a pointer: write the address of a variable, or &T{...}")
 		return ""
 	}
 	if !e.needVTable(iface, concrete) {
@@ -3230,46 +3230,71 @@ func (e *emitter) hasIfaceMethod(iface, method string) bool {
 // ifaceOperand resolves what is being put into an interface: the concrete type it
 // is a value of, and the C expression for the data pointer.
 //
-// `x` and `&x` name the same storage and differ only in which method set satisfies
-// the interface -- a question the checker has already settled -- so both arrive
-// here as the address of the variable, which is what the table's thunks unpack.
+// What an interface holds is a POINTER, so the operand is one: `&x`, a variable
+// already of pointer type, or `&T{...}`. A value is refused -- the checker says so
+// first, in Go's words and with the fix; this is the backstop.
 func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok bool) {
-	name, isName := e.exprIdent(rhs)
-	if !isName {
-		if root, isAddr := e.addrOfRoot(rhs); isAddr {
-			name, isName = root, true
+	// `&T{...}` is asked first: addrOfRoot takes the literal's TYPE name for the
+	// root of the address, there being an identifier in front of the brace, and
+	// would answer for a variable that does not exist.
+	if concrete, data, temp, ok := e.ifaceAddrLitOperand(rhs); ok {
+		return concrete, data, temp, ok
+	}
+	if root, isAddr := e.addrOfRoot(rhs); isAddr {
+		ct, ok := e.varType(root)
+		if !ok {
+			return "", "", false, false
 		}
+		return ct, "&" + e.varRef(root), false, true
 	}
-	if !isName {
-		return e.ifaceTempOperand(rhs)
-	}
-	ct, ok := e.varType(name)
-	if !ok {
-		return e.ifaceTempOperand(rhs)
-	}
-	if e.isPointer(ct) {
+	if name, isName := e.exprIdent(rhs); isName {
 		// A variable already of pointer type points at the value itself.
-		return e.elemType(ct), e.varRef(name), false, true
+		if ct, ok := e.varType(name); ok && e.isPointer(ct) {
+			return e.elemType(ct), e.varRef(name), false, true
+		}
+		return "", "", false, false
 	}
-	return ct, "&" + e.varRef(name), false, true
+	return e.ifaceAddrLitOperand(rhs)
 }
 
-// ifaceTempOperand gives storage to a value that has none of its own -- a composite
-// literal, a call's result -- so an interface has an address to point at. It is a
-// temporary of this frame, which is exactly what a local is, so the lifetime rules
-// treat it as one: an interface made from it may not outlive the frame.
+// ifaceAddrLitOperand gives storage to `&T{...}`, a fresh value with no variable of
+// its own. Go allocates one; there is no heap here, so it is a temporary of this
+// frame -- which is exactly what a local is, so the lifetime rules already cover
+// it: an interface made from it may not outlive the frame.
 //
 // A package variable's initializer has no frame to put one in (its temporaries are
-// locals of ogo_pkg_init), so there the value is refused rather than pointed at.
-func (e *emitter) ifaceTempOperand(rhs []int32) (concrete, data string, temp, ok bool) {
-	if e.pkgScope {
+// locals of ogo_pkg_init), so there it is refused rather than pointed at.
+func (e *emitter) ifaceAddrLitOperand(rhs []int32) (concrete, data string, temp, ok bool) {
+	ct, lit, isLit := e.addrOfCompositeLit(rhs)
+	if !isLit || e.pkgScope || !e.isStruct(ct) {
 		return "", "", false, false
 	}
-	ct, ok := e.inferCType(rhs)
-	if !ok || ct == "" || e.isIfaceCType(ct) || !(e.isStruct(ct) || e.isUserType(ct)) {
-		return "", "", false, false
+	return ct, "&" + e.hoist(ct, func() { e.emitCompositeLit(ct, lit, true) }), true, true
+}
+
+// addrOfCompositeLit reports whether an expression is the address of a composite
+// literal, `&T{...}`, and returns the literal. addrOfRoot answers the same question
+// for a variable and takes only a named root, which is why this exists beside it.
+func (e *emitter) addrOfCompositeLit(ast []int32) (ctype string, lit Node, ok bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
 	}
-	return ct, "&" + e.hoist(ct, func() { e.emitExpr(rhs) }), true, true
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", Node{}, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) < 2 || kids[0].sym != UnaryOp {
+		return "", Node{}, false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != AND {
+		return "", Node{}, false
+	}
+	fac := kids[len(kids)-1]
+	if fac.sym != Factor {
+		return "", Node{}, false
+	}
+	return e.factorCompositeLit(slices.Collect(it(fac.ast)))
 }
 
 // ifaceValueC renders a concrete value as an interface value, for the positions

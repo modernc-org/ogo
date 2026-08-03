@@ -1085,16 +1085,16 @@ func main() {
 	gr.w, gr.h = 2, 5
 
 	// A variable of interface type, and a call through it.
-	var s Shape = gq
+	var s Shape = &gq
 	println(s.Name(), s.Area())
 
 	// The same variable, another concrete type: the table changes with it.
-	s = gr
+	s = &gr
 	println(s.Name(), s.Area())
 
-	// A concrete value handed to an interface parameter, wrapped where it stands.
-	println(describe(gq), describe(gr))
-	println(bigger(gq, gr), bigger(gr, gq))
+	// A pointer handed to an interface parameter, wrapped where it stands.
+	println(describe(&gq), describe(&gr))
+	println(bigger(&gq, &gr), bigger(&gr, &gq))
 
 	// An interface value passed on as an interface: the two words, copied.
 	println(describe(s))
@@ -1103,8 +1103,8 @@ func main() {
 	// interface does not outlive it.
 	var lq sq
 	lq.n = 4
-	var t Shape = lq
-	println(t.Name(), t.Area(), describe(lq))
+	var t Shape = &lq
+	println(t.Name(), t.Area(), describe(&lq))
 
 	// A pointer-receiver method is in *counter's method set, not counter's, so
 	// the address is what satisfies Mutable -- and what it mutates is the
@@ -1162,9 +1162,9 @@ var shapes [3]Shape
 
 func pick(k int) Shape {
 	if k == 0 {
-		return gq
+		return &gq
 	}
-	return gr
+	return &gr
 }
 
 func total(xs []Shape) int {
@@ -1175,7 +1175,7 @@ func total(xs []Shape) int {
 	return sum
 }
 
-func feed(ch chan Shape) { ch <- gr }
+func feed(ch chan Shape) { ch <- &gr }
 
 func main() {
 	gq.n = 3
@@ -1188,13 +1188,13 @@ func main() {
 
 	// Held in a struct field.
 	var sc scene
-	sc.first = gq
+	sc.first = &gq
 	sc.count = 1
 	println(sc.first.Name(), sc.first.Area(), sc.count)
 
 	// Held in an array, walked as a slice.
-	shapes[0] = gq
-	shapes[1] = gr
+	shapes[0] = &gq
+	shapes[1] = &gr
 	shapes[2] = pick(0)
 	println(total(shapes[:]), shapes[1].Name())
 
@@ -1208,18 +1208,17 @@ func main() {
 		want: "sq 9 rect 10\nsq 9 1\n28 rect\nrect 10\n",
 	},
 	{
-		// An interface value made from something that has no variable of its own: a
-		// composite literal and a call's result. There is no address to point at, so
-		// each is copied into a temporary of the frame -- which is also the one shape
-		// that matches Go exactly, an interface here otherwise REFERRING to the
-		// variable it was made from rather than copying it.
+		// What an interface holds is a POINTER, so &T{...} is how a value with no
+		// variable of its own gets in. Go allocates for it; here it is a temporary of
+		// the frame, which is exactly what a local is, so the lifetime rules already
+		// cover it. A call's result has no address in Go either and is bound first.
 		//
-		// A package variable of interface type is the fourth line's business: an
+		// A package variable of interface type is the first line's business: an
 		// address is not a C constant expression, so its two words are written at
-		// package initialization. Reading 4 rather than 0 for `var g Shape = gq` with
-		// gq set in main is that reference showing -- Go prints 0 -- and is the
-		// divergence octogo.go's Status section records.
-		name: "an interface over a literal, a call result and a package variable",
+		// package initialization.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "an interface over &T{...}, a bound call result and a package variable",
 		src: `type Shape interface {
 	Area() int
 	Name() string
@@ -1243,24 +1242,24 @@ func use(s Shape) int { return s.Area() }
 
 var gq sq
 
-var g Shape = gq
+var g Shape = &gq
 
 func main() {
 	gq.n = 2
 	println(g.Area(), g.Name())
 
-	// A composite literal and a call's result: neither has a variable to point at,
-	// so each is copied into storage the compiler mints.
-	var a Shape = sq{4}
-	println(a.Area())
+	// &T{...}: a fresh value with no variable of its own. Go allocates one; here it
+	// is a temporary of the frame, which the lifetime rules already cover.
+	var a Shape = &sq{4}
+	println(a.Area(), use(&sq{6}))
 
-	var b Shape = mk(5)
-	println(b.Area())
-
-	println(use(sq{6}), use(mk(7)))
+	// A call's result has no address in Go either, so it is bound first.
+	t := mk(5)
+	var b Shape = &t
+	println(b.Area(), use(&t))
 }
 `,
-		want: "4 sq\n16\n25\n36 49\n",
+		want: "4 sq\n16 36\n25 25\n",
 	},
 	{
 		// A binary heap over a caller's array: sift up, sift down, a struct payload

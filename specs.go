@@ -123,17 +123,16 @@
 //     scheduler and no preemption, so "go" starts a real core, not a task.
 //   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
 //     synchronous rendezvous with no scheduler behind it.
-//   - An interface value REFERS to the variable it was made from; Go copies into
-//     it. There is no heap to box a copy into, so the value is a data pointer
-//     beside a pointer to a statically emitted vtable, and the data pointer is the
-//     variable's address. Assigning to that variable afterwards is therefore
-//     visible through the interface, where Go would have kept the old value. The
-//     same rule makes an interface value a reference for lifetime purposes: what it
-//     points at must outlive it, which is what everything else here obeys. A value
-//     with no variable of its own -- a literal, a call's result -- is copied to
-//     storage the compiler mints, and those match Go exactly, there being nothing
-//     to alias. See internal/octogo/octogo.go. Type switches and type assertions
-//     are reachable under this model and are not implemented yet.
+//   - An interface value holds a POINTER, so a pointer is what goes into one: "&x",
+//     not "x". Go accepts either and copies the value in, allocating for it; there
+//     is no heap here to allocate into, so the value form is refused rather than
+//     quietly made a reference to the variable it was written from. What that buys
+//     is that a program which compiles here means exactly what it means in Go --
+//     "&x" puts a pointer in the interface in both languages, and mutations through
+//     x are visible through the interface in both. "&T{...}" works too, its storage
+//     being a temporary of the frame rather than an allocation, and so subject to
+//     the lifetime rule above. See internal/octogo/octogo.go. Type switches and
+//     type assertions are reachable under this model and are not implemented yet.
 //
 // # Introduction
 //
@@ -575,24 +574,33 @@
 //     type set of the interface.
 //   - The value of an uninitialized variable of interface type is nil.
 //
-// (OctoGo Specific): An interface value is a data pointer beside a pointer to a
-// statically emitted vtable, one table per (concrete type, interface) pair. There
-// is no heap, so what the data pointer holds is the ADDRESS of the variable the
-// value was made from rather than a copy of it -- an interface value refers to that
-// variable, where Go copies. Two consequences, both worth knowing before writing
-// one:
+// (OctoGo Specific): An interface value is two words -- a pointer to the value it
+// carries, beside a pointer to a statically emitted vtable, one table per (concrete
+// type, interface) pair. Assigning one interface value to another copies both
+// words, as in Go.
 //
-//   - Assigning to the variable afterwards is visible through the interface.
-//   - The variable must outlive the interface value, which is the lifetime rule
-//     everything else here obeys, and is enforced.
+// What goes INTO one is a pointer, and only a pointer:
 //
-// A value with no variable of its own -- a composite literal, a call's result -- is
-// put in storage the compiler mints for it, so those two behave exactly as Go's do:
-// there is nothing to alias.
+//	var s Shape = &q      // this
+//	var s Shape = q       // not this: "an interface holds a pointer here; write &q"
 //
-// Go's method-set rule is kept: a value of T carries the methods declared on T and
-// *T carries all of them, so an interface holding a pointer-receiver method is
-// satisfied by &x and not by x.
+// Go accepts both, copying the value into storage it allocates. There is no heap
+// here to allocate into, so the value form is refused rather than quietly made a
+// reference to q -- which would differ from Go the moment anything assigned to q
+// afterwards. Refusing it is what makes a program that compiles here mean exactly
+// what it means in Go: "&q" puts a pointer in the interface in both languages, and
+// what is written through q is visible through the interface in both.
+//
+// A composite literal may be addressed, "&T{...}", and is the way to put a fresh
+// value in an interface. Its storage is a temporary of the enclosing function
+// rather than an allocation, so the lifetime rule applies to it as to any local: an
+// interface made from one may not outlive the function. A call's result has no
+// address in Go either -- bind it to a variable and take that.
+//
+// Go's method-set rule is kept, since it is what makes the address correct: a value
+// of T carries the methods declared on T and *T carries all of them. Taking the
+// address is therefore never the thing that makes a type fail to implement an
+// interface, only the thing that makes it succeed.
 //
 // Type switches and type assertions are reachable under this model and are not
 // implemented yet. Generic interface constraints, unions and the underlying-type
