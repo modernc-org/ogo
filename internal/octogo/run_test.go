@@ -2257,6 +2257,118 @@ func main() {
 		want: "10 6\n10 30 4\n7\n2 9\n",
 	},
 	{
+		name: "an array parameter is a copy",
+		src: `func mutate(a [3]int) int {
+	a[0] = 99
+	return a[0]
+}
+
+func main() {
+	var a [3]int
+	a[0] = 1
+	println(mutate(a), a[0])
+}
+`,
+		want: "99 1\n",
+	},
+	{
+		name: "assigning one array to another copies it",
+		src: `func main() {
+	var a [3]int
+	var b [3]int
+	b[0] = 5
+	a = b
+	b[0] = 9
+	println(a[0], b[0])
+}
+`,
+		want: "5 9\n",
+	},
+	{
+		name: "an array literal as a value",
+		src: `type Row [3]int
+
+var g [3]int
+
+// An array parameter is a copy, so what the callee writes stays there.
+func take(a [3]int) int {
+	a[0] = 99
+	return a[1]
+}
+
+func main() {
+	var a [3]int
+	a = [3]int{1, 2, 3}
+	println(a[0], a[1], a[2])
+
+	println(take([3]int{4, 5, 6}), take(a), a[0])
+
+	// Copies, so a later write to the source does not reach the target.
+	var b [3]int
+	b[0] = 7
+	a = b
+	b[0] = 8
+	println(a[0], b[0])
+
+	g = a
+	a[0] = 0
+	println(g[0], a[0])
+
+	var r Row
+	r = Row{7, 8, 9}
+	println(r[1])
+
+	var m [2][2]int
+	var n [2][2]int
+	n[1][1] = 4
+	m = n
+	n[1][1] = 6
+	println(m[1][1], n[1][1])
+}
+`,
+		want: "1 2 3\n5 2 1\n7 8\n7 0\n8\n4 6\n",
+	},
+	{
+		name: "an array field written over",
+		src: `type S struct {
+	a [3]int
+	n int
+}
+
+func main() {
+	var s S
+	s.a = [3]int{1, 2, 3}
+	println(s.a[0], s.a[2])
+
+	var b [3]int
+	b[1] = 4
+	s.a = b
+	b[1] = 9
+	println(s.a[1], b[1])
+
+	// The whole struct, which carries the array with it.
+	var t S
+	t = s
+	s.a[0] = 77
+	println(t.a[0], s.a[0])
+}
+`,
+		want: "1 3\n4 9\n0 77\n",
+	},
+	{
+		name: "an array literal returned",
+		src: `// The literal binds to a temporary of this frame, and the copy into the
+// caller's storage IS the return, so the frame outliving it is not in question.
+func mk() [3]int { return [3]int{1, 2, 3} }
+
+func main() {
+	r := mk()
+	println(r[0], r[1], r[2])
+}
+`,
+		want: "1 2 3\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

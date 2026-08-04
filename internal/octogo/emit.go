@@ -6003,6 +6003,19 @@ func (e *emitter) arrayReturnOperand(ast []int32) (string, arrDim, bool) {
 		}
 		return "", arrDim{}, false
 	}
+	// `return [3]int{1, 2, 3}`: bound to a temporary of this frame, which the copy
+	// into the caller's out parameter then reads. The frame does not outlive the
+	// copy -- the memcpy is the return -- so the literal's storage being local costs
+	// nothing here.
+	if fac, ok := e.soleFactorNode(ast); ok {
+		if typeAST, _, ok := e.factorArrayLit(fac); ok {
+			if a, isArray := e.arrayDim(typeAST); isArray {
+				if name, ok := e.hoistArrayLitExpr(ast); ok {
+					return name, a, true
+				}
+			}
+		}
+	}
 	return "", arrDim{}, false
 }
 
@@ -7180,6 +7193,62 @@ func (e *emitter) hoistLit(typeAST []int32, lit Node) (string, bool) {
 		e.prologue = append(e.prologue, line+"\n")
 	}
 	return name, true
+}
+
+// hoistArrayLitExpr binds an ARRAY literal standing in expression position to a
+// temporary of this frame, declared before the statement, and answers with its name.
+//
+// It is separate from hoistLit, which handles a slice literal and refuses an array
+// on purpose: a slice is a header, an ordinary C value that can stand wherever one
+// can, while an array is not, so a name bound here cannot simply be emitted where the
+// literal was. What it CAN do is serve the two positions that have a lowering of
+// their own -- an argument, where the parameter's C form is a pointer the callee
+// memcpys from, and an assignment, which copies. Both are given the name; neither
+// makes C assign an array.
+//
+// The temporary is this frame's, so the lifetime rules that already see an array
+// literal as frame storage (frameRefOf) still refuse returning or storing one.
+func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
+	if e.declInit || e.deferReplay >= 0 {
+		return "", false
+	}
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return "", false
+	}
+	typeAST, lit, ok := e.factorArrayLit(fac)
+	if !ok {
+		return "", false
+	}
+	if _, isArray := e.arrayDim(typeAST); !isArray {
+		return "", false
+	}
+	name := e.newTmp()
+	saved := e.indent
+	e.indent = 0
+	text := e.captureC(func() { e.emitArrayLitVar(name, typeAST, lit, false) })
+	e.indent = saved
+	if text == "" {
+		return "", false
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		e.prologue = append(e.prologue, line+"\n")
+	}
+	return name, true
+}
+
+// arraySourceC names what an array-valued right-hand side is, for a copy to read
+// from: another array variable by its C name, or an array literal by a temporary
+// bound ahead of the statement. Anything else is not something this can copy from
+// and is left to the paths that report it.
+func (e *emitter) arraySourceC(ast []int32) (string, bool) {
+	if name, ok := e.exprIdent(ast); ok {
+		if _, isArray := e.arrayVar(name); isArray {
+			return e.varRef(name), true
+		}
+		return "", false
+	}
+	return e.hoistArrayLitExpr(ast)
 }
 
 // litSliceType is sliceType for the type of a composite LITERAL, where a defined
@@ -11025,7 +11094,14 @@ func (e *emitter) emitReturn(nodes []Node) {
 			return
 		}
 		src, srcDim, okSrc := e.arrayReturnOperand(exprs[0].ast)
-		if !okSrc || srcDim.elem != a.elem || srcDim.declSuffix() != a.declSuffix() {
+		switch {
+		case !okSrc:
+			// Not an array this can copy from at all. Said as itself rather than
+			// through the type mismatch below, whose message named the missing
+			// source as the empty type "[]".
+			e.fail("an array result must be returned as a variable or an array literal")
+			return
+		case srcDim.elem != a.elem || srcDim.declSuffix() != a.declSuffix():
 			e.fail("cannot return %s as %s", e.goArrayTypeName(srcDim), e.goArrayTypeName(a))
 			return
 		}
@@ -12646,6 +12722,28 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			}
 		}
 	}
+	// A whole ARRAY written over: `a = b`, or `a = [3]int{1, 2, 3}`. C has no array
+	// assignment, so this is a memcpy of the target's own size -- the same lowering
+	// `b := a` has always had at a declaration.
+	//
+	// It used to emit `a = b;` verbatim. flexcc ACCEPTS that as an extension and
+	// copies, so the board was right and silent, while the C was not C: gcc rejects
+	// it with "assignment to expression with array type", which is why no host test
+	// could cover the form. Emitting the copy makes the two agree and the output
+	// valid.
+	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+		if _, isArray := e.arrayVar(base); isArray {
+			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				if src, ok := e.arraySourceC(rhs[0].ast); ok {
+					e.includes["string.h"] = true
+					dst := e.varRef(base)
+					e.ind()
+					e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n")
+					return
+				}
+			}
+		}
+	}
 	// Multiple assignment `a, b = f()` / `a, b := f()`: the PostfixOp carries the
 	// extra targets as LhsItems ahead of the operator. Recognised here, ahead of the
 	// target shapes below, because the head of a multiple assignment may take any of
@@ -12755,6 +12853,22 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		// compound operators bind looser -- but writing one form keeps the target
 		// from depending on which tail follows it.
 		lhs = "(" + stars + lhs + ")"
+	}
+
+	// A whole ARRAY FIELD written over, `s.a = b` / `s.a = [3]int{1, 2, 3}`: the
+	// same copy the plain-variable target takes, and needed for the same reason --
+	// `s.a = b;` is not C, however willingly flexcc takes it.
+	if len(fields) != 0 && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+		if _, isArray := e.fieldArray(base, fields); isArray {
+			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				if src, ok := e.arraySourceC(rhs[0].ast); ok {
+					e.includes["string.h"] = true
+					e.ind()
+					e.emit("memcpy(" + lhs + ", " + src + ", sizeof(" + lhs + "));\n")
+					return
+				}
+			}
+		}
 	}
 
 	// Increment/decrement: PostfixOp = "++" | "--" (no operand of its own).
@@ -13945,6 +14059,14 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			e.emit(", ")
 		}
 		first = false
+		// An ARRAY literal written as an argument, `take([3]int{1, 2, 3})`. The
+		// parameter is a pointer the callee memcpys from -- an array parameter is a
+		// copy, as Go says -- so what the call needs is an lvalue, and a temporary
+		// of this frame is one. The callee copies before the frame can go anywhere.
+		if name, ok := e.hoistArrayLitExpr(arg.ast); ok {
+			e.emit(name)
+			continue
+		}
 		// The predeclared nil has no type of its own: alone it emits the null
 		// pointer 0, which is not a slice header, so passing it to a slice
 		// parameter built a call whose argument count did not even match. The

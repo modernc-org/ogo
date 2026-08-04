@@ -5900,13 +5900,18 @@ func TestEmitCSelectSendRefused(t *testing.T) {
 }
 
 // TestEmitCArrayLitRefused pins the cases that are refused by name rather than
-// mis-emitted: an ARRAY literal outside a declaration (C cannot assign one, and
-// binding it to a temporary would only move the error into C), a literal whose type
-// is not the declared one, and more values than the array is long -- which C only
-// warns about while dropping the excess.
+// mis-emitted: a literal whose type is not the declared one, more values than the
+// array is long -- which C only warns about while dropping the excess -- and the
+// positions an array literal still cannot stand in.
 //
-// A slice literal outside a declaration is no longer here: it is a header, an
-// ordinary C value, and stands wherever one can.
+// An array literal outside a declaration is no longer refused wholesale. It stands
+// where the position has a copy of its own to do -- an argument, an assignment, a
+// return -- each binding it to a temporary the copy reads. What is left here is the
+// positions with no such lowering, where it would have to become a C value and there
+// is no array value in C.
+//
+// A slice literal outside a declaration was removed for the same reason earlier: it
+// is a header, an ordinary C value, and stands wherever one can.
 func TestEmitCArrayLitRefused(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -5914,18 +5919,14 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 		want string
 	}{
 		{
-			name: "assignment",
-			src:  "func main() {\n\tvar a [3]int\n\ta = [3]int{1, 2, 3}\n\tprintln(a[0])\n}\n",
-			want: "a [3]int literal is only supported as a variable's initializer",
-		},
-		{
-			// An array literal, which is the half that stays refused: a slice one is
-			// a header and stands as a value (see the emitRunCases), while an array
-			// has no C value type to become. Passing it would want the parameter's
-			// decay, which is a property of that position rather than of the literal.
-			name: "call argument",
-			src:  "func take(a [2]int) int { return a[0] }\n\nfunc main() {\n\tprintln(take([2]int{1, 2}))\n}\n",
-			want: "a [2]int literal is only supported as a variable's initializer",
+			// An operand of an expression: there is no C array value for it to
+			// become, and no copy of the position's own to bind it for.
+			// (Indexing one where it stands, `[3]int{1, 2, 3}[0]`, does not reach
+			// here at all -- it does not parse; see the Factor-rule TODO in
+			// specs.go, which is the same missing FactorSuffix as `[]byte(s)`.)
+			name: "in an expression",
+			src:  "func main() {\n\tvar a [3]int\n\tprintln(a == [3]int{1, 2, 3})\n}\n",
+			want: "cannot compare [3]int with a value of another type",
 		},
 		{
 			name: "length mismatch",

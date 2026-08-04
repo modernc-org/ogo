@@ -34,8 +34,10 @@
 // and "go" through a variable holding one. A named function, a function literal and
 // a bound-receiver method value all work as values (see Function types and function
 // values, and Function literals).
-// TODO 20260804 A conversion to an UNNAMED COMPOSITE type does not parse:
-// `[]byte(s)`, `[]int(xs)` and `[3]int(q)` all stop at the "(". The Factor rule's
+// TODO 20260804 Nothing may FOLLOW an unnamed composite type in a factor. A
+// conversion to one does not parse -- `[]byte(s)`, `[]int(xs)` and `[3]int(q)` all
+// stop at the "(" -- and neither does indexing a literal of one where it stands,
+// `[3]int{1, 2, 3}[0]`, which is the same rule refusing a "[". The Factor rule's
 // array/slice alternative -- `"[" [ Expression ] "]" Type [ CompositeLit ]` -- admits
 // a composite literal after the type but no FactorSuffix, so there is nowhere for a
 // CallSuffix to go; a conversion whose target is a NAME goes through the identifier
@@ -46,10 +48,11 @@
 // rather than as a syntax error. The named direction, `Row(r)`, works and may be
 // indexed where it stands, and assigning between a defined array type and its
 // underlying one needs no conversion either way (`var a [3]int = q`).
-// TODO 20260727 Array literals as general values: an array literal passed to a
-// function or assigned. A slice literal stands as a value now, being a header; an
-// array is not a C value, so it initializes a variable, fills a slot in another
-// literal, and is what a "range" walks, and nothing else.
+// TODO 20260804 An array literal cannot stand as an operand of an EXPRESSION,
+// `a == [3]int{1, 2, 3}`. An array is not a C value, so a literal stands only where
+// the position has a copy of its own to bind it for -- an argument, an assignment, a
+// return, a variable's initializer, a slot in another literal, a "range" -- and an
+// expression operand has none.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

@@ -138,7 +138,22 @@ Releases before v0.9.0 predate this file; see
   declaration: the constant evaluator does not resolve an import qualifier, which is
   a general gap rather than a `p2` one.
 
+### Language
+
+- **An array literal stands as a value where the position copies.** `take([3]int{1,
+  2, 3})`, `a = [3]int{1, 2, 3}`, `s.a = [3]int{1, 2, 3}` and `return [3]int{1, 2,
+  3}` all work; each binds the literal to a temporary of the frame that the copy
+  then reads. It is still refused as an operand of an expression, where there is no
+  copy to bind it for and C has no array value for it to become.
+
 ### Behaviour changes
+
+- **Assigning one array to another emits a copy**, `memcpy`, where it emitted C's
+  `a = b`. That is not valid C -- gcc rejects it with "assignment to expression
+  with array type" -- but flexcc accepts it as an extension and copies, so the
+  board was right while no host test could cover the form at all. It applies to a
+  struct field target too, `s.a = b`. Behaviour on the board is unchanged; the
+  emitted C is now C.
 
 - **A name C has reserved is renamed in the emitted C wherever it appears**, not
   only at file scope. A local, parameter, struct field or method named `static`,
