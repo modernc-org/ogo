@@ -264,10 +264,10 @@ broken.
   with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
-* A channel held in a struct field works, but not through an **array of such
-  structs** (`bs[0].ch <- v`) and not in a **`select` clause** (`case <-x.a:`).
-  Directly on a variable's field, `p.tx <- v` and `<-p.rx`, is fine, nested structs
-  included.
+* A channel held in a struct field works — sends, receives and `select` clauses,
+  nested structs included — but not through an **array of such structs**,
+  `bs[0].ch <- v`. The operand is resolved as a variable or as a field of one, and
+  neither reaches an index.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
 * A conversion to a defined array type may not be **indexed where it stands**,

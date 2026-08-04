@@ -34,6 +34,29 @@ func ok() {
 	println(<-q.rx)
 }
 
+// A select's clauses take a field as readily as a variable -- a receive binding a
+// value, a send, and a bare receive -- which is what a driver's ports want: several
+// channels belonging to one thing, waited on together.
+
+func selects() {
+	select {
+	case v := <-p.tx:
+		println(v)
+	case p.rx <- 1:
+	case <-nm.c:
+	default:
+	}
+}
+
+func selectNotAChannel() {
+	select {
+	// ERROR invalid operation: cannot receive from non-channel
+	case v := <-p.n:
+		println(v)
+	default:
+	}
+}
+
 func notAChannel() {
 	// ERROR invalid operation: cannot send to non-channel
 	p.n <- 1

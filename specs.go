@@ -33,11 +33,10 @@
 // values, and Function literals).
 // TODO 20260728 Defined types over a channel: a method on one (see Type
 // Declarations). Sends, receives and select clauses work.
-// TODO 20260804 Channels held in a struct field work, except through an ARRAY of
-// such structs ("bs[0].ch <- v") and in a SELECT clause ("case <-x.a:"). Both are
-// the same missing step -- the operand is resolved as a variable or one field, and
-// neither reaches an index or a comm clause -- rather than anything of the design,
-// which is settled in internal/octogo/octogo.go.
+// TODO 20260804 Channels held in a struct field work -- sends, receives and select
+// clauses alike -- except through an ARRAY of such structs, "bs[0].ch <- v". The
+// operand is resolved as a variable or as a field of one, and neither reaches an
+// index. See internal/octogo/octogo.go for the design, which is settled.
 // TODO 20260730 A conversion to a defined ARRAY type cannot be indexed or measured
 // where it stands: `Row(r)[1]` and `len(Row(r))` for `type Row [3]int`. C has no
 // cast to an array type, so such a conversion has to emit its operand rather than a

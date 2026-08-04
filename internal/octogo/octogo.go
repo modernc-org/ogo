@@ -440,8 +440,8 @@
 //
 // # A channel held in a struct field
 //
-// Implemented for a variable's field, package-level and local; not yet through an
-// array of such structs, nor in a select clause. The note that used to say the
+// Implemented for a variable's field, package-level and local, in sends, receives
+// and select clauses alike; not yet through an array of such structs. The note that used to say the
 // design was the blocker was wrong about what the open question was.
 //
 // REPRESENTATION: nothing new is needed. `chan T` is already a POINTER --
@@ -489,9 +489,13 @@
 // field a null pointer that faults at the first send. A feature missing that way is
 // worse than one refused.
 //
-// STILL MISSING: an array of such structs, and a select clause on a field. Both are
-// the same step -- the operand resolves as a variable or as one field, and neither
-// reaches an index or a comm clause -- and neither is a question of design.
+// A SELECT clause resolves its channel through the same chanOperand, so a receive
+// clause and a bare one came along with the receives. A send clause did not: its
+// grammar keeps the head and the selectors apart, so the two are rejoined in
+// selectChanField before the field is resolved.
+//
+// STILL MISSING: an array of such structs. The operand resolves as a variable or as
+// one field and neither reaches an index, which is a step rather than a design.
 //
 // # Deferred, deliberately
 //

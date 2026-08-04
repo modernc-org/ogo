@@ -1196,27 +1196,51 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 		c.target = assignTarget{name: e.soleIdent(head.ast), stars: e.derefStars(head.ast), chain: chain}
 		return e.selectChan(value, c)
 	}
-	if len(chain) != 0 {
-		e.fail("a select send clause needs a plain channel operand")
-		return false
-	}
 	c.send, c.val = true, value
+	if len(chain) != 0 {
+		// `case ports.tx <- v:` -- the channel is a FIELD of the head. A channel is a
+		// pointer to its cell, so the field access is what names it.
+		return e.selectChanField(head, chain, c)
+	}
 	return e.selectChan(head, c)
 }
 
-// selectChan resolves the channel a clause polls.
+// selectChan resolves the channel a clause polls: a variable, or a field of one --
+// chanOperand answers for both, a channel being a pointer either way.
 func (e *emitter) selectChan(n Node, c *selectCase) bool {
-	base, ok := e.exprIdent(n.ast)
+	elem, text, ok := e.chanOperand(n.ast)
 	if !ok {
-		e.fail("a select clause needs a plain channel operand")
+		e.fail("a select clause needs a channel operand: a variable or a field of one")
 		return false
 	}
-	ct, ok := e.varType(base)
-	if !ok || !e.isChanCType(ct) {
-		e.fail("a select clause needs a channel operand")
+	c.ch, c.elem = text, elem
+	return true
+}
+
+// selectChanField resolves the channel of a SEND clause written on a field,
+// `case ports.tx <- v:`. The head and the selectors arrive separately there, since
+// the clause's own grammar keeps them apart, so they are rejoined here.
+func (e *emitter) selectChanField(head Node, chain []Node, c *selectCase) bool {
+	base := e.soleIdent(head.ast)
+	var fields []string
+	for _, step := range chain {
+		if step.sym != Selector {
+			e.fail("a select send clause takes a channel variable or a field of one")
+			return false
+		}
+		fld := e.soleIdent(step.ast)
+		if fld == "" {
+			e.fail("a select send clause takes a channel variable or a field of one")
+			return false
+		}
+		fields = append(fields, fld)
+	}
+	ct, ok := e.fieldType(base, fields)
+	if base == "" || !ok || !e.isChanCType(ct) {
+		e.fail("a select send clause takes a channel variable or a field of one")
 		return false
 	}
-	c.ch, c.elem = base, e.chanElemByName[ct]
+	c.ch, c.elem = e.fieldAccessC(base, fields), e.chanElemByName[ct]
 	return true
 }
 

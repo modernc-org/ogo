@@ -1915,6 +1915,77 @@ func main() {
 		want: "42\n10\n7\ntrue\n",
 	},
 	{
+		// A select over channels held in STRUCT FIELDS, which is what a driver's
+		// ports look like: several channels belonging to one thing. All three clause
+		// shapes on a field -- a receive binding a value, a send, and a bare receive.
+		//
+		// Written so the two machines cannot disagree: the second select has no
+		// default, so it waits rather than depending on whether the other side has
+		// been scheduled yet. With a default there it printed "neither" under Go,
+		// whose goroutine had not run, and "b 2" on the board, whose cog genuinely
+		// had -- both right, and useless as a test.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a select over channels in struct fields",
+		src: `type ports struct {
+	a chan int
+	b chan int
+}
+
+var p ports
+
+var done chan int
+
+func feedA() { p.a <- 1 }
+
+func feedB() { p.b <- 2 }
+
+func drain() {
+	v := <-p.a
+	done <- v
+}
+
+func main() {
+	// Nothing is ready, so the default clause runs. A select over two fields of one
+	// struct is what a driver's ports look like.
+	select {
+	case v := <-p.a:
+		println("a", v)
+	case v := <-p.b:
+		println("b", v)
+	default:
+		println("neither")
+	}
+
+	// With no default the select waits, so this is the same on either machine
+	// however the two schedulers happen to run.
+	go feedB()
+	select {
+	case v := <-p.a:
+		println("a", v)
+	case v := <-p.b:
+		println("b", v)
+	}
+
+	// A send clause on a field.
+	go drain()
+	select {
+	case p.a <- 7:
+		println("sent")
+	}
+	println("drained", <-done)
+
+	// A bare receive clause on a field, with no value bound.
+	go feedA()
+	select {
+	case <-p.a:
+		println("bare")
+	}
+}
+`,
+		want: "neither\nb 2\nsent\ndrained 7\nbare\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

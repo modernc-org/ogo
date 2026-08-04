@@ -38,9 +38,12 @@ Releases before v0.9.0 predate this file; see
   obeys: the *declaration* owns it. A struct type allocates nothing; two variables of
   one type have a channel each.
 
-  Not yet: through an array of such structs, `bs[0].ch <- v`, or in a `select`
-  clause, `case <-x.a:`. Both are the same missing step rather than anything of the
-  design.
+  **A `select` takes one too** — a receive clause binding a value, a send clause and
+  a bare receive alike — which is what a driver's ports want: several channels
+  belonging to one thing, waited on together.
+
+  Not yet: through an array of such structs, `bs[0].ch <- v`. The operand is
+  resolved as a variable or as a field of one, and neither reaches an index.
 - **Two documented limits were gone and nobody had noticed.** A call *three deep*,
   `chooser()(0)(6)`, computed 0 on the board at every optimization level while the
   host was right — a silent wrong answer — and a call written directly on an array
