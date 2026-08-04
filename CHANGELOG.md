@@ -15,6 +15,18 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A conversion to a defined array type may be indexed, measured and ranged where
+  it stands.** `Row(r)[2]`, `len(Row(r))`, `cap(Row(r))` and `for i, v := range
+  Row(r)` all work for `type Row [3]int`, including through more than one step --
+  `Grid(g)[1][2]`, `Pts(ps)[1].y`. It previously had to be bound to a variable
+  first. C has no cast to an array type, so the conversion is unwrapped rather than
+  emitted: the typedef stands for the same storage, so the operand's own access
+  chain is what the steps apply to.
+
+  The three shapes Go rejects are refused with Go's reason rather than accepted: a
+  conversion's result is a value, not a variable, so `Row(r)[0] = 7`, `&Row(r)[1]`
+  and `Row(r)[0:2]` each say it is not addressable.
+
 - **A deferred print may take arguments.** `defer println("x:", x)` was refused;
   Go evaluates a deferred call's arguments at the `defer` and runs the call at the
   return, which is the whole point of deferring a print, and it is now what happens.

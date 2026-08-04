@@ -5380,6 +5380,69 @@ func main() {
 	}
 }
 
+// TestEmitCArrayConvNotAddressable pins the three shapes Go rejects for a
+// conversion to a defined array type: a conversion's result is a VALUE, so it can be
+// read but not written, addressed or sliced.
+//
+// The pin matters because the emitter UNWRAPS the conversion -- `Row(a)[i]` is
+// `a[i]`, the typedef standing for the same storage -- which is what makes reading
+// one work at all. Unwrapping would just as happily give `&Row(a)[1]` the address of
+// the operand's element, a meaning for a program Go does not accept, so each of these
+// is refused deliberately rather than by not being implemented. Verified against
+// `go vet` on the same three programs.
+func TestEmitCArrayConvNotAddressable(t *testing.T) {
+	const header = `type Row [3]int
+
+var r [3]int
+
+var p *int
+
+`
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "assigned to",
+			src: `func main() {
+	Row(r)[0] = 7
+	println(r[0])
+}
+`,
+			want: "cannot assign to a conversion",
+		},
+		{
+			name: "addressed",
+			src: `func main() {
+	p = &Row(r)[1]
+	println(*p)
+}
+`,
+			want: "cannot take the address of a conversion",
+		},
+		{
+			name: "sliced",
+			src: `func main() {
+	s := Row(r)[0:2]
+	println(len(s))
+}
+`,
+			want: "cannot slice a conversion",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 // TestEmitCNestedArrayLit pins an array literal standing as a struct literal's
 // element. It becomes a nested brace group exactly where it is written, which is C's
 // own spelling and the only one flexcc lowers for a struct holding an array -- and

@@ -264,9 +264,6 @@ broken.
   with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
-* A conversion to a defined array type may not be **indexed where it stands**,
-  `row(g)[2]`; bind it first. C has no cast to an array type. The conversion itself,
-  and every other use of the result, works.
 * An **array** literal may not stand as a general value — it initializes a variable,
   fills a slot in another composite literal, or is what a `range` walks, and nothing
   else, C having no array value for it to become. A *slice* literal has no such

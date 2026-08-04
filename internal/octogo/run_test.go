@@ -2163,6 +2163,54 @@ func main() {
 		want: "42\n1\n",
 	},
 	{
+		name: "a conversion to a defined array type, indexed where it stands",
+		src: `type Row [3]int
+
+type Grid [2]Row
+
+type Pt struct {
+	x int
+	y int
+}
+
+type Pts [2]Pt
+
+var r [3]int
+
+var g [2]Row
+
+var ps [2]Pt
+
+func main() {
+	r[0] = 10
+	r[1] = 20
+	r[2] = 30
+	// The conversion names the same storage, so it is read straight through.
+	println(Row(r)[0], Row(r)[2])
+	println(len(Row(r)), cap(Row(r)))
+
+	sum := 0
+	for i, v := range Row(r) {
+		sum += i * v
+	}
+	println(sum)
+
+	g[1][2] = 7
+	println(Grid(g)[1][2])
+
+	ps[1].y = 9
+	println(Pts(ps)[1].y)
+
+	// It is a value, not a variable: what is converted is unaffected by anything
+	// done with it, and the element read is the operand's own.
+	q := Row(r)
+	q[0] = 99
+	println(r[0], q[0], Row(r)[0])
+}
+`,
+		want: "10 30\n3 3\n80\n7\n9\n10 99 10\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

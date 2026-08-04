@@ -8615,12 +8615,87 @@ func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 	if len(steps) == 0 {
 		return "", nil, false
 	}
+	name := e.src(kids[0].tok)
+	// `Row(a)[i]` for `type Row [3]int`: a conversion to a defined ARRAY type is a
+	// no-op on the representation -- the typedef stands for the same storage -- so
+	// the chain continues from the OPERAND and the conversion is dropped. It has to
+	// be unwrapped rather than emitted because an array has no C value type: a
+	// conversion to one cannot become an expression the steps then apply to, the way
+	// a conversion to a scalar can.
+	//
+	// Every reader of a chain goes through here, so the emitter, the type walk and
+	// the channel paths all see through the conversion, not just the one that
+	// happened to be reported.
+	if operand, rest, ok := e.arrayConvChain(name, steps); ok {
+		name, steps = operand, rest
+	}
 	for _, n := range steps {
 		if n.sym != Index && n.sym != Selector {
 			return "", nil, false
 		}
 	}
-	return e.src(kids[0].tok), steps, true
+	return name, steps, true
+}
+
+// arrayConvChain matches a leading conversion to a defined array type, `Row(a)`,
+// and answers with the operand's name and the steps that follow it. The operand
+// must be a plain identifier: what makes the unwrap sound is that the conversion
+// names the same storage, which is only true of something that HAS storage.
+func (e *emitter) arrayConvChain(name string, steps []Node) (string, []Node, bool) {
+	if len(steps) < 2 || steps[0].sym != CallSuffix {
+		return "", nil, false
+	}
+	ct, isType := e.convType(name)
+	if !isType {
+		return "", nil, false
+	}
+	if _, isArray := e.namedArrays[ct]; !isArray {
+		return "", nil, false
+	}
+	args := e.callArgExprs(steps[0].ast)
+	if len(args) != 1 {
+		return "", nil, false
+	}
+	base, ok := e.exprIdent(args[0].ast)
+	if !ok {
+		return "", nil, false
+	}
+	// `Row(a)[0:2]`: slicing an array needs it to be addressable, which a
+	// conversion's result is not, so Go refuses this too. Reported from here because
+	// unlike the address-of and the assignment it needs no context -- a slice step
+	// after this conversion is wrong wherever it stands -- and fail keeps the FIRST
+	// error, so this wins over the generic one the typing path would reach.
+	for _, st := range steps[1:] {
+		if st.sym != Index {
+			continue
+		}
+		if _, _, _, isSlice := e.sliceParts(st.ast); isSlice {
+			e.fail("cannot slice a conversion: it is not addressable")
+			break
+		}
+	}
+	return base, steps[1:], true
+}
+
+// isArrayConv reports whether n is (or wraps) a factor whose chain begins with a
+// conversion to a defined array type -- the shape factorAccessChain unwraps. It is
+// what lets a context that must NOT see through the conversion say so.
+func (e *emitter) isArrayConv(n Node) bool {
+	kids := slices.Collect(it(n.ast))
+	for len(kids) == 1 && kids[0].sym != 0 {
+		if kids[0].sym == Factor {
+			break
+		}
+		kids = slices.Collect(it(kids[0].ast))
+	}
+	if len(kids) == 1 && kids[0].sym == Factor {
+		kids = slices.Collect(it(kids[0].ast))
+	}
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return false
+	}
+	_, _, ok := e.arrayConvChain(e.src(kids[0].tok), slices.Collect(it(kids[1].ast)))
+	return ok
 }
 
 // isAccessChain reports whether every step is a selector or an index.
@@ -9663,6 +9738,14 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 // two-variable form copies the element into the value variable at the top of each
 // iteration.
 func (e *emitter) emitRange(h *forHeader, body []int32) {
+	// `range Row(a)` for `type Row [3]int`: a conversion to a defined array type
+	// changes nothing about the value -- the typedef stands for the same storage --
+	// so it is unwrapped and the operand is what is ranged. An array is the one
+	// representation C has no value type for, so every path that reads an array
+	// operand reads a NAME, and would not otherwise see through the conversion.
+	if operand, ok := e.arrayConvOperand(h.rangeExpr); ok {
+		h.rangeExpr = operand
+	}
 	// The representation decides what ranging means -- a value of `type Name string`
 	// is a string and yields its runes -- so the name is resolved away here.
 	ct, _ := e.exprReprCType(h.rangeExpr)
@@ -11757,6 +11840,11 @@ func (e *emitter) emitLen(callSuffix []int32) {
 		return
 	}
 	arg := args[0].ast
+	// `len(Row(a))` / `cap(Row(a))`: a conversion to a defined array type is a no-op
+	// on the representation, so the operand is what is measured.
+	if operand, ok := e.arrayConvOperand(arg); ok {
+		arg = operand
+	}
 	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
 		if a, ok := e.arrayVar(e.src(tok)); ok {
 			e.emit(a.bound)
@@ -11807,6 +11895,11 @@ func (e *emitter) emitCap(callSuffix []int32) {
 		return
 	}
 	arg := args[0].ast
+	// `len(Row(a))` / `cap(Row(a))`: a conversion to a defined array type is a no-op
+	// on the representation, so the operand is what is measured.
+	if operand, ok := e.arrayConvOperand(arg); ok {
+		arg = operand
+	}
 	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
 		if a, ok := e.arrayVar(e.src(tok)); ok {
 			e.emit(a.bound)
@@ -12447,6 +12540,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	base := e.soleIdent(head.ast)
 	if base == "" {
 		e.fail("only assignment to a simple variable is supported yet")
+		return
+	}
+	// `Row(a)[0] = v`: like the address-of above, a conversion's result is not
+	// addressable, so it cannot be assigned to. Said here rather than left to the
+	// shape refusals below, which would call it unsupported -- it is not something
+	// this compiler has yet to do, it is something Go rejects.
+	if _, _, isConv := e.arrayConvChain(base, postfix); isConv {
+		e.fail("cannot assign to a conversion: it is not addressable")
 		return
 	}
 	// A dereferenced target `*p = v` (AssignHead = { "*" } identifier): keep the
@@ -13860,6 +13961,14 @@ func (e *emitter) factorCall(kids []Node) (recv string, suffix []Node, ok bool) 
 	}
 	suffix = slices.Collect(it(kids[1].ast))
 	if !containsSym(suffix, CallSuffix) {
+		return "", nil, false
+	}
+	// `Row(a)[i]` is spelled like a call but is a conversion the chain paths unwrap
+	// (arrayConvChain). Declining it here is what lets them see it: this runs first,
+	// and claiming it would only reach the refusal for a call whose result is an
+	// array. A conversion with nothing after it is left alone -- that is
+	// emitConversion's, and it is already handled.
+	if _, _, isConv := e.arrayConvChain(e.src(kids[0].tok), suffix); isConv {
 		return "", nil, false
 	}
 	return e.src(kids[0].tok), suffix, true
@@ -15280,6 +15389,14 @@ func (e *emitter) emitExprNode(n Node) {
 			case haveOp && e.f.ch(tok) == XOR:
 				ct, _ := e.inferNode(kids[1])
 				e.emitComplement(kids[1].ast, ct, func() { e.emitExprNode(kids[1]) })
+				return
+			// `&Row(a)[1]`: a conversion's result is not addressable, so Go refuses
+			// this and so does OctoGo. It has to be said here because the chain paths
+			// UNWRAP the conversion (factorAccessChain), which would otherwise give
+			// the address of the operand's element -- a meaning for a program Go does
+			// not accept.
+			case haveOp && e.f.ch(tok) == AND && e.isArrayConv(kids[1]):
+				e.fail("cannot take the address of a conversion: it is not addressable")
 				return
 			// Unary minus on a narrow type: C negates the promoted int, Go negates
 			// in the type. See narrowCType.

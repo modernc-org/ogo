@@ -34,11 +34,10 @@
 // and "go" through a variable holding one. A named function, a function literal and
 // a bound-receiver method value all work as values (see Function types and function
 // values, and Function literals).
-// TODO 20260730 A conversion to a defined ARRAY type cannot be indexed or measured
-// where it stands: `Row(r)[1]` and `len(Row(r))` for `type Row [3]int`. C has no
-// cast to an array type, so such a conversion has to emit its operand rather than a
-// cast, which is a different lowering from every other conversion. The workaround is
-// a variable: `q := Row(r); q[1]`.
+// TODO 20260804 A conversion to an UNNAMED array type, `[3]int(q)` for a q of a
+// defined array type, is not supported, and the error names an unrelated line
+// ("undefined: Row") rather than the conversion. The named direction, `Row(r)`,
+// works and may be indexed where it stands.
 // TODO 20260728 A local variable, parameter or struct field whose name is a C
 // KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
 // moved out of C's way; a local one is not, several emission paths writing a local's
