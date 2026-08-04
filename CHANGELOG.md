@@ -140,7 +140,21 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
-- **A function with more than one result may be used as a value.** `f := divmod`,
+- **A parenthesised expression may carry a suffix**, `(a)[1]`, `(s).v`, `(dbl)(21)`.
+  These are ordinary Go and were rejected as syntax errors: the grammar's
+  parenthesised alternative had no suffix at all.
+
+- **A literal of a bracketed type may be read where it stands**, `[]int{1, 2, 3}[1]`,
+  `[3]int{4, 5, 6}[2]`, `[2]P{{1, 2}, {3, 4}}[1].y`. The literal binds to a temporary
+  and the suffix reads that, which is the only way an array literal can be indexed --
+  C has no array value for an index to apply to.
+
+- **A conversion to an unnamed composite type works when parenthesised**,
+  `([]int)(xs)` and `([3]int)(q)`. Both are valid Go. The bare `[]int(xs)` still does
+  not parse, and now says so as a deliberate restriction rather than an accident: it
+  is the one spelling that costs the LL(1) grammar conflicts, and specs.go's
+  "Parentheses where the parser needs them" records when such a restriction is
+  allowed at all. `f := divmod`,
   `var g func(int) (int, bool) = flags`, a struct field of that type and a parameter
   of it all work, and a call through one destructures as a direct call does. The
   result struct is keyed by the RESULT TYPES rather than by the function, so two

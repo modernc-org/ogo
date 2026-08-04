@@ -40,51 +40,14 @@
 // too, so it is about the return statement rather than about function values:
 // checkReturn counts operands against results and has no case for the single call
 // that supplies all of them.
-// TODO 20260804 Nothing may FOLLOW an unnamed composite type in a factor. A
-// conversion to one does not parse -- `[]byte(s)`, `[]int(xs)` and `[3]int(q)` all
-// stop at the "(" -- and neither does indexing a literal of one where it stands,
-// `[3]int{1, 2, 3}[0]`, which is the same rule refusing a "[". The Factor rule's
-// array/slice alternative -- `"[" [ Expression ] "]" Type [ CompositeLit ]` -- admits
-// a composite literal after the type but no FactorSuffix, so there is nowhere for a
-// CallSuffix to go; a conversion whose target is a NAME goes through the identifier
-// alternative, which has one.
-//
-// The LL(1) cost is MEASURED, per variant, against the committed grammar's OWN
-// baseline of EIGHT First/Follow warnings -- seven in `Signature`, one in
-// `HeaderFactor`, both pre-existing and unrelated to this rule. Counting totals
-// rather than differences got this backwards once; compare the SETS.
-//
-//	variant                                                      total   new
-//	------------------------------------------------------------------------
-//	(committed grammar)                                              8     --
-//	"]" Type [ CompositeLit ] [ FactorSuffix ]      -- `[]byte(s)`  10     +2
-//	"]" Type [ CompositeLit [ FactorSuffix ] ]  -- `[]int{..}[0]`    8      0
-//	"(" Expression ")" [ FactorSuffix ]           -- `([]byte)(s)`   8      0
-//
-// So only the UNPARENTHESISED conversion costs anything, and what it costs is
-// `Signature` on "(" and `Type` on "." -- `func() []int` and a conversion competing
-// for the same decision. The two parenthesised forms are free, and both were
-// confirmed free TOGETHER, with the full test suite passing on the regenerated
-// parser.
-//
-// That is what the parenthesis escape hatch buys (see "Parentheses where the parser
-// needs them" in the prose above): the spellings that carry their own delimiter cost
-// nothing, so the language can require them here without the grammar paying for the
-// general case. They are valid Go as written, so a program using them compiles both
-// places.
-//
-// What remains is not the grammar. With both alternatives in, every form parses and
-// each then fails in the CHECKER or the EMITTER -- `(a)[1]` reaches
-// "unsupported operand '('", `[3]int{1, 2, 3}[0]` reaches "invalid composite literal
-// type" -- so the work is teaching those two about a parenthesised base and a
-// suffixed literal. The grammar change is held back until they can back it, rather
-// than shipped to turn syntax errors into worse ones.
-//
-// `[]byte(s)` would still be refused after parsing -- it allocates -- but as itself
-// rather than as a syntax error. The named direction, `Row(r)`, works and may be
-// indexed where it stands; a defined slice type gives the conversion a name too
-// (`type Bytes []byte; Bytes(...)`), and assigning between a defined array type and
-// its underlying one needs no conversion either way (`var a [3]int = q`).
+// TODO 20260804 A conversion to an unnamed composite type must be PARENTHESISED:
+// `([]int)(xs)` and `([3]int)(q)` work, `[]int(xs)` does not parse. That is the
+// parenthesis restriction above, taken because the bare form is the one variant that
+// costs LL(1) conflicts -- it adds `Signature` on "(" and `Type` on "." to the
+// grammar's own eight, where the parenthesised form adds none. Both spellings are
+// valid Go, so obeying it costs nothing but the two characters. A conversion that
+// would change the REPRESENTATION -- `([]byte)(s)` from a string -- is refused after
+// parsing, as it allocates.
 // TODO 20260804 An array literal cannot stand as an operand of an EXPRESSION,
 // `a == [3]int{1, 2, 3}`. An array is not a C value, so a literal stands only where
 // the position has a copy of its own to bind it for -- an argument, an assignment, a
@@ -179,9 +142,16 @@
 // "for" or "switch" header where the "{" would be read as the block; C requires
 // parentheses around a type in a cast, and around far more besides.
 //
-// Where it applies is stated at the construct. The rule for adding one: it is
-// allowed only when the parenthesised spelling means the same thing in Go, so that
-// obeying the restriction never produces a program Go reads differently.
+// Where it applies, today, is one place: a conversion whose target is an UNNAMED
+// composite type must be written `([]int)(xs)` or `([3]int)(q)` rather than
+// `[]int(xs)`. Measured, the bare form is the only variant that costs the grammar
+// anything -- it makes `func() []int` and a conversion compete for one decision --
+// while the parenthesised one is free. A conversion whose target is a NAME,
+// `Row(r)`, needs no parentheses and never did.
+//
+// The rule for adding another: it is allowed only when the parenthesised spelling
+// means the same thing in Go, so that obeying the restriction never produces a
+// program Go reads differently.
 //
 // # Introduction
 //
@@ -988,8 +958,8 @@
 //		| float_lit
 //		| string_lit
 //		| rune_lit
-//		| "(" Expression ")"
-//		| "[" [ Expression ] "]" Type [ CompositeLit ]
+//		| "(" Expression ")" [ FactorSuffix ]
+//		| "[" [ Expression ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 //		| "chan" Type
 //		| FuncLiteral [ FactorSuffix ] .
 //	CompositeLit = "{" [ ElementList ] "}" .

@@ -7090,6 +7090,14 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		// the single selector after it. Anything else in front of a literal -- an
 		// index, a call, a longer selector run -- names no type at all.
 		t := litType{name: id}
+		// A BRACKETED literal's suffix comes after it, not before: `[]int{1, 2, 3}[0]`
+		// indexes the literal, where `pkg.T{...}` qualifies its type. The two are told
+		// apart by the leading identifier, which only the qualified form has -- the
+		// bracketed alternative starts with "[". Without this the trailing suffix was
+		// read as a qualifier that names no type.
+		if hasSuffix && !hasID {
+			hasSuffix = false
+		}
 		if hasSuffix {
 			sel, ok := f.fieldSelector(suffix)
 			if !ok {

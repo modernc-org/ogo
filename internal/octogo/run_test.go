@@ -2369,6 +2369,57 @@ func main() {
 		want: "1 2 3\n",
 	},
 	{
+		name: "parentheses where the parser needs them",
+		src: `type Row [3]int
+
+type Nums []int
+
+type P struct {
+	x int
+	y int
+}
+
+func dbl(n int) int { return n * 2 }
+
+var q Row
+
+func main() {
+	// A parenthesised expression carrying a suffix. Ordinary Go, and rejected
+	// here until the Factor rule's parenthesised alternative gained one.
+	var a [3]int
+	a[1] = 5
+	var s P
+	s.y = 4
+	println((a)[1], (s).y, (dbl)(21))
+
+	xs := []int{7, 8, 9}
+	println((xs)[2])
+
+	// A literal of a bracketed type, read where it stands. The literal binds to a
+	// temporary and the steps read that -- an array has no C value to index.
+	println([]int{1, 2, 3}[1], [3]int{4, 5, 6}[2])
+	println([2]P{{1, 2}, {3, 4}}[1].y)
+
+	v := []int{10, 20, 30}[1]
+	w := [3]int{40, 50, 60}[2]
+	println(v, w)
+
+	// A conversion to an unnamed composite type, which the grammar can only spell
+	// parenthesised. Between a defined type and what it is defined over nothing
+	// about the value changes, so the operand is the answer.
+	q[0] = 11
+	q[2] = 13
+	var b [3]int = ([3]int)(q)
+	println(b[0], ([3]int)(q)[2])
+
+	var ns Nums = []int{1, 2, 3}
+	ys := ([]int)(ns)
+	println(len(ys), ys[1])
+}
+`,
+		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
+	},
+	{
 		name: "a multi-result function as a value",
 		src: `type Ops struct {
 	dm func(int, int) (int, int)

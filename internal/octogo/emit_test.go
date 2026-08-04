@@ -5368,6 +5368,46 @@ func main() {
 	}
 }
 
+// TestEmitCParenRestriction pins the two sides of the parenthesis restriction: the
+// bare conversion to an unnamed composite type is a SYNTAX error (the grammar cannot
+// describe it without making `func() []int` ambiguous), and the parenthesised form
+// is accepted only where it is the identity -- a conversion that would change the
+// representation allocates, which this target cannot do.
+//
+// See "Parentheses where the parser needs them" in specs.go for when a restriction
+// like this is allowed at all.
+func TestEmitCParenRestriction(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "bare conversion does not parse",
+			src:  "type Nums []int\n\nvar ns Nums\n\nfunc main() { println(len([]int(ns))) }\n",
+			want: "expected",
+		},
+		{
+			name: "parenthesised, but not the identity",
+			src:  "func main() {\n\ts := \"hi\"\n\tprintln(([]byte)(s)[0])\n}\n",
+			want: "only supported where it changes nothing about the value",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				if !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("expected %q, got %v", test.want, err)
+				}
+				return
+			}
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 // TestEmitCArrayConvNotAddressable pins the three shapes Go rejects for a
 // conversion to a defined array type: a conversion's result is a VALUE, so it can be
 // read but not written, addressed or sliced.

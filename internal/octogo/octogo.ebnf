@@ -74,8 +74,8 @@ Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
 	| float_lit
 	| string_lit
 	| rune_lit
-	| "(" Expression ")"
-	| "[" [ Expression ] "]" Type [ CompositeLit ]
+	| "(" Expression ")" [ FactorSuffix ]
+	| "[" [ Expression ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 	| "chan" Type
 	| FuncLiteral [ FactorSuffix ] .
 CompositeLit = "{" [ ElementList ] "}" .

@@ -7220,18 +7220,7 @@ func (e *emitter) hoistLit(typeAST []int32, lit Node) (string, bool) {
 	if _, ok := e.litSliceType(typeAST); !ok {
 		return "", false
 	}
-	name := e.newTmp()
-	saved := e.indent
-	e.indent = 0
-	text := e.captureC(func() { e.emitArrayLitVar(name, typeAST, lit, false) })
-	e.indent = saved
-	if text == "" {
-		return "", false
-	}
-	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
-		e.prologue = append(e.prologue, line+"\n")
-	}
-	return name, true
+	return e.hoistLitVar(typeAST, lit)
 }
 
 // hoistArrayLitExpr binds an ARRAY literal standing in expression position to a
@@ -7262,18 +7251,7 @@ func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
 	if _, isArray := e.arrayDim(typeAST); !isArray {
 		return "", false
 	}
-	name := e.newTmp()
-	saved := e.indent
-	e.indent = 0
-	text := e.captureC(func() { e.emitArrayLitVar(name, typeAST, lit, false) })
-	e.indent = saved
-	if text == "" {
-		return "", false
-	}
-	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
-		e.prologue = append(e.prologue, line+"\n")
-	}
-	return name, true
+	return e.hoistLitVar(typeAST, lit)
 }
 
 // arraySourceC names what an array-valued right-hand side is, for a copy to read
@@ -7288,6 +7266,111 @@ func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 		return "", false
 	}
 	return e.hoistArrayLitExpr(ast)
+}
+
+// hoistLitVar binds a composite literal to a temporary of this frame, declared
+// before the statement, and answers with its name. It is the shared body of the
+// slice and array hoists, which differ only in which literals they will take.
+func (e *emitter) hoistLitVar(typeAST []int32, lit Node) (string, bool) {
+	name := e.newTmp()
+	saved := e.indent
+	e.indent = 0
+	text := e.captureC(func() { e.emitArrayLitVar(name, typeAST, lit, false) })
+	e.indent = saved
+	if text == "" {
+		return "", false
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		e.prologue = append(e.prologue, line+"\n")
+	}
+	return name, true
+}
+
+// factorLitIndexed recognises a literal of a BRACKETED type with an index or
+// selector run after it -- `[]int{1, 2, 3}[0]`, `[2]P{{1, 2}, {3, 4}}[1].x`. The
+// literal is bound to a temporary and the steps read that, which is the only way an
+// ARRAY literal can be indexed at all: C has no array value for the steps to apply
+// to. A named type's literal, `Row{1, 2, 3}[0]`, is not this shape -- it goes
+// through the identifier alternative, whose suffix comes BEFORE the literal.
+func (e *emitter) factorLitIndexed(fac Node) (typeAST []int32, lit Node, steps []Node, ok bool) {
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LBRACK {
+		return nil, Node{}, nil, false
+	}
+	if kids[len(kids)-1].sym != FactorSuffix || kids[len(kids)-2].sym != CompositeLit {
+		return nil, Node{}, nil, false
+	}
+	if steps = slices.Collect(it(kids[len(kids)-1].ast)); !isAccessChain(steps) {
+		return nil, Node{}, nil, false
+	}
+	// The Factor's own nodes are the bracketed type: arrayDim and sliceType look
+	// only for the length Expression and the element Type, and ignore the rest.
+	return fac.ast, kids[len(kids)-2], steps, true
+}
+
+// factorBracketConv recognises a conversion whose target is an UNNAMED composite
+// type, `([]int)(xs)` / `([3]int)(q)`, reached here through unparenKids -- the
+// parentheses are what let an LL(1) grammar spell it (see "Parentheses where the
+// parser needs them" in specs.go). It answers with the target type, the operand and
+// whatever follows the call.
+func (e *emitter) factorBracketConv(fac Node) (typeAST []int32, arg []int32, steps []Node, ok bool) {
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return nil, nil, nil, false
+	}
+	// The parenthesised type: its own factor's AST is what arrayDim and sliceType
+	// read, so it is kept whole rather than reduced to nodes.
+	inner, isFac := e.soleFactorNode(kids[1].ast)
+	if !isFac {
+		return nil, nil, nil, false
+	}
+	innerKids := slices.Collect(it(inner.ast))
+	if len(innerKids) == 0 || innerKids[0].sym != 0 || e.f.ch(innerKids[0].tok) != LBRACK {
+		return nil, nil, nil, false
+	}
+	for _, k := range innerKids {
+		if k.sym == FactorSuffix || k.sym == CompositeLit {
+			return nil, nil, nil, false
+		}
+	}
+	typeAST = inner.ast
+	steps = slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 || steps[0].sym != CallSuffix {
+		return nil, nil, nil, false
+	}
+	args := e.callArgExprs(steps[0].ast)
+	if len(args) != 1 {
+		return nil, nil, nil, false
+	}
+	return typeAST, args[0].ast, steps[1:], true
+}
+
+// bracketConvOperand answers with the C text of a bracketed conversion whose target
+// has the operand's own representation, and with whether it is one at all.
+//
+// A conversion between an unnamed composite type and a defined type over it changes
+// nothing: `type Row [3]int` and `[3]int` are the same storage, as are `type Nums
+// []int` and `[]int`. So the operand IS the answer. A conversion that would change
+// the representation -- `([]byte)(s)` from a string -- is not identity and is left
+// to the refusal below, which says what is actually wrong with it.
+func (e *emitter) bracketConvOperand(typeAST []int32, arg []int32) (string, bool) {
+	name, isName := e.exprIdent(arg)
+	if !isName {
+		return "", false
+	}
+	if a, isArray := e.arrayDim(typeAST); isArray {
+		if v, isVar := e.arrayVar(name); isVar && v.elem == a.elem && v.declSuffix() == a.declSuffix() {
+			return e.varRef(name), true
+		}
+		return "", false
+	}
+	if elem, isSlice := e.litSliceType(typeAST); isSlice {
+		if el, isVar := e.sliceElem(name); isVar && el == elem {
+			return e.varRef(name), true
+		}
+	}
+	return "", false
 }
 
 // litSliceType is sliceType for the type of a composite LITERAL, where a defined
@@ -8025,6 +8108,41 @@ func fitsCInt(v int64) bool { return v >= math.MinInt32 && v <= math.MaxInt32 }
 // children of the Factor it consists of, for a caller that matches a Factor shape
 // (factorCall, factorFieldAccess). An expression that is not a single factor
 // yields whatever level it stops at, which those matchers then reject.
+// unparenKids reduces a Factor written `(x) suffix` to the kids of `x suffix`, so
+// every recogniser below sees the shape it already knows. `(a)[1]`, `(s).v` and
+// `(dbl)(21)` are ordinary Go and mean exactly what the unparenthesised forms mean,
+// and a parenthesised TYPE is how a conversion the LL(1) grammar cannot spell
+// directly is written -- `([]byte)(s)`, `([3]int)(q)`. See "Parentheses where the
+// parser needs them" in specs.go.
+//
+// Only a parenthesised expression with NO suffix of its own is unwrapped. Splicing
+// two suffix runs together -- `(a[0])[1]` -- would hand the recognisers a shape with
+// two FactorSuffix nodes, which none of them match, so that keeps its refusal rather
+// than becoming a silently different tree.
+func (e *emitter) unparenKids(kids []Node) []Node {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return kids
+	}
+	inner := e.factorKids(kids[1].ast)
+	if len(inner) == 0 {
+		return kids
+	}
+	// The inner factor must carry no suffix of its own.
+	for _, k := range inner {
+		if k.sym == FactorSuffix || k.sym == CompositeLit {
+			return kids
+		}
+	}
+	// A parenthesised composite TYPE is a conversion, and factorBracketConv reads it
+	// from the unreduced node -- the type it needs is the inner factor's own AST,
+	// which splicing the nodes out here would lose.
+	if inner[0].sym == 0 && e.f.ch(inner[0].tok) == LBRACK {
+		return kids
+	}
+	return append(slices.Clone(inner), kids[3])
+}
+
 func (e *emitter) factorKids(ast []int32) []Node {
 	kids := slices.Collect(it(ast))
 	for len(kids) == 1 && kids[0].sym != 0 {
@@ -14619,6 +14737,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.inferNode(kids[1])
 		}
+		kids = e.unparenKids(kids)
 		if elem, _, ok := e.recvOperand(n, kids); ok {
 			return elem, true
 		}
@@ -14683,6 +14802,37 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// "x.(T)" is the pointer that was put in, read back out.
 			if _, _, concrete, ok := e.typeAssertionKids(kids); ok {
 				return concrete + "*", true
+			}
+			// A bracketed conversion types as its TARGET, the operand having the
+			// same representation.
+			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
+				if _, isID := e.bracketConvOperand(typeAST, arg); !isID || len(steps) != 0 {
+					return "", false
+				}
+				if elem, isSlice := e.litSliceType(typeAST); isSlice {
+					e.needSlice(elem)
+					return sliceCName(elem), true
+				}
+				return "", false // an array has no C value type to name here
+			}
+			// `[]int{1, 2, 3}[0]` types as the literal's ELEMENT. Typed from the
+			// literal rather than by walking a hoisted temporary, since inferring a
+			// type must emit nothing; a longer chain than one index falls through to
+			// the paths below rather than being guessed at.
+			if typeAST, _, steps, ok := e.factorLitIndexed(n); ok {
+				if len(steps) != 1 || steps[0].sym != Index {
+					return "", false
+				}
+				if _, _, _, isSlice := e.sliceParts(steps[0].ast); isSlice {
+					return "", false
+				}
+				if a, isArray := e.arrayDim(typeAST); isArray {
+					return a.elem, true
+				}
+				if elem, isSlice := e.litSliceType(typeAST); isSlice {
+					return elem, true
+				}
+				return "", false
 			}
 			// "T{...}" is a value of T, and a struct's C type is the typedef named
 			// after it, so the literal types itself.
@@ -15430,6 +15580,7 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(")")
 			return
 		}
+		kids = e.unparenKids(kids)
 		// A negated wide literal, "-987654321098". It reaches no binary level, so it
 		// is folded here as well: written out as C source it is a unary minus, which
 		// the target's compiler folds in no aggregate initializer at all. The fold
@@ -15488,6 +15639,37 @@ func (e *emitter) emitExprNode(n Node) {
 				e.prologue = append(e.prologue, "if (!("+e.assertOKC(operand, iface, concrete)+")) "+
 					"ogo_panic(\"interface conversion: "+e.goTypeName(iface)+" is not *"+e.goTypeName(concrete)+"\");\n")
 				e.emit(e.assertValueC(operand, concrete))
+				return
+			}
+			// `([]int)(xs)` / `([3]int)(q)` -- a conversion to an unnamed composite
+			// type, written parenthesised because the grammar cannot spell it bare.
+			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
+				text, isID := e.bracketConvOperand(typeAST, arg)
+				if !isID {
+					e.fail("a conversion to %s is only supported where it changes nothing about the value, "+
+						"from a defined type over it", e.litTypeName(typeAST))
+					return
+				}
+				if len(steps) == 0 {
+					e.emit(text)
+					return
+				}
+				if _, ok := e.emitAccessChain(text, steps); ok {
+					return
+				}
+				e.fail("a conversion to %s cannot be read through this suffix", e.litTypeName(typeAST))
+				return
+			}
+			// `[]int{1, 2, 3}[0]` -- a bracketed literal read through a suffix. The
+			// literal becomes a temporary and the steps apply to that, which is what
+			// gives an array literal something indexable to be.
+			if typeAST, lit, steps, ok := e.factorLitIndexed(n); ok {
+				if name, ok := e.hoistLitVar(typeAST, lit); ok {
+					if _, ok := e.emitAccessChain(name, steps); ok {
+						return
+					}
+				}
+				e.fail("a %s literal cannot be read through this suffix", e.litTypeName(typeAST))
 				return
 			}
 			// A literal of a DEFINED array or slice type is matched first: its

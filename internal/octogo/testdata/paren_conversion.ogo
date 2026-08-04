@@ -1,0 +1,32 @@
+// A conversion whose target is an UNNAMED composite type is written parenthesised:
+// `([]int)(xs)`, not `[]int(xs)`. Both are valid Go; only the parenthesised one is
+// describable in the LL(1) grammar this compiler's parser is generated from, and
+// specs.go's "Parentheses where the parser needs them" is the rule that permits
+// requiring it.
+//
+// A conversion whose target is a NAME needs no parentheses and never did.
+
+type Row [3]int
+
+type Nums []int
+
+var q Row
+
+var ns Nums
+
+func main() {
+	// Between a defined type and what it is defined over, nothing about the value
+	// changes, so these are the identity and the operand is the answer.
+	a := ([3]int)(q)
+	println(a[0])
+
+	ys := ([]int)(ns)
+	println(len(ys))
+
+	// The named direction, which needs no help.
+	r := Row(a)
+	println(r[0])
+
+	// A parenthesised expression carrying a suffix is ordinary Go too.
+	println((a)[1], (ys)[0])
+}
