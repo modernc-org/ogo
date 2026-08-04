@@ -1,0 +1,45 @@
+// A channel held in a struct field. A channel is a pointer to its rendezvous cell,
+// so a field holding one is an ordinary reference: the struct type allocates
+// nothing, the declaration of a VARIABLE owns a cell per channel field, and a copy
+// of the variable shares the channel -- which is what a copy of a channel does in
+// Go too.
+
+type ports struct {
+	tx chan int
+	rx chan int
+	n  int
+}
+
+type Ch chan int
+
+type named struct {
+	c Ch
+}
+
+var p ports
+
+var nm named
+
+func ok() {
+	p.tx <- 1
+	println(<-p.rx)
+
+	// A defined type over a channel is a channel here as much as anywhere.
+	nm.c <- 2
+	println(<-nm.c)
+
+	// A local struct's declaration owns cells too.
+	var q ports
+	q.tx = p.tx
+	println(<-q.rx)
+}
+
+func notAChannel() {
+	// ERROR invalid operation: cannot send to non-channel
+	p.n <- 1
+}
+
+func wrongElement() {
+	// ERROR cannot use "s" of type string as type int in send
+	p.tx <- "s"
+}

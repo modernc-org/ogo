@@ -26,6 +26,21 @@ Releases before v0.9.0 predate this file; see
   body's block scope has been left, where a local's name no longer types at all. A
   string would have printed as the first word of its header and a bool as `1`. The
   captured temporary carries its type, so that is now what chooses the format.
+- **A channel may be held in a struct field.** `p.tx <- v` and `<-p.rx` work, for a
+  written `chan T` and for a defined type over one, on a package-level variable and
+  on a local, nested structs included.
+
+  There turned out to be no design question. A channel is already a *pointer* to its
+  rendezvous cell — it has to be, or handing one to a goroutine would hand it a copy
+  — so a field holding one needs no new representation, and **copying the struct
+  shares the channel**, which is exactly what copying a channel does in Go. The one
+  rule is where the cell comes from, and it is the rule a channel variable already
+  obeys: the *declaration* owns it. A struct type allocates nothing; two variables of
+  one type have a channel each.
+
+  Not yet: through an array of such structs, `bs[0].ch <- v`, or in a `select`
+  clause, `case <-x.a:`. Both are the same missing step rather than anything of the
+  design.
 - **Two documented limits were gone and nobody had noticed.** A call *three deep*,
   `chooser()(0)(6)`, computed 0 on the board at every optimization level while the
   host was right — a silent wrong answer — and a call written directly on an array

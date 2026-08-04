@@ -3231,7 +3231,8 @@ func (f *File) commOp(s *Scope, op Node) {
 		// "case ch <- v": the AssignHead is the channel, the Expression the value.
 		f.checkNames(s, operand)
 		if id, ok := f.assignHeadIdent(assignHead); ok {
-			f.checkSend(s, id, operand)
+			fld, _ := f.postfixField([]Node{postfixComm})
+			f.checkSend(s, id, fld, operand)
 		}
 	}
 }
@@ -3804,7 +3805,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
 	if op == ARROW {
 		if len(lhs) == 1 && len(rhs) == 1 {
-			f.checkSend(s, lhs[0], rhs[0])
+			fld, _ := f.postfixField([]Node{postfix})
+			f.checkSend(s, lhs[0], fld, rhs[0])
 		}
 		return
 	}
@@ -4592,7 +4594,7 @@ func countUnits(n int, unit string) string {
 // value v must match the channel's element type. The channel operand is resolved
 // here -- unlike an "=" target it is not seen by checkAssignment's target loop --
 // so an undefined or blank channel is reported, mirroring checkDerefAssign.
-func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
+func (f *File) checkSend(s *Scope, chTok Token, field Token, valNode Node) {
 	if f.blankRead(chTok) { // "_ <- v" reads "_" as a channel
 		return
 	}
@@ -4603,17 +4605,29 @@ func (f *File) checkSend(s *Scope, chTok Token, valNode Node) {
 		}
 		return // a defined non-variable is left to its own check, as in checkDerefAssign
 	}
+	// The channel may be a FIELD of the target rather than the target: `ports.tx <-
+	// v`. A channel is a pointer to its cell, so a field holding one is a channel as
+	// much as a variable is.
 	elem, hasElem, isChan := f.chanElemOf(d)
+	elemName := d.chanElemName
+	if field.IsValid() {
+		elem, hasElem, isChan = f.fieldChan(s, chTok, field)
+		elemName = f.fieldChanElemName(s, chTok, field)
+	}
 	if !isChan {
-		f.err(chTok.Position(), "invalid operation: cannot send to non-channel")
+		at := chTok
+		if field.IsValid() {
+			at = field
+		}
+		f.err(at.Position(), "invalid operation: cannot send to non-channel")
 		return
 	}
 	f.checkEscapeCross(s, valNode, true)
 	// A channel of interface type asks implements, as every other position a value
 	// meets a named type does. The element's Kind cannot answer it -- a named
 	// interface has none -- so the element's NAME is what the declaration retains.
-	if d.chanElemName.IsValid() {
-		f.checkImplements(s, d.chanElemName.Src(), valNode, "send")
+	if elemName.IsValid() {
+		f.checkImplements(s, elemName.Src(), valNode, "send")
 	}
 	vk, vok := f.exprType(s, valNode)
 	if !hasElem || !vok {
@@ -6706,15 +6720,65 @@ func (f *File) chanElemOf(d *VarDeclaration) (elem Kind, hasElem, isChan bool) {
 	return d.chanElemKind, d.hasChanElemKind, d.isChan
 }
 
-// exprChan reports whether expression n is a bare channel variable and, if so,
-// its element Kind. Like exprIsPointer it is deliberately shallow.
+// exprChan reports whether expression n names a channel and, if so, its element
+// Kind. A channel is a reference -- it is a pointer to its rendezvous cell -- so a
+// struct FIELD holding one is a channel exactly as a variable is, and what differs
+// between them is only where the name is found. Like exprIsPointer it is
+// deliberately shallow: one field, not a chain.
 func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 	if id, ok := f.exprIdent(n); ok {
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
 			return f.chanElemOf(d)
 		}
 	}
+	if head, field, ok := f.exprFieldRead(n); ok {
+		return f.fieldChan(s, head, field)
+	}
 	return 0, false, false
+}
+
+// fieldChan resolves a struct field as a channel: its element Kind, and whether the
+// field is a channel at all. It follows a defined type over a channel the way
+// chanElem does, that being the same question asked of the field's written type.
+func (f *File) fieldChan(s *Scope, head, field Token) (elem Kind, hasElem, isChan bool) {
+	tn := f.fieldTypeNode(s, head, field)
+	if tn == nil {
+		return 0, false, false
+	}
+	return f.chanElem(s, tn)
+}
+
+// fieldChanElemName names a channel field's element type, for the checks a Kind
+// cannot answer -- a named interface has none. It is chanElemTypeName asked of a
+// field rather than of a variable.
+func (f *File) fieldChanElemName(s *Scope, head, field Token) Token {
+	if tn := f.fieldTypeNode(s, head, field); tn != nil {
+		return f.chanElemTypeName(s, tn)
+	}
+	return Token{}
+}
+
+// postfixField returns the single field a postfix selects, for "b.ch <- v" and
+// "case b.ch <- v", where the channel is a field of the head rather than the head.
+// A longer chain or an index is not one field and is left unresolved.
+func (f *File) postfixField(postfix []Node) (Token, bool) {
+	var fld Token
+	n := 0
+	for _, p := range postfix {
+		for c := range it(p.ast) {
+			switch c.sym {
+			case Selector:
+				for d := range it(c.ast) {
+					if d.sym == 0 && f.ch(d.tok) == IDENT {
+						fld, n = f.tok(d.tok), n+1
+					}
+				}
+			case Index:
+				return Token{}, false
+			}
+		}
+	}
+	return fld, n == 1
 }
 
 // receiveFactor reports whether expression n is exactly a receive "<-ch" and,

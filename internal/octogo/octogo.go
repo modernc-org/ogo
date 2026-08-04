@@ -440,8 +440,9 @@
 //
 // # A channel held in a struct field
 //
-// Not implemented. The design is settled, though, and the note that used to say
-// otherwise was wrong about what the open question was.
+// Implemented for a variable's field, package-level and local; not yet through an
+// array of such structs, nor in a select clause. The note that used to say the
+// design was the blocker was wrong about what the open question was.
 //
 // REPRESENTATION: nothing new is needed. `chan T` is already a POINTER --
 // `typedef ogo_chan_T_cell* ogo_chan_T` -- because a channel is a reference type in
@@ -472,17 +473,25 @@
 // of such structs needs one cell per element -- a static array of cells and a loop
 // at init -- which is a separate increment, not a separate design.
 //
-// THE WORK, measured rather than guessed:
+// WHAT IT TOOK, and the one thing that was not obvious. The checker resolves a
+// channel operand in one place (exprChan) and a send in another (checkSend), and
+// both now ask a field as readily as a variable. The emitter reads the type through
+// fieldType where it read it off the root variable. The cells follow the rule above.
 //
-//   - The emitter's send path takes the channel's C type from the target's ROOT
-//     variable, so `ports.tx <- v` looks like a send to a struct. lhs already
-//     renders the field access correctly -- a channel is a pointer, so the field
-//     access needs nothing special -- and the fix is to read the type through
-//     fieldType instead. Nine lines, and the whole suite still passes with them.
-//   - The checker is the bulk. checkSend takes a single Token for the channel, and
-//     chanElemOf reads a VarDeclaration's own type, so neither can see a field.
-//     Receives and select clauses resolve the same way. That is the piece to build.
-//   - Then the cell, per the rule above.
+// The one that would have been a silent bug: the channel TYPEDEF used to be emitted
+// with its helpers, after the typedef section, because nothing had ever needed it
+// earlier. A struct with a channel field does -- C wants the type before the struct
+// that holds one -- so it is a typedef unit now, with its element as a dependency,
+// and the helpers stay where they were (they call ogo_panic and the P2 intrinsics).
+//
+// And the one that WAS a silent bug, caught by asking rather than by a test: a local
+// struct with a channel field compiled before its cells were minted, leaving the
+// field a null pointer that faults at the first send. A feature missing that way is
+// worse than one refused.
+//
+// STILL MISSING: an array of such structs, and a select clause on a field. Both are
+// the same step -- the operand resolves as a variable or as one field, and neither
+// reaches an index or a comm clause -- and neither is a question of design.
 //
 // # Deferred, deliberately
 //

@@ -1849,6 +1849,72 @@ func main() {
 		want: "12\n36\n12\n14 48\n",
 	},
 	{
+		// A channel held in a struct field. A channel is already a POINTER to its
+		// rendezvous cell -- it has to be, or handing one to a goroutine would hand
+		// it a copy -- so a field holding one needs no new representation, and a copy
+		// of the struct shares the channel exactly as a copy of a channel does in Go.
+		//
+		// The one rule is where the cell comes from, and it is the rule a channel
+		// variable already obeys: the DECLARATION owns it. So a struct TYPE allocates
+		// nothing, two variables of one type have a channel each, and a copy shares.
+		//
+		// Every line of this prints what real Go prints for the same program, with
+		// the make() calls Go needs and this target does not.
+		name: "a channel held in a struct field",
+		src: `type ports struct {
+	tx   chan int
+	rx   chan int
+	name string
+}
+
+type Ch chan int
+
+type named struct {
+	c Ch
+	n int
+}
+
+var p ports
+
+var q ports
+
+var nm named
+
+func worker() {
+	v := <-p.tx
+	p.rx <- v * 2
+}
+
+func tag() {
+	nm.c <- nm.n
+}
+
+func main() {
+	// Two variables of one struct type have a channel each: the declaration owns
+	// the cell, so p.tx and q.tx are different channels.
+	go worker()
+	p.tx <- 21
+	println(<-p.rx)
+
+	// A copy shares the channel it was copied from, which is what a copy of a
+	// channel does in Go too.
+	r := p
+	go worker()
+	r.tx <- 5
+	println(<-r.rx)
+
+	// A defined type over a channel, held in a field.
+	nm.n = 7
+	go tag()
+	println(<-nm.c)
+
+	// The other variable's channels are its own and were never used.
+	println(q.name == "")
+}
+`,
+		want: "42\n10\n7\ntrue\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

@@ -264,14 +264,10 @@ broken.
   with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
-* A **channel held in a struct field**: a send or a receive on one is refused,
-  whether the field is written `chan T` or a defined type over one. A channel in a
-  variable, a parameter or a package-level declaration is fine. The design is
-  settled — a channel is already a pointer, so a field holding one needs no new
-  representation and copying the struct shares the channel exactly as Go does; the
-  declaration of a struct *variable* owns a cell per channel field, as a channel
-  variable's declaration already does. What is left is the work, most of it in the
-  checker. See `internal/octogo/octogo.go`.
+* A channel held in a struct field works, but not through an **array of such
+  structs** (`bs[0].ch <- v`) and not in a **`select` clause** (`case <-x.a:`).
+  Directly on a variable's field, `p.tx <- v` and `<-p.rx`, is fine, nested structs
+  included.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
 * A conversion to a defined array type may not be **indexed where it stands**,

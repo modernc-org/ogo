@@ -441,15 +441,34 @@ func (e *emitter) recvOperand(n Node, kids []Node) (elem, base string, ok bool) 
 // bare receive statement reaches it with the operator on the statement, so the two
 // cannot disagree about what channel is being read.
 func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
-	base, ok = e.exprIdent(ast)
-	if !ok {
+	if name, isName := e.exprIdent(ast); isName {
+		ct, isVar := e.varType(name)
+		if !isVar || !e.isChanCType(ct) {
+			return "", "", false
+		}
+		return e.chanElemByName[ct], e.varRef(name), true
+	}
+	// A channel held in a struct FIELD, `<-ports.rx`. A channel is a pointer to its
+	// cell, so the field access is what names it and nothing else changes.
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	// The operand arrives either wrapped in a Factor or already as one's children,
+	// depending on which caller asked; both are the same expression.
+	kids := nodes
+	if len(nodes) == 1 && nodes[0].sym == Factor {
+		kids = slices.Collect(it(nodes[0].ast))
+	}
+	root, fields, isField := e.factorFieldAccess(kids)
+	if !isField {
 		return "", "", false
 	}
-	ct, ok := e.varType(base)
-	if !ok || !e.isChanCType(ct) {
+	ct, okf := e.fieldType(root, fields)
+	if !okf || !e.isChanCType(ct) {
 		return "", "", false
 	}
-	return e.chanElemByName[ct], base, true
+	return e.chanElemByName[ct], e.fieldAccessC(root, fields), true
 }
 
 // goSite is one `go` statement: the callee's C name and the C types of its
@@ -1825,12 +1844,18 @@ func (e *emitter) isChanCType(ctype string) bool {
 // tests cannot see it, and the board case above is what guards it. Do not re-add
 // `inline` here; the call costs nothing next to the lock-and-yield loop it
 // guards.
+// chanTypedefDef is the cell struct and the channel type over it. It is a unit of
+// the TYPEDEF section rather than of the helpers below, because a struct field may
+// hold a channel and C wants the type declared before the struct that holds one.
+// The helpers cannot move with it: they call ogo_panic and the P2 intrinsics.
+func chanTypedefDef(elem string) string {
+	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; volatile %[1]s val; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
+		elem, chanCellCName(elem), chanCName(elem))
+}
+
 func (e *emitter) chanRuntimeDefs(elem string) string {
 	c, snd, rcv, ini := chanCName(elem), chanSendCName(elem), chanRecvCName(elem), chanInitCName(elem)
 	var b strings.Builder
-	fmt.Fprintf(&b, `typedef struct { int lock; volatile int full; volatile int taken; volatile %[2]s val; } %[6]s;
-typedef %[6]s* %[1]s;
-`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 	if e.chanInitElems[elem] {
 		fmt.Fprintf(&b, `static void %[5]s(%[1]s ch) {
 	ch->lock = _locknew();
@@ -2506,6 +2531,11 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// hand was neither.
 	for _, el := range sortedKeys(e.sliceElems) {
 		e.addTypedef(sliceCName(el), sliceTypedefDef(el), el+"*")
+	}
+	// A channel's typedef belongs here rather than with its helpers: a struct field
+	// may hold a channel, and C wants the type before the struct.
+	for _, el := range sortedKeys(e.chanElems) {
+		e.addTypedef(chanCName(el), chanTypedefDef(el), el)
 	}
 	for _, el := range sortedKeys(e.tryappendElems) {
 		e.addTypedef(appendokCName(el),
@@ -4039,7 +4069,64 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				e.chanInitElems[elem] = true
 				e.deferPkgInit(chanInitCName(elem) + "(" + gn + ");")
 			}
+			// A struct variable owns a cell per CHANNEL FIELD, on the same rule: the
+			// declaration owns the cell, the field is a reference to it. Declaring the
+			// struct TYPE allocates nothing, and a copy of the variable shares the
+			// channel, which is what a copy of a channel does in Go too.
+			e.emitChanFieldCells(gn, ctype)
 		}
+	}
+}
+
+// emitChanFieldCells mints a rendezvous cell for every channel field of a struct
+// variable and wires the field to it at package initialization, which is where a
+// channel variable's own cell is wired for the same reason: acquiring the lock is a
+// call, and C has no calls in a file-scope initializer.
+//
+// The rule is the one a channel variable already obeys -- the DECLARATION owns the
+// cell -- so a struct type declares nothing, two variables of one type have a
+// channel each, and a copy of a variable shares the channel it was copied from.
+// That last is not a compromise: a channel value is a reference in Go as well.
+func (e *emitter) emitChanFieldCells(gn, ctype string) {
+	for _, fld := range e.structs[ctype] {
+		if !e.isChanCType(fld.ctype) {
+			if _, nested := e.structs[fld.ctype]; nested && fld.dim.bound == "" {
+				// A struct field holding a struct with channel fields of its own.
+				e.emitChanFieldCells(gn+"."+e.fieldIdent(fld.name), fld.ctype)
+			}
+			continue
+		}
+		if fld.dim.bound != "" {
+			e.fail("a channel field that is an array is not supported yet")
+			return
+		}
+		elem := e.chanElemByName[fld.ctype]
+		cell := cIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell"
+		e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
+		e.deferPkgInit(gn + "." + e.fieldIdent(fld.name) + " = &" + cell + ";")
+		e.chanInitElems[elem] = true
+		e.deferPkgInit(chanInitCName(elem) + "(" + gn + "." + e.fieldIdent(fld.name) + ");")
+	}
+}
+
+// emitLocalChanFieldCells is emitChanFieldCells for a local struct: the cells are
+// still file-scope objects (their locks are taken once, before main), but the field
+// is wired at the declaration rather than at package initialization, because that is
+// where the variable comes into existence.
+func (e *emitter) emitLocalChanFieldCells(nm, ctype string) {
+	for _, fld := range e.structs[ctype] {
+		if !e.isChanCType(fld.ctype) {
+			if _, nested := e.structs[fld.ctype]; nested && fld.dim.bound == "" {
+				e.emitLocalChanFieldCells(nm+"."+e.fieldIdent(fld.name), fld.ctype)
+			}
+			continue
+		}
+		if fld.dim.bound != "" {
+			e.fail("a channel field that is an array is not supported yet")
+			return
+		}
+		e.ind()
+		e.emit(nm + "." + e.fieldIdent(fld.name) + " = &" + e.localChanCell(e.chanElemByName[fld.ctype]) + ";\n")
 	}
 }
 
@@ -6204,6 +6291,11 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.ind()
 				e.emit(nm + " = &" + e.localChanCell(e.chanElemByName[ctype]) + ";\n")
 			}
+			// A local struct owns a cell per channel field, on the same rule as a
+			// local channel: the declaration owns it. Without this the field would be
+			// a null pointer that builds and then faults at the first send, which is
+			// the worst way for a feature to be missing.
+			e.emitLocalChanFieldCells(nm, ctype)
 		}
 	}
 }
@@ -12003,7 +12095,18 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// `s[i].v[j] = e`. Tried first: the fixed shapes below cannot match it, and the
 	// chain is typed before anything is emitted, so a rejected one leaves no
 	// half-written statement.
-	if chain := postfix[:len(postfix)-1]; stars == "" && isAccessChain(chain) {
+	// A send whose channel is a field, `ports.tx <- v`, is a send and not an
+	// assignment to a chain: the tail is "<-", which no assignment tail matches.
+	// Asked before the chain path so it is not claimed and then refused there.
+	isFieldSend := false
+	if tail := postfix[len(postfix)-1]; tail.sym == PostfixOp {
+		for c := range it(tail.ast) {
+			if c.sym == 0 && e.f.ch(c.tok) == ARROW {
+				isFieldSend = true
+			}
+		}
+	}
+	if chain := postfix[:len(postfix)-1]; stars == "" && !isFieldSend && isAccessChain(chain) {
 		// A slice-valued target is a header assignment, `s[i].v = xs`, which C makes
 		// by copying the struct -- the view changes, the storage it names does not.
 		// Only when an index put it out of the fixed shapes' reach, though: a plain
@@ -12123,7 +12226,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	case ARROW:
 		// A send `ch <- v`. The receive form `x = <-ch` is an ordinary assignment
 		// whose right-hand side is a receive expression, so it does not come here.
-		ct, ok := e.varType(lhs)
+		// The channel may be a FIELD, `ports.tx <- v`. A channel is a pointer to its
+		// cell, so a field holding one is an ordinary pointer field and lhs already
+		// names it; only the type has to be looked up through the field rather than
+		// off the root variable.
+		ct, ok := e.varType(base)
+		if len(fields) != 0 {
+			ct, ok = e.fieldType(base, fields)
+		}
 		if !ok || !e.isChanCType(ct) {
 			e.fail("a send statement needs a channel on the left")
 			return
