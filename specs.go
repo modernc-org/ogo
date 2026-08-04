@@ -41,13 +41,29 @@
 // array/slice alternative -- `"[" [ Expression ] "]" Type [ CompositeLit ]` -- admits
 // a composite literal after the type but no FactorSuffix, so there is nowhere for a
 // CallSuffix to go; a conversion whose target is a NAME goes through the identifier
-// alternative, which has one. Fixing it is a grammar change (an optional
-// FactorSuffix on that alternative) and needs the LL(1) question answered first:
-// `[]T{...}` and `[]T(...)` would then both be reachable from the same prefix.
+// alternative, which has one.
+//
+// The LL(1) question is MEASURED, and the answer is no: the committed grammar
+// generates with zero First/Follow warnings, and every form of the obvious fix
+// introduces eight to ten. `[ FactorSuffix ]` on that alternative gives ten;
+// narrowing it to a suffix only after a literal (`[ CompositeLit [ FactorSuffix ] ]`)
+// or to indexes alone (`[ CompositeLit { Index } ]`) still gives eight. They are not
+// local to this rule either -- they land in `Signature` (on every token that can
+// start a Type) and in `HeaderFactor` -- so what a Factor may be followed by
+// propagates into where a function type's result ends. A parser generated from any
+// of them is choosing arbitrarily at those points, which is how a silent misparse
+// gets in.
+//
+// So this needs the grammar restructured around Signature/Type, or a parser that is
+// not LL(1), not a one-line alternative. Do not retry the one-liner: regenerate,
+// count the warnings, and confirm the baseline is still zero before assuming a
+// variant is clean.
+//
 // `[]byte(s)` would still be refused after parsing -- it allocates -- but as itself
 // rather than as a syntax error. The named direction, `Row(r)`, works and may be
-// indexed where it stands, and assigning between a defined array type and its
-// underlying one needs no conversion either way (`var a [3]int = q`).
+// indexed where it stands; a defined slice type gives the conversion a name too
+// (`type Bytes []byte; Bytes(...)`), and assigning between a defined array type and
+// its underlying one needs no conversion either way (`var a [3]int = q`).
 // TODO 20260804 An array literal cannot stand as an operand of an EXPRESSION,
 // `a == [3]int{1, 2, 3}`. An array is not a C value, so a literal stands only where
 // the position has a copy of its own to bind it for -- an argument, an assignment, a
