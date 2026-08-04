@@ -1656,10 +1656,6 @@ func (e *emitter) funcValueCType(cname string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if len(fv.res) > 1 {
-		e.fail("a function with more than one result cannot be used as a value yet")
-		return "", false
-	}
 	return e.funcTypeFor(fv), true
 }
 
@@ -1682,8 +1678,13 @@ func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 		params = "void"
 	}
 	ret := "void"
-	if len(resTypes) == 1 {
+	switch {
+	case len(resTypes) == 1:
 		ret = resTypes[0]
+	case len(resTypes) > 1:
+		// The shared result struct, which is what makes two functions of one
+		// signature return one C type and so lets the signature have a typedef.
+		ret = e.retStructNameOf(resTypes)
 	}
 	return funcValueType{key: ret + " (*)(" + params + ")", res: resTypes, params: paramTypes}
 }
@@ -1692,16 +1693,7 @@ func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 // the written type `func(...)...` and by a function name used as a value, so the
 // two agree by construction.
 func (e *emitter) funcTypeOfSig(sig []int32) (string, bool) {
-	fv := e.funcSigCParts(sig)
-	if len(fv.res) > 1 {
-		// A multi-result function returns a struct named after the function, not
-		// after its signature, so two functions of one type would return two
-		// different C types. Reconciling that needs a per-signature result struct;
-		// until then, say so rather than emit a mismatch.
-		e.fail("a function with more than one result cannot be used as a value yet")
-		return "", false
-	}
-	return e.funcTypeFor(fv), true
+	return e.funcTypeFor(e.funcSigCParts(sig)), true
 }
 
 // funcTypeFor returns the typedef standing for a C function-pointer signature,
@@ -2488,7 +2480,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, retStructs: map[string]bool{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2991,6 +2983,7 @@ type emitter struct {
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
 	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
+	retStructs         map[string]bool          // result-struct typedefs already emitted, keyed by name
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
 	anonStructNames    map[string]string        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
 	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
@@ -4617,15 +4610,7 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		e.funcParams[cname] = e.cParamTypes(sig)
 		if len(resTypes) > 1 {
-			text := e.captureC(func() {
-				e.emit("typedef struct { ")
-				for i, ct := range resTypes {
-					fmt.Fprintf(e.w, "%s _%d; ", ct, i)
-				}
-				e.emit("} " + e.retStructName(cname) + ";\n")
-			})
-			// Each result is held by value, so every one of their typedefs comes first.
-			e.addTypedef(e.retStructName(cname), text, resTypes...)
+			e.retStructNameOf(resTypes)
 		}
 	})
 }
@@ -5106,7 +5091,61 @@ func (e *emitter) declKey(decl []int32) string {
 }
 
 // retStructName is the C typedef name of a multi-result function's result struct.
-func (e *emitter) retStructName(fn string) string { return "ogo_ret_" + fn }
+func (e *emitter) retStructName(fn string) string { return e.retStructNameOf(e.funcRet[fn]) }
+
+// retStructNameOf is that name keyed by the RESULT TYPES rather than by the
+// function, and mints the typedef on first sight.
+//
+// Naming it after the function was what kept a multi-result function from being a
+// value: `divmod` and `split`, both `func(int, int) (int, int)`, returned
+// ogo_ret_divmod and ogo_ret_split, so there was no single C type for a variable of
+// that function type to return, and taking either as a value was refused. Keyed by
+// shape they return the same struct and the function type is spellable -- the same
+// reasoning anonStructType already uses for an anonymous struct, where Go gives two
+// of them one identity when their fields match.
+func (e *emitter) retStructNameOf(res []string) string {
+	if len(res) < 2 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("ogo_ret")
+	for _, ct := range res {
+		b.WriteByte('_')
+		b.WriteString(cTypeIdent(ct))
+	}
+	name := b.String()
+	if !e.retStructs[name] {
+		e.retStructs[name] = true
+		text := e.captureC(func() {
+			e.emit("typedef struct { ")
+			for i, ct := range res {
+				fmt.Fprintf(e.w, "%s _%d; ", ct, i)
+			}
+			e.emit("} " + name + ";\n")
+		})
+		// Each result is held by value, so every one of their typedefs comes first.
+		e.addTypedef(name, text, res...)
+	}
+	return name
+}
+
+// cTypeIdent folds a C type into the identifier text a generated name is built
+// from: a pointer becomes a "_p" suffix, and anything else that is not an
+// identifier character becomes an underscore.
+func cTypeIdent(ct string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(ct) {
+		switch {
+		case r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+		case r == '*':
+			b.WriteString("_p")
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
 
 // emitPrototypes emits a forward prototype for every user function and method in a
 // file (all but main, which C declares implicitly). Run before the definitions so a
@@ -13794,14 +13833,16 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.emitTryAppend(targets, declare, suffix[0].ast)
 		return
 	}
-	cname, resTypes, ok := e.callResultInfo(callee, suffix)
+	_, resTypes, ok := e.callResultInfo(callee, suffix)
 	if !ok || len(resTypes) != len(targets) {
 		e.fail("multiple-assignment target/result count mismatch")
 		return
 	}
 	tmp := e.newTmp()
 	e.ind()
-	e.emit(e.retStructName(cname) + " " + tmp + " = ")
+	// Keyed by the result TYPES, not by the callee: a call through a function value
+	// has no callee name to key on, and a named one gives the same struct either way.
+	e.emit(e.retStructNameOf(resTypes) + " " + tmp + " = ")
 	// A method reached through fields is emitted here rather than by emitCallExpr,
 	// which knows the two fixed call shapes and not this one: the receiver is the
 	// field chain, taken by address when the method wants a pointer.
@@ -13931,6 +13972,14 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 			}
 			return "", nil, false
 		}
+		// A struct FIELD holding a function value, `o.dm(17, 5)`: the field's own
+		// typedef says what a call through it yields. Asked before the method path,
+		// which would read the same `o.dm` as a method of o's type and find none.
+		if ct, okf := e.fieldType(recv, []string{member}); okf {
+			if res, isFunc := e.funcTypeRet[ct]; isFunc {
+				return "", res, true
+			}
+		}
 		if rct, isVar := e.varType(recv); isVar && e.isUserType(methodBaseType(rct)) {
 			cname = methodCName(methodBaseType(rct), member)
 		} else if prefix, isPkg := e.importQualifiers[recv]; isPkg {
@@ -13940,6 +13989,15 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 		}
 		resTypes, ok = e.funcRet[cname]
 		return cname, resTypes, ok
+	}
+	// A call THROUGH A VALUE, `f(17, 5)` where f holds a function: the results are
+	// the ones its typedef yields, the concrete function behind it being whatever it
+	// was last assigned. There is no cname -- nothing to name a result struct after
+	// -- which is why the callers key that off the result types instead.
+	if ct, isVar := e.varType(recv); isVar {
+		if res, isFunc := e.funcTypeRet[ct]; isFunc {
+			return "", res, true
+		}
 	}
 	cname = e.funcCallC(recv)
 	resTypes, ok = e.funcRet[cname]

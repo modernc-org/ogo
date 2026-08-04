@@ -2369,6 +2369,75 @@ func main() {
 		want: "1 2 3\n",
 	},
 	{
+		name: "a multi-result function as a value",
+		src: `type Ops struct {
+	dm func(int, int) (int, int)
+}
+
+func divmod(a int, b int) (int, int) { return a / b, a % b }
+
+// The same signature as divmod, which is the point: both return the ONE result
+// struct their result types name, so a variable of that function type can hold
+// either.
+func swap(a int, b int) (int, int) { return b, a }
+
+func flags(n int) (int, bool) { return n * 2, n > 0 }
+
+func nm(n int) (int, string) { return n + 1, "hi" }
+
+func narrow(n int) (int8, int16) { return int8(n), int16(n * 2) }
+
+func apply(f func(int, int) (int, int), a int, b int) int {
+	q, r := f(a, b)
+	return q + r
+}
+
+func main() {
+	f := divmod
+	q, r := f(17, 5)
+	println(q, r)
+
+	f = swap
+	x, y := f(1, 2)
+	println(x, y)
+
+	// A written function type, and results of two different types.
+	var g func(int) (int, bool) = flags
+	n, ok := g(3)
+	println(n, ok)
+
+	// Held in a struct field.
+	var o Ops
+	o.dm = divmod
+	a, b := o.dm(9, 4)
+	println(a, b)
+
+	// Passed as a parameter.
+	println(apply(divmod, 17, 5), apply(swap, 1, 2))
+
+	// A string result and narrow ones: the member kinds the backend diagnostic
+	// recorded below is about. It fires for a result struct whose members are not
+	// all machine words, so what those return is checked on the board here.
+	var t func(int) (int, string) = nm
+	c, u := t(7)
+	println(c, u)
+
+	var w func(int) (int8, int16) = narrow
+	p, v := w(3)
+	println(p, v)
+}
+`,
+		want: "3 2\n2 1\n6 true\n2 1\n5 3\n8 hi\n3 6\n",
+		// The types are identical -- both spelled by the same typedef -- and the
+		// values this returns are checked on real hardware right here, for a bool, a
+		// string and two narrow ints. The target's compiler unifies a result struct
+		// of machine words and calls anything else "unknown type", so a result list
+		// of plain ints is silent and a mixed one is not. It is the diagnostic that
+		// is wrong, not the code; doc/funcptr-nonword-struct.c has the measurements
+		// and the cast that would silence it, with why that was declined.
+		backendWarning: "incompatible pointer types in assignment",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

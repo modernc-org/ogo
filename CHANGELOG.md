@@ -140,6 +140,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A function with more than one result may be used as a value.** `f := divmod`,
+  `var g func(int) (int, bool) = flags`, a struct field of that type and a parameter
+  of it all work, and a call through one destructures as a direct call does. The
+  result struct is keyed by the RESULT TYPES rather than by the function, so two
+  functions of one signature return the same C type and the signature has a typedef
+  to name -- which is what the refusal was about. `go` through a function value is
+  still refused: starting a cog needs the callee's name.
+
 - **An array literal stands as a value where the position copies.** `take([3]int{1,
   2, 3})`, `a = [3]int{1, 2, 3}`, `s.a = [3]int{1, 2, 3}` and `return [3]int{1, 2,
   3}` all work; each binds the literal to a temporary of the frame that the copy
