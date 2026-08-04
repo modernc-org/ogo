@@ -138,6 +138,22 @@ Releases before v0.9.0 predate this file; see
   declaration: the constant evaluator does not resolve an import qualifier, which is
   a general gap rather than a `p2` one.
 
+### Behaviour changes
+
+- **A name C has reserved is renamed in the emitted C wherever it appears**, not
+  only at file scope. A local, parameter, struct field or method named `static`,
+  `char`, `long`, `do`, `printf`, `NULL` or any other C keyword or unshadowable
+  macro used to reach the backend verbatim and fail there, with a C syntax error
+  against generated code. They are ordinary OctoGo identifiers and now work in
+  every position. Top-level names of C *type* keywords (`var char = 7`) were
+  broken too, and are fixed by the same change.
+
+  An ordinary library function -- `memcpy`, `atoi`, `strlen` -- is still left
+  alone as a local or a field, since shadowing is all C needs there; only a
+  file-scope symbol of that name moves, as before. The exception is `memcpy`,
+  which the emitter itself calls inside a user function body to copy an array,
+  so a local of that name would shadow the emitter's own call.
+
 ### Diagnostics
 
 - **A file that does not parse is no longer type-checked**, so a syntax error is

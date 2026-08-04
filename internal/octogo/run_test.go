@@ -2211,6 +2211,52 @@ func main() {
 		want: "10 30\n3 3\n80\n7\n9\n10 99 10\n",
 	},
 	{
+		name: "a name C has spoken for, in every position",
+		src: `// Every identifier here is a C keyword or an unshadowable macro. They are
+// ordinary OctoGo identifiers, so a program is entitled to them; the emitter
+// renames them rather than handing C a declaration it cannot parse.
+type Shape interface {
+	static() int
+	long() int
+}
+
+type Sq struct {
+	double int
+}
+
+func (s *Sq) static() int { return s.double * 2 }
+
+func (s *Sq) long() int { return s.double + 1 }
+
+// A method reached through an interface is a VTABLE FIELD, so the name has to be
+// renamed identically where the table is built and where it is read.
+func do(char int) int { return char * 10 }
+
+var register = 3
+
+var printf = 4
+
+func main() {
+	q := Sq{double: 5}
+	var sh Shape = &q
+	println(sh.static(), sh.long())
+	println(q.static(), do(register), printf)
+
+	union := 7
+	println(union)
+
+	// An ordinary library FUNCTION is not renamed: a local of that name shadows
+	// the header's declaration, which is all C needs.
+	memcpy := 2
+	var a [2]int
+	a[0] = 9
+	b := a
+	println(memcpy, b[0])
+}
+`,
+		want: "10 6\n10 30 4\n7\n2 9\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

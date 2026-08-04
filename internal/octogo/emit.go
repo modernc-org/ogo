@@ -38,10 +38,79 @@ func cIdent(name string) string {
 	return b.String()
 }
 
-// cReserved is the set of names the emitted C has already spoken for: C's own
-// keywords, and the library functions and macros declared by the headers the output
-// includes -- <stdio.h>, <stdlib.h>, <string.h> and propeller2.h. A user symbol of
-// one of these names is emitted with the ogo_ prefix instead.
+// userIdent is the C spelling of a name the USER chose -- a variable, parameter,
+// field, method or top-level symbol. It escapes the name as cIdent does and renames
+// it if C has the name reserved, which is what lets a program declare a `static` or
+// a `char`.
+//
+// It is deliberately NOT cIdent itself. cIdent also spells C TYPE names into the
+// generated helper names -- ogo_mod_int, ogo_shl_uint32_t -- where "int" is C's own
+// type and must stay exactly that. Renaming there produced ogo_mod_ogo_kw_int, which
+// is why the two are separate funnels: one for names C gave us, one for names the
+// program did.
+func userIdent(name string) string {
+	if cUnusable[name] {
+		return "ogo_kw_" + name
+	}
+	return cIdent(name)
+}
+
+// cUnusable is the set of names that cannot be a C identifier ANYWHERE -- C's own
+// keywords, the flexcc extensions, and the four library names its headers make
+// MACROS of. Being reserved by the language or replaced by the preprocessor, a
+// declaration of one is a syntax error wherever it stands: at file scope, as a
+// local, as a parameter, or as a struct field. cIdent renames them.
+//
+// This is the set shadowing cannot rescue, which is what separates it from
+// cReserved below. An ordinary library FUNCTION -- memcpy, atoi -- is an
+// identifier like any other, so a local or a field of that name shadows or
+// qualifies it and needs no help; only a file-scope symbol collides with the
+// header's declaration. Every name in cReserved was measured as a parameter
+// against this backend, and exactly these four proved unshadowable.
+var cUnusable = map[string]bool{}
+
+func init() {
+	for _, name := range []string{
+		// C keywords. The ones that are also OctoGo keywords ("for", "return")
+		// cannot be identifiers here either, and are listed for completeness rather
+		// than because they can be reached.
+		"auto", "break", "case", "char", "const", "continue", "default", "do",
+		"double", "else", "enum", "extern", "float", "for", "goto", "if", "inline",
+		"int", "long", "register", "restrict", "return", "short", "signed",
+		"sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
+		"void", "volatile", "while",
+		"_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic",
+		"_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local",
+		// A flexcc extension, which is a keyword to its parser like any other.
+		"__using",
+		// Macros, not functions: the preprocessor replaces the name before the C
+		// compiler sees a scope, so shadowing does not apply. printf is
+		// __builtin_printf here, NULL is a constant, and the three streams are
+		// expressions.
+		"printf", "NULL", "stdin", "stdout", "stderr",
+		// A library function the EMITTER ITSELF calls inside a user function body:
+		// `b := a` for an array copies through memcpy. Shadowing works here, which
+		// is the problem -- a user local of this name shadows the declaration for
+		// the emitter's own call too, and `memcpy(b, a, sizeof(b))` becomes a call
+		// to an int.
+		//
+		// This is the whole of that set today; every other libc name the emitter
+		// uses is inside a runtime helper at file scope, where a user local is not
+		// in scope at all. Emitting a new one directly into a user body means adding
+		// it here, and the run case "a name C has spoken for, in every position"
+		// is what would catch forgetting to.
+		"memcpy",
+	} {
+		cUnusable[name] = true
+	}
+}
+
+// cReserved is the set of library names the emitted C has already spoken for at FILE
+// SCOPE: the functions declared by the headers the output includes -- <stdio.h>,
+// <stdlib.h>, <string.h> and propeller2.h. A top-level user symbol of one of these
+// names is emitted with the ogo_ prefix instead; a local, parameter or field of the
+// same name shadows the declaration and is left alone (see cUnusable for the names
+// where that is not enough).
 //
 // It does not need to be exhaustive to be worth having: it covers what a program is
 // plausibly going to name, and a name missing from it fails the way it does today,
@@ -50,16 +119,10 @@ var cReserved = map[string]bool{}
 
 func init() {
 	for _, name := range []string{
-		// C keywords that are valid OctoGo identifiers. The ones that are also C
-		// TYPE names -- int, char, float, long and the rest -- are left out on
-		// purpose: the emitter writes them as types itself, and every identifier it
-		// emits comes through here.
-		"auto", "enum", "extern", "register", "sizeof", "static", "typedef",
-		"union", "volatile", "inline", "restrict",
 		// <stdio.h>
-		"printf", "fprintf", "sprintf", "snprintf", "puts", "putchar", "getchar",
+		"fprintf", "sprintf", "snprintf", "puts", "putchar", "getchar",
 		"fopen", "fclose", "fread", "fwrite", "fseek", "ftell", "rewind", "remove",
-		"rename", "perror", "stdin", "stdout", "stderr", "EOF",
+		"rename", "perror", "EOF",
 		// <stdlib.h>
 		"abort", "abs", "atexit", "atof", "atoi", "atol", "bsearch", "calloc",
 		"div", "exit", "free", "getenv", "labs", "ldiv", "malloc", "qsort", "rand",
@@ -123,11 +186,11 @@ func mangle(prefix, name string) string {
 		// safe boundary, since a top-level name is reached through this one funnel
 		// while a local's is written in several places.
 		if cReserved[name] {
-			return "ogo_" + cIdent(name)
+			return "ogo_" + userIdent(name)
 		}
-		return cIdent(name)
+		return userIdent(name)
 	}
-	return prefix + "_" + cIdent(name)
+	return prefix + "_" + userIdent(name)
 }
 
 func cIntLit(src string) string {
@@ -3390,7 +3453,7 @@ func ifaceVTName(iface string) string { return iface + "_vt" }
 func ifaceVTVar(iface, concrete string) string { return iface + "_vt_" + concrete }
 
 func ifaceThunkName(iface, concrete, method string) string {
-	return iface + "_" + concrete + "_" + cIdent(method)
+	return iface + "_" + concrete + "_" + userIdent(method)
 }
 
 // collectInterfaceType records an interface's methods in declaration order and
@@ -3425,7 +3488,7 @@ func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "struct %s {", vt)
 	for _, m := range methods {
-		fmt.Fprintf(&b, " %s (*%s)(void*", m.res, cIdent(m.name))
+		fmt.Fprintf(&b, " %s (*%s)(void*", m.res, userIdent(m.name))
 		for _, p := range m.params {
 			b.WriteString(", " + p)
 		}
@@ -4148,7 +4211,7 @@ func (e *emitter) emitChanFieldCells(gn, ctype string) {
 			return
 		}
 		elem := e.chanElemOfCType(fld.ctype)
-		cell := cIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell"
+		cell := userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell"
 		e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
 		e.deferPkgInit(gn + "." + e.fieldIdent(fld.name) + " = &" + cell + ";")
 		e.chanInitElems[elem] = true
@@ -5546,7 +5609,7 @@ func methodBaseType(recvCType string) string { return strings.TrimSuffix(recvCTy
 // the receiver type's mangled C name (package-namespaced), so a method is namespaced
 // by its type and cannot collide across packages; the method name is passed through
 // cIdent so a Unicode method name is a valid C identifier too.
-func methodCName(baseType, method string) string { return baseType + "_" + cIdent(method) }
+func methodCName(baseType, method string) string { return baseType + "_" + userIdent(method) }
 
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
 // results.
@@ -5668,7 +5731,7 @@ func (e *emitter) arrayResultOf(sig []int32) (arrDim, bool) {
 // methodSignatureC builds a method's C signature with the receiver as the leading
 // parameter, e.g. `int Point_Sum(Point p)` or `void Point_Scale(Point* p, int f)`.
 func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int32) string {
-	recvParam := recvCType + " " + cIdent(recvName)
+	recvParam := recvCType + " " + userIdent(recvName)
 	if a, ok := e.arrayResultOf(sig); ok {
 		// As for a function: the out parameter leads, after the receiver.
 		e.funcArrayRet[cname] = a
@@ -5788,7 +5851,7 @@ func (e *emitter) cParamList(ast []int32) []string {
 			// "...T" is received as the []T it means; the caller builds the header.
 			elem := e.cType(ta)
 			e.needSlice(elem)
-			out = append(out, sliceCName(elem)+" "+cIdent(name))
+			out = append(out, sliceCName(elem)+" "+userIdent(name))
 			return
 		}
 		if elem, _, ok := e.arrayType(ta); ok {
@@ -5797,7 +5860,7 @@ func (e *emitter) cParamList(ast []int32) []string {
 		}
 		ct := e.cType(ta)
 		e.refuseArrayStructABI(ct, "parameter "+name)
-		out = append(out, ct+" "+cIdent(name)) // a parameter name may be Unicode
+		out = append(out, ct+" "+userIdent(name)) // a parameter name may be Unicode
 	})
 	return out
 }
@@ -6015,7 +6078,7 @@ func unnamedParamName(i int) string { return "_ogo_unused" + strconv.Itoa(i) }
 
 // paramArgName is the C name of a value-array parameter as it is received (a
 // pointer), distinct from the local copy the body sees under the source name.
-func paramArgName(name string) string { return "_ogo_" + cIdent(name) }
+func paramArgName(name string) string { return "_ogo_" + userIdent(name) }
 
 // bindParams records the current function's parameters in the local type
 // environment, so a `x := p` short declaration can be typed from a parameter p. A
@@ -8789,12 +8852,12 @@ func (e *emitter) globalC(name string) string { return mangle(e.curPkgPrefix, na
 // inlined elsewhere). It is the read counterpart to the global declarations.
 func (e *emitter) varRef(name string) string {
 	if _, ok := e.locals[name]; ok {
-		return cIdent(name) // a local or parameter: Unicode-escaped, no package prefix
+		return userIdent(name) // a local or parameter: renamed if C reserved it
 	}
 	if _, ok := e.globals[e.globalC(name)]; ok {
 		return e.globalC(name)
 	}
-	return cIdent(name)
+	return userIdent(name)
 }
 
 // sliceSource describes what a slice expression slices: the C type of the result
@@ -11255,7 +11318,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				e.fail("type %s has no method %s", ct, method)
 				return false
 			}
-			e.emit(e.varRef(recv) + ".vt->" + cIdent(method) + "(" + e.varRef(recv) + ".data")
+			e.emit(e.varRef(recv) + ".vt->" + userIdent(method) + "(" + e.varRef(recv) + ".data")
 			if args := e.argsCText("", suffix[1].ast); args != "" {
 				e.emit(", " + args)
 			}
@@ -11610,7 +11673,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if slot < 0 {
 					return "", "", false, false
 				}
-				call := text + ".vt->" + cIdent(field) + "(" + text + ".data"
+				call := text + ".vt->" + userIdent(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
 				}
@@ -12825,8 +12888,8 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	if cname, a, ok := e.arrayResultCall(initExpr); ok {
 		e.arrays[name] = a
 		e.ind()
-		e.emit(a.elem + " " + cIdent(name) + a.declSuffix() + ";\n")
-		e.emitArrayResultCall(cIdent(name), cname, initExpr)
+		e.emit(a.elem + " " + userIdent(name) + a.declSuffix() + ";\n")
+		e.emitArrayResultCall(userIdent(name), cname, initExpr)
 		return
 	}
 	// `b := a` where a is an array variable: Go copies the array by value. C cannot
@@ -12930,7 +12993,7 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	// the initializer, so the recursion bottoms out on the ordinary path below.
 	// cn is the emitted C name (Unicode-escaped); `name` stays the source name, used
 	// for initRefsName's comparison against the initializer's own identifiers.
-	cn := cIdent(name)
+	cn := userIdent(name)
 	if e.initRefsName(initExpr, name) {
 		tmp := e.newTmp()
 		e.emitVarDeclInit(ctype, tmp, initExpr)
@@ -13437,7 +13500,7 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 		e.ind()
 		if declare {
 			e.locals[t.name] = ctype
-			e.emit(ctype + " " + cIdent(t.name) + " = " + val + ";\n")
+			e.emit(ctype + " " + userIdent(t.name) + " = " + val + ";\n")
 		} else {
 			e.emit(e.varRef(t.name) + " = " + val + ";\n")
 		}
@@ -14308,7 +14371,7 @@ func (e *emitter) fieldType(base string, fields []string) (string, bool) {
 // function, and nowhere else: a program with no such collision emits exactly the C
 // it emitted before.
 func (e *emitter) fieldIdent(name string) string {
-	id := cIdent(name)
+	id := userIdent(name)
 	for e.typeNames[id] {
 		id += "_"
 	}
