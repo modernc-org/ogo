@@ -49,21 +49,36 @@
 // CallSuffix to go; a conversion whose target is a NAME goes through the identifier
 // alternative, which has one.
 //
-// The LL(1) question is MEASURED, and the answer is no: the committed grammar
-// generates with zero First/Follow warnings, and every form of the obvious fix
-// introduces eight to ten. `[ FactorSuffix ]` on that alternative gives ten;
-// narrowing it to a suffix only after a literal (`[ CompositeLit [ FactorSuffix ] ]`)
-// or to indexes alone (`[ CompositeLit { Index } ]`) still gives eight. They are not
-// local to this rule either -- they land in `Signature` (on every token that can
-// start a Type) and in `HeaderFactor` -- so what a Factor may be followed by
-// propagates into where a function type's result ends. A parser generated from any
-// of them is choosing arbitrarily at those points, which is how a silent misparse
-// gets in.
+// The LL(1) cost is MEASURED, per variant, against the committed grammar's OWN
+// baseline of EIGHT First/Follow warnings -- seven in `Signature`, one in
+// `HeaderFactor`, both pre-existing and unrelated to this rule. Counting totals
+// rather than differences got this backwards once; compare the SETS.
 //
-// So this needs the grammar restructured around Signature/Type, or a parser that is
-// not LL(1), not a one-line alternative. Do not retry the one-liner: regenerate,
-// count the warnings, and confirm the baseline is still zero before assuming a
-// variant is clean.
+//	variant                                                      total   new
+//	------------------------------------------------------------------------
+//	(committed grammar)                                              8     --
+//	"]" Type [ CompositeLit ] [ FactorSuffix ]      -- `[]byte(s)`  10     +2
+//	"]" Type [ CompositeLit [ FactorSuffix ] ]  -- `[]int{..}[0]`    8      0
+//	"(" Expression ")" [ FactorSuffix ]           -- `([]byte)(s)`   8      0
+//
+// So only the UNPARENTHESISED conversion costs anything, and what it costs is
+// `Signature` on "(" and `Type` on "." -- `func() []int` and a conversion competing
+// for the same decision. The two parenthesised forms are free, and both were
+// confirmed free TOGETHER, with the full test suite passing on the regenerated
+// parser.
+//
+// That is what the parenthesis escape hatch buys (see "Parentheses where the parser
+// needs them" in the prose above): the spellings that carry their own delimiter cost
+// nothing, so the language can require them here without the grammar paying for the
+// general case. They are valid Go as written, so a program using them compiles both
+// places.
+//
+// What remains is not the grammar. With both alternatives in, every form parses and
+// each then fails in the CHECKER or the EMITTER -- `(a)[1]` reaches
+// "unsupported operand '('", `[3]int{1, 2, 3}[0]` reaches "invalid composite literal
+// type" -- so the work is teaching those two about a parenthesised base and a
+// suffixed literal. The grammar change is held back until they can back it, rather
+// than shipped to turn syntax errors into worse ones.
 //
 // `[]byte(s)` would still be refused after parsing -- it allocates -- but as itself
 // rather than as a syntax error. The named direction, `Row(r)`, works and may be
@@ -147,6 +162,26 @@
 //     being a temporary of the frame rather than an allocation, and so subject to
 //     the lifetime rule above. A type assertion "x.(*T)" and a type switch both
 //     recover the concrete pointer. See internal/octogo/octogo.go.
+//
+// # Parentheses where the parser needs them
+//
+// The compiler's parser is LL(1), generated from the grammar below. A few Go
+// spellings cannot be described in that class without making unrelated decisions
+// ambiguous, and where a spelling has an equivalent that carries its own
+// delimiters, THE PARENTHESISED FORM MAY BE REQUIRED.
+//
+// This is a restriction on the implementation, not a change to the language. The
+// parenthesised form is valid Go as written, so a program using it compiles both
+// here and there; a more powerful parser -- a different generator, or a hand-written
+// one once the grammar has settled -- must accept BOTH forms, and this section is
+// what it is allowed to relax, never something it has to keep. Go itself restricts
+// the other way for a related reason, refusing a bare composite literal in an "if",
+// "for" or "switch" header where the "{" would be read as the block; C requires
+// parentheses around a type in a cast, and around far more besides.
+//
+// Where it applies is stated at the construct. The rule for adding one: it is
+// allowed only when the parenthesised spelling means the same thing in Go, so that
+// obeying the restriction never produces a program Go reads differently.
 //
 // # Introduction
 //
