@@ -13,6 +13,30 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+## v0.18.0
+
+A release about what a value may be and where it may stand. An array can be a
+function result, an array literal stands wherever the position copies, a channel can
+live in a struct field, a defined channel type can have methods, and a function with
+more than one result is finally a value like any other.
+
+Two of them came from reading a refusal's own comment and finding the obstacle had
+been removed by an earlier commit — a defined channel type's methods, and the
+"documented limits" note that turned out to describe two bugs already fixed.
+
+The `p2` package is embedded OctoGo source now rather than a table the compiler took
+on trust, so a misspelt intrinsic is a compiler error and a call into it is checked
+against a real signature. Cross-package calls are checked the same way.
+
+The parser gained a rule of its own: where an LL(1) grammar cannot describe a
+spelling, the parenthesised form may be required. `([]int)(xs)` works, `[]int(xs)`
+does not, and both are valid Go — so a program obeying the restriction compiles in
+both places. See "Parentheses where the parser needs them" in `specs.go`.
+
+Diagnostics got attention too. A file that does not parse is no longer type-checked,
+so a syntax error stops being buried under the errors it caused, and an identifier
+used as a type now says what it actually is.
+
 ### Language
 
 - **A conversion to a defined array type may be indexed, measured and ranged where
@@ -138,7 +162,13 @@ Releases before v0.9.0 predate this file; see
   declaration: the constant evaluator does not resolve an import qualifier, which is
   a general gap rather than a `p2` one.
 
-### Language
+- **A function with more than one result may be used as a value.** `f := divmod`,
+  `var g func(int) (int, bool) = flags`, a struct field of that type and a parameter
+  of it all work, and a call through one destructures as a direct call does. The
+  result struct is keyed by the result *types* rather than by the function, so two
+  functions of one signature return the same C type and the signature has a typedef
+  to name — which is what the refusal was about. `go` through a function value is
+  still refused: starting a cog needs the callee's name.
 
 - **A parenthesised expression may carry a suffix**, `(a)[1]`, `(s).v`, `(dbl)(21)`.
   These are ordinary Go and were rejected as syntax errors: the grammar's
@@ -167,6 +197,7 @@ Releases before v0.9.0 predate this file; see
   3}` all work; each binds the literal to a temporary of the frame that the copy
   then reads. It is still refused as an operand of an expression, where there is no
   copy to bind it for and C has no array value for it to become.
+
 
 ### Behaviour changes
 
