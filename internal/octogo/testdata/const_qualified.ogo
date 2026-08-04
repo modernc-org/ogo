@@ -17,7 +17,16 @@ func main() {
 	// ERROR undefined: p2.Nope
 	p2.Nope()
 
-	// The argument COUNT of a cross-package call is not checked yet, for p2 or for
-	// any other package, so p2.WaitMs(1, 2) still reaches the C compiler.
+	// A call is checked against the package's own signature: the count always, and
+	// an argument's type where the parameter's resolves.
 	p2.WaitMs(1)
+
+	// ERROR too many arguments in call to WaitMs
+	p2.WaitMs(1, 2)
+
+	// ERROR not enough arguments in call to PinStart
+	p2.PinStart(0)
+
+	// ERROR cannot use "x" of type string as type int in argument to WaitMs
+	p2.WaitMs("x")
 }

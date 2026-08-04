@@ -47,3 +47,20 @@ func noSuchMethod() {
 	// ERROR "type p.T has no method Bogus"
 	_ = x.Bogus()
 }
+
+// A CALL into another package is checked against that package's signature: the
+// argument count always, and an argument's type where the parameter's resolves.
+// Before this it reached the C compiler as "Bad number of parameters in call".
+
+func callArity() {
+	println(p.Add(1, 2))
+
+	// ERROR too many arguments in call to Add
+	println(p.Add(1, 2, 3))
+
+	// ERROR not enough arguments in call to Add
+	println(p.Add(1))
+
+	// ERROR cannot use "s" of type string as type int in argument to Add
+	println(p.Add("s", 2))
+}

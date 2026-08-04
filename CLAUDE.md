@@ -442,7 +442,9 @@ define a symbol in. They exist because the hex is unforgiving in a way that look
 like working code: `_examples/gopher` was written with `0x140006`, which is the DAC
 range and the mode and no OUTPUT ENABLE, and drives nothing. They work in a `const`
 declaration as any package's constants do (qualifiedConst in check.go,
-foldedQualifiedInt in emit.go).
+foldedQualifiedInt in emit.go), and a call into p2 -- like a call into any imported
+package -- is checked against its signature (checkQualifiedRef -> checkArgsIn,
+which resolves the parameter types in the CALLEE's scope).
 
 The four lock entries are the P2's 16 hardware locks, the same pool the channel
 runtime draws from. **`NewLock` does not report exhaustion**: after handing out

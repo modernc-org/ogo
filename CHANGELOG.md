@@ -38,8 +38,11 @@ Releases before v0.9.0 predate this file; see
   package is emitted: every declaration is substituted at the use, a function by its
   C intrinsic and a constant by its value.
 
-  Not yet: the argument *count* of a cross-package call, which is unchecked for
-  every package and not only this one.
+- **A call into another package is checked against that package's signature.** The
+  argument count always, and an argument's type where the parameter's resolves —
+  which for a cross-package call means resolving the parameter types in the
+  *callee's* scope, since `geo.Vec` is `Vec` there. Before this, `geo.Twice(1, 2)`
+  reached the C compiler as *Bad number of parameters in call*.
 - **A constant of an imported package may be used in a `const` declaration.**
   `const limit = geo.MaxPoints` reported *undefined: geo* — imports live in the file
   scope, which a constant expression's resolution never reached. A constant is a

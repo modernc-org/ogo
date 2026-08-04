@@ -28,3 +28,7 @@ func (r T) hidden() int { return r.g }
 // t is an unexported type, referenced by qualified_type.ogo to check that the
 // export rule applies to a qualified type name too.
 type t struct{ f int }
+
+// Add takes two arguments and returns one, so an importer's call can be checked
+// against a signature that is this package's rather than the caller's.
+func Add(a int, b int) int { return a + b }

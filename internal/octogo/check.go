@@ -4713,7 +4713,7 @@ func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 		return
 	}
 	if f.isImportQualifier(s, id.Src()) {
-		f.checkQualifiedRef(id, postfix)
+		f.checkQualifiedRef(s, id, postfix)
 		return
 	}
 	// Not an import qualifier: a "head.field" selection of a struct variable
@@ -4721,6 +4721,30 @@ func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 	if field, ok := f.fieldSelector(postfix); ok {
 		f.checkFieldAccess(s, id, field)
 	}
+}
+
+// callSuffixArgs returns the argument expressions of the call a suffix makes, and
+// whether it makes one at all. A qualified reference that is not a call -- reading
+// an exported variable or constant -- has none.
+func (f *File) callSuffixArgs(suffix Node) ([]Node, bool) {
+	for c := range it(suffix.ast) {
+		if c.sym != CallSuffix {
+			continue
+		}
+		var args []Node
+		for a := range it(c.ast) {
+			if a.sym != ArgumentList {
+				continue
+			}
+			for e := range it(a.ast) {
+				if e.sym == Expression {
+					args = append(args, e)
+				}
+			}
+		}
+		return args, true
+	}
+	return nil, false
 }
 
 // isImportQualifier reports whether name denotes a package imported by this
@@ -4745,7 +4769,7 @@ func (f *File) isImportQualifier(s *Scope, name string) bool {
 // rejects an unknown intrinsic. A failed import (noPkg) is likewise left to the
 // import-time diagnostic. Only the first selector qualifies the package; a deeper
 // selector operates on its result, which is not modelled.
-func (f *File) checkQualifiedRef(qual Token, suffix Node) {
+func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 	for c := range it(suffix.ast) {
 		if c.sym != Selector {
 			continue
@@ -4762,8 +4786,26 @@ func (f *File) checkQualifiedRef(qual Token, suffix Node) {
 		if !ok || imp.Import == nil {
 			return
 		}
-		if pkg := imp.Import.Pkg; pkg != nil && pkg != noPkg && pkg.Scope.Declarations[m.Src()] == nil {
+		pkg := imp.Import.Pkg
+		if pkg == nil || pkg == noPkg {
+			return
+		}
+		d := pkg.Scope.Declarations[m.Src()]
+		if d == nil {
 			f.err(m.Position(), "undefined: %s.%s", qual.Src(), m.Src())
+			return
+		}
+		// A call into another package is checked against that package's signature,
+		// with its parameter types resolved THERE. Only the count is reliably
+		// answerable across the boundary -- a parameter of the callee's own named
+		// type resolves, an argument of the caller's is judged by its own kind -- and
+		// the count is what was going to the C compiler as "Bad number of parameters".
+		fd, isFunc := d.(*FuncDeclaration)
+		if !isFunc || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
+			return
+		}
+		if args, ok := f.callSuffixArgs(suffix); ok {
+			f.checkArgsIn(s, pkg.Scope, m, fd.FuncDecl.Type.Signature, args)
 		}
 		return
 	}
@@ -7073,7 +7115,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			switch {
 			case directCall:
 			case hasSelector && f.isImportQualifier(s, id.Src()):
-				f.checkQualifiedRef(id, suffix)
+				f.checkQualifiedRef(s, id, suffix)
 			default:
 				f.err(id.Position(), "undefined: %s", id.Src())
 			}
@@ -7435,7 +7477,16 @@ func isBuiltinFuncName(name string) bool {
 // an argument whose type is not yet determined (a call, selector, or unresolved
 // name) or a parameter of a non-predeclared type is left unchecked.
 func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) {
-	params := f.flattenParams(s, sig)
+	f.checkArgsIn(s, s, name, sig, args)
+}
+
+// checkArgsIn is checkArgs with the parameter types resolved in a scope of their
+// own. For a call into another package they are names of THAT package -- "geo.Vec"
+// is Vec there -- so resolving them in the caller's scope would find nothing and
+// silently skip the check. The arguments are still the caller's, and are resolved
+// in s.
+func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode, args []Node) {
+	params := f.flattenParams(paramScope, sig)
 	// A variadic parameter takes the rest of the arguments, however many -- none
 	// included -- so only the fixed ones before it are counted, and only they are
 	// checked pairwise. What the rest have to be is the element type, which needs
@@ -7450,7 +7501,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 		// against T rather than against the slice flattenParams reports.
 		last := sig.Params.List[len(sig.Params.List)-1]
 		if sl, isSlice := last.TypeNode.(*TypeNodeSlice); isSlice {
-			elem := f.resultType(s, sl.TypeNode)
+			elem := f.resultType(paramScope, sl.TypeNode)
 			for _, arg := range args[fixed:] {
 				f.checkNilAssignable(s, elem, arg, "argument to "+name.Src())
 				if !elem.known {
@@ -7475,7 +7526,7 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 			p := params[i]
 			// A function-typed parameter has no predeclared Kind, so this stands
 			// ahead of the known-kind guard below.
-			f.checkFuncAssign(s, f.funcSig(s, p.typeNode), arg, "argument to "+name.Src())
+			f.checkFuncAssign(s, f.funcSig(paramScope, p.typeNode), arg, "argument to "+name.Src())
 			f.checkPointerArg(s, p, arg, name)
 			if !p.known {
 				continue
