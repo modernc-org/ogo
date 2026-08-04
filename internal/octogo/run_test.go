@@ -1798,6 +1798,57 @@ func main() {
 		want: "1310790\n1376256 1441792 1507328\n2 4 64\n1310784\n",
 	},
 	{
+		// Two shapes this compiler documented as broken until they were measured
+		// again, both fixed by the temporary that doc/call-through-array-element.c
+		// describes -- binding an intermediate rather than calling straight through
+		// it, which was the manual workaround both notes prescribed.
+		//
+		//   - THREE CALLS DEEP, chooser()(0)(6), computed 0 on the board at every
+		//     optimization level while the host was right. Silently.
+		//   - A call written directly on an ARRAY ELEMENT of function type,
+		//     fns[0](8), which the target's C compiler refused outright.
+		//
+		// Pinned here because the first was a silent wrong answer, which is the kind
+		// that comes back unnoticed.
+		name: "three calls deep, and a call on an array element",
+		src: `type Op func(int) int
+
+type Pick func(int) Op
+
+func add6(a int) int { return a + 6 }
+
+func mul6(a int) int { return a * 6 }
+
+func pick(k int) Op {
+	if k == 0 {
+		return add6
+	}
+	return mul6
+}
+
+func chooser() Pick { return pick }
+
+var fns [2]Op
+
+func main() {
+	// Three calls deep, the documented one.
+	println(chooser()(0)(6))
+	println(chooser()(1)(6))
+
+	// The same, broken up, which the note says always worked.
+	a := chooser()
+	b := a(0)
+	println(b(6))
+
+	// A call written directly on an array element of function type.
+	fns[0] = add6
+	fns[1] = mul6
+	println(fns[0](8), fns[1](8))
+}
+`,
+		want: "12\n36\n12\n14 48\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

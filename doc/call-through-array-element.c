@@ -22,6 +22,14 @@
 // in an element of function-pointer type binds that element to a temporary; see the
 // CallSuffix case of chainCText in internal/octogo/emit.go.
 //
+// The same temporary fixed two other things this compiler had documented as broken,
+// which were the same defect wearing different clothes: a call THREE DEEP,
+// `chooser()(0)(6)`, which computed 0 on the board at every optimization level while
+// the host was right, and a call written directly on an array element of function
+// type, `fns[0](8)`, which the target refused outright. Both were measured again on
+// 2026-08-04 and both are correct; the run case "three calls deep, and a call on an
+// array element" pins them.
+//
 // This is the defect a dispatch table runs into, which is most of the reason to put
 // functions in an array at all. It went unnoticed because the host C compiler gets
 // it right: the emit-and-run tests passed, and only TestOnBoard disagreed.

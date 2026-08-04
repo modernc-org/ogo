@@ -26,6 +26,17 @@ Releases before v0.9.0 predate this file; see
   body's block scope has been left, where a local's name no longer types at all. A
   string would have printed as the first word of its header and a bool as `1`. The
   captured temporary carries its type, so that is now what chooses the format.
+- **Two documented limits were gone and nobody had noticed.** A call *three deep*,
+  `chooser()(0)(6)`, computed 0 on the board at every optimization level while the
+  host was right — a silent wrong answer — and a call written directly on an array
+  element of function type, `fns[0](8)`, was refused by the target's C compiler.
+  Both were fixed by the temporary added for the dispatch-table defect in v0.17.0,
+  which binds an intermediate rather than calling straight through it: the manual
+  workaround both notes prescribed is now what the compiler emits.
+
+  Re-measured on hardware and pinned as a run case, since the first was the silent
+  kind. The other eleven claims in the README's "does not work yet" list were
+  re-measured at the same time and all eleven still hold.
 - **The `p2` package exports named pin-configuration constants** — `p2.DAC990R3V`,
   `p2.DACDitherPWM`, `p2.OutputEnable` and the rest of the DAC set, values from
   flexcc's `smartpins.h`.
