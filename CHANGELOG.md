@@ -42,8 +42,11 @@ Releases before v0.9.0 predate this file; see
   a bare receive alike — which is what a driver's ports want: several channels
   belonging to one thing, waited on together.
 
-  Not yet: through an array of such structs, `bs[0].ch <- v`. The operand is
-  resolved as a variable or as a field of one, and neither reaches an index.
+  **An array of such structs** works too — `ws[i].cmd <- v`, a constant index or a
+  variable one — which is a worker per element, each with channels of its own. On a
+  part with eight cores that is the shape the hardware suggests. The array's
+  declaration owns a cell per element per field, the same rule applied once per
+  element.
 - **Two documented limits were gone and nobody had noticed.** A call *three deep*,
   `chooser()(0)(6)`, computed 0 on the board at every optimization level while the
   host was right — a silent wrong answer — and a call written directly on an array

@@ -347,6 +347,7 @@ type VarDeclaration struct {
 	chanElemKind    Kind  // the predeclared element type of a channel variable, for send/receive type checks
 	hasChanElemKind bool  // chanElemKind is meaningful
 	chanElemName    Token // the element type's NAME, for a check a Kind cannot answer
+	elemTypeName    Token // an array's or slice's element type NAME, for a field reached through an index
 }
 
 // FuncDeclaration represents a named function.

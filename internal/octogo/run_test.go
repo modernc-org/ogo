@@ -1986,6 +1986,69 @@ func main() {
 		want: "neither\nb 2\nsent\ndrained 7\nbare\n",
 	},
 	{
+		// An ARRAY of structs holding channels: a worker per element, each with
+		// channels of its own. On a part with eight cores that is the shape the
+		// hardware suggests, and it is what completes the feature -- sends, receives
+		// and a select, through a constant index and a variable one.
+		//
+		// The array's declaration owns a cell per element per field, which is the
+		// same rule a channel variable obeys, applied once per element.
+		//
+		// Every line of this prints what real Go prints for the same program, with
+		// the make() calls Go needs and this target does not.
+		name: "an array of structs holding channels",
+		src: `type worker struct {
+	cmd  chan int
+	done chan int
+}
+
+var ws [2]worker
+
+func run0() {
+	v := <-ws[0].cmd
+	ws[0].done <- v * 10
+}
+
+func run1() {
+	v := <-ws[1].cmd
+	ws[1].done <- v * 100
+}
+
+func main() {
+	// One worker per element, each with channels of its own: the array's
+	// declaration owns a cell per element per field, so ws[0] and ws[1] rendezvous
+	// with different cogs and never with each other.
+	go run0()
+	go run1()
+	ws[0].cmd <- 1
+	ws[1].cmd <- 2
+	println(<-ws[0].done, <-ws[1].done)
+
+	// A variable index, both directions. What the field IS never varies with the
+	// index; only which cell it names does.
+	go run0()
+	go run1()
+	for i := 0; i < 2; i++ {
+		ws[i].cmd <- i + 3
+	}
+	for i := 0; i < 2; i++ {
+		println(i, <-ws[i].done)
+	}
+
+	// A select over two elements' channels.
+	go run0()
+	ws[0].cmd <- 5
+	select {
+	case v := <-ws[0].done:
+		println("got", v)
+	case v := <-ws[1].done:
+		println("other", v)
+	}
+}
+`,
+		want: "10 200\n0 30\n1 400\ngot 50\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

@@ -739,6 +739,7 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 		vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
 		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
 		vd.chanElemName = f.chanElemTypeName(s, tn)
+		vd.elemTypeName = f.elemTypeName(s, tn)
 	}
 	if err := s.add(vd); err != nil {
 		f.err(tok.Position(), "%v", err)
@@ -926,6 +927,31 @@ func (f *File) chanElem(s *Scope, tn TypeNode) (elem Kind, hasElem, isChan bool)
 	return 0, false, false
 }
 
+// elemTypeName names an array's or slice's element type -- the "worker" in
+// "[8]worker" -- for a field reached through an index. A Kind cannot answer it: a
+// struct element has none.
+func (f *File) elemTypeName(s *Scope, tn TypeNode) (nm Token) {
+	for range 16 {
+		switch x := tn.(type) {
+		case *TypeNodeArray:
+			nm, _ = namedTypeToken(x.TypeNode)
+			return nm
+		case *TypeNodeSlice:
+			nm, _ = namedTypeToken(x.TypeNode)
+			return nm
+		case *TypeNodeIdent:
+			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
+			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+				return nm
+			}
+			tn = d.TypeSpec.TypeNode
+		default:
+			return nm
+		}
+	}
+	return nm
+}
+
 // chanElemTypeName names a channel type's element -- the "Shape" in chan Shape --
 // for the checks that need the type itself rather than its predeclared Kind, of
 // which a named interface has none. It follows a defined channel type the way
@@ -969,9 +995,10 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
 		chanElemName := f.chanElemTypeName(s, p.TypeNode)
+		elemName := f.elemTypeName(s, p.TypeNode)
 		funcSig := f.funcSig(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -3231,8 +3258,8 @@ func (f *File) commOp(s *Scope, op Node) {
 		// "case ch <- v": the AssignHead is the channel, the Expression the value.
 		f.checkNames(s, operand)
 		if id, ok := f.assignHeadIdent(assignHead); ok {
-			fld, _ := f.postfixField([]Node{postfixComm})
-			f.checkSend(s, id, fld, operand)
+			fld, indexed, _ := f.postfixField([]Node{postfixComm})
+			f.checkSend(s, id, fld, indexed, operand)
 		}
 	}
 }
@@ -3335,7 +3362,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var names []Token
 		var kind, elemKind, chanElemKind Kind
 		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
-		var typeName, typeQual, chanElemName Token
+		var typeName, typeQual, chanElemName, elemName Token
 		var funcSig *SignatureNode
 		var declType TypeNode
 		var initExprs []Node
@@ -3360,6 +3387,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
 						chanElemName = f.chanElemTypeName(s, tn)
+						elemName = f.elemTypeName(s, tn)
 						funcSig = f.funcSig(s, tn)
 					}
 				}
@@ -3390,7 +3418,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkInferredOverflow(s, e)
 		}
 		for _, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, funcSig: funcSig, isFunc: funcSig != nil}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, funcSig: funcSig, isFunc: funcSig != nil}
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue
@@ -3805,8 +3833,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
 	if op == ARROW {
 		if len(lhs) == 1 && len(rhs) == 1 {
-			fld, _ := f.postfixField([]Node{postfix})
-			f.checkSend(s, lhs[0], fld, rhs[0])
+			fld, indexed, _ := f.postfixField([]Node{postfix})
+			f.checkSend(s, lhs[0], fld, indexed, rhs[0])
 		}
 		return
 	}
@@ -4594,7 +4622,7 @@ func countUnits(n int, unit string) string {
 // value v must match the channel's element type. The channel operand is resolved
 // here -- unlike an "=" target it is not seen by checkAssignment's target loop --
 // so an undefined or blank channel is reported, mirroring checkDerefAssign.
-func (f *File) checkSend(s *Scope, chTok Token, field Token, valNode Node) {
+func (f *File) checkSend(s *Scope, chTok Token, field Token, indexed bool, valNode Node) {
 	if f.blankRead(chTok) { // "_ <- v" reads "_" as a channel
 		return
 	}
@@ -4611,8 +4639,8 @@ func (f *File) checkSend(s *Scope, chTok Token, field Token, valNode Node) {
 	elem, hasElem, isChan := f.chanElemOf(d)
 	elemName := d.chanElemName
 	if field.IsValid() {
-		elem, hasElem, isChan = f.fieldChan(s, chTok, field)
-		elemName = f.fieldChanElemName(s, chTok, field)
+		elem, hasElem, isChan = f.fieldChanOf(s, chTok, field, indexed)
+		elemName = f.fieldChanElemNameOf(s, chTok, field, indexed)
 	}
 	if !isChan {
 		at := chTok
@@ -5610,11 +5638,26 @@ func (f *File) fieldKind(s *Scope, head, field Token) (Kind, bool) {
 // the head is not a variable of a known struct type or has no such field. It is
 // what fieldKind reduces to a Kind and what the function-type checks read whole.
 func (f *File) fieldTypeNode(s *Scope, head, field Token) TypeNode {
+	return f.fieldTypeNodeOf(s, head, field, false)
+}
+
+// fieldTypeNodeOf is fieldTypeNode with a choice of which type carries the field:
+// the head's own, or -- for a field reached through an index, `ws[i].cmd` -- its
+// ELEMENT's. What the field is does not depend on which element, so one lookup
+// answers for every index.
+func (f *File) fieldTypeNodeOf(s *Scope, head, field Token, indexed bool) TypeNode {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
-	if !ok || !d.typeName.IsValid() {
+	if !ok {
 		return nil
 	}
-	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	owner := d.typeName
+	if indexed {
+		owner = d.elemTypeName
+	}
+	if !owner.IsValid() {
+		return nil
+	}
+	td, ok := s.find(owner.Src()).(*TypeDeclaration)
 	if !ok || td.TypeSpec == nil {
 		return nil
 	}
@@ -6741,7 +6784,13 @@ func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 // field is a channel at all. It follows a defined type over a channel the way
 // chanElem does, that being the same question asked of the field's written type.
 func (f *File) fieldChan(s *Scope, head, field Token) (elem Kind, hasElem, isChan bool) {
-	tn := f.fieldTypeNode(s, head, field)
+	return f.fieldChanOf(s, head, field, false)
+}
+
+// fieldChanOf is fieldChan for a field reached through an index as well as for one
+// reached directly.
+func (f *File) fieldChanOf(s *Scope, head, field Token, indexed bool) (elem Kind, hasElem, isChan bool) {
+	tn := f.fieldTypeNodeOf(s, head, field, indexed)
 	if tn == nil {
 		return 0, false, false
 	}
@@ -6752,7 +6801,12 @@ func (f *File) fieldChan(s *Scope, head, field Token) (elem Kind, hasElem, isCha
 // cannot answer -- a named interface has none. It is chanElemTypeName asked of a
 // field rather than of a variable.
 func (f *File) fieldChanElemName(s *Scope, head, field Token) Token {
-	if tn := f.fieldTypeNode(s, head, field); tn != nil {
+	return f.fieldChanElemNameOf(s, head, field, false)
+}
+
+// fieldChanElemNameOf is fieldChanElemName for a field reached through an index too.
+func (f *File) fieldChanElemNameOf(s *Scope, head, field Token, indexed bool) Token {
+	if tn := f.fieldTypeNodeOf(s, head, field, indexed); tn != nil {
 		return f.chanElemTypeName(s, tn)
 	}
 	return Token{}
@@ -6761,8 +6815,7 @@ func (f *File) fieldChanElemName(s *Scope, head, field Token) Token {
 // postfixField returns the single field a postfix selects, for "b.ch <- v" and
 // "case b.ch <- v", where the channel is a field of the head rather than the head.
 // A longer chain or an index is not one field and is left unresolved.
-func (f *File) postfixField(postfix []Node) (Token, bool) {
-	var fld Token
+func (f *File) postfixField(postfix []Node) (fld Token, indexed, ok bool) {
 	n := 0
 	for _, p := range postfix {
 		for c := range it(p.ast) {
@@ -6774,11 +6827,14 @@ func (f *File) postfixField(postfix []Node) (Token, bool) {
 					}
 				}
 			case Index:
-				return Token{}, false
+				// `ws[i].cmd <- v`: an index on the way to the field. What the field
+				// IS does not depend on which element, so one lookup answers for every
+				// index; only the address varies.
+				indexed = true
 			}
 		}
 	}
-	return fld, n == 1
+	return fld, indexed, n == 1
 }
 
 // receiveFactor reports whether expression n is exactly a receive "<-ch" and,
@@ -8851,6 +8907,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
 		chanElemName := f.chanElemTypeName(s, typ)
+		elemName := f.elemTypeName(s, typ)
 		funcSig := f.funcSig(s, typ)
 		for _, vd := range varDecls {
 			if vd == nil {
@@ -8860,6 +8917,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
 			vd.isChan, vd.chanElemKind, vd.hasChanElemKind = isChan, chanElemKind, hasChanElemKind
 			vd.chanElemName = chanElemName
+			vd.elemTypeName = elemName
 			vd.funcSig, vd.isFunc = funcSig, funcSig != nil
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:

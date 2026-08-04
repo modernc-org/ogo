@@ -460,15 +460,25 @@ func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
 	if len(nodes) == 1 && nodes[0].sym == Factor {
 		kids = slices.Collect(it(nodes[0].ast))
 	}
-	root, fields, isField := e.factorFieldAccess(kids)
-	if !isField {
+	if root, fields, isField := e.factorFieldAccess(kids); isField {
+		ct, okf := e.fieldType(root, fields)
+		if !okf || !e.isChanCType(ct) {
+			return "", "", false
+		}
+		return e.chanElemByName[ct], e.fieldAccessC(root, fields), true
+	}
+	// A channel field reached through an INDEX, `ws[i].cmd`. The chain walker knows
+	// how to render one and what type it reaches, which is more than the fixed
+	// field path can do.
+	root, steps, isChain := e.factorAccessChain(kids)
+	if !isChain {
 		return "", "", false
 	}
-	ct, okf := e.fieldType(root, fields)
-	if !okf || !e.isChanCType(ct) {
+	text, ct, _, okc := e.chainCText(root, steps)
+	if !okc || !e.isChanCType(ct) {
 		return "", "", false
 	}
-	return e.chanElemByName[ct], e.fieldAccessC(root, fields), true
+	return e.chanElemByName[ct], text, true
 }
 
 // goSite is one `go` statement: the callee's C name and the C types of its
@@ -3989,6 +3999,10 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					gn := e.globalC(nm)
 					e.globalArrays[gn] = a
 					e.emit("static " + a.elem + " " + gn + a.declSuffix() + ";\n")
+					// An array of structs holding channels owns a cell per ELEMENT per
+					// channel field: `var ws [8]worker` is eight workers with a channel
+					// each, which is the shape this target is for -- one per cog.
+					e.emitChanFieldCellsArray(gn, a)
 				}
 			}
 			continue
@@ -4133,6 +4147,56 @@ func (e *emitter) emitChanFieldCells(gn, ctype string) {
 	}
 }
 
+// emitChanFieldCellsArray mints the cells for an ARRAY of structs holding channels,
+// one per element, and wires each element's field at package initialization. A
+// multi-dimensional array is walked in row-major order, so the index expression
+// matches the C declarator.
+func (e *emitter) emitChanFieldCellsArray(gn string, a arrDim) {
+	if !e.hasChanField(a.elem) {
+		return
+	}
+	bounds := a.bounds()
+	counts := make([]int, len(bounds))
+	total := 1
+	for i, b := range bounds {
+		n, err := strconv.Atoi(b)
+		if err != nil || n < 0 {
+			e.fail("a channel field in an array needs a constant bound, got %q", b)
+			return
+		}
+		counts[i], total = n, total*n
+	}
+	idx := make([]int, len(counts))
+	for k := 0; k < total; k++ {
+		sub := gn
+		for _, i := range idx {
+			sub += "[" + strconv.Itoa(i) + "]"
+		}
+		e.emitChanFieldCells(sub, a.elem)
+		for d := len(idx) - 1; d >= 0; d-- {
+			idx[d]++
+			if idx[d] < counts[d] {
+				break
+			}
+			idx[d] = 0
+		}
+	}
+}
+
+// hasChanField reports whether a struct type holds a channel, at any depth. It is
+// what keeps an ordinary array of ordinary structs from walking its elements.
+func (e *emitter) hasChanField(ctype string) bool {
+	for _, fld := range e.structs[ctype] {
+		if e.isChanCType(fld.ctype) {
+			return true
+		}
+		if _, nested := e.structs[fld.ctype]; nested && fld.dim.bound == "" && e.hasChanField(fld.ctype) {
+			return true
+		}
+	}
+	return false
+}
+
 // emitLocalChanFieldCells is emitChanFieldCells for a local struct: the cells are
 // still file-scope objects (their locks are taken once, before main), but the field
 // is wired at the declaration rather than at package initialization, because that is
@@ -4152,6 +4216,33 @@ func (e *emitter) emitLocalChanFieldCells(nm, ctype string) {
 		e.ind()
 		e.emit(nm + "." + e.fieldIdent(fld.name) + " = &" + e.localChanCell(e.chanElemByName[fld.ctype]) + ";\n")
 	}
+}
+
+// emitChanSend emits one send on an already-rendered channel, whatever named it: a
+// variable, a field, or an element's field. op is the PostfixOp's children, whose
+// second is the value.
+func (e *emitter) emitChanSend(ch, elem string, op []Node) {
+	if len(op) != 2 || op[1].sym != Expression {
+		e.fail("unsupported send statement")
+		return
+	}
+	if x, r, bad := e.frameRefIn([]Node{op[1]}); bad {
+		e.fail("%v: cannot send %s: its storage does not outlive the function, and the receiver keeps "+
+			"the value; declare the backing array at package scope",
+			e.f.tok(x.Pos()).Position(), r.what)
+		return
+	}
+	e.ind()
+	e.chanSendElems[elem] = true
+	e.emit(chanSendCName(elem) + "(" + ch + ", ")
+	// A concrete value sent on a channel of interface type is wrapped, the element
+	// type being the target here.
+	if text, ok := e.ifaceValueC(elem, op[1].ast); ok && e.isIfaceCType(elem) {
+		e.emit(text)
+	} else {
+		e.emitExpr(op[1].ast)
+	}
+	e.emit(");\n")
 }
 
 // emitGlobalInit emits a package variable's initializer, which C requires to be a
@@ -12164,6 +12255,20 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			}
 		}
 	}
+	// A send whose channel is reached through an INDEX, `ws[i].cmd <- v`. The chain
+	// walker renders it and says what it reaches, which the field list below cannot
+	// do; a channel is a pointer, so what it renders is the channel.
+	if isFieldSend {
+		if steps := postfix[:len(postfix)-1]; isAccessChain(steps) && hasIndexStep(steps) {
+			text, ct, _, okc := e.chainCText(base, steps)
+			if !okc || !e.isChanCType(ct) {
+				e.fail("a send statement needs a channel on the left")
+				return
+			}
+			e.emitChanSend(text, e.chanElemByName[ct], op)
+			return
+		}
+	}
 	var fields []string
 	for _, n := range postfix[:len(postfix)-1] {
 		fld := ""
@@ -12262,24 +12367,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("a send statement needs a channel on the left")
 			return
 		}
-		if x, r, bad := e.frameRefIn([]Node{op[1]}); bad {
-			e.fail("%v: cannot send %s: its storage does not outlive the function, and the receiver keeps "+
-				"the value; declare the backing array at package scope",
-				e.f.tok(x.Pos()).Position(), r.what)
-			return
-		}
-		e.ind()
-		e.chanSendElems[e.chanElemByName[ct]] = true
-		elem := e.chanElemByName[ct]
-		e.emit(chanSendCName(elem) + "(" + lhs + ", ")
-		// A concrete value sent on a channel of interface type is wrapped, the
-		// element type being the target here.
-		if text, ok := e.ifaceValueC(elem, rhsAst); ok && e.isIfaceCType(elem) {
-			e.emit(text)
-		} else {
-			e.emitExpr(rhsAst)
-		}
-		e.emit(");\n")
+		e.emitChanSend(lhs, e.chanElemByName[ct], op)
 		return
 	case ASSIGN:
 		if lhs == "_" {

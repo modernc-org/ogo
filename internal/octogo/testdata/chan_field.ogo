@@ -57,6 +57,28 @@ func selectNotAChannel() {
 	}
 }
 
+// An ARRAY of such structs is a worker per element, each with channels of its own:
+// the array's declaration owns a cell per element per field. A constant index and a
+// variable one resolve the same way -- what the field IS never varies with the
+// index, only which cell it names.
+
+var ws [2]ports
+
+func elements() {
+	ws[0].tx <- 1
+	println(<-ws[1].rx)
+
+	for i := 0; i < 2; i++ {
+		ws[i].tx <- i
+	}
+
+	select {
+	case v := <-ws[0].rx:
+		println(v)
+	default:
+	}
+}
+
 func notAChannel() {
 	// ERROR invalid operation: cannot send to non-channel
 	p.n <- 1

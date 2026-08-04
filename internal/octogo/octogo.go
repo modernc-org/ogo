@@ -440,8 +440,8 @@
 //
 // # A channel held in a struct field
 //
-// Implemented for a variable's field, package-level and local, in sends, receives
-// and select clauses alike; not yet through an array of such structs. The note that used to say the
+// Implemented: a variable's field, package-level and local, an array of such
+// structs, and nested structs -- in sends, receives and select clauses alike. The note that used to say the
 // design was the blocker was wrong about what the open question was.
 //
 // REPRESENTATION: nothing new is needed. `chan T` is already a POINTER --
@@ -494,8 +494,14 @@
 // grammar keeps the head and the selectors apart, so the two are rejoined in
 // selectChanField before the field is resolved.
 //
-// STILL MISSING: an array of such structs. The operand resolves as a variable or as
-// one field and neither reaches an index, which is a step rather than a design.
+// An ARRAY of such structs is a worker per element, each with channels of its own,
+// which on a part with eight cores is the shape the hardware suggests. The rule
+// applies once per element: the array's declaration owns a cell per element per
+// field. A constant index and a variable one need nothing different -- what the
+// field IS never varies with the index, only which cell it names -- so the checker
+// resolves the field off the ELEMENT type (elemTypeName, recorded beside the type
+// name a plain field is resolved from) and the emitter renders the address through
+// the chain walker.
 //
 // # Deferred, deliberately
 //
