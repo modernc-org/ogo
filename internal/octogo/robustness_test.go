@@ -1,6 +1,7 @@
 package octogo
 
 import (
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -830,5 +831,49 @@ func buildEach(t *testing.T, progs []string) {
 			fsys := fstest.MapFS{"x.ogo": &fstest.MapFile{Data: []byte(src)}}
 			Build(-1, []string{"x.ogo"}, fsys)
 		}()
+	}
+}
+
+// TestParseErrorSilencesChecker: a file the parser could not read is not checked.
+//
+// Every checker error such a file yields comes from a tree that is not what was
+// written, so it reports a consequence somewhere the reader has to work to connect
+// back to the cause. `a := [3]int(q)` -- a conversion the grammar does not accept
+// -- reported "undefined: Row" against a declaration three lines ABOVE the syntax
+// error, the broken parse having cost the whole file its type declarations. Go
+// stops after parsing for the same reason.
+//
+// The second file is what keeps the rule from being "one syntax error hides the
+// package": it parses, so its errors are about what it says, and they survive.
+func TestParseErrorSilencesChecker(t *testing.T) {
+	fsys := fstest.MapFS{
+		"main.ogo": &fstest.MapFile{Data: []byte(`type Row [3]int
+
+var q Row
+
+func main() {
+	a := [3]int(q)
+	println(a[0])
+}
+`)},
+		"other.ogo": &fstest.MapFile{Data: []byte(`func helper() { println(nosuchname) }
+`)},
+	}
+	_, err := Build(-1, []string{"main.ogo", "other.ogo"}, fsys)
+	if err == nil {
+		t.Fatal("expected errors")
+	}
+	got := err.Error()
+	// The cause, at the token the parser stopped on.
+	if !strings.Contains(got, "main.ogo:6:13") {
+		t.Errorf("expected the parse error at main.ogo:6:13, got:\n%s", got)
+	}
+	// Not the consequence: Row IS declared, on a line that parsed.
+	if strings.Contains(got, "undefined: Row") {
+		t.Errorf("a checker error from the unparsed file survived:\n%s", got)
+	}
+	// A file that parsed is still checked.
+	if !strings.Contains(got, "undefined: nosuchname") {
+		t.Errorf("the sibling file's error was lost:\n%s", got)
 	}
 }

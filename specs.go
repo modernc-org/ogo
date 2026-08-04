@@ -34,10 +34,18 @@
 // and "go" through a variable holding one. A named function, a function literal and
 // a bound-receiver method value all work as values (see Function types and function
 // values, and Function literals).
-// TODO 20260804 A conversion to an UNNAMED array type, `[3]int(q)` for a q of a
-// defined array type, is not supported, and the error names an unrelated line
-// ("undefined: Row") rather than the conversion. The named direction, `Row(r)`,
-// works and may be indexed where it stands.
+// TODO 20260804 A conversion to an UNNAMED COMPOSITE type does not parse:
+// `[]byte(s)`, `[]int(xs)` and `[3]int(q)` all stop at the "(". The Factor rule's
+// array/slice alternative -- `"[" [ Expression ] "]" Type [ CompositeLit ]` -- admits
+// a composite literal after the type but no FactorSuffix, so there is nowhere for a
+// CallSuffix to go; a conversion whose target is a NAME goes through the identifier
+// alternative, which has one. Fixing it is a grammar change (an optional
+// FactorSuffix on that alternative) and needs the LL(1) question answered first:
+// `[]T{...}` and `[]T(...)` would then both be reachable from the same prefix.
+// `[]byte(s)` would still be refused after parsing -- it allocates -- but as itself
+// rather than as a syntax error. The named direction, `Row(r)`, works and may be
+// indexed where it stands, and assigning between a defined array type and its
+// underlying one needs no conversion either way (`var a [3]int = q`).
 // TODO 20260728 A local variable, parameter or struct field whose name is a C
 // KEYWORD ("static", "union", "register", ...) emits invalid C. A top-level name is
 // moved out of C's way; a local one is not, several emission paths writing a local's

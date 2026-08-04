@@ -138,6 +138,15 @@ Releases before v0.9.0 predate this file; see
   declaration: the constant evaluator does not resolve an import qualifier, which is
   a general gap rather than a `p2` one.
 
+### Diagnostics
+
+- **A file that does not parse is no longer type-checked**, so a syntax error is
+  reported alone instead of beneath the errors it caused. `a := [3]int(q)` reported
+  `undefined: Row` against a declaration three lines *above* the syntax error --
+  the broken parse had cost the whole file its type declarations, so the checker
+  complained about the consequence and the reader had to find the cause. A file
+  that parses is still checked: one bad file does not silence its siblings.
+
 ## v0.17.0
 
 The release interfaces landed in, and with them everything that was waiting behind

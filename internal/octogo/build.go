@@ -369,11 +369,38 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 		errs = consolidateErrors(errs, c.errList)
 		// Establish stable order
 		sort.Slice(errs, func(i, j int) bool { return errs[i].less(errs[j]) })
+		// A file the parser could not read is not checked: every checker error it
+		// yields is derived from a tree that is not what was written, and says so
+		// somewhere the reader has to work to connect to the cause. `a := [3]int(q)`
+		// -- a conversion the grammar does not accept -- reported "undefined: Row"
+		// against an unrelated declaration three lines above the syntax error, the
+		// broken parse having cost the whole file its type declarations. Go stops
+		// after parsing for the same reason.
+		//
+		// Only that file is silenced: another file in the package parsed fine, and
+		// its errors are about what it says.
+		broken := map[string]bool{}
+		for _, v := range errs {
+			if v.Parse && v.Pos.IsValid() {
+				broken[v.Pos.Filename] = true
+			}
+		}
+		if len(broken) != 0 {
+			w := 0
+			for _, v := range errs {
+				if !v.Parse && v.Pos.IsValid() && broken[v.Pos.Filename] {
+					continue
+				}
+				errs[w] = v
+				w++
+			}
+			errs = errs[:w]
+		}
 		// Remove multiple errors for the same line, keeping the parser's where there
-		// is one: a checker error on a line the parser could not read is derived from
-		// a tree that is not what was written, so it reports a consequence and hides
-		// the cause. `if v, ok := f(); ok` said "undefined: v" and swallowed the
-		// parse error at the comma that explains why v was never declared.
+		// is one -- the same rule within a line, for the files that DID parse: a
+		// checker error there is a consequence hiding its cause. `if v, ok := f(); ok`
+		// said "undefined: v" and swallowed the parse error at the comma that
+		// explains why v was never declared.
 		w := 0
 		for _, v := range errs {
 			if w == 0 {
