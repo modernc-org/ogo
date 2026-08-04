@@ -266,10 +266,12 @@ broken.
   all.
 * A **channel held in a struct field**: a send or a receive on one is refused,
   whether the field is written `chan T` or a defined type over one. A channel in a
-  variable, a parameter or a package-level declaration is fine. What has to be
-  settled first is where the rendezvous cell lives — a channel variable gets one
-  allocated beside it, and a field cannot without deciding what declaring the struct
-  allocates, and what a copy of it then shares.
+  variable, a parameter or a package-level declaration is fine. The design is
+  settled — a channel is already a pointer, so a field holding one needs no new
+  representation and copying the struct shares the channel exactly as Go does; the
+  declaration of a struct *variable* owns a cell per channel field, as a channel
+  variable's declaration already does. What is left is the work, most of it in the
+  checker. See `internal/octogo/octogo.go`.
 * A **method on a defined type over a channel**, `func (c Ch) tag()`. Sends,
   receives and select clauses on such a type all work.
 * A conversion to a defined array type may not be **indexed where it stands**,

@@ -35,11 +35,12 @@
 // Declarations). Sends, receives and select clauses work.
 // TODO 20260728 Channels held in a struct field: a send or a receive on one is
 // refused, for a written "chan T" as much as for a defined type over one. The
-// operand plumbing is the small half; the question to settle first is where the
-// rendezvous cell lives. A channel VARIABLE gets one statically allocated beside it
-// and initialized before main, which a field cannot have without deciding what a
-// declaration of the struct allocates -- and what a copy of it, a composite literal
-// of it, and an array of it then share.
+// design is settled (see internal/octogo/octogo.go): a channel is already a
+// pointer, so a field holding one needs no new representation, and a copy of the
+// struct shares the channel exactly as Go's does. The declaration of a struct
+// VARIABLE owns a cell per channel field, as a channel variable's declaration
+// already does. What is left is the work, most of it in the checker -- checkSend
+// takes a single token for the channel and cannot see a field.
 // TODO 20260730 A conversion to a defined ARRAY type cannot be indexed or measured
 // where it stands: `Row(r)[1]` and `len(Row(r))` for `type Row [3]int`. C has no
 // cast to an array type, so such a conversion has to emit its operand rather than a

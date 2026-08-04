@@ -438,6 +438,52 @@
 // devirtualization, which is what removes the indirection where the target is
 // provable.
 //
+// # A channel held in a struct field
+//
+// Not implemented. The design is settled, though, and the note that used to say
+// otherwise was wrong about what the open question was.
+//
+// REPRESENTATION: nothing new is needed. `chan T` is already a POINTER --
+// `typedef ogo_chan_T_cell* ogo_chan_T` -- because a channel is a reference type in
+// Go and passing a by-value cell to a goroutine would hand it a copy, leaving the
+// two to rendezvous with themselves. A struct field of channel type is therefore an
+// ordinary pointer field, and the struct's C layout needs no thought at all.
+//
+// COPYING is likewise settled, and settled the easy way. Copying a struct copies
+// the pointer, so the copy and the original name the same channel -- which is
+// exactly what Go does, a channel value being a reference. There is no aliasing bug
+// to prevent and so no need for a rule forbidding the copy (the shape Go itself
+// considered for other types in golang/go#70811). A struct holding a channel is as
+// copyable as a struct holding a pointer, because that is what it is.
+//
+// THE CELL is the whole of the real question: who allocates it. Today the
+// DECLARATION of a channel variable owns one -- a static cell minted beside it, the
+// variable pointed at it, and its lock acquired (emitPackageVarDecl at package
+// scope, localChanCell in a body). The rule that extends this without inventing
+// anything:
+//
+//	The declaration of a struct VARIABLE owns one cell per channel field it has,
+//	minted at that declaration site, exactly as a channel variable's does.
+//
+// So `var b box` at package scope mints a cell per channel field and wires it in
+// ogo_pkg_init; a local `var b box` mints one per declaration site, as a local
+// channel already does. A struct copied, passed, returned or assigned carries the
+// pointer; the cell stays where it was declared. A nested struct recurses. An array
+// of such structs needs one cell per element -- a static array of cells and a loop
+// at init -- which is a separate increment, not a separate design.
+//
+// THE WORK, measured rather than guessed:
+//
+//   - The emitter's send path takes the channel's C type from the target's ROOT
+//     variable, so `ports.tx <- v` looks like a send to a struct. lhs already
+//     renders the field access correctly -- a channel is a pointer, so the field
+//     access needs nothing special -- and the fix is to read the type through
+//     fieldType instead. Nine lines, and the whole suite still passes with them.
+//   - The checker is the bulk. checkSend takes a single Token for the channel, and
+//     chanElemOf reads a VarDeclaration's own type, so neither can see a field.
+//     Receives and select clauses resolve the same way. That is the piece to build.
+//   - Then the cell, per the rule above.
+//
 // # Deferred, deliberately
 //
 // An assertion between two INTERFACE types is not implemented: the table it would
