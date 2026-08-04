@@ -38,6 +38,20 @@ Releases before v0.9.0 predate this file; see
   package is emitted: every declaration is substituted at the use, a function by its
   C intrinsic and a constant by its value.
 
+- **An array may be a function result.** `func mk() [3]int` was refused; it now
+  works, for a function and for a method, in one dimension and in several.
+
+  C cannot return an array, and the obvious workaround — wrapping it in a struct, as
+  a multi-result function's results already are — is a shape this backend refuses to
+  assign (*Unable to multiply assign this target*, measured again before designing
+  around it). So the result travels through an **out parameter**: the caller owns the
+  storage and the callee fills it, which is the answer C has always had. Binding one
+  therefore costs a call and no copy — the declaration *is* the storage.
+
+  What that leaves is that the call is a statement rather than a value. `a := mk()`
+  and `var a [3]int = mk()` work; `take(mk())`, `b = mk()` and `mk()[1]` are refused
+  with the way out. An array *beside another result* stays refused outright, since
+  handing back a pointer would name the callee's dead frame.
 - **A call into another package is checked against that package's signature.** The
   argument count always, and an argument's type where the parameter's resolves —
   which for a cross-package call means resolving the parameter types in the

@@ -2049,6 +2049,72 @@ func main() {
 		want: "10 200\n0 30\n1 400\ngot 50\n",
 	},
 	{
+		// An array as a function result. C cannot return one, and the obvious
+		// workaround -- wrapping it in a struct, as a multi-result function's results
+		// are -- is a shape this backend refuses to assign. So it travels through an
+		// OUT PARAMETER: the caller owns the storage and the callee fills it, which
+		// is the answer C has always had.
+		//
+		// The declaration IS the storage, so binding one costs a call and no copy.
+		// What that leaves is that the call is a statement rather than a value:
+		// TestEmitCArrayResultABI pins the forms that refuses.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "an array as a function result",
+		src: `type Row [3]int
+
+func mk(base int) [3]int {
+	var r [3]int
+	r[0] = base
+	r[1] = base + 1
+	r[2] = base + 2
+	return r
+}
+
+func grid() [2][3]int {
+	var g [2][3]int
+	g[0][0] = 1
+	g[1][2] = 6
+	return g
+}
+
+type box struct {
+	n int
+}
+
+func (b box) triple() [3]int {
+	var r [3]int
+	r[0] = b.n
+	r[1] = b.n * 2
+	r[2] = b.n * 3
+	return r
+}
+
+var gb box
+
+func main() {
+	a := mk(10)
+	println(a[0], a[1], a[2])
+
+	// A multi-dimensional result travels as one block.
+	g := grid()
+	println(g[0][0], g[1][2])
+
+	// A method's result, and a second call into a different variable: each call
+	// writes the storage its caller gave it.
+	gb.n = 5
+	t := gb.triple()
+	b := mk(100)
+	println(t[2], b[0], a[0])
+
+	// Declared with its type written out rather than inferred.
+	var c [3]int = mk(7)
+	println(c[1])
+}
+`,
+		want: "10 11 12\n1 6\n15 100 10\n8\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,

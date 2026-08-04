@@ -5287,38 +5287,59 @@ func main() {
 	}
 }
 
-// TestEmitCArrayResultABI pins the refusal of a fixed-array result. C cannot return
-// an array by value, and a result -- unlike a parameter, which decays to a pointer
-// -- has nowhere to decay to. It is refused with an actionable message rather than an
-// empty, nameless "unsupported type" (the element is a nested node, so cType finds no
-// identifier to name). A one- and a multi-dimensional result are both covered.
+// TestEmitCArrayResultABI pins what a fixed-array result may NOT be used as. The
+// result itself works -- it travels through an out parameter the caller supplies,
+// which is the "an array as a function result" run case -- but the CALL is a
+// statement rather than a value, so any form needing a value is refused with the
+// way out.
+//
+// An array beside another result stays refused outright: that would need a struct
+// holding an array, which this backend cannot assign ("Unable to multiply assign
+// this target"), and handing back a pointer instead would name the callee's dead
+// frame.
 func TestEmitCArrayResultABI(t *testing.T) {
-	for _, test := range []struct{ name, src string }{
+	for _, test := range []struct{ name, src, want string }{
 		{
-			name: "one-dimensional",
+			name: "as an argument",
+			src: `func f() [3]int {
+	var a [3]int
+	return a
+}
+
+func take(a [3]int) int { return a[0] }
+
+func main() { println(take(f())) }
+`,
+			want: "must be bound to a variable first",
+		},
+		{
+			name: "assigned to an existing variable",
 			src: `func f() [3]int {
 	var a [3]int
 	return a
 }
 
 func main() {
-	b := f()
+	var b [3]int
+	b = f()
 	println(b[0])
 }
 `,
+			want: "must be bound to a variable first",
 		},
 		{
-			name: "multi-dimensional",
-			src: `func f() [2][3]int {
-	var a [2][3]int
-	return a
+			name: "beside another result",
+			src: `func f() ([3]int, int) {
+	var a [3]int
+	return a, 1
 }
 
 func main() {
-	b := f()
-	println(b[0][0])
+	a, n := f()
+	println(a[0], n)
 }
 `,
+			want: "cannot return an array beside another result",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -5327,11 +5348,11 @@ func main() {
 			if err != nil {
 				t.Fatalf("Build: %v", err)
 			}
-			var buf bytes.Buffer
-			if err := EmitC(pkg, &buf); err == nil {
-				t.Fatalf("EmitC accepted an array result by value:\n%s", buf.String())
-			} else if !strings.Contains(err.Error(), "cannot return an array by value") {
-				t.Errorf("EmitC error %q is not the array-result refusal", err)
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
 			}
 		})
 	}

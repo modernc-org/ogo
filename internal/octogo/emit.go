@@ -2414,7 +2414,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2870,6 +2870,7 @@ type emitter struct {
 	funcRet         map[string][]string // user function / mangled method name -> C result types (empty=void), for typing calls
 	funcSliceParams map[string][]string // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
 	funcVariadic    map[string]int      // same key -> the position of a "...T" parameter, for the pack a call has to build
+	funcArrayRet    map[string]arrDim   // same key -> the extents of an ARRAY result, handed back through a leading out parameter
 	// A function literal has no name, and C has no nested functions, so each one is
 	// LIFTED to a file-scope function of a minted name and the expression becomes
 	// that name. Collected while walking a body, so they can only be written out
@@ -4520,6 +4521,17 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		_, resTypes := e.resultInfo(sig)
 		e.funcRet[cname] = resTypes
+		if _, arrRet := e.arrayResultOf(sig); arrRet {
+			// A function with an array result cannot be used as a VALUE: its C
+			// signature has an out parameter the type would have to describe, and a
+			// function type here is the signature the source wrote. Recorded as
+			// returning nothing so the call sites that ask find no value type, and
+			// skipped here so cSig is never asked about the array result.
+			e.funcRet[cname] = nil
+			e.funcSliceParams[cname] = e.paramSliceTypes(sig)
+			e.funcParams[cname] = e.cParamTypes(sig)
+			return
+		}
 		if recv == nil {
 			// Kept so the name used as a value can mint its function type on demand.
 			// Minting here instead would emit a typedef for every function in the
@@ -5591,6 +5603,18 @@ func (e *emitter) emitMain(sig, body []int32) {
 // e.g. `int add(int a, int b)`, `void run(void)`, or -- for more than one result
 // -- `ogo_ret_divmod divmod(int a, int b)`.
 func (e *emitter) funcSignatureC(name string, sig []int32) string {
+	// An ARRAY result is handed back through an out parameter, which leads the
+	// list: the function returns void and writes what the caller gave it. Asked
+	// before cSig, which refuses an array result -- rightly, for every shape but
+	// this one.
+	if a, ok := e.arrayResultOf(sig); ok {
+		e.funcArrayRet[name] = a
+		out := arrayResultCType(a) + " " + arrayResultParam
+		if params, _ := e.cParams(sig); params != "" {
+			out += ", " + params
+		}
+		return "void " + name + "(" + out + ")"
+	}
 	params, resTypes := e.cSig(sig)
 	if params == "" {
 		params = "void"
@@ -5598,11 +5622,66 @@ func (e *emitter) funcSignatureC(name string, sig []int32) string {
 	return e.cReturnType(name, resTypes) + " " + name + "(" + params + ")"
 }
 
+// cParams renders a Signature's parameters alone, without asking about its
+// results, which is what the array-result path needs: cSig refuses an array result
+// before it gets to the parameters.
+func (e *emitter) cParams(sig []int32) (string, bool) {
+	for n := range it(sig) {
+		if n.sym == ParameterList {
+			return strings.Join(e.cParamList(n.ast), ", "), true
+		}
+	}
+	return "", false
+}
+
+// arrayResultOf reports whether a signature's single result is a fixed array, and
+// what its extents are. Two results one of which is an array is not this: it would
+// need a struct holding an array, which this backend cannot assign.
+func (e *emitter) arrayResultOf(sig []int32) (arrDim, bool) {
+	var out []arrDim
+	n := 0
+	for k := range it(sig) {
+		switch k.sym {
+		case ResultList:
+			for _, d := range e.f.paramDecls(k.ast) {
+				c := len(d.Names)
+				if c == 0 {
+					c = 1
+				}
+				for range c {
+					n++
+					if a, ok := e.arrayDim(d.TypeAST.ast); ok {
+						out = append(out, a)
+					}
+				}
+			}
+		case Type:
+			n++
+			if a, ok := e.arrayDim(k.ast); ok {
+				out = append(out, a)
+			}
+		}
+	}
+	if n != 1 || len(out) != 1 {
+		return arrDim{}, false
+	}
+	return out[0], true
+}
+
 // methodSignatureC builds a method's C signature with the receiver as the leading
 // parameter, e.g. `int Point_Sum(Point p)` or `void Point_Scale(Point* p, int f)`.
 func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int32) string {
-	params, resTypes := e.cSig(sig)
 	recvParam := recvCType + " " + cIdent(recvName)
+	if a, ok := e.arrayResultOf(sig); ok {
+		// As for a function: the out parameter leads, after the receiver.
+		e.funcArrayRet[cname] = a
+		out := recvParam + ", " + arrayResultCType(a) + " " + arrayResultParam
+		if params, _ := e.cParams(sig); params != "" {
+			out += ", " + params
+		}
+		return "void " + cname + "(" + out + ")"
+	}
+	params, resTypes := e.cSig(sig)
 	if params == "" {
 		params = recvParam
 	} else {
@@ -5662,6 +5741,13 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 // value). An unnamed result has an empty name; a named result contributes its
 // name (a shared "(a, b int)" yields one entry per name).
 func (e *emitter) resultInfo(sig []int32) (names, types []string) {
+	// A single ARRAY result is not a returned value at all: it is written through an
+	// out parameter, so the function returns nothing and has no result type to name.
+	// Asked first, because resultCType refuses an array -- rightly, for every other
+	// shape.
+	if _, ok := e.arrayResultOf(sig); ok {
+		return nil, nil
+	}
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
@@ -5770,13 +5856,104 @@ func (e *emitter) refuseArrayStructABI(ctype, what string) {
 // an array is refused by refuseArrayStructABI for the same ABI reason.
 func (e *emitter) resultCType(ta []int32) string {
 	if _, ok := e.arrayDim(ta); ok {
-		e.fail("cannot return an array by value; return a slice or a pointer to it")
+		// A SINGLE array result is handed back through an out parameter, and
+		// funcSignatureC takes that path before this one is reached. Anything else
+		// -- an array beside another result -- would need a struct holding an array,
+		// which this backend cannot assign ("Unable to multiply assign this
+		// target"), and returning a pointer instead would name the callee's dead
+		// frame. So it is still refused, and the message still names the way out.
+		e.fail("cannot return an array beside another result; return a slice or a pointer to it")
 		return ""
 	}
 	ct := e.cType(ta)
 	e.refuseArrayStructABI(ct, "result")
 	return ct
 }
+
+// arrayCountC renders an array's element count as a C factor chain, "*3" for a
+// [3]int and "*2*3" for a [2][3]int, so a copy sizes a multi-dimensional array as
+// one block.
+func arrayCountC(a arrDim) string {
+	s := ""
+	for _, b := range a.bounds() {
+		s += "*" + b
+	}
+	return s
+}
+
+// arrayResultCall reports whether an expression is exactly a call to a function
+// with an ARRAY result, and names it. Such a call is a statement rather than a
+// value: what it yields has no C value type, so it is written into storage the
+// caller supplies.
+func (e *emitter) arrayResultCall(ast []int32) (string, arrDim, bool) {
+	recv, suffix, ok := e.directCall(ast)
+	if !ok || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
+		return "", arrDim{}, false
+	}
+	cname := e.funcCallC(recv)
+	if len(suffix) == 2 && suffix[0].sym == Selector {
+		// A method, `b.triple()`: its C name is the receiver type's, and the
+		// receiver leads the argument list ahead of the out parameter.
+		rct, isVar := e.varType(recv)
+		if !isVar || !e.isUserType(methodBaseType(rct)) {
+			return "", arrDim{}, false
+		}
+		cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
+	} else if len(suffix) != 1 {
+		return "", arrDim{}, false
+	}
+	a, isArr := e.funcArrayRet[cname]
+	return cname, a, isArr
+}
+
+// emitArrayResultCall emits the call itself, with dst as the out parameter it
+// writes through.
+func (e *emitter) emitArrayResultCall(dst, cname string, ast []int32) {
+	recv, suffix, _ := e.directCall(ast)
+	a := e.funcArrayRet[cname]
+	e.ind()
+	e.emit(cname + "(")
+	// A method's receiver leads, ahead of the out parameter.
+	if len(suffix) == 2 && suffix[0].sym == Selector {
+		rct, _ := e.varType(recv)
+		r, ok := e.chainReceiver(e.varRef(recv), rct, true, e.methodPtr[cname])
+		if !ok {
+			e.fail("cannot take the address of %s for a pointer-receiver method", recv)
+			return
+		}
+		e.emit(r + ", ")
+	}
+	// The out parameter is a pointer to the ELEMENT, so a multi-dimensional
+	// destination is cast: `int (*)[3]` and `int*` name the same storage and C will
+	// not convert between them silently.
+	e.emit("(" + arrayResultCType(a) + ")" + dst)
+	if args := e.argsCText(cname, suffix[len(suffix)-1].ast); args != "" {
+		e.emit(", " + args)
+	}
+	e.emit(");\n")
+}
+
+// arrayReturnOperand names an expression that IS an array -- today a variable --
+// and its extents. An array has no C value type, so what this returns is the
+// storage's name, which is what a copy needs.
+func (e *emitter) arrayReturnOperand(ast []int32) (string, arrDim, bool) {
+	if nm, ok := e.exprIdent(ast); ok {
+		if a, ok := e.arrayVar(nm); ok {
+			return e.varRef(nm), a, true
+		}
+		return "", arrDim{}, false
+	}
+	return "", arrDim{}, false
+}
+
+// arrayResultCType is the C type of the out parameter an array result is passed
+// back through: a pointer to the array's element. A multi-dimensional result is a
+// pointer to its innermost element too -- the caller's storage is contiguous either
+// way, and the copy is by size.
+func arrayResultCType(a arrDim) string { return a.elem + "*" }
+
+// arrayResultParam is the name of that out parameter, in the callee.
+const arrayResultParam = "_ogo_ret"
 
 // forEachParam walks a ParameterList's `IdentifierList Type` groups, calling fn
 // with each parameter's name and C type (a shared type "a, b int" yields two
@@ -6325,6 +6502,18 @@ func (e *emitter) emitVarDecl(ast []int32) {
 						return
 					}
 					e.emitArrayLitVar(nm, litType, lit, false)
+					continue
+				}
+				// `var c [3]int = mk()`: the declaration is the storage the callee
+				// fills, so there is nothing to copy afterwards.
+				if cname, ra, isArrCall := e.arrayResultCall(initExpr); isArrCall {
+					if ra.elem != a.elem || ra.declSuffix() != a.declSuffix() {
+						e.fail("cannot use %s as %s in variable declaration", e.goArrayTypeName(ra), e.goArrayTypeName(a))
+						return
+					}
+					e.ind()
+					e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+					e.emitArrayResultCall(nm, cname, initExpr)
 					continue
 				}
 				e.includes["string.h"] = true
@@ -10687,6 +10876,29 @@ func (e *emitter) emitReturn(nodes []Node) {
 		}
 	}
 	e.checkReturnBacking(exprs)
+	// An ARRAY result is written through the out parameter the caller supplied, not
+	// returned: C cannot return an array. The copy is by size, so a
+	// multi-dimensional result travels as one block.
+	if a, ok := e.funcArrayRet[e.curFunc]; ok {
+		if len(exprs) != 1 {
+			e.fail("a function with an array result returns exactly one value")
+			return
+		}
+		src, srcDim, okSrc := e.arrayReturnOperand(exprs[0].ast)
+		if !okSrc || srcDim.elem != a.elem || srcDim.declSuffix() != a.declSuffix() {
+			e.fail("cannot return %s as %s", e.goArrayTypeName(srcDim), e.goArrayTypeName(a))
+			return
+		}
+		e.includes["string.h"] = true
+		if len(e.defers) != 0 {
+			e.emitDeferred()
+		}
+		e.ind()
+		e.emit("memcpy(" + arrayResultParam + ", " + src + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+		e.ind()
+		e.emit("return;\n")
+		return
+	}
 	// Go evaluates a return's expressions, assigns them to the results, and only
 	// then runs the defers. The defers used to run first, so an expression reading
 	// what a defer had changed saw the changed value -- "return n + 1" with a defer
@@ -10855,6 +11067,21 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 // by the statement call path (emitCall) and the expression Factor path. The
 // checker has already verified the callee resolves and the arguments match.
 func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
+	// A call whose result is an ARRAY is a statement, not a value: the caller owns
+	// the storage and the callee fills it, so there is no expression for the call to
+	// become. Bind it and use the variable.
+	if len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+		cname := e.funcCallC(recv)
+		if len(suffix) == 2 && suffix[0].sym == Selector {
+			if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
+				cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
+			}
+		}
+		if _, isArr := e.funcArrayRet[cname]; isArr {
+			e.fail("a call returning an array must be bound to a variable first: `a := %s(...)`, then use a", recv)
+			return false
+		}
+	}
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		if recv == "len" {
@@ -12496,6 +12723,15 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	}
 	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
 		e.emitArrayLitVar(name, typeAST, lit, false)
+		return
+	}
+	// `a := mk()` where mk returns an array: the caller owns the storage and the
+	// callee fills it, so the declaration IS the storage and the call is a statement.
+	if cname, a, ok := e.arrayResultCall(initExpr); ok {
+		e.arrays[name] = a
+		e.ind()
+		e.emit(a.elem + " " + cIdent(name) + a.declSuffix() + ";\n")
+		e.emitArrayResultCall(cIdent(name), cname, initExpr)
 		return
 	}
 	// `b := a` where a is an array variable: Go copies the array by value. C cannot

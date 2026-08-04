@@ -280,7 +280,12 @@ broken.
   value whose receiver is not a package-level variable** — the receiver is bound at
   compile time, which is what keeps a function value one word (`doc/funcval-cost.c`
   prices the alternative).
-* An array as a function result, a slice whose element is an array, and `goto`.
+* A **call returning an array** is a statement, not a value: bind it (`a := mk()`,
+  `var a [3]int = mk()`) and use the variable. Passing one straight to a parameter or
+  assigning it to an existing variable is refused, and an array *beside another
+  result* is refused outright — that would need a struct holding an array, which the
+  backend cannot assign.
+* A slice whose element is an array, and `goto`.
 * A `range` clause written with `=` accepts only variables, not an element or a
   field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.
 * A three-clause `for` header declares **one** variable: `for a, b := f(); a < b;`
