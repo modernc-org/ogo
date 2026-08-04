@@ -4256,6 +4256,14 @@ func (e *emitter) emitGlobalInit(initExpr []int32) {
 			return
 		}
 	}
+	// A constant of an imported package, `geo.MaxPoints`, folds to its value like a
+	// constant of this one. It has to: C evaluates a file-scope initializer at
+	// compile time, and the other package's `static const` is a symbol, not a
+	// literal ("global initializers ... must be constant").
+	if v, ok := e.foldedQualifiedInt(initExpr); ok {
+		e.emit(v)
+		return
+	}
 	e.declInit = true
 	e.emitExpr(initExpr)
 	e.declInit = false
@@ -4439,6 +4447,36 @@ func (e *emitter) foldedInt(name string) (string, bool) {
 		return v, true
 	}
 	v, ok := e.constInt[e.globalC(name)]
+	return v, ok
+}
+
+// foldedQualifiedInt folds a reference to an imported package's integer constant,
+// `geo.MaxPoints`, to its literal value. The fold maps are keyed by the mangled
+// name, which is what that package emitted the constant under.
+func (e *emitter) foldedQualifiedInt(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	kids := nodes
+	if len(nodes) == 1 && nodes[0].sym == Factor {
+		kids = slices.Collect(it(nodes[0].ast))
+	}
+	return e.foldedQualifiedIntKids(kids)
+}
+
+// foldedQualifiedIntKids is foldedQualifiedInt given a Factor's children, which is
+// what the constant folder holds.
+func (e *emitter) foldedQualifiedIntKids(kids []Node) (string, bool) {
+	base, fields, ok := e.factorFieldAccess(kids)
+	if !ok || len(fields) != 1 {
+		return "", false
+	}
+	prefix, isImport := e.importQualifiers[base]
+	if !isImport {
+		return "", false
+	}
+	v, ok := e.constInt[mangle(prefix, fields[0])]
 	return v, ok
 }
 
@@ -7766,6 +7804,12 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 			if v, ok := e.convFold(kids); ok {
 				return v, true
 			}
+		}
+		// A constant of an imported package, `geo.MaxPoints`. It folds like a
+		// constant of this one; the token switch below sees only a bare name.
+		if v, ok := e.foldedQualifiedIntKids(kids); ok {
+			n, err := strconv.ParseInt(v, 0, 64)
+			return n, err == nil
 		}
 		// A prefix operator, either as a bare token or wrapped in a UnaryOp node --
 		// the shape the parser actually builds for "-1", and the reason "-1 << 40"

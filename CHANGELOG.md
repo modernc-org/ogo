@@ -26,6 +26,16 @@ Releases before v0.9.0 predate this file; see
   body's block scope has been left, where a local's name no longer types at all. A
   string would have printed as the first word of its header and a bool as `1`. The
   captured temporary carries its type, so that is now what chooses the format.
+- **A constant of an imported package may be used in a `const` declaration.**
+  `const limit = geo.MaxPoints` reported *undefined: geo* — imports live in the file
+  scope, which a constant expression's resolution never reached. A constant is a
+  value and not a symbol, so there is nothing to link: it folds to its literal, which
+  is what C needs at file scope anyway.
+
+  `p2` is the exception and now says so instead of calling the package undefined: it
+  has no source, so its constants are a table in the compiler with no scope to find
+  them in. Written where they are used they are ordinary values, which is how
+  `_examples/gopher` spells its pin mode.
 - **A channel may be held in a struct field.** `p.tx <- v` and `<-p.rx` work, for a
   written `chan T` and for a defined type over one, on a package-level variable and
   on a local, nested structs included.

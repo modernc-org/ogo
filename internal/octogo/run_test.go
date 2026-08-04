@@ -9971,7 +9971,7 @@ type hidden struct{ n int }
 // the lowering is about nothing but names.
 // multiPkgWant is what that program prints, on every one of the three.
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
-	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n"
+	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "greet"
@@ -10036,7 +10036,15 @@ println(unit.Sum(), vecs[1].A)
 var ch chan int
 go greet.Send(ch, 20)
 println(<-ch)
+// A constant of an imported package used in a CONST declaration of this one,
+// which needs its VALUE at compile time -- the other package emits a symbol,
+// and C evaluates a file-scope initializer before there is one.
+println(limit, wide)
 }
+
+const limit = greet.K + 5
+
+const wide = greet.K * 2
 
 // Package-scope values of an imported type, laid out statically.
 var unit = greet.Vec{A: 1, B: 1}

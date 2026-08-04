@@ -1,0 +1,19 @@
+// A constant of an imported package may be used where any constant may, a const
+// declaration included: a constant is a value, not a symbol, so there is nothing to
+// link and nothing for C to evaluate at run time.
+//
+// The p2 package is the exception, and says so rather than reporting the package
+// undefined: it has no source, so its constants are a table in the compiler with no
+// scope to find them in.
+
+import "p2"
+
+const mode = 1
+
+func main() {
+	// ERROR a p2 constant cannot be used in a const declaration yet
+	const bad = p2.OutputEnable
+
+	// Written where it is used, it is an ordinary value.
+	println(mode, p2.OutputEnable)
+}

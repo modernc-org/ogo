@@ -10322,6 +10322,69 @@ type FactorNodeParen struct {
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")" .
+//
+// qualifiedConst evaluates "pkg.Name" as a compile-time constant of an imported
+// package. A constant is a value, not a symbol, so there is nothing to link and the
+// import is as usable in a const declaration as a local constant is -- which is
+// what Go does, and what this could not do before.
+//
+// Only an exported name of a package that loaded resolves; an unexported or missing
+// one is left to checkQualifiedRef, which says so in its own words rather than
+// having this report "not a constant" about a name that is one.
+func (f *File) qualifiedConst(s *Scope, n Node) (ExpressionNode, bool) {
+	var qual, member Token
+	seen := 0
+	for c := range it(n.ast) {
+		switch c.sym {
+		case FactorSuffix:
+			for d := range it(c.ast) {
+				if d.sym != Selector {
+					return nil, false
+				}
+				for e := range it(d.ast) {
+					if e.sym == 0 && f.ch(e.tok) == IDENT {
+						member = f.tok(e.tok)
+					}
+				}
+			}
+		case 0:
+			if f.ch(c.tok) != IDENT {
+				return nil, false
+			}
+			qual, seen = f.tok(c.tok), seen+1
+		default:
+			return nil, false
+		}
+	}
+	if seen != 1 || !member.IsValid() || !f.isImportQualifier(s, qual.Src()) {
+		return nil, false
+	}
+	imp, ok := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	if !ok || imp.Import == nil {
+		return nil, false
+	}
+	// An intrinsic package has no source and so no scope to find a constant in: p2's
+	// are a table in the emitter. Said plainly, because the walk below would report
+	// "undefined: p2" about a package that is imported and does exist.
+	if intrinsicImports[imp.Import.ImportPath] {
+		f.err(qual.Position(), "a %s constant cannot be used in a const declaration yet; use var, or write it where it is used",
+			imp.Import.ImportPath)
+		return untypedConst{constant.MakeUnknown()}, true
+	}
+	if imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
+		return nil, false
+	}
+	cd, ok := imp.Import.Pkg.Scope.Declarations[member.Src()].(*ConstDeclaration)
+	if !ok || !token.IsExported(member.Src()) {
+		return nil, false
+	}
+	f.resolveConst(imp.Import.Pkg.Scope, cd)
+	if cd.ConstSpec == nil || cd.ConstSpec.Value == nil {
+		return nil, false
+	}
+	return cd.ConstSpec.Value.Expr(), true
+}
+
 func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	// A conversion of a constant, `int32(1)` or `float64(n)`, which Go folds like
 	// any other constant expression -- and which is how a scale factor is written:
@@ -10329,6 +10392,12 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	// name would resolve to a type rather than a constant and be reported as "not a
 	// constant".
 	if v, ok := f.constConversion(s, n); ok {
+		return v
+	}
+	// A constant of an imported package, `geo.MaxPoints`. Checked before the walk
+	// below, where the qualifier resolves to nothing on a body's scope chain --
+	// imports live in the file scope -- and came out as "undefined: geo".
+	if v, ok := f.qualifiedConst(s, n); ok {
 		return v
 	}
 	//TODO 	var ident *FactorNodeIdent

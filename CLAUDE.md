@@ -435,9 +435,11 @@ set -- in `p2Constants` (`internal/octogo/emit.go`), values from flexcc's
 define a symbol in. They exist because the hex is unforgiving in a way that looks
 like working code: `_examples/gopher` was written with `0x140006`, which is the DAC
 range and the mode and no OUTPUT ENABLE, and drives nothing. A `const` declaration
-cannot use them (`const m = p2.X` is "undefined: p2" -- the const evaluator does not
-resolve an import qualifier, which is a general gap, not a p2 one); `var` and `:=`
-both work.
+cannot use them -- p2 has no source, so its constants have no package scope for the
+constant evaluator to find them in, and it says that rather than reporting the
+package undefined. A user package's constants DO work in a const declaration
+(qualifiedConst in check.go, foldedQualifiedInt in emit.go); `var` and `:=` work for
+p2's.
 
 The four lock entries are the P2's 16 hardware locks, the same pool the channel
 runtime draws from. **`NewLock` does not report exhaustion**: after handing out
