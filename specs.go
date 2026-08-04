@@ -34,8 +34,6 @@
 // and "go" through a variable holding one. A named function, a function literal and
 // a bound-receiver method value all work as values (see Function types and function
 // values, and Function literals).
-// TODO 20260728 Defined types over a channel: a method on one (see Type
-// Declarations). Sends, receives and select clauses work.
 // TODO 20260730 A conversion to a defined ARRAY type cannot be indexed or measured
 // where it stands: `Row(r)[1]` and `len(Row(r))` for `type Row [3]int`. C has no
 // cast to an array type, so such a conversion has to emit its operand rather than a

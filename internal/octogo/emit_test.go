@@ -5129,20 +5129,27 @@ func main() { bad() }
 	}
 }
 
-// TestEmitCChanMethodRefused pins the one thing a defined type over a channel gives
-// up. It is answered for by the channel cell's own C name, the emitter reaching a
-// channel through that name everywhere -- the cell, the helpers, the element type --
-// so it has no C type of its own to hang a method namespace on. Refused where the
-// method is written; at the call it reads as an unknown package.
-func TestEmitCChanMethodRefused(t *testing.T) {
+// TestEmitCDefinedChanType pins the C name a defined type over a channel gets, and
+// why it needs one: two such types over the same element must not share a method
+// namespace. It used to have none -- it was answered for by the cell's name, which
+// is why a method on it was refused -- and could not, because the cell's typedef was
+// emitted after the typedef section. Moving that typedef in (for a channel held in a
+// struct field) is what made this possible; the dependency is what orders the two.
+func TestEmitCDefinedChanType(t *testing.T) {
 	src := `type Ch chan int
+
+type Gate chan int
 
 func (c Ch) tag() int { return 7 }
 
+func (g Gate) tag() int { return 8 }
+
 var gch Ch
 
+var gg Gate
+
 func main() {
-	println(gch.tag())
+	println(gch.tag(), gg.tag())
 }
 `
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
@@ -5151,10 +5158,25 @@ func main() {
 		t.Fatalf("Build: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := EmitC(pkg, &buf); err == nil {
-		t.Fatalf("EmitC accepted a method on a defined channel type:\n%s", buf.String())
-	} else if !strings.Contains(err.Error(), "method on a defined type over a channel") {
-		t.Errorf("EmitC error %q is not the channel-method refusal", err)
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		// Each defined type is its own C type, ordered after the channel it stands
+		// for.
+		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
+		"typedef ogo_chan_int Ch;\n",
+		"typedef ogo_chan_int Gate;\n",
+		// So the two methods are distinct functions rather than one name twice.
+		"int Ch_tag(Ch c)",
+		"int Gate_tag(Gate g)",
+		// And a variable of one is declared with its own name.
+		"static Ch gch;\n",
+		"static Gate gg;\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("defined channel type: missing %q in\n%s", want, got)
+		}
 	}
 }
 

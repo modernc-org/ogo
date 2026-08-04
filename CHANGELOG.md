@@ -38,6 +38,16 @@ Releases before v0.9.0 predate this file; see
   package is emitted: every declaration is substituted at the use, a function by its
   C intrinsic and a constant by its value.
 
+- **A defined type over a channel may have methods.** `type Ch chan int` with
+  `func (c Ch) Send(v int)` — which is what makes a channel a named thing with
+  behaviour rather than a bare pipe.
+
+  It was refused because such a type had no C name of its own: it was answered for
+  by the channel cell's, so two defined types over the same element would have
+  shared one method namespace. It has a typedef now, which it could not have while
+  the channel's own typedef was emitted *after* the typedef section — moving that
+  (for a channel held in a struct field) is what made this possible, and a
+  dependency is what orders the two.
 - **An array may be a function result.** `func mk() [3]int` was refused; it now
   works, for a function and for a method, in one dimension and in several.
 

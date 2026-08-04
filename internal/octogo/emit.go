@@ -446,7 +446,7 @@ func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
 		if !isVar || !e.isChanCType(ct) {
 			return "", "", false
 		}
-		return e.chanElemByName[ct], e.varRef(name), true
+		return e.chanElemOfCType(ct), e.varRef(name), true
 	}
 	// A channel held in a struct FIELD, `<-ports.rx`. A channel is a pointer to its
 	// cell, so the field access is what names it and nothing else changes.
@@ -465,7 +465,7 @@ func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
 		if !okf || !e.isChanCType(ct) {
 			return "", "", false
 		}
-		return e.chanElemByName[ct], e.fieldAccessC(root, fields), true
+		return e.chanElemOfCType(ct), e.fieldAccessC(root, fields), true
 	}
 	// A channel field reached through an INDEX, `ws[i].cmd`. The chain walker knows
 	// how to render one and what type it reaches, which is more than the fixed
@@ -478,7 +478,7 @@ func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
 	if !okc || !e.isChanCType(ct) {
 		return "", "", false
 	}
-	return e.chanElemByName[ct], text, true
+	return e.chanElemOfCType(ct), text, true
 }
 
 // goSite is one `go` statement: the callee's C name and the C types of its
@@ -1250,7 +1250,7 @@ func (e *emitter) selectChanField(head Node, chain []Node, c *selectCase) bool {
 		e.fail("a select send clause takes a channel variable or a field of one")
 		return false
 	}
-	c.ch, c.elem = e.fieldAccessC(base, fields), e.chanElemByName[ct]
+	c.ch, c.elem = e.fieldAccessC(base, fields), e.chanElemOfCType(ct)
 	return true
 }
 
@@ -1833,6 +1833,17 @@ func (e *emitter) isFuncCType(ctype string) bool {
 func (e *emitter) needChan(elem string) {
 	e.chanElems[elem] = true
 	e.chanElemByName[chanCName(elem)] = elem
+}
+
+// chanElemOfCType names the element type of a channel C type, following a DEFINED
+// type over one to what it stands for: `type Ch chan int` is its own C type now --
+// which is what gives it a name to hang a method on -- and the element, the cell and
+// the helpers are all keyed by the channel's own name.
+func (e *emitter) chanElemOfCType(ctype string) string {
+	if el, ok := e.chanElemByName[ctype]; ok {
+		return el
+	}
+	return e.chanElemByName[e.underlyingCType(ctype)]
 }
 
 // isChanCType reports whether a C type is a channel cell, a defined type over one
@@ -3350,17 +3361,11 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		}
 		e.namedTypes[mn] = true
 		e.namedUnderlying[mn] = underlying
-		if strings.HasPrefix(underlying, chanTypePrefix) {
-			// A defined type over a channel takes no typedef of its own and is
-			// answered for by the cell's name (see cType). The cell's typedef is
-			// emitted with the channel helpers, after this section, so a typedef
-			// naming it here would name a type C has not seen -- and the emitter
-			// reaches a channel through its C type name everywhere (the cell, the
-			// helpers, the element), so a second name for it would have to be
-			// resolved at each of those. The type keeps its identity to the checker;
-			// what it gives up is a method of its own, which is refused by name.
-			continue
-		}
+		// A defined type over a channel takes a typedef like any other defined type,
+		// which is what gives it a name to hang a method on. It could not until the
+		// channel's own typedef moved into this section (it used to be emitted with
+		// the helpers, after it, so a typedef naming it here named a type C had not
+		// seen); the dependency is what orders the two now.
 		e.addTypedef(mn, "typedef "+underlying+" "+mn+";\n", underlying)
 	}
 }
@@ -4104,7 +4109,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			if e.isChanCType(ctype) {
 				// The cell is a file-scope object like the variable pointing at it;
 				// acquiring its lock is a call, so it waits for package init.
-				elem := e.chanElemByName[ctype]
+				elem := e.chanElemOfCType(ctype)
 				cell := gn + "_cell"
 				e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
 				e.deferPkgInit(gn + " = &" + cell + ";")
@@ -4142,7 +4147,7 @@ func (e *emitter) emitChanFieldCells(gn, ctype string) {
 			e.fail("a channel field that is an array is not supported yet")
 			return
 		}
-		elem := e.chanElemByName[fld.ctype]
+		elem := e.chanElemOfCType(fld.ctype)
 		cell := cIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell"
 		e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
 		e.deferPkgInit(gn + "." + e.fieldIdent(fld.name) + " = &" + cell + ";")
@@ -4218,7 +4223,7 @@ func (e *emitter) emitLocalChanFieldCells(nm, ctype string) {
 			return
 		}
 		e.ind()
-		e.emit(nm + "." + e.fieldIdent(fld.name) + " = &" + e.localChanCell(e.chanElemByName[fld.ctype]) + ";\n")
+		e.emit(nm + "." + e.fieldIdent(fld.name) + " = &" + e.localChanCell(e.chanElemOfCType(fld.ctype)) + ";\n")
 	}
 }
 
@@ -5525,14 +5530,6 @@ func (e *emitter) receiverInfo(recv []int32) (name, ctype string, named bool) {
 	}
 	d := decls[0]
 	ctype = e.cType(d.TypeAST.ast)
-	if e.isChanCType(methodBaseType(ctype)) {
-		// A defined type over a channel is answered for by the channel cell's own C
-		// name (see collectTypeDecl), so it has no C type of its own to hang a
-		// method namespace on. Refused where the method is written rather than at
-		// the call, where it reads as an unknown package.
-		e.fail("a method on a defined type over a channel is not supported yet")
-		return recvSynthName, "", false
-	}
 	if len(d.Names) != 0 && d.Names[0].Src() != "_" {
 		return d.Names[0].Src(), ctype, true
 	}
@@ -6644,7 +6641,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			if e.isChanCType(ctype) {
 				// The declaration owns the cell; the variable is a reference to it.
 				e.ind()
-				e.emit(nm + " = &" + e.localChanCell(e.chanElemByName[ctype]) + ";\n")
+				e.emit(nm + " = &" + e.localChanCell(e.chanElemOfCType(ctype)) + ";\n")
 			}
 			// A local struct owns a cell per channel field, on the same rule as a
 			// local channel: the declaration owns it. Without this the field would be
@@ -7515,9 +7512,6 @@ func (e *emitter) cType(ast []int32) string {
 		return mn
 	}
 	if e.namedTypes[mn] {
-		if u := e.namedUnderlying[mn]; strings.HasPrefix(u, chanTypePrefix) {
-			return u // see collectTypeDecl: a defined channel type is its cell
-		}
 		return mn
 	}
 	e.fail("unsupported type %q", name)
@@ -12563,7 +12557,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				e.fail("a send statement needs a channel on the left")
 				return
 			}
-			e.emitChanSend(text, e.chanElemByName[ct], op)
+			e.emitChanSend(text, e.chanElemOfCType(ct), op)
 			return
 		}
 	}
@@ -12665,7 +12659,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("a send statement needs a channel on the left")
 			return
 		}
-		e.emitChanSend(lhs, e.chanElemByName[ct], op)
+		e.emitChanSend(lhs, e.chanElemOfCType(ct), op)
 		return
 	case ASSIGN:
 		if lhs == "_" {

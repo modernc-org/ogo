@@ -2115,6 +2115,54 @@ func main() {
 		want: "10 11 12\n1 6\n15 100 10\n8\n",
 	},
 	{
+		// A method on a defined type over a channel, which is what makes a channel a
+		// named thing with behaviour rather than a bare pipe. Two such types over the
+		// same element have methods of their own, which is the reason it needed a C
+		// name of its own: it used to be answered for by the cell's, so Ch and Gate
+		// would have shared one method namespace.
+		//
+		// Every line of this prints what real Go prints for the same program, with
+		// the make() calls Go needs and this target does not.
+		name: "a method on a defined channel type",
+		src: `type Ch chan int
+
+// A method on a defined type over a channel, which is what makes a channel a
+// named thing with behaviour rather than a bare pipe.
+func (c Ch) Send(v int) { c <- v }
+
+func (c Ch) Recv() int { return <-c }
+
+// A second defined type over the SAME element: its methods are its own, which is
+// why the type needs a C name of its own.
+type Gate chan int
+
+func (g Gate) Open() { g <- 1 }
+
+func (g Gate) Wait() int { return <-g }
+
+var c Ch
+
+var g Gate
+
+func worker() {
+	v := c.Recv()
+	c.Send(v * 2)
+}
+
+func opener() { g.Open() }
+
+func main() {
+	go worker()
+	c.Send(21)
+	println(c.Recv())
+
+	go opener()
+	println(g.Wait())
+}
+`,
+		want: "42\n1\n",
+	},
+	{
 		// A dispatch table: functions in an array, called through the index. It is
 		// most of the reason to put functions in an array at all, and it was BROKEN
 		// on the P2 until now -- every element called whatever the first one held,
