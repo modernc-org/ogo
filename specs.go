@@ -46,10 +46,6 @@
 // rather than as a syntax error. The named direction, `Row(r)`, works and may be
 // indexed where it stands, and assigning between a defined array type and its
 // underlying one needs no conversion either way (`var a [3]int = q`).
-// TODO 20260804 A local variable cannot shadow a PREDECLARED TYPE NAME: `int := 7`
-// is legal Go (the name is predeclared, not reserved) and is refused here with
-// "int is not a type". A local named for a C keyword is fine -- that is a separate
-// thing, and works.
 // TODO 20260727 Array literals as general values: an array literal passed to a
 // function or assigned. A slice literal stands as a value now, being a header; an
 // array is not a C value, so it initializes a variable, fills a slot in another

@@ -1,0 +1,70 @@
+// A predeclared name is not reserved: `int`, `len` and `true` are ordinary
+// identifiers a program may declare over, exactly as in Go. What that costs is the
+// meaning they had -- once `int` names a variable, it no longer names a type for the
+// rest of the block -- and the error for that lands on the USE, which can be a long
+// way from the declaration that took the name.
+//
+// So each message says what the identifier is bound to. Every wording here was
+// compared against gc's for the same program: a parameter, a result variable, a
+// local and a package-level variable are each named as themselves, a built-in
+// function is distinguished from a declared one, and a package is a "package name".
+
+import "p2"
+
+var taken = 7
+
+const fixed = 3
+
+func declared() int { return 1 }
+
+// A parameter shadows the type for the whole body.
+func byParam(int int) int {
+	// ERROR int \(parameter\) is not a type
+	var a [2]int
+	return int + a[0]
+}
+
+// A named result shares the body scope with the parameters, so it shadows too.
+func byResult() (string string) {
+	// ERROR string \(result variable\) is not a type
+	var a [2]string
+	_ = a
+	return ""
+}
+
+func main() {
+	// The declaration is legal; only using the name as a type afterwards is not.
+	int := 7
+	// ERROR int \(local variable\) is not a type
+	var a [2]int
+	println(int, a[0])
+
+	// ERROR taken \(package-level variable\) is not a type
+	var b [2]taken
+	println(b[0])
+
+	// ERROR fixed \(constant\) is not a type
+	var c [2]fixed
+	println(c[0])
+
+	// ERROR declared \(function\) is not a type
+	var d [2]declared
+	println(d[0])
+
+	// A built-in is not a declared function, and gc says so.
+	// ERROR len \(built-in function\) is not a type
+	var e [2]len
+	println(e[0])
+
+	// true is a constant, not a keyword.
+	// ERROR true \(constant\) is not a type
+	var g [2]true
+	println(g[0])
+
+	// A package qualifier with no type after it. This used to reach the emitter,
+	// which called it an unsupported type -- the checker recorded the qualifier and
+	// waited for a ". T" that never came, and nobody reported the wait.
+	// ERROR p2 \(package name\) is not a type
+	var h [2]p2
+	println(h[0])
+}

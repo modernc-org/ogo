@@ -156,6 +156,20 @@ Releases before v0.9.0 predate this file; see
 
 ### Diagnostics
 
+- **An identifier used as a type says what it is instead**, `int (local variable)
+  is not a type` rather than `int is not a type`. A predeclared name is not
+  reserved -- `int := 7` is legal, here as in Go -- but it costs the name its
+  meaning for the rest of the block, and the error then lands on a later use that
+  can be a long way from the declaration that took it. Each wording matches gc's
+  for the same program: a parameter, a result variable, a local and a
+  package-level variable are named as themselves, and a built-in function is
+  distinguished from a declared one.
+
+- **A package name used as a type is reported by the checker**, `p2 (package name)
+  is not a type`. `var a [2]p2` reached the backend instead and was called an
+  unsupported type: the checker recorded the qualifier and waited for a `.T` that
+  never came, and nothing reported the wait.
+
 - **A file that does not parse is no longer type-checked**, so a syntax error is
   reported alone instead of beneath the errors it caused. `a := [3]int(q)` reported
   `undefined: Row` against a declaration three lines *above* the syntax error --

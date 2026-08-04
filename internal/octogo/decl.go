@@ -315,9 +315,22 @@ type TypeDeclaration struct {
 }
 
 // VarDeclaration represents a named run time value.
+// varRole says how a variable came to be declared, which a diagnostic naming what
+// an identifier is bound to reports: Go distinguishes a parameter from a result
+// variable from an ordinary local, and so does the message here.
+type varRole int
+
+// varRole values.
+const (
+	roleVar varRole = iota
+	roleParam
+	roleResult
+)
+
 type VarDeclaration struct {
 	declaration
 	VarSpec     *VarSpecNode
+	role        varRole
 	kind        Kind  // the variable's type, when it resolves to a predeclared type
 	hasKind     bool  // kind is meaningful
 	isPtr       bool  // the variable's type is a pointer "*T"

@@ -592,8 +592,8 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 			f.declareReceiver(fs, n)
 		case Signature:
 			sig := f.signature(fs, n)
-			f.declareParamList(fs, sig.Params)
-			f.declareParamList(fs, sig.Results)
+			f.declareParamList(fs, sig.Params, roleParam)
+			f.declareParamList(fs, sig.Results, roleResult)
 			results = f.flattenResults(fs, sig)
 		case Block:
 			f.checkBlock(fs, results, n)
@@ -980,7 +980,7 @@ func (f *File) chanElemTypeName(s *Scope, tn TypeNode) (nm Token) {
 // be referenced and assigned in the body; an unnamed entry (an unnamed result)
 // declares nothing, and a name shared by a parameter and a result is a
 // redeclaration.
-func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
+func (f *File) declareParamList(s *Scope, list *ParameterListNode, role varRole) {
 	if list == nil {
 		return
 	}
@@ -998,7 +998,7 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode) {
 		elemName := f.elemTypeName(s, p.TypeNode)
 		funcSig := f.funcSig(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -4218,8 +4218,8 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		// that is the capture rule expressed as a scope rather than as a check.
 		ls := f.Scope.child()
 		sig := f.signature(ls, sigNode)
-		f.declareParamList(ls, sig.Params)
-		f.declareParamList(ls, sig.Results)
+		f.declareParamList(ls, sig.Params, roleParam)
+		f.declareParamList(ls, sig.Results, roleResult)
 		f.reportCaptures(s, ls, body)
 		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
 	}
@@ -4809,6 +4809,37 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		}
 		return
 	}
+}
+
+// declKind names what an identifier is bound to, for a diagnostic that says why a
+// name is not usable as a type. Go's wording, including its "local" for something
+// declared inside a function: `int := 7` shadows the predeclared type for the rest
+// of the block, so a later `var a [2]int` fails -- correctly, and confusingly if the
+// message only says the name is not a type. The error points at the USE, which may
+// be a long way from the declaration that took the name.
+func declKind(sc *Scope, d Declaration) string {
+	switch x := d.(type) {
+	case *VarDeclaration:
+		switch x.role {
+		case roleParam:
+			return "parameter"
+		case roleResult:
+			return "result variable"
+		}
+		if sc != nil && sc.Kind == BlockScope {
+			return "local variable"
+		}
+		return "package-level variable"
+	case *ConstDeclaration:
+		return "constant"
+	case *FuncDeclaration:
+		return "function"
+	case *PredeclaredFunc:
+		return "built-in function"
+	case *ImportDeclaration:
+		return "package name"
+	}
+	return "not a type"
 }
 
 // checkQualifiedType validates a qualified type name "qualifier.name" used in a
@@ -9261,7 +9292,8 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				case f.isImportQualifier(s, nm):
 					ident.Qualifier = tok // a "pkg.T" qualified type; the "." and T follow
 				default:
-					switch s.find(nm).(type) {
+					sc, d := s.find2(nm)
+					switch d.(type) {
 					case *PredeclaredType, *TypeDeclaration:
 						ident.Name = tok
 						ident.Index = n.tok
@@ -9269,7 +9301,7 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 					case nil:
 						f.err(tok.Position(), "undefined: %s", nm)
 					default:
-						f.err(tok.Position(), "%s is not a type", nm)
+						f.err(tok.Position(), "%s (%s) is not a type", nm, declKind(sc, d))
 					}
 				}
 			case PERIOD:
@@ -9293,6 +9325,14 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
+	}
+	// An import qualifier with no ". T" after it, `var a [2]p2`: the IDENT case
+	// records the qualifier and waits for the name, so a type that ends there is
+	// reported by nobody and reaches the emitter as "unsupported type". A package
+	// is not a type, which is what Go says about it too.
+	if ident.Qualifier.IsValid() && !ident.Name.IsValid() {
+		f.err(ident.Qualifier.Position(), "%s (package name) is not a type", ident.Qualifier.Src())
+		return nil
 	}
 	return r
 }
