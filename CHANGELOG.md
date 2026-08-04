@@ -26,6 +26,20 @@ Releases before v0.9.0 predate this file; see
   body's block scope has been left, where a local's name no longer types at all. A
   string would have printed as the first word of its header and a bool as `1`. The
   captured temporary carries its type, so that is now what chooses the format.
+- **The `p2` package is real source now.** It was a table in the compiler that the
+  checker took on trust: any exported `p2.X` was admitted, and a misspelt intrinsic
+  reached the C compiler as an unknown symbol. It is now an embedded package like
+  `testing`, declaring every function *bodyless* — the grammar's form for a function
+  implemented elsewhere — and every constant.
+
+  So the checker sees real signatures, `p2.Nope()` is *undefined: p2.Nope* from the
+  compiler, an unused `import "p2"` is reported like any other, and the constants
+  work in a `const` declaration, which is where a pin mode belongs. Nothing of the
+  package is emitted: every declaration is substituted at the use, a function by its
+  C intrinsic and a constant by its value.
+
+  Not yet: the argument *count* of a cross-package call, which is unchecked for
+  every package and not only this one.
 - **A constant of an imported package may be used in a `const` declaration.**
   `const limit = geo.MaxPoints` reported *undefined: geo* — imports live in the file
   scope, which a constant expression's resolution never reached. A constant is a

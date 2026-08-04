@@ -1,13 +1,17 @@
 import "p2"
 
+// p2 is imported to keep this file's shape; using it silences the unused-import
+// report, which p2 now draws like any other package -- it has source.
+func tick() { p2.WaitMs(1) }
+
 func process() {
-    // A fixed-capacity slice make is a compile-time-sized backing array, not a
-    // heap allocation, so it is allowed on the P2.
-    var buffer []int = make([]int, 0, 10)
+	// A fixed-capacity slice make is a compile-time-sized backing array, not a
+	// heap allocation, so it is allowed on the P2.
+	var buffer []int = make([]int, 0, 10)
 
-    // ERROR "undeclared name: new|dynamic allocation not supported"
-    ptr := new(int)
+	// ERROR "undeclared name: new|dynamic allocation not supported"
+	ptr := new(int)
 
-    _ = buffer
-    _ = ptr
+	_ = buffer
+	_ = ptr
 }

@@ -406,10 +406,16 @@ rejection is spent on lifetime, where proof genuinely fails.
 
 The `p2` package (resolved from the dotless import `"p2"`) is a thin, strongly-typed
 wrapper over flexcc's built-in P2 intrinsics — zero runtime overhead, no custom PASM.
-The mapping is the `p2Intrinsics` table in `internal/octogo/emit.go` (each entry is
-the C intrinsic plus the result C type, so a uint32 intrinsic like `Rnd` prints
-unsigned). The checker admits any exported `p2.X`; the emitter maps it and rejects an
-unknown one. Currently wired (verified on the P2 via `TestOnBoard`, and off-target
+
+**It is EMBEDDED SOURCE**, like `testing`: `p2Src` in `internal/octogo/build.go`
+declares every function BODYLESS (the grammar's form for a function implemented
+elsewhere) and every constant, so the checker sees real signatures and a misspelt
+name is caught by the compiler rather than by C. Nothing of it is emitted — it is in
+`intrinsicImports`, which `reachablePackages` skips — because every declaration is
+substituted at the use: a function by its C intrinsic (`p2Intrinsics`, which carries
+the result C type so a uint32 one like `Rnd` prints unsigned), a constant by its
+value. The constant VALUES live once, in `p2Constants`, and `p2ConstDecls` renders
+the source's const block from them so the two cannot drift. Currently wired (verified on the P2 via `TestOnBoard`, and off-target
 via the `testdata/hostp2` shim which now stubs these):
 
 | OctoGo | intrinsic (→ result) | OctoGo | intrinsic (→ result) |
@@ -434,12 +440,9 @@ set -- in `p2Constants` (`internal/octogo/emit.go`), values from flexcc's
 `smartpins.h`. They are emitted as literals, since the p2 package has no source to
 define a symbol in. They exist because the hex is unforgiving in a way that looks
 like working code: `_examples/gopher` was written with `0x140006`, which is the DAC
-range and the mode and no OUTPUT ENABLE, and drives nothing. A `const` declaration
-cannot use them -- p2 has no source, so its constants have no package scope for the
-constant evaluator to find them in, and it says that rather than reporting the
-package undefined. A user package's constants DO work in a const declaration
-(qualifiedConst in check.go, foldedQualifiedInt in emit.go); `var` and `:=` work for
-p2's.
+range and the mode and no OUTPUT ENABLE, and drives nothing. They work in a `const`
+declaration as any package's constants do (qualifiedConst in check.go,
+foldedQualifiedInt in emit.go).
 
 The four lock entries are the P2's 16 hardware locks, the same pool the channel
 runtime draws from. **`NewLock` does not report exhaustion**: after handing out

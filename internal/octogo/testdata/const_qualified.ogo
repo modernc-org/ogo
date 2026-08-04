@@ -2,18 +2,22 @@
 // declaration included: a constant is a value, not a symbol, so there is nothing to
 // link and nothing for C to evaluate at run time.
 //
-// The p2 package is the exception, and says so rather than reporting the package
-// undefined: it has no source, so its constants are a table in the compiler with no
-// scope to find them in.
+// p2 is no exception: it is a package of declarations, so its constants are
+// constants, and its functions are checked against real signatures.
 
 import "p2"
 
-const mode = 1
+const mode = p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable
 
 func main() {
-	// ERROR a p2 constant cannot be used in a const declaration yet
-	const bad = p2.OutputEnable
-
-	// Written where it is used, it is an ordinary value.
 	println(mode, p2.OutputEnable)
+
+	// A misspelt intrinsic is caught by the compiler now, where before any exported
+	// name was admitted and C reported it.
+	// ERROR undefined: p2.Nope
+	p2.Nope()
+
+	// The argument COUNT of a cross-package call is not checked yet, for p2 or for
+	// any other package, so p2.WaitMs(1, 2) still reaches the C compiler.
+	p2.WaitMs(1)
 }

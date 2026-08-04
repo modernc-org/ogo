@@ -30,7 +30,125 @@ var intrinsicImports = map[string]bool{"p2": true}
 // from a directory. They are ORDINARY OctoGo, compiled and mangled like any other
 // package -- nothing about them is intrinsic -- so the day one of them ships as
 // source on disk, the only change is where it is read from.
-var embeddedPkgs = map[string]string{"testing": testingSrc}
+var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src}
+
+// p2Src is the p2 package: the Propeller 2's hardware, as declarations. Every
+// function here is BODYLESS -- the form the grammar provides for a function
+// implemented elsewhere -- because each is one flexcc intrinsic and the emitter
+// substitutes the call. What the source buys is that the checker sees real
+// signatures and real constants: an argument is checked, a misspelt name is caught
+// by the compiler rather than by C, and a constant is usable wherever a constant is.
+//
+// The constants are the pin-configuration bits, from flexcc's smartpins.h, which is
+// embedded in this repository and is the authority. They are named rather than
+// written as hex because the hex is unforgiving in a way that looks like working
+// code: _examples/gopher was first written with a mode word missing P_OE, which
+// compiles, runs and drives nothing.
+var p2Src = `// Package p2 is the Propeller 2's hardware: its pins, its timing, its random
+// number generator and its sixteen hardware locks. Each function is one intrinsic
+// of the C backend, so a call costs what the instruction costs and nothing more.
+//
+// There is no init and nothing to configure. A pin is a number, 0..63 on a P2.
+
+` + p2ConstDecls() + `
+// PinHigh drives a pin high, PinLow low, PinToggle inverts it and PinFloat releases
+// it.
+func PinHigh(pin int)
+
+func PinLow(pin int)
+
+func PinToggle(pin int)
+
+func PinFloat(pin int)
+
+// PinIn reads a pin's input.
+func PinIn(pin int) int
+
+// PinWrite drives a pin to v.
+func PinWrite(pin int, v int)
+
+// WaitMs, WaitUs and WaitCycles pause the calling cog. Only this cog: there is no
+// scheduler, so the other seven are unaffected.
+func WaitMs(ms int)
+
+func WaitUs(us int)
+
+func WaitCycles(n int)
+
+// PinStart brings a smart pin up: its mode, its X and Y registers and its direction
+// bit in one call. WritePinMode, WritePinX and WritePinY set the parts separately.
+func PinStart(pin int, mode int, x int, y int)
+
+func WritePinMode(pin int, mode int)
+
+func WritePinX(pin int, x int)
+
+func WritePinY(pin int, y int)
+
+// ReadPin reads a smart pin's result and acknowledges it; AckPin acknowledges
+// without reading.
+func ReadPin(pin int) uint32
+
+func AckPin(pin int)
+
+// GetCt is the system counter, GetMs and GetSec the milliseconds and seconds since
+// reset. GetCt is the one to measure with: it counts every clock.
+func GetCt() uint32
+
+func GetMs() uint32
+
+func GetSec() uint32
+
+// Rnd is the hardware random number generator. Rev reverses the bits of x.
+func Rnd() uint32
+
+func Rev(x uint32) uint32
+
+// Reboot restarts the board.
+func Reboot()
+
+// The sixteen hardware locks, the same pool the channel runtime draws from.
+// TryLock is the only way to take one -- the hardware offers no blocking acquire --
+// so a caller that must wait spins on it.
+//
+// NewLock does NOT report exhaustion: after handing out 0..15 it returns 15 for
+// every further call, measured on a P2-EDGE. Two logically distinct locks can
+// therefore alias, which costs contention where they are shared and hangs where a
+// program nests two it believes are independent. See doc/locknew-never-fails.c.
+func NewLock() int
+
+func TryLock(l int) bool
+
+func Unlock(l int)
+
+func FreeLock(l int)
+`
+
+// p2ConstDecls renders the p2 package's constants from p2Constants, which is the
+// one place their values live: the checker reads them from this source and the
+// emitter substitutes them at the use, and two tables would drift.
+func p2ConstDecls() string {
+	var b strings.Builder
+	b.WriteString("// The pin-configuration bits, from flexcc's smartpins.h. OutputEnable is the one\n")
+	b.WriteString("// that is easy to leave out of a hex constant: a mode without it configures a pin\n")
+	b.WriteString("// that is switched off, which on a scope looks like a bug in whatever fed it.\nconst (\n")
+	names := make([]string, 0, len(p2Constants))
+	for k := range p2Constants {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	w := 0
+	for _, nm := range names {
+		if len(nm) > w {
+			w = len(nm)
+		}
+	}
+	for _, nm := range names {
+		fmt.Fprintf(&b, "\t%-*s = %s\n", w, nm, p2Constants[nm])
+	}
+	b.WriteString(")\n")
+	return b.String()
+}
 
 // testingSrc is the testing package: what a test needs, and no more than this
 // target can provide. There is no heap and no formatting, so there is no Errorf --

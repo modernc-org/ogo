@@ -1785,13 +1785,13 @@ func main() {
 		name: "the p2 package's pin-configuration constants",
 		src: `import "p2"
 
+// A CONST declaration takes them, which is where a pin mode belongs.
+const mode = p2.DAC990R3V | p2.OutputEnable
+
 func main() {
 	println(p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable)
 	println(p2.DAC600R2V, p2.DAC124R3V, p2.DAC75R2V)
 	println(p2.DACNoise, p2.DACDitherRnd, p2.OutputEnable)
-
-	// Usable where a value is, which is what makes them worth having.
-	mode := p2.DAC990R3V | p2.OutputEnable
 	println(mode)
 }
 `,

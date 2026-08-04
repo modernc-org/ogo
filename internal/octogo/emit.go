@@ -2387,15 +2387,18 @@ func testFuncName(f *File, decl Node) (string, bool) {
 // through its imports, in dependency order: a package's imports precede it, and the
 // main package's files come last. Each package appears once. This flattens the whole
 // program into the single C translation unit the emitter produces (all reachable
-// packages are compiled together, matching the no-separate-compilation model). A p2
-// import resolves to noPkg -- it has no .ogo source, only intrinsics -- and is
-// skipped here, staying on the p2Intrinsics path.
+// packages are compiled together, matching the no-separate-compilation model).
+//
+// An INTRINSIC package is skipped. p2 has source -- the checker reads real
+// signatures and real constants from it -- but every declaration in it is
+// substituted at the use: a function by its C intrinsic, a constant by its value.
+// There is nothing to emit, and emitting it would declare symbols that do not exist.
 func reachablePackages(main *Package) []*Package {
 	var order []*Package
 	seen := map[string]bool{}
 	var visit func(p *Package)
 	visit = func(p *Package) {
-		if p == nil || p == noPkg || seen[p.ImportPath] {
+		if p == nil || p == noPkg || seen[p.ImportPath] || intrinsicImports[p.ImportPath] {
 			return
 		}
 		seen[p.ImportPath] = true
@@ -4476,6 +4479,12 @@ func (e *emitter) foldedQualifiedIntKids(kids []Node) (string, bool) {
 	if !isImport {
 		return "", false
 	}
+	// An intrinsic package's constants are the compiler's own table: nothing was
+	// emitted for them, so there is no mangled name to look up.
+	if base == "p2" {
+		v, ok := p2Constants[fields[0]]
+		return v, ok
+	}
 	v, ok := e.constInt[mangle(prefix, fields[0])]
 	return v, ok
 }
@@ -5052,7 +5061,11 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		return
 	}
 	if body == nil {
-		e.fail("func %q must have a body", name)
+		// A function declared without a body is implemented elsewhere -- which the
+		// grammar provides for, and which the p2 package is entirely made of: each of
+		// its functions is one C intrinsic the call site substitutes. There is
+		// nothing to emit, and emitting a prototype would name a symbol that does not
+		// exist.
 		return
 	}
 
@@ -10988,6 +11001,20 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emit(")")
 			return true
 		}
+		// p2 is a package of declarations only -- each of its functions is one C
+		// intrinsic -- so its calls are substituted rather than mangled. Asked before
+		// the qualifier path below, which would name a p2_X that is never defined.
+		if recv == "p2" {
+			intr, ok := p2Intrinsics[method]
+			if !ok {
+				e.fail("unsupported p2 function %q", method)
+				return false
+			}
+			e.emit(intr.c + "(")
+			e.emitCallArgs("", suffix[1].ast) // a p2 intrinsic takes no slice
+			e.emit(")")
+			return true
+		}
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: the exported function is emitted
 			// in that package's namespace, so the call resolves to the mangled name.
@@ -14264,20 +14291,21 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 			}
 			return "", false
 		}
+		if recv == "p2" {
+			// A p2 intrinsic's result carries its declared C type (unsigned for a
+			// uint32 one), so a high-bit value prints and compares unsigned. A void
+			// intrinsic has no result type. Asked before the qualifier path below,
+			// which would look for a p2_X this package never defines.
+			if intr, ok := p2Intrinsics[e.soleIdent(suffix[0].ast)]; ok {
+				return intr.ret, intr.ret != ""
+			}
+			return "", false
+		}
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: its function's recorded result type
 			// is keyed by its mangled name in that package's namespace.
 			if rts, ok := e.funcRet[mangle(prefix, e.soleIdent(suffix[0].ast))]; ok && len(rts) == 1 {
 				return rts[0], true
-			}
-			return "", false
-		}
-		if recv == "p2" {
-			// A p2 intrinsic's result carries its declared C type (unsigned for a
-			// uint32 one), so a high-bit value prints and compares unsigned. A void
-			// intrinsic has no result type.
-			if intr, ok := p2Intrinsics[e.soleIdent(suffix[0].ast)]; ok {
-				return intr.ret, intr.ret != ""
 			}
 			return "", false
 		}

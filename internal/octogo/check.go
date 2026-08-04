@@ -10363,14 +10363,6 @@ func (f *File) qualifiedConst(s *Scope, n Node) (ExpressionNode, bool) {
 	if !ok || imp.Import == nil {
 		return nil, false
 	}
-	// An intrinsic package has no source and so no scope to find a constant in: p2's
-	// are a table in the emitter. Said plainly, because the walk below would report
-	// "undefined: p2" about a package that is imported and does exist.
-	if intrinsicImports[imp.Import.ImportPath] {
-		f.err(qual.Position(), "a %s constant cannot be used in a const declaration yet; use var, or write it where it is used",
-			imp.Import.ImportPath)
-		return untypedConst{constant.MakeUnknown()}, true
-	}
 	if imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
 		return nil, false
 	}

@@ -71,6 +71,13 @@ const (
 	// frameMs is how long one step of the dance is held, when it is running. Eight
 	// frames at 120 ms is a loop about a second long.
 	frameMs = 120
+
+	// dacMode configures a pin as a DAC: the 990-ohm 3.3 V range, the smart-pin
+	// mode that takes a 16-bit level, and OUTPUT ENABLE -- the one that is easy to
+	// leave out of a hex constant. Without it the pin does not drive at all, and a
+	// scope shows a few tens of millivolts of dither ripple, which looks like a bug
+	// in the drawing rather than a pin that was never switched on.
+	dacMode = p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable
 )
 
 // pt is one point of the figure, in the 0..255 square an 8-bit DAC level spans.
@@ -113,15 +120,8 @@ func drawFrame(f int) {
 }
 
 func main() {
-	// The pin configuration, spelled out: the 990-ohm 3.3 V DAC range, the
-	// smart-pin mode that takes a 16-bit level, and OUTPUT ENABLE -- which is the
-	// one that is easy to leave out of a hex constant. Without it the pin does not
-	// drive at all, and a scope shows a few tens of millivolts of dither ripple,
-	// which looks like a bug in the drawing rather than a pin that was never
-	// switched on.
-	mode := p2.DAC990R3V | p2.DACDitherPWM | p2.OutputEnable
-	p2.PinStart(xPin, mode, 0, 0)
-	p2.PinStart(yPin, mode, 0, 0)
+	p2.PinStart(xPin, dacMode, 0, 0)
+	p2.PinStart(yPin, dacMode, 0, 0)
 
 	if still >= 0 {
 		// One frame, drawn over and over. Nothing moves, which is what a still
