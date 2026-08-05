@@ -2420,6 +2420,44 @@ func main() {
 		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
 	},
 	{
+		name: "a struct-returning call handed on by value",
+		src: `type S struct {
+	n  int
+	ok bool
+}
+
+func mk(n int) S {
+	var s S
+	s.n = n * 2
+	s.ok = n > 0
+	return s
+}
+
+func (s S) flag() bool { return s.ok }
+
+// Each of these hands a struct-returning call somewhere BY VALUE without going
+// through the ordinary argument path: the equality helper, a value receiver, and a
+// literal's element. The target loses a sub-word member across such a handoff, so
+// each is bound to a temporary first.
+func main() {
+	println(mk(3) == mk(3), mk(3) == mk(-5))
+	println(mk(3).flag(), mk(-5).flag())
+	xs := []S{mk(3), mk(-5)}
+	println(xs[0].ok, xs[1].ok)
+	println(mk(3).n, mk(-5).ok)
+}
+`,
+		want: "true false\ntrue false\ntrue false\n6 false\n",
+		// The one position still warning is the slice literal, `[]S{mk(3), mk(-5)}`:
+		// "mixing pointer and integer types". Its values are checked right here on
+		// the board and are right. It is not bound like the others because a
+		// literal's elements are a DECLARATION initializer, which has no prologue to
+		// hoist into -- a real fix, not a one-liner. The equality and the value
+		// receiver beside it were the same warning family and were genuinely broken;
+		// see doc/return-nonword-struct.c for which positions were which.
+		backendWarning: "mixing pointer and integer types",
+	},
+	{
 		name: "a struct with a sub-word field, in every position",
 		src: `type S struct {
 	n  int

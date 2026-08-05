@@ -15,16 +15,17 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
-- **A struct with a field narrower than a machine word was mishandled in three
+- **A struct with a field narrower than a machine word was mishandled in five
   places**, on the target only, and a sweep of every position it can reach found
-  them. Passing one **by value from a call**, `take(mk(3))`, and returning one
-  **through an interface method** joined the direct return below: each gave the
-  wrong value for the narrow field on a P2-EDGE while the `int` beside it survived.
-  All three are fixed by binding the call to a temporary. The run case "a struct
-  with a sub-word field, in every position" exercises the lot on real hardware, and
-  `doc/return-nonword-struct.c` records which positions warned and which were
-  actually broken — five and three, so the backend's diagnostic is a signal and not
-  a verdict.
+  them all. Beside the direct return below: passing one **by value from a call**,
+  `take(mk(3))`; returning one **through an interface method**; **comparing** two,
+  `mk(3) == mk(3)`, which answered false for equal values; and using one as a
+  **value receiver**, `mk(-5).flag()`. Each gave the wrong answer for the narrow
+  field on a P2-EDGE while the `int` beside it survived, so half of every value was
+  right. All five are fixed by binding the call to a temporary. Two run cases
+  exercise the lot on real hardware, and `doc/return-nonword-struct.c` tabulates
+  which of the eight positions warned and which were actually broken — eight, five
+  — so the backend's diagnostic is a signal, not a verdict.
 
 - **A struct returned straight from a call lost any field narrower than a machine
   word**, on the target only. `func fwd(n int) S { return mk(n) }` for an `S` with a

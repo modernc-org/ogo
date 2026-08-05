@@ -11982,6 +11982,19 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			cname := e.funcCallC(base)
 			text = cname + "(" + e.argsCText(cname, n.ast) + ")"
 			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
+			// A STRUCT result about to become a METHOD's receiver is bound to a
+			// temporary: the target drops a member narrower than a machine word when
+			// such a value is handed on by value, which `mk(-5).flag()` showed by
+			// answering true for a false bool. See doc/return-nonword-struct.c.
+			//
+			// Only before a method call -- Selector then CallSuffix. A plain field
+			// select, `mk().y`, reads the value where it stands and is correct; it
+			// also already has a temporary from the paths that hoist a call, and
+			// binding again would only emit a copy of a copy.
+			if i+2 < len(steps) && steps[i+1].sym == Selector && steps[i+2].sym == CallSuffix && e.isStruct(cur.ctype) {
+				bound := text
+				text = e.hoist(cur.ctype, func() { e.emit(bound) })
+			}
 		case Selector:
 			field := e.soleIdent(n.ast)
 			// A method reached through an interface: the slot's declared result is
@@ -15384,10 +15397,21 @@ func (e *emitter) emitStructCompareTriple(l, r Node, op, ctype string) {
 		e.emit("!")
 	}
 	e.emit(structEqName(ctype) + "(")
-	e.emitExprNode(l)
+	e.emitStructOperand(l)
 	e.emit(", ")
-	e.emitExprNode(r)
+	e.emitStructOperand(r)
 	e.emit(")")
+}
+
+// emitStructOperand emits a struct-valued operand for a helper that takes it BY
+// VALUE, binding a call to a temporary first. The target loses a member narrower
+// than a machine word across such a handoff, which made `mk(3) == mk(3)` false.
+func (e *emitter) emitStructOperand(n Node) {
+	if name, ok := e.hoistStructCallArg(n); ok {
+		e.emit(name)
+		return
+	}
+	e.emitExprNode(n)
 }
 
 // needStructEq records that struct type ctype needs an equality helper and, by

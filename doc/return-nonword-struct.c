@@ -39,12 +39,18 @@
 //	returned through an interface method (the thunk)      yes        NO
 //	sent on a channel from a call                        yes       yes
 //	returned by a function VALUE                         yes       yes
+//	compared, `mk(3) == mk(3)`                           yes        NO
+//	as a value receiver, `mk(-5).flag()`                 yes        NO
+//	as a slice-literal element, `[]S{mk(3)}`             yes       yes
+//	field selected off it, `mk(3).n`                      no       yes
+//	as a composite-literal field, `Box{mk(3)}`            no       yes
+//	deferred, `defer println(take(mk(-5)))`               no       yes
 //
-// So the warning is a SIGNAL, not a verdict: it fired on five positions, three of
+// So the warning is a SIGNAL, not a verdict: it fired on eight positions, five of
 // which were broken. It is also not the only signal -- the silent positions were all
 // correct, but that is luck rather than a rule, which is why the sweep ran them too.
 //
-// The three broken ones are fixed by the same move: bind the call to a temporary.
+// All five broken ones are fixed by the same move: bind the call to a temporary.
 // That is correct everywhere and, in all but the function-value case, silent -- so
 // the warning going away is a second confirmation. The channel send was bound for
 // the same reason even though it was already right, since silence is worth more than
