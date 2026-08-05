@@ -3752,11 +3752,19 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		if e.methodPtr[cname] {
 			recv = "(" + concrete + "*)_ogo_r"
 		}
-		b.WriteString(") { ")
-		if m.res != "void" {
-			b.WriteString("return ")
+		call := cname + "(" + strings.Join(append([]string{recv}, args...), ", ") + ")"
+		switch {
+		case m.res == "void":
+			b.WriteString(") { " + call + "; }\n")
+		case e.isStruct(m.res):
+			// Bound, not returned where it stands: the target loses a struct member
+			// narrower than a machine word out of `return f();`. The thunk is a
+			// return of a call by construction, so every struct-result method
+			// reached through an interface hit it. See doc/return-nonword-struct.c.
+			b.WriteString(") { " + m.res + " _ogo_v = " + call + "; return _ogo_v; }\n")
+		default:
+			b.WriteString(") { return " + call + "; }\n")
 		}
-		b.WriteString(cname + "(" + strings.Join(append([]string{recv}, args...), ", ") + "); }\n")
 	}
 	fmt.Fprintf(&b, "static const %s %s = {", ifaceVTName(iface), ifaceVTVar(iface, concrete))
 	for i, m := range methods {
@@ -4297,12 +4305,19 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 			e.f.tok(x.Pos()).Position(), r.what)
 		return
 	}
+	// `ch <- mk(3)`: the send helper takes the element by value, so a struct-
+	// returning call handed to it is the same shape hoistStructCallArg binds for an
+	// ordinary call -- and the send does not go through emitCallArgs, so it is bound
+	// here. See doc/return-nonword-struct.c.
+	sent, hoisted := e.hoistStructCallArg(op[1])
 	e.ind()
 	e.chanSendElems[elem] = true
 	e.emit(chanSendCName(elem) + "(" + ch + ", ")
 	// A concrete value sent on a channel of interface type is wrapped, the element
 	// type being the target here.
-	if text, ok := e.ifaceValueC(elem, op[1].ast); ok && e.isIfaceCType(elem) {
+	if hoisted {
+		e.emit(sent)
+	} else if text, ok := e.ifaceValueC(elem, op[1].ast); ok && e.isIfaceCType(elem) {
 		e.emit(text)
 	} else {
 		e.emitExpr(op[1].ast)
@@ -14255,6 +14270,29 @@ func (e *emitter) emitDiscard(expr []int32) {
 // emitCallArgs emits a call's argument list. cname is the callee's C name, used
 // only to recover its parameter types; "" (a p2 intrinsic, or a callee whose
 // signature is not recorded) simply emits every argument as written.
+// hoistStructCallArg binds an argument that is a call returning a STRUCT to a
+// temporary of this frame and answers with its name. See the call site for why.
+func (e *emitter) hoistStructCallArg(arg Node) (string, bool) {
+	if e.declInit || e.deferReplay >= 0 {
+		return "", false
+	}
+	callee, suffix, ok := e.directCall(arg.ast)
+	if !ok {
+		return "", false
+	}
+	_, resTypes, ok := e.callResultInfo(callee, suffix)
+	if !ok || len(resTypes) != 1 || !e.isStruct(resTypes[0]) {
+		return "", false
+	}
+	text := e.captureC(func() { ok = e.emitCallExpr(callee, suffix) })
+	if !ok {
+		return "", false
+	}
+	name := e.newTmp()
+	e.prologue = append(e.prologue, resTypes[0]+" "+name+" = "+text+";\n")
+	return name, true
+}
+
 func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	sliceParams := e.funcSliceParams[cname]
 	args := e.callArgExprs(callSuffix)
@@ -14311,6 +14349,15 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			e.emit(", ")
 		}
 		first = false
+		// A struct-returning CALL as an argument, `take(mk(3))`. Bound first: the
+		// target drops a member narrower than a machine word when such a call is
+		// passed where it stands -- `take(mk(-5))` answered true for a false bool on
+		// a P2-EDGE. Same defect as the direct return; see
+		// doc/return-nonword-struct.c.
+		if name, ok := e.hoistStructCallArg(arg); ok {
+			e.emit(name)
+			continue
+		}
 		// An ARRAY literal written as an argument, `take([3]int{1, 2, 3})`. The
 		// parameter is a pointer the callee memcpys from -- an array parameter is a
 		// copy, as Go says -- so what the call needs is an lvalue, and a temporary

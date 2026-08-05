@@ -2420,6 +2420,63 @@ func main() {
 		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
 	},
 	{
+		name: "a struct with a sub-word field, in every position",
+		src: `type S struct {
+	n  int
+	ok bool
+}
+
+type Maker interface{ make1(n int) S }
+
+type M struct{}
+
+func (m *M) make1(n int) S { return mk(n) }
+
+var ch chan S
+
+func mk(n int) S {
+	var s S
+	s.n = n * 2
+	s.ok = n > 0
+	return s
+}
+
+func take(s S) bool { return s.ok }
+
+func send() { ch <- mk(3) }
+
+// The target loses a struct member narrower than a machine word in some positions
+// and warns about more of them than it breaks (doc/return-nonword-struct.c). Each
+// one is exercised here so the BOARD says which, rather than the diagnostic.
+func main() {
+	x := mk(3)
+	println(x.n, x.ok)
+
+	println(take(mk(3)), take(mk(-5)))
+
+	var mm M
+	var i Maker = &mm
+	v := i.make1(3)
+	println(v.n, v.ok)
+
+	f := mk
+	w := f(3)
+	println(w.n, w.ok)
+
+	go send()
+	c := <-ch
+	println(c.n, c.ok)
+}
+`,
+		want: "6 true\n" + "true false\n" + "6 true\n" + "6 true\n" + "6 true\n",
+		// The one position left warning is `f := mk` -- a function VALUE whose
+		// result is a struct with a sub-word member. That is the diagnostic
+		// doc/funcptr-nonword-struct.c measured and found cosmetic, and the values
+		// it produces are checked right here on the board. The other three that used
+		// to warn were real, and are fixed rather than recorded.
+		backendWarning: "incompatible pointer types in assignment",
+	},
+	{
 		name: "returning a call that returns a struct",
 		src: `type S struct {
 	n  int

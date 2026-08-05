@@ -15,6 +15,17 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A struct with a field narrower than a machine word was mishandled in three
+  places**, on the target only, and a sweep of every position it can reach found
+  them. Passing one **by value from a call**, `take(mk(3))`, and returning one
+  **through an interface method** joined the direct return below: each gave the
+  wrong value for the narrow field on a P2-EDGE while the `int` beside it survived.
+  All three are fixed by binding the call to a temporary. The run case "a struct
+  with a sub-word field, in every position" exercises the lot on real hardware, and
+  `doc/return-nonword-struct.c` records which positions warned and which were
+  actually broken — five and three, so the backend's diagnostic is a signal and not
+  a verdict.
+
 - **A struct returned straight from a call lost any field narrower than a machine
   word**, on the target only. `func fwd(n int) S { return mk(n) }` for an `S` with a
   `bool` field gave `false` for it on a P2-EDGE where Go and gcc give `true` — the

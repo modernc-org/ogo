@@ -27,21 +27,32 @@
 //
 // It is the same underlying weakness as doc/funcptr-nonword-struct.c -- the target's
 // compiler cannot resolve a struct typedef whose members are not all machine words,
-// and says "unknown type" about it. What matters is that the two positions differ in
-// consequence:
+// and says "unknown type" about it. Every position a struct of that shape can reach
+// was then swept, on the board, by the run case "a struct with a sub-word field, in
+// every position":
 //
-//	position                                          warns   code correct
-//	----------------------------------------------------------------------
-//	assigning a function to a function pointer          yes         YES
-//	returning a call's struct result directly           yes          NO
+//	position                                       warned   was correct
+//	-------------------------------------------------------------------
+//	assigned from a call to a local/global/field/element   no       yes
+//	returned directly from a call                        yes        NO
+//	passed by value from a call                          yes        NO
+//	returned through an interface method (the thunk)      yes        NO
+//	sent on a channel from a call                        yes       yes
+//	returned by a function VALUE                         yes       yes
 //
-// So a warning in this family is NOT reliably cosmetic. The function-pointer one was
-// checked against real hardware and its values are right; this one was assumed to be
-// the same thing and was not. Re-measure each position on the board before calling
-// any of them harmless -- and prefer a workaround that makes the warning go away,
-// since silence is then evidence rather than a suppressed signal. This is also why
-// ogo does not cast to quiet the function-pointer case: a cast would hide a
-// diagnostic that has now been shown to catch a real defect.
+// So the warning is a SIGNAL, not a verdict: it fired on five positions, three of
+// which were broken. It is also not the only signal -- the silent positions were all
+// correct, but that is luck rather than a rule, which is why the sweep ran them too.
+//
+// The three broken ones are fixed by the same move: bind the call to a temporary.
+// That is correct everywhere and, in all but the function-value case, silent -- so
+// the warning going away is a second confirmation. The channel send was bound for
+// the same reason even though it was already right, since silence is worth more than
+// a warning nobody can act on.
+//
+// What is left warning is the function value, which doc/funcptr-nonword-struct.c
+// measured and found cosmetic. ogo does NOT cast it quiet: a cast would suppress a
+// diagnostic that has now caught three real defects.
 //
 // To re-measure, compile with the target backend and read the two numbers.
 
