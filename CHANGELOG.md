@@ -15,6 +15,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **A struct holding an array is refused at every by-value boundary**, not just at a
+  parameter and a result. A **value receiver**, a **channel element** and a
+  **literal's element** reached the backend instead, which answered `Internal error,
+  couldn't find object variable with offset 4` or `incompatible types`. They are
+  reported where they are written now, with the reason and the advice the other two
+  already gave — use a pointer. Nothing that worked stops working: copying such a
+  struct between variables is a `memcpy` the emitter writes itself, a pointer
+  receiver copies nothing, and a literal written in place *is* the storage.
+
 - **A struct with a field narrower than a machine word was mishandled in five
   places**, on the target only, and a sweep of every position it can reach found
   them all. Beside the direct return below: passing one **by value from a call**,
