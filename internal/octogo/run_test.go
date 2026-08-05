@@ -2415,9 +2415,23 @@ func main() {
 	var ns Nums = []int{1, 2, 3}
 	ys := ([]int)(ns)
 	println(len(ys), ys[1])
+
+	// Every paren layer peels, not just one, and two hoisted literals in one
+	// expression each get their own temporary.
+	println(((a))[1], (((s))).y)
+	println([]int{1, 2, 3}[1] + []int{4, 5}[1])
+
+	// A literal indexed inside a loop is bound each time round.
+	for i := 0; i < 3; i++ {
+		println([]int{7, 8, 9}[i])
+	}
+
+	var z [2]int
+	println(z == [2]int{0, 0}, z == [2]int{1, 1})
 }
 `,
-		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
+		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n" +
+			"5 4\n7\n7\n8\n9\ntrue false\n",
 	},
 	{
 		name: "a for header with two names",

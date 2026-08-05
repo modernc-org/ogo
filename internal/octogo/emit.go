@@ -8219,28 +8219,42 @@ func fitsCInt(v int64) bool { return v >= math.MinInt32 && v <= math.MaxInt32 }
 // two suffix runs together -- `(a[0])[1]` -- would hand the recognisers a shape with
 // two FactorSuffix nodes, which none of them match, so that keeps its refusal rather
 // than becoming a silently different tree.
+// unparenKids peels every layer, `((a))[1]` as readily as `(a)[1]`: one call removes
+// one pair, and the result of removing one is the shape the next call matches.
 func (e *emitter) unparenKids(kids []Node) []Node {
+	// Peeling `((a))[1]` leaves `(a)[1]`, which has the same NUMBER of nodes, so the
+	// peel reports whether it did anything rather than being compared by shape.
+	for {
+		next, peeled := e.unparenKidsOnce(kids)
+		if !peeled {
+			return next
+		}
+		kids = next
+	}
+}
+
+func (e *emitter) unparenKidsOnce(kids []Node) ([]Node, bool) {
 	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
 		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
-		return kids
+		return kids, false
 	}
 	inner := e.factorKids(kids[1].ast)
 	if len(inner) == 0 {
-		return kids
+		return kids, false
 	}
 	// The inner factor must carry no suffix of its own.
 	for _, k := range inner {
 		if k.sym == FactorSuffix || k.sym == CompositeLit {
-			return kids
+			return kids, false
 		}
 	}
 	// A parenthesised composite TYPE is a conversion, and factorBracketConv reads it
 	// from the unreduced node -- the type it needs is the inner factor's own AST,
 	// which splicing the nodes out here would lose.
 	if inner[0].sym == 0 && e.f.ch(inner[0].tok) == LBRACK {
-		return kids
+		return kids, false
 	}
-	return append(slices.Clone(inner), kids[3])
+	return append(slices.Clone(inner), kids[3]), true
 }
 
 func (e *emitter) factorKids(ast []int32) []Node {

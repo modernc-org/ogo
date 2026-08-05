@@ -30,3 +30,25 @@ func main() {
 	// A parenthesised expression carrying a suffix is ordinary Go too.
 	println((a)[1], (ys)[0])
 }
+
+type Pt struct {
+	x int
+	y int
+}
+
+var pt Pt
+
+// A parenthesised operand is checked as the bare one is: `(pt).nosuch` used to reach
+// the emitter, which said "unsupported expression node FactorSuffix". Every layer
+// peels, so the third form is caught too.
+func fields() {
+	// ERROR type Pt has no field nosuch
+	println((pt).nosuch)
+	// ERROR type Pt has no field nosuch
+	println(((pt)).nosuch)
+	// ERROR type Pt has no field nosuch
+	println((((pt))).nosuch)
+
+	pt.y = 4
+	println((pt).y, ((pt)).y)
+}

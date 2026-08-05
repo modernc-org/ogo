@@ -251,9 +251,11 @@ used as a type now says what it actually is.
   to name — which is what the refusal was about. `go` through a function value is
   still refused: starting a cog needs the callee's name.
 
-- **A parenthesised expression may carry a suffix**, `(a)[1]`, `(s).v`, `(dbl)(21)`.
-  These are ordinary Go and were rejected as syntax errors: the grammar's
-  parenthesised alternative had no suffix at all.
+- **A parenthesised expression may carry a suffix**, `(a)[1]`, `(s).v`, `(dbl)(21)`,
+  through any number of layers, `((a))[1]`. These are ordinary Go and were rejected
+  as syntax errors: the grammar's parenthesised alternative had no suffix at all. The
+  checker sees through the parentheses too, so `(s).nosuch` is reported as the field
+  that does not exist rather than reaching the backend.
 
 - **A literal of a bracketed type may be read where it stands**, `[]int{1, 2, 3}[1]`,
   `[3]int{4, 5, 6}[2]`, `[2]P{{1, 2}, {3, 4}}[1].y`. The literal binds to a temporary

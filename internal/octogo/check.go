@@ -7096,6 +7096,37 @@ func (f *File) checkIndexExprs(s *Scope, n Node) {
 	}
 }
 
+// parenSoleIdent returns the identifier a factor of the form `( x ) suffix`
+// parenthesises, when x is exactly a name. Every layer is peeled, `((s)).y` as
+// readily as `(s).y`, matching what the emitter does with the same shape.
+func (f *File) parenSoleIdent(n Node) (Token, bool) {
+	kids := slices.Collect(it(n.ast))
+	for {
+		// `( x )` with or without a suffix after it: only the outermost carries one.
+		if len(kids) < 3 || kids[0].sym != 0 || Symbol(f.tok(kids[0].tok).Ch) != LPAREN ||
+			kids[2].sym != 0 || Symbol(f.tok(kids[2].tok).Ch) != RPAREN {
+			return Token{}, false
+		}
+		kids = f.factorKidsOf(kids[1])
+		if len(kids) == 1 && kids[0].sym == 0 {
+			if tok := f.tok(kids[0].tok); Symbol(tok.Ch) == IDENT {
+				return tok, true
+			}
+			return Token{}, false
+		}
+	}
+}
+
+// factorKidsOf descends the single-child Expression/SimpleExpr/Term/UnaryExpr
+// wrappers to the children of the factor underneath.
+func (f *File) factorKidsOf(n Node) []Node {
+	kids := slices.Collect(it(n.ast))
+	for len(kids) == 1 && kids[0].sym != 0 {
+		kids = slices.Collect(it(kids[0].ast))
+	}
+	return kids
+}
+
 // checkSliceBounds reports a three-bound slice expression that leaves out one of
 // the two bounds it must write. In "a[low:high:max]" only low may be omitted, the
 // capacity being meaningless without the length that has to fit inside it, so
@@ -7164,6 +7195,15 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
 				id, hasID = tok, true
 			}
+		}
+	}
+	// `(s).y` is `s.y`: the parenthesised form means the same thing, so it is checked
+	// the same way. Without this the checks below -- a field that exists, a method
+	// that exists, a call's arguments -- all skipped it for want of a leading
+	// identifier, and `(s).nosuch` reached the emitter instead of being reported.
+	if !hasID && hasSuffix {
+		if tok, ok := f.parenSoleIdent(n); ok {
+			id, hasID = tok, true
 		}
 	}
 	if hasLit {
