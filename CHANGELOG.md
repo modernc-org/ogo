@@ -15,6 +15,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Fixed
 
+- **Two functions whose result lists spell the same struct name shared one struct**,
+  silently. The struct is named after the result types run together, and `(a_b, int)`
+  and `(a, b_int)` both read as `a_b_int` once a type name contains an underscore —
+  so the second function got the first one's layout, and an `int64` result came back
+  truncated to 32 bits. A name already standing for a different list is numbered
+  apart now, and the lookup is by the list rather than by the name so one list always
+  answers with one struct. Present in v0.18.0, which is where result structs became
+  shape-keyed.
+
 - **A struct holding an array is refused at every by-value boundary**, not just at a
   parameter and a result. A **value receiver**, a **channel element** and a
   **literal's element** reached the backend instead, which answered `Internal error,
