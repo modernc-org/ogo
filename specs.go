@@ -35,11 +35,6 @@
 // function, so there is nothing to generate against. A named function, a function
 // literal, a bound-receiver method value and a multi-result function all work as
 // values (see Function types and function values, and Function literals).
-// TODO 20260804 A multi-result call cannot be FORWARDED as a return, `return f()`
-// where both signatures have the same results. It is refused for a named callee
-// too, so it is about the return statement rather than about function values:
-// checkReturn counts operands against results and has no case for the single call
-// that supplies all of them.
 // TODO 20260804 A conversion to an unnamed composite type must be PARENTHESISED:
 // `([]int)(xs)` and `([3]int)(q)` work, `[]int(xs)` does not parse. That is the
 // parenthesis restriction above, taken because the bare form is the one variant that

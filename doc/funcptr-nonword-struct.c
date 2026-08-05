@@ -45,6 +45,16 @@
 // warning from `ogo build`. Reporting it upstream is the way to remove it; if it is
 // fixed, drop the backendWarning field from that case and this file with it.
 //
+// READ THIS BEFORE CALLING ANOTHER ONE HARMLESS. The same weakness in a different
+// position IS a miscompile: returning a call's struct result directly loses the
+// narrow member, and warns while doing it (doc/return-nonword-struct.c, measured
+// 2026-08-05). So a warning in this family is not reliably cosmetic -- this one was
+// checked against real hardware and its values are right, and the other was assumed
+// to be the same thing and was not. Measure each position on the board, and prefer a
+// workaround that makes the warning GO AWAY: silence is then evidence. That is a
+// second reason not to cast here, beyond the one above -- a cast would suppress a
+// diagnostic now known to catch a real defect.
+//
 // To re-measure, compile with the target backend and read the line numbers.
 
 #include <stdio.h>

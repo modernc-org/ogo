@@ -11230,6 +11230,40 @@ func (e *emitter) emitDeferred() {
 	}
 }
 
+// forwardedCallC renders `f()` in `return f()`, where the one call supplies every
+// result. It answers only when the callee's results are exactly this function's --
+// two functions of one result list share a result struct, and nothing else can be
+// returned as one.
+func (e *emitter) forwardedCallC(ex Node) (string, bool) {
+	callee, suffix, ok := e.directCall(ex.ast)
+	if !ok {
+		return "", false
+	}
+	_, resTypes, ok := e.callResultInfo(callee, suffix)
+	if !ok || !slices.Equal(resTypes, e.curResultTypes) {
+		return "", false
+	}
+	text := e.captureC(func() { ok = e.emitCallExpr(callee, suffix) })
+	if !ok {
+		return "", false
+	}
+	return text, true
+}
+
+// soleResultCType is the C type of a function with exactly one result, or "".
+func (e *emitter) soleResultCType() string {
+	if len(e.curResultTypes) != 1 {
+		return ""
+	}
+	return e.curResultTypes[0]
+}
+
+// isDirectCall reports whether an expression is exactly `f(args)`.
+func (e *emitter) isDirectCall(ex Node) bool {
+	_, _, ok := e.directCall(ex.ast)
+	return ok
+}
+
 func (e *emitter) emitReturn(nodes []Node) {
 	var exprs []Node
 	for _, n := range nodes[1:] {
@@ -11270,6 +11304,34 @@ func (e *emitter) emitReturn(nodes []Node) {
 		e.emit("memcpy(" + arrayResultParam + ", " + src + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
 		e.ind()
 		e.emit("return;\n")
+		return
+	}
+	// `return f()` -- one call supplying every result, which Go allows when the
+	// counts match. Both functions return the SAME C struct, result structs being
+	// keyed by the result types, so the call is the return value as it stands.
+	if len(exprs) == 1 && len(e.curResultTypes) > 1 {
+		text, ok := e.forwardedCallC(exprs[0])
+		if !ok {
+			e.fail("a return supplying every result needs a call whose results are exactly %s",
+				strings.Join(e.curResultTypes, ", "))
+			return
+		}
+		// The call is BOUND to a temporary rather than returned where it stands.
+		// `return f();` is valid C and gcc runs it correctly, but the target's
+		// compiler miscompiles it when the result struct holds anything narrower
+		// than a machine word: a (int, bool) result came back with the bool always
+		// false, measured on a P2-EDGE. Binding first is correct and, unlike the
+		// direct form, compiles silently. See doc/return-nonword-struct.c.
+		//
+		// The binding is what a defer needs anyway: Go evaluates the operand and
+		// only then runs the defers, so emitting the call after them would let a
+		// defer change what it reads.
+		tmp := e.newTmp()
+		e.ind()
+		e.emit(e.retStructNameOf(e.curResultTypes) + " " + tmp + " = " + text + ";\n")
+		e.emitDeferred()
+		e.ind()
+		e.emit("return " + tmp + ";\n")
 		return
 	}
 	// Go evaluates a return's expressions, assigns them to the results, and only
@@ -11332,6 +11394,20 @@ func (e *emitter) emitReturn(nodes []Node) {
 			e.emit("};\n")
 		}
 	case 1:
+		// A STRUCT result returned straight from a call is bound to a temporary
+		// first, for the same reason a multi-result one is: the target's compiler
+		// loses a member narrower than a machine word out of `return f();` and warns
+		// while doing it. Binding is correct and silent. See
+		// doc/return-nonword-struct.c -- this is the plain-struct half of it, and it
+		// predates the multi-result forwarding that found it.
+		if ct := e.soleResultCType(); e.isStruct(ct) && e.isDirectCall(exprs[0]) {
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(ct + " " + tmp + " = " + e.captureC(func() { e.emitReturnValue(0, exprs[0]) }) + ";\n")
+			e.ind()
+			e.emit("return " + tmp + ";\n")
+			return
+		}
 		e.emit("return ")
 		e.emitReturnValue(0, exprs[0])
 		e.emit(";\n")

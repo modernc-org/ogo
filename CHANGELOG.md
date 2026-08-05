@@ -13,6 +13,23 @@ Releases before v0.9.0 predate this file; see
 
 ## Unreleased
 
+### Fixed
+
+- **A struct returned straight from a call lost any field narrower than a machine
+  word**, on the target only. `func fwd(n int) S { return mk(n) }` for an `S` with a
+  `bool` field gave `false` for it on a P2-EDGE where Go and gcc give `true` — the
+  `int` beside it survived, so half the value was right. The backend warned
+  (`incompatible pointer types in return`) and the warning turned out to be a true
+  signal. The call is bound to a temporary before the return now, which is correct
+  and compiles silently; `doc/return-nonword-struct.c` has the measurement. Present
+  in v0.18.0 and earlier.
+
+### Language
+
+- **A multi-result call may be forwarded as a return**, `return f()`, where the
+  callee's results are exactly the caller's. Both functions return the same C struct
+  — result structs are keyed by the result types — so the call is the return value.
+
 ## v0.18.0
 
 A release about what a value may be and where it may stand. An array can be a

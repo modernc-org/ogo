@@ -2420,6 +2420,73 @@ func main() {
 		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
 	},
 	{
+		name: "returning a call that returns a struct",
+		src: `type S struct {
+	n  int
+	ok bool
+}
+
+func mk(n int) S {
+	var s S
+	s.n = n * 2
+	s.ok = n > 0
+	return s
+}
+
+// The call's result returned straight out. On the target, returning a struct that
+// holds anything narrower than a machine word DIRECTLY from a call loses that
+// member, so the call is bound to a temporary first; see doc/return-nonword-struct.c.
+func fwd(n int) S { return mk(n) }
+
+func main() {
+	a := fwd(3)
+	b := fwd(-5)
+	println(a.n, a.ok, b.n, b.ok)
+}
+`,
+		want: "6 true -10 false\n",
+	},
+	{
+		name: "a multi-result call forwarded as a return",
+		src: `var log int
+
+func two() (int, int) { return 1, 2 }
+
+func flags(n int) (int, bool) { return n * 2, n > 0 }
+
+// One call supplying every result. Both functions return the same C struct --
+// result structs are keyed by the result types -- so the call IS the return value.
+func fwd() (int, int) { return two() }
+
+func fwdFlags(n int) (int, bool) { return flags(n) }
+
+func through(f func() (int, int)) (int, int) { return f() }
+
+func withDefer() (int, int) {
+	// Go evaluates the operand and only then runs the defers, so the call is bound
+	// before they run rather than emitted after them.
+	defer func() { log = 9 }()
+	return two()
+}
+
+func main() {
+	a, b := fwd()
+	println(a, b)
+
+	v, ok := fwdFlags(3)
+	w, no := fwdFlags(-5)
+	println(v, ok, w, no)
+
+	c, d := through(two)
+	println(c, d)
+
+	e, f := withDefer()
+	println(e, f, log)
+}
+`,
+		want: "1 2\n6 true -10 false\n1 2\n1 2 9\n",
+	},
+	{
 		name: "a multi-result function as a value",
 		src: `type Ops struct {
 	dm func(int, int) (int, int)

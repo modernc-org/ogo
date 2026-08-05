@@ -1895,6 +1895,21 @@ func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 			}
 		}
 		return
+	case len(exprs) == 1 && len(results) > 1:
+		// `return f()`: one call supplying every result, which Go allows when the
+		// counts match exactly. The operands are not checked one by one -- there is
+		// one operand and several results -- so what is verified is the arity here
+		// and the C result type in the emitter, the two functions sharing a result
+		// struct only when their result types agree.
+		v, known := f.rhsValueCount(s, exprs)
+		if known && v != len(results) {
+			f.err(retTok.Position(), "cannot use %s as %s in return statement",
+				f.valueSource(s, exprs, v), countUnits(len(results), "result"))
+			return
+		}
+		f.checkNames(s, exprs[0])
+		f.checkEscapeReturn(s, exprs[0])
+		return
 	case len(exprs) < len(results):
 		f.err(retTok.Position(), "not enough arguments to return")
 		return
