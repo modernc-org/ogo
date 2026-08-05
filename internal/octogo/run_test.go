@@ -2739,6 +2739,16 @@ func mk(k int) [3]int {
 	return a
 }
 
+type S struct {
+	v [3]int
+}
+
+var g [3]int
+
+func fwd(k int) [3]int { return mk(k) }
+
+func take(a [3]int, b [3]int) int { return a[0] + b[1] }
+
 // An array result travels through an out parameter -- C cannot return one -- so
 // the call is a statement with no expression to index. It is bound to a temporary
 // and the steps read that; two calls in one expression get one temporary each.
@@ -2757,9 +2767,32 @@ func main() {
 	var t T
 	t.n = 8
 	println(t.row()[0], t.row()[1])
+
+	// Handed on WHOLE. The caller owns the storage, so where the target IS storage
+	// -- a variable, a global, a struct field, this function's own out parameter --
+	// the call writes through it and nothing is copied.
+	var b [3]int
+	b = mk(4)
+	println(b[0], b[1], b[2])
+
+	g = mk(10)
+	println(g[2])
+
+	var s S
+	s.v = mk(7)
+	println(s.v[1])
+
+	// An argument is not storage the callee owns, so it binds to a temporary; two
+	// calls in one call get one each.
+	println(take(mk(1), mk(10)))
+
+	c := fwd(20)
+	println(c[1])
+
+	println(take(b, b), b[0])
 }
 `,
-		want: "5 12\n7\n8\n8 16\n",
+		want: "5 12\n7\n8\n8 16\n4 5 6\n12\n8\n12\n21\n9 4\n",
 	},
 	{
 		name: "go through a function value",

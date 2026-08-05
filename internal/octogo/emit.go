@@ -11696,6 +11696,21 @@ func (e *emitter) emitReturn(nodes []Node) {
 			e.fail("a function with an array result returns exactly one value")
 			return
 		}
+		// `return mk(k)`: the caller's storage is this function's out parameter, so
+		// the inner call writes into it and there is nothing left to copy.
+		if cname, ca, isCall := e.arrayResultCall(exprs[0].ast); isCall {
+			if ca.elem != a.elem || ca.declSuffix() != a.declSuffix() {
+				e.fail("cannot return %s as %s", e.goArrayTypeName(ca), e.goArrayTypeName(a))
+				return
+			}
+			if len(e.defers) != 0 {
+				e.emitDeferred()
+			}
+			e.emitArrayResultCall(arrayResultParam, cname, exprs[0].ast)
+			e.ind()
+			e.emit("return;\n")
+			return
+		}
 		src, srcDim, okSrc := e.arrayReturnOperand(exprs[0].ast)
 		switch {
 		case !okSrc:
@@ -13392,6 +13407,17 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
 		if _, isArray := e.arrayVar(base); isArray {
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				// `b = mk()`: the callee fills storage the caller owns, and b IS
+				// that storage. So the call writes through b directly -- no copy,
+				// which is what the out-parameter ABI is for.
+				if cname, a, isCall := e.arrayResultCall(rhs[0].ast); isCall {
+					if dst, ok := e.arrayVar(base); !ok || dst.elem != a.elem || dst.declSuffix() != a.declSuffix() {
+						e.fail("cannot assign %s to %s", e.goArrayTypeName(a), e.goArrayTypeName(dst))
+						return
+					}
+					e.emitArrayResultCall(e.varRef(base), cname, rhs[0].ast)
+					return
+				}
 				if src, ok := e.arraySourceC(rhs[0].ast); ok {
 					e.includes["string.h"] = true
 					dst := e.varRef(base)
@@ -13517,8 +13543,18 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// same copy the plain-variable target takes, and needed for the same reason --
 	// `s.a = b;` is not C, however willingly flexcc takes it.
 	if len(fields) != 0 && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
-		if _, isArray := e.fieldArray(base, fields); isArray {
+		if fa, isArray := e.fieldArray(base, fields); isArray {
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				// `s.v = mk()`: the field is the caller's storage, so the out
+				// parameter writes into it, as it does for a plain variable.
+				if cname, a, isCall := e.arrayResultCall(rhs[0].ast); isCall {
+					if fa.elem != a.elem || fa.declSuffix() != a.declSuffix() {
+						e.fail("cannot assign %s to %s", e.goArrayTypeName(a), e.goArrayTypeName(fa))
+						return
+					}
+					e.emitArrayResultCall(lhs, cname, rhs[0].ast)
+					return
+				}
 				if src, ok := e.arraySourceC(rhs[0].ast); ok {
 					e.includes["string.h"] = true
 					e.ind()
@@ -14680,6 +14716,34 @@ func (e *emitter) emitDiscard(expr []int32) {
 // emitCallArgs emits a call's argument list. cname is the callee's C name, used
 // only to recover its parameter types; "" (a p2 intrinsic, or a callee whose
 // signature is not recorded) simply emits every argument as written.
+// hoistArrayCallArg binds an argument that is a call returning an ARRAY to a
+// temporary of this frame and answers with its name.
+func (e *emitter) hoistArrayCallArg(arg Node) (string, bool) {
+	if e.declInit || e.deferReplay >= 0 {
+		return "", false
+	}
+	cname, a, ok := e.arrayResultCall(arg.ast)
+	if !ok {
+		return "", false
+	}
+	name := e.newTmp()
+	saved := e.indent
+	e.indent = 0
+	text := e.captureC(func() {
+		e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+		e.emitArrayResultCall(name, cname, arg.ast)
+	})
+	e.indent = saved
+	if text == "" {
+		return "", false
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		e.prologue = append(e.prologue, line+"\n")
+	}
+	e.arrays[name] = a
+	return name, true
+}
+
 // hoistStructCallArg binds an argument that is a call returning a STRUCT to a
 // temporary of this frame and answers with its name. See the call site for why.
 func (e *emitter) hoistStructCallArg(arg Node) (string, bool) {
@@ -14759,6 +14823,13 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			e.emit(", ")
 		}
 		first = false
+		// An ARRAY-returning call as an argument, `take(mk())`. The parameter is a
+		// pointer the callee memcpys from, so what the call site needs is storage:
+		// the result is bound to a temporary and that is passed.
+		if name, ok := e.hoistArrayCallArg(arg); ok {
+			e.emit(name)
+			continue
+		}
 		// A struct-returning CALL as an argument, `take(mk(3))`. Bound first: the
 		// target drops a member narrower than a machine word when such a call is
 		// passed where it stands -- `take(mk(-5))` answered true for a false bool on

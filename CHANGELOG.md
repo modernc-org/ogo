@@ -70,12 +70,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
-- **A call returning an array may be read where it stands**, `mk()[1]`, `x :=
-  mk()[0]`, `for i, v := range mk()`, and through a method, `t.row()[0]`. C cannot
-  return an array, so the result travels through an out parameter and the call is a
-  statement with no expression to index — it binds to a temporary now, and the steps
-  read that. Handing one on whole, `take(mk())` or `b = mk()`, still asks for a
-  variable.
+- **A call returning an array may be used like any other value.** Read where it
+  stands — `mk()[1]`, `x := mk()[0]`, `for i, v := range mk()`, `t.row()[0]` — and
+  handed on whole: `b = mk()`, `g = mk()`, `s.v = mk()`, `take(mk())`, and
+  `return mk(k)`. C cannot return an array, so the result travels through an out
+  parameter the caller supplies; where the target *is* storage the call writes
+  straight through it and nothing is copied, and where it is not the result binds to
+  a temporary. The one form still refused is an array *beside* another result.
 
 - **`go` may start a function held in a value**, `go g(21)` for a variable or a
   struct field holding one. A cog's entry point is generated per function, which is

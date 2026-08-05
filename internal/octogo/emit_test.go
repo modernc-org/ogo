@@ -5296,46 +5296,18 @@ func main() {
 	}
 }
 
-// TestEmitCArrayResultABI pins what a fixed-array result may NOT be used as. The
-// result itself works -- it travels through an out parameter the caller supplies,
-// which is the "an array as a function result" run case -- but the CALL is a
-// statement rather than a value, so any form needing a value is refused with the
-// way out.
+// TestEmitCArrayResultABI pins what a fixed-array result may NOT be used as, which
+// is now one thing: an array BESIDE another result. That would need a struct holding
+// an array, which this backend cannot assign ("Unable to multiply assign this
+// target"), and handing back a pointer instead would name the callee's dead frame.
 //
-// An array beside another result stays refused outright: that would need a struct
-// holding an array, which this backend cannot assign ("Unable to multiply assign
-// this target"), and handing back a pointer instead would name the callee's dead
-// frame.
+// The forms that used to be here -- as an argument, assigned to an existing variable
+// -- work: the result travels through an out parameter the caller supplies, so where
+// the target IS storage the call writes through it, and where it is not the result
+// binds to a temporary. See the run case "a call returning an array, read where it
+// stands".
 func TestEmitCArrayResultABI(t *testing.T) {
 	for _, test := range []struct{ name, src, want string }{
-		{
-			name: "as an argument",
-			src: `func f() [3]int {
-	var a [3]int
-	return a
-}
-
-func take(a [3]int) int { return a[0] }
-
-func main() { println(take(f())) }
-`,
-			want: "must be bound to a variable first",
-		},
-		{
-			name: "assigned to an existing variable",
-			src: `func f() [3]int {
-	var a [3]int
-	return a
-}
-
-func main() {
-	var b [3]int
-	b = f()
-	println(b[0])
-}
-`,
-			want: "must be bound to a variable first",
-		},
 		{
 			name: "beside another result",
 			src: `func f() ([3]int, int) {
