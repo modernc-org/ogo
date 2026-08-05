@@ -2681,6 +2681,30 @@ func main() {
 		want: "1 2\n6 true -10 false\n1 2\n1 2 9\n",
 	},
 	{
+		name: "two result lists that spell one struct name",
+		src: `// The result struct is named after the result TYPES, which two different lists
+// can spell alike once a type name contains an underscore: (a_b, int) and
+// (a, b_int) both read as a_b_int. The second function used to get the first's
+// struct, and an int64 result came back truncated.
+type a int64
+
+type b_int int8
+
+type a_b int
+
+func f() (a_b, int) { return 1, 2 }
+
+func g() (a, b_int) { return 1234567890123, 7 }
+
+func main() {
+	p, q := f()
+	r, s := g()
+	println(int(p), q, int64(r), int(s))
+}
+`,
+		want: "1 2 1234567890123 7\n",
+	},
+	{
 		name: "a multi-result function as a value",
 		src: `type Ops struct {
 	dm func(int, int) (int, int)

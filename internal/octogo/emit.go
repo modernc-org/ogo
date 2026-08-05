@@ -2496,7 +2496,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, retStructs: map[string]bool{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2999,7 +2999,8 @@ type emitter struct {
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
 	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
-	retStructs         map[string]bool          // result-struct typedefs already emitted, keyed by name
+	retStructs         map[string]string        // result-struct typedef name -> the result types it stands for
+	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
 	anonStructNames    map[string]string        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
 	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
@@ -3027,52 +3028,53 @@ type emitter struct {
 	labelBreak         map[string]string        // source label -> C break-target label, for "break L" (a labeled for or switch)
 	labelContinue      map[string]string        // source label -> C continue-target label, for "continue L" (a labeled for)
 	labelUsed          map[string]bool          // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
-	labelSeq           int                      // counter minting unique labeled-loop break/continue labels
-	pendingContLabel   string                   // the current labeled for's C continue target, for emitLoopBody to place at the body's end
-	postContLabel      string                   // the enclosing loop's post-statement label, when its post cannot fit C's third clause
-	pendingPost        func()                   // that loop's post statements, emitted after the label
-	pendingSwitchLabel string                   // the source label of a labeled switch, for emitSwitch to bind to its end label
-	deferBlockDepth    int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
-	deferReplay        int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
-	iota               int                      // the current iota value while emitting a const spec's expression, or -1 outside one
-	deferReplayArgs    []deferArg               // that slot's arguments, so emitCallArgs knows which were captured
-	usesPanic          bool                     // ogo_panic is called: emit its definition and pull in its includes
-	testEntry          string                   // the entry point of a test binary, replacing main (see TestEntry)
-	usesBound          bool                     // ogo_bound is called: emit the index bounds-check helper
-	usesNonzero        bool                     // ogo_nonzero is called: emit the divide-by-zero-check helper
-	usesNonzero64      bool                     // ogo_nonzero64 (64-bit divisor guard) is called
-	shiftHelpers       map[string][2]string     // guarded shift helper name -> {operator, value C type}
-	divHelpers         map[string][2]string     // guarded signed division helper name -> {operator, value C type}
-	release            bool                     // release build: a panic reboots (_reboot) instead of halting the cog
-	checks             bool                     // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
-	locals             map[string]string        // current function's parameter/local name -> C type, for typing `x := y`
-	curFunc            string                   // name of the function whose body is being emitted (for its result-struct type)
-	pkgScope           bool                     // a package variable's initializer is being emitted, where this frame's storage does not exist
-	curResultNames     []string                 // current function's result C-variable names, for a bare "return" (naked return)
-	curResultTypes     []string                 // current function's result C types, for typing a `return nil` in a slice-returning function
-	tmp                int                      // per-function counter for generated temporaries (destructuring)
-	makeN              int                      // translation-unit counter for make() backing arrays
-	wroteDecl          bool                     // a top-level definition has been emitted (drives blank-line separators)
-	mainRet            bool                     // currently emitting main's body: a bare `return` yields `return 0;`
-	declInit           bool                     // emitting a static initializer: a string literal must use a brace, not a compound literal
-	usesString         bool                     // an ogo_string type/literal appears: emit stringTypedef
-	usesStringPrint    bool                     // a string is printed: emit stringHelpers
-	usesStringEq       bool                     // a string == / != appears: emit ogo_string_eq
-	eqStructs          map[string]bool          // struct C types compared with == / !=: emit an ogo_eq_<T> helper
-	eqArrays           map[string]arrDim        // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
-	prologue           []string                 // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
-	frameBacked        map[string]bool          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
-	crossParams        map[string][]leak        // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
-	retParams          map[string][]bool        // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
-	funcValueOf        map[string]string        // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
-	crossEdges         []crossEdge              // call sites passing a parameter straight on, the graph closeCrossParams walks
-	retEdges           []crossEdge              // returns of a call taking a parameter, the graph the result summary is closed over
-	crossNames         map[string]string        // C function name -> the name it was declared with, for crossParams diagnostics
-	frameHolder        map[string]string        // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
-	chanCells          []string                 // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
-	chanCellN          int                      // counter minting unique cell names, program-wide like makeN
-	usesStringCmp      bool                     // a string < <= > >= appears: emit ogo_string_cmp
-	usesRuneDecode     bool                     // `for i, c := range s` appears: emit ogo_decode_rune
+	labelSeq           int
+	retSeq             int                  // disambiguates a result-struct name two different result lists spell alike                      // counter minting unique labeled-loop break/continue labels
+	pendingContLabel   string               // the current labeled for's C continue target, for emitLoopBody to place at the body's end
+	postContLabel      string               // the enclosing loop's post-statement label, when its post cannot fit C's third clause
+	pendingPost        func()               // that loop's post statements, emitted after the label
+	pendingSwitchLabel string               // the source label of a labeled switch, for emitSwitch to bind to its end label
+	deferBlockDepth    int                  // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
+	deferReplay        int                  // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
+	iota               int                  // the current iota value while emitting a const spec's expression, or -1 outside one
+	deferReplayArgs    []deferArg           // that slot's arguments, so emitCallArgs knows which were captured
+	usesPanic          bool                 // ogo_panic is called: emit its definition and pull in its includes
+	testEntry          string               // the entry point of a test binary, replacing main (see TestEntry)
+	usesBound          bool                 // ogo_bound is called: emit the index bounds-check helper
+	usesNonzero        bool                 // ogo_nonzero is called: emit the divide-by-zero-check helper
+	usesNonzero64      bool                 // ogo_nonzero64 (64-bit divisor guard) is called
+	shiftHelpers       map[string][2]string // guarded shift helper name -> {operator, value C type}
+	divHelpers         map[string][2]string // guarded signed division helper name -> {operator, value C type}
+	release            bool                 // release build: a panic reboots (_reboot) instead of halting the cog
+	checks             bool                 // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
+	locals             map[string]string    // current function's parameter/local name -> C type, for typing `x := y`
+	curFunc            string               // name of the function whose body is being emitted (for its result-struct type)
+	pkgScope           bool                 // a package variable's initializer is being emitted, where this frame's storage does not exist
+	curResultNames     []string             // current function's result C-variable names, for a bare "return" (naked return)
+	curResultTypes     []string             // current function's result C types, for typing a `return nil` in a slice-returning function
+	tmp                int                  // per-function counter for generated temporaries (destructuring)
+	makeN              int                  // translation-unit counter for make() backing arrays
+	wroteDecl          bool                 // a top-level definition has been emitted (drives blank-line separators)
+	mainRet            bool                 // currently emitting main's body: a bare `return` yields `return 0;`
+	declInit           bool                 // emitting a static initializer: a string literal must use a brace, not a compound literal
+	usesString         bool                 // an ogo_string type/literal appears: emit stringTypedef
+	usesStringPrint    bool                 // a string is printed: emit stringHelpers
+	usesStringEq       bool                 // a string == / != appears: emit ogo_string_eq
+	eqStructs          map[string]bool      // struct C types compared with == / !=: emit an ogo_eq_<T> helper
+	eqArrays           map[string]arrDim    // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
+	prologue           []string             // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	frameBacked        map[string]bool      // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
+	crossParams        map[string][]leak    // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
+	retParams          map[string][]bool    // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
+	funcValueOf        map[string]string    // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
+	crossEdges         []crossEdge          // call sites passing a parameter straight on, the graph closeCrossParams walks
+	retEdges           []crossEdge          // returns of a call taking a parameter, the graph the result summary is closed over
+	crossNames         map[string]string    // C function name -> the name it was declared with, for crossParams diagnostics
+	frameHolder        map[string]string    // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
+	chanCells          []string             // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
+	chanCellN          int                  // counter minting unique cell names, program-wide like makeN
+	usesStringCmp      bool                 // a string < <= > >= appears: emit ogo_string_cmp
+	usesRuneDecode     bool                 // `for i, c := range s` appears: emit ogo_decode_rune
 	err                error
 }
 
@@ -5146,19 +5148,38 @@ func (e *emitter) retStructNameOf(res []string) string {
 		b.WriteByte('_')
 		b.WriteString(cTypeIdent(ct))
 	}
-	name := b.String()
-	if !e.retStructs[name] {
-		e.retStructs[name] = true
-		text := e.captureC(func() {
-			e.emit("typedef struct { ")
-			for i, ct := range res {
-				fmt.Fprintf(e.w, "%s _%d; ", ct, i)
-			}
-			e.emit("} " + name + ";\n")
-		})
-		// Each result is held by value, so every one of their typedefs comes first.
-		e.addTypedef(name, text, res...)
+	// The readable name is the result types run together, which two DIFFERENT lists
+	// can spell the same way once a type name contains an underscore: `(a_b, int)`
+	// and `(a, b_int)` both give ogo_ret_a_b_int. That silently gave the second
+	// function the first one's struct -- an int64 result came back truncated. So the
+	// name is checked against the list it already stands for and numbered apart when
+	// they differ; the common case keeps the name it always had.
+	// Looked up by the result LIST, not by the name: the same list must answer with
+	// the same struct every time it is asked, and asking by name would mint a fresh
+	// one on each call once a collision had pushed it off the base name.
+	key := strings.Join(res, ",")
+	if had, ok := e.retStructByKey[key]; ok {
+		return had
 	}
+	name := b.String()
+	for {
+		if _, taken := e.retStructs[name]; !taken {
+			break
+		}
+		e.retSeq++
+		name = fmt.Sprintf("%s_%d", b.String(), e.retSeq)
+	}
+	e.retStructByKey[key] = name
+	e.retStructs[name] = key
+	text := e.captureC(func() {
+		e.emit("typedef struct { ")
+		for i, ct := range res {
+			fmt.Fprintf(e.w, "%s _%d; ", ct, i)
+		}
+		e.emit("} " + name + ";\n")
+	})
+	// Each result is held by value, so every one of their typedefs comes first.
+	e.addTypedef(name, text, res...)
 	return name
 }
 
