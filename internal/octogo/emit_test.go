@@ -5368,6 +5368,99 @@ func main() {
 	}
 }
 
+// TestEmitCArrayFieldABI pins every by-value boundary a struct holding an ARRAY is
+// refused at. The target's C compiler drops the argument slot or fails the copy, and
+// no lowering here can reach the calling convention itself, so each is reported where
+// it is written with the same advice: use a pointer.
+//
+// Three of these used to reach the backend instead, which answered "Internal error,
+// couldn't find object variable with offset 4" and "incompatible types" -- the guard
+// covered parameters and results but not a value receiver, a channel element or a
+// literal's element. Copying between variables is NOT here: that is a memcpy the
+// emitter writes itself.
+func TestEmitCArrayFieldABI(t *testing.T) {
+	const header = `type A struct {
+	v [3]int
+	n int
+}
+
+var g A
+
+`
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "value receiver",
+			src:  "func (a A) top() int { return a.v[2] }\n\nfunc main() { println(g.top()) }\n",
+			want: "receiver a: A holds an array",
+		},
+		{
+			name: "parameter",
+			src:  "func take(x A) int { return x.n }\n\nfunc main() { println(take(g)) }\n",
+			want: "parameter x: A holds an array",
+		},
+		{
+			name: "result",
+			src:  "func mk() A { return g }\n\nfunc main() { println(mk().n) }\n",
+			want: "result: A holds an array",
+		},
+		{
+			name: "channel element",
+			src:  "var ch chan A\n\nfunc send() { ch <- g }\n\nfunc main() {\n\tgo send()\n\tc := <-ch\n\tprintln(c.n)\n}\n",
+			want: "channel element: A holds an array",
+		},
+		{
+			name: "literal element",
+			src:  "func main() {\n\txs := []A{g}\n\tprintln(xs[0].n)\n}\n",
+			want: "cannot be a literal's element",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+// TestEmitCArrayFieldABIAllows pins what is NOT refused: a pointer receiver copies
+// nothing, a copy between variables is a memcpy the emitter writes, and a literal
+// written in place IS the storage rather than a copy into it.
+func TestEmitCArrayFieldABIAllows(t *testing.T) {
+	src := `type A struct {
+	v [3]int
+	n int
+}
+
+var g A
+
+func (a *A) bottom() int { return a.v[0] }
+
+func main() {
+	x := g
+	println(x.n, g.bottom())
+	ys := []A{{v: [3]int{1, 2, 3}, n: 4}}
+	println(ys[0].n)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var out bytes.Buffer
+	if err := EmitC(pkg, &out); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+}
+
 // TestEmitCParenRestriction pins the two sides of the parenthesis restriction: the
 // bare conversion to an unnamed composite type is a SYNTAX error (the grammar cannot
 // describe it without making `func() []int` ambiguous), and the parenthesised form

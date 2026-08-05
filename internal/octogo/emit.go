@@ -1886,6 +1886,10 @@ func (e *emitter) isFuncCType(ctype string) bool {
 // needChan records that `chan elem` is used, so its typedef and helpers are
 // emitted.
 func (e *emitter) needChan(elem string) {
+	// The send and receive helpers take and return the element BY VALUE, so an
+	// element that cannot cross that boundary cannot be a channel's element either.
+	// Without this the backend was reached and reported an internal error.
+	e.refuseArrayStructABI(elem, "channel element")
 	e.chanElems[elem] = true
 	e.chanElemByName[chanCName(elem)] = elem
 }
@@ -5785,6 +5789,12 @@ func (e *emitter) arrayResultOf(sig []int32) (arrDim, bool) {
 // methodSignatureC builds a method's C signature with the receiver as the leading
 // parameter, e.g. `int Point_Sum(Point p)` or `void Point_Scale(Point* p, int f)`.
 func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int32) string {
+	// A VALUE receiver is passed by value, so it meets the same ABI wall a parameter
+	// does. It reached the backend instead, which said "Internal error, couldn't
+	// find object variable with offset 4". A pointer receiver is unaffected.
+	if !strings.HasSuffix(recvCType, "*") {
+		e.refuseArrayStructABI(recvCType, "receiver "+recvName)
+	}
 	recvParam := recvCType + " " + userIdent(recvName)
 	if a, ok := e.arrayResultOf(sig); ok {
 		// As for a function: the out parameter leads, after the receiver.
@@ -6898,6 +6908,17 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 // which must name something a brace can fill.
 func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	expectType := expect.ctype
+	// An element of a struct type that holds an array is assigned by value into the
+	// literal's storage, which is the same copy the backend cannot make: it reported
+	// "incompatible types" rather than anything a reader could act on. A whole
+	// literal of such a struct is fine -- that is C's own aggregate initialization,
+	// which emitStructLit writes -- so this refuses only an element COPIED from
+	// something else.
+	if e.hasArrayField(expectType) && !e.isCompositeLitExpr(v) {
+		e.fail("a value of %s cannot be a literal's element: it holds an array, which the target's "+
+			"C compiler cannot copy; write the fields, or use a pointer", expectType)
+		return
+	}
 	// An array-typed field takes a nested aggregate, `P{1, [2]int{2, 3}}` or its
 	// type-elided form `P{1, {2, 3}}`. Both are the same values in braces, and the
 	// field's own extents say how deep they nest -- the literal's written type, when
@@ -15412,6 +15433,25 @@ func (e *emitter) emitStructOperand(n Node) {
 		return
 	}
 	e.emitExprNode(n)
+}
+
+// isCompositeLitExpr reports whether an expression is written as a composite
+// literal, `T{...}` or the type-elided `{...}` -- storage the literal declares
+// rather than a value copied into it.
+func (e *emitter) isCompositeLitExpr(v Node) bool {
+	if v.sym == CompositeLit {
+		return true
+	}
+	kids, ok := e.soleFactor(v.ast)
+	if !ok {
+		return false
+	}
+	for _, k := range kids {
+		if k.sym == CompositeLit {
+			return true
+		}
+	}
+	return false
 }
 
 // needStructEq records that struct type ctype needs an equality helper and, by
