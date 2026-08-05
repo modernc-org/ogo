@@ -43,26 +43,6 @@
 // valid Go, so obeying it costs nothing but the two characters. A conversion that
 // would change the REPRESENTATION -- `([]byte)(s)` from a string -- is refused after
 // parsing, as it allocates.
-// TODO 20260805 A three-clause "for" header declares ONE variable: `for i, j := 0,
-// 9; i < j; i, j = i+1, j-1` does not parse. The grammar is not what stands in the
-// way -- allowing it costs ZERO new First/Follow conflicts, measured against the
-// baseline of eight, with the range branch's tree shape preserved by inlining the
-// alternation rather than naming a new rule (naming one renests the range operand
-// and every range loop stops compiling).
-//
-// What stands in the way is the emitter, and the trap is worth knowing before
-// retrying: enabling the grammar alone makes `i, j = i+1, j-1` parse as a post and
-// the emitter drops it SILENTLY -- `for (; i < j; i)`, an infinite loop. C's
-// for-post is an expression, so a multiple assignment cannot go there at all: Go
-// assigns simultaneously and that needs temporaries, which is why the body-level
-// form emits four statements. The correct lowering is a for with an empty post and
-// the post statements emitted at the bottom of the body AND before every "continue",
-// which is machinery that does not exist yet. forInfo and forHeader would also each
-// need their single initLHS/initRHS to become lists.
-//
-// So: do the emitter first, and do not land the grammar without it. A clean syntax
-// error is better than a loop that never ends.
-//
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
@@ -1552,10 +1532,12 @@
 //		| HeaderExpression [ ForRest ] .
 //	ForRest    = ";" [ HeaderExpression ] ";" [ ForPost ]
 //		| ( "=" | ":=" ) ForAssignRest
-//		| "," HeaderExpression ( "=" | ":=" ) "range" HeaderExpression .
+//		| "," HeaderExpression ( "=" | ":=" ) ( "range" HeaderExpression
+//			| HeaderExpression { "," HeaderExpression } ";" [ HeaderExpression ] ";" [ ForPost ] ) .
 //	ForAssignRest = "range" HeaderExpression
 //		| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .
-//	ForPost    = HeaderExpression [ ( "=" | ":=" ) HeaderExpression | "++" | "--" ] .
+//	ForPost    = HeaderExpression { "," HeaderExpression }
+//		[ ( "=" | ":=" ) HeaderExpression { "," HeaderExpression } | "++" | "--" ] .
 //
 // The "++" and "--" forms are the increment and decrement statements "x++" and
 // "x--"; they take no operand of their own (the target is the AssignHead) and,

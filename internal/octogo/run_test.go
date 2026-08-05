@@ -2420,6 +2420,49 @@ func main() {
 		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
 	},
 	{
+		name: "a for header with two names",
+		src: `func main() {
+	for i, j := 0, 9; i < j; i, j = i+1, j-1 {
+		println(i, j)
+	}
+
+	// A multiple assignment cannot be C's third clause, so the post statements go
+	// at the end of the body behind a label -- and continue must jump to that label
+	// rather than skip them, or the loop never ends.
+	n := 0
+	for i, j := 0, 6; i < j; i, j = i+1, j-1 {
+		if i == 1 {
+			continue
+		}
+		n += i * 10
+		n += j
+	}
+	println(n)
+
+	// Simultaneous, so a swap alternates rather than duplicating.
+	a, b := 1, 2
+	for k := 0; k < 3; k++ {
+		a, b = b, a
+	}
+	println(a, b)
+
+	// Nested: the inner continue is the INNER loop's post, not the outer one's.
+	total := 0
+	for p, q := 0, 3; p < q; p, q = p+1, q-1 {
+		for r, s := 0, 2; r < s; r, s = r+1, s-1 {
+			if r == 0 {
+				continue
+			}
+			total++
+		}
+		total += 100
+	}
+	println(total)
+}
+`,
+		want: "0 9\n1 8\n2 7\n3 6\n4 5\n30\n2 1\n200\n",
+	},
+	{
 		name: "a bracketed literal used as a value",
 		src: `type Row [3]int
 

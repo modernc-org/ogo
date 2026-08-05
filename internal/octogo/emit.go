@@ -3029,6 +3029,8 @@ type emitter struct {
 	labelUsed          map[string]bool          // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
 	labelSeq           int                      // counter minting unique labeled-loop break/continue labels
 	pendingContLabel   string                   // the current labeled for's C continue target, for emitLoopBody to place at the body's end
+	postContLabel      string                   // the enclosing loop's post-statement label, when its post cannot fit C's third clause
+	pendingPost        func()                   // that loop's post statements, emitted after the label
 	pendingSwitchLabel string                   // the source label of a labeled switch, for emitSwitch to bind to its end label
 	deferBlockDepth    int                      // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
 	deferReplay        int                      // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
@@ -6535,11 +6537,17 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 		// unlabeled continue is a plain C continue, which names the enclosing loop
 		// either way, exactly as Go's does.
 		e.ind()
-		if lbl, ok := e.stmtLabelOperand(nodes); ok {
+		switch lbl, ok := e.stmtLabelOperand(nodes); {
+		case ok:
 			target := e.labelContinue[lbl]
 			e.emit("goto " + target + ";\n")
 			e.labelUsed[target] = true
-		} else {
+		case e.postContLabel != "":
+			// This loop's post statements live at the end of its body, not in C's
+			// third clause, so a plain `continue` would skip them.
+			e.emit("goto " + e.postContLabel + ";\n")
+			e.labelUsed[e.postContLabel] = true
+		default:
 			e.emit("continue;\n")
 		}
 	case first.sym == 0 && e.f.ch(first.tok) == ARROW:
@@ -9753,13 +9761,21 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 // SwitchGuard uses.
 type forHeader struct {
 	// Three-clause / condition form.
-	initLHS   []int32 // nil when there is no init statement
-	initOp    Symbol  // ASSIGN or DEFINE
-	initRHS   []int32
-	cond      []int32 // nil for a conditionless loop
-	postLHS   []int32 // nil when there is no post statement
-	postOp    Symbol  // ASSIGN, DEFINE, INC or DEC
-	postRHS   []int32
+	initLHS []int32 // nil when there is no init statement
+	initOp  Symbol  // ASSIGN or DEFINE
+	initRHS []int32
+	cond    []int32 // nil for a conditionless loop
+	postLHS []int32 // nil when there is no post statement
+	postOp  Symbol  // ASSIGN, DEFINE, INC or DEC
+	postRHS []int32
+	// The list forms of the init and post, for the multiple-assignment shapes
+	// `for i, j := 0, 9; ...; i, j = i+1, j-1`. Each is filled for EVERY clause,
+	// one entry included, so a reader has one place to look; the singles above stay
+	// for the paths that only ever see one and would otherwise all grow an index.
+	initLHSs  [][]int32
+	initRHSs  [][]int32
+	postLHSs  [][]int32
+	postRHSs  [][]int32
 	hasClause bool
 
 	// Range form.
@@ -9818,26 +9834,70 @@ func (e *emitter) parseForHeader(n Node) (h forHeader, ok bool) {
 
 // parseForRest reads the ForRest following the leading Expression, distinguishing
 // the three-clause tail from the range tail.
+// containsTok reports whether any terminal among nodes satisfies pred.
+func containsTok(nodes []Node, pred func(int32) bool) bool {
+	for _, n := range nodes {
+		if n.sym == 0 && pred(n.tok) {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *emitter) parseForRest(n Node, h *forHeader) bool {
 	kids := slices.Collect(it(n.ast))
 	// `, val := range x`: a comma makes this the two-variable range form, with the
 	// leading expression as the key.
 	if len(kids) >= 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == COMMA {
-		h.isRange = true
-		h.keyVar, h.cond = h.cond, nil
-		seenRange := false
+		if containsTok(kids, func(t int32) bool { return e.f.ch(t) == RANGE }) {
+			h.isRange = true
+			h.keyVar, h.cond = h.cond, nil
+			seenRange := false
+			for _, c := range kids {
+				switch {
+				case c.sym == 0 && e.f.ch(c.tok) == DEFINE:
+					h.rangeDef = true
+				case c.sym == 0 && e.f.ch(c.tok) == RANGE:
+					seenRange = true
+				case c.sym == Expression && !seenRange:
+					h.valVar = c.ast
+				case c.sym == Expression && seenRange:
+					h.rangeExpr = c.ast
+				}
+			}
+			return true
+		}
+		// `for i, j := 0, 9; cond; post`: the leading expression was the first name.
+		h.hasClause = true
+		h.initLHSs = append(h.initLHSs, h.cond)
+		h.cond = nil
+		semis, seenOp := 0, false
 		for _, c := range kids {
 			switch {
-			case c.sym == 0 && e.f.ch(c.tok) == DEFINE:
-				h.rangeDef = true
-			case c.sym == 0 && e.f.ch(c.tok) == RANGE:
-				seenRange = true
-			case c.sym == Expression && !seenRange:
-				h.valVar = c.ast
-			case c.sym == Expression && seenRange:
-				h.rangeExpr = c.ast
+			case c.sym == 0 && e.f.ch(c.tok) == SEMICOLON:
+				semis++
+			case c.sym == 0 && e.f.ch(c.tok) == COMMA:
+				// separates one name or value from the next
+			case c.sym == 0 && semis == 0:
+				h.initOp = e.f.ch(c.tok)
+				seenOp = true
+			case c.sym == Expression && semis == 0 && !seenOp:
+				h.initLHSs = append(h.initLHSs, c.ast)
+			case c.sym == Expression && semis == 0:
+				h.initRHSs = append(h.initRHSs, c.ast)
+			case c.sym == Expression && semis == 1:
+				h.cond = c.ast
+			case c.sym == ForPost:
+				if !e.parseForPost(c, h) {
+					return false
+				}
 			}
 		}
+		if len(h.initLHSs) != len(h.initRHSs) {
+			e.fail("a for-loop init declares %d names from %d values", len(h.initLHSs), len(h.initRHSs))
+			return false
+		}
+		h.initLHS, h.initRHS = h.initLHSs[0], h.initRHSs[0]
 		return true
 	}
 	// Otherwise a leading semicolon or an assignment operator, then ForAssignRest.
@@ -9903,23 +9963,64 @@ func (e *emitter) parseForAssignRest(n Node, h *forHeader) bool {
 
 // parseForPost reads a ForPost node: `i++`, `i--`, or an assignment.
 func (e *emitter) parseForPost(n Node, h *forHeader) bool {
+	seenOp := false
 	for c := range it(n.ast) {
 		switch {
-		case c.sym == Expression && h.postLHS == nil:
-			h.postLHS = c.ast
-		case c.sym == Expression:
-			h.postRHS = c.ast
+		case c.sym == 0 && e.f.ch(c.tok) == COMMA:
+			// separates one target or value from the next
 		case c.sym == 0:
 			h.postOp = e.f.ch(c.tok)
+			seenOp = true
+		case c.sym == Expression && !seenOp:
+			h.postLHSs = append(h.postLHSs, c.ast)
+		case c.sym == Expression:
+			h.postRHSs = append(h.postRHSs, c.ast)
 		}
 	}
-	return h.postLHS != nil
+	if len(h.postLHSs) == 0 {
+		return false
+	}
+	h.postLHS = h.postLHSs[0]
+	if len(h.postRHSs) != 0 {
+		h.postRHS = h.postRHSs[0]
+	}
+	// A multiple assignment needs one value per target, as it does anywhere else.
+	if len(h.postLHSs) > 1 && len(h.postLHSs) != len(h.postRHSs) {
+		e.fail("a for-loop post statement assigns %d values to %d targets", len(h.postRHSs), len(h.postLHSs))
+		return false
+	}
+	return true
+}
+
+// emitSimultaneous emits `a, b = x, y` as Go means it: every value is read into a
+// temporary before any target is written, so `a, b = b, a` swaps rather than
+// duplicating. It is the loop post's form of what emitMultiAssign does for a
+// statement.
+func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
+	tmps := make([]string, len(rhss))
+	for i, rhs := range rhss {
+		ct, ok := e.inferCType(rhs)
+		if !ok {
+			ct = "int"
+		}
+		tmps[i] = e.newTmp()
+		e.ind()
+		e.emit(ct + " " + tmps[i] + " = " + e.exprC(rhs) + ";\n")
+	}
+	for i, lhs := range lhss {
+		e.ind()
+		e.emit(e.exprC(lhs) + " = " + tmps[i] + ";\n")
+	}
 }
 
 func (e *emitter) emitFor(nodes []Node) {
 	// A name a for header declares belongs to the statement, not to the block
 	// around it (see enterScope).
 	defer e.enterScope()()
+	// This loop's post placement, replacing whatever an enclosing loop set: a
+	// `continue` names the nearest loop, so the nearest loop's answer is the one
+	// that must be in force while its body is emitted.
+	e.pendingPost, e.postContLabel = nil, ""
 	var body []int32
 	var h forHeader
 	for _, n := range nodes[1:] {
@@ -9960,6 +10061,9 @@ func (e *emitter) emitFor(nodes []Node) {
 	// condition was rendered against whatever the name meant OUTSIDE the loop --
 	// which was the same thing in every loop that shadows nothing, and a string
 	// comparison of two ints in one that shadows a string.
+	// A multi-name init is declared in a block around the loop; blockInit says one
+	// was opened, so it is closed after the body.
+	blockInit := false
 	initName, initCType := "", ""
 	if h.hasClause && h.initLHS != nil && h.initOp == DEFINE {
 		initName = e.exprC(h.initLHS)
@@ -10007,6 +10111,32 @@ func (e *emitter) emitFor(nodes []Node) {
 	} else {
 		// The three-clause form maps onto C's own, including the init declaration:
 		// C scopes a variable declared there to the loop, exactly as Go does.
+		if len(h.initLHSs) > 1 {
+			// C's init clause declares one type; two names of different types cannot
+			// share it. A block around the loop declares them and scopes them to it,
+			// which is where Go scopes them too.
+			e.emit("{\n")
+			e.indent++
+			for i, lhs := range h.initLHSs {
+				ct, ok := e.inferCType(h.initRHSs[i])
+				if !ok {
+					ct = "int"
+				}
+				name := e.exprC(lhs)
+				if h.initOp == DEFINE {
+					e.locals[name] = ct
+					e.ind()
+					e.emit(ct + " " + name + " = " + e.exprC(h.initRHSs[i]) + ";\n")
+					continue
+				}
+				e.ind()
+				e.emit(name + " = " + e.exprC(h.initRHSs[i]) + ";\n")
+			}
+			e.ind()
+			// The declarations are made; the loop's own init clause is empty.
+			h.initLHS = nil
+			blockInit = true
+		}
 		e.emit("for (")
 		if h.initLHS != nil {
 			lhs := e.exprC(h.initLHS)
@@ -10024,6 +10154,26 @@ func (e *emitter) emitFor(nodes []Node) {
 			e.emit(condText)
 		}
 		e.emit("; ")
+		if len(h.postLHSs) > 1 {
+			// A MULTIPLE assignment cannot be C's third clause: Go assigns
+			// simultaneously, which needs temporaries, and that clause is an
+			// expression with nowhere to declare one. So the loop takes an empty post
+			// and the statements go at the END OF THE BODY, behind a label an
+			// unlabeled `continue` jumps to -- a plain continue would otherwise skip
+			// them. Falling off the bottom reaches them the same way.
+			e.labelSeq++
+			e.postContLabel = fmt.Sprintf("ogo_post_%d", e.labelSeq)
+			lhss, rhss := h.postLHSs, h.postRHSs
+			e.pendingPost = func() { e.emitSimultaneous(lhss, rhss) }
+			e.emit(") {\n")
+			e.emitLoopBody(body, inject)
+			if blockInit {
+				e.indent--
+				e.ind()
+				e.emit("}\n")
+			}
+			return
+		}
 		if h.postLHS != nil {
 			// The post statement runs after every iteration and on every continue, so
 			// C's third clause is the only place it fits -- and that clause takes an
@@ -10050,6 +10200,11 @@ func (e *emitter) emitFor(nodes []Node) {
 		e.emit(") {\n")
 	}
 	e.emitLoopBody(body, inject)
+	if blockInit {
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	}
 }
 
 // capturePrologue renders through emit and returns the text along with any prologue
@@ -10076,6 +10231,13 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	// on entry so a nested loop does not inherit this loop's target.
 	cont := e.pendingContLabel
 	e.pendingContLabel = ""
+	// The post statements of a loop whose post cannot fit C's third clause, and the
+	// label a `continue` in THIS body jumps to so it runs them. emitFor sets both
+	// (to nil and "" for an ordinary loop), so a nested loop replaces rather than
+	// inherits them; pendingPost is cleared here because it belongs to this loop
+	// alone, while postContLabel stays for the body about to be emitted.
+	post, postLabel := e.pendingPost, e.postContLabel
+	e.pendingPost = nil
 	savedBreak := e.switchBreak
 	e.switchBreak = ""
 	if inject != nil {
@@ -10085,6 +10247,13 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	if cont != "" && e.labelUsed[cont] {
 		e.ind()
 		e.emit(cont + ":;\n")
+	}
+	if post != nil {
+		if e.labelUsed[postLabel] {
+			e.ind()
+			e.emit(postLabel + ":;\n")
+		}
+		post()
 	}
 	e.switchBreak = savedBreak
 	e.deferBlockDepth--

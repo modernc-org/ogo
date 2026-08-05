@@ -47,6 +47,13 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A three-clause `for` header may declare and assign several names**,
+  `for i, j := 0, 9; i < j; i, j = i+1, j-1`. A multiple assignment cannot be C's
+  third clause — Go assigns simultaneously, which needs temporaries, and that clause
+  is an expression — so the post statements go at the end of the body behind a label
+  that `continue` jumps to. A multi-name init becomes a block around the loop, which
+  is also where Go scopes those names.
+
 - **A pointer to an array is refused by name**, `*[3]int` and `&a` for an array
   variable, where the messages used to be "cannot infer a type for the declaration
   of p" and "unsupported type" with an empty name. It is the same C shape the entry

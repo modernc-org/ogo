@@ -141,10 +141,12 @@ ForHeader  = ";" [ HeaderExpression ] ";" [ ForPost ]
 	| HeaderExpression [ ForRest ] .
 ForRest    = ";" [ HeaderExpression ] ";" [ ForPost ]
 	| ( "=" | ":=" ) ForAssignRest
-	| "," HeaderExpression ( "=" | ":=" ) "range" HeaderExpression .
+	| "," HeaderExpression ( "=" | ":=" ) ( "range" HeaderExpression
+		| HeaderExpression { "," HeaderExpression } ";" [ HeaderExpression ] ";" [ ForPost ] ) .
 ForAssignRest = "range" HeaderExpression
 	| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .
-ForPost    = HeaderExpression [ ( "=" | ":=" ) HeaderExpression | "++" | "--" ] .
+ForPost    = HeaderExpression { "," HeaderExpression }
+	[ ( "=" | ":=" ) HeaderExpression { "," HeaderExpression } | "++" | "--" ] .
 IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
 IfInit = { "," LhsItem } ":=" HeaderExpression ";" HeaderExpression .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .

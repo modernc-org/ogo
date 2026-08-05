@@ -1238,9 +1238,12 @@ type forInfo struct {
 	hasVal      bool
 	rangeDefine bool
 
-	initLHS  Node
-	hasInit  bool
-	initRHS  Node
+	initLHS Node
+	hasInit bool
+	initRHS Node
+	// Every name and value of a multi-name init, `for i, j := 0, 9; ...`.
+	initLHSs []Node
+	initRHSs []Node
 	define   bool
 	cond     Node
 	hasCond  bool
@@ -1289,9 +1292,51 @@ func (f *File) parseForInfo(hdr Node) forInfo {
 	return fi
 }
 
+// containsTokIn reports whether any terminal among nodes satisfies pred.
+func containsTokIn(nodes []Node, pred func(int32) bool) bool {
+	for _, n := range nodes {
+		if n.sym == 0 && pred(n.tok) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseForRestInfo reads the ForRest following the leading Expression.
 func (f *File) parseForRestInfo(n Node, fi *forInfo) {
 	kids := slices.Collect(it(n.ast))
+	// `for i, j := 0, 9; ...`: a comma without a "range" is a multi-name init, not
+	// the two-variable range form. Every name is declared and every value resolved;
+	// the emitter is what pairs them.
+	if len(kids) >= 1 && kids[0].sym == 0 && f.ch(kids[0].tok) == COMMA &&
+		!containsTokIn(kids, func(t int32) bool { return f.ch(t) == RANGE }) {
+		fi.hasInit = true
+		fi.initLHSs = append(fi.initLHSs, fi.cond)
+		fi.cond, fi.hasCond = Node{}, false
+		semis, seenOp := 0, false
+		for _, c := range kids {
+			switch {
+			case c.sym == 0 && f.ch(c.tok) == SEMICOLON:
+				semis++
+			case c.sym == 0 && f.ch(c.tok) == COMMA:
+			case c.sym == 0 && semis == 0:
+				fi.define = f.ch(c.tok) == DEFINE
+				seenOp = true
+			case c.sym == Expression && semis == 0 && !seenOp:
+				fi.initLHSs = append(fi.initLHSs, c)
+			case c.sym == Expression && semis == 0:
+				fi.initRHSs = append(fi.initRHSs, c)
+			case c.sym == Expression && semis == 1:
+				fi.cond, fi.hasCond = c, true
+			case c.sym == ForPost:
+				fi.postNode, fi.hasPost = c, true
+			}
+		}
+		if len(fi.initLHSs) != 0 {
+			fi.initLHS, fi.initRHS = fi.initLHSs[0], fi.initRHSs[0]
+		}
+		return
+	}
 	// `, val := range x`: the leading expression was the key.
 	if len(kids) >= 1 && kids[0].sym == 0 && f.ch(kids[0].tok) == COMMA {
 		fi.isRange = true
@@ -2189,8 +2234,26 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 		return
 	}
 	if fi.hasInit {
-		f.checkNames(s, fi.initRHS)
-		f.declareForInitVar(s, fi.initLHS, fi.initRHS, fi.define)
+		// A multi-name init declares every name from its own value, `for i, j := 0, 9`.
+		// The values are resolved BEFORE any name is declared, so an initializer
+		// naming an outer variable of the same name still means the outer one, as it
+		// does in Go.
+		if len(fi.initLHSs) > 1 {
+			if len(fi.initLHSs) != len(fi.initRHSs) {
+				f.err(f.tok(fi.initLHSs[0].Pos()).Position(), "assignment mismatch: %s but %s",
+					countUnits(len(fi.initLHSs), "variable"), countUnits(len(fi.initRHSs), "value"))
+				return
+			}
+			for _, rhs := range fi.initRHSs {
+				f.checkNames(s, rhs)
+			}
+			for i, lhs := range fi.initLHSs {
+				f.declareForInitVar(s, lhs, fi.initRHSs[i], fi.define)
+			}
+		} else {
+			f.checkNames(s, fi.initRHS)
+			f.declareForInitVar(s, fi.initLHS, fi.initRHS, fi.define)
+		}
 	}
 	if fi.hasCond {
 		f.checkCondition(s, kw, fi.cond)
