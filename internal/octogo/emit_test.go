@@ -6025,11 +6025,13 @@ func TestEmitCSelectSendRefused(t *testing.T) {
 // array is long -- which C only warns about while dropping the excess -- and the
 // positions an array literal still cannot stand in.
 //
-// An array literal outside a declaration is no longer refused wholesale. It stands
-// where the position has a copy of its own to do -- an argument, an assignment, a
-// return -- each binding it to a temporary the copy reads. What is left here is the
-// positions with no such lowering, where it would have to become a C value and there
-// is no array value in C.
+// An array literal outside a declaration is no longer refused at all for being one.
+// It stands where the position binds it to a temporary -- an argument, an assignment,
+// a return, a comparison operand, and read through a suffix -- so what is left here
+// is type errors, which Go reports too. The positions that still refuse an array
+// literal refuse an array VARIABLE for the same independent reason (arithmetic on
+// arrays, which Go does not define either; a channel whose element is an array,
+// which is unsupported whatever is sent).
 //
 // A slice literal outside a declaration was removed for the same reason earlier: it
 // is a header, an ordinary C value, and stands wherever one can.
@@ -6039,16 +6041,6 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 		src  string
 		want string
 	}{
-		{
-			// An operand of an expression: there is no C array value for it to
-			// become, and no copy of the position's own to bind it for.
-			// (Indexing one where it stands, `[3]int{1, 2, 3}[0]`, does not reach
-			// here at all -- it does not parse; see the Factor-rule TODO in
-			// specs.go, which is the same missing FactorSuffix as `[]byte(s)`.)
-			name: "in an expression",
-			src:  "func main() {\n\tvar a [3]int\n\tprintln(a == [3]int{1, 2, 3})\n}\n",
-			want: "cannot compare [3]int with a value of another type",
-		},
 		{
 			name: "length mismatch",
 			src:  "func main() {\n\tvar a [3]int = [2]int{1, 2}\n\tprintln(a[0])\n}\n",

@@ -264,12 +264,10 @@ broken.
   with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
-* An **array** literal may not stand as an operand of an expression, `a == [3]int{1,
-  2, 3}`, C having no array value for it to become. It stands wherever the position
-  copies — an argument, an assignment, a return, a variable's initializer, a slot in
-  another literal, what a `range` walks — each binding it to a temporary the copy
-  reads. A *slice* literal has no such limit at all; its backing array is a local, so
-  it carries that local's lifetime.
+* An **array** or **slice** whose element is itself an array — `chan [3]int`,
+  `[][2]int` — is not supported, and says only "unsupported type". An array literal,
+  by contrast, now stands wherever an array variable does: the position binds it to a
+  temporary.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
 * A function with more than **one result used as a value**; `go` through a variable

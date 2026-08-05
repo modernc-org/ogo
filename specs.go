@@ -66,11 +66,10 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260804 An array literal cannot stand as an operand of an EXPRESSION,
-// `a == [3]int{1, 2, 3}`. An array is not a C value, so a literal stands only where
-// the position has a copy of its own to bind it for -- an argument, an assignment, a
-// return, a variable's initializer, a slot in another literal, a "range" -- and an
-// expression operand has none.
+// TODO 20260805 A channel whose element is an ARRAY, `chan [3]int`, is not
+// supported, and neither is a slice whose element is one, `[][2]int`. Both report
+// "unsupported type" with an empty type name, which says nothing a reader can act
+// on. Independent of literals: an array VARIABLE cannot be sent or held either.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

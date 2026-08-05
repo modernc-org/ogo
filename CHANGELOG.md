@@ -47,6 +47,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **An array literal may be a comparison operand**, `a == [3]int{1, 0, 0}`, in
+  either position and with `!=`. It binds to a temporary and the per-type helper
+  compares the two, so an array literal now stands wherever an array variable does.
+
+- **A literal read through more than one step types**, `[2]P{{1, 2}, {3, 4}}[1].y`
+  as a declaration's initializer. The first index reaches the element and the rest is
+  walked by the same chain typer a variable's suffix uses; only a single index was
+  handled before.
+
 - **A multi-result call may be forwarded as a return**, `return f()`, where the
   callee's results are exactly the caller's. Both functions return the same C struct
   — result structs are keyed by the result types — so the call is the return value.

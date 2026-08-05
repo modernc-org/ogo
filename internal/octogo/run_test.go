@@ -2420,6 +2420,36 @@ func main() {
 		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
 	},
 	{
+		name: "a bracketed literal used as a value",
+		src: `type Row [3]int
+
+type P struct {
+	x int
+	y int
+}
+
+func main() {
+	// An array literal as a comparison operand: it has no C value, so it binds to
+	// a temporary and the per-type helper compares the two.
+	var a [3]int
+	a[0] = 1
+	println(a == [3]int{1, 0, 0}, a == [3]int{9, 0, 0})
+	println([3]int{1, 0, 0} == a, a != [3]int{1, 0, 0})
+
+	var r Row
+	r[1] = 5
+	println(r == Row{0, 5, 0})
+
+	// A literal read through more than one step, which needs the chain walker to
+	// type it rather than the element rule alone.
+	x := [2]P{{1, 2}, {3, 4}}[1].y
+	y := []P{{5, 6}, {7, 8}}[0].x
+	println(x, y)
+}
+`,
+		want: "true false\ntrue false\ntrue\n4 5\n",
+	},
+	{
 		name: "a struct-returning call handed on by value",
 		src: `type S struct {
 	n  int

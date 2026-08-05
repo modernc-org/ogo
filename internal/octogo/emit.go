@@ -14977,19 +14977,36 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// type must emit nothing; a longer chain than one index falls through to
 			// the paths below rather than being guessed at.
 			if typeAST, _, steps, ok := e.factorLitIndexed(n); ok {
-				if len(steps) != 1 || steps[0].sym != Index {
+				if len(steps) == 0 || steps[0].sym != Index {
 					return "", false
 				}
 				if _, _, _, isSlice := e.sliceParts(steps[0].ast); isSlice {
 					return "", false
 				}
-				if a, isArray := e.arrayDim(typeAST); isArray {
-					return a.elem, true
+				// The first index reaches the literal's element; anything after it
+				// is walked from there, so `[2]P{{1, 2}, {3, 4}}[1].y` is typed by
+				// the same walker a variable's chain uses. Rank > 1 is left to the
+				// paths below, an inner row not being a value type here.
+				elem := ""
+				if a, isArray := e.arrayDim(typeAST); isArray && a.dims() == 1 {
+					elem = a.elem
+				} else if el, isSlice := e.litSliceType(typeAST); isSlice {
+					elem = el
 				}
-				if elem, isSlice := e.litSliceType(typeAST); isSlice {
+				if elem == "" {
+					return "", false
+				}
+				if len(steps) == 1 {
 					return elem, true
 				}
-				return "", false
+				cur, okc := e.accessChainTypeAt(e.plainOrSlice(elem), steps[1:], false)
+				if !okc || len(cur.dims) != 0 {
+					return "", false
+				}
+				if cur.slice {
+					return sliceCName(cur.elem), true
+				}
+				return cur.ctype, true
 			}
 			// "T{...}" is a value of T, and a struct's C type is the typedef named
 			// after it, so the literal types itself.
@@ -16405,11 +16422,29 @@ func (e *emitter) arrayCompareAt(kids []Node, i int) (op string, a arrDim, ok bo
 // arrayOperand reports the array type of a comparison operand that is a plain
 // array variable, local or package-level.
 func (e *emitter) arrayOperand(n Node) (arrDim, bool) {
-	name, ok := e.exprIdent(n.ast)
-	if !ok {
-		return arrDim{}, false
+	if name, ok := e.exprIdent(n.ast); ok {
+		return e.arrayVar(name)
 	}
-	return e.arrayVar(name)
+	// An array LITERAL is an operand too, `a == [3]int{1, 2, 3}`. It has no C value,
+	// so the comparison binds it to a temporary (emitArrayOperand); what it needs
+	// here is only its extents, to be told apart from a value of another type.
+	if fac, ok := e.soleFactorNode(n.ast); ok {
+		if typeAST, _, ok := e.factorArrayLit(fac); ok {
+			return e.arrayDim(typeAST)
+		}
+	}
+	return arrDim{}, false
+}
+
+// emitArrayOperand emits one side of an array comparison, binding a literal to a
+// temporary first: the helper takes the arrays by pointer, and a literal has no C
+// value to take the address of.
+func (e *emitter) emitArrayOperand(n Node) {
+	if name, ok := e.hoistArrayLitExpr(n.ast); ok {
+		e.emit(name)
+		return
+	}
+	e.emitExprNode(n)
 }
 
 // emitArrayCompareTriple emits an array equality as a call to the per-type helper,
@@ -16420,9 +16455,9 @@ func (e *emitter) emitArrayCompareTriple(l, r Node, op string, a arrDim) {
 		e.emit("!")
 	}
 	e.emit(arrayEqName(a) + "(")
-	e.emitExprNode(l)
+	e.emitArrayOperand(l)
 	e.emit(", ")
-	e.emitExprNode(r)
+	e.emitArrayOperand(r)
 	e.emit(")")
 }
 
