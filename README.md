@@ -275,11 +275,9 @@ broken.
   value whose receiver is not a package-level variable** — the receiver is bound at
   compile time, which is what keeps a function value one word (`doc/funcval-cost.c`
   prices the alternative).
-* A **call returning an array** is a statement, not a value: bind it (`a := mk()`,
-  `var a [3]int = mk()`) and use the variable. Passing one straight to a parameter or
-  assigning it to an existing variable is refused, and an array *beside another
-  result* is refused outright — that would need a struct holding an array, which the
-  backend cannot assign.
+* An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
+  need a struct holding an array, which the backend cannot assign. An array result on
+  its own is used like any other value.
 * A slice whose element is an array, and `goto`.
 * A `range` clause written with `=` accepts only variables, not an element or a
   field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.
