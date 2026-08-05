@@ -551,6 +551,11 @@ type goSite struct {
 	callee string
 	args   []string
 	id     int
+	// fnCType is the function typedef when the callee is a VALUE rather than a name:
+	// `go g(21)` for a g holding a function. There is no name to generate an entry
+	// point against, so the pointer travels in the argument block like an argument
+	// and the trampoline calls through it.
+	fnCType string
 }
 
 // goArgsCName and goTrampolineCName name a site's generated struct and trampoline.
@@ -722,8 +727,17 @@ func (e *emitter) emitGo(nodes []Node) {
 		callSuffix = suffix[0]
 	case base != "" && len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		if _, ok := e.userFunc(base); !ok {
-			e.fail("only `go f(args)` on a package function is supported yet")
-			return
+			// A variable holding a function: which function it is is not known until
+			// run time, so the trampoline is generated against its TYPE and the
+			// pointer is marshalled with the arguments.
+			ct, isVar := e.varType(base)
+			if !isVar || !e.isFuncCType(ct) {
+				e.fail("only `go f(args)` on a package function or a variable holding one is supported yet")
+				return
+			}
+			site = goSite{callee: e.varRef(base), fnCType: e.underlyingCType(ct), id: len(e.goSites)}
+			callSuffix = suffix[0]
+			break
 		}
 		site = goSite{callee: e.funcCallC(base), id: len(e.goSites)}
 		callSuffix = suffix[0]
@@ -769,6 +783,18 @@ func (e *emitter) emitGo(nodes []Node) {
 			}
 			recvText = recv
 			site = goSite{callee: cname, args: []string{recvCType}, id: len(e.goSites)}
+			break
+		}
+		// A struct FIELD holding a function, `go t.fn(5)`: the same value path a bare
+		// variable takes, with the field access as the pointer's source. Asked before
+		// the method path, which would read `t.fn` as a method of t's type and emit a
+		// call to a name nothing declares.
+		if ft, okf := e.fieldType(base, []string{name}); okf && e.isFuncCType(ft) && len(suffix) == 2 {
+			site = goSite{
+				callee:  e.fieldAccessC(base, []string{name}),
+				fnCType: e.underlyingCType(ft),
+				id:      len(e.goSites),
+			}
 			break
 		}
 		rct, isVar := e.varType(base)
@@ -820,6 +846,9 @@ func (e *emitter) emitGo(nodes []Node) {
 	// The receiver, when there is one, is site.args[0] already; cParamTypes excludes
 	// it, so the parameters line up with the arguments one for one either way.
 	params := e.funcParams[site.callee]
+	if site.fnCType != "" {
+		params = e.funcTypeParams[site.fnCType]
+	}
 	for i, a := range args {
 		ct := ""
 		if i < len(params) {
@@ -851,6 +880,12 @@ func (e *emitter) emitGo(nodes []Node) {
 	e.emit(goArgsCName(site.id) + "* " + ap + " = (void*)&ogo_cog_pool[" + slot + "].ogo_args;\n")
 	e.ind()
 	e.emit(ap + "->ogo_slot = " + slot + ";\n")
+	if site.fnCType != "" {
+		// Read once, here: the variable may be reassigned before the cog runs, and
+		// Go evaluates the callee at the `go` statement.
+		e.ind()
+		e.emit(ap + "->fn = " + site.callee + ";\n")
+	}
 	first := 0
 	if recvText != "" {
 		e.ind()
@@ -909,6 +944,9 @@ func (e *emitter) goDefs() string {
 	var b, tramps strings.Builder
 	for _, s := range e.goSites {
 		fmt.Fprintf(&b, "typedef struct { int ogo_slot;")
+		if s.fnCType != "" {
+			fmt.Fprintf(&b, " %s fn;", s.fnCType)
+		}
 		for i, a := range s.args {
 			fmt.Fprintf(&b, " %s a%d;", a, i)
 		}
@@ -920,8 +958,12 @@ func (e *emitter) goDefs() string {
 	}
 	b.WriteString(" } ogo_go_args;\n")
 	for _, s := range e.goSites {
+		callee := s.callee
+		if s.fnCType != "" {
+			callee = "a->fn"
+		}
 		fmt.Fprintf(&tramps, "static void %s(void* p) {\n\t%s* a = p;\n\t%s(",
-			goTrampolineCName(s.id), goArgsCName(s.id), s.callee)
+			goTrampolineCName(s.id), goArgsCName(s.id), callee)
 		for i := range s.args {
 			if i != 0 {
 				tramps.WriteString(", ")
@@ -1718,6 +1760,7 @@ func (e *emitter) funcTypeFor(fv funcValueType) string {
 	name := fmt.Sprintf("%s%d", funcTypePrefix, len(e.funcTypeNames))
 	e.funcTypeNames[fv.key] = name
 	e.funcTypeRet[name] = fv.res
+	e.funcTypeParams[name] = fv.params
 	// "ret (*)(params)" -> "typedef ret (*name)(params);"
 	e.addTypedef(name, "typedef "+strings.Replace(fv.key, "(*)", "(*"+name+")", 1)+";\n",
 		append(slices.Clone(fv.res), fv.params...)...)
@@ -2496,7 +2539,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2999,6 +3042,7 @@ type emitter struct {
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
 	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
+	funcTypeParams     map[string][]string      // that typedef -> its parameter C types, for marshalling a `go` through a value
 	retStructs         map[string]string        // result-struct typedef name -> the result types it stands for
 	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order

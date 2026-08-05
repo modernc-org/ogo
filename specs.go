@@ -30,11 +30,6 @@
 // backend cannot assign), so there is no expression for the call to become.
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
-// TODO 20260727 Function values: "go" through a variable holding one. Starting a
-// cog needs the callee's NAME, a goroutine's C entry point being generated per
-// function, so there is nothing to generate against. A named function, a function
-// literal, a bound-receiver method value and a multi-result function all work as
-// values (see Function types and function values, and Function literals).
 // TODO 20260804 A conversion to an unnamed composite type must be PARENTHESISED:
 // `([]int)(xs)` and `([3]int)(q)` work, `[]int(xs)` does not parse. That is the
 // parenthesis restriction above, taken because the bare form is the one variant that

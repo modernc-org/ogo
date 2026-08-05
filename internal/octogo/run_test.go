@@ -2719,6 +2719,54 @@ func main() {
 		want: "1 2 1234567890123 7\n",
 	},
 	{
+		name: "go through a function value",
+		src: `type T struct {
+	fn func(int)
+}
+
+var done chan int
+
+func a(n int) { done <- n }
+
+func b(n int) { done <- n * 100 }
+
+func two(x int, y int) { done <- x + y }
+
+func none() { done <- 9 }
+
+// A cog's entry point is generated per function, so a value has no name to
+// generate one against: the trampoline is generated against the function TYPE and
+// the pointer travels in the argument block with the arguments.
+func main() {
+	var g func(int) = a
+	go g(7)
+	println(<-done)
+
+	// Go evaluates the callee at the "go", so reassigning after it changes nothing.
+	h := a
+	go h(3)
+	h = b
+	println(<-done)
+
+	k := two
+	go k(3, 4)
+	println(<-done)
+
+	n := none
+	go n()
+	println(<-done)
+
+	// Held in a struct field, which used to take the method path and emit a call to
+	// a name nothing declared.
+	var t T
+	t.fn = b
+	go t.fn(5)
+	println(<-done)
+}
+`,
+		want: "7\n3\n7\n9\n500\n",
+	},
+	{
 		name: "a multi-result function as a value",
 		src: `type Ops struct {
 	dm func(int, int) (int, int)

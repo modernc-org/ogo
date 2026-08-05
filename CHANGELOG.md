@@ -70,6 +70,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`go` may start a function held in a value**, `go g(21)` for a variable or a
+  struct field holding one. A cog's entry point is generated per function, which is
+  what left this out: a value has no name to generate one against. It is generated
+  against the function *type* instead, and the pointer travels in the argument block
+  with the arguments — read at the `go` statement, so reassigning the variable after
+  it changes nothing, as in Go. Every function-valued shape is accepted now.
+
 - **A three-clause `for` header may declare and assign several names**,
   `for i, j := 0, 9; i < j; i, j = i+1, j-1`, any number of them. A multiple assignment cannot be C's
   third clause — Go assigns simultaneously, which needs temporaries, and that clause

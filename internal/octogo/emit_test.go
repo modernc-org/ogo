@@ -5229,42 +5229,41 @@ func main() {
 	}
 }
 
-// TestEmitCFuncValueRefused pins the function-value shape the emitter refuses.
+// TestEmitCGoValueShapes pins what `go` accepts as a callee now that it takes a
+// value: a variable holding a function, a struct field holding one, and the named
+// forms it always took. Nothing function-valued is refused any more -- this test
+// replaces TestEmitCFuncValueRefused, whose last case was `go` through a variable.
 //
-// Starting a cog needs the callee's NAME, since a goroutine's C entry point is
-// generated per function, so `go` through a variable has nothing to generate
-// against. That is a property of the go statement rather than of function values,
-// and is what keeps it here now that the multi-result case has gone: a multi-result
-// function is a value like any other, its result struct being keyed by the result
-// types rather than by the function (see TestEmitCMultiResult).
-func TestEmitCFuncValueRefused(t *testing.T) {
-	for _, test := range []struct{ name, src, want string }{
-		{
-			name: "go through a function value",
-			src: `var done chan int
-
-func work(n int) { done <- n * 2 }
-
-func main() {
-	var g func(int) = work
-	go g(21)
-	println(<-done)
+// The cog's entry point is still generated per FUNCTION TYPE rather than per
+// function, which is what a value needs: the pointer travels in the argument block
+// and the trampoline calls through it.
+func TestEmitCGoValueShapes(t *testing.T) {
+	const header = `type T struct {
+	fn func(int)
 }
-`,
-			want: "only `go f(args)` on a package function",
-		},
+
+var done chan int
+
+var gt T
+
+func work(n int) { done <- n }
+
+`
+	for _, test := range []struct{ name, src string }{
+		{"a variable", "func main() {\n\tg := work\n\tgo g(1)\n\tprintln(<-done)\n}\n"},
+		{"a declared function type", "func main() {\n\tvar g func(int) = work\n\tgo g(1)\n\tprintln(<-done)\n}\n"},
+		{"a struct field", "func main() {\n\tgt.fn = work\n\tgo gt.fn(1)\n\tprintln(<-done)\n}\n"},
+		{"the named form", "func main() {\n\tgo work(1)\n\tprintln(<-done)\n}\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err != nil {
 				t.Fatalf("Build: %v", err)
 			}
-			var buf bytes.Buffer
-			if err := EmitC(pkg, &buf); err == nil {
-				t.Fatalf("EmitC accepted %s:\n%s", test.name, buf.String())
-			} else if !strings.Contains(err.Error(), test.want) {
-				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			var out bytes.Buffer
+			if err := EmitC(pkg, &out); err != nil {
+				t.Fatalf("EmitC: %v", err)
 			}
 		})
 	}
