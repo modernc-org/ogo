@@ -47,6 +47,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A slice may have an ARRAY element**, `[][2]int`. `make`, reading, writing and
+  `range` all work; only a literal of one is still refused. C cannot spell an array
+  inline where the slice header's pointer goes — the name lands in the middle of the
+  declarator — so a typedef is minted for the element, which is the same move a
+  function pointer already needs. A channel of arrays is now refused with that
+  reason rather than "unsupported type" with an empty name: a rendezvous copies its
+  element by value, which C cannot do for an array.
+
 - **An array literal may be a comparison operand**, `a == [3]int{1, 0, 0}`, in
   either position and with `!=`. It binds to a temporary and the per-type helper
   compares the two, so an array literal now stands wherever an array variable does.

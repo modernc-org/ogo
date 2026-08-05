@@ -66,10 +66,12 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260805 A channel whose element is an ARRAY, `chan [3]int`, is not
-// supported, and neither is a slice whose element is one, `[][2]int`. Both report
-// "unsupported type" with an empty type name, which says nothing a reader can act
-// on. Independent of literals: an array VARIABLE cannot be sent or held either.
+// TODO 20260805 A LITERAL of a slice whose element is an array does not work,
+// `[][2]int{{1, 2}, {3, 4}}` -- the slice itself does, so `make([][2]int, n)` and
+// every read, write and range over it are fine. Both the type-elided element form
+// and the written-out `[2]int{1, 2}` are refused by the literal machinery, which
+// takes an array element for a nested extent of the OUTER array rather than a value
+// of the element type.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
