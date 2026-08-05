@@ -2719,6 +2719,29 @@ func main() {
 		want: "1 2 1234567890123 7\n",
 	},
 	{
+		name: "an array of slices",
+		src: `// Each element is a slice HEADER, which is an ordinary C value, so the flat
+// static layout has somewhere to put it. A slice of ARRAYS is the other way round
+// and is refused: it would need a pointer to an array, which the target's compiler
+// mismodels (doc/slice-of-arrays.c).
+func main() {
+	var m [2][]int
+	m[0] = []int{1, 2, 3}
+	m[1] = []int{9}
+	println(m[0][1], len(m[0]), m[1][0], len(m[1]))
+
+	sum := 0
+	for i := 0; i < 2; i++ {
+		for j := 0; j < len(m[i]); j++ {
+			sum += m[i][j]
+		}
+	}
+	println(sum)
+}
+`,
+		want: "2 3 9 1\n15\n",
+	},
+	{
 		name: "a call returning an array, read where it stands",
 		src: `type T struct {
 	n int

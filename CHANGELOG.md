@@ -18,6 +18,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Documentation
+
+- **`specs.go` re-measured.** The language spec still said a function with more than
+  one result could not be a value and that `go` needed a declared callee — both have
+  worked for several commits — and that an **array of slices** is unsupported, which
+  it never was: `var m [2][]int` works, each element being an ordinary slice header,
+  and there is now a run case for it on real hardware. The slice-of-arrays sentence
+  beside it gave the wrong reason as well; the measured one is in
+  `doc/slice-of-arrays.c`.
+
 ### Fixed
 
 - **A parenthesised expression may carry a suffix through any number of layers**,

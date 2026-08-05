@@ -1039,8 +1039,10 @@
 //
 // A row shorter than its extent zeroes the rest, and an outer index that skips a
 // row zeroes that row entirely, both following the one-dimensional rule. A slice
-// of arrays and an array of slices are not supported: each needs an element that
-// is itself indirect, which the flat static layout above has nowhere to put.
+// of arrays is not supported: its element would be reached through a pointer to an
+// array, which the target's C compiler mismodels as a pointer to a pointer -- see
+// doc/slice-of-arrays.c, where the measurement is. An array OF SLICES is supported,
+// each element being an ordinary slice header.
 //
 // A row of such an array may be sliced -- "m[i][:]", or any sub-range of it --
 // giving a slice over the row's own storage, so a write through it is a write to
@@ -1153,10 +1155,11 @@
 // address travelling -- which is also why it is always safe to send one to another
 // cog: it names code, not the frame it was made in.
 //
-// Three forms are not supported yet. A function with more than one result cannot be
-// used as a value, C having no way to name the result struct by the signature alone.
-// A "go" statement's callee must be a declared function or a function literal, not
-// a variable holding one, since a cog's entry point is generated per function.
+// A function with more than one result is a value like any other: the struct its
+// results travel in is named after the result TYPES, so two functions of one
+// signature return the same C type and the signature has something to name. A "go"
+// statement takes a value too, "go g(21)" -- a cog's entry point is generated per
+// function TYPE in that case, and the pointer travels in the argument block.
 //
 // A method value, "gp.bump", is taken with its receiver BOUND: the compiler lifts
 // it to a function of its own that names the receiver, so the value stays an
