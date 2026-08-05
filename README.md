@@ -215,9 +215,10 @@ broken.
   imported package's call alike, `b, ok := r.pop()`.
 * A declared function used as a **value**: a variable, parameter, result, array
   element or struct field of a function type holds one and a call through it is a
-  call, `chosen = add; chosen(1, 2)`. It becomes a C function pointer, so it costs
-  nothing and allocates nothing, and one is always safe to send to another cog — it
-  names code, not the frame it was made in.
+  call, `chosen = add; chosen(1, 2)`, including one with several results. `go`
+  starts one too, `go g(21)`. It becomes a C function pointer, so it costs nothing
+  and allocates nothing, and one is always safe to send to another cog — it names
+  code, not the frame it was made in.
 * `if`/`else` and `switch` including an init statement (`if v := f(); v > 0`,
   `switch v := f(); v`), which may declare several names from one call
   (`if v, ok := m.get(k); ok`), all `for` forms including `range`, `switch` with or without
@@ -227,7 +228,8 @@ broken.
   strings, structs and arrays. A multiple assignment writes to anything a single one
   can — an element, a field, a pointee — so `xs[i], xs[j] = xs[j], xs[i]` swaps.
 * A call's result may be used directly: a field read off it (`mk().y`), a method
-  called on it, or an index into it (`mk()[1]`, `mk().d[1]`).
+  called on it, or an index into it (`mk()[1]`, `mk().d[1]`) — an array result
+  included, which may also be ranged, assigned and passed on whole.
 * `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
   fixed-capacity slice, `panic`, `print`/`println`.
 * A predeclared **`Builder`** for assembling a string at run time without a heap:
@@ -265,20 +267,20 @@ broken.
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
 * An **array** or **slice** whose element is itself an array — `chan [3]int`,
-  `[][2]int` — is not supported, and says only "unsupported type". An array literal,
-  by contrast, now stands wherever an array variable does: the position binds it to a
-  temporary.
+  `[][2]int` — is refused, each with its own reason. A channel copies its element by
+  value, which C cannot do for an array; a slice would need a pointer to one, and the
+  backend mismodels that (`doc/slice-of-arrays.c` has the measurement). An array
+  literal, by contrast, stands wherever an array variable does.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
-* A function with more than **one result used as a value**; `go` through a variable
-  holding a function rather than through the function's own name; and a **method
-  value whose receiver is not a package-level variable** — the receiver is bound at
-  compile time, which is what keeps a function value one word (`doc/funcval-cost.c`
-  prices the alternative).
+* A **method value whose receiver is not a package-level variable**: the receiver is
+  bound at compile time, which is what keeps a function value one word
+  (`doc/funcval-cost.c` prices the alternative). Every other function-valued form
+  works, `go` through one included.
 * An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
   need a struct holding an array, which the backend cannot assign. An array result on
   its own is used like any other value.
-* A slice whose element is an array, and `goto`.
+* `goto`.
 * A `range` clause written with `=` accepts only variables, not an element or a
   field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.
 
