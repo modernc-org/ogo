@@ -66,6 +66,11 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
+// TODO 20260805 A POINTER to an array, `*[3]int`, is not supported: C spells it
+// `int (*p)[3]`, and the typedef that would move the name out of the declarator is
+// the same shape the target's compiler mismodels (below). A slice passes an array by
+// reference and a struct holding one takes a working pointer, which is what the
+// refusal points at.
 // TODO 20260805 A slice whose element is an ARRAY, `[][2]int`, is refused, and a
 // channel of one is too. Both are refused deliberately and by name. The slice was
 // implemented and reverted: the C is fine and gcc runs it, but the target's compiler

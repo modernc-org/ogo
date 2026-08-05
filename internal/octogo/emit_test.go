@@ -5368,6 +5368,69 @@ func main() {
 	}
 }
 
+// TestEmitCPointerToArray pins that a pointer to an ARRAY is refused by name, in
+// both spellings, and that the two forms it points at instead are not.
+//
+// C spells one `int (*p)[3]` -- the name in the middle of the declarator -- and the
+// typedef that would move it out of the way is the shape the target's compiler
+// mismodels, which is what made a slice of arrays unshippable
+// (doc/slice-of-arrays.c). Both messages used to be about something else entirely:
+// "cannot infer a type for the declaration of p", and "unsupported type" with an
+// empty name.
+func TestEmitCPointerToArray(t *testing.T) {
+	for _, test := range []struct{ name, src string }{
+		{"as a parameter", "func set(p *[3]int) { p[0] = 9 }\n\nfunc main() {\n\tvar a [3]int\n\tset(&a)\n\tprintln(a[0])\n}\n"},
+		{"taking the address", "var a [3]int\n\nfunc main() {\n\tp := &a\n\tprintln(p[0])\n}\n"},
+		{"as a variable's type", "func main() {\n\tvar p *[3]int\n\t_ = p\n\tprintln(1)\n}\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), "a pointer to an array is not supported") {
+				t.Fatalf("expected the pointer-to-array refusal, got %v", err)
+			}
+		})
+	}
+}
+
+// TestEmitCPointerToArrayAlternatives pins what the refusal points at: a slice of
+// the array passes it by reference, and a struct holding it takes a pointer that
+// works. The address of an ELEMENT is unaffected -- that is a pointer to an int.
+func TestEmitCPointerToArrayAlternatives(t *testing.T) {
+	src := `type A struct {
+	v [3]int
+}
+
+func viaSlice(xs []int) { xs[0] = 9 }
+
+func viaStruct(p *A) { p.v[1] = 8 }
+
+func main() {
+	var a A
+	viaSlice(a.v[:])
+	viaStruct(&a)
+	p := &a.v[2]
+	*p = 7
+	println(a.v[0], a.v[1], a.v[2])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var out bytes.Buffer
+	if err := EmitC(pkg, &out); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+}
+
 // TestEmitCArrayFieldABI pins every by-value boundary a struct holding an ARRAY is
 // refused at. The target's C compiler drops the argument slot or fails the copy, and
 // no lowering here can reach the calling convention itself, so each is reported where

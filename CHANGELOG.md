@@ -47,6 +47,14 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
+- **A pointer to an array is refused by name**, `*[3]int` and `&a` for an array
+  variable, where the messages used to be "cannot infer a type for the declaration
+  of p" and "unsupported type" with an empty name. It is the same C shape the entry
+  below is about — `int (*p)[3]` puts the name in the middle of the declarator — so
+  it was never supported; only the diagnostic is new. The refusal names the two
+  forms that do work: a slice of the array, `a[:]`, and a pointer to a struct
+  holding it.
+
 - **A slice or channel whose element is an ARRAY is refused by name**, `[][2]int`
   and `chan [3]int`, rather than reported as "unsupported type" with an empty type
   name. The slice form was implemented and then reverted: the emitted C is correct

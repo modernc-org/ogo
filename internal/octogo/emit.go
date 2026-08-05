@@ -7721,6 +7721,17 @@ func (e *emitter) cType(ast []int32) string {
 	nodes := slices.Collect(it(ast))
 	// Pointer type: "*" Type -> "<elem>*".
 	if len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == MUL && nodes[1].sym == Type {
+		// A pointer to an ARRAY, `*[3]int`, is refused by name. C spells it
+		// `int (*p)[3]` -- the name in the middle of the declarator again -- and the
+		// typedef that would move it out of the way is the shape the target's
+		// compiler mismodels, which is what made a slice of arrays unshippable
+		// (doc/slice-of-arrays.c). A struct holding the array takes a pointer that
+		// works, and a slice already passes an array by reference.
+		if _, isArr := e.arrayDim(nodes[1].ast); isArr {
+			e.fail("a pointer to an array is not supported: pass a slice of it, `a[:]`, " +
+				"or a pointer to a struct holding it")
+			return ""
+		}
 		if elem := e.cType(nodes[1].ast); elem != "" {
 			return elem + "*"
 		}
@@ -14937,6 +14948,17 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if tok, ok := e.unaryOpTok(kids[0].ast); ok {
 				switch e.f.ch(tok) {
 				case AND:
+					// `&a` for an ARRAY variable is a pointer to an array, which is
+					// not supported; said here rather than left to "cannot infer a
+					// type for the declaration of p". See the pointer branch of
+					// cType for why.
+					if nm, isName := e.exprIdent(kids[len(kids)-1].ast); isName {
+						if _, isArr := e.arrayVar(nm); isArr {
+							e.fail("a pointer to an array is not supported: pass a slice of it, `%s[:]`, "+
+								"or a pointer to a struct holding it", nm)
+							return "", false
+						}
+					}
 					if t, ok := e.inferNode(kids[len(kids)-1]); ok {
 						return t + "*", true
 					}
