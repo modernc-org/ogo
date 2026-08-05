@@ -286,7 +286,8 @@ broken.
 * A `range` clause written with `=` accepts only variables, not an element or a
   field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.
 * A three-clause `for` header declares **one** variable: `for a, b := f(); a < b;`
-  does not parse. `if` and `switch` headers take several, `if v, ok := f(); ok`.
+  does not parse, and neither does a two-name post, `i, j = i+1, j-1`. `if` and
+  `switch` headers take several, `if v, ok := f(); ok`.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,
