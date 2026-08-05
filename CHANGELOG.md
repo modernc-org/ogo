@@ -47,13 +47,15 @@ Releases before v0.9.0 predate this file; see
 
 ### Language
 
-- **A slice may have an ARRAY element**, `[][2]int`. `make`, reading, writing and
-  `range` all work; only a literal of one is still refused. C cannot spell an array
-  inline where the slice header's pointer goes — the name lands in the middle of the
-  declarator — so a typedef is minted for the element, which is the same move a
-  function pointer already needs. A channel of arrays is now refused with that
-  reason rather than "unsupported type" with an empty name: a rendezvous copies its
-  element by value, which C cannot do for an array.
+- **A slice or channel whose element is an ARRAY is refused by name**, `[][2]int`
+  and `chan [3]int`, rather than reported as "unsupported type" with an empty type
+  name. The slice form was implemented and then reverted: the emitted C is correct
+  and gcc runs it, but the target's compiler models a pointer to a typedef'd array
+  as a pointer to a *pointer* and indexes it by the wrong size — not uniformly,
+  which is what makes it unshippable. On a P2-EDGE a small program gave the right
+  answers and a slightly larger one silently gave `36` where Go gives `14`. The
+  measurement and what a viable representation would have to avoid are in
+  `doc/slice-of-arrays.c`; the workaround is a struct wrapping the array.
 
 - **An array literal may be a comparison operand**, `a == [3]int{1, 0, 0}`, in
   either position and with `!=`. It binds to a temporary and the per-type helper

@@ -2420,27 +2420,6 @@ func main() {
 		want: "5 4 42\n9\n2 6\n4\n20 60\n11 13\n3 2\n",
 	},
 	{
-		name: "an array as a slice element",
-		src: `// C cannot spell an array inline where a slice header's pointer goes -- the name
-// lands in the middle of the declarator, ` + "`int (*ptr)[2]`" + `. A typedef moves it out of
-// the way, the same move a function pointer needs, and the element is an ordinary C
-// type name thereafter.
-func main() {
-	xs := make([][2]int, 3)
-	xs[0][1] = 7
-	xs[2][0] = 4
-	println(xs[0][1], xs[2][0], len(xs))
-
-	sum := 0
-	for i, v := range xs {
-		sum += i + v[0] + v[1]
-	}
-	println(sum)
-}
-`,
-		want: "7 4 3\n14\n",
-	},
-	{
 		name: "a bracketed literal used as a value",
 		src: `type Row [3]int
 

@@ -8071,42 +8071,22 @@ func (e *emitter) sliceType(typeAST []int32) (elem string, ok bool) {
 	if elemAST == nil {
 		return "", false
 	}
-	// An ARRAY element, `[][2]int`: C cannot spell one inline as a slice header's
-	// pointer -- `int (*ptr)[2]` puts the name in the middle of the declarator,
-	// which the emitter's ctype-is-a-string model has nowhere to put. A typedef
-	// moves it out of the way, exactly as it does for a function pointer, and the
-	// element is thereafter an ordinary C type name.
-	if name, isArr := e.arrayElemTypedef(elemAST); isArr {
-		return name, true
+	// An ARRAY element, `[][2]int`, is refused rather than left to fail as an
+	// "unsupported type" with no name. A typedef gives it a C name and everything
+	// compiles -- but the target's compiler models a pointer to a typedef'd array as
+	// a pointer to a POINTER ("expected pointer to pointer to int but got pointer to
+	// array of int"), so the addresses it computes are wrong. It was measured on a
+	// P2-EDGE: simple programs answered correctly and slightly larger ones did not,
+	// which is worse than not having it. See doc/slice-of-arrays.c.
+	if _, isArr := e.arrayDim(elemAST); isArr {
+		e.fail("a slice element may not be an array: the target's C compiler mismodels a pointer to " +
+			"one and indexes it wrongly; use a struct holding the array, or a flat slice")
+		return "", false
 	}
 	if elem = e.cType(elemAST); elem == "" {
 		return "", false
 	}
 	return elem, true
-}
-
-// arrayElemTypedef mints (or reuses) the typedef standing for an ARRAY used as an
-// element type, `typedef int ogo_arr_2_int[2];`, and registers it as a named array
-// so indexing a value of it reads through the same path a defined array type does.
-//
-// Keyed by the shape rather than by where it was written, so `[][2]int` written
-// twice mints once -- the same rule anonStructType and the result structs follow.
-func (e *emitter) arrayElemTypedef(typeAST []int32) (string, bool) {
-	a, ok := e.arrayDim(typeAST)
-	if !ok {
-		return "", false
-	}
-	name := "ogo_arr"
-	for _, b := range a.bounds() {
-		name += "_" + cTypeIdent(b)
-	}
-	name += "_" + cTypeIdent(a.elem)
-	if _, seen := e.namedArrays[name]; !seen {
-		e.namedArrays[name] = a
-		e.typeNames[name] = true
-		e.addTypedef(name, "typedef "+a.elem+" "+name+a.declSuffix()+";\n", a.elem)
-	}
-	return name, true
 }
 
 // arrayBoundC renders a fixed-array bound as a C integer constant: a single
@@ -8672,13 +8652,6 @@ func (e *emitter) byteReadOpen() string {
 func (e *emitter) plainOrSlice(elem string) accessCur {
 	if el, ok := e.sliceElemByName[elem]; ok {
 		return accessCur{elem: el, slice: true}
-	}
-	// A named ARRAY type carries its extents, so a further index has something to
-	// consume: `[][2]int` reaches its element as ogo_arr_2_int, and `xs[0][1]` is
-	// that element indexed once more. Without this the chain stopped at the element
-	// and typed the whole array as the value.
-	if a, ok := e.namedArrays[elem]; ok {
-		return accessCur{elem: a.elem, dims: a.bounds()}
 	}
 	return accessCur{ctype: elem}
 }
@@ -10251,23 +10224,12 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 	}
 	if h.valVar != nil {
 		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
-			// An ARRAY element is COPIED, as Go copies it, and C cannot assign one:
-			// `T v = xs.ptr[i]` is not an initializer it accepts. emitArrayCopy
-			// declares the value and memcpys into it. flexcc took the plain form and
-			// gcc did not, so this needed the host to find.
-			if a, isArr := e.namedArrays[elem]; isArr && h.rangeDef {
-				lines = append(lines, func() {
-					e.locals[val] = elem
-					e.emitArrayCopy(val, access, a)
-				})
-			} else {
-				decl := ""
-				if h.rangeDef {
-					e.locals[val] = elem
-					decl = elem + " "
-				}
-				lines = append(lines, func() { e.ind(); e.emit(decl + val + " = " + access + ";\n") })
+			decl := ""
+			if h.rangeDef {
+				e.locals[val] = elem
+				decl = elem + " "
 			}
+			lines = append(lines, func() { e.ind(); e.emit(decl + val + " = " + access + ";\n") })
 		}
 	}
 	if len(lines) == 0 {

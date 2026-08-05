@@ -66,12 +66,14 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260805 A LITERAL of a slice whose element is an array does not work,
-// `[][2]int{{1, 2}, {3, 4}}` -- the slice itself does, so `make([][2]int, n)` and
-// every read, write and range over it are fine. Both the type-elided element form
-// and the written-out `[2]int{1, 2}` are refused by the literal machinery, which
-// takes an array element for a nested extent of the OUTER array rather than a value
-// of the element type.
+// TODO 20260805 A slice whose element is an ARRAY, `[][2]int`, is refused, and a
+// channel of one is too. Both are refused deliberately and by name. The slice was
+// implemented and reverted: the C is fine and gcc runs it, but the target's compiler
+// models a pointer to a typedef'd array as a pointer to a POINTER, so it indexes by
+// the wrong size -- and NOT uniformly, which is the dangerous part. A small program
+// gave the right answers on a P2-EDGE and a slightly larger one silently did not.
+// See doc/slice-of-arrays.c for the measurement and for what a viable representation
+// would have to avoid. The workaround is a struct wrapping the array.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
