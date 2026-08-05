@@ -2719,6 +2719,49 @@ func main() {
 		want: "1 2 1234567890123 7\n",
 	},
 	{
+		name: "a call returning an array, read where it stands",
+		src: `type T struct {
+	n int
+}
+
+func (t T) row() [2]int {
+	var a [2]int
+	a[0] = t.n
+	a[1] = t.n * 2
+	return a
+}
+
+func mk(k int) [3]int {
+	var a [3]int
+	a[0] = k
+	a[1] = k + 1
+	a[2] = k + 2
+	return a
+}
+
+// An array result travels through an out parameter -- C cannot return one -- so
+// the call is a statement with no expression to index. It is bound to a temporary
+// and the steps read that; two calls in one expression get one temporary each.
+func main() {
+	println(mk(4)[1], mk(10)[2])
+
+	x := mk(7)[0]
+	println(x)
+
+	sum := 0
+	for i, v := range mk(1) {
+		sum += i * v
+	}
+	println(sum)
+
+	var t T
+	t.n = 8
+	println(t.row()[0], t.row()[1])
+}
+`,
+		want: "5 12\n7\n8\n8 16\n",
+	},
+	{
 		name: "go through a function value",
 		src: `type T struct {
 	fn func(int)

@@ -24,10 +24,12 @@
 // recursion above -- dies before the check is ever reached, so it could not be shown
 // to catch anything. What would work is a depth check at function entry, or a stack
 // whose size the "go" statement can choose, which is what this TODO is really for.
-// TODO 20260804 Arrays: a call returning an array is a statement rather than a
-// value -- bind it and use the variable. The result travels through an out
-// parameter (C cannot return an array, and a struct holding one is a shape this
-// backend cannot assign), so there is no expression for the call to become.
+// TODO 20260806 Arrays: a call returning an array may be INDEXED and RANGED where
+// it stands, but not handed on whole -- `take(mk())` and `b = mk()` still ask for a
+// variable. The result travels through an out parameter (C cannot return an array,
+// and a struct holding one is a shape this backend cannot assign); indexing binds
+// the result to a temporary, and the remaining two want the temporary to be the
+// caller's storage rather than a copy of it.
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
 // TODO 20260804 A conversion to an unnamed composite type must be PARENTHESISED:

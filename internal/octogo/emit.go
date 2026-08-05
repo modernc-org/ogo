@@ -6093,6 +6093,12 @@ func (e *emitter) arrayResultCall(ast []int32) (string, arrDim, bool) {
 	if !ok || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
 		return "", arrDim{}, false
 	}
+	return e.arrayResultCallOf(recv, suffix)
+}
+
+// arrayResultCallOf is arrayResultCall for a callee and suffix already in hand,
+// which is what a caller that has stripped trailing steps off the factor has.
+func (e *emitter) arrayResultCallOf(recv string, suffix []Node) (string, arrDim, bool) {
 	cname := e.funcCallC(recv)
 	if len(suffix) == 2 && suffix[0].sym == Selector {
 		// A method, `b.triple()`: its C name is the receiver type's, and the
@@ -6113,6 +6119,11 @@ func (e *emitter) arrayResultCall(ast []int32) (string, arrDim, bool) {
 // writes through.
 func (e *emitter) emitArrayResultCall(dst, cname string, ast []int32) {
 	recv, suffix, _ := e.directCall(ast)
+	e.emitArrayResultCallOf(dst, cname, recv, suffix)
+}
+
+// emitArrayResultCallOf is emitArrayResultCall for a callee and suffix in hand.
+func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) {
 	a := e.funcArrayRet[cname]
 	e.ind()
 	e.emit(cname + "(")
@@ -7492,6 +7503,67 @@ func (e *emitter) bracketConvOperand(typeAST []int32, arg []int32) (string, bool
 		}
 	}
 	return "", false
+}
+
+// hoistArrayResultCall recognises a call whose result is an ARRAY with steps after
+// it, `mk()[1]` or `mk()[i].x`, binds the result to a temporary of this frame and
+// answers with that temporary and the steps.
+//
+// An array result travels through an out parameter -- C cannot return one -- so the
+// call is a statement and has no expression to index. Binding it gives the steps
+// something to read, which is what a declaration of the result already did; this is
+// the same move without the user having to write the variable.
+func (e *emitter) hoistArrayResultCall(ast []int32) (string, []Node, bool) {
+	if e.declInit || e.deferReplay >= 0 {
+		return "", nil, false
+	}
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return "", nil, false
+	}
+	return e.hoistArrayResultCallKids(slices.Collect(it(fac.ast)))
+}
+
+// hoistArrayResultCallKids is hoistArrayResultCall for a factor's children already
+// in hand, which is what the expression and typing walks hold.
+func (e *emitter) hoistArrayResultCallKids(kids []Node) (string, []Node, bool) {
+	if e.declInit || e.deferReplay >= 0 {
+		return "", nil, false
+	}
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	// The call, then the steps that read what it returned. A method is `recv.m()`,
+	// two steps before the rest.
+	call := 1
+	if len(steps) >= 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+		call = 2
+	}
+	if len(steps) <= call || steps[call-1].sym != CallSuffix || !isAccessChain(steps[call:]) {
+		return "", nil, false
+	}
+	recv := e.src(kids[0].tok)
+	cname, a, isArr := e.arrayResultCallOf(recv, steps[:call])
+	if !isArr {
+		return "", nil, false
+	}
+	name := e.newTmp()
+	saved := e.indent
+	e.indent = 0
+	text := e.captureC(func() {
+		e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+		e.emitArrayResultCallOf(name, cname, recv, steps[:call])
+	})
+	e.indent = saved
+	if text == "" {
+		return "", nil, false
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		e.prologue = append(e.prologue, line+"\n")
+	}
+	e.arrays[name] = a
+	return name, steps[call:], true
 }
 
 // litSliceType is sliceType for the type of a composite LITERAL, where a defined
@@ -10394,6 +10466,12 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 	// reads elements, and the value variable is a copy. Bound before the switch, so
 	// the binding happens once however the operand turns out to be shaped.
 	name := e.rangeLitVar(h.rangeExpr)
+	if name == "" {
+		// `range mk()` for a function returning an ARRAY: the result travels through
+		// an out parameter, so there is storage to range and no expression naming it.
+		// Bound here for the same reason a literal is.
+		name = e.rangeArrayResultVar(h.rangeExpr)
+	}
 	switch {
 	case name != "":
 		if a, isArray := e.arrays[name]; isArray {
@@ -10517,6 +10595,21 @@ func (e *emitter) emitRangeArray(h *forHeader, body []int32, key string, a arrDi
 	e.ind()
 	e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
 	e.emitLoopBody(body, e.rangeValueInject(h, key, a.elem, base+"["+key+"]"))
+}
+
+// rangeArrayResultVar binds a range operand that is a call returning an ARRAY to a
+// fresh local and returns its name, or "" for any other operand.
+func (e *emitter) rangeArrayResultVar(rangeExpr []int32) string {
+	cname, a, ok := e.arrayResultCall(rangeExpr)
+	if !ok {
+		return ""
+	}
+	name := e.newTmp()
+	e.ind()
+	e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+	e.emitArrayResultCall(name, cname, rangeExpr)
+	e.arrays[name] = a
+	return name
 }
 
 // rangeLitVar binds a range operand that is an array or slice literal to a fresh
@@ -15254,6 +15347,17 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if _, _, concrete, ok := e.typeAssertionKids(kids); ok {
 				return concrete + "*", true
 			}
+			// `x := mk()[1]` types as the chain reached from the bound result.
+			if name, steps, ok := e.hoistArrayResultCallKids(kids); ok {
+				cur, okc := e.accessChainType(name, steps)
+				if !okc || len(cur.dims) != 0 {
+					return "", false
+				}
+				if cur.slice {
+					return sliceCName(cur.elem), true
+				}
+				return cur.ctype, true
+			}
 			// A bracketed conversion types as its TARGET, the operand having the
 			// same representation.
 			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
@@ -16137,6 +16241,16 @@ func (e *emitter) emitExprNode(n Node) {
 				e.prologue = append(e.prologue, "if (!("+e.assertOKC(operand, iface, concrete)+")) "+
 					"ogo_panic(\"interface conversion: "+e.goTypeName(iface)+" is not *"+e.goTypeName(concrete)+"\");\n")
 				e.emit(e.assertValueC(operand, concrete))
+				return
+			}
+			// `mk()[1]` -- a call returning an ARRAY, read through a suffix. The
+			// result is bound to a temporary, since C cannot return an array and the
+			// call is therefore a statement with no expression to index.
+			if name, steps, ok := e.hoistArrayResultCallKids(kids); ok {
+				if _, ok := e.emitAccessChain(name, steps); ok {
+					return
+				}
+				e.fail("an array result cannot be read through this suffix")
 				return
 			}
 			// `([]int)(xs)` / `([3]int)(q)` -- a conversion to an unnamed composite
