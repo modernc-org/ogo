@@ -11,9 +11,23 @@ compiler catching something it should have caught before.
 Releases before v0.9.0 predate this file; see
 [the releases page](https://github.com/modernc-org/ogo/releases).
 
+A released section is frozen: it says what that release did, and a later fix to the
+same area is a new entry under **Unreleased**, not an edit to the old one. Amending a
+shipped section tells a reader on that version that they have behaviour they do not.
+`git show vX.Y.Z:CHANGELOG.md` is the check.
+
 ## Unreleased
 
 ### Fixed
+
+- **A parenthesised expression may carry a suffix through any number of layers**,
+  `((a))[1]`. v0.18.0 peeled one pair and refused the rest.
+
+- **A parenthesised operand is checked like the bare one**, so `(s).nosuch` is
+  reported as the field that does not exist. In v0.18.0 it reached the backend, which
+  answered `unsupported expression node FactorSuffix`: the checker's field, method
+  and call checks all key on a leading identifier, and a parenthesised operand has
+  none.
 
 - **Two functions whose result lists spell the same struct name shared one struct**,
   silently. The struct is named after the result types run together, and `(a_b, int)`
@@ -251,11 +265,9 @@ used as a type now says what it actually is.
   to name — which is what the refusal was about. `go` through a function value is
   still refused: starting a cog needs the callee's name.
 
-- **A parenthesised expression may carry a suffix**, `(a)[1]`, `(s).v`, `(dbl)(21)`,
-  through any number of layers, `((a))[1]`. These are ordinary Go and were rejected
-  as syntax errors: the grammar's parenthesised alternative had no suffix at all. The
-  checker sees through the parentheses too, so `(s).nosuch` is reported as the field
-  that does not exist rather than reaching the backend.
+- **A parenthesised expression may carry a suffix**, `(a)[1]`, `(s).v`, `(dbl)(21)`.
+  These are ordinary Go and were rejected as syntax errors: the grammar's
+  parenthesised alternative had no suffix at all.
 
 - **A literal of a bracketed type may be read where it stands**, `[]int{1, 2, 3}[1]`,
   `[3]int{4, 5, 6}[2]`, `[2]P{{1, 2}, {3, 4}}[1].y`. The literal binds to a temporary
