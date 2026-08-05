@@ -48,7 +48,7 @@ Releases before v0.9.0 predate this file; see
 ### Language
 
 - **A three-clause `for` header may declare and assign several names**,
-  `for i, j := 0, 9; i < j; i, j = i+1, j-1`. A multiple assignment cannot be C's
+  `for i, j := 0, 9; i < j; i, j = i+1, j-1`, any number of them. A multiple assignment cannot be C's
   third clause — Go assigns simultaneously, which needs temporaries, and that clause
   is an expression — so the post statements go at the end of the body behind a label
   that `continue` jumps to. A multi-name init becomes a block around the loop, which

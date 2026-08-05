@@ -1332,7 +1332,10 @@ func (f *File) parseForRestInfo(n Node, fi *forInfo) {
 				fi.postNode, fi.hasPost = c, true
 			}
 		}
-		if len(fi.initLHSs) != 0 {
+		// Both lists, not just the names: a header the grammar should not admit must
+		// still not crash the compiler here. A count mismatch is reported where the
+		// init is checked, which needs the lists intact rather than a first element.
+		if len(fi.initLHSs) != 0 && len(fi.initRHSs) != 0 {
 			fi.initLHS, fi.initRHS = fi.initLHSs[0], fi.initRHSs[0]
 		}
 		return

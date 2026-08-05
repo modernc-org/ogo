@@ -2458,9 +2458,35 @@ func main() {
 		total += 100
 	}
 	println(total)
+
+	// Three names, and a labeled continue OUT of an inner loop into one: the
+	// label lands before the post, so falling through it runs the post.
+	for i, j, k := 0, 9, 100; i < j; i, j, k = i+1, j-1, k+1 {
+		println(i, j, k)
+	}
+
+	outer := 0
+L:
+	for i, j := 0, 4; i < j; i, j = i+1, j-1 {
+		for k := 0; k < 3; k++ {
+			if k == 1 {
+				continue L
+			}
+			outer++
+		}
+	}
+	println(outer)
+
+	// The assigning form, "=" rather than ":=", which writes variables that exist.
+	p := 0
+	q := 0
+	for p, q = 0, 5; p < q; p, q = p+1, q-1 {
+		println(p, q)
+	}
 }
 `,
-		want: "0 9\n1 8\n2 7\n3 6\n4 5\n30\n2 1\n200\n",
+		want: "0 9\n1 8\n2 7\n3 6\n4 5\n30\n2 1\n200\n" +
+			"0 9 100\n1 8 101\n2 7 102\n3 6 103\n4 5 104\n2\n0 5\n1 4\n2 3\n",
 	},
 	{
 		name: "a bracketed literal used as a value",

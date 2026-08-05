@@ -9893,7 +9893,7 @@ func (e *emitter) parseForRest(n Node, h *forHeader) bool {
 				}
 			}
 		}
-		if len(h.initLHSs) != len(h.initRHSs) {
+		if len(h.initLHSs) != len(h.initRHSs) || len(h.initLHSs) == 0 {
 			e.fail("a for-loop init declares %d names from %d values", len(h.initLHSs), len(h.initRHSs))
 			return false
 		}

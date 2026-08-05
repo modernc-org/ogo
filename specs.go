@@ -1532,7 +1532,7 @@
 //		| HeaderExpression [ ForRest ] .
 //	ForRest    = ";" [ HeaderExpression ] ";" [ ForPost ]
 //		| ( "=" | ":=" ) ForAssignRest
-//		| "," HeaderExpression ( "=" | ":=" ) ( "range" HeaderExpression
+//		| "," HeaderExpression { "," HeaderExpression } ( "=" | ":=" ) ( "range" HeaderExpression
 //			| HeaderExpression { "," HeaderExpression } ";" [ HeaderExpression ] ";" [ ForPost ] ) .
 //	ForAssignRest = "range" HeaderExpression
 //		| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .

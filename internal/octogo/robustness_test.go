@@ -1,6 +1,7 @@
 package octogo
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -831,6 +832,29 @@ func buildEach(t *testing.T, progs []string) {
 			fsys := fstest.MapFS{"x.ogo": &fstest.MapFile{Data: []byte(src)}}
 			Build(-1, []string{"x.ogo"}, fsys)
 		}()
+	}
+}
+
+// TestForHeaderRobustness feeds the multi-name "for" header shapes that once
+// panicked the checker. Three names did: the grammar admitted only two, so the
+// values list came back empty and the checker indexed it. The grammar takes any
+// number now, and both the checker and the emitter check BOTH lists before indexing
+// either -- a header the grammar should not admit must still not crash the compiler.
+func TestForHeaderRobustness(t *testing.T) {
+	for _, src := range []string{
+		"func main() {\n\tfor i, j, k := 0, 9, 100; i < j; i, j, k = i+1, j-1, k+1 {\n\t\tprintln(i, j, k)\n\t}\n}\n",
+		"func main() {\n\tfor i, j := 0, 9, 3; i < j; i++ {\n\t\tprintln(i)\n\t}\n}\n",
+		"func main() {\n\tfor i, j := 0; i < j; i++ {\n\t\tprintln(i)\n\t}\n}\n",
+		"func main() {\n\tfor i, j := 0, 9; i < j; i, j = i+1 {\n\t\tprintln(i)\n\t}\n}\n",
+		"func main() {\n\tfor i, j := 0, 9; i < j; i = i+1, j-1 {\n\t\tprintln(i)\n\t}\n}\n",
+	} {
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			continue // reported, which is fine; what matters is that it did not panic
+		}
+		var out bytes.Buffer
+		_ = EmitC(pkg, &out)
 	}
 }
 
