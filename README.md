@@ -267,10 +267,10 @@ broken.
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
 * An **array** or **slice** whose element is itself an array — `chan [3]int`,
-  `[][2]int` — is refused, each with its own reason. A channel copies its element by
-  value, which C cannot do for an array; a slice would need a pointer to one, and the
-  backend mismodels that (`doc/slice-of-arrays.c` has the measurement). An array
-  literal, by contrast, stands wherever an array variable does.
+  `[][2]int` — is refused. A channel copies its element by value, which C cannot do
+  for an array. The slice is implementable and was reverted on a wrong diagnosis; see
+  `doc/array-param-corrupts.c`. An array literal, by contrast, stands wherever an
+  array variable does.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
 * A **method value whose receiver is not a package-level variable**: the receiver is

@@ -46,14 +46,17 @@
 // the same shape the target's compiler mismodels (below). A slice passes an array by
 // reference and a struct holding one takes a working pointer, which is what the
 // refusal points at.
-// TODO 20260805 A slice whose element is an ARRAY, `[][2]int`, is refused, and a
-// channel of one is too. Both are refused deliberately and by name. The slice was
-// implemented and reverted: the C is fine and gcc runs it, but the target's compiler
-// models a pointer to a typedef'd array as a pointer to a POINTER, so it indexes by
-// the wrong size -- and NOT uniformly, which is the dangerous part. A small program
-// gave the right answers on a P2-EDGE and a slightly larger one silently did not.
-// See doc/slice-of-arrays.c for the measurement and for what a viable representation
-// would have to avoid. The workaround is a struct wrapping the array.
+// TODO 20260806 A slice whose element is an ARRAY, `[][2]int`, is refused, and a
+// channel of one is too. The slice is IMPLEMENTABLE and the reason it was reverted
+// was misdiagnosed: a pointer to a typedef'd array is fine on this target. What
+// broke it was the generated `append` helper taking the element by value, an array
+// PARAMETER, which corrupts unrelated code in the same program --
+// doc/array-param-corrupts.c isolates that in thirty lines and
+// doc/slice-of-arrays.c carries the correction. Re-landing it means giving the
+// helpers pointer parameters, or a flat representation (an `int*` to the innermost
+// element plus a stride), which is how C models this anyway. The channel is separate
+// and stays refused: a rendezvous copies its element by value, which C cannot do for
+// an array at all.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

@@ -9,14 +9,22 @@
 //	typedef int ogo_arr_2_int[2];
 //	typedef struct { ogo_arr_2_int* ptr; int len; int cap; } slice;
 //
+// THE DIAGNOSIS BELOW IS WRONG, and doc/array-param-corrupts.c has the right one.
+// A pointer to a typedef'd array is fine on this target: `arr2 *ptr` in a struct,
+// indexed `ptr[i][j]`, was measured correct on a P2-EDGE on 2026-08-06. What broke
+// the implementation was one thing in it -- the generated `append` helper took the
+// element BY VALUE, `push(slice s, arr2 v)`, and a function parameter of array type
+// corrupts unrelated code elsewhere in the program. Give that helper a pointer
+// parameter and the same program is correct.
+//
+// The warning below is real but is not the fault; it fires on an assignment the
+// implementation also made, and I read a warning plus a wrong answer as one cause.
+//
 // gcc compiles that and every operation over it correctly. The target's compiler
-// (spin2cpp v7.7.0, through this repository's backend) does not: it models
-// `ogo_arr_2_int*` as a pointer to a POINTER, and says so when the two meet --
+// (spin2cpp v7.7.0, through this repository's backend) warns where the two meet --
 //
 //	warning: incompatible pointer types in assignment:
 //	expected pointer to pointer to int  but got pointer to array of int
-//
-// -- so the addresses it computes step by the wrong size.
 //
 // WHAT MAKES IT DANGEROUS is that it is not uniformly wrong. Measured on a P2-EDGE
 // on 2026-08-05, this program answered correctly:

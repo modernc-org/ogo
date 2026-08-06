@@ -18,6 +18,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Documentation
+
+- **The slice-of-arrays revert was misdiagnosed**, and the record is corrected. A
+  pointer to a typedef'd array is *fine* on this target — measured on a P2-EDGE. What
+  broke the implementation was the generated `append` helper taking the element by
+  value: **a function parameter of array type corrupts unrelated code elsewhere in
+  the same program**, silently, and the wrong value is not even stable across
+  unrelated edits. `doc/array-param-corrupts.c` isolates it in thirty lines, gcc
+  against board. ogo has always avoided array parameters for user functions — a
+  `func take(a [3]int)` is emitted as `int take(int* _ogo_a)` — so the only one it
+  ever emitted was in that helper. The feature is implementable after all; the revert
+  itself stands, since the code that shipped was genuinely wrong.
+
 ## v0.19.0
 
 The release that went looking for miscompiles and found seven. A struct holding a
