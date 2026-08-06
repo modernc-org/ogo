@@ -10438,8 +10438,8 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			if v == nil {
 				continue
 			}
-			if _, ok := e.exprIdent(v); !ok {
-				e.fail("a range target that is not a variable is not supported yet")
+			if _, ok := e.exprIdent(v); !ok && !e.isFieldTarget(v) {
+				e.fail("a range target must be a variable or a struct field")
 				return
 			}
 		}
@@ -10553,6 +10553,19 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 // assigned by an "=" one, and -- for an "=" clause -- the key variable, copied from
 // the loop's own counter. It is nil when there is nothing to write. elem is the
 // element C type and access the C expression reading the current element.
+// isFieldTarget reports whether an expression is a struct field access, `s.i`,
+// which a range clause may assign into: the field path renders it as an lvalue,
+// which is what writing it each iteration needs. An ELEMENT target is not one --
+// indexing renders a bounds check around the read, not a place to write.
+func (e *emitter) isFieldTarget(v []int32) bool {
+	base, fields, ok := e.factorFieldAccess(e.factorKids(v))
+	if !ok || len(fields) == 0 {
+		return false
+	}
+	_, isField := e.fieldType(base, fields)
+	return isField
+}
+
 func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func() {
 	var lines []func()
 	if h.keyStore != "" {

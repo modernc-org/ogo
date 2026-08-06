@@ -18,6 +18,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A `range` clause may assign into a struct field**, `for s.i, s.v = range xs`.
+  The emission already rendered its targets as lvalues; only the guard ahead of it
+  required a bare name. An element target, `for a[0] = range xs`, is still refused —
+  indexing renders a bounds-checked read, which is not a place to write.
+
 ### Documentation
 
 - **`specs.go` re-measured.** The language spec still said a function with more than

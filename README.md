@@ -281,8 +281,8 @@ broken.
   need a struct holding an array, which the backend cannot assign. An array result on
   its own is used like any other value.
 * `goto`.
-* A `range` clause written with `=` accepts only variables, not an element or a
-  field: `for xs[0], a[0] = range xs` is refused. Plain variables are fine.
+* A `range` clause written with `=` accepts a variable or a struct field, not an
+  element: `for xs[0], a[0] = range xs` is refused.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,

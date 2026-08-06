@@ -1446,8 +1446,9 @@
 // A clause written with "=" rather than ":=" assigns variables that already
 // exist instead of declaring new ones. They are written at the top of each
 // iteration, so after the loop they hold the last index and element, and a
-// "break" leaves them at the iteration it broke on. Each such variable must be a
-// name; an element or a field target is not supported yet.
+// "break" leaves them at the iteration it broke on. Each such target must be a name
+// or a struct FIELD; an element target is not supported, indexing rendering a
+// bounds-checked read rather than a place to write.
 //
 // (OctoGo Specific): To stay LL(1), a header is parsed as an expression first
 // and what follows it decides how to read it: a "{" makes it the condition, and

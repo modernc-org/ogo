@@ -2719,6 +2719,44 @@ func main() {
 		want: "1 2 1234567890123 7\n",
 	},
 	{
+		name: "a range clause assigning into struct fields",
+		src: `type S struct {
+	i int
+	v int
+}
+
+var s S
+
+var t S
+
+// An assigning clause writes variables that already exist. A struct FIELD is a
+// place to write like any other -- the field path renders it as an lvalue -- so
+// the loop copies its counter and element into one each iteration.
+func main() {
+	xs := []int{5, 6, 7}
+	for s.i, s.v = range xs {
+		println(s.i, s.v)
+	}
+	// After the loop they hold the last pair, as Go leaves them.
+	println(s.i, s.v)
+
+	// break leaves them at the iteration it broke on.
+	for t.i, t.v = range xs {
+		if t.i == 1 {
+			break
+		}
+	}
+	println(t.i, t.v)
+
+	// The key alone.
+	for s.i = range xs {
+	}
+	println(s.i)
+}
+`,
+		want: "0 5\n1 6\n2 7\n2 7\n1 6\n2\n",
+	},
+	{
 		name: "an array of slices",
 		src: `// Each element is a slice HEADER, which is an ordinary C value, so the flat
 // static layout has somewhere to put it. A slice of ARRAYS is the other way round
