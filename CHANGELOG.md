@@ -18,6 +18,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A slice may have an ARRAY element**, `[][2]int`, `[]Row`, `[][2][3]int`. `make`,
+  reading, writing, `range`, `append`, `copy`, reslicing, passing to a function, a
+  struct field of that type and a literal all work. C cannot spell an array inline
+  where the slice header's pointer goes, so the element takes a typedef; the helpers
+  that would take it *by value* take a pointer instead, since a function parameter of
+  array type corrupts unrelated code on this target. This shipped in v0.18.0, was
+  reverted in v0.19.0 on a wrong diagnosis, and is back with the actual cause fixed —
+  the whole surface is checked against `go run` and on a P2-EDGE.
+
 ### Documentation
 
 - **The slice-of-arrays revert was misdiagnosed**, and the record is corrected. A

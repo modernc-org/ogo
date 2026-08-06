@@ -2757,6 +2757,69 @@ func main() {
 		want: "0 5\n1 6\n2 7\n2 7\n1 6\n2\n",
 	},
 	{
+		name: "a slice whose element is an array",
+		src: `type Row [2]int
+
+type T struct {
+	rows [][2]int
+}
+
+func first(xs [][2]int) int { return xs[0][0] }
+
+// C cannot spell an array inline where the slice header's pointer goes, so the
+// element gets a typedef. The helpers that would take it BY VALUE take a pointer
+// instead: a function parameter of array type corrupts unrelated code on this
+// target (doc/array-param-corrupts.c), which is what made this look impossible.
+func main() {
+	xs := make([][2]int, 3)
+	xs[0][1] = 7
+	xs[2][0] = 4
+	println(xs[0][1], xs[2][0], len(xs))
+
+	sum := 0
+	for i, v := range xs {
+		sum += i + v[0] + v[1]
+	}
+	println(sum)
+
+	// append copies the element in, so writing the source afterwards does not
+	// reach it.
+	as := make([][2]int, 0, 4)
+	var r [2]int
+	r[0] = 5
+	r[1] = 6
+	as = append(as, r)
+	r[0] = 99
+	println(len(as), as[0][0], as[0][1])
+
+	bs := make([][2]int, 1)
+	copy(bs, as)
+	println(bs[0][0], bs[0][1])
+
+	println(first(xs[2:]))
+	cs := xs[1:]
+	println(len(cs), cs[1][0])
+
+	// A literal: the backing is declared with the element's own extents, the
+	// target refusing a brace group for a typedef'd array element.
+	ls := [][2]int{{1, 2}, {3, 4}, {5, 6}}
+	println(len(ls), ls[0][0], ls[1][1], ls[2][0])
+
+	ys := []Row{{11, 12}, {13, 14}}
+	println(ys[1][0], ys[0][1])
+
+	var t T
+	t.rows = [][2]int{{3, 4}}
+	println(t.rows[0][1])
+
+	zs := make([][2][3]int, 2)
+	zs[1][0][2] = 9
+	println(zs[1][0][2])
+}
+`,
+		want: "7 4 3\n14\n1 5 6\n5 6\n4\n2 4\n3 1 4 5\n13 12\n4\n9\n",
+	},
+	{
 		name: "an array of slices",
 		src: `// Each element is a slice HEADER, which is an ordinary C value, so the flat
 // static layout has somewhere to put it. A slice of ARRAYS is the other way round

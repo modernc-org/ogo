@@ -2806,10 +2806,21 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		helperDefs.WriteString(e.chanRuntimeDefs(el))
 	}
 	for _, el := range sortedKeys(e.appendElems) {
-		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n"+
+		param, store := el+" v", "s.ptr[s.len] = v;"
+		if a, isArr := e.namedArrays[el]; isArr {
+			// NOT `%s v` for an array element: a function parameter of array type
+			// corrupts unrelated code on this target, silently and non-locally --
+			// doc/array-param-corrupts.c reduces it to thirty lines. A pointer to the
+			// element costs nothing at the call site, an array argument decaying to
+			// one anyway, and C has no array assignment so the store is a copy either
+			// way.
+			e.includes["string.h"] = true
+			param, store = "const "+a.elem+"* v", "memcpy(s.ptr[s.len], v, sizeof(s.ptr[s.len]));"
+		}
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s) {\n"+
 			"\tif (s.len >= s.cap) {\n\t\togo_panic(\"append: out of capacity\");\n\t} else {\n"+
-			"\t\ts.ptr[s.len] = v;\n\t\ts.len++;\n\t}\n\treturn s;\n}\n",
-			sliceCName(el), appendCName(el), sliceCName(el), el)
+			"\t\t%s\n\t\ts.len++;\n\t}\n\treturn s;\n}\n",
+			sliceCName(el), appendCName(el), sliceCName(el), param, store)
 	}
 	// copy(dst, src): move min(len) elements and return the count. memmove, not
 	// memcpy, because Go's copy allows dst and src to overlap.
@@ -2882,10 +2893,15 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return %s ? a : b; }\n", ct, maxCName(ct), ct, ct, minMaxCmp(ct, ">"))
 	}
 	for _, el := range sortedKeys(e.tryappendElems) {
-		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
+		param, store := el+" v", "s.ptr[s.len] = v;" // see the append helper above
+		if a, isArr := e.namedArrays[el]; isArr {
+			e.includes["string.h"] = true
+			param, store = "const "+a.elem+"* v", "memcpy(s.ptr[s.len], v, sizeof(s.ptr[s.len]));"
+		}
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s) {\n\t%s r;\n"+
 			"\tif (s.len >= s.cap) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
-			"\t\ts.ptr[s.len] = v;\n\t\ts.len++;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
-			appendokCName(el), tryappendCName(el), sliceCName(el), el, appendokCName(el))
+			"\t\t%s\n\t\ts.len++;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
+			appendokCName(el), tryappendCName(el), sliceCName(el), param, appendokCName(el), store)
 	}
 	// The per-element slice printers render "[e0 e1 ...]"; the newline form defers
 	// to the plain one and adds a trailing '\n'. They reference the slice typedef
@@ -7149,7 +7165,14 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 			e.emit(e.zeroInitC(elemCType))
 			continue
 		}
-		e.emitLitElement(*v, structField{ctype: elemCType}, true)
+		// A named ARRAY element carries its extents, so a `{1, 2}` written for one is
+		// read as a value OF that element rather than as a nested extent of the outer
+		// array -- which is what `[][2]int{{1, 2}, {3, 4}}` needs.
+		fld := structField{ctype: elemCType}
+		if a, isArr := e.namedArrays[elemCType]; isArr {
+			fld.dim = a
+		}
+		e.emitLitElement(*v, fld, true)
 	}
 	e.emit("}")
 }
@@ -7310,8 +7333,17 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	}
 	backing := e.newBacking()
 	n := strconv.Itoa(length)
+	// An ARRAY element is declared through the element's own extents rather than
+	// through its typedef: `int b[2][2] = {{1, 2}, {3, 4}}`, not
+	// `ogo_arr_2_int b[2] = {...}`, which the target's compiler refuses ("expected
+	// pointer to int but got list of 2 values"). The header stores the same thing
+	// either way -- `int[2][2]` decays to `int (*)[2]`, which IS ogo_arr_2_int*.
+	decl, suffix := elem, ""
+	if a, isArr := e.namedArrays[elem]; isArr {
+		decl, suffix = a.elem, a.declSuffix()
+	}
 	lead()
-	e.emit(elem + " " + backing + "[" + n + "] = ")
+	e.emit(decl + " " + backing + "[" + n + "]" + suffix + " = ")
 	e.emitPositionalValues(values, elem)
 	e.emit(";\n")
 	lead()
@@ -8227,22 +8259,42 @@ func (e *emitter) sliceType(typeAST []int32) (elem string, ok bool) {
 	if elemAST == nil {
 		return "", false
 	}
-	// An ARRAY element, `[][2]int`, is refused rather than left to fail as an
-	// "unsupported type" with no name. A typedef gives it a C name and everything
-	// compiles -- but the target's compiler models a pointer to a typedef'd array as
-	// a pointer to a POINTER ("expected pointer to pointer to int but got pointer to
-	// array of int"), so the addresses it computes are wrong. It was measured on a
-	// P2-EDGE: simple programs answered correctly and slightly larger ones did not,
-	// which is worse than not having it. See doc/slice-of-arrays.c.
-	if _, isArr := e.arrayDim(elemAST); isArr {
-		e.fail("a slice element may not be an array: the target's C compiler mismodels a pointer to " +
-			"one and indexes it wrongly; use a struct holding the array, or a flat slice")
-		return "", false
+	// An ARRAY element, `[][2]int`: C cannot spell one inline where the header's
+	// pointer goes -- `int (*ptr)[2]` puts the name in the middle of the declarator --
+	// so a typedef moves it out of the way, the same move a function pointer needs.
+	// The helpers that would take such an element BY VALUE take a pointer instead;
+	// see the append helper, and doc/array-param-corrupts.c for why.
+	if name, isArr := e.arrayElemTypedef(elemAST); isArr {
+		return name, true
 	}
 	if elem = e.cType(elemAST); elem == "" {
 		return "", false
 	}
 	return elem, true
+}
+
+// arrayElemTypedef mints (or reuses) the typedef standing for an ARRAY used as an
+// element type, `typedef int ogo_arr_2_int[2];`, and registers it as a named array
+// so indexing a value of it reads through the same path a defined array type does.
+//
+// Keyed by the shape rather than by where it was written, so `[][2]int` written
+// twice mints once -- the same rule anonStructType and the result structs follow.
+func (e *emitter) arrayElemTypedef(typeAST []int32) (string, bool) {
+	a, ok := e.arrayDim(typeAST)
+	if !ok {
+		return "", false
+	}
+	name := "ogo_arr"
+	for _, b := range a.bounds() {
+		name += "_" + cTypeIdent(b)
+	}
+	name += "_" + cTypeIdent(a.elem)
+	if _, seen := e.namedArrays[name]; !seen {
+		e.namedArrays[name] = a
+		e.typeNames[name] = true
+		e.addTypedef(name, "typedef "+a.elem+" "+name+a.declSuffix()+";\n", a.elem)
+	}
+	return name, true
 }
 
 // arrayBoundC renders a fixed-array bound as a C integer constant: a single
@@ -8822,6 +8874,12 @@ func (e *emitter) byteReadOpen() string {
 func (e *emitter) plainOrSlice(elem string) accessCur {
 	if el, ok := e.sliceElemByName[elem]; ok {
 		return accessCur{elem: el, slice: true}
+	}
+	// A named ARRAY type carries its extents, so a further index has something to
+	// consume: `[][2]int` reaches its element as ogo_arr_2_int, and `xs[0][1]` is
+	// that element indexed once more.
+	if a, ok := e.namedArrays[elem]; ok {
+		return accessCur{elem: a.elem, dims: a.bounds()}
 	}
 	return accessCur{ctype: elem}
 }
@@ -10574,12 +10632,21 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 	}
 	if h.valVar != nil {
 		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
-			decl := ""
-			if h.rangeDef {
-				e.locals[val] = elem
-				decl = elem + " "
+			// An ARRAY element is COPIED, as Go copies it, and C cannot assign one:
+			// `T v = xs.ptr[i]` is not an initializer it accepts.
+			if a, isArr := e.namedArrays[elem]; isArr && h.rangeDef {
+				lines = append(lines, func() {
+					e.locals[val] = elem
+					e.emitArrayCopy(val, access, a)
+				})
+			} else {
+				decl := ""
+				if h.rangeDef {
+					e.locals[val] = elem
+					decl = elem + " "
+				}
+				lines = append(lines, func() { e.ind(); e.emit(decl + val + " = " + access + ";\n") })
 			}
-			lines = append(lines, func() { e.ind(); e.emit(decl + val + " = " + access + ";\n") })
 		}
 	}
 	if len(lines) == 0 {

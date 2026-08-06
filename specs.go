@@ -46,17 +46,9 @@
 // the same shape the target's compiler mismodels (below). A slice passes an array by
 // reference and a struct holding one takes a working pointer, which is what the
 // refusal points at.
-// TODO 20260806 A slice whose element is an ARRAY, `[][2]int`, is refused, and a
-// channel of one is too. The slice is IMPLEMENTABLE and the reason it was reverted
-// was misdiagnosed: a pointer to a typedef'd array is fine on this target. What
-// broke it was the generated `append` helper taking the element by value, an array
-// PARAMETER, which corrupts unrelated code in the same program --
-// doc/array-param-corrupts.c isolates that in thirty lines and
-// doc/slice-of-arrays.c carries the correction. Re-landing it means giving the
-// helpers pointer parameters, or a flat representation (an `int*` to the innermost
-// element plus a stride), which is how C models this anyway. The channel is separate
-// and stays refused: a rendezvous copies its element by value, which C cannot do for
-// an array at all.
+// TODO 20260806 A CHANNEL whose element is an array, `chan [3]int`, is refused: a
+// rendezvous copies its element by value, which C cannot do for an array. A SLICE of
+// arrays works (it was reverted once on a wrong diagnosis and re-landed).
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
@@ -1042,10 +1034,11 @@
 //
 // A row shorter than its extent zeroes the rest, and an outer index that skips a
 // row zeroes that row entirely, both following the one-dimensional rule. A slice
-// of arrays is not supported: its element would be reached through a pointer to an
-// array, which the target's C compiler mismodels as a pointer to a pointer -- see
-// doc/slice-of-arrays.c, where the measurement is. An array OF SLICES is supported,
-// each element being an ordinary slice header.
+// of arrays IS supported, its element reached through a pointer to an array; the
+// helpers that would take such an element by value take a pointer instead, a
+// function parameter of array type corrupting unrelated code on this target (see
+// doc/array-param-corrupts.c). An array of slices is supported too, each element
+// being an ordinary slice header.
 //
 // A row of such an array may be sliced -- "m[i][:]", or any sub-range of it --
 // giving a slice over the row's own storage, so a write through it is a write to
