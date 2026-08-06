@@ -2768,6 +2768,8 @@ var done chan int
 
 var t T
 
+var gw [3]int
+
 // The rendezvous cannot copy an array BY VALUE -- C has no array assignment, and a
 // parameter of a typedef'd array type miscompiles here -- so the cell holds the
 // array and the helpers take a pointer both ways. A receive therefore has no
@@ -2783,6 +2785,11 @@ func send() {
 	a[0] = 1
 	ch <- a
 	<-done
+	a[0] = 3
+	a[2] = 8
+	ch <- a
+	a[0] = 4
+	ch <- a
 }
 
 func main() {
@@ -2799,10 +2806,27 @@ func main() {
 	println(t.v[0], t.v[2])
 
 	done <- 1
-	println("done")
+
+	// A select clause receives one too: its temporary is declared with the
+	// element's extents and the try-receive fills it, then the clause's variable is
+	// copied out of that.
+	select {
+	case u := <-ch:
+		println(u[0], u[2])
+	}
+	select {
+	case gw = <-ch:
+		println(gw[0], gw[2])
+	}
+	select {
+	case z := <-ch:
+		println("got", z[0])
+	default:
+		println("none")
+	}
 }
 `,
-		want: "7 9\n99 9\n1 9\ndone\n",
+		want: "7 9\n99 9\n1 9\n3 8\n4 8\nnone\n",
 	},
 	{
 		name: "a slice whose element is an array",

@@ -46,11 +46,6 @@
 // the same shape the target's compiler mismodels (below). A slice passes an array by
 // reference and a struct holding one takes a working pointer, which is what the
 // refusal points at.
-// TODO 20260806 A SELECT clause may not receive an array element: each clause's
-// value lands in a temporary the select declares by TYPE, and an array cannot be
-// declared or assigned that way. The blocking send and receive handle one (the cell
-// holds the array, the helpers take a pointer), so what is left is declaring each
-// clause's temporary with the element's extents and receiving into it.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

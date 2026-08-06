@@ -1108,7 +1108,15 @@ func (e *emitter) emitSelect(ast []int32) {
 		}
 		tmps[i] = e.newTmp()
 		e.ind()
-		e.emit(c.elem + " " + tmps[i] + ";\n")
+		if a, isArr := e.namedArrays[c.elem]; isArr {
+			// An ARRAY element cannot be declared through its typedef here and is
+			// filled by the try-receive rather than assigned, so it is declared with
+			// its own extents and passed as the pointer it decays to.
+			e.arrays[tmps[i]] = a
+			e.emit(a.elem + " " + tmps[i] + a.declSuffix() + ";\n")
+		} else {
+			e.emit(c.elem + " " + tmps[i] + ";\n")
+		}
 	}
 	// The offer stands across rounds, taken back only when some receive clause looks
 	// ready -- because taking a value commits to that clause, and the offer must be
@@ -1156,33 +1164,42 @@ func (e *emitter) emitSelect(ast []int32) {
 			continue
 		}
 		tmp := tmps[i]
-		// A select's try-receive hands the value back through a pointer to a
-		// temporary the select declared, and that temporary is declared by its type
-		// -- which an ARRAY element cannot be, C having no array assignment either.
-		// The blocking forms take the element by pointer (chanRuntimeDefs); giving
-		// select the same treatment means declaring each clause's temporary with the
-		// element's extents, which its shared declaration does not do yet.
-		if _, isArr := e.namedArrays[c.elem]; isArr {
-			e.fail("a select clause may not receive an array element yet: use a blocking receive, " +
-				"or a struct holding the array")
-			return
-		}
 		e.chanTryRecvElems[c.elem] = true
+		// An array temporary is already a pointer where one is wanted.
+		addr := "&"
+		if _, isArr := e.namedArrays[c.elem]; isArr {
+			addr = ""
+		}
 		guard := ""
 		if tryRecv != "" {
 			guard = tryRecv + " && "
 		}
-		e.emit("if (" + guard + chanTryRecvCName(c.elem) + "(" + c.ch + ", &" + tmp + ")) {\n")
+		e.emit("if (" + guard + chanTryRecvCName(c.elem) + "(" + c.ch + ", " + addr + tmp + ")) {\n")
 		e.indent++
 		if !hasDefault {
 			e.ind()
 			e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
 		}
 		if c.target.name != "" {
-			// The same store a multiple assignment writes, so a clause may receive
-			// into a field or an element -- `case b.v = <-ch:` -- as the plain
-			// assignment `b.v = <-ch` always could.
-			e.emitStore(c.target, c.declare, c.elem, tmp)
+			if a, isArr := e.namedArrays[c.elem]; isArr {
+				// An ARRAY element is copied out of the clause's temporary: C cannot
+				// assign one, and the clause's variable is a value of its own, as it
+				// is for every other element type.
+				if c.declare {
+					e.locals[c.target.name] = c.elem
+					e.emitArrayCopy(c.target.name, tmp, a)
+				} else {
+					e.includes["string.h"] = true
+					e.ind()
+					e.emit("memcpy(" + e.varRef(c.target.name) + ", " + tmp + ", sizeof(" +
+						e.varRef(c.target.name) + "));\n")
+				}
+			} else {
+				// The same store a multiple assignment writes, so a clause may receive
+				// into a field or an element -- `case b.v = <-ch:` -- as the plain
+				// assignment `b.v = <-ch` always could.
+				e.emitStore(c.target, c.declare, c.elem, tmp)
+			}
 		}
 		for _, st := range c.body {
 			e.emitStatement(st.ast)
@@ -2045,6 +2062,7 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	}
 	sendParam, sendStore := elem+" v", "ch->val = v;"
 	recvRet, recvSig, recvTake, recvOut := elem, "", elem+" v = ch->val;", "return v;"
+	tryOut, tryStore := elem+"* out", "*out = ch->val;"
 	if a, isArr := e.namedArrays[elem]; isArr {
 		// The element crosses by POINTER in both directions: C has no array
 		// assignment, and a parameter of a typedef'd array type miscompiles on this
@@ -2054,6 +2072,7 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 		sendParam, sendStore = "const "+a.elem+"* v", "memcpy((void*)ch->val, v, sizeof ch->val);"
 		recvRet, recvSig = "void", ", "+a.elem+"* out"
 		recvTake, recvOut = "memcpy(out, (const void*)ch->val, sizeof ch->val);", "return;"
+		tryOut, tryStore = a.elem+"* out", "memcpy(out, (const void*)ch->val, sizeof ch->val);"
 	}
 	if e.chanSendElems[elem] {
 		fmt.Fprintf(&b, `static void %[3]s(%[1]s ch, %[8]s) {
@@ -2135,10 +2154,10 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 	}
 	if e.chanTryRecvElems[elem] {
-		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[2]s* out) {
+		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[8]s) {
 	if (ch->full && _locktry(ch->lock)) {
 		if (ch->full) {
-			*out = ch->val;
+			%[9]s
 			ch->full = 0;
 			ch->taken++;
 			_lockrel(ch->lock);
@@ -2148,7 +2167,7 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 	}
 	return 0;
 }
-`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), tryOut, tryStore)
 	}
 	if e.chanRecvElems[elem] {
 		fmt.Fprintf(&b, `static %[8]s %[4]s(%[1]s ch%[9]s) {

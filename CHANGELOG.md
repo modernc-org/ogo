@@ -25,8 +25,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   typedef'd array type miscompiles here — so the cell holds the array and the helpers
   take a pointer both ways. A receive therefore has no expression: `v := <-ch`,
   `w = <-ch` and `s.v = <-ch` write into storage the receiver already owns, and a
-  receive in expression position binds a temporary. A `select` clause receiving one
-  is refused for now, its per-clause temporary being declared by type.
+  receive in expression position binds a temporary. A `select` clause receives one
+  too — its temporary is declared with the element's extents and the try-receive
+  fills it — in the declaring and assigning forms, with or without a `default`.
 
 - **A slice may have an ARRAY element**, `[][2]int`, `[]Row`, `[][2][3]int`. `make`,
   reading, writing, `range`, `append`, `copy`, reslicing, passing to a function, a
