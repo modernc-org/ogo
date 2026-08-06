@@ -46,13 +46,11 @@
 // the same shape the target's compiler mismodels (below). A slice passes an array by
 // reference and a struct holding one takes a working pointer, which is what the
 // refusal points at.
-// TODO 20260806 A CHANNEL whose element is an array, `chan [3]int`, is refused
-// because the rendezvous helpers pass the element by value and C cannot do that for
-// an array. It is implementable the way the slice of arrays was: the cell holds the
-// array and the helpers take a POINTER in both directions, measured correct on a
-// P2-EDGE. What it costs is a receive that has no expression -- `<-ch` would bind to
-// a temporary the way a call returning an array does -- across the send, receive,
-// select and expression paths. A SLICE of arrays works.
+// TODO 20260806 A SELECT clause may not receive an array element: each clause's
+// value lands in a temporary the select declares by TYPE, and an array cannot be
+// declared or assigned that way. The blocking send and receive handle one (the cell
+// holds the array, the helpers take a pointer), so what is left is declaring each
+// clause's temporary with the element's extents and receiving into it.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

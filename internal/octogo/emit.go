@@ -1156,6 +1156,17 @@ func (e *emitter) emitSelect(ast []int32) {
 			continue
 		}
 		tmp := tmps[i]
+		// A select's try-receive hands the value back through a pointer to a
+		// temporary the select declared, and that temporary is declared by its type
+		// -- which an ARRAY element cannot be, C having no array assignment either.
+		// The blocking forms take the element by pointer (chanRuntimeDefs); giving
+		// select the same treatment means declaring each clause's temporary with the
+		// element's extents, which its shared declaration does not do yet.
+		if _, isArr := e.namedArrays[c.elem]; isArr {
+			e.fail("a select clause may not receive an array element yet: use a blocking receive, " +
+				"or a struct holding the array")
+			return
+		}
 		e.chanTryRecvElems[c.elem] = true
 		guard := ""
 		if tryRecv != "" {
@@ -1656,17 +1667,12 @@ func (e *emitter) chanType(typeAST []int32) (elem string, ok bool) {
 	}
 	for _, n := range nodes {
 		if n.sym == Type {
-			// An ARRAY element is refused here rather than left to fail as an
-			// "unsupported type" with no name. A typedef gives it a C name -- that is
-			// what makes a SLICE of arrays work -- but a channel needs more than a
-			// name: the send helper assigns the element into the cell and the receive
-			// helper returns it, and C can do neither with an array. The runtime would
-			// have to memcpy both ways, which is a change to the generated helpers
-			// rather than to the type.
-			if _, isArr := e.arrayDim(n.ast); isArr {
-				e.fail("a channel element may not be an array: the rendezvous copies it by value, " +
-					"which C cannot do; use a struct holding the array, or a slice")
-				return "", false
+			// An ARRAY element takes the same typedef a slice's does. The rendezvous
+			// cannot copy it BY VALUE -- C has no array assignment and a parameter of
+			// a typedef'd array type miscompiles here -- so the cell holds the array
+			// and the helpers take a pointer both ways; see chanRuntimeDefs.
+			if name, isArr := e.arrayElemTypedef(n.ast); isArr {
+				return name, true
 			}
 			if elem = e.cType(n.ast); elem == "" {
 				return "", false
@@ -2008,8 +2014,19 @@ func (e *emitter) isChanCType(ctype string) bool {
 // hold a channel and C wants the type declared before the struct that holds one.
 // The helpers cannot move with it: they call ogo_panic and the P2 intrinsics.
 func chanTypedefDef(elem string) string {
-	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; volatile %[1]s val; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
-		elem, chanCellCName(elem), chanCName(elem))
+	return chanTypedefDefDim(elem, arrDim{}, false)
+}
+
+// chanTypedefDefDim is chanTypedefDef for an element that is an ARRAY: the cell's
+// payload is declared with the element's own extents, `volatile int val[3]`, rather
+// than through its typedef.
+func chanTypedefDefDim(elem string, a arrDim, isArr bool) string {
+	member := elem + " val"
+	if isArr {
+		member = a.elem + " val" + a.declSuffix()
+	}
+	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; volatile %[1]s; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
+		member, chanCellCName(elem), chanCName(elem))
 }
 
 func (e *emitter) chanRuntimeDefs(elem string) string {
@@ -2026,8 +2043,20 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 }
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 	}
+	sendParam, sendStore := elem+" v", "ch->val = v;"
+	recvRet, recvSig, recvTake, recvOut := elem, "", elem+" v = ch->val;", "return v;"
+	if a, isArr := e.namedArrays[elem]; isArr {
+		// The element crosses by POINTER in both directions: C has no array
+		// assignment, and a parameter of a typedef'd array type miscompiles on this
+		// target (doc/array-param-corrupts.c). The cell's payload is the array
+		// itself, so both copies are a memcpy of its own size.
+		e.includes["string.h"] = true
+		sendParam, sendStore = "const "+a.elem+"* v", "memcpy((void*)ch->val, v, sizeof ch->val);"
+		recvRet, recvSig = "void", ", "+a.elem+"* out"
+		recvTake, recvOut = "memcpy(out, (const void*)ch->val, sizeof ch->val);", "return;"
+	}
 	if e.chanSendElems[elem] {
-		fmt.Fprintf(&b, `static void %[3]s(%[1]s ch, %[2]s v) {
+		fmt.Fprintf(&b, `static void %[3]s(%[1]s ch, %[8]s) {
 	int mine = 0; // always set below before the rendezvous loop reads it; the
 	// initializer only quiets flexcc, whose flow analysis cannot prove the first
 	// loop exits solely through the break that follows the assignment.
@@ -2035,7 +2064,7 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 		if (!ch->full && _locktry(ch->lock)) {
 			if (!ch->full) {
 				mine = ch->taken;
-				ch->val = v;
+				%[9]s
 				ch->full = 1;
 				_lockrel(ch->lock);
 				break;
@@ -2056,7 +2085,7 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 		_waitx(1);
 	}
 }
-`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), sendParam, sendStore)
 	}
 	if e.chanTrySendElems[elem] {
 		// The three halves a select's send clause needs, which the blocking send does
@@ -2122,24 +2151,58 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 	}
 	if e.chanRecvElems[elem] {
-		fmt.Fprintf(&b, `static %[2]s %[4]s(%[1]s ch) {
+		fmt.Fprintf(&b, `static %[8]s %[4]s(%[1]s ch%[9]s) {
 	while (1) {
 		if (ch->full && _locktry(ch->lock)) {
 			if (ch->full) {
-				%[2]s v = ch->val;
+				%[10]s
 				ch->full = 0;
 				ch->taken++;
 				_lockrel(ch->lock);
-				return v;
+				%[11]s
 			}
 			_lockrel(ch->lock);
 		}
 		_waitx(1);
 	}
 }
-`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), recvRet, recvSig, recvTake, recvOut)
 	}
 	return b.String()
+}
+
+// arrayRecvInit recognises `<-ch` for a channel whose element is an ARRAY, and
+// answers with the element type, the channel's C text and the element's extents.
+func (e *emitter) arrayRecvInit(ast []int32) (string, string, arrDim, bool) {
+	// `<-ch` is a UnaryExpr, not a Factor: descending past it would drop the arrow.
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && nodes[0].sym != 0 && nodes[0].sym != UnaryExpr {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", "", arrDim{}, false
+	}
+	n := nodes[0]
+	elem, base, ok := e.recvOperand(n, slices.Collect(it(n.ast)))
+	if !ok {
+		return "", "", arrDim{}, false
+	}
+	a, isArr := e.namedArrays[elem]
+	return elem, base, a, isArr
+}
+
+// hoistChanRecv binds a receive of an ARRAY element to a temporary of this frame,
+// declared before the statement, and answers with its name.
+func (e *emitter) hoistChanRecv(base, elem string, a arrDim) (string, bool) {
+	if e.declInit || e.deferReplay >= 0 {
+		return "", false
+	}
+	name := e.newTmp()
+	e.prologue = append(e.prologue,
+		a.elem+" "+name+a.declSuffix()+";\n",
+		chanRecvCName(elem)+"("+base+", "+name+");\n")
+	e.arrays[name] = a
+	return name, true
 }
 
 // sliceTypedefDef returns the C typedef declaring the slice header for element
@@ -2697,7 +2760,8 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// A channel's typedef belongs here rather than with its helpers: a struct field
 	// may hold a channel, and C wants the type before the struct.
 	for _, el := range sortedKeys(e.chanElems) {
-		e.addTypedef(chanCName(el), chanTypedefDef(el), el)
+		a, isArr := e.namedArrays[el]
+		e.addTypedef(chanCName(el), chanTypedefDefDim(el, a, isArr), el)
 	}
 	for _, el := range sortedKeys(e.tryappendElems) {
 		e.addTypedef(appendokCName(el),
@@ -13488,6 +13552,18 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
 		if _, isArray := e.arrayVar(base); isArray {
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				// `w = <-ch` for a channel of arrays: the receive writes through an
+				// out parameter, and w IS the storage.
+				if elem, ch, ra, isRecv := e.arrayRecvInit(rhs[0].ast); isRecv {
+					if dst, ok := e.arrayVar(base); !ok || dst.elem != ra.elem || dst.declSuffix() != ra.declSuffix() {
+						e.fail("cannot receive %s into %s", e.goArrayTypeName(ra), e.goArrayTypeName(dst))
+						return
+					}
+					e.chanRecvElems[elem] = true
+					e.ind()
+					e.emit(chanRecvCName(elem) + "(" + ch + ", " + e.varRef(base) + ");\n")
+					return
+				}
 				// `b = mk()`: the callee fills storage the caller owns, and b IS
 				// that storage. So the call writes through b directly -- no copy,
 				// which is what the out-parameter ABI is for.
@@ -13626,6 +13702,17 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(fields) != 0 && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
 		if fa, isArray := e.fieldArray(base, fields); isArray {
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				// `s.v = <-ch`: the field is the storage the receive writes into.
+				if elem, ch, ra, isRecv := e.arrayRecvInit(rhs[0].ast); isRecv {
+					if fa.elem != ra.elem || fa.declSuffix() != ra.declSuffix() {
+						e.fail("cannot receive %s into %s", e.goArrayTypeName(ra), e.goArrayTypeName(fa))
+						return
+					}
+					e.chanRecvElems[elem] = true
+					e.ind()
+					e.emit(chanRecvCName(elem) + "(" + ch + ", " + lhs + ");\n")
+					return
+				}
 				// `s.v = mk()`: the field is the caller's storage, so the out
 				// parameter writes into it, as it does for a plain variable.
 				if cname, a, isCall := e.arrayResultCall(rhs[0].ast); isCall {
@@ -13772,6 +13859,19 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		e.emitArrayLitVar(name, typeAST, lit, false)
 		return
 	}
+	// `v := <-ch` for a channel of arrays: the receive writes through an out
+	// parameter, and the declaration IS the storage it writes into. Asked before the
+	// array-result call below, which it mirrors.
+	if elem, base, a, ok := e.arrayRecvInit(initExpr); ok {
+		e.arrays[name] = a
+		e.locals[name] = elem
+		e.chanRecvElems[elem] = true
+		e.ind()
+		e.emit(a.elem + " " + userIdent(name) + a.declSuffix() + ";\n")
+		e.ind()
+		e.emit(chanRecvCName(elem) + "(" + base + ", " + userIdent(name) + ");\n")
+		return
+	}
 	// `a := mk()` where mk returns an array: the caller owns the storage and the
 	// callee fills it, so the declaration IS the storage and the call is a statement.
 	if cname, a, ok := e.arrayResultCall(initExpr); ok {
@@ -13862,6 +13962,18 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 // it stays on the ordinary path.
 func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	e.bindFuncValue(name, initExpr)
+	// `var v [3]int = <-ch` / `v := <-ch` for a channel of arrays: the receive writes
+	// through an out parameter, and this declaration IS the storage it writes into.
+	if elem, base, a, ok := e.arrayRecvInit(initExpr); ok {
+		e.arrays[name] = a
+		e.locals[name] = elem
+		e.chanRecvElems[elem] = true
+		e.ind()
+		e.emit(a.elem + " " + userIdent(name) + a.declSuffix() + ";\n")
+		e.ind()
+		e.emit(chanRecvCName(elem) + "(" + base + ", " + userIdent(name) + ");\n")
+		return
+	}
 	if e.isIfaceCType(ctype) {
 		e.locals[name] = ctype
 		e.ind()
@@ -16348,6 +16460,18 @@ func (e *emitter) emitExprNode(n Node) {
 		// cannot be emitted as the operator token followed by the operand.
 		if elem, base, ok := e.recvOperand(n, kids); ok {
 			e.chanRecvElems[elem] = true
+			// An ARRAY element comes back through an out parameter -- C cannot return
+			// one -- so the receive binds to a temporary of this frame and the
+			// temporary is what stands here, as a call returning an array does.
+			if a, isArr := e.namedArrays[elem]; isArr {
+				name, ok := e.hoistChanRecv(base, elem, a)
+				if !ok {
+					e.fail("a receive of an array element is only supported as a statement or an initializer")
+					return
+				}
+				e.emit(name)
+				return
+			}
 			e.emit(chanRecvCName(elem) + "(" + base + ")")
 			return
 		}
@@ -16832,6 +16956,15 @@ func (e *emitter) emitRecvStmt(nodes []Node) {
 		}
 		e.chanRecvElems[elem] = true
 		e.ind()
+		if a, isArr := e.namedArrays[elem]; isArr {
+			// The value is discarded, but the rendezvous still has to happen, so it
+			// is received into a temporary nothing reads.
+			tmp := e.newTmp()
+			e.emit(a.elem + " " + tmp + a.declSuffix() + ";\n")
+			e.ind()
+			e.emit(chanRecvCName(elem) + "(" + base + ", " + tmp + ");\n")
+			return
+		}
 		e.emit("(void)" + chanRecvCName(elem) + "(" + base + ");\n")
 		return
 	}

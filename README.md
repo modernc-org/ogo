@@ -266,8 +266,9 @@ broken.
   with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
   goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
   all.
-* A **channel** whose element is an array, `chan [3]int`: a rendezvous copies its
-  element by value, which C cannot do for an array. A *slice* of arrays works.
+* A `select` clause may not **receive an array element** — each clause's value lands
+  in a temporary declared by type, which an array cannot be. A blocking send or
+  receive on such a channel works.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
 * A **method value whose receiver is not a package-level variable**: the receiver is

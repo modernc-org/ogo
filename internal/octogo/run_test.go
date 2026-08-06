@@ -2757,6 +2757,54 @@ func main() {
 		want: "0 5\n1 6\n2 7\n2 7\n1 6\n2\n",
 	},
 	{
+		name: "a channel whose element is an array",
+		src: `type T struct {
+	v [3]int
+}
+
+var ch chan [3]int
+
+var done chan int
+
+var t T
+
+// The rendezvous cannot copy an array BY VALUE -- C has no array assignment, and a
+// parameter of a typedef'd array type miscompiles here -- so the cell holds the
+// array and the helpers take a pointer both ways. A receive therefore has no
+// expression: it writes into storage the receiver already owns, or into a temporary
+// bound for it.
+func send() {
+	var a [3]int
+	a[0] = 7
+	a[2] = 9
+	ch <- a
+	a[0] = 99
+	ch <- a
+	a[0] = 1
+	ch <- a
+	<-done
+}
+
+func main() {
+	go send()
+
+	v := <-ch
+	println(v[0], v[2])
+
+	var w [3]int
+	w = <-ch
+	println(w[0], w[2])
+
+	t.v = <-ch
+	println(t.v[0], t.v[2])
+
+	done <- 1
+	println("done")
+}
+`,
+		want: "7 9\n99 9\n1 9\ndone\n",
+	},
+	{
 		name: "a slice whose element is an array",
 		src: `type Row [2]int
 

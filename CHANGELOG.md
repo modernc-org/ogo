@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A channel may have an ARRAY element**, `chan [3]int`, `chan Row`. The rendezvous
+  cannot copy one by value — C has no array assignment, and a parameter of a
+  typedef'd array type miscompiles here — so the cell holds the array and the helpers
+  take a pointer both ways. A receive therefore has no expression: `v := <-ch`,
+  `w = <-ch` and `s.v = <-ch` write into storage the receiver already owns, and a
+  receive in expression position binds a temporary. A `select` clause receiving one
+  is refused for now, its per-clause temporary being declared by type.
+
 - **A slice may have an ARRAY element**, `[][2]int`, `[]Row`, `[][2][3]int`. `make`,
   reading, writing, `range`, `append`, `copy`, reslicing, passing to a function, a
   struct field of that type and a literal all work. C cannot spell an array inline
