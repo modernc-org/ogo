@@ -18,6 +18,34 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+## v0.19.0
+
+The release that went looking for miscompiles and found seven. A struct holding a
+field narrower than a machine word — a `bool`, an `int8` — was mishandled in five
+places on the target, silently: returned from a call, passed by value, through an
+interface method, compared, and as a value receiver. Each gave the wrong answer for
+the narrow field while the `int` beside it survived, so half of every value was
+right. Two functions whose result lists spelled the same struct name shared one
+struct, truncating an `int64` result. All are fixed, and
+`doc/return-nonword-struct.c` tabulates which of the eight positions the backend
+warned about and which were actually broken — five and three, so its diagnostic is a
+signal rather than a verdict.
+
+One feature was withdrawn. A slice whose element is an array shipped in v0.18.0 and
+is gone: the emitted C is correct and gcc runs it, but the target's compiler
+mismodels a pointer to an array and indexes by the wrong size — not uniformly, which
+is what makes it unshippable. A small program answered correctly and a slightly
+larger one silently did not.
+
+What was added is mostly reach: an array result is now used like any other value, a
+`go` statement starts a function held in a value, a `for` header declares and
+assigns several names, and array literals stand where array variables do. With `go`
+through a value, every function-valued form works.
+
+All three documents were re-measured rather than remembered — the README, the
+language spec and this file — and eight claims across them turned out to be stale or
+never true.
+
 ### Language
 
 - **A `range` clause may assign into a struct field**, `for s.i, s.v = range xs`.
@@ -25,7 +53,67 @@ shipped section tells a reader on that version that they have behaviour they do 
   required a bare name. An element target, `for a[0] = range xs`, is still refused —
   indexing renders a bounds-checked read, which is not a place to write.
 
+- **A call returning an array may be used like any other value.** Read where it
+  stands — `mk()[1]`, `x := mk()[0]`, `for i, v := range mk()`, `t.row()[0]` — and
+  handed on whole: `b = mk()`, `g = mk()`, `s.v = mk()`, `take(mk())`, and
+  `return mk(k)`. C cannot return an array, so the result travels through an out
+  parameter the caller supplies; where the target *is* storage the call writes
+  straight through it and nothing is copied, and where it is not the result binds to
+  a temporary. The one form still refused is an array *beside* another result.
+
+- **`go` may start a function held in a value**, `go g(21)` for a variable or a
+  struct field holding one. A cog's entry point is generated per function, which is
+  what left this out: a value has no name to generate one against. It is generated
+  against the function *type* instead, and the pointer travels in the argument block
+  with the arguments — read at the `go` statement, so reassigning the variable after
+  it changes nothing, as in Go. Every function-valued shape is accepted now.
+
+- **A three-clause `for` header may declare and assign several names**,
+  `for i, j := 0, 9; i < j; i, j = i+1, j-1`, any number of them. A multiple assignment cannot be C's
+  third clause — Go assigns simultaneously, which needs temporaries, and that clause
+  is an expression — so the post statements go at the end of the body behind a label
+  that `continue` jumps to. A multi-name init becomes a block around the loop, which
+  is also where Go scopes those names.
+
+- **A pointer to an array is refused by name**, `*[3]int` and `&a` for an array
+  variable, where the messages used to be "cannot infer a type for the declaration
+  of p" and "unsupported type" with an empty name. It is the same C shape the entry
+  below is about — `int (*p)[3]` puts the name in the middle of the declarator — so
+  it was never supported; only the diagnostic is new. The refusal names the two
+  forms that do work: a slice of the array, `a[:]`, and a pointer to a struct
+  holding it.
+
+- **A slice or channel whose element is an ARRAY is refused by name**, `[][2]int`
+  and `chan [3]int`, rather than reported as "unsupported type" with an empty type
+  name. The slice form was implemented and then reverted: the emitted C is correct
+  and gcc runs it, but the target's compiler models a pointer to a typedef'd array
+  as a pointer to a *pointer* and indexes it by the wrong size — not uniformly,
+  which is what makes it unshippable. On a P2-EDGE a small program gave the right
+  answers and a slightly larger one silently gave `36` where Go gives `14`. The
+  measurement and what a viable representation would have to avoid are in
+  `doc/slice-of-arrays.c`; the workaround is a struct wrapping the array.
+
+- **An array literal may be a comparison operand**, `a == [3]int{1, 0, 0}`, in
+  either position and with `!=`. It binds to a temporary and the per-type helper
+  compares the two, so an array literal now stands wherever an array variable does.
+
+- **A literal read through more than one step types**, `[2]P{{1, 2}, {3, 4}}[1].y`
+  as a declaration's initializer. The first index reaches the element and the rest is
+  walked by the same chain typer a variable's suffix uses; only a single index was
+  handled before.
+
+- **A multi-result call may be forwarded as a return**, `return f()`, where the
+  callee's results are exactly the caller's. Both functions return the same C struct
+  — result structs are keyed by the result types — so the call is the return value.
+
 ### Documentation
+
+- **The README's status list re-measured.** Every claim in it was built rather than
+  read, and four were stale: a multi-result function as a value, `go` through a
+  variable, the message a slice or channel of arrays gives, and a call returning an
+  array. Two "works" bullets were understating. The claims that survived — `goto`, a
+  select with a send and a default, an array beside another result — were measured
+  too.
 
 - **`specs.go` re-measured.** The language spec still said a function with more than
   one result could not be a value and that `go` needed a declared callee — both have
@@ -84,61 +172,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   signal. The call is bound to a temporary before the return now, which is correct
   and compiles silently; `doc/return-nonword-struct.c` has the measurement. Present
   in v0.18.0 and earlier.
-
-### Language
-
-- **A call returning an array may be used like any other value.** Read where it
-  stands — `mk()[1]`, `x := mk()[0]`, `for i, v := range mk()`, `t.row()[0]` — and
-  handed on whole: `b = mk()`, `g = mk()`, `s.v = mk()`, `take(mk())`, and
-  `return mk(k)`. C cannot return an array, so the result travels through an out
-  parameter the caller supplies; where the target *is* storage the call writes
-  straight through it and nothing is copied, and where it is not the result binds to
-  a temporary. The one form still refused is an array *beside* another result.
-
-- **`go` may start a function held in a value**, `go g(21)` for a variable or a
-  struct field holding one. A cog's entry point is generated per function, which is
-  what left this out: a value has no name to generate one against. It is generated
-  against the function *type* instead, and the pointer travels in the argument block
-  with the arguments — read at the `go` statement, so reassigning the variable after
-  it changes nothing, as in Go. Every function-valued shape is accepted now.
-
-- **A three-clause `for` header may declare and assign several names**,
-  `for i, j := 0, 9; i < j; i, j = i+1, j-1`, any number of them. A multiple assignment cannot be C's
-  third clause — Go assigns simultaneously, which needs temporaries, and that clause
-  is an expression — so the post statements go at the end of the body behind a label
-  that `continue` jumps to. A multi-name init becomes a block around the loop, which
-  is also where Go scopes those names.
-
-- **A pointer to an array is refused by name**, `*[3]int` and `&a` for an array
-  variable, where the messages used to be "cannot infer a type for the declaration
-  of p" and "unsupported type" with an empty name. It is the same C shape the entry
-  below is about — `int (*p)[3]` puts the name in the middle of the declarator — so
-  it was never supported; only the diagnostic is new. The refusal names the two
-  forms that do work: a slice of the array, `a[:]`, and a pointer to a struct
-  holding it.
-
-- **A slice or channel whose element is an ARRAY is refused by name**, `[][2]int`
-  and `chan [3]int`, rather than reported as "unsupported type" with an empty type
-  name. The slice form was implemented and then reverted: the emitted C is correct
-  and gcc runs it, but the target's compiler models a pointer to a typedef'd array
-  as a pointer to a *pointer* and indexes it by the wrong size — not uniformly,
-  which is what makes it unshippable. On a P2-EDGE a small program gave the right
-  answers and a slightly larger one silently gave `36` where Go gives `14`. The
-  measurement and what a viable representation would have to avoid are in
-  `doc/slice-of-arrays.c`; the workaround is a struct wrapping the array.
-
-- **An array literal may be a comparison operand**, `a == [3]int{1, 0, 0}`, in
-  either position and with `!=`. It binds to a temporary and the per-type helper
-  compares the two, so an array literal now stands wherever an array variable does.
-
-- **A literal read through more than one step types**, `[2]P{{1, 2}, {3, 4}}[1].y`
-  as a declaration's initializer. The first index reaches the element and the rest is
-  walked by the same chain typer a variable's suffix uses; only a single index was
-  handled before.
-
-- **A multi-result call may be forwarded as a return**, `return f()`, where the
-  callee's results are exactly the caller's. Both functions return the same C struct
-  — result structs are keyed by the result types — so the call is the return value.
 
 ## v0.18.0
 
