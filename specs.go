@@ -41,11 +41,17 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260805 A POINTER to an array, `*[3]int`, is not supported: C spells it
-// `int (*p)[3]`, and the typedef that would move the name out of the declarator is
-// the same shape the target's compiler mismodels (below). A slice passes an array by
-// reference and a struct holding one takes a working pointer, which is what the
-// refusal points at.
+// TODO 20260806 A POINTER to an array, `*[3]int`, is not supported. The
+// REPRESENTATION is settled and measured: the pointee takes the same generated
+// typedef a slice's array element does, `ogo_arr_3_int*`, and a pointer to a
+// typedef'd array is sound on this target -- doc/array-param-corrupts.c shows it is
+// a PARAMETER of one that is not. What is missing is the dereference surface, and it
+// is the whole cost: Go's `p[i]` means `(*p)[i]`, so every path that indexes,
+// assigns through, measures or ranges a base must render `(*p)` where it renders a
+// variable's name today. Attempting the type alone is worse than the refusal --
+// `p[1]` then emits C's `p[1]`, which is the ARRAY at offset 1, and prints garbage
+// where Go prints the element. A slice passes an array by reference and a struct
+// holding one takes a working pointer, which is what the refusal points at.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
