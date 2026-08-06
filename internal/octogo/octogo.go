@@ -129,6 +129,37 @@
 // Propeller 2 hardware constraints, ready to be passed to the escape analysis,
 // the WPO pass and the C emitter.
 //
+// # Readable C is a debugging aid, not the objective
+//
+// The emitted C is meant to be read -- it is how this compiler and the programs it
+// builds get debugged, and keeping a user's names is worth real effort. But when a
+// GENERATED identifier or type unblocks a construct the language needs, it wins.
+// Every time.
+//
+// The cost is not zero and is always the same three things: the generated name has
+// to be tracked so one shape mints one name, every use has to be substituted
+// consistently, and anything exported has to survive linking. That is the price;
+// pay it rather than leave the construct unsupported.
+//
+// Three of them are already load-bearing here. A function type becomes
+// ogo_functypeN because C spells a function pointer with the name in the middle of
+// the declarator and the emitter's ctype-is-a-string model has nowhere to put it. A
+// slice whose element is an array becomes ogo_arr_2_int for the same reason. A
+// multi-result function returns ogo_ret_<types>, since C has no tuple.
+//
+// The mistake to avoid is the opposite one, and this repository has made it: the
+// multi-result struct was named after its result TYPES because that READS well, and
+// two different result lists spelled the same name -- `(a_b, int)` and `(a, b_int)`
+// both give ogo_ret_a_b_int. One function silently got the other's layout and an
+// int64 came back truncated. A counter would have been correct by construction.
+// Readability chosen over uniqueness is a bug waiting for the right two type names.
+//
+// The same principle is what unblocks what is still refused. A channel whose element
+// is an array is refused today because the rendezvous copies its element by value,
+// which C cannot do for an array -- but the cell can hold the array and the helpers
+// can take a POINTER either way, which was measured correct on a P2-EDGE. That is a
+// generated-representation problem, not a wall.
+//
 // # Escape & Lifetime Analysis (Static Guarantees)
 //
 // Status: largely implemented. A reference to this frame's storage -- the address
