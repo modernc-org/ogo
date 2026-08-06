@@ -2808,9 +2808,10 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	for _, el := range sortedKeys(e.appendElems) {
 		param, store := el+" v", "s.ptr[s.len] = v;"
 		if a, isArr := e.namedArrays[el]; isArr {
-			// NOT `%s v` for an array element: a function parameter of array type
-			// corrupts unrelated code on this target, silently and non-locally --
-			// doc/array-param-corrupts.c reduces it to thirty lines. A pointer to the
+			// NOT `%s v` for an array element: a parameter whose type is a TYPEDEF'D
+			// array corrupts unrelated code on this target, silently and non-locally
+			// -- doc/array-param-corrupts.c reduces it to thirty lines, and shows that
+			// the spelled-out `int v[2]` and `int v[]` are both fine. A pointer to the
 			// element costs nothing at the call site, an array argument decaying to
 			// one anyway, and C has no array assignment so the store is a copy either
 			// way.

@@ -24,8 +24,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   reading, writing, `range`, `append`, `copy`, reslicing, passing to a function, a
   struct field of that type and a literal all work. C cannot spell an array inline
   where the slice header's pointer goes, so the element takes a typedef; the helpers
-  that would take it *by value* take a pointer instead, since a function parameter of
-  array type corrupts unrelated code on this target. This shipped in v0.18.0, was
+  that would take it *by value* take a pointer instead, since a parameter whose type
+  is a *typedef'd* array corrupts unrelated code on this target — the spelled-out
+  `int v[2]` is fine, which is why nothing else in the compiler was affected. This shipped in v0.18.0, was
   reverted in v0.19.0 on a wrong diagnosis, and is back with the actual cause fixed —
   the whole surface is checked against `go run` and on a P2-EDGE.
 

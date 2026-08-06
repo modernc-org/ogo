@@ -1,6 +1,14 @@
-// A function PARAMETER of array type corrupts unrelated code elsewhere in the same
-// program. This is the defect that made a slice of arrays look unimplementable, and
-// it is much narrower than that: nothing about pointers to arrays is wrong.
+// A function parameter whose type is a TYPEDEF'D ARRAY corrupts unrelated code
+// elsewhere in the same program. This is the defect that made a slice of arrays look
+// unimplementable, and it is narrower still than "an array parameter": spelling the
+// same parameter out, or as a pointer, is correct.
+//
+//	static slice push(slice s, arr2 v)         sum 24   WRONG   (typedef int arr2[2])
+//	static slice push(slice s, int v[2])       sum 10   right
+//	static slice push(slice s, int v[])        sum 10   right
+//	static slice push(slice s, const int *v)   sum 10   right
+//
+// Nothing about pointers to arrays is wrong.
 //
 //	cc -o t array-param-corrupts.c && ./t
 //	sum 10 (want 10)   push 1 5        <- gcc, and what C says
@@ -13,13 +21,16 @@
 // enough. Measured 2026-08-06 with this repository's in-process backend (spin2cpp
 // v7.7.0) and the flags ogo build passes.
 //
-// Change the one parameter and the program is correct on the same board:
-//
-//	static slice push(slice s, arr2 v)         sum 24   WRONG
-//	static slice push(slice s, const int *v)   sum 10   right
-//
 // The wrong value is not even stable across unrelated edits: with a typedef'd `arr2
 // v` local in the loop instead of `int v[2]` the same board printed -1991913358.
+//
+// Nothing else in ogo emits one. A user function taking an array, `func take(a
+// [3]int)`, and one taking a DEFINED array type, `func take(r Row)`, are both
+// emitted as `int take(int* _ogo_a)` with a memcpy on entry -- Go's copy semantics
+// and this defect's workaround at once. The array-equality helper takes `int
+// _ogo_l[]`, which is the spelled-out form and is correct. The only typedef'd-array
+// parameter the compiler ever emitted was in the generated append helper, and it
+// takes a pointer now.
 //
 // What is NOT the cause, each ruled out on hardware:
 //
