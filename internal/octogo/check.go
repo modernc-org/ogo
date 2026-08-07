@@ -6467,22 +6467,40 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 }
 
 // checkIndexAssign checks an element assignment target "base[i] = rhs". A scalar
-// variable cannot be indexed ("cannot index"). When base is an array or slice of a
-// predeclared element type, the right-hand side must be assignable to that element
-// type. The base identifier's definedness is already checked by the general target
-// loop, since an index head is a plain identifier.
+// variable and a pointer cannot be indexed ("cannot index"). When base is an array
+// or slice of a predeclared element type, the right-hand side must be assignable to
+// that element type. The base identifier's definedness is already checked by the
+// general target loop, since an index head is a plain identifier.
 func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	d, ok := s.find(base.Src()).(*VarDeclaration)
 	if !ok {
 		return
 	}
-	if _, known := f.identKind(s, base); known { // a scalar variable cannot be indexed
+	// Neither a scalar variable nor a pointer can be indexed.
+	if _, known := f.identKind(s, base); known || f.indexingPointer(s, base) {
 		f.err(base.Position(), "invalid operation: cannot index %s", base.Src())
 		return
 	}
 	if d.hasElemKind && !d.isPtr {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
 	}
+}
+
+// indexingPointer reports that base names a POINTER, which is not something an
+// index applies to. Go admits `p[i]` for exactly one pointer type, a pointer to an
+// ARRAY, where it abbreviates `(*p)[i]`; that one is not supported here yet and is
+// refused with everything else.
+//
+// Nothing below says it, which is why it is said here. C indexes any pointer as the
+// array it is not, and the emitter renders the index as C's: `p[1]` off a `*int`
+// read whatever storage followed the pointee and `p[1] = v` wrote there, both
+// silently and both accepted, where Go rejects the program outright. Off a `*string`
+// it read the header's own bytes as a number, and off a `*[]int` it emitted C that
+// does not compile -- an internal defect surfacing as a diagnostic from the C
+// backend.
+func (f *File) indexingPointer(s *Scope, base Token) bool {
+	d, ok := s.find(base.Src()).(*VarDeclaration)
+	return ok && d.isPtr
 }
 
 // checkElemAssignType reports a type-category mismatch between the element or
@@ -7297,9 +7315,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	// "x[i]" where x is not an array or slice. This is the read-side analogue of
 	// checkIndexAssign. A string is byte-indexable, and a pointer, array or slice
 	// carries its element kind rather than a scalar kind, so identKind reports those
-	// not-known and they are left to their own handling.
+	// not-known: an array and a slice are left to their own handling, while a
+	// pointer is refused here (see indexingPointer).
 	if index, isIndex := firstSuffixIndex(suffix); hasID && hasSuffix && isIndex {
-		if k, known := f.identKind(s, id); known {
+		if f.indexingPointer(s, id) {
+			f.err(id.Position(), "invalid operation: cannot index %s", id.Src())
+		} else if k, known := f.identKind(s, id); known {
 			switch kindCategory(k) {
 			case catNumeric, catBool:
 				f.err(id.Position(), "invalid operation: cannot index %s", id.Src())

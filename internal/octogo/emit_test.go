@@ -5348,10 +5348,14 @@ func main() {
 // (doc/slice-of-arrays.c). Both messages used to be about something else entirely:
 // "cannot infer a type for the declaration of p", and "unsupported type" with an
 // empty name.
+//
+// None of these INDEXES the pointer: that is refused a stage earlier, by the
+// checker, along with indexing every other pointer (index_pointer.ogo). What is
+// pinned here is the type itself, which is what the emitter is asked for.
 func TestEmitCPointerToArray(t *testing.T) {
 	for _, test := range []struct{ name, src string }{
-		{"as a parameter", "func set(p *[3]int) { p[0] = 9 }\n\nfunc main() {\n\tvar a [3]int\n\tset(&a)\n\tprintln(a[0])\n}\n"},
-		{"taking the address", "var a [3]int\n\nfunc main() {\n\tp := &a\n\tprintln(p[0])\n}\n"},
+		{"as a parameter", "func set(p *[3]int) { _ = p }\n\nfunc main() {\n\tvar a [3]int\n\tset(&a)\n\tprintln(a[0])\n}\n"},
+		{"taking the address", "var a [3]int\n\nfunc main() {\n\tp := &a\n\t_ = p\n\tprintln(a[0])\n}\n"},
 		{"as a variable's type", "func main() {\n\tvar p *[3]int\n\t_ = p\n\tprintln(1)\n}\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

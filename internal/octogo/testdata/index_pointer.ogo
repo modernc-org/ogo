@@ -1,0 +1,68 @@
+// Indexing a POINTER -- "p[i]" where p is a pointer -- is invalid, on both the read
+// and the assignment side. Go admits it for exactly one pointer type, a pointer to
+// an ARRAY, where it abbreviates "(*p)[i]"; that one is not supported here yet and
+// is refused with the rest.
+//
+// It has to be said in the checker, because nothing below says it. C indexes any
+// pointer as the array it is not, and the emitter renders the index as C's, so
+// "p[1]" off a "*int" read whatever storage followed the pointee and "p[1] = v"
+// wrote there -- silently, and accepted. What "p" points at is reached by "*p" (see
+// assign_indirect.ogo) and, for a struct, by "p.field".
+
+type P struct {
+	x  int
+	xs []int
+}
+
+func readSide() {
+	var n int
+	var s string
+	var xs []int
+	var q P
+
+	pn := &n
+	ps := &s
+	pxs := &xs
+	pq := &q
+
+	// ERROR "invalid operation: cannot index pn"
+	_ = pn[0]
+	// ERROR "invalid operation: cannot index ps"
+	_ = ps[0]
+	// ERROR "invalid operation: cannot index pxs"
+	_ = pxs[0]
+	// ERROR "invalid operation: cannot index pq"
+	_ = pq[0]
+
+	// The dereference is how the pointee is read, and a field of a pointed-to
+	// struct is reached through the pointer without one.
+	_ = *pn
+	_ = pq.x
+	_ = pq.xs[0]
+}
+
+func assignSide() {
+	var n int
+	pn := &n
+
+	// ERROR "invalid operation: cannot index pn"
+	pn[0] = 1
+
+	*pn = 1
+}
+
+// A slice expression over a pointer is the same operation and is refused the same
+// way. A written pointer type, a parameter and a pointer receiver all reach it.
+func sliceSide(pl *[]int) {
+	// ERROR "invalid operation: cannot index pl"
+	_ = pl[0:1]
+
+	var p *int
+	// ERROR "invalid operation: cannot index p"
+	_ = p[:]
+}
+
+func (p *P) method() int {
+	// ERROR "invalid operation: cannot index p"
+	return p[0]
+}

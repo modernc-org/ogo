@@ -18,6 +18,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Behaviour changes
+
+- **Indexing a pointer is refused**, `p[i]`, on both the read and the assignment
+  side. Go admits it for exactly one pointer type, a pointer to an ARRAY, where it
+  abbreviates `(*p)[i]`; that one is not supported here yet and is refused with the
+  rest. What a pointer points at is reached by `*p`, and a field of a pointed-to
+  struct by `p.field`, neither of which changes.
+
+  It was accepted before, and what it did was C's: the emitter rendered the index as
+  C's, and C indexes any pointer as the array it is not. `p[1]` off a `*int` read
+  whatever storage happened to follow the pointee, `p[1] = v` wrote there, and both
+  compiled and ran without a word — the silent-wrong-program case the compiler exists
+  to prevent. Off a `*string` it read the header's own bytes as a number, off a
+  `*struct` it read past the struct, and off a `*[]int` it emitted C that does not
+  compile, so an internal defect surfaced as a diagnostic from the C backend. Go
+  rejects every one of them.
+
 ## v0.20.0
 
 Arrays as element types. A slice or a channel may have an array element of any rank
