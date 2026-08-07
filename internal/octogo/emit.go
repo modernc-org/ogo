@@ -7508,9 +7508,9 @@ func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
 }
 
 // arraySourceC names what an array-valued right-hand side is, for a copy to read
-// from: another array variable by its C name, or an array literal by a temporary
-// bound ahead of the statement. Anything else is not something this can copy from
-// and is left to the paths that report it.
+// from: another array variable by its C name, a dereferenced pointer to one, or an
+// array literal by a temporary bound ahead of the statement. Anything else is not
+// something this can copy from and is left to the paths that report it.
 func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 	if name, ok := e.exprIdent(ast); ok {
 		if _, isArray := e.arrayVar(name); isArray {
@@ -7518,7 +7518,43 @@ func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 		}
 		return "", false
 	}
+	// `b = *p`: what is copied is the array the pointer names, and copying it is
+	// what Go's dereference of a pointer to an array does.
+	if text, _, ok := e.arrayDerefOperand(ast); ok {
+		return text, true
+	}
 	return e.hoistArrayLitExpr(ast)
+}
+
+// arrayDerefOperand recognises `*p` where p is a pointer to an ARRAY, answering
+// with the C text for the array it points at and its extents. It is the whole-value
+// half of the dereference surface: the index, length and range paths reach the
+// array through a base they were given, while a copy is handed the dereference
+// itself and has to see through it.
+func (e *emitter) arrayDerefOperand(ast []int32) (string, arrDim, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", arrDim{}, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp {
+		return "", arrDim{}, false // one star only; `**p` is not a pointer to an array
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != MUL {
+		return "", arrDim{}, false
+	}
+	name, ok := e.exprIdent(kids[1].ast)
+	if !ok {
+		return "", arrDim{}, false
+	}
+	a, ok := e.arrayPtrVar(name)
+	if !ok {
+		return "", arrDim{}, false
+	}
+	return "(*" + e.varRef(name) + ")", a, true
 }
 
 // hoistLitVar binds a composite literal to a temporary of this frame, declared
@@ -7987,16 +8023,14 @@ func (e *emitter) cType(ast []int32) string {
 	nodes := slices.Collect(it(ast))
 	// Pointer type: "*" Type -> "<elem>*".
 	if len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == MUL && nodes[1].sym == Type {
-		// A pointer to an ARRAY, `*[3]int`, is refused by name. C spells it
-		// `int (*p)[3]` -- the name in the middle of the declarator again -- and the
-		// typedef that would move it out of the way is the shape the target's
-		// compiler mismodels, which is what made a slice of arrays unshippable
-		// (doc/slice-of-arrays.c). A struct holding the array takes a pointer that
-		// works, and a slice already passes an array by reference.
-		if _, isArr := e.arrayDim(nodes[1].ast); isArr {
-			e.fail("a pointer to an array is not supported: pass a slice of it, `a[:]`, " +
-				"or a pointer to a struct holding it")
-			return ""
+		// A pointer to an ARRAY, `*[3]int`. C spells one `int (*p)[3]` -- the name
+		// in the middle of the declarator -- so the pointee takes the same generated
+		// typedef a slice's array element does and the name comes back out in front
+		// of it. A pointer to a typedef'd array is sound on this target; it is a
+		// PARAMETER of one that is not (doc/array-param-corrupts.c), which is why
+		// nothing here passes the array itself by value.
+		if name, isArr := e.arrayElemTypedef(nodes[1].ast); isArr {
+			return name + "*"
 		}
 		if elem := e.cType(nodes[1].ast); elem != "" {
 			return elem + "*"
@@ -8373,6 +8407,13 @@ func (e *emitter) arrayElemTypedef(typeAST []int32) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	return e.arrayTypedef(a), true
+}
+
+// arrayTypedef is arrayElemTypedef from the extents themselves, for a caller that
+// has already resolved them -- the address of an array variable, whose type is
+// known from the variable rather than from a written one.
+func (e *emitter) arrayTypedef(a arrDim) string {
 	name := "ogo_arr"
 	for _, b := range a.bounds() {
 		name += "_" + cTypeIdent(b)
@@ -8383,7 +8424,66 @@ func (e *emitter) arrayElemTypedef(typeAST []int32) (string, bool) {
 		e.typeNames[name] = true
 		e.addTypedef(name, "typedef "+a.elem+" "+name+a.declSuffix()+";\n", a.elem)
 	}
-	return name, true
+	return name
+}
+
+// arrayPtrCType reports the array a C pointer type points at, `ogo_arr_3_int*` ->
+// the [3]int it stands for. A pointer to an array is the one pointer an index
+// applies to, Go's `p[i]` there meaning `(*p)[i]`, and this is what tells it from
+// every other pointer.
+//
+// The pointee's typedef is the registry: `namedArrays` holds both the arrays a
+// program defined a name for and the ones the compiler minted a name for, and a
+// pointer to either behaves the same way.
+func (e *emitter) arrayPtrCType(ctype string) (arrDim, bool) {
+	if !strings.HasSuffix(ctype, "*") {
+		return arrDim{}, false
+	}
+	a, ok := e.namedArrays[strings.TrimSuffix(ctype, "*")]
+	return a, ok
+}
+
+// arrayPtrVar reports the array a pointer VARIABLE points at.
+func (e *emitter) arrayPtrVar(name string) (arrDim, bool) {
+	ct, ok := e.varType(name)
+	if !ok {
+		return arrDim{}, false
+	}
+	return e.arrayPtrCType(ct)
+}
+
+// indexableBase reports whether a base that is not an array, a slice or a string
+// may be indexed, refusing it by name when it is not. It backs the checker's own
+// refusal (indexingPointer) at the one place C would not: an index on a pointer is
+// pointer arithmetic there, so an unrefused one compiles and reads storage the
+// program never named. The checker refuses what its type model can prove; this
+// refuses what reaches here anyway, which is a pointer to a type it could not
+// resolve -- a slice, a channel, a function value.
+func (e *emitter) indexableBase(base string) bool {
+	ct, ok := e.varType(base)
+	if !ok || !e.isPointer(ct) {
+		return true
+	}
+	e.fail("cannot index %s: only a pointer to an array is indexable", base)
+	return false
+}
+
+// arrayBase names the storage an array-valued base denotes and its extents: an
+// array variable is its own name, and a POINTER to an array is that name
+// dereferenced, since Go's `p[i]`, `len(p)` and `range p` all mean the array.
+//
+// It is the one place the dereference is written. Every path that indexes,
+// assigns through, measures, ranges or slices an array base goes through it, so a
+// pointer reaches each of them as the array it points at rather than as a pointer
+// each would have to know about separately.
+func (e *emitter) arrayBase(name string) (string, arrDim, bool) {
+	if a, ok := e.arrayVar(name); ok {
+		return e.varRef(name), a, true
+	}
+	if a, ok := e.arrayPtrVar(name); ok {
+		return "(*" + e.varRef(name) + ")", a, true
+	}
+	return "", arrDim{}, false
 }
 
 // arrayBoundC renders a fixed-array bound as a C integer constant: a single
@@ -8842,8 +8942,8 @@ type accessCur struct {
 	slice bool
 }
 
-// accessBase resolves the start of a chain: a slice variable, an array variable,
-// or a plain local/global.
+// accessBase resolves the start of a chain: a slice variable, an array variable, a
+// pointer to an array, or a plain local/global.
 func (e *emitter) accessBase(base string) (accessCur, bool) {
 	// A folded string constant is not a variable: there is nothing named to walk a
 	// chain from, and the chain's steps read ".str"/".len" off the name. Refusing
@@ -8855,13 +8955,25 @@ func (e *emitter) accessBase(base string) (accessCur, bool) {
 	if el, ok := e.sliceElem(base); ok {
 		return accessCur{elem: el, slice: true}, true
 	}
-	if a, ok := e.arrayVar(base); ok {
+	// A pointer to an array enters the chain AS the array: `p[i].f` is
+	// `(*p)[i].f`, and every step after the first is then the array's. The
+	// dereference is in the text accessBaseText renders, not here.
+	if _, a, ok := e.arrayBase(base); ok {
 		return accessCur{elem: a.elem, dims: a.bounds()}, true
 	}
 	if ct, ok := e.varType(base); ok {
 		return accessCur{ctype: ct}, true
 	}
 	return accessCur{}, false
+}
+
+// accessBaseText is the C text a chain starts from: a variable's name, or a
+// pointer to an array dereferenced, since what the chain walks is the array.
+func (e *emitter) accessBaseText(base string) string {
+	if text, _, ok := e.arrayBase(base); ok {
+		return text
+	}
+	return e.varRef(base)
 }
 
 // accessSelect advances the chain by a field selector.
@@ -8907,7 +9019,28 @@ func (e *emitter) accessIndex(cur accessCur, prefix string) (next accessCur, len
 		}
 		return e.plainOrSlice(cur.elem), cur.dims[0], true
 	}
+	// A POINTER to an array reached part-way along a chain -- a struct field of one,
+	// `b.p[i]` -- is indexed as the array it points at, which is what accessDeref
+	// writes. A pointer BASE never arrives here: accessBase already entered the
+	// chain as the array, so there is no second dereference to apply.
+	if a, ok := e.arrayPtrCType(cur.ctype); ok {
+		rest := a.bounds()[1:]
+		if len(rest) != 0 {
+			return accessCur{elem: a.elem, dims: rest}, a.bound, true
+		}
+		return e.plainOrSlice(a.elem), a.bound, true
+	}
 	return accessCur{}, "", false
+}
+
+// accessDeref renders the base an index or a slice step applies to: a pointer to
+// an ARRAY is dereferenced, everything else is itself. It pairs with the pointer
+// case of accessIndex, which types what this writes.
+func (e *emitter) accessDeref(cur accessCur, prefix string) string {
+	if _, ok := e.arrayPtrCType(cur.ctype); ok {
+		return "(*" + prefix + ")"
+	}
+	return prefix
 }
 
 // accessSlice advances the chain by a slice step, `[l:h]`. Slicing an array or a
@@ -8987,7 +9120,7 @@ func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 	if !ok {
 		return accessCur{}, false
 	}
-	return e.emitAccessChainAt(e.varRef(base), cur, steps, false)
+	return e.emitAccessChainAt(e.accessBaseText(base), cur, steps, false)
 }
 
 // emitAccessChainAt emits a chain from a value already reached and named by prefix.
@@ -9071,7 +9204,7 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 			case cur.ctype == cString:
 				open, pre, closing = ".str[", e.byteReadOpen(), "])"
 			}
-			e.emit(pre + prefix + open)
+			e.emit(pre + e.accessDeref(cur, prefix) + open)
 			e.emitIndex(low, lenExpr)
 			e.emit(closing)
 			prefix = ""
@@ -9469,9 +9602,10 @@ func (e *emitter) varRef(name string) string {
 // empty for a string, which has no capacity and slices to a 2-field ogo_string.
 type sliceSource struct{ cname, ptr, baseLen, baseCap string }
 
-// sliceableVar resolves a variable base to slice: a string, a fixed array, or a
-// slice.
+// sliceableVar resolves a variable base to slice: a string, a fixed array, a
+// pointer to one, or a slice.
 func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
+	text, a, isArray := e.arrayBase(base)
 	switch {
 	case e.isStringConstName(base):
 		// A string constant has no C variable: every use folds to its literal, so
@@ -9483,8 +9617,7 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 	case e.isStringVarName(base):
 		e.usesString = true
 		return sliceSource{cString, base + ".str", base + ".len", ""}, true
-	case e.hasArrayVar(base):
-		a, _ := e.arrayVar(base)
+	case isArray:
 		if a.dims() > 1 {
 			// "m[:]" over a [2][3]int would be a slice of [3]int, and a slice of
 			// arrays has no element type C can name here. Slicing a *row*,
@@ -9493,6 +9626,11 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 			return sliceSource{}, false
 		}
 		e.needSlice(a.elem)
+		if _, isPtr := e.arrayPtrVar(base); isPtr {
+			// `p[lo:hi]` slices the array p points at. The dereference is what
+			// decays to the first element, where a plain array's name already does.
+			return sliceSource{sliceCName(a.elem), text, a.bound, a.bound}, true
+		}
 		return sliceSource{sliceCName(a.elem), base, a.bound, a.bound}, true
 	case e.hasSliceVar(base):
 		elem, _ := e.sliceElem(base)
@@ -9577,7 +9715,7 @@ func (e *emitter) accessChainCText(base string, steps []Node) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return e.accessChainCTextAt(e.varRef(base), cur, steps, false)
+	return e.accessChainCTextAt(e.accessBaseText(base), cur, steps, false)
 }
 
 // accessChainCTextAt is accessChainCText from a value already reached.
@@ -9885,9 +10023,6 @@ func (e *emitter) varReprType(name string) (string, bool) {
 	}
 	return e.underlyingCType(ct), true
 }
-
-// hasArrayVar reports whether base names a fixed-array variable.
-func (e *emitter) hasArrayVar(base string) bool { _, ok := e.arrayVar(base); return ok }
 
 // hasSliceVar reports whether base names a slice variable.
 func (e *emitter) hasSliceVar(base string) bool { _, ok := e.sliceElem(base); return ok }
@@ -10634,6 +10769,9 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.emitRangeSlice(h, body, key, ct, hdr)
 	case e.rangeArray(h.rangeExpr) != nil:
 		base, _ := e.exprIdent(h.rangeExpr)
+		if _, isPtr := e.arrayPtrVar(base); isPtr {
+			base = "(*" + e.varRef(base) + ")" // `range p` iterates the array p points at
+		}
 		e.emitRangeArray(h, body, key, *e.rangeArray(h.rangeExpr), base)
 	case ct == cString:
 		// Ranging a string iterates its runes, as Go does (not its bytes): key is the
@@ -10679,6 +10817,15 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		}
 		e.emitLoopBody(body, inject)
 	default:
+		// A POINTER that is not one to an array, which the checker leaves here when
+		// its type model could not resolve the pointee (see indexingPointer). Said
+		// before the integer range below, which would otherwise report it as one.
+		if base, ok := e.exprIdent(h.rangeExpr); ok {
+			if ct, ok := e.varType(base); ok && e.isPointer(ct) {
+				e.fail("cannot range over %s: only a pointer to an array is rangeable", base)
+				return
+			}
+		}
 		// An integer range. Hoist the bound so a side-effecting or costly operand is
 		// evaluated once, as Go does.
 		if h.valVar != nil {
@@ -10796,13 +10943,13 @@ func (e *emitter) rangeLitVar(rangeExpr []int32) string {
 }
 
 // rangeArray returns the array dimension of a range operand that is a bare array
-// variable, or nil.
+// variable or a pointer to one, or nil.
 func (e *emitter) rangeArray(expr []int32) *arrDim {
 	base, ok := e.exprIdent(expr)
 	if !ok {
 		return nil
 	}
-	if a, ok := e.arrayVar(base); ok {
+	if _, a, ok := e.arrayBase(base); ok {
 		return &a
 	}
 	return nil
@@ -12699,7 +12846,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if cur.slice {
 				open = ".ptr["
 			}
-			text += open + e.indexCText(low, lenExpr) + "]"
+			text = e.accessDeref(cur, text) + open + e.indexCText(low, lenExpr) + "]"
 			cur, addr = next, true
 		default:
 			return "", "", false, false
@@ -12827,7 +12974,8 @@ func (e *emitter) emitLen(callSuffix []int32) {
 		arg = operand
 	}
 	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
-		if a, ok := e.arrayVar(e.src(tok)); ok {
+		// A pointer to an array measures the array, `len(p)` being `len(*p)`.
+		if _, a, ok := e.arrayBase(e.src(tok)); ok {
 			e.emit(a.bound)
 			return
 		}
@@ -12882,7 +13030,8 @@ func (e *emitter) emitCap(callSuffix []int32) {
 		arg = operand
 	}
 	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
-		if a, ok := e.arrayVar(e.src(tok)); ok {
+		// A pointer to an array measures the array, `len(p)` being `len(*p)`.
+		if _, a, ok := e.arrayBase(e.src(tok)); ok {
 			e.emit(a.bound)
 			return
 		}
@@ -13919,6 +14068,14 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 			return
 		}
 	}
+	// `b := *p` where p points at an array: the same copy, reading through the
+	// dereference. inferCType does type `*p` -- it is a pointer's element -- but the
+	// type it names is the array's typedef, which C cannot initialize from another
+	// array any more than it can assign one, so this has to come first.
+	if src, a, ok := e.arrayDerefOperand(initExpr); ok {
+		e.emitArrayCopy(name, src, a)
+		return
+	}
 	if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
 		cname := sliceCName(elem)
 		e.needSlice(elem)
@@ -14455,20 +14612,26 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		e.fail("unsupported index target")
 		return
 	}
-	// A slice element is addressed through its backing pointer; an array directly.
-	// The index is bounds-checked against the container length.
+	// A slice element is addressed through its backing pointer; an array directly,
+	// and a pointer to an array through the dereference `p[i]` abbreviates. The
+	// index is bounds-checked against the container length.
 	lhs := base
 	lenExpr, elem := "", ""
 	if el, ok := e.sliceElem(base); ok {
 		lhs = base + ".ptr"
 		lenExpr = base + ".len"
 		elem = el
-	} else if a, ok := e.arrayVar(base); ok {
+	} else if text, a, ok := e.arrayBase(base); ok {
 		if a.dims() > 1 {
 			e.fail("a multi-dimensional array must be indexed in every dimension")
 			return
 		}
+		if _, isPtr := e.arrayPtrVar(base); isPtr {
+			lhs = text
+		}
 		lenExpr, elem = a.bound, a.elem
+	} else if !e.indexableBase(base) {
+		return
 	}
 	t, ok := e.assignTailOf(opNode)
 	if !ok {
@@ -15160,7 +15323,14 @@ func (e *emitter) factorCall(kids []Node) (recv string, suffix []Node, ok bool) 
 func (e *emitter) isStruct(ctype string) bool { _, ok := e.structs[ctype]; return ok }
 
 // isSliceCType reports whether a C type name is a slice header type (ogo_slice_<T>).
-func (e *emitter) isSliceCType(ctype string) bool { return strings.HasPrefix(ctype, sliceTypePrefix) }
+//
+// A POINTER to one is not: `ogo_slice_int*` shares the prefix and is a different
+// type, and answering yes for it made `p := &xs` a slice variable, so `p[0]` and
+// `len(p)` emitted `p.ptr` and `p.len` off a pointer -- C that does not compile,
+// from a program the checker leaves to this stage (see indexingPointer).
+func (e *emitter) isSliceCType(ctype string) bool {
+	return strings.HasPrefix(ctype, sliceTypePrefix) && !strings.HasSuffix(ctype, "*")
+}
 
 // needSlice records that a slice `[]elem` is used, so its header typedef is emitted.
 func (e *emitter) needSlice(elem string) {
@@ -15577,15 +15747,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if tok, ok := e.unaryOpTok(kids[0].ast); ok {
 				switch e.f.ch(tok) {
 				case AND:
-					// `&a` for an ARRAY variable is a pointer to an array, which is
-					// not supported; said here rather than left to "cannot infer a
-					// type for the declaration of p". See the pointer branch of
-					// cType for why.
+					// `&a` for an ARRAY variable is a pointer to that array. An
+					// array has no C value type, so inferNode cannot answer for it
+					// and the pointee's typedef is minted from the extents instead
+					// -- the same name a written `*[3]int` resolves to, so the two
+					// spellings meet.
 					if nm, isName := e.exprIdent(kids[len(kids)-1].ast); isName {
-						if _, isArr := e.arrayVar(nm); isArr {
-							e.fail("a pointer to an array is not supported: pass a slice of it, `%s[:]`, "+
-								"or a pointer to a struct holding it", nm)
-							return "", false
+						if a, isArr := e.arrayVar(nm); isArr {
+							return e.arrayTypedef(a) + "*", true
 						}
 					}
 					if t, ok := e.inferNode(kids[len(kids)-1]); ok {
@@ -15756,7 +15925,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					if e.isStringVarName(base) {
 						return cString, true
 					}
-					if a, ok := e.arrayVar(base); ok {
+					if _, a, ok := e.arrayBase(base); ok {
 						return sliceCName(a.elem), true
 					}
 					if elem, ok := e.sliceElem(base); ok {
@@ -16704,12 +16873,20 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(e.byteReadOpen() + base + ".str[")
 					lenExpr, closing = base+".len", "])"
 				default:
-					if a, ok := e.arrayVar(base); ok && a.dims() > 1 {
+					_, a, isArray := e.arrayBase(base)
+					if isArray && a.dims() > 1 {
 						e.fail("a multi-dimensional array must be indexed in every dimension")
 						return
 					}
-					e.emit(base + "[")
-					if a, ok := e.arrayVar(base); ok {
+					if !isArray && !e.indexableBase(base) {
+						return
+					}
+					if _, isPtr := e.arrayPtrVar(base); isPtr {
+						e.emit("(*" + e.varRef(base) + ")[") // `p[i]` is `(*p)[i]`
+					} else {
+						e.emit(base + "[")
+					}
+					if isArray {
 						lenExpr = a.bound
 					}
 				}

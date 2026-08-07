@@ -1,36 +1,40 @@
 // Indexing a POINTER -- "p[i]" where p is a pointer -- is invalid, on both the read
 // and the assignment side. Go admits it for exactly one pointer type, a pointer to
-// an ARRAY, where it abbreviates "(*p)[i]"; that one is not supported here yet and
-// is refused with the rest.
+// an ARRAY, where it abbreviates "(*p)[i]"; that one works and is exercised by the
+// emitter's tests, since what it needs is a representation this checker does not
+// carry.
 //
-// It has to be said in the checker, because nothing below says it. C indexes any
-// pointer as the array it is not, and the emitter renders the index as C's, so
-// "p[1]" off a "*int" read whatever storage followed the pointee and "p[1] = v"
-// wrote there -- silently, and accepted. What "p" points at is reached by "*p" (see
+// It has to be said here, because nothing below says it. C indexes any pointer as
+// the array it is not, and the emitter renders the index as C's, so "p[1]" off a
+// "*int" read whatever storage followed the pointee and "p[1] = v" wrote there --
+// silently, and accepted. What "p" points at is reached by "*p" (see
 // assign_indirect.ogo) and, for a struct, by "p.field".
+//
+// The refusal is spent on what this checker can PROVE is not an array: a
+// predeclared pointee, and a named one whose type resolves to something else. A
+// pointee it cannot resolve -- "*[]int" writes no name -- reaches the emitter, whose
+// model of array types is the complete one and which refuses it there.
 
 type P struct {
 	x  int
 	xs []int
 }
 
+type Row [3]int
+
 func readSide() {
 	var n int
 	var s string
-	var xs []int
 	var q P
 
 	pn := &n
 	ps := &s
-	pxs := &xs
 	pq := &q
 
 	// ERROR "invalid operation: cannot index pn"
 	_ = pn[0]
 	// ERROR "invalid operation: cannot index ps"
 	_ = ps[0]
-	// ERROR "invalid operation: cannot index pxs"
-	_ = pxs[0]
 	// ERROR "invalid operation: cannot index pq"
 	_ = pq[0]
 
@@ -53,9 +57,9 @@ func assignSide() {
 
 // A slice expression over a pointer is the same operation and is refused the same
 // way. A written pointer type, a parameter and a pointer receiver all reach it.
-func sliceSide(pl *[]int) {
-	// ERROR "invalid operation: cannot index pl"
-	_ = pl[0:1]
+func sliceSide(pf *float64) {
+	// ERROR "invalid operation: cannot index pf"
+	_ = pf[0:1]
 
 	var p *int
 	// ERROR "invalid operation: cannot index p"
@@ -65,4 +69,20 @@ func sliceSide(pl *[]int) {
 func (p *P) method() int {
 	// ERROR "invalid operation: cannot index p"
 	return p[0]
+}
+
+// A pointer to an ARRAY is the one that is indexed, ranged and measured, in both
+// the unnamed and the defined spelling. None of these is an error.
+func arrayPointers(pa *[3]int) int {
+	var r Row
+	pr := &r
+	pr[0] = 1
+
+	var a [2]int
+	pb := &a
+	n := 0
+	for _, v := range pb {
+		n += v
+	}
+	return pa[0] + pr[0] + n + len(pa)
 }

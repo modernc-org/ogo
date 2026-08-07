@@ -2272,6 +2272,112 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
+		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
+		// how an array is passed by reference without a slice header, which is what
+		// the by-value refusals used to point at.
+		//
+		// C spells the type `int (*p)[3]`, the name in the middle of the declarator,
+		// so the pointee takes a generated typedef and the name comes back out in
+		// front of it. Every line here reads or writes the SAME array through the
+		// pointer, so a missing dereference does not merely print the wrong number --
+		// it indexes the array at the wrong rank, which is what the type without the
+		// dereference surface did.
+		name: "a pointer to an array",
+		src: `type Row [3]int
+
+var g [3]int
+
+func fill(p *[3]int) {
+	for i := range p {
+		p[i] = i * 2
+	}
+}
+
+func total(p *Row) int {
+	n := 0
+	for _, v := range p {
+		n += v
+	}
+	return n
+}
+
+func global() *[3]int { return &g }
+
+func main() {
+	var a [3]int
+	fill(&a)
+	println(a[0], a[1], a[2], len(a))
+
+	p := &a
+	p[0] = 9
+	p[1]++
+	println(a[0], a[1], len(p), cap(p))
+
+	// The pointer is a value: copying it aliases the same array.
+	q := p
+	q[2] = 5
+	println(a[2])
+
+	// Slicing through the pointer views the same storage.
+	s := p[1:]
+	s[0] = 8
+	println(a[1], len(s), cap(s))
+
+	// The dereference COPIES the array, as assigning one does.
+	b := *p
+	b[0] = 0
+	println(a[0], b[0])
+
+	var r Row
+	r[0], r[1], r[2] = 1, 2, 3
+	println(total(&r))
+
+	g[1] = 7
+	println(global()[1])
+}
+`,
+		want: "0 2 4 3\n9 3 3 3\n5\n8 2 2\n9 0\n6\n7\n",
+	},
+	{
+		// The pointer where it is not the base of the expression: a STRUCT FIELD of
+		// one, which the dereference has to reach part-way along a chain rather than
+		// at its start. Plus the element types whose C declarator differs -- a
+		// multi-dimensional pointee, a byte one and a string one.
+		name: "a pointer to an array as a struct field",
+		src: `type Grid struct {
+	cells *[2][3]int
+	tag   int
+}
+
+func mark(g *Grid) {
+	g.cells[1][2] = 6
+}
+
+func main() {
+	var m [2][3]int
+	pm := &m
+	pm[0][1] = 4
+	println(pm[0][1], len(pm))
+
+	g := Grid{cells: &m, tag: 1}
+	mark(&g)
+	println(m[1][2], g.cells[0][1], g.tag)
+
+	var bs [4]uint8
+	pb := &bs
+	pb[3] = 200
+	println(bs[3], len(pb))
+
+	var one [1]string
+	po := &one
+	po[0] = "hi"
+	println(po[0], len(po))
+}
+`,
+		want: "4 2\n6 4 1\n200 4\nhi 1\n",
+	},
+	{
 		name: "assigning one array to another copies it",
 		src: `func main() {
 	var a [3]int
@@ -2911,8 +3017,8 @@ func main() {
 		name: "an array of slices",
 		src: `// Each element is a slice HEADER, which is an ordinary C value, so the flat
 // static layout has somewhere to put it. A slice of ARRAYS is the other way round
-// and is refused: it would need a pointer to an array, which the target's compiler
-// mismodels (doc/slice-of-arrays.c).
+// and works too, its element reached through a pointer to an array -- see "a slice
+// whose element is an array".
 func main() {
 	var m [2][]int
 	m[0] = []int{1, 2, 3}

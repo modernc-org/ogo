@@ -5339,24 +5339,78 @@ func main() {
 	}
 }
 
-// TestEmitCPointerToArray pins that a pointer to an ARRAY is refused by name, in
-// both spellings, and that the two forms it points at instead are not.
+// TestEmitCPointerToArray pins the C a pointer to an ARRAY is spelled in, and the
+// dereference every use of one carries.
 //
-// C spells one `int (*p)[3]` -- the name in the middle of the declarator -- and the
-// typedef that would move it out of the way is the shape the target's compiler
-// mismodels, which is what made a slice of arrays unshippable
-// (doc/slice-of-arrays.c). Both messages used to be about something else entirely:
-// "cannot infer a type for the declaration of p", and "unsupported type" with an
-// empty name.
-//
-// None of these INDEXES the pointer: that is refused a stage earlier, by the
-// checker, along with indexing every other pointer (index_pointer.ogo). What is
-// pinned here is the type itself, which is what the emitter is asked for.
+// C spells the type `int (*p)[3]` -- the name in the middle of the declarator -- so
+// the pointee takes the same generated typedef a slice's array element does and the
+// name comes back out in front of it. Then Go's `p[i]` means `(*p)[i]`, and the
+// whole cost of the feature is that every path reaching the array through the
+// pointer has to write that dereference: what `p[1]` emitted with the type alone was
+// C's `p[1]`, the ARRAY at offset 1, which compiles and prints the wrong thing.
 func TestEmitCPointerToArray(t *testing.T) {
-	for _, test := range []struct{ name, src string }{
-		{"as a parameter", "func set(p *[3]int) { _ = p }\n\nfunc main() {\n\tvar a [3]int\n\tset(&a)\n\tprintln(a[0])\n}\n"},
-		{"taking the address", "var a [3]int\n\nfunc main() {\n\tp := &a\n\t_ = p\n\tprintln(a[0])\n}\n"},
-		{"as a variable's type", "func main() {\n\tvar p *[3]int\n\t_ = p\n\tprintln(1)\n}\n"},
+	src := `type Row [3]int
+
+func set(p *[3]int) { p[0] = 9 }
+
+func main() {
+	var a [3]int
+	set(&a)
+	p := &a
+	p[1] = len(p)
+	i := 2
+	p[i] = 4
+	var r Row
+	q := &r
+	q[2] = 7
+	println(a[0], a[1], a[2], r[2])
+}
+`
+	want := []string{
+		"typedef int ogo_arr_3_int[3];", // the pointee's name, out of the declarator
+		"void set(ogo_arr_3_int* p) {",  // the parameter, spelled through it
+		"(*p)[0] = 9;",                  // an index through the pointer is a deref
+		"ogo_arr_3_int* p = &a;",        // the address of an array
+		"(*p)[1] = 3;",                  // len(p) folds to the array's extent
+		"(*p)[ogo_bound(i, 3)] = 4;",    // a run-time index is checked against it too
+		// A DEFINED array type reaches the same typedef rather than its own name: a
+		// use renders the underlying declarator (`int r[3]`, not `Row r`), so the
+		// name a program writes is documentary and the minted one is what the
+		// pointer is spelled in. Both are `int[3]`.
+		"ogo_arr_3_int* q = &r;",
+		"(*q)[2] = 7;",
+	}
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var out bytes.Buffer
+	if err := EmitC(pkg, &out, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, w := range want {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("missing %q in:\n%s", w, out.String())
+		}
+	}
+}
+
+// TestEmitCIndexNonArrayPointer pins the emitter's half of the refusal that a
+// pointer is not indexable. The checker reports the pointers its type model can
+// prove are not arrays (index_pointer.ogo); a pointee it cannot resolve reaches
+// here, and here is where the complete model of array types lives.
+//
+// It matters because C would not refuse it. `p[0]` off a `*[]int` used to emit
+// `p.ptr[...]`, a C error from an internal defect, and once that was fixed it
+// emitted C's own pointer index, which compiles and reads storage the program never
+// named.
+func TestEmitCIndexNonArrayPointer(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{"read", "func main() {\n\txs := []int{1, 2}\n\tp := &xs\n\tprintln(p[0])\n}\n", "cannot index p"},
+		{"write", "func main() {\n\txs := []int{1, 2}\n\tp := &xs\n\tp[0] = 3\n\tprintln(xs[0])\n}\n", "cannot index p"},
+		{"parameter", "func f(pl *[]int) { println(pl[0]) }\n\nfunc main() {\n\txs := []int{1}\n\tf(&xs)\n}\n", "cannot index pl"},
+		{"range", "func main() {\n\txs := []int{1, 2}\n\tp := &xs\n\tfor _, v := range p {\n\t\tprintln(v)\n\t}\n}\n", "cannot range over p"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
@@ -5367,16 +5421,17 @@ func TestEmitCPointerToArray(t *testing.T) {
 			var out bytes.Buffer
 			if err = EmitC(pkg, &out); err == nil {
 				t.Fatalf("expected a refusal, got:\n%s", out.String())
-			} else if !strings.Contains(err.Error(), "a pointer to an array is not supported") {
-				t.Fatalf("expected the pointer-to-array refusal, got %v", err)
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
 			}
 		})
 	}
 }
 
-// TestEmitCPointerToArrayAlternatives pins what the refusal points at: a slice of
-// the array passes it by reference, and a struct holding it takes a pointer that
-// works. The address of an ELEMENT is unaffected -- that is a pointer to an int.
+// TestEmitCPointerToArrayAlternatives pins the two forms that pass an array by
+// reference without a pointer to it: a slice of the array, and a struct holding it.
+// They predate the pointer and are what the refusal used to point at. The address
+// of an ELEMENT is a third and is unaffected -- that is a pointer to an int.
 func TestEmitCPointerToArrayAlternatives(t *testing.T) {
 	src := `type A struct {
 	v [3]int

@@ -41,17 +41,11 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260806 A POINTER to an array, `*[3]int`, is not supported. The
-// REPRESENTATION is settled and measured: the pointee takes the same generated
-// typedef a slice's array element does, `ogo_arr_3_int*`, and a pointer to a
-// typedef'd array is sound on this target -- doc/array-param-corrupts.c shows it is
-// a PARAMETER of one that is not. What is missing is the dereference surface, and it
-// is the whole cost: Go's `p[i]` means `(*p)[i]`, so every path that indexes,
-// assigns through, measures or ranges a base must render `(*p)` where it renders a
-// variable's name today. Attempting the type alone is worse than the refusal --
-// `p[1]` then emits C's `p[1]`, which is the ARRAY at offset 1, and prints garbage
-// where Go prints the element. A slice passes an array by reference and a struct
-// holding one takes a working pointer, which is what the refusal points at.
+// TODO 20260807 A parenthesised DEREFERENCE cannot carry a suffix: "(*p).x" and
+// "(*p)[i]" are refused, where "p.x" and "p[i]" -- which is what Go says they mean
+// -- both work. It is the parenthesised-factor peel not seeing past a unary
+// operator, and it is not about pointers to arrays; a struct pointer is refused the
+// same way.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
@@ -621,6 +615,26 @@
 // called the base type of the pointer.
 //
 //   - The value of an uninitialized pointer is nil.
+//
+// A pointer to an ARRAY, "*[3]int", is the one pointer an index applies to, and it
+// abbreviates the dereference exactly as Go does: "p[i]" is "(*p)[i]", and so are
+// "len(p)", "cap(p)", "range p" and "p[lo:hi]". It is how an array is passed by
+// reference without a slice header:
+//
+//	func fill(p *[3]int) {
+//		for i := range p {
+//			p[i] = i
+//		}
+//	}
+//
+// The pointer is a value, so copying it aliases the same array, while dereferencing
+// it -- "b := *p" -- copies the array, as assigning one does. A defined array type
+// takes a pointer the same way, "*Row".
+//
+// No OTHER pointer is indexable, which C would not say for itself: it indexes any
+// pointer as the array it is not, so "p[1]" off a "*int" would read past the
+// pointee. What a pointer points at is reached by "*p", and a field of a pointed-to
+// struct by "p.field".
 //
 // # Interface types
 //

@@ -199,6 +199,11 @@ broken.
   `chan [3]int`, `chan [2][3]int`. C cannot spell one inline where a slice header's
   pointer or a rendezvous payload goes, so the element gets a generated typedef and
   everything that would copy it by value copies it through a pointer instead.
+* A **pointer to an array**, `*[3]int`, which passes one by reference without a
+  slice header. It abbreviates the dereference as Go does — `p[i]` is `(*p)[i]`, and
+  so are `len(p)`, `range p` and `p[lo:hi]` — while `*p` copies the array and
+  copying the pointer aliases it. No other pointer is indexable, which C would not
+  say for itself.
 * Slicing, including the capacity bound: `pool[0:0:64]` hands out a region of a
   package-level buffer that appending cannot grow past, which is how you sub-divide
   storage with no heap to allocate from.
@@ -279,11 +284,8 @@ broken.
 * An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
   need a struct holding an array, which the backend cannot assign. An array result on
   its own is used like any other value.
-* A **pointer to an array**, `*[3]int`. The representation is settled — the pointee
-  takes the same generated typedef a slice's array element does — but Go's `p[i]`
-  means `(*p)[i]`, and every path that indexes, assigns through, measures or ranges
-  would have to render the dereference. Pass a slice of the array, `a[:]`, or a
-  pointer to a struct holding it.
+* A **parenthesised dereference carrying a suffix**, `(*p).x` and `(*p)[i]`. Both
+  abbreviate to `p.x` and `p[i]`, which work.
 * `goto`.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.

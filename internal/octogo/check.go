@@ -2321,9 +2321,15 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt bool) {
 			case d.isChan:
 				f.err(id.Position(), "cannot range over a channel")
 				return 0, false, false
-			case d.isPtr:
+			case d.isPtr && !f.mayPointToArray(s, d):
+				// A pointer to an ARRAY is rangeable in Go, over the array it points
+				// at; no other pointer is. What the type model cannot resolve is
+				// left to the emitter, exactly as an index on one is -- see
+				// indexingPointer.
 				f.err(id.Position(), "cannot range over a pointer")
 				return 0, false, false
+			case d.isPtr:
+				return 0, false, false // the pointee's element is the emitter's to infer
 			case d.hasElemKind:
 				return d.elemKind, true, false // slice or array
 			}
@@ -6486,10 +6492,9 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	}
 }
 
-// indexingPointer reports that base names a POINTER, which is not something an
-// index applies to. Go admits `p[i]` for exactly one pointer type, a pointer to an
-// ARRAY, where it abbreviates `(*p)[i]`; that one is not supported here yet and is
-// refused with everything else.
+// indexingPointer reports that base names a POINTER an index does not apply to. Go
+// admits `p[i]` for exactly one pointer type, a pointer to an ARRAY, where it
+// abbreviates `(*p)[i]`; every other pointer is refused here.
 //
 // Nothing below says it, which is why it is said here. C indexes any pointer as the
 // array it is not, and the emitter renders the index as C's: `p[1]` off a `*int`
@@ -6498,9 +6503,58 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 // it read the header's own bytes as a number, and off a `*[]int` it emitted C that
 // does not compile -- an internal defect surfacing as a diagnostic from the C
 // backend.
+//
+// The refusal is spent on what this checker can PROVE is not an array, which its
+// coarse type model can do for a predeclared pointee and for a named one. What it
+// cannot resolve -- an unnamed `*[3]int`, or the address of a variable whose own
+// type it did not pin down -- is admitted and reaches the emitter, whose model of
+// array types is the complete one and which refuses an index on any other pointer
+// in its turn. Two places have to agree that a pointer is not indexable, and this
+// is the one that can name the variable in the message.
 func (f *File) indexingPointer(s *Scope, base Token) bool {
 	d, ok := s.find(base.Src()).(*VarDeclaration)
-	return ok && d.isPtr
+	return ok && d.isPtr && !f.mayPointToArray(s, d)
+}
+
+// mayPointToArray reports whether a pointer variable's pointee could be an array,
+// as far as the recorded type says. A predeclared pointee (`*int`, `*string`) is
+// not one; a named pointee is one exactly when the name resolves to an array type,
+// which is what admits `*Row` for a `type Row [3]int`. A pointee the declaration
+// pinned down no further -- `*[3]int` writes no name, and `p := &a` records only
+// what a's own declaration knew -- is unresolved, and unresolved is admitted.
+func (f *File) mayPointToArray(s *Scope, d *VarDeclaration) bool {
+	if d.hasElemKind {
+		return false // a predeclared pointee: int, string, bool, a float
+	}
+	if !d.typeName.IsValid() {
+		return true // no name to resolve: left to the emitter
+	}
+	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return false // a predeclared type, or a name that resolves to no type
+	}
+	return f.isArrayType(s, td.TypeSpec.TypeNode)
+}
+
+// isArrayType reports whether a type is a fixed ARRAY, following defined types to
+// their underlying one. It is the array twin of isPointerType, bounded the same way
+// and for the same reason.
+func (f *File) isArrayType(s *Scope, tn TypeNode) bool {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		switch x := tn.(type) {
+		case *TypeNodeArray:
+			return true
+		case *TypeNodeIdent:
+			td, ok := s.find(x.Name.Src()).(*TypeDeclaration)
+			if !ok || td.TypeSpec == nil {
+				return false
+			}
+			tn = td.TypeSpec.TypeNode
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // checkElemAssignType reports a type-category mismatch between the element or

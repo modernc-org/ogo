@@ -18,13 +18,31 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A pointer to an ARRAY**, `*[3]int` and `*Row`, which passes an array by
+  reference without a slice header — what the array-by-value refusals used to point
+  at second-best. It abbreviates the dereference exactly as Go does: `p[i]` is
+  `(*p)[i]`, and so are `len(p)`, `cap(p)`, `range p` and `p[lo:hi]`. `*p` copies
+  the array, as assigning one does, while copying the pointer aliases it. It works
+  as a parameter, a result, a struct field and a package variable, at any rank, and
+  the index is bounds-checked against the pointee's extent like any other.
+
+  C spells the type `int (*p)[3]` — the name in the middle of the declarator — so
+  the pointee takes the same generated typedef a slice's array element does. That
+  representation was settled and measured in v0.20.0; what this release adds is the
+  dereference surface, which is where the whole cost of the feature was. Landing the
+  type alone would have been worse than the refusal it replaced, since `p[1]` then
+  emits C's `p[1]` — the ARRAY at offset 1 — which compiles silently and prints
+  nothing like what Go prints.
+
 ### Behaviour changes
 
-- **Indexing a pointer is refused**, `p[i]`, on both the read and the assignment
-  side. Go admits it for exactly one pointer type, a pointer to an ARRAY, where it
-  abbreviates `(*p)[i]`; that one is not supported here yet and is refused with the
-  rest. What a pointer points at is reached by `*p`, and a field of a pointed-to
-  struct by `p.field`, neither of which changes.
+- **Indexing a pointer that is not one to an array is refused**, `p[i]`, on both the
+  read and the assignment side — the other half of the entry above, and the reason
+  it had to be written first. Go admits an index on a pointer to an ARRAY and on no
+  other pointer. What a pointer points at is still reached by `*p`, and a field of a
+  pointed-to struct by `p.field`, neither of which changes.
 
   It was accepted before, and what it did was C's: the emitter rendered the index as
   C's, and C indexes any pointer as the array it is not. `p[1]` off a `*int` read
@@ -34,6 +52,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   `*struct` it read past the struct, and off a `*[]int` it emitted C that does not
   compile, so an internal defect surfaced as a diagnostic from the C backend. Go
   rejects every one of them.
+
+  The refusal is split across the two stages that can each see part of the answer:
+  the checker names the variable for a pointee its type model resolves, and the
+  emitter — which carries the complete model of array types — refuses what reaches
+  it. A pointer to a SLICE was the case that needed both, since `ogo_slice_int*`
+  shares a prefix with the header type and was being mistaken for one.
 
 ## v0.20.0
 
