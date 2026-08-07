@@ -16,6 +16,25 @@
 #
 # Output: build/release/<VERSION>/ containing ogo-<VERSION>-<goos>-<goarch>.zip for
 # every target and a SHA256SUMS over them.
+#
+# WHAT THIS DOES NOT DO IS TEST THEM. Every target is cross-compiled here and only
+# the host one can be run here, so of the five zips published, exactly one has ever
+# been executed before shipping -- and only if someone unpacks and runs it, which is
+# not automated either. `go test ./...` and the on-board suite run on the host
+# platform alone; there is no CI.
+#
+# What that leaves covered: all five COMPILE (a break fails this script), and their
+# test packages typecheck under `GOOS=... go vet`. What it leaves uncovered: anything
+# that compiles everywhere and misbehaves on one platform -- the windows CRT
+# supplement, the darwin libc supplement, path and console handling, and the serial
+# port in loadp2. Each target was exercised once on real hardware when it was added
+# (windows/amd64 and linux/arm64 against a P2-EDGE, producing binaries byte-identical
+# to the linux build) and not since.
+#
+# The cheap improvement, if this matters: before publishing, unpack each zip on a
+# machine of that platform, run `ogo version` and build one program, and compare the
+# .binary sha256 against the linux build of the same source -- they should be equal,
+# the backend being the same transpiled C compiler everywhere.
 
 set -eu
 

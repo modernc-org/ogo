@@ -41,14 +41,48 @@ const (
 	// `rm -rf flexprop flexprop_install`, rerun `go generate`, then update the flexcc
 	// --help golden in internal/flexcc/all_test.go.
 	//
-	// Five backends are generated from this pin. linux/amd64 and linux/arm64
-	// natively, each on a host of that architecture (the default path; run
-	// `go run generator.go` there). windows/amd64 cross-compiled on a linux/amd64
-	// host with MinGW (TARGET_GOOS=windows TARGET_GOARCH=amd64 go run generator.go;
-	// needs x86_64-w64-mingw32-gcc and the ccgo CLI on PATH; see transpileWindows).
-	// darwin/arm64 and darwin/amd64 natively on a darwin host (arm64 directly;
-	// amd64 on an arm64 mac under Rosetta 2 with the amd64 go+ccgo toolchain via
-	// `arch -x86_64`; needs clang and the homebrew gmake/gsed; see transpileDarwin).
+	// Five backends are generated from this pin, BY HAND, each on a machine of its
+	// own; the transpiled Go is then committed. Nothing regenerates them
+	// automatically -- there is no CI in this repository, and the builder fleet has
+	// no part in it. That is the point: because the backends are committed Go,
+	// `make release` cross-builds every target from one host with no native
+	// toolchain anywhere.
+	//
+	//	target          where                        command
+	//	---------------------------------------------------------------------------
+	//	linux/amd64     the amd64 dev box            cd internal && go generate
+	//	linux/arm64     an arm64 linux box           cd internal && go run generator.go
+	//	windows/amd64   the linux/amd64 box (cross)  TARGET_GOOS=windows \
+	//	                                             TARGET_GOARCH=amd64 \
+	//	                                             go run generator.go
+	//	darwin/arm64    an arm64 mac                 cd internal && go run generator.go
+	//	darwin/amd64    the SAME arm64 mac, Rosetta  arch -x86_64 <amd64-go> run \
+	//	                                             generator.go
+	//
+	// Prerequisites, per target:
+	//
+	//   - all: git and a network (the generator clones totalspectrum/flexprop at
+	//     flexpropRef), and enough disk for the clone plus a ~10 MB emitted file.
+	//   - linux/*: nothing else. ccgo runs under `-exec make`, so the ccgo CLI is
+	//     not needed. An arm64 linux box may need tk8.6-dev for the flexprop build.
+	//   - windows/amd64: x86_64-w64-mingw32-gcc AND the ccgo CLI on PATH (this path
+	//     drives ccgo directly rather than through make). The emitted file is not
+	//     gofmt-clean, so follow with `gofmt -s -w flexcc/`; `go generate` does that
+	//     for linux, a bare `go run generator.go` does not.
+	//   - darwin/*: clang, and the homebrew gmake and gsed -- macOS ships BSD make
+	//     and sed, which the flexprop Makefile and the main2lib seds cannot use.
+	//     darwin/amd64 additionally needs an amd64 go toolchain and an amd64 ccgo,
+	//     both run under `arch -x86_64` on the arm64 mac.
+	//
+	// Generating a second target without resetting accumulates both into the undup
+	// fold, which is intended: run darwin/amd64 after darwin/arm64 on the same mac.
+	// See transpileWindows and transpileDarwin for what each does beyond this.
+	//
+	// The hostnames used when each target was first generated were `darwin-m1` (both
+	// darwin backends) and `rpi5` (linux/arm64), reachable over ssh from the dev box.
+	// They are recorded because the question "where was this made?" has already been
+	// asked once and could not be answered from the repository; correct them here if
+	// the machines change.
 	flexpropRef = "v7.7.0"
 	installDir  = "flexprop_install"
 )
