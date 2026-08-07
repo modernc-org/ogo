@@ -18,6 +18,30 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+## v0.21.0
+
+Pointers — and the operations C will perform on one that this language does not.
+
+The feature is a pointer to an ARRAY. `*[3]int` passes an array by reference without
+a slice header, and it abbreviates the dereference exactly as Go does, so `p[i]`,
+`len(p)`, `range p` and `p[lo:hi]` all mean the array it points at. The
+representation was settled and measured in v0.20.0; what was owed was the
+dereference surface, and that turned out to be the whole cost of the feature.
+
+Adding it needed the other half done first. `p[i]` was accepted for **every** pointer
+type and emitted C's index, and C indexes any pointer as the array it is not: off a
+`*int` it read whatever storage followed the pointee and wrote there, silently, in a
+program Go rejects outright. That had to be refused before the one indexable pointer
+could be added, because the emitter cannot tell Go's abbreviation from C's pointer
+arithmetic — in C they are the same operation. Dereferencing a non-pointer was the
+same shape of hole one operator over, and is refused now too, wherever the operand is
+written rather than only where it is a bare name.
+
+The written-out dereference `(*p).x` also works, which is not a nicety: for a pointer
+to a slice or a string it is the only spelling there is, so those two types had no
+element access at all. It had never worked because the parentheses were being peeled
+as redundant — and they are not, `(*p).x` peeled to `*p.x` being `*(p.x)`.
+
 ### Language
 
 - **A pointer to an ARRAY**, `*[3]int` and `*Row`, which passes an array by
@@ -97,6 +121,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **`ogo fmt` spaced an index off a composite literal**, `[3]int{1, 2, 3} [0]`. The
   same rule, and the same kind of gap: a `}` was not among the tokens an index may
   follow.
+
+### Documentation
+
+- **Where each backend is generated, and what a release does not test.**
+  `internal/generator.go` said how each of the five flexcc backends is made and never
+  which machine makes it; it now carries a table of target, machine and command, plus
+  the prerequisites per target. Nothing regenerates them automatically and there is no
+  CI here — deliberately, since the backends are committed Go and `make release`
+  cross-builds every target from one host.
+
+  `scripts/release.sh` now says what a release does not verify: of the five zips it
+  publishes, exactly one can be run on the machine that built it. All five compile and
+  their test packages typecheck under `GOOS=... go vet`; nothing else about the other
+  four is checked per release, so a defect that compiles everywhere and misbehaves on
+  one platform would ship unnoticed.
 
 ## v0.20.0
 
