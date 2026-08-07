@@ -20,7 +20,7 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
-- **A channel may have an ARRAY element**, `chan [3]int`, `chan Row`. The rendezvous
+- **A channel may have an ARRAY element**, `chan [3]int`, `chan Row`, `chan [2][3]int`. The rendezvous
   cannot copy one by value — C has no array assignment, and a parameter of a
   typedef'd array type miscompiles here — so the cell holds the array and the helpers
   take a pointer both ways. A receive therefore has no expression: `v := <-ch`,

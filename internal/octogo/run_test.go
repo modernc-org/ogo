@@ -2770,6 +2770,8 @@ var t T
 
 var gw [3]int
 
+var deep chan [2][3]int
+
 // The rendezvous cannot copy an array BY VALUE -- C has no array assignment, and a
 // parameter of a typedef'd array type miscompiles here -- so the cell holds the
 // array and the helpers take a pointer both ways. A receive therefore has no
@@ -2824,9 +2826,23 @@ func main() {
 	default:
 		println("none")
 	}
+
+	// A MULTI-DIMENSIONAL element. The copy is by size and names no element type,
+	// which is what makes every rank work: a [2][3]int decays to a pointer to its
+	// ROW, not to an int, so a helper naming the innermost element mismatches it.
+	go send3()
+	m := <-deep
+	println(m[1][2], m[0][0])
+}
+
+func send3() {
+	var a [2][3]int
+	a[1][2] = 7
+	a[0][0] = 4
+	deep <- a
 }
 `,
-		want: "7 9\n99 9\n1 9\n3 8\n4 8\nnone\n",
+		want: "7 9\n99 9\n1 9\n3 8\n4 8\nnone\n7 4\n",
 	},
 	{
 		name: "a slice whose element is an array",

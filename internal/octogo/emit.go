@@ -2063,16 +2063,21 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	sendParam, sendStore := elem+" v", "ch->val = v;"
 	recvRet, recvSig, recvTake, recvOut := elem, "", elem+" v = ch->val;", "return v;"
 	tryOut, tryStore := elem+"* out", "*out = ch->val;"
-	if a, isArr := e.namedArrays[elem]; isArr {
+	if _, isArr := e.namedArrays[elem]; isArr {
 		// The element crosses by POINTER in both directions: C has no array
 		// assignment, and a parameter of a typedef'd array type miscompiles on this
 		// target (doc/array-param-corrupts.c). The cell's payload is the array
 		// itself, so both copies are a memcpy of its own size.
 		e.includes["string.h"] = true
-		sendParam, sendStore = "const "+a.elem+"* v", "memcpy((void*)ch->val, v, sizeof ch->val);"
-		recvRet, recvSig = "void", ", "+a.elem+"* out"
+		// void*, not a pointer to the element: what the caller hands over is an
+		// array, and a MULTI-DIMENSIONAL one decays to a pointer to its ROW --
+		// `int (*)[3]`, not `int*` -- so naming the innermost element mismatches
+		// every rank above one. The copy is a memcpy either way, which needs no
+		// element type at all.
+		sendParam, sendStore = "const void* v", "memcpy((void*)ch->val, v, sizeof ch->val);"
+		recvRet, recvSig = "void", ", void* out"
 		recvTake, recvOut = "memcpy(out, (const void*)ch->val, sizeof ch->val);", "return;"
-		tryOut, tryStore = a.elem+"* out", "memcpy(out, (const void*)ch->val, sizeof ch->val);"
+		tryOut, tryStore = "void* out", "memcpy(out, (const void*)ch->val, sizeof ch->val);"
 	}
 	if e.chanSendElems[elem] {
 		fmt.Fprintf(&b, `static void %[3]s(%[1]s ch, %[8]s) {
