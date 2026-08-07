@@ -1,0 +1,69 @@
+// An index, selection or call applied to a FIELD whose type has none of them:
+// "q.n[0]", "q.n.f", "q.n()". It is the twin of result_suffix.ogo one operand shape
+// over -- that one reads the type off a call's result, this one off the struct
+// declaration the field is written in -- and it reports the same three things in the
+// same words.
+//
+// Every one of these used to reach the emitter, which answered "unsupported
+// expression node FactorSuffix", naming an internal node in a program whose source
+// contains no such thing. What the emitter still answers for -- a composite field
+// type, which no predeclared Kind describes -- it now answers by naming the operand.
+
+type Inner struct {
+	v int
+}
+
+type P struct {
+	n  int
+	b  bool
+	s  string
+	xs []int
+	in Inner
+}
+
+func suffixes() {
+	var q P
+
+	// ERROR "invalid operation: cannot index q.n"
+	_ = q.n[0]
+	// ERROR "invalid operation: cannot index q.b"
+	_ = q.b[0]
+
+	// ERROR "type int has no field f"
+	_ = q.n.f
+	// ERROR "type string has no field f"
+	_ = q.s.f
+
+	// ERROR "cannot call non-function q.n"
+	_ = q.n()
+
+	// A STRING field is byte-indexable, as a string is anywhere else, and a slice
+	// and a struct field carry their own elements and fields.
+	_ = q.s[0]
+	_ = q.xs[0]
+	_ = q.in.v
+	_ = q
+}
+
+// The same three on the assignment side.
+func targets() {
+	var q P
+
+	// ERROR "invalid operation: cannot index q.n"
+	q.n[0] = 1
+
+	q.n = 1
+	q.xs[0] = 1
+	q.in.v = 1
+	_ = q
+}
+
+// A METHOD is not a field, so a call of one is not "cannot call": the field lookup
+// answers nothing for it and the check stands aside.
+func (p P) bump() int { return p.n }
+
+func methods() {
+	var q P
+	_ = q.bump()
+	_ = q
+}

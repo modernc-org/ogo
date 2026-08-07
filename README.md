@@ -287,10 +287,6 @@ broken.
 * An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
   need a struct holding an array, which the backend cannot assign. An array result on
   its own is used like any other value.
-* **An index or a selector applied to something that has neither** — `q.n[0]`,
-  `q.n.f` for an `int` field — is refused, but by the emitter and with a message
-  naming an internal node rather than the operand. Nothing is mis-emitted; the
-  message is what is owed.
 * `goto`.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.

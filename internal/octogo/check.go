@@ -3899,6 +3899,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		// A dereference "*p = e" or an element "a[i] = e" target -- a single target
 		// with a single value. The pointed-to/element type must accept the value,
 		// and the base must actually be a pointer/array.
+		// A suffix applied to a field whose type has none, on the TARGET side:
+		// `q.n[0] = 1`. Same check as the read side, and the same message, since it
+		// is the same mistake -- the postfix carries the steps here where a Factor
+		// carries them there.
+		if id, ok := f.assignHeadIdent(head); ok {
+			f.checkFieldSuffix(s, id, head.Pos(), postfix)
+		}
 		if lhsItems == 0 && len(rhs) == 1 {
 			if base, ok := f.derefAssignTarget(head, postfix); ok {
 				f.checkDerefAssign(s, base, rhs[0])
@@ -7448,6 +7455,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	// predeclared scalar ("g()[i]", "g().field", "p.m().field") is illegal there.
 	if hasID && hasSuffix {
 		f.checkResultSuffix(s, id, n.Pos(), suffix)
+		f.checkFieldSuffix(s, id, n.Pos(), suffix)
 	}
 }
 
@@ -7500,6 +7508,58 @@ func (f *File) checkResultSuffix(s *Scope, id Token, start int32, suffix Node) {
 				member = "method" // "g().m()" selects a method, not a field
 			}
 			f.err(m.Position(), "type %s has no %s %s", kindName(resultKind), member, m.Src())
+		}
+	case CallSuffix:
+		f.err(f.tok(next.Pos()).Position(), "cannot call non-function %s", name)
+	}
+}
+
+// checkFieldSuffix reports an index, selection or call applied to a FIELD whose type
+// is a predeclared scalar: "q.n[0]" and "q.n.f" ("cannot index", "type int has no
+// field f"), and "q.n()" ("cannot call non-function"). It is checkResultSuffix's
+// twin, one operand shape over -- that one reads the type off a call's result, this
+// one off the struct declaration the field is written in -- and it reports the same
+// three things in the same words.
+//
+// Only a directly-predeclared field kind answers (fieldKind reports nothing for a
+// composite or named one), so a slice, an array, a struct or a defined type is left
+// to the emitter, which resolves what this cannot. Reaching the emitter is not the
+// problem it was: what these said there was "unsupported expression node
+// FactorSuffix", naming an internal node rather than the operand.
+func (f *File) checkFieldSuffix(s *Scope, id Token, start int32, suffix Node) {
+	var ops []Node
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			ops = append(ops, c)
+		}
+	}
+	if len(ops) < 2 || ops[0].sym != Selector {
+		return
+	}
+	field, ok := f.selectorMember(ops[0])
+	if !ok {
+		return
+	}
+	kind, have := f.fieldKind(s, id, field)
+	if !have {
+		return
+	}
+	name := f.sourceSpan(start, ops[0].End()) // "q.n"
+	switch next := ops[1]; next.sym {
+	case Index:
+		// A string is byte-indexable, as it is anywhere else; a number and a bool
+		// have no elements at all.
+		if c := kindCategory(kind); c == catNumeric || c == catBool {
+			f.err(f.tok(next.Pos()).Position(), "invalid operation: cannot index %s", name)
+		}
+	case Selector:
+		if m, ok := f.selectorMember(next); ok {
+			member := "field"
+			if len(ops) > 2 && ops[2].sym == CallSuffix {
+				member = "method" // "q.n.m()" selects a method, not a field
+			}
+			f.err(m.Position(), "type %s has no %s %s", kindName(kind), member, m.Src())
 		}
 	case CallSuffix:
 		f.err(f.tok(next.Pos()).Position(), "cannot call non-function %s", name)

@@ -5448,6 +5448,54 @@ func main() {
 	}
 }
 
+// TestEmitCSuffixNamesOperand pins the emitter naming the OPERAND and the step that
+// could not be applied to it, for the chains the checker's type model cannot reach:
+// a composite field type reduces to no predeclared Kind, so field_suffix.ogo's check
+// stands aside and these arrive here.
+//
+// Every one of them used to be "unsupported expression node FactorSuffix" -- a
+// message naming an internal AST node, in a program whose source contains no such
+// thing -- and the assignment forms were "only simple and field assignment targets
+// are supported yet", which describes a missing feature where Go rejects the
+// program. The positions were checked against Go and match it.
+func TestEmitCSuffixNamesOperand(t *testing.T) {
+	const header = `type Inner struct {
+	v int
+}
+
+type P struct {
+	n  int
+	xs []int
+	p  *int
+	in Inner
+}
+
+`
+	for _, test := range []struct{ name, src, want string }{
+		{"select on a slice field", "\t_ = q.xs.f\n", "q.xs has no field f"},
+		{"unknown field of a struct field", "\t_ = q.in.zz\n", "q.in has no field zz"},
+		{"index a pointer field", "\t_ = q.p[0]\n", "cannot index q.p"},
+		{"index an element twice", "\t_ = q.xs[0][1]\n", "cannot index q.xs[0]"},
+		{"index a nested field", "\t_ = q.in.v[0]\n", "cannot index q.in.v"},
+		{"assign through an unknown field", "\tq.in.zz = 1\n", "q.in has no field zz"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := header + "func main() {\n\tvar q P\n\t_ = q\n" + test.src + "\tprintln(9)\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 // TestEmitCIndirectNonPointer pins the emitter's half of the refusal that only a
 // pointer may be dereferenced. The checker refuses the operands its type model
 // resolves -- a name, a field, a call whose result is predeclared

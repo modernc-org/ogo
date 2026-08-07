@@ -9951,13 +9951,106 @@ func orNodes(a, b []int32) []int32 {
 }
 
 // failAt reports an emitter error at a node's source position.
-func (e *emitter) failAt(n []int32, format string, args ...any) {
-	at := ""
-	for c := range it(n) {
-		at = e.f.tok(c.Pos()).Position().String()
-		break
+// failSuffixChain reports why a chain of selectors and indexes could not be
+// emitted, naming the operand each step applies to and what that operand is. It
+// walks the same steps accessChainType does and stops at the first one the value
+// reached cannot take, which is the one the program got wrong.
+//
+// It is a diagnosis, not a check: everything it reports has already been refused by
+// returning false somewhere above. What it adds is a message that names source the
+// user wrote, where the fallthrough named an AST node.
+func (e *emitter) failSuffixChain(n Node, kids []Node) {
+	base, steps, ok := e.factorAccessChain(kids)
+	if !ok {
+		e.fail("cannot read %s: this form is not supported yet", e.f.exprSource(n))
+		return
 	}
-	e.fail("%s: "+format, append([]any{at}, args...)...)
+	if e.failChainSteps(n.Pos(), base, steps) {
+		return
+	}
+	// Every step typed, so what failed was the emission rather than the shape --
+	// a chain the walkers can describe but not write, which is worth saying as
+	// itself rather than as a made-up type error.
+	e.fail("cannot read %s: this combination of indexes and fields is not supported yet", e.f.exprSource(n))
+}
+
+// failChainSteps walks base's chain and reports the first step the value reached
+// cannot take, naming the operand that step applies to in the source the user
+// wrote. start is the token the whole chain begins at, which is what the operand's
+// text is measured from. It reports whether it said anything: a chain whose every
+// step types is one the caller could not EMIT, which is a different sentence.
+//
+// Shared by the read and the assignment sides, which fail in the same ways and
+// used to describe them differently -- one naming an AST node, the other calling a
+// program Go rejects "not supported yet".
+func (e *emitter) failChainSteps(start int32, base string, steps []Node) bool {
+	cur, ok := e.accessBase(base)
+	if !ok {
+		e.failAtPos(start, "%s is not a value with fields or elements", base)
+		return true
+	}
+	for _, step := range steps {
+		reached := e.f.sourceSpan(start, step.Pos()-1)
+		switch step.sym {
+		case Selector:
+			field := e.soleIdent(step.ast)
+			next, ok := e.accessSelect(cur, field)
+			if !ok {
+				// At the NAME rather than at the dot before it, which is where Go
+				// reports it and the only part of the step the user chose.
+				e.failAtPos(e.selectorFieldPos(step, step.Pos()), "%s has no field %s", reached, field)
+				return true
+			}
+			cur = next
+		case Index:
+			if _, _, _, isSlice := e.sliceParts(step.ast); isSlice {
+				next, ok := e.accessSlice(cur)
+				if !ok {
+					e.failAt(step.ast, "cannot slice %s", reached)
+					return true
+				}
+				cur = next
+				continue
+			}
+			// The prefix is only tested for being non-empty here, never read: this
+			// walk emits nothing, so any placeholder does.
+			next, _, ok := e.accessIndex(cur, "?")
+			if !ok {
+				e.failAt(step.ast, "cannot index %s", reached)
+				return true
+			}
+			cur = next
+		default:
+			return false // a call or another suffix: not this walk's to describe
+		}
+	}
+	return false
+}
+
+func (e *emitter) failAt(n []int32, format string, args ...any) {
+	for c := range it(n) {
+		e.failAtPos(c.Pos(), format, args...)
+		return
+	}
+	e.fail(format, args...)
+}
+
+// failAtPos is failAt from a token index, for a diagnostic that points at one
+// token of a node rather than at its first.
+func (e *emitter) failAtPos(pos int32, format string, args ...any) {
+	e.fail("%s: "+format, append([]any{e.f.tok(pos).Position().String()}, args...)...)
+}
+
+// selectorFieldPos returns the token index of a Selector's field NAME, or def when
+// it has none. A Selector begins with its dot, which is not what a message about
+// the field should point at.
+func (e *emitter) selectorFieldPos(sel Node, def int32) int32 {
+	for c := range it(sel.ast) {
+		if c.sym == 0 && e.f.ch(c.tok) == IDENT {
+			return c.Pos()
+		}
+	}
+	return def
 }
 
 // sliceNeedsHelper reports whether a slice expression goes through its reslice
@@ -14008,6 +14101,20 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			return
 		}
 	}
+	// A target the shapes above did not claim. Diagnosed against the chain before
+	// the field list is built, so a step the operand's type cannot take is named as
+	// itself -- an index on an int field used to be "only simple and field
+	// assignment targets are supported yet", which describes a missing feature
+	// where Go rejects the program.
+	//
+	// Only when the base is a VALUE this walker knows. A write through an import
+	// qualifier, `pkg.V = x`, has a package name there, which is not a value with
+	// fields at all and belongs to qualifiedGlobalRead below.
+	if steps := postfix[:len(postfix)-1]; isAccessChain(steps) {
+		if _, isValue := e.accessBase(base); isValue && e.failChainSteps(head.Pos(), base, steps) {
+			return
+		}
+	}
 	var fields []string
 	for _, n := range postfix[:len(postfix)-1] {
 		fld := ""
@@ -17139,6 +17246,15 @@ func (e *emitter) emitExprNode(n Node) {
 					return
 				}
 			}
+		}
+		// A Factor carrying a SUFFIX that nothing above claimed. Emitting its
+		// children reaches the FactorSuffix node itself, which no case handles, so
+		// what came out was "unsupported expression node FactorSuffix" -- a message
+		// naming an internal node in a program whose source contains no such thing.
+		// Say what could not be done to which operand instead.
+		if n.sym == Factor && containsSym(kids, FactorSuffix) {
+			e.failSuffixChain(n, kids)
+			return
 		}
 		for _, c := range kids {
 			e.emitExprNode(c)

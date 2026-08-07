@@ -18,6 +18,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **A suffix that does not apply to its operand now names the operand.** `q.n[0]`,
+  `q.n.f`, `q.n()` for an `int` field, and the assignment forms — all programs Go
+  rejects — used to answer `unsupported expression node FactorSuffix`, naming an
+  internal AST node in source that contains no such thing. One of them, `q.n.f = 1`,
+  reached the C backend instead. They now say `cannot index q.n`, `type int has no
+  field f`, `cannot call non-function q.n`, at the position Go reports.
+
+  A field's type is read off the struct declaration, so the checker answers for a
+  predeclared one — the same twin-of-`checkResultSuffix` treatment a call's result
+  already had. A composite field type reduces to no `Kind` at all, so those reach
+  the emitter, which walks the chain and reports the first step the value cannot
+  take: `q.xs has no field f`, `cannot index q.xs[0]`. Every position was checked
+  against Go and matches.
+
 ## v0.21.0
 
 Pointers — and the operations C will perform on one that this language does not.
