@@ -5396,6 +5396,83 @@ func main() {
 	}
 }
 
+// TestEmitCWrittenDeref pins the C a written-out dereference carrying a suffix is
+// emitted in, and the one shape that is NOT emitted as a chain.
+//
+// `(*p)` names what p points at, so the suffix applies to that: a struct's field
+// through the dereference, a slice's element through the header it reaches. A
+// method call is different -- Go defines `p.m()` as the same call, and the chain
+// walkers model no call step -- so it becomes the shorthand.
+//
+// Every one of these used to fail with "unsupported expression node FactorSuffix",
+// naming a node the source does not contain. The cause was a peel: the parentheses
+// were being dropped, which turns `(*p).x` into `*p.x`, and Go reads that as
+// `*(p.x)`.
+func TestEmitCWrittenDeref(t *testing.T) {
+	src := `type P struct {
+	x  int
+	xs []int
+}
+
+func (p *P) bump() { p.x++ }
+
+func main() {
+	q := P{4, []int{1, 2}}
+	p := &q
+	println((*p).x)
+	(*p).x = 7
+	(*p).xs[0] = 5
+	(*p).bump()
+	println((*p).xs[1], len((*p).xs))
+}
+`
+	want := []string{
+		"printf(\"%d\\n\", (*p).x);", // a field through the dereference
+		"(*p).x = 7;",
+		"(*p).xs.ptr[ogo_bound(0, (*p).xs.len)] = 5;", // an element of a slice field
+		"P_bump(p);",                                  // a method call is the shorthand, not a chain
+	}
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var out bytes.Buffer
+	if err := EmitC(pkg, &out, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, w := range want {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("missing %q in:\n%s", w, out.String())
+		}
+	}
+}
+
+// TestEmitCWrittenDerefRefusal pins that a suffix the dereference cannot carry is
+// refused by name, rather than reaching the C compiler or the "unsupported
+// expression node" the whole family used to get. A `*int` has no element and no
+// field, so neither suffix applies to it.
+func TestEmitCWrittenDerefRefusal(t *testing.T) {
+	for _, test := range []struct{ name, src string }{
+		{"index", "func main() {\n\tx := 5\n\tp := &x\n\tprintln((*p)[0])\n}\n"},
+		{"field", "func main() {\n\tx := 5\n\tp := &x\n\tprintln((*p).f)\n}\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), "cannot read *p through this suffix") {
+				t.Fatalf("expected the dereference refusal, got %v", err)
+			}
+		})
+	}
+}
+
 // TestEmitCIndexNonArrayPointer pins the emitter's half of the refusal that a
 // pointer is not indexable. The checker reports the pointers its type model can
 // prove are not arrays (index_pointer.ogo); a pointee it cannot resolve reaches

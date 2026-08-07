@@ -2340,6 +2340,79 @@ func main() {
 		want: "0 2 4 3\n9 3 3 3\n5\n8 2 2\n9 0\n6\n7\n",
 	},
 	{
+		// The DEREFERENCE written out, `(*p)`, carrying a suffix. Go's `p.x` and,
+		// for a pointer to an array, `p[i]` abbreviate it, and most code writes the
+		// short form -- but for a pointer to a SLICE or a STRING the long form is
+		// the only one there is, `p[i]` being illegal on those, so without it those
+		// two types have no element access at all.
+		//
+		// Every kind of pointee is exercised, since what the dereference reaches
+		// decides how the suffix is emitted: a struct's field is a selector, a
+		// slice's element goes through its header, an array's is direct, a string's
+		// is a byte. A method call is the one suffix NOT emitted as a chain -- Go
+		// defines `p.m()` as the same call, so it is emitted as that.
+		name: "a dereference written out, carrying a suffix",
+		src: `type Inner struct {
+	v int
+}
+
+type P struct {
+	x  int
+	xs []int
+	in Inner
+}
+
+func (p *P) get() int { return p.x }
+
+func (p *P) bump() { p.x++ }
+
+func main() {
+	q := P{4, []int{1, 2, 3}, Inner{6}}
+	p := &q
+	println((*p).x, (*p).xs[1], (*p).in.v, len((*p).xs))
+	(*p).x = 9
+	(*p).x++
+	(*p).x += 2
+	(*p).xs[0] = 5
+	(*p).in.v = 3
+	println(q.x, q.xs[0], q.in.v)
+	println((*p).get())
+	(*p).bump()
+	println(q.x, (*(p)).x)
+
+	// A pointer to a SLICE: the written-out form is the only one, since an index
+	// on the pointer itself is not an operation Go has.
+	xs := []int{1, 5, 9}
+	ps := &xs
+	println((*ps)[1], len(*ps), cap(*ps))
+	(*ps)[2] = 4
+	(*ps)[2]++
+	s := (*ps)[1:]
+	println(xs[2], len(s), s[0])
+	for i, v := range *ps {
+		println(i, v)
+	}
+
+	// A pointer to an ARRAY reaches the same storage both ways.
+	a := [3]int{1, 5, 9}
+	pa := &a
+	println((*pa)[1], len(*pa), pa[1])
+	(*pa)[0] = 3
+	b := *pa
+	b[1] = 0
+	println(a[0], a[1], b[1])
+	for i, v := range *pa {
+		println(i, v)
+	}
+
+	str := "hey"
+	pstr := &str
+	println((*pstr)[1], len(*pstr))
+}
+`,
+		want: "4 2 6 3\n12 5 3\n12\n13 13\n5 3 3\n5 2 5\n0 1\n1 5\n2 5\n5 3 5\n3 5 0\n0 3\n1 5\n2 9\n101 3\n",
+	},
+	{
 		// The pointer where it is not the base of the expression: a STRUCT FIELD of
 		// one, which the dereference has to reach part-way along a chain rather than
 		// at its start. Plus the element types whose C declarator differs -- a

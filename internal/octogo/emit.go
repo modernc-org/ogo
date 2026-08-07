@@ -7526,27 +7526,56 @@ func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 	return e.hoistArrayLitExpr(ast)
 }
 
+// derefOperand recognises `*p` where p is a pointer VARIABLE, answering with its
+// name. One star only: `**p` reaches a pointer, not a value with fields or
+// elements, and nothing here models the second level.
+func (e *emitter) derefOperand(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp {
+		return "", false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != MUL {
+		return "", false
+	}
+	name, ok := e.exprIdent(e.unparenExpr(kids[1].ast))
+	if !ok {
+		return "", false
+	}
+	if ct, ok := e.varType(name); !ok || !e.isPointer(ct) {
+		return "", false
+	}
+	return name, true
+}
+
+// unparenExpr peels redundant parentheses from an expression, `(p)` and `((p))`
+// alike, returning what they enclose. It is the operand-level twin of unparenKids,
+// which peels a parenthesised factor that carries a SUFFIX; there is nothing to
+// splice here, so the enclosed expression stands on its own.
+func (e *emitter) unparenExpr(ast []int32) []int32 {
+	for {
+		kids := e.factorKids(ast)
+		if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+			kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+			return ast
+		}
+		ast = kids[1].ast
+	}
+}
+
 // arrayDerefOperand recognises `*p` where p is a pointer to an ARRAY, answering
 // with the C text for the array it points at and its extents. It is the whole-value
 // half of the dereference surface: the index, length and range paths reach the
 // array through a base they were given, while a copy is handed the dereference
 // itself and has to see through it.
 func (e *emitter) arrayDerefOperand(ast []int32) (string, arrDim, bool) {
-	nodes := slices.Collect(it(ast))
-	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
-		nodes = slices.Collect(it(nodes[0].ast))
-	}
-	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
-		return "", arrDim{}, false
-	}
-	kids := slices.Collect(it(nodes[0].ast))
-	if len(kids) != 2 || kids[0].sym != UnaryOp {
-		return "", arrDim{}, false // one star only; `**p` is not a pointer to an array
-	}
-	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != MUL {
-		return "", arrDim{}, false
-	}
-	name, ok := e.exprIdent(kids[1].ast)
+	name, ok := e.derefOperand(ast)
 	if !ok {
 		return "", arrDim{}, false
 	}
@@ -8605,6 +8634,15 @@ func (e *emitter) unparenKidsOnce(kids []Node) ([]Node, bool) {
 			return kids, false
 		}
 	}
+	// A leading UNARY OPERATOR makes the parentheses load-bearing, and peeling them
+	// changes what the program says: `(*p).x` is not `*p.x`, which Go reads as
+	// `*(p.x)`, and `(<-ch).x` is not `<-ch.x`. The peel used to take them anyway,
+	// leaving a node sequence no case matched -- which is why every `(*p).x` failed
+	// with "unsupported expression node FactorSuffix", naming a node the source does
+	// not contain. factorDerefChain handles the shape this now leaves alone.
+	if inner[0].sym == UnaryOp {
+		return kids, false
+	}
 	// A parenthesised composite TYPE is a conversion, and factorBracketConv reads it
 	// from the unreduced node -- the type it needs is the inner factor's own AST,
 	// which splicing the nodes out here would lose.
@@ -9434,6 +9472,51 @@ func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 		}
 	}
 	return name, steps, true
+}
+
+// factorDerefChain matches a parenthesised DEREFERENCE carrying a suffix, `(*p).x`
+// and `(*p)[i]`, returning the pointer's name and the steps that follow.
+//
+// Go admits the shorthands `p.x` and, for a pointer to an array, `p[i]`, and those
+// are the spellings most code uses -- but the written-out form is ordinary Go, and
+// for a pointer to a SLICE or a STRING it is the only form there is, `p[i]` being
+// illegal on those.
+func (e *emitter) factorDerefChain(kids []Node) (string, []Node, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return "", nil, false
+	}
+	name, ok := e.derefOperand(kids[1].ast)
+	if !ok {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 {
+		return "", nil, false
+	}
+	return name, steps, true
+}
+
+// derefCallSteps reports a chain through a dereference that CALLS something,
+// `(*p).m()`. Go defines `p.m()` as the same call -- a selector on a pointer to a
+// struct dereferences it, for a method as for a field -- so it is emitted as the
+// shorthand rather than through the chain walkers, which model no call step.
+func derefCallSteps(steps []Node) bool { return containsSym(steps, CallSuffix) }
+
+// derefBase resolves `(*p)` as the start of a chain: the C text naming what p
+// points at, and the value reached there.
+//
+// plainOrSlice classifies the pointee, so a slice, an array (defined or minted) and
+// a plain value each arrive as themselves -- which is what lets the chain walkers
+// treat the dereference as any other base. A pointer to an ARRAY reaches this the
+// other way too, through arrayBase, since `p[i]` names the same storage; both
+// render the same text.
+func (e *emitter) derefBase(name string) (string, accessCur, bool) {
+	ct, ok := e.varType(name)
+	if !ok || !e.isPointer(ct) {
+		return "", accessCur{}, false
+	}
+	return "(*" + e.varRef(name) + ")", e.plainOrSlice(e.elemType(ct)), true
 }
 
 // arrayConvChain matches a leading conversion to a defined array type, `Row(a)`,
@@ -10768,11 +10851,8 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.emit(ct + " " + hdr + " = " + e.exprC(h.rangeExpr) + ";\n")
 		e.emitRangeSlice(h, body, key, ct, hdr)
 	case e.rangeArray(h.rangeExpr) != nil:
-		base, _ := e.exprIdent(h.rangeExpr)
-		if _, isPtr := e.arrayPtrVar(base); isPtr {
-			base = "(*" + e.varRef(base) + ")" // `range p` iterates the array p points at
-		}
-		e.emitRangeArray(h, body, key, *e.rangeArray(h.rangeExpr), base)
+		text, a, _ := e.rangeArrayBase(h.rangeExpr)
+		e.emitRangeArray(h, body, key, a, text)
 	case ct == cString:
 		// Ranging a string iterates its runes, as Go does (not its bytes): key is the
 		// byte index of each rune's start, the two-variable value is the decoded rune,
@@ -10942,17 +11022,31 @@ func (e *emitter) rangeLitVar(rangeExpr []int32) string {
 	return name
 }
 
-// rangeArray returns the array dimension of a range operand that is a bare array
-// variable or a pointer to one, or nil.
+// rangeArray returns the array dimension of a range operand that is an array, or
+// nil.
 func (e *emitter) rangeArray(expr []int32) *arrDim {
-	base, ok := e.exprIdent(expr)
+	_, a, ok := e.rangeArrayBase(expr)
 	if !ok {
 		return nil
 	}
-	if _, a, ok := e.arrayBase(base); ok {
-		return &a
+	return &a
+}
+
+// rangeArrayBase resolves a range operand that is an ARRAY to the C text naming its
+// storage and its extents. Three spellings reach the same array: the variable
+// itself, a pointer to it -- `range p` being `range *p` -- and that dereference
+// written out.
+func (e *emitter) rangeArrayBase(expr []int32) (string, arrDim, bool) {
+	if base, ok := e.exprIdent(expr); ok {
+		if a, isPtr := e.arrayPtrVar(base); isPtr {
+			return "(*" + e.varRef(base) + ")", a, true
+		}
+		if a, isArr := e.arrayVar(base); isArr {
+			return base, a, true
+		}
+		return "", arrDim{}, false
 	}
-	return nil
+	return e.arrayDerefOperand(expr)
 }
 
 // emitSwitch emits a switch statement as an if / else-if chain. Case bodies are
@@ -12237,6 +12331,15 @@ func (e *emitter) emitAssignHeadStmt(nodes []Node) {
 func (e *emitter) emitCall(head Node, postfix []Node) {
 	recv := e.soleIdent(head.ast)
 	if recv == "" {
+		// `(*p).m()` as a statement. Go defines `p.m()` as the same call, so the
+		// receiver is the pointer and the shorthand is what is emitted -- the same
+		// equivalence the expression form uses (see derefCallSteps).
+		if name, ok := e.derefHead(head); ok {
+			e.ind()
+			e.emitCallExpr(name, postfix)
+			e.emit(";\n")
+			return
+		}
 		e.fail("unsupported call target")
 		return
 	}
@@ -12980,6 +13083,13 @@ func (e *emitter) emitLen(callSuffix []int32) {
 			return
 		}
 	}
+	// `len(*p)` written out. The dereference of a pointer to a SLICE or a STRING
+	// falls through to the header field below, which reads it off `(*p)`; an array
+	// has no header, so its extent is answered here.
+	if _, a, ok := e.arrayDerefOperand(arg); ok {
+		e.emit(a.bound)
+		return
+	}
 	// An array-typed struct field, `len(r.buf)`: its length is the declared extent,
 	// exactly as for an array variable. A slice-typed field carries a header and
 	// falls through to it below.
@@ -13035,6 +13145,13 @@ func (e *emitter) emitCap(callSuffix []int32) {
 			e.emit(a.bound)
 			return
 		}
+	}
+	// `len(*p)` written out. The dereference of a pointer to a SLICE or a STRING
+	// falls through to the header field below, which reads it off `(*p)`; an array
+	// has no header, so its extent is answered here.
+	if _, a, ok := e.arrayDerefOperand(arg); ok {
+		e.emit(a.bound)
+		return
 	}
 	if b, ok := e.arrayFieldBound(arg); ok {
 		e.emit(b) // an array's capacity is its length: see the len case
@@ -13658,6 +13775,52 @@ func (e *emitter) derefStars(headAST []int32) string {
 	return stars
 }
 
+// derefHead matches a parenthesised DEREFERENCE standing as an assignment
+// target's base, `(*p).x = v`. AssignHead is `{ "*" } ( identifier | "(" Expression
+// ")" )`, so this is the parenthesised alternative holding a `*p` -- distinct from
+// the leading-star form `*p = v`, which writes the whole pointee and is read by
+// derefStars.
+func (e *emitter) derefHead(head Node) (string, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", false
+	}
+	return e.derefOperand(kids[1].ast)
+}
+
+// emitDerefAssign emits an assignment whose target is reached through a written-out
+// dereference. It is the access-chain assignment path with the chain started from
+// what the pointer points at rather than from a variable's name -- the same pairing
+// of derefBase and the chain walkers' "At" entry points the read side uses.
+func (e *emitter) emitDerefAssign(name string, postfix []Node) {
+	text, cur, ok := e.derefBase(name)
+	if !ok {
+		e.fail("cannot assign through *%s", name)
+		return
+	}
+	chain := postfix[:len(postfix)-1]
+	if !isAccessChain(chain) {
+		e.fail("unsupported assignment target through *%s", name)
+		return
+	}
+	// Typed before anything is emitted, so a target this cannot reach leaves no
+	// half-written statement. An ARRAY target is refused with the rest: C has no
+	// array assignment, which is what dims being non-empty says.
+	at, ok := e.accessChainTypeAt(cur, chain, true)
+	if !ok || len(at.dims) != 0 {
+		e.fail("cannot assign to this target through *%s", name)
+		return
+	}
+	t, ok := e.assignTailOf(postfix[len(postfix)-1])
+	if !ok {
+		e.fail("unsupported assignment form through *%s", name)
+		return
+	}
+	t.targetCType = at.ctype
+	e.emitAssignTailOrCopy(func() { e.emitAccessChainAt(text, cur, chain, true) }, t)
+}
+
 // emitAssignment handles a single-target assignment `lhs = expr`, a field
 // assignment `base.f = expr`, a short declaration `lhs := expr`, and increment /
 // decrement. The PostfixOp is the postfix's last element; any Selectors before it
@@ -13665,6 +13828,14 @@ func (e *emitter) derefStars(headAST []int32) string {
 func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
 		e.fail("unsupported assignment target")
+		return
+	}
+	// `(*p).x = v` / `(*p)[i] = v` -- a written-out dereference as the target's
+	// base, which the grammar admits as AssignHead's parenthesised alternative.
+	// Asked before soleIdent, which finds no name in it: the only identifier is
+	// inside the parentheses, and it names the POINTER rather than the target.
+	if name, ok := e.derefHead(head); ok {
+		e.emitDerefAssign(name, postfix)
 		return
 	}
 	base := e.soleIdent(head.ast)
@@ -15896,6 +16067,25 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					return cur.ctype, true
 				}
 			}
+			// `q := (*p).x` -- the same chain, started from a dereference. It is
+			// CLAIMED: a trailing slice step has no fixed shape to be handed back to
+			// here, the fixed shapes all starting from a variable's name.
+			if name, steps, ok := e.factorDerefChain(kids); ok {
+				if derefCallSteps(steps) {
+					return e.callResultCType(name, steps)
+				}
+				_, cur, ok := e.derefBase(name)
+				if !ok {
+					return "", false
+				}
+				if cur, ok := e.accessChainTypeAt(cur, steps, true); ok && len(cur.dims) == 0 {
+					if cur.slice {
+						return sliceCName(cur.elem), true
+					}
+					return cur.ctype, true
+				}
+				return "", false
+			}
 			// `m[i][j]` -- a fully indexed multi-dimensional array yields its element.
 			// `s[i].x` / `p.pts[i].x` -- the element's selected field type.
 			// `base.f[i]` -- indexing a slice struct field. Checked before the
@@ -16820,6 +17010,21 @@ func (e *emitter) emitExprNode(n Node) {
 				if _, ok := e.emitAccessChain(base, steps); ok {
 					return
 				}
+			}
+			// `(*p).x` / `(*p)[i]` -- a written-out dereference carrying a suffix.
+			// The chain starts from what p points at, named by the dereference.
+			if name, steps, ok := e.factorDerefChain(kids); ok {
+				if derefCallSteps(steps) {
+					e.emitCallExpr(name, steps)
+					return
+				}
+				if text, cur, ok := e.derefBase(name); ok {
+					if _, ok := e.emitAccessChainAt(text, cur, steps, true); ok {
+						return
+					}
+				}
+				e.fail("cannot read *%s through this suffix", name)
+				return
 			}
 			// `m[i][j]` -- a full index into a multi-dimensional array.
 			// `s[i].x` / `p.pts[i].x` -- index a container, then select from the

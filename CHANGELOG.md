@@ -36,6 +36,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   emits C's `p[1]` — the ARRAY at offset 1 — which compiles silently and prints
   nothing like what Go prints.
 
+- **A dereference may be written out and carry a suffix**, `(*p).x`, `(*p)[i]`,
+  `(*p).m()` — what Go's `p.x` and `p[i]` abbreviate. For a pointer to a SLICE or a
+  STRING it is the only spelling there is, an index on the pointer itself being no
+  operation in either language, so those two types had no element access at all
+  before this. Reading, writing, `len`, `cap`, `range`, a slice expression, a method
+  call and a nested `(*(p)).x` all work, for every kind of pointee.
+
+  The family used to fail with `unsupported expression node FactorSuffix`, naming a
+  node the source does not contain. The cause was a peel: the parentheses were
+  dropped as redundant, and they are not — `(*p).x` peeled to `*p.x`, which Go reads
+  as `*(p.x)`. They are kept now, and a leading unary operator is what marks them as
+  load-bearing.
+
 ### Behaviour changes
 
 - **Indexing a pointer that is not one to an array is refused**, `p[i]`, on both the

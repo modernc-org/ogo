@@ -41,11 +41,10 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260807 A parenthesised DEREFERENCE cannot carry a suffix: "(*p).x" and
-// "(*p)[i]" are refused, where "p.x" and "p[i]" -- which is what Go says they mean
-// -- both work. It is the parenthesised-factor peel not seeing past a unary
-// operator, and it is not about pointers to arrays; a struct pointer is refused the
-// same way.
+// TODO 20260807 Dereferencing a non-pointer FIELD or element is not refused where
+// it is written: "*q.xs" for a slice field emits C the backend rejects, where Go
+// says "invalid operation: cannot indirect q.xs". The checker's "cannot indirect"
+// reads a bare identifier only.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
@@ -635,6 +634,18 @@
 // pointer as the array it is not, so "p[1]" off a "*int" would read past the
 // pointee. What a pointer points at is reached by "*p", and a field of a pointed-to
 // struct by "p.field".
+//
+// The DEREFERENCE may be written out and carry a suffix, "(*p).x" and "(*p)[i]",
+// which is what Go's "p.x" and "p[i]" abbreviate. For a pointer to a slice or a
+// string it is the only spelling there is, an index on the pointer itself not being
+// an operation in either language:
+//
+//	xs := []int{1, 5, 9}
+//	p := &xs
+//	println((*p)[1], len(*p))   // "p[1]" is not an operation, here or in Go
+//	(*p)[2] = 4
+//
+// A method call written that way, "(*p).m()", is the same call as "p.m()".
 //
 // # Interface types
 //

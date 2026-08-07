@@ -203,7 +203,10 @@ broken.
   slice header. It abbreviates the dereference as Go does — `p[i]` is `(*p)[i]`, and
   so are `len(p)`, `range p` and `p[lo:hi]` — while `*p` copies the array and
   copying the pointer aliases it. No other pointer is indexable, which C would not
-  say for itself.
+  say for itself. The **dereference may also be written out and carry a suffix**,
+  `(*p).x` and `(*p)[i]`; for a pointer to a slice or a string that is the only
+  spelling there is, an index on the pointer itself being no operation in either
+  language.
 * Slicing, including the capacity bound: `pool[0:0:64]` hands out a region of a
   package-level buffer that appending cannot grow past, which is how you sub-divide
   storage with no heap to allocate from.
@@ -284,8 +287,9 @@ broken.
 * An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
   need a struct holding an array, which the backend cannot assign. An array result on
   its own is used like any other value.
-* A **parenthesised dereference carrying a suffix**, `(*p).x` and `(*p)[i]`. Both
-  abbreviate to `p.x` and `p[i]`, which work.
+* **Dereferencing something that is not a pointer is not refused where it is
+  written**: `*q.xs` for a slice field reaches the C backend instead, which is the
+  wrong stage for it. Go rejects it outright.
 * `goto`.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.
