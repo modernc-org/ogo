@@ -18,6 +18,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Testing
+
+- **The fuzzer generates pointers to arrays.** `ogo smith` had no pointer variables
+  at all, so the whole dereference surface v0.21.0 added was covered by hand-written
+  tests only. It now emits `p := &a` and, in one block, writes an element through the
+  pointer, reads that element back through the ARRAY's own name, reads one through
+  the pointer, takes `len(p)` and ranges it — so the checksum disagrees if a
+  dereference is dropped, if the pointer copies instead of aliasing, or if the extent
+  is wrong.
+
+  The aliasing needed no modelling: the generation-time VM already represents an
+  array by a pointer type, so binding the pointer to the same value is what makes a
+  write through either name visible from the other. 5,600 seeds and 24 programs on a
+  P2-EDGE found nothing, which is the expected result for code that shipped with
+  tests — the point is that it is now covered on every run, and
+  `TestGeneratorCoverage` asserts all four operations still appear.
+
 ### Fixed
 
 - **A suffix that does not apply to its operand now names the operand.** `q.n[0]`,

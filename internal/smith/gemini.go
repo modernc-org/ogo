@@ -372,6 +372,12 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genStructCopy(vm, mem) // 3% chance for a by-value struct copy
 	case r < 0.97:
 		return f.genCompoundAssign(vm, mem) // 3% chance for a compound assignment
+	case r < 0.985:
+		// 1.5% chance for a pointer to an array. Taken from the checksum-mutation
+		// filler below rather than from a neighbour, so no other construct's share
+		// moved: this one emits a block of several statements, and thinning an
+		// existing construct to pay for it would trade coverage for coverage.
+		return f.genArrayPtrStmt(vm, mem)
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -976,6 +982,79 @@ func (f *Fuzzer) genArrayWrite(vm Machine, mem Memory) Node {
 	return &AssignStmtNode{Lhs: fmt.Sprintf("%s[%d]", arr.Name, idx), Op: "=", Rhs: exprNode}
 }
 
+// genArrayPtrStmt takes the address of an existing array, `p := &a`, and exercises
+// every way a pointer to one is read and written: an element written through the
+// pointer, an element read back through the ARRAY'S OWN NAME, `len(p)`, and a range
+// over it.
+//
+// A pointer to an array is the one pointer an index applies to -- `p[i]` abbreviates
+// `(*p)[i]` -- so this covers the dereference every use of one carries. The oracle
+// property that matters is the read-back: the write goes through the pointer and the
+// checksum reads the array, so a compiler that dropped the dereference (or wrote to
+// the wrong place) leaves the old value there and the checksum says so.
+//
+// The whole thing is one block, like the string and sized-integer generators: the
+// pointer is declared and used inside it and never enters the environment, so no
+// later statement can name a variable whose scope has closed.
+func (f *Fuzzer) genArrayPtrStmt(vm Machine, mem Memory) Node {
+	arrays := f.CurrentEnv.GetArraySymbols()
+	if len(arrays) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	arr := arrays[f.Rand.Intn(len(arrays))]
+	arr.Used = true
+	at := arr.Type.(ArrayType)
+	av := mem.Load(arr.Name).(*ArrayVal)
+	name := f.newVarName("pa")
+
+	stmts := []Node{&ArrayPtrDeclNode{Name: name, Array: arr.Name}}
+	fold := func(n Node, v Int32) {
+		newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, newChecksum)
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: n},
+		})
+	}
+
+	// A write THROUGH the pointer, then the same element read back through the
+	// array. Both names reach one ArrayVal here, which is what the target must do
+	// too -- the pointer aliases the array rather than copying it.
+	idx := f.Rand.Intn(at.Len)
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	av.Elems[idx] = exprVal.(Int32)
+	stmts = append(stmts, &AssignStmtNode{
+		Lhs: fmt.Sprintf("%s[%d]", name, idx),
+		Op:  "=",
+		Rhs: exprNode,
+	})
+	fold(&IndexNode{Name: arr.Name, Index: idx}, av.Elems[idx])
+
+	// Read back through the POINTER as well, and its length: len(p) is the extent
+	// of what it points at, not the size of a pointer.
+	j := f.Rand.Intn(at.Len)
+	fold(&IndexNode{Name: name, Index: j}, av.Elems[j])
+	fold(&BuiltinCallNode{Fn: "len", Arg: name}, Int32(at.Len))
+
+	// A range over the pointer iterates the array it points at. Unconditional, so
+	// every occurrence covers all three ways one is read -- index, len and range --
+	// which is what keeps the construct's coverage from depending on two dice.
+	{
+		acc := Int32(0)
+		for i, v := range av.Elems {
+			acc = Int32(int32(acc) ^ int32(i) ^ int32(v))
+		}
+		newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), acc)
+		mem.Store(f.ChecksumName, newChecksum)
+		iv, vv := f.newVarName("i"), f.newVarName("v")
+		stmts = append(stmts, &RangeFoldNode{
+			Index: iv, Value: vv, Over: name, Checksum: f.ChecksumName,
+		})
+	}
+	return &BlockNode{Statements: stmts}
+}
+
 // genElementSwap exchanges two elements of one array or slice through a multiple
 // assignment, `a[i], a[j] = a[j], a[i]` -- the swap every sort is written with, and
 // the one statement shape whose targets are LVALUES rather than names.
@@ -1359,6 +1438,18 @@ type ArrayDeclNode struct {
 func (n *ArrayDeclNode) Write(w io.Writer, indent int) {
 	writeIndent(w, indent)
 	fmt.Fprintf(w, "var %s [%d]int", n.Name, n.Len)
+}
+
+// ArrayPtrDeclNode takes the address of an array, `p := &a`. The pointer aliases
+// the array rather than copying it, which is what the statements around it check.
+type ArrayPtrDeclNode struct {
+	Name  string
+	Array string
+}
+
+func (n *ArrayPtrDeclNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s := &%s", n.Name, n.Array)
 }
 
 // IndexNode is an element of an array or a slice at a constant index.

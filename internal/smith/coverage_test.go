@@ -63,6 +63,13 @@ var generatedConstructs = []struct {
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
 	{"element swap", `\w+\[\d+\], \w+\[\d+\] = `},
+	// A pointer to an ARRAY, the one pointer an index applies to. The write and the
+	// read-back are separate entries because they are separate properties: the
+	// write must go through the dereference, and the array's own name must see it.
+	{"pointer to an array", `\n\s*pa_\d+ := &a_\d+`},
+	{"write through a pointer to an array", `\n\s*pa_\d+\[\d+\] = `},
+	{"len of a pointer to an array", `len\(pa_\d+\)`},
+	{"range over a pointer to an array", `range pa_\d+ \{`},
 	{"slice make", `make\(\[\]int`},
 	{"append", `append\(`},
 	{"len", `len\(`},
