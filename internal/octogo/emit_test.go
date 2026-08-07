@@ -5448,6 +5448,44 @@ func main() {
 	}
 }
 
+// TestEmitCIndirectNonPointer pins the emitter's half of the refusal that only a
+// pointer may be dereferenced. The checker refuses the operands its type model
+// resolves -- a name, a field, a call whose result is predeclared
+// (indirect_operand.ogo) -- and these are what reaches here instead: an element,
+// and a call returning a struct.
+//
+// It matters because C would not refuse them either way. The star was written in
+// front of the operand and the C compiler answered "invalid type argument of unary
+// *", which is a diagnostic about the emitted C in a program Go rejects outright.
+func TestEmitCIndirectNonPointer(t *testing.T) {
+	const header = `type P struct {
+	n  int
+	xs []int
+}
+
+func mk() P { return P{} }
+
+`
+	for _, test := range []struct{ name, src, want string }{
+		{"an element", "func main() {\n\tq := P{1, []int{1, 2}}\n\t_ = *q.xs[0]\n\tprintln(9)\n}\n", "cannot indirect q.xs[0]"},
+		{"a struct result", "func main() {\n\t_ = *mk()\n\tprintln(9)\n}\n", "cannot indirect mk()"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var out bytes.Buffer
+			if err = EmitC(pkg, &out); err == nil {
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 // TestEmitCWrittenDerefRefusal pins that a suffix the dereference cannot carry is
 // refused by name, rather than reaching the C compiler or the "unsupported
 // expression node" the whole family used to get. A `*int` has no element and no

@@ -51,6 +51,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **Dereferencing something that is not a pointer is refused wherever the operand is
+  written**, not only where it is a bare name: `*q.xs` for a field, `*q.xs[0]` for an
+  element, `*mk()` for a call's result, and the assignment forms of each. Go rejects
+  all of them.
+
+  They used to reach the C backend, which answered `invalid type argument of unary
+  *` — a diagnostic about the emitted C in a program that should never have got that
+  far. The cause was that the check asked for the operand's *Kind*, and a Kind
+  answers only for a predeclared type: a slice, an array or a struct operand read as
+  "type unknown", and unknown is not the same as "not a pointer". It now asks about
+  pointerness, which a field's written type answers even when it is composite. A
+  bare name is also named in the message where it used to say the word `operand`.
+
 - **Indexing a pointer that is not one to an array is refused**, `p[i]`, on both the
   read and the assignment side — the other half of the entry above, and the reason
   it had to be written first. Go admits an index on a pointer to an ARRAY and on no

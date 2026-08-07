@@ -1,0 +1,75 @@
+// Dereferencing something that is not a pointer is refused wherever the operand is
+// written, not only where it is a bare name. A FIELD is the case this was built for:
+// its type is written out in the struct's declaration, so it is resolved even when
+// it is composite -- a slice, an array, a struct -- which asking for a predeclared
+// Kind is not, and asking for one is what let `*q.xs` through to the C backend.
+//
+// What reaches the emitter instead of being resolved here -- an element, a call's
+// result -- is refused there, against the C type it inferred. Both stages have a
+// message; this one can name the operand and its position.
+
+type P struct {
+	n  int
+	s  string
+	xs []int
+	a  [2]int
+	p  *int
+	in Inner
+}
+
+type Inner struct {
+	v int
+}
+
+func readSide() {
+	var q P
+
+	// ERROR "invalid operation: cannot indirect q.n"
+	_ = *q.n
+	// ERROR "invalid operation: cannot indirect q.s"
+	_ = *q.s
+	// ERROR "invalid operation: cannot indirect q.xs"
+	_ = *q.xs
+	// ERROR "invalid operation: cannot indirect q.a"
+	_ = *q.a
+	// ERROR "invalid operation: cannot indirect q.in"
+	_ = *q.in
+
+	// The one field that IS a pointer dereferences.
+	_ = *q.p
+}
+
+func assignSide() {
+	var q P
+
+	// ERROR "invalid operation: cannot indirect q.n"
+	*q.n = 1
+	// ERROR "invalid operation: cannot indirect q.xs"
+	*q.xs = nil
+
+	*q.p = 1
+}
+
+// A bare name is refused as it always was, and now names itself rather than the
+// word "operand" where it is not a name. A composite one is newly refused: asking
+// for a Kind answered "unknown" for a slice, and unknown is not "not a pointer".
+func names() {
+	var n int
+	var xs []int
+	var p *int
+
+	// ERROR "invalid operation: cannot indirect n"
+	_ = *n
+	// ERROR "invalid operation: cannot indirect xs"
+	_ = *xs
+
+	_ = *p
+}
+
+// A call's result is refused too, by its type.
+func calls() {
+	// ERROR "invalid operation: cannot indirect num\(\)"
+	_ = *num()
+}
+
+func num() int { return 1 }

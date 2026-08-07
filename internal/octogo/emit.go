@@ -17117,6 +17117,18 @@ func (e *emitter) emitExprNode(n Node) {
 			case haveOp && e.f.ch(tok) == AND && e.isArrayConv(kids[1]):
 				e.fail("cannot take the address of a conversion: it is not addressable")
 				return
+			// A dereference of something that is NOT a pointer. The checker refuses
+			// the spellings its type model resolves (see exprPointerness); this backs
+			// it for the rest -- an element, a call's result -- because otherwise the
+			// star is written in front of the operand and the C compiler answers
+			// "invalid type argument of unary *", a diagnostic about the emitted C
+			// rather than about the program. A type it cannot infer is left alone,
+			// so this only ever refuses what it has resolved.
+			case haveOp && e.f.ch(tok) == MUL:
+				if ct, ok := e.inferNode(kids[1]); ok && !e.isPointer(ct) {
+					e.fail("cannot indirect %s: it is not a pointer", e.f.exprSource(kids[1]))
+					return
+				}
 			// Unary minus on a narrow type: C negates the promoted int, Go negates
 			// in the type. See narrowCType.
 			case haveOp && e.f.ch(tok) == SUB:

@@ -41,10 +41,11 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260807 Dereferencing a non-pointer FIELD or element is not refused where
-// it is written: "*q.xs" for a slice field emits C the backend rejects, where Go
-// says "invalid operation: cannot indirect q.xs". The checker's "cannot indirect"
-// reads a bare identifier only.
+// TODO 20260807 Applying an INDEX or a SELECTOR to something that has neither --
+// "q.n[0]", "q.n.f" for an int field -- is refused, but by the emitter and with a
+// message naming an internal node ("unsupported expression node FactorSuffix")
+// rather than the operand. Go names both the operand and its type. Nothing is
+// mis-emitted; the message is what is owed.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

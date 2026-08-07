@@ -3902,6 +3902,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if lhsItems == 0 && len(rhs) == 1 {
 			if base, ok := f.derefAssignTarget(head, postfix); ok {
 				f.checkDerefAssign(s, base, rhs[0])
+			} else if base, field, ok := f.derefFieldAssignTarget(head, postfix); ok {
+				f.checkDerefFieldAssign(s, base, field)
 			} else if base, ok := f.indexAssignTarget(head, postfix); ok {
 				f.checkIndexAssign(s, base, rhs[0])
 			}
@@ -6419,6 +6421,60 @@ func (f *File) derefAssignTarget(head, postfix Node) (base Token, ok bool) {
 	return base, stars == 1 && base.IsValid()
 }
 
+// derefFieldAssignTarget reports the base and field of a dereference assignment
+// target reached through a FIELD, `*q.n = e`. derefAssignTarget declines anything
+// with a selector in the postfix, so this is what is left of that family: one star,
+// a plain base, and exactly one selector. A deeper chain, `*q.in.p = e`, needs the
+// whole path resolved and is left alone.
+func (f *File) derefFieldAssignTarget(head, postfix Node) (base, field Token, ok bool) {
+	stars := 0
+	for c := range it(head.ast) {
+		if c.sym != 0 {
+			return Token{}, Token{}, false
+		}
+		switch tok := f.tok(c.tok); Symbol(tok.Ch) {
+		case MUL:
+			stars++
+		case IDENT:
+			base = tok
+		default:
+			return Token{}, Token{}, false
+		}
+	}
+	if stars != 1 || !base.IsValid() {
+		return Token{}, Token{}, false
+	}
+	selectors := 0
+	for c := range it(postfix.ast) {
+		switch c.sym {
+		case Selector:
+			selectors++
+			if m, ok := f.selectorMember(c); ok {
+				field = m
+			}
+		case Index, CallSuffix:
+			return Token{}, Token{}, false
+		}
+	}
+	return base, field, selectors == 1 && field.IsValid()
+}
+
+// checkDerefFieldAssign reports `*q.n = e` where the field is not a pointer. What
+// the star applies to is the FIELD -- Go reads `*q.n` as `*(q.n)` -- and a field's
+// type is written out in the struct's declaration, so it is resolved even when it
+// is composite, which asking for a predeclared Kind is not (see exprPointerness).
+//
+// Without it the star reached the emitter, which wrote it in front of the field and
+// left "invalid type argument of unary *" to the C compiler: a diagnostic about the
+// emitted C, in a program Go rejects outright.
+func (f *File) checkDerefFieldAssign(s *Scope, base, field Token) {
+	tn := f.fieldTypeNode(s, base, field)
+	if tn == nil || f.isPointerType(s, tn) {
+		return
+	}
+	f.err(base.Position(), "invalid operation: cannot indirect %s.%s", base.Src(), field.Src())
+}
+
 // indexAssignTarget reports the base identifier of an element assignment target
 // "base[i] = e": the head is a plain identifier and the postfix carries exactly one
 // index and no selector or call, so the target is a single element of base.
@@ -6604,12 +6660,13 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	// modelled, so the check stops here in either case.
 	switch inner := ops[len(ops)-1]; f.unaryOp(s, inner) {
 	case MUL:
-		if _, known := f.exprType(s, fac); known && !f.exprIsPointer(s, fac) {
-			name := "operand"
-			if id, ok := f.exprIdent(fac); ok {
-				name = id.Src()
-			}
-			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s", name)
+		// Asked of the operand's POINTERNESS rather than of its Kind. A Kind answers
+		// only for a predeclared type, so a slice, an array or a struct operand read
+		// as "type unknown" and slipped through -- `*q.xs` reached the C backend,
+		// which called it "invalid type argument of unary *", a diagnostic about the
+		// emitted C rather than about the program.
+		if isPtr, known := f.exprPointerness(s, fac); known && !isPtr {
+			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s", f.exprSource(fac))
 		}
 		return
 	case ARROW:
@@ -7867,6 +7924,23 @@ func (f *File) exprPointerness(s *Scope, n Node) (isPtr, known bool) {
 			}
 			return false, d.hasKind || d.typeName.IsValid() || d.hasElemKind || d.isChan || d.isFunc
 		}
+	}
+	// A FIELD read, `q.xs`. Its type is written out in the struct's declaration, so
+	// it is resolved rather than inferred -- which is what lets this answer for a
+	// composite one, where asking for a predeclared Kind cannot: a slice, an array
+	// and a struct all reduce to no Kind at all, and "no Kind" is not "not a
+	// pointer".
+	if head, field, ok := f.exprFieldRead(n); ok {
+		if tn := f.fieldTypeNode(s, head, field); tn != nil {
+			return f.isPointerType(s, tn), true
+		}
+	}
+	// Anything whose type reduces to a predeclared Kind is not a pointer either.
+	// This is the narrower, older answer and it comes last: it covers the shapes
+	// with no declaration to read a type node off -- a call's result, an index --
+	// while saying nothing about the composite ones the cases above resolve.
+	if _, known := f.exprType(s, n); known {
+		return false, true
 	}
 	return false, false
 }
