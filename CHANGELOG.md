@@ -18,6 +18,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+## v0.20.0
+
+Arrays as element types. A slice or a channel may have an array element of any rank
+— `[][2]int`, `chan [3]int`, `chan [2][3]int` — with every operation over them:
+`make`, indexing, `range`, `append`, `copy`, reslicing, literals, a struct field of
+that type, and `select` on the channel forms.
+
+The slice half shipped in v0.18.0 and was withdrawn in v0.19.0 as unsound. That
+withdrawal was right about the code and **wrong about the reason**, which is the more
+useful half of this release: a pointer to a typedef'd array is fine on this target,
+and what actually corrupted the program was a generated helper taking the element by
+value — a parameter whose *type* is a typedef'd array corrupts unrelated code
+elsewhere in the same translation unit, silently and non-locally.
+`doc/array-param-corrupts.c` reduces that to thirty lines, gcc against board. Every
+such helper takes a pointer now, which is also what made the channel forms possible.
+
+The rule the fix came from is written down in `internal/octogo/octogo.go`: readable
+generated C is a debugging aid, not the objective, and when a generated identifier or
+type unblocks a construct the language needs, it wins — at the known cost of one name
+per shape, consistent substitution, and care at link time.
+
 ### Language
 
 - **A channel may have an ARRAY element**, `chan [3]int`, `chan Row`, `chan [2][3]int`. The rendezvous
@@ -44,13 +65,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **The slice-of-arrays revert was misdiagnosed**, and the record is corrected. A
   pointer to a typedef'd array is *fine* on this target — measured on a P2-EDGE. What
   broke the implementation was the generated `append` helper taking the element by
-  value: **a function parameter of array type corrupts unrelated code elsewhere in
-  the same program**, silently, and the wrong value is not even stable across
-  unrelated edits. `doc/array-param-corrupts.c` isolates it in thirty lines, gcc
+  value: **a parameter whose type is a *typedef'd* array corrupts unrelated code
+  elsewhere in the same program**, silently, and the wrong value is not even stable
+  across unrelated edits. The spelled-out `int v[2]` and `int v[]` are both fine,
+  which is why nothing else in the compiler was affected. `doc/array-param-corrupts.c` isolates it in thirty lines, gcc
   against board. ogo has always avoided array parameters for user functions — a
   `func take(a [3]int)` is emitted as `int take(int* _ogo_a)` — so the only one it
   ever emitted was in that helper. The feature is implementable after all; the revert
   itself stands, since the code that shipped was genuinely wrong.
+
+- **A pointer to an array is documented as unsupported**, `*[3]int`. It always was,
+  but no bullet said so, and it is what the array-by-value refusals point at. The
+  representation is settled and measured; what is missing is that Go's `p[i]` means
+  `(*p)[i]`, so every path that indexes, assigns through, measures or ranges a base
+  would have to render the dereference. Pass a slice of the array or a pointer to a
+  struct holding it.
 
 ## v0.19.0
 
