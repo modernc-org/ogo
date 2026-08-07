@@ -687,6 +687,59 @@ func f(a [3]int, s []int) [2]int {
 	}
 }
 
+// TestFormatPointerToArraySpacing pins a "[" binding tight to the "*" of a pointer
+// type and to the "&" of an address-of, "*[3]int" and "&[2]int{1, 2}", where the
+// index rule alone spaced them off as "* [3]int". The rule asks only whether the
+// previous token could end an operand, which is right for an index and wrong here,
+// and nothing wrote a pointer to an array until it was supported.
+//
+// The BINARY forms are pinned beside them, since telling the two apart is the whole
+// content of the rule: "n * [3]int{1, 2, 3}[0]" is a multiplication by an element of
+// a literal, and gofmt spaces it. Both spellings were checked against gofmt.
+func TestFormatPointerToArraySpacing(t *testing.T) {
+	const in = `type box struct {
+p * [3]int
+q *[2][3]int
+r *int
+}
+
+func f(p * [3]int, n int) int {
+a := & [2]int{1, 2}
+b := n*[3]int{1, 2, 3}[0]
+c := n&[3]int{7, 7, 7}[1]
+return p[0] + a[1] + b + c
+}
+`
+	const want = `type box struct {
+	p *[3]int
+	q *[2][3]int
+	r *int
+}
+
+func f(p *[3]int, n int) int {
+	a := &[2]int{1, 2}
+	b := n * [3]int{1, 2, 3}[0]
+	c := n & [3]int{7, 7, 7}[1]
+	return p[0] + a[1] + b + c
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("pointer-to-array spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatAssignOps pins the compound assignment operators being spaced like the
 // plain "=" -- they reach the same isAssignOp spacing rule -- and the result being
 // a fixed point, which catches an operator that round-trips to different text.

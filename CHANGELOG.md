@@ -59,6 +59,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   it. A pointer to a SLICE was the case that needed both, since `ogo_slice_int*`
   shares a prefix with the header type and was being mistaken for one.
 
+### Fixed
+
+- **`ogo fmt` spaced a `[` off the `*` or `&` in front of it**, writing `* [3]int`
+  for `*[3]int` and `& [2]int{1, 2}` for `&[2]int{1, 2}`. Its rule for `[` asks only
+  whether the previous token could end an operand — which is what tells an index
+  from a type, and a `*` or `&` cannot. The pointer form was unwritable until this
+  release, so nothing had run into it. The binary spellings keep their spaces,
+  `n * [3]int{1, 2, 3}[0]` being a multiplication; both were checked against gofmt.
+
+- **`ogo fmt` spaced an index off a composite literal**, `[3]int{1, 2, 3} [0]`. The
+  same rule, and the same kind of gap: a `}` was not among the tokens an index may
+  follow.
+
 ## v0.20.0
 
 Arrays as element types. A slice or a channel may have an array element of any rank

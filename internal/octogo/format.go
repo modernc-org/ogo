@@ -288,12 +288,25 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// its brackets together.
 	//
 	// An index is the only thing that binds tight, and it is recognisable from what
-	// it indexes: a name, or a closing bracket or paren. A '[' anywhere else opens a
-	// type, whether or not inType is set -- an array or slice literal is a type in
-	// an expression -- and is spaced like an ordinary operand, so "x := [4]int{...}"
-	// does not come out as "x :=[4]int{...}".
+	// it indexes: a name, a closing bracket or paren, or the '}' that closes a
+	// composite literal ("[3]int{1, 2, 3}[0]", which gofmt writes tight). A '['
+	// anywhere else opens a type, whether or not inType is set -- an array or slice
+	// literal is a type in an expression -- and is spaced like an ordinary operand,
+	// so "x := [4]int{...}" does not come out as "x :=[4]int{...}".
+	// A '[' straight after a '*' or '&' that is a POINTER or an address-of belongs to
+	// what the operator applies to and binds tight: the type "*[3]int", and the
+	// address of an array literal "&[2]int{1, 2}". Both came out as "* [3]int" --
+	// the '[' rule below sees only that the previous token is not a name, which is
+	// what an index needs, and a pointer to an array was refused until now so
+	// nothing wrote one. The unary/binary test is the one the '*' rule further down
+	// uses, for the same reason: "n * [3]int{1, 2, 3}[0]" is a multiplication.
+	case curr == LBRACK && (prev == MUL || prev == AND):
+		if prev == MUL && (c.inType || c.inParams) {
+			return false // in type syntax a '*' is always a pointer
+		}
+		return isOperandEnd(prevPrev)
 	case curr == LBRACK:
-		return c.inType || (prev != IDENT && prev != RBRACK && prev != RPAREN)
+		return c.inType || (prev != IDENT && prev != RBRACK && prev != RPAREN && prev != RBRACE)
 	// A slice ":" takes spaces when the slice writes more than one bound and one of
 	// them is a binary expression ("xs[i+1 : j-1]", "a[i+1 : j : k]"), matching
 	// gofmt; otherwise it binds tight (the cases just below). The decision is
@@ -342,25 +355,17 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		if prev == MUL && (c.inType || c.inParams) {
 			return false
 		}
-		// Check the token BEFORE the operator to determine its context
-		switch prevPrev {
-
-		// If preceded by a literal, closing punctuation, or an identifier:
-		case INT, STRING, CHAR, RPAREN, RBRACK, IDENT:
-
-			// Otherwise, it's a binary operator!
-			// Respect the hasAddOp precedence for MulOps to group multiplication:
-			if isMulOp(prev) {
-				return !c.hasAddOp
-			}
-			return true
-
-		// For all other preceding tokens (keywords, operators, opening punctuation),
-		// this must be a unary operator.
-		// Examples: a = *b, return &x, ch <- -y
-		default:
+		// Check the token BEFORE the operator to determine its context: preceded by
+		// an operand, it is binary; by anything else -- a keyword, an operator,
+		// opening punctuation -- it is unary ("a = *b", "return &x", "ch <- -y").
+		if !isOperandEnd(prevPrev) {
 			return false
 		}
+		// Respect the hasAddOp precedence for MulOps to group multiplication:
+		if isMulOp(prev) {
+			return !c.hasAddOp
+		}
+		return true
 
 	case isAssignOp(curr) || isRelOp(curr):
 		return true
@@ -379,6 +384,17 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 
 func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
 	return needsSpace(f.prevPrevTok, prev, curr, c)
+}
+
+// isOperandEnd reports whether a token can END an operand -- a literal, a name, or
+// a closing bracket or paren. It is how "*" and "&" are told apart from their unary
+// forms: an operator with an operand before it is binary, and one without is unary.
+func isOperandEnd(s Symbol) bool {
+	switch s {
+	case INT, STRING, CHAR, RPAREN, RBRACK, IDENT:
+		return true
+	}
+	return false
 }
 
 // isAssignOp reports whether s is an assignment operator, for spacing: the plain
