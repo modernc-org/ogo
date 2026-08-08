@@ -84,6 +84,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Examples and tests
 
+- **The fuzzer generates interfaces.** It generated none at all before, which meant
+  the newest and least-exercised part of the compiler was the one part `ogo smith`
+  could not reach. Every generated struct now implements one fixed-name method, so a
+  single interface type is satisfied by all of them — that is what makes the dispatch
+  DYNAMIC to the compiler while staying static to the generator, which is what an
+  oracle fuzzer needs to predict the answer. Each generated interface statement binds
+  the interface to a struct variable and then reads the same field back three ways:
+  a plain call through the vtable, a type assertion with the call on its result, and
+  a type switch with one case per concrete type — so the cases that must NOT be taken
+  are exercised as well as the one that must. All three have to agree, and the VM
+  knows what they agree on.
+
 - **`_examples/life`** — Conway's Game of Life, and the first example that imports
   nothing at all: no pin, no cog, no intrinsic, just arrays, structs, methods and
   loops. Give the source a package clause and spell `printf` `fmt.Printf` and it

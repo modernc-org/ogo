@@ -41,6 +41,13 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	for i, n := 0, f.Rand.Intn(3); i < n; i++ {
 		f.genStructType()
 	}
+	// 3.5. One interface type, satisfied by every struct above. It is declared only
+	// when there is something to satisfy it: an interface no type implements can be
+	// declared but never usefully held, and an unused declaration is noise in a
+	// failing seed.
+	if len(f.Structs) != 0 {
+		fmt.Fprintf(f.Out, "type %s interface {\n\t%s() int\n}\n\n", ifaceTypeName, ifaceMethod)
+	}
 
 	// 4. Generate the functions main will call. They come first so that every call
 	// site in main has one to draw on, and they take no part in the environment:
@@ -378,6 +385,12 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		// moved: this one emits a block of several statements, and thinning an
 		// existing construct to pay for it would trade coverage for coverage.
 		return f.genArrayPtrStmt(vm, mem)
+	case r < 0.995:
+		// 1% chance for an interface, taken from the checksum-mutation filler for
+		// the same reason the line above was: it emits a block of several
+		// statements, and paying for it out of a neighbour would trade coverage
+		// for coverage.
+		return f.genInterfaceStmt(vm, mem)
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -1839,6 +1852,11 @@ func (n *MethodsNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, "func (r *%s) %s(v int) int {\n\tr.%s = v\n\treturn r.%s\n}\n\n", d.Name, d.Set, f0, f0)
 	fmt.Fprintf(w, "func (r %s) %s(v int) int {\n\tr.%s = v\n\treturn r.%s\n}\n\n", d.Name, d.Shadow, f0, f0)
 	fmt.Fprintf(w, "func (r %s) %s() { %s = %s ^ r.%s }\n", d.Name, d.Emit, d.Checksum, d.Checksum, f0)
+	// Val is the one method every struct spells the SAME way, which is what lets a
+	// single interface type be satisfied by all of them -- and therefore what makes
+	// the dispatch dynamic rather than a call with extra steps. A POINTER receiver,
+	// because a pointer is what an interface holds here.
+	fmt.Fprintf(w, "\nfunc (r *%s) %s() int { return r.%s }\n", d.Name, ifaceMethod, f0)
 }
 
 // MethodCallNode is `v.m()` or `v.m(arg)`.
@@ -1887,4 +1905,148 @@ type FieldNode struct {
 
 func (n *FieldNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, "%s.%s", n.Name, n.Field)
+}
+
+// ifaceTypeName and ifaceMethod name the one interface every generated program
+// declares, and the method every generated struct implements. Both are fixed rather
+// than counted: the point of an interface here is that MORE THAN ONE concrete type
+// satisfies it, and two types cannot share a method set if their methods are named
+// apart.
+const (
+	ifaceTypeName = "Valuer"
+	ifaceMethod   = "Val"
+)
+
+// IfaceDeclNode is `var i Valuer = &v`, binding an interface to a struct variable.
+type IfaceDeclNode struct {
+	Name, Recv string
+}
+
+func (n *IfaceDeclNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "var %s %s = &%s", n.Name, ifaceTypeName, n.Recv)
+}
+
+// IfaceCallNode is `i.Val()`, a call THROUGH the interface -- an indirect call via
+// the vtable, where a direct one would be a load.
+type IfaceCallNode struct {
+	Name string
+}
+
+func (n *IfaceCallNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s.%s()", n.Name, ifaceMethod)
+}
+
+// AssertCallNode is `i.(*S).Val()`: an assertion to the concrete type, and the call
+// on its result where it stands. The assertion must SUCCEED -- the generator knows
+// the dynamic type -- because a failing one panics, and a panicking program tells
+// the oracle nothing it can check.
+type AssertCallNode struct {
+	Name, Type string
+}
+
+func (n *AssertCallNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s.(*%s).%s()", n.Name, n.Type, ifaceMethod)
+}
+
+// IfaceSwitchNode is a type switch over an interface, with one case per concrete
+// type the program declares and a default. Exactly one arm runs, and which one is
+// what the vtable comparison decides; the VM knows which, so a wrong dispatch shows
+// as a wrong checksum.
+type IfaceSwitchNode struct {
+	Iface, Checksum string
+	Types           []string // one case per concrete type, in order
+	Weights         []int    // the multiplier each arm folds with, so the arms differ
+}
+
+func (n *IfaceSwitchNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "switch x := %s.(type) {\n", n.Iface)
+	for i, t := range n.Types {
+		writeIndent(w, indent)
+		fmt.Fprintf(w, "case *%s:\n", t)
+		writeIndent(w, indent+1)
+		fmt.Fprintf(w, "%s = %s ^ (x.%s() * %d)\n", n.Checksum, n.Checksum, ifaceMethod, n.Weights[i])
+	}
+	writeIndent(w, indent)
+	fmt.Fprint(w, "default:\n")
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "%s = %s ^ 99\n", n.Checksum, n.Checksum)
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}")
+}
+
+// genInterfaceStmt binds an interface to a struct variable and then reads its field
+// back through it three ways: a plain call, an assertion to the concrete type, and a
+// type switch. All three must agree, and the VM knows what they agree ON, because
+// the generator chose the concrete type and can look the field up directly.
+//
+// This is what makes an interface fuzzable at all despite the oracle needing to
+// predict everything: dispatch is dynamic to the COMPILER and static to the
+// generator.
+func (f *Fuzzer) genInterfaceStmt(vm Machine, mem Memory) Node {
+	if len(f.Structs) == 0 {
+		return f.genChecksumMutation(vm, mem) // no concrete type to hold
+	}
+	// A struct VARIABLE is what an interface is bound to, and there may be none in
+	// scope yet. Declaring one rather than giving up is what makes this construct
+	// appear as often as its share of the dispatch says it should: bailing turned
+	// most of the draws into a plain checksum mutation.
+	//
+	// It is declared in a SCOPE OF ITS OWN, pushed and popped around this block,
+	// because the block is what it is written inside: registered in the enclosing
+	// scope instead, the generator went on referring to a name C had already
+	// dropped at the closing brace.
+	var stmts []Node
+	structs := f.CurrentEnv.GetStructSymbols()
+	if len(structs) == 0 {
+		mem.PushScope()
+		f.CurrentEnv = NewScope(f.CurrentEnv)
+		defer func() {
+			f.CurrentEnv = f.CurrentEnv.Parent
+			mem.PopScope()
+		}()
+		stmts = append(stmts, f.genStructDecl(vm, mem))
+		if structs = f.CurrentEnv.GetStructSymbols(); len(structs) == 0 {
+			return f.genChecksumMutation(vm, mem)
+		}
+	}
+	sym := structs[f.Rand.Intn(len(structs))]
+	sym.Used = true
+	sv := mem.Load(sym.Name).(*StructVal)
+	val := sv.Fields[sv.Def.Fields[0]]
+
+	name := f.newVarName("if")
+	stmts = append(stmts, &IfaceDeclNode{Name: name, Recv: sym.Name})
+
+	fold := func(n Node, v Int32) {
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: n},
+		})
+		cs, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, cs)
+	}
+	fold(&IfaceCallNode{Name: name}, val)
+	fold(&AssertCallNode{Name: name, Type: sv.Def.Name}, val)
+
+	// The type switch, over every concrete type the program has. Only the arm for
+	// this variable's type runs; the others are there to be NOT taken, which is the
+	// half of a vtable comparison a single-case switch would never exercise.
+	sw := &IfaceSwitchNode{Iface: name, Checksum: f.ChecksumName}
+	var taken Value = Int32(0)
+	for i, def := range f.Structs {
+		sw.Types = append(sw.Types, def.Name)
+		sw.Weights = append(sw.Weights, i+2)
+		if def == sv.Def {
+			taken, _ = vm.Eval("*", val, Int32(i+2))
+		}
+	}
+	stmts = append(stmts, sw)
+	cs, _ := vm.Eval("^", mem.Load(f.ChecksumName), taken)
+	mem.Store(f.ChecksumName, cs)
+	return &BlockNode{Statements: stmts}
 }

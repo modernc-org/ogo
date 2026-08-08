@@ -88,6 +88,19 @@ var generatedConstructs = []struct {
 	{"deferred call", `\n\s*defer sink_\d+\(v\)`},
 	{"deferred method call, value receiver", `\n\s*defer dr_\d+\.emit_\d+\(\)`},
 	{"call of a defer-carrying procedure", `\n\s*dp_\d+\(\)`},
+	// Interfaces. Every struct implements Val the SAME way round, which is what lets
+	// one interface type hold any of them -- and what makes the dispatch dynamic to
+	// the compiler while staying static to the generator, so the oracle can still
+	// predict it. The four call shapes are separate entries because they lower
+	// differently: through the vtable, through an assertion, and through the case
+	// comparisons of a type switch.
+	{"interface method declaration", `\nfunc \(r \*S_\d+\) Val\(\) int`},
+	{"interface type", `\ntype Valuer interface`},
+	{"interface variable bound to a struct", `\n\s*var if_\d+ Valuer = &st_\d+`},
+	{"call through an interface", `if_\d+\.Val\(\)`},
+	{"type assertion, then a call on its result", `if_\d+\.\(\*S_\d+\)\.Val\(\)`},
+	{"type switch on an interface", `switch x := if_\d+\.\(type\)`},
+	{"type switch case not taken", `case \*S_\d+:\n\s*\w+ = \w+ \^ \(x\.Val\(\)\*\d+\)\n\s*case \*S_\d+:`},
 }
 
 // TestGeneratorCoverage asserts that the generator still emits every construct it
