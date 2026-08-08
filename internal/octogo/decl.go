@@ -12,7 +12,9 @@ import (
 )
 
 // Name definitions for predeclared identifiers.
-const preclaredNames = `// bool is the set of boolean values, true and false.
+const preclaredNames = `// any is an alias for interface{} and is equivalent to it in all ways.
+any
+// bool is the set of boolean values, true and false.
 bool
 // byte is an alias for uint8 and is equivalent to uint8 in all ways. It is
 // used, by convention, to distinguish byte values from 8-bit unsigned integer
@@ -114,7 +116,6 @@ out:
 		}
 	}
 
-	//TODO any = interface
 	//TODO len(), cap()
 
 	Universe.Declarations = map[string]Declaration{}
@@ -141,6 +142,22 @@ out:
 	// construction (NewBuilder) and methods are handled by the emitter. Intended to
 	// become strings.Builder once packages land -- see specs.go.
 	f("Builder", PredeclaredBuilder)
+	// any is Go's alias for the empty interface, and is registered AS one -- a type
+	// declaration over an interface with no methods -- rather than as a Kind of its
+	// own. Everything that keys on a variable's type being an interface then works
+	// for it with no case of its own: assigning a pointer in, asserting one back
+	// out, a type switch. It is what `type any interface{}` in a source file gives,
+	// spelled once in the universe.
+	//
+	// Go added it in 1.18, with generics, so it is outside "pre-generics Go" read
+	// by date -- but it is only a spelling of interface{}, which is not, and the
+	// policy is about what the language can express (see specs.go).
+	anyTok := names["any"]
+	Universe.Declarations["any"] = &TypeDeclaration{
+		declaration: declaration{token: anyTok},
+		TypeSpec:    &TypeSpecNode{Name: anyTok, TypeNode: &TypeNodeInterface{}},
+	}
+
 	// Type aliases
 	f("byte", PredeclaredUint8)
 	f("int", PredeclaredInt32)

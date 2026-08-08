@@ -2272,6 +2272,69 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// An interface written where a type is WANTED rather than declared with one
+		// of its own -- "interface{ area() int }" as a parameter, and the empty
+		// "interface{}" that "any" spells. Everything the interface machinery does is
+		// keyed by a name, so giving the shape one is the whole of what it needed.
+		//
+		// The identities are the part worth running: "any" and "interface{}" are ONE
+		// type, and so are two anonymous interfaces with the same method set, so a
+		// value passes between them. That falls out of keying the minted name by the
+		// method set rather than by where it was written -- and it is what would
+		// break if two spellings each minted their own.
+		name: "an interface type written where a type is wanted",
+		src: `type Shape interface {
+	area() int
+}
+
+type Sq int
+
+type Circ int
+
+func (s *Sq) area() int   { return int(*s) * int(*s) }
+func (c *Circ) area() int { return 3 * int(*c) * int(*c) }
+
+// An interface written where a type is wanted, rather than declared with one of
+// its own: as a parameter, and as the empty one that "any" spells.
+func measure(s interface{ area() int }) int { return s.area() }
+
+func kind(e any) int {
+	switch t := e.(type) {
+	case *Sq:
+		return t.area()
+	case *Circ:
+		return t.area()
+	}
+	return -1
+}
+
+func hold(e interface{}) any { return e }
+
+func main() {
+	q := Sq(4)
+	c := Circ(2)
+	println(measure(&q), measure(&c))
+	println(kind(&q), kind(&c))
+
+	// "any" and "interface{}" are one type, so a value passes between them.
+	var a any = &q
+	var b interface{} = hold(a)
+	p := b.(*Sq)
+	println(p.area())
+
+	// Two anonymous interfaces of the same method set are one type too.
+	var m1 interface{ area() int } = &q
+	var m2 interface{ area() int } = m1
+	println(m2.area())
+
+	// A named interface is unaffected.
+	var s Shape = &c
+	println(s.area())
+}
+`,
+		want: "16 12\n16 12\n16\n16\n12\n",
+	},
+	{
 		// `len` and `cap` of an ARRAY reached through a chain: a ROW of a
 		// multi-dimensional one, `len(m[0])`, a struct's array field, that field's
 		// row, a row through a pointer, a row of a DEFINED array type, and a field

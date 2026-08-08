@@ -681,6 +681,20 @@
 // interface made from one may not outlive the function. A call's result has no
 // address in Go either -- bind it to a variable and take that.
 //
+// An interface type may be written where a type is WANTED rather than declared with
+// a name of its own -- as a parameter, a variable's type, a struct field -- and the
+// empty one is spelled "any" as well:
+//
+//	func measure(s interface{ area() int }) int { return s.area() }
+//
+//	var e any = &q                  // the same type as interface{}
+//	var f interface{} = e
+//
+// Identity is by METHOD SET, not by where the type was written or in what order its
+// methods were listed: two anonymous interfaces with the same methods are one type,
+// and a value passes between them. "any" is exactly the empty one, so it and
+// "interface{}" are interchangeable.
+//
 // Go's method-set rule is kept, since it is what makes the address correct: a value
 // of T carries the methods declared on T and *T carries all of them. Taking the
 // address is therefore never the thing that makes a type fail to implement an

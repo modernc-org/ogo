@@ -2626,7 +2626,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -3151,32 +3151,33 @@ type emitter struct {
 	retStructs         map[string]string        // result-struct typedef name -> the result types it stands for
 	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
-	anonStructNames    map[string]string        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
-	sliceElems         map[string]bool          // element C types that need an ogo_slice_<T> typedef
-	sliceElemByName    map[string]string        // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
-	appendElems        map[string]bool          // element C types needing the trapping ogo_append_<T> helper
-	tryappendElems     map[string]bool          // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
-	copyElems          map[string]bool          // element C types needing the ogo_copy_<T> helper for the copy builtin
-	resliceElems       map[string]bool          // element C types needing the ogo_reslice_<T> helper, a bounds-checked slice expression
-	reslice3Elems      map[string]bool          // element C types needing its three-bound twin, ogo_reslice3_<T>
-	usesResliceStr     bool                     // a string is sliced through the helper: emit ogo_reslice_str
-	resliceCalled      bool                     // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
-	usesCopyStr        bool                     // copy(dst []byte, src string) is used: emit the ogo_copystr helper
-	usesBuilder        bool                     // the Builder type is used: emit its typedef and method helpers
-	importQualifiers   map[string]string        // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
-	curPkgPrefix       string                   // the C symbol prefix of the package whose file is currently being emitted ("" for main)
-	clearElems         map[string]bool          // element C types needing the ogo_clear_<T> helper for the clear builtin
-	minElems           map[string]bool          // C types needing the ogo_min_<T> helper for the min builtin
-	maxElems           map[string]bool          // C types needing the ogo_max_<T> helper for the max builtin
-	printSliceElems    map[string]bool          // element C types printed without a newline, needing the ogo_print_slice_<T> helper
-	printlnElems       map[string]bool          // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
-	defers             []deferredCall           // the current function's top-level defers, in source order, replayed LIFO before each return
-	switchBreak        string                   // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
-	switchBreakSeq     int                      // counter minting unique switch-end labels
-	switchBreakUsed    map[string]bool          // switch-end labels a break actually jumped to, so an unreferenced label is not emitted
-	labelBreak         map[string]string        // source label -> C break-target label, for "break L" (a labeled for or switch)
-	labelContinue      map[string]string        // source label -> C continue-target label, for "continue L" (a labeled for)
-	labelUsed          map[string]bool          // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
+	anonStructNames    map[string]string
+	anonIfaceNames     map[string]string // method-set shape -> the minted name of an anonymous interface        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
+	sliceElems         map[string]bool   // element C types that need an ogo_slice_<T> typedef
+	sliceElemByName    map[string]string // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
+	appendElems        map[string]bool   // element C types needing the trapping ogo_append_<T> helper
+	tryappendElems     map[string]bool   // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	copyElems          map[string]bool   // element C types needing the ogo_copy_<T> helper for the copy builtin
+	resliceElems       map[string]bool   // element C types needing the ogo_reslice_<T> helper, a bounds-checked slice expression
+	reslice3Elems      map[string]bool   // element C types needing its three-bound twin, ogo_reslice3_<T>
+	usesResliceStr     bool              // a string is sliced through the helper: emit ogo_reslice_str
+	resliceCalled      bool              // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
+	usesCopyStr        bool              // copy(dst []byte, src string) is used: emit the ogo_copystr helper
+	usesBuilder        bool              // the Builder type is used: emit its typedef and method helpers
+	importQualifiers   map[string]string // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
+	curPkgPrefix       string            // the C symbol prefix of the package whose file is currently being emitted ("" for main)
+	clearElems         map[string]bool   // element C types needing the ogo_clear_<T> helper for the clear builtin
+	minElems           map[string]bool   // C types needing the ogo_min_<T> helper for the min builtin
+	maxElems           map[string]bool   // C types needing the ogo_max_<T> helper for the max builtin
+	printSliceElems    map[string]bool   // element C types printed without a newline, needing the ogo_print_slice_<T> helper
+	printlnElems       map[string]bool   // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
+	defers             []deferredCall    // the current function's top-level defers, in source order, replayed LIFO before each return
+	switchBreak        string            // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
+	switchBreakSeq     int               // counter minting unique switch-end labels
+	switchBreakUsed    map[string]bool   // switch-end labels a break actually jumped to, so an unreferenced label is not emitted
+	labelBreak         map[string]string // source label -> C break-target label, for "break L" (a labeled for or switch)
+	labelContinue      map[string]string // source label -> C continue-target label, for "continue L" (a labeled for)
+	labelUsed          map[string]bool   // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
 	labelSeq           int
 	retSeq             int                  // disambiguates a result-struct name two different result lists spell alike                      // counter minting unique labeled-loop break/continue labels
 	pendingContLabel   string               // the current labeled for's C continue target, for emitLoopBody to place at the body's end
@@ -3618,11 +3619,13 @@ func ifaceThunkName(iface, concrete, method string) string {
 	return iface + "_" + concrete + "_" + userIdent(method)
 }
 
-// collectInterfaceType records an interface's methods in declaration order and
-// emits the two typedefs it becomes: the value -- a data pointer beside a pointer
-// to a table -- and the table's shape. The value is what a variable of the type is,
-// and the table is what tells a call which function to make.
-func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
+// ifaceMethodsOf reads an InterfaceType's MethodSpecs into vtable slots, in
+// declaration order -- which is slot order, and why this is a slice.
+//
+// It is separate from collectInterfaceType because an ANONYMOUS interface needs the
+// slots before it has a name: the shape is what its name is derived from, so the
+// methods have to be read first and registered second.
+func (e *emitter) ifaceMethodsOf(structAST []int32) ([]ifaceMethod, bool) {
 	var methods []ifaceMethod
 	for n := range it(structAST) {
 		if n.sym != MethodSpec {
@@ -3640,10 +3643,75 @@ func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
 			res = resTypes[0]
 		default:
 			e.fail("an interface method with more than one result is not supported yet")
-			return
+			return nil, false
 		}
 		methods = append(methods, ifaceMethod{name: name, res: res, params: e.cParamTypes(n.ast)})
 	}
+	return methods, true
+}
+
+// anonInterfaceType mints (or reuses) the name of an interface type written where a
+// type is wanted rather than declared with one of its own, `interface{ foo() }` and
+// the empty `interface{}` that `any` stands for.
+//
+// Everything the interface machinery does is keyed by a NAME -- the method table,
+// the vtable struct, the one static table per (concrete type, interface) pair -- so
+// giving the shape a name is the whole of what it needed. It is the same move
+// anonStructType makes, and the same rule: a generated identifier that unblocks a
+// construct beats readable C (see octogo.go).
+//
+// Keyed by the METHOD SET, sorted by name, so identity does not depend on the order
+// the methods were written in: Go's method sets are unordered, and `interface{ a();
+// b() }` is `interface{ b(); a() }`. Sorting the slots too is what makes the two
+// share one table rather than merely one name.
+func (e *emitter) anonInterfaceType(ifaceAST []int32) string {
+	methods, ok := e.ifaceMethodsOf(ifaceAST)
+	if !ok {
+		return ""
+	}
+	return e.anonInterfaceOf(methods)
+}
+
+// anonInterfaceOf is anonInterfaceType from the method set itself, for the caller
+// that has no AST to read one from: `any`, which is the empty one spelled as a name.
+func (e *emitter) anonInterfaceOf(methods []ifaceMethod) string {
+	slices.SortFunc(methods, func(a, b ifaceMethod) int { return strings.Compare(a.name, b.name) })
+	var key strings.Builder
+	for _, m := range methods {
+		key.WriteString(m.res + " " + m.name + "(" + strings.Join(m.params, ",") + ");")
+	}
+	if name, ok := e.anonIfaceNames[key.String()]; ok {
+		return name
+	}
+	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anonface%d", len(e.anonIfaceNames)))
+	e.anonIfaceNames[key.String()] = name
+	e.interfaceTypes[name] = true
+	e.typeNames[name] = true
+	e.registerInterface(name, methods, true)
+	return name
+}
+
+// collectInterfaceType records an interface's methods in declaration order and
+// emits the two typedefs it becomes: the value -- a data pointer beside a pointer
+// to a table -- and the table's shape. The value is what a variable of the type is,
+// and the table is what tells a call which function to make.
+func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
+	methods, ok := e.ifaceMethodsOf(structAST)
+	if !ok {
+		return
+	}
+	e.registerInterface(mn, methods, false)
+}
+
+// registerInterface records an interface's slots under a name and emits the two
+// typedefs the name becomes. Shared by the declared form and the anonymous one.
+//
+// forward asks for the two tagged structs to be FORWARD-DECLARED here as well. A
+// declared interface already has both from collectStructForwards, which runs before
+// any body; an anonymous one is discovered while a body is being emitted, long after
+// that pass, so it has to carry its own -- and both go in ONE typedef unit, since a
+// forward and the definition that needs it cannot be ordered apart.
+func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bool) {
 	e.ifaceMethods[mn] = methods
 
 	vt := ifaceVTName(mn)
@@ -3665,8 +3733,18 @@ func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
 		deps = append(deps, m.res)
 		deps = append(deps, m.params...)
 	}
+	value := "struct " + mn + " { void* data; const " + vt + "* vt; };\n"
+	if forward {
+		// Registered as structs so a POINTER to either needs only the forward
+		// declaration, which is the rule typedefDeps follows for every other struct.
+		e.structs[mn] = nil
+		e.structs[vt] = nil
+		e.addTypedef(mn, "typedef struct "+vt+" "+vt+";\n"+b.String()+
+			"typedef struct "+mn+" "+mn+";\n"+value, deps...)
+		return
+	}
 	e.addTypedef(vt, b.String(), deps...)
-	e.addTypedef(mn, "struct "+mn+" { void* data; const "+vt+"* vt; };\n", vt+"*")
+	e.addTypedef(mn, value, vt+"*")
 }
 
 // ifaceStoreC renders writing a concrete value into an interface value named by
@@ -8086,11 +8164,24 @@ func (e *emitter) cType(ast []int32) string {
 	if structAST := e.structTypeAST(ast); structAST != nil {
 		return e.anonStructType(structAST)
 	}
-	// An interface type written out. The checker admits it and its method set; the
-	// representation is settled (a data pointer beside a static vtable, see
-	// octogo.go) and not emitted yet. Said by name, because the tokens below hold no
-	// identifier for the generic message to report and it would name the empty
-	// string.
+	// An interface type written out rather than declared with a name of its own,
+	// `interface{ foo() }` and the empty `interface{}` that `any` stands for. It
+	// gets a minted name, which is all the interface machinery ever wanted.
+	//
+	// The comment that stood here said this was refused BY NAME, and the code that
+	// would have done so was not below it: the tokens carry no identifier, so the
+	// generic refusal named the empty string -- "unsupported type" with nothing in
+	// it -- which is what a reader of `var e interface{}` actually got.
+	if ifaceAST := e.interfaceTypeAST(ast); ifaceAST != nil {
+		return e.anonInterfaceType(ifaceAST)
+	}
+	// `any`, which is that empty interface spelled as a name. It reaches here as a
+	// bare identifier and resolves to no declared type, the universe holding it
+	// rather than any file -- so it is answered here, where the spelling it stands
+	// for is answered.
+	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT && e.src(tok) == "any" && !e.typeNames[mangle(e.curPkgPrefix, "any")] {
+		return e.anonInterfaceOf(nil)
+	}
 
 	var toks []int32
 	nonTerminal := false

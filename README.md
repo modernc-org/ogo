@@ -331,5 +331,8 @@ Interfaces work: an interface value is a pointer to what it carries beside a
 pointer to a statically emitted vtable, with type assertions and type switches on
 top. A pointer is what goes into one -- `var s Shape = &q`, never `= q` -- because
 there is no heap to copy into and a silently aliasing value form would mean
-something Go does not. The whole-program-optimization pass that would devirtualize
-the calls is still an open question, and opinions are welcome.
+something Go does not. One may be written where a type is wanted rather than
+declared with a name, `func measure(s interface{ area() int })`, and the empty one
+is spelled `any` as well; identity is by method set, so `any` and `interface{}` are
+one type. The whole-program-optimization pass that would devirtualize the calls is
+still an open question, and opinions are welcome.

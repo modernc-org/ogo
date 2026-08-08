@@ -18,6 +18,30 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **An interface type may be written where a type is wanted**, rather than only
+  declared with a name of its own: `func measure(s interface{ area() int })`, a
+  variable, a struct field, and the empty `interface{}`. It used to be `unsupported
+  type ""` -- a refusal naming nothing, because the tokens carry no identifier for
+  the message to report.
+
+  Everything the interface machinery does is keyed by a NAME -- the method table, the
+  vtable struct, the one static table per (concrete type, interface) pair -- so
+  giving the shape a name is the whole of what it needed. That is the move
+  `anonStructType` already makes for `struct{ x, y int }`.
+
+  Identity is by METHOD SET, so two anonymous interfaces with the same methods are
+  one type and a value passes between them, whatever order the methods were written
+  in.
+
+- **`any`**, Go's name for the empty interface, and interchangeable with
+  `interface{}` because it is the same type rather than a parallel one. It is
+  registered in the universe as a type declaration over an interface with no
+  methods, so everything that keys on a variable's type being an interface works for
+  it with no case of its own. Being predeclared rather than a keyword, it can still
+  be shadowed: existing code using `any` as an identifier is unaffected.
+
 ### Behaviour changes
 
 - **A call that yields no values is refused where a value is wanted**,
