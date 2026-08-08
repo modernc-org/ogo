@@ -18,6 +18,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+## v0.23.0
+
+A standard library, a formatted print, and an example that is also a test against Go.
+
+`strings` is the first library code here that is neither a hardware wrapper nor a
+test harness, and it is written in OctoGo. `printf` joins `print` and `println`, with
+`%T` — the verb worth having — answered at compile time for everything but an
+interface, whose vtable now carries the name of the type it was built for.
+`_examples/life` imports nothing at all and is the same program in Go: the tests
+perform the two substitutions that make it one, run the twin under `go run`, run this
+one on a real P2-EDGE, and require the same bytes from all three.
+
+Running the same program under Go is what most of this release was checked with, and
+it is what found most of it. `append(s, xs...)` had been accepted with its ellipsis
+ignored since the day `append` shipped. A string literal was passed through to C on
+the belief that the two languages share their escapes, which they do until `\xff` is
+followed by a `b`. `println` of a struct printed a garbage integer where Go refuses
+the program. And a method promoted from an embedded field could be called but could
+not satisfy the interface it was written for.
+
 ### Language
 
 - **`printf` is a built-in**, beside `print` and `println`. It writes its arguments
