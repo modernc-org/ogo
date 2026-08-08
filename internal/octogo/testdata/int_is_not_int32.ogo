@@ -1,0 +1,89 @@
+// int and uint are types of their OWN, distinct from int32 and uint32 even though
+// all four are 32 bits wide on this target. Go says so, and a value of one is not
+// assignable to the other without a conversion; while the checker shared one kind
+// between them every position below compiled here and was refused by Go.
+//
+// byte and rune are the opposite case -- Go's two predeclared ALIASES, the same
+// type under a second name -- so those do mix freely, which the tail checks.
+
+type Point struct {
+	x int32
+}
+
+func take32(v int32) int32 { return v }
+func takeInt(v int) int    { return v }
+
+func give32() int32 {
+	n := 1
+
+	// ERROR "cannot use n of type int as type int32 in return statement"
+	return n
+}
+
+func run() {
+	// An untyped constant is assignable to any integer type it fits in, which is
+	// what keeps these legal -- the rule is about types, not about widths.
+	var a int = 1
+	var b int32 = 1
+	var c uint = 1
+	var d uint32 = 1
+	takeInt(a)
+	take32(b)
+	takeInt(int(c))
+	take32(int32(d))
+
+	// ERROR "cannot use a of type int as type int32 in variable declaration"
+	var e int32 = a
+	_ = e
+
+	// ERROR "cannot use b of type int32 as type int in variable declaration"
+	var g int = b
+	_ = g
+
+	// ERROR "cannot use c of type uint as type uint32 in variable declaration"
+	var h uint32 = c
+	_ = h
+
+	var i int32
+	// ERROR "cannot use a of type int as type int32 in assignment"
+	i = a
+	_ = i
+
+	// ERROR "cannot use a of type int as type int32 in argument to take32"
+	take32(a)
+
+	// ERROR "mismatched types int and int32"
+	takeInt(a + b)
+
+	// ERROR "mismatched types int and int32"
+	if a == b {
+	}
+
+	var xs []int32 = make([]int32, 2)
+	// ERROR "cannot use a of type int as type int32 in assignment"
+	xs[0] = a
+
+	var p Point
+	// ERROR "cannot use a of type int as type int32 in assignment"
+	p.x = a
+
+	// A shift is the exception: the count is independent of the type shifted, so
+	// the two need not agree.
+	take32(b << c)
+	takeInt(a << c)
+
+	// byte IS uint8 and rune IS int32, so no conversion is wanted either way.
+	var by byte = 'A'
+	var u8 uint8 = by
+	var ru rune = 'A'
+	var i32 int32 = ru
+	take32(i32)
+	takeInt(int(u8))
+
+	// A rune literal defaults to rune, not to int: this is int32 both sides.
+	k := 'A'
+	take32(k)
+
+	// ERROR "cannot use k of type int32 as type int in argument to takeInt"
+	takeInt(k)
+}

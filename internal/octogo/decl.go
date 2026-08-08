@@ -22,7 +22,8 @@ bool
 byte
 // false is an untyped boolean false value
 false
-// int is an alias for int32.
+// int is the set of all signed integers of the target's word size, 32 bits.
+// It is a type of its own, distinct from int32, as it is in Go.
 int
 // int16 is the set of all signed 16-bit integers. Range: -32768 through 32767.
 int16
@@ -38,7 +39,8 @@ nil
 rune
 // true is an untyped boolean true value
 true
-// uint is an alias for uint32.
+// uint is the set of all unsigned integers of the target's word size, 32 bits.
+// It is a type of its own, distinct from uint32, as it is in Go.
 uint
 // uint16 is the set of all unsigned 16-bit integers. Range: 0 through 65535.
 uint16
@@ -163,11 +165,17 @@ out:
 		TypeSpec:    &TypeSpecNode{Name: anyTok, TypeNode: &TypeNodeInterface{}},
 	}
 
-	// Type aliases
+	// int and uint are types of their own, 32 bits wide on the target but distinct
+	// from int32 and uint32, as they are in Go.
+	f("int", PredeclaredInt)
+	f("uint", PredeclaredUint)
+
+	// Type aliases. byte and rune are Go's two predeclared ALIASES -- byte IS
+	// uint8 and rune IS int32, the same type under a second name -- so they share
+	// the kind rather than getting one, and a value of either is assignable to the
+	// other without a conversion.
 	f("byte", PredeclaredUint8)
-	f("int", PredeclaredInt32)
 	f("rune", PredeclaredInt32)
-	f("uint", PredeclaredUint32)
 
 	// Untyped bool constants
 	f2 := func(nm string, v bool) {
@@ -176,7 +184,7 @@ out:
 			declaration: declaration{token: tok},
 			ConstSpec: &ConstSpecNode{
 				Name:  tok,
-				Value: untypedConst{constant.MakeBool(v)},
+				Value: constVal{cv: constant.MakeBool(v)},
 			},
 		}
 	}

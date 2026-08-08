@@ -2006,7 +2006,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 		}
 		return
 	}
-	if k, ok := f.exprType(s, e); ok && kindCategory(k) != catUnknown && kindCategory(k) != kindCategory(rt.kind) {
+	if k, ok := f.exprType(s, e); ok && !assignableKind(rt.kind, k) {
 		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in return statement", f.exprSource(e), kindName(k), rt.name)
 	}
 }
@@ -2113,7 +2113,7 @@ func isNumericKind(k Kind) bool {
 	switch k {
 	case PredeclaredInt8, PredeclaredInt16, PredeclaredInt32, PredeclaredInt64,
 		PredeclaredUint8, PredeclaredUint16, PredeclaredUint32, PredeclaredUint64,
-		PredeclaredUintptr:
+		PredeclaredInt, PredeclaredUint, PredeclaredUintptr:
 		return true
 	}
 	return false
@@ -2144,7 +2144,11 @@ func intKindRange(k Kind) (lo, hi constant.Value, ok bool) {
 		lo64, hi64 = 0, 255
 	case PredeclaredUint16:
 		lo64, hi64 = 0, 65535
-	case PredeclaredUint32, PredeclaredUintptr:
+	case PredeclaredInt:
+		// int and uint are the target's word, 32 bits, so they share int32's and
+		// uint32's ranges while remaining types of their own.
+		lo64, hi64 = -2147483648, 2147483647
+	case PredeclaredUint32, PredeclaredUint, PredeclaredUintptr:
 		lo64, hi64 = 0, 4294967295
 	case PredeclaredUint64:
 		// uint64's maximum does not fit in an int64, so build it directly.
@@ -2176,6 +2180,10 @@ func sizedKindName(k Kind) string {
 		return "uint32"
 	case PredeclaredUint64:
 		return "uint64"
+	case PredeclaredInt:
+		return "int"
+	case PredeclaredUint:
+		return "uint"
 	case PredeclaredUintptr:
 		return "uintptr"
 	}
@@ -2184,14 +2192,66 @@ func sizedKindName(k Kind) string {
 
 // isUntypedKind reports whether k is the kind of an untyped constant or of an
 // untyped boolean, the value a comparison yields. An untyped operand takes the
-// type of the context it appears in, which is what makes it contribute no type of
-// its own to an expression -- see operandsType.
+// type of its context, so it is assignable wherever it is representable, which is
+// what separates it from a typed one in assignableKind.
 func isUntypedKind(k Kind) bool {
 	switch k {
-	case UntypedBool, UntypedFloat, UntypedInt, UntypedNil, UntypedString:
+	case UntypedBool, UntypedFloat, UntypedInt, UntypedRune, UntypedNil, UntypedString:
 		return true
 	}
 	return false
+}
+
+// defaultKind returns the type a variable takes when it is declared from an
+// expression of kind k without a written type, "x := e" and "var x = e". An
+// untyped constant's default type is what Go's own defaulting gives -- int for an
+// integer literal, rune for a rune literal, float64, bool, string -- and a typed
+// expression keeps its type.
+//
+// Recording the DEFAULT rather than the untyped kind is what lets assignableKind
+// separate the two cases it must: an untyped constant is assignable to any type
+// that can represent it, while a variable inferred from one has an ordinary type
+// and is assignable only to its own. Without it "x := 42; var y int32 = x" read as
+// an untyped constant meeting int32 and was accepted, where Go refuses it.
+func defaultKind(k Kind) Kind {
+	switch k {
+	case UntypedBool:
+		return PredeclaredBool
+	case UntypedFloat:
+		return PredeclaredFloat64
+	case UntypedInt:
+		return PredeclaredInt
+	case UntypedRune:
+		return PredeclaredInt32 // rune
+	case UntypedString:
+		return PredeclaredString
+	}
+	return k
+}
+
+// assignableKind reports whether a value of kind src may be used where kind dst is
+// wanted -- assigned, passed, returned, sent, or written into a field or element.
+//
+// Two typed operands must be of the SAME type: int is not int32 even where both
+// are 32 bits wide, which is Go's rule and the one this compiler was missing. An
+// untyped operand is assignable to any type of its own class, its value being
+// range-checked separately by checkValueOverflow; that is what keeps "var y int32
+// = 42" legal.
+//
+// A kind the model does not carry -- a struct, a slice, nil, a Builder -- yields
+// true, leaving the position unchecked rather than misreported, exactly as the
+// class comparison it replaces did.
+func assignableKind(dst, src Kind) bool {
+	dc, sc := kindCategory(dst), kindCategory(src)
+	switch {
+	case dc == catUnknown || sc == catUnknown:
+		return true
+	case dc != sc:
+		return false
+	case isUntypedKind(dst) || isUntypedKind(src):
+		return true
+	}
+	return dst == src
 }
 
 // isBoolKind reports whether k is a boolean type (predeclared or untyped).
@@ -2216,24 +2276,40 @@ func kindCategory(k Kind) int {
 		return catBool
 	case k == PredeclaredString || k == UntypedString:
 		return catString
-	case isNumericKind(k) || isFloatKind(k) || k == UntypedInt || k == UntypedFloat:
+	case isNumericKind(k) || isFloatKind(k) || k == UntypedInt || k == UntypedRune || k == UntypedFloat:
 		return catNumeric
 	}
 	return catUnknown
 }
 
-// kindName returns a source-like name for k, for use in diagnostics.
+// kindName returns a source-like name for k, for use in diagnostics. A predeclared
+// type is named exactly -- "int32", not the "int" every numeric kind used to read
+// as, which said nothing once int and int32 became types that can be mismatched
+// with each other. An untyped constant reads as its default type, which is the
+// type it would take in the position being reported.
 func kindName(k Kind) string {
-	if isFloatKind(k) || k == UntypedFloat {
-		return "float"
-	}
-	switch kindCategory(k) {
-	case catBool:
+	switch k {
+	case UntypedBool:
 		return "bool"
-	case catString:
+	case UntypedString:
 		return "string"
-	case catNumeric:
+	case UntypedInt:
 		return "int"
+	case UntypedRune:
+		return "rune"
+	case UntypedFloat:
+		return "float"
+	case PredeclaredBool:
+		return "bool"
+	case PredeclaredString:
+		return "string"
+	case PredeclaredFloat32:
+		return "float32"
+	case PredeclaredFloat64:
+		return "float64"
+	}
+	if n := sizedKindName(k); n != "?" {
+		return n
 	}
 	return "?"
 }
@@ -2290,7 +2366,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	elem, hasElem, isInt := f.rangeElem(s, fi.rangeExpr)
 	declared := false
 	if fi.hasKey && fi.rangeDefine {
-		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt32, true)
+		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true)
 	} else if fi.hasKey {
 		f.checkRangeTarget(s, fi.keyVar)
 	}
@@ -2410,7 +2486,7 @@ func (f *File) declareForInitVar(s *Scope, lhs, rhs Node, define bool) {
 		f.errNoNewVars(id)
 		return
 	}
-	kind, hasKind := f.exprType(s, rhs)
+	kind, hasKind := f.inferredKind(s, rhs)
 	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
 }
 
@@ -2492,10 +2568,12 @@ func (f *File) checkCondition(s *Scope, kw string, n Node) {
 //
 // The operands of an arithmetic operator are of ONE type and the result is that
 // type, so an untyped constant beside a typed operand takes the typed operand's
-// type: "1 + v" is an int64 when v is, not the int the leading literal would give
-// on its own. Scanning for the first TYPED operand is what says so.
+// type: `50 * one` is an int32 when one is, not the int the leading literal would
+// give on its own. Scanning for the first TYPED operand is what says so; taking
+// the first operand outright was right only while every integer shared one kind,
+// and became wrong the moment int and int32 could be told apart.
 //
-// A SHIFT is the exception, and keeps the first operand: "1 << n" is an int
+// A SHIFT is the exception, and keeps the first operand: `1 << n` is an int
 // whatever type the count n has, the count being independent of the value being
 // shifted. Since the grammar is flat, one shift anywhere in the run is enough to
 // fall back -- the alternative would be to re-derive precedence here, which the
@@ -2647,8 +2725,13 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		return f.exprType(s, paren)
 	case hasLit:
 		switch Symbol(lit.Ch) {
-		case INT, CHAR:
+		case INT:
 			return UntypedInt, true
+		case CHAR:
+			// A rune literal is an untyped constant like an integer one, and differs
+			// only in the type it defaults to: "x := 'a'" gives a rune, where "x :=
+			// 97" gives an int.
+			return UntypedRune, true
 		case FLOAT:
 			return UntypedFloat, true
 		case STRING:
@@ -2658,6 +2741,20 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		}
 	}
 	return 0, false
+}
+
+// inferredKind is exprType for a variable that takes its type from an
+// initializer rather than from a written one, "x := e" and the ":=" forms of the
+// for, if and switch headers. An untyped constant's kind becomes the type it
+// defaults to, because what is recorded is a VARIABLE's type and no variable is
+// untyped -- see defaultKind for why that distinction has to be made here rather
+// than at the uses.
+func (f *File) inferredKind(s *Scope, n Node) (Kind, bool) {
+	k, ok := f.exprType(s, n)
+	if !ok {
+		return 0, false
+	}
+	return defaultKind(k), true
 }
 
 // identKind returns the type Kind bound to a name when it is a variable with a
@@ -2761,7 +2858,7 @@ func (f *File) caseConstValue(s *Scope, e Node) (constant.Value, bool) {
 	if en == nil {
 		return nil, false
 	}
-	cv, ok := en.Value().(untypedConst)
+	cv, ok := en.Value().(constVal)
 	if !ok || cv.cv == nil || cv.cv.Kind() == constant.Unknown {
 		return nil, false
 	}
@@ -3141,7 +3238,7 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 		f.declareHeaderVars(ss, g.name, g.items)
 	} else if g.hasName {
 		f.checkNames(s, g.value)
-		kind, hasKind := f.exprType(s, g.value)
+		kind, hasKind := f.inferredKind(s, g.value)
 		if id, ok := f.exprIdent(g.name); ok && id.Src() == "_" {
 			f.errNoNewVars(id) // "switch _ := f(); ..." introduces nothing
 		} else if ok {
@@ -3260,7 +3357,7 @@ func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
 	if !ok {
 		return
 	}
-	if gc, cc := kindCategory(guardKind), kindCategory(k); gc != 0 && cc != 0 && gc != cc {
+	if !assignableKind(guardKind, k) {
 		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in case", f.exprSource(e), kindName(k), kindName(guardKind))
 	}
 }
@@ -3483,7 +3580,7 @@ func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr 
 	if !isChan || !hasElem {
 		return
 	}
-	if tk, tok := f.identKind(s, id); tok && kindCategory(tk) != kindCategory(elem) {
+	if tk, tok := f.identKind(s, id); tok && !assignableKind(tk, elem) {
 		f.err(f.tok(chanExpr.Pos()).Position(), "cannot assign value received from chan %s to type %s", kindName(elem), kindName(tk))
 	}
 }
@@ -4106,7 +4203,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// carries P, so its fields and methods are checked as an explicitly
 				// typed variable's are.
 				vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
-				if k, ok := f.exprType(s, rhs[i]); ok {
+				if k, ok := f.inferredKind(s, rhs[i]); ok {
 					vd.kind, vd.hasKind = k, true
 				}
 				// A named type may also be a function type: `type Fn func(int) int`
@@ -4125,7 +4222,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// A function-valued form the language does not model yet, named
 				// where it stands rather than left to surface as a puzzling
 				// "cannot call non-function" at the variable's first use.
-			} else if k, ok := f.exprType(s, rhs[i]); ok {
+			} else if k, ok := f.inferredKind(s, rhs[i]); ok {
 				vd.kind, vd.hasKind = k, true
 				// ":=" writes no type, so the initializer's own type bounds a
 				// constant value, as for "var x = expr".
@@ -4859,7 +4956,7 @@ func (f *File) checkSend(s *Scope, chTok Token, field Token, indexed bool, valNo
 	if !hasElem || !vok {
 		return
 	}
-	if kindCategory(vk) != kindCategory(elem) {
+	if !assignableKind(elem, vk) {
 		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.exprSource(valNode), kindName(vk), kindName(elem))
 	}
 }
@@ -4878,7 +4975,7 @@ func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
 		return
 	}
 	tk, tok := f.identKind(s, target)
-	if tok && kindCategory(tk) != kindCategory(elem) {
+	if tok && !assignableKind(tk, elem) {
 		f.err(f.tok(rhs.Pos()).Position(), "cannot assign value received from chan %s to type %s", kindName(elem), kindName(tk))
 	}
 }
@@ -6435,7 +6532,7 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 		return
 	}
 	pos := f.tok(opNode.Pos()).Position()
-	if lc != rc {
+	if !assignableKind(lk, rk) {
 		f.err(pos, "mismatched types %s and %s", kindName(lk), kindName(rk))
 		return
 	}
@@ -6498,6 +6595,13 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 		f.err(pos, "invalid operation: operator %s not defined on %s and %s", sym, kindName(lk), kindName(rk))
 	case !binaryAllowed(op, lc):
 		f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(lk))
+	case op != SHL && op != SHR && !assignableKind(lk, rk):
+		// Both operands are numbers, or both strings, but of DIFFERENT types --
+		// "int + int32". Go requires the two operands of a binary operator to be of
+		// one type, and says so in these words. A shift is the exception: its count
+		// is independent of the type being shifted, so "x << n" holds for any
+		// integer n.
+		f.err(pos, "mismatched types %s and %s", kindName(lk), kindName(rk))
 	}
 }
 
@@ -6570,11 +6674,10 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 	}
 	lk, lok := f.identKind(s, lhsTok)
 	rk, rok := f.exprType(s, rhsNode)
-	lc, rc := kindCategory(lk), kindCategory(rk)
-	if !lok || !rok || lc == catUnknown || rc == catUnknown {
+	if !lok || !rok {
 		return
 	}
-	if lc != rc {
+	if !assignableKind(lk, rk) {
 		// A defined type reads as itself, not as the type it is defined over, which
 		// is what its declaration's diagnostic says too.
 		name := kindName(lk)
@@ -6607,8 +6710,7 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 		return
 	}
 	rk, rok := f.exprType(s, init)
-	lc, rc := kindCategory(kind), kindCategory(rk)
-	if !rok || lc == catUnknown || rc == catUnknown || lc == rc {
+	if !rok || assignableKind(kind, rk) {
 		return
 	}
 	name := kindName(kind)
@@ -6625,11 +6727,10 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
-	lc, rc := kindCategory(lk), kindCategory(rk)
-	if !lok || !rok || lc == catUnknown || rc == catUnknown {
+	if !lok || !rok {
 		return
 	}
-	if lc != rc {
+	if !assignableKind(lk, rk) {
 		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), kindName(lk))
 		return
 	}
@@ -6868,11 +6969,10 @@ func (f *File) isArrayType(s *Scope, tn TypeNode) bool {
 // no single left-hand variable token.
 func (f *File) checkElemAssignType(s *Scope, elem Kind, rhsNode Node) {
 	rk, rok := f.exprType(s, rhsNode)
-	lc, rc := kindCategory(elem), kindCategory(rk)
-	if !rok || lc == catUnknown || rc == catUnknown {
+	if !rok {
 		return
 	}
-	if lc != rc {
+	if !assignableKind(elem, rk) {
 		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), kindName(elem))
 		return
 	}
@@ -8178,7 +8278,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 					continue
 				}
 				ak, aok := f.exprType(s, arg)
-				if aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(elem.kind) {
+				if aok && !assignableKind(elem.kind, ak) {
 					f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s",
 						f.exprSource(arg), kindName(ak), elem.name, name.Src())
 				}
@@ -8203,7 +8303,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			}
 			f.checkNilAssignable(s, p, arg, "argument to "+name.Src())
 			ak, aok := f.exprType(s, arg)
-			if aok && kindCategory(ak) != catUnknown && kindCategory(ak) != kindCategory(p.kind) {
+			if aok && !assignableKind(p.kind, ak) {
 				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.exprSource(arg), kindName(ak), p.name, name.Src())
 				continue
 			}
@@ -9932,7 +10032,7 @@ func (f *File) arrayBound(s *Scope, n Node) ExpressionNode {
 	reported := len(f.errList) > n0
 
 	pos := f.tok(n.Pos()).Position()
-	cv, _ := e.Value().(untypedConst)
+	cv, _ := e.Value().(constVal)
 	switch {
 	case cv.cv == nil || cv.cv.Kind() == constant.Unknown:
 		// A non-constant bound. When factor already reported a more specific
@@ -10384,7 +10484,7 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 		return
 	case resolving:
 		f.err(cs.Name.Position(), "constant definition cycle for %s", cs.Name.Src())
-		cs.Value = untypedConst{constant.MakeUnknown()}
+		cs.Value = constVal{cv: constant.MakeUnknown()}
 		cs.gate.close()
 		return
 	}
@@ -10409,7 +10509,16 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 	}
 	f.iota = savedIota
 	if cs.Value == nil {
-		cs.Value = untypedConst{constant.MakeUnknown()}
+		cs.Value = constVal{cv: constant.MakeUnknown()}
+	}
+	// A written type makes the constant a typed one, "const one int32 = 1",
+	// whatever the initializer folded to. A constant with no written type keeps
+	// the type its expression gave it -- which is a type only if that expression
+	// named one, as "int32(1) << 16" does.
+	if k, ok := f.typeKind(s, cs.TypeNode); ok {
+		if uc, isConst := cs.Value.(constVal); isConst {
+			cs.Value = uc.typedAs(k)
+		}
 	}
 	f.checkConstOverflow(s, cs, exprPos)
 	cs.gate.close()
@@ -10430,7 +10539,7 @@ func (f *File) checkConstOverflow(s *Scope, cs *ConstSpecNode, pos token.Positio
 	if !ok {
 		return
 	}
-	uc, ok := cs.Value.(untypedConst)
+	uc, ok := cs.Value.(constVal)
 	if !ok {
 		return
 	}
@@ -10476,13 +10585,13 @@ func (f *File) checkInferredOverflow(s *Scope, e Node) {
 }
 
 // defaultTarget is sizedTarget for a target whose type was inferred rather than
-// written: an untyped integer kind resolves to its default type, int, which is
-// what a variable inferred from an untyped constant actually becomes. It reads as
-// "int" rather than the int32 that int aliases, since int is the type in play and
-// there is no written type token to take the name from.
+// written: an untyped kind resolves to its default type, which is what a variable
+// inferred from an untyped constant actually becomes. It reads as that type's own
+// name -- "int", "rune" -- rather than the int32 rune aliases, since that is the
+// type in play and there is no written type token to take a name from.
 func defaultTarget(k Kind, typeName Token) retResult {
-	if k == UntypedInt {
-		return retResult{name: "int", kind: PredeclaredInt32}
+	if isUntypedKind(k) {
+		return retResult{name: kindName(k), kind: defaultKind(k)}
 	}
 	return sizedTarget(k, typeName)
 }
@@ -10516,7 +10625,7 @@ func (f *File) constValue(s *Scope, n Node) (constant.Value, bool) {
 	if e == nil {
 		return nil, false
 	}
-	uc, ok := e.Value().(untypedConst)
+	uc, ok := e.Value().(constVal)
 	if !ok || uc.cv == nil || uc.cv.Kind() != constant.Int {
 		return nil, false
 	}
@@ -10631,14 +10740,14 @@ func canCompareConst(k constant.Kind, op token.Token) bool {
 // of differing kinds, or an ordering comparison of a kind that does not support
 // it all yield an unknown constant, so that constant evaluation never panics.
 func (f *File) foldCompare(lhs ExpressionNode, op Symbol, rhs ExpressionNode) ExpressionNode {
-	lc, lok := lhs.Value().(untypedConst)
-	rc, rok := rhs.Value().(untypedConst)
+	lc, lok := lhs.Value().(constVal)
+	rc, rok := rhs.Value().(constVal)
 	if t := relOpTok(op); t != token.ILLEGAL && lok && rok &&
 		lc.cv != nil && rc.cv != nil && lc.cv.Kind() == rc.cv.Kind() &&
 		lc.cv.Kind() != constant.Unknown && canCompareConst(lc.cv.Kind(), t) {
-		return untypedConst{constant.MakeBool(constant.Compare(lc.cv, t, rc.cv))}
+		return constVal{cv: constant.MakeBool(constant.Compare(lc.cv, t, rc.cv))}
 	}
-	return untypedConst{constant.MakeUnknown()}
+	return constVal{cv: constant.MakeUnknown()}
 }
 
 // binaryOpTok maps an OctoGo binary operator symbol to the go/token operator
@@ -10678,11 +10787,11 @@ func binaryOpTok(op Symbol) token.Token {
 // diagnostic); otherwise a BinaryExpressionNode is returned for later (Phase 4)
 // checking.
 func (f *File) foldBinary(lhs ExpressionNode, op Symbol, opTok Token, rhs ExpressionNode) ExpressionNode {
-	lc, lok := lhs.Value().(untypedConst)
-	rc, rok := rhs.Value().(untypedConst)
+	lc, lok := lhs.Value().(constVal)
+	rc, rok := rhs.Value().(constVal)
 	if lok && rok && lc.cv != nil && rc.cv != nil {
 		if v, ok := f.foldConstBinaryOp(opTok, lc.cv, op, rc.cv); ok {
-			return untypedConst{v}
+			return constVal{cv: v}.sameTypeAs(lc, rc)
 		}
 	}
 	return &BinaryExpressionNode{LHS: lhs, Op: op, RHS: rhs}
@@ -10949,7 +11058,7 @@ func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
 // unary operators (pointer "*"/"&", receive "<-", "~") and non-constant operands
 // yield a UnaryExprNode for later (Phase 4) checking.
 func (f *File) foldUnary(op Symbol, opTok Token, e ExpressionNode) ExpressionNode {
-	if c, ok := e.Value().(untypedConst); ok && c.cv != nil {
+	if c, ok := e.Value().(constVal); ok && c.cv != nil {
 		var t token.Token
 		switch op {
 		case ADD:
@@ -10962,7 +11071,7 @@ func (f *File) foldUnary(op Symbol, opTok Token, e ExpressionNode) ExpressionNod
 			t = token.NOT
 		}
 		if t != token.ILLEGAL {
-			return untypedConst{f.constUnaryOp(opTok, t, c.cv)}
+			return constVal{cv: f.constUnaryOp(opTok, t, c.cv)}.sameTypeAs(c, c)
 		}
 	}
 	return &UnaryExprNode{List: []Symbol{op}, Factor: e}
@@ -10992,7 +11101,7 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 		return nil, false
 	}
 	v := f.expression(s, arg)
-	uc, ok := v.(untypedConst)
+	uc, ok := v.(constVal)
 	if !ok || uc.cv == nil || uc.cv.Kind() == constant.Unknown {
 		// Not a constant operand: not a constant expression either. Fall through to
 		// the walk, which reports it in the one voice used everywhere else.
@@ -11004,7 +11113,7 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 		cv = constant.ToFloat(cv)
 		if cv.Kind() == constant.Unknown {
 			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to %s", uc.cv, nameTok.Src())
-			return untypedConst{constant.MakeUnknown()}, true
+			return constVal{cv: constant.MakeUnknown()}, true
 		}
 	default:
 		if _, _, ok := intKindRange(k); !ok {
@@ -11014,13 +11123,16 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 			iv := constant.ToInt(cv)
 			if iv.Kind() == constant.Unknown {
 				f.err(f.tok(arg.Pos()).Position(), "constant %s truncated to integer", cv)
-				return untypedConst{constant.MakeUnknown()}, true
+				return constVal{cv: constant.MakeUnknown()}, true
 			}
 			cv = iv
 		}
 		f.reportOverflow(f.tok(arg.Pos()).Position(), cv, k, nameTok.Src())
 	}
-	return untypedConst{cv}, true
+	// The conversion is what gives the constant a type: `int32(1)` is an int32
+	// constant, not an untyped one that happens to have been written that way, and
+	// everything folded from it keeps that type.
+	return constVal{cv: cv}.typedAs(k), true
 }
 
 // nameKind is typeKind for a type written as a bare name, following a chain of
@@ -11203,23 +11315,23 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 			// not a compile-time constant. A problematic operand identifier has
 			// already been reported above; in an array bound the "non-constant
 			// array bound" diagnostic is emitted by arrayBound.
-			r = untypedConst{constant.MakeUnknown()}
+			r = constVal{cv: constant.MakeUnknown()}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case INT:
-				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.INT, 0)}); r.Type() == nil {
+				if r = (constVal{cv: constant.MakeFromLiteral(tok.Src(), token.INT, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid integer literal: %s", tok.Src())
 				}
 			case FLOAT:
-				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.FLOAT, 0)}); r.Type() == nil {
+				if r = (constVal{cv: constant.MakeFromLiteral(tok.Src(), token.FLOAT, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid floating-point literal: %s", tok.Src())
 				}
 			case CHAR:
-				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {
+				if r = (constVal{cv: constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid rune literal: %s", tok.Src())
 				}
 			case STRING:
-				if r = (untypedConst{constant.MakeFromLiteral(tok.Src(), token.STRING, 0)}); r.Type() == nil {
+				if r = (constVal{cv: constant.MakeFromLiteral(tok.Src(), token.STRING, 0)}); r.Type() == nil {
 					f.err(tok.Position(), "invalid string literal: %s", tok.Src())
 				}
 			case IDENT:
@@ -11227,7 +11339,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 				if nm == "iota" && f.iota >= 0 {
 					// The predeclared iota: the index of the current spec in its
 					// const group, an untyped integer constant.
-					r = untypedConst{constant.MakeInt64(int64(f.iota))}
+					r = constVal{cv: constant.MakeInt64(int64(f.iota))}
 					break
 				}
 				switch d := s.find(nm); x := d.(type) {
@@ -11238,11 +11350,11 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 					if x.ConstSpec != nil && x.ConstSpec.Value != nil {
 						r = x.ConstSpec.Value.Expr()
 					} else {
-						r = untypedConst{constant.MakeUnknown()}
+						r = constVal{cv: constant.MakeUnknown()}
 					}
 				case nil:
 					f.err(tok.Position(), "undefined: %s", nm)
-					r = untypedConst{constant.MakeUnknown()}
+					r = constVal{cv: constant.MakeUnknown()}
 				default:
 					// A non-constant name (var, func, type, ...) used where a
 					// constant expression is required. In an array bound the
@@ -11253,7 +11365,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 					if !f.inArrayBound && !f.inCaseExpr {
 						f.err(tok.Position(), "%s is not a constant", nm)
 					}
-					r = untypedConst{constant.MakeUnknown()}
+					r = constVal{cv: constant.MakeUnknown()}
 				}
 			case LPAREN, RPAREN:
 				// The delimiters of a parenthesized expression.

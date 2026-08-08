@@ -17,22 +17,25 @@ func _() {
 	_ = x[PredeclaredUint32-6]
 	_ = x[PredeclaredInt64-7]
 	_ = x[PredeclaredUint64-8]
-	_ = x[PredeclaredFloat32-9]
-	_ = x[PredeclaredFloat64-10]
-	_ = x[PredeclaredUintptr-11]
-	_ = x[PredeclaredString-12]
-	_ = x[PredeclaredBuilder-13]
-	_ = x[UntypedBool-14]
-	_ = x[UntypedFloat-15]
-	_ = x[UntypedInt-16]
-	_ = x[UntypedNil-17]
-	_ = x[UntypedString-18]
-	_ = x[Alias-19]
+	_ = x[PredeclaredInt-9]
+	_ = x[PredeclaredUint-10]
+	_ = x[PredeclaredFloat32-11]
+	_ = x[PredeclaredFloat64-12]
+	_ = x[PredeclaredUintptr-13]
+	_ = x[PredeclaredString-14]
+	_ = x[PredeclaredBuilder-15]
+	_ = x[UntypedBool-16]
+	_ = x[UntypedFloat-17]
+	_ = x[UntypedInt-18]
+	_ = x[UntypedRune-19]
+	_ = x[UntypedNil-20]
+	_ = x[UntypedString-21]
+	_ = x[Alias-22]
 }
 
-const _Kind_name = "PredeclaredBoolPredeclaredInt8PredeclaredUint8PredeclaredInt16PredeclaredUint16PredeclaredInt32PredeclaredUint32PredeclaredInt64PredeclaredUint64PredeclaredFloat32PredeclaredFloat64PredeclaredUintptrPredeclaredStringPredeclaredBuilderUntypedBoolUntypedFloatUntypedIntUntypedNilUntypedStringAlias"
+const _Kind_name = "PredeclaredBoolPredeclaredInt8PredeclaredUint8PredeclaredInt16PredeclaredUint16PredeclaredInt32PredeclaredUint32PredeclaredInt64PredeclaredUint64PredeclaredIntPredeclaredUintPredeclaredFloat32PredeclaredFloat64PredeclaredUintptrPredeclaredStringPredeclaredBuilderUntypedBoolUntypedFloatUntypedIntUntypedRuneUntypedNilUntypedStringAlias"
 
-var _Kind_index = [...]uint16{0, 15, 30, 46, 62, 79, 95, 112, 128, 145, 163, 181, 199, 216, 234, 245, 257, 267, 277, 290, 295}
+var _Kind_index = [...]uint16{0, 15, 30, 46, 62, 79, 95, 112, 128, 145, 159, 174, 192, 210, 228, 245, 263, 274, 286, 296, 307, 317, 330, 335}
 
 func (i Kind) String() string {
 	idx := int(i) - 0

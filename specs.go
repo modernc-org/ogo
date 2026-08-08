@@ -457,6 +457,19 @@
 //     complement overflow stands rather than being undefined as it is in C.
 //   - Explicit conversions are required when different numeric types are mixed in
 //     an expression or assignment.
+//   - int and uint are the target's word, 32 bits wide, and are types of their own:
+//     int is NOT int32 and uint is NOT uint32, so mixing them takes a conversion
+//     even though the two have the same width and representation here. byte and
+//     rune are the two exceptions, being aliases as they are in Go -- byte IS uint8
+//     and rune IS int32 -- and mix with what they name without one.
+//   - An untyped constant takes the type of the context it appears in, so no
+//     conversion is wanted where one fits: "var x int32 = 42" and "var y int64 = 42"
+//     are both legal. Written on its own it takes its default type -- int for an
+//     integer literal, rune for a rune literal, float64, bool, string -- so "x := 42"
+//     is an int and "x := 'a'" is a rune.
+//   - A conversion in a constant expression makes the constant TYPED, and it types
+//     what it is combined with: with "const one = int32(1) << 16", "50 * one" is an
+//     int32 and "scale := 50 * one" declares one.
 //
 // A floating-point type represents the set of IEEE-754 values: float32 and
 // float64. Float literals, arithmetic, comparison, and conversion to and from the

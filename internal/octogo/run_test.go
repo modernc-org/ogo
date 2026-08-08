@@ -37,6 +37,68 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// int and uint are types of their OWN, distinct from int32 and uint32 even
+		// though all four are 32 bits wide here, while byte and rune are ALIASES of
+		// uint8 and int32 and so mix with them freely. A rune literal defaults to
+		// rune where an integer literal defaults to int, and a constant written
+		// through a conversion is a TYPED constant that types what it is combined
+		// with. "%T" reports what each of those decided; every line matches real Go,
+		// which is where the expected output came from.
+		name: "int is not int32",
+		src: `const (
+	fracBits = 16
+	one      = int32(1) << fracBits
+	half     = one / 2
+	typedU   = uint16(40000)
+)
+
+func take32(v int32) int32 { return v }
+
+func takeInt(v int) int { return v }
+
+func takeU(v uint) uint { return v }
+
+func takeByte(v byte) byte { return v }
+
+func takeRune(v rune) rune { return v }
+
+func take16(v uint16) uint16 { return v }
+
+func main() {
+	scale := 50 * one
+	printf("%T %T %T\n", scale, half, typedU)
+	println(take32(scale), take32(half), take16(typedU))
+
+	r := 'A'
+	n := 65
+	var u uint = 65
+	printf("%T %T %T\n", r, n, u)
+	println(takeRune(r), takeInt(n), takeU(u))
+
+	var b byte = 'z'
+	var u8 uint8 = b
+	var i32 int32 = r
+	println(takeByte(u8), take32(i32), takeRune(i32))
+
+	var cnt uint = 3
+	var v32 int32 = 5
+	var v64 int64 = 5
+	println(v32<<cnt, v64<<cnt, n<<cnt, b>>1)
+
+	var w8 int8 = 100
+	var w64 uint64 = 1 << 40
+	println(w8+27, w64/2, takeInt(fracBits))
+}
+`,
+		want: "int32 int32 uint16\n" +
+			"3276800 32768 40000\n" +
+			"int32 int uint\n" +
+			"65 65 65\n" +
+			"122 65 65\n" +
+			"40 40 520 61\n" +
+			"127 549755813888 16\n",
+	},
+	{
 		// A ":="-inferred value takes the type of the operand that HAS one, not the
 		// type of whichever operand comes first. Writing the untyped constant on the
 		// left used to name the variable's type after it: "b := 1 + v" for an int64

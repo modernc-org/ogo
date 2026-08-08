@@ -308,9 +308,10 @@ var importIncludes = map[string]string{
 	"p2": "propeller2.h",
 }
 
-// cTypes maps predeclared OctoGo type names to C types. int is int32 in OctoGo
-// and the P2's C int is 32-bit, so int maps to plain int. Fixed-width names use
-// <stdint.h> (see stdintType).
+// cTypes maps predeclared OctoGo type names to C types. int is a type of its own,
+// 32 bits wide on this target as the P2's C int is, so it maps to plain int --
+// int32 is a DIFFERENT type and maps to int32_t, which is how the two stay apart
+// in the emitted C as they do in the checker. Fixed-width names need <stdint.h>.
 var cTypes = map[string]string{
 	"int": "int", "uint": "unsigned", "bool": cBool,
 	"int8": "int8_t", "int16": "int16_t", "int32": "int32_t", "int64": "int64_t",
@@ -17527,7 +17528,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		case INT:
 			return "int", true
 		case CHAR:
-			return "int", true // a rune literal is an int32, C "int" on this target
+			// A rune literal defaults to rune, which IS int32, so "x := 'a'" gives a
+			// variable of that type -- not the int an integer literal gives. The two
+			// are the same width here, so nothing computes differently; what changes
+			// is the type the program has, which "%T" prints and the checker now
+			// tells apart. Unlike the names that reach a C type through cTypeName,
+			// an inferred one has to ask for its header itself.
+			e.includes["stdint.h"] = true
+			return "int32_t", true
 		case FLOAT:
 			return "double", true // an untyped float literal defaults to float64 (C double)
 		case STRING:

@@ -25,6 +25,14 @@ const (
 	PredeclaredUint32
 	PredeclaredInt64
 	PredeclaredUint64
+	// PredeclaredInt and PredeclaredUint are int and uint, which are 32 bits wide
+	// on the target but are types of their own, distinct from int32 and uint32 as
+	// they are in Go. Sharing int32's kind made every check that compares types
+	// blind to the difference, so "var y int32 = x" for an int x compiled here and
+	// was refused by Go. Contrast byte and rune, which are ALIASES: those do share
+	// uint8's and int32's kinds, because in Go they are the same type.
+	PredeclaredInt
+	PredeclaredUint
 	PredeclaredFloat32
 	PredeclaredFloat64
 	PredeclaredUintptr
@@ -36,6 +44,10 @@ const (
 	UntypedBool
 	UntypedFloat
 	UntypedInt
+	// UntypedRune is the kind of a rune literal, 'a'. It is kept apart from
+	// UntypedInt only for its DEFAULT type: a variable inferred from one becomes a
+	// rune, not an int. In every other respect the two behave alike.
+	UntypedRune
 	UntypedNil
 	UntypedString
 	Alias
