@@ -37,6 +37,52 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A ":="-inferred value takes the type of the operand that HAS one, not the
+		// type of whichever operand comes first. Writing the untyped constant on the
+		// left used to name the variable's type after it: "b := 1 + v" for an int64
+		// v was declared int and truncated 1099511627777 to 1, "d := 2 * f" dropped a
+		// float64's fraction, and "w := 1 + u" wrapped a uint32 past 2^31 to a
+		// negative. Each pair below writes the same operation both ways round; every
+		// line matches real Go.
+		name: "an inferred value takes the type of the typed operand",
+		src: `const (
+	fracBits = 16
+	one      = int32(1) << fracBits
+)
+
+func take32(v int32) int32 { return v }
+
+func main() {
+	var v int64 = 1 << 40
+	println(v+1, 1+v)
+
+	var f float64 = 1.7
+	println(f*2, 2*f)
+
+	var g float32 = 0.5
+	println(g+1, 1+g)
+
+	var u uint32 = 3000000000
+	println(u+1, 1+u)
+
+	// A typed constant types the expression the same way a variable does, and an
+	// untyped one (fracBits) still contributes no type of its own.
+	scale := 50 * one
+	println(take32(scale), take32(fracBits*one))
+
+	// A shift keeps the type being SHIFTED, whatever the count is typed as.
+	var cnt uint = 3
+	println(v<<cnt, 1<<cnt)
+}
+`,
+		want: "1099511627777 1099511627777\n" +
+			"3.4 3.4\n" +
+			"1.5 1.5\n" +
+			"3000000001 3000000001\n" +
+			"3276800 1048576\n" +
+			"8796093022208 8\n",
+	},
+	{
 		name: "arithmetic and control flow",
 		src: `func main() {
 	x := 17

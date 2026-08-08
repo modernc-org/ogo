@@ -2182,6 +2182,18 @@ func sizedKindName(k Kind) string {
 	return "?"
 }
 
+// isUntypedKind reports whether k is the kind of an untyped constant or of an
+// untyped boolean, the value a comparison yields. An untyped operand takes the
+// type of the context it appears in, which is what makes it contribute no type of
+// its own to an expression -- see operandsType.
+func isUntypedKind(k Kind) bool {
+	switch k {
+	case UntypedBool, UntypedFloat, UntypedInt, UntypedNil, UntypedString:
+		return true
+	}
+	return false
+}
+
 // isBoolKind reports whether k is a boolean type (predeclared or untyped).
 func isBoolKind(k Kind) bool {
 	return k == PredeclaredBool || k == UntypedBool
@@ -2475,6 +2487,45 @@ func (f *File) checkCondition(s *Scope, kw string, n Node) {
 	}
 }
 
+// operandsType determines the Kind of a SimpleExpr or Term -- a flat run of
+// operands joined by add or mul operators.
+//
+// The operands of an arithmetic operator are of ONE type and the result is that
+// type, so an untyped constant beside a typed operand takes the typed operand's
+// type: "1 + v" is an int64 when v is, not the int the leading literal would give
+// on its own. Scanning for the first TYPED operand is what says so.
+//
+// A SHIFT is the exception, and keeps the first operand: "1 << n" is an int
+// whatever type the count n has, the count being independent of the value being
+// shifted. Since the grammar is flat, one shift anywhere in the run is enough to
+// fall back -- the alternative would be to re-derive precedence here, which the
+// checker deliberately does not do.
+//
+// An operand of an unresolved type is skipped rather than made the answer, so a
+// run mixing one with a typed operand still resolves; a run of nothing but
+// untyped operands answers with its first, as it always has.
+func (f *File) operandsType(s *Scope, n Node) (Kind, bool) {
+	var first Kind
+	firstSet, firstOK, shift := false, false, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case MulOp:
+			if op := f.mulOp(s, c); op == SHL || op == SHR {
+				shift = true
+			}
+		case Term, UnaryExpr:
+			k, ok := f.exprType(s, c)
+			if !firstSet {
+				first, firstOK, firstSet = k, ok, true
+			}
+			if ok && !isUntypedKind(k) && !shift {
+				return k, true
+			}
+		}
+	}
+	return first, firstOK
+}
+
 // exprType conservatively determines the type Kind of an expression, reporting
 // ok=false when it cannot (a call/selector result, channel receive, or a name
 // that is not a typed variable/constant). It does not itself report errors.
@@ -2501,13 +2552,7 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 			return f.exprType(s, first)
 		}
 	case SimpleExpr, Term:
-		// Add/mul operators keep the operand's (numeric) kind; use the first.
-		for c := range it(n.ast) {
-			switch c.sym {
-			case Term, UnaryExpr:
-				return f.exprType(s, c)
-			}
-		}
+		return f.operandsType(s, n)
 	case UnaryExpr:
 		// "!" yields bool; "<-" (receive) has an element type we can't resolve
 		// here; the arithmetic unary operators keep the operand's kind.

@@ -2719,7 +2719,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -3271,6 +3271,7 @@ type emitter struct {
 	namedArrays        map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
 	constInt           map[string]string        // integer-constant name -> its C literal value, for array bounds
 	constStr           map[string]string        // string-constant name -> its decoded value, for folding string concatenation
+	constUntyped       map[string]bool          // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
 	arrays             map[string]arrDim        // local array name -> element type and bound (reset per function)
 	globalArrays       map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
 	sliceVars          map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
@@ -5031,6 +5032,14 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			e.globals[cname] = ctype
 		} else {
 			e.locals[cname] = ctype
+		}
+		// A constant written with no type and built only from untyped constants is
+		// itself untyped: it has no type to contribute to an expression it appears
+		// in, and takes the type of whatever it meets. Recorded so inferNodes can
+		// look past it -- "fracBits * one" is an int32 because one is, whichever
+		// operand comes first.
+		if !hasType && e.exprUntyped(initExpr) {
+			e.constUntyped[cname] = true
 		}
 		// A constant that folds to an integer -- a literal, iota, or a constant
 		// expression like "2 + 1" or "W * H" -- can serve as an array bound (flexcc
@@ -6920,11 +6929,13 @@ func (e *emitter) enterScope() func() {
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
+	constUntyped := maps.Clone(e.constUntyped)
 	funcValueOf := maps.Clone(e.funcValueOf)
 	return func() {
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
+		e.constUntyped = constUntyped
 		e.funcValueOf = funcValueOf
 	}
 }
@@ -17153,6 +17164,21 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 			return cBool, true // a comparison yields bool
 		}
 	}
+	// The operands of an arithmetic operator are of one type, so the type of the
+	// whole is the type of any operand that HAS one: an untyped constant beside a
+	// typed operand takes the typed operand's type. Taking the first operand
+	// outright declared "b := 1 + v" an int for an int64 v and truncated it to 1,
+	// and did the same to a float ("2 * f") and to a uint32 ("1 + u"); the leading
+	// literal named a type it does not have.
+	//
+	// A shift needs no exception here: its count is not an operand of the value's
+	// type, but an untyped count contributes nothing and a typed one only ever
+	// appears where the checker already required the types to agree.
+	//
+	// When every operand is untyped the first still answers, which is what it
+	// always did -- an all-untyped expression takes its default type.
+	var first Node
+	firstSet := false
 	for _, n := range nodes {
 		switch n.sym {
 		case AddOp, MulOp, UnaryOp:
@@ -17163,9 +17189,63 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 				continue // a prefix operator token; skip to its operand
 			}
 		}
+		if !firstSet {
+			first, firstSet = n, true
+		}
+		if e.operandUntyped(n) {
+			continue
+		}
 		return e.inferNode(n)
 	}
+	if firstSet {
+		return e.inferNode(first)
+	}
 	return "", false
+}
+
+// operandUntyped reports whether an operand is an untyped constant, contributing
+// no type of its own to the expression it sits in.
+func (e *emitter) operandUntyped(n Node) bool {
+	if n.sym == 0 {
+		return e.tokenUntyped(n.tok)
+	}
+	return e.exprUntyped(n.ast)
+}
+
+// exprUntyped reports whether every leaf of an expression is an untyped constant
+// -- a literal, iota, or a constant recorded untyped by emitConstSpecName. A name
+// that is anything else (a variable, a typed constant, a conversion's type name)
+// makes the expression typed, since it brings a type with it.
+//
+// It answers "untyped" for a shape it does not recognise, which is what the
+// inference did for every expression before this existed: the answer only ever
+// makes inferNodes look FURTHER for a type, so an unrecognised leaf leaves the
+// old behaviour rather than inventing a new one.
+func (e *emitter) exprUntyped(ast []int32) bool {
+	for n := range it(ast) {
+		if n.sym != 0 {
+			if !e.exprUntyped(n.ast) {
+				return false
+			}
+			continue
+		}
+		if !e.tokenUntyped(n.tok) {
+			return false
+		}
+	}
+	return true
+}
+
+// tokenUntyped is exprUntyped for a single terminal.
+func (e *emitter) tokenUntyped(tok int32) bool {
+	switch e.f.ch(tok) {
+	case INT, CHAR, FLOAT, STRING:
+		return true // an untyped literal
+	case IDENT:
+		nm := e.src(tok)
+		return nm == "iota" || e.constUntyped[nm] || e.constUntyped[e.globalC(nm)]
+	}
+	return true // an operator or punctuation carries no type
 }
 
 // inferNode types a single expression node: a wrapper level recurses, a
