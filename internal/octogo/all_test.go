@@ -1514,6 +1514,69 @@ func TestFormatIndexArith(t *testing.T) {
 	}
 }
 
+// TestFormatCallArgArith pins gofmt's depth rule as it applies to a CALL: an
+// argument list of more than one argument raises the expression depth, and at depth
+// the add- and mul-level operators render tight. One argument does not raise it, so
+// "f(a + b)" keeps its spaces where "f(a+b, c)" loses them -- which reads like an
+// inconsistency and is the rule.
+//
+// Only those two levels tighten. A comparison and a logical operator stay spaced at
+// any depth, which is what "f(a == b, c)" is here for.
+//
+// Every want below was taken from gofmt on the same source rather than written from
+// what seemed right. The unary cases are the ones that make it subtle: "&" and "-"
+// are mul- and add-level operators AND unary ones, so "f(&a, &b)" must keep the
+// space after its comma.
+func TestFormatCallArgArith(t *testing.T) {
+	const in = `func run(a int, b int, c int, p *int, q *int) {
+	f(a + b)
+	f(a + b, c)
+	f(a == b, c)
+	f(a && true, c)
+	f(a | b, c)
+	f(a << b, c)
+	f(g(a + b), c)
+	f(g(a + b))
+	f(a + b*c, c)
+	f(&p, &q)
+	f(-a, -b)
+	x := a + b
+	_ = x
+}
+`
+	const want = `func run(a int, b int, c int, p *int, q *int) {
+	f(a + b)
+	f(a+b, c)
+	f(a == b, c)
+	f(a && true, c)
+	f(a|b, c)
+	f(a<<b, c)
+	f(g(a+b), c)
+	f(g(a + b))
+	f(a+b*c, c)
+	f(&p, &q)
+	f(-a, -b)
+	x := a + b
+	_ = x
+}
+`
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("call-argument spacing:\n got %q\nwant %q", g, want)
+	}
+
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
+	}
+}
+
 // TestFormatSliceColon pins gofmt's rule for spacing a slice ":": spaced when the
 // slice writes more than one bound and at least one of them is a binary expression
 // ("xs[i+1 : j-1]", "xs[a+1 : b]", "xs[a : b+1]", "xs[a+1 : b : n]"), tight

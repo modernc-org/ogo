@@ -64,9 +64,7 @@ func (g *grid) neighbors(x, y int) int {
 	for dy := -1; dy <= 1; dy++ {
 		for dx := -1; dx <= 1; dx++ {
 			if dx != 0 || dy != 0 {
-				nx := x + dx
-				ny := y + dy
-				n = n + g.at(nx, ny)
+				n = n + g.at(x+dx, y+dy)
 			}
 		}
 	}

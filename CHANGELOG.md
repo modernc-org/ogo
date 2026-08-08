@@ -113,6 +113,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixes
 
+- **`ogo fmt` tightens a binary operand inside a multi-argument call**, as gofmt
+  does: `f(a+b, c)` where `f(a + b)` keeps its spaces. That reads like an
+  inconsistency and is the rule — gofmt raises its expression DEPTH for an argument
+  list of more than one argument, and at depth the add- and mul-level operators
+  render tight. A comparison and a logical operator stay spaced at any depth. It is
+  the same rule `ogo fmt` already applied inside a subscript, now applied where it
+  is met far more often; `_examples/life` had been written around it and is spelt
+  naturally again.
+- **A unary operator is no longer tightened by that rule.** `&` and `*` and `-` are
+  mul- and add-level operators AND unary ones, so a purely symbolic test dropped the
+  space after the comma in `f(&a, &b)`. Latent in the subscript rule since it
+  shipped; a subscript rarely holds an address.
+- **A float literal ends an operand.** `isOperandEnd` had no case for one, so the
+  `/` in `10.0/4.0` was not recognised as a division.
 - **A string literal is decoded and re-quoted for C** rather than passed through.
   Go and C share the common escapes and part company on the rest, and the
   passthrough was wrong wherever they do: C's `\x` has no length limit, so `"a\xffb"`

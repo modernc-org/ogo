@@ -317,8 +317,8 @@ var frames [nFrames][nPoints]pt = [nFrames][nPoints]pt{
 // setXY puts the beam at one point. The DAC takes a 16-bit level, so an 8-bit
 // coordinate is shifted into the top of it.
 func setXY(x int, y int) {
-	p2.WritePinY(xPin, x << 8)
-	p2.WritePinY(yPin, y << 8)
+	p2.WritePinY(xPin, x<<8)
+	p2.WritePinY(yPin, y<<8)
 	p2.WaitCycles(dwell)
 }
 
@@ -326,7 +326,7 @@ func setXY(x int, y int) {
 // idea what a line is, it only ever shows where the beam is now.
 func lineTo(a pt, b pt) {
 	for i := 1; i <= steps; i++ {
-		setXY(a.x + (b.x - a.x)*i/steps, a.y + (b.y - a.y)*i/steps)
+		setXY(a.x+(b.x-a.x)*i/steps, a.y+(b.y-a.y)*i/steps)
 	}
 }
 

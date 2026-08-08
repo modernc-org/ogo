@@ -341,7 +341,7 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// keep it compact ("xs[:n+1]", "a[i+1]", "xs[a+b*c]", "xs[a&b]"). Commas (in a
 	// call), ":" and the brackets are handled by the cases above; this covers the
 	// add- and mul-level operators the rules below would otherwise space.
-	case c.inIndex && (isAddOp(prev) || isAddOp(curr) || isMulOp(prev) || isMulOp(curr)):
+	case (c.inIndex || c.inArgs) && tightBinaryGap(prevPrev, prev, curr):
 		return false
 	// Unambiguous unary operators never need a space after them
 	case prev == NOT || prev == TILDE:
@@ -386,12 +386,32 @@ func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
 	return needsSpace(f.prevPrevTok, prev, curr, c)
 }
 
+// tightBinaryGap reports whether this gap sits beside a BINARY add- or mul-level
+// operator, which is the only kind gofmt's depth rule tightens.
+//
+// The binary test is not a refinement, it is the rule: "&" and "*" and "-" are
+// mul- and add-level operators AND unary ones, so a gap beside "&b" in "f(&a, &b)"
+// matched a purely symbolic test and lost the space after the comma. The unary
+// forms take their spacing from the cases below, which is where they always did.
+func tightBinaryGap(prevPrev, prev, curr Symbol) bool {
+	switch {
+	case isAddOp(curr) || isMulOp(curr):
+		return isOperandEnd(prev) // an operand before it makes it binary
+	case isAddOp(prev) || isMulOp(prev):
+		return isOperandEnd(prevPrev)
+	}
+	return false
+}
+
 // isOperandEnd reports whether a token can END an operand -- a literal, a name, or
 // a closing bracket or paren. It is how "*" and "&" are told apart from their unary
 // forms: an operator with an operand before it is binary, and one without is unary.
 func isOperandEnd(s Symbol) bool {
 	switch s {
-	case INT, STRING, CHAR, RPAREN, RBRACK, IDENT:
+	// FLOAT belongs here for the same reason INT does and was simply missing: a
+	// float literal ends an operand, so the "/" in "10.0/4.0" is a division and not
+	// the start of a unary anything.
+	case INT, FLOAT, STRING, CHAR, RPAREN, RBRACK, IDENT:
 		return true
 	}
 	return false
@@ -576,6 +596,10 @@ type formatterCtx struct {
 	inParamDecl bool
 	inType      bool
 	inIndex     bool // True inside an Index, where ':' binds tight ("s[0:1]")
+	inArgs      bool // True inside an argument list of MORE THAN ONE argument, where
+	// gofmt renders an add- or mul-level operator tight ("f(a+b, c)") and leaves a
+	// relational or logical one spaced ("f(a == b, c)"). One argument does not: it is
+	// gofmt's expression DEPTH, which a call raises only when it has several.
 	// sliceColonBlanks is true inside a multi-bound slice whose ":" gofmt spaces
 	// because one of the bounds is a binary expression ("xs[i+1 : j-1]").
 	sliceColonBlanks bool
@@ -946,8 +970,10 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					// literal they sit -- a function literal given as an element.
 					c.inLiteralBraces = false
 					// A block resets subscript depth, so the tight-operator rule for an
-					// index does not reach into a statement body nested inside one.
+					// index or an argument list does not reach into a statement body
+					// nested inside one -- a function literal written as an argument.
 					c.inIndex = false
+					c.inArgs = false
 				case ConstDecl, VarDecl, TypeDecl, ImportDecl:
 					// A grouped declaration indents its specs, as gofmt does, with the
 					// parentheses staying at the level of the keyword -- the same shape
@@ -970,6 +996,13 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 						c.indentLevel++
 					}
 				case ResultList, ArgumentList:
+					// Several arguments raise gofmt's expression depth and one does
+					// not, which is the whole of the difference between "f(a+b, c)"
+					// and "f(a + b)". Scoped to the subtree by the by-value ctx, so a
+					// nested call inherits it -- "f(g(a+b), c)" is tight in gofmt too.
+					if Symbol(-n) == ArgumentList && argumentCount(ast[2:next]) > 1 {
+						c.inArgs = true
+					}
 					// A list whose first element starts a line of its own indents what
 					// follows it. The parentheses are not part of these productions, so
 					// the closing one is emitted at the level outside them with nothing
@@ -1234,4 +1267,17 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		}
 	}
 	return err
+}
+
+// argumentCount counts the arguments of an ArgumentList, which is what decides
+// whether it raises gofmt's expression depth: `ArgumentList = Expression { ","
+// Expression } [ "..." ] [ "," ]`, so the direct Expression children are the
+// arguments and a trailing comma or ellipsis is not one of them.
+func argumentCount(ast []int32) (n int) {
+	for c := range it(ast) {
+		if c.sym == Expression {
+			n++
+		}
+	}
+	return n
 }
