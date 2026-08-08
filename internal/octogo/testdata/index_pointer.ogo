@@ -55,14 +55,16 @@ func assignSide() {
 	*pn = 1
 }
 
-// A slice expression over a pointer is the same operation and is refused the same
-// way. A written pointer type, a parameter and a pointer receiver all reach it.
+// A slice expression over a pointer is refused the same way, and says SLICE: the
+// verb follows the operation written, as Go's does, so a program that sliced is not
+// told it cannot index. A written pointer type, a parameter and a pointer receiver
+// all reach it.
 func sliceSide(pf *float64) {
-	// ERROR "invalid operation: cannot index pf"
+	// ERROR "invalid operation: cannot slice pf"
 	_ = pf[0:1]
 
 	var p *int
-	// ERROR "invalid operation: cannot index p"
+	// ERROR "invalid operation: cannot slice p"
 	_ = p[:]
 }
 

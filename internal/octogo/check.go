@@ -5741,6 +5741,58 @@ func (f *File) thirdSliceBound(index Node) (Node, bool) {
 	return Node{}, false
 }
 
+// isSliceExpr reports whether an Index node is a SLICE expression, "a[l:h]", rather
+// than an index, "a[i]". Its colon is what tells them apart, and the verb in a
+// diagnostic follows it: Go says "cannot slice" for one and "cannot index" for the
+// other, and using the wrong one names an operation the program does not contain.
+func (f *File) isSliceExpr(index Node) bool {
+	for c := range it(index.ast) {
+		if c.sym == 0 && f.ch(c.tok) == COLON {
+			return true
+		}
+	}
+	return false
+}
+
+// pointerOfType renders the parenthetical for a POINTER operand, " (variable of
+// type *int)". Its pointee is recorded as a Kind or as a named type, so between the
+// two most pointers can be named; one whose pointee is neither gets no parenthetical.
+func (f *File) pointerOfType(s *Scope, id Token) string {
+	d, ok := s.find(id.Src()).(*VarDeclaration)
+	if !ok || !d.isPtr {
+		return ""
+	}
+	switch {
+	case d.hasElemKind:
+		return " (variable of type *" + kindName(d.elemKind) + ")"
+	case d.typeName.IsValid():
+		return " (variable of type *" + d.typeName.Src() + ")"
+	}
+	return ""
+}
+
+// indexVerb is "index" or "slice", whichever the operation written is.
+func (f *File) indexVerb(index Node) string {
+	if f.isSliceExpr(index) {
+		return "slice"
+	}
+	return "index"
+}
+
+// ofType renders Go's parenthetical naming an operand's type, " (variable of type
+// int)". It is what turns "cannot index n" into a diagnosis: the operation is
+// refused BECAUSE of the type, and the type is the part the reader does not have.
+//
+// A Kind names only a predeclared type, so a composite operand gets no parenthetical
+// rather than a made-up name -- an omission the reader can live with, where a wrong
+// type name is worse than none.
+func ofType(k Kind, known bool) string {
+	if !known {
+		return ""
+	}
+	return " (variable of type " + kindName(k) + ")"
+}
+
 // endsInCall reports whether the last operation of a statement postfix's suffix
 // chain is a call, so "p.m()" and "a[i].m()" are calls -- valid expression
 // statements -- while "p.f", "a[i]" and "p.m().f" end in a selection or index and
@@ -6525,8 +6577,8 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 		return
 	}
 	if !d.isPtr {
-		if _, known := f.identKind(s, base); known { // a known scalar is not a pointer
-			f.err(base.Position(), "invalid operation: cannot indirect %s", base.Src())
+		if k, known := f.identKind(s, base); known { // a known scalar is not a pointer
+			f.err(base.Position(), "invalid operation: cannot indirect %s%s", base.Src(), ofType(k, true))
 		}
 		return
 	}
@@ -6545,9 +6597,15 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	if !ok {
 		return
 	}
-	// Neither a scalar variable nor a pointer can be indexed.
-	if _, known := f.identKind(s, base); known || f.indexingPointer(s, base) {
-		f.err(base.Position(), "invalid operation: cannot index %s", base.Src())
+	// Neither a scalar variable nor a pointer can be indexed. The two are exclusive
+	// -- a pointer resolves to no Kind -- so one parenthetical or the other, never
+	// both concatenated.
+	if k, known := f.identKind(s, base); known || f.indexingPointer(s, base) {
+		of := f.pointerOfType(s, base)
+		if known {
+			of = ofType(k, true)
+		}
+		f.err(base.Position(), "invalid operation: cannot index %s%s", base.Src(), of)
 		return
 	}
 	if d.hasElemKind && !d.isPtr {
@@ -6673,7 +6731,9 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 		// which called it "invalid type argument of unary *", a diagnostic about the
 		// emitted C rather than about the program.
 		if isPtr, known := f.exprPointerness(s, fac); known && !isPtr {
-			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s", f.exprSource(fac))
+			k, hasKind := f.exprType(s, fac)
+			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s%s",
+				f.exprSource(fac), ofType(k, hasKind))
 		}
 		return
 	case ARROW:
@@ -7436,12 +7496,13 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	// not-known: an array and a slice are left to their own handling, while a
 	// pointer is refused here (see indexingPointer).
 	if index, isIndex := firstSuffixIndex(suffix); hasID && hasSuffix && isIndex {
+		verb := f.indexVerb(index)
 		if f.indexingPointer(s, id) {
-			f.err(id.Position(), "invalid operation: cannot index %s", id.Src())
+			f.err(id.Position(), "invalid operation: cannot %s %s%s", verb, id.Src(), f.pointerOfType(s, id))
 		} else if k, known := f.identKind(s, id); known {
 			switch kindCategory(k) {
 			case catNumeric, catBool:
-				f.err(id.Position(), "invalid operation: cannot index %s", id.Src())
+				f.err(id.Position(), "invalid operation: cannot %s %s%s", verb, id.Src(), ofType(k, true))
 			case catString:
 				// A third slice bound sets the result's capacity, and a string has
 				// none: slicing one yields a string, which is { pointer, length }.
@@ -7499,7 +7560,8 @@ func (f *File) checkResultSuffix(s *Scope, id Token, start int32, suffix Node) {
 	switch next.sym {
 	case Index:
 		if c := kindCategory(resultKind); c == catNumeric || c == catBool {
-			f.err(f.tok(next.Pos()).Position(), "invalid operation: cannot index %s", name)
+			f.err(f.tok(next.Pos()).Position(), "invalid operation: cannot %s %s%s",
+				f.indexVerb(next), name, ofType(resultKind, true))
 		}
 	case Selector:
 		if m, ok := f.selectorMember(next); ok {
@@ -7551,7 +7613,8 @@ func (f *File) checkFieldSuffix(s *Scope, id Token, start int32, suffix Node) {
 		// A string is byte-indexable, as it is anywhere else; a number and a bool
 		// have no elements at all.
 		if c := kindCategory(kind); c == catNumeric || c == catBool {
-			f.err(f.tok(next.Pos()).Position(), "invalid operation: cannot index %s", name)
+			f.err(f.tok(next.Pos()).Position(), "invalid operation: cannot %s %s%s",
+				f.indexVerb(next), name, ofType(kind, true))
 		}
 	case Selector:
 		if m, ok := f.selectorMember(next); ok {

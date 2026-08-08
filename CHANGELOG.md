@@ -18,6 +18,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **A slice expression that is refused says "cannot slice", not "cannot index".**
+  `n[0:1]` on an `int` was told it could not be *indexed* — an operation the program
+  does not contain. The verb now follows what was written, as Go's does.
+
+- **A refused index, slice or dereference names the operand's type**, `cannot index n
+  (variable of type int)`, where it used to name only the operand. That is the part
+  the reader does not already have: the operation is refused *because* of the type.
+  It reaches the pointer cases too, `cannot index p (variable of type *int)`.
+
+  A COMPOSITE operand still gets no type. The checker reduces a type to a
+  predeclared `Kind` to name it, and a slice, an array or a struct reduces to none —
+  so those say `cannot indirect xs` with no parenthetical, rather than inventing a
+  name. Three messages in the family also still differ from Go's in shape; both are
+  written down in `specs.go`.
+
 ### Testing
 
 - **The fuzzer generates pointers to arrays.** `ogo smith` had no pointer variables

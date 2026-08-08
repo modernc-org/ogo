@@ -41,10 +41,13 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260807 Diagnostics naming a TYPE name the predeclared Kind, "type int has
-// no field f", where Go names the operand and its full type, "q.n.f undefined (type
-// int has no field or method f)". The positions match Go's; the wording is a family
-// of its own, and the "cannot index" half omits the type entirely.
+// TODO 20260808 Three diagnostics still read differently from Go's, in shape rather
+// than in content: an "invalid operation:" prefix on "cannot index"/"cannot slice",
+// which Go drops there and keeps on "cannot indirect"; "type int has no field f",
+// where Go writes "n.f undefined (type int has no field or method f)"; and "cannot
+// call non-function q.n", where Go writes "cannot call q.n (variable of type int):
+// int is not a function". A COMPOSITE operand gets no type in the parenthetical --
+// a Kind names only a predeclared type, and a wrong name is worse than none.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.

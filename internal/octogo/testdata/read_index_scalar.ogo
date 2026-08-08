@@ -13,16 +13,28 @@ func scalarIndex() {
 	var s string
 	var a [3]int
 
-	// ERROR "invalid operation: cannot index n"
+	// The type is named, as Go names it: the operation is refused BECAUSE of the
+	// type, and the type is the part the reader does not already have.
+	// ERROR "invalid operation: cannot index n \(variable of type int\)"
 	_ = n[0]
-	// ERROR "invalid operation: cannot index b"
+	// ERROR "invalid operation: cannot index b \(variable of type bool\)"
 	_ = b[0]
-	// ERROR "invalid operation: cannot index answer"
+	// ERROR "invalid operation: cannot index answer \(variable of type int\)"
 	_ = answer[0]
 
-	// A string is byte-indexable, and an array is indexable: both are fine.
+	// A SLICE expression says slice, not index: the verb follows the operation
+	// written. Saying the other one names something the program does not contain.
+	// ERROR "invalid operation: cannot slice n \(variable of type int\)"
+	_ = n[0:1]
+	// ERROR "invalid operation: cannot slice b"
+	_ = b[:]
+
+	// A string is byte-indexable, and an array is indexable: both are fine. So is
+	// slicing either of them.
 	_ = s[0]
 	_ = a[0]
+	_ = s[0:1]
+	_ = a[:]
 
 	_ = n
 	_ = b
