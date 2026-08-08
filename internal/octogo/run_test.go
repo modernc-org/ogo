@@ -11726,6 +11726,93 @@ func main() {
 			"\tprintln(\"tab\\there\\nnl\")\n" +
 			"}\n",
 		want: "3 97 255 98\n4 226 128 168 120\n3 65 66 55\ntab\there\nnl\n",
+	},
+	{
+		// A method PROMOTED from an embedded field satisfies an interface, as it does
+		// in Go. It always satisfied a direct call -- b.get() reached A's get -- and
+		// the interface check read the type's OWN methods only, so one method-set
+		// question was answered two different ways: a method you could call was not
+		// a method you could put behind the interface it was written for.
+		//
+		// The vtable thunk is what the fix has to reach: a promoted method takes the
+		// EMBEDDED sub-object as its receiver, not the whole struct, so the thunk
+		// walks the field path in. Two levels deep, a value receiver, and an outer
+		// method OVERRIDING the promoted one (the shallowest wins, as in Go) are all
+		// here, and every line was diffed against the same program run by Go.
+		name: "an embedded type's method satisfies an interface",
+		src: `type Getter interface {
+	get() int
+}
+
+type A struct {
+	n int
+}
+
+func (a *A) get() int {
+	return a.n
+}
+
+type V struct {
+	v int
+}
+
+func (v V) get() int {
+	return v.v
+}
+
+type B struct {
+	A
+}
+
+type C struct {
+	B
+	k int
+}
+
+type D struct {
+	A
+}
+
+func (d *D) get() int {
+	return d.n * 10
+}
+
+type W struct {
+	V
+}
+
+func main() {
+	var b B
+	b.n = 7
+	var g Getter = &b
+	println(g.get())
+
+	var c C
+	c.n = 9
+	c.k = 1
+	g = &c
+	println(g.get(), c.k)
+
+	var d D
+	d.n = 4
+	g = &d
+	println(g.get(), d.A.get())
+
+	var w W
+	w.v = 3
+	g = &w
+	println(g.get())
+
+	switch t := g.(type) {
+	case *W:
+		println("W", t.get())
+	default:
+		println("other")
+	}
+	println(g.(*W).get())
+}
+`,
+		want: "7\n9 1\n40 4\n3\nW 3\n3\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -113,6 +113,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixes
 
+- **An embedded type's method satisfies an interface**, as it does in Go. It always
+  satisfied a direct call — `b.get()` reached the embedded `A`'s `get` — while the
+  interface check read the type's OWN methods only, so one method-set question was
+  answered two different ways: a method you could call was not a method you could put
+  behind the interface it was written for. Both the checker and the emitter had their
+  own copy of the check and both now resolve through the embedding chain, breadth
+  first as Go promotes. The vtable thunk is where it shows: a promoted method takes
+  the EMBEDDED sub-object as its receiver, not the whole struct, so the thunk walks
+  the field path in.
+
 - **`ogo fmt` tightens a binary operand inside a multi-argument call**, as gofmt
   does: `f(a+b, c)` where `f(a + b)` keeps its spaces. That reads like an
   inconsistency and is the rule — gofmt raises its expression DEPTH for an argument

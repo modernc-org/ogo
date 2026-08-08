@@ -4285,8 +4285,13 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 	e.ifaceVTables[key] = true
 	var b strings.Builder
 	for _, m := range methods {
-		cname := methodCName(concrete, m.name)
-		if _, has := e.funcRet[cname]; !has {
+		// Resolved through the embedding chain, not read off the concrete type: a
+		// PROMOTED method is in the type's method set, so it satisfies an interface
+		// as a declared one does, and the same lookup the direct call path uses
+		// answers both. The path it returns is empty for a method the type declares
+		// itself, so that case is untouched.
+		cname, path, _, has := e.promotedMethod(concrete, m.name)
+		if !has {
 			e.fail("%s does not implement %s: missing method %s", concrete, iface, m.name)
 			return false
 		}
@@ -4300,6 +4305,17 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		recv := "*(" + concrete + "*)_ogo_r"
 		if e.methodPtr[cname] {
 			recv = "(" + concrete + "*)_ogo_r"
+		}
+		if len(path) != 0 {
+			// A promoted method takes the EMBEDDED sub-object as its receiver rather
+			// than the whole struct. embeddedPathC renders the way in, which is the
+			// same helper the direct call path uses -- the C field is not spelt the
+			// way the source spells it, and writing the path out by hand here got
+			// "->A" where the field is named "A_".
+			sub := "(*(" + concrete + "*)_ogo_r)" + e.embeddedPathC(concrete, path)
+			if recv = sub; e.methodPtr[cname] {
+				recv = "&" + sub
+			}
 		}
 		call := cname + "(" + strings.Join(append([]string{recv}, args...), ", ") + ")"
 		switch {

@@ -5628,7 +5628,20 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 		return "", "", "", "", "", true
 	}
 	for _, name := range sortedNames(set) {
-		fd := td.methods[name]
+		fd, ptrRecv := td.methods[name], td.ptrRecv[name]
+		if fd == nil {
+			// A method PROMOTED from an embedded field is in this type's method set,
+			// so it satisfies an interface exactly as a declared one does. The direct
+			// call path has always resolved these -- `c.get()` reaches an embedded
+			// get -- and this one did not, which answered one method-set question two
+			// different ways: a type whose promoted method was callable could not be
+			// put in the interface that method set was written for.
+			if owner, promoted := f.methodOwner(s, td.Token(), name); promoted {
+				if otd, ok := s.find(owner.Src()).(*TypeDeclaration); ok {
+					fd, ptrRecv = otd.methods[name], otd.ptrRecv[name]
+				}
+			}
+		}
 		if fd == nil {
 			return name, "", "", "", "", false
 		}
@@ -5637,7 +5650,7 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 		// mutating method is satisfied by &x and not by x, and this target keeps it
 		// -- the "&" is where a reference into the caller's storage becomes visible,
 		// which is what the lifetime rules are trying to keep legible.
-		if td.ptrRecv[name] && !valueIsPtr {
+		if ptrRecv && !valueIsPtr {
 			return "", name, "", "", "", false
 		}
 		if fd.Type == nil {

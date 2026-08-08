@@ -224,3 +224,51 @@ func methodSets() {
 
 	_, _ = m1, m2
 }
+
+// A method PROMOTED from an embedded field is in the type's method set, so it
+// satisfies an interface exactly as a declared one does. The direct call path always
+// resolved these; the interface check read the type's OWN methods only, and answered
+// the same question the other way.
+type Emb struct {
+	n int
+}
+
+func (e *Emb) get() int {
+	return e.n
+}
+
+type Outer struct {
+	Emb
+}
+
+type Deeper struct {
+	Outer
+}
+
+type Reader interface {
+	get() int
+}
+
+func promoted() {
+	var o Outer
+	var r Reader = &o
+	_ = r
+
+	// Two levels down is still promoted, breadth-first as Go has it.
+	var d Deeper
+	var r2 Reader = &d
+	_ = r2
+}
+
+// A method the chain does not carry is still missing, and says so.
+type NeedsTwo interface {
+	get() int
+	put(v int)
+}
+
+func promotedShort() {
+	var o Outer
+	// ERROR "does not implement NeedsTwo \(missing method put\)"
+	var n NeedsTwo = &o
+	_ = n
+}
