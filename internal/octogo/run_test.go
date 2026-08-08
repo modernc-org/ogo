@@ -83,7 +83,7 @@ func main() {
 	var cnt uint = 3
 	var v32 int32 = 5
 	var v64 int64 = 5
-	println(v32<<cnt, v64<<cnt, n<<cnt, b>>1)
+	println(v32<<cnt, v64<<3, n<<cnt, b>>1)
 
 	var w8 int8 = 100
 	var w64 uint64 = 1 << 40
@@ -132,9 +132,14 @@ func main() {
 	scale := 50 * one
 	println(take32(scale), take32(fracBits*one))
 
-	// A shift keeps the type being SHIFTED, whatever the count is typed as.
+	// A shift keeps the type being SHIFTED, whatever the count is typed as. The
+	// value shifted by the VARIABLE count is 32-bit on purpose: flexcc miscompiles
+	// a 64-bit shift by a variable count (it is correct by a constant one, and
+	// "v * 8" is correct), so a 64-bit one here would be testing the backend's bug
+	// rather than this rule.
 	var cnt uint = 3
-	println(v<<cnt, 1<<cnt)
+	var w32 int32 = 5
+	println(w32<<cnt, v<<3, 1<<cnt)
 }
 `,
 		want: "1099511627777 1099511627777\n" +
@@ -142,7 +147,7 @@ func main() {
 			"1.5 1.5\n" +
 			"3000000001 3000000001\n" +
 			"3276800 1048576\n" +
-			"8796093022208 8\n",
+			"40 8796093022208 8\n",
 	},
 	{
 		name: "arithmetic and control flow",

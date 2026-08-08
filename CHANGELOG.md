@@ -63,6 +63,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A composite literal with a value of the wrong type is refused**, where it used
   to compile and write the value's bytes into the field.
 
+### Known issues
+
+- **A 64-bit shift by a variable count is miscompiled on the target.** `v << n` and
+  `v >> n` on an `int64` or `uint64`, where `n` is not a compile-time constant,
+  produce garbage on a P2; the same shift by a constant count is correct, and so is
+  multiplying by the equivalent power of two. It is a backend fault, present since
+  64-bit integers shipped and found by a new test rather than caused by one:
+  `doc/shift64-by-variable.c` is the reproducer, and the host C compiler gets every
+  case right, which is why it went unseen. Working around it means shifting in
+  32-bit halves, which is not built yet.
+
 ## v0.23.0
 
 A standard library, a formatted print, and an example that is also a test against Go.
