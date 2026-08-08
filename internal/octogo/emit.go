@@ -13139,22 +13139,27 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 
 // emitLen emits the builtin `len(x)`: an array's length is its compile-time bound;
 // a string's and a slice's is its header's `len` field.
-// arrayFieldBound returns the declared extent of an array-typed struct field named
-// by an expression, `r.buf` or `r.inner.buf`. It is the length and the capacity
-// alike, and it is a compile-time constant, so no storage is read to produce it.
+// arrayChainBound returns the extent of an ARRAY reached through a chain of fields
+// and indexes: a struct's array field, `len(r.buf)` and `len(r.inner.buf)`; a ROW of
+// a multi-dimensional one, `len(m[0])`; and a field reached past an index,
+// `len(rs[i].buf)`. It is the length and the capacity alike, and it is a
+// compile-time constant, so no storage is read to produce it.
 //
-// A field reached through an index, `rs[i].buf`, is not matched here: that is a
-// chain rather than a selector list, and it has never been asked for.
-func (e *emitter) arrayFieldBound(arg []int32) (string, bool) {
-	base, fields, ok := e.factorFieldAccess(e.factorKids(arg))
+// The chain walk is what makes one answer serve all of them. What it reports having
+// reached carries the extents still remaining -- one index into a [2][3]int leaves a
+// [3]int -- so the answer is simply the outermost of those, exactly as it is for a
+// variable. A slice reached the same way carries no extents and falls through to the
+// header field, which is where its length lives.
+func (e *emitter) arrayChainBound(arg []int32) (string, bool) {
+	base, steps, ok := e.factorAccessChain(e.factorKids(arg))
 	if !ok {
 		return "", false
 	}
-	a, ok := e.fieldArray(base, fields)
-	if !ok {
+	cur, ok := e.accessChainType(base, steps)
+	if !ok || len(cur.dims) == 0 {
 		return "", false
 	}
-	return a.bound, true // the OUTER extent, as for a multi-dimensional variable
+	return cur.dims[0], true
 }
 
 func (e *emitter) emitLen(callSuffix []int32) {
@@ -13186,7 +13191,7 @@ func (e *emitter) emitLen(callSuffix []int32) {
 	// An array-typed struct field, `len(r.buf)`: its length is the declared extent,
 	// exactly as for an array variable. A slice-typed field carries a header and
 	// falls through to it below.
-	if b, ok := e.arrayFieldBound(arg); ok {
+	if b, ok := e.arrayChainBound(arg); ok {
 		e.emit(b)
 		return
 	}
@@ -13246,7 +13251,7 @@ func (e *emitter) emitCap(callSuffix []int32) {
 		e.emit(a.bound)
 		return
 	}
-	if b, ok := e.arrayFieldBound(arg); ok {
+	if b, ok := e.arrayChainBound(arg); ok {
 		e.emit(b) // an array's capacity is its length: see the len case
 		return
 	}

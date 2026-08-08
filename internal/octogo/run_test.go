@@ -2272,6 +2272,52 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// `len` and `cap` of an ARRAY reached through a chain: a ROW of a
+		// multi-dimensional one, `len(m[0])`, a struct's array field, that field's
+		// row, a row through a pointer, a row of a DEFINED array type, and a field
+		// reached past an index. Every one of them is a compile-time constant, and
+		// what makes one answer serve them all is that the chain walk reports the
+		// extents still remaining -- one index into a [2][3]int leaves a [3]int.
+		//
+		// A SLICE reached the same way is not a constant, and is here to pin that it
+		// still reads its header's length rather than an extent it does not have.
+		name: "len and cap of an array reached through a chain",
+		src: `type Row [3]int
+
+type G struct {
+	rows [2][3]int
+	data []int
+}
+
+func main() {
+	var m [2][3]int
+	m[1][2] = 5
+	println(len(m), len(m[0]), cap(m[1]), m[1][2])
+
+	var z [2][3][4]int
+	z[0][1][2] = 7
+	println(len(z), len(z[0]), len(z[0][1]), z[0][1][2])
+
+	var g G
+	g.rows[1][0] = 9
+	g.data = []int{1, 2, 3}
+	println(len(g.rows), len(g.rows[0]), len(g.data), g.rows[1][0])
+
+	p := &m
+	println(len(p), len(p[0]), p[1][2])
+
+	var n [2]Row
+	n[0][1] = 4
+	println(len(n), len(n[0]), n[0][1])
+
+	gs := []G{{}, {}}
+	gs[1].rows[0][2] = 6
+	println(len(gs[0].rows), len(gs[0].rows[1]), gs[1].rows[0][2])
+}
+`,
+		want: "2 3 3 5\n2 3 4 7\n2 3 3 9\n2 3 5\n2 3 4\n2 3 6\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what

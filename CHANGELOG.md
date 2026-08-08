@@ -18,6 +18,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`len` and `cap` of an array reached through a chain**: a ROW of a
+  multi-dimensional one, `len(m[0])`, a struct's array field indexed to its row,
+  `len(g.rows[0])`, a row through a pointer to the array, and a field reached past an
+  index, `len(gs[i].rows)`. Only the outermost extent of a variable or of a plain
+  field answered before; everything else was `len is only supported for strings,
+  arrays and slices yet`, about an operand that is an array.
+
+  One walk answers all of them, which is why it is one change rather than six: what
+  the chain walk reports having reached carries the extents still remaining — one
+  index into a `[2][3]int` leaves a `[3]int` — so the answer is the outermost of
+  those, exactly as it is for a variable. A slice reached the same way carries no
+  extents and still reads its header, which is where a length that is not a constant
+  lives.
+
 ### Fixed
 
 - **A slice expression that is refused says "cannot slice", not "cannot index".**
