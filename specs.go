@@ -1705,6 +1705,10 @@
 // declares v and switches on it. Go rejects that text, so the portable spelling
 // of the same thing is "switch v := f(); v".
 //
+// A TYPE switch takes neither form: its guard is the whole statement, so nothing
+// may follow it. "switch x := v.(type); x {" is refused, as Go refuses it -- there
+// is no expression for a type switch to also switch on.
+//
 // As in Go, a case body does not fall through to the next, and "break" leaves the
 // switch rather than any enclosing loop.
 //

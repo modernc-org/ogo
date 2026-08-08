@@ -85,3 +85,15 @@ func concrete(v any) {
 	p := v.(P)
 	_ = p
 }
+
+// A type switch guard IS the statement, so nothing may follow it: Go has no
+// meaning for "switch x := v.(type); x {" and neither has this. It used to be read
+// as an ordinary type switch with the tag ignored, which compiled a program Go
+// rejects -- and gave the right answer, which is the worst way to be wrong.
+func guardTag(v any) {
+	// ERROR "a type switch guard takes no expression after it"
+	switch x := v.(type); x {
+	case T:
+		_ = x
+	}
+}

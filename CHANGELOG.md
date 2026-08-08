@@ -76,6 +76,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A type switch guard may not be followed by an expression**, `switch x :=
+  v.(type); x {`. A type switch's guard is the whole statement, so there is nothing
+  for a tag to be; Go rejects the text outright.
+
+  It used to compile — the tag was read and ignored, so the statement ran as an
+  ordinary type switch and gave the answer you would expect. Accepting a program Go
+  has no meaning for is the problem, and giving the right answer while doing it is
+  the worst version: the habit travels to Go, where it does not build. The message
+  names the spelling that works.
+
 - **A call that yields no values is refused where a value is wanted**,
   `println(v.m())` for a method declared without results. Go rejects it —
   `v.m() (no value) used as value` — and so does this now, in every position: an

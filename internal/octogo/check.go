@@ -2745,6 +2745,15 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 		switch c.sym {
 		case SwitchGuard:
 			if ts, isTypeSwitch = f.typeSwitchParts(c); isTypeSwitch {
+				if ts.hasTag {
+					// `switch x := v.(type); x {`. A type switch's guard IS the
+					// statement, so there is nothing for a tag to be: Go rejects the
+					// text outright, and reading it as a plain type switch -- which
+					// is what ignoring the tag did -- accepted a program Go has no
+					// meaning for.
+					f.err(f.tok(ts.tag.Pos()).Position(),
+						"a type switch guard takes no expression after it: write %q", "switch "+ts.name.Src()+" := "+ts.operand.Src()+".(type) {")
+				}
 				f.checkTypeSwitchOperand(s, ss, ts)
 				break
 			}
@@ -2774,6 +2783,11 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 type typeSwitchGuard struct {
 	name    Token
 	operand Token
+	// tag marks a guard that also carried a ";" and something after it, `switch x
+	// := v.(type); x {`. That is not a type switch and not anything else: Go has no
+	// statement for it, so it is refused rather than read as one (see checkSwitch).
+	tag    Node
+	hasTag bool
 }
 
 // typeSwitchParts recognises a type switch's guard. The Selector spelling ".(type)"
@@ -2787,6 +2801,12 @@ func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
 	value := g.tag
 	if g.hasName {
 		value = g.value
+		// The guard is `name := value`, so anything after a ";" is a TAG the type
+		// switch has no room for. Recorded rather than ignored, which is what let
+		// `switch x := v.(type); x {` compile as an ordinary type switch.
+		if g.semi {
+			ts.tag, ts.hasTag = g.tag, g.hasTag
+		}
 	}
 	fac, isFac := f.soleFactor(value)
 	if !isFac {
