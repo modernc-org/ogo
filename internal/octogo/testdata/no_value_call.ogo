@@ -1,0 +1,73 @@
+// A call whose callee yields NO values is not an expression, so using one where a
+// value is wanted is invalid: `println(v.m())` for a method declared without
+// results. Go rejects it, and it has to be rejected here rather than left to the C
+// compiler -- the emitted C passes a void expression where an int is wanted, which
+// gcc refuses and the target's compiler ACCEPTS, printing whatever happened to be
+// in the register. That is how it was found: a program that ran and printed an
+// extra 0 per call.
+//
+// A call statement is the legal form and is untouched: it goes nowhere near the
+// expression checker, which is what tells the two apart.
+
+type X int
+
+func (r *X) nothing() {
+}
+
+func (r *X) value() int {
+	return 3
+}
+
+func plain() {
+}
+
+func take(n int) int {
+	return n
+}
+
+func positions() {
+	v := X(0)
+
+	// ERROR "plain\(\) \(no value\) used as value"
+	println(plain())
+	// ERROR "v.nothing\(\) \(no value\) used as value"
+	println(v.nothing())
+	// ERROR "v.nothing\(\) \(no value\) used as value"
+	println(take(v.nothing()))
+	// ERROR "v.nothing\(\) \(no value\) used as value"
+	println(1 + v.nothing())
+	// ERROR "v.nothing\(\) \(no value\) used as value"
+	x := v.nothing()
+	// ERROR "v.nothing\(\) \(no value\) used as value"
+	var y int = v.nothing()
+	// ERROR "v.nothing\(\) \(no value\) used as value"
+	y = v.nothing()
+
+	_, _ = x, y
+}
+
+func result() int {
+	// ERROR "plain\(\) \(no value\) used as value"
+	return plain()
+}
+
+// The legal forms: a call with no results as a STATEMENT, and a call that does
+// yield a value used as one.
+func legal() {
+	v := X(0)
+	v.nothing()
+	plain()
+	println(v.value(), take(v.value()), 1+v.value())
+	n := v.value()
+	println(n)
+}
+
+// A CONVERSION records the type it converts to, which is what lets a method call on
+// the result be checked at all: `v := X(0)` used to leave v with no type recorded,
+// so every check keying on one was skipped for it.
+func conversions() {
+	v := X(0)
+	// ERROR "type X has no method nosuch"
+	println(v.nosuch())
+	println(v.value())
+}

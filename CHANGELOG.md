@@ -18,6 +18,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Behaviour changes
+
+- **A call that yields no values is refused where a value is wanted**,
+  `println(v.m())` for a method declared without results. Go rejects it —
+  `v.m() (no value) used as value` — and so does this now, in every position: an
+  argument, an operand, a `return`, and the three assignment forms.
+
+  It used to compile and RUN, printing an extra line per call. The emitted C passes
+  a void expression where an `int` is wanted; gcc refuses that, so the host tests
+  never saw it, and the target's compiler accepts it and prints whatever was in the
+  register. Reported from a P2, where two `println(v.foo())` calls each printed a
+  spurious `0` after their real output.
+
+- **A conversion records the type it converts to**, so `v := X(0)` gives `v` the type
+  `X`. It used to leave the variable with no recorded type at all, which silently
+  skipped every check that keys on one — a method call on such a variable went
+  unchecked to the C compiler, including the no-value call above. `v.nosuch()` on one
+  is now `type X has no method nosuch`. The same silence `p := P{1, 2}` had before
+  v0.9.0, in the one initializer shape that still had it.
+
 ### Language
 
 - **`len` and `cap` of an array reached through a chain**: a ROW of a

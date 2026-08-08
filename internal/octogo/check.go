@@ -6909,6 +6909,15 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	if !ok {
 		return Token{}, Token{}, false, false
 	}
+	// A CONVERSION, "v := X(0)": its value has the type converted TO. It is written
+	// like a call, and the callee resolving to a TYPE rather than a function is what
+	// tells the two apart. Without this the variable carried no type at all -- the
+	// same silence "p := P{1, 2}" used to have, and with the same consequence: every
+	// check that keys on a named type was skipped for it, so a method called on one
+	// went unchecked to the C compiler.
+	if _, isType := s.find(callee.Src()).(*TypeDeclaration); isType {
+		return callee, Token{}, isPtr, true
+	}
 	d, ok := s.find(callee.Src()).(*FuncDeclaration)
 	if !ok || d.FuncDecl == nil || d.FuncDecl.Type == nil || d.FuncDecl.Type.Signature == nil {
 		return Token{}, Token{}, false, false
@@ -7514,6 +7523,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	}
 	// An index, selection or call applied to a call or method result whose type is a
 	// predeclared scalar ("g()[i]", "g().field", "p.m().field") is illegal there.
+	// A call yielding NO values, standing where a value is wanted. Reached only
+	// through checkNames, which the value positions call and a call STATEMENT does
+	// not -- that is what tells `println(v.m())` from `v.m()` on a line of its own.
+	if hasID && hasSuffix && f.zeroResultCall(s, id, suffix) {
+		f.err(id.Position(), "%s (no value) used as value", f.exprSource(n))
+	}
 	if hasID && hasSuffix {
 		f.checkResultSuffix(s, id, n.Pos(), suffix)
 		f.checkFieldSuffix(s, id, n.Pos(), suffix)
@@ -7574,6 +7589,62 @@ func (f *File) checkResultSuffix(s *Scope, id Token, start int32, suffix Node) {
 	case CallSuffix:
 		f.err(f.tok(next.Pos()).Position(), "cannot call non-function %s", name)
 	}
+}
+
+// zeroResultCall reports a call whose callee yields NO values -- `plain()`, or
+// `v.m()` for a method declared without results. Used where a VALUE is wanted, that
+// is not an expression at all, and Go rejects the program.
+//
+// It answers only for a callee it resolves: a named function, a method of a
+// variable's named type, or a function-valued variable. A package call, a builtin
+// and anything it cannot pin down are left alone, so the check accuses nothing it
+// has not looked up.
+func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
+	var ops []Node
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			ops = append(ops, c)
+		}
+	}
+	switch {
+	case len(ops) == 1 && ops[0].sym == CallSuffix:
+		switch d := s.find(id.Src()).(type) {
+		case *FuncDeclaration:
+			if d.FuncDecl == nil || d.FuncDecl.Type == nil {
+				return false
+			}
+			return len(f.flattenResults(s, d.FuncDecl.Type.Signature)) == 0
+		case *VarDeclaration:
+			// A call through a function VALUE, `g()`, checked against the signature
+			// the variable carries.
+			if d.funcSig == nil {
+				return false
+			}
+			return len(f.flattenResults(s, d.funcSig)) == 0
+		}
+	case len(ops) == 2 && ops[0].sym == Selector && ops[1].sym == CallSuffix:
+		member, ok := f.selectorMember(ops[0])
+		if !ok {
+			return false
+		}
+		// A VariableDeclaration is what tells a method call from a package one: an
+		// import qualifier resolves to no variable, so `pkg.F()` is left alone.
+		d, ok := s.find(id.Src()).(*VarDeclaration)
+		if !ok || !d.typeName.IsValid() {
+			return false
+		}
+		td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+		if !ok {
+			return false
+		}
+		fd := td.methods[member.Src()]
+		if fd == nil || fd.Type == nil {
+			return false
+		}
+		return len(f.flattenResults(s, fd.Type.Signature)) == 0
+	}
+	return false
 }
 
 // checkFieldSuffix reports an index, selection or call applied to a FIELD whose type
