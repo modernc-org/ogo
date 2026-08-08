@@ -2272,6 +2272,97 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// A type switch case naming an INTERFACE, "case T:", which matches on the
+		// METHOD SET rather than on identity. The clause order is what decides
+		// between two interfaces one type satisfies, so Both must precede T here and
+		// the answers differ if it does not -- which is the property a wrong
+		// lowering would lose.
+		//
+		// What makes it decidable is that the program is closed: the emitter knows
+		// every type and method, so "implements T" is a list of table comparisons it
+		// can write out. Exercised against a type implementing both interfaces, one
+		// implementing a single one, one implementing neither, a nil operand, a
+		// NON-empty operand interface, a concrete case beside interface ones, and
+		// two interfaces in one case.
+		name: "a type switch case naming an interface",
+		src: `type T interface{ foo() }
+
+type U interface{ bar() }
+
+type Both interface {
+	foo()
+	bar()
+}
+
+type X int // foo + bar
+type Y int // foo only
+type Z int // neither
+
+func (*X) foo() { println("X.foo") }
+func (*X) bar() { println("X.bar") }
+func (*Y) foo() { println("Y.foo") }
+func (*Z) other() {}
+
+func which(v any) {
+	switch t := v.(type) {
+	case Both:
+		print("Both: ")
+		t.foo()
+	case T:
+		print("T: ")
+		t.foo()
+	case U:
+		println("U")
+	case nil:
+		println("nil")
+	default:
+		println("none")
+	}
+}
+
+// A non-empty operand interface, with an interface case over it.
+func narrow(s T) {
+	switch s.(type) {
+	case Both:
+		println("narrow: Both")
+	case T:
+		println("narrow: T")
+	default:
+		println("narrow: none")
+	}
+}
+
+// A concrete case beside an interface one, and several types in one case.
+func mixed(v any) {
+	switch v.(type) {
+	case *Y:
+		println("mixed: Y")
+	case T, U:
+		println("mixed: T or U")
+	default:
+		println("mixed: none")
+	}
+}
+
+func main() {
+	x := X(0)
+	y := Y(0)
+	z := Z(0)
+	which(&x)
+	which(&y)
+	which(&z)
+	var n any
+	which(n)
+	narrow(&x)
+	narrow(&y)
+	mixed(&x)
+	mixed(&y)
+	mixed(&z)
+}
+`,
+		want: "Both: X.foo\nT: Y.foo\nnone\nnil\nnarrow: Both\nnarrow: T\nmixed: T or U\nmixed: Y\nmixed: none\n",
+	},
+	{
 		// An interface written where a type is WANTED rather than declared with one
 		// of its own -- "interface{ area() int }" as a parameter, and the empty
 		// "interface{}" that "any" spells. Everything the interface machinery does is

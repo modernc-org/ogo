@@ -11430,9 +11430,92 @@ func (e *emitter) typeSwitchOperand(ast []int32) (string, bool) {
 // A case reads as an EXPRESSION, the grammar having no other place to put it, so
 // "*T" arrives as a deref of a name rather than as a Type. Reading it here is what
 // keeps the grammar out of it.
+// caseIfaceC recognises a type-switch case naming an INTERFACE, `case T:`, and
+// answers with its C name.
+func (e *emitter) caseIfaceC(ex Node) (string, bool) {
+	name, ok := e.exprIdent(ex.ast)
+	if !ok {
+		return "", false
+	}
+	mn := mangle(e.curPkgPrefix, name)
+	return mn, e.isIfaceCType(mn)
+}
+
+// ifaceCaseCond renders the test for a case naming an INTERFACE. A clause like that
+// matches on the METHOD SET: any dynamic type implementing it takes the clause, so
+// the first such clause wins and the order they are written in is what decides
+// between two interfaces a type satisfies.
+//
+// What makes it decidable here is that the program is closed: the emitter knows
+// every type and every method, so the set of dynamic types that could be in the
+// operand AND implement the case is a list it can write out. The test is that list
+// of table comparisons, OR-ed -- the same comparison a concrete case makes, once per
+// type that qualifies.
+//
+// The EMPTY interface is the one that needs no list: every type implements it, so
+// what it asks is only that the value hold something.
+func (e *emitter) ifaceCaseCond(operand, operandIface, caseIface string) (string, []string, bool) {
+	if len(e.ifaceMethods[caseIface]) == 0 {
+		return e.varRef(operand) + ".vt != 0", nil, true
+	}
+	var conds, types []string
+	for _, ct := range e.ifaceImplementors(caseIface) {
+		// Only a type that could BE in the operand: the table compared against is
+		// the one the operand's interface would have used, and a type that does not
+		// implement that interface never had one made.
+		if !e.implementsIface(ct, operandIface) {
+			continue
+		}
+		if !e.needVTable(operandIface, ct) {
+			return "", nil, false
+		}
+		conds = append(conds, e.assertOKC(operand, operandIface, ct))
+		types = append(types, ct)
+	}
+	if len(conds) == 0 {
+		// No type in this program satisfies both, so the clause is dead. Emitted as
+		// an unreachable test rather than refused: a case for an interface nothing
+		// implements YET is a reasonable thing to write, and Go accepts it too.
+		return "0", nil, true
+	}
+	return strings.Join(conds, " || "), types, true
+}
+
+// ifaceImplementors names every type satisfying iface, sorted for reproducibility.
+func (e *emitter) ifaceImplementors(iface string) []string {
+	var out []string
+	for _, ct := range sortedKeys(e.typeNames) {
+		if e.isIfaceCType(ct) {
+			continue // an interface is not a dynamic type here; a pointer goes in
+		}
+		if e.implementsIface(ct, iface) {
+			out = append(out, ct)
+		}
+	}
+	return out
+}
+
+// implementsIface reports whether concrete has every method iface declares. It is
+// needVTable's question without the emission, for a caller asking about a type it
+// may then decline.
+func (e *emitter) implementsIface(concrete, iface string) bool {
+	for _, m := range e.ifaceMethods[iface] {
+		if _, has := e.funcRet[methodCName(concrete, m.name)]; !has {
+			return false
+		}
+	}
+	return true
+}
+
 func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	if e.isNilExpr(ex.ast) {
 		return "", true, true
+	}
+	// An INTERFACE named bare, `case T:`. Recognised before the pointer shape,
+	// which it does not have: `*T` would be a pointer to an interface, and this is
+	// the interface itself.
+	if name, isIface := e.caseIfaceC(ex); isIface {
+		return name, false, true
 	}
 	nodes := slices.Collect(it(ex.ast))
 	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
@@ -11489,16 +11572,24 @@ func (e *emitter) emitTypeSwitch(ts typeSwitch, cases []Node) {
 		}
 		var conds []string
 		concrete, single := "", len(exprs) == 1
+		caseIface, ifaceTypes := "", []string(nil)
 		for _, ex := range exprs {
 			ct, isNil, ok := e.caseTypeC(ex)
 			if !ok {
-				e.fail("a type switch case names a pointer type, or nil")
+				e.fail("a type switch case names a pointer type, an interface type, or nil")
 				return
 			}
 			switch {
 			case isNil:
 				conds = append(conds, e.varRef(ts.operand)+".vt == 0")
 				single = false // nil binds the interface value, not a concrete one
+			case e.isIfaceCType(ct):
+				cond, types, ok := e.ifaceCaseCond(ts.operand, ts.iface, ct)
+				if !ok {
+					return
+				}
+				conds = append(conds, cond)
+				caseIface, ifaceTypes = ct, types
 			default:
 				if !e.needVTable(ts.iface, ct) {
 					return
@@ -11516,7 +11607,15 @@ func (e *emitter) emitTypeSwitch(ts typeSwitch, cases []Node) {
 		}
 		e.emit(strings.Join(conds, " || ") + ") {\n")
 		e.indent++
-		e.bindTypeSwitchName(ts, concrete, single)
+		if single && caseIface != "" {
+			// One INTERFACE named: Go binds the name at that interface, so what the
+			// clause gets is a value of it -- the same data word, beside the table
+			// for the pair the operand turned out to hold. Which pair that is, is
+			// what the condition just decided between, so it is asked again here.
+			e.bindTypeSwitchIface(ts, caseIface, ifaceTypes)
+		} else {
+			e.bindTypeSwitchName(ts, concrete, single)
+		}
 		e.emitCaseFrom(cases, i)
 		e.indent--
 		e.ind()
@@ -11564,6 +11663,38 @@ func (e *emitter) emitTypeSwitch(ts typeSwitch, cases []Node) {
 // bindTypeSwitchName declares the name a type switch binds, inside the clause that
 // proved its type. A clause naming one type gets that pointer; every other clause
 // gets the interface value itself, as in Go.
+// bindTypeSwitchIface binds the type switch's name at the INTERFACE a clause named.
+// The data word carries over unchanged -- it is the same pointer -- and the table is
+// the one for (that interface, whatever concrete type the operand holds), which the
+// clause's own condition has narrowed to the listed types but not chosen between.
+//
+// So it is chosen here, by the same comparison, once per candidate. With one
+// candidate that is a straight assignment; with several it is a chain, which is the
+// price of a case that matches a set rather than a type.
+func (e *emitter) bindTypeSwitchIface(ts typeSwitch, caseIface string, types []string) {
+	if ts.name == "" || ts.name == "_" {
+		return
+	}
+	e.locals[ts.name] = caseIface
+	e.ind()
+	e.emit(caseIface + " " + e.varRef(ts.name) + " = {0};\n")
+	e.ind()
+	e.emit(e.varRef(ts.name) + ".data = " + e.varRef(ts.operand) + ".data;\n")
+	for i, ct := range types {
+		if !e.needVTable(caseIface, ct) {
+			return
+		}
+		e.ind()
+		if i != 0 {
+			e.emit("else ")
+		}
+		e.emit("if (" + e.assertOKC(ts.operand, ts.iface, ct) + ") " +
+			e.varRef(ts.name) + ".vt = &" + ifaceVTVar(caseIface, ct) + ";\n")
+	}
+	e.ind()
+	e.emit("(void)" + e.varRef(ts.name) + ";\n")
+}
+
 func (e *emitter) bindTypeSwitchName(ts typeSwitch, concrete string, single bool) {
 	if ts.name == "" || ts.name == "_" {
 		return

@@ -1,0 +1,72 @@
+// A type switch case may name an INTERFACE, written bare: `case T:`. It matches on
+// the METHOD SET -- any dynamic type implementing T takes the clause -- where a
+// concrete case, `case *X:`, matches one type. The two spellings differ by the star
+// for that reason: what an interface holds here is a pointer, so a concrete case
+// names one, and an interface case names the interface itself.
+//
+// Because it matches a set, the ORDER of the clauses decides between two interfaces
+// one type satisfies: the first that matches wins, as in Go.
+
+type T interface {
+	foo()
+}
+
+type U interface {
+	bar()
+}
+
+type Both interface {
+	foo()
+	bar()
+}
+
+type X int
+
+func (*X) foo() {
+}
+
+func (*X) bar() {
+}
+
+func ok(v any) {
+	switch t := v.(type) {
+	case Both:
+		t.foo()
+	case T:
+		t.foo()
+	case U:
+		_ = t
+	case *X:
+		t.foo()
+	case nil:
+		_ = t
+	default:
+		_ = t
+	}
+}
+
+// A case naming neither a pointer, an interface, nor nil is refused, and the
+// message says all three.
+func bad(v any) {
+	switch v.(type) {
+	// ERROR "a type switch case names a pointer type, an interface type, or nil"
+	case 1:
+	}
+}
+
+// Naming one interface twice is a duplicate, as naming one type twice is.
+func dup(v any) {
+	switch v.(type) {
+	case T:
+	// ERROR "duplicate case T in type switch"
+	case T:
+	}
+}
+
+// A type ASSERTION to an interface is not supported yet, and says so rather than
+// advising "*T" -- which for an interface would be a pointer to one.
+func assertion(v any) {
+	// ERROR "a type assertion to an interface type is not supported yet"
+	t := v.(T)
+	_ = t
+}

@@ -731,6 +731,26 @@
 // a type that could not supply the method set is Go's "impossible type switch
 // case", reported here as one, as is a case named twice.
 //
+// A case may name an INTERFACE instead, written bare -- "case T:" where a concrete
+// case is "case *X:", the star being there because what an interface holds is a
+// pointer. It matches on the METHOD SET: any dynamic type implementing T takes the
+// clause, and the name binds at T.
+//
+// Matching a SET is what makes clause order matter. Where a type satisfies two of
+// them, the first clause wins:
+//
+//	switch v.(type) {
+//	case T:   // taken for a type implementing both
+//	case U:
+//	}
+//
+// The program is closed, so "implements T" is a question this compiler answers by
+// listing the types that do -- there is no run-time method lookup, only the same
+// table comparison a concrete case makes, once per type that qualifies.
+//
+// A type ASSERTION to an interface, "s.(T)", is not supported yet; a type switch
+// with a case for T is what does it.
+//
 // Generic interface constraints, unions and the underlying-type
 // "~" operator belong to generics, which is a separate question entirely; an
 // interface here strictly defines a method set.

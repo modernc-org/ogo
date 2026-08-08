@@ -20,6 +20,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A type switch case may name an INTERFACE**, `case T:`, matching on the method
+  set: any dynamic type implementing `T` takes the clause, and the name binds at
+  `T`. Written bare, where a concrete case is `case *X:` — the star is there because
+  what an interface holds is a pointer, so a concrete case names one and an
+  interface case names the interface.
+
+  Matching a *set* is what makes clause order matter, and it is the property to
+  watch: where a type satisfies two of them the first clause wins, so the same value
+  through `case T:` then `case U:` and through `case U:` then `case T:` answers
+  differently. Both are exercised on hardware.
+
+  The program is closed, so "implements T" is a question this compiler answers by
+  listing the types that do. There is no run-time method lookup — only the same
+  table comparison a concrete case makes, once per type that qualifies, which is
+  also why the empty interface needs no list at all: it asks only that the value
+  hold something.
+
+  A type ASSERTION to an interface, `s.(T)`, is still not supported; it now says so
+  rather than advising `*T`, which for an interface would be a pointer to one.
+
 - **An interface type may be written where a type is wanted**, rather than only
   declared with a name of its own: `func measure(s interface{ area() int })`, a
   variable, a struct field, and the empty `interface{}`. It used to be `unsupported

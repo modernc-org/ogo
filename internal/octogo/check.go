@@ -2866,10 +2866,21 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	exprs, isDefault := f.clauseCaseExprs(clause)
 	base, single := Token{}, len(exprs) == 1 && !isDefault
 	for _, ex := range exprs {
+		// An INTERFACE named bare, `case T:`. It matches on the method set, so it
+		// needs no implements check of its own: what may be asked of the name is
+		// only that it be an interface, which is what recognised it.
+		if nm, isIface := f.caseInterfaceName(cs, ex); isIface {
+			if seen[nm.Src()] {
+				f.err(nm.Position(), "duplicate case %s in type switch", nm.Src())
+			}
+			seen[nm.Src()] = true
+			base = nm
+			continue
+		}
 		nm, isNil, ok := f.caseTypeName(cs, ex)
 		switch {
 		case !ok:
-			f.err(f.tok(ex.Pos()).Position(), "a type switch case names a pointer type, or nil")
+			f.err(f.tok(ex.Pos()).Position(), "a type switch case names a pointer type, an interface type, or nil")
 			continue
 		case isNil:
 			if seen["nil"] {
@@ -2975,6 +2986,25 @@ func (f *File) caseTypeName(s *Scope, ex Node) (name Token, isNil, ok bool) {
 		return name, false, false
 	}
 	return id, false, true
+}
+
+// caseInterfaceName recognises a case naming an INTERFACE type, written bare:
+// `case T:` where T is an interface. That is how Go spells it, and it is the one
+// case with no star -- a concrete case is `case *X:`, because what an interface
+// holds here is a pointer.
+//
+// A clause naming an interface matches on the METHOD SET rather than on identity:
+// any dynamic type implementing T takes it, so the first such clause wins and the
+// order the clauses are written in is what decides between two a type satisfies.
+func (f *File) caseInterfaceName(s *Scope, ex Node) (name Token, ok bool) {
+	id, isID := f.exprSoleIdent(ex)
+	if !isID {
+		return Token{}, false
+	}
+	if _, isIface := f.interfaceMethodsNamed(s, id.Src()); !isIface {
+		return Token{}, false
+	}
+	return id, true
 }
 
 // markClauseFallthroughs records every "fallthrough" that is legally placed --
@@ -4613,6 +4643,14 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 	base, hasBase := namedTypeToken(tn)
 	if !hasBase {
 		return true // an unnamed asserted type: nothing to check it against
+	}
+	if _, isIface := f.interfaceMethodsNamed(s, base.Src()); isIface && !f.isPointerType(s, tn) {
+		// Asserting to an INTERFACE is ordinary Go and is not supported here yet.
+		// Said as itself: the advice below is to write `*T`, which for an interface
+		// would be a pointer TO one and not what was meant.
+		f.err(base.Position(), "a type assertion to an interface type is not supported yet; "+
+			"switch on %s with a case for %s", id.Src(), base.Src())
+		return true
 	}
 	if !f.isPointerType(s, tn) {
 		f.err(base.Position(), "an interface holds a pointer here; assert *%s", base.Src())
