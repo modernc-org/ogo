@@ -18,6 +18,34 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+## v0.22.0
+
+Interfaces, taken as far as a program written in Go would expect them to go.
+
+`any` is spelled `any`. An interface may be written where a type is wanted rather
+than declared with a name. One may embed others. A type switch case may name an
+interface, and so may an assertion — both matching on the METHOD SET, which the
+whole-program view turns into a list of table comparisons the compiler writes out.
+One interface value assigns to a variable of another when the methods allow it, and
+an assertion is a value like any other, so a suffix applies to it where it stands.
+
+Almost all of it came from one reader's test programs, written the way Go would be
+written and then run here. That is a better generator of work than a backlog: each
+failure was a place where the language stopped short of what someone reasonably
+expected, and two of them were not the gaps they appeared to be. `println(v.foo())`
+on a method with no results COMPILED, printing an extra line per call, because the
+emitted C passes a void expression to printf — which gcc refuses, so no host test
+could have seen it, and the target's compiler accepts. And
+`switch x := v.(type); x {` compiled too, which Go rejects outright; it gave the
+right answer, which is the worst way for that to be wrong.
+
+The one to be careful about is interface WIDENING. An interface carries a pointer,
+and on a target with no heap the lifetime rules are what keep that pointer honest —
+so widening must not become the way to launder one into a package variable. It does
+not, but making it so needed a second fix: a type switch binds a NEW NAME to what it
+switched on, and storing that name is storing whatever the operand was, which the
+leak summary did not follow.
+
 ### Language
 
 - **A suffix may be applied to a type assertion's result where it stands**,
@@ -118,6 +146,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   it with no case of its own. Being predeclared rather than a keyword, it can still
   be shadowed: existing code using `any` as an identifier is unaffected.
 
+
+- **`len` and `cap` of an array reached through a chain**: a ROW of a
+  multi-dimensional one, `len(m[0])`, a struct's array field indexed to its row,
+  `len(g.rows[0])`, a row through a pointer to the array, and a field reached past an
+  index, `len(gs[i].rows)`. Only the outermost extent of a variable or of a plain
+  field answered before; everything else was `len is only supported for strings,
+  arrays and slices yet`, about an operand that is an array.
+
+  One walk answers all of them, which is why it is one change rather than six: what
+  the chain walk reports having reached carries the extents still remaining — one
+  index into a `[2][3]int` leaves a `[3]int` — so the answer is the outermost of
+  those, exactly as it is for a variable. A slice reached the same way carries no
+  extents and still reads its header, which is where a length that is not a constant
+  lives.
+
 ### Behaviour changes
 
 - **A type switch guard may not be followed by an expression**, `switch x :=
@@ -148,22 +191,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   is now `type X has no method nosuch`. The same silence `p := P{1, 2}` had before
   v0.9.0, in the one initializer shape that still had it.
 
-### Language
-
-- **`len` and `cap` of an array reached through a chain**: a ROW of a
-  multi-dimensional one, `len(m[0])`, a struct's array field indexed to its row,
-  `len(g.rows[0])`, a row through a pointer to the array, and a field reached past an
-  index, `len(gs[i].rows)`. Only the outermost extent of a variable or of a plain
-  field answered before; everything else was `len is only supported for strings,
-  arrays and slices yet`, about an operand that is an array.
-
-  One walk answers all of them, which is why it is one change rather than six: what
-  the chain walk reports having reached carries the extents still remaining — one
-  index into a `[2][3]int` leaves a `[3]int` — so the answer is the outermost of
-  those, exactly as it is for a variable. A slice reached the same way carries no
-  extents and still reads its header, which is where a length that is not a constant
-  lives.
-
 ### Fixed
 
 - **A slice expression that is refused says "cannot slice", not "cannot index".**
@@ -181,6 +208,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   name. Three messages in the family also still differ from Go's in shape; both are
   written down in `specs.go`.
 
+
+- **A suffix that does not apply to its operand now names the operand.** `q.n[0]`,
+  `q.n.f`, `q.n()` for an `int` field, and the assignment forms — all programs Go
+  rejects — used to answer `unsupported expression node FactorSuffix`, naming an
+  internal AST node in source that contains no such thing. One of them, `q.n.f = 1`,
+  reached the C backend instead. They now say `cannot index q.n`, `type int has no
+  field f`, `cannot call non-function q.n`, at the position Go reports.
+
+  A field's type is read off the struct declaration, so the checker answers for a
+  predeclared one — the same twin-of-`checkResultSuffix` treatment a call's result
+  already had. A composite field type reduces to no `Kind` at all, so those reach
+  the emitter, which walks the chain and reports the first step the value cannot
+  take: `q.xs has no field f`, `cannot index q.xs[0]`. Every position was checked
+  against Go and matches.
+
 ### Testing
 
 - **The fuzzer generates pointers to arrays.** `ogo smith` had no pointer variables
@@ -197,22 +239,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   P2-EDGE found nothing, which is the expected result for code that shipped with
   tests — the point is that it is now covered on every run, and
   `TestGeneratorCoverage` asserts all four operations still appear.
-
-### Fixed
-
-- **A suffix that does not apply to its operand now names the operand.** `q.n[0]`,
-  `q.n.f`, `q.n()` for an `int` field, and the assignment forms — all programs Go
-  rejects — used to answer `unsupported expression node FactorSuffix`, naming an
-  internal AST node in source that contains no such thing. One of them, `q.n.f = 1`,
-  reached the C backend instead. They now say `cannot index q.n`, `type int has no
-  field f`, `cannot call non-function q.n`, at the position Go reports.
-
-  A field's type is read off the struct declaration, so the checker answers for a
-  predeclared one — the same twin-of-`checkResultSuffix` treatment a call's result
-  already had. A composite field type reduces to no `Kind` at all, so those reach
-  the emitter, which walks the chain and reports the first step the value cannot
-  take: `q.xs has no field f`, `cannot index q.xs[0]`. Every position was checked
-  against Go and matches.
 
 ## v0.21.0
 
