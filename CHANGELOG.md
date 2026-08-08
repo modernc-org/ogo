@@ -45,6 +45,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   complement `ffffff01` C prints for the same value, and `%c` writes the UTF-8
   encoding of the character an integer names rather than one byte of it.
 
+### Examples and tests
+
+- **`_examples/life`** — Conway's Game of Life, and the first example that imports
+  nothing at all: no pin, no cog, no intrinsic, just arrays, structs, methods and
+  loops. Give the source a package clause and spell `printf` `fmt.Printf` and it
+  compiles as Go, which the tests do not take on trust — `TestExampleMatchesGo`
+  performs exactly those two substitutions, runs the twin under `go run`, runs this
+  one through the compiler, and requires the same bytes out of both.
+  `TestOnBoardExample` makes the same comparison with a real P2-EDGE standing in for
+  the host, and `TestExampleTwinIsGofmtClean` requires the twin to be gofmt-clean,
+  so the example reads as Go rather than merely computing what Go computes.
+- **Every example is now built by `go test ./...`**, with the real backend and to
+  the standard every target build is held to: a successful build must also be
+  silent. Nothing compiled them before — the run corpus is its own table, and the Go
+  tool skips a directory named with a leading underscore — so an example that
+  stopped building would have been found by a reader.
+
 ### Behaviour changes
 
 - **`println` of a struct is refused.** It used to compile and print the struct's

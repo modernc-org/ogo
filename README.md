@@ -143,6 +143,23 @@ voltages, redrawn about a thousand times a second. Eight frames make it dance.
 ogo run _examples/gopher     # then probe the two pins it names, scope in X/Y mode
 ```
 
+### The same program, in Go and on a P2
+
+`_examples/life` runs Conway's Game of Life on the board and imports nothing at
+all — no pin, no cog, no intrinsic, just arrays, structs, methods and loops. Give
+the source a package clause and spell `printf` `fmt.Printf` and it compiles as Go,
+which is not a claim it is left to make: the test suite performs exactly those two
+substitutions, runs the twin under `go run`, runs this one on a real P2-EDGE, and
+requires the two to print the same bytes.
+
+```sh
+ogo run _examples/life
+```
+
+That is a stronger check than a test corpus gets. Pinning behaviour against what
+somebody wrote down as expected is only as good as the person who wrote it; pinning
+it against the language OctoGo is modelled on, running the same source, is not.
+
 ## **Language Specification**
 
 The language is specified in the package documentation:

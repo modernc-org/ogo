@@ -1,0 +1,143 @@
+// Conway's Game of Life, on a Propeller 2.
+//
+// A glider walks across a 24x12 torus and runs into a blinker. Every generation is
+// printed to the serial console, so this is the example to reach for when you want
+// to watch the language work rather than watch a pin:
+//
+//	ogo run _examples/life
+//
+// Nothing here is written for the P2. There are no intrinsics, no pins and no
+// import at all -- the whole program is arrays, structs, methods and loops, and it
+// would compile as Go if you gave it a package clause and spelled printf
+// fmt.Printf. That is the point of it: TestExampleMatchesGo does exactly those two
+// substitutions, runs the result under `go run`, and requires the board and Go to
+// print the same bytes. An example that is also a differential test against the
+// language this one is modelled on.
+//
+// The grid is a torus: the left edge neighbours the right, the top the bottom. A
+// glider therefore never leaves, which is what makes eight generations of it worth
+// printing.
+
+const (
+	width  = 24
+	height = 12
+	gens   = 8
+)
+
+// grid holds one generation. It is passed by pointer everywhere: a struct with an
+// array field is a big thing to copy, and the P2 has no memory to waste on copies
+// nobody asked for.
+type grid struct {
+	cells [height][width]bool
+}
+
+// set brings a cell to life. It is how a pattern is written down.
+func (g *grid) set(x, y int) {
+	g.cells[y][x] = true
+}
+
+// at reads a cell with the edges wrapped, so the grid is a torus and a pattern
+// that walks off one side comes back on the other. It answers 1 or 0 rather than a
+// bool because every caller is counting.
+func (g *grid) at(x, y int) int {
+	if x < 0 {
+		x = x + width
+	}
+	if x >= width {
+		x = x - width
+	}
+	if y < 0 {
+		y = y + height
+	}
+	if y >= height {
+		y = y - height
+	}
+	if g.cells[y][x] {
+		return 1
+	}
+	return 0
+}
+
+// neighbors counts the live cells of the eight surrounding one.
+func (g *grid) neighbors(x, y int) int {
+	n := 0
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			if dx != 0 || dy != 0 {
+				nx := x + dx
+				ny := y + dy
+				n = n + g.at(nx, ny)
+			}
+		}
+	}
+	return n
+}
+
+// step writes the next generation into dst. Two grids are kept and swapped rather
+// than one being updated in place, because a cell's fate depends on its neighbours
+// as they were, not as they are becoming.
+func (g *grid) step(dst *grid) {
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			n := g.neighbors(x, y)
+			dst.cells[y][x] = n == 3 || (n == 2 && g.cells[y][x])
+		}
+	}
+}
+
+// population counts the live cells, which is the one number that says whether a
+// pattern is still going.
+func (g *grid) population() int {
+	n := 0
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			n = n + g.at(x, y)
+		}
+	}
+	return n
+}
+
+// show draws the generation.
+func (g *grid) show(gen int) {
+	printf("generation %d, population %d\n", gen, g.population())
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			if g.cells[y][x] {
+				printf("%c", '#')
+			} else {
+				printf("%c", '.')
+			}
+		}
+		printf("\n")
+	}
+	printf("\n")
+}
+
+// The two generations live at package scope. Nothing allocates at run time here,
+// so the memory a program needs is the memory it declares.
+var a grid
+
+var b grid
+
+func main() {
+	// A glider in the top-left corner, heading down and to the right.
+	a.set(1, 0)
+	a.set(2, 1)
+	a.set(0, 2)
+	a.set(1, 2)
+	a.set(2, 2)
+
+	// A blinker for it to run into, which it does around generation 12.
+	a.set(10, 5)
+	a.set(11, 5)
+	a.set(12, 5)
+
+	cur := &a
+	nxt := &b
+	for gen := 0; gen < gens; gen++ {
+		cur.show(gen)
+		cur.step(nxt)
+		cur, nxt = nxt, cur
+	}
+	cur.show(gens)
+}
