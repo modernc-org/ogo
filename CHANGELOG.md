@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A suffix may be applied to a type assertion's result where it stands**,
+  `e.(*P).foo()`, `e.(*P).n`, `e.(*P).xs[i]`, and each of the writable ones as an
+  assignment target, `e.(*P).n = 1`. Interface targets too, `e.(T).foo()`.
+
+  All of them used to be `type any has no method foo` — the assertion's Selector
+  carries a type rather than a field name, so it was not counted and the suffix was
+  read against the OPERAND's type. It is checked against the asserted type now, and
+  emitted by binding the assertion to a temporary so the rest has a base to apply
+  to, which is what the interface form already did for its own value.
+
 - **An interface value may be assigned to a variable of another interface type**,
   `var e any = z` — widening, which Go allows when the target's method set is a
   subset of the source's. It works wherever a value can stand: a variable, an

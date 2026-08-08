@@ -4036,13 +4036,36 @@ func (e *emitter) typeAssertion(ast []int32) (operand, iface, target string, tar
 // typeAssertionKids is typeAssertion given a Factor's children, which is what the
 // expression emitter and the type inference each already hold.
 func (e *emitter) typeAssertionKids(kids []Node) (operand, iface, target string, targetIsIface, ok bool) {
+	operand, iface, target, targetIsIface, rest, ok := e.typeAssertionPrefix(kids)
+	if !ok || len(rest) != 0 {
+		return "", "", "", false, false // a suffix beyond the assertion is a chain
+	}
+	return operand, iface, target, targetIsIface, true
+}
+
+// typeAssertionPrefix is typeAssertionKids for an assertion that may be FOLLOWED by
+// more of a suffix, `e.(*P).foo()`. It answers with the steps after it, which apply
+// to what the assertion yielded rather than to the operand -- reading them against
+// the operand is what "type any has no method foo" was.
+func (e *emitter) typeAssertionPrefix(kids []Node) (operand, iface, target string, targetIsIface bool, rest []Node, ok bool) {
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", "", "", false, false
+		return "", "", "", false, nil, false
 	}
-	steps := slices.Collect(it(kids[1].ast))
-	if len(steps) != 1 || steps[0].sym != Selector {
-		return "", "", "", false, false
+	operand = e.src(kids[0].tok)
+	iface, target, targetIsIface, rest, ok = e.assertionSteps(operand, slices.Collect(it(kids[1].ast)))
+	return operand, iface, target, targetIsIface, rest, ok
+}
+
+// assertionSteps is typeAssertionPrefix from an operand NAME and the steps applied
+// to it, for the statement path, whose call is not a Factor: `e.(*P).m()` on a line
+// of its own arrives as a head and a postfix rather than as one node.
+func (e *emitter) assertionSteps(operand string, allSteps []Node) (iface, target string, targetIsIface bool, rest []Node, ok bool) {
+	steps := allSteps
+	if len(steps) == 0 || steps[0].sym != Selector {
+		return "", "", false, nil, false
 	}
+	rest = steps[1:]
+	steps = steps[:1]
 	var typeAST []int32
 	for c := range it(steps[0].ast) {
 		if c.sym == Type {
@@ -4050,23 +4073,22 @@ func (e *emitter) typeAssertionKids(kids []Node) (operand, iface, target string,
 		}
 	}
 	if typeAST == nil {
-		return "", "", "", false, false
+		return "", "", false, nil, false
 	}
-	operand = e.src(kids[0].tok)
 	if iface, ok = e.varType(operand); !ok || !e.isIfaceCType(iface) {
-		return "", "", "", false, false
+		return "", "", false, nil, false
 	}
 	ct := e.cType(typeAST)
 	// An INTERFACE target, `v.(T)`. Written without a star -- `*T` would be a
 	// pointer TO an interface -- so it is the unpointered case, and the one whose
 	// result is another interface value rather than the pointer that went in.
 	if e.isIfaceCType(ct) {
-		return operand, iface, ct, true, true
+		return iface, ct, true, rest, true
 	}
 	if !e.isPointer(ct) {
-		return "", "", "", false, false
+		return "", "", false, nil, false
 	}
-	return operand, iface, e.elemType(ct), false, true
+	return iface, e.elemType(ct), false, rest, true
 }
 
 // assertOKC renders the test an assertion asks: the value carries this concrete
@@ -11872,6 +11894,35 @@ func (e *emitter) bindTypeSwitchIface(ts typeSwitch, caseIface string, types []s
 	e.emit("(void)" + e.varRef(ts.name) + ";\n")
 }
 
+// hoistAssert binds a type assertion's value to a temporary and answers with its
+// name and C type, so a SUFFIX after the assertion has a base to apply to. It is
+// the one lowering both targets share: an interface one is already statements, and
+// a concrete one becomes statements here because the panic check is one.
+//
+// The temporary is registered as a local, which is what lets the chain and call
+// paths type it exactly as they type any other variable.
+func (e *emitter) hoistAssert(operand, iface, target string, targetIsIface bool) (string, string, bool) {
+	if targetIsIface {
+		name, ok := e.hoistIfaceAssert(operand, iface, target)
+		if !ok {
+			return "", "", false
+		}
+		e.locals[name] = target
+		return name, target, true
+	}
+	if !e.needVTable(iface, target) {
+		return "", "", false
+	}
+	e.needPanic()
+	name := e.newTmp()
+	e.prologue = append(e.prologue,
+		"if (!("+e.assertOKC(operand, iface, target)+")) ogo_panic(\"interface conversion: "+
+			e.goTypeName(iface)+" is not *"+e.goTypeName(target)+"\");\n",
+		target+"* "+name+" = "+e.assertValueC(operand, target)+";\n")
+	e.locals[name] = target + "*"
+	return name, target + "*", true
+}
+
 // hoistIfaceAssert emits `v.(T)` for an INTERFACE T standing as one value: the
 // check that it holds, a panic when it does not, and the value itself, bound to a
 // temporary declared before the statement. The temporary is what the expression
@@ -12920,6 +12971,18 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 	}
 	if len(postfix) == 1 && postfix[0].sym == CallSuffix && (recv == "println" || recv == "print") {
 		e.emitPrint(recv == "println", postfix[0].ast)
+		return
+	}
+	// `e.(*P).m()` as a statement: the assertion binds to a temporary and the call
+	// is on that, exactly as in an expression.
+	if iface, target, isIface, rest, ok := e.assertionSteps(recv, postfix); ok && len(rest) != 0 {
+		name, _, ok := e.hoistAssert(recv, iface, target, isIface)
+		if !ok {
+			return
+		}
+		e.ind()
+		e.emitCallExpr(name, rest)
+		e.emit(";\n")
 		return
 	}
 	e.ind()
@@ -14585,6 +14648,30 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				return
 			}
 			e.emitChanSend(text, e.chanElemOfCType(ct), op)
+			return
+		}
+	}
+	// `e.(*P).n = v` -- an assertion as the target's base. The assertion binds to a
+	// temporary and the rest of the target applies to that, which is the same
+	// rebasing the read side does.
+	if tail := postfix[len(postfix)-1]; tail.sym == PostfixOp {
+		if iface, target, isIface, rest, ok := e.assertionSteps(base, postfix[:len(postfix)-1]); ok && len(rest) != 0 {
+			name, _, ok := e.hoistAssert(base, iface, target, isIface)
+			if !ok {
+				return
+			}
+			cur, ok := e.accessChainType(name, rest)
+			if !ok || len(cur.dims) != 0 {
+				e.fail("cannot assign to this target through an assertion")
+				return
+			}
+			t, ok := e.assignTailOf(tail)
+			if !ok {
+				e.fail("unsupported assignment form through an assertion")
+				return
+			}
+			t.targetCType = cur.ctype
+			e.emitAssignTailOrCopy(func() { e.emitAccessChain(name, rest) }, t)
 			return
 		}
 	}
@@ -16576,6 +16663,22 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				return target + "*", true
 			}
+			// `q := e.(*P).xs` -- a SUFFIX after the assertion. The chain is walked
+			// from what the assertion yields, which is a pure question and needs no
+			// temporary; the emitter binds one, this only has to agree about types.
+			if _, _, target, isIface, rest, ok := e.typeAssertionPrefix(kids); ok && len(rest) != 0 {
+				cur := accessCur{ctype: target + "*"}
+				if isIface {
+					cur = accessCur{ctype: target}
+				}
+				if at, ok := e.accessChainTypeAt(cur, rest, true); ok && len(at.dims) == 0 {
+					if at.slice {
+						return sliceCName(at.elem), true
+					}
+					return at.ctype, true
+				}
+				return "", false
+			}
 			// `x := mk()[1]` types as the chain reached from the bound result.
 			if name, steps, ok := e.hoistArrayResultCallKids(kids); ok {
 				cur, okc := e.accessChainType(name, steps)
@@ -17530,6 +17633,24 @@ func (e *emitter) emitExprNode(n Node) {
 				e.prologue = append(e.prologue, "if (!("+e.assertOKC(operand, iface, target)+")) "+
 					"ogo_panic(\"interface conversion: "+e.goTypeName(iface)+" is not *"+e.goTypeName(target)+"\");\n")
 				e.emit(e.assertValueC(operand, target))
+				return
+			}
+			// `e.(*P).foo()` / `e.(T).n` -- an assertion carrying a SUFFIX. The
+			// assertion binds to a temporary and the rest applies to that, which is
+			// what gives the steps a base of the ASSERTED type to be read against.
+			if operand, iface, target, isIface, rest, ok := e.typeAssertionPrefix(kids); ok && len(rest) != 0 {
+				name, _, ok := e.hoistAssert(operand, iface, target, isIface)
+				if !ok {
+					return
+				}
+				if containsSym(rest, CallSuffix) {
+					e.emitCallExpr(name, rest)
+					return
+				}
+				if _, ok := e.emitAccessChain(name, rest); ok {
+					return
+				}
+				e.fail("cannot read the result of an assertion through this suffix")
 				return
 			}
 			// `mk()[1]` -- a call returning an ARRAY, read through a suffix. The

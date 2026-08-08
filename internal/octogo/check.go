@@ -1839,7 +1839,7 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	if !direct && ok {
 		f.checkCallBase(s, id, hasSelectorChild(stmt))
 		if m, has := f.methodCallMember(stmt); has {
-			f.checkMethodCall(s, id, m, argList)
+			f.checkMethodCall(s, id, m, argList, stmt)
 		}
 	}
 }
@@ -3701,7 +3701,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if !direct && ok {
 			f.checkCallBase(s, id, hasSelectorChild(postfix))
 			if m, has := f.methodCallMember(postfix); has {
-				f.checkMethodCall(s, id, m, argList)
+				f.checkMethodCall(s, id, m, argList, postfix)
 			}
 		}
 	}
@@ -4872,7 +4872,7 @@ func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 	// Not an import qualifier: a "head.field" selection of a struct variable
 	// (e.g. a field assignment "p.x = 1").
 	if field, ok := f.fieldSelector(postfix); ok {
-		f.checkFieldAccess(s, id, field)
+		f.checkFieldAccess(s, id, field, postfix)
 	}
 }
 
@@ -5900,9 +5900,21 @@ func endsInCall(postfix Node) bool {
 // type has no such field: a predeclared scalar (int, bool, string, ...) has no
 // fields at all, and a named struct type is checked field by field. A pointer,
 // array, slice or other named type carries no scalar kind and is left alone.
-func (f *File) checkFieldAccess(s *Scope, head, field Token) {
+func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
-	if !ok || !d.typeName.IsValid() {
+	if !ok {
+		return
+	}
+	// `e.(*P).n` -- the field is one of what the ASSERTION yielded. See
+	// checkMethodCall, which reads the same prefix for the same reason.
+	if tn, isAssert := f.leadingAssertedType(suffix); isAssert {
+		nm, named := namedTypeToken(tn)
+		if !named {
+			return
+		}
+		d = &VarDeclaration{typeName: nm, typeQual: namedTypeQual(tn)}
+	}
+	if !d.typeName.IsValid() {
 		return
 	}
 	if d.hasKind {
@@ -6113,10 +6125,21 @@ var builderMethods = map[string]bool{
 // struct, no field either -- a field of function type is not modelled, so it is
 // accepted); for a real method it checks the argument count and types against
 // the method's signature.
-func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
+func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Node) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok {
 		return
+	}
+	// `e.(*P).m()` -- the call is on what the ASSERTION yielded, not on e. The
+	// assertion's Selector carries a Type rather than a field name, so
+	// methodCallMember does not count it, and the member arrived here looking like
+	// one of e's own: that is what "type any has no method foo" was.
+	if tn, isAssert := f.leadingAssertedType(suffix); isAssert {
+		nm, named := namedTypeToken(tn)
+		if !named {
+			return // an unnamed asserted type: nothing to look a method up on
+		}
+		d = &VarDeclaration{typeName: nm, typeQual: namedTypeQual(tn)}
 	}
 	// The predeclared Builder, whose method set the compiler knows rather than
 	// reads from a declaration: it resolves to no TypeDeclaration, so the branches
@@ -6198,6 +6221,22 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList Node) {
 		}
 	}
 	f.checkArgs(s, member, fd.Type.Signature, args)
+}
+
+// leadingAssertedType returns the type a suffix's FIRST step asserts, when it is a
+// type assertion carrying more after it. What follows applies to that type rather
+// than to the operand's.
+func (f *File) leadingAssertedType(suffix Node) (TypeNode, bool) {
+	steps := slices.Collect(it(suffix.ast))
+	if len(steps) < 2 || steps[0].sym != Selector {
+		return nil, false
+	}
+	for c := range it(steps[0].ast) {
+		if c.sym == Type {
+			return f.typ(f.Scope, c), true
+		}
+	}
+	return nil, false
 }
 
 // checkCallBase resolves the base of a call made through a selector or index -- the
@@ -7537,13 +7576,13 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			f.checkCall(s, id, direct && hasID, argList)
 			if !direct && hasID {
 				if m, ok := f.methodCallMember(suffix); ok {
-					f.checkMethodCall(s, id, m, argList)
+					f.checkMethodCall(s, id, m, argList, suffix)
 				}
 			}
 		} else if hasID && f.checkTypeAssertion(s, id, suffix) {
 			// "x.(T)": a Selector carrying a type, not a field name.
 		} else if field, ok := f.fieldSelector(suffix); ok && hasID {
-			f.checkFieldAccess(s, id, field)
+			f.checkFieldAccess(s, id, field, suffix)
 		}
 	}
 	if hasID && s.find(id.Src()) == nil {

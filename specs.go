@@ -41,10 +41,6 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260808 A method may not be CALLED on an assertion's result where it
-// stands: "e.(*X).foo()" and "e.(T).foo()" are "type any has no method foo", the
-// call being read against the operand's type rather than the asserted one. Binding
-// it first works. Concrete and interface targets alike.
 // TODO 20260808 Three diagnostics still read differently from Go's, in shape rather
 // than in content: an "invalid operation:" prefix on "cannot index"/"cannot slice",
 // which Go drops there and keeps on "cannot indirect"; "type int has no field f",
@@ -751,6 +747,11 @@
 // The program is closed, so "implements T" is a question this compiler answers by
 // listing the types that do -- there is no run-time method lookup, only the same
 // table comparison a concrete case makes, once per type that qualifies.
+//
+// An assertion is a value, so a suffix may be applied to it where it stands --
+// "e.(*P).foo()", "e.(*P).n", "e.(*P).xs[i]" -- and each is checked against the
+// ASSERTED type. That includes an assignment target, "e.(*P).n = 1", the assertion
+// yielding a pointer through which the field is addressable.
 //
 // An interface value may be assigned to a variable of ANOTHER interface type when
 // the target's method set is a subset of the source's -- widening, since anything

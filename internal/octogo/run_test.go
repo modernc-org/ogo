@@ -2272,6 +2272,61 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// A SUFFIX applied to a type assertion's result where it stands,
+		// "e.(*P).foo()". The assertion is a value like any other, so what follows
+		// applies to IT -- reading the suffix against the operand instead is what
+		// answered "type any has no method foo".
+		//
+		// Every shape the suffix can take: a method call in an expression and as a
+		// statement, a field, a nested field, an element, len, and each of the
+		// writable ones as an assignment target. Plus the same chain over a
+		// different dynamic type, which is what checks the assertion rather than
+		// just the suffix.
+		name: "a suffix applied to a type assertion",
+		src: `type T interface{ foo() int }
+
+type Inner struct{ n int }
+
+type P struct {
+	n  int
+	in Inner
+	xs []int
+}
+
+func (p *P) foo() int { return p.n }
+
+func (p *P) bump() { p.n++ }
+
+type Q int
+
+func (q *Q) foo() int { return int(*q) * 100 }
+
+func main() {
+	q := P{3, Inner{7}, []int{1, 2, 3}}
+	var e any = &q
+
+	// A field, a nested field, an element, and len through the assertion.
+	println(e.(*P).n, e.(*P).in.n, e.(*P).xs[1], len(e.(*P).xs))
+
+	// Writing through one.
+	e.(*P).n = 9
+	e.(*P).in.n = 8
+	e.(*P).xs[0] = 5
+	println(q.n, q.in.n, q.xs[0])
+
+	// A statement call, and an interface assertion's method.
+	e.(*P).bump()
+	println(q.n, e.(T).foo())
+
+	// The same chain over a different dynamic type.
+	z := Q(2)
+	var e2 any = &z
+	println(e2.(T).foo())
+}
+`,
+		want: "3 7 2 3\n9 8 5\n10 10\n200\n",
+	},
+	{
 		// Assigning an interface value to a variable of ANOTHER interface type --
 		// widening, which Go allows when the target's method set is a subset of the
 		// source's. The two words are the same pointer viewed through a different

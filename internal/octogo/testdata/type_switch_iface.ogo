@@ -146,3 +146,26 @@ func widen() {
 	var back Both2 = t
 	_ = back
 }
+
+// A suffix may be applied to an assertion's result where it stands, and is checked
+// against the ASSERTED type rather than the operand's -- which is what "type any
+// has no method foo" was.
+type Rec struct {
+	n int
+}
+
+func (r *Rec) get() int {
+	return r.n
+}
+
+func chained(v any) int {
+	v.(*Rec).n = 1
+	return v.(*Rec).get() + v.(*Rec).n
+}
+
+func chainedBad(v any) {
+	// ERROR "type Rec has no method nosuch"
+	_ = v.(*Rec).nosuch()
+	// ERROR "type Rec has no field nofield"
+	_ = v.(*Rec).nofield
+}
