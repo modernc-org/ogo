@@ -5129,6 +5129,154 @@ func main() { bad() }
 	}
 }
 
+// TestEmitCPrintfRefusals pins what printf will not compile. Every one of these is
+// found where the format is READ, which is why the format must be a constant: a
+// verb that does not suit its argument is a mistake the program can be stopped for
+// rather than a wrong line at run time.
+//
+// These live here rather than in testdata because they are the emitter's: the
+// checker's coarse type model cannot say what C type an argument has.
+func TestEmitCPrintfRefusals(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "no format at all",
+			src:  "func main() {\n\tprintf()\n}\n",
+			want: "printf takes a format string",
+		},
+		{
+			// There is no heap to build a format in, and a format built at run time
+			// could not be checked here at all.
+			name: "a format that is not constant",
+			src:  "func main() {\n\ts := \"%d\\n\"\n\tprintf(s, 1)\n}\n",
+			want: "printf's format must be a constant string",
+		},
+		{
+			name: "an unknown verb",
+			src:  "func main() {\n\tprintf(\"%q\\n\", \"x\")\n}\n",
+			want: "printf: unknown formatting verb %q",
+		},
+		{
+			// A trailing % formats nothing. Go prints %!(NOVERB) for it; here it is
+			// refused, and the message borrows the name.
+			name: "a format ending in a percent",
+			src:  "func main() {\n\tprintf(\"100%\")\n}\n",
+			want: "printf: unknown formatting verb %!(NOVERB)",
+		},
+		{
+			name: "more verbs than arguments",
+			src:  "func main() {\n\tprintf(\"%d %d\\n\", 1)\n}\n",
+			want: "printf: the format has 2 verbs but 1 argument given",
+		},
+		{
+			name: "more arguments than verbs",
+			src:  "func main() {\n\tprintf(\"hi\\n\", 1)\n}\n",
+			want: "printf: the format has 0 verbs but 1 argument given",
+		},
+		{
+			name: "%d of a string",
+			src:  "func main() {\n\tprintf(\"%d\\n\", \"hi\")\n}\n",
+			want: "printf: %d wants an integer, not string",
+		},
+		{
+			name: "%s of an integer",
+			src:  "func main() {\n\tprintf(\"%s\\n\", 1)\n}\n",
+			want: "printf: %s wants a string, not int",
+		},
+		{
+			name: "%t of an integer",
+			src:  "func main() {\n\tprintf(\"%t\\n\", 1)\n}\n",
+			want: "printf: %t wants a bool, not int",
+		},
+		{
+			name: "%f of an integer",
+			src:  "func main() {\n\tprintf(\"%f\\n\", 1)\n}\n",
+			want: "printf: %f wants a float, not int",
+		},
+		{
+			// A struct has no %v form here and no address form either -- Go refuses to
+			// print one at all -- so the message offers only %T.
+			name: "%v of a struct",
+			src: `type P struct {
+	n int
+}
+
+func main() {
+	p := P{1}
+	printf("%v\n", p)
+}
+`,
+			want: "printf: %v of P is not supported yet; %T prints its type",
+		},
+		{
+			// fmt prints "<nil>" for a nil pointer where the builtin println prints
+			// 0x0, and "&{1 2}" for a pointer to a struct. printf follows fmt, and
+			// says so rather than printing a third thing.
+			name: "%v of a pointer",
+			src:  "func main() {\n\tvar p *int\n\tprintf(\"%v\\n\", p)\n}\n",
+			want: "printf: %v of *int is not supported yet; %T prints its type",
+		},
+		{
+			name: "%v of an interface",
+			src: `type Shape interface {
+	area() int
+}
+
+func main() {
+	var sh Shape
+	printf("%v\n", sh)
+}
+`,
+			want: "printf: %v of Shape is not supported yet",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted it:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCPrintRefusesUnprintable pins that print and println refuse a value that
+// does not print as itself. A struct used to reach the %d default and print its
+// first word as an integer -- a garbage number, said with no warning. Go refuses
+// the same program: "illegal types for operand: print".
+func TestEmitCPrintRefusesUnprintable(t *testing.T) {
+	const src = `type P struct {
+	n int
+	s string
+}
+
+func main() {
+	p := P{1, "hi"}
+	println(p)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err == nil {
+		t.Fatalf("EmitC printed a struct:\n%s", buf.String())
+	} else if want := "cannot print a value of type P"; !strings.Contains(err.Error(), want) {
+		t.Errorf("EmitC error %q does not mention %q", err, want)
+	}
+}
+
 // TestEmitCDefinedChanType pins the C name a defined type over a channel gets, and
 // why it needs one: two such types over the same element must not share a method
 // namespace. It used to have none -- it was answered for by the cell's name, which

@@ -18,6 +18,43 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`printf` is a built-in**, beside `print` and `println`. It writes its arguments
+  under the control of a format and formats as `fmt.Printf` does — `%d %x %X %s %t
+  %f %c %v %T %%`, no flags or width yet. The format must be a CONSTANT string:
+  there is no heap to build one in, and a format known at compile time is what lets
+  every verb be checked against its argument where the call is written rather than
+  going wrong on the board. A wrong verb, an unknown verb and a verb count that does
+  not match the argument count are each refused there.
+- **`%T` prints the type**, which is the verb this is really for. For everything but
+  an interface it is a compile-time constant and costs nothing at all. For an
+  interface it is the dynamic type, read from the value: each vtable now leads with
+  the name of the type it was built for, so the answer is one pointer away and is
+  exact. A type prints unqualified — `Celsius`, where Go prints `main.Celsius`,
+  there being no package clause here — and an interface holding nothing prints
+  `<nil>`, as in Go.
+- `%v` prints what `println` prints, by calling the same code rather than restating
+  it: `[1 2 3]` for a slice, `true` for a bool, the shortest form for a float. Not a
+  pointer, a func value, an interface or a struct — `fmt` prints `<nil>` for a nil
+  one where the built-in `println` prints `0x0`, and `&{1 2}` for a pointer to a
+  struct. `printf` is `fmt`'s function, so rather than print a third thing that is
+  neither, `%v` declines those and says that `%T` answers for the type.
+- Each verb renders as `fmt` does rather than as C does, where the two differ.
+  `%x` of a negative integer is a sign and a magnitude, `-ff`, not the two's
+  complement `ffffff01` C prints for the same value, and `%c` writes the UTF-8
+  encoding of the character an integer names rather than one byte of it.
+
+### Behaviour changes
+
+- **`println` of a struct is refused.** It used to compile and print the struct's
+  first word as an integer — a garbage number, with nothing said. Go rejects the
+  same program (`illegal types for operand: print`), so this is one more place where
+  a program that compiles here means what it means in Go.
+- **A pointer, a func value and an interface print as an address**, as Go prints
+  them, the interface as its two words `(0x0,0x0)`. They used to print as a signed
+  decimal, or — for an interface — as only the first of the two.
+
 ## v0.22.0
 
 Interfaces, taken as far as a program written in Go would expect them to go.

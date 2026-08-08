@@ -329,6 +329,19 @@ var cTypes = map[string]string{
 	"string": cString,
 }
 
+// goCTypeNames inverts cTypes for the names a diagnostic or "%T" prints. It is
+// written out rather than derived, because cTypes is not injective: byte and uint8
+// are one C type and so are rune and int32, and the name to print back is the one
+// the language calls the type -- "uint8", "int32". `int` maps to C `int` and is
+// therefore already its own answer.
+var goCTypeNames = map[string]string{
+	"unsigned": "uint", cBool: "bool", cString: "string",
+	"int8_t": "int8", "int16_t": "int16", "int32_t": "int32", "int64_t": "int64",
+	"uint8_t": "uint8", "uint16_t": "uint16", "uint32_t": "uint32", "uint64_t": "uint64",
+	"uintptr_t": "uintptr", "float": "float32", "double": "float64",
+	"ogo_builder": "Builder",
+}
+
 // cString is the C type of an OctoGo string: a { const char* str; int len; }
 // header emitted as stringTypedef, printed via the stringHelpers.
 const cString = "ogo_string"
@@ -375,6 +388,32 @@ const builderHelpers = "static ogo_builder ogo_builder_new(ogo_slice_uint8_t bac
 	"static ogo_string ogo_builder_String(ogo_builder* b) { ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
 	"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
 	"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
+
+// runePrintHelper prints a rune as its UTF-8 bytes, which is what Go's %c does --
+// a rune is not a byte, and putchar of one above 127 would emit a single wrong
+// byte silently. Out-of-range and surrogate values print U+FFFD, as a string(rune)
+// conversion does. Written out rather than shared with ogo_builder_WriteRune: that
+// one writes into a buffer and can decline for want of room, and this one cannot.
+const runePrintHelper = "static void ogo_print_rune(int32_t r) {\n" +
+	"\tunsigned int c = (unsigned int)r;\n" +
+	"\tif (r < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;\n" +
+	"\tif (c < 0x80) { putchar((int)c); return; }\n" +
+	"\tif (c < 0x800) { putchar((int)(0xC0 | (c >> 6))); }\n" +
+	"\telse {\n" +
+	"\t\tif (c < 0x10000) { putchar((int)(0xE0 | (c >> 12))); }\n" +
+	"\t\telse { putchar((int)(0xF0 | (c >> 18))); putchar((int)(0x80 | ((c >> 12) & 0x3F))); }\n" +
+	"\t\tputchar((int)(0x80 | ((c >> 6) & 0x3F)));\n" +
+	"\t}\n" +
+	"\tputchar((int)(0x80 | (c & 0x3F)));\n}\n"
+
+// hexPrintHelper prints a SIGNED integer in hex as Go prints it -- a sign and the
+// magnitude, "-ff" -- where C's %x prints the two's complement of the same value,
+// "ffffff01". The magnitude is negated as UNSIGNED, which is defined for the most
+// negative value where negating the signed one is not.
+const hexPrintHelper = "static void ogo_print_hex(long long v, int upper) {\n" +
+	"\tunsigned long long u = (unsigned long long)v;\n" +
+	"\tif (v < 0) { putchar('-'); u = -u; }\n" +
+	"\tif (upper) printf(\"%llX\", u); else printf(\"%llx\", u);\n}\n"
 
 // stringHelpers print a string header's exact bytes. A string is not
 // null-terminated, so %s is wrong; and the target's printf TRUNCATES "%.*s" at 62
@@ -2816,6 +2855,14 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(stringHelpers)
 		out.WriteByte('\n')
 	}
+	if e.usesRunePrint {
+		out.WriteString(runePrintHelper)
+		out.WriteByte('\n')
+	}
+	if e.usesHexPrint {
+		out.WriteString(hexPrintHelper)
+		out.WriteByte('\n')
+	}
 	if e.usesStringCmp {
 		out.WriteString(stringCmpHelper)
 		out.WriteByte('\n')
@@ -3211,6 +3258,8 @@ type emitter struct {
 	declInit           bool                 // emitting a static initializer: a string literal must use a brace, not a compound literal
 	usesString         bool                 // an ogo_string type/literal appears: emit stringTypedef
 	usesStringPrint    bool                 // a string is printed: emit stringHelpers
+	usesRunePrint      bool                 // printf %c is used: emit runePrintHelper
+	usesHexPrint       bool                 // printf %x of a signed type: emit hexPrintHelper
 	usesStringEq       bool                 // a string == / != appears: emit ogo_string_eq
 	eqStructs          map[string]bool      // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim    // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
@@ -3614,6 +3663,10 @@ type ifaceMethod struct {
 	params []string
 }
 
+// vtTypeField names the vtable member holding the dynamic type's name, which "%T"
+// reads. It leads the table so its offset does not depend on the method set.
+const vtTypeField = "_ogo_type"
+
 // ifaceVTName names the vtable STRUCT of an interface -- the table's shape, one
 // function pointer per method.
 func ifaceVTName(iface string) string { return iface + "_vt" }
@@ -3778,16 +3831,17 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 
 	vt := ifaceVTName(mn)
 	var b strings.Builder
-	fmt.Fprintf(&b, "struct %s {", vt)
+	// The dynamic type's NAME leads every table. It is what "%T" reads: a value
+	// carries its table, and one table per (concrete type, interface) pair means the
+	// table identifies the type exactly. It also gives an empty interface's table a
+	// member, which C requires and which used to be a filler byte.
+	fmt.Fprintf(&b, "struct %s { const char* %s;", vt, vtTypeField)
 	for _, m := range methods {
 		fmt.Fprintf(&b, " %s (*%s)(void*", m.res, userIdent(m.name))
 		for _, p := range m.params {
 			b.WriteString(", " + p)
 		}
 		b.WriteString(");")
-	}
-	if len(methods) == 0 {
-		b.WriteString(" char _ogo_empty;") // C rejects a struct with no members
 	}
 	b.WriteString(" };\n")
 	var deps []string
@@ -4161,15 +4215,10 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			b.WriteString(") { return " + call + "; }\n")
 		}
 	}
-	fmt.Fprintf(&b, "static const %s %s = {", ifaceVTName(iface), ifaceVTVar(iface, concrete))
-	for i, m := range methods {
-		if i != 0 {
-			b.WriteString(",")
-		}
-		b.WriteString(" " + ifaceThunkName(iface, concrete, m.name))
-	}
-	if len(methods) == 0 {
-		b.WriteString(" 0")
+	fmt.Fprintf(&b, "static const %s %s = { %q", ifaceVTName(iface), ifaceVTVar(iface, concrete),
+		"*"+e.goTypeName(concrete)) // what goes in is a POINTER, so that is the dynamic type
+	for _, m := range methods {
+		b.WriteString(", " + ifaceThunkName(iface, concrete, m.name))
 	}
 	b.WriteString(" };\n")
 	e.vtables.WriteString(b.String())
@@ -12973,6 +13022,10 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		e.emitPrint(recv == "println", postfix[0].ast)
 		return
 	}
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "printf" {
+		e.emitPrintf(postfix[0].ast)
+		return
+	}
 	// `e.(*P).m()` as a statement: the assertion binds to a temporary and the call
 	// is on that, exactly as in an expression.
 	if iface, target, isIface, rest, ok := e.assertionSteps(recv, postfix); ok && len(rest) != 0 {
@@ -14157,6 +14210,286 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	}
 }
 
+// printfItem is one piece of a format string: literal text, or a VERB. The
+// arguments are matched to the verbs in order by the caller, which is also where a
+// count that does not add up is reported.
+type printfItem struct {
+	lit  string
+	verb byte
+}
+
+// parsePrintfFormat splits a format string into literal runs and verbs. "%%" is a
+// literal percent and consumes no argument; "%T" is a verb like any other, its
+// argument being the value whose TYPE is wanted. A verb with no argument left, or
+// an argument with no verb, is the caller's to report -- this only reads the shape.
+func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb string, ok bool) {
+	lit := ""
+	for i := 0; i < len(format); i++ {
+		if format[i] != '%' {
+			lit += string(format[i])
+			continue
+		}
+		if i+1 == len(format) {
+			return nil, 0, "%!(NOVERB)", false // a trailing "%" formats nothing
+		}
+		i++
+		switch c := format[i]; c {
+		case '%':
+			lit += "%"
+		case 'd', 'x', 'X', 's', 't', 'v', 'f', 'T', 'c':
+			if lit != "" {
+				items = append(items, printfItem{lit: lit})
+				lit = ""
+			}
+			items = append(items, printfItem{verb: c})
+			verbs++
+		default:
+			return nil, 0, "%" + string(c), false
+		}
+	}
+	if lit != "" {
+		items = append(items, printfItem{lit: lit})
+	}
+	return items, verbs, "", true
+}
+
+// emitPrintf emits the builtin `printf(format, args...)`. The format must be a
+// CONSTANT -- there is no heap to build one in -- which is what lets every verb be
+// checked against its argument's type here rather than going wrong at run time.
+//
+// One C statement per item, not one packed printf. A string is printed by a helper
+// rather than by a conversion (its bytes carry a length and no terminator), and a
+// statement each is also what keeps the arguments evaluated in source order: C
+// leaves the order in one call unspecified, and the two compilers this targets
+// disagree about it (see emitPrintMulti).
+func (e *emitter) emitPrintf(callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) == 0 {
+		e.failAt(callSuffix, "printf takes a format string")
+		return
+	}
+	format, isConst := e.foldConstString(args[0].ast)
+	if !isConst {
+		e.failAt(args[0].ast, "printf's format must be a constant string")
+		return
+	}
+	items, verbs, badVerb, ok := parsePrintfFormat(format)
+	if !ok {
+		e.failAt(args[0].ast, "printf: unknown formatting verb %s", badVerb)
+		return
+	}
+	rest := args[1:]
+	if verbs != len(rest) {
+		e.failAt(args[0].ast, "printf: the format has %s but %s given",
+			countUnits(verbs, "verb"), countUnits(len(rest), "argument"))
+		return
+	}
+	e.includes["stdio.h"] = true
+	next := 0
+	lit := ""
+	flush := func() {
+		if lit == "" {
+			return
+		}
+		// The literal is itself a C format, so a percent in it -- which is what "%%"
+		// became -- has to be doubled again on the way out. It printed correctly under
+		// glibc and the target's compiler said "not enough parameters for printf
+		// format string", which is what TestTargetBuild is for: the host run builds
+		// with -Wno-format and could not have seen it.
+		e.ind()
+		e.emit("printf(" + strconv.Quote(strings.ReplaceAll(lit, "%", "%%")) + ");\n")
+		lit = ""
+	}
+	for _, item := range items {
+		if item.verb == 0 {
+			lit += item.lit
+			continue
+		}
+		arg := rest[next]
+		next++
+		// A type NAME is known here whenever the argument is not an interface, so it
+		// joins the literal text and costs no call at all.
+		if item.verb == 'T' {
+			if name, static := e.staticTypeName(next-1, arg); static {
+				lit += name
+				continue
+			}
+		}
+		flush()
+		if !e.emitPrintfVerb(item.verb, next-1, arg) {
+			return
+		}
+	}
+	flush()
+}
+
+// printfArgType resolves the type "%T" reports on. It asks for the DECLARED type
+// rather than the representation the other verbs follow: a value of `type Celsius
+// int` prints as an int and IS a Celsius, and %T is the one verb that wants the
+// name rather than the bytes.
+func (e *emitter) printfArgType(idx int, arg Node) (string, bool) {
+	if ct, ok := e.inferCType(arg.ast); ok {
+		return ct, true
+	}
+	return e.printArgCType(idx, arg)
+}
+
+// staticTypeName answers "%T" for an argument whose type is known where it is
+// written, which is every argument that is not an interface value: what an
+// interface holds is decided at run time, and its table is what says so.
+func (e *emitter) staticTypeName(idx int, arg Node) (string, bool) {
+	ct, ok := e.printfArgType(idx, arg)
+	if !ok || e.isIfaceCType(ct) {
+		return "", false
+	}
+	return e.goTypeName(ct), true
+}
+
+// emitPrintfVerb emits one verb's argument, checking the verb against the type it
+// was given. A verb that does not suit its argument is refused here: the format is
+// constant and the type is known, so there is nothing left to find out at run time.
+func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
+	ct, known := e.printArgCType(idx, arg)
+	value := func() { e.emitPrintArg(idx, arg) }
+	wrong := func(want string) bool {
+		e.failAt(arg.ast, "printf: %%%c wants %s, not %s", verb, want, e.goTypeName(ct))
+		return false
+	}
+	if verb == 'T' {
+		// Not static, so an interface: its TABLE names the dynamic type, and a value
+		// carrying no table carries no type -- which Go prints as <nil>.
+		ict, ok := e.printfArgType(idx, arg)
+		if !ok || !e.isIfaceCType(ict) {
+			e.failAt(arg.ast, "printf: cannot tell the type of this argument")
+			return false
+		}
+		// Bound to a temporary first: the table is read twice and the argument may be
+		// a call. A block keeps that in source order, where the prologue would not.
+		tmp := e.newTmp()
+		e.ind()
+		e.emit("{ " + ict + " " + tmp + " = ")
+		value()
+		e.emit("; printf(\"%s\", " + tmp + ".vt ? " + tmp + ".vt->" + vtTypeField +
+			" : \"<nil>\"); }\n")
+		return true
+	}
+	if verb == 'v' {
+		// %v prints what println prints, by calling it -- "[1 2 3]" for a slice, the
+		// word for a bool, the shortest form for a float. Restating that would be two
+		// spellings free to drift apart.
+		//
+		// Except for the pointer-shaped types, where the two disagree in Go itself and
+		// this follows fmt, whose function printf is: fmt prints "<nil>" for a nil
+		// pointer, func or interface where the builtin println prints 0x0, and
+		// "&{1 2}" for a pointer to a struct where println prints its address. The
+		// second needs a formatter per struct type, which does not exist yet, so
+		// rather than print a third thing that is neither, %v declines them and says
+		// what does answer.
+		if known && !e.printableCType(ct) {
+			also := ""
+			if e.addressPrintC(ct) != "" {
+				also = ", and println prints its address"
+			}
+			e.failAt(arg.ast, "printf: %%v of %s is not supported yet; %%T prints its type%s",
+				e.goTypeName(ct), also)
+			return false
+		}
+		e.emitPrintOne(false, idx, arg)
+		return true
+	}
+	if !known {
+		e.failAt(arg.ast, "printf: cannot tell the type of this argument")
+		return false
+	}
+	switch verb {
+	case 's':
+		if ct != cString {
+			return wrong("a string")
+		}
+		e.usesStringPrint = true
+		e.ind()
+		e.emit("ogo_print_str(")
+		value()
+		e.emit(");\n")
+	case 't':
+		if ct != cBool {
+			return wrong("a bool")
+		}
+		e.ind()
+		e.emit("printf(\"%s\", (")
+		value()
+		e.emit(") ? \"true\" : \"false\");\n")
+	case 'f', 'g':
+		if !isFloatCType(ct) {
+			return wrong("a float")
+		}
+		// %f is fixed-point with six decimals, as C's is and as Go's is; %g is the
+		// shortest form, which is what %v of a float asks for.
+		e.ind()
+		e.emit("printf(\"%" + string(verb) + "\", ")
+		value()
+		e.emit(");\n")
+	case 'c':
+		if !isIntCType(ct) {
+			return wrong("an integer")
+		}
+		e.usesRunePrint = true
+		e.ind()
+		e.emit("ogo_print_rune((int32_t)(")
+		value()
+		e.emit("));\n")
+	case 'd', 'x', 'X':
+		if !isIntCType(ct) {
+			return wrong("an integer")
+		}
+		if verb != 'd' && isSignedIntCType(ct) {
+			// A negative value prints as a sign and its magnitude, as in Go. C's %x
+			// would print the two's complement instead, which is a different number.
+			e.usesHexPrint = true
+			e.ind()
+			e.emit("ogo_print_hex((long long)(")
+			value()
+			upper := "0"
+			if verb == 'X' {
+				upper = "1"
+			}
+			e.emit("), " + upper + ");\n")
+			return true
+		}
+		e.ind()
+		e.emit("printf(\"" + intPrintfVerb(verb, ct) + "\", ")
+		value()
+		e.emit(");\n")
+	}
+	return true
+}
+
+// intPrintfVerb renders an integer verb at the argument's width: the 64-bit types
+// take the "ll" length, which the target's printf needs spelled out (its PRId64 is
+// not the standard one -- see the int64 notes in scalarPrintVerb's neighbours).
+func intPrintfVerb(verb byte, ct string) string {
+	long := ""
+	switch ct {
+	case "int64_t", "uint64_t":
+		long = "ll"
+	}
+	if verb == 'd' {
+		switch ct {
+		case "unsigned", "uint8_t", "uint16_t", "uint32_t", "uintptr_t":
+			return "%u"
+		case "uint64_t":
+			return "%llu"
+		case "int64_t":
+			return "%lld"
+		}
+		return "%d"
+	}
+	return "%" + long + string(verb)
+}
+
+// isFloatCType reports whether ct is one of the floating C types.
+func isFloatCType(ct string) bool { return ct == "double" || ct == "float" }
+
 // emitPrintOne emits print/println of a single argument, appending a newline when
 // newline is set. Integer and string output are folded into one call (preserving
 // the compact printf("%d\n", x) / ogo_println_str(x) forms); slices and arrays go
@@ -14204,6 +14537,12 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 		e.emit(");\n")
 		return
 	}
+	// A type that does not print as itself does not reach the %d default: that read
+	// its first word as an integer and said nothing.
+	if ct, ok := e.printArgCType(idx, arg); ok && !e.printableCType(ct) {
+		e.emitPrintAddress(newline, ct, idx, arg)
+		return
+	}
 	// Default: an integer, or an integer-typed expression. The conversion is %u for
 	// an unsigned type so a large value prints unsigned, as in Go, rather than
 	// wrapping negative.
@@ -14214,6 +14553,37 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	} else {
 		e.emit("printf(\"" + verb + "\", ")
 	}
+	e.emitPrintArg(idx, arg)
+	e.emit(");\n")
+}
+
+// emitPrintAddress prints a value Go prints as an address -- a pointer, a func
+// value, or an interface as its two words. A struct has no such form in Go, which
+// refuses to print one; so does this, and it names the OctoGo type rather than the
+// C one.
+func (e *emitter) emitPrintAddress(newline bool, ct string, idx int, arg Node) {
+	form := e.addressPrintC(ct)
+	if form == "" {
+		e.failAt(arg.ast, "cannot print a value of type %s", e.goTypeName(ct))
+		return
+	}
+	e.includes["stdint.h"] = true // uintptr_t
+	nl := ""
+	if newline {
+		nl = "\\n"
+	}
+	e.ind()
+	if e.isIfaceCType(ct) {
+		// Bound to a temporary first: the two words are read from one value, and the
+		// argument may be a call. A block keeps that in source order.
+		tmp := e.newTmp()
+		e.emit("{ " + ct + " " + tmp + " = ")
+		e.emitPrintArg(idx, arg)
+		e.emit("; printf(\"" + form + nl + "\", (unsigned)(uintptr_t)" + tmp +
+			".data, (unsigned)(uintptr_t)" + tmp + ".vt); }\n")
+		return
+	}
+	e.emit("printf(\"" + form + nl + "\", (unsigned)(uintptr_t)")
 	e.emitPrintArg(idx, arg)
 	e.emit(");\n")
 }
@@ -14342,6 +14712,17 @@ func scalarPrintVerb(ct string) string {
 	return "%d"
 }
 
+// isSignedIntCType reports whether ct is a SIGNED integer C type. It is what tells
+// %x how to print a negative value: Go writes a sign and the magnitude, C the two's
+// complement, and only a signed type can be negative to begin with.
+func isSignedIntCType(ct string) bool {
+	switch ct {
+	case "int", "int8_t", "int16_t", "int32_t", "int64_t":
+		return true
+	}
+	return false
+}
+
 // isIntCType reports whether ct is one of the integer C types an OctoGo numeric
 // maps to. It is the printable-integer set: a named type over int (its own typedef
 // name) is not in it, so a slice of one still fails honestly.
@@ -14394,6 +14775,35 @@ func (e *emitter) isScalarPrint(idx int, arg Node) bool {
 		}
 	}
 	return true
+}
+
+// printableCType reports whether a value of this C type prints AS ITSELF. What is
+// not in the set used to reach the %d default and print its first word as an
+// integer -- a struct printed a garbage number that way, which is the silent kind
+// of wrong. printArgCType resolves a named type to its representation, so a value
+// of `type Celsius int` is an int here and prints as one.
+func (e *emitter) printableCType(ct string) bool {
+	return ct == cString || ct == cBool || isIntCType(ct) || isFloatCType(ct) ||
+		e.isSliceCType(ct)
+}
+
+// addressPrintC renders a value that prints as its ADDRESS, which is what Go
+// prints for a pointer, a func value and an interface -- the last as its two
+// words, "(data,itab)". It returns "" for a type that has no such form, a struct
+// above all: Go refuses to print one and so does this.
+//
+// The 0x is written out rather than taken from %#x, which C suppresses for a zero
+// value: a nil pointer printed "0" where Go prints "0x0". The width is the
+// target's -- a P2 pointer is 32 bits, so %x is exact there and truncates only
+// under the host shim, where an address means nothing to compare anyway.
+func (e *emitter) addressPrintC(ct string) string {
+	switch {
+	case strings.HasSuffix(ct, "*"), strings.HasPrefix(ct, funcTypePrefix):
+		return "0x%x"
+	case e.isIfaceCType(ct):
+		return "(0x%x,0x%x)"
+	}
+	return ""
 }
 
 // canPrintElem reports whether a slice/array of the given C element type can be
@@ -17021,6 +17431,12 @@ func (e *emitter) goArrayTypeName(a arrDim) string {
 func (e *emitter) goTypeName(ct string) string {
 	if e.isSliceCType(ct) {
 		return "[]" + e.goTypeName(sliceElemFromCName(ct))
+	}
+	if strings.HasSuffix(ct, "*") {
+		return "*" + e.goTypeName(strings.TrimSuffix(ct, "*"))
+	}
+	if name, ok := goCTypeNames[ct]; ok {
+		return name
 	}
 	if a, ok := e.namedArrays[ct]; ok {
 		return arrayTypeName(a)

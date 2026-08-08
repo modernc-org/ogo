@@ -11484,6 +11484,135 @@ func main() {
 `,
 		panics: true,
 		want:   "panic: boom\n",
+	},
+	{
+		// printf is print/println's formatted sibling: the same compiler magic over a
+		// CONSTANT format, which is what lets every verb be checked against its
+		// argument here rather than going wrong at run time. Output was diffed against
+		// the same program written for Go's fmt.Printf, and differs from it in exactly
+		// one place: %T of a defined type prints "Celsius" where Go prints
+		// "main.Celsius", there being no package clause to qualify it with.
+		name: "printf formats every verb as Go does",
+		src: `type Celsius int
+
+func main() {
+	n := 42
+	s := "hi"
+	b := true
+	var f float64 = 1.5
+	var u uint8 = 7
+	var c Celsius = 3
+	var big int64 = -5000000000
+	var ub uint32 = 4000000000
+	printf("d=%d s=%s t=%t f=%f u=%d c=%d\n", n, s, b, f, u, c)
+	printf("big=%d ub=%d hex=%x HEX=%X 100%%\n", big, ub, 255, 255)
+	var i8 int8 = -1
+	var i32 int32 = -2147483648
+	var i64 int64 = -1099511627776
+	printf("neg: %x %X | %x %x %x | %x %x\n", -255, -255, i8, i32, i64, 0, ub)
+	printf("T: %T %T %T %T %T %T\n", n, s, b, f, c, ub)
+	xs := []int{1, 2, 3}
+	var a [2]string
+	a[0] = "hi"
+	a[1] = "yo"
+	printf("v: %v %v %v %v %v\n", n, s, b, f, xs)
+	printf("arr: %v\n", a)
+	printf("c: %c%c%c %c %c\n", 'H', 'i', '!', 'é', 955)
+	printf("no verbs\n")
+}
+`,
+		want: `d=42 s=hi t=true f=1.500000 u=7 c=3
+big=-5000000000 ub=4000000000 hex=ff HEX=FF 100%
+neg: -ff -FF | -1 -80000000 -10000000000 | 0 ee6b2800
+T: int string bool float64 Celsius uint32
+v: 42 hi true 1.5 [1 2 3]
+arr: [hi yo]
+c: Hi! é λ
+no verbs
+`,
+	},
+	{
+		// %T of an INTERFACE is the one verb answered at run time: the vtable leads
+		// with the name of the type it was built for, so the dynamic type costs one
+		// pointer read. A value carrying no table carries no type, which prints <nil>
+		// as Go's does. The argument is bound to a temporary because the table is read
+		// twice and mk() must not run twice.
+		name: "%T reports an interface's dynamic type",
+		src: `type Shape interface {
+	area() int
+}
+
+type Sq int
+
+func (s *Sq) area() int {
+	return int(*s) * int(*s)
+}
+
+type Circ int
+
+func (c *Circ) area() int {
+	return 3 * int(*c) * int(*c)
+}
+
+var q = Sq(4)
+
+var c2 = Circ(2)
+
+var calls int
+
+func mk(which int) Shape {
+	calls++
+	if which == 0 {
+		return &q
+	}
+	return &c2
+}
+
+func main() {
+	for i := 0; i < 2; i++ {
+		sh := mk(i)
+		printf("%T area=%d\n", sh, sh.area())
+	}
+	printf("%T\n", mk(0))
+	println(calls)
+	var nilf Shape
+	printf("nil=%T\n", nilf)
+}
+`,
+		want: `*Sq area=16
+*Circ area=12
+*Sq
+3
+nil=<nil>
+`,
+	},
+	{
+		// print and println give a pointer, a func value and an interface the form
+		// Go's BUILTIN println gives them -- an address, the interface as its two
+		// words. printf follows fmt instead, which prints those differently, so %v
+		// declines them and %T answers for the type. The 0x is written out because C
+		// suppresses %#x's prefix for a zero value, where Go prints 0x0. Only the nil
+		// forms are asserted: a real address is not the same twice.
+		name: "a pointer, func and interface print as an address",
+		src: `type Shape interface {
+	area() int
+}
+
+func main() {
+	var p *int
+	var f func()
+	var sh Shape
+	println(p)
+	println(f)
+	println(sh)
+	printf("%T %T\n", p, sh)
+}
+`,
+		want: `0x0
+0x0
+(0x0,0x0)
+*int <nil>
+`,
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -1455,6 +1455,7 @@
 //	panic(s)            abort with a string message
 //	print(args…)        write the arguments to the serial console
 //	println(args…)      like print, but space-separated and newline-terminated
+//	printf(f, args…)    write the arguments under the control of a format
 //
 // The names are predeclared in the universe block, so a local or package-level
 // declaration of the same name shadows the built-in — min, max and clear are the
@@ -1474,10 +1475,46 @@
 // place. panic takes a string, writes "panic: " and that message to the serial
 // console and halts the cog; with --release it reboots the board instead.
 //
-// print and println are the only I/O built-ins; they write to the board's serial
-// output. Each takes any number of arguments, either scalar values or a whole
-// slice or array of a scalar element type. println separates its arguments with a
-// space and ends with a newline; print writes them adjacently with no terminator.
+// print, println and printf are the only I/O built-ins; they write to the board's
+// serial output. print and println each take any number of arguments, either
+// scalar values or a whole slice or array of a scalar element type. println
+// separates its arguments with a space and ends with a newline; print writes them
+// adjacently with no terminator. A value that does not print as itself — a struct
+// — is refused, as Go refuses it; a pointer, a func value and an interface print
+// as an address, the interface as its two words, as in Go.
+//
+// printf writes its arguments under the control of a format, which must be a
+// CONSTANT string: there is no heap to build one in, and a format known here is
+// what lets every verb be checked against its argument at compile time rather than
+// going wrong on the board. It is the built-in fmt.Printf would be if there were a
+// fmt package, and it formats as fmt does:
+//
+//	%d %x %X    an integer, in decimal or hexadecimal
+//	%s          a string
+//	%t          a bool, as the word true or false
+//	%f          a float, fixed-point
+//	%c          the character an integer names, encoded as UTF-8
+//	%v          the value in its default form — what println would print, down to
+//	            "[1 2 3]" for a slice. Not a pointer, a func value, an interface
+//	            or a struct: fmt renders those differently from the built-in
+//	            println, and this does not render them yet
+//	%T          the value's type
+//	%%          a literal percent
+//
+// The verbs take no flags, width or precision yet. A verb that does not suit its
+// argument, an unknown verb, and a count of verbs that does not match the count of
+// arguments are each refused where the call is written.
+//
+// Each verb renders as fmt does rather than as C does, where the two differ: %x of
+// a negative integer is a sign and a magnitude, "-ff", not the two's complement C
+// would print; %c writes the UTF-8 encoding of the character an integer names, not
+// one byte of it.
+//
+// %T is answered at compile time for everything but an interface, whose dynamic
+// type is read from the value at run time and costs one pointer. A type prints
+// unqualified — "Celsius", where Go would print "main.Celsius" — there being no
+// package clause here to qualify it with. An interface holding nothing prints
+// "<nil>".
 //
 // The other Go built-ins are recognized by the checker but not yet emitted:
 // close, complex, delete, imag, real and recover each report "the X built-in is

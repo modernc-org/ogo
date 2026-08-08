@@ -69,6 +69,11 @@ max
 min
 // print writes its arguments to the serial console with no separator or newline.
 print
+// printf writes its arguments to the serial console under the control of a format
+// string, which must be a constant. The verbs are checked against the arguments'
+// types when the program is compiled, so a mismatch is an error rather than
+// nonsense at run time.
+printf
 // println writes its arguments to the serial console, space-separated and
 // newline-terminated.
 println
@@ -192,7 +197,7 @@ out:
 	// the resolve-to-nothing validation in checkFactorNames (its slice form is
 	// allowed, other forms and new are rejected as dynamic allocation), and the
 	// builtins not yet emitted stay exempt via isBuiltinFuncName.
-	for _, bn := range []string{"append", "cap", "clear", "copy", "len", "max", "min", "print", "println"} {
+	for _, bn := range []string{"append", "cap", "clear", "copy", "len", "max", "min", "print", "printf", "println"} {
 		Universe.Declarations[bn] = &PredeclaredFunc{declaration: declaration{token: names[bn]}}
 	}
 	// NewBuilder(back []byte) Builder -- the compiler-known Builder constructor. It

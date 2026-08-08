@@ -244,6 +244,11 @@ broken.
   included, which may also be ranged, assigned and passed on whole.
 * `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
   fixed-capacity slice, `panic`, `print`/`println`.
+* **`printf`**, the built-in `fmt.Printf` would be if there were a `fmt` package:
+  `%d %x %X %s %t %f %c %v %T %%`, over a format that must be a constant — which is
+  what lets a wrong verb be refused where you wrote it instead of printing nonsense
+  on the board. `%T` costs nothing for a static type and one pointer read for an
+  interface, whose vtable carries its type's name.
 * A predeclared **`Builder`** for assembling a string at run time without a heap:
   `NewBuilder(back[:])` puts a write cursor over a byte array you own, and
   `WriteString`, `WriteByte`, `WriteRune`, `Write`, `String`, `Len` and `Reset`
