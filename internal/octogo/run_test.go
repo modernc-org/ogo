@@ -2272,6 +2272,71 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// An interface EMBEDDING others, "type Z interface { T; U }", which
+		// contributes their methods to its own. Exercised where it is not merely a
+		// rename: OVERLAPPING sets, where two embedded interfaces declare the same
+		// method and it must become ONE vtable slot rather than two; TRANSITIVE
+		// embedding; and a FORWARD reference, since declarations are collected in
+		// source order and an interface may embed one written after it.
+		//
+		// Then the two things a method set is for: a case naming an embedded
+		// interface, and an assertion to one.
+		name: "an interface embedding others",
+		src: `type T interface{ foo() int }
+
+type U interface{ bar() int }
+
+// Overlapping method sets: both embed T, so foo() appears twice and must become
+// one slot.
+type A interface {
+	T
+	baz() int
+}
+
+type B interface {
+	T
+	U
+}
+
+// Embedding one that is itself embedded, and a forward reference to a type
+// declared LATER.
+type C interface {
+	B
+	Late
+}
+
+type Late interface{ late() int }
+
+type X int
+
+func (x *X) foo() int  { return int(*x) }
+func (x *X) bar() int  { return int(*x) * 10 }
+func (x *X) baz() int  { return int(*x) * 100 }
+func (x *X) late() int { return int(*x) * 1000 }
+
+func main() {
+	x := X(2)
+	var a A = &x
+	println(a.foo(), a.baz())
+	var b B = &x
+	println(b.foo(), b.bar())
+	var c C = &x
+	println(c.foo(), c.bar(), c.late())
+
+	var e any = &x
+	switch t := e.(type) {
+	case C:
+		println("C", t.late())
+	default:
+		println("none")
+	}
+	d := e.(B)
+	println(d.foo(), d.bar())
+}
+`,
+		want: "2 200\n2 20\n2 20 2000\nC 2000\n2 20\n",
+	},
+	{
 		// A type ASSERTION to an interface, "v.(T)", in both forms. It asks the same
 		// question a type switch case for T asks -- the method set -- of one type,
 		// and is written without a star for the same reason: "*T" would be a pointer

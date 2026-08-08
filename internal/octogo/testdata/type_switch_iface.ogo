@@ -97,3 +97,36 @@ func guardTag(v any) {
 		_ = x
 	}
 }
+
+// An interface may EMBED others, contributing their methods to its own. Two that
+// declare the same method overlap, which Go allows and which becomes one method.
+type Both2 interface {
+	T
+	U
+}
+
+type Overlap interface {
+	T
+	Both2
+}
+
+func embedded(v any) {
+	switch x := v.(type) {
+	case Overlap:
+		x.foo()
+		x.bar()
+	}
+}
+
+// Embedding itself, directly or through another, defines a method set in terms of
+// itself. walkTypeCycle stops at an interface -- one is a fixed size whatever it
+// carries -- so this is checked on its own.
+// ERROR "invalid recursive type SelfA"
+type SelfA interface {
+	SelfB
+}
+
+// ERROR "invalid recursive type SelfB"
+type SelfB interface {
+	SelfA
+}

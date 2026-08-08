@@ -20,6 +20,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An interface may EMBED another**, `type Z interface { T; U }`, taking its
+  methods as its own. Two embedded interfaces may declare the same method, which
+  stays one method — a vtable has one slot per name — and the embedded name may be
+  declared anywhere in the package, before or after.
+
+  The grammar's `MethodSpec` gains the bare-name form,
+  `identifier [ "(" … ] `, which left-factors: the parenthesis is what tells a
+  method from a name standing alone, and the regenerated parser reports the same
+  eight ambiguities as before, none new.
+
+  Embedding a type that is NOT an interface is Go's type-constraint syntax, which
+  belongs to generics and is refused. An interface that embeds itself, directly or
+  through others, is `invalid recursive type` — the existing cycle pass stops at an
+  interface on purpose, since one is a fixed size whatever it carries, but embedding
+  is about the method set rather than the size.
+
 - **A type switch case may name an INTERFACE**, `case T:`, matching on the method
   set: any dynamic type implementing `T` takes the clause, and the name binds at
   `T`. Written bare, where a concrete case is `case *X:` — the star is there because

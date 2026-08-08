@@ -48,7 +48,7 @@ StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
 FieldDecl = "*" [ identifier "." ] identifier
 	| identifier [ "." identifier | { "," identifier } Type ] .
 InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
-MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
+MethodSpec = identifier [ "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] ] .
 Block = "{" { Statement ";" } [ Statement ] "}" .
 TopLevelDecl = FuncDecl | VarDecl | ConstDecl | TypeDecl .
 VarDecl = "var" ( VarSpec | "(" { VarSpec ";" } [ VarSpec ] ")" ) .

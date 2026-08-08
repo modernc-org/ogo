@@ -5540,13 +5540,43 @@ func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodS
 		return nil, false
 	}
 	set := map[string]*MethodSpecNode{}
+	f.collectIfaceMethods(s, it, set, map[string]bool{name: true})
+	return set, true
+}
+
+// collectIfaceMethods adds an interface's methods to set, expanding every EMBEDDED
+// name into the methods of the interface it names. seen holds the names already
+// expanded, so a cycle stops rather than recurring -- the cycle itself is the
+// type-cycle pass's to report, and this only has to terminate.
+//
+// A method already in the set stays: two embedded interfaces may declare the same
+// one, which Go allows, and either spec describes it.
+func (f *File) collectIfaceMethods(s *Scope, it *TypeNodeInterface, set map[string]*MethodSpecNode, seen map[string]bool) {
 	for i := range it.Methods {
 		m := &it.Methods[i]
-		if m.Name.IsValid() && m.Name.Src() != "_" {
-			set[m.Name.Src()] = m
+		if !m.Name.IsValid() || m.Name.Src() == "_" {
+			continue
 		}
+		if !m.Embedded {
+			if _, have := set[m.Name.Src()]; !have {
+				set[m.Name.Src()] = m
+			}
+			continue
+		}
+		if seen[m.Name.Src()] {
+			continue
+		}
+		seen[m.Name.Src()] = true
+		td, ok := s.find(m.Name.Src()).(*TypeDeclaration)
+		if !ok || td.TypeSpec == nil {
+			continue // not a type: reported where the embedding is checked
+		}
+		inner, ok := td.TypeSpec.TypeNode.(*TypeNodeInterface)
+		if !ok {
+			continue // not an interface: likewise
+		}
+		f.collectIfaceMethods(s, inner, set, seen)
 	}
-	return set, true
 }
 
 // methodSpecSig reads a method spec as the signature it is. The two productions
@@ -9374,6 +9404,50 @@ func (f *File) checkTypeCycle(s *Scope, cd *TypeDeclaration) {
 	ts.gate.open()
 	f.walkTypeCycle(s, ts.TypeNode)
 	ts.gate.close()
+	f.checkIfaceEmbedCycle(s, ts)
+}
+
+// checkIfaceEmbedCycle reports an interface that EMBEDS itself, directly or through
+// others. walkTypeCycle stops at an interface deliberately -- an interface value is
+// one fixed size whatever it carries, so it cannot make a type infinite -- but
+// embedding is not about size: it is about the method set, and a set defined in
+// terms of itself has no members to compute.
+func (f *File) checkIfaceEmbedCycle(s *Scope, ts *TypeSpecNode) {
+	it, ok := ts.TypeNode.(*TypeNodeInterface)
+	if !ok || !ts.Name.IsValid() {
+		return
+	}
+	var reaches func(*TypeNodeInterface, map[string]bool) bool
+	reaches = func(cur *TypeNodeInterface, seen map[string]bool) bool {
+		for i := range cur.Methods {
+			m := &cur.Methods[i]
+			if !m.Embedded || !m.Name.IsValid() {
+				continue
+			}
+			if m.Name.Src() == ts.Name.Src() {
+				return true
+			}
+			if seen[m.Name.Src()] {
+				continue
+			}
+			seen[m.Name.Src()] = true
+			td, ok := s.find(m.Name.Src()).(*TypeDeclaration)
+			if !ok || td.TypeSpec == nil {
+				continue
+			}
+			inner, ok := td.TypeSpec.TypeNode.(*TypeNodeInterface)
+			if !ok {
+				continue
+			}
+			if reaches(inner, seen) {
+				return true
+			}
+		}
+		return false
+	}
+	if reaches(it, map[string]bool{ts.Name.Src(): true}) {
+		f.err(ts.Name.Position(), "invalid recursive type %s", ts.Name.Src())
+	}
 }
 
 // walkTypeCycle follows the edges of tn that contribute to a value's size: a
@@ -9727,6 +9801,10 @@ type MethodSpecNode struct {
 	Name    Token
 	Params  *ParameterListNode
 	Results *ParameterListNode
+	// Embedded marks a spec that is an interface NAME standing alone rather than a
+	// method. The production left-factors to `identifier [ "(" ... ]`, so the
+	// parenthesis is what tells them apart.
+	Embedded bool
 }
 
 // TypeNodeInterface describes the InterfaceType production.
@@ -9946,10 +10024,13 @@ func (f *File) interfaceType(s *Scope, n Node) (r *TypeNodeInterface) {
 		}
 	}
 
-	// An interface's method names must be unique.
+	// An interface's method names must be unique. An EMBEDDED name is not a method
+	// name, and two embedded interfaces may declare the same method -- Go allows
+	// that, and the overlapping methods become one -- so only what this interface
+	// DECLARES is checked here.
 	seen := map[string]bool{}
 	for _, m := range r.Methods {
-		if !m.Name.IsValid() {
+		if !m.Name.IsValid() || m.Embedded {
 			continue
 		}
 		name := m.Name.Src()
@@ -9970,6 +10051,7 @@ func (f *File) interfaceType(s *Scope, n Node) (r *TypeNodeInterface) {
 // The signature part mirrors Signature: the first ")" separates parameters from
 // results.
 func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
+	r.Embedded = true // until a "(" says otherwise
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ParameterList:
@@ -9985,7 +10067,7 @@ func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
 			case IDENT:
 				r.Name = tok
 			case LPAREN, RPAREN:
-				// structural
+				r.Embedded = false // a signature, so this is a method
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}

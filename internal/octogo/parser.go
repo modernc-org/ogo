@@ -8152,12 +8152,13 @@ state1:
 
 // MethodSpec grammar:
 //
-//	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] .
+//	MethodSpec = identifier [ "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] ] .
 //
 //	State 0
 //		on  identifier
 //			shift and goto state 1
 //	State 1
+//		Accept
 //		on  '('
 //			shift and goto state 2
 //	State 2
@@ -8196,7 +8197,7 @@ func (p *Parser) MethodSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 86
+	accept, errorSet = true, 86
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
