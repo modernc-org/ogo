@@ -1,0 +1,68 @@
+// A composite literal's VALUES are checked against the types of the fields they
+// land in, positionally or by key -- the same question an assignment to the field
+// asks. Until this ran, a literal was checked for its field NAMES and its value
+// COUNT and for nothing about the values themselves, so "S{f: true}" put a bool in
+// an int32 field and compiled.
+
+type S struct {
+	f int32
+	g uint8
+	n int
+	s string
+	b bool
+}
+
+// A field whose type the Kind model does not carry is left alone rather than
+// misreported, so a literal naming one of these still passes.
+type Holder struct {
+	inner S
+	xs    []int
+	arr   [2]int
+	p     *S
+}
+
+func ok() {
+	var n int = 1
+	var i32 int32 = 1
+	s := S{i32, 2, n, "x", true}
+	t := S{f: i32, n: n, s: "y"}
+	// An untyped constant goes wherever it fits, whatever the field's width.
+	u := S{1, 2, 3, "z", false}
+	println(s.n, t.n, u.n)
+
+	var h Holder
+	v := Holder{inner: s, p: &h.inner}
+	println(v.inner.n)
+}
+
+func wrongType() {
+	var n int = 1
+
+	// ERROR "cannot use true of type bool as type int32 in struct literal"
+	a := S{f: true}
+
+	// ERROR "cannot use n of type int as type int32 in struct literal"
+	b := S{f: n}
+
+	// ERROR "cannot use n of type int as type int32 in struct literal"
+	c := S{n, 1, 1, "", false}
+
+	// ERROR "cannot use 1 of type int as type string in struct literal"
+	d := S{s: 1}
+
+	println(a.f, b.f, c.f, d.f)
+}
+
+// A constant that is of the right type may still not fit the field, which is the
+// same range check every other assignment position makes.
+func overflows() {
+	// ERROR "constant 300 overflows uint8"
+	a := S{g: 300}
+	println(a.g)
+}
+
+func main() {
+	ok()
+	wrongType()
+	overflows()
+}

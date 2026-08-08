@@ -5367,6 +5367,7 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 	for i, el := range elements {
 		if i < len(types) {
 			f.checkImplements(s, f.typeNodeString(types[i], false), el.value, "struct literal")
+			f.checkLitValue(s, t, types[i], el.value)
 		}
 	}
 	// A positional literal fills every field in order, including any this package
@@ -5392,6 +5393,35 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 		}
 		f.err(id.Position(), "%s values in %s{...}: %s but %s", what, t, countUnits(len(elements), "value"), countUnits(len(names), "field"))
 	}
+}
+
+// checkLitValue checks one value of a composite literal against the type of the
+// field it lands in -- the same question an assignment to that field asks, asked
+// where the literal writes it. Until this ran, a literal's values were checked for
+// nothing but a field NAME: "S{f: true}" put a bool in an int32 field and compiled.
+//
+// Conservative in the way its neighbours are. A field whose type the Kind model
+// does not carry (a struct, a slice, a pointer, an interface) and a value whose
+// type cannot be determined are both left alone rather than misreported. So is
+// every literal of a type from another package, whose field types are written in
+// the DECLARING package's scope and would resolve here to a different type of the
+// same name, or to nothing.
+func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node) {
+	if t.qual.IsValid() {
+		return
+	}
+	ft := f.resultType(s, tn)
+	vk, ok := f.exprType(s, value)
+	if !ft.known || !ok {
+		return
+	}
+	if !assignableKind(ft.kind, vk) {
+		f.err(f.tok(value.Pos()).Position(), "cannot use %s of type %s as type %s in struct literal", f.exprSource(value), kindName(vk), ft.name)
+		return
+	}
+	// Same type: a constant may still overflow a sized field, "S{b: 300}" for a
+	// uint8 b. The field's own written type name is what the report says.
+	f.checkValueOverflow(s, ft, value)
 }
 
 // checkLitUniform reports whether every element of a composite literal is of the
@@ -5451,6 +5481,7 @@ func (f *File) checkKeyedLit(s *Scope, t litType, names []Token, types []TypeNod
 		}
 		seen[name] = true
 		f.checkImplements(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
+		f.checkLitValue(s, t, fieldType(name), el.value)
 	}
 }
 
