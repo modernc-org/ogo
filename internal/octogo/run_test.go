@@ -7769,7 +7769,11 @@ func main() {
 	println(outer)
 }
 `,
-		want: "10 20\n5 6\n1 1 7\n10 20\n99\n",
+		// "1 true 7": the ok of a two-result append is a BOOL. It printed 1 until
+		// 2026-08-08 -- the checker always typed it bool, and only the emitter said
+		// int -- and this golden was written from the implementation and agreed with
+		// it. Every other ok in the language prints true.
+		want: "10 20\n5 6\n1 true 7\n10 20\n99\n",
 	},
 	{
 		// Array equality. C would accept "a == b" and mean something else entirely:
@@ -11613,6 +11617,115 @@ func main() {
 (0x0,0x0)
 *int <nil>
 `,
+	},
+	{
+		// append(s, xs...) -- the SPREAD form. It parsed and type-checked from the
+		// day append shipped and the ellipsis was then IGNORED, so the whole slice
+		// was emitted where one element belonged: ogo_append_int(buf, src). Both C
+		// compilers refuse that, so it was a build break rather than a wrong answer,
+		// but it was a build break in the user's C.
+		//
+		// One memmove rather than a loop, which is also what makes the overlapping
+		// case right: append(o, o...) is legal Go and copies a region onto one that
+		// runs into it. Every line here was diffed against the same program run by
+		// Go.
+		name: "append spreads a slice",
+		src: `type pt struct {
+	x int
+	y int
+}
+
+func main() {
+	var back [16]byte
+	buf := back[:0]
+	buf = append(buf, "hi"...)
+	buf = append(buf, ", "...)
+	src := []byte{119, 111}
+	buf = append(buf, src...)
+	buf = append(buf, 33)
+	println(len(buf), buf[0], buf[4], buf[6])
+
+	var ib [8]int
+	is := ib[:0]
+	is = append(is, []int{7, 8}...)
+	println(len(is), is[0], is[1])
+
+	var none []int
+	is = append(is, none...)
+	println(len(is))
+
+	var ov [8]int
+	o := ov[:2]
+	o[0] = 5
+	o[1] = 6
+	o = append(o, o...)
+	println(len(o), o[0], o[1], o[2], o[3])
+
+	var pb [4]pt
+	ps := pb[:0]
+	ps = append(ps, []pt{{1, 2}, {3, 4}}...)
+	println(len(ps), ps[0].x, ps[1].y)
+}
+`,
+		want: "7 104 119 33\n2 7 8\n2\n4 5 6 5 6\n2 1 4\n",
+	},
+	{
+		// The spread traps on overflow like the single-value form, and is ALL OR
+		// NOTHING: a partial append would leave the caller nothing to read it from,
+		// ok being one bool for the call.
+		name: "a spread past capacity traps",
+		src: `func main() {
+	var back [3]byte
+	buf := back[:0]
+	buf = append(buf, "toolong"...)
+	println(len(buf))
+}
+`,
+		panics: true,
+		want:   "panic: append: out of capacity\n",
+	},
+	{
+		// The ok form of the spread, in both its shapes: a whole slice and a string
+		// onto a []byte. The last one does not fit, so nothing of it is appended.
+		name: "the two-result append spreads too",
+		src: `func main() {
+	var small [4]byte
+	s := small[:0]
+	s, ok := append(s, "ab"...)
+	println(len(s), ok)
+
+	s2, ok2 := append(s, []byte{99}...)
+	println(len(s2), ok2)
+
+	s3, ok3 := append(s2, "xyz"...)
+	println(len(s3), ok3)
+}
+`,
+		want: "2 true\n3 true\n3 false\n",
+	},
+	{
+		// A string literal is DECODED and RE-QUOTED for C rather than passed through.
+		// Go and C share the common escapes and part company on the rest, and the
+		// passthrough was wrong wherever they do: C's "\x" has no length limit, so
+		// "a\xffb" read there as an 'a' and ONE escape of value 0xffb -- a warning
+		// from the compiler, a two-byte string, and a program that then could not
+		// find its own 'b'. Go's "\u2028" is three UTF-8 bytes here and a universal
+		// character name there.
+		//
+		// The bytes are what is emitted now: printable ASCII as itself, the escapes
+		// both languages spell alike as themselves, everything else as three-digit
+		// octal, which C caps at three digits so it always ends where written.
+		name: "string escapes are re-quoted for C",
+		src: "func main() {\n" +
+			"\tbad := \"a\\xffb\"\n" +
+			"\tprintln(len(bad), bad[0], bad[1], bad[2])\n" +
+			"\tu := \"\\u2028x\"\n" +
+			"\tprintln(len(u), u[0], u[1], u[2], u[3])\n" +
+			"\toct := \"\\101\\1027\"\n" +
+			"\tprintln(len(oct), oct[0], oct[1], oct[2])\n" +
+			"\tprintln(\"tab\\there\\nnl\")\n" +
+			"}\n",
+		want: "3 97 255 98\n4 226 128 168 120\n3 65 66 55\ntab\there\nnl\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

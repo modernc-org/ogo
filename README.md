@@ -290,10 +290,19 @@ broken.
 
 **Does not work yet**, in rough order of how likely you are to hit it:
 
-* **There is no standard library.** The `p2` package wraps twenty-four intrinsics
-  (pin control, smart pins, timing, the hardware locks), and `testing` carries the
-  state a test reports through. That is the whole of it. Your own packages do import
-  and build; there is just nothing else to import yet.
+* **The standard library is three packages.** `strings` is the allocation-free part
+  of Go's — the functions that answer a question about a string or return a
+  substring of one, each meaning exactly what Go's of the same name means, checked
+  by running the same program under Go. `p2` wraps twenty-four intrinsics (pin
+  control, smart pins, timing, the hardware locks), and `testing` carries the state
+  a test reports through. That is the whole of it. Your own packages do import and
+  build; there is just little else to import yet.
+* **One function's locals live in cog RAM, and there are 480 longs of it** for all
+  of them together. A function big enough to exhaust that fails to build with the
+  backend's `fit 480 failed: pc is N` — the P2's own limit rather than the
+  compiler's, and it names assembly rather than your source, which is the unfriendly
+  part. Splitting the function into several is the fix, and is what the code wanted
+  anyway.
 * A **goroutine's stack is a fixed 256 longs** and cannot be sized per `go`
   statement. Recursion works — `main` runs on the cog's own stack and a goroutine on
   its pool slot's — but a deep enough call chain in a goroutine overruns that slot

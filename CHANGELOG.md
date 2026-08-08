@@ -45,6 +45,43 @@ shipped section tells a reader on that version that they have behaviour they do 
   complement `ffffff01` C prints for the same value, and `%c` writes the UTF-8
   encoding of the character an integer names rather than one byte of it.
 
+- **`append(s, xs...)` works.** The spread form parsed and type-checked from the day
+  `append` shipped, and its ellipsis was then IGNORED: the whole slice was emitted
+  where one element belonged, so both C compilers refused the result. It was a build
+  break rather than a wrong answer, but it was a build break in C the user never
+  wrote. A slice of the same element type spreads, and — as in Go — a **string
+  spreads onto a `[]byte`**, `bs = append(bs, "hi"...)`. The source and the
+  destination may overlap, so `append(s, s...)` means what it means in Go.
+  The two-result form spreads too, and is all-or-nothing: either the whole spread
+  fits or none of it is appended, `ok` being one bool for the call.
+
+### Standard library
+
+- **A `strings` package**, the first library code here that is neither a hardware
+  wrapper nor a test harness. It is the allocation-free part of Go's: `Compare`,
+  `Contains`, `ContainsAny`, `ContainsRune`, `Count`, `Cut`, `CutPrefix`,
+  `CutSuffix`, `HasPrefix`, `HasSuffix`, `Index`, `IndexAny`, `IndexByte`,
+  `IndexRune`, `LastIndex`, `LastIndexByte`, `TrimPrefix`, `TrimSuffix` and
+  `TrimSpace`. Each either answers a question about a string or returns a SUBSTRING
+  of one, which costs nothing — a string is a pointer and a length, so a slice of it
+  points into the same bytes. What is absent is what allocates: `Split`, `Join`,
+  `Repeat`, `Replace`, `ToUpper` and the rest need somewhere to put a string that
+  did not exist before. `Builder` is how a program makes one.
+- It is **written in OctoGo**, compiled like any other package. Nothing in it is an
+  intrinsic and nothing in it is C, which is as much the point as the functions are:
+  a standard library a language cannot express is a standard library written in
+  something else.
+- **`EqualFold` is deliberately absent.** Go's folds Unicode, not ASCII, and an
+  ASCII-only one would differ on the inputs nobody tests. A function that is nearly
+  Go's is worse than one that is missing, because it compiles. `TrimSpace`, by
+  contrast, trims what *Unicode* calls white space — a short, closed list — so it is
+  exact rather than an approximation.
+- Checked by running the same program under Go and comparing the bytes
+  (`TestStringsMatchesGo`, `TestOnBoardStrings`), on the arguments where a plausible
+  implementation and a correct one part company: an empty needle, a needle longer
+  than the haystack, overlapping matches, a multi-byte rune, invalid UTF-8, and the
+  white space that is white space only to Unicode.
+
 ### Examples and tests
 
 - **`_examples/life`** — Conway's Game of Life, and the first example that imports
@@ -62,8 +99,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   tool skips a directory named with a leading underscore — so an example that
   stopped building would have been found by a reader.
 
+### Fixes
+
+- **A string literal is decoded and re-quoted for C** rather than passed through.
+  Go and C share the common escapes and part company on the rest, and the
+  passthrough was wrong wherever they do: C's `\x` has no length limit, so `"a\xffb"`
+  read there as an `a` and ONE escape of value `0xffb` — a compiler warning, a
+  two-byte string, and a program that could not then find its own `b`. Go's
+  `"\u2028"` is three UTF-8 bytes here and a universal character name there.
+
 ### Behaviour changes
 
+- **The `ok` of a two-result `append` is a `bool`.** It was emitted as an `int`, so
+  `println(ok)` printed `1` where a type assertion's `ok` prints `true`. The checker
+  had always typed append's `bool` (`var b bool = ok` was accepted); only the
+  emitter disagreed. Code that stored it
+  in a variable is unaffected; code that printed it sees `true`/`false` now.
 - **`println` of a struct is refused.** It used to compile and print the struct's
   first word as an integer — a garbage number, with nothing said. Go rejects the
   same program (`illegal types for operand: print`), so this is one more place where

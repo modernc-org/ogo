@@ -342,6 +342,48 @@ var goCTypeNames = map[string]string{
 	"ogo_builder": "Builder",
 }
 
+// cNamedEscape is the escapes C and Go spell identically. They are kept for the
+// sake of whoever reads the emitted C: "\n" is every other line of it, and octal
+// would be correct and unreadable.
+var cNamedEscape = map[byte]string{
+	'\a': `\a`, '\b': `\b`, '\t': `\t`, '\n': `\n`, '\v': `\v`, '\f': `\f`, '\r': `\r`,
+}
+
+// cQuote renders a string as a C literal, byte by byte. Every byte that is not
+// printable ASCII becomes a THREE-DIGIT OCTAL escape, which is where it differs
+// from Go's strconv.Quote and why it exists: C's hex escape has no length limit, so
+// the "a\xffb" that Go quotes as "a\xffb" reads in C as an 'a' followed by ONE
+// escape of value 0xffb -- a warning, and the wrong bytes. C caps an octal escape
+// at three digits, so it always ends where it is written.
+//
+// A non-ASCII byte goes the same way rather than through as itself: the emitted C
+// then holds no byte a compiler could read as anything but a string, whatever it
+// believes the source encoding to be.
+func cQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"' || c == '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c >= 0x20 && c < 0x7f:
+			b.WriteByte(c)
+		default:
+			// The named escapes mean the same in both languages and are a whole
+			// escape by themselves, so they cannot run into what follows the way
+			// "\x" does. Everything else goes out as octal.
+			if named := cNamedEscape[c]; named != "" {
+				b.WriteString(named)
+				continue
+			}
+			fmt.Fprintf(&b, "\\%03o", c)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 // cString is the C type of an OctoGo string: a { const char* str; int len; }
 // header emitted as stringTypedef, printed via the stringHelpers.
 const cString = "ogo_string"
@@ -2294,6 +2336,18 @@ func appendCName(elem string) string    { return "ogo_append_" + sanitizeElem(el
 func tryappendCName(elem string) string { return "ogo_tryappend_" + sanitizeElem(elem) }
 func appendokCName(elem string) string  { return "ogo_appendok_" + sanitizeElem(elem) }
 
+// appendSliceCName and tryappendSliceCName name the SPREAD forms of the same two,
+// `append(s, xs...)`: they take a whole slice rather than one value. A string
+// spread onto a []byte -- Go's one mixed-type append -- has its own pair, since
+// what it reads from is a string header and not a slice one.
+func appendSliceCName(elem string) string    { return "ogo_appendslice_" + sanitizeElem(elem) }
+func tryappendSliceCName(elem string) string { return "ogo_tryappendslice_" + sanitizeElem(elem) }
+
+// appendStrCName and tryappendStrCName name `append(bs, s...)` for a []byte and a
+// string. There is one of each: the element type is fixed at uint8_t.
+const appendStrCName = "ogo_appendstr"
+const tryappendStrCName = "ogo_tryappendstr"
+
 // copyCName names the per-element helper for the copy builtin, ogo_copy_<T>.
 func copyCName(elem string) string { return "ogo_copy_" + sanitizeElem(elem) }
 
@@ -2665,7 +2719,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -2826,7 +2880,11 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		a, isArr := e.namedArrays[el]
 		e.addTypedef(chanCName(el), chanTypedefDefDim(el, a, isArr), el)
 	}
-	for _, el := range sortedKeys(e.tryappendElems) {
+	// The { slice, ok } result struct is what EVERY ok form returns -- single value,
+	// spread, or a string spread onto a []byte -- so it has a gate of its own. The
+	// three helpers have theirs, which is what keeps a program using one of them
+	// from carrying the other two as unused functions.
+	for _, el := range sortedKeys(e.appendokStructs) {
 		e.addTypedef(appendokCName(el),
 			fmt.Sprintf("typedef struct { %s slice; int ok; } %s;\n", sliceCName(el), appendokCName(el)),
 			sliceCName(el))
@@ -2958,6 +3016,26 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\t\t%s\n\t\ts.len++;\n\t}\n\treturn s;\n}\n",
 			sliceCName(el), appendCName(el), sliceCName(el), param, store)
 	}
+	// The SPREAD forms, append(s, xs...). One memmove rather than a loop, which is
+	// both shorter and correct where the two overlap -- `append(s, s...)` is legal
+	// Go and copies a region onto one that may run into it. sizeof(*s.ptr) is the
+	// element's size whatever it is, so an array element needs no separate form here
+	// (the store is a copy either way, which is what the single-value helper spells
+	// out by hand).
+	for _, el := range sortedKeys(e.appendSliceElems) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n"+
+			"\tif (v.len > s.cap - s.len) {\n\t\togo_panic(\"append: out of capacity\");\n\t} else {\n"+
+			"\t\tmemmove(s.ptr + s.len, v.ptr, (unsigned)v.len * sizeof(*s.ptr));\n"+
+			"\t\ts.len += v.len;\n\t}\n\treturn s;\n}\n",
+			sliceCName(el), appendSliceCName(el), sliceCName(el), sliceCName(el))
+	}
+	if e.usesAppendStr {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n"+
+			"\tif (v.len > s.cap - s.len) {\n\t\togo_panic(\"append: out of capacity\");\n\t} else {\n"+
+			"\t\tmemmove(s.ptr + s.len, v.str, (unsigned)v.len);\n"+
+			"\t\ts.len += v.len;\n\t}\n\treturn s;\n}\n",
+			sliceCName("uint8_t"), appendStrCName, sliceCName("uint8_t"), cString)
+	}
 	// copy(dst, src): move min(len) elements and return the count. memmove, not
 	// memcpy, because Go's copy allows dst and src to overlap.
 	for _, el := range sortedKeys(e.copyElems) {
@@ -3038,6 +3116,23 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\tif (s.len >= s.cap) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
 			"\t\t%s\n\t\ts.len++;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
 			appendokCName(el), tryappendCName(el), sliceCName(el), param, appendokCName(el), store)
+	}
+	// The ok forms of the spread. Either the whole spread fits or nothing is
+	// appended: a partial append would leave the caller with no way to say what
+	// happened, ok being one bool for the call.
+	for _, el := range sortedKeys(e.tryappendSliceEls) {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
+			"\tif (v.len > s.cap - s.len) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
+			"\t\tmemmove(s.ptr + s.len, v.ptr, (unsigned)v.len * sizeof(*s.ptr));\n"+
+			"\t\ts.len += v.len;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
+			appendokCName(el), tryappendSliceCName(el), sliceCName(el), sliceCName(el), appendokCName(el))
+	}
+	if e.usesTryAppendStr {
+		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
+			"\tif (v.len > s.cap - s.len) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
+			"\t\tmemmove(s.ptr + s.len, v.str, (unsigned)v.len);\n"+
+			"\t\ts.len += v.len;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
+			appendokCName("uint8_t"), tryappendStrCName, sliceCName("uint8_t"), cString, appendokCName("uint8_t"))
 	}
 	// The per-element slice printers render "[e0 e1 ...]"; the newline form defers
 	// to the plain one and adds a trailing '\n'. They reference the slice typedef
@@ -3206,6 +3301,11 @@ type emitter struct {
 	sliceElemByName    map[string]string  // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
 	appendElems        map[string]bool    // element C types needing the trapping ogo_append_<T> helper
 	tryappendElems     map[string]bool    // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	appendSliceElems   map[string]bool    // element C types needing the spread ogo_appendslice_<T> helper
+	tryappendSliceEls  map[string]bool    // element C types needing the spread ok-form ogo_tryappendslice_<T>
+	appendokStructs    map[string]bool    // element C types needing the { slice, ok } ogo_appendok_<T> struct
+	usesAppendStr      bool               // append(bs, s...) of a string: emit ogo_appendstr
+	usesTryAppendStr   bool               // the ok form of the same: emit ogo_tryappendstr
 	copyElems          map[string]bool    // element C types needing the ogo_copy_<T> helper for the copy builtin
 	resliceElems       map[string]bool    // element C types needing the ogo_reslice_<T> helper, a bounds-checked slice expression
 	reslice3Elems      map[string]bool    // element C types needing its three-bound twin, ogo_reslice3_<T>
@@ -10527,7 +10627,7 @@ func (e *emitter) stringConstParts(base string) (ptr, length string, ok bool) {
 	if !ok {
 		return "", "", false
 	}
-	return strconv.Quote(v), strconv.Itoa(len(v)), true
+	return cQuote(v), strconv.Itoa(len(v)), true
 }
 
 func (e *emitter) isStringVarName(base string) bool {
@@ -13933,6 +14033,33 @@ func (e *emitter) exprIdent(ast []int32) (string, bool) {
 	return "", false
 }
 
+// spreadAppendArg validates `append(s, xs...)` and says what is being spread. Go
+// takes exactly one argument after the ellipsis form, and it must be a slice of the
+// same element type -- or a STRING when the destination is a []byte, which is the
+// one place Go lets two different types meet in an append.
+//
+// It answers isStr for that string case. A failure is reported here, so a false
+// return means the call has already been refused.
+func (e *emitter) spreadAppendArg(elem string, args []Node) (isStr, ok bool) {
+	if len(args) != 2 {
+		e.failAt(args[0].ast, "append takes a single value with \"...\" -- append(s, xs...)")
+		return false, false
+	}
+	ct, known := e.inferCType(args[1].ast)
+	if !known {
+		e.failAt(args[1].ast, "cannot tell the type of the value spread into append")
+		return false, false
+	}
+	switch {
+	case e.isSliceCType(ct) && sliceElemFromCName(ct) == elem:
+		return false, true
+	case ct == cString && elem == "uint8_t":
+		return true, true
+	}
+	e.failAt(args[1].ast, "cannot append %s... to []%s", e.goTypeName(ct), e.goTypeName(elem))
+	return false, false
+}
+
 // emitAppend emits the single-result append `append(s, x, ...)` through the trapping
 // ogo_append_<T> helper (which panics if the slice is already at cap). Several values
 // nest the calls -- append(s, a, b, c) becomes
@@ -13943,8 +14070,28 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	if !ok {
 		return
 	}
-	e.appendElems[elem] = true
 	e.needPanic()
+	if e.spreadCall(callSuffix) {
+		isStr, ok := e.spreadAppendArg(elem, args)
+		if !ok {
+			return
+		}
+		e.includes["string.h"] = true // memmove, in the helper below
+		call := appendSliceCName(elem)
+		if isStr {
+			e.usesAppendStr = true
+			call = appendStrCName
+		} else {
+			e.appendSliceElems[elem] = true
+		}
+		e.emit(call + "(")
+		e.emitExpr(args[0].ast)
+		e.emit(", ")
+		e.emitExpr(args[1].ast)
+		e.emit(")")
+		return
+	}
+	e.appendElems[elem] = true
 	values := args[1:]
 	for range values {
 		e.emit(appendCName(elem) + "(")
@@ -14126,10 +14273,29 @@ func (e *emitter) emitTryAppend(targets []assignTarget, declare []bool, callSuff
 		e.fail("the two-result append form takes a single value -- s, ok = append(s, x)")
 		return
 	}
-	e.tryappendElems[elem] = true
+	e.appendokStructs[elem] = true
+	call := tryappendCName(elem)
+	switch {
+	case e.spreadCall(callSuffix):
+		isStr, ok := e.spreadAppendArg(elem, args)
+		if !ok {
+			return
+		}
+		e.includes["string.h"] = true // memmove, in the helper below
+		switch {
+		case isStr:
+			e.usesTryAppendStr = true
+			call = tryappendStrCName
+		default:
+			e.tryappendSliceEls[elem] = true
+			call = tryappendSliceCName(elem)
+		}
+	default:
+		e.tryappendElems[elem] = true
+	}
 	tmp := e.newTmp()
 	e.ind()
-	e.emit(appendokCName(elem) + " " + tmp + " = " + tryappendCName(elem) + "(")
+	e.emit(appendokCName(elem) + " " + tmp + " = " + call + "(")
 	e.emitExpr(args[0].ast)
 	e.emit(", ")
 	e.emitExpr(args[1].ast)
@@ -14139,7 +14305,11 @@ func (e *emitter) emitTryAppend(targets []assignTarget, declare []bool, callSuff
 		e.sliceVars[targets[0].name] = elem
 	}
 	e.emitStore(targets[0], declare[0], sliceCName(elem), tmp+".slice")
-	e.emitStore(targets[1], declare[1], "int", tmp+".ok")
+	// A BOOL, as every other ok in the language is and as the checker already types
+	// this one -- `var b bool = ok` has always been accepted. Only the emitter said
+	// int, so println(ok) printed 1 where the type assertion's ok prints true. The
+	// helper's field stays an int and C narrows it, which it does exactly.
+	e.emitStore(targets[1], declare[1], cBool, tmp+".ok")
 }
 
 // arrayVar looks a name up in the local then the package array environment.
@@ -14297,7 +14467,7 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 		// format string", which is what TestTargetBuild is for: the host run builds
 		// with -Wno-format and could not have seen it.
 		e.ind()
-		e.emit("printf(" + strconv.Quote(strings.ReplaceAll(lit, "%", "%%")) + ");\n")
+		e.emit("printf(" + cQuote(strings.ReplaceAll(lit, "%", "%%")) + ");\n")
 		lit = ""
 	}
 	for _, item := range items {
@@ -18415,7 +18585,7 @@ func (e *emitter) emitOperandToken(tok int32) {
 // header. In a static initializer a brace `{"s", n}` is required (a compound
 // literal is not a constant expression there); elsewhere the compound literal
 // `(ogo_string){"s", n}` is used. n is the decoded byte length (escapes counted as
-// one byte). The literal text emits verbatim -- Go and C share the common escapes.
+// one byte).
 // foldConstString folds a compile-time-constant string expression to its decoded
 // value: a string literal, a string constant, or a concatenation (with "+") of
 // those. It reports false for anything with a non-constant operand -- a variable --
@@ -18472,7 +18642,7 @@ func (e *emitter) foldConstString(ast []int32) (string, bool) {
 // file-scope initializer is not a constant expression otherwise.
 func (e *emitter) emitFoldedString(v string) {
 	e.usesString = true
-	body := strconv.Quote(v) + ", " + strconv.Itoa(len(v))
+	body := cQuote(v) + ", " + strconv.Itoa(len(v))
 	if e.declInit {
 		e.emit("{" + body + "}")
 	} else {
@@ -18495,13 +18665,12 @@ func (e *emitter) emitStringLit(tok int32) {
 		e.fail("invalid string literal %s", src)
 		return
 	}
-	e.usesString = true
-	body := src + ", " + strconv.Itoa(len(decoded))
-	if e.declInit {
-		e.emit("{" + body + "}")
-	} else {
-		e.emit("(" + cString + "){" + body + "}")
-	}
+	// Decoded and RE-QUOTED, not passed through. Go and C share the common escapes
+	// and part company on the rest: C's "\x" has no length limit, so Go's "a\xffb"
+	// reads there as one escape of value 0xffb -- a warning and the wrong bytes --
+	// and Go's "\u2028" is a UTF-8 sequence here and a universal character name
+	// there. Re-quoting settles all of it by writing the BYTES.
+	e.emitFoldedString(decoded)
 }
 
 // normalizeIntLit rewrites an OctoGo integer literal to a form the C backend

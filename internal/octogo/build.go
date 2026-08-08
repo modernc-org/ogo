@@ -30,7 +30,7 @@ var intrinsicImports = map[string]bool{"p2": true}
 // from a directory. They are ORDINARY OctoGo, compiled and mangled like any other
 // package -- nothing about them is intrinsic -- so the day one of them ships as
 // source on disk, the only change is where it is read from.
-var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src}
+var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc}
 
 // p2Src is the p2 package: the Propeller 2's hardware, as declarations. Every
 // function here is BODYLESS -- the form the grammar provides for a function
@@ -187,6 +187,269 @@ func (t *T) Skip() { t.skipped = true }
 
 // Skipped reports whether Skip has been called.
 func (t *T) Skipped() bool { return t.skipped }
+`
+
+// stringsSrc is the strings package: the allocation-free part of Go's. It is
+// ordinary OctoGo, compiled like any other package -- nothing in it is intrinsic
+// and nothing in it is C -- which is the point as much as the functions are. A
+// standard library a language cannot express is a standard library written in
+// something else.
+const stringsSrc = `// Package strings is the allocation-free part of Go's strings.
+//
+// Everything here either answers a question about a string -- a bool, an int -- or
+// returns a SUBSTRING of one, which costs nothing: a string is a pointer and a
+// length, so a slice of one points into the same bytes and allocates nothing at
+// all. What is missing is what allocates. Split, Join, Repeat, Replace, ToUpper and
+// the rest need somewhere to put a string that did not exist before, and there is
+// no heap here to put it; Builder is how a program makes one, over memory it owns.
+//
+// Each function here means exactly what Go's of the same name means, including for
+// an empty argument and for invalid UTF-8. That is worth more than breadth: a
+// function that is nearly Go's is worse than one that is missing, because it
+// compiles.
+
+// Compare returns -1 if a sorts before b, 0 if they are equal, and 1 if a sorts
+// after b. It is included for symmetry with Go's; use ==, < and > directly, which
+// is what Go says too.
+func Compare(a, b string) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+// Contains reports whether substr is within s.
+func Contains(s, substr string) bool {
+	return Index(s, substr) >= 0
+}
+
+// ContainsAny reports whether any rune of chars is within s.
+func ContainsAny(s, chars string) bool {
+	return IndexAny(s, chars) >= 0
+}
+
+// ContainsRune reports whether r is within s.
+func ContainsRune(s string, r rune) bool {
+	return IndexRune(s, r) >= 0
+}
+
+// Count counts the non-overlapping instances of substr in s. If substr is empty it
+// returns 1 plus the number of runes in s, as Go's does.
+func Count(s, substr string) int {
+	if len(substr) == 0 {
+		n := 1
+		for range s {
+			n = n + 1
+		}
+		return n
+	}
+	n := 0
+	i := 0
+	for i+len(substr) <= len(s) {
+		if s[i:i+len(substr)] == substr {
+			n = n + 1
+			i = i + len(substr)
+		} else {
+			i = i + 1
+		}
+	}
+	return n
+}
+
+// Cut slices s around the first instance of sep, returning what precedes it and
+// what follows it. found reports whether sep appears at all; if it does not, Cut
+// returns s, "", false.
+func Cut(s, sep string) (string, string, bool) {
+	i := Index(s, sep)
+	if i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
+}
+
+// CutPrefix returns s without its leading prefix and reports whether it had one.
+// If it did not, CutPrefix returns s, false.
+func CutPrefix(s, prefix string) (string, bool) {
+	if HasPrefix(s, prefix) {
+		return s[len(prefix):], true
+	}
+	return s, false
+}
+
+// CutSuffix returns s without its trailing suffix and reports whether it had one.
+func CutSuffix(s, suffix string) (string, bool) {
+	if HasSuffix(s, suffix) {
+		return s[:len(s)-len(suffix)], true
+	}
+	return s, false
+}
+
+// HasPrefix reports whether s begins with prefix.
+func HasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+// HasSuffix reports whether s ends with suffix.
+func HasSuffix(s, suffix string) bool {
+	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
+// Index returns the byte index of the first instance of substr in s, or -1. An
+// empty substr is at 0, as Go has it.
+func Index(s, substr string) int {
+	n := len(substr)
+	if n == 0 {
+		return 0
+	}
+	if n > len(s) {
+		return -1
+	}
+	for i := 0; i+n <= len(s); i++ {
+		if s[i:i+n] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+// IndexAny returns the byte index of the first rune of s that is also in chars, or
+// -1 if there is none.
+func IndexAny(s, chars string) int {
+	if len(chars) == 0 {
+		return -1
+	}
+	for i, c := range s {
+		if ContainsRune(chars, c) {
+			return i
+		}
+	}
+	return -1
+}
+
+// IndexByte returns the index of the first instance of c in s, or -1.
+func IndexByte(s string, c byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == c {
+			return i
+		}
+	}
+	return -1
+}
+
+// IndexRune returns the byte index of the first instance of r in s, or -1. Ranging
+// a string yields U+FFFD for each byte of an invalid encoding, so asking for
+// U+FFFD finds the first such byte -- which is what Go's does.
+func IndexRune(s string, r rune) int {
+	for i, c := range s {
+		if c == r {
+			return i
+		}
+	}
+	return -1
+}
+
+// LastIndex returns the byte index of the last instance of substr in s, or -1. An
+// empty substr is at len(s), as Go has it.
+func LastIndex(s, substr string) int {
+	n := len(substr)
+	if n == 0 {
+		return len(s)
+	}
+	for i := len(s) - n; i >= 0; i-- {
+		if s[i:i+n] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+// LastIndexByte returns the index of the last instance of c in s, or -1.
+func LastIndexByte(s string, c byte) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == c {
+			return i
+		}
+	}
+	return -1
+}
+
+// TrimPrefix returns s without its leading prefix. If it has none, s is returned
+// unchanged.
+func TrimPrefix(s, prefix string) string {
+	if HasPrefix(s, prefix) {
+		return s[len(prefix):]
+	}
+	return s
+}
+
+// TrimSuffix returns s without its trailing suffix.
+func TrimSuffix(s, suffix string) string {
+	if HasSuffix(s, suffix) {
+		return s[:len(s)-len(suffix)]
+	}
+	return s
+}
+
+// TrimSpace returns s without leading and trailing white space, as Unicode defines
+// it -- not merely as ASCII does, which would leave a non-breaking space behind and
+// look right until it did not.
+func TrimSpace(s string) string {
+	start := len(s)
+	for i, c := range s {
+		if !isSpace(c) {
+			start = i
+			break
+		}
+	}
+	if start == len(s) {
+		return ""
+	}
+	end := start
+	for i, c := range s {
+		if i >= start && !isSpace(c) {
+			end = i + runeLen(c)
+		}
+	}
+	return s[start:end]
+}
+
+// isSpace reports whether r is white space, which is Unicode's White_Space
+// property: a short, closed list, so this is exact rather than an approximation of
+// what unicode.IsSpace answers.
+func isSpace(r rune) bool {
+	if r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r' {
+		return true
+	}
+	if r == 0x85 || r == 0xA0 || r == 0x1680 {
+		return true
+	}
+	if r >= 0x2000 && r <= 0x200A {
+		return true
+	}
+	return r == 0x2028 || r == 0x2029 || r == 0x202F || r == 0x205F || r == 0x3000
+}
+
+// runeLen is how many bytes r takes in UTF-8, which is what turns a rune's start
+// index into the index just past it. An invalid rune is one byte, matching what
+// ranging a string yields for one.
+func runeLen(r rune) int {
+	if r < 0x80 {
+		return 1
+	}
+	if r < 0x800 {
+		return 2
+	}
+	if r > 0x10FFFF || (r >= 0xD800 && r <= 0xDFFF) {
+		return 1
+	}
+	if r < 0x10000 {
+		return 3
+	}
+	return 4
+}
 `
 
 type importTask struct {

@@ -559,8 +559,16 @@
 // then "a[i:j]") or from "make([]T, len, cap)", which reserves a fixed, compile-
 // time-sized backing array. "append(s, x)" grows the length in place: the form
 // "s = append(s, x)" panics when the slice is already at capacity, while
-// "s, ok = append(s, x)" instead reports a full slice through ok and leaves s
-// unchanged. len(s) and cap(s) report the header's length and capacity.
+// "s, ok = append(s, x)" instead reports a full slice through ok — a bool — and
+// leaves s unchanged. len(s) and cap(s) report the header's length and capacity.
+//
+// A whole slice is appended with Go's spread, "s = append(s, xs...)", where xs is a
+// slice of the same element type; and, as in Go, a STRING spreads onto a []byte,
+// "bs = append(bs, \"hi\"...)". It takes no other value beside the spread. Either the
+// whole of it fits or none of it is appended: the ok form has one bool to report
+// with, so a partial append would leave the caller nothing to read the truth from.
+// The source and the destination may overlap, so "append(s, s...)" means what it
+// means in Go.
 //
 // # Struct types
 //
@@ -1466,10 +1474,12 @@
 // time, so n and m must be constants, and it is admitted only as the initializer
 // of a slice variable, "var s []T = make([]T, n, m)"; the two-argument form
 // "make([]T, n)" sets the capacity equal to the length. append takes one or more
-// elements, appending each in turn, and cannot grow a slice past its capacity, so
-// it has two forms: the one-result form "s = append(s, x)" traps at run time if
-// an element does not fit, while the two-result form "s, ok = append(s, x)" never
-// traps and reports through ok whether the element was appended. copy copies
+// elements, appending each in turn — or a whole slice with Go's spread,
+// "append(s, xs...)", a string spreading onto a []byte — and cannot grow a slice
+// past its capacity, so it has two forms: the one-result form "s = append(s, x)"
+// traps at run time if an element does not fit, while the two-result form
+// "s, ok = append(s, x)" never traps and reports through ok whether the element was
+// appended. copy copies
 // min(len(dst), len(src)) elements between two slices of the same element type —
 // which may overlap — and yields that count. clear zeroes a slice's elements in
 // place. panic takes a string, writes "panic: " and that message to the serial

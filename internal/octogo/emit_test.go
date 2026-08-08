@@ -5249,6 +5249,62 @@ func main() {
 	}
 }
 
+// TestEmitCAppendSpreadRefusals pins what `append(s, xs...)` will not compile. The
+// spread was accepted and its ellipsis IGNORED until 2026-08-08, so these are the
+// first checks the form has ever had.
+func TestEmitCAppendSpreadRefusals(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// Go allows the spread only as the sole value: append(s, a, b...) is not
+			// a program in either language.
+			name: "a value beside the spread",
+			src: "func main() {\n\tvar b [8]int\n\ts := b[:0]\n" +
+				"\ts = append(s, 1, []int{2}...)\n\tprintln(len(s))\n}\n",
+			want: `append takes a single value with "..." -- append(s, xs...)`,
+		},
+		{
+			name: "a slice of the wrong element type",
+			src: "func main() {\n\tvar b [8]int\n\ts := b[:0]\n\tsrc := []byte{1}\n" +
+				"\ts = append(s, src...)\n\tprintln(len(s))\n}\n",
+			want: "cannot append []uint8... to []int",
+		},
+		{
+			// A string spreads onto a []byte and nothing else. Go's one mixed-type
+			// append is that one.
+			name: "a string onto the wrong element type",
+			src: "func main() {\n\tvar b [8]int\n\ts := b[:0]\n" +
+				"\ts = append(s, \"hi\"...)\n\tprintln(len(s))\n}\n",
+			want: "cannot append string... to []int",
+		},
+		{
+			// A scalar has nothing to spread. Written through a variable because
+			// "1..." does not scan as a number and an ellipsis.
+			name: "a scalar spread",
+			src: "func main() {\n\tvar b [8]int\n\ts := b[:0]\n\tn := 1\n" +
+				"\ts = append(s, n...)\n\tprintln(len(s))\n}\n",
+			want: "cannot append int... to []int",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted it:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCPrintRefusesUnprintable pins that print and println refuse a value that
 // does not print as itself. A struct used to reach the %d default and print its
 // first word as an integer -- a garbage number, said with no warning. Go refuses
