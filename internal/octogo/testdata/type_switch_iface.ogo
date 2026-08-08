@@ -63,10 +63,25 @@ func dup(v any) {
 	}
 }
 
-// A type ASSERTION to an interface is not supported yet, and says so rather than
-// advising "*T" -- which for an interface would be a pointer to one.
+// A type ASSERTION to an interface asks the same question of one type, and is
+// written without a star for the same reason: "*T" would be a pointer to the
+// interface. Both forms are legal.
 func assertion(v any) {
-	// ERROR "a type assertion to an interface type is not supported yet"
 	t := v.(T)
-	_ = t
+	t.foo()
+
+	u, ok := v.(U)
+	_, _ = u, ok
+}
+
+// Asserting to a CONCRETE type still wants the star, and says so when it is
+// missing: a struct or defined type is not what an interface holds.
+type P struct {
+	n int
+}
+
+func concrete(v any) {
+	// ERROR "an interface holds a pointer here; assert \*P"
+	p := v.(P)
+	_ = p
 }

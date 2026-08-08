@@ -4645,11 +4645,10 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 		return true // an unnamed asserted type: nothing to check it against
 	}
 	if _, isIface := f.interfaceMethodsNamed(s, base.Src()); isIface && !f.isPointerType(s, tn) {
-		// Asserting to an INTERFACE is ordinary Go and is not supported here yet.
-		// Said as itself: the advice below is to write `*T`, which for an interface
-		// would be a pointer TO one and not what was meant.
-		f.err(base.Position(), "a type assertion to an interface type is not supported yet; "+
-			"switch on %s with a case for %s", id.Src(), base.Src())
+		// Asserting to an INTERFACE, `v.(T)`, written without a star: `*T` would be
+		// a pointer TO one. It asks about the method set rather than about identity,
+		// so there is no "impossible" case to check below -- any type implementing T
+		// satisfies it, and which types those are is the emitter's list.
 		return true
 	}
 	if !f.isPointerType(s, tn) {

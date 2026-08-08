@@ -37,8 +37,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   also why the empty interface needs no list at all: it asks only that the value
   hold something.
 
-  A type ASSERTION to an interface, `s.(T)`, is still not supported; it now says so
-  rather than advising `*T`, which for an interface would be a pointer to one.
+- **A type ASSERTION to an interface**, `s.(T)`, in both forms: `t := s.(T)` panics
+  when it does not hold, `t, ok := s.(T)` reports it and leaves `t` the zero
+  interface value. Written without a star for the same reason a case is — `*T` would
+  be a pointer TO the interface — and it asks the same question, of one type.
+
+  What comes back is another interface VALUE rather than the pointer that went in,
+  so it is two words built from two: the data carries over unchanged, and the table
+  becomes the one for the asserted interface paired with whatever concrete type the
+  operand turned out to hold. That pairing is what the run case checks by asserting
+  the same interface over two different dynamic types.
+
+  A panic from one names the shape now — `interface conversion: interface{} is not
+  U` — where an anonymous interface used to leak the generated name it was minted
+  under.
 
 - **An interface type may be written where a type is wanted**, rather than only
   declared with a name of its own: `func measure(s interface{ area() int })`, a

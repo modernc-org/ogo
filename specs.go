@@ -41,6 +41,11 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
+// TODO 20260808 Assigning an interface value to a variable of a DIFFERENT interface
+// type -- "var e any = b", where b is some other interface -- is refused with "an
+// interface holds a pointer: write the address of a variable". Go allows it when the
+// target's method set is a subset of the source's (widening); narrowing needs an
+// assertion, which works. The rebind an assertion does is the same operation.
 // TODO 20260808 Three diagnostics still read differently from Go's, in shape rather
 // than in content: an "invalid operation:" prefix on "cannot index"/"cannot slice",
 // which Go drops there and keeps on "cannot indirect"; "type int has no field f",
@@ -748,8 +753,11 @@
 // listing the types that do -- there is no run-time method lookup, only the same
 // table comparison a concrete case makes, once per type that qualifies.
 //
-// A type ASSERTION to an interface, "s.(T)", is not supported yet; a type switch
-// with a case for T is what does it.
+// A type ASSERTION to an interface, "s.(T)", asks the same question of one type,
+// in both forms -- "t := s.(T)" panics when it does not hold, "t, ok := s.(T)"
+// reports it. Written without a star for the same reason a case is: "*T" would be a
+// pointer TO the interface. What comes back is another interface VALUE, not the
+// pointer that went in.
 //
 // Generic interface constraints, unions and the underlying-type
 // "~" operator belong to generics, which is a separate question entirely; an

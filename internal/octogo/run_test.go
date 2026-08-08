@@ -2272,6 +2272,68 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// A type ASSERTION to an interface, "v.(T)", in both forms. It asks the same
+		// question a type switch case for T asks -- the method set -- of one type,
+		// and is written without a star for the same reason: "*T" would be a pointer
+		// TO the interface.
+		//
+		// The result is another interface VALUE rather than the pointer that went
+		// in, so it is two words built from two: the data carries over, and the table
+		// becomes the one for the asserted interface and whatever concrete type the
+		// operand turned out to hold. The last line is what checks that pairing --
+		// the same assertion over a different dynamic type must pick the other table.
+		name: "a type assertion to an interface",
+		src: `type T interface{ foo() int }
+
+type U interface{ bar() int }
+
+type Both interface {
+	foo() int
+	bar() int
+}
+
+type X int
+
+func (x *X) foo() int { return int(*x) }
+func (x *X) bar() int { return int(*x) * 10 }
+
+type Y int
+
+func (y *Y) foo() int { return int(*y) + 100 }
+
+func main() {
+	x := X(3)
+	y := Y(4)
+	var e any = &x
+	var f any = &y
+
+	// The one-value form, which holds.
+	t := e.(T)
+	println(t.foo())
+
+	// Asserting to an interface with a LARGER method set, then using both of them.
+	b := e.(Both)
+	println(b.foo(), b.bar())
+
+	// And narrowing that one further, which asserts against its own tables.
+	t2 := b.(T)
+	println(t2.foo())
+
+	// The comma-ok form, both ways.
+	u, ok := e.(U)
+	println(ok, u.bar())
+	u2, ok2 := f.(U)
+	println(ok2)
+	_ = u2
+
+	// The same assertion over a different dynamic type picks the other table.
+	t3, ok3 := f.(T)
+	println(ok3, t3.foo())
+}
+`,
+		want: "3\n3 30\n3\ntrue 30\nfalse\ntrue 104\n",
+	},
+	{
 		// A type switch case naming an INTERFACE, "case T:", which matches on the
 		// METHOD SET rather than on identity. The clause order is what decides
 		// between two interfaces one type satisfies, so Both must precede T here and

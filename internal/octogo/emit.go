@@ -2626,7 +2626,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -3152,7 +3152,8 @@ type emitter struct {
 	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
 	anonStructNames    map[string]string
-	anonIfaceNames     map[string]string // method-set shape -> the minted name of an anonymous interface        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
+	anonIfaceNames     map[string]string // method-set shape -> the minted name of an anonymous interface
+	anonIfaceMinted    map[string]bool   // the minted names, so a message says the SHAPE rather than the name        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
 	sliceElems         map[string]bool   // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName    map[string]string // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
 	appendElems        map[string]bool   // element C types needing the trapping ogo_append_<T> helper
@@ -3685,6 +3686,7 @@ func (e *emitter) anonInterfaceOf(methods []ifaceMethod) string {
 	}
 	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anonface%d", len(e.anonIfaceNames)))
 	e.anonIfaceNames[key.String()] = name
+	e.anonIfaceMinted[name] = true
 	e.interfaceTypes[name] = true
 	e.typeNames[name] = true
 	e.registerInterface(name, methods, true)
@@ -3902,26 +3904,26 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 //
 // The grammar admits the same Selector for ".(type)", which carries no Type child;
 // that is a type switch and is not this.
-func (e *emitter) typeAssertion(ast []int32) (operand, iface, concrete string, ok bool) {
+func (e *emitter) typeAssertion(ast []int32) (operand, iface, target string, targetIsIface, ok bool) {
 	nodes := slices.Collect(it(ast))
 	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
 		nodes = slices.Collect(it(nodes[0].ast))
 	}
 	if len(nodes) != 1 || nodes[0].sym != Factor {
-		return "", "", "", false
+		return "", "", "", false, false
 	}
 	return e.typeAssertionKids(slices.Collect(it(nodes[0].ast)))
 }
 
 // typeAssertionKids is typeAssertion given a Factor's children, which is what the
 // expression emitter and the type inference each already hold.
-func (e *emitter) typeAssertionKids(kids []Node) (operand, iface, concrete string, ok bool) {
+func (e *emitter) typeAssertionKids(kids []Node) (operand, iface, target string, targetIsIface, ok bool) {
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", "", "", false
+		return "", "", "", false, false
 	}
 	steps := slices.Collect(it(kids[1].ast))
 	if len(steps) != 1 || steps[0].sym != Selector {
-		return "", "", "", false
+		return "", "", "", false, false
 	}
 	var typeAST []int32
 	for c := range it(steps[0].ast) {
@@ -3930,17 +3932,23 @@ func (e *emitter) typeAssertionKids(kids []Node) (operand, iface, concrete strin
 		}
 	}
 	if typeAST == nil {
-		return "", "", "", false
+		return "", "", "", false, false
 	}
 	operand = e.src(kids[0].tok)
 	if iface, ok = e.varType(operand); !ok || !e.isIfaceCType(iface) {
-		return "", "", "", false
+		return "", "", "", false, false
 	}
 	ct := e.cType(typeAST)
-	if !e.isPointer(ct) {
-		return "", "", "", false
+	// An INTERFACE target, `v.(T)`. Written without a star -- `*T` would be a
+	// pointer TO an interface -- so it is the unpointered case, and the one whose
+	// result is another interface value rather than the pointer that went in.
+	if e.isIfaceCType(ct) {
+		return operand, iface, ct, true, true
 	}
-	return operand, iface, e.elemType(ct), true
+	if !e.isPointer(ct) {
+		return "", "", "", false, false
+	}
+	return operand, iface, e.elemType(ct), false, true
 }
 
 // assertOKC renders the test an assertion asks: the value carries this concrete
@@ -11678,21 +11686,96 @@ func (e *emitter) bindTypeSwitchIface(ts typeSwitch, caseIface string, types []s
 	e.locals[ts.name] = caseIface
 	e.ind()
 	e.emit(caseIface + " " + e.varRef(ts.name) + " = {0};\n")
-	e.ind()
-	e.emit(e.varRef(ts.name) + ".data = " + e.varRef(ts.operand) + ".data;\n")
-	for i, ct := range types {
-		if !e.needVTable(caseIface, ct) {
-			return
-		}
-		e.ind()
-		if i != 0 {
-			e.emit("else ")
-		}
-		e.emit("if (" + e.assertOKC(ts.operand, ts.iface, ct) + ") " +
-			e.varRef(ts.name) + ".vt = &" + ifaceVTVar(caseIface, ct) + ";\n")
+	text, ok := e.ifaceRebindC(e.varRef(ts.name), caseIface, ts.operand, ts.iface, types, e.indent)
+	if !ok {
+		return
 	}
+	e.emit(text)
 	e.ind()
 	e.emit("(void)" + e.varRef(ts.name) + ";\n")
+}
+
+// hoistIfaceAssert emits `v.(T)` for an INTERFACE T standing as one value: the
+// check that it holds, a panic when it does not, and the value itself, bound to a
+// temporary declared before the statement. The temporary is what the expression
+// becomes, since building an interface value is statements and a cast is not.
+//
+// What it asserts is the METHOD SET -- the same list of table comparisons a type
+// switch case for T makes, which is where the two meet.
+func (e *emitter) hoistIfaceAssert(operand, iface, target string) (string, bool) {
+	cond, types, ok := e.ifaceCaseCond(operand, iface, target)
+	if !ok {
+		return "", false
+	}
+	name := e.newTmp()
+	e.needPanic()
+	rebind, ok := e.ifaceRebindC(name, target, operand, iface, types, 1)
+	if !ok {
+		return "", false
+	}
+	e.prologue = append(e.prologue,
+		target+" "+name+" = {0};\n",
+		"if (!("+cond+")) ogo_panic(\"interface conversion: "+e.goTypeName(iface)+
+			" is not "+e.goTypeName(target)+"\");\n",
+		rebind)
+	return name, true
+}
+
+// emitIfaceAssertOk emits `t, ok := v.(T)` for an INTERFACE T. ok is computed
+// first and t reads it, as in the concrete form and for the same reason: t is the
+// ZERO interface value when the assertion does not hold, which is what Go gives.
+func (e *emitter) emitIfaceAssertOk(targets []assignTarget, declare []bool, operand, iface, target string) {
+	cond, types, ok := e.ifaceCaseCond(operand, iface, target)
+	if !ok {
+		return
+	}
+	okTmp := e.newTmp()
+	e.ind()
+	e.emit("int " + okTmp + " = " + cond + ";\n")
+	val := e.newTmp()
+	e.ind()
+	e.emit(target + " " + val + " = {0};\n")
+	rebind, ok := e.ifaceRebindC(val, target, operand, iface, types, e.indent+1)
+	if !ok {
+		return
+	}
+	e.ind()
+	e.emit("if (" + okTmp + ") {\n")
+	e.emit(rebind)
+	e.ind()
+	e.emit("}\n")
+	e.emitStore(targets[0], declare[0], target, val)
+	e.emitStore(targets[1], declare[1], cBool, okTmp)
+}
+
+// ifaceRebindC renders the statements that view an interface value AS another
+// interface: the data word carries over unchanged -- it is the same pointer -- and
+// the table becomes the one for (dst's interface, whatever concrete type the source
+// holds). Which that is, is what the caller's own test narrowed to types but did not
+// choose between, so it is asked once more here, once per candidate.
+//
+// Shared by the type switch's binding and the assertion, which build the same value
+// from the same two words and differ only in what decided to build it.
+func (e *emitter) ifaceRebindC(dst, dstIface, src, srcIface string, types []string, indent int) (string, bool) {
+	var b strings.Builder
+	ind := func() {
+		for range indent {
+			b.WriteString("\t")
+		}
+	}
+	ind()
+	fmt.Fprintf(&b, "%s.data = %s.data;\n", dst, e.varRef(src))
+	for i, ct := range types {
+		if !e.needVTable(dstIface, ct) {
+			return "", false
+		}
+		ind()
+		if i != 0 {
+			b.WriteString("else ")
+		}
+		fmt.Fprintf(&b, "if (%s) %s.vt = &%s;\n", e.assertOKC(src, srcIface, ct), dst, ifaceVTVar(dstIface, ct))
+	}
+	return b.String(), true
 }
 
 func (e *emitter) bindTypeSwitchName(ts typeSwitch, concrete string, single bool) {
@@ -15348,18 +15431,22 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	// "v, ok := x.(T)": no call, and the two values are a cast and a comparison.
 	// The order matters -- v is the zero value when the assertion does not hold, as
 	// in Go -- so ok is computed first and v reads it.
-	if operand, iface, concrete, isAssert := e.typeAssertion(rhs); isAssert {
+	if operand, iface, target, isIface, isAssert := e.typeAssertion(rhs); isAssert {
 		if len(targets) != 2 {
 			e.fail("a type assertion yields one value, or two in the comma-ok form")
 			return
 		}
-		if !e.needVTable(iface, concrete) {
+		if isIface {
+			e.emitIfaceAssertOk(targets, declare, operand, iface, target)
+			return
+		}
+		if !e.needVTable(iface, target) {
 			return
 		}
 		okTmp := e.newTmp()
 		e.ind()
-		e.emit("int " + okTmp + " = " + e.assertOKC(operand, iface, concrete) + ";\n")
-		e.emitStore(targets[0], declare[0], concrete+"*", okTmp+" ? "+e.assertValueC(operand, concrete)+" : 0")
+		e.emit("int " + okTmp + " = " + e.assertOKC(operand, iface, target) + ";\n")
+		e.emitStore(targets[0], declare[0], target+"*", okTmp+" ? "+e.assertValueC(operand, target)+" : 0")
 		e.emitStore(targets[1], declare[1], cBool, okTmp)
 		return
 	}
@@ -16306,8 +16393,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				return e.funcTypeOfSig(sig)
 			}
 			// "x.(T)" is the pointer that was put in, read back out.
-			if _, _, concrete, ok := e.typeAssertionKids(kids); ok {
-				return concrete + "*", true
+			if _, _, target, isIface, ok := e.typeAssertionKids(kids); ok {
+				if isIface {
+					return target, true // the asserted interface, not a pointer
+				}
+				return target + "*", true
 			}
 			// `x := mk()[1]` types as the chain reached from the bound result.
 			if name, steps, ok := e.hoistArrayResultCallKids(kids); ok {
@@ -16654,6 +16744,26 @@ func (e *emitter) goTypeName(ct string) string {
 	}
 	if a, ok := e.namedArrays[ct]; ok {
 		return arrayTypeName(a)
+	}
+	// A MINTED interface name has no source spelling to return -- the program wrote
+	// the shape, not a name -- so the shape is what a message about it says. Left to
+	// a set rather than to the name's prefix: a C type classified by how its name
+	// begins has gone wrong here before (see isSliceCType).
+	if e.anonIfaceMinted[ct] {
+		ms := e.ifaceMethods[ct]
+		if len(ms) == 0 {
+			return "interface{}"
+		}
+		var b strings.Builder
+		b.WriteString("interface{ ")
+		for i, m := range ms {
+			if i != 0 {
+				b.WriteString("; ")
+			}
+			b.WriteString(m.name + "()")
+		}
+		b.WriteString(" }")
+		return b.String()
 	}
 	return ct
 }
@@ -17226,14 +17336,23 @@ func (e *emitter) emitExprNode(n Node) {
 			// does. The check is a statement, so it goes in the prologue and the
 			// expression is left as the cast -- which puts the panic ahead of every
 			// position an assertion can stand in, not just a declaration.
-			if operand, iface, concrete, ok := e.typeAssertionKids(kids); ok {
-				if !e.needVTable(iface, concrete) {
+			if operand, iface, target, isIface, ok := e.typeAssertionKids(kids); ok {
+				if isIface {
+					// An INTERFACE target: the result is another interface value, and
+					// building one is statements rather than a cast, so it goes to a
+					// temporary in the prologue and the temporary stands here.
+					if name, ok := e.hoistIfaceAssert(operand, iface, target); ok {
+						e.emit(name)
+					}
+					return
+				}
+				if !e.needVTable(iface, target) {
 					return
 				}
 				e.needPanic()
-				e.prologue = append(e.prologue, "if (!("+e.assertOKC(operand, iface, concrete)+")) "+
-					"ogo_panic(\"interface conversion: "+e.goTypeName(iface)+" is not *"+e.goTypeName(concrete)+"\");\n")
-				e.emit(e.assertValueC(operand, concrete))
+				e.prologue = append(e.prologue, "if (!("+e.assertOKC(operand, iface, target)+")) "+
+					"ogo_panic(\"interface conversion: "+e.goTypeName(iface)+" is not *"+e.goTypeName(target)+"\");\n")
+				e.emit(e.assertValueC(operand, target))
 				return
 			}
 			// `mk()[1]` -- a call returning an ARRAY, read through a suffix. The
