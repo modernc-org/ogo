@@ -18,6 +18,51 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`int` and `uint` are types of their own**, distinct from `int32` and `uint32`
+  even though all four are 32 bits wide here — Go's rule, and the one the checker
+  was missing. `byte` and `rune` are the two exceptions and stay aliases, being the
+  same type twice named in Go, so they mix with `uint8` and `int32` without a
+  conversion. An untyped constant still goes anywhere it fits, so `var x int32 =
+  42` needs nothing written.
+- **A rune literal defaults to `rune`**, where an integer literal defaults to
+  `int`: `x := 'a'` is a `rune` and `%T` says `int32`, as in Go. It used to be an
+  `int`.
+- **A constant written through a conversion is a TYPED constant**, and types what
+  it is combined with. With `const one = int32(1) << 16`, `50 * one` is an `int32`
+  and `scale := 50 * one` declares one. The conversion's type used to be dropped
+  as soon as it was folded.
+
+### Fixes
+
+- **A value inferred from a mixed-type expression took the type of the FIRST
+  operand**, so an untyped constant written on the left named a type the
+  expression does not have and the value was truncated to fit it: `b := 1 + v` for
+  an `int64` `v` was declared `int` and printed `1` instead of `1099511627777`,
+  `d := 2 * f` dropped a `float64`'s fraction, and `w := 1 + u` wrapped a `uint32`
+  past 2^31 to a negative. Written the other way round each was already correct,
+  which is why no test had caught them.
+- **A composite literal's values were checked against nothing.** Field names, the
+  two forms not being mixed and the value count were all checked; the values
+  themselves were not, so `S{f: true}` put a `bool` in an `int32` field and
+  compiled. They are now checked against the field's type, and a constant is
+  range-checked against it too.
+
+### Behaviour changes
+
+- **Mixing `int` with `int32` (or `uint` with `uint32`) now needs a conversion**,
+  in all eleven positions where a value meets a type: a declaration, an
+  assignment, an argument, a return, a binary operation, a comparison, an element
+  or field assignment, a send, a case, and a composite literal. Every such program
+  was refused by Go already; none of them computed a wrong answer here, `int`
+  being 32 bits, but a program that compiles here is meant to compile in Go.
+  `specs.go` has required this from the start — "explicit conversions are required
+  when different numeric types are mixed" — so this is the checker catching up to
+  the spec rather than a change of rule.
+- **A composite literal with a value of the wrong type is refused**, where it used
+  to compile and write the value's bytes into the field.
+
 ## v0.23.0
 
 A standard library, a formatted print, and an example that is also a test against Go.
