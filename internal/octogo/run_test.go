@@ -2272,6 +2272,82 @@ func main() {
 		want: "99 1\n",
 	},
 	{
+		// Assigning an interface value to a variable of ANOTHER interface type --
+		// widening, which Go allows when the target's method set is a subset of the
+		// source's. The two words are the same pointer viewed through a different
+		// table, so what is stored is the data unchanged beside the table for the
+		// pair the value turned out to hold.
+		//
+		// Exercised in every position one can stand: a variable, an argument, a
+		// result, a package variable, and widening to the empty interface then
+		// narrowing back by assertion. The last pair is what checks the TABLE rather
+		// than the test -- a different dynamic type through the same widening must
+		// come back with its own.
+		name: "assigning one interface to another",
+		src: `type T interface{ foo() int }
+
+type U interface{ bar() int }
+
+type Z interface {
+	T
+	U
+}
+
+type X int
+
+func (x *X) foo() int { return int(*x) }
+func (x *X) bar() int { return int(*x) * 10 }
+
+type Y int
+
+func (y *Y) foo() int { return int(*y) + 100 }
+
+func takeT(t T) int { return t.foo() }
+
+func toAny(t T) any { return t }
+
+var pkgX X
+
+var global any
+
+func main() {
+	x := X(3)
+	var z Z = &x
+
+	// Widening: Z has both methods, so it may be used where T or U is wanted.
+	var t T = z
+	var u U = z
+	println(t.foo(), u.bar())
+
+	// As an argument, and as a result.
+	println(takeT(z))
+	a := toAny(z)
+	b := a.(T)
+	println(b.foo())
+
+	// Widening to the empty interface, then narrowing back by assertion.
+	var e any = z
+	zz := e.(Z)
+	println(zz.foo(), zz.bar())
+
+	// A package variable may hold one whose data is a package variable.
+	pkgX = 7
+	var pz Z = &pkgX
+	global = pz
+	gt := global.(T)
+	println(gt.foo())
+
+	// A different dynamic type through the same widening.
+	y := Y(1)
+	var t2 T = &y
+	var e2 any = t2
+	t3 := e2.(T)
+	println(t3.foo())
+}
+`,
+		want: "3 30\n3\n3\n3 30\n7\n101\n",
+	},
+	{
 		// An interface EMBEDDING others, "type Z interface { T; U }", which
 		// contributes their methods to its own. Exercised where it is not merely a
 		// rename: OVERLAPPING sets, where two embedded interfaces declare the same

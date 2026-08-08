@@ -41,11 +41,10 @@
 // When measuring any grammar change, confirm make actually REGENERATED -- `touch
 // specs.go` can land in the same second as a preceding checkout and leave parser.go
 // "up to date", which reports zero warnings and has twice produced a false baseline.
-// TODO 20260808 Assigning an interface value to a variable of a DIFFERENT interface
-// type -- "var e any = b", where b is some other interface -- is refused with "an
-// interface holds a pointer: write the address of a variable". Go allows it when the
-// target's method set is a subset of the source's (widening); narrowing needs an
-// assertion, which works. The rebind an assertion does is the same operation.
+// TODO 20260808 A method may not be CALLED on an assertion's result where it
+// stands: "e.(*X).foo()" and "e.(T).foo()" are "type any has no method foo", the
+// call being read against the operand's type rather than the asserted one. Binding
+// it first works. Concrete and interface targets alike.
 // TODO 20260808 Three diagnostics still read differently from Go's, in shape rather
 // than in content: an "invalid operation:" prefix on "cannot index"/"cannot slice",
 // which Go drops there and keeps on "cannot indirect"; "type int has no field f",
@@ -752,6 +751,12 @@
 // The program is closed, so "implements T" is a question this compiler answers by
 // listing the types that do -- there is no run-time method lookup, only the same
 // table comparison a concrete case makes, once per type that qualifies.
+//
+// An interface value may be assigned to a variable of ANOTHER interface type when
+// the target's method set is a subset of the source's -- widening, since anything
+// the source holds already has the target's methods. It is the same two words: the
+// data pointer unchanged, beside the table for the target and whatever concrete
+// type the value holds. The other direction is what an assertion is for.
 //
 // A type ASSERTION to an interface, "s.(T)", asks the same question of one type,
 // in both forms -- "t := s.(T)" panics when it does not hold, "t, ok := s.(T)"

@@ -130,3 +130,19 @@ type SelfA interface {
 type SelfB interface {
 	SelfA
 }
+
+// Assigning one interface to another is WIDENING: allowed when the target's method
+// set is a subset of the source's. The other direction needs an assertion, and
+// saying so is the checker's, in Go's words.
+func widen() {
+	var x X
+	var b Both2 = &x
+	var t T = b
+	var u U = b
+	var e any = b
+	_, _, _ = t, u, e
+
+	// ERROR "does not implement Both2 \(missing method bar\)"
+	var back Both2 = t
+	_ = back
+}

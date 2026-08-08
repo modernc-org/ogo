@@ -20,6 +20,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An interface value may be assigned to a variable of another interface type**,
+  `var e any = z` — widening, which Go allows when the target's method set is a
+  subset of the source's. It works wherever a value can stand: a variable, an
+  argument, a result and a package variable. The other direction is what an
+  assertion is for, and narrowing is still refused with Go's message.
+
+  It is the same two words — the data pointer unchanged beside the table for the
+  target — so it is the rebind the type switch's binding and the assertion already
+  make.
+
+  **The lifetime rules see through it.** An interface carries a pointer, and
+  widening must not become the way to launder one into a package variable, so
+  provenance travels with the value. That needed one more thing: a type switch BINDS
+  a new name to what it switched on, and storing that name is storing whatever the
+  operand was, which the leak summary did not follow. `switch x := p.(type)` then
+  `global = x` was silently accepted; it now reports at the call site, exactly as
+  storing the parameter itself does.
+
 - **An interface may EMBED another**, `type Z interface { T; U }`, taking its
   methods as its own. Two embedded interfaces may declare the same method, which
   stays one method — a vtable has one slot per name — and the embedded name may be

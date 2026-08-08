@@ -3830,6 +3830,15 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 		}
 		return target + " = " + e.captureC(func() { e.emitExpr(rhs) }) + ";\n"
 	}
+	// A value of ANOTHER interface type. Go allows it when the target's method set
+	// is a subset of the source's -- widening; narrowing is what an assertion is
+	// for. What is stored is the same data word beside a different table, which is
+	// the rebind a type switch's binding and an assertion both make.
+	if src, ok := e.exprIdent(rhs); ok {
+		if from, ok := e.varType(src); ok && e.isIfaceCType(from) && from != iface {
+			return e.ifaceWidenC(target, iface, src, from)
+		}
+	}
 	concrete, data, temp, ok := e.ifaceOperand(rhs)
 	if !ok {
 		if e.pkgScope {
@@ -3859,6 +3868,40 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 		}
 	}
 	return target + ".data = " + data + "; " + target + ".vt = &" + ifaceVTVar(iface, concrete) + ";\n"
+}
+
+// ifaceWidenC stores an interface value in a variable of ANOTHER interface type.
+// It is allowed exactly when every method the target declares is one the source
+// declares too -- Go's assignability for interfaces, and the direction that needs no
+// check at run time, since anything in the source already has the target's methods.
+//
+// PROVENANCE TRAVELS WITH IT. The two words are the same pointer viewed through a
+// different table, so what the copy reaches is what the original reached: a value
+// holding a reference into this frame still does after being widened, and storing it
+// where it outlives the frame is refused as before. Losing that here would have made
+// widening the way to launder a dangling pointer into a package variable.
+func (e *emitter) ifaceWidenC(target, iface, src, from string) string {
+	for _, m := range e.ifaceMethods[iface] {
+		if !e.hasIfaceMethod(from, m.name) {
+			e.fail("cannot use %s as %s: missing method %s", e.goTypeName(from), e.goTypeName(iface), m.name)
+			return ""
+		}
+	}
+	if origin := e.frameHolder[src]; origin != "" {
+		e.frameHolder[target] = origin
+	}
+	var types []string
+	for _, ct := range e.ifaceImplementors(from) {
+		if !e.needVTable(iface, ct) {
+			return ""
+		}
+		types = append(types, ct)
+	}
+	text, ok := e.ifaceRebindC(target, iface, src, from, types, 0)
+	if !ok {
+		return ""
+	}
+	return text
 }
 
 // hasIfaceMethod reports whether an interface declares a method by that name.
@@ -3949,6 +3992,21 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 	// so it is itself: the two words, copied.
 	if ct, ok := e.inferCType(rhs); ok && ct == iface {
 		return e.captureC(func() { e.emitExpr(rhs) }), true
+	}
+	// A value of ANOTHER interface, widened. Building one is statements rather than
+	// an expression -- the table is chosen per concrete type -- so it goes to a
+	// temporary declared before the statement, which is what stands here.
+	if src, isName := e.exprIdent(rhs); isName {
+		if from, ok := e.varType(src); ok && e.isIfaceCType(from) && from != iface {
+			name := e.newTmp()
+			e.prologue = append(e.prologue, iface+" "+name+" = {0};\n")
+			text := e.ifaceWidenC(name, iface, src, from)
+			if text == "" {
+				return "", false
+			}
+			e.prologue = append(e.prologue, text)
+			return name, true
+		}
 	}
 	concrete, data, _, ok := e.ifaceOperand(rhs)
 	if !ok || !e.needVTable(iface, concrete) {
@@ -4995,7 +5053,28 @@ func (e *emitter) collectCrossParams(ast []int32) {
 		if !ok {
 			return
 		}
-		at := func(name string) int { return slices.Index(params, name) }
+		// A type switch BINDS a new name to the value it switched on, so a store of
+		// that name is a store of whatever the operand was. Without following it, a
+		// parameter reached a package variable through `switch x := p.(type)` with
+		// no summary recorded -- and interface widening then made that the way to
+		// launder a reference into a global.
+		//
+		// Collected for the whole body rather than per clause: the name is scoped to
+		// its switch anyway, and merging two switches' bindings can only refuse more.
+		alias := e.typeSwitchAliases(body)
+		at := func(name string) int {
+			for range 16 { // bounded; an alias chain cannot outlive the body
+				if i := slices.Index(params, name); i >= 0 {
+					return i
+				}
+				next, ok := alias[name]
+				if !ok {
+					return -1
+				}
+				name = next
+			}
+			return -1
+		}
 		if _, seen := e.crossParams[cname]; !seen {
 			e.crossParams[cname] = make([]leak, len(params))
 		}
@@ -5191,6 +5270,44 @@ func (e *emitter) leakRoot(ast []int32) string {
 		return name
 	}
 	return e.crossRoot(ast)
+}
+
+// typeSwitchAliases maps each name a type switch binds to the operand it switched
+// on, for every type switch in a body. What the binding names is the same value the
+// operand named, so a question asked about one is asked about the other.
+func (e *emitter) typeSwitchAliases(body []int32) map[string]string {
+	alias := map[string]string{}
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == SwitchGuard {
+				if name, operand, ok := e.typeSwitchNames(n.ast); ok {
+					alias[name] = operand
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	walk(body)
+	return alias
+}
+
+// typeSwitchNames reads a type switch guard's bound name and its operand, by SHAPE
+// alone. typeSwitchGuard answers the same question but resolves the operand's type
+// and reports when it is not an interface -- which this caller runs too early to
+// ask, the summaries being computed before any body has declared a local.
+func (e *emitter) typeSwitchNames(guardAST []int32) (name, operand string, ok bool) {
+	g, ok := e.f.switchGuardParts(guardAST)
+	if !ok || !g.hasName {
+		return "", "", false
+	}
+	if operand, ok = e.typeSwitchOperand(g.value.ast); !ok {
+		return "", "", false
+	}
+	if name, ok = e.exprIdent(g.name.ast); !ok || name == "" || name == "_" {
+		return "", "", false
+	}
+	return name, operand, true
 }
 
 // goStmtArgs returns the argument expressions of a go statement.
