@@ -37,6 +37,62 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// An interface-to-interface question -- "case N:" in a type switch, and the
+		// assertion "r.(N)" -- asks which concrete types satisfy BOTH interfaces,
+		// and asked it with a direct method lookup that a PROMOTED method is
+		// invisible to. A sensor embedding a base gets v() from the base, so it was
+		// not counted as implementing R, so no candidate was left to test and the
+		// question was emitted as a constant 0: the N case was skipped and the
+		// assertion answered false, silently, for a value that satisfies both.
+		//
+		// needVTable already resolved through the embedding chain, so the two
+		// disagreed about the same fact. This is the third copy of "does this type
+		// implement that interface"; 81d50b7 fixed the checker's and needVTable's.
+		//
+		// plain, which embeds the same base and declares no nm(), is here so the
+		// case can be seen to be answered rather than merely taken. Every line
+		// matches real Go.
+		name: "an interface case reached through embedding",
+		src: `type R interface{ v() int }
+
+type N interface{ nm() string }
+
+type base struct{ n int }
+
+func (b *base) v() int { return b.n }
+
+type sensor struct{ base }
+
+func (s *sensor) nm() string { return "s1" }
+
+type plain struct{ base }
+
+func main() {
+	sn := sensor{base{5}}
+	pl := plain{base{7}}
+	var rs []R = make([]R, 2)
+	rs[0] = &sn
+	rs[1] = &pl
+	for i := 0; i < 2; i++ {
+		r := rs[i]
+		switch t := r.(type) {
+		case N:
+			println("N", t.nm())
+		default:
+			println("plain", r.v())
+		}
+		q, ok := r.(N)
+		if ok {
+			println("assert", q.nm())
+		} else {
+			println("assert no")
+		}
+	}
+}
+`,
+		want: "N s1\nassert s1\nplain 7\nassert no\n",
+	},
+	{
 		// A type switch may switch on any interface EXPRESSION, not only on a name:
 		// "switch t := shapes[i].(type)" is how a dispatch loop is written, and it
 		// used to fail with "cannot infer the type of the switch guard variable"

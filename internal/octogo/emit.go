@@ -11934,7 +11934,14 @@ func (e *emitter) ifaceImplementors(iface string) []string {
 // may then decline.
 func (e *emitter) implementsIface(concrete, iface string) bool {
 	for _, m := range e.ifaceMethods[iface] {
-		if _, has := e.funcRet[methodCName(concrete, m.name)]; !has {
+		// Resolved through the embedding chain, exactly as needVTable resolves it.
+		// Reading the method off the concrete type DIRECTLY made a promoted method
+		// invisible here while needVTable saw it, so the two disagreed about which
+		// types implement an interface -- and this one decides which candidates an
+		// interface-to-interface assertion or case tests. With no candidate the test
+		// is emitted as a constant 0, so `r.(N)` on a type whose R-method is
+		// promoted answered FALSE and said nothing about it.
+		if _, _, _, has := e.promotedMethod(concrete, m.name); !has {
 			return false
 		}
 	}
