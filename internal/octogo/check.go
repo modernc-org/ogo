@@ -2796,6 +2796,12 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			vd.elemKind, vd.hasElemKind = ek, true
 			return
 		}
+		if ek, ok := f.exprMakeElemKind(s, init); ok {
+			// `xs := make([]int, 3)`: the same, with the element type written as
+			// make's argument rather than in the literal's own brackets.
+			vd.elemKind, vd.hasElemKind = ek, true
+			return
+		}
 		if nm, ql, ptr, ok := f.exprNamedType(s, init); ok {
 			// `p := P{1, 2}` / `p := &P{1, 2}` / `q := p` / `p := mk()`: p
 			// carries P, so its fields and methods are checked as an explicitly
@@ -8168,28 +8174,98 @@ func (f *File) isSliceMake(suffix Node) bool {
 // It descends single-child wrappers (Expression/SimpleExpr/Term/UnaryExpr) to the
 // Factor and inspects its first two children.
 func (f *File) isSliceTypeFactor(n Node) bool {
-	cur := n
+	fac := unwrapSingle(n)
+	var k0, k1 Node
+	count := 0
+	for c := range it(fac.ast) {
+		switch count {
+		case 0:
+			k0 = c
+		case 1:
+			k1 = c
+		}
+		if count++; count >= 2 {
+			break
+		}
+	}
+	return count >= 2 && k0.sym == 0 && f.ch(k0.tok) == LBRACK &&
+		k1.sym == 0 && f.ch(k1.tok) == RBRACK
+}
+
+// unwrapSingle descends the single-child wrappers an expression is nested in --
+// Expression, SimpleExpr, Term, UnaryExpr -- to the first node carrying more than
+// one child, which for a bracketed form is its Factor.
+func unwrapSingle(n Node) Node {
 	for {
-		var k0, k1 Node
+		var k0 Node
 		count := 0
-		for c := range it(cur.ast) {
-			switch count {
-			case 0:
+		for c := range it(n.ast) {
+			if count == 0 {
 				k0 = c
-			case 1:
-				k1 = c
 			}
 			if count++; count >= 2 {
 				break
 			}
 		}
-		if count == 1 {
-			cur = k0 // a single-child wrapper: descend toward the Factor
+		if count != 1 {
+			return n
+		}
+		n = k0
+	}
+}
+
+// exprMakeElemKind returns the element kind of a "make([]T, n)" initializer, so a
+// variable declared from one carries T the way "var xs []T = make([]T, n)" does.
+// Without it a made slice was the one container whose elements went unchecked:
+// exprLitElemKind reads the element type off a composite literal's own brackets,
+// and make writes them in an argument instead.
+func (f *File) exprMakeElemKind(s *Scope, n Node) (Kind, bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return 0, false
+	}
+	var fac Node
+	facSet := false
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+		case UnaryOp:
+			return 0, false // "&make(...)" is not a form the language takes
+		}
+	}
+	if !facSet {
+		return 0, false
+	}
+	// make is deliberately not registered in the universe, so resolving to nothing
+	// is what identifies the builtin -- a user function of the same name resolves,
+	// and its result is not a slice of anything this can read.
+	if root, suffixed, ok := f.factorRoot(fac); !ok || !suffixed || root.Src() != "make" || s.find("make") != nil {
+		return 0, false
+	}
+	var suffix Node
+	for c := range it(fac.ast) {
+		if c.sym == FactorSuffix {
+			suffix = c
+		}
+	}
+	argList, _, isCall := f.callInfo(suffix)
+	if !isCall || !f.isSliceMake(suffix) {
+		return 0, false
+	}
+	for a := range it(argList.ast) {
+		if a.sym != Expression {
 			continue
 		}
-		return count >= 2 && k0.sym == 0 && f.ch(k0.tok) == LBRACK &&
-			k1.sym == 0 && f.ch(k1.tok) == RBRACK
+		// "[" "]" Type: the type argument's own Factor carries the element type.
+		for c := range it(unwrapSingle(a).ast) {
+			if c.sym == Type {
+				return f.typeKind(s, f.typ(s, c))
+			}
+		}
+		return 0, false
 	}
+	return 0, false
 }
 
 // checkCall resolves the names in a call's arguments and, for a direct call

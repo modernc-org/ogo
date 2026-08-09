@@ -106,3 +106,25 @@ func notScalars() {
 	ys[0] = 1
 	use(ys[0])
 }
+
+// A MADE slice carries its element type too. It is the one container that did not:
+// a composite literal writes its element type in its own brackets, where make
+// writes it in an argument, so the literal was read and make was not -- and an
+// element of a made slice went unchecked whichever way the variable was declared.
+func madeSlice() {
+	var n int = 1
+
+	var xs = make([]int32, 2)
+	// ERROR "cannot use n of type int as type int32 in assignment"
+	xs[0] = n
+	use(int(xs[0]))
+
+	ys := make([]int32, 2)
+	// ERROR "cannot use n of type int as type int32 in assignment"
+	ys[0] = n
+	use(int(ys[0]))
+
+	zs := make([]int, 2)
+	zs[0] = n
+	use(zs[0])
+}
