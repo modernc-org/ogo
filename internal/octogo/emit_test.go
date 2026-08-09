@@ -4194,7 +4194,7 @@ func main() {
 		"\t\t_ogo_defer1 = 1;\n" +
 		"\t}\n" +
 		"\tstep(3);\n" +
-		"\tif (_ogo_defer1) step(_ogo_defer1_a0);\n" +
+		"\tif (_ogo_defer1) {\n\t\tstep(_ogo_defer1_a0);\n\t}\n" +
 		"\tstep(_ogo_defer0_a0);\n" +
 		"}\n"
 	if got := buf.String(); !strings.Contains(got, want) {

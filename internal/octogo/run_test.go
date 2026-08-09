@@ -37,6 +37,47 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A defer written inside an if runs only if that branch did, which a runtime
+		// flag records -- and the flag has to guard the WHOLE call. It was written as
+		// a statement prefix, "if (flag) f(...);", on the assumption that a call is
+		// one C statement. println of several arguments is one printf per argument,
+		// so the flag guarded the first and let the rest run: a branch that never
+		// executed still printed the tail of its deferred println, from capture
+		// temporaries that were never written. "println(f(1))" printed a bare " 0"
+		// between its two real lines.
+		//
+		// The golden for nested defer deferred a call of ONE statement, so it agreed
+		// with the emitter either way; only running the program showed it.
+		//
+		// Every line matches real Go.
+		name: "a defer inside a branch that did not run",
+		src: `func f(n int) int {
+	defer println("exit", n)
+	if n > 2 {
+		defer println("big", n, "x")
+		return n * 10
+	}
+	defer println("small", n)
+	return n
+}
+
+func g(n int) {
+	if n == 0 {
+		defer println("zero", n, n+1, n+2)
+	}
+	println("g done", n)
+}
+
+func main() {
+	println(f(1))
+	println(f(5))
+	g(0)
+	g(1)
+}
+`,
+		want: "small 1\nexit 1\n1\nbig 5 x\nexit 5\n50\ng done 0\nzero 0 1 2\ng done 1\n",
+	},
+	{
 		// A shift by a count that is not a compile-time constant, over every integer
 		// width and every width of count. It goes through the guarded helper, which
 		// is what makes a shift mean in C what it means in Go -- a count at or past

@@ -65,6 +65,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   was read, and `make` writes it in an argument, which was not -- so `xs :=
   make([]int32, 3); xs[0] = n` for an `int` `n` compiled, whichever way `xs` was
   declared. Writing `var xs []int32 = make(...)` was always checked.
+- **A defer inside a branch that never ran still printed part of itself.** A defer
+  written in an `if` is replayed under a runtime flag recording whether the branch
+  executed, and the flag was written as a statement PREFIX -- `if (flag) f(...);`
+  -- on the assumption that a call is one C statement. `println` of several
+  arguments is one `printf` per argument, so the flag guarded the first and let the
+  rest run: a branch that never executed printed the tail of its deferred `println`
+  from capture temporaries that were never written, producing a bare ` 0` line out
+  of nowhere. The flag now opens a block.
 - **A value inferred from a mixed-type expression took the type of the FIRST
   operand**, so an untyped constant written on the left named a type the
   expression does not have and the value was truncated to fit it: `b := 1 + v` for

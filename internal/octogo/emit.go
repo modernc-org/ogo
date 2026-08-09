@@ -12847,14 +12847,20 @@ func (e *emitter) emitDeferred() {
 			continue
 		}
 		if d.cond {
-			// The flag is a statement prefix, so the call emitCall writes lands as
-			// the guarded statement: `if (_ogo_deferN) f(...);`.
+			// The flag opens a BLOCK, because the call is not always one C
+			// statement: println of several arguments is one printf per argument,
+			// and a call that hoists a temporary writes that ahead of itself. As a
+			// statement PREFIX the flag guarded the first of them and let the rest
+			// run, so a deferred `println("big", n)` in a branch that never ran
+			// still printed the tail of itself from its zeroed capture temporaries
+			// -- " 0" on a line of its own, out of nowhere.
 			e.ind()
-			e.emit("if (" + deferFlagName(d.slot) + ") ")
-			saved := e.indent
-			e.indent = 0
+			e.emit("if (" + deferFlagName(d.slot) + ") {\n")
+			e.indent++
 			e.emitCall(d.head, d.suffix)
-			e.indent = saved
+			e.indent--
+			e.ind()
+			e.emit("}\n")
 		} else {
 			e.emitCall(d.head, d.suffix)
 		}
