@@ -5903,19 +5903,34 @@ func sortedNames(set map[string]*MethodSpecNode) []string {
 // two must lead to opposite conclusions.
 func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 	if nm, ql, isPtr, ok := f.exprNamedType(s, n); ok && nm.IsValid() && !isPtr && !ql.IsValid() {
-		switch s.find(nm.Src()).(type) {
-		case *TypeDeclaration:
-			return nm.Src(), true
-		case *PredeclaredType:
-			return "", true
+		return f.definedName(s, nm.Src())
+	}
+	// A field read, "b.w": the field's declared type is what names it.
+	// exprFieldRead is exactly a plain two-name read -- an index or a call
+	// disqualifies it -- so the field looked up is the one written.
+	if head, field, ok := f.exprFieldRead(n); ok {
+		if tn, isIdent := f.fieldTypeNode(s, head, field).(*TypeNodeIdent); isIdent && !tn.Qualifier.IsValid() {
+			return f.definedName(s, tn.Name.Src())
 		}
-		return "", false
 	}
 	// A Kind with no type token is NOT evidence of a predeclared type. A range
 	// value over a []Word records Word's Kind and no name, so reading the silence
 	// as "int32" reported "t += w" inside "for _, w := range ws" against a Word t
 	// -- a value of exactly the right type. Where the name is not recorded the type
 	// is unknown, and unknown is where this stops.
+	return "", false
+}
+
+// definedName classifies a written type name for type identity: the name itself
+// when it names a DEFINED type, "" when it names a predeclared one, and not-ok when
+// it names neither -- a composite, or nothing resolvable.
+func (f *File) definedName(s *Scope, name string) (string, bool) {
+	switch s.find(name).(type) {
+	case *TypeDeclaration:
+		return name, true
+	case *PredeclaredType:
+		return "", true
+	}
 	return "", false
 }
 

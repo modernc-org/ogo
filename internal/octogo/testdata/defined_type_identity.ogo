@@ -101,6 +101,16 @@ func run() {
 	_ = bx
 	by := Box{c: c}
 	_ = by
+
+	// A field READ names its type too: the field's declared type is written down,
+	// so unlike a range value it is not a silence.
+	b.c = 70
+	takeC(b.c)
+	c = b.c
+
+	// ERROR "cannot use b.c of type Celsius as type int in assignment"
+	i = b.c
+	_ = i
 }
 
 // A defined type over another defined type is that type's own, and the chain

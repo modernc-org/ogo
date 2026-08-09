@@ -53,11 +53,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   assignment, struct literal, send, and both operands of an operator), and two
   defined types over one underlying type are two types.
 
-  It answers only where the value's type is KNOWN. A range value, a field read and
-  a method result carry no type name, so those go unchecked rather than
-  misreported: `for _, w := range ws` over a `[]Word` yields a `Word` that the
-  checker cannot name, and reading that silence as "int32" would refuse `t += w`
-  for a `Word` t -- a value of exactly the right type.
+  It answers only where the value's type is KNOWN. A range value and a method
+  result carry no type name, so those go unchecked rather than misreported: `for _,
+  w := range ws` over a `[]Word` yields a `Word` that the checker cannot name, and
+  reading that silence as "int32" would refuse `t += w` for a `Word` t -- a value
+  of exactly the right type. A field read is named, its type being written down in
+  the struct. Still unchecked for the same reason: an element assignment and a
+  switch case, whose destinations carry no name either.
 - **A slice from `make` carries its element type.** It was the one container that
   did not: a composite literal writes its element type in its own brackets, which
   was read, and `make` writes it in an argument, which was not -- so `xs :=
