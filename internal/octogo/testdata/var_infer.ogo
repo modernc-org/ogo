@@ -1,0 +1,108 @@
+// "var x = expr" infers x's type from its initializer, exactly as "x := expr"
+// does -- the two forms mean the same thing in Go, and now say so through one
+// function (inferVarFrom). Only ":=" used to infer anything, so a "var" written
+// without a type carried NO type at all and every check keyed on one was skipped
+// for it: a bool went where an int was wanted, a string did too, and an integer
+// served as a condition. The same held at package scope.
+//
+// The companion file for the ":=" form is define_infer.ogo.
+
+type Celsius int
+
+func (c Celsius) deg() int { return int(c) }
+
+type P struct {
+	x  int
+	nm string
+}
+
+func mkP() P { return P{1, "a"} }
+
+func dbl(n int) int { return n * 2 }
+
+func use(n int)   {}
+func want(b bool) {}
+
+// A package-level var infers its type the same way a local one does.
+var pkgN = 42
+
+var pkgS = "s"
+
+func inferred() {
+	var n = 5
+	use(n)
+
+	var b = true
+	want(b)
+
+	var s = "x"
+
+	// ERROR "cannot use b of type bool as type int in argument to use"
+	use(b)
+
+	// ERROR "cannot use n of type int as type bool in argument to want"
+	want(n)
+
+	// ERROR "cannot use s of type string as type int in argument to use"
+	use(s)
+
+	// ERROR "non-bool used as if condition"
+	if n {
+	}
+
+	// ERROR "cannot use n of type int as type int32 in variable declaration"
+	var narrow int32 = n
+	_ = narrow
+
+	// ERROR "cannot use pkgN of type int as type bool in argument to want"
+	want(pkgN)
+
+	// ERROR "cannot use pkgS of type string as type int in argument to use"
+	use(pkgS)
+}
+
+// A call's result types the variable too, as it does after ":=".
+func fromCall() {
+	var v = dbl(3)
+	use(v)
+
+	// ERROR "cannot use v of type int as type bool in argument to want"
+	want(v)
+}
+
+// The shapes that carry something other than a scalar kind keep working: a
+// pointer stays a pointer, a struct keeps its type for field and method access, a
+// composite literal keeps its element type, a function value keeps its signature,
+// and a defined type keeps its methods. Each of these would be refused, or
+// mis-refused, by an inference that only read a scalar kind off the initializer.
+func notScalars() {
+	var q = 5
+	var p = &q
+	*p = 7
+	use(*p)
+
+	var v = P{1, "a"}
+	use(v.x)
+
+	var w = mkP()
+	use(w.x)
+
+	var xs = []int{1, 2}
+	xs[0] = 9
+	use(xs[1])
+	use(len(xs))
+
+	var a = [2]int{1, 2}
+	a[0] = 9
+	use(a[1])
+
+	var g = dbl
+	use(g(3))
+
+	var c = Celsius(20)
+	use(c.deg())
+
+	var ys = make([]int, 2)
+	ys[0] = 1
+	use(ys[0])
+}

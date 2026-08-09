@@ -36,6 +36,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixes
 
+- **`var x = expr` gave the variable no type at all**, where `x := expr` -- the
+  same declaration in Go -- infers one. Every check keyed on a type was therefore
+  skipped for such a variable: a `bool` was accepted where an `int` was wanted, a
+  `string` likewise, `if n {}` compiled for an integer `n`, and the same held for a
+  package-level `var`. The two forms now share one inference, so a `var` without a
+  written type carries exactly what a `:=` would give it -- a scalar type, a
+  pointer, a named type with its methods, a composite literal's element type, or a
+  function's signature.
 - **A value inferred from a mixed-type expression took the type of the FIRST
   operand**, so an untyped constant written on the left named a type the
   expression does not have and the value was truncated to fit it: `b := 1 + v` for
@@ -62,6 +70,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   the spec rather than a change of rule.
 - **A composite literal with a value of the wrong type is refused**, where it used
   to compile and write the value's bytes into the field.
+- **A variable declared `var x = expr` is type-checked**, where it used to be
+  checked nowhere. Programs that passed such a variable to a parameter of another
+  type, or used an integer one as a condition, were accepted and are now refused --
+  as Go refuses them, and as the `:=` form here already did.
 
 - **A 64-bit shift by a variable count was miscompiled on the target**, and is
   fixed. `v << n` on an `int64` or `uint64` with a count that is not a compile-time

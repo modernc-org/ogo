@@ -2757,6 +2757,81 @@ func (f *File) inferredKind(s *Scope, n Node) (Kind, bool) {
 	return defaultKind(k), true
 }
 
+// inferVarFrom records on vd the type its initializer gives it, for a variable
+// declared without a written one: "x := e", "var x = e" and the package-level
+// "var x = e" alike. All three mean the same thing in Go and now say so through one
+// function -- only ":=" used to infer anything, so a "var" without a type carried
+// NO type at all and every check keyed on one was skipped for it. A bool passed
+// where an int was wanted, a string likewise, and "if n {}" for an integer n, all
+// compiled.
+//
+// The order of the cases is the order they must be asked in, each being a shape the
+// one below it would answer wrongly or not at all.
+func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
+	switch ek, hasEk, tn, isPtr := f.addressOfInfo(s, init); {
+	case isPtr:
+		// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
+		// `*p` reads and writes are admitted and checked.
+		vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName = true, ek, hasEk, tn
+		if !tn.IsValid() {
+			// `p := &P{1, 2}`: the operand is a literal, not a variable, so
+			// there was no declaration to read the type off -- it is the
+			// literal's own.
+			if nm, ql, _, ok := f.exprNamedType(s, init); ok {
+				vd.typeName, vd.typeQual = nm, ql
+			}
+		}
+	case f.isNewBuilderCall(s, init):
+		// `sb := NewBuilder(back[:])`: sb holds a Builder, whose method set
+		// the compiler knows. The callee is predeclared, so exprNamedType --
+		// which reads a result type off a FuncDeclaration -- cannot answer,
+		// and without this the variable carried no type and every method call
+		// on it went unchecked to the C compiler.
+		vd.builderVar = true
+	default:
+		if ek, ok := f.exprLitElemKind(s, init); ok {
+			// `xs := []int{1, 2}` / `a := [2]int{1, 2}`: xs carries int, so
+			// writing into an element is checked as an explicitly typed
+			// container's is.
+			vd.elemKind, vd.hasElemKind = ek, true
+			return
+		}
+		if nm, ql, ptr, ok := f.exprNamedType(s, init); ok {
+			// `p := P{1, 2}` / `p := &P{1, 2}` / `q := p` / `p := mk()`: p
+			// carries P, so its fields and methods are checked as an explicitly
+			// typed variable's are.
+			vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
+			if k, ok := f.inferredKind(s, init); ok {
+				vd.kind, vd.hasKind = k, true
+			}
+			// A named type may also be a function type: `type Fn func(int) int`
+			// carried over by `g := f` is still callable, and is checked against
+			// the same signature. Taking the name alone left g with a type and no
+			// signature, so the call through it was "cannot call non-function".
+			if sig := f.exprFuncSig(s, init); sig != nil {
+				vd.funcSig, vd.isFunc = sig, true
+			}
+			return
+		}
+		if sig := f.exprFuncSig(s, init); sig != nil {
+			// `g := dbl` / `g := pick()` / `g := o.fn`: g holds a function, so a
+			// call through it is a call and is checked against that signature.
+			vd.funcSig, vd.isFunc = sig, true
+			return
+		}
+		if f.reportUnsupportedFuncValue(s, init) {
+			// A function-valued form the language does not model yet, named
+			// where it stands rather than left to surface as a puzzling
+			// "cannot call non-function" at the variable's first use.
+			vd.isFunc = true
+			return
+		}
+		if k, ok := f.inferredKind(s, init); ok {
+			vd.kind, vd.hasKind = k, true
+		}
+	}
+}
+
 // identKind returns the type Kind bound to a name when it is a variable with a
 // resolved predeclared type or a constant with a known value type.
 func (f *File) identKind(s *Scope, tok Token) (Kind, bool) {
@@ -3696,8 +3771,14 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			// which still bounds a constant value.
 			f.checkInferredOverflow(s, e)
 		}
-		for _, nm := range names {
+		for i, nm := range names {
 			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, funcSig: funcSig, isFunc: funcSig != nil}
+			if declType == nil && len(names) == len(initExprs) {
+				// No type written: the variable takes the one its own initializer
+				// gives it, exactly as ":=" does. A multi-result call feeding
+				// several names pairs up with none of them and is left alone.
+				f.inferVarFrom(s, vd, initExprs[i])
+			}
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue
@@ -4174,60 +4255,10 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			}
 		}
 		if inferKinds {
-			if ek, hasEk, tn, isPtr := f.addressOfInfo(s, rhs[i]); isPtr {
-				// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
-				// `*p` reads and writes are admitted and checked.
-				vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName = true, ek, hasEk, tn
-				if !tn.IsValid() {
-					// `p := &P{1, 2}`: the operand is a literal, not a variable, so
-					// there was no declaration to read the type off -- it is the
-					// literal's own.
-					if nm, ql, _, ok := f.exprNamedType(s, rhs[i]); ok {
-						vd.typeName, vd.typeQual = nm, ql
-					}
-				}
-			} else if f.isNewBuilderCall(s, rhs[i]) {
-				// `sb := NewBuilder(back[:])`: sb holds a Builder, whose method set
-				// the compiler knows. The callee is predeclared, so exprNamedType --
-				// which reads a result type off a FuncDeclaration -- cannot answer,
-				// and without this the variable carried no type and every method call
-				// on it went unchecked to the C compiler.
-				vd.builderVar = true
-			} else if ek, ok := f.exprLitElemKind(s, rhs[i]); ok {
-				// `xs := []int{1, 2}` / `a := [2]int{1, 2}`: xs carries int, so
-				// writing into an element is checked as an explicitly typed
-				// container's is.
-				vd.elemKind, vd.hasElemKind = ek, true
-			} else if nm, ql, ptr, ok := f.exprNamedType(s, rhs[i]); ok {
-				// `p := P{1, 2}` / `p := &P{1, 2}` / `q := p` / `p := mk()`: p
-				// carries P, so its fields and methods are checked as an explicitly
-				// typed variable's are.
-				vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
-				if k, ok := f.inferredKind(s, rhs[i]); ok {
-					vd.kind, vd.hasKind = k, true
-				}
-				// A named type may also be a function type: `type Fn func(int) int`
-				// carried over by `g := f` is still callable, and is checked against
-				// the same signature. Taking the name alone left g with a type and no
-				// signature, so the call through it was "cannot call non-function".
-				if sig := f.exprFuncSig(s, rhs[i]); sig != nil {
-					vd.funcSig, vd.isFunc = sig, true
-				}
-			} else if sig := f.exprFuncSig(s, rhs[i]); sig != nil {
-				// `g := dbl` / `g := pick()` / `g := o.fn`: g holds a function, so a
-				// call through it is a call and is checked against that signature.
-				vd.funcSig, vd.isFunc = sig, true
-			} else if f.reportUnsupportedFuncValue(s, rhs[i]) {
-				vd.isFunc = true
-				// A function-valued form the language does not model yet, named
-				// where it stands rather than left to surface as a puzzling
-				// "cannot call non-function" at the variable's first use.
-			} else if k, ok := f.inferredKind(s, rhs[i]); ok {
-				vd.kind, vd.hasKind = k, true
-				// ":=" writes no type, so the initializer's own type bounds a
-				// constant value, as for "var x = expr".
-				f.checkInferredOverflow(s, rhs[i])
-			}
+			f.inferVarFrom(s, vd, rhs[i])
+			// ":=" writes no type, so the initializer's own type is what bounds a
+			// constant value, as for "var x = expr".
+			f.checkInferredOverflow(s, rhs[i])
 		}
 		_ = s.add(vd)
 		f.localVars = append(f.localVars, vd)
@@ -9808,6 +9839,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 	var names []Token
 	var varDecls []*VarDeclaration
 	var typ TypeNode
+	var initExprs []Node
 
 	defer func() {
 		// Record the resolved type on each declared variable (like a local
@@ -9822,7 +9854,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		chanElemName := f.chanElemTypeName(s, typ)
 		elemName := f.elemTypeName(s, typ)
 		funcSig := f.funcSig(s, typ)
-		for _, vd := range varDecls {
+		for i, vd := range varDecls {
 			if vd == nil {
 				continue
 			}
@@ -9832,6 +9864,13 @@ func (f *File) varSpec(s *Scope, n Node) {
 			vd.chanElemName = chanElemName
 			vd.elemTypeName = elemName
 			vd.funcSig, vd.isFunc = funcSig, funcSig != nil
+			if typ == nil && len(varDecls) == len(initExprs) {
+				// No type written: the variable takes the one its own initializer
+				// gives it, as ":=" and a local "var" do. This runs after the fields
+				// above, which a nil typ leaves zeroed, so it is filling them in
+				// rather than fighting them.
+				f.inferVarFrom(s, vd, initExprs[i])
+			}
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:
 				vs.TypeNode = typ
@@ -9894,6 +9933,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			// initializer) rather than folding it as a constant, which would
 			// wrongly report a non-constant initializer or panic on a call.
 			exprs := expressionListItems(n)
+			initExprs = exprs
 			f.checkVarSpecArity(s, names, exprs)
 			// The Type production precedes the initializer in the grammar, so typ
 			// is already resolved here; it is nil for an inferred type, whose
