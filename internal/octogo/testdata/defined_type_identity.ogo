@@ -1,0 +1,119 @@
+// A DEFINED type is a type of its own, distinct from the type it is defined over:
+// "type Celsius int" makes Celsius and int two types, and a value of one goes into
+// the other only through a conversion. Go says so; here the two shared a Kind --
+// typeKind resolves through the definition on purpose, so that every check keyed on
+// a Kind works for a defined type at all -- which left them indistinguishable to
+// the assignability check, and every position below compiled.
+//
+// checkDefinedType is the name-based companion that sees the difference, in the
+// family of checkImplements and checkPointerValue. It answers only where the
+// value's type is KNOWN: a range value, a field read and a method result carry no
+// name here, and go unchecked rather than misreported.
+
+type Celsius int
+
+type Fahrenheit int
+
+type Word int32
+
+type Box struct {
+	c Celsius
+}
+
+func takeInt(n int) int          { return n }
+func takeC(c Celsius) Celsius    { return c }
+func takeW(w Word) Word          { return w }
+
+func giveInt() int {
+	var c Celsius = 20
+
+	// ERROR "cannot use c of type Celsius as type int in return statement"
+	return c
+}
+
+func run() {
+	var c Celsius = 20
+	var i int = 1
+	var w Word = 2
+	var i32 int32 = 3
+
+	// A conversion is how the two meet, and it is unaffected.
+	i = int(c)
+	c = Celsius(i)
+	takeInt(int(c))
+	takeC(Celsius(i))
+	takeW(Word(i32))
+
+	// An untyped constant goes into either, needing no conversion.
+	c = 30
+	var c2 Celsius = 40
+	takeC(50)
+	_ = c2
+
+	// ERROR "cannot use c of type Celsius as type int in variable declaration"
+	var bad1 int = c
+	_ = bad1
+
+	// ERROR "cannot use c of type Celsius as type int in assignment"
+	i = c
+
+	// ERROR "cannot use i of type int as type Celsius in assignment"
+	c = i
+
+	// ERROR "cannot use c of type Celsius as type int in argument to takeInt"
+	takeInt(c)
+
+	// ERROR "cannot use i of type int as type Celsius in argument to takeC"
+	takeC(i)
+
+	// Two defined types over the same underlying type are still two types.
+	// ERROR "cannot use c of type Celsius as type Fahrenheit in variable declaration"
+	var bad2 Fahrenheit = c
+	_ = bad2
+
+	// ERROR "cannot use i32 of type int32 as type Word in assignment"
+	w = i32
+	_ = w
+
+	// An operator wants its two operands to be of one type, and a defined type is
+	// not the type it is defined over.
+	// ERROR "mismatched types Celsius and int"
+	_ = c + i
+
+	// ERROR "mismatched types Celsius and int"
+	if c == i {
+	}
+
+	// The same operators between one type are fine, and so is an untyped operand.
+	takeC(c + 1)
+	takeC(c * Celsius(2))
+	if c > 10 {
+	}
+
+	var b Box
+	// ERROR "cannot use i of type int as type Celsius in assignment"
+	b.c = i
+	b.c = c
+	b.c = 60
+
+	// ERROR "cannot use i of type int as type Celsius in struct literal"
+	bx := Box{c: i}
+	_ = bx
+	by := Box{c: c}
+	_ = by
+}
+
+// A defined type over another defined type is that type's own, and the chain
+// resolves for the Kind while the name stays what was written.
+type Deep Celsius
+
+func deep() {
+	var d Deep = 1
+	var c Celsius = 2
+
+	// ERROR "cannot use c of type Celsius as type Deep in assignment"
+	d = c
+	d = Deep(c)
+	d = 3
+	_ = d
+}

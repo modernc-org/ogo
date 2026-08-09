@@ -1983,6 +1983,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	wantPtr := f.isPointerType(s, rt.typeNode)
 	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	f.checkImplements(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
+	f.checkDefinedType(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	if !rt.known {
 		return
 	}
@@ -3765,6 +3766,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			if len(names) == len(initExprs) {
 				f.checkPointerValue(s, isPtr, f.typeNodeString(declType, false), e, "variable declaration")
 				f.checkImplements(s, f.typeNodeString(declType, false), e, "variable declaration")
+				f.checkDefinedType(s, f.typeNodeString(declType, false), e, "variable declaration")
 				// One initializer per name; a multi-result call feeding several
 				// names pairs up with none of them and is left alone.
 				f.checkDeclType(s, kind, hasKind, typeName, e)
@@ -4988,6 +4990,7 @@ func (f *File) checkSend(s *Scope, chTok Token, field Token, indexed bool, valNo
 	// interface has none -- so the element's NAME is what the declaration retains.
 	if elemName.IsValid() {
 		f.checkImplements(s, elemName.Src(), valNode, "send")
+		f.checkDefinedType(s, elemName.Src(), valNode, "send")
 	}
 	vk, vok := f.exprType(s, valNode)
 	if !hasElem || !vok {
@@ -5404,6 +5407,7 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 	for i, el := range elements {
 		if i < len(types) {
 			f.checkImplements(s, f.typeNodeString(types[i], false), el.value, "struct literal")
+			f.checkDefinedType(s, f.typeNodeString(types[i], false), el.value, "struct literal")
 			f.checkLitValue(s, t, types[i], el.value)
 		}
 	}
@@ -5518,6 +5522,7 @@ func (f *File) checkKeyedLit(s *Scope, t litType, names []Token, types []TypeNod
 		}
 		seen[name] = true
 		f.checkImplements(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
+		f.checkDefinedType(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
 		f.checkLitValue(s, t, fieldType(name), el.value)
 	}
 }
@@ -5885,6 +5890,104 @@ func sortedNames(set map[string]*MethodSpecNode) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// typeIdentity returns the name that identifies a value's type for the purposes of
+// TYPE IDENTITY: the name of its defined type, or "" when its type is a predeclared
+// one. ok is false when the type cannot be determined at all -- a field read, a
+// method result, an index -- which must not be read as "predeclared", or every one
+// of those would be reported against a defined-type destination.
+//
+// The distinction is the whole reason this is not just exprNamedType: that answers
+// "no" both for a value of type int and for a value whose type is unknown, and the
+// two must lead to opposite conclusions.
+func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
+	if nm, ql, isPtr, ok := f.exprNamedType(s, n); ok && nm.IsValid() && !isPtr && !ql.IsValid() {
+		switch s.find(nm.Src()).(type) {
+		case *TypeDeclaration:
+			return nm.Src(), true
+		case *PredeclaredType:
+			return "", true
+		}
+		return "", false
+	}
+	// A Kind with no type token is NOT evidence of a predeclared type. A range
+	// value over a []Word records Word's Kind and no name, so reading the silence
+	// as "int32" reported "t += w" inside "for _, w := range ws" against a Word t
+	// -- a value of exactly the right type. Where the name is not recorded the type
+	// is unknown, and unknown is where this stops.
+	return "", false
+}
+
+// checkDefinedType reports a value used where a different DEFINED type is wanted.
+//
+// A defined type and the type it is defined over share a Kind -- typeKind resolves
+// through the definition on purpose, so that every check keyed on a Kind works for
+// one -- which leaves the two indistinguishable to assignableKind. Go treats them
+// as distinct types and wants a conversion between them, so "var i int = c" for a
+// "type Celsius int" c compiled here and was refused there.
+//
+// This is the name-based companion to assignableKind, in the family of
+// checkImplements and checkPointerValue: called from the same positions, and
+// answering only the part its neighbour cannot see.
+//
+// Conservative twice over. It reports only where BOTH sides resolve to a scalar
+// Kind, so a struct, an interface, a pointer, a slice and a channel are left to the
+// checks that own them; and only where the value's type is actually KNOWN, so a
+// field read or a method result -- which carry no name here -- go unchecked rather
+// than misreported. An untyped constant goes wherever it fits, as it does in Go.
+func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what string) {
+	if wantName == "" {
+		return
+	}
+	wantKind, ok := f.nameKind(s, wantName)
+	if !ok || kindCategory(wantKind) == catUnknown {
+		return
+	}
+	haveKind, ok := f.exprType(s, value)
+	if !ok || kindCategory(haveKind) == catUnknown || isUntypedKind(haveKind) {
+		return
+	}
+	have, ok := f.typeIdentity(s, value)
+	if !ok {
+		return
+	}
+	want := ""
+	if _, defined := s.find(wantName).(*TypeDeclaration); defined {
+		want = wantName
+	}
+	if have == want {
+		return
+	}
+	from := have
+	if from == "" {
+		from = kindName(haveKind)
+	}
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s of type %s as type %s in %s", f.exprSource(value), from, wantName, what)
+}
+
+// definedTypeMismatch reports two operands of an operator whose DEFINED types
+// differ -- one is a defined type and the other is not, or they are two different
+// ones. An untyped operand takes the other's type and never mismatches, and an
+// operand whose type is unknown is not guessed at.
+func (f *File) definedTypeMismatch(s *Scope, a, b Node) bool {
+	ak, aok := f.exprType(s, a)
+	bk, bok := f.exprType(s, b)
+	if !aok || !bok || isUntypedKind(ak) || isUntypedKind(bk) {
+		return false
+	}
+	an, aok := f.typeIdentity(s, a)
+	bn, bok := f.typeIdentity(s, b)
+	return aok && bok && an != bn
+}
+
+// operandTypeName names an operand's type for a mismatch report: its defined type
+// where it has one, and otherwise the predeclared type its Kind names.
+func (f *File) operandTypeName(s *Scope, n Node, k Kind) string {
+	if nm, ok := f.typeIdentity(s, n); ok && nm != "" {
+		return nm
+	}
+	return kindName(k)
 }
 
 // checkImplements reports a concrete value assigned where an interface is wanted
@@ -6600,8 +6703,8 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 		return
 	}
 	pos := f.tok(opNode.Pos()).Position()
-	if !assignableKind(lk, rk) {
-		f.err(pos, "mismatched types %s and %s", kindName(lk), kindName(rk))
+	if !assignableKind(lk, rk) || f.definedTypeMismatch(s, lNode, rNode) {
+		f.err(pos, "mismatched types %s and %s", f.operandTypeName(s, lNode, lk), f.operandTypeName(s, rNode, rk))
 		return
 	}
 	// Same class: ordering operators are undefined on bool.
@@ -6663,13 +6766,14 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 		f.err(pos, "invalid operation: operator %s not defined on %s and %s", sym, kindName(lk), kindName(rk))
 	case !binaryAllowed(op, lc):
 		f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(lk))
-	case op != SHL && op != SHR && !assignableKind(lk, rk):
+	case op != SHL && op != SHR && (!assignableKind(lk, rk) || f.definedTypeMismatch(s, lNode, rNode)):
 		// Both operands are numbers, or both strings, but of DIFFERENT types --
-		// "int + int32". Go requires the two operands of a binary operator to be of
-		// one type, and says so in these words. A shift is the exception: its count
-		// is independent of the type being shifted, so "x << n" holds for any
-		// integer n.
-		f.err(pos, "mismatched types %s and %s", kindName(lk), kindName(rk))
+		// "int + int32", or "Celsius + int" where the two share a Kind and differ
+		// by name. Go requires the two operands of a binary operator to be of one
+		// type, and says so in these words. A shift is the exception: its count is
+		// independent of the type being shifted, so "x << n" holds for any integer
+		// n.
+		f.err(pos, "mismatched types %s and %s", f.operandTypeName(s, lNode, lk), f.operandTypeName(s, rNode, rk))
 	}
 }
 
@@ -6738,6 +6842,7 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 			}
 			f.checkPointerValue(s, d.isPtr, want, rhsNode, "assignment")
 			f.checkImplements(s, d.typeName.Src(), rhsNode, "assignment")
+			f.checkDefinedType(s, d.typeName.Src(), rhsNode, "assignment")
 		}
 	}
 	lk, lok := f.identKind(s, lhsTok)
@@ -6793,6 +6898,7 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 // the struct-field analogue of checkAssignType.
 func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
+	f.checkDefinedType(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
 	if !lok || !rok {
@@ -8465,6 +8571,7 @@ func (f *File) checkPointerArg(s *Scope, p retResult, arg Node, name Token) {
 	want := f.isPointerType(s, p.typeNode)
 	f.checkPointerValue(s, want, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
 	f.checkImplements(s, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
+	f.checkDefinedType(s, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
 }
 
 // checkPointerValue is that check for every other place a value is assigned to

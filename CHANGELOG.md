@@ -44,6 +44,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   written type carries exactly what a `:=` would give it -- a scalar type, a
   pointer, a named type with its methods, a composite literal's element type, or a
   function's signature.
+- **A defined type is a type of its own**, distinct from the type it is defined
+  over: with `type Celsius int`, an `int` goes into a `Celsius` only through a
+  conversion, and the reverse likewise. The two shared a Kind here -- which is what
+  makes every Kind-keyed check work for a defined type at all -- so nothing could
+  tell them apart, and `var i int = c` compiled. Checked now in the eight positions
+  a value meets a written type (declaration, assignment, argument, return, field
+  assignment, struct literal, send, and both operands of an operator), and two
+  defined types over one underlying type are two types.
+
+  It answers only where the value's type is KNOWN. A range value, a field read and
+  a method result carry no type name, so those go unchecked rather than
+  misreported: `for _, w := range ws` over a `[]Word` yields a `Word` that the
+  checker cannot name, and reading that silence as "int32" would refuse `t += w`
+  for a `Word` t -- a value of exactly the right type.
 - **A slice from `make` carries its element type.** It was the one container that
   did not: a composite literal writes its element type in its own brackets, which
   was read, and `make` writes it in an argument, which was not -- so `xs :=
@@ -81,6 +95,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   as Go refuses them, and as the `:=` form here already did.
 - **An element of a slice from `make` is type-checked**, where it used to be
   checked only when the variable was written with its type.
+- **Mixing a defined type with the type it is defined over now needs a
+  conversion**, in the eight positions listed above. Every such program was refused
+  by Go already; none computed a wrong answer here, the two having one
+  representation.
 
 - **A 64-bit shift by a variable count was miscompiled on the target**, and is
   fixed. `v << n` on an `int64` or `uint64` with a count that is not a compile-time
