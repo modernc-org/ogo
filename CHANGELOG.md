@@ -65,6 +65,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   was read, and `make` writes it in an argument, which was not -- so `xs :=
   make([]int32, 3); xs[0] = n` for an `int` `n` compiled, whichever way `xs` was
   declared. Writing `var xs []int32 = make(...)` was always checked.
+- **A type switch may switch on any interface expression**, not only on a name:
+  `switch t := shapes[i].(type)` is how a dispatch loop is written, and an index or
+  a field operand used to be refused -- with a message that named neither the limit
+  nor the workaround. The operand is bound to a temporary, which also makes it
+  evaluated exactly once however many cases test it, as in Go. A type ASSERTION on
+  such an operand (`rs[i].(*T)`, `v, ok := rs[i].(T)`) is still refused; bind it to
+  a variable first.
 - **A defer inside a branch that never ran still printed part of itself.** A defer
   written in an `if` is replayed under a runtime flag recording whether the branch
   executed, and the flag was written as a statement PREFIX -- `if (flag) f(...);`

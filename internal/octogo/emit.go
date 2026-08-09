@@ -5505,7 +5505,12 @@ func (e *emitter) typeSwitchNames(guardAST []int32) (name, operand string, ok bo
 	if !ok || !g.hasName {
 		return "", "", false
 	}
-	if operand, ok = e.typeSwitchOperand(g.value.ast); !ok {
+	// The BASE answers for an operand that is not a plain name: a reference into
+	// the frame through `rs[i]` or `b.r` is one through `rs` or `b`, so asking the
+	// base is right where it matters and conservative everywhere else. Answering
+	// "no operand" instead would drop the binding out of the leak summary, which is
+	// the hole that let a widened interface launder a pointer to a local.
+	if operand, _, ok = e.typeSwitchOperand(g.value.ast); !ok {
 		return "", "", false
 	}
 	if name, ok = e.exprIdent(g.name.ast); !ok || name == "" || name == "_" {
@@ -11658,6 +11663,21 @@ func (e *emitter) emitSwitch(ast []int32) {
 	// label, which emitTypeSwitch mints for itself.
 	if guardAST != nil {
 		if ts, ok := e.typeSwitchGuard(guardAST); ok {
+			if ts.bindText != "" {
+				// The bound operand is scoped to the statement, like a guard
+				// variable, so it goes in a block of its own.
+				e.ind()
+				e.emit("{\n")
+				e.indent++
+				e.ind()
+				e.emit(ts.iface + " " + ts.operand + " = " + ts.bindText + ";\n")
+				e.locals[ts.operand] = ts.iface
+				e.emitTypeSwitch(ts, cases)
+				e.indent--
+				e.ind()
+				e.emit("}\n")
+				return
+			}
 			e.emitTypeSwitch(ts, cases)
 			return
 		}
@@ -11757,6 +11777,11 @@ type typeSwitch struct {
 	name    string
 	operand string
 	iface   string
+
+	// bindText is the C text of an operand that is not a plain name -- `rs[i]`,
+	// `b.r`, `mk()` -- which the statement binds to a temporary and switches on
+	// that. Empty when the operand names a variable, which needs no binding.
+	bindText string
 }
 
 // typeSwitchGuard recognises a type switch's guard. The Selector that spells
@@ -11771,7 +11796,7 @@ func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 	if g.hasName {
 		value = g.value
 	}
-	operand, isTypeSwitch := e.typeSwitchOperand(value.ast)
+	base, prefix, isTypeSwitch := e.typeSwitchOperand(value.ast)
 	if !isTypeSwitch {
 		return ts, false
 	}
@@ -11781,37 +11806,55 @@ func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 			return ts, false
 		}
 	}
-	ts.operand = operand
-	if ts.iface, ok = e.varType(operand); !ok || !e.isIfaceCType(ts.iface) {
-		e.fail("%s is not an interface, so it has no dynamic type to switch on", operand)
+	if len(prefix) != 0 {
+		// The operand is not a name -- `rs[i].(type)`, `b.r.(type)`. Everything
+		// below reads the operand by NAME, once per case, so it is bound to a
+		// temporary and the cases switch on that. Binding is also what makes the
+		// operand evaluated once, which is what Go does and what an index with a
+		// side effect would otherwise get wrong.
+		text, ctype, _, okChain := e.chainCText(base, prefix)
+		if !okChain || !e.isIfaceCType(ctype) {
+			e.fail("a type switch needs an operand of interface type; bind %s to a variable and switch on that", base)
+			return ts, false
+		}
+		ts.operand, ts.iface, ts.bindText = e.newTmp(), ctype, text
+		return ts, true
+	}
+	ts.operand = base
+	if ts.iface, ok = e.varType(base); !ok || !e.isIfaceCType(ts.iface) {
+		e.fail("%s is not an interface, so it has no dynamic type to switch on", base)
 		return ts, false
 	}
 	return ts, true
 }
 
-// typeSwitchOperand returns the operand of an "x.(type)" expression.
-func (e *emitter) typeSwitchOperand(ast []int32) (string, bool) {
+// typeSwitchOperand splits an "x.(type)" expression into the base identifier and
+// the suffix steps that reach the operand -- everything before the ".(type)"
+// selector, which is empty when the operand is the base itself. A guard that does
+// not end in ".(type)" is not a type switch and is reported as such.
+func (e *emitter) typeSwitchOperand(ast []int32) (base string, prefix []Node, ok bool) {
 	nodes := slices.Collect(it(ast))
 	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
 		nodes = slices.Collect(it(nodes[0].ast))
 	}
 	if len(nodes) != 1 || nodes[0].sym != Factor {
-		return "", false
+		return "", nil, false
 	}
 	kids := slices.Collect(it(nodes[0].ast))
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", false
+		return "", nil, false
 	}
 	steps := slices.Collect(it(kids[1].ast))
-	if len(steps) != 1 || steps[0].sym != Selector {
-		return "", false
+	last := len(steps) - 1
+	if last < 0 || steps[last].sym != Selector {
+		return "", nil, false
 	}
-	for c := range it(steps[0].ast) {
+	for c := range it(steps[last].ast) {
 		if c.sym == 0 && e.f.ch(c.tok) == TYPE {
-			return e.src(kids[0].tok), true
+			return e.src(kids[0].tok), steps[:last], true
 		}
 	}
-	return "", false
+	return "", nil, false
 }
 
 // caseTypeC resolves a type-switch case expression -- "*T", or "nil" -- to the

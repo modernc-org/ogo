@@ -37,6 +37,85 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A type switch may switch on any interface EXPRESSION, not only on a name:
+		// "switch t := shapes[i].(type)" is how a dispatch loop is written, and it
+		// used to fail with "cannot infer the type of the switch guard variable"
+		// (an index) or "b.r has no field" (a field), neither of which named the
+		// real limit -- everything below the guard reads the operand by name, once
+		// per case.
+		//
+		// The operand is now bound to a temporary, which is also what makes it
+		// evaluated ONCE however many cases test it: "calls" below is 1, as in Go.
+		//
+		// Every line matches real Go.
+		name: "a type switch on an expression",
+		src: `type R interface{ v() int }
+
+type A struct{ n int }
+
+func (a *A) v() int { return a.n }
+
+type B struct{ m int }
+
+func (b *B) v() int { return b.m }
+
+type Box struct{ r R }
+
+var calls int
+
+func pick(rs []R, i int) R {
+	calls++
+	return rs[i]
+}
+
+func main() {
+	var x A
+	var y B
+	x.n = 4
+	y.m = 9
+	var rs []R = make([]R, 2)
+	rs[0] = &x
+	rs[1] = &y
+
+	for i := 0; i < 2; i++ {
+		switch t := rs[i].(type) {
+		case *A:
+			println("A", t.n)
+		case *B:
+			println("B", t.m)
+		default:
+			println("other")
+		}
+	}
+
+	var bx Box
+	bx.r = &y
+	switch t := bx.r.(type) {
+	case *A:
+		println("box A", t.n)
+	case *B:
+		println("box B", t.m)
+	}
+
+	switch t := pick(rs, 0).(type) {
+	case *A:
+		println("picked A", t.n)
+	case *B:
+		println("picked B", t.m)
+	}
+	println("calls", calls)
+
+	switch rs[1].(type) {
+	case *A:
+		println("bare A")
+	case *B:
+		println("bare B")
+	}
+}
+`,
+		want: "A 4\nB 9\nbox B 9\npicked A 4\ncalls 1\nbare B\n",
+	},
+	{
 		// A defer written inside an if runs only if that branch did, which a runtime
 		// flag records -- and the flag has to guard the WHOLE call. It was written as
 		// a statement prefix, "if (flag) f(...);", on the assumption that a call is
