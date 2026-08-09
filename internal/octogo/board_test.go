@@ -108,6 +108,38 @@ func TestOnBoardMultiPkg(t *testing.T) {
 // defects were turned off (see internal/build): 320 subtests, no failure and no
 // skip. Widen it again to hunt -- that sweep is how both defects were found.
 //
+// SWEPT TO 400 ON 2026-08-09, AND SEEDS 74 AND 323 FAIL ON THE BOARD -- a third
+// backend defect, live, not covered by the two flags. Both compute the wrong
+// checksum on a P2 and the right one on the host, so the C is right and the
+// target's compiler is not; the compiler at 7113ce0 miscompiles them identically,
+// so they predate the work that found them. To reproduce:
+//
+//	ogo smith -seed 74 > prog.ogo    # then strip the checksum guard, print the
+//	                                 # value, and compare host against board
+//
+// What is known, from building the emitted C directly with the in-repo flexcc
+// (a ~15-line main calling flexcc.Main lets any flags be tried):
+//
+//   - -O0 computes both correctly, so it is the optimizer.
+//   - Seed 74 is corrected by -Ono-regs; seed 323 is NOT -- it merely changes to a
+//     DIFFERENT wrong value -- so more than one pass is involved and this is not
+//     the same shape as the two already worked around.
+//   - No cheaper single pass helps: no-local-reuse, no-cse, no-const,
+//     no-aggressive-mem, no-remove-dead, no-branch-convert, no-tail-calls,
+//     no-loop-basic, no-loop-reduce, no-inline-single and
+//     no-merge-duplicate-functions each leave seed 74 wrong.
+//   - -Ono-regs is not adoptable anyway: it was measured at 68% more code (see
+//     internal/build), and it does not fix seed 323.
+//   - Seed 74 is a HEISENBUG. Printing the operands of the expression that
+//     diverges makes it compute correctly, so it cannot be watched -- reduce it
+//     with a delta debugger over "host FINAL != board FINAL", never by adding
+//     prints.
+//
+// smithSeeds stays at 24 so this suite remains a fast, green sample. The failing
+// seeds are NOT excused here: excusing a backend defect in outgrewCog is exactly
+// what was removed so a recurrence fails loudly, and the same reasoning applies to
+// a skip list. They are recorded here instead, to be picked up deliberately.
+//
 // Widening it to hunt for new bugs eventually runs into a target limit rather than
 // a compiler one: a generated program is one very long main, and past some size it
 // no longer fits the cog's code window ("fit 480 failed"). Such a seed is SKIPPED,

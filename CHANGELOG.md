@@ -103,6 +103,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   compiled. They are now checked against the field's type, and a constant is
   range-checked against it too.
 
+### Known issues
+
+- **A third backend optimizer defect is live**, found by widening the on-board
+  fuzzer sample to 400 seeds: seeds 74 and 323 compute the wrong answer on a P2 and
+  the right one on the host, so the emitted C is correct and the target's compiler
+  is not. `-O0` corrects both, `-Ono-regs` corrects only one, and no cheaper single
+  pass corrects either -- so the two flags already passed for the earlier defects do
+  not cover this, and neither does any affordable addition. It predates the release
+  that found it. See the `smithSeeds` comment in `internal/octogo/board_test.go` for
+  how to reproduce it and everything measured so far.
+
 ### Behaviour changes
 
 - **Mixing `int` with `int32` (or `uint` with `uint32`) now needs a conversion**,
