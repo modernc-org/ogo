@@ -4876,12 +4876,38 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 	return true
 }
 
-// isTypeAssertion reports whether an expression is "x.(T)". Such an expression
-// yields one value, or two in the comma-ok form, which is why the arity checks ask
-// separately rather than through rhsValueCount.
+// isTypeAssertion reports whether an expression ENDS in a type assertion, "x.(T)"
+// or "rs[i].(T)" or "b.r.(T)". Such an expression yields one value, or two in the
+// comma-ok form, which is why the arity checks ask separately rather than through
+// rhsValueCount.
+//
+// It asks by SHAPE and takes no interest in the operand, which is what lets it see
+// an assertion on an expression where typeAssertion -- whose callers want the
+// operand's NAME -- can only see one on a name.
+//
+// The assertion must be the LAST step: "x.(T).m()" yields the method's result, not
+// the assertion's, and answering yes for it would admit a comma-ok form that means
+// nothing.
 func (f *File) isTypeAssertion(n Node) bool {
-	_, _, ok := f.typeAssertion(n)
-	return ok
+	fac, isFac := f.soleFactor(n)
+	if !isFac {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	last := len(steps) - 1
+	if last < 0 || steps[last].sym != Selector {
+		return false
+	}
+	for c := range it(steps[last].ast) {
+		if c.sym == Type {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *File) soleFactor(n Node) (Node, bool) {

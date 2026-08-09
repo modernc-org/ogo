@@ -37,6 +37,80 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// The comma-ok type assertion accepts an interface EXPRESSION as its
+		// operand, not only a name: "if p, ok := rs[i].(*A); ok" is how a dispatch
+		// loop tests an element. The checker refused it first ("2 variables but 1
+		// value", its shape test seeing an assertion only on a name) and the
+		// emitter after that ("multiple assignment requires a single function call
+		// on the right-hand side").
+		//
+		// The operand is bound to a temporary, which an assertion needs anyway --
+		// it reads the operand TWICE, once to test the table and once to take the
+		// data word -- and which makes an operand with a side effect evaluated
+		// once: "calls" below is 1, as in Go.
+		//
+		// The one-value form on an expression, "p := rs[i].(*A)", is a different
+		// path and is still refused; bind the operand to a variable first.
+		//
+		// Every line matches real Go.
+		name: "a comma-ok assertion on an expression",
+		src: `type R interface{ v() int }
+
+type N interface{ nm() string }
+
+type A struct{ n int }
+
+func (a *A) v() int { return a.n }
+
+func (a *A) nm() string { return "a" }
+
+type B struct{ m int }
+
+func (b *B) v() int { return b.m }
+
+type Box struct{ r R }
+
+var calls int
+
+func mk(r R) R {
+	calls++
+	return r
+}
+
+func main() {
+	var x A
+	var y B
+	x.n = 4
+	y.m = 9
+	var rs []R = make([]R, 2)
+	rs[0] = &x
+	rs[1] = &y
+
+	for i := 0; i < 2; i++ {
+		if p, ok := rs[i].(*A); ok {
+			println("A", p.n)
+		} else {
+			println("not A")
+		}
+		if q, ok := rs[i].(N); ok {
+			println("N", q.nm())
+		} else {
+			println("not N")
+		}
+	}
+
+	var bx Box
+	bx.r = &y
+	p, ok := bx.r.(*B)
+	println("field", ok, p.m)
+
+	r2, ok2 := mk(rs[0]).(*A)
+	println("call", ok2, r2.n, calls)
+}
+`,
+		want: "A 4\nN a\nnot A\nnot N\nfield true 9\ncall true 4 1\n",
+	},
+	{
 		// An interface-to-interface question -- "case N:" in a type switch, and the
 		// assertion "r.(N)" -- asks which concrete types satisfy BOTH interfaces,
 		// and asked it with a direct method lookup that a PROMOTED method is

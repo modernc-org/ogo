@@ -4228,30 +4228,80 @@ func (e *emitter) assertionSteps(operand string, allSteps []Node) (iface, target
 		return "", "", false, nil, false
 	}
 	rest = steps[1:]
-	steps = steps[:1]
+	if iface, ok = e.varType(operand); !ok || !e.isIfaceCType(iface) {
+		return "", "", false, nil, false
+	}
+	target, targetIsIface, ok = e.assertedTargetC(steps[0])
+	if !ok {
+		return "", "", false, nil, false
+	}
+	return iface, target, targetIsIface, rest, true
+}
+
+// assertedTargetC reads the type a ".(T)" selector asserts, as the C type the
+// assertion yields. It is the half of an assertion that does not depend on the
+// operand, which is what lets a bound operand share it.
+func (e *emitter) assertedTargetC(sel Node) (target string, targetIsIface, ok bool) {
 	var typeAST []int32
-	for c := range it(steps[0].ast) {
+	for c := range it(sel.ast) {
 		if c.sym == Type {
 			typeAST = c.ast
 		}
 	}
 	if typeAST == nil {
-		return "", "", false, nil, false
-	}
-	if iface, ok = e.varType(operand); !ok || !e.isIfaceCType(iface) {
-		return "", "", false, nil, false
+		return "", false, false
 	}
 	ct := e.cType(typeAST)
 	// An INTERFACE target, `v.(T)`. Written without a star -- `*T` would be a
 	// pointer TO an interface -- so it is the unpointered case, and the one whose
 	// result is another interface value rather than the pointer that went in.
 	if e.isIfaceCType(ct) {
-		return iface, ct, true, rest, true
+		return ct, true, true
 	}
 	if !e.isPointer(ct) {
-		return "", "", false, nil, false
+		return "", false, false
 	}
-	return iface, e.elemType(ct), false, rest, true
+	return e.elemType(ct), false, true
+}
+
+// bindAssertionOperand lowers "<expr>.(T)" whose operand is NOT a plain name --
+// "rs[i].(T)", "b.r.(T)", "mk().(T)" -- by binding the operand to a temporary and
+// answering with that temporary's name. Everything below an assertion reads the
+// operand by name and reads it TWICE (once to test the table, once to take the
+// data word), so a name is what it needs; binding is also what makes an operand
+// with a side effect evaluated once.
+//
+// It EMITS, so it may be called only from a statement context, and only once the
+// caller knows the expression really is an assertion.
+func (e *emitter) bindAssertionOperand(ast []int32) (operand, iface, target string, targetIsIface, ok bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != Factor {
+		return "", "", "", false, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", "", "", false, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	last := len(steps) - 1
+	if last < 1 || steps[last].sym != Selector {
+		return "", "", "", false, false // no operand steps: the plain-name path owns it
+	}
+	text, ctype, _, okChain := e.chainCText(e.src(kids[0].tok), steps[:last])
+	if !okChain || !e.isIfaceCType(ctype) {
+		return "", "", "", false, false
+	}
+	if target, targetIsIface, ok = e.assertedTargetC(steps[last]); !ok {
+		return "", "", "", false, false
+	}
+	tmp := e.newTmp()
+	e.ind()
+	e.emit(ctype + " " + tmp + " = " + text + ";\n")
+	e.locals[tmp] = ctype
+	return tmp, ctype, target, targetIsIface, true
 }
 
 // assertOKC renders the test an assertion asks: the value carries this concrete
@@ -16393,7 +16443,14 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	// "v, ok := x.(T)": no call, and the two values are a cast and a comparison.
 	// The order matters -- v is the zero value when the assertion does not hold, as
 	// in Go -- so ok is computed first and v reads it.
-	if operand, iface, target, isIface, isAssert := e.typeAssertion(rhs); isAssert {
+	operand, iface, target, isIface, isAssert := e.typeAssertion(rhs)
+	if !isAssert {
+		// The operand may be an expression rather than a name, in which case it is
+		// bound first and the assertion reads the binding. bindAssertionOperand
+		// decides for itself and emits nothing unless it answers yes.
+		operand, iface, target, isIface, isAssert = e.bindAssertionOperand(rhs)
+	}
+	if isAssert {
 		if len(targets) != 2 {
 			e.fail("a type assertion yields one value, or two in the comma-ok form")
 			return
