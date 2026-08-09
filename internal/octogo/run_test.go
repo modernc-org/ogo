@@ -37,6 +37,65 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A shift by a count that is not a compile-time constant, over every integer
+		// width and every width of count. It goes through the guarded helper, which
+		// is what makes a shift mean in C what it means in Go -- a count at or past
+		// the value's width gives 0, or -1 for an arithmetic right shift of a
+		// negative value, where C would take the count modulo the width.
+		//
+		// Nothing here had a test of its own, and TWO backend faults were living in
+		// the gap. The 64-bit left shift came back wrong for every variable count,
+		// its helper casting a 64-bit expression back to a 64-bit type; and a
+		// 64-bit value written as an EXPRESSION with a narrower count -- the
+		// "(s<<62)>>n32" line -- had the count passed in one slot where two were
+		// wanted, so the callee read its high word out of the frame and shifted by
+		// garbage, or panicked on a count that came out negative. Both are worked
+		// around in shiftHelperDef and shiftCountC.
+		//
+		// Every line matches real Go, which is where the expected output came from,
+		// and every line has been read off a P2-EDGE.
+		name: "shift by a variable count",
+		src: `func main() {
+	var v int64 = 81985529216486895
+	var w int64 = -81985529216486895
+	var u uint64 = 18364758544493064720
+	var n32 int32 = 3
+	var n64 int64 = 3
+	var nu uint = 3
+	var s int64 = 1
+
+	println(v<<n32, v<<n64, v<<nu)
+	println(v>>n32, w>>n32, u>>n32)
+
+	var k int = 63
+	println(v<<k, w>>k, u>>k)
+	k = 64
+	println(v<<k, w>>k, u>>k)
+	k = 100
+	println(v<<k, w>>k, u>>k)
+
+	println((s<<62)>>n32, (v+v)>>n32, (u+u)>>n32)
+
+	var c int64 = 1
+	c <<= n32
+	c >>= n32
+	println(c)
+
+	var e uint32 = 3000000000
+	var f uint8 = 200
+	println(e<<n32, e>>n32, f<<n32, f>>n32)
+}
+`,
+		want: "655884233731895160 655884233731895160 655884233731895160\n" +
+			"10248191152060861 -10248191152060862 2295594818061633090\n" +
+			"-9223372036854775808 -1 1\n" +
+			"0 -1 0\n" +
+			"0 -1 0\n" +
+			"576460752303423488 20496382304121723 2285346626909572228\n" +
+			"1\n" +
+			"2525163520 375000000 64 25\n",
+	},
+	{
 		// int and uint are types of their OWN, distinct from int32 and uint32 even
 		// though all four are 32 bits wide here, while byte and rune are ALIASES of
 		// uint8 and int32 and so mix with them freely. A rune literal defaults to
@@ -83,7 +142,7 @@ func main() {
 	var cnt uint = 3
 	var v32 int32 = 5
 	var v64 int64 = 5
-	println(v32<<cnt, v64<<3, n<<cnt, b>>1)
+	println(v32<<cnt, v64<<cnt, n<<cnt, b>>1)
 
 	var w8 int8 = 100
 	var w64 uint64 = 1 << 40
@@ -132,14 +191,9 @@ func main() {
 	scale := 50 * one
 	println(take32(scale), take32(fracBits*one))
 
-	// A shift keeps the type being SHIFTED, whatever the count is typed as. The
-	// value shifted by the VARIABLE count is 32-bit on purpose: flexcc miscompiles
-	// a 64-bit shift by a variable count (it is correct by a constant one, and
-	// "v * 8" is correct), so a 64-bit one here would be testing the backend's bug
-	// rather than this rule.
+	// A shift keeps the type being SHIFTED, whatever the count is typed as.
 	var cnt uint = 3
-	var w32 int32 = 5
-	println(w32<<cnt, v<<3, 1<<cnt)
+	println(v<<cnt, 1<<cnt)
 }
 `,
 		want: "1099511627777 1099511627777\n" +
@@ -147,7 +201,7 @@ func main() {
 			"1.5 1.5\n" +
 			"3000000001 3000000001\n" +
 			"3276800 1048576\n" +
-			"40 8796093022208 8\n",
+			"8796093022208 8\n",
 	},
 	{
 		name: "arithmetic and control flow",

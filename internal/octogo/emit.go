@@ -2509,7 +2509,14 @@ func shiftHelperDef(op, ctype string, checks bool) string {
 		if v, ok := cUnsignedOf[ctype]; ok {
 			u = v
 		}
-		body += fmt.Sprintf("\tif (%s) return 0;\n\treturn (%s)((%s)v << n);\n", cmp, ctype, u)
+		// The shifted value is bound to a variable before the cast back. flexcc
+		// miscompiles a cast to a 64-bit type applied to a 64-bit EXPRESSION (see
+		// doc/shift64-by-variable.c and the div helper, which routes around the same
+		// fault), and "(int64_t)((uint64_t)v << n)" is exactly that shape: every
+		// 64-bit left shift by a variable count came back wrong on the target while
+		// the right shift, which needs no cast, was right. Casting a VARIABLE is
+		// fine, so the temporary is the whole fix.
+		body += fmt.Sprintf("\tif (%s) return 0;\n\t%s t = (%s)v << n;\n\treturn (%s)t;\n", cmp, u, u, ctype)
 	case cUnsignedOf[ctype] != "": // a signed right shift keeps the sign
 		body += fmt.Sprintf("\tif (%s) return v < 0 ? -1 : 0;\n\treturn v >> n;\n", cmp)
 	default:
@@ -13419,7 +13426,7 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		switch {
 		case haveType && e.shiftNeedsGuard(op, kids[i-1], rhs):
 			fn := e.needShift(e.opText(op.ast), e.underlyingCType(ctype))
-			text = fn + "(" + text + ", " + rhsText + ")"
+			text = fn + "(" + text + ", " + e.shiftCountC(rhsText, rhs.ast) + ")"
 		case haveType && e.divNeedsGuard(op, kids[i-1], rhs):
 			fn := e.needDiv(e.opText(op.ast), e.underlyingCType(ctype))
 			text = fn + "(" + text + ", " + rhsText + ")"
@@ -15962,7 +15969,34 @@ func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 	} else {
 		e.needDiv(op, e.underlyingCType(ctype))
 	}
-	return text + " = " + fn + "(" + text + ", " + e.captureC(func() { e.emitExpr(t.rhs) }) + ")", true
+	rhsText := e.captureC(func() { e.emitExpr(t.rhs) })
+	if isShift {
+		rhsText = e.shiftCountC(rhsText, t.rhs)
+	}
+	return text + " = " + fn + "(" + text + ", " + rhsText + ")", true
+}
+
+// shiftCountC renders a guarded shift's COUNT argument, widening it to the
+// int64_t the helper declares when its own type is narrower.
+//
+// flexcc does not widen it itself: given a 64-bit EXPRESSION for the value and a
+// narrower count, it passes one slot where two are wanted -- it says so, "Bad
+// number of parameters in call to ogo_shr_int64_t: expected 4 found 3" -- and the
+// callee reads the count's high word from whatever was next in the frame. What ran
+// was a shift by a garbage count, or a panic for a count that came out negative.
+// A plain variable for the value escapes it, which is why every shift written the
+// ordinary way was right and only "(s << 62) >> m" was wrong.
+//
+// The cast is written only where the count is KNOWN to be narrower. A count that
+// is already 64 bits needs none, and casting one would step into the other fault
+// this backend has -- a cast to a 64-bit type applied to a 64-bit expression, the
+// very thing shiftHelperDef binds a temporary to avoid.
+func (e *emitter) shiftCountC(text string, rhs []int32) string {
+	if ct, ok := e.inferCType(rhs); ok && cIntWidths[e.underlyingCType(ct)] == 64 {
+		return text
+	}
+	e.includes["stdint.h"] = true
+	return "(int64_t)(" + text + ")"
 }
 
 // divNeedsGuard1 is divNeedsGuard for a value whose C type is already known.

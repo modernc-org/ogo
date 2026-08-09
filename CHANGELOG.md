@@ -63,16 +63,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A composite literal with a value of the wrong type is refused**, where it used
   to compile and write the value's bytes into the field.
 
-### Known issues
+- **A 64-bit shift by a variable count was miscompiled on the target**, and is
+  fixed. `v << n` on an `int64` or `uint64` with a count that is not a compile-time
+  constant came back wrong on a P2 for every count, and `(v << 62) >> n` could
+  panic with "negative shift amount" for a count of 3. Two backend faults were
+  behind it, neither about shifting: a cast to a 64-bit type applied to a 64-bit
+  expression (the left-shift helper's `(int64_t)((uint64_t)v << n)`, which is why
+  the right shift was right all along), and an argument narrower than an `int64_t`
+  parameter not being widened when another argument at the call is a 64-bit
+  expression, so the callee read the count's high word out of the frame. Both are
+  routed around; `doc/shift64-by-variable.c` is the reproducer for each.
 
-- **A 64-bit shift by a variable count is miscompiled on the target.** `v << n` and
-  `v >> n` on an `int64` or `uint64`, where `n` is not a compile-time constant,
-  produce garbage on a P2; the same shift by a constant count is correct, and so is
-  multiplying by the equivalent power of two. It is a backend fault, present since
-  64-bit integers shipped and found by a new test rather than caused by one:
-  `doc/shift64-by-variable.c` is the reproducer, and the host C compiler gets every
-  case right, which is why it went unseen. Working around it means shifting in
-  32-bit halves, which is not built yet.
+  It had been broken since 64-bit integers shipped. A run case did shift an `int64`
+  by a variable, but only by a count past the width, so the guard returned before
+  reaching the fault — the shape was covered and the path was not.
 
 ## v0.23.0
 
