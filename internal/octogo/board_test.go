@@ -108,44 +108,46 @@ func TestOnBoardMultiPkg(t *testing.T) {
 // defects were turned off (see internal/build): 320 subtests, no failure and no
 // skip. Widen it again to hunt -- that sweep is how both defects were found.
 //
-// SWEPT TO 400 ON 2026-08-09, AND SEEDS 74 AND 323 FAIL ON THE BOARD -- a third
-// backend defect, live, not covered by the two flags. Both compute the wrong
-// checksum on a P2 and the right one on the host, so the C is right and the
-// target's compiler is not; the compiler at 7113ce0 miscompiles them identically,
-// so they predate the work that found them. To reproduce:
+// SWEPT TO 400 ON 2026-08-09/10, AND SEEDS 74 AND 323 FAIL ON THE BOARD. They are
+// TWO defects, not one, and only one of them is ours to wait on:
+//
+//   - Seed 74 is a division by a CONSTANT miscompiled next to a never-taken call.
+//     Reduced to 25 lines in doc/const-divide-miscompile.c. The pinned backend gets
+//     it wrong and spin2cpp MASTER GETS IT RIGHT, so it is already fixed upstream
+//     and there is nothing to report -- what would clear it here is regenerating
+//     internal/flexcc once a release carries the fix.
+//   - Seed 323 is still wrong on master (identically wrong, same value), so it is
+//     live upstream and is the one worth reporting. Reduction in progress.
+//
+// Both compute the wrong checksum on a P2 and the right one on the host, so the
+// emitted C is right and the target's compiler is not; the compiler at 7113ce0
+// miscompiles both identically, so they predate the work that found them. To
+// reproduce either:
 //
 //	ogo smith -seed 74 > prog.ogo    # then strip the checksum guard, print the
 //	                                 # value, and compare host against board
 //
-// What is known, from building the emitted C directly with the in-repo flexcc
-// (a ~15-line main calling flexcc.Main lets any flags be tried):
+// What is known, from building the emitted C directly with a ~15-line driver
+// calling flexcc.Main, which lets any flags be tried in about ten seconds each:
 //
 //   - -O0 computes both correctly, so it is the optimizer.
 //   - Seed 74 is corrected by -Ono-regs; seed 323 is NOT -- it merely changes to a
-//     DIFFERENT wrong value -- so more than one pass is involved and this is not
-//     the same shape as the two already worked around.
+//     DIFFERENT wrong value. That difference is what first suggested two defects,
+//     and testing against master confirmed it.
 //   - No cheaper single pass helps: no-local-reuse, no-cse, no-const,
 //     no-aggressive-mem, no-remove-dead, no-branch-convert, no-tail-calls,
 //     no-loop-basic, no-loop-reduce, no-inline-single and
 //     no-merge-duplicate-functions each leave seed 74 wrong.
 //   - -Ono-regs is not adoptable anyway: it was measured at 68% more code (see
 //     internal/build), and it does not fix seed 323.
-//   - Seed 74 is a HEISENBUG. Printing the operands of the expression that
-//     diverges makes it compute correctly, so it cannot be watched -- reduce it
-//     with a delta debugger over "host FINAL != board FINAL", never by adding
-//     prints.
+//   - Both are HEISENBUGS. Printing the operands of the expression that diverges
+//     makes them compute correctly, so they cannot be watched -- reduce with a
+//     delta debugger over "gcc output != board output", never by adding prints.
 //
 // smithSeeds stays at 24 so this suite remains a fast, green sample. The failing
 // seeds are NOT excused here: excusing a backend defect in outgrewCog is exactly
 // what was removed so a recurrence fails loudly, and the same reasoning applies to
 // a skip list. They are recorded here instead, to be picked up deliberately.
-//
-// Widening it to hunt for new bugs eventually runs into a target limit rather than
-// a compiler one: a generated program is one very long main, and past some size it
-// no longer fits the cog's code window ("fit 480 failed"). Such a seed is SKIPPED,
-// not failed -- see outgrewCog. Generated programs sit close enough to that ceiling
-// that adding to the generator pushes some seed over it, so this must not be a
-// failure or the fuzzer's coverage becomes hostage to program size.
 const smithSeeds = 24
 
 // outgrewCog reports whether a build failed because the program does not fit the
