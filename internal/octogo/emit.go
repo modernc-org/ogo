@@ -4264,6 +4264,51 @@ func (e *emitter) assertedTargetC(sel Node) (target string, targetIsIface, ok bo
 	return e.elemType(ct), false, true
 }
 
+// assertionSplit finds a type assertion that is the LAST step of a Factor's suffix
+// and splits the suffix around it: the steps BEFORE it reach the operand, and the
+// selector itself names the asserted type. It answers only when there is at least
+// one step before -- an assertion directly on the name is the plain path's, and
+// this is the shape that path cannot read.
+func (e *emitter) assertionSplit(kids []Node) (base string, prefix []Node, sel Node, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, Node{}, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	last := len(steps) - 1
+	if last < 1 || steps[last].sym != Selector {
+		return "", nil, Node{}, false
+	}
+	for c := range it(steps[last].ast) {
+		if c.sym == Type {
+			return e.src(kids[0].tok), steps[:last], steps[last], true
+		}
+	}
+	return "", nil, Node{}, false
+}
+
+// boundAssertionKids is bindAssertionOperand for a Factor in EXPRESSION position:
+// the binding goes to the statement prologue rather than being written where it
+// stands, since an expression has nowhere to put a declaration. The prologue is
+// carried into a loop body by capturePrologue where that matters, so an operand
+// that changes per iteration is still bound per iteration.
+func (e *emitter) boundAssertionKids(kids []Node) (operand, iface, target string, targetIsIface, ok bool) {
+	base, prefix, sel, ok := e.assertionSplit(kids)
+	if !ok {
+		return "", "", "", false, false
+	}
+	text, ctype, _, okChain := e.chainCText(base, prefix)
+	if !okChain || !e.isIfaceCType(ctype) {
+		return "", "", "", false, false
+	}
+	if target, targetIsIface, ok = e.assertedTargetC(sel); !ok {
+		return "", "", "", false, false
+	}
+	tmp := e.newTmp()
+	e.prologue = append(e.prologue, ctype+" "+tmp+" = "+text+";\n")
+	e.locals[tmp] = ctype
+	return tmp, ctype, target, targetIsIface, true
+}
+
 // bindAssertionOperand lowers "<expr>.(T)" whose operand is NOT a plain name --
 // "rs[i].(T)", "b.r.(T)", "mk().(T)" -- by binding the operand to a temporary and
 // answering with that temporary's name. Everything below an assertion reads the
@@ -17487,6 +17532,17 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				return target + "*", true
 			}
+			// The same for an assertion on an EXPRESSION. Its type is the asserted
+			// type whatever the operand is, so this needs only the selector and
+			// never lowers the operand -- typing must not emit.
+			if _, _, sel, ok := e.assertionSplit(kids); ok {
+				if target, isIface, ok := e.assertedTargetC(sel); ok {
+					if isIface {
+						return target, true
+					}
+					return target + "*", true
+				}
+			}
 			// `q := e.(*P).xs` -- a SUFFIX after the assertion. The chain is walked
 			// from what the assertion yields, which is a pure question and needs no
 			// temporary; the emitter binds one, this only has to agree about types.
@@ -18453,7 +18509,13 @@ func (e *emitter) emitExprNode(n Node) {
 			// does. The check is a statement, so it goes in the prologue and the
 			// expression is left as the cast -- which puts the panic ahead of every
 			// position an assertion can stand in, not just a declaration.
-			if operand, iface, target, isIface, ok := e.typeAssertionKids(kids); ok {
+			operand, iface, target, isIface, ok := e.typeAssertionKids(kids)
+			if !ok {
+				// The operand is an expression rather than a name, "rs[i].(*A)":
+				// bind it first and assert on the binding.
+				operand, iface, target, isIface, ok = e.boundAssertionKids(kids)
+			}
+			if ok {
 				if isIface {
 					// An INTERFACE target: the result is another interface value, and
 					// building one is statements rather than a cast, so it goes to a

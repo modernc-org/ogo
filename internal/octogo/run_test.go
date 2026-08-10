@@ -106,9 +106,23 @@ func main() {
 
 	r2, ok2 := mk(rs[0]).(*A)
 	println("call", ok2, r2.n, calls)
+
+	// The ONE-VALUE form takes an expression too. It runs through the expression
+	// emitter rather than the assignment path, so its binding goes to the
+	// statement prologue -- which is carried into a loop body, so an operand that
+	// changes per iteration is bound per iteration.
+	one := rs[0].(*A)
+	println("one", one.n)
+	fld := bx.r.(*B)
+	println("one field", fld.m)
+	for i := 0; i < 2; i++ {
+		it := rs[0].(N)
+		println("one loop", i, it.nm())
+	}
 }
 `,
-		want: "A 4\nN a\nnot A\nnot N\nfield true 9\ncall true 4 1\n",
+		want: "A 4\nN a\nnot A\nnot N\nfield true 9\ncall true 4 1\n" +
+			"one 4\none field 9\none loop 0 a\none loop 1 a\n",
 	},
 	{
 		// An interface-to-interface question -- "case N:" in a type switch, and the

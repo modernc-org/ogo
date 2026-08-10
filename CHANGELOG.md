@@ -72,11 +72,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   not count as implementing `R`, no candidate was left to test, and the test became
   a constant false -- the case skipped and the assertion answering no, silently,
   for a value that satisfies both.
-- **The comma-ok type assertion accepts an expression operand**, `p, ok :=
-  rs[i].(*A)` and `q, ok := b.r.(N)`, where only a name worked before. The operand
-  is bound once, so one with a side effect is evaluated once. The one-value form on
-  an expression, `p := rs[i].(*A)`, is a different path and is still refused; bind
-  the operand to a variable first.
+- **A type assertion accepts an expression operand** in both forms, `p, ok :=
+  rs[i].(*A)` and `p := b.r.(*A)`, where only a name worked before. The operand is
+  bound once, so one with a side effect is evaluated once; in the one-value form
+  the binding goes to the statement prologue, which is carried into a loop body, so
+  an operand that changes per iteration is bound per iteration.
 - **A type switch may switch on any interface expression**, not only on a name:
   `switch t := shapes[i].(type)` is how a dispatch loop is written, and an index or
   a field operand used to be refused -- with a message that named neither the limit
