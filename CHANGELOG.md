@@ -116,7 +116,11 @@ shipped section tells a reader on that version that they have behaviour they do 
     reduced to 25 lines in `doc/const-divide-miscompile.c`. spin2cpp master already
     computes it correctly, so what would clear it here is regenerating
     `internal/flexcc` once a release carries the fix.
-  - Seed 323 is still wrong on master and is being reduced for an upstream report.
+  - Seed 323 is an **unwritten local array element meeting a general multiply**,
+    reduced to eight lines in `doc/array-multiply-miscompile.c`. It is wrong on
+    master too, so it is live upstream. It is close kin to flexprop issue 103 and
+    strictly simpler than that one -- no call and no global -- and the #103 fix does
+    not cover it: master corrects #103's reproducer and leaves this one wrong.
 
   No affordable flag covers either: `-Ono-regs` corrects seed 74 but costs 68% more
   code and does not correct 323, and eleven other passes turned off individually

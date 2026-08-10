@@ -116,8 +116,12 @@ func TestOnBoardMultiPkg(t *testing.T) {
 //     it wrong and spin2cpp MASTER GETS IT RIGHT, so it is already fixed upstream
 //     and there is nothing to report -- what would clear it here is regenerating
 //     internal/flexcc once a release carries the fix.
-//   - Seed 323 is still wrong on master (identically wrong, same value), so it is
-//     live upstream and is the one worth reporting. Reduction in progress.
+//   - Seed 323 is an unwritten local array element meeting a general multiply.
+//     Reduced to EIGHT lines in doc/array-multiply-miscompile.c. Master is wrong
+//     too, so it is live upstream and is the one to report. It is close kin to
+//     flexprop issue 103 and strictly simpler than that one -- no call, no global
+//     -- and the #103 fix does not cover it: master corrects #103's reproducer and
+//     not this.
 //
 // Both compute the wrong checksum on a P2 and the right one on the host, so the
 // emitted C is right and the target's compiler is not; the compiler at 7113ce0
