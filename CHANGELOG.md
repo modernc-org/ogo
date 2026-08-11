@@ -82,6 +82,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   a field operand used to be refused -- with a message that named neither the limit
   nor the workaround. The operand is bound to a temporary, which also makes it
   evaluated exactly once however many cases test it, as in Go.
+- **Two interface values compared equal when they were not.** An interface is a
+  struct here and was registered as one with no fields -- its words are the data
+  pointer and the table, not anything the source declared -- so the struct-equality
+  helper compared nothing and returned whatever was in the return register. Two
+  interfaces holding different pointers came out equal, silently. They now compare
+  by dynamic type and value, as Go does.
+- **nil works as an interface value.** `i == nil`, `i = nil` and `return nil` from
+  a function returning an interface each failed to compile, in three different
+  ways; only `var i I` with no initializer was right, which is why the gap held --
+  the common spelling of the zero interface was the one that worked.
 - **A constant that fits an unsigned int but not a signed one no longer widens to
   64 bits.** `0xFFFFFFFF` and anything else above 2^31 was written with an `LL`
   suffix, which made `m ^ 0xFFFFFFFF` for a `uint32` `m` a `long long` -- and the

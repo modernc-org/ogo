@@ -3982,6 +3982,14 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 // the variable it was made from must outlive it. That is recorded where the ordinary
 // provenance mark is, so every sink already asks about it.
 func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
+	if e.isNilExpr(rhs) {
+		// The ZERO interface: no table and no data. It is written as two stores
+		// rather than as a compound literal, which this target's C compiler refuses
+		// on the right of an assignment (see emitGo). Without this case nil fell
+		// through to "an interface holds a pointer: write the address of a
+		// variable", which is true of a concrete value and not of nil.
+		return target + ".data = 0; " + target + ".vt = 0;\n"
+	}
 	if ct, ok := e.inferCType(rhs); ok && ct == iface {
 		// Already an interface value: the same two words, copied. A variable's
 		// provenance travels with them, since what the copy points at is what the
@@ -13263,8 +13271,13 @@ func (e *emitter) exprIsLiteral(ast []int32) bool {
 // integer 0, which is only nil's pointer form.
 func (e *emitter) emitReturnValue(i int, ex Node) {
 	if i < len(e.curResultTypes) {
-		if e.isNilExpr(ex.ast) && e.isSliceCType(e.curResultTypes[i]) {
-			e.emit("(" + e.curResultTypes[i] + "){0}")
+		// A nil slice and a nil INTERFACE are both the all-zero value of a struct,
+		// and a compound literal is allowed where a return's value goes (unlike the
+		// right of an assignment, which this target's C compiler refuses). Without
+		// the interface half, "return nil" from a function returning one emitted
+		// the null pointer constant, "return 0" for a two-word struct.
+		if ct := e.curResultTypes[i]; e.isNilExpr(ex.ast) && (e.isSliceCType(ct) || e.isIfaceCType(ct)) {
+			e.emit("(" + ct + "){0}")
 			return
 		}
 		// A concrete value returned as an interface is wrapped here, the result
@@ -15296,7 +15309,11 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// assignment, and the pair decides which table.
 	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
 		if ct, ok := e.varType(base); ok && e.isIfaceCType(ct) {
-			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 && !e.isNilExpr(rhs[0].ast) {
+			// nil is not excluded here: ifaceStoreC writes the ZERO interface for
+			// it. Leaving it out sent "j = nil" down the ordinary path, which
+			// assigns the null POINTER constant -- "j = 0" for a two-word struct,
+			// which the host compiler refuses outright and this one miscounts.
+			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
 				if text := e.ifaceStoreC(e.varRef(base), ct, rhs[0].ast); text != "" {
 					e.ind()
 					e.emit(text)
@@ -18058,7 +18075,63 @@ func (e *emitter) structCompareAt(kids []Node, i int) (op, ctype string, ok bool
 	if _, isStruct := e.structs[ct]; !isStruct {
 		return "", "", false
 	}
+	if e.isIfaceCType(ct) {
+		// An interface is a struct here, and it IS registered as one -- with no
+		// fields, since its members are the data word and the table rather than
+		// anything the source declared. The struct helper would therefore compare
+		// NOTHING and return whatever was in the return register, which is how two
+		// interfaces holding different pointers compared equal. ifaceCompareAt owns
+		// this case.
+		return "", "", false
+	}
 	return op, ct, true
+}
+
+// ifaceCompareAt reports whether kids[i..i+2] compares INTERFACE values for
+// equality -- two of them, or one against nil -- and, if so, the operator and the
+// two operands.
+//
+// Go compares interface values by dynamic type AND value, which here is the table
+// pointer and the data pointer; against nil it is the zero interface, which carries
+// no table. Neither is what comparing the two structs member by member would give,
+// even if the struct helper knew the members.
+func (e *emitter) ifaceCompareAt(kids []Node, i int) (op string, l, r Node, ok bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return "", Node{}, Node{}, false
+	}
+	switch op = e.opText(kids[i+1].ast); op {
+	case "==", "!=":
+	default:
+		return "", Node{}, Node{}, false
+	}
+	l, r = kids[i], kids[i+2]
+	lct, lok := e.inferCType(l.ast)
+	rct, rok := e.inferCType(r.ast)
+	switch {
+	case lok && e.isIfaceCType(lct) && (rok && e.isIfaceCType(rct) || e.isNilExpr(r.ast)):
+		return op, l, r, true
+	case rok && e.isIfaceCType(rct) && e.isNilExpr(l.ast):
+		return op, r, l, true // the interface first, so the nil case reads one way
+	}
+	return "", Node{}, Node{}, false
+}
+
+// emitIfaceCompareTriple emits an interface equality. Each operand is rendered
+// ONCE -- both words of it are read, and an operand that is a call must not be
+// evaluated twice -- which emitStructOperand's hoist already arranges.
+func (e *emitter) emitIfaceCompareTriple(op string, l, r Node) {
+	lt := e.captureC(func() { e.emitStructOperand(l) })
+	if e.isNilExpr(r.ast) {
+		// The zero interface carries no table, so that word alone answers it.
+		e.emit("(" + lt + ".vt " + op + " 0)")
+		return
+	}
+	rt := e.captureC(func() { e.emitStructOperand(r) })
+	join, eq := " && ", "=="
+	if op == "!=" {
+		join, eq = " || ", "!="
+	}
+	e.emit("(" + lt + ".vt " + eq + " " + rt + ".vt" + join + lt + ".data " + eq + " " + rt + ".data)")
 }
 
 // isNilExpr reports whether an expression is exactly the predeclared nil.
@@ -18272,6 +18345,11 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 		}
 		if op, a, ok := e.arrayCompareAt(kids, i); ok {
 			e.emitArrayCompareTriple(kids[i], kids[i+2], op, a)
+			i += 3
+			continue
+		}
+		if op, l, r, ok := e.ifaceCompareAt(kids, i); ok {
+			e.emitIfaceCompareTriple(op, l, r)
 			i += 3
 			continue
 		}

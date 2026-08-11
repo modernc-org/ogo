@@ -125,6 +125,79 @@ func main() {
 			"one 4\none field 9\none loop 0 a\none loop 1 a\n",
 	},
 	{
+		// Interface values compared, and nil as an interface value.
+		//
+		// Comparing two of them was a SILENT WRONG ANSWER: an interface is a struct
+		// here and is registered as one, but with no fields -- its words are the
+		// data pointer and the table, not anything the source declared -- so the
+		// struct helper compared NOTHING and returned whatever was in the return
+		// register. Two interfaces holding different pointers came out equal. Go
+		// compares the dynamic type AND the value, which is what the two words are.
+		//
+		// nil in the other three positions did not compile at all, each in its own
+		// way: "i == nil" called the struct helper with the null POINTER constant,
+		// "i = nil" assigned 0 to a two-word struct, and "return nil" returned it.
+		// Only "var i I" (no initializer) was right, which is why the gap held: the
+		// common spelling of the zero interface was the one that worked.
+		//
+		// Every line matches real Go.
+		name: "interface equality and nil",
+		src: `type I interface{ m() int }
+
+type J interface{ m() int }
+
+type T struct{ n int }
+
+func (t *T) m() int { return t.n }
+
+type U struct{ n int }
+
+func (u *U) m() int { return u.n }
+
+var a T
+var b T
+var c U
+
+func pick(k int) I {
+	switch k {
+	case 0:
+		return &a
+	case 1:
+		return &c
+	}
+	return nil
+}
+
+func main() {
+	a.n, b.n, c.n = 1, 2, 3
+
+	var i I
+	println(i == nil, i != nil)
+	i = &a
+	println(i == nil, i != nil)
+	i = nil
+	println(i == nil, i != nil)
+
+	var z I = nil
+	println(z == nil)
+
+	var x I = &a
+	var y I = &a
+	var w I = &b
+	var v I = &c
+	println(x == y, x == w, x == v, x != w)
+
+	println(nil == i, pick(0) == nil, pick(2) == nil, pick(1) != nil)
+	println(pick(0) == x, pick(1) == v)
+
+	var q J = x
+	println(q.m(), x.m())
+}
+`,
+		want: "true false\nfalse true\ntrue false\ntrue\n" +
+			"true false false true\ntrue false true true\ntrue true\n1 1\n",
+	},
+	{
 		// A constant that does not fit a signed int but DOES fit an unsigned one --
 		// 0xFFFFFFFF, and anything else above 2^31 -- is written with a U suffix, so
 		// it and the expression around it stay 32 bits wide.
