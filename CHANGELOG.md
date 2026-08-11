@@ -18,6 +18,33 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+## v0.24.0
+
+Types this compiler could not tell apart, and a handful of wrong answers nobody was
+looking for.
+
+`int` and `int32` shared one kind, and so did a defined type and the type it is
+defined over, so nothing here could tell a `Celsius` from an `int` or refuse `var y
+int32 = x`. Both are types of their own now, and `var x = expr` — which carried no
+type at all, where `x := expr` has always inferred one — is type-checked like its
+twin. `specs.go` had required those conversions from the start, so this is the
+checker catching up to the spec rather than a change of rule; it is also why this
+release refuses more programs than any before it, all of them programs Go refuses
+too.
+
+Interfaces were wrong from the other end. Two of them compared equal when they held
+different pointers, silently, because an interface is a struct with no fields here
+and the struct-equality helper compared nothing at all. And nil was not an interface
+value in any position except the one everybody writes, `var i I`, which is exactly
+why the gap held for so long.
+
+Most of the rest was found by running ordinary Go-shaped programs under Go and under
+this compiler and diffing the bytes rather than the exit status: a defer inside a
+branch that never ran, printing part of itself from arguments that were never
+written; a value inferred from `1 + v` taking the type of the literal and truncating
+an int64 to 1; and, on hardware, the two backend faults behind every 64-bit shift by
+a variable count.
+
 ### Language
 
 - **`int` and `uint` are types of their own**, distinct from `int32` and `uint32`
