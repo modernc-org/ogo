@@ -125,6 +125,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   compiled. They are now checked against the field's type, and a constant is
   range-checked against it too.
 
+- **A 64-bit shift by a variable count was miscompiled on the target**, and is
+  fixed. `v << n` on an `int64` or `uint64` with a count that is not a compile-time
+  constant came back wrong on a P2 for every count, and `(v << 62) >> n` could
+  panic with "negative shift amount" for a count of 3. Two backend faults were
+  behind it, neither about shifting: a cast to a 64-bit type applied to a 64-bit
+  expression (the left-shift helper's `(int64_t)((uint64_t)v << n)`, which is why
+  the right shift was right all along), and an argument narrower than an `int64_t`
+  parameter not being widened when another argument at the call is a 64-bit
+  expression, so the callee read the count's high word out of the frame. Both are
+  routed around; `doc/shift64-by-variable.c` is the reproducer for each.
+
+  It had been broken since 64-bit integers shipped. A run case did shift an `int64`
+  by a variable, but only by a count past the width, so the guard returned before
+  reaching the fault — the shape was covered and the path was not.
+
 ### Known issues
 
 - **Two more backend optimizer defects**, found by widening the on-board fuzzer
@@ -173,21 +188,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   conversion**, in the eight positions listed above. Every such program was refused
   by Go already; none computed a wrong answer here, the two having one
   representation.
-
-- **A 64-bit shift by a variable count was miscompiled on the target**, and is
-  fixed. `v << n` on an `int64` or `uint64` with a count that is not a compile-time
-  constant came back wrong on a P2 for every count, and `(v << 62) >> n` could
-  panic with "negative shift amount" for a count of 3. Two backend faults were
-  behind it, neither about shifting: a cast to a 64-bit type applied to a 64-bit
-  expression (the left-shift helper's `(int64_t)((uint64_t)v << n)`, which is why
-  the right shift was right all along), and an argument narrower than an `int64_t`
-  parameter not being widened when another argument at the call is a 64-bit
-  expression, so the callee read the count's high word out of the frame. Both are
-  routed around; `doc/shift64-by-variable.c` is the reproducer for each.
-
-  It had been broken since 64-bit integers shipped. A run case did shift an `int64`
-  by a variable, but only by a count past the width, so the guard returned before
-  reaching the fault — the shape was covered and the path was not.
 
 ## v0.23.0
 
