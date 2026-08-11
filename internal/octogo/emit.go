@@ -9285,6 +9285,18 @@ func intCLit(v int64) string {
 	switch {
 	case fitsCInt(v):
 		return strconv.FormatInt(v, 10)
+	case v > 0 && v <= math.MaxUint32:
+		// It does not fit a signed int but does fit an UNSIGNED one, which is 32
+		// bits on this target, so a U suffix is both exact and keeps the constant
+		// -- and the expression around it -- 32 bits wide.
+		//
+		// Spelling it LL instead made "m ^ 0xFFFFFFFF" for a uint32 m a long long,
+		// and the target's C compiler REFUSES the printf that feeds: "Bad number of
+		// parameters in call to _basic_print_unsigned: expected 4 found 5", a
+		// 64-bit argument taking two slots where %u wants one. gcc accepts the same
+		// C, so nothing off-target saw it. The comment on constIntValue below
+		// describes this same hazard reached through a conversion.
+		return strconv.FormatUint(uint64(v), 10) + "U"
 	case v >= 0:
 		return strconv.FormatInt(v, 10) + "LL"
 	default:

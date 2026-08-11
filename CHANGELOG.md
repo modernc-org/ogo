@@ -82,6 +82,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   a field operand used to be refused -- with a message that named neither the limit
   nor the workaround. The operand is bound to a temporary, which also makes it
   evaluated exactly once however many cases test it, as in Go.
+- **A constant that fits an unsigned int but not a signed one no longer widens to
+  64 bits.** `0xFFFFFFFF` and anything else above 2^31 was written with an `LL`
+  suffix, which made `m ^ 0xFFFFFFFF` for a `uint32` `m` a `long long` -- and the
+  target's C compiler refuses the `printf` that feeds, so the build failed outright
+  with "Bad number of parameters in call to `_basic_print_unsigned`". It was never a
+  wrong answer, but it was a build that only failed on a board: gcc accepts the same
+  C, so nothing off-target saw it. Such a constant now carries a `U` suffix and
+  stays 32 bits wide.
 - **A defer inside a branch that never ran still printed part of itself.** A defer
   written in an `if` is replayed under a runtime flag recording whether the branch
   executed, and the flag was written as a statement PREFIX -- `if (flag) f(...);`

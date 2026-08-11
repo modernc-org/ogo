@@ -125,6 +125,51 @@ func main() {
 			"one 4\none field 9\none loop 0 a\none loop 1 a\n",
 	},
 	{
+		// A constant that does not fit a signed int but DOES fit an unsigned one --
+		// 0xFFFFFFFF, and anything else above 2^31 -- is written with a U suffix, so
+		// it and the expression around it stay 32 bits wide.
+		//
+		// It used to be written LL, which made "m ^ 0xFFFFFFFF" for a uint32 m a
+		// long long, and the TARGET C compiler refuses the printf that feeds: "Bad
+		// number of parameters in call to _basic_print_unsigned: expected 4 found
+		// 5", a 64-bit argument taking two slots where %u wants one. The build
+		// failed outright, so it was never a wrong answer -- but only on the target:
+		// gcc accepts the same C, so the host suite was green and nothing said
+		// anything until the program was built for a board.
+		//
+		// The uint64 and int64 lines are here so the widening that IS needed is not
+		// lost with it. Every line matches real Go.
+		name: "a constant that fits only an unsigned int",
+		src: `func main() {
+	var m uint32 = 0xF0F0F0F0
+	println(m&^0x0F0F0F0F, m|0x0F0F0F0F, m^0xFFFFFFFF)
+
+	var h uint32 = 2166136261
+	h ^= 0xFF
+	h *= 16777619
+	println(h)
+
+	var p uint32 = 1
+	println(p + 4294967294)
+
+	var u uint64 = 4294967295
+	println(u+1, u*2)
+
+	var i int64 = 4294967295
+	println(i*2, i+1)
+
+	var n uint32 = 4042322160
+	println(n, n/2)
+}
+`,
+		want: "4042322160 4294967295 252645135\n" +
+			"2047574606\n" +
+			"4294967295\n" +
+			"4294967296 8589934590\n" +
+			"8589934590 4294967296\n" +
+			"4042322160 2021161080\n",
+	},
+	{
 		// An interface-to-interface question -- "case N:" in a type switch, and the
 		// assertion "r.(N)" -- asks which concrete types satisfy BOTH interfaces,
 		// and asked it with a direct method lookup that a PROMOTED method is
