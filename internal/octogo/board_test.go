@@ -121,7 +121,7 @@ func TestOnBoardMultiPkg(t *testing.T) {
 //     too, so it is live upstream and is the one to report. It is close kin to
 //     flexprop issue 103 and strictly simpler than that one -- no call, no global
 //     -- and the #103 fix does not cover it: master corrects #103's reproducer and
-//     not this.
+//     not this. REPORTED as flexprop issue 105 on 2026-08-11.
 //
 // Both compute the wrong checksum on a P2 and the right one on the host, so the
 // emitted C is right and the target's compiler is not; the compiler at 7113ce0

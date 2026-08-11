@@ -121,6 +121,8 @@ shipped section tells a reader on that version that they have behaviour they do 
     master too, so it is live upstream. It is close kin to flexprop issue 103 and
     strictly simpler than that one -- no call and no global -- and the #103 fix does
     not cover it: master corrects #103's reproducer and leaves this one wrong.
+    Reported upstream as
+    [flexprop#105](https://github.com/totalspectrum/flexprop/issues/105).
 
   No affordable flag covers either: `-Ono-regs` corrects seed 74 but costs 68% more
   code and does not correct 323, and eleven other passes turned off individually

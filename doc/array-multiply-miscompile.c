@@ -12,7 +12,12 @@
 //
 // Measured on a P2-EDGE, with the flexcc in internal/flexcc (v7.7.0) and with one
 // built from spin2cpp master (v7.7.0-7-g54a19b1). BOTH are wrong, so unlike
-// doc/const-divide-miscompile.c this is LIVE UPSTREAM and is the one to report.
+// doc/const-divide-miscompile.c this is LIVE UPSTREAM.
+//
+// REPORTED 2026-08-11 as flexprop issue 105. When it is fixed, the fix will be in
+// spin2cpp's sources and NOT in internal/flexcc, which is a transpiled copy pinned
+// to v7.7.0 -- so this file stays the check until that pin moves. Compile it and
+// read the number.
 //
 // It is close kin to flexprop issue 103, whose reproducer is
 // doc/optimizer-miscompile.c -- both are an unwritten local array element meeting a
