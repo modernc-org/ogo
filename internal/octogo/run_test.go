@@ -198,6 +198,49 @@ func main() {
 			"true false false true\ntrue false true true\ntrue true\n1 1\n",
 	},
 	{
+		// nil written into a FIELD, for the two types whose nil is a whole struct
+		// rather than a word. Assigning it to a plain variable was right and
+		// assigning it to a field was not -- the branch that knew about it asked
+		// only about a bare name -- so "h.s = nil" and "h.i = nil" emitted "= 0"
+		// against a three-word header and a two-word interface.
+		//
+		// The indexed base is here because it reaches the field by a different
+		// path again. Every line matches real Go.
+		name: "nil written into a field",
+		src: `type I interface{ m() int }
+
+type T struct{ n int }
+
+func (t *T) m() int { return t.n }
+
+type holder struct {
+	i I
+	s []int
+}
+
+var g T
+var back [2]int
+
+func main() {
+	var h holder
+	println(h.i == nil, h.s == nil)
+	h.i = &g
+	h.s = back[:1]
+	println(h.i == nil, h.s == nil, h.i.m())
+	h.i = nil
+	h.s = nil
+	println(h.i == nil, h.s == nil)
+
+	var arr [2]holder
+	arr[0].i = &g
+	println(arr[0].i == nil, arr[1].i == nil)
+	arr[0].i = nil
+	println(arr[0].i == nil)
+}
+`,
+		want: "true true\nfalse false 0\ntrue true\nfalse true\ntrue\n",
+	},
+	{
 		// A constant that does not fit a signed int but DOES fit an unsigned one --
 		// 0xFFFFFFFF, and anything else above 2^31 -- is written with a U suffix, so
 		// it and the expression around it stay 32 bits wide.

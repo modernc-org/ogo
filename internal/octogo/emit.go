@@ -4159,6 +4159,12 @@ func (e *emitter) addrOfCompositeLit(ast []int32) (ctype string, lit Node, ok bo
 // that need one expression rather than two statements: an argument, and a return.
 // An operand that is already of the interface type is itself.
 func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
+	if e.isNilExpr(rhs) {
+		// The ZERO interface, wherever a VALUE is wanted: a field assignment, an
+		// argument, a return. ifaceStoreC is the sibling for a TARGET being written
+		// member by member, which is what a plain variable assignment does.
+		return "(" + iface + "){0}", true
+	}
 	// Already an interface value -- a variable of one, or a call returning one --
 	// so it is itself: the two words, copied.
 	if ct, ok := e.inferCType(rhs); ok && ct == iface {
@@ -13271,12 +13277,10 @@ func (e *emitter) exprIsLiteral(ast []int32) bool {
 // integer 0, which is only nil's pointer form.
 func (e *emitter) emitReturnValue(i int, ex Node) {
 	if i < len(e.curResultTypes) {
-		// A nil slice and a nil INTERFACE are both the all-zero value of a struct,
-		// and a compound literal is allowed where a return's value goes (unlike the
-		// right of an assignment, which this target's C compiler refuses). Without
-		// the interface half, "return nil" from a function returning one emitted
-		// the null pointer constant, "return 0" for a two-word struct.
-		if ct := e.curResultTypes[i]; e.isNilExpr(ex.ast) && (e.isSliceCType(ct) || e.isIfaceCType(ct)) {
+		// A nil slice is the all-zero header. The interface case is not here: it
+		// belongs to ifaceValueC below, which every position wanting an interface
+		// VALUE goes through, so nil is answered once rather than per position.
+		if ct := e.curResultTypes[i]; e.isNilExpr(ex.ast) && e.isSliceCType(ct) {
 			e.emit("(" + ct + "){0}")
 			return
 		}
@@ -15630,11 +15634,23 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.emitDiscard(rhsAst)
 			return
 		}
-		// `s = nil` resets a slice variable to its zero header, not the integer 0.
-		if e.isNilExpr(rhsAst) && len(fields) == 0 {
-			if ct, ok := e.varType(base); ok && e.isSliceCType(ct) {
+		// `s = nil` resets a slice or an interface to its ZERO VALUE, not to the
+		// integer 0 -- neither is one word. It holds for a field as well as a
+		// variable: asking only about a bare name left "h.s = nil" assigning 0 to a
+		// three-word header, which the host compiler refuses and this one miscounts.
+		if e.isNilExpr(rhsAst) {
+			ct, ok := e.varType(base)
+			if len(fields) != 0 {
+				ct, ok = e.fieldType(base, fields)
+			}
+			switch {
+			case ok && e.isSliceCType(ct):
 				e.ind()
 				e.emit(lhs + " = (" + ct + "){0};\n")
+				return
+			case ok && e.isIfaceCType(ct):
+				e.ind()
+				e.emit(e.ifaceStoreC(lhs, ct, rhsAst))
 				return
 			}
 		}

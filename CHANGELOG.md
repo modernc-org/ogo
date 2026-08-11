@@ -88,6 +88,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   helper compared nothing and returned whatever was in the return register. Two
   interfaces holding different pointers came out equal, silently. They now compare
   by dynamic type and value, as Go does.
+- **nil written into a FIELD works**, for the two types whose nil is a whole struct
+  rather than a word: `h.s = nil` for a slice field and `h.i = nil` for an interface
+  one each emitted `= 0`. Assigning nil to a plain *variable* was right, which is
+  what hid it -- the branch that knew about nil asked only about a bare name.
 - **nil works as an interface value.** `i == nil`, `i = nil` and `return nil` from
   a function returning an interface each failed to compile, in three different
   ways; only `var i I` with no initializer was right, which is why the gap held --
