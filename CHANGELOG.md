@@ -26,6 +26,32 @@ shipped section tells a reader on that version that they have behaviour they do 
   talking to anything with a fixed protocol speed. The host must be reading at the
   new rate by the time anything is written.
 
+- **`p2.ReadByte(timeout)` reads from the serial line** -- the first way IN. Every
+  one of the two dozen intrinsics was output or pins or time, and the three print
+  built-ins only write, so a program could stream measurements at a host and could
+  not be told anything by one. A command protocol, which is what a host talking to
+  an instrument is, could not be written at all.
+
+  It returns the byte as 0..255 or **-1** if the wait ran out, so a caller tests for
+  a negative. A timeout of zero waits forever. They are BINARY milliseconds, 1/1024
+  of a second rather than 1/1000, the toolchain dividing the clock by a shift -- a
+  wait measures about 2.4% short of what its number says, which is fine for a
+  protocol timeout and not fine for keeping time.
+
+  **Nothing is buffered behind it**, and that is the governing fact rather than a
+  caution. Measured on a P2-EDGE at 230400 baud: a loop reading into an array caught
+  all eight bytes of `PING\rOK\r` in order, and the same loop with one `printf` per
+  byte caught four of them -- silently, with nothing reported anywhere. A program
+  that must not miss a byte gives a cog to reading and to nothing else.
+
+  And it must not hand them over on a **channel**, which is the obvious thing to
+  reach for: a channel here is a rendezvous, so the send parks the reader until the
+  far side arrives, and the line does not wait. Measured, that loses every byte of
+  the next two commands while the worker prints the answer to the first. The handover
+  is a single-producer/single-consumer ring -- the reader only stores and bumps head,
+  the worker only reads and bumps tail -- which took all of `PING\rSTATUS\rGO\r`
+  where the channel version took one command and two fragments.
+
 - **The ADC half of the smart-pin vocabulary**, mirroring the DAC set that was
   already there: input ranges `p2.ADC1X` through `p2.ADC100X`, sampling modes
   `p2.ADCSample`, `p2.ADCSampleExt` and `p2.ADCScope`, and the internal references

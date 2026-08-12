@@ -110,6 +110,35 @@ func Rev(x uint32) uint32
 // at the new rate by then.
 func SetBaud(baud int)
 
+// ReadByte reads one byte from the serial link the console goes out on -- the other
+// direction of SetBaud's -- and is the only way in. It returns the byte as 0..255,
+// or -1 if the wait ran out, so a caller tests for a negative rather than for a
+// value no byte can take.
+//
+// timeout is how long to wait. Zero waits FOREVER, which parks the cog until a byte
+// arrives; any other value gives up after that many milliseconds. They are BINARY
+// milliseconds, 1/1024 of a second rather than 1/1000: the toolchain divides the
+// clock by a shift, so a wait measures about 2.4% short of what its number says.
+// Near enough for a protocol timeout and not near enough to keep time with.
+//
+// NOTHING IS BUFFERED BEHIND THIS, and at speed that is not a caution but the
+// governing fact. A byte arriving while the cog is doing anything else is gone.
+// Measured on a P2-EDGE at 230400 baud, where a byte takes 43us: a loop reading into
+// an array caught all eight of "PING\rOK\r" in order, and the same loop with one
+// printf per byte in it caught "PNO\r" -- half of them, silently, with no error
+// anywhere.
+//
+// So a program that must not miss a byte gives a cog to reading and to nothing else.
+// AND IT MUST NOT HAND THEM OVER ON A CHANNEL, which is the obvious thing to reach
+// for and does not work: a channel here is a rendezvous, so the send parks the
+// reader until the far side arrives, and the line does not wait -- measured, that
+// costs every byte of the next two commands while the worker is printing the answer
+// to the first. The handover is a single-producer/single-consumer ring, the reader
+// only ever storing and bumping head, the worker only ever reading and bumping tail.
+// That reads all of "PING\rSTATUS\rGO\r" where the channel version read one command
+// and two fragments.
+func ReadByte(timeout int) int
+
 // Reboot restarts the board.
 func Reboot()
 

@@ -1841,6 +1841,46 @@ func main() {
 // a host shim can stand in for. It was verified on a P2-EDGE instead: a floating pin
 // read 1647 mV between references measured at 3022 and 13661 counts, which is
 // mid-rail to three digits.
+// TestEmitCReadByte pins p2.ReadByte to the intrinsic. A GOLDEN rather than a run
+// case because neither harness can feed it: the host shim has no serial line to type
+// at, and the on-board one only reads the board's output back. It was verified by
+// hand on a P2-EDGE instead -- a loop reading into an array received "PING\rOK\r" as
+// 80 73 78 71 13 79 75 13, every byte and in order.
+func TestEmitCReadByte(t *testing.T) {
+	src := `import "p2"
+
+func main() {
+	for {
+		c := p2.ReadByte(0)
+		if c < 0 {
+			break
+		}
+		println(c)
+	}
+	println(p2.ReadByte(250))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	// Typed int, not unsigned: the -1 that says "nothing arrived" is the whole
+	// protocol, and an unsigned result would compare greater than zero forever.
+	for _, want := range []string{"_rxraw(0)", "_rxraw(250)", "#include <propeller2.h>"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("EmitC: want it to contain %q\ngot:\n%s", want, buf.String())
+		}
+	}
+	if strings.Contains(buf.String(), "unsigned") {
+		t.Errorf("EmitC: ReadByte must type as a signed int:\n%s", buf.String())
+	}
+}
+
 func TestEmitCADC(t *testing.T) {
 	src := `import "p2"
 
