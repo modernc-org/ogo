@@ -46,7 +46,11 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 	var compileOnly bool
 	var port string
 	var rest []string
+	// A test binary takes the same clock as the program it tests. Running the tests
+	// at a different speed than the thing ships at is how a timing bug hides.
+	clock, xtal := 0, octogo.DefaultXtal
 	for i := 0; i < len(args); i++ {
+		var err error
 		switch a := args[i]; {
 		case a == "-c":
 			compileOnly = true
@@ -56,11 +60,23 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 				return 2, fmt.Errorf("test: -p requires an argument")
 			}
 			port = args[i]
+		case a == "--clock" || a == "-clock":
+			if clock, err = parseHz("test", a, args, &i); err != nil {
+				return 2, err
+			}
+		case a == "--xtal" || a == "-xtal":
+			if xtal, err = parseHz("test", a, args, &i); err != nil {
+				return 2, err
+			}
 		case strings.HasPrefix(a, "-"):
 			return 2, fmt.Errorf("test: unknown flag %q", a)
 		default:
 			rest = append(rest, a)
 		}
+	}
+	clockOpts, err := clockOption(clock, xtal)
+	if err != nil {
+		return 2, err
 	}
 
 	dir := "."
@@ -107,7 +123,8 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 	}
 
 	var cbuf bytes.Buffer
-	if err := octogo.EmitC(pkg, &cbuf, octogo.Checked(), octogo.TestEntry("ogoTestMain")); err != nil {
+	emitOpts := append([]octogo.EmitOption{octogo.Checked(), octogo.TestEntry("ogoTestMain")}, clockOpts...)
+	if err := octogo.EmitC(pkg, &cbuf, emitOpts...); err != nil {
 		return 1, err
 	}
 

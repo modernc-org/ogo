@@ -179,7 +179,7 @@ Use "%s help <command>" for more information about a command.
 
 // commandHelp is the per-command detail behind "ogo help <command>".
 var commandHelp = map[string]string{
-	"build": `usage: ogo build [-o output] [--release] [--unchecked] [package | file.ogo ...]
+	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--clock hz] [package | file.ogo ...]
 
 Build compiles a package to a Propeller 2 binary.
 
@@ -196,16 +196,32 @@ Runtime checks are on by default: out-of-range indexing and slicing, division an
 remainder by zero, a shift by a negative count, and appending past a slice's
 capacity. Each prints "panic: <what>" and halts the offending cog.
 
+The system clock is 160 MHz unless --clock asks for another, that being what the C
+backend falls back to: a 20 MHz crystal times eight, which is a round multiplier
+rather than any limit of the part. --clock takes plain Hz or a suffix, so both
+"--clock 200000000" and "--clock 200MHz" ask for the same thing, and the frequency
+must be one the crystal can make EXACTLY -- one it cannot is refused rather than
+rounded to the nearest, since every wait, baud rate and sample period is scaled by
+it and a board running one percent fast reports nothing at all. --xtal states the
+crystal when it is not the usual 20 MHz; nothing can ask the board, so an unstated
+crystal is believed.
+
 	-o output     write the binary here
 	--unchecked   omit the runtime checks
 	--release     reboot the board on a panic instead of halting the cog
+	--clock hz    the system clock to ask for, e.g. 200MHz (default 160 MHz)
+	--xtal hz     the board's crystal (default 20MHz)
 `,
-	"run": `usage: ogo run [--release] [--unchecked] [package | file.ogo ...]
+	"run": `usage: ogo run [--release] [--unchecked] [--clock hz] [package | file.ogo ...]
 
 Run builds a package exactly as ogo build does, loads the binary onto a connected
-Propeller 2 and opens a terminal on its serial output. It sets a precise 200 MHz
-clock and reads at 230400 baud, so println output is readable out of the box (a
-board with a non-standard crystal needs "ogo loadp2" with an explicit -f).
+Propeller 2 and opens a terminal on its serial output, reading at 230400 baud so
+println output is readable out of the box.
+
+The clock is the one the program was BUILT with -- 160 MHz unless --clock says
+otherwise, exactly as for ogo build. The loader is passed a -f frequency, but that
+does not decide what the program runs at: a flexcc-compiled program sets its own
+clock as it starts, which is why the frequency has to be chosen at build time.
 
 Press Ctrl-] to leave the terminal.
 
@@ -252,7 +268,7 @@ that assertion implicates the compiler.
 
 Note: generation is not yet reproducible from a seed.
 `,
-	"test": `usage: ogo test [-c] [-p port] [package]
+	"test": `usage: ogo test [-c] [-p port] [--clock hz] [package]
 
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.
@@ -276,9 +292,13 @@ would sometimes be wrong -- the two C compilers disagree about semantics, not on
 about warnings -- and a test reporting "ok" from somewhere the program will never
 run is worse than a test that did not run.
 
-	-c        build the tests and do not run them, leaving <pkg>.test.binary
-	          beside the package. It is what CI without a board can honestly do.
-	-p port   serial port to load through; omitted lets the loader find one.
+	-c          build the tests and do not run them, leaving <pkg>.test.binary
+	            beside the package. It is what CI without a board can honestly do.
+	-p port     serial port to load through; omitted lets the loader find one.
+	--clock hz  the system clock to run the tests at, as for ogo build. A test
+	            binary should take the clock the program it tests ships with:
+	            running them at a different speed is how a timing bug hides.
+	--xtal hz   the board's crystal (default 20MHz)
 
 Exit status is 0 when every test passed and 1 when any failed.
 `,

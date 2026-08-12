@@ -26,6 +26,33 @@ shipped section tells a reader on that version that they have behaviour they do 
   talking to anything with a fixed protocol speed. The host must be reading at the
   new rate by the time anything is written.
 
+- **`ogo build --clock`** picks the system clock, which was not selectable at all.
+  Programs ran at 160 MHz because that is what the C backend falls back to when a
+  program asks for nothing -- a 20 MHz crystal times eight, a round multiplier rather
+  than any limit of the part. Verified on a P2-EDGE: 160061416 Hz by default,
+  180068584 with `--clock 180MHz`, 200075240 with `--clock 200MHz`.
+
+  It takes plain Hz or a suffix (`--clock 200MHz`), and applies to `ogo run` and
+  `ogo test` too -- a test binary should take the clock the program it tests ships
+  with, since running tests at another speed is how a timing bug hides. `--xtal`
+  states the crystal when it is not the usual 20 MHz; nothing can ask the board, so
+  an unstated crystal is believed. A frequency the crystal cannot make **exactly** is
+  refused rather than rounded to the nearest it can: every wait, baud rate and sample
+  period is scaled by this number, and a board running one percent fast reports
+  nothing at all. Above ~200 MHz is refused as well, that being the fastest confirmed
+  here and above the part's rating -- a P2 will go faster, but a compiler should not
+  overclock one because a number was typed.
+
+  Doing it at BUILD time is what keeps the console readable: the backend derives the
+  serial divisor from a clock it can see, where a run-time change would leave
+  everything written before the baud was re-set as line noise.
+
+- **Fixed: `ogo run --help` said it "sets a precise 200 MHz clock".** It does not and
+  never did. The loader is passed a `-f` frequency, but a flexcc-compiled program
+  sets its own clock as it starts, so `-f` does not decide what it runs at -- the
+  same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
+  at all. The frequency is the build's to choose, which is what `--clock` is for.
+
 - **`p2.ReadByte(timeout)` reads from the serial line** -- the first way IN. Every
   one of the two dozen intrinsics was output or pins or time, and the three print
   built-ins only write, so a program could stream measurements at a host and could

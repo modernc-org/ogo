@@ -95,7 +95,21 @@ CLI subcommands (`ogo <cmd>`): `build`, `run`, `test`, `fmt`, `loadp2`, `smith`,
 ```sh
 ogo fmt -l -w --exclude='\/testdata\/' .   # gofmt-style reformat of .ogo sources in place
 ogo smith -seed 12345                      # emit a random OctoGo program to stdout (compiler fuzzer)
+ogo build --clock 200MHz .                 # ask for a system clock; default is 160 MHz
 ```
+
+**The clock is a BUILD-time choice and 160 MHz is the default**, which surprises
+people (the `ogo run` help claimed 200 MHz until 2026-08-12 and was simply wrong).
+flexcc falls back to 160 MHz -- mode `0x010007fb`, a 20 MHz crystal times eight --
+whenever the program declares no `_clkfreq`/`_clkmode` pair, and it reads those two
+by name from the program's own constants (`GetClkFreq` in the transpiled sources).
+`--clock` computes the PLL divisors and emits that pair; `internal/octogo/clock.go`
+holds the arithmetic, and its test pins the 160 MHz word against the backend's own
+fallback so the encoding cannot drift from the compiler that consumes it.
+
+**loadp2's `-f` does NOT set the program's clock**, whatever the name suggests: a
+flexcc program sets its own as it starts, and the same binary measures 160061416 Hz
+with `-f 200000000` or with no `-f`. `-f` is for the loader's own timing.
 
 ## Code generation
 

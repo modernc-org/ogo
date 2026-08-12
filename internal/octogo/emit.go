@@ -2941,6 +2941,16 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if len(incs) != 0 {
 		out.WriteByte('\n')
 	}
+	// The clock the program asks for. The backend looks these two up BY NAME and
+	// wants both as constants, so they are an enum rather than variables; finding
+	// neither, it falls back to 160 MHz. Declared here, before anything runs, which
+	// is what keeps the console readable: the serial divisor is derived from a
+	// _clkfreq the backend can see, where a run-time _clkset would leave everything
+	// written before it as line noise.
+	if e.clock != nil {
+		fmt.Fprintf(&out, "enum { _clkfreq = %d, _clkmode = %#08x };\n\n",
+			e.clock.freq, e.clock.mode)
+	}
 	// One slice header typedef per distinct element type, and append's ok-form
 	// result struct { slice, ok } per element type. Both are units of the typedef
 	// section like the struct bodies and the function typedefs, and the dependency
@@ -3432,6 +3442,7 @@ type emitter struct {
 	usesNonzero64      bool                 // ogo_nonzero64 (64-bit divisor guard) is called
 	shiftHelpers       map[string][2]string // guarded shift helper name -> {operator, value C type}
 	divHelpers         map[string][2]string // guarded signed division helper name -> {operator, value C type}
+	clock              *clockSetting        // a clock the program asks for, instead of the backend's 160 MHz default
 	release            bool                 // release build: a panic reboots (_reboot) instead of halting the cog
 	checks             bool                 // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals             map[string]string    // current function's parameter/local name -> C type, for typing `x := y`

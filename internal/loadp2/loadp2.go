@@ -56,6 +56,14 @@ const DefaultUserBaud = 230400
 // accurate. 200 MHz assumes the standard 20 MHz P2 crystal (P2-EC / Edge and most
 // boards) and is verified clean on hardware; a board with a different crystal
 // overrides via Options.ClockHz.
+//
+// IT DOES NOT DECIDE WHAT THE LOADED PROGRAM RUNS AT, which the name and the -f
+// invite believing. A flexcc-compiled program sets its own clock as it starts, from
+// constants the compiler wrote into it, so the frequency is a BUILD-time choice
+// (ogo build --clock) and this is only what the loader itself uses. Measured on a
+// P2-EDGE: the same binary reports 160061416 Hz whether loaded with -f 200000000 or
+// with no -f at all, and one built with --clock 200MHz reports 200075240 Hz under
+// both. The help for ogo run said this set the program's clock until 2026-08-12.
 const DefaultClockHz = 200_000_000
 
 type Options struct {

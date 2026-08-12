@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"modernc.org/ogo/internal/octogo"
 )
 
 // TestResolvePackage covers how the command line names a package: a package is a
@@ -126,20 +128,53 @@ func TestResolvePackage(t *testing.T) {
 // TestParseArgs pins the flag handling, in particular that several positional
 // arguments are now collected rather than refused.
 func TestParseArgs(t *testing.T) {
-	srcs, out, release, unchecked, err := parseArgs([]string{"a.ogo", "b.ogo", "-o", "x.binary", "--release", "--unchecked"})
+	srcs, f, err := parseArgs([]string{"a.ogo", "b.ogo", "-o", "x.binary", "--release", "--unchecked"})
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
 	}
 	if want := []string{"a.ogo", "b.ogo"}; !slices.Equal(srcs, want) {
 		t.Errorf("srcs: got %v, want %v", srcs, want)
 	}
-	if out != "x.binary" || !release || !unchecked {
-		t.Errorf("got out=%q release=%v unchecked=%v", out, release, unchecked)
+	if f.out != "x.binary" || !f.release || !f.unchecked {
+		t.Errorf("got out=%q release=%v unchecked=%v", f.out, f.release, f.unchecked)
 	}
-	if _, _, _, _, err := parseArgs([]string{"-o"}); err == nil {
+	if f.clock != 0 {
+		t.Errorf("clock: got %d, want 0 -- an unasked-for clock is the backend's to pick", f.clock)
+	}
+	if f.xtal != octogo.DefaultXtal {
+		t.Errorf("xtal: got %d, want the %d default", f.xtal, octogo.DefaultXtal)
+	}
+	if _, _, err := parseArgs([]string{"-o"}); err == nil {
 		t.Error("-o without an argument: want an error")
 	}
-	if _, _, _, _, err := parseArgs([]string{"-nope"}); err == nil {
+	if _, _, err := parseArgs([]string{"-nope"}); err == nil {
 		t.Error("unknown flag: want an error")
+	}
+
+	// A clock may be written in Hz or with the suffix it is usually spoken in --
+	// nine digits are easy to write with the wrong number of zeros.
+	for _, tc := range []struct {
+		args []string
+		want int
+	}{
+		{[]string{"--clock", "200000000"}, 200000000},
+		{[]string{"--clock", "200MHz"}, 200000000},
+		{[]string{"-clock", "200mhz"}, 200000000},
+		{[]string{"--clock", "160MHz"}, 160000000},
+	} {
+		_, f, err := parseArgs(append(tc.args, "a.ogo"))
+		if err != nil {
+			t.Errorf("parseArgs(%v): %v", tc.args, err)
+			continue
+		}
+		if f.clock != tc.want {
+			t.Errorf("parseArgs(%v): clock = %d, want %d", tc.args, f.clock, tc.want)
+		}
+	}
+	if _, _, err := parseArgs([]string{"--clock", "fast"}); err == nil {
+		t.Error("a clock that is not a frequency: want an error")
+	}
+	if _, _, err := parseArgs([]string{"--clock"}); err == nil {
+		t.Error("--clock without an argument: want an error")
 	}
 }

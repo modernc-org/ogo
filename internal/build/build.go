@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"modernc.org/ogo/internal/flexcc"
@@ -50,10 +51,11 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 // package's files become one C translation unit, so a multi-file package is a
 // single flexcc invocation.
 func compile(args []string, stdout, stderr io.Writer) (binary string, code int, err error) {
-	srcs, out, release, unchecked, err := parseArgs(args)
+	srcs, flags, err := parseArgs(args)
 	if err != nil {
 		return "", 2, err
 	}
+	out := flags.out
 	dir, files, defaultOut, err := resolvePackage(srcs)
 	if err != nil {
 		return "", 2, err
@@ -67,12 +69,17 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	// Runtime bounds / divide-by-zero checks are on by default (a debug build):
 	// --unchecked omits them, --release reboots on a panic instead of halting.
 	var emitOpts []octogo.EmitOption
-	if !unchecked {
+	if !flags.unchecked {
 		emitOpts = append(emitOpts, octogo.Checked())
 	}
-	if release {
+	if flags.release {
 		emitOpts = append(emitOpts, octogo.Release())
 	}
+	clockOpts, err := clockOption(flags.clock, flags.xtal)
+	if err != nil {
+		return "", 2, err
+	}
+	emitOpts = append(emitOpts, clockOpts...)
 	var cbuf bytes.Buffer
 	if err := octogo.EmitC(pkg, &cbuf, emitOpts...); err != nil {
 		return "", 1, err
@@ -102,28 +109,91 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	return out, 0, nil
 }
 
-// parseArgs pulls the positional source arguments, the optional -o output, and
-// the --release / --unchecked build-mode flags from args.
-func parseArgs(args []string) (srcs []string, out string, release, unchecked bool, err error) {
+// buildFlags is what a build command line says, beyond the sources themselves.
+type buildFlags struct {
+	out       string
+	release   bool
+	unchecked bool
+	// clock is the system clock the program asks for, in Hz, and xtal the crystal
+	// it is made from. Zero clock leaves it to the backend, which falls back to
+	// 160 MHz -- a 20 MHz crystal times eight, and a round multiplier rather than
+	// any limit of the part.
+	clock int
+	xtal  int
+}
+
+// parseHz reads a flag's frequency argument, advancing i past it. It takes plain Hz
+// and the two suffixes a clock is usually spoken in, so "--clock 200MHz" works as
+// well as the nine digits -- which are easy to write with the wrong number of zeros,
+// and where a stray one is a board running ten times too slow rather than an error.
+func parseHz(cmd, name string, args []string, i *int) (int, error) {
+	*i++
+	if *i >= len(args) {
+		return 0, fmt.Errorf("%s: %s requires a frequency", cmd, name)
+	}
+	s := args[*i]
+	scale := 1
+	switch {
+	case strings.HasSuffix(strings.ToLower(s), "mhz"):
+		scale, s = 1000000, s[:len(s)-3]
+	case strings.HasSuffix(strings.ToLower(s), "khz"):
+		scale, s = 1000, s[:len(s)-3]
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0, fmt.Errorf("%s: %s wants a frequency, got %q", cmd, name, args[*i])
+	}
+	return n * scale, nil
+}
+
+// clockOption turns a wanted clock and crystal into the emit option that asks for
+// it, or nothing at all when no clock was asked for -- which leaves the choice to
+// the backend, and its fallback is 160 MHz.
+func clockOption(clock, xtal int) ([]octogo.EmitOption, error) {
+	if clock == 0 {
+		return nil, nil
+	}
+	// Refused rather than rounded to the nearest the crystal can make: every wait,
+	// baud rate and sample period is scaled by this number, so a program running one
+	// percent fast would report nothing at all.
+	setting, err := octogo.ClockFor(xtal, clock)
+	if err != nil {
+		return nil, err
+	}
+	return []octogo.EmitOption{octogo.Clock(setting)}, nil
+}
+
+// parseArgs pulls the positional source arguments and the flags from args.
+func parseArgs(args []string) (srcs []string, f buildFlags, err error) {
+	hz := func(name string, i *int) (int, error) { return parseHz("build", name, args, i) }
+	f.xtal = octogo.DefaultXtal
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "-o":
 			i++
 			if i >= len(args) {
-				return nil, "", false, false, fmt.Errorf("build: -o requires an argument")
+				return nil, buildFlags{}, fmt.Errorf("build: -o requires an argument")
 			}
-			out = args[i]
+			f.out = args[i]
 		case a == "--release" || a == "-release":
-			release = true
+			f.release = true
 		case a == "--unchecked" || a == "-unchecked":
-			unchecked = true
+			f.unchecked = true
+		case a == "--clock" || a == "-clock":
+			if f.clock, err = hz(a, &i); err != nil {
+				return nil, buildFlags{}, err
+			}
+		case a == "--xtal" || a == "-xtal":
+			if f.xtal, err = hz(a, &i); err != nil {
+				return nil, buildFlags{}, err
+			}
 		case strings.HasPrefix(a, "-"):
-			return nil, "", false, false, fmt.Errorf("build: unknown flag %q", a)
+			return nil, buildFlags{}, fmt.Errorf("build: unknown flag %q", a)
 		default:
 			srcs = append(srcs, a)
 		}
 	}
-	return srcs, out, release, unchecked, nil
+	return srcs, f, nil
 }
 
 // resolvePackage turns the positional arguments into the directory holding the
