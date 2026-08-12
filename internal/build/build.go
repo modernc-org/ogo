@@ -235,18 +235,65 @@ func isDir(path string) bool {
 //	              define, and the assembler refuses the program
 //	              (doc/optimizer-dangling-label.c). Loud, at least.
 //
-// Each defect needs both passes' cooperation, so turning either one off is
-// enough for it; these two together cover both. -Ono-regs also covers both and
-// was rejected: it costs 68% more code where this pair costs between nothing
-// and 15%, depending on the program -- measured 13360 -> 13232 bytes on the
-// framing-receiver test case and 10292 -> 11792 on a fuzzer-generated one.
+// EACH FLAG FIXES EXACTLY ONE OF THE TWO, and neither one covers both, so both
+// are required. Measured on a P2-EDGE, every cell of the matrix:
+//
+//	                     -2 plain      -Ono-peephole   -Ono-inline-small
+//	dangling label       refused       BUILT           refused
+//	silent miscompile    -202817768    -202817768      0
+//
+// This corrects what stood here before, which read "each defect needs both
+// passes' cooperation, so turning either one off is enough for it". That is
+// false, and it is false in the expensive direction: -Ono-inline-small is where
+// nearly all the cost is (below), so the note invited dropping precisely the
+// flag that is the only thing standing between a build and a silently wrong
+// integer. It was never measured, only inferred from the two upstream reports.
+//
+// The cost, also measured rather than assumed. Size, over the whole pair: 0 to
+// 15%, depending on the program -- 13360 -> 13232 bytes on the framing-receiver
+// test case, 10292 -> 11792 on a fuzzer-generated one.
+//
+// SPEED is the number that was missing, and it is much larger. On a tight
+// real-time loop -- a DDS phase accumulator plus two smart-pin DAC writes, the
+// shape a motor controller runs -- cycles per iteration on hardware:
+//
+//	-2 plain                              205
+//	-2 -Ono-peephole                      221   +8%
+//	-2 -Ono-inline-small                  393   +92%
+//	-2 with both, i.e. what ships         384   +87%
+//
+// So the pair can cost 87% of a hot loop's time, and -Ono-inline-small is
+// essentially all of it. That is the real price of the workaround, and it is
+// the argument for regenerating the backend rather than a preference.
+//
+// The tax is SHAPE-DEPENDENT, not a uniform 87%, which is worth knowing before
+// reading too much into one number. Two loops of opposite shape, cycles per
+// iteration, same board:
+//
+//	                          call-heavy   register-heavy
+//	-2 plain                      41            64
+//	-2 with both, i.e. ships     100            64
+//	-2 -Ono-regs                 133           120
+//
+// Losing the inliner costs 2.4x where a small function is called every
+// iteration and NOTHING at all where none is. Code that does its work in
+// straight-line arithmetic pays nothing for this workaround.
+//
+// -Ono-regs covers both defects BY ITSELF -- verified against both reproducers,
+// unlike the claim it replaces -- and was still rejected. It costs 68% more code
+// (and 32% on the DDS program), and on speed it is worse than the pair on both
+// shapes above, badly so on the register-heavy one, which is what turning the
+// register allocator off would predict. It wins only on the DDS loop (286 vs
+// 384), and one loop is not a default. Do not swap to it without re-measuring
+// both shapes.
 //
 // The whole test corpus, the on-board suite and all 40 seeds of the widened
 // fuzzer sample pass with these, including the two seeds that reproduce the
-// defects. Take them off when a regenerated backend no longer needs them --
-// the two reproducers in doc/ are the check, and both have to come back clean
-// before either flag goes, since each defect needs two passes cooperating and
-// only one of the two was named in each report.
+// defects. Take them off when a regenerated backend no longer needs them.
+// The check is one reproducer per flag, since each flag answers for its own
+// defect and for no other: doc/optimizer-miscompile.c must print 0 before
+// -Ono-inline-small goes, and doc/optimizer-dangling-label.c must assemble
+// before -Ono-peephole goes. Each may go on its own.
 func compileC(cFile, out string, stdout, stderr io.Writer) (int, error) {
 	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-Ono-inline-small", "-Ono-peephole", "-o", out, cFile}); err != nil {
 		return 1, fmt.Errorf("flexcc: %v", err)

@@ -1,10 +1,19 @@
 // WORKED AROUND since this was written: `ogo build` passes -Ono-inline-small, and
 // with that pass off the program is right. Both passes behind the bug -- the
 // small-function inliner and the register allocator -- have to cooperate for it,
-// so turning either off is enough; the inliner is the cheaper one to lose. See
+// so turning either off is enough; the inliner is the cheaper one to lose, which
+// has since been measured in time as well as in code size and holds. See
 // internal/build for the flags and what they cost. This file stays as the check
 // that the workaround is still needed: compile it WITHOUT the flag, and if it
 // prints 0 the backend has been fixed and the flag can go.
+//
+// -Ono-inline-small IS THE ONLY ONE OF THE TWO FLAGS `ogo build` PASSES THAT
+// SAVES THIS PROGRAM. -Ono-peephole, the other one, leaves it printing the same
+// wrong -202817768 as a plain build; that flag answers for
+// doc/optimizer-dangling-label.c and for nothing else. Neither flag is redundant
+// and neither covers the other's defect -- internal/build has the full matrix.
+// This is worth stating plainly because the note that used to stand there said
+// the opposite, and the flag it invited dropping was this one.
 //
 // FIXED UPSTREAM 2026-08-03 (flexprop issue 103): the root cause was an
 // optimization moving an instruction between a `qmul` and its `getqx` that the

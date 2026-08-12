@@ -4,6 +4,11 @@
 // compile it WITHOUT the flag, and if it assembles the backend has been fixed and
 // the flag can go.
 //
+// -Ono-peephole IS THE ONLY ONE OF THE TWO FLAGS `ogo build` PASSES THAT SAVES
+// THIS PROGRAM: with -Ono-inline-small instead, the assembler still refuses it
+// over an undefined label. That flag answers for doc/optimizer-miscompile.c and
+// for nothing else. internal/build has the full matrix.
+//
 // FIXED UPSTREAM 2026-08-03 (flexprop issue 104): dead-code elimination was
 // removing labels that were still branched to. The fix is in spin2cpp's sources
 // and will be in the next binary release; the backend here is a transpiled copy
