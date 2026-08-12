@@ -48,22 +48,26 @@ func SubCommand(args []string) int {
 const DefaultUserBaud = 230400
 
 // DefaultClockHz is the -f clock frequency Load uses when Options.ClockHz is 0.
-// It is the load-bearing default: loadp2's own default leaves the P2 on its
-// imprecise internal RC oscillator, so the flexcc serial timing
-// (bitperiod = clkfreq / baud) drifts and the output is garbled at EVERY read
-// baud — the single most likely "ogo run does nothing / prints garbage" report.
-// Passing a real frequency makes loadp2 lock the crystal PLL, so the serial is
-// accurate. 200 MHz assumes the standard 20 MHz P2 crystal (P2-EC / Edge and most
-// boards) and is verified clean on hardware; a board with a different crystal
-// overrides via Options.ClockHz.
 //
-// IT DOES NOT DECIDE WHAT THE LOADED PROGRAM RUNS AT, which the name and the -f
-// invite believing. A flexcc-compiled program sets its own clock as it starts, from
+// IT DOES NOT DECIDE WHAT THE LOADED PROGRAM RUNS AT, and it is not what makes the
+// output readable either, both of which the name and the surrounding history invite
+// believing. A flexcc-compiled program sets its own clock as it starts, from
 // constants the compiler wrote into it, so the frequency is a BUILD-time choice
-// (ogo build --clock) and this is only what the loader itself uses. Measured on a
-// P2-EDGE: the same binary reports 160061416 Hz whether loaded with -f 200000000 or
-// with no -f at all, and one built with --clock 200MHz reports 200075240 Hz under
-// both. The help for ogo run said this set the program's clock until 2026-08-12.
+// (ogo build --clock) and this is only what the loader itself uses.
+//
+// Measured on a P2-EDGE, every combination, because the note that stood here said
+// otherwise: the same binary reports 160061416 Hz whether loaded with -f 200000000
+// or with no -f at all, and one built with --clock 200MHz reports 200075240 Hz under
+// both. For readable output what matters is DefaultUserBaud and nothing else -- with
+// -b 230400 the program's text arrives whatever -f says, and without it the same
+// binary yields rubbish bytes whatever -f says, loadp2 reading at 115200 where the
+// program writes at 230400.
+//
+// It is kept, and kept at a real frequency, because ogo loadp2 is a passthrough that
+// also loads binaries which set no clock of their own; for those -f is the only thing
+// that gets them off the imprecise internal RC oscillator. 200 MHz assumes the
+// standard 20 MHz P2 crystal (P2-EC / Edge and most boards); a board with a different
+// crystal overrides via Options.ClockHz.
 const DefaultClockHz = 200_000_000
 
 type Options struct {

@@ -45,7 +45,14 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 	var exclude *regexp.Regexp
 
 	set := opt.NewSet()
-	set.Arg("-exclude", false, func(_, arg string) error { exclude, err = regexp.Compile(arg); return err })
+	// Both spellings. The name registered here gains a dash, so "-exclude" is what
+	// the caller writes as "--exclude", which the Makefile does and which was for a
+	// while the only form that worked -- while "ogo help fmt" documented "-exclude"
+	// and every other multi-letter flag in this tool (--release, --unchecked) takes
+	// either. Following the help got "unexpected flag: -exclude".
+	onExclude := func(_, arg string) error { exclude, err = regexp.Compile(arg); return err }
+	set.Arg("-exclude", false, onExclude)
+	set.Arg("exclude", false, onExclude)
 	set.Opt("l", func(_ string) error { list = true; return nil })
 	set.Opt("w", func(_ string) error { write = true; return nil })
 

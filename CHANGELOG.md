@@ -53,6 +53,29 @@ shipped section tells a reader on that version that they have behaviour they do 
   same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
   at all. The frequency is the build's to choose, which is what `--clock` is for.
 
+- **Fixed: `ogo fmt -exclude` was documented but refused.** Only `--exclude` worked,
+  so following `ogo help fmt` got `unexpected flag: -exclude`. Both spellings are
+  accepted now, as `--release`/`-release` already were on `ogo build`.
+
+- **Corrected help.** Every command's help was read against what the tool does, after
+  two claims in it turned out to be false. Three more were:
+  - `ogo smith` said "generation is not yet reproducible from a seed". It is, and has
+    been: the same `-seed` writes a byte-identical program. The note survived the fix
+    that made it wrong, and it is the kind that costs real work -- it tells you not to
+    bother re-running the seed that failed.
+  - `ogo loadp2` said a passthrough load leaves the P2 "on its imprecise internal
+    oscillator" so output is "garbled at every baud", and prescribed `-f 200000000 -b
+    230400`. Only the baud matters: measured, the same binary prints cleanly with `-b
+    230400` whatever `-f` says, and rubbish without it whatever `-f` says. loadp2
+    reads at 115200 where an ogo program writes at 230400, and the program is on the
+    crystal PLL either way because it sets its own clock.
+  - `ogo fmt` said "the formatted result is compared and nothing is written", which
+    reads as though it prints nothing. It prints the formatted source, as gofmt does.
+
+  What the help gets right was checked too, not assumed: the binary naming, `-c`
+  leaving `<pkg>.test.binary`, the 0/1 exit status, and each of the five documented
+  runtime checks panicking on the board with the message it advertises.
+
 - **The pin DRIVE strengths**: `p2.DriveHigh15K` through `p2.DriveHighFloat`, the
   current-source variants, and the `DriveLow` mirrors. They are what a digital INPUT
   needs, which is not obvious from the name: the P2 has no pull-up bit and nothing

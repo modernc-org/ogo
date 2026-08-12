@@ -232,8 +232,8 @@ may not respond (use Ctrl-C).
 	"fmt": `usage: ogo fmt [-l] [-w] [-exclude regexp] [path ...]
 
 Fmt formats .ogo source files in the canonical style. Each path may be a file or a
-directory, which is searched recursively. With no flags the formatted result is
-compared and nothing is written.
+directory, which is searched recursively. With no flags the formatted result goes
+to standard output and no file is touched, as gofmt does.
 
 	-l            list the files whose formatting differs
 	-w            rewrite the files in place
@@ -247,11 +247,20 @@ loadp2's usage.
 
 The loader is built in; no separate loadp2 installation is needed.
 
-Unlike "ogo run", this passthrough uses loadp2's own defaults, which leave the P2
-on its imprecise internal oscillator and read at 115200 -- so a program's println
-output is garbled at every baud. To see it, set a real clock and the matching
-baud, e.g. "ogo loadp2 -f 200000000 -b 230400 -t prog.binary" (200000000 assumes
-the usual 20 MHz crystal). "ogo run" does this for you.
+Unlike "ogo run", this passthrough uses loadp2's own defaults, and the one that
+matters is the read baud: loadp2 reads at 115200 where an ogo program writes at
+230400, so its output arrives as rubbish bytes rather than text. Pass the matching
+baud to see it:
+
+	ogo loadp2 -b 230400 -t prog.binary
+
+That is the whole fix, measured. The -f frequency is NOT part of it for a program
+built here: such a program sets its own clock as it starts, so -f neither changes
+what it runs at nor what its output looks like -- the same binary prints cleanly
+with -b alone and rubbish without it, whatever -f says. -f still matters for a
+binary that sets no clock of its own, which is why the flag is passed on. Choose an
+ogo program's clock at build time with "ogo build --clock". "ogo run" supplies the
+baud for you.
 
 On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
 (git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the terminal's
@@ -264,9 +273,11 @@ against itself: it interprets the program as it generates it, so the program
 carries an assertion of its own expected result and a compiled binary that fails
 that assertion implicates the compiler.
 
-	-seed n       seed the generator (0 uses the current time)
+A seed is reproducible: the same -seed writes the same program every time, which
+is what makes a failing one worth reporting. Omitting it, or passing 0, seeds from
+the clock instead.
 
-Note: generation is not yet reproducible from a seed.
+	-seed n       seed the generator (0 uses the current time)
 `,
 	"test": `usage: ogo test [-c] [-p port] [--clock hz] [package]
 
