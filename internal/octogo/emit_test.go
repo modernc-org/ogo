@@ -5250,6 +5250,27 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			want: "printf: %d wants an integer, not string",
 		},
 		{
+			// The two flags the target's printf drops on the floor. Refused rather
+			// than passed through, because the HOST C compiler honours both: a
+			// program green on the host would print something narrower on the board.
+			// doc/printf-flags-ignored.c has the measurements.
+			name: "the # flag",
+			src:  "func main() {\n\tprintf(\"%#x\\n\", uint32(255))\n}\n",
+			want: "printf: the '#' flag is not supported by the C backend",
+		},
+		{
+			name: "the 0 flag on a float",
+			src:  "func main() {\n\tprintf(\"%08.3f\\n\", 1.5)\n}\n",
+			want: "printf: the '0' flag on %08.3f is not supported by the C backend",
+		},
+		{
+			// The '*' forms take the width from an argument of their own, which would
+			// break the verb-to-argument count the type checking rests on.
+			name: "a star width",
+			src:  "func main() {\n\tprintf(\"%*d\\n\", 4, 42)\n}\n",
+			want: "printf: unknown formatting verb %*",
+		},
+		{
 			name: "%s of an integer",
 			src:  "func main() {\n\tprintf(\"%s\\n\", 1)\n}\n",
 			want: "printf: %s wants a string, not int",

@@ -1524,9 +1524,26 @@
 //	%T          the value's type
 //	%%          a literal percent
 //
-// The verbs take no flags, width or precision yet. A verb that does not suit its
-// argument, an unknown verb, and a count of verbs that does not match the count of
-// arguments are each refused where the call is written.
+// A verb may carry fmt's flags, width and precision — "%6.2f", "%-8s", "%+05d",
+// "%.3s" — which mean what they mean in fmt. For a string that is a count of RUNES,
+// not of bytes: "%.1s" of "héllo" is "h" and never half of a character. The "%*d"
+// forms, which take the width from an argument of their own, are not accepted: the
+// verb count is what pairs each verb with an argument to check it against.
+//
+// Two flags are refused because the C backend ignores them, and a program that
+// compiles here is meant to mean what it means in Go rather than approximately
+// that: "#", which would write a base prefix, and "0" on a float, which would pad
+// with zeros — "%08.3f". "0" on the integer verbs is honoured, so "%05d" is fine.
+//
+// Two verbs do not take a width yet, and say so where they are written: %v, whose
+// rendering is the built-in println's and does its own spacing, and %x of a SIGNED
+// integer, which prints as a sign and a magnitude here — Go puts the fill on
+// different sides of that sign depending on the flag, and getting it subtly wrong
+// would be worse than declining. %x of an unsigned integer takes a width.
+//
+// A verb that does not suit its argument, an unknown verb, and a count of verbs
+// that does not match the count of arguments are each refused where the call is
+// written.
 //
 // Each verb renders as fmt does rather than as C does, where the two differ: %x of
 // a negative integer is a sign and a magnitude, "-ff", not the two's complement C

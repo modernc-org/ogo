@@ -42,6 +42,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   so the number is in the docs. At X=13 the mode gives about 10640 counts between the
   references, a little over 13 bits, for 8192 clocks.
 
+- **`printf` takes flags, a width and a precision** -- `%6.2f`, `%-8s`, `%+05d`,
+  `%.3s`. They were rejected outright before, so `%.2f` -- printing a number to two
+  decimals -- could not be written at all, and the error said "unknown formatting
+  verb %." as though the trouble were the verb. They mean what they mean in `fmt`,
+  and for a string the width and precision count RUNES rather than bytes, so `%.1s`
+  of `"héllo"` is `"h"` and never half a character.
+
+  Two flags are refused, because the C backend ignores them and printing something
+  narrower than asked for is worse than saying so: `#`, which would write a base
+  prefix, and `0` on a float, which would zero-pad. `0` on the integer verbs works,
+  so `%05d` is fine. Both are the backend's, not the language's --
+  `doc/printf-flags-ignored.c` measures them, and the refusal goes when that comes
+  back clean. The `%*d` forms, which take a width from an argument of their own,
+  stay unaccepted: the count of verbs is what pairs each one with an argument to
+  type-check it against.
+
 ## v0.24.0
 
 Types this compiler could not tell apart, and a handful of wrong answers nobody was

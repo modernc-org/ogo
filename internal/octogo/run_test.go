@@ -37,6 +37,58 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// printf's flags, width and precision. Every line was taken from real Go
+		// (GOARCH=386) rather than written by hand, because half the point is the
+		// places C and Go would disagree if the spec were just handed through.
+		//
+		// The two string verbs are where they do. fmt measures a string's width in
+		// RUNES -- "héllo" is five of them in six bytes, so %4s pads it by nothing
+		// and a byte count would have padded by nothing at width 4 but wrongly at 5 --
+		// and %.1s truncates to one rune, not one byte, which would have cut "é" in
+		// half. Neither can borrow C's padding anyway: a string here carries a length
+		// and no terminator, and the target's printf truncates "%.*s" at 62
+		// characters silently.
+		//
+		// "%#x" and "%08.3f" are absent because they are REFUSED, the target's printf
+		// ignoring both flags -- doc/printf-flags-ignored.c. This case is why they
+		// are: it passed on the host with both in it, and the board printed "ff" and
+		// "   1.500".
+		//
+		// The two-digit widths are here for the other direction: a '0' is a flag only
+		// at the FRONT of a spec, so "%10.3f" and "%20d" have to keep their width
+		// whole rather than lose a zero to the flag scan.
+		//
+		// The %T line takes a path of its own. A statically known type name is
+		// normally folded into the surrounding literal and costs no call; a width
+		// cannot be folded, so that case has to fall through to a printf instead --
+		// and matching Go here needs the three names to be predeclared ones, since a
+		// defined type prints unqualified where Go writes "main.".
+		name: "printf width and precision",
+		src: `func main() {
+	printf("[%6.2f][%-8.3f][%10.3f][%20d]\n", 3.14159, 2.5, 1.5, 7)
+	printf("[%5d][%-5d][%05d][%+d][% d]\n", 42, 42, 42, 42, 42)
+	printf("[%8s][%-8s][%.2s][%6.2s]\n", "abc", "abc", "abcdef", "abcdef")
+	var u uint32 = 255
+	printf("[%4x][%04X]\n", u, u)
+	printf("[%6t][%-6t]|\n", true, false)
+	printf("[%3c][%-3c][%.2c][%5.2c]|\n", 'A', 'B', 'C', 'D')
+	printf("[%4s][%.1s]\n", "héllo", "héllo")
+	printf("[%3c]\n", 'é')
+	printf("[%6T][%-8T][%T]|\n", 1, "x", true)
+}
+`,
+		want: `[  3.14][2.500   ][     1.500][                   7]
+[   42][42   ][00042][+42][ 42]
+[     abc][abc     ][ab][    ab]
+[  ff][00FF]
+[  true][false ]|
+[  A][B  ][C][    D]|
+[héllo][h]
+[  é]
+[   int][string  ][bool]|
+`,
+	},
+	{
 		// The comma-ok type assertion accepts an interface EXPRESSION as its
 		// operand, not only a name: "if p, ok := rs[i].(*A); ok" is how a dispatch
 		// loop tests an element. The checker refused it first ("2 variables but 1

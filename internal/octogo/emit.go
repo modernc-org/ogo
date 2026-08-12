@@ -506,6 +506,35 @@ const hexPrintHelper = "static void ogo_print_hex(long long v, int upper) {\n" +
 const stringHelpers = "static inline void ogo_print_str(ogo_string s) { for (int _i = 0; _i < s.len; _i++) { putchar(s.str[_i]); } }\n" +
 	"static inline void ogo_println_str(ogo_string s) { ogo_print_str(s); putchar('\\n'); }\n"
 
+// stringPadHelper prints a string to a field width, for printf's "%-8s" and friends.
+// It counts RUNES, not bytes, because that is what fmt's width and precision mean
+// for a string -- "%3s" of a two-rune six-byte string pads by one, and padding by
+// nothing would be the easy way to get it wrong. Precision truncates, and truncates
+// on a rune boundary. The pass over the bytes recognises a rune by its lead byte:
+// every continuation byte is 10xxxxxx, so anything else starts one.
+const stringPadHelper = "static inline void ogo_print_str_pad(ogo_string s, int w, int prec, int left) {\n" +
+	"\tint _b = s.len, _n = 0;\n" +
+	"\tfor (int _i = 0; _i < s.len; _i++) {\n" +
+	"\t\tif ((s.str[_i] & 0xC0) != 0x80) {\n" +
+	"\t\t\tif (prec >= 0 && _n == prec) { _b = _i; break; }\n" +
+	"\t\t\t_n++;\n" +
+	"\t\t}\n" +
+	"\t}\n" +
+	"\tint _p = w > _n ? w - _n : 0;\n" +
+	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
+	"\tfor (int _i = 0; _i < _b; _i++) putchar(s.str[_i]);\n" +
+	"\tif (left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
+	"}\n"
+
+// runePadHelper prints a rune to a field width. A rune is one character however many
+// bytes it takes, so the padding is around a count of one.
+const runePadHelper = "static inline void ogo_print_rune_pad(int32_t r, int w, int left) {\n" +
+	"\tint _p = w > 1 ? w - 1 : 0;\n" +
+	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
+	"\togo_print_rune(r);\n" +
+	"\tif (left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
+	"}\n"
+
 // stringEqHelper compares two ogo_string values by content, as Go's == does. The
 // byte loop avoids a memcmp (and its <string.h>); a string here is never long
 // enough for that to matter.
@@ -2961,8 +2990,17 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(stringHelpers)
 		out.WriteByte('\n')
 	}
+	if e.usesStringPad {
+		out.WriteString(stringPadHelper)
+		out.WriteByte('\n')
+	}
 	if e.usesRunePrint {
 		out.WriteString(runePrintHelper)
+		out.WriteByte('\n')
+	}
+	// After runePrintHelper, which it calls.
+	if e.usesRunePad {
+		out.WriteString(runePadHelper)
 		out.WriteByte('\n')
 	}
 	if e.usesHexPrint {
@@ -3407,7 +3445,9 @@ type emitter struct {
 	declInit           bool                 // emitting a static initializer: a string literal must use a brace, not a compound literal
 	usesString         bool                 // an ogo_string type/literal appears: emit stringTypedef
 	usesStringPrint    bool                 // a string is printed: emit stringHelpers
+	usesStringPad      bool                 // printf %s with a width: emit stringPadHelper
 	usesRunePrint      bool                 // printf %c is used: emit runePrintHelper
+	usesRunePad        bool                 // printf %c with a width: emit runePadHelper
 	usesHexPrint       bool                 // printf %x of a signed type: emit hexPrintHelper
 	usesStringEq       bool                 // a string == / != appears: emit ogo_string_eq
 	eqStructs          map[string]bool      // struct C types compared with == / !=: emit an ogo_eq_<T> helper
@@ -14640,13 +14680,65 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 // count that does not add up is reported.
 type printfItem struct {
 	lit  string
+	spec string // the flags, width and precision between the % and the verb
 	verb byte
 }
+
+// width reports the field width the spec asks for, and whether it asks at all. It
+// is the digits before any '.', a leading '0' being a flag rather than the start of
+// a number.
+func (it printfItem) width() (int, bool) {
+	s := strings.TrimLeft(it.spec, "+- #0")
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		s = s[:i]
+	}
+	if s == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	return n, err == nil
+}
+
+// precision reports the precision the spec asks for, and whether it asks at all.
+// A bare "." means zero, as in Go.
+func (it printfItem) precision() (int, bool) {
+	i := strings.IndexByte(it.spec, '.')
+	if i < 0 {
+		return 0, false
+	}
+	if it.spec[i+1:] == "" {
+		return 0, true
+	}
+	n, err := strconv.Atoi(it.spec[i+1:])
+	return n, err == nil
+}
+
+// flags is the leading run of flag characters, which is the only place a '0' is one:
+// in "%10.3f" the zero belongs to the width.
+func (it printfItem) flags() string {
+	i := 0
+	for i < len(it.spec) && strings.IndexByte("+- #0", it.spec[i]) >= 0 {
+		i++
+	}
+	return it.spec[:i]
+}
+
+// hasFlag reports whether the spec carries flag f.
+func (it printfItem) hasFlag(f byte) bool { return strings.IndexByte(it.flags(), f) >= 0 }
+
+// leftAlign reports whether the spec pads on the right, which is the '-' flag.
+func (it printfItem) leftAlign() bool { return it.hasFlag('-') }
 
 // parsePrintfFormat splits a format string into literal runs and verbs. "%%" is a
 // literal percent and consumes no argument; "%T" is a verb like any other, its
 // argument being the value whose TYPE is wanted. A verb with no argument left, or
 // an argument with no verb, is the caller's to report -- this only reads the shape.
+//
+// A verb may carry fmt's flags, width and precision -- "%6.2f", "%-8s", "%+05d" --
+// which is why the shape read here is more than a single byte. The '*' forms, where
+// a width comes from an argument of its own, are not read: they would make the verb
+// count stop matching the argument count, and that count is what lets every verb be
+// checked against its argument's type at compile time.
 func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb string, ok bool) {
 	lit := ""
 	for i := 0; i < len(format); i++ {
@@ -14658,18 +14750,43 @@ func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb st
 			return nil, 0, "%!(NOVERB)", false // a trailing "%" formats nothing
 		}
 		i++
-		switch c := format[i]; c {
-		case '%':
+		if format[i] == '%' {
 			lit += "%"
+			continue
+		}
+		// The flags, then the width, then the precision, in fmt's order.
+		start := i
+		for i < len(format) && strings.IndexByte("+- #0", format[i]) >= 0 {
+			i++
+		}
+		for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+			i++
+		}
+		if i < len(format) && format[i] == '.' {
+			i++
+			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+				i++
+			}
+		}
+		if i == len(format) {
+			return nil, 0, "%!(NOVERB)", false
+		}
+		spec := format[start:i]
+		switch c := format[i]; c {
+		// Deliberately no 'g': emitPrintfVerb can render it, and the %v path uses it,
+		// but C's %g defaults to six significant digits where Go's is the shortest
+		// form that reads back exactly, so 1234567.0 prints 1.23457e+06 there and
+		// 1.234567e+06 here. Accepting it would buy a rarely-used verb with a silent
+		// output difference.
 		case 'd', 'x', 'X', 's', 't', 'v', 'f', 'T', 'c':
 			if lit != "" {
 				items = append(items, printfItem{lit: lit})
 				lit = ""
 			}
-			items = append(items, printfItem{verb: c})
+			items = append(items, printfItem{spec: spec, verb: c})
 			verbs++
 		default:
-			return nil, 0, "%" + string(c), false
+			return nil, 0, "%" + spec + string(c), false
 		}
 	}
 	if lit != "" {
@@ -14733,15 +14850,16 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 		arg := rest[next]
 		next++
 		// A type NAME is known here whenever the argument is not an interface, so it
-		// joins the literal text and costs no call at all.
-		if item.verb == 'T' {
+		// joins the literal text and costs no call at all. With a width to fill it
+		// cannot: padding is the printf's to do, so that case takes the call.
+		if item.verb == 'T' && item.spec == "" {
 			if name, static := e.staticTypeName(next-1, arg); static {
 				lit += name
 				continue
 			}
 		}
 		flush()
-		if !e.emitPrintfVerb(item.verb, next-1, arg) {
+		if !e.emitPrintfVerb(item, next-1, arg) {
 			return
 		}
 	}
@@ -14773,14 +14891,49 @@ func (e *emitter) staticTypeName(idx int, arg Node) (string, bool) {
 // emitPrintfVerb emits one verb's argument, checking the verb against the type it
 // was given. A verb that does not suit its argument is refused here: the format is
 // constant and the type is known, so there is nothing left to find out at run time.
-func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
+func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
+	verb, spec := item.verb, item.spec
 	ct, known := e.printArgCType(idx, arg)
 	value := func() { e.emitPrintArg(idx, arg) }
 	wrong := func(want string) bool {
 		e.failAt(arg.ast, "printf: %%%c wants %s, not %s", verb, want, e.goTypeName(ct))
 		return false
 	}
+	// noSpec refuses a width on the verbs that cannot honour one yet. It is a
+	// compile-time refusal of a format Go accepts, so it names the verb and what to
+	// reach for instead: printing something narrower than asked for, silently, is the
+	// outcome worth avoiding.
+	noSpec := func(why string) bool {
+		e.failAt(arg.ast, "printf: %%%s%c does not take a width or precision yet (%s)",
+			spec, verb, why)
+		return false
+	}
+	// Two flags the TARGET's printf ignores, so they are refused here rather than
+	// silently dropped there. Both work under the host C compiler, which is exactly
+	// what makes them worth refusing: a host-green run would have proved nothing and
+	// the board would quietly have printed something narrower. Measured on a P2-EDGE
+	// and reduced in doc/printf-flags-ignored.c.
+	if item.hasFlag('#') {
+		e.failAt(arg.ast, "printf: the '#' flag is not supported by the C backend, "+
+			"which prints %%%s%c without the base prefix; write the prefix in the format",
+			spec, verb)
+		return false
+	}
+	if item.hasFlag('0') && (verb == 'f' || verb == 'g') {
+		e.failAt(arg.ast, "printf: the '0' flag on %%%s%c is not supported by the C "+
+			"backend, which pads a float with spaces instead of zeros; it does honour "+
+			"'0' on the integer verbs", spec, verb)
+		return false
+	}
 	if verb == 'T' {
+		// A width is why a statically known name arrives here rather than being folded
+		// into the surrounding literal: the name is known, but the padding is not
+		// something a literal can carry.
+		if name, static := e.staticTypeName(idx, arg); static {
+			e.ind()
+			e.emit("printf(\"%" + spec + "s\", " + cQuote(name) + ");\n")
+			return true
+		}
 		// Not static, so an interface: its TABLE names the dynamic type, and a value
 		// carrying no table carries no type -- which Go prints as <nil>.
 		ict, ok := e.printfArgType(idx, arg)
@@ -14794,11 +14947,14 @@ func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
 		e.ind()
 		e.emit("{ " + ict + " " + tmp + " = ")
 		value()
-		e.emit("; printf(\"%s\", " + tmp + ".vt ? " + tmp + ".vt->" + vtTypeField +
+		e.emit("; printf(\"%" + spec + "s\", " + tmp + ".vt ? " + tmp + ".vt->" + vtTypeField +
 			" : \"<nil>\"); }\n")
 		return true
 	}
 	if verb == 'v' {
+		if spec != "" {
+			return noSpec("%v prints what println prints, which does its own padding")
+		}
 		// %v prints what println prints, by calling it -- "[1 2 3]" for a slice, the
 		// word for a bool, the shortest form for a float. Restating that would be two
 		// spellings free to drift apart.
@@ -14831,6 +14987,23 @@ func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
 		if ct != cString {
 			return wrong("a string")
 		}
+		// A string here carries a length and no terminator, so C's own padding cannot
+		// be borrowed the way the numeric verbs borrow it: the helper does the width
+		// and the precision itself. Precision truncates, as in Go.
+		if spec != "" {
+			w, _ := item.width()
+			p, hasP := item.precision()
+			if !hasP {
+				p = -1
+			}
+			e.usesStringPrint = true
+			e.usesStringPad = true
+			e.ind()
+			e.emit("ogo_print_str_pad(")
+			value()
+			e.emit(fmt.Sprintf(", %d, %d, %d);\n", w, p, boolToInt(item.leftAlign())))
+			return true
+		}
 		e.usesStringPrint = true
 		e.ind()
 		e.emit("ogo_print_str(")
@@ -14841,7 +15014,7 @@ func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
 			return wrong("a bool")
 		}
 		e.ind()
-		e.emit("printf(\"%s\", (")
+		e.emit("printf(\"%" + spec + "s\", (")
 		value()
 		e.emit(") ? \"true\" : \"false\");\n")
 	case 'f', 'g':
@@ -14849,14 +15022,28 @@ func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
 			return wrong("a float")
 		}
 		// %f is fixed-point with six decimals, as C's is and as Go's is; %g is the
-		// shortest form, which is what %v of a float asks for.
+		// shortest form, which is what %v of a float asks for. Flags, width and
+		// precision mean the same in both, so they pass straight through.
 		e.ind()
-		e.emit("printf(\"%" + string(verb) + "\", ")
+		e.emit("printf(\"%" + spec + string(verb) + "\", ")
 		value()
 		e.emit(");\n")
 	case 'c':
 		if !isIntCType(ct) {
 			return wrong("an integer")
+		}
+		// A rune is one character however many bytes it takes, so the width counts
+		// the character and the helper pads around it. A precision is IGNORED rather
+		// than refused, which is what fmt does with one: "%5.2c" is a width of five.
+		if spec != "" {
+			w, _ := item.width()
+			e.usesRunePrint = true
+			e.usesRunePad = true
+			e.ind()
+			e.emit("ogo_print_rune_pad((int32_t)(")
+			value()
+			e.emit(fmt.Sprintf("), %d, %d);\n", w, boolToInt(item.leftAlign())))
+			return true
 		}
 		e.usesRunePrint = true
 		e.ind()
@@ -14870,6 +15057,13 @@ func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
 		if verb != 'd' && isSignedIntCType(ct) {
 			// A negative value prints as a sign and its magnitude, as in Go. C's %x
 			// would print the two's complement instead, which is a different number.
+			if spec != "" {
+				// Padding around a sign the helper prints itself: Go puts %8x of -255
+				// as "    -ff" and %08x as "-00000ff", so the fill goes on different
+				// sides of the sign depending on the flag. Getting that subtly wrong
+				// is worse than saying so.
+				return noSpec("a negative %x prints as sign and magnitude here")
+			}
 			e.usesHexPrint = true
 			e.ind()
 			e.emit("ogo_print_hex((long long)(")
@@ -14882,17 +15076,27 @@ func (e *emitter) emitPrintfVerb(verb byte, idx int, arg Node) bool {
 			return true
 		}
 		e.ind()
-		e.emit("printf(\"" + intPrintfVerb(verb, ct) + "\", ")
+		e.emit("printf(\"" + intPrintfVerb(verb, ct, spec) + "\", ")
 		value()
 		e.emit(");\n")
 	}
 	return true
 }
 
+// boolToInt renders a flag as the 0 or 1 a C helper takes.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // intPrintfVerb renders an integer verb at the argument's width: the 64-bit types
 // take the "ll" length, which the target's printf needs spelled out (its PRId64 is
 // not the standard one -- see the int64 notes in scalarPrintVerb's neighbours).
-func intPrintfVerb(verb byte, ct string) string {
+// The flags, width and precision go between the % and the length, which is where C
+// wants them and where fmt writes them, so the spec passes through untouched.
+func intPrintfVerb(verb byte, ct, spec string) string {
 	long := ""
 	switch ct {
 	case "int64_t", "uint64_t":
@@ -14901,15 +15105,15 @@ func intPrintfVerb(verb byte, ct string) string {
 	if verb == 'd' {
 		switch ct {
 		case "unsigned", "uint8_t", "uint16_t", "uint32_t", "uintptr_t":
-			return "%u"
+			return "%" + spec + "u"
 		case "uint64_t":
-			return "%llu"
+			return "%" + spec + "llu"
 		case "int64_t":
-			return "%lld"
+			return "%" + spec + "lld"
 		}
-		return "%d"
+		return "%" + spec + "d"
 	}
-	return "%" + long + string(verb)
+	return "%" + spec + long + string(verb)
 }
 
 // isFloatCType reports whether ct is one of the floating C types.
