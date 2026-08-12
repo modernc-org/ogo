@@ -245,8 +245,8 @@ type p2Intrinsic struct {
 // the line.
 //
 // The values are from flexcc's smartpins.h, which is the authority and is embedded
-// in this repository (internal/flexcc/p2include.tar.gz). Only the DAC path is here;
-// the rest of the vocabulary is a table to grow, not a design to settle.
+// in this repository (internal/flexcc/p2include.tar.gz). The DAC and ADC paths are
+// here; the rest of the vocabulary is a table to grow, not a design to settle.
 var p2Constants = map[string]string{
 	// The DAC output ranges: drive strength and full-scale voltage.
 	"DAC990R3V": "0x140000", // P_DAC_990R_3V
@@ -263,6 +263,45 @@ var p2Constants = map[string]string{
 	// OutputEnable is what makes the pin drive at all. A mode without it configures
 	// a pin that is switched off.
 	"OutputEnable": "0x40", // P_OE
+
+	// The ADC input ranges. The gain is the fraction of full scale the pin's own
+	// voltage covers, so a bigger number is a SMALLER measurable range: ADC1X reads
+	// the whole 0..3.3 V span, ADC100X a hundredth of it at a hundred times the
+	// resolution. The pin's analog input is what these select, and one of them and a
+	// mode below are both needed.
+	"ADC1X":   "0x118000", // P_ADC_1X
+	"ADC3X":   "0x120000", // P_ADC_3X
+	"ADC10X":  "0x128000", // P_ADC_10X
+	"ADC30X":  "0x130000", // P_ADC_30X
+	"ADC100X": "0x138000", // P_ADC_100X
+
+	// The ADC's two internal reference inputs and its off position. They measure no
+	// pin: ADCGround reads the chip's own ground and ADCSupply its 3.3 V rail, which
+	// is how a reading is turned into a voltage. The converter is ratiometric and its
+	// zero and span drift, so the pair is read and the pin's own reading scaled
+	// between them -- the P2's documented calibration, and the reason these exist at
+	// all rather than a fixed full-scale constant.
+	"ADCGround": "0x100000", // P_ADC_GIO
+	"ADCSupply": "0x108000", // P_ADC_VIO
+	"ADCFloat":  "0x110000", // P_ADC_FLOAT
+
+	// The smart-pin ADC modes. Each accumulates its result where p2.ReadPin reads it.
+	// ADCSample is the ordinary one: it clocks itself, and the sample period is the
+	// pin's X register -- 2^X clocks, so X is a number of BITS and each one doubles
+	// both the time taken and the full-scale count. Unlike the DAC modes these want
+	// no OutputEnable; a pin that drives is not measuring.
+	//
+	// X IS USABLE TO 13 AND NO FURTHER, measured on a P2-EDGE. Up to there the
+	// doubling is exact -- spans of 1330, 2659, 5319, 10640 counts at X of 10, 11, 12,
+	// 13 -- and at 14 and 15 every reading is 0, above that noise that changes run to
+	// run. The Y register selects the filter variant and does NOT lift the ceiling;
+	// all four values behave identically. So the best this mode offers is X=13: about
+	// 10640 counts between the two references, a little over 13 bits, taking 8192
+	// clocks. Ask for more and the reading does not degrade, it stops meaning
+	// anything -- and nothing reports that, which is why the number is written here.
+	"ADCSample":    "0x30", // P_ADC
+	"ADCSampleExt": "0x32", // P_ADC_EXT
+	"ADCScope":     "0x34", // P_ADC_SCOPE
 }
 
 // p2Intrinsics maps the p2 package's exported functions to their intrinsics (the

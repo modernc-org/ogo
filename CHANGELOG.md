@@ -26,6 +26,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   talking to anything with a fixed protocol speed. The host must be reading at the
   new rate by the time anything is written.
 
+- **The ADC half of the smart-pin vocabulary**, mirroring the DAC set that was
+  already there: input ranges `p2.ADC1X` through `p2.ADC100X`, sampling modes
+  `p2.ADCSample`, `p2.ADCSampleExt` and `p2.ADCScope`, and the internal references
+  `p2.ADCGround`, `p2.ADCSupply` and `p2.ADCFloat`. Analog output could be written
+  and analog input could not, which left half of a measuring instrument unreachable.
+  The converter is ratiometric, so a raw count means nothing on its own -- read the
+  two references and scale between them, which is what those are for, and neither
+  needs a wire. Verified on a P2-EDGE: a floating pin read 1647 mV, mid-rail to three
+  digits.
+
+  `ADCSample`'s X argument is a sample period of 2^X clocks and **is usable to 13 and
+  no further**. Up to there the doubling is exact; at 14 and 15 every reading is 0 and
+  above that it is noise, whatever the Y register says. Nothing reports the overrun,
+  so the number is in the docs. At X=13 the mode gives about 10640 counts between the
+  references, a little over 13 bits, for 8192 clocks.
+
 ## v0.24.0
 
 Types this compiler could not tell apart, and a handful of wrong answers nobody was

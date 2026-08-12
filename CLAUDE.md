@@ -437,8 +437,15 @@ via the `testdata/hostp2` shim which now stubs these):
 
 The package also exports the pin-configuration CONSTANTS a smart pin is brought up
 with -- `p2.DAC990R3V`, `p2.DACDitherPWM`, `p2.OutputEnable` and the rest of the DAC
-set -- in `p2Constants` (`internal/octogo/emit.go`), values from flexcc's
-`smartpins.h`. They are emitted as literals, since the p2 package has no source to
+set, and since 2026-08-12 the ADC one that mirrors it: the input ranges `p2.ADC1X`
+through `p2.ADC100X`, the sampling modes `p2.ADCSample`/`ADCSampleExt`/`ADCScope`,
+and `p2.ADCGround`/`p2.ADCSupply`/`p2.ADCFloat`, the internal references a
+ratiometric reading has to be scaled between -- in `p2Constants`
+(`internal/octogo/emit.go`), values from flexcc's `smartpins.h`. **`ADCSample`'s X
+is a sample period of 2^X clocks and is usable to 13 and no further**: measured on a
+P2-EDGE the doubling is exact up to there and at 14 every reading is 0, above that
+noise, whatever the Y register says. So the mode's best is ~10640 counts between the
+references, a little over 13 bits. Nothing reports the overrun. They are emitted as literals, since the p2 package has no source to
 define a symbol in. They exist because the hex is unforgiving in a way that looks
 like working code: `_examples/gopher` was written with `0x140006`, which is the DAC
 range and the mode and no OUTPUT ENABLE, and drives nothing. They work in a `const`

@@ -1834,6 +1834,46 @@ func main() {
 	}
 }
 
+// TestEmitCADC pins the ADC half of the smart-pin vocabulary: the input ranges, the
+// two internal references a ratiometric reading is scaled between, and the sampling
+// mode. A GOLDEN rather than a run case for the reason the DAC constants are not run
+// either -- what a converter returns is an analog fact about the board, not a value
+// a host shim can stand in for. It was verified on a P2-EDGE instead: a floating pin
+// read 1647 mV between references measured at 3022 and 13661 counts, which is
+// mid-rail to three digits.
+func TestEmitCADC(t *testing.T) {
+	src := `import "p2"
+
+func main() {
+	p2.PinStart(40, p2.ADC1X|p2.ADCSample, 13, 0)
+	p2.PinStart(40, p2.ADCGround|p2.ADCSample, 13, 0)
+	p2.PinStart(40, p2.ADCSupply|p2.ADCSample, 13, 0)
+	println(int(p2.ReadPin(40)))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	// The range or reference in the high bits, the mode in the low ones. Either half
+	// alone still compiles and still runs, which is what makes the pair worth pinning.
+	for _, want := range []string{
+		"_pinstart(40, (0x118000 | 0x30), 13, 0)",
+		"_pinstart(40, (0x100000 | 0x30), 13, 0)",
+		"_pinstart(40, (0x108000 | 0x30), 13, 0)",
+		"_rdpin(40)",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("EmitC: want it to contain %q\ngot:\n%s", want, buf.String())
+		}
+	}
+}
+
 func TestEmitCMinMax(t *testing.T) {
 	src := `func main() {
 	println(min(8, 3, 5), max(2, 9))
