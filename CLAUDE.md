@@ -431,6 +431,7 @@ via the `testdata/hostp2` shim which now stubs these):
 | `p2.WaitUs(us)` | `_waitus` | `p2.GetSec()` | `_getsec`→uint32 |
 | `p2.WaitCycles(n)` | `_waitx` | `p2.Rnd()` | `_rnd`→uint32 |
 | `p2.Rev(x)` | `_rev`→uint32 | `p2.Reboot()` | `_reboot` |
+| `p2.SetBaud(n)` | `_setbaud` | | |
 | `p2.NewLock()` | `_locknew`→int | `p2.TryLock(l)` | `_locktry`→bool |
 | `p2.Unlock(l)` | `_lockrel` | `p2.FreeLock(l)` | `_lockret` |
 

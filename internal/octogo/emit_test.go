@@ -1806,6 +1806,34 @@ func TestEmitCClear(t *testing.T) {
 // (a<b?a:b / a>b?a:b) that a variadic call folds left over -- min(8, 3, 5) is
 // min(min(8, 3), 5). The helper, not an inline ternary, is what evaluates each
 // argument once.
+// TestEmitCSetBaud pins p2.SetBaud to the intrinsic, as a GOLDEN rather than a run
+// case: it changes the rate of the very link the on-board harness reads the answer
+// back on, so running it would break the test that ran it. The Viskomat protocol
+// this exists for wants 921600, where the loader leaves the link at 230400.
+func TestEmitCSetBaud(t *testing.T) {
+	src := `import "p2"
+
+func main() {
+	p2.SetBaud(921600)
+	printf("x %d\r", 1)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{"#include <propeller2.h>", "_setbaud(921600);"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("EmitC: want it to contain %q\ngot:\n%s", want, buf.String())
+		}
+	}
+}
+
 func TestEmitCMinMax(t *testing.T) {
 	src := `func main() {
 	println(min(8, 3, 5), max(2, 9))

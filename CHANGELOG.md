@@ -18,6 +18,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`p2.SetBaud(n)`** sets the baud rate of the link `print`, `println` and `printf`
+  go out on, mapping to the backend's `_setbaud`. The loader leaves it at 230400,
+  and a host expecting another rate had no way to ask for one -- which ruled out
+  talking to anything with a fixed protocol speed. The host must be reading at the
+  new rate by the time anything is written.
+
 ## v0.24.0
 
 Types this compiler could not tell apart, and a handful of wrong answers nobody was

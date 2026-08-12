@@ -104,6 +104,12 @@ func Rnd() uint32
 
 func Rev(x uint32) uint32
 
+// SetBaud sets the baud rate of the serial link the console -- print, println and
+// printf -- goes out on. The loader leaves it at 230400; a host expecting another
+// rate needs this called before anything is written, and the host must be reading
+// at the new rate by then.
+func SetBaud(baud int)
+
 // Reboot restarts the board.
 func Reboot()
 

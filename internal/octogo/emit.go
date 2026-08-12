@@ -289,6 +289,7 @@ var p2Intrinsics = map[string]p2Intrinsic{
 	"GetSec":       {"_getsec", "unsigned"},
 	"Rnd":          {"_rnd", "unsigned"},
 	"Rev":          {"_rev", "unsigned"},
+	"SetBaud":      {"_setbaud", ""},
 	"Reboot":       {"_reboot", ""},
 
 	// The hardware locks. The P2 has 16, shared with the channel runtime, which
