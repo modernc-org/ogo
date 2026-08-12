@@ -455,12 +455,21 @@ with -- `p2.DAC990R3V`, `p2.DACDitherPWM`, `p2.OutputEnable` and the rest of the
 set, and since 2026-08-12 the ADC one that mirrors it: the input ranges `p2.ADC1X`
 through `p2.ADC100X`, the sampling modes `p2.ADCSample`/`ADCSampleExt`/`ADCScope`,
 and `p2.ADCGround`/`p2.ADCSupply`/`p2.ADCFloat`, the internal references a
-ratiometric reading has to be scaled between -- in `p2Constants`
+ratiometric reading has to be scaled between; and the pin DRIVE strengths,
+`p2.DriveHigh15K` through `p2.DriveHighFloat` and their `DriveLow` mirrors -- in
+`p2Constants`
 (`internal/octogo/emit.go`), values from flexcc's `smartpins.h`. **`ADCSample`'s X
 is a sample period of 2^X clocks and is usable to 13 and no further**: measured on a
 P2-EDGE the doubling is exact up to there and at 14 every reading is 0, above that
 noise, whatever the Y register says. So the mode's best is ~10640 counts between the
-references, a little over 13 bits. Nothing reports the overrun. They are emitted as literals, since the p2 package has no source to
+references, a little over 13 bits. Nothing reports the overrun.
+
+**A pull-up is a weak HIGH drive plus a floating LOW one** -- the P2 has no pull-up
+bit and nothing named like one, so `p2.DriveHigh15K|p2.DriveLowFloat` through
+`WritePinMode` and then `PinHigh` is the whole recipe, and the mirror with `PinLow`
+is a pull-down. Verified on the board: pulled down a pin read 0 where the same pin
+left floating read 1. Reading an input with neither a pull nor an external driver is
+what these exist to prevent. They are emitted as literals, since the p2 package has no source to
 define a symbol in. They exist because the hex is unforgiving in a way that looks
 like working code: `_examples/gopher` was written with `0x140006`, which is the DAC
 range and the mode and no OUTPUT ENABLE, and drives nothing. They work in a `const`

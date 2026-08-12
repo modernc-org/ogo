@@ -53,6 +53,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
   at all. The frequency is the build's to choose, which is what `--clock` is for.
 
+- **The pin DRIVE strengths**: `p2.DriveHigh15K` through `p2.DriveHighFloat`, the
+  current-source variants, and the `DriveLow` mirrors. They are what a digital INPUT
+  needs, which is not obvious from the name: the P2 has no pull-up bit and nothing
+  called one, so **a pull-up is a weak HIGH drive together with a floating LOW one**
+  and a pull-down is its mirror. Reading a switch was possible before only if
+  something external held the pin, and a pin held by nothing does not read a stable
+  anything -- which is a poor way to learn the state of a stop button.
+
+	p2.PinFloat(pin)
+	p2.WritePinMode(pin, p2.DriveHigh15K|p2.DriveLowFloat)
+	p2.PinHigh(pin)   // a weak 1 a switch to ground can overpower
+
+  Verified on a P2-EDGE at both 15K and 150K: the pulled-down pin read 0 where the
+  same pin left floating read 1.
+
 - **`p2.WriteByte(b)` puts a byte on the serial line exactly as given**, which no
   other path here will do. It is what a protocol carrying anything but text needs,
   and it pairs with `p2.ReadByte` below: without both, a packet could be received and

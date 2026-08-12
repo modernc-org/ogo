@@ -264,6 +264,46 @@ var p2Constants = map[string]string{
 	// a pin that is switched off.
 	"OutputEnable": "0x40", // P_OE
 
+	// How hard a pin drives, one strength for the state it holds HIGH and one for the
+	// state it holds LOW. The default at both ends is Fast, which is the full-strength
+	// push-pull drive an output wants and the wrong thing to read a switch through.
+	//
+	// A PULL-UP IS A WEAK HIGH DRIVE AND A FLOATING LOW ONE, which is the part worth
+	// writing down because the P2 has no separate pull-up bit and nothing named like
+	// one. A switch to ground on pin 40, read with p2.PinIn:
+	//
+	//	p2.PinFloat(pin)                                          // clear any old mode
+	//	p2.WritePinMode(pin, p2.DriveHigh15K|p2.DriveLowFloat)
+	//	p2.PinHigh(pin)                                           // now a weak 1
+	//
+	// and a pull-down is the mirror -- DriveHighFloat|DriveLow15K with p2.PinLow. Both
+	// verified on a P2-EDGE, where the pulled-down pin read 0 while the same pin left
+	// floating read 1.
+	//
+	// The resistances are nominal; the current sources (1mA, 100uA, 10uA) are the
+	// other way to do it. Which to choose is an electrical question -- a weaker pull
+	// costs less current and picks up more noise -- and 15K is the usual answer for a
+	// switch. Reading an input with NEITHER a pull nor something external driving it
+	// is the failure this exists to prevent: the pin floats, and a floating pin does
+	// not read a stable anything.
+	"DriveHighFast":  "0x00",   // P_HIGH_FAST, the default
+	"DriveHigh1K5":   "0x800",  // P_HIGH_1K5
+	"DriveHigh15K":   "0x1000", // P_HIGH_15K
+	"DriveHigh150K":  "0x1800", // P_HIGH_150K
+	"DriveHigh1mA":   "0x2000", // P_HIGH_1MA
+	"DriveHigh100uA": "0x2800", // P_HIGH_100UA
+	"DriveHigh10uA":  "0x3000", // P_HIGH_10UA
+	"DriveHighFloat": "0x3800", // P_HIGH_FLOAT
+
+	"DriveLowFast":  "0x00",  // P_LOW_FAST, the default
+	"DriveLow1K5":   "0x100", // P_LOW_1K5
+	"DriveLow15K":   "0x200", // P_LOW_15K
+	"DriveLow150K":  "0x300", // P_LOW_150K
+	"DriveLow1mA":   "0x400", // P_LOW_1MA
+	"DriveLow100uA": "0x500", // P_LOW_100UA
+	"DriveLow10uA":  "0x600", // P_LOW_10UA
+	"DriveLowFloat": "0x700", // P_LOW_FLOAT
+
 	// The ADC input ranges. The gain is the fraction of full scale the pin's own
 	// voltage covers, so a bigger number is a SMALLER measurable range: ADC1X reads
 	// the whole 0..3.3 V span, ADC100X a hundredth of it at a hundred times the

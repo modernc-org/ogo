@@ -1914,6 +1914,42 @@ func main() {
 	}
 }
 
+// TestEmitCPinDrive pins the pull-up and pull-down recipes, which are the reason the
+// drive constants exist: the P2 has no pull-up bit, so one is a weak HIGH drive with
+// a floating LOW drive, and getting either half wrong leaves a pin that reads
+// whatever it likes. Verified on a P2-EDGE: pulled down the pin read 0 where the same
+// pin left floating read 1.
+func TestEmitCPinDrive(t *testing.T) {
+	src := `import "p2"
+
+func main() {
+	p2.WritePinMode(40, p2.DriveHigh15K|p2.DriveLowFloat)
+	p2.PinHigh(40)
+	p2.WritePinMode(41, p2.DriveHighFloat|p2.DriveLow15K)
+	p2.PinLow(41)
+	println(p2.PinIn(40), p2.PinIn(41))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"_wrpin(40, (0x1000 | 0x700))", // a weak high, a floating low: a pull-up
+		"_wrpin(41, (0x3800 | 0x200))", // and the mirror of it
+		"_pinr(40)",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("EmitC: want it to contain %q\ngot:\n%s", want, buf.String())
+		}
+	}
+}
+
 func TestEmitCADC(t *testing.T) {
 	src := `import "p2"
 
