@@ -8049,7 +8049,7 @@ func (e *emitter) rowValues(v Node, row arrDim) ([]*Node, bool) {
 	if v.sym != CompositeLit {
 		litType, sub, ok := e.soleArrayLit(v.ast)
 		if !ok {
-			e.fail("an element of a %s literal must itself be a literal", arrayTypeName(row))
+			e.fail("an element of a %s literal must itself be a literal", e.goArrayTypeName(row))
 			return nil, false
 		}
 		if !e.sameArrayType(row, litType) {
@@ -8062,7 +8062,7 @@ func (e *emitter) rowValues(v Node, row arrDim) ([]*Node, bool) {
 		return nil, false
 	}
 	if n, err := strconv.Atoi(row.bound); err == nil && length > n {
-		e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(row), countUnits(length, "value"), row.bound)
+		e.fail("too many values in %s literal: %s but the length is %s", e.goArrayTypeName(row), countUnits(length, "value"), row.bound)
 		return nil, false
 	}
 	return values, true
@@ -8099,7 +8099,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		// An index-form literal spans highest-index+1 positions, so this also
 		// catches "[3]int{5: 1}", whose index lies past the declared length.
 		if n, err := strconv.Atoi(a.bound); err == nil && length > n {
-			e.fail("too many values in %s literal: %s but the length is %s", arrayTypeName(a), countUnits(length, "value"), a.bound)
+			e.fail("too many values in %s literal: %s but the length is %s", e.goArrayTypeName(a), countUnits(length, "value"), a.bound)
 			return
 		}
 		if static {
@@ -8166,7 +8166,7 @@ func (e *emitter) sameArrayType(want arrDim, litType []int32) bool {
 	if ok && lit.elem == want.elem && slices.Equal(lit.bounds(), want.bounds()) {
 		return true
 	}
-	e.fail("cannot use a %s literal as %s", e.litTypeName(litType), arrayTypeName(want))
+	e.fail("cannot use a %s literal as %s", e.litTypeName(litType), e.goArrayTypeName(want))
 	return false
 }
 
@@ -8506,16 +8506,22 @@ func (e *emitter) isNamedLitType(kids []Node) bool {
 // spells it rather than as C would.
 func (e *emitter) litTypeName(litType []int32) string {
 	if a, ok := e.arrayDim(litType); ok {
-		return arrayTypeName(a)
+		return e.goArrayTypeName(a)
 	}
 	if elem, ok := e.sliceType(litType); ok {
-		return "[]" + elem
+		return "[]" + e.goTypeName(elem)
 	}
 	return "array or slice"
 }
 
 // arrayTypeName spells an array type the way the source does, "[2][3]int", rather
 // than the way C declares it, which puts the extents on the declarator.
+//
+// THE ELEMENT IS SPELLED AS IT IS HELD, which is C's name for it, so this is for
+// internal use and NOT for a diagnostic: it reported "[2]uint8_t" for a "[2]byte"
+// and "[2]int32_t" for a "[2]rune", and one message managed both spellings at once
+// -- "cannot use a [2]int literal as [2]uint8_t". goArrayTypeName, which already
+// existed for exactly this, is what a message to the reader wants.
 func arrayTypeName(a arrDim) string {
 	s := ""
 	for _, b := range a.bounds() {
@@ -10461,7 +10467,7 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 			// "m[:]" over a [2][3]int would be a slice of [3]int, and a slice of
 			// arrays has no element type C can name here. Slicing a *row*,
 			// "m[0][:]", is a slice of int and does work (sliceableChainRow).
-			e.fail("cannot slice %s: its element is an array; slice a row instead, %s[i][:]", arrayTypeName(a), base)
+			e.fail("cannot slice %s: its element is an array; slice a row instead, %s[i][:]", e.goArrayTypeName(a), base)
 			return sliceSource{}, false
 		}
 		e.needSlice(a.elem)
@@ -18273,7 +18279,7 @@ func (e *emitter) goTypeName(ct string) string {
 		return name
 	}
 	if a, ok := e.namedArrays[ct]; ok {
-		return arrayTypeName(a)
+		return e.goArrayTypeName(a)
 	}
 	// A MINTED interface name has no source spelling to return -- the program wrote
 	// the shape, not a name -- so the shape is what a message about it says. Left to

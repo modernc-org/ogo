@@ -6721,6 +6721,26 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 			src:  "func main() {\n\ti := 2\n\ta := [3]int{i: 5}\n\tprintln(a[0])\n}\n",
 			want: "an array or slice literal index must be a non-negative integer constant",
 		},
+		{
+			// Every case above has an int element, whose C name is also "int", so
+			// none of them could ever have caught the leak these two are here for:
+			// the diagnostics spelled the element as the emitted C holds it, saying
+			// "[2]uint8_t" for a [2]byte and "[2]int32_t" for a [2]rune -- naming a
+			// type that does not exist in this language. One message managed both
+			// spellings at once, "cannot use a [2]int literal as [2]uint8_t".
+			//
+			// byte and rune are ALIASES here as they are in Go, so uint8 and int32
+			// are the same types under other names and either spelling is true. Go
+			// would say "[2]byte", tracking which one was written; this does not.
+			name: "a byte element is not spelled in C",
+			src:  "func main() {\n\ta := [2]byte{1, 2, 3}\n\tprintln(a[0])\n}\n",
+			want: "too many values in [2]uint8 literal: 3 values but the length is 2",
+		},
+		{
+			name: "a rune element is not spelled in C",
+			src:  "func main() {\n\tvar a [2]rune = [2]int{1, 2}\n\tprintln(a[0])\n}\n",
+			want: "cannot use a [2]int literal as [2]int32",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}

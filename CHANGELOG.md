@@ -53,6 +53,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
   at all. The frequency is the build's to choose, which is what `--clock` is for.
 
+- **Diagnostics naming an array type no longer spell it in C.** Five of them reported
+  the element as the emitted C holds it -- `[2]uint8_t` for a `[2]byte`, `[2]int32_t`
+  for a `[2]rune` -- naming a type that does not exist in this language, and one
+  managed both spellings in a single message: `cannot use a [2]int literal as
+  [2]uint8_t`. The helper that renders a type in OctoGo's spelling already existed;
+  those messages simply did not call it. (`byte` and `rune` are aliases here as in
+  Go, so the `uint8`/`int32` now printed name the same types; Go tracks which
+  spelling you wrote and says `[2]byte`, and this does not.)
+
 - **Fixed a miscompile of a literal of a named slice type.** `var l List = List{10,
   20, 30}` over `type List []int` wrote the elements into the slice header's own
   fields, so `len(l)` answered 20, `cap(l)` 30, and `l[0]` read whatever lives at
