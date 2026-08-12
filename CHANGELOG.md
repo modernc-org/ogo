@@ -18,84 +18,42 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+Talking to the hardware, and to whatever is on the other end of the wire.
+
+A P2 program could drive an analog output and not read one, could stream text at a
+host and could not be told anything by one, and ran at whatever clock the C backend
+happened to pick. All three are closed: the ADC half of the smart-pin vocabulary and
+the pin drive strengths that let an input be read at all, `p2.ReadByte` and
+`p2.WriteByte` for the serial line in both directions and in binary, and `ogo build
+--clock` for the frequency. A binary request/response protocol — a frame in, a frame
+out, checksummed — now runs on a P2-EDGE, which is the thing none of these pieces
+could do alone.
+
+One miscompile, and it was found by testing a sentence in the README rather than by a
+test: a literal of a named slice type, in the one spelling of five that names the type
+twice, wrote its elements into the slice header instead of into storage. Auditing the
+rest of what this project claims about itself — every line of `ogo help`, then the
+README, then `specs.go` — turned up that bug, a second one in the diagnostics, a flag
+that was documented and refused, and five sentences that were simply false. The
+sections below say which.
+
 ### Language
 
-- **`p2.SetBaud(n)`** sets the baud rate of the link `print`, `println` and `printf`
-  go out on, mapping to the backend's `_setbaud`. The loader leaves it at 230400,
-  and a host expecting another rate had no way to ask for one -- which ruled out
-  talking to anything with a fixed protocol speed. The host must be reading at the
-  new rate by the time anything is written.
+- **The ADC half of the smart-pin vocabulary**, mirroring the DAC set that was
+  already there: input ranges `p2.ADC1X` through `p2.ADC100X`, sampling modes
+  `p2.ADCSample`, `p2.ADCSampleExt` and `p2.ADCScope`, and the internal references
+  `p2.ADCGround`, `p2.ADCSupply` and `p2.ADCFloat`. Analog output could be written
+  and analog input could not, which left half of a measuring instrument unreachable.
+  The converter is ratiometric, so a raw count means nothing on its own -- read the
+  two references and scale between them, which is what those are for, and neither
+  needs a wire. Verified on a P2-EDGE: a floating pin read 1647 mV, mid-rail to three
+  digits.
 
-- **`ogo build --clock`** picks the system clock, which was not selectable at all.
-  Programs ran at 160 MHz because that is what the C backend falls back to when a
-  program asks for nothing -- a 20 MHz crystal times eight, a round multiplier rather
-  than any limit of the part. Verified on a P2-EDGE: 160061416 Hz by default,
-  180068584 with `--clock 180MHz`, 200075240 with `--clock 200MHz`.
-
-  It takes plain Hz or a suffix (`--clock 200MHz`), and applies to `ogo run` and
-  `ogo test` too -- a test binary should take the clock the program it tests ships
-  with, since running tests at another speed is how a timing bug hides. `--xtal`
-  states the crystal when it is not the usual 20 MHz; nothing can ask the board, so
-  an unstated crystal is believed. A frequency the crystal cannot make **exactly** is
-  refused rather than rounded to the nearest it can: every wait, baud rate and sample
-  period is scaled by this number, and a board running one percent fast reports
-  nothing at all. Above ~200 MHz is refused as well, that being the fastest confirmed
-  here and above the part's rating -- a P2 will go faster, but a compiler should not
-  overclock one because a number was typed.
-
-  Doing it at BUILD time is what keeps the console readable: the backend derives the
-  serial divisor from a clock it can see, where a run-time change would leave
-  everything written before the baud was re-set as line noise.
-
-- **Fixed: `ogo run --help` said it "sets a precise 200 MHz clock".** It does not and
-  never did. The loader is passed a `-f` frequency, but a flexcc-compiled program
-  sets its own clock as it starts, so `-f` does not decide what it runs at -- the
-  same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
-  at all. The frequency is the build's to choose, which is what `--clock` is for.
-
-- **Diagnostics naming an array type no longer spell it in C.** Five of them reported
-  the element as the emitted C holds it -- `[2]uint8_t` for a `[2]byte`, `[2]int32_t`
-  for a `[2]rune` -- naming a type that does not exist in this language, and one
-  managed both spellings in a single message: `cannot use a [2]int literal as
-  [2]uint8_t`. The helper that renders a type in OctoGo's spelling already existed;
-  those messages simply did not call it. (`byte` and `rune` are aliases here as in
-  Go, so the `uint8`/`int32` now printed name the same types; Go tracks which
-  spelling you wrote and says `[2]byte`, and this does not.)
-
-- **Fixed a miscompile of a literal of a named slice type.** `var l List = List{10,
-  20, 30}` over `type List []int` wrote the elements into the slice header's own
-  fields, so `len(l)` answered 20, `cap(l)` 30, and `l[0]` read whatever lives at
-  address 10. A brace initializer cannot fill a slice -- it is a header pointing at
-  storage, and the literal has to put the elements somewhere first.
-
-  Only that one spelling was wrong. `l := List{...}`, `var l = List{...}` with no
-  type written, a literal passed as an argument and one at package scope all took
-  other paths and were always right, which is how it lasted: the broken form names
-  the type twice. Found by checking a README claim rather than by a test, and the
-  regression case now covers all five positions.
-
-- **Fixed: `ogo fmt -exclude` was documented but refused.** Only `--exclude` worked,
-  so following `ogo help fmt` got `unexpected flag: -exclude`. Both spellings are
-  accepted now, as `--release`/`-release` already were on `ogo build`.
-
-- **Corrected help.** Every command's help was read against what the tool does, after
-  two claims in it turned out to be false. Three more were:
-  - `ogo smith` said "generation is not yet reproducible from a seed". It is, and has
-    been: the same `-seed` writes a byte-identical program. The note survived the fix
-    that made it wrong, and it is the kind that costs real work -- it tells you not to
-    bother re-running the seed that failed.
-  - `ogo loadp2` said a passthrough load leaves the P2 "on its imprecise internal
-    oscillator" so output is "garbled at every baud", and prescribed `-f 200000000 -b
-    230400`. Only the baud matters: measured, the same binary prints cleanly with `-b
-    230400` whatever `-f` says, and rubbish without it whatever `-f` says. loadp2
-    reads at 115200 where an ogo program writes at 230400, and the program is on the
-    crystal PLL either way because it sets its own clock.
-  - `ogo fmt` said "the formatted result is compared and nothing is written", which
-    reads as though it prints nothing. It prints the formatted source, as gofmt does.
-
-  What the help gets right was checked too, not assumed: the binary naming, `-c`
-  leaving `<pkg>.test.binary`, the 0/1 exit status, and each of the five documented
-  runtime checks panicking on the board with the message it advertises.
+  `ADCSample`'s X argument is a sample period of 2^X clocks and **is usable to 13 and
+  no further**. Up to there the doubling is exact; at 14 and 15 every reading is 0 and
+  above that it is noise, whatever the Y register says. Nothing reports the overrun,
+  so the number is in the docs. At X=13 the mode gives about 10640 counts between the
+  references, a little over 13 bits, for 8192 clocks.
 
 - **The pin DRIVE strengths**: `p2.DriveHigh15K` through `p2.DriveHighFloat`, the
   current-source variants, and the `DriveLow` mirrors. They are what a digital INPUT
@@ -111,18 +69,6 @@ shipped section tells a reader on that version that they have behaviour they do 
 
   Verified on a P2-EDGE at both 15K and 150K: the pulled-down pin read 0 where the
   same pin left floating read 1.
-
-- **`p2.WriteByte(b)` puts a byte on the serial line exactly as given**, which no
-  other path here will do. It is what a protocol carrying anything but text needs,
-  and it pairs with `p2.ReadByte` below: without both, a packet could be received and
-  not sent.
-
-  The two near misses are why it exists, and both corrupt silently. `printf("%c", b)`
-  writes a RUNE, so everything from 0x80 up goes out UTF-8 encoded as two bytes and a
-  length field of 200 becomes 195 136. C's `putchar` looks right until a byte happens
-  to be 10, which it TRANSLATES into 13 10. Measured on a P2-EDGE: this wrote 1..255
-  as exactly those 255 bytes where `putchar` wrote 256. A frame of `AA 04 0A C8 AA 0D`
-  plus checksum -- chosen to contain both traps -- arrived byte for byte.
 
 - **`p2.ReadByte(timeout)` reads from the serial line** -- the first way IN. Every
   one of the two dozen intrinsics was output or pins or time, and the three print
@@ -150,21 +96,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   the worker only reads and bumps tail -- which took all of `PING\rSTATUS\rGO\r`
   where the channel version took one command and two fragments.
 
-- **The ADC half of the smart-pin vocabulary**, mirroring the DAC set that was
-  already there: input ranges `p2.ADC1X` through `p2.ADC100X`, sampling modes
-  `p2.ADCSample`, `p2.ADCSampleExt` and `p2.ADCScope`, and the internal references
-  `p2.ADCGround`, `p2.ADCSupply` and `p2.ADCFloat`. Analog output could be written
-  and analog input could not, which left half of a measuring instrument unreachable.
-  The converter is ratiometric, so a raw count means nothing on its own -- read the
-  two references and scale between them, which is what those are for, and neither
-  needs a wire. Verified on a P2-EDGE: a floating pin read 1647 mV, mid-rail to three
-  digits.
+- **`p2.WriteByte(b)` puts a byte on the serial line exactly as given**, which no
+  other path here will do. It is what a protocol carrying anything but text needs,
+  and it pairs with `p2.ReadByte` below: without both, a packet could be received and
+  not sent.
 
-  `ADCSample`'s X argument is a sample period of 2^X clocks and **is usable to 13 and
-  no further**. Up to there the doubling is exact; at 14 and 15 every reading is 0 and
-  above that it is noise, whatever the Y register says. Nothing reports the overrun,
-  so the number is in the docs. At X=13 the mode gives about 10640 counts between the
-  references, a little over 13 bits, for 8192 clocks.
+  The two near misses are why it exists, and both corrupt silently. `printf("%c", b)`
+  writes a RUNE, so everything from 0x80 up goes out UTF-8 encoded as two bytes and a
+  length field of 200 becomes 195 136. C's `putchar` looks right until a byte happens
+  to be 10, which it TRANSLATES into 13 10. Measured on a P2-EDGE: this wrote 1..255
+  as exactly those 255 bytes where `putchar` wrote 256. A frame of `AA 04 0A C8 AA 0D`
+  plus checksum -- chosen to contain both traps -- arrived byte for byte.
+
+- **`p2.SetBaud(n)`** sets the baud rate of the link `print`, `println` and `printf`
+  go out on, mapping to the backend's `_setbaud`. The loader leaves it at 230400,
+  and a host expecting another rate had no way to ask for one -- which ruled out
+  talking to anything with a fixed protocol speed. The host must be reading at the
+  new rate by the time anything is written.
 
 - **`printf` takes flags, a width and a precision** -- `%6.2f`, `%-8s`, `%+05d`,
   `%.3s`. They were rejected outright before, so `%.2f` -- printing a number to two
@@ -181,6 +129,85 @@ shipped section tells a reader on that version that they have behaviour they do 
   back clean. The `%*d` forms, which take a width from an argument of their own,
   stay unaccepted: the count of verbs is what pairs each one with an argument to
   type-check it against.
+
+### Fixed
+
+- **Fixed a miscompile of a literal of a named slice type.** `var l List = List{10,
+  20, 30}` over `type List []int` wrote the elements into the slice header's own
+  fields, so `len(l)` answered 20, `cap(l)` 30, and `l[0]` read whatever lives at
+  address 10. A brace initializer cannot fill a slice -- it is a header pointing at
+  storage, and the literal has to put the elements somewhere first.
+
+  Only that one spelling was wrong. `l := List{...}`, `var l = List{...}` with no
+  type written, a literal passed as an argument and one at package scope all took
+  other paths and were always right, which is how it lasted: the broken form names
+  the type twice. Found by checking a README claim rather than by a test, and the
+  regression case now covers all five positions.
+
+### Diagnostics
+
+- **Diagnostics naming an array type no longer spell it in C.** Five of them reported
+  the element as the emitted C holds it -- `[2]uint8_t` for a `[2]byte`, `[2]int32_t`
+  for a `[2]rune` -- naming a type that does not exist in this language, and one
+  managed both spellings in a single message: `cannot use a [2]int literal as
+  [2]uint8_t`. The helper that renders a type in OctoGo's spelling already existed;
+  those messages simply did not call it. (`byte` and `rune` are aliases here as in
+  Go, so the `uint8`/`int32` now printed name the same types; Go tracks which
+  spelling you wrote and says `[2]byte`, and this does not.)
+
+### Tooling
+
+- **`ogo build --clock`** picks the system clock, which was not selectable at all.
+  Programs ran at 160 MHz because that is what the C backend falls back to when a
+  program asks for nothing -- a 20 MHz crystal times eight, a round multiplier rather
+  than any limit of the part. Verified on a P2-EDGE: 160061416 Hz by default,
+  180068584 with `--clock 180MHz`, 200075240 with `--clock 200MHz`.
+
+  It takes plain Hz or a suffix (`--clock 200MHz`), and applies to `ogo run` and
+  `ogo test` too -- a test binary should take the clock the program it tests ships
+  with, since running tests at another speed is how a timing bug hides. `--xtal`
+  states the crystal when it is not the usual 20 MHz; nothing can ask the board, so
+  an unstated crystal is believed. A frequency the crystal cannot make **exactly** is
+  refused rather than rounded to the nearest it can: every wait, baud rate and sample
+  period is scaled by this number, and a board running one percent fast reports
+  nothing at all. Above ~200 MHz is refused as well, that being the fastest confirmed
+  here and above the part's rating -- a P2 will go faster, but a compiler should not
+  overclock one because a number was typed.
+
+  Doing it at BUILD time is what keeps the console readable: the backend derives the
+  serial divisor from a clock it can see, where a run-time change would leave
+  everything written before the baud was re-set as line noise.
+
+- **Fixed: `ogo fmt -exclude` was documented but refused.** Only `--exclude` worked,
+  so following `ogo help fmt` got `unexpected flag: -exclude`. Both spellings are
+  accepted now, as `--release`/`-release` already were on `ogo build`.
+
+### Documentation
+
+- **Fixed: `ogo run --help` said it "sets a precise 200 MHz clock".** It does not and
+  never did. The loader is passed a `-f` frequency, but a flexcc-compiled program
+  sets its own clock as it starts, so `-f` does not decide what it runs at -- the
+  same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
+  at all. The frequency is the build's to choose, which is what `--clock` is for.
+
+- **Corrected help.** Every command's help was read against what the tool does, after
+  two claims in it turned out to be false. Three more were:
+  - `ogo smith` said "generation is not yet reproducible from a seed". It is, and has
+    been: the same `-seed` writes a byte-identical program. The note survived the fix
+    that made it wrong, and it is the kind that costs real work -- it tells you not to
+    bother re-running the seed that failed.
+  - `ogo loadp2` said a passthrough load leaves the P2 "on its imprecise internal
+    oscillator" so output is "garbled at every baud", and prescribed `-f 200000000 -b
+    230400`. Only the baud matters: measured, the same binary prints cleanly with `-b
+    230400` whatever `-f` says, and rubbish without it whatever `-f` says. loadp2
+    reads at 115200 where an ogo program writes at 230400, and the program is on the
+    crystal PLL either way because it sets its own clock.
+  - `ogo fmt` said "the formatted result is compared and nothing is written", which
+    reads as though it prints nothing. It prints the formatted source, as gofmt does.
+
+  What the help gets right was checked too, not assumed: the binary naming, `-c`
+  leaving `<pkg>.test.binary`, the 0/1 exit status, and each of the five documented
+  runtime checks panicking on the board with the message it advertises.
 
 ## v0.24.0
 
