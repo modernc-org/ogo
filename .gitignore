@@ -1,1 +1,6 @@
 /build/
+
+# Local assistant/tooling state. Only settings.local.json was excluded, and only by
+# a global ignore file, so anything else dropped here would be swept in by a
+# `git add -A` into a public mirror.
+.claude/
