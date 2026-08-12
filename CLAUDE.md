@@ -318,8 +318,12 @@ still design-only.
   `[]int{1, 4: 9}`) with constant indices -- expanded to positional C initializers
   (gaps zero-filled), a slice's length being the highest index plus one. A
   non-constant index is refused.
-- Multi-package programs work: a user `import "geo"` resolves to a sibling
-  directory and the whole program -- the main package plus every package it
+- Multi-package programs work: a user `import "geo"` resolves to a SUBDIRECTORY of
+  the importing package, not a sibling -- the import path is read against
+  `os.DirFS(<the package's own directory>)`, so `geo/` must sit inside the directory
+  being built. Measured 2026-08-12: the subdirectory layout builds and runs, the
+  sibling one fails with `cannot find package "geo"`. (This entry said "sibling"
+  until then.) The whole program -- the main package plus every package it
   imports, transitively -- is emitted into **one C translation unit** in dependency
   order, with top-level symbols mangled into their package's namespace. `import
   "p2"` remains the one dotless, directory-less import, mapping to the hardware

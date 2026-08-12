@@ -293,8 +293,9 @@ broken.
 * **The standard library is three packages.** `strings` is the allocation-free part
   of Go's — the functions that answer a question about a string or return a
   substring of one, each meaning exactly what Go's of the same name means, checked
-  by running the same program under Go. `p2` wraps twenty-four intrinsics (pin
-  control, smart pins, timing, the hardware locks), and `testing` carries the state
+  by running the same program under Go. `p2` wraps twenty-eight intrinsics (pin
+  control, smart pins including the ADC, timing, the serial line in both directions,
+  the hardware locks), and `testing` carries the state
   a test reports through. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all
@@ -321,6 +322,13 @@ broken.
 * `goto`.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.
+* An **array literal only stands as a variable's initializer**. `a := [2]int{1, 2}`
+  is fine and so is the array-typed `var`, but `append(rows, [2]int{1, 2})` and `ch
+  <- [3]int{1, 2, 3}` are refused — bind the literal to a variable and send that.
+  The array-as-element types themselves are fine, as above.
+* An imported package must be a **subdirectory** of the package that imports it, so
+  `import "geo"` reads `geo/` beside the importing files rather than beside their
+  directory. Go's module layout is not implemented.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,

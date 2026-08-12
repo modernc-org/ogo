@@ -53,6 +53,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
   at all. The frequency is the build's to choose, which is what `--clock` is for.
 
+- **Fixed a miscompile of a literal of a named slice type.** `var l List = List{10,
+  20, 30}` over `type List []int` wrote the elements into the slice header's own
+  fields, so `len(l)` answered 20, `cap(l)` 30, and `l[0]` read whatever lives at
+  address 10. A brace initializer cannot fill a slice -- it is a header pointing at
+  storage, and the literal has to put the elements somewhere first.
+
+  Only that one spelling was wrong. `l := List{...}`, `var l = List{...}` with no
+  type written, a literal passed as an argument and one at package scope all took
+  other paths and were always right, which is how it lasted: the broken form names
+  the type twice. Found by checking a README claim rather than by a test, and the
+  regression case now covers all five positions.
+
 - **Fixed: `ogo fmt -exclude` was documented but refused.** Only `--exclude` worked,
   so following `ogo help fmt` got `unexpected flag: -exclude`. Both spellings are
   accepted now, as `--release`/`-release` already were on `ogo build`.

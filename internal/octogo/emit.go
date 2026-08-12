@@ -8622,8 +8622,23 @@ func (e *emitter) litFieldValues(name string, lit Node) (values []*Node, fields 
 
 // emitVarInit emits a variable declaration's initializer. A composite literal that
 // is the whole of one is emitted as a brace initializer; see emitCompositeLit.
+//
+// EXCEPT WHEN THE TYPE IS A SLICE, which a brace cannot fill. A slice is a header
+// pointing at storage, so its literal has to put the elements somewhere first and
+// point at that -- which is what emitExpr does. A NAMED slice type reached here and
+// was brace-filled like a struct, writing the elements into the header's own fields:
+// `var l List = List{10, 20, 30}` over `type List []int` gave a length of 20, a
+// capacity of 30 and a data pointer of 10, so len(l) answered 20 and l[0] read
+// whatever lives at address 10. The C compiler did say "mixing pointer and integer
+// types in assignment", which is how it was found, but `ogo build` still wrote a
+// binary and the program still ran.
+//
+// Only this spelling was wrong. `l := List{...}`, `var l = List{...}` with no type
+// written, a literal as an argument and one at package scope all took other paths
+// and were always right, which is why it survived: the form that names the type
+// twice is the one nobody writes twice.
 func (e *emitter) emitVarInit(initExpr []int32) {
-	if name, lit, ok := e.soleCompositeLit(initExpr); ok {
+	if name, lit, ok := e.soleCompositeLit(initExpr); ok && !e.isSliceCType(e.underlyingCType(name)) {
 		e.emitCompositeLit(name, lit, true)
 		return
 	}

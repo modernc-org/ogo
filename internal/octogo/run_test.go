@@ -37,6 +37,52 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A literal of a NAMED SLICE type, in every position one can stand in. The
+		// typed var was a miscompile: a brace initializer cannot fill a slice, which
+		// is a header pointing at storage, and filling one anyway wrote the elements
+		// into the header's own fields -- "var b List = List{7, 8, 9}" gave a length
+		// of 8, a capacity of 9 and a data pointer of 7, so b[0] read address 7.
+		//
+		// The other four spellings took other paths and were always right, which is
+		// how it survived: the broken one names the type twice, and nobody writes the
+		// type twice. Found by checking a README claim ("type List []int as a slice")
+		// rather than by a test, so the positions are all here now.
+		//
+		// The array line is the control: a brace initializer IS right for one, so the
+		// fix has to keep taking that path.
+		name: "a literal of a named slice type",
+		src: `type List []int
+type Row [3]int
+
+func take(l List) int { return len(l) }
+
+var pkg = List{1, 2, 3}
+
+func main() {
+	a := List{4, 5, 6}
+	println("short", len(a), a[0])
+	var b List = List{7, 8, 9}
+	println("var", len(b), b[0], cap(b))
+	var c = List{1, 1, 1}
+	println("infer", len(c), c[0])
+	println("arg", take(List{2, 2}))
+	println("pkg", len(pkg), pkg[0])
+	var r Row = Row{1, 2, 3}
+	println("row", len(r), r[2])
+	var s List = List{}
+	println("empty", len(s))
+}
+`,
+		want: `short 3 4
+var 3 7 3
+infer 3 1
+arg 2
+pkg 3 1
+row 3 3
+empty 0
+`,
+	},
+	{
 		// printf's flags, width and precision. Every line was taken from real Go
 		// (GOARCH=386) rather than written by hand, because half the point is the
 		// places C and Go would disagree if the spec were just handed through.
