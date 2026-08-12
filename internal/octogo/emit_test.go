@@ -1881,6 +1881,39 @@ func main() {
 	}
 }
 
+// TestEmitCWriteByte pins p2.WriteByte to _txraw and to nothing else. The intrinsic
+// is the whole point: the two obvious alternatives both corrupt a packet, quietly.
+// printf's %c writes a rune, so 200 goes out UTF-8 as 195 136; putchar translates a
+// 10 into 13 10. Measured on a P2-EDGE, _txraw wrote 1..255 as exactly 255 bytes
+// where putchar wrote 256, and a frame of {0xAA, 4, 10, 200, 0xAA, 13, sum} arrived
+// byte for byte.
+func TestEmitCWriteByte(t *testing.T) {
+	src := `import "p2"
+
+func main() {
+	p2.WriteByte(0xAA)
+	p2.WriteByte(10)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{"_txraw(0xAA)", "_txraw(10)"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("EmitC: want it to contain %q\ngot:\n%s", want, buf.String())
+		}
+	}
+	if strings.Contains(buf.String(), "putchar") || strings.Contains(buf.String(), "ogo_print_rune") {
+		t.Errorf("EmitC: WriteByte must not go through a translating path:\n%s", buf.String())
+	}
+}
+
 func TestEmitCADC(t *testing.T) {
 	src := `import "p2"
 

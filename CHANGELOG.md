@@ -53,6 +53,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   same binary reports 160061416 Hz whether loaded with `-f 200000000` or with no `-f`
   at all. The frequency is the build's to choose, which is what `--clock` is for.
 
+- **`p2.WriteByte(b)` puts a byte on the serial line exactly as given**, which no
+  other path here will do. It is what a protocol carrying anything but text needs,
+  and it pairs with `p2.ReadByte` below: without both, a packet could be received and
+  not sent.
+
+  The two near misses are why it exists, and both corrupt silently. `printf("%c", b)`
+  writes a RUNE, so everything from 0x80 up goes out UTF-8 encoded as two bytes and a
+  length field of 200 becomes 195 136. C's `putchar` looks right until a byte happens
+  to be 10, which it TRANSLATES into 13 10. Measured on a P2-EDGE: this wrote 1..255
+  as exactly those 255 bytes where `putchar` wrote 256. A frame of `AA 04 0A C8 AA 0D`
+  plus checksum -- chosen to contain both traps -- arrived byte for byte.
+
 - **`p2.ReadByte(timeout)` reads from the serial line** -- the first way IN. Every
   one of the two dozen intrinsics was output or pins or time, and the three print
   built-ins only write, so a program could stream measurements at a host and could

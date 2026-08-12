@@ -139,6 +139,22 @@ func SetBaud(baud int)
 // and two fragments.
 func ReadByte(timeout int) int
 
+// WriteByte puts one byte on the serial link exactly as given, which is what a
+// protocol carrying anything but text needs and what none of print, println and
+// printf will do.
+//
+// printf's %c is the near miss. It writes a RUNE, so it is right for text and wrong
+// for a packet: every value from 0x80 up comes out UTF-8 encoded as two bytes, and a
+// length field of 200 becomes 0xC3 0x88. Measured on a P2-EDGE, this writes 1..255
+// as exactly those 255 bytes.
+//
+// The C beneath is not putchar, which is the other near miss and a worse one,
+// because it looks right until a byte happens to be 10: putchar TRANSLATES that to a
+// carriage return and a newline, so the same 255 values come out as 256 bytes with a
+// 13 inserted. A framing byte, a length or a checksum that lands on 10 would be
+// corrupted and nothing would say so.
+func WriteByte(b byte)
+
 // Reboot restarts the board.
 func Reboot()
 
