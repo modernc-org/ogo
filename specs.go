@@ -1493,7 +1493,10 @@
 // no heap allocation: it reserves a backing array whose size is fixed at compile
 // time, so n and m must be constants, and it is admitted only as the initializer
 // of a slice variable, "var s []T = make([]T, n, m)"; the two-argument form
-// "make([]T, n)" sets the capacity equal to the length. append takes one or more
+// "make([]T, n)" sets the capacity equal to the length. The type may be written as
+// a DEFINED slice type rather than as the "[]T" shape — "var d List = make(List, n,
+// m)" over "type List []int", following a chain of definitions — and the variable
+// then has that type, methods and all. append takes one or more
 // elements, appending each in turn — or a whole slice with Go's spread,
 // "append(s, xs...)", a string spreading onto a []byte — and cannot grow a slice
 // past its capacity, so it has two forms: the one-result form "s = append(s, x)"
