@@ -37,6 +37,56 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// Mixed-width arithmetic in the shapes a device protocol actually uses, as
+		// against the operator-at-a-time cases elsewhere in this table. Each line is
+		// somewhere a 32-bit target can quietly differ from Go:
+		//
+		//	the split and reassembly of a wide value, where the low half has to be
+		//	  masked through uint32 -- unmasked, a low word with its top bit set
+		//	  sign-extends and poisons the whole result. The -1 line is the one that
+		//	  catches it: every half is 0xFFFFFFFF there.
+		//	a counter difference across WRAPAROUND, which is how elapsed time is
+		//	  measured against a 32-bit cycle counter that laps every few seconds.
+		//	a widening before a multiply, beside the same multiply left narrow --
+		//	  the last line overflows on purpose, and the two must disagree exactly
+		//	  as Go has them disagree. The narrow one is bound to a variable rather
+		//	  than written as int64(raw*3300) only because ogo fmt does not yet
+		//	  tighten a binary operand inside a conversion the way gofmt does; the
+		//	  arithmetic is identical either way.
+		//
+		// Every value was taken from real Go. Verified on a P2-EDGE as well as on
+		// the host: this is emulated 64-bit arithmetic on the target, so the host
+		// compiler agreeing with Go says little about the backend that ships.
+		name: "mixed-width protocol arithmetic",
+		src: `func main() {
+	v := int64(0x0000123456789ABC)
+	hi := int32(v >> 32)
+	lo := int32(v & 0xFFFFFFFF)
+	println(hi, lo, int64(hi)<<32|int64(uint32(lo)) == v)
+
+	w := int64(-1)
+	whi := int32(w >> 32)
+	wlo := int32(w & 0xFFFFFFFF)
+	println(whi, wlo, int64(whi)<<32|int64(uint32(wlo)) == w)
+
+	var t0 uint32 = 0xFFFFFF00
+	var t1 uint32 = 0x00000100
+	println(t1-t0, int32(t1-t0))
+
+	var raw int32 = 2000000
+	println(int64(raw)*3300/65536, int32(int64(raw)*3300/65536))
+	narrow := raw * 3300
+	println(int64(narrow) / 65536)
+}
+`,
+		want: `4660 1450744508 true
+-1 -1 true
+512 512
+100708 100708
+-30363
+`,
+	},
+	{
 		// A named slice type where it is NOT a literal's initializer. Each line was
 		// its own defect, and all four share one cause: a defined type was read by
 		// the name written rather than by what it is defined over, so every table
