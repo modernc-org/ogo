@@ -43,6 +43,12 @@ var generatedConstructs = []struct {
 	// The one that matters: a value folded into the checksum WITHOUT being stored
 	// back first. A store truncates to the type, so a stored result cannot tell a
 	// compiler that computed in the wrong width from one that did not.
+	// A DEFINED type over a sized kind, and a variable declared with it. The pair
+	// matters: declaring the type and never using it would satisfy the first
+	// pattern while testing nothing, which is the failure mode this whole test
+	// exists to catch.
+	{"defined type over a sized kind", `\ntype D_\d+ (u?int8|u?int16|uint32)\n`},
+	{"sized variable of a defined type", `\n\s*var z_\d+ D_\d+ = `},
 	{"method declaration, value receiver", `\nfunc \(r S_\d+\) `},
 	{"method declaration, pointer receiver", `\nfunc \(r \*S_\d+\) `},
 	{"method call, value-receiver getter", `\.get_\d+\(\)`},

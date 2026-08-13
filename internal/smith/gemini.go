@@ -49,6 +49,26 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		fmt.Fprintf(f.Out, "type %s interface {\n\t%s() int\n}\n\n", ifaceTypeName, ifaceMethod)
 	}
 
+	// 3.6. Defined types over the sized integer kinds, for genSizedStmt to declare
+	// its variables with. They must be here rather than beside the variable: a type
+	// declared inside a function is refused ("statement TypeDecl is not supported
+	// yet"), so package scope is the only scope there is.
+	//
+	// Not every kind draws one, so a seed exercises both spellings and a failing
+	// seed says which was involved.
+	f.SizedDefined = map[BasicKind]string{}
+	for _, k := range sizedKinds {
+		if f.Rand.Intn(2) != 0 {
+			continue
+		}
+		name := f.newVarName("D")
+		f.SizedDefined[k] = name
+		fmt.Fprintf(f.Out, "type %s %s\n", name, BasicType{Kind: k}.String())
+	}
+	if len(f.SizedDefined) != 0 {
+		fmt.Fprint(f.Out, "\n")
+	}
+
 	// 4. Generate the functions main will call. They come first so that every call
 	// site in main has one to draw on, and they take no part in the environment:
 	// a body reads only its own parameters (see genPureExpr).
@@ -739,9 +759,18 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	}
 	cur := NewSized(start, k)
 
+	// The type is written as the DEFINED one over this kind when the program drew
+	// one, and as the predeclared kind otherwise. Nothing else about the block
+	// changes: a defined type has the representation of what it is defined over, so
+	// every step and the fold read the same, and the VM -- which keys values by name
+	// and never sees this string -- is untouched.
+	typeName := BasicType{Kind: k}.String()
+	if d, ok := f.SizedDefined[k]; ok {
+		typeName = d
+	}
 	stmts := []Node{&VarDeclNode{
 		Name: name,
-		Type: BasicType{Kind: k}.String(),
+		Type: typeName,
 		Expr: &IntLitNode{Value: fmt.Sprint(cur.v)},
 	}}
 
@@ -2042,7 +2071,21 @@ func (f *Fuzzer) genInterfaceStmt(vm Machine, mem Memory) Node {
 		sw.Types = append(sw.Types, def.Name)
 		sw.Weights = append(sw.Weights, i+2)
 		if def == sv.Def {
-			taken, _ = vm.Eval("*", val, Int32(i+2))
+			// The arm multiplies the field by its weight, and the VM refuses to
+			// model an int32 overflow rather than guess at it. What it cannot
+			// predict must not be GENERATED: the oracle's whole claim is that it
+			// knows the answer, so the switch is dropped instead.
+			//
+			// The error was discarded here, which left taken nil and panicked the
+			// generator on the next Eval -- "interface conversion: interface is
+			// nil" -- for any seed whose field grew large enough. Reachable all
+			// along; seed 486 found it once a change upstream shifted the random
+			// stream far enough to try one.
+			t, err := vm.Eval("*", val, Int32(i+2))
+			if err != nil {
+				return &BlockNode{Statements: stmts}
+			}
+			taken = t
 		}
 	}
 	stmts = append(stmts, sw)

@@ -115,6 +115,20 @@ type Fuzzer struct {
 	// Structs are the generated struct types, in generation order.
 	Structs []*StructDef
 
+	// SizedDefined maps a sized integer kind to a DEFINED type declared over it,
+	// "type D_3 uint8", for the kinds that drew one. A sized variable is then
+	// declared with that name instead of the predeclared one, which puts every
+	// operation the sized generator already performs through a defined type.
+	//
+	// It exists because a defined type is read by the compiler in two ways at once
+	// -- as a distinct type for identity, as what it is defined over for arithmetic
+	// -- and getting the second wrong is silent. Four such defects were found by
+	// hand in one day; this is what looks for the rest. Sized kinds are where it
+	// matters most: they are also where Go and C disagree about the width a
+	// computation happens in, so a wrong resolution shows up as a wrong number
+	// rather than as a compile error.
+	SizedDefined map[BasicKind]string
+
 	// Hardware limits tracking
 	CogCount int // Max 8
 

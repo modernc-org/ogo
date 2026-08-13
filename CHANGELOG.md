@@ -18,6 +18,30 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Testing
+
+- **The fuzzer generates DEFINED types**, `type D_3 uint8`, and declares its sized
+  integer variables with them. Every operation it already performs on a sized
+  variable -- the arithmetic, the compound assignments, the shifts, the unary forms,
+  and the fold of an unstored expression -- now runs through a defined type as well
+  as a predeclared one, checked against the oracle's own answer.
+
+  Sized kinds are where this is worth doing: a defined type has to be read two ways
+  at once, as a distinct type for identity and as what it is defined over for
+  arithmetic, and the sized kinds are also where Go and C disagree about the width a
+  computation happens in. Get the resolution wrong there and it shows up as a wrong
+  number rather than as a compile error. Four such defects were found by hand in a
+  day; this is what looks for the rest.
+
+- **Fixed a generator crash that had always been reachable.** `genInterfaceStmt`
+  multiplied a struct field by its type-switch weight and discarded the error, so a
+  field large enough to overflow an int32 left the value nil and panicked the next
+  evaluation -- "interface conversion: interface is nil". The VM declines to model an
+  overflow rather than guess, and what it cannot predict must not be generated, so
+  the type switch is now dropped instead. Found at seed 486 once the change above
+  shifted the random stream far enough to reach a large field; 3000 seeds are clean
+  either way now, where before that seed aborted `ogo smith` outright.
+
 ### Documentation
 
 - **`specs.go` claimed type ALIASES work. They do not.** "type A = B" parses and is
