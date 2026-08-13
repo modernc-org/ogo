@@ -1,0 +1,120 @@
+import "p2"
+
+// A framed binary protocol over the serial line: the host sends a frame, the board
+// answers with one. It is the shape a device speaking to a program on a PC wants,
+// and it is here because the two things that make it work are not guessable.
+//
+// A frame is a start byte, a length, that many payload bytes, and a checksum over
+// the length and the payload:
+//
+//	AA  len  b0 b1 ... b(len-1)  sum
+//
+// The reply is the same frame with every payload byte incremented, so a host can
+// tell an answer from an echo. A bad checksum is dropped rather than answered, and
+// the parser resynchronises on the next start byte.
+//
+// # Why a whole cog does nothing but read
+//
+// NOTHING IS BUFFERED behind p2.ReadByte. A byte that arrives while the cog is
+// doing something else is gone, and at 230400 baud a byte is 43 microseconds --
+// less than one printf. Measured on a P2-EDGE: a loop reading into an array caught
+// all eight bytes of a frame, and the same loop with one printf per byte caught
+// four of them, silently. So the reader reads, and does nothing else at all.
+//
+// # Why the handover is a ring and not a channel
+//
+// A channel here is a RENDEZVOUS: the send parks the reader until the far side
+// arrives to take the value. That is exactly the pause the line does not wait
+// through. Measured the same way, a reader handing bytes over a channel lost every
+// byte of the next two frames while the worker was printing the answer to the
+// first.
+//
+// A single-producer/single-consumer ring needs no lock and never blocks the
+// producer: the reader only ever stores and bumps head, the worker only ever reads
+// and bumps tail, and each index is written by one cog and read by the other.
+
+const (
+	// ringN must be a power of two: the index wraps with a mask, which is one
+	// instruction where a modulo is a divide.
+	ringN = 64
+
+	startByte  = 0xAA
+	maxPayload = 32
+
+	// frames is how many the program answers before it stops, so the example
+	// terminates rather than running forever under a test.
+	frames = 3
+)
+
+var (
+	ring [ringN]byte
+	head int // written by the reader cog only
+	tail int // written by the worker only
+
+	payload [maxPayload]byte
+)
+
+// reader owns the serial line for the life of the program. It blocks in ReadByte,
+// stores, and goes straight back -- no formatting, no channel, no work of any kind
+// between one byte and the next.
+func reader() {
+	for {
+		ring[head&(ringN-1)] = byte(p2.ReadByte(0))
+		head++
+	}
+}
+
+// next takes one byte from the ring, spinning until the reader has produced it.
+// The spin is the worker's to pay, not the reader's.
+func next() byte {
+	for tail == head {
+	}
+	b := ring[tail&(ringN-1)]
+	tail++
+	return b
+}
+
+// send writes one frame. p2.WriteByte is the only way to put a byte on the wire as
+// it stands: printf's %c writes a RUNE, so anything from 0x80 up would go out
+// UTF-8-encoded as two bytes, and C's putchar turns a 10 into 13 10.
+func send(b []byte) {
+	sum := byte(len(b))
+	p2.WriteByte(startByte)
+	p2.WriteByte(byte(len(b)))
+	for i := 0; i < len(b); i++ {
+		p2.WriteByte(b[i])
+		sum += b[i]
+	}
+	p2.WriteByte(sum)
+}
+
+// readFrame collects one frame and reports whether its checksum held. It returns
+// the payload length either way; a caller that is told false must not read it.
+func readFrame() (int, bool) {
+	for next() != startByte { // resynchronise: skip anything before a start byte
+	}
+	n := int(next())
+	if n > maxPayload {
+		return 0, false
+	}
+	sum := byte(n)
+	for i := 0; i < n; i++ {
+		payload[i] = next()
+		sum += payload[i]
+	}
+	return n, next() == sum
+}
+
+func main() {
+	go reader()
+	for i := 0; i < frames; i++ {
+		n, ok := readFrame()
+		if !ok {
+			continue // a corrupt frame is dropped, not answered
+		}
+		for j := 0; j < n; j++ {
+			payload[j]++
+		}
+		send(payload[0:n])
+	}
+}

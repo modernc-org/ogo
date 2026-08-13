@@ -85,6 +85,24 @@ shipped section tells a reader on that version that they have behaviour they do 
   declared this way. `append` had to learn to look through a defined type for the
   same reason: it read the written name and refused.
 
+### Examples and tests
+
+- **`_examples/protocol`**: a framed binary protocol over the serial line, host sends
+  a frame and the board answers with one. It is the first example putting `go`, a
+  ring, `p2.ReadByte` and `p2.WriteByte` together, and it exists because the two
+  things that make it work are not guessable from the language:
+
+  A whole cog does nothing but read — nothing is buffered behind `p2.ReadByte`, and
+  at 230400 baud a byte is 43 microseconds, less than one `printf`. And the handover
+  is a RING and not a channel: a channel here is a rendezvous, so the send parks the
+  reader until the far side arrives, which is exactly the pause the line does not
+  wait through.
+
+  Both are measurements rather than advice, and the README records them. Verified on
+  a P2-EDGE: three frames round-trip byte for byte, one of them carrying a payload
+  byte that increments `0xFF` to `0x00` — a NUL on the wire, which no text path here
+  can write.
+
 ### Fixed
 
 - **A channel of pointers had a payload the compiler could cache.** The cell's field
