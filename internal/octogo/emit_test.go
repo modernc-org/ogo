@@ -4489,7 +4489,13 @@ func TestEmitCChannel(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"typedef struct { int lock; volatile int full; volatile int taken; volatile int val; } ogo_chan_int_cell;\n",
+		// The payload's qualifier comes AFTER its type, "int volatile val". For an
+		// int that is merely another spelling of "volatile int", but the position is
+		// load-bearing and this pins it: written before, it binds to what a POINTER
+		// element points at rather than to the field, so `chan *P` got a field the
+		// compiler was free to cache -- the one word two cogs poll. See
+		// chanTypedefDefDim.
+		"typedef struct { int lock; volatile int full; volatile int taken; int volatile val; } ogo_chan_int_cell;\n",
 		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
 		// A locally declared channel's cell is a file-scope static, one per
 		// declaration site, and its lock is taken once at package init -- not a

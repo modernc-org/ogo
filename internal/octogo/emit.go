@@ -2243,11 +2243,22 @@ func chanTypedefDef(elem string) string {
 // payload is declared with the element's own extents, `volatile int val[3]`, rather
 // than through its typedef.
 func chanTypedefDefDim(elem string, a arrDim, isArr bool) string {
-	member := elem + " val"
+	// The qualifier goes AFTER the element type, not before it. Written before, it
+	// binds to what a POINTER element points at rather than to the field: `chan *P`
+	// declared `volatile P* val`, which is a pointer to volatile P and a field that
+	// is not volatile at all -- so the one word two cogs poll was the one the
+	// compiler was free to cache, which is the opposite of what the rendezvous
+	// needs. `P* volatile val` is the volatile pointer meant. The host compiler said
+	// so ("initialization discards volatile qualifier") where the target's said
+	// nothing.
+	//
+	// It reads the same for every other element: `int volatile val` is `volatile
+	// int`, and an array's `int volatile val[3]` is an array of volatile int.
+	member := elem + " volatile val"
 	if isArr {
-		member = a.elem + " val" + a.declSuffix()
+		member = a.elem + " volatile val" + a.declSuffix()
 	}
-	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; volatile %[1]s; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
+	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; %[1]s; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
 		member, chanCellCName(elem), chanCName(elem))
 }
 

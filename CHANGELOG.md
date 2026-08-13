@@ -87,6 +87,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A channel of pointers had a payload the compiler could cache.** The cell's field
+  was declared `volatile T* val`, which qualifies what the pointer POINTS AT rather
+  than the field itself — so for `chan *P` the one word two cogs poll was the one
+  word not marked volatile, the opposite of what a rendezvous needs. It is
+  `T* volatile val` now, and reads the same for every other element type
+  (`int volatile val` is `volatile int`).
+
+  Whether the target's compiler actually cached it is unknown and beside the point:
+  the intent was wrong. The host compiler said so — "initialization discards volatile
+  qualifier" — where the target's said nothing, which is the second time this week
+  the stricter compiler earned its place in the suite.
+
 - **An interface in a composite literal.** A literal put whatever was written
   straight into an interface-typed slot, where the two words `{data, table}` belong,
   so `Box{&gr}` over `type Box struct{ in Shape }` was refused -- "expected

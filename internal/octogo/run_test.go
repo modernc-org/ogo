@@ -37,6 +37,56 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// Four channel ELEMENT types the table did not otherwise reach. The rest are
+		// well covered -- an array element, an interface element, a defined channel
+		// type, channels in struct fields and in an array of structs all have cases
+		// of their own -- and a sweep of twelve element types found nothing wrong,
+		// which is why only the uncovered four are kept rather than all twelve.
+		//
+		// The defined SLICE element is the one worth having: the rendezvous copies
+		// the element by its C type, and a defined type is read by two different
+		// names depending on who is asking, which is where this week's defects were.
+		name: "channel elements a case did not reach",
+		src: `type List []int
+type P struct{ a, b int }
+
+var gp = P{5, 6}
+var l = List{21, 22}
+
+var cl chan List
+var cp chan *P
+var cf chan float32
+var cb chan byte
+var done chan int
+
+func send() {
+	cl <- l
+	cp <- &gp
+	cf <- 1.5
+	cb <- 200
+	done <- 1
+}
+
+func main() {
+	go send()
+	v := <-cl
+	println("defined-slice", len(v), v[1])
+	p := <-cp
+	println("pointer", p.a, p.b)
+	f := <-cf
+	println("float32", f*2)
+	b := <-cb
+	println("byte", int(b))
+	<-done
+}
+`,
+		want: `defined-slice 2 22
+pointer 5 6
+float32 3
+byte 200
+`,
+	},
+	{
 		// An interface in every position one can stand in. Two of them did not
 		// compile at all: a literal put whatever was written straight into an
 		// interface-typed slot, where the two words {data, table} belong, so
