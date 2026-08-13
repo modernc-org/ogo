@@ -37,6 +37,56 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A method on a defined SLICE type, reached through every way of making one.
+		// The short form was the odd one out: `d := List{1, 2, 3}` recorded the
+		// variable as the slice HEADER's type rather than as a List, so `d.sum()`
+		// had nothing to hang off and the emitter read it as a package
+		// qualification -- "unknown package \"d\"", which names neither the type nor
+		// the method and sends the reader looking for an import.
+		//
+		// The others always worked, which is what made it worth fixing rather than
+		// documenting: the same program is accepted or refused depending on which
+		// spelling introduced the variable, and Go accepts them all.
+		name: "a method on a defined slice type",
+		src: `type List []int
+
+func (l List) total() int {
+	t := 0
+	for _, v := range l {
+		t += v
+	}
+	return t
+}
+
+var back = [4]int{9, 9, 9, 9}
+var pkg = List{5, 6}
+
+func main() {
+	d := List{1, 2, 3}
+	println("short", d.total(), len(d), d[1])
+
+	var m List = make(List, 2, 4)
+	m[0] = 4
+	m[1] = 5
+	println("make", m.total())
+
+	var l List = back[:]
+	println("sliceexpr", l.total())
+
+	var v List = List{7, 8}
+	println("var-lit", v.total())
+
+	println("pkg", pkg.total())
+}
+`,
+		want: `short 6 3 2
+make 9
+sliceexpr 36
+var-lit 15
+pkg 11
+`,
+	},
+	{
 		// make over a DEFINED slice type. It was refused three layers deep: the
 		// checker read only the "[]T" shape and called a type name "dynamic
 		// allocation not supported"; then, once it read the name, the bare-type-name

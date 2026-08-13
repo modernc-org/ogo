@@ -8151,6 +8151,16 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	}
 	e.needSlice(elem)
 	cname := sliceCName(elem)
+	// When the literal NAMES a defined slice type, the variable takes that name and
+	// not the header's. litSliceType above answers with the element, which is what
+	// indexing and len want; the name is what a METHOD wants, and dropping it left
+	// `d := List{1, 2, 3}` with nothing for `d.sum()` to hang off -- the emitter read
+	// the call as a package qualification and said `unknown package "d"`. The
+	// declared forms, `var d List = make(...)` and `var l List = back[:]`, always
+	// kept it, so this is the short form catching up with them.
+	if nm, ok := e.namedSliceLitType(typeAST); ok {
+		cname = nm
+	}
 	if static {
 		e.globalSliceVars[name] = elem
 		e.globals[name] = cname
@@ -8556,6 +8566,22 @@ func (e *emitter) soleArrayLit(initExpr []int32) (typeAST []int32, lit Node, ok 
 		return nil, Node{}, false
 	}
 	return e.factorArrayLit(fac)
+}
+
+// namedSliceLitType reports the C name of a literal's type when that type is a
+// DEFINED slice type written by name, "List{1, 2, 3}" over "type List []int".
+// litSliceType answers such a literal with its ELEMENT, which is what the backing
+// array and the indexing need; this is the other half, the name a method hangs off.
+func (e *emitter) namedSliceLitType(typeAST []int32) (string, bool) {
+	nodes := slices.Collect(it(typeAST))
+	if len(nodes) != 1 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != IDENT {
+		return "", false
+	}
+	nm := mangle(e.curPkgPrefix, e.src(nodes[0].tok))
+	if !e.isSliceCType(e.underlyingCType(nm)) {
+		return "", false
+	}
+	return nm, true
 }
 
 // arrayLitElement matches a composite-literal element that fills an array-typed
@@ -16099,9 +16125,22 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		e.fail("cannot infer a type for the declaration of %q", name)
 		return
 	}
+	// A literal of a DEFINED type gives the variable THAT type rather than the
+	// representation underneath it. inferCType answers with the representation --
+	// `List{1, 2, 3}` is an ogo_slice_int -- and taking that verbatim lost the name
+	// a method hangs off: `d := List{1, 2, 3}` then `d.sum()` was reported as
+	// "unknown package \"d\"", the emitter reading the call as a package
+	// qualification because nothing said d had a type with methods. The declared
+	// forms, `var d List = make(...)` and `var l List = back[:]`, always kept it.
+	if nm, _, isLit := e.soleCompositeLit(initExpr); isLit && nm != ct && e.underlyingCType(nm) == ct {
+		ct = nm
+	}
 	e.locals[name] = ct
-	if e.isSliceCType(ct) {
-		e.sliceVars[name] = sliceElemFromCName(ct)
+	// Through the underlying type, so a defined slice type is still a slice here:
+	// what makes `d[i]` and len(d) work is this entry, and the name above is what
+	// makes `d.sum()` work. Both are wanted.
+	if u := e.underlyingCType(ct); e.isSliceCType(u) {
+		e.sliceVars[name] = sliceElemFromCName(u)
 		// A slice copied from another views the same storage, so it inherits where
 		// that storage lives; otherwise returning the copy would dodge the check.
 		if _, frame := e.sliceBackingIsFrame(initExpr); frame {

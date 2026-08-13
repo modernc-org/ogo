@@ -87,6 +87,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method on a defined slice type, reached through the short form.** `d := List{1,
+  2, 3}` recorded the variable as the slice HEADER's type rather than as a `List`, so
+  `d.total()` had nothing to hang off and came out as `unknown package "d"` -- a
+  message naming neither the type nor the method, and sending the reader after an
+  import that was never there. Every other way of making one always worked (`var d
+  List = make(...)`, `var l List = back[:]`, `var v List = List{...}`, package
+  scope), so the same program was accepted or refused depending on which spelling
+  introduced the variable. Go accepts them all, and now so does this.
+
+- **The README repeated two claims the help had already been corrected on**: that
+  `ogo run` "sets a precise 200 MHz clock", and that `-f` is "the key part" of
+  reading a board's output. Neither is true -- a compiled program sets its own clock,
+  and the baud is the whole fix -- and the note is rewritten around what was
+  measured. It was missed when the help was audited because the audit read the
+  Status section rather than the whole file.
+
 - **Four more defects in a named slice type**, all one cause: a defined type was read
   by the name written rather than by what it is defined over, so every table keyed on
   the slice header's own C name missed it. Over `type List []int`:

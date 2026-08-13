@@ -123,14 +123,20 @@ There is no `Errorf` — formatting needs allocation this target does not have �
 test prints with the builtin `println` and calls `t.Fail()`. `ogo test -c` builds
 the tests without running them, for a machine with no board attached.
 
-> **Seeing garbled serial output?** `ogo run` sets a precise 200 MHz clock and
-> reads at 230400 baud, so `println` output is readable out of the box. If you
-> load with the raw `ogo loadp2` passthrough instead, it uses loadp2's own
-> defaults — which leave the P2 on its imprecise internal oscillator, so the
-> output is garbled at *every* baud. Pass a real clock and the matching baud:
-> `ogo loadp2 -f 200000000 -b 230400 -t prog.binary` (the `-f` is the key part;
-> `200000000` assumes the usual 20 MHz P2 crystal — use your board's value if it
-> differs). This is a P2 clocking detail, not an ogo bug.
+> **Seeing garbled serial output?** `ogo run` reads at 230400 baud, which is what a
+> compiled program writes at, so `println` output is readable out of the box. The raw
+> `ogo loadp2` passthrough uses loadp2's own defaults instead, and it reads at 115200
+> — a baud mismatch, so the output arrives as rubbish bytes rather than text. Pass the
+> matching baud and nothing else is needed:
+>
+> ```sh
+> ogo loadp2 -b 230400 -t prog.binary
+> ```
+>
+> The `-f` frequency is *not* part of the fix for a program built here: such a
+> program sets its own clock as it starts, so `-f` decides neither what it runs at
+> nor what its output looks like. The clock is a build-time choice — `ogo build
+> --clock 200MHz` — and 160 MHz is the default.
 
 ### Drawing on an oscilloscope
 
@@ -329,13 +335,6 @@ broken.
 * An imported package must be a **subdirectory** of the package that imports it, so
   `import "geo"` reads `geo/` beside the importing files rather than beside their
   directory. Go's module layout is not implemented.
-* A method on a **defined slice type** is reachable only when the variable was
-  declared with its type written out — `var d List = make(List, n, c)` or `var l List
-  = back[:]` carry `d.total()`, while `d := List{1, 2, 3}` does not and reports
-  `unknown package "d"`. The short form loses the name the method hangs off.
-  Everything else a named slice type can be put through — declaring, `make`,
-  indexing, slicing, ranging, `len`/`cap`, `append`, `copy`, comparing with nil,
-  passing, returning, a struct field of one — works.
 * A `type` declaration must stand at **package scope**; one inside a function is
   refused.
 * A type **alias**, `type A = B`, parses and is then treated as a definition — the
