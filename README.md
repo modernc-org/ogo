@@ -329,6 +329,11 @@ broken.
 * An imported package must be a **subdirectory** of the package that imports it, so
   `import "geo"` reads `geo/` beside the importing files rather than beside their
   directory. Go's module layout is not implemented.
+* `make` names its slice type as `[]T` and not by a **defined name**: over `type List
+  []int`, `make([]int, n)` is fine and `make(List, n)` is refused. Everything else a
+  named slice type can be put through — declaring, indexing, slicing, ranging,
+  `len`/`cap`, `append`, `copy`, comparing with nil, passing, returning, a struct
+  field of one — works, so this is the one hole left in it.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,

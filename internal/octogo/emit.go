@@ -1592,7 +1592,19 @@ func (e *emitter) zeroInitC(ctype string) string {
 	// declaration, so it is in no struct table; `var b Builder` is a zero Builder,
 	// which writes nowhere until it is given a backing, and needs braces like any
 	// other struct.
-	if e.isStruct(ctype) || ctype == cString || e.isSliceCType(ctype) || ctype == "ogo_builder" {
+	//
+	// A DEFINED type is whatever it is defined over, and only the underlying name
+	// says so: `type List []int` is a slice header and needs the braces, while the
+	// name "List" matches none of the tests below. Reading the written name alone
+	// emitted `List l = 0;` for `var l List` -- a scalar assigned to a struct, which
+	// the target's C compiler refuses outright ("Expected multiple values"), so a
+	// variable of a named slice type could not be declared without an initializer at
+	// all. The written name is still tested first, since a type that IS one of these
+	// has no underlying to resolve to.
+	aggregate := func(ct string) bool {
+		return e.isStruct(ct) || ct == cString || e.isSliceCType(ct) || ct == "ogo_builder"
+	}
+	if aggregate(ctype) || aggregate(e.underlyingCType(ctype)) {
 		return "{0}"
 	}
 	return "0"
@@ -7862,7 +7874,13 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		e.emitCompositeLit(expectType, v, true)
 		return
 	}
-	if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok {
+	// A SLICE element is not a nested aggregate, whatever it is named: it is a header
+	// that has to point at storage, so it takes the expression path, which hoists a
+	// backing array and a temporary ahead of the literal and puts the temporary here.
+	// A []int element already went that way, its literal not being a named one; a
+	// `type List []int` element did not, and was brace-filled -- "Box b = {{1, 2,
+	// 3}}" set the header's own pointer, length and capacity to 1, 2 and 3.
+	if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok && !e.isSliceCType(e.underlyingCType(nm)) {
 		if len(compositeLitElements(sub)) == 0 {
 			e.emit(e.zeroBraceC(nm)) // "{0}" does not nest; see zeroBraceC
 			return
@@ -8512,22 +8530,6 @@ func (e *emitter) litTypeName(litType []int32) string {
 		return "[]" + e.goTypeName(elem)
 	}
 	return "array or slice"
-}
-
-// arrayTypeName spells an array type the way the source does, "[2][3]int", rather
-// than the way C declares it, which puts the extents on the declarator.
-//
-// THE ELEMENT IS SPELLED AS IT IS HELD, which is C's name for it, so this is for
-// internal use and NOT for a diagnostic: it reported "[2]uint8_t" for a "[2]byte"
-// and "[2]int32_t" for a "[2]rune", and one message managed both spellings at once
-// -- "cannot use a [2]int literal as [2]uint8_t". goArrayTypeName, which already
-// existed for exactly this, is what a message to the reader wants.
-func arrayTypeName(a arrDim) string {
-	s := ""
-	for _, b := range a.bounds() {
-		s += "[" + b + "]"
-	}
-	return s + a.elem
 }
 
 // soleArrayLit matches an initializer that is exactly an array or slice literal,
@@ -9788,7 +9790,11 @@ func (e *emitter) accessSelect(cur accessCur, field string) (accessCur, bool) {
 	if !ok {
 		return accessCur{}, false
 	}
-	if el, ok := e.sliceElemByName[ct]; ok {
+	// Through the underlying type, so a field of a DEFINED slice type is a slice:
+	// the table is keyed by the header's own C name, which `type List []int` does
+	// not share, and reading it by the written name alone refused `b.in[0]` with
+	// "cannot index b.in" for a field Go indexes happily.
+	if el, ok := e.sliceElemByName[e.underlyingCType(ct)]; ok {
 		return accessCur{elem: el, slice: true}, true
 	}
 	return accessCur{ctype: ct}, true
@@ -18494,7 +18500,11 @@ func (e *emitter) sliceNilCompareAt(kids []Node, i int) (op string, sliceNode No
 	if lNil {
 		operand = r
 	}
-	if ct, ok := e.inferCType(operand.ast); ok && e.isSliceCType(ct) {
+	// Through the underlying type: `type List []int` is a slice however its name
+	// reads, and asking only the written name let it fall through to the scalar
+	// path, emitting `b == 0` against a three-word header -- which the host compiler
+	// refuses outright and the target's miscounts.
+	if ct, ok := e.inferCType(operand.ast); ok && e.isSliceCType(e.underlyingCType(ct)) {
 		return op, operand, true
 	}
 	return "", Node{}, false

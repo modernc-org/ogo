@@ -37,6 +37,54 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A named slice type where it is NOT a literal's initializer. Each line was
+		// its own defect, and all four share one cause: a defined type was read by
+		// the name written rather than by what it is defined over, so every table
+		// keyed on the slice header's own C name missed it.
+		//
+		//	var zero List   emitted "List zero = 0;", a scalar assigned to a struct,
+		//	                which the target's C compiler refuses outright -- a
+		//	                variable of a named slice type could not be DECLARED
+		//	                without an initializer at all.
+		//	b.in[0]         was refused, "cannot index b.in", for a field Go indexes.
+		//	Box{List{...}}  emitted "Box b = {{1, 2, 3}}", filling the header's own
+		//	                pointer, length and capacity with 1, 2 and 3.
+		//
+		// Found by sweeping a matrix of six literal kinds against eight syntactic
+		// positions after the initializer case turned up on its own: the lesson of
+		// that one was that a construct correct in one position can be broken in
+		// another, so the positions got enumerated rather than guessed at.
+		name: "a named slice type outside an initializer",
+		src: `type List []int
+type Box struct{ in List }
+
+func take(l List) int { return len(l) }
+
+func main() {
+	var zero List
+	println("zero", len(zero), cap(zero), zero == nil)
+
+	var v List
+	v = List{7, 8, 9}
+	println("assign", len(v), v[0])
+
+	b := Box{List{1, 2, 3}}
+	println("field", len(b.in), b.in[0], b.in[2])
+
+	var bz Box
+	println("field-zero", len(bz.in))
+
+	println("arg", take(List{4, 5}))
+}
+`,
+		want: `zero 0 0 true
+assign 3 7
+field 3 1 3
+field-zero 0
+arg 2
+`,
+	},
+	{
 		// A literal of a NAMED SLICE type, in every position one can stand in. The
 		// typed var was a miscompile: a brace initializer cannot fill a slice, which
 		// is a header pointing at storage, and filling one anyway wrote the elements

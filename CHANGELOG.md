@@ -18,6 +18,30 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **Four more defects in a named slice type**, all one cause: a defined type was read
+  by the name written rather than by what it is defined over, so every table keyed on
+  the slice header's own C name missed it. Over `type List []int`:
+  - `var l List` with no initializer emitted `List l = 0;`, a scalar assigned to a
+    struct, which the C backend refuses outright — **a variable of a named slice type
+    could not be declared without an initializer at all**.
+  - `Box{List{1, 2, 3}}` emitted `Box b = {{1, 2, 3}}`, filling the header's own
+    pointer, length and capacity with 1, 2 and 3. **A silent wrong answer**, like the
+    v0.25.0 one it is kin to.
+  - `b.in[0]` was refused, "cannot index b.in", for a struct field Go indexes.
+  - `l == nil` emitted `l == 0` against a three-word header, which the host compiler
+    refuses and the target's miscounts.
+
+  Found by sweeping six literal kinds against eight syntactic positions, after the
+  v0.25.0 fix showed that a construct correct in one position can be broken in
+  another. All 48 cells now agree with Go, bar one that is a lifetime refusal by
+  design. `make(List, n)` remains refused and is listed in the README — it needs the
+  checker to accept a type NAME where it looks for `[]T`, which is a change of a
+  different size.
+
+## v0.25.0
+
 Talking to the hardware, and to whatever is on the other end of the wire.
 
 A P2 program could drive an analog output and not read one, could stream text at a
