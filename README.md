@@ -328,10 +328,11 @@ broken.
 * `goto`.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.
-* An **array literal only stands as a variable's initializer**. `a := [2]int{1, 2}`
-  is fine and so is the array-typed `var`, but `append(rows, [2]int{1, 2})` and `ch
-  <- [3]int{1, 2, 3}` are refused — bind the literal to a variable and send that.
-  The array-as-element types themselves are fine, as above.
+* An **array literal cannot stand in an `append` or a channel send**: `append(rows,
+  [2]int{1, 2})` and `ch <- [3]int{1, 2, 3}` are refused — bind the literal to a
+  variable and pass that. Every other position takes one, including an argument, a
+  result and a struct field's value, and the array-as-element types themselves are
+  fine, as above.
 * An imported package must be a **subdirectory** of the package that imports it, so
   `import "geo"` reads `geo/` beside the importing files rather than beside their
   directory. Go's module layout is not implemented.

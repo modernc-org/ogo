@@ -18,6 +18,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+Things that did not compile, and the documentation that said they did.
+
+Six programs Go accepts were refused here, all of them found by asking a construct to
+stand in every position it can rather than in the one somebody happened to write: an
+interface in a composite literal, `make` over a defined slice type, a method on a
+defined slice type declared the short way, a variadic of strings or of structs, and
+two more in named slice types. One of the named-slice defects was a wrong ANSWER
+rather than a refusal, and a channel of pointers had a payload the compiler was free
+to cache — the field two cogs poll being the one word that was not marked volatile.
+
+The pattern behind most of them is worth stating: where a construct is parameterised
+by a type, the tests varied its SHAPE and not its element. Every variadic test used
+an `int` element, which has nothing to brace; every array-literal diagnostic used an
+`int` element, whose C name is the same in both languages. Both hid a defect that a
+`string` or a struct exposed at once.
+
+The documentation was swept against the compiler afterwards, which is how the last
+few entries below arrived: a spec sentence listing three of the six positions an
+array literal may stand in, a diagnostic naming a rule that had stopped being true,
+and a README note repeating two claims the help had already been corrected on.
+
 ### Testing
 
 - **The fuzzer generates defined SLICE types too**, `type L_7 []int`, and makes
@@ -54,6 +75,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   either way now, where before that seed aborted `ogo smith` outright.
 
 ### Documentation
+
+- **Where an array literal may stand, said correctly.** `specs.go` had it as "an
+  initializer, an element, and a `range` operand", which is three of the six: it also
+  stands as an argument, as a result and as the operand of an index. The two it may
+  NOT stand in are an `append` argument and a channel send, and the diagnostic said
+  so as "only supported as a variable's initializer" — a rule a reader would find
+  contradicted by the first argument they passed. It now names the fix instead: bind
+  it to a variable and use that. The README's entry is narrowed to match.
 
 - **`specs.go` claimed type ALIASES work. They do not.** "type A = B" parses and is
   then treated as a definition -- the `=` is read and discarded, there being no alias

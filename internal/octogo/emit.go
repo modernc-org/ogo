@@ -19179,7 +19179,14 @@ func (e *emitter) emitExprNode(n Node) {
 			if litType, lit, ok := e.factorArrayLit(n); ok {
 				name, ok := e.hoistLit(litType, lit)
 				if !ok {
-					e.fail("a %s literal is only supported as a variable's initializer", e.litTypeName(litType))
+					// Not "only as a variable's initializer", which this said and
+					// which is no longer true: an array literal stands as an
+					// argument, as a result and as a struct field's value. What is
+					// left is the positions that hoist nothing to point at -- an
+					// append and a channel send -- so the message names the fix
+					// rather than a rule the reader would find contradicted.
+					e.fail("a %s literal cannot stand here; bind it to a variable and use that",
+						e.litTypeName(litType))
 					return
 				}
 				e.emit(name)
