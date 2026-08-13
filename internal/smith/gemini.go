@@ -69,6 +69,18 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		fmt.Fprint(f.Out, "\n")
 	}
 
+	// 3.7. Defined types over []int, for genSliceDecl. Package scope for the same
+	// reason as above, and a variable of one is made with "make(L_7, n, c)" -- the
+	// capacity headroom the append generator needs, which a literal could not give.
+	for i, n := 0, f.Rand.Intn(3); i < n; i++ {
+		name := f.newVarName("L")
+		f.SliceDefined = append(f.SliceDefined, name)
+		fmt.Fprintf(f.Out, "type %s []int\n", name)
+	}
+	if len(f.SliceDefined) != 0 {
+		fmt.Fprint(f.Out, "\n")
+	}
+
 	// 4. Generate the functions main will call. They come first so that every call
 	// site in main has one to draw on, and they take no part in the environment:
 	// a body reads only its own parameters (see genPureExpr).
@@ -1204,8 +1216,16 @@ func (f *Fuzzer) genSliceDecl(vm Machine, mem Memory) Node {
 	n := f.Rand.Intn(4)         // length 0..3
 	c := n + 1 + f.Rand.Intn(3) // capacity, one to three elements of headroom
 	mem.Store(name, &SliceVal{Elems: make([]Int32, n), Cap: c})
+	// The environment records it as a slice of int either way: a defined slice type
+	// behaves as one for every operation the other generators perform on it, and
+	// none of them assigns one slice variable to another, which is the only place
+	// the distinct identity would show.
 	f.CurrentEnv.Declare(name, SliceType{Elem: BasicType{Kind: KindInt}}, false)
-	return &SliceDeclNode{Name: name, Len: n, Cap: c}
+	typ := ""
+	if len(f.SliceDefined) != 0 && f.Rand.Intn(2) == 0 {
+		typ = f.SliceDefined[f.Rand.Intn(len(f.SliceDefined))]
+	}
+	return &SliceDeclNode{Name: name, Type: typ, Len: n, Cap: c}
 }
 
 // genSliceWrite assigns an integer expression to one element of an existing slice,
@@ -1506,13 +1526,20 @@ func (n *IndexNode) Write(w io.Writer, indent int) {
 
 type SliceDeclNode struct {
 	Name string
+	// Type is the slice type as written, "[]int" or a defined name over it. The
+	// same name goes in the make, which is what "make(L_7, n, c)" needs to be.
+	Type string
 	Len  int
 	Cap  int
 }
 
 func (n *SliceDeclNode) Write(w io.Writer, indent int) {
 	writeIndent(w, indent)
-	fmt.Fprintf(w, "var %s []int = make([]int, %d, %d)", n.Name, n.Len, n.Cap)
+	t := n.Type
+	if t == "" {
+		t = "[]int"
+	}
+	fmt.Fprintf(w, "var %s %s = make(%s, %d, %d)", n.Name, t, t, n.Len, n.Cap)
 }
 
 // AppendNode is `append(s, v)`, generated only as the right-hand side of the

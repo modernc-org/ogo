@@ -49,6 +49,11 @@ var generatedConstructs = []struct {
 	// exists to catch.
 	{"defined type over a sized kind", `\ntype D_\d+ (u?int8|u?int16|uint32)\n`},
 	{"sized variable of a defined type", `\n\s*var z_\d+ D_\d+ = `},
+	// A defined SLICE type, and a variable made with one. The make is the point:
+	// it is what gives the capacity headroom the append generator needs, and it is
+	// the spelling that was refused outright until this week.
+	{"defined type over a slice", `\ntype L_\d+ \[\]int\n`},
+	{"slice variable of a defined type", `\n\s*var s_\d+ L_\d+ = make\(L_\d+, `},
 	{"method declaration, value receiver", `\nfunc \(r S_\d+\) `},
 	{"method declaration, pointer receiver", `\nfunc \(r \*S_\d+\) `},
 	{"method call, value-receiver getter", `\.get_\d+\(\)`},

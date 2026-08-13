@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Testing
 
+- **The fuzzer generates defined SLICE types too**, `type L_7 []int`, and makes
+  variables with them -- `var s_9 L_7 = make(L_7, 2, 4)`. This is the class four
+  defects were found in by hand this week, so it is the one worth having under the
+  oracle rather than under a person remembering to try a spelling. Every operation
+  the slice generator performs goes through one when a variable draws it: the element
+  writes, the appends, `len` and `cap`, the index reads.
+
+  It needed `make` over a defined slice type to exist first, which is above: a
+  literal would have given `cap == len` and left the append generator nothing to
+  grow into.
+
 - **The fuzzer generates DEFINED types**, `type D_3 uint8`, and declares its sized
   integer variables with them. Every operation it already performs on a sized
   variable -- the arithmetic, the compound assignments, the shifts, the unary forms,

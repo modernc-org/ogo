@@ -129,6 +129,16 @@ type Fuzzer struct {
 	// rather than as a compile error.
 	SizedDefined map[BasicKind]string
 
+	// SliceDefined are DEFINED slice types declared over []int, "type L_7 []int",
+	// for genSliceDecl to declare a variable with instead of the plain spelling.
+	//
+	// This is the class four defects were found in by hand: a defined slice type
+	// read by its own name rather than by what it is defined over. Every operation
+	// the slice generator performs -- the element writes, the appends, len and cap,
+	// the index reads -- goes through one when a variable draws it, so the oracle
+	// checks the resolution rather than a person having to think of the spelling.
+	SliceDefined []string
+
 	// Hardware limits tracking
 	CogCount int // Max 8
 
