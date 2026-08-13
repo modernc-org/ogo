@@ -975,9 +975,16 @@
 //
 // # Type Declarations
 //
-// A type declaration binds an identifier, the type name, to a type. It
-// supports both type definitions and alias declarations via the optional =
-// operator.
+// A type declaration binds an identifier, the type name, to a type.
+//
+// It must stand at PACKAGE SCOPE. A type declared inside a function is refused,
+// "statement TypeDecl is not supported yet", though Go admits one.
+//
+// The ALIAS form, "type A = B", parses and is then treated as a definition: the "="
+// is read and discarded, so A is a distinct type rather than another name for B, and
+// "var i int = a" over "type A = int" is refused where Go accepts it. The two
+// spellings should differ and do not; write the definition form and mean it until
+// they do.
 //
 //	TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 //	TypeSpec = identifier [ "=" ] Type .

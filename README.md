@@ -334,6 +334,12 @@ broken.
   named slice type can be put through — declaring, indexing, slicing, ranging,
   `len`/`cap`, `append`, `copy`, comparing with nil, passing, returning, a struct
   field of one — works, so this is the one hole left in it.
+* A `type` declaration must stand at **package scope**; one inside a function is
+  refused.
+* A type **alias**, `type A = B`, parses and is then treated as a definition — the
+  `=` is read and discarded, so `A` is a distinct type rather than another name for
+  `B`, and `var i int = a` over `type A = int` is refused where Go accepts it. Use
+  the definition form until the two differ.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,

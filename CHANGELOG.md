@@ -18,6 +18,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Documentation
+
+- **`specs.go` claimed type ALIASES work. They do not.** "type A = B" parses and is
+  then treated as a definition -- the `=` is read and discarded, there being no alias
+  flag anywhere -- so `A` is a distinct type rather than another name for `B`, and
+  `var i int = a` over `type A = int` is refused where Go accepts it. Recorded in the
+  spec and the README rather than half-implemented: making an alias transparent means
+  threading identity through the whole type system, which is a feature and not a fix.
+- **A `type` declaration must stand at package scope**; one inside a function is
+  refused, "statement TypeDecl is not supported yet", where Go admits it. Now said
+  out loud in both places.
+
+  Both came out of sweeping defined types over every kind one can be defined over --
+  string, pointer, func, channel, integer, struct. Those all match Go exactly, so the
+  blind spot behind this release's fixes really was slice-shaped; the two gaps above
+  are in the DECLARATION rather than in any kind.
+
 ### Fixed
 
 - **Four more defects in a named slice type**, all one cause: a defined type was read
