@@ -37,6 +37,58 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// make over a DEFINED slice type. It was refused three layers deep: the
+		// checker read only the "[]T" shape and called a type name "dynamic
+		// allocation not supported"; then, once it read the name, the bare-type-name
+		// rule called the argument a value; then the emitter's make path wanted the
+		// declared type to be "[]T" as well.
+		//
+		// The variable keeps its OWN name as its C type rather than the slice
+		// header's, which is what the method line tests: resolve the name away and
+		// d.total() has nothing to hang off. That is also why append had to learn to
+		// look through a defined type -- it read the written name and refused.
+		//
+		// The Alias line is the chain, "type Alias List" over "type List []int", and
+		// the plain line is the control: the "[]T" spelling must keep working.
+		name: "make over a defined slice type",
+		src: `type List []int
+type Alias List
+
+func (l List) total() int {
+	t := 0
+	for _, v := range l {
+		t += v
+	}
+	return t
+}
+
+func main() {
+	var d List = make(List, 2, 4)
+	d[0] = 7
+	d[1] = 8
+	println("make", len(d), cap(d), d[0], d[1])
+
+	d = append(d, 9)
+	println("append", len(d), cap(d), d[2])
+
+	println("method", d.total())
+
+	var a Alias = make(Alias, 1, 3)
+	a[0] = 5
+	println("chain", len(a), cap(a), a[0])
+
+	var p []int = make([]int, 2, 2)
+	println("plain", len(p), cap(p))
+}
+`,
+		want: `make 2 4 7 8
+append 3 4 9
+method 24
+chain 1 3 5
+plain 2 2
+`,
+	},
+	{
 		// Mixed-width arithmetic in the shapes a device protocol actually uses, as
 		// against the operator-at-a-time cases elsewhere in this table. Each line is
 		// somewhere a 32-bit target can quietly differ from Go:

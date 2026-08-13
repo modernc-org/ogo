@@ -7697,6 +7697,19 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				continue
 			}
 			e.locals[nm] = ctype
+			// `var d List = make(List, n, c)` over `type List []int`. The branch
+			// above takes the "[]T" spelling; a DEFINED slice type arrives here
+			// instead, because its declared type is a name. It keeps that name as
+			// its C type -- resolving it to the header's own would cost the variable
+			// its methods, which is what litSliceType's comment warns about -- while
+			// the backing array and the { ptr, len, cap } it points at are built
+			// exactly as for the unnamed spelling.
+			if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok && e.isSliceCType(e.underlyingCType(ctype)) {
+				e.needSlice(elem)
+				e.sliceVars[nm] = elem
+				e.emitMakeSliceVar(nm, ctype, elem, lenAST, capAST, false)
+				continue
+			}
 			if initExpr != nil {
 				e.emitVarDeclInit(ctype, nm, initExpr)
 			} else {
@@ -11051,8 +11064,13 @@ func (e *emitter) makeSliceInit(initExpr []int32) (elem string, lenAST, capAST [
 	if len(args) < 2 || len(args) > 3 {
 		return "", nil, nil, false
 	}
-	// The first argument is the slice type "[]T" as a factor; read its element type.
-	if elem, ok = e.sliceType(e.peelToFactorAST(args[0].ast)); !ok {
+	// The first argument is the slice type as a factor; read its element type. A
+	// DEFINED slice type names one too -- "make(List, n)" over "type List []int" is
+	// Go's. litSliceType is the resolver for a TYPE written out, as against
+	// sliceType, which also answers for a VARIABLE and must not resolve a name (see
+	// its comment: a variable of a defined slice type keeps its own name, which is
+	// what its methods hang off).
+	if elem, ok = e.litSliceType(e.peelToFactorAST(args[0].ast)); !ok {
 		return "", nil, nil, false
 	}
 	lenAST = args[1].ast
@@ -14388,12 +14406,17 @@ func (e *emitter) appendParts(callSuffix []int32) (elem string, args []Node, ok 
 		e.fail("append needs a slice and at least one value -- append(s, x)")
 		return "", nil, false
 	}
+	// Through the underlying type, so a variable of a DEFINED slice type appends:
+	// one declared `var d List = make(List, n, c)` keeps "List" as its C type, that
+	// being what its methods hang off, and the header's own name is what the element
+	// has to be read from.
 	ct, ok := e.inferCType(args[0].ast)
-	if !ok || !e.isSliceCType(ct) {
+	u := e.underlyingCType(ct)
+	if !ok || !e.isSliceCType(u) {
 		e.fail("append's first argument must be a slice variable or slice field yet")
 		return "", nil, false
 	}
-	elem = sliceElemFromCName(ct)
+	elem = sliceElemFromCName(u)
 	e.needSlice(elem)
 	return elem, args, true
 }

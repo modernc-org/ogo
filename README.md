@@ -329,11 +329,13 @@ broken.
 * An imported package must be a **subdirectory** of the package that imports it, so
   `import "geo"` reads `geo/` beside the importing files rather than beside their
   directory. Go's module layout is not implemented.
-* `make` names its slice type as `[]T` and not by a **defined name**: over `type List
-  []int`, `make([]int, n)` is fine and `make(List, n)` is refused. Everything else a
-  named slice type can be put through — declaring, indexing, slicing, ranging,
-  `len`/`cap`, `append`, `copy`, comparing with nil, passing, returning, a struct
-  field of one — works, so this is the one hole left in it.
+* A method on a **defined slice type** is reachable only when the variable was
+  declared with its type written out — `var d List = make(List, n, c)` or `var l List
+  = back[:]` carry `d.total()`, while `d := List{1, 2, 3}` does not and reports
+  `unknown package "d"`. The short form loses the name the method hangs off.
+  Everything else a named slice type can be put through — declaring, `make`,
+  indexing, slicing, ranging, `len`/`cap`, `append`, `copy`, comparing with nil,
+  passing, returning, a struct field of one — works.
 * A `type` declaration must stand at **package scope**; one inside a function is
   refused.
 * A type **alias**, `type A = B`, parses and is then treated as a definition — the

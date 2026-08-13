@@ -59,6 +59,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   blind spot behind this release's fixes really was slice-shaped; the two gaps above
   are in the DECLARATION rather than in any kind.
 
+### Language
+
+- **`make` takes a defined slice type**: `var d List = make(List, n, c)` over `type
+  List []int`, which Go allows and this refused. It was refused three layers deep,
+  each with a message about something else -- the checker read only the `[]T` shape
+  and called a type name "dynamic allocation not supported"; having learned the name,
+  the bare-type-name rule called the argument a value; and the emitter's make path
+  wanted the declared type to be `[]T` too. A chain of definitions works, `type Alias
+  List` over `type List []int`.
+
+  The variable keeps its OWN name as its C type rather than the slice header's, so a
+  method on the type still has something to hang off -- `d.total()` works on one
+  declared this way. `append` had to learn to look through a defined type for the
+  same reason: it read the written name and refused.
+
 ### Fixed
 
 - **Four more defects in a named slice type**, all one cause: a defined type was read

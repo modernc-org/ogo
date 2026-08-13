@@ -232,6 +232,7 @@ type File struct {
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	clauseFallthrough map[string]bool   // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
+	makeTypeArgs      map[string]bool   // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
 	defineRedeclares  map[string]bool   // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
@@ -583,6 +584,7 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	f.localVars = nil
 	f.writeTargets = map[string]bool{}
 	f.clauseFallthrough = map[string]bool{}
+	f.makeTypeArgs = map[string]bool{}
 	var results []retResult
 	var body Node
 	hasBody := false
@@ -7946,6 +7948,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		if argList, later, direct, isCall := f.callInfoAll(suffix); isCall {
 			f.resolveArgNames(s, later)
 			directCall = direct
+			// Before the arguments are walked, since the walk is what reports a bare
+			// type name as a value and make's first argument is a type. Only the
+			// builtin qualifies: a user function named make resolves in scope.
+			if hasID && id.Src() == "make" && s.find("make") == nil {
+				f.markMakeTypeArg(argList)
+			}
 			f.checkCall(s, id, direct && hasID, argList)
 			if !direct && hasID {
 				if m, ok := f.methodCallMember(suffix); ok {
@@ -7960,7 +7968,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	}
 	if hasID && s.find(id.Src()) == nil {
 		switch {
-		case id.Src() == "make" && hasSuffix && f.isSliceMake(suffix):
+		case id.Src() == "make" && hasSuffix && f.isSliceMake(s, suffix):
 			// make([]T, len[, cap]) builds a slice header over a statically-sized
 			// backing array -- no heap allocation -- so it is allowed. Every other
 			// make form and all of new remain rejected below.
@@ -7989,7 +7997,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	// not an expression, and was previously accepted silently. With a suffix it is
 	// a conversion "T(x)" (a call) or a qualified name, and with a composite literal
 	// it names the literal's type, so only the bare form is flagged.
-	if hasID && !hasSuffix && !hasLit {
+	if hasID && !hasSuffix && !hasLit && !f.makeTypeArgs[id.Position().String()] {
 		switch s.find(id.Src()).(type) {
 		case *TypeDeclaration, *PredeclaredType:
 			f.err(id.Position(), "cannot use type %s as a value", id.Src())
@@ -8302,17 +8310,70 @@ func (f *File) callArgList(callSuffix Node) (r Node) {
 // isSliceMake reports whether a call suffix is make([]T, ...): its first argument
 // is a slice-type factor "[]T". It gates the make carve-out in checkFactorNames --
 // a slice make allocates only a fixed-size backing array, no heap.
-func (f *File) isSliceMake(suffix Node) bool {
+func (f *File) isSliceMake(s *Scope, suffix Node) bool {
 	argList, _, isCall := f.callInfo(suffix)
 	if !isCall {
 		return false
 	}
 	for a := range it(argList.ast) {
 		if a.sym == Expression {
-			return f.isSliceTypeFactor(a)
+			// Either spelling of a slice type: the "[]T" shape, or a name defined
+			// over one.
+			return f.isSliceTypeFactor(a) || f.namesSliceType(s, a)
 		}
 	}
 	return false
+}
+
+// namesSliceType reports whether an argument expression is an identifier naming a
+// DEFINED slice type, following a chain of definitions ("type Alias List" over
+// "type List []int").
+//
+// It is the other half of isSliceTypeFactor. make's first argument is a TYPE, and a
+// slice type may be written either as the "[]T" shape or as a name -- "make(List,
+// n)" is Go's, and reading only the shape refused it as "dynamic allocation not
+// supported", a message about a heap the program never asked for.
+func (f *File) namesSliceType(s *Scope, n Node) bool {
+	// unwrapSingle descends while a node has exactly one child, so a bare name
+	// arrives as the TOKEN itself rather than as a Factor holding one: it keeps
+	// going until the count is not one, and a terminal's is zero.
+	fac := unwrapSingle(n)
+	if fac.sym != 0 || f.ch(fac.tok) != IDENT {
+		return false
+	}
+	name := f.tok(fac.tok).Src()
+	// Bounded rather than cycle-tracked, as typeKind is: a type cycle is reported by
+	// its own pass, and the bound costs nothing here.
+	for range 16 {
+		d, ok := s.find(name).(*TypeDeclaration)
+		if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+			return false
+		}
+		switch t := d.TypeSpec.TypeNode.(type) {
+		case *TypeNodeSlice:
+			return true
+		case *TypeNodeIdent:
+			name = t.Name.Src()
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// markMakeTypeArg records the position of make's first argument when it is a bare
+// identifier, so the bare-type-name check leaves it alone: that argument is a TYPE,
+// and "cannot use type List as a value" is exactly wrong about it.
+func (f *File) markMakeTypeArg(argList Node) {
+	for a := range it(argList.ast) {
+		if a.sym != Expression {
+			continue
+		}
+		if fac := unwrapSingle(a); fac.sym == 0 && f.ch(fac.tok) == IDENT {
+			f.makeTypeArgs[f.tok(fac.tok).Position().String()] = true
+		}
+		return // the FIRST argument only; the rest are lengths, which are values
+	}
 }
 
 // isSliceTypeFactor reports whether an argument expression is a slice type used as
@@ -8397,7 +8458,7 @@ func (f *File) exprMakeElemKind(s *Scope, n Node) (Kind, bool) {
 		}
 	}
 	argList, _, isCall := f.callInfo(suffix)
-	if !isCall || !f.isSliceMake(suffix) {
+	if !isCall || !f.isSliceMake(s, suffix) {
 		return 0, false
 	}
 	for a := range it(argList.ast) {
