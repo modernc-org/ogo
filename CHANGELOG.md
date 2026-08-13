@@ -105,6 +105,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A variadic whose element is a string or a struct did not compile.** A call packs
+  its trailing arguments into an array of the calling frame, and an array
+  initializer wants its aggregates BRACED rather than written as compound literals --
+  `(ogo_string){"a", 1}` and `(P){9}` were both refused inside the braces, the
+  target's compiler naming the compound literal's own anonymous type. `count("a",
+  "bb")` and `firsts(P{9})` are ordinary Go and neither built.
+
+  Every existing variadic test uses an `int` element, which has nothing to brace,
+  which is why the feature looked whole: the shapes were all covered -- pack, spread,
+  empty, a fixed parameter before it, a variadic method -- and the element type was
+  the one axis nobody varied. The host compiler accepts a compound literal there as
+  well, so only the board answered for it.
+
 - **A channel of pointers had a payload the compiler could cache.** The cell's field
   was declared `volatile T* val`, which qualifies what the pointer POINTS AT rather
   than the field itself — so for `chan *P` the one word two cogs poll was the one

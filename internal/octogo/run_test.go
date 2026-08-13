@@ -37,6 +37,52 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A variadic whose ELEMENT is a string or a struct. Neither compiled: a call
+		// packs its trailing arguments into an array of this frame, and an array
+		// INITIALIZER wants its aggregates braced rather than written as compound
+		// literals -- `(ogo_string){"a", 1}` and `(P){9}` were both refused inside
+		// the braces, the target's compiler naming the compound literal's own
+		// anonymous type.
+		//
+		// The variadic case further down covers the SHAPES -- pack, spread, empty, a
+		// fixed parameter before it, a method -- and every one of them uses an int
+		// element, which has nothing to brace. That is why the feature looked whole.
+		// The host compiler accepts a compound literal there too, so only the board
+		// answered for it.
+		name: "a variadic of strings and of structs",
+		src: `func count(xs ...string) int {
+	n := 0
+	for _, s := range xs {
+		n += len(s)
+	}
+	return n
+}
+
+type P struct{ a int }
+
+func firsts(ps ...P) int {
+	if len(ps) == 0 {
+		return -1
+	}
+	return ps[0].a + len(ps)
+}
+
+func joined(sep string, xs ...string) int {
+	return len(sep)*100 + count(xs...)
+}
+
+func main() {
+	println("strings", count("a", "bb", "ccc"), count(), count("x"))
+	println("structs", firsts(P{9}, P{8}), firsts(), firsts(P{4}))
+	println("fwd", joined("--", "ab", "c"))
+}
+`,
+		want: `strings 6 0 1
+structs 11 -1 5
+fwd 203
+`,
+	},
+	{
 		// Four channel ELEMENT types the table did not otherwise reach. The rest are
 		// well covered -- an array element, an interface element, a defined channel
 		// type, channels in struct fields and in an array of structs all have cases

@@ -17077,9 +17077,24 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 	if len(args) == 0 {
 		return "(" + sliceCName(elem) + "){0}"
 	}
+	// Each value goes into an ARRAY INITIALIZER, which wants its aggregates braced
+	// rather than written as compound literals. Emitted the ordinary way, a string
+	// argument became `(ogo_string){"a", 1}` and a struct one `(P){9}`, and the
+	// target's compiler refused both inside the braces -- "expected pointer to const
+	// char but got __anon_...", naming the compound literal's own anonymous type. So
+	// a variadic of strings or of structs did not compile at all, where a variadic of
+	// ints did. declInit is the flag that spells a string the other way; a composite
+	// literal takes the brace form of its own emitter.
 	var vals []string
 	for _, a := range args {
+		if nm, lit, ok := e.soleCompositeLit(a.ast); ok {
+			vals = append(vals, e.captureC(func() { e.emitCompositeLit(nm, lit, true) }))
+			continue
+		}
+		saved := e.declInit
+		e.declInit = true
 		vals = append(vals, e.captureC(func() { e.emitExpr(a.ast) }))
+		e.declInit = saved
 	}
 	tmp := e.newTmp()
 	n := strconv.Itoa(len(vals))
