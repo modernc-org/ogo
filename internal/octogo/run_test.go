@@ -37,6 +37,97 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// An interface in every position one can stand in. Two of them did not
+		// compile at all: a literal put whatever was written straight into an
+		// interface-typed slot, where the two words {data, table} belong, so
+		// `Box{&gr}` was refused as "expected _struct__Shape but got pointer to
+		// _struct__Rect" and `[2]Shape{&gq, &gr}` likewise -- both accepted by Go.
+		// A brace initializer wants the members braced rather than a compound
+		// literal, which is why building the value the ordinary way did not fit
+		// here and ifaceBraceC exists.
+		//
+		// The rest were already right and are kept because this is the table's only
+		// pass over the positions together: the vtable is per (concrete, interface)
+		// pair, so which position built the value decides which table it carries.
+		//
+		// The four functions have multi-line bodies rather than one-liners because
+		// gofmt ALIGNS the braces of adjacent one-line functions and ogo fmt does
+		// not yet; the gofmt ratchet counts programs rather than excusing them.
+		name: "an interface in every position",
+		src: `type Shape interface{ area() int }
+
+type Sq struct{ s int }
+type Rect struct{ w, h int }
+
+func (q *Sq) area() int {
+	return q.s * q.s
+}
+
+func (r *Rect) area() int {
+	return r.w * r.h
+}
+
+var gq = Sq{3}
+var gr = Rect{2, 5}
+
+type Box struct{ in Shape }
+
+func take(s Shape) int {
+	return s.area()
+}
+
+func give() Shape {
+	return &gq
+}
+
+func main() {
+	var s Shape = &gq
+	println("var", s.area())
+	println("arg", take(&gr))
+	println("ret", give().area())
+
+	b := Box{&gr}
+	println("field", b.in.area())
+
+	s = &gr
+	println("reassign", s.area())
+
+	var z Shape
+	println("nil", z == nil, s != nil)
+	s2 := s
+	println("eq", s == s2)
+
+	if r, ok := s.(*Rect); ok {
+		println("assert ok", r.w)
+	}
+	if _, ok := s.(*Sq); !ok {
+		println("assert not")
+	}
+
+	for _, v := range [2]Shape{&gq, &gr} {
+		switch t := v.(type) {
+		case *Sq:
+			println("switch Sq", t.s)
+		case *Rect:
+			println("switch Rect", t.w)
+		}
+	}
+}
+`,
+		want: `var 9
+arg 10
+ret 9
+field 10
+reassign 10
+nil true true
+eq true
+assert ok 2
+assert not
+switch Sq 3
+switch Rect 2
+`,
+	},
+	{
 		// A method on a defined SLICE type, reached through every way of making one.
 		// The short form was the odd one out: `d := List{1, 2, 3}` recorded the
 		// variable as the slice HEADER's type rather than as a List, so `d.sum()`

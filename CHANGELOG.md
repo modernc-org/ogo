@@ -87,6 +87,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An interface in a composite literal.** A literal put whatever was written
+  straight into an interface-typed slot, where the two words `{data, table}` belong,
+  so `Box{&gr}` over `type Box struct{ in Shape }` was refused -- "expected
+  _struct__Shape but got pointer to _struct__Rect" -- and `[2]Shape{&gq, &gr}`
+  likewise. Both are accepted by Go. A brace initializer wants its members braced
+  rather than a compound literal, which is why building the value the ordinary way
+  did not fit and a brace-form sibling was needed.
+
+  Found by sweeping an interface through every position one can stand in -- variable,
+  argument, result, struct field, reassignment, comparison with nil and with another
+  interface, both comma-ok assertions, and a type switch over an array of them. The
+  other nine were already right, and the whole set now runs on the board as a case:
+  the vtable is per (concrete, interface) pair, so which position built a value
+  decides which table it carries.
+
 - **A method on a defined slice type, reached through the short form.** `d := List{1,
   2, 3}` recorded the variable as the slice HEADER's type rather than as a `List`, so
   `d.total()` had nothing to hang off and came out as `unknown package "d"` -- a

@@ -4337,6 +4337,28 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 	return "(" + iface + "){" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
 }
 
+// ifaceBraceC is ifaceValueC for a position INSIDE a brace initializer -- a struct
+// literal's interface-typed field, an interface array's element -- where a compound
+// literal is the wrong shape: the initializer wants the members braced, "{ptr, &vt}",
+// not a cast-and-braces value. Without it a literal put the raw pointer where the
+// two words go, which the C compiler refused ("expected _struct__Shape but got
+// pointer to _struct__Rect") rather than miscompiling, so `Box{&gr}` and
+// `[2]Shape{&gq, &gr}` were both rejected though Go accepts them.
+func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
+	if e.isNilExpr(rhs) {
+		return "{0}", true // the zero interface: no data, no table
+	}
+	// Already an interface value: its two words, copied as they stand.
+	if ct, ok := e.inferCType(rhs); ok && ct == iface {
+		return e.captureC(func() { e.emitExpr(rhs) }), true
+	}
+	concrete, data, _, ok := e.ifaceOperand(rhs)
+	if !ok || !e.needVTable(iface, concrete) {
+		return "", false
+	}
+	return "{" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
+}
+
 // typeAssertion recognises "x.(T)" and resolves the three names its lowering needs:
 // the operand, the interface type it holds, and the asserted concrete type. Only
 // "*T" is asserted, an interface holding a pointer and nothing else, so the star is
@@ -7850,6 +7872,21 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 // which must name something a brace can fill.
 func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	expectType := expect.ctype
+	// An INTERFACE-typed position takes the two words, not whatever was written: a
+	// pointer standing here has to become {data, table} the way it does at an
+	// assignment or an argument. Put in raw, the C compiler refused the literal --
+	// "expected _struct__Shape but got pointer to _struct__Rect" -- so `Box{&gr}`
+	// did not compile though Go accepts it.
+	if e.isIfaceCType(expectType) {
+		text, ok := e.ifaceBraceC(expectType, v.ast)
+		if !ok {
+			e.fail("cannot use this value as %s in a literal: an interface holds a pointer here, "+
+				"so write the address of a variable", e.goTypeName(expectType))
+			return
+		}
+		e.emit(text)
+		return
+	}
 	// An element of a struct type that holds an array is assigned by value into the
 	// literal's storage, which is the same copy the backend cannot make: it reported
 	// "incompatible types" rather than anything a reader could act on. A whole
