@@ -5835,10 +5835,10 @@ func main() {
 }
 `
 	want := []string{
-		"printf(\"%d\\n\", (*p).x);", // a field through the dereference
-		"(*p).x = 7;",
-		"(*p).xs.ptr[ogo_bound(0, (*p).xs.len)] = 5;", // an element of a slice field
-		"P_bump(p);",                                  // a method call is the shorthand, not a chain
+		"printf(\"%d\\n\", (*ogo_nil_P_ptr(p)).x);", // a field through the dereference
+		"(*ogo_nil_P_ptr(p)).x = 7;",
+		"(*ogo_nil_P_ptr(p)).xs.ptr[ogo_bound(0, (*ogo_nil_P_ptr(p)).xs.len)] = 5;", // an element of a slice field
+		"P_bump(p);", // a method call is the shorthand, not a chain
 	}
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 	pkg, err := Build(-1, []string{"main.ogo"}, fsys)

@@ -37,6 +37,62 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A nil dereference panics rather than using address zero. It used not to:
+		// address zero on this target is ordinary Hub RAM, not a trap, so a READ
+		// through a nil pointer yielded whatever lives at 0 and a WRITE stored into
+		// the boot area, both silently, where Go panics for each.
+		//
+		// The write is the one worth a case of its own -- reading garbage is bad and
+		// corrupting the boot area is worse -- but a test can only observe the first
+		// panic, so the read is what this asserts and the write has its own case
+		// below it.
+		name: "a nil pointer dereference panics",
+		src: `type P struct{ a int }
+
+var np *P
+
+func main() {
+	println("before")
+	println(np.a)
+	println("unreachable")
+}
+`,
+		panics: true,
+		want:   "panic: nil pointer dereference\n",
+	},
+	{
+		name: "a nil pointer write panics",
+		src: `type P struct{ a int }
+
+var np *P
+
+func main() {
+	println("before")
+	np.a = 1
+	println("unreachable")
+}
+`,
+		panics: true,
+		want:   "panic: nil pointer dereference\n",
+	},
+	{
+		// The written-out dereference takes the check too, which is a separate
+		// emission path from the "p.f" shorthand: the star and the name are emitted
+		// as unrelated tokens, so the one place that knows this is a dereference is
+		// where the shape is still visible.
+		name: "a nil written-out dereference panics",
+		src: `var ni *int
+
+func main() {
+	println("before")
+	println(*ni)
+	println("unreachable")
+}
+`,
+		panics: true,
+		want:   "panic: nil pointer dereference\n",
+	},
+	{
 		// A variadic whose ELEMENT is a string or a struct. Neither compiled: a call
 		// packs its trailing arguments into an array of this frame, and an array
 		// INITIALIZER wants its aggregates braced rather than written as compound

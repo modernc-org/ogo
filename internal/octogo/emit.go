@@ -2540,6 +2540,31 @@ const ogoBound = "static int ogo_bound(int i, int n) {\n" +
 	"\treturn i;\n" +
 	"}\n"
 
+// nilHelperDef is the guard for a DEREFERENCE of one pointer type: it returns p when
+// non-nil, else panics. One is emitted per pointer type used.
+//
+// A single void* helper with a cast at the site was tried first and does not work:
+// flexcc loses the value for a pointer to an ARRAY, so `po[0] = "hi"` through a
+// *[1]string wrote nothing and the read printed an empty string, while the host
+// compiler accepted the same C and behaved. Casting a void* back to a
+// pointer-to-array typedef is the part it cannot follow, so no cast is used at all
+// and the type is exact everywhere -- the same reason the slice, channel and
+// equality helpers are per type here.
+//
+// Address zero on this target is ordinary Hub RAM rather than a trap, so without
+// this a read through a nil pointer yields whatever lives at 0 and a WRITE stores
+// into the boot area, both silently. Go panics for each.
+func nilHelperDef(ptrType, name string) string {
+	return "static " + ptrType + " " + name + "(" + ptrType + " p) {\n" +
+		"\tif (p == 0) ogo_panic(\"nil pointer dereference\");\n" +
+		"\treturn p;\n" +
+		"}\n"
+}
+
+// nilHelperName is the guard's C name for a pointer type: "ogo_nil_int_ptr" for an
+// int*, the star spelled the way sanitizeElem spells one.
+func nilHelperName(ptrType string) string { return "ogo_nil_" + sanitizeElem(ptrType) }
+
 // ogoNonzero guards a divisor: it returns b when non-zero, else panics.
 const ogoNonzero = "static int ogo_nonzero(int b) {\n" +
 	"\tif (b == 0) ogo_panic(\"integer divide by zero\");\n" +
@@ -2861,7 +2886,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -3129,6 +3154,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	}
 	if e.usesBound {
 		helperDefs.WriteString(ogoBound)
+	}
+	for _, pt := range slices.Sorted(maps.Keys(e.nilHelpers)) {
+		helperDefs.WriteString(nilHelperDef(pt, nilHelperName(pt)))
 	}
 	if e.usesNonzero64 {
 		helperDefs.WriteString(ogoNonzero64)
@@ -3502,6 +3530,7 @@ type emitter struct {
 	usesPanic          bool                 // ogo_panic is called: emit its definition and pull in its includes
 	testEntry          string               // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                 // ogo_bound is called: emit the index bounds-check helper
+	nilHelpers         map[string]bool      // pointer types whose nil-dereference guard is called
 	usesNonzero        bool                 // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesNonzero64      bool                 // ogo_nonzero64 (64-bit divisor guard) is called
 	shiftHelpers       map[string][2]string // guarded shift helper name -> {operator, value C type}
@@ -8388,7 +8417,7 @@ func (e *emitter) arrayDerefOperand(ast []int32) (string, arrDim, bool) {
 	if !ok {
 		return "", arrDim{}, false
 	}
-	return "(*" + e.varRef(name) + ")", a, true
+	return "(*" + e.nilCheckedPtrVar(name) + ")", a, true
 }
 
 // hoistLitVar binds a composite literal to a temporary of this frame, declared
@@ -9349,7 +9378,7 @@ func (e *emitter) arrayBase(name string) (string, arrDim, bool) {
 		return e.varRef(name), a, true
 	}
 	if a, ok := e.arrayPtrVar(name); ok {
-		return "(*" + e.varRef(name) + ")", a, true
+		return "(*" + e.nilCheckedPtrVar(name) + ")", a, true
 	}
 	return "", arrDim{}, false
 }
@@ -9862,6 +9891,12 @@ func (e *emitter) accessBaseText(base string) string {
 	if text, _, ok := e.arrayBase(base); ok {
 		return text
 	}
+	// A chain that starts at a POINTER dereferences it -- every step through one is
+	// a "->" or an index -- so the base takes the nil check here, once, rather than
+	// at each step. arrayBase above has already applied it to a pointer to an array.
+	if ct, ok := e.varType(base); ok && e.isPointer(ct) {
+		return e.nilCheckedC(e.varRef(base), ct)
+	}
 	return e.varRef(base)
 }
 
@@ -10371,7 +10406,7 @@ func (e *emitter) derefBase(name string) (string, accessCur, bool) {
 	if !ok || !e.isPointer(ct) {
 		return "", accessCur{}, false
 	}
-	return "(*" + e.varRef(name) + ")", e.plainOrSlice(e.elemType(ct)), true
+	return "(*" + e.nilCheckedC(e.varRef(name), ct) + ")", e.plainOrSlice(e.elemType(ct)), true
 }
 
 // arrayConvChain matches a leading conversion to a defined array type, `Row(a)`,
@@ -11065,6 +11100,50 @@ func (e *emitter) needPanic() {
 	e.includes["stdio.h"] = true
 	e.includes["stdlib.h"] = true
 	e.includes["propeller2.h"] = true
+}
+
+// nilCheckedC wraps a POINTER expression in the nil check, so a dereference through
+// it panics rather than reading or writing address zero. ctype is the pointer's own
+// C type, which the result is cast back to; the caller dereferences what comes back
+// exactly as it would have dereferenced ptr.
+//
+// It is the one place the check is applied, so every dereference site reads the same
+// and none can be half-converted. With checks off it is the identity, as the bounds
+// check is.
+func (e *emitter) nilCheckedC(ptr, ctype string) string {
+	if !e.checks {
+		return ptr
+	}
+	// A pointer to an ARRAY is left unchecked, and this is a backend defect rather
+	// than a choice. flexcc DROPS an assignment made through a pointer-to-array that
+	// came out of a function: given `(*guard(po))[0] = x` it writes nothing at all,
+	// silently, where the host compiler writes. Reduced to a dozen lines of C in
+	// doc/ptr-to-array-through-call.c. Wrapping the pointer in a comma expression
+	// instead of a call fails the same way, so there is no form of the check that
+	// leaves the write intact -- and a check that costs the store it guards would be
+	// a far worse bargain than the one it buys.
+	//
+	// Nothing else in the emitter generates that shape: an assignment through a
+	// CALL's result is refused ("only simple and field assignment targets are
+	// supported yet"), so this defect is reachable only by adding the wrapper, and
+	// not adding it is what keeps it unreachable.
+	if _, isArrPtr := e.arrayPtrCType(ctype); isArrPtr {
+		return ptr
+	}
+	e.needPanic()
+	e.nilHelpers[ctype] = true
+	return nilHelperName(ctype) + "(" + ptr + ")"
+}
+
+// nilCheckedPtrVar is nilCheckedC for a pointer VARIABLE, looking its own C type up
+// so the caller need not. A variable whose type is not known is left alone: there is
+// nothing to cast the result back to.
+func (e *emitter) nilCheckedPtrVar(name string) string {
+	ct, ok := e.varType(name)
+	if !ok || !e.isPointer(ct) {
+		return e.varRef(name)
+	}
+	return e.nilCheckedC(e.varRef(name), ct)
 }
 
 // emitIndex emits an index expression, wrapping it in a bounds check ogo_bound(i,
@@ -17821,7 +17900,13 @@ func (e *emitter) fieldIdent(name string) string {
 // each pointer step (an auto-dereferenced Go field access) and "." otherwise.
 func (e *emitter) fieldAccessC(base string, fields []string) string {
 	ctype, _ := e.varType(base)
+	// A field reached THROUGH a pointer is a dereference, so the base takes the nil
+	// check: "p.f" is "p->f", which on this target reads or writes address zero
+	// happily when p is nil.
 	s := e.varRef(base) // a global base is mangled, a Unicode local base escaped
+	if len(fields) != 0 && e.isPointer(ctype) {
+		s = e.nilCheckedC(s, ctype)
+	}
 	for _, f := range fields {
 		sel, ok := e.selectC(ctype, f)
 		if !ok {
@@ -19364,6 +19449,23 @@ func (e *emitter) emitExprNode(n Node) {
 		if n.sym == Factor && containsSym(kids, FactorSuffix) {
 			e.failSuffixChain(n, kids)
 			return
+		}
+		// A written-out DEREFERENCE, `*p` of a pointer variable, takes the nil check.
+		// The generic walk below emits the star and the name separately -- the star
+		// through emitOperandToken, which sees a token and not a shape -- so the one
+		// place that knows this is a dereference is here, before the walk.
+		// The shape is read off the CHILDREN here, not through derefOperand: that one
+		// takes the ast of an expression CONTAINING a UnaryExpr, and this node is the
+		// UnaryExpr, so handing it n.ast matches nothing.
+		if n.sym == UnaryExpr && len(kids) == 2 && kids[0].sym == UnaryOp {
+			if tok, isOp := e.unaryOpTok(kids[0].ast); isOp && e.f.ch(tok) == MUL {
+				if name, isName := e.exprIdent(e.unparenExpr(kids[1].ast)); isName {
+					if ct, okT := e.varType(name); okT && e.isPointer(ct) {
+						e.emit("(*" + e.nilCheckedC(e.varRef(name), ct) + ")")
+						return
+					}
+				}
+			}
 		}
 		for _, c := range kids {
 			e.emitExprNode(c)

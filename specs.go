@@ -639,19 +639,18 @@
 //
 //   - The value of an uninitialized pointer is nil.
 //
-// DEREFERENCING A NIL POINTER IS NOT CAUGHT. Go panics with "invalid memory address
-// or nil pointer dereference"; here the address is simply used, and on this target
-// address zero is ordinary Hub RAM rather than a trap. Measured on a P2-EDGE: a read
-// through a nil pointer yields 0 and the program carries on, and a WRITE through one
-// stores into Hub address 0 — the boot area — and the program carries on from there
-// too. Nothing is reported at either end.
+// Dereferencing a nil pointer panics, "panic: nil pointer dereference", and halts the
+// cog — one of the runtime checks, alongside an out-of-range index or slice, a
+// division or remainder by zero, a shift by a negative count and appending past a
+// capacity. It has to be a check rather than a trap the hardware springs: address
+// zero on this target is ordinary Hub RAM, so without one a read yields whatever
+// lives there and a WRITE stores into the boot area, both silently. "--unchecked"
+// omits it with the rest, and then those are again what happens.
 //
-// It is the one place a program that compiles here can mean something other than
-// what it means in Go while saying nothing about it, so it is written down rather
-// than left to be met. The runtime checks that ARE made — an out-of-range index or
-// slice, a division or remainder by zero, a shift by a negative count, appending
-// past a capacity — each print "panic: <what>" and halt the cog; a nil dereference
-// belongs in that family and is not yet in it.
+// A pointer to an ARRAY is the one that carries no such check, which is a limit of
+// the C backend rather than a rule: it drops a store made through a pointer-to-array
+// that has been through a function, so the guard would cost the write it guards.
+// "p[i]" on a nil "*[N]T" therefore still reads or writes address zero.
 //
 // A pointer to an ARRAY, "*[3]int", is the one pointer an index applies to, and it
 // abbreviates the dereference exactly as Go does: "p[i]" is "(*p)[i]", and so are
