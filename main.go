@@ -193,8 +193,10 @@ when a single file is named, which keeps that file's name: ogo build x.ogo write
 x.binary. -o overrides the path.
 
 Runtime checks are on by default: out-of-range indexing and slicing, division and
-remainder by zero, a shift by a negative count, and appending past a slice's
-capacity. Each prints "panic: <what>" and halts the offending cog.
+remainder by zero, a shift by a negative count, appending past a slice's capacity,
+a nil pointer dereference and cog exhaustion. Each prints "panic: <what>" and halts
+the offending cog. A pointer to an ARRAY is the one that carries no nil check, which
+is a limit of the C backend rather than a rule.
 
 The system clock is 160 MHz unless --clock asks for another, that being what the C
 backend falls back to: a 20 MHz crystal times eight, which is a round multiplier

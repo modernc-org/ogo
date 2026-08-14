@@ -16,7 +16,9 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.27.0
+
+A nil pointer dereference stops the program.
 
 ### Language
 
@@ -54,6 +56,25 @@ shipped section tells a reader on that version that they have behaviour they do 
   a program that appeared to work may now panic, and what it was really doing was
   reading or writing the boot area. `--unchecked` restores the old behaviour if a
   measurement needs it.
+
+### Documentation
+
+- **`ogo help build` listed the runtime checks and named four of six.** Cog
+  exhaustion had been missing since it shipped and the nil dereference since this
+  release; a list introduced as what is "on by default" reads as complete, so being
+  short is being wrong. The pointer-to-array exception is named there too, since a
+  reader relying on the check needs to know the one place it does not apply.
+
+- **A defined type over a STRUCT is not distinct from that struct, and now says so.**
+  Found by testing the claim rather than reading it: `type A B` with `B` a struct
+  lets an `A` pass, assign, return and compare where a `B` is wanted and the reverse,
+  six positions Go refuses in both directions. Over an `int` or a `string` base the
+  rule is enforced, so this is a gap in the struct path, not a policy — but `specs.go`
+  had said flatly that a defined type "is not the same type as what it is defined
+  over", which is true of every base except the one most people will use it on.
+  Nothing is miscompiled, the two having one representation; the risk is the other
+  way, a program that builds here and not under Go. Documented rather than pinned by
+  a test, since a test written now would agree with the bug.
 
 ## v0.26.0
 

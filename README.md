@@ -345,6 +345,14 @@ broken.
   `=` is read and discarded, so `A` is a distinct type rather than another name for
   `B`, and `var i int = a` over `type A = int` is refused where Go accepts it. Use
   the definition form until the two differ.
+* A **defined STRUCT type is not yet distinct from the struct it was defined over**.
+  Given `type A B` with `B` a struct, an `A` may be passed, assigned, returned and
+  compared where a `B` is wanted and the other way round — six positions, all of
+  which Go refuses. Over an `int` or a `string` base the same rule *is* enforced, so
+  this is a gap in the struct path rather than a policy. Nothing is miscompiled: the
+  two layouts are identical, and a program Go accepts still means here what it means
+  there. It is the reverse that is admitted, so a program written against this will
+  not build under Go.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,

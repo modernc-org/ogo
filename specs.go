@@ -1009,7 +1009,12 @@
 // one of those ways. Only its identity differs: which methods it has, and that it
 // is not the same type as what it is defined over.
 //
-// A defined type over a struct is written and used as that struct is.
+// A defined type over a struct is written and used as that struct is. It is not yet
+// DISTINCT from it, which is a gap rather than a rule: a type defined over a struct
+// passes, assigns, returns and compares where that struct is wanted and the other way
+// round, six positions Go refuses in both directions. Over an int or a string base
+// the distinctness above IS enforced. Nothing is miscompiled, the two having one
+// representation, but a program leaning on this will not build under Go.
 //
 // It is also type-checked as the type it is defined over, following a chain of
 // definitions to reach it: a value of one is bounded, converted, compared and passed
