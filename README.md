@@ -289,7 +289,8 @@ broken.
 * Runtime traps for out-of-range indexing and slicing, division and remainder by
   zero, a shift by a negative count, appending past a slice's capacity, and cog
   exhaustion. Each prints `panic: <what>` and halts the offending cog; `--release`
-  reboots the board instead, and `--unchecked` omits the checks.
+  reboots the board instead, and `--unchecked` omits the checks. **A nil pointer
+  dereference is not among them** — see the caveat below.
 * A package is a directory: `ogo build` compiles every `.ogo` file in it together,
   and a program may span several packages. A value of an imported package's struct
   type is written the way you would expect, `geo.Point{1, 2}`.
@@ -355,6 +356,15 @@ heap, maps, closures that capture their environment (a function *value* is fine 
 it is a pointer to code, not to a frame), and runtime string concatenation.
 Constant string concatenation folds at compile time; to assemble one at run time,
 write into a `Builder` over storage you own.
+
+**Dereferencing a nil pointer is not caught.** Go panics; here the address is simply
+used, and on this target address zero is ordinary Hub RAM rather than a trap.
+Measured on a P2-EDGE: a read through a nil pointer yields 0 and the program carries
+on, and a *write* through one stores into Hub address 0 — the boot area — and carries
+on from there too. Nothing is reported at either end. It is the one place a program
+that compiles here can mean something other than what it means in Go while saying
+nothing about it, which is why it is stated here rather than left to be met. It
+belongs in the runtime-check family above and is not in it yet.
 
 Having no heap has one consequence worth knowing before you meet it: a reference
 must not outlive what it refers to. Where Go would move the referent to the heap and

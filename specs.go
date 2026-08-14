@@ -639,6 +639,20 @@
 //
 //   - The value of an uninitialized pointer is nil.
 //
+// DEREFERENCING A NIL POINTER IS NOT CAUGHT. Go panics with "invalid memory address
+// or nil pointer dereference"; here the address is simply used, and on this target
+// address zero is ordinary Hub RAM rather than a trap. Measured on a P2-EDGE: a read
+// through a nil pointer yields 0 and the program carries on, and a WRITE through one
+// stores into Hub address 0 — the boot area — and the program carries on from there
+// too. Nothing is reported at either end.
+//
+// It is the one place a program that compiles here can mean something other than
+// what it means in Go while saying nothing about it, so it is written down rather
+// than left to be met. The runtime checks that ARE made — an out-of-range index or
+// slice, a division or remainder by zero, a shift by a negative count, appending
+// past a capacity — each print "panic: <what>" and halt the cog; a nil dereference
+// belongs in that family and is not yet in it.
+//
 // A pointer to an ARRAY, "*[3]int", is the one pointer an index applies to, and it
 // abbreviates the dereference exactly as Go does: "p[i]" is "(*p)[i]", and so are
 // "len(p)", "cap(p)", "range p" and "p[lo:hi]". It is how an array is passed by

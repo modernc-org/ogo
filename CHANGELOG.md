@@ -16,6 +16,25 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Documentation
+
+- **A nil pointer dereference is not caught, and now says so.** Go panics with
+  "invalid memory address or nil pointer dereference"; here the address is simply
+  used, and on this target address zero is ordinary Hub RAM rather than a trap.
+  Measured on a P2-EDGE: a read through a nil pointer yields 0 and the program
+  carries on, and a WRITE through one stores into Hub address 0 -- the boot area --
+  and carries on from there too. Nothing is reported at either end.
+
+  It is the one place a program that compiles here can mean something other than what
+  it means in Go while saying nothing about it, so it is stated in `specs.go` and in
+  the README rather than left to be met. It belongs in the runtime-check family --
+  out-of-range index, divide by zero, negative shift, append past capacity -- and is
+  not in it yet; that would be a check at every dereference, of which there are a
+  dozen emission sites, and it is a change to make deliberately rather than beside a
+  release.
+
 ## v0.26.0
 
 Things that did not compile, and the documentation that said they did.
