@@ -8058,6 +8058,31 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	e.emitExpr(v.ast)
 }
 
+// valueIsSliceExpr reports whether a value is a slice EXPRESSION -- `pool[:]`,
+// `b.arr[:]`, `(*p)[:]` -- rather than a literal, a call or a name. It is the shape
+// that renders as a compound literal, and so the only one that needs the brace
+// spelling inside an initializer.
+func (e *emitter) valueIsSliceExpr(v Node) bool {
+	// A CONVERSION to a slice type renames the same header, so it renders whatever
+	// its operand renders: `L(a[:])` is a compound literal exactly as `a[:]` is.
+	if recv, suffix, isCall := e.directCall(v.ast); isCall && len(suffix) != 0 &&
+		suffix[len(suffix)-1].sym == CallSuffix && e.convToSliceType(recv, len(suffix)) {
+		if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
+			return e.valueIsSliceExpr(args[0])
+		}
+	}
+	fac, ok := e.soleFactorNode(v.ast)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if _, steps, isDeref := e.factorDerefChain(kids); isDeref {
+		return e.endsInSliceStep(steps)
+	}
+	_, steps, isChain := e.factorAccessChain(kids)
+	return isChain && e.endsInSliceStep(steps)
+}
+
 // litKeyIndex evaluates an array or slice literal's element index -- the "2" in
 // "[]int{2: 5}" -- to a non-negative integer. Only a constant is admitted: an
 // integer literal or a name bound to an integer const, in any base normalizeIntLit
@@ -8150,6 +8175,21 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 		fld := structField{ctype: elemCType}
 		if a, isArr := e.namedArrays[elemCType]; isArr {
 			fld.dim = a
+		}
+		// A slice EXPRESSION standing as an ARRAY's element renders as a compound
+		// literal, `(ogo_slice_int){pool, 4, 4}`, and the target's compiler refuses
+		// one inside an ARRAY initializer -- "expected pointer to int but got
+		// __anon_..." -- while accepting it inside a STRUCT initializer, which is
+		// why only this path spells it the other way. So `[2][]int{r0[:], r1[:]}`,
+		// a table of rows, did not compile at all. declInit braces the header, and
+		// only a slice expression needs it: a slice LITERAL element must hoist a
+		// backing array first, which is exactly what declInit turns off.
+		if e.isSliceCType(e.underlyingCType(elemCType)) && e.valueIsSliceExpr(*v) {
+			saved := e.declInit
+			e.declInit = true
+			e.emitLitElement(*v, fld, true)
+			e.declInit = saved
+			continue
 		}
 		e.emitLitElement(*v, fld, true)
 	}

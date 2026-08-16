@@ -4408,6 +4408,51 @@ func main() {
 		want: "2 4 11 20\n1 31\n1 2 3 4\n",
 	},
 	{
+		// A composite literal whose ELEMENTS are slices -- a table of rows, which is
+		// how a program states one without a heap. It rendered each element as a
+		// compound literal, `(ogo_slice_int){r0, 3, 3}`, and the target's compiler
+		// refuses one inside an ARRAY initializer while accepting it inside a STRUCT
+		// initializer. So the shape did not compile at all, though the host compiler
+		// took the same C.
+		//
+		// A slice expression, a conversion of one, and a slice-of-slices rather than
+		// an array of them, since each reaches the element by its own route.
+		name: "a composite literal whose elements are slices",
+		src: `type L []int
+
+var r0 [3]int
+
+var r1 [2]int
+
+var r2 [4]int
+
+var table = [3][]int{r0[:], r1[:], r2[:]}
+
+func widths(rows [][]int) int {
+	n := 0
+	for _, r := range rows {
+		n = n*10 + len(r)
+	}
+	return n
+}
+
+func main() {
+	r0[0], r1[0], r2[0] = 10, 20, 30
+	println(len(table), widths(table[:]))
+
+	local := [2][]int{r1[:], r2[:]}
+	rows := [][]int{r2[:], r0[:]}
+	println(len(local), local[0][0], len(rows), rows[0][0])
+
+	// A conversion to a defined slice type renders what its operand renders, so it
+	// needs the same spelling.
+	named := [2]L{L(r0[:]), L(r2[:])}
+	println(len(named), len(named[1]))
+}
+`,
+		want: "3 324\n2 20 2 30\n2 4\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what

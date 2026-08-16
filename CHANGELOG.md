@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A composite literal whose elements are SLICES compiles** — `[3][]int{r0[:],
+  r1[:], r2[:]}`, a table of rows, which is how a program states one without a heap.
+  Each element rendered as a compound literal, `(ogo_slice_int){r0, 3, 3}`, and the
+  target's C compiler refuses one inside an *array* initializer while accepting it
+  inside a *struct* initializer — so the shape did not compile at all, though the
+  host compiler takes the identical C. The array path now braces the header, as it
+  already did for a string element. A slice *literal* element is unaffected: it has
+  to hoist a backing array first, which is the opposite spelling.
+
 - **A select's SEND clause carries an interface or an array element.** The blocking
   `ch <- v` handled both and the clause handled neither: an interface element took
   the raw pointer where the two words go, and an array element was bound with
