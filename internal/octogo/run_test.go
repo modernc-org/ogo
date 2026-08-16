@@ -2020,6 +2020,65 @@ func main() {
 		want: "1 2 3\n11\n7\n",
 	},
 	{
+		// A method called on a struct FIELD or on a CALL RESULT whose type is a
+		// defined type over a scalar. Both were refused by the checker, which had
+		// only the field's or the result's Kind to go on -- and a Kind is what a
+		// defined type resolves THROUGH, so "type Celsius int" carries int's and
+		// nothing of its own. "type int has no method F" named a type the program
+		// never wrote, of a method it had declared.
+		//
+		// Reaching the same value through a local always worked, which is what made
+		// the shape look supported; the last line pins that the two agree.
+		name: "a method on a field or a call result of a defined type",
+		src: `type Celsius int32
+
+type Name string
+
+type Reading struct {
+	t Celsius
+	n Name
+}
+
+type Box struct {
+	inner Reading
+}
+
+func (c Celsius) F() int32 { return int32(c)*9/5 + 32 }
+
+func (c Celsius) hot() bool { return c > 30 }
+
+func (n Name) size() int { return len(n) }
+
+func mk() Celsius { return Celsius(25) }
+
+func (r Reading) temp() Celsius { return r.t }
+
+var g Reading
+
+var box Box
+
+var pool [2]Reading
+
+func main() {
+	g.t, g.n = 40, "probe"
+	println(g.t.F(), g.t.hot(), g.n.size())
+
+	// One level deeper, and through an element.
+	box.inner.t = 10
+	pool[1].t = 100
+	println(box.inner.t.F(), pool[1].t.F())
+
+	// On a call result, direct and through a method.
+	println(mk().F(), mk().hot(), g.temp().F())
+
+	// The long way round agrees with the short.
+	v := g.t
+	println(v.F() == g.t.F())
+}
+`,
+		want: "104 true 5\n50 212\n77 false 104\ntrue\n",
+	},
+	{
 		// Floating point: float64 (C double) and float32 (C float), their literals,
 		// arithmetic, a float parameter and result, conversions to and from int, and
 		// printing (as %g, concise like Go's fmt). Float division is not guarded --

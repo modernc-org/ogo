@@ -1,0 +1,65 @@
+// A field or a call RESULT of a DEFINED type has that type's method set.
+//
+// A Kind cannot report it. typeKind resolves a defined type through to what it is
+// defined over, which is what makes every Kind-keyed check work for one at all, and
+// the cost is that a field of a "type Celsius int" carries int's Kind and nothing
+// else. The two checks that had only the Kind -- checkFieldSuffix, for "h.f.m()",
+// and checkResultSuffix, for "mk().m()" -- read that Kind and reported a method the
+// program had declared as missing, naming int: a type the program never wrote.
+//
+// Reaching the same value through a LOCAL always worked ("v := g.t; v.m()"), which
+// is what made the shape look supported; so did a method on an element, "pool[1].m()".
+
+type Celsius int
+
+type Name string
+
+func (c Celsius) F() int { return int(c)*9/5 + 32 }
+
+func (n Name) size() int { return len(n) }
+
+type Reading struct {
+	t Celsius
+	n Name
+	k int
+}
+
+func mk() Celsius { return Celsius(20) }
+
+func (r Reading) temp() Celsius { return r.t }
+
+var g Reading
+
+func members() {
+	// A method of the FIELD's own defined type resolves.
+	_ = g.t.F()
+	_ = g.n.size()
+
+	// And one of a call RESULT's, whether a function's or a method's.
+	_ = mk().F()
+	_ = g.temp().F()
+
+	// The local form, which always worked and is here so the two stay in step.
+	v := g.t
+	_ = v.F()
+
+	// A member the defined type does not have is still reported -- and names the
+	// type the program wrote rather than the one it is defined over.
+	// ERROR "type Celsius has no method nope"
+	_ = g.t.nope()
+
+	// ERROR "type Celsius has no method nope"
+	_ = mk().nope()
+
+	// A selection with no call is a FIELD, and a defined type over a scalar has
+	// none.
+	// ERROR "type Name has no field len"
+	_ = g.n.len
+
+	// A field of a PREDECLARED type has no methods, which is what the Kind was
+	// right about all along.
+	// ERROR "type int has no method m"
+	_ = g.k.m()
+
+	_ = v
+}

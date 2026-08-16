@@ -20,6 +20,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A method on a struct FIELD or a call RESULT of a defined type is found.**
+  `g.t.F()` and `mk().F()` for a `type Celsius int` with a method `F` were refused
+  with `type int has no method F` — naming a type the program never wrote, of a
+  method it had declared. Reaching the same value through a local (`v := g.t;
+  v.F()`) always worked, and so did a method on an element, which is what made the
+  shape look supported.
+
+  The two checks involved had only the field's or the result's **Kind** to go on,
+  and a Kind is precisely what a defined type resolves *through*: `typeKind` follows
+  the definition down to `int` on purpose, since that is what makes every Kind-keyed
+  check work for a defined type at all. The cost is that the name — which is what
+  carries the method set — is gone by then. Both checks now look the method up by
+  name before reporting, and name the written type when they do report, so a
+  genuinely missing member reads `type Celsius has no method nope`.
+
 - **An array literal stands in an `append` and a channel send.** `append(rows,
   [2]int{1, 2})` and `ch <- [3]int{1, 2, 3}` were refused, on the ground that C has
   no array value for the literal to become. It has one — the compound literal

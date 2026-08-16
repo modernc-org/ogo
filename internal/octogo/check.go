@@ -8112,6 +8112,7 @@ func (f *File) checkResultSuffix(s *Scope, id Token, start int32, suffix Node) {
 		}
 	}
 	var resultKind Kind
+	var resultName string
 	var have bool
 	var callEnd int32
 	nextIdx := -1
@@ -8119,11 +8120,13 @@ func (f *File) checkResultSuffix(s *Scope, id Token, start int32, suffix Node) {
 	case len(ops) >= 2 && ops[0].sym == CallSuffix:
 		// A direct call "g() <op>".
 		resultKind, have = f.funcSingleResultKind(s, id)
+		resultName = f.funcSingleResultName(s, id)
 		callEnd, nextIdx = ops[0].End(), 1
 	case len(ops) >= 3 && ops[0].sym == Selector && ops[1].sym == CallSuffix:
 		// A method call "p.m() <op>".
 		if m, ok := f.selectorMember(ops[0]); ok {
 			resultKind, have = f.methodSingleResultKind(s, id, m)
+			resultName = f.methodSingleResultName(s, id, m)
 		}
 		callEnd, nextIdx = ops[1].End(), 2
 	}
@@ -8140,11 +8143,17 @@ func (f *File) checkResultSuffix(s *Scope, id Token, start int32, suffix Node) {
 		}
 	case Selector:
 		if m, ok := f.selectorMember(next); ok {
+			// A DEFINED result type has its own method set, which the Kind cannot
+			// report: typeKind resolves through to what the type is defined over, so
+			// "func mk() T" for a "type T int" has int's Kind and T's methods.
+			if f.namedTypeHasMember(s, resultName, m.Src()) {
+				return
+			}
 			member := "field"
 			if nextIdx+1 < len(ops) && ops[nextIdx+1].sym == CallSuffix {
 				member = "method" // "g().m()" selects a method, not a field
 			}
-			f.err(m.Position(), "type %s has no %s %s", kindName(resultKind), member, m.Src())
+			f.err(m.Position(), "type %s has no %s %s", orKindName(resultName, resultKind), member, m.Src())
 		}
 	case CallSuffix:
 		f.err(f.tok(next.Pos()).Position(), "cannot call non-function %s", name)
@@ -8249,11 +8258,20 @@ func (f *File) checkFieldSuffix(s *Scope, id Token, start int32, suffix Node) {
 		}
 	case Selector:
 		if m, ok := f.selectorMember(next); ok {
+			// A field of a DEFINED type has that type's method set, which the Kind
+			// cannot report: typeKind resolves through to what the type is defined
+			// over, so a field of a "type T int" carries int's Kind. `h.f.m()` was
+			// reported as "type int has no method m" -- of a method the program had
+			// declared, against a type it had never written.
+			tname := f.fieldTypeName(s, id, field)
+			if f.namedTypeHasMember(s, tname, m.Src()) {
+				return
+			}
 			member := "field"
 			if len(ops) > 2 && ops[2].sym == CallSuffix {
 				member = "method" // "q.n.m()" selects a method, not a field
 			}
-			f.err(m.Position(), "type %s has no %s %s", kindName(kind), member, m.Src())
+			f.err(m.Position(), "type %s has no %s %s", orKindName(tname, kind), member, m.Src())
 		}
 	case CallSuffix:
 		f.err(f.tok(next.Pos()).Position(), "cannot call non-function %s", name)
@@ -8288,6 +8306,90 @@ func (f *File) funcSingleResultKind(s *Scope, callee Token) (Kind, bool) {
 		return results[0].kind, true
 	}
 	return 0, false
+}
+
+// funcSingleResultName names the sole result's written type, "" when there is not
+// exactly one or its type is not a plain name. It is the companion to
+// funcSingleResultKind, which reports the Kind that name is lost to: a defined type
+// resolves to the Kind of what it is defined over, on purpose, so "type T int" and
+// int are one Kind and two method sets.
+func (f *File) funcSingleResultName(s *Scope, callee Token) string {
+	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
+	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
+		return ""
+	}
+	if results := f.flattenResults(s, fd.FuncDecl.Type.Signature); len(results) == 1 {
+		return results[0].name
+	}
+	return ""
+}
+
+// methodSingleResultName is funcSingleResultName for a method call, "p.m()".
+func (f *File) methodSingleResultName(s *Scope, head, member Token) string {
+	d, ok := s.find(head.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() {
+		return ""
+	}
+	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !ok {
+		return ""
+	}
+	fd := td.methods[member.Src()]
+	if fd == nil || fd.Type == nil {
+		return ""
+	}
+	if results := f.flattenResults(s, fd.Type.Signature); len(results) == 1 {
+		return results[0].name
+	}
+	return ""
+}
+
+// fieldTypeName names the written type of "head.field", "" when the field's type is
+// not a plain name of this package.
+func (f *File) fieldTypeName(s *Scope, head, field Token) string {
+	tn, isIdent := f.fieldTypeNode(s, head, field).(*TypeNodeIdent)
+	if !isIdent || tn.Qualifier.IsValid() {
+		return ""
+	}
+	return tn.Name.Src()
+}
+
+// namedTypeHasMember reports whether the DEFINED type called name has a member of
+// this name: a method of its own, one promoted from an embedded field, or -- for a
+// struct -- a field. A name that is not a defined type answers false, which leaves a
+// predeclared scalar to the Kind-based checks that ask.
+//
+// It exists because a Kind cannot answer the question at all. typeKind resolves a
+// defined type through to what it is defined over, which is what makes every
+// Kind-keyed check work for one; the cost is that a field or a result of a
+// "type T int" carries int's Kind and its OWN method set, and the checks that had
+// only the Kind reported a declared method missing.
+func (f *File) namedTypeHasMember(s *Scope, name, member string) bool {
+	td, ok := s.find(name).(*TypeDeclaration)
+	if !ok {
+		return false
+	}
+	if td.methods[member] != nil {
+		return true
+	}
+	if owner, promoted := f.methodOwner(s, td.Token(), member); promoted {
+		if otd, isType := s.find(owner.Src()).(*TypeDeclaration); isType && otd.methods[member] != nil {
+			return true
+		}
+	}
+	fields, isStruct := f.structFields(s, td.Token())
+	return isStruct && fields[member]
+}
+
+// orKindName names a type for a diagnostic: the type's own written name where there
+// is one, and otherwise what its Kind is called. A defined type's name is what the
+// program wrote and what carries its methods, so reporting the Kind named a type the
+// reader never mentioned.
+func orKindName(name string, k Kind) string {
+	if name != "" {
+		return name
+	}
+	return kindName(k)
 }
 
 // callInfo inspects a FactorSuffix or a Postfix for a call. isCall is true when
