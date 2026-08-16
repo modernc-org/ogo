@@ -221,7 +221,10 @@ broken.
 * An **array may be a slice's or a channel's element**, of any rank: `[][2]int`,
   `chan [3]int`, `chan [2][3]int`. C cannot spell one inline where a slice header's
   pointer or a rendezvous payload goes, so the element gets a generated typedef and
-  everything that would copy it by value copies it through a pointer instead.
+  everything that would copy it by value copies it through a pointer instead. Such a
+  slice is made the same way as any other, by slicing a backing array — `m[:]` over
+  a `[4][2]int` is a `[][2]int` over that storage, as is `d[1][:]` over one rank
+  further in.
 * A **pointer to an array**, `*[3]int`, which passes one by reference without a
   slice header. It abbreviates the dereference as Go does — `p[i]` is `(*p)[i]`, and
   so are `len(p)`, `range p` and `p[lo:hi]` — while `*p` copies the array and

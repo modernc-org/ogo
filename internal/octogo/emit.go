@@ -9977,12 +9977,29 @@ func (e *emitter) accessDeref(cur accessCur, prefix string) string {
 // elsewhere: a slice of arrays has no element type C can name.
 func (e *emitter) accessSlice(cur accessCur) (accessCur, bool) {
 	switch {
-	case cur.slice, len(cur.dims) == 1:
+	case cur.slice:
 		return accessCur{elem: cur.elem, slice: true}, true
+	case len(cur.dims) >= 1:
+		return accessCur{elem: e.accessSliceElem(cur), slice: true}, true
 	case cur.ctype == cString:
 		return accessCur{ctype: cString}, true
 	}
 	return accessCur{}, false
+}
+
+// accessSliceElem names the C element type slicing cur yields, for the chain form
+// the way sliceElemOfArray does for the arrDim one: cur's element where the array
+// has one extent left, and otherwise the typedef standing for its ROW. A [2][3]int
+// slices to a slice of [3]int, whose element C names as ogo_arr_3_int.
+//
+// This is what carried the refusal into a chain: `d[0][:]` over a [3][2][2]int is
+// still a slice of arrays after the index, so the advice the old diagnostic gave --
+// slice a row instead -- did not hold for a rank above two.
+func (e *emitter) accessSliceElem(cur accessCur) string {
+	if len(cur.dims) < 2 {
+		return cur.elem
+	}
+	return e.arrayTypedef(arrDim{elem: cur.elem, bound: cur.dims[1], inner: cur.dims[2:]})
 }
 
 // accessSliceSource describes what a slice step slices -- sliceableVar's form for a
@@ -9996,10 +10013,12 @@ func (e *emitter) accessSliceSource(cur accessCur, prefix string) (sliceSource, 
 	switch {
 	case cur.slice:
 		return sliceSource{sliceCName(cur.elem), prefix + ".ptr", prefix + ".len", prefix + ".cap"}, true
-	case len(cur.dims) == 1:
-		// An array decays to a pointer to its first element and its extent is both
-		// its length and its capacity.
-		return sliceSource{sliceCName(cur.elem), prefix, cur.dims[0], cur.dims[0]}, true
+	case len(cur.dims) >= 1:
+		// An array decays to a pointer to its first element and its OUTERMOST extent
+		// is both its length and its capacity. Where extents remain past that one the
+		// element is a row, and decaying names it: an `int m[2][3]` decays to
+		// `int(*)[3]`, which is exactly the ogo_arr_3_int* the header holds.
+		return sliceSource{sliceCName(e.accessSliceElem(cur)), prefix, cur.dims[0], cur.dims[0]}, true
 	case cur.ctype == cString:
 		return sliceSource{cString, prefix + ".str", prefix + ".len", ""}, true
 	}
@@ -10575,6 +10594,25 @@ func (e *emitter) varRef(name string) string {
 // empty for a string, which has no capacity and slices to a 2-field ogo_string.
 type sliceSource struct{ cname, ptr, baseLen, baseCap string }
 
+// sliceElemOfArray names the C element type a slice of array a has: a's element
+// where a is one-dimensional, and otherwise the TYPEDEF standing for its row --
+// `m[:]` over a [2][3]int is a []([3]int), whose element C cannot write inline but
+// can name, `typedef int ogo_arr_3_int[3]`.
+//
+// Minting that typedef here is not a new mechanism: a `[][3]int` written as a type
+// has always gone through arrayElemTypedef and produced the same name, so a slice
+// made by slicing and one made by a literal are the same C type and interchange.
+// This used to refuse instead, on the belief that "a slice of arrays has no element
+// type C can name" -- which had stopped being true, and left the language's own
+// idiom for a heapless slice, a package-scope backing array sliced at the point of
+// use, working for every element type but this one.
+func (e *emitter) sliceElemOfArray(a arrDim) string {
+	if a.dims() == 1 {
+		return a.elem
+	}
+	return e.arrayTypedef(a.row())
+}
+
 // sliceableVar resolves a variable base to slice: a string, a fixed array, a
 // pointer to one, or a slice.
 func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
@@ -10591,20 +10629,14 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 		e.usesString = true
 		return sliceSource{cString, base + ".str", base + ".len", ""}, true
 	case isArray:
-		if a.dims() > 1 {
-			// "m[:]" over a [2][3]int would be a slice of [3]int, and a slice of
-			// arrays has no element type C can name here. Slicing a *row*,
-			// "m[0][:]", is a slice of int and does work (sliceableChainRow).
-			e.fail("cannot slice %s: its element is an array; slice a row instead, %s[i][:]", e.goArrayTypeName(a), base)
-			return sliceSource{}, false
-		}
-		e.needSlice(a.elem)
+		elem := e.sliceElemOfArray(a)
+		e.needSlice(elem)
 		if _, isPtr := e.arrayPtrVar(base); isPtr {
 			// `p[lo:hi]` slices the array p points at. The dereference is what
 			// decays to the first element, where a plain array's name already does.
-			return sliceSource{sliceCName(a.elem), text, a.bound, a.bound}, true
+			return sliceSource{sliceCName(elem), text, a.bound, a.bound}, true
 		}
-		return sliceSource{sliceCName(a.elem), base, a.bound, a.bound}, true
+		return sliceSource{sliceCName(elem), base, a.bound, a.bound}, true
 	case e.hasSliceVar(base):
 		elem, _ := e.sliceElem(base)
 		e.needSlice(elem)
@@ -10623,8 +10655,14 @@ func (e *emitter) sliceableField(base string, fields []string) (sliceSource, boo
 	}
 	lv := e.fieldAccessC(base, fields)
 	if a, ok := e.fieldArray(base, fields); ok {
-		e.needSlice(a.elem)
-		return sliceSource{sliceCName(a.elem), lv, a.bound, a.bound}, true
+		// A field whose element is an ARRAY took a.elem here and named the header
+		// after the innermost type, so `b.g[:]` over a [3][2]int built an
+		// ogo_slice_int over an int(*)[2]. flexcc only WARNED about the pointer, so
+		// the build succeeded and every use of the result was refused afterwards
+		// for a reason that named C rather than the program.
+		elem := e.sliceElemOfArray(a)
+		e.needSlice(elem)
+		return sliceSource{sliceCName(elem), lv, a.bound, a.bound}, true
 	}
 	ct, ok := e.fieldType(base, fields)
 	if !ok {
@@ -10654,9 +10692,10 @@ func (e *emitter) sliceableField(base string, fields []string) (sliceSource, boo
 // text; a slice header needs exactly that text for its pointer. So the prefix is
 // typed and then rendered to a string, and the row's own extent bounds the result.
 //
-// Only a row that is itself one-dimensional can become a slice: a row of a
-// [2][3][4]int is a [3][4]int, and a slice of arrays has no element type C can
-// name here (the same limit that refuses a `[][2]int` literal).
+// A row of any rank can become a slice. A row of a [2][3][4]int is a [3][4]int and
+// slices to a slice of [4]int, whose element C names through the typedef
+// accessSliceElem mints -- the same one a `[][4]int` literal is built over, so the
+// two are one type.
 func (e *emitter) sliceableChainRow(base string, steps []Node) (src sliceSource, low, high, max []int32, ok bool) {
 	if len(steps) < 2 || steps[len(steps)-1].sym != Index {
 		return sliceSource{}, nil, nil, nil, false
@@ -10667,17 +10706,18 @@ func (e *emitter) sliceableChainRow(base string, steps []Node) (src sliceSource,
 	}
 	prefix := steps[:len(steps)-1]
 	cur, ok := e.accessChainType(base, prefix)
-	if !ok || cur.slice || len(cur.dims) != 1 {
+	if !ok || cur.slice || len(cur.dims) == 0 {
 		return sliceSource{}, nil, nil, nil, false
 	}
 	text, ok := e.accessChainCText(base, prefix)
 	if !ok {
 		return sliceSource{}, nil, nil, nil, false
 	}
-	e.needSlice(cur.elem)
-	// The row decays to a pointer to its first element, and its extent is both the
-	// length and the capacity: an array's storage is exactly its extent.
-	return sliceSource{sliceCName(cur.elem), text, cur.dims[0], cur.dims[0]}, low, high, max, true
+	elem := e.accessSliceElem(cur)
+	e.needSlice(elem)
+	// The row decays to a pointer to its first element, and its outermost extent is
+	// both the length and the capacity: an array's storage is exactly its extent.
+	return sliceSource{sliceCName(elem), text, cur.dims[0], cur.dims[0]}, low, high, max, true
 }
 
 // accessChainCText renders an access chain to a string, the way argsCText does
@@ -18291,7 +18331,13 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 						return cString, true
 					}
 					if _, a, ok := e.arrayBase(base); ok {
-						return sliceCName(a.elem), true
+						// sliceElemOfArray, not a.elem: slicing a [2][3]int yields a
+						// slice of ROWS, and naming it after the innermost type
+						// declared the variable an ogo_slice_int while the header
+						// built beside it was an ogo_slice_ogo_arr_3_int.
+						elem := e.sliceElemOfArray(a)
+						e.needSlice(elem)
+						return sliceCName(elem), true
 					}
 					if elem, ok := e.sliceElem(base); ok {
 						return sliceCName(elem), true

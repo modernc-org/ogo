@@ -1190,9 +1190,16 @@
 //
 // A row of such an array may be sliced -- "m[i][:]", or any sub-range of it --
 // giving a slice over the row's own storage, so a write through it is a write to
-// the array. Slicing the array itself is what a slice of arrays would be, and is
-// refused. Only a row that is one-dimensional can be sliced, for the same reason:
-// a row of a [2][3][4]int is a [3][4]int.
+// the array. The ARRAY ITSELF may be sliced the same way: "m[:]" over a [4][2]int
+// is a [][2]int over that storage, the elements being its rows. Rank is no limit on
+// either -- a row of a [2][3][4]int is a [3][4]int and slices to a [][4]int -- and
+// the element of the result is named by the generated typedef above, so a slice
+// made by slicing and one made by a literal are the same type and interchange.
+//
+// Every base a slice expression takes reaches this: a variable, a pointer to an
+// array, a struct field, and a row reached through a chain. That is what makes the
+// idiom for a slice with no heap -- a package-scope backing array, sliced where it
+// is used -- available for an array element as for every other.
 //
 // A "chan" type may stand where a type-as-value may, so that "make(chan T)"
 // parses and is then refused by the checker, which can name the real problem;

@@ -4080,6 +4080,86 @@ func main() {
 		want: "2 3 3 5\n2 3 4 7\n2 3 3 9\n2 3 5\n2 3 4\n2 3 6\n",
 	},
 	{
+		// SLICING an array whose element is an array. `[][2]int` was already a type a
+		// literal could make, but the language's own idiom for a heapless slice -- a
+		// package-scope backing array, sliced where it is used -- was refused for this
+		// one element type, on a belief that had stopped being true: that a slice of
+		// arrays has no element type C can name. It does, and by the same typedef the
+		// literal has always been built over, `typedef int ogo_arr_2_int[2]`, so a
+		// slice made by slicing and one made by a literal are one C type.
+		//
+		// Every base a slice expression takes is here, because they resolve the
+		// element in four different places: a variable, a pointer to one, a struct
+		// field, and a row reached through a chain. The struct field was the one that
+		// did not refuse -- it named the header after the INNERMOST type, built an
+		// ogo_slice_int over an int(*)[2], and flexcc only warned, so the build
+		// succeeded and every later use of the result was refused for a reason that
+		// named C rather than the program.
+		name: "slicing an array whose element is an array",
+		src: `type Row [2]int
+
+type Grid struct {
+	g [3][2]int
+}
+
+var m [4][2]int
+
+var d [3][2][2]int
+
+var rows [3]Row
+
+var gr Grid
+
+var pool [8][2]int
+
+func total(rs [][2]int) int {
+	n := 0
+	for _, r := range rs {
+		n += r[0] + r[1]
+	}
+	return n
+}
+
+func main() {
+	for i := 0; i < 4; i++ {
+		m[i][0] = i * 10
+		m[i][1] = i
+	}
+	// The idiom: a package-scope backing array, sliced where it is used.
+	xs := m[:]
+	println(len(xs), cap(xs), xs[2][0], total(xs))
+
+	// Bounded, and with a capacity bound.
+	a := m[1:3]
+	b := m[0:1:4]
+	println(len(a), a[0][0], len(b), cap(b))
+
+	// A slice is a view, not a copy: writing through it is seen in the backing.
+	xs[3][1] = 99
+	println(m[3][1])
+
+	// A row of a 3-D array is itself a slice of arrays, which is where the old
+	// advice -- slice a row instead -- ran out.
+	d[1][0][0] = 5
+	d[1][1][0] = 6
+	r := d[1][:]
+	println(len(r), r[0][0], r[1][0])
+
+	// A defined array type as the element, and a struct field as the base.
+	rows[2][0] = 7
+	gr.g[1][1] = 8
+	println(len(rows[:]), rows[:][2][0], len(gr.g[:]), gr.g[:][1][1])
+
+	// Appending a row onto a slice over another backing array.
+	ys := pool[:0]
+	ys = append(ys, xs[1])
+	ys = append(ys, r[0])
+	println(len(ys), ys[0][0], ys[1][0])
+}
+`,
+		want: "4 4 20 66\n2 10 1 4\n99\n2 5 6\n3 7 3 8\n2 10 5\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what

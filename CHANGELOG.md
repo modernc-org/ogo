@@ -20,6 +20,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array whose element is an array can be sliced.** `m[:]` over a `[4][2]int` is
+  a `[][2]int` over that storage, and so is `d[1][:]` one rank further in. `[][2]int`
+  was already a type a literal could make, so what was missing was the language's own
+  idiom for a slice with no heap — a package-scope backing array, sliced where it is
+  used — for this one element type. Every base a slice expression takes now reaches
+  it: a variable, a pointer to an array, a struct field, and a row through a chain.
+
+  The refusal rested on a belief that had stopped being true — that a slice of arrays
+  has no element type C can name. It has one: the same generated typedef a `[][2]int`
+  literal has always been built over, `typedef int ogo_arr_2_int[2]`, so a slice made
+  by slicing and one made by a literal are one C type and interchange.
+
+  The struct-field base was the one that did not refuse, and was worse for it. It
+  named the header after the INNERMOST type, building an `ogo_slice_int` over an
+  `int(*)[2]`; flexcc only warned about the pointer, so `ogo build` succeeded and
+  every later use of the result was refused for a reason that named C rather than the
+  program.
+
 - **A defined type over a STRUCT is a distinct type**, which it was not. `type Loc Pt`
   over a struct `Pt` now passes, assigns, returns, is sent and compares only where a
   `Loc` is wanted, and a conversion is what carries a value across in either
