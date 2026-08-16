@@ -221,6 +221,96 @@ func main() {
 		want: "19 6\n19\n0 19\n",
 	},
 	{
+		// The ELEMENT axis of a variadic, swept in one program. Twice now a defect
+		// here has been a spelling the table never varied: first every element was an
+		// `int`, which has nothing to brace, and then every argument was a LITERAL,
+		// which is the one thing an array initializer's braces take. Both looked whole
+		// because the SHAPES -- pack, spread, empty, a fixed parameter before it, a
+		// method -- were covered thoroughly and the element was not.
+		//
+		// So this is the guard rather than another case: each element type, and for
+		// each of them the two spellings that differed. The kinds with a history of
+		// their own -- a string, a struct, a slice, an interface -- are covered by the
+		// two cases above; these are the rest.
+		name: "a variadic of every element type",
+		src: `type P struct{ a int }
+
+type Loc P
+
+type Cel int
+
+type List []int
+
+func vBool(xs ...bool) int {
+	n := 0
+	for _, x := range xs {
+		if x {
+			n++
+		}
+	}
+	return n
+}
+
+func vF(xs ...float32) int {
+	n := 0
+	for _, x := range xs {
+		n += int(x)
+	}
+	return n
+}
+
+func vLoc(xs ...Loc) int {
+	n := 0
+	for _, x := range xs {
+		n += x.a
+	}
+	return n
+}
+
+func vCel(xs ...Cel) int {
+	n := 0
+	for _, x := range xs {
+		n += int(x)
+	}
+	return n
+}
+
+func vList(xs ...List) int {
+	n := 0
+	for _, x := range xs {
+		n += len(x)
+	}
+	return n
+}
+
+func vPtr(xs ...*P) int {
+	n := 0
+	for _, x := range xs {
+		n += x.a
+	}
+	return n
+}
+
+var gp = P{5}
+
+func main() {
+	b := true
+	f := float32(2.5)
+	l := Loc{6}
+	c := Cel(8)
+	li := List{1, 2}
+	pp := &gp
+
+	// A literal and a variable of each: the pair that differed, the literal being
+	// the only thing an array initializer's braces took.
+	println(vBool(true, b), vF(1.5, f))
+	println(vLoc(Loc{2}, l), vCel(3, c))
+	println(vList(List{9}, li), vPtr(&gp, pp))
+}
+`,
+		want: "2 3\n8 11\n3 10\n",
+	},
+	{
 		// Four channel ELEMENT types the table did not otherwise reach. The rest are
 		// well covered -- an array element, an interface element, a defined channel
 		// type, channels in struct fields and in an array of structs all have cases

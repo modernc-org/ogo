@@ -91,6 +91,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   each reported now instead of being passed on — the first two silently, the rest as
   a flexcc diagnostic naming C. Go refuses all of them.
 
+### Testing
+
+- **The ELEMENT axis of a variadic is swept in one program now.** Twice a defect
+  there has been a spelling the table never varied: first every element was an
+  `int`, which has nothing to brace, and then every argument was a literal, which is
+  the one thing an array initializer's braces take. Both looked whole because the
+  SHAPES — pack, spread, empty, a fixed parameter before it, a method — were covered
+  thoroughly and the element was not. The new case runs each element type in the two
+  spellings that differed, and its output is byte-identical to the same program
+  under Go.
+
 ## v0.27.0
 
 A nil pointer dereference stops the program.
