@@ -17173,7 +17173,21 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 	n := strconv.Itoa(len(args))
 	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"];\n")
 	for i, a := range args {
-		val := e.captureC(func() { e.emitExpr(a.ast) })
+		val, wrapped := "", false
+		// A concrete value handed to an INTERFACE element is wrapped where it
+		// stands, exactly as one handed to an interface parameter is: the two words
+		// the element is, made of the value's address and the table for that pair.
+		// Without it the pack stored the raw pointer where the two words go, so a
+		// variadic of interfaces did not compile at all. ifaceValueC may itself
+		// declare a temporary -- widening one interface to another is statements
+		// rather than an expression -- which lands after this array's declaration
+		// and before the assignment reading it, which is the order it needs.
+		if e.isIfaceCType(elem) && e.deferReplay < 0 {
+			val, wrapped = e.ifaceValueC(elem, a.ast)
+		}
+		if !wrapped {
+			val = e.captureC(func() { e.emitExpr(a.ast) })
+		}
 		e.prologue = append(e.prologue, tmp+"["+strconv.Itoa(i)+"] = "+val+";\n")
 	}
 	return "(" + sliceCName(elem) + "){" + tmp + ", " + n + ", " + n + "}"

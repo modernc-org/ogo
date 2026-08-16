@@ -25,7 +25,14 @@ import (
 // Lowering it is the point. Raising it means a formatting change made ogo fmt agree
 // with gofmt LESS often, which is worth a second look even when the new output
 // looks reasonable -- write the same source as .go and run gofmt on it.
-const gofmtDisagreements = 37
+//
+// The count also moves when the CORPUS grows, which is not the same thing and is
+// the only reason it has ever gone up: 37 -> 38 when "a variadic of interfaces"
+// arrived writing a method pair on adjacent lines, which is the alignment gap
+// already named above and not a change to the formatter. Raising it for that reason
+// is allowed; raising it because output changed is not. Check which one it is by
+// writing the program as .go and running gofmt on it, as the test does.
+const gofmtDisagreements = 38
 
 // TestFormatMatchesGofmt formats every run-corpus program with `ogo fmt` and with
 // real gofmt, and counts how many come out identical.

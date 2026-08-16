@@ -159,6 +159,68 @@ vars 5 9 6
 `,
 	},
 	{
+		// An INTERFACE element, the last element type a variadic could not take. A
+		// concrete value handed to an interface parameter is wrapped where it stands
+		// -- the two words the parameter is, the value's address and the table for
+		// that pair -- and the pack did not wrap, storing the raw pointer where the
+		// two words go. So a variadic of interfaces did not compile at all.
+		//
+		// Two concrete types in one pack is the case worth running rather than only
+		// building: each element carries its OWN table, so a pack that wrapped with
+		// one table for all of them would compile and dispatch to the wrong method.
+		name: "a variadic of interfaces",
+		src: `type Shape interface {
+	Area() int
+	Name() string
+}
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int    { return q.s * q.s }
+func (q *Sq) Name() string { return "sq" }
+
+type Rect struct{ w, h int }
+
+func (r *Rect) Area() int    { return r.w * r.h }
+func (r *Rect) Name() string { return "rect" }
+
+func total(ss ...Shape) int {
+	t := 0
+	for _, s := range ss {
+		t += s.Area()
+	}
+	return t
+}
+
+func names(ss ...Shape) int {
+	n := 0
+	for _, s := range ss {
+		n += len(s.Name())
+	}
+	return n
+}
+
+func fwd(ss ...Shape) int { return total(ss...) }
+
+var gq = Sq{3}
+
+var gr = Rect{2, 5}
+
+func main() {
+	println(total(&gq, &gr), names(&gq, &gr))
+
+	// An interface VARIABLE is already the two words, and is copied as it stands
+	// rather than wrapped a second time.
+	var s Shape = &gr
+	println(total(s, &gq))
+
+	// The empty pack, and forwarding one on with a spread.
+	println(total(), fwd(&gq, &gr))
+}
+`,
+		want: "19 6\n19\n0 19\n",
+	},
+	{
 		// Four channel ELEMENT types the table did not otherwise reach. The rest are
 		// well covered -- an array element, an interface element, a defined channel
 		// type, channels in struct fields and in an array of structs all have cases

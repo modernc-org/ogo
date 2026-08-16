@@ -37,6 +37,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   behind it. Both sides must be structs, which leaves an interface target to the
   check that owns it and a mismatch of shape to the checks that own that.
 
+- **A variadic of INTERFACES did not compile.** `total(&gq, &gr)` for
+  `total(ss ...Shape)` reached the C backend, which refused it. A concrete value
+  handed to an interface parameter is wrapped where it stands — the two words the
+  parameter is, the value's address and the table for that pair — and the pack did
+  not wrap, storing the raw pointer where the two words go. Each element carries its
+  own table, so two concrete types in one call dispatch to their own methods; an
+  interface variable passed in is already the two words and is copied as it stands.
+
 - **A variadic argument that was a VARIABLE of an aggregate type did not compile** —
   a string, a struct or a slice alike. `count(s, "ccc")` for a `string` `s`,
   `firsts(p, P{8})` for a struct `p`, and `lens(xs, pool[:])` for a slice `xs` each
