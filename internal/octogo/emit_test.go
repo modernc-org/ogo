@@ -6992,6 +6992,56 @@ func main() {
 `,
 		},
 		{
+			// The holder mark is per VARIABLE, so reading a field out of one has to be
+			// told apart by the FIELD's type: a scalar cannot carry a reference and is
+			// not refused, however suspect the variable it sits in.
+			name: "a scalar field read out of a marked holder",
+			src: `type B struct {
+	d []int
+	n int
+}
+
+var g int
+
+func fill() {
+	var a [4]int
+	var b B
+	b.d = a[:]
+	b.n = 7
+	g = b.n
+}
+
+func main() {
+	fill()
+	println(g)
+}
+`,
+		},
+		{
+			// And a struct given PACKAGE storage is not marked at all, so reading its
+			// slice field out is free.
+			name: "a slice field of an unmarked struct",
+			src: `type B struct {
+	d []int
+}
+
+var pool [4]int
+
+var g []int
+
+func fill() {
+	var b B
+	b.d = pool[:]
+	g = b.d
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+		},
+		{
 			// Marking a defined slice's backing must not mark storage that outlives
 			// the call, nor refuse one that never leaves the frame.
 			name: "a defined slice over package storage, and one that stays home",
@@ -7451,6 +7501,122 @@ func main() {
 }
 `,
 			want: "cannot store a slice backed by local s",
+		},
+		{
+			// Reading a field OUT of a marked holder. `b.d = a[:]` marks b, and
+			// handing b on was refused -- but `g = b.d` is the same header by another
+			// spelling, and it was accepted at every sink. Measured: a package
+			// variable filled with 11 22 33 44 read back as garbage the moment the
+			// filling function returned.
+			//
+			// All four sinks are here because the mark is consulted in one predicate
+			// they share, so a gap in it is a gap in all of them at once.
+			name: "a slice field read out of a marked holder, stored",
+			src: `type B struct {
+	d []int
+}
+
+var g []int
+
+func fill() {
+	var a [4]int
+	var b B
+	b.d = a[:]
+	g = b.d
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store b.d, which holds a pointer into local a",
+		},
+		{
+			name: "a slice field read out of a marked holder, returned",
+			src: `type B struct {
+	d []int
+}
+
+func mk() []int {
+	var a [4]int
+	var b B
+	b.d = a[:]
+	return b.d
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return b.d, which holds a pointer into local a",
+		},
+		{
+			name: "a slice field read out of a marked holder, sent",
+			src: `type B struct {
+	d []int
+}
+
+var ch chan []int
+
+func feed() {
+	var a [4]int
+	var b B
+	b.d = a[:]
+	ch <- b.d
+}
+
+func main() {
+	go feed()
+	println(len(<-ch))
+}
+`,
+			want: "cannot send b.d, which holds a pointer into local a",
+		},
+		{
+			name: "a slice field read out of a marked holder, handed to a goroutine",
+			src: `type B struct {
+	d []int
+}
+
+var done chan int
+
+func work(xs []int) { done <- len(xs) }
+
+func fill() {
+	var a [4]int
+	var b B
+	b.d = a[:]
+	go work(b.d)
+}
+
+func main() {
+	fill()
+	println(<-done)
+}
+`,
+			want: "cannot pass b.d, which holds a pointer into local a",
+		},
+		{
+			// A POINTER field reads out the same way a slice field does.
+			name: "a pointer field read out of a marked holder",
+			src: `type B struct {
+	p *int
+}
+
+var g *int
+
+func fill() {
+	var x int
+	var b B
+	b.p = &x
+	g = b.p
+}
+
+func main() {
+	fill()
+	println(*g)
+}
+`,
+			want: "cannot store b.p, which holds a pointer into local x",
 		},
 		{
 			// A method launched on another cog takes its receiver across too. A

@@ -20201,6 +20201,26 @@ func holderRef(name, origin string) frameRef {
 	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
 }
 
+// fieldHolderRef names a field read out of a marked holder, `b.d`. It says what the
+// program wrote rather than naming the variable, which would send a reader looking
+// at a line they did not write.
+func fieldHolderRef(base string, fields []string, origin string) frameRef {
+	return frameRef{origin: origin, what: base + "." + strings.Join(fields, ".") + ", which holds a pointer into " + origin}
+}
+
+// carriesReference reports whether a value of this C type can hold a reference to
+// storage elsewhere: a slice header, a pointer, or a struct that may contain either.
+// A scalar cannot, which is what keeps reading an int field out of a marked holder
+// from being refused for no reason.
+//
+// A STRING is not counted. One can view storage -- a Builder's backing -- but that
+// is its own open question, and counting it here would refuse the ordinary string
+// field a great many structs have.
+func (e *emitter) carriesReference(ctype string) bool {
+	u := e.underlyingCType(ctype)
+	return e.isSliceCType(u) || e.isPointer(u) || e.isStruct(u)
+}
+
 // advice names the fix. A view has a backing array to move; anything else is the
 // variable itself, and telling a reader to move a backing array that is not there
 // sends them looking for one.
@@ -20237,6 +20257,26 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	if name, ok := e.exprIdent(ast); ok {
 		if origin := e.frameHolder[name]; origin != "" {
 			return holderRef(name, origin), true
+		}
+	}
+	// Reading a field OUT of a marked holder hands on the reference the holder
+	// carries. `b.d = a[:]` marks b, and handing b on is refused -- but `g = b.d` is
+	// the same header by another spelling, and it was accepted at every sink: a
+	// dangling slice stored, returned, sent and launched, silently.
+	//
+	// The mark is per VARIABLE, deliberately (see noteFrameHolder), so there is no
+	// per-field provenance to consult and the field's own TYPE is what separates a
+	// reference-carrying read from a harmless one. That costs the same over-refusal
+	// the variable mark already costs -- a second slice field holding package storage
+	// reads as suspect too -- and it costs nothing on a scalar field, which cannot
+	// carry a reference at all.
+	if fac, isFac := e.soleFactorNode(ast); isFac {
+		if base, fields, isField := e.factorFieldAccess(slices.Collect(it(fac.ast))); isField {
+			if origin := e.frameHolder[base]; origin != "" {
+				if ct, known := e.fieldType(base, fields); known && e.carriesReference(ct) {
+					return fieldHolderRef(base, fields, origin), true
+				}
+			}
 		}
 	}
 	// A call whose result derives from one of its arguments hands the argument's

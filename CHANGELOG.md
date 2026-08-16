@@ -20,6 +20,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Reading a reference out of a struct that holds one is refused.** `b.d = a[:]`
+  for a local array `a` marks `b` as holding a reference into this frame, and handing
+  `b` on was already refused — but `g = b.d` is the same slice header by another
+  spelling, and it was accepted at every sink. Measured: a package variable filled
+  with `11 22 33 44` read back as garbage the moment the filling function returned,
+  where Go prints the four values. A pointer field, `g = b.p` after `b.p = &x`, went
+  the same way.
+
+  The mark is per *variable* and there is no per-field provenance, so the field's own
+  type is what tells a reference-carrying read from a harmless one: a slice, a
+  pointer or a struct field of a marked holder is refused, and a scalar field is not.
+  A struct given package-level storage is not marked at all, so reading its slice
+  field out stays free.
+
 - **A DEFINED slice type no longer bypasses the lifetime rules.** This is the
   serious one. `type L []int` and then `g = L{1, 2}` into a package variable was
   accepted — where the identical `g = []int{1, 2}` was refused — and stored a slice
@@ -150,6 +164,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   complained about C the program never wrote.
 
 ### Behaviour changes
+
+- **A program that read a reference out of a frame-holding struct no longer builds.**
+  `g = b.d` after `b.d = a[:]` built before and was wrong. If a program relied on it,
+  it was reading whatever later occupied the frame. The fix the diagnostic asks for is
+  the same one: declare the backing array at package scope. A field of a struct that
+  was never given frame storage is unaffected, and so is a scalar field of one that
+  was.
 
 - **A program that stored, returned, sent or launched a slice literal of a DEFINED
   type no longer builds.** It built before and was wrong: the header pointed into a
