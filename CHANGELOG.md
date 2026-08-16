@@ -20,6 +20,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A defined ARRAY type carries methods**, in both receiver forms. `type Row [2]int`
+  with `func (r Row) sum() int` and `func (r *Row) set(i, v int)` did not compile at
+  all: an array carries no C type — its extents live in a map of their own and
+  nowhere else — so nothing said which type a variable of one was, and therefore
+  which methods it had. `g.set(0, 3)` was read as a package qualification and
+  reported as `unknown package "g"`. The shape's name now travels with its extents.
+
+  A **value receiver is a copy**, as Go's is. It travels as a pointer, since a
+  parameter of array type corrupts unrelated code on this target, and the method
+  copies from it on entry — so writing to a value receiver leaves the caller's array
+  alone. Verified on hardware, which is where that ABI defect shows.
+
+  A defined array type is also spelled by its **own name** in the emitted C now
+  rather than by a minted one, which is what let the method be found: it used to emit
+  as `ogo_arr_2_int_set`, a name no call site would look for, beside a duplicate
+  typedef of the same `int[2]`.
+
+  The receiver may be a variable, a package-level one, a pointer to either, or the
+  written-out `(&v).m()`. Reaching one through a struct **field** or an array
+  **element** is not wired up yet.
+
 - **A function parameter may be a multi-dimensional array**, `func f(m [3][2]int)`
   or `[3]R` over a `type R [2]int`, of any rank. The one-dimensional form has always
   worked — an array parameter travels as a pointer and the callee copies from it,

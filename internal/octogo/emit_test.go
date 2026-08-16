@@ -5781,11 +5781,14 @@ func main() {
 		"ogo_arr_3_int* p = &a;",        // the address of an array
 		"(*p)[1] = 3;",                  // len(p) folds to the array's extent
 		"(*p)[ogo_bound(i, 3)] = 4;",    // a run-time index is checked against it too
-		// A DEFINED array type reaches the same typedef rather than its own name: a
-		// use renders the underlying declarator (`int r[3]`, not `Row r`), so the
-		// name a program writes is documentary and the minted one is what the
-		// pointer is spelled in. Both are `int[3]`.
-		"ogo_arr_3_int* q = &r;",
+		// A DEFINED array type is spelled by its OWN name. It used to reach the
+		// minted one -- the note here said the written name was documentary -- and
+		// that is what made a method on such a type emit as `ogo_arr_3_int_set`, a
+		// name no call site would look for, and put a second typedef of `int[3]`
+		// beside the type's own. Both spellings are `int[3]` and the pointers
+		// interchange; the NAME is what carries the method set, so it is the one to
+		// keep. A use still renders the underlying declarator, `int r[3]`.
+		"Row* q = &r;",
 		"(*q)[2] = 7;",
 	}
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}

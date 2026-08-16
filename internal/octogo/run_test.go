@@ -4559,6 +4559,76 @@ func main() {
 		want: "381 15 9\n99 1\n",
 	},
 	{
+		// METHODS on a defined ARRAY type. An array carries no C type -- its extents
+		// live in their own map and nowhere else -- so nothing said which type a
+		// variable of one was, and therefore which methods it had: `g.set(0, 3)` was
+		// read as a package qualification and reported as `unknown package "g"`. The
+		// shape's name now travels with its extents.
+		//
+		// A value receiver of array type is received as a POINTER and copied, exactly
+		// as an array parameter is, since a parameter of array type corrupts
+		// unrelated code on this target. The clobber line is what pins that the copy
+		// is real: Go's value receiver leaves the caller's array alone.
+		name: "methods on a defined array type",
+		src: `type Row [2]int
+
+type Grid [2][2]int
+
+func (r Row) sum() int { return r[0] + r[1] }
+
+func (r Row) at(i int) int { return r[i] }
+
+func (r Row) clobber() int {
+	r[0] = 99
+	return r[0]
+}
+
+func (r *Row) set(i, v int) { r[i] = v }
+
+func (r *Row) scale(k int) {
+	r[0] *= k
+	r[1] *= k
+}
+
+func (g Grid) total() int {
+	n := 0
+	for i := 0; i < 2; i++ {
+		n += g[i][0] + g[i][1]
+	}
+	return n
+}
+
+var pg Row
+
+var gr Grid
+
+func main() {
+	// A package-level receiver, both forms.
+	pg.set(0, 3)
+	pg.set(1, 4)
+	println(pg.sum(), pg.at(1))
+	pg.scale(10)
+	println(pg[0], pg[1], pg.sum())
+
+	// A local one, and through a pointer to it.
+	var v Row
+	v.set(0, 5)
+	p := &v
+	p.set(1, 6)
+	println(v.sum(), v.at(0), (&v).sum())
+
+	// The VALUE receiver is a copy: writing to it leaves the caller's array alone.
+	println(v.clobber(), v[0])
+
+	// And a multi-dimensional defined array type.
+	gr[0][0], gr[0][1] = 1, 2
+	gr[1][0], gr[1][1] = 3, 4
+	println(gr.total())
+}
+`,
+		want: "7 4\n30 40 70\n11 5 11\n99 5\n10\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what

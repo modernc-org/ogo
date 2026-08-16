@@ -3708,6 +3708,12 @@ type arrDim struct {
 	elem  string
 	bound string
 	inner []string
+	// name is the DEFINED type's C name when the array was written as one -- `Row`
+	// for a `type Row [2]int` -- and "" for an array written out. It is what carries
+	// the type's METHODS: a variable's dimensions say nothing about which type it is,
+	// and the emitter keeps arrays out of the locals map that answers that for
+	// everything else.
+	name string
 }
 
 // dims reports the number of dimensions.
@@ -6234,16 +6240,24 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
 	var proto string
 	var emptyRecvName string // receiver of an empty-struct method: nothing to access, so (void) it
+	var recvName, recvCType string
 	if recv == nil {
 		cname := e.funcDefCName(name, ast)
 		proto = e.funcSignatureC(cname, sig)
 		e.curFunc = cname
 	} else {
-		recvName, recvCType, recvNamed := e.receiverInfo(recv)
+		var recvNamed bool
+		recvName, recvCType, recvNamed = e.receiverInfo(recv)
 		cname := methodCName(methodBaseType(recvCType), name)
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
-		e.locals[recvName] = recvCType
+		if a, isArr := e.namedArrays[recvCType]; isArr {
+			// Recorded as an ARRAY, not a plain local: that is what makes `r[i]`
+			// index it, `len(r)` fold to its extent and a bounds check apply.
+			e.arrays[recvName] = a
+		} else {
+			e.locals[recvName] = recvCType
+		}
 		// (void) the receiver when the body does not use it: an unnamed receiver
 		// `(T)` (the source never names it), a receiver whose type is an empty struct
 		// (nothing to access), or a named one the body simply never mentions -- a
@@ -6265,6 +6279,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.bindParams(sig)
 	e.emit(proto + " {\n")
 	e.indent++
+	e.emitRecvCopy(recvName, recvCType)
 	e.emitParamCopies(sig)
 	e.emitParamVoids(sig, body)
 	if emptyRecvName != "" {
@@ -6642,7 +6657,15 @@ func (e *emitter) receiverInfo(recv []int32) (name, ctype string, named bool) {
 		return recvSynthName, "", false
 	}
 	d := decls[0]
-	ctype = e.cType(d.TypeAST.ast)
+	// An ARRAY receiver is asked for BEFORE cType, which models no array type and
+	// latches "unsupported type" when asked about one. The DEFINED name stands for
+	// it: that is what methodCName wants for the method's namespace, and what the
+	// pointer form `*Row` already yields.
+	if a, isArr := e.arrayDim(d.TypeAST.ast); isArr && a.name != "" {
+		ctype = a.name
+	} else {
+		ctype = e.cType(d.TypeAST.ast)
+	}
 	if len(d.Names) != 0 && d.Names[0].Src() != "_" {
 		return d.Names[0].Src(), ctype, true
 	}
@@ -6788,6 +6811,14 @@ func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int3
 		e.refuseArrayStructABI(recvCType, "receiver "+recvName)
 	}
 	recvParam := recvCType + " " + userIdent(recvName)
+	// An ARRAY value receiver is received as a POINTER and copied in the body,
+	// exactly as an array PARAMETER is: a parameter of array type corrupts unrelated
+	// code on this target (doc/array-param-corrupts.c), and `Row r` is one. It is
+	// still the value Go passes -- emitRecvCopy makes the copy the caller cannot see
+	// past.
+	if a, isArr := e.namedArrays[recvCType]; isArr {
+		recvParam = e.arrayParamCType(a) + " " + paramArgName(recvName)
+	}
 	if a, ok := e.arrayResultOf(sig); ok {
 		// As for a function: the out parameter leads, after the receiver.
 		e.funcArrayRet[cname] = a
@@ -9393,7 +9424,11 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 	// a struct field, a parameter) treats r as its `[3]int`. Only a bare name that
 	// was declared as an array type matches -- `type Celsius int` is not here.
 	if len(nodes) == 1 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT {
-		a, ok := e.namedArrays[mangle(e.curPkgPrefix, e.src(nodes[0].tok))]
+		nm := mangle(e.curPkgPrefix, e.src(nodes[0].tok))
+		a, ok := e.namedArrays[nm]
+		if ok {
+			a.name = nm // resolved away everywhere else; kept here for the method set
+		}
 		return a, ok
 	}
 	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK {
@@ -9477,6 +9512,13 @@ func (e *emitter) arrayElemTypedef(typeAST []int32) (string, bool) {
 // has already resolved them -- the address of an array variable, whose type is
 // known from the variable rather than from a written one.
 func (e *emitter) arrayTypedef(a arrDim) string {
+	// A DEFINED array type already HAS a C name and a typedef of its own, so it
+	// stands for itself. Minting a second one emitted `typedef int ogo_arr_2_int[2]`
+	// beside `typedef int Row[2]` for the same type, and named a method on Row after
+	// the mint -- `ogo_arr_2_int_set` -- which no call site would ever look for.
+	if a.name != "" {
+		return a.name
+	}
 	name := "ogo_arr"
 	for _, b := range a.bounds() {
 		name += "_" + cTypeIdent(b)
@@ -14070,7 +14112,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emit(")")
 			return true
 		}
-		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
+		if rct, ok := e.methodRecvCType(recv); ok {
 			cname := methodCName(methodBaseType(rct), method)
 			// A method PROMOTED from an embedded field is called on that field, which
 			// the source did not name and C requires: `d.Get()` is `base_Get(&d.base)`.
@@ -14242,6 +14284,62 @@ func (e *emitter) shiftNeedsGuard(op, lhs, rhs Node) bool {
 // the caller holds and the one the method declares: it takes the address of a value
 // passed to a pointer method (&x), dereferences a pointer passed to a value method
 // (*x), and otherwise passes the receiver unchanged.
+// emitRecvCopy copies an ARRAY value receiver out of the pointer it arrived in, the
+// receiver counterpart of emitParamCopies. It emits nothing for every other receiver
+// shape, which arrive by value or as a pointer the method means to write through.
+//
+// The copy is what makes it Go's value receiver: the pointer is how the array
+// crosses, not what it means, so a method that writes to its receiver writes to the
+// copy and the caller's array is untouched.
+func (e *emitter) emitRecvCopy(recvName, recvCType string) {
+	a, isArr := e.namedArrays[recvCType]
+	if !isArr || recvName == "" {
+		return
+	}
+	e.includes["string.h"] = true
+	e.ind()
+	e.emit(a.elem + " " + userIdent(recvName) + a.declSuffix() + ";\n")
+	e.ind()
+	e.emit("memcpy(" + userIdent(recvName) + ", " + paramArgName(recvName) + ", sizeof(" + userIdent(recvName) + "));\n")
+}
+
+// methodRecvCType is the receiver C type a method call on recv dispatches through,
+// and whether recv names a type that can carry methods at all.
+//
+// An ARRAY variable has no C type to look up: its extents live in e.arrays and
+// nowhere else, which is why varType answers nothing for one. The DEFINED name it
+// was declared with is the only thing that says which type it is, and therefore
+// which methods it has -- without it `g.set(0, 7)` for a `type Row [2]int` was read
+// as a package qualification and reported as `unknown package "g"`.
+func (e *emitter) methodRecvCType(recv string) (string, bool) {
+	if ct, ok := e.varType(recv); ok {
+		if e.isUserType(methodBaseType(ct)) {
+			return ct, true
+		}
+		// A POINTER to a defined array type. Its base carries a method set like any
+		// other named type, but a named array takes a typedef of its own and skips
+		// the namedTypes registry isUserType asks, so `p := &v; p.m()` was read as a
+		// package qualification where `v.m()` was not.
+		if base := methodBaseType(ct); base != ct {
+			if _, isArr := e.namedArrays[base]; isArr {
+				return ct, true
+			}
+		}
+		return "", false
+	}
+	// BOTH array environments. A local array is in arrays and a package one in
+	// globalArrays, and asking only the first answered "no" for `var g Row` at
+	// package scope while the same method on a local worked -- the third time that
+	// split has caught a predicate here (see isPackageVar and isFrameVar).
+	if a, ok := e.arrays[recv]; ok && a.name != "" {
+		return a.name, true
+	}
+	if a, ok := e.globalArrays[e.globalC(recv)]; ok && a.name != "" {
+		return a.name, true
+	}
+	return "", false
+}
+
 func (e *emitter) emitMethodReceiver(recv, recvCType string, wantPtr bool) {
 	switch havePtr := e.isPointer(recvCType); {
 	case wantPtr && !havePtr:

@@ -1029,6 +1029,14 @@
 // as that type's values are. Its own name is what a diagnostic says and what carries
 // its methods, so "var c Celsius = \"a\"" reads as Celsius, not as int.
 //
+// A defined type over an ARRAY carries methods too, in both receiver forms, and a
+// value receiver is a COPY as Go's is. It travels as a pointer -- a parameter of
+// array type corrupts unrelated code on this target -- and the method copies from it
+// on entry, so writing to a value receiver leaves the caller's array alone. The
+// receiver may be a variable, a package-level one, a pointer to either, or a written
+// out "(&v).m()"; reaching one through a struct FIELD or an array ELEMENT is not
+// wired up yet.
+//
 // A defined type over a channel is a channel too: a send, a receive and a select
 // clause all reach it. The one thing such a type gives up is a method of its own,
 // which is refused where it is written -- it is answered for by the channel cell's
