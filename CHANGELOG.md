@@ -20,6 +20,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Slicing a local through a chain is refused, as slicing it directly always was.**
+  Only the bare `a[:]` shape was recognised as viewing this frame, so `b.arr[:]` for
+  a local struct with an array field — the ordinary way a program carries a buffer
+  around — was a dangling slice at every sink, and so were `m[0][:]`, `bs[1].arr[:]`,
+  `p[:]` and `(*p)[:]`.
+
+  What is being sliced decides. An array's storage is wherever the array lives, so
+  slicing one reached from a local root views this frame and one reached from a
+  package root does not; a slice has a backing of its own and its mark says where;
+  and through a pointer the chain reaches what the pointer points at, which only the
+  holder mark knows — reading the pointer's own storage instead would refuse
+  `p := &pkgArray`, which is fine. The package-scope counterpart of every refused
+  shape is pinned beside it.
+
 - **Reading a reference out of a struct that holds one is refused.** `b.d = a[:]`
   for a local array `a` marks `b` as holding a reference into this frame, and handing
   `b` on was already refused — but `g = b.d` is the same slice header by another
@@ -174,6 +188,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   complained about C the program never wrote.
 
 ### Behaviour changes
+
+- **A program that let a chained slice of a local escape no longer builds.**
+  `b.arr[:]` for a local `b`, and the rest of the chained forms, built before and
+  were wrong. Move the backing to package scope, which is what the diagnostic asks
+  for. The same expressions over package storage are unaffected, and slicing a local
+  buffer to work on it inside the function still compiles — that is what the rule is
+  careful to keep legal.
 
 - **A program that read a reference out of a frame-holding struct no longer builds.**
   `g = b.d` after `b.d = a[:]` built before and was wrong. If a program relied on it,

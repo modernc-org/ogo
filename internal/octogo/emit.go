@@ -20161,24 +20161,57 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 			return e.sliceBackingIsFrame(args[0].ast)
 		}
 	}
-	// `a[:]` / `s[1:2]`: the result views the base's storage, so it is frame-backed
-	// exactly when the base is.
+	// A slice step at the end of a CHAIN: `a[:]` and `s[1:2]`, but also `b.arr[:]`,
+	// `m[0][:]`, `bs[1].arr[:]` and `p[:]`. Only the bare one-step shape used to be
+	// read, so every longer route to the same storage produced a dangling slice at
+	// every sink -- an array field of a local struct being the ordinary way a program
+	// carries a buffer around.
 	fac, ok := e.soleFactorNode(ast)
 	if !ok {
 		return "", false
 	}
 	kids := slices.Collect(it(fac.ast))
-	base, indexAST, ok := e.factorIndex(kids)
-	if !ok {
+	// `(*p)[:]`, the written-out form: what it reaches is what p points at, which is
+	// the holder mark's business rather than the pointer's own storage.
+	if name, steps, isDeref := e.factorDerefChain(kids); isDeref && e.endsInSliceStep(steps) {
+		return name, e.frameHolder[name] != ""
+	}
+	base, steps, isChain := e.factorAccessChain(kids)
+	if !isChain || !e.endsInSliceStep(steps) {
 		return "", false
 	}
-	if _, _, _, isSlice := e.sliceParts(indexAST); !isSlice {
+	// Through a POINTER the chain reaches what the pointer points at, and only the
+	// holder mark knows where that is: `p := &pkgArray` is a local pointing at
+	// storage that outlives the call, and reading the pointer's own would refuse it.
+	if ct, isVar := e.varType(base); isVar && e.isPointer(ct) {
+		return base, e.frameHolder[base] != ""
+	}
+	cur, walked := e.accessChainType(base, steps[:len(steps)-1])
+	if !walked {
 		return "", false
 	}
-	if _, isLocalArray := e.arrays[base]; isLocalArray {
-		return base, true
+	switch {
+	case len(cur.dims) != 0:
+		// An ARRAY's storage is wherever the array itself lives, so slicing one
+		// reached from a local root views this frame -- and one reached from a
+		// package root does not.
+		return base, e.isFrameVar(base)
+	case cur.slice:
+		// A SLICE has a backing of its own, and its mark is what says where.
+		return base, e.frameBacked[base] || e.frameHolder[base] != ""
 	}
-	return base, e.frameBacked[base]
+	return "", false
+}
+
+// endsInSliceStep reports whether the last step of a chain is a SLICE rather than an
+// index -- `xs[1:2]` and not `xs[1]`. Only a slice keeps a view of the storage; an
+// index reads a value out of it.
+func (e *emitter) endsInSliceStep(steps []Node) bool {
+	if len(steps) == 0 || steps[len(steps)-1].sym != Index {
+		return false
+	}
+	_, _, _, isSlice := e.sliceParts(steps[len(steps)-1].ast)
+	return isSlice
 }
 
 // frameRef describes a value that reaches storage of the current frame: which local

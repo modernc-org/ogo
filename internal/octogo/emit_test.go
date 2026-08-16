@@ -7018,6 +7018,54 @@ func main() {
 `,
 		},
 		{
+			// The package-scope counterpart of every chained slice refused above. This
+			// is the discrimination the rule turns on: the same expression over
+			// storage that outlives the call is free, so widening the recognizer must
+			// not have widened the refusal.
+			name: "the same chained slices over package storage",
+			src: `type B struct {
+	arr [4]int
+}
+
+var b B
+
+var m [4][2]int
+
+var pool [4]int
+
+var g []int
+
+func fill() {
+	g = b.arr[:]
+	g = m[0][:]
+	p := &pool
+	g = p[:]
+	g = (*p)[:]
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+		},
+		{
+			// And a local one that never leaves the frame is what the rule is careful
+			// to keep legal -- slicing a local buffer to work on it is the point.
+			name: "a local struct's array field sliced and used in-frame",
+			src: `type B struct {
+	arr [4]int
+}
+
+func main() {
+	var b B
+	s := b.arr[:]
+	s[0] = 9
+	println(len(s), s[0])
+}
+`,
+		},
+		{
 			// Merging the marks back out of a block must stay precise: a name the
 			// block DECLARED takes its mark with it, so a later sibling block's
 			// same-named variable does not inherit one it never earned.
@@ -7621,6 +7669,110 @@ func main() {
 }
 `,
 			want: "cannot pass b.d, which holds a pointer into local a",
+		},
+		{
+			// A slice step at the END OF A CHAIN, rather than on a bare array name.
+			// Only `a[:]` was recognised, so every longer route to the same storage
+			// produced a dangling slice at every sink -- and an array field of a local
+			// struct is the ordinary way a program carries a buffer around.
+			//
+			// What is being sliced decides: an ARRAY's storage is wherever the array
+			// lives, so slicing one reached from a local root views this frame. The
+			// package-scope counterpart of each of these is in the accepted set below,
+			// which is the discrimination that matters.
+			name: "an array field of a local struct, sliced",
+			src: `type B struct {
+	arr [4]int
+}
+
+var g []int
+
+func fill() {
+	var b B
+	g = b.arr[:]
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local b",
+		},
+		{
+			name: "an array field of a local array's element, sliced",
+			src: `type B struct {
+	arr [4]int
+}
+
+var g []int
+
+func fill() {
+	var bs [2]B
+	g = bs[1].arr[:]
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local bs",
+		},
+		{
+			name: "a row of a local multi-dimensional array, sliced",
+			src: `var g []int
+
+func mk() []int {
+	var m [4][2]int
+	return m[0][1:2]
+}
+
+func fill() { g = mk() }
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot return a slice backed by local m",
+		},
+		{
+			// Through a POINTER the chain reaches what the pointer points at, which
+			// the holder mark records -- reading the pointer's own storage instead
+			// would refuse `p := &pkgArray`, which is in the accepted set.
+			name: "a pointer to a local array, sliced",
+			src: `var g []int
+
+func fill() {
+	var a [4]int
+	p := &a
+	g = p[:]
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local p",
+		},
+		{
+			name: "a written-out dereference of a pointer to a local array, sliced",
+			src: `var g []int
+
+func fill() {
+	var a [4]int
+	p := &a
+	g = (*p)[:]
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local p",
 		},
 		{
 			// An ARRAY of slices is marked on the array, so reaching an element out of
