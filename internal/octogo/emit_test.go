@@ -6973,6 +6973,25 @@ func main() { println(len(mk())) }
 `,
 		},
 		{
+			// Following a conversion's operand must not turn into refusing every
+			// conversion: what a slice over PACKAGE storage is converted to still
+			// outlives the call.
+			name: "a conversion of a package-backed slice",
+			src: `type L []int
+
+var pool [4]int
+
+var g L
+
+func fill() { g = L(pool[:]) }
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+		},
+		{
 			name: "parameter, and a re-slice of one",
 			src: `var g = []int{1, 2, 3}
 
@@ -7199,6 +7218,146 @@ func main() {
 }
 `,
 			want: "cannot send a slice literal, whose backing array is this function's",
+		},
+		{
+			// The SAME four sinks, with the literal written as a DEFINED slice type.
+			// It is the same value backed by the same minted local, and every one of
+			// them let it through: the check read the literal's type with sliceType,
+			// which matches the written "[]T" shape and not a name defined over one.
+			// So `g = L{1, 2}` stored a header over a dead frame into a package
+			// variable, silently -- the program built, and read back whatever had
+			// since been written over that frame. Measured: 11 22 33 came back as
+			// 32765 3 2.
+			//
+			// A chain of definitions is included because that is where the narrower
+			// predicate would fail next, and a defined ARRAY type is NOT here on
+			// purpose: an array literal is a value, copied where it is used, and
+			// carries no reference to anything.
+			name: "slice literal of a defined type returned",
+			src: `type L []int
+
+func mk() L { return L{1, 2} }
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal of a defined type stored in a package variable",
+			src: `type L []int
+
+var g L
+
+func fill() { g = L{1, 2} }
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal of a defined type stored in a package struct field",
+			src: `type L []int
+
+type H struct {
+	f L
+}
+
+var h H
+
+func fill() { h.f = L{1, 2} }
+
+func main() {
+	fill()
+	println(len(h.f))
+}
+`,
+			want: "cannot store a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal of a defined type handed to a goroutine",
+			src: `type L []int
+
+func work(s L, ch chan int) { ch <- len(s) }
+
+func main() {
+	var ch chan int
+	go work(L{1, 2}, ch)
+	println(<-ch)
+}
+`,
+			want: "cannot pass a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal of a defined type sent on a channel",
+			src: `type L []int
+
+func work(ch chan L) { println(len(<-ch)) }
+
+func main() {
+	var ch chan L
+	go work(ch)
+	ch <- L{1, 2}
+}
+`,
+			want: "cannot send a slice literal, whose backing array is this function's",
+		},
+		{
+			name: "slice literal through a chain of definitions stored in a package variable",
+			src: `type L []int
+
+type A L
+
+var g A
+
+func fill() { g = A{1, 2} }
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice literal, whose backing array is this function's",
+		},
+		{
+			// A CONVERSION to a slice type is not a call: it renames the same header
+			// over the same storage. The frame reference passed straight through it,
+			// so `g = L(a[:])` was accepted where the plain `g = a[:]` was refused --
+			// one word of syntax laundering the reference past every sink.
+			//
+			// The diagnostic still names the ORIGIN rather than the conversion, which
+			// is the point of following the operand rather than stopping at it.
+			name: "a conversion to a slice type does not launder a local's backing",
+			src: `type L []int
+
+var g L
+
+func fill() {
+	var a [4]int
+	g = L(a[:])
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local a",
+		},
+		{
+			name: "a conversion to a slice type in a return",
+			src: `type L []int
+
+func mk() L {
+	var a [4]int
+	return L(a[:])
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local a",
 		},
 		{
 			// A method launched on another cog takes its receiver across too. A

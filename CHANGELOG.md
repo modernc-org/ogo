@@ -20,6 +20,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A DEFINED slice type no longer bypasses the lifetime rules.** This is the
+  serious one. `type L []int` and then `g = L{1, 2}` into a package variable was
+  accepted — where the identical `g = []int{1, 2}` was refused — and stored a slice
+  header over the *calling function's dead frame*. The program built and read back
+  whatever had since been written there: measured, `11 22 33` came back as
+  `32765 3 2`. Go accepts that program and prints `11 22 33`, so this was the one
+  thing the no-heap rules exist to prevent, happening silently.
+
+  **Every sink had the hole** — returning, storing in a package variable, storing in
+  a package variable's field, sending on a channel, and handing to a goroutine. The
+  check read the literal's type with the predicate that matches the written `[]T`
+  shape and not a name defined over one, so a single word of syntax turned the whole
+  escape analysis off.
+
+  A **conversion** laundered it the same way and is closed with it: `g = L(a[:])`
+  for a local `a` passed where the plain `g = a[:]` was refused. A conversion to a
+  slice type is not a call — it renames the same header over the same storage — so
+  the operand is followed through it, and the diagnostic still names the origin
+  (`local a`) rather than the conversion. Converting a slice over *package* storage
+  is unaffected, as is a conversion to a scalar or an array, which yields a value
+  that refers to nothing.
+
 - **A method call may be written out through an address**, `(&v).m(args)`, the
   mirror of the `(*p).x` form already supported. It means what `v.m(args)` means — a
   value receiver copies what the pointer points at, a pointer receiver is what
@@ -120,6 +142,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   complained about C the program never wrote.
 
 ### Behaviour changes
+
+- **A program that stored, returned, sent or launched a slice literal of a DEFINED
+  type no longer builds.** It built before and was wrong: the header pointed into a
+  frame that had already returned. If a program relied on it, it was reading whatever
+  later occupied that memory, and the fix is the one the diagnostic asks for —
+  declare the backing array at package scope and slice it. The same applies to a
+  conversion of a frame-backed slice, `L(a[:])`, which was the other way past the
+  check.
 
 - **A program that used a defined struct type and the struct it was defined over
   interchangeably no longer builds.** Six positions changed at once — argument,

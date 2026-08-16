@@ -20214,6 +20214,15 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// this a single call launders a reference past every sink -- `return id(&x)`
 	// compiled, and so did storing or sending one.
 	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+		// A CONVERSION to a slice type is not a call: it renames the same header
+		// over the same storage, so whatever the operand referred to, the result
+		// refers to. `g = L(a[:])` for a local a laundered the reference past every
+		// sink -- the plain `g = a[:]` was refused and the conversion of it was not.
+		if e.convToSliceType(recv, len(suffix)) {
+			if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
+				return e.frameRefOf(args[0].ast)
+			}
+		}
 		cname := e.calleeSummaryName(recv)
 		if len(suffix) != 1 {
 			// A method or an imported package's function: the same resolution the
@@ -20237,6 +20246,22 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	return frameRef{}, false
 }
 
+// convToSliceType reports whether recv names a defined type whose underlying type is
+// a SLICE, so that `recv(x)` is a conversion rather than a call and the result views
+// whatever x views. steps is the number of suffix steps, which must be the one call:
+// a qualified name is another package's and is not resolved here.
+//
+// Only a slice result matters to the lifetime rules. A conversion to a scalar or to
+// an array yields a VALUE, which refers to nothing; a conversion to a slice yields
+// the same three words over the same backing.
+func (e *emitter) convToSliceType(recv string, steps int) bool {
+	if steps != 1 {
+		return false
+	}
+	u, ok := e.namedUnderlying[mangle(e.curPkgPrefix, recv)]
+	return ok && e.isSliceCType(e.underlyingCType(u))
+}
+
 // receiverFrameRef reports a method receiver that reaches this frame's storage when
 // the method is launched on another cog. A pointer receiver hands out the address of
 // the receiver itself; a value receiver is copied, and carries a reference only if
@@ -20254,12 +20279,21 @@ func (e *emitter) receiverFrameRef(recv string, wantPtr bool) (frameRef, bool) {
 // soleSliceLit matches an expression that is nothing but a slice literal, returning
 // its element C type. An array literal is not one: it is a value, copied where it is
 // used, and carries no reference to anything.
+//
+// litSliceType, not sliceType: a literal of a DEFINED slice type is a slice literal
+// too, backed by an array of this frame exactly as the "[]T{...}" spelling is. It
+// used to be read with sliceType, which matches only the written "[]T" shape, so
+// "xs = L{1, 2}" for a "type L []int" passed the lifetime check that refused
+// "xs = []int{1, 2}" -- and stored a header over a dead frame into a package
+// variable. That is the one thing the lifetime rules exist to prevent, and it was
+// SILENT: the program built and read back whatever had since been written over the
+// frame.
 func (e *emitter) soleSliceLit(ast []int32) (string, Node, bool) {
 	typeAST, lit, ok := e.soleArrayLit(ast)
 	if !ok {
 		return "", Node{}, false
 	}
-	if elem, ok := e.sliceType(typeAST); ok {
+	if elem, ok := e.litSliceType(typeAST); ok {
 		return elem, lit, true
 	}
 	return "", Node{}, false
