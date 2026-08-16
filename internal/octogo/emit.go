@@ -1271,10 +1271,24 @@ func (e *emitter) emitSelect(ast []int32) {
 	if send != nil {
 		e.chanTrySendElems[send.elem] = true
 		valTmp, offered, mine = e.newTmp(), e.newTmp(), e.newTmp()
-		e.ind()
-		e.emit(send.elem + " " + valTmp + " = ")
-		e.emitExpr(send.val.ast)
-		e.emit(";\n")
+		switch a, isArr := e.namedArrays[send.elem]; {
+		case isArr:
+			// An ARRAY is copied, not assigned: C has no array assignment, so
+			// `elem tmp = arr` was not C at all.
+			e.emitArrayCopy(valTmp, e.captureC(func() { e.emitExpr(send.val.ast) }), a)
+		default:
+			e.ind()
+			e.emit(send.elem + " " + valTmp + " = ")
+			// A concrete value sent on a channel of INTERFACE type is wrapped into
+			// the two words the element is, as the blocking send wraps it. Without
+			// this the raw pointer went where the pair goes.
+			if text, ok := e.ifaceValueC(send.elem, send.val.ast); ok && e.isIfaceCType(send.elem) {
+				e.emit(text)
+			} else {
+				e.emitExpr(send.val.ast)
+			}
+			e.emit(";\n")
+		}
 		e.ind()
 		e.emit("int " + offered + " = 0, " + mine + " = 0;\n")
 	}
@@ -2338,11 +2352,17 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 		// one of two states, ours-still-there (full, taken unchanged) or consumed
 		// (not full, taken moved), so a withdrawal cannot race a receiver -- under
 		// the lock it sees one or the other, never a middle.
-		fmt.Fprintf(&b, `static int ogo_chan_offer_%[7]s(%[1]s ch, %[2]s v, int* mine) {
+		// The offer takes its value the way the blocking send does -- sendParam and
+		// sendStore, so an ARRAY element crosses by pointer and is memcpy'd. Written
+		// out as `%[2]s v` and `ch->val = v` it was a parameter of array type, which
+		// miscompiles on this target, storing with an assignment C does not have: a
+		// select with `case ch <- arr:` did not compile at all, though the blocking
+		// `ch <- arr` always did.
+		fmt.Fprintf(&b, `static int ogo_chan_offer_%[7]s(%[1]s ch, %[8]s, int* mine) {
 	if (!ch->full && _locktry(ch->lock)) {
 		if (!ch->full) {
 			*mine = ch->taken;
-			ch->val = v;
+			%[9]s
 			ch->full = 1;
 			_lockrel(ch->lock);
 			return 1;
@@ -2372,7 +2392,7 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 		_waitx(1);
 	}
 }
-`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), sendParam, sendStore)
 	}
 	if e.chanTryRecvElems[elem] {
 		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[8]s) {

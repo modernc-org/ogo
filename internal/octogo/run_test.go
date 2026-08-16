@@ -3414,6 +3414,87 @@ func main() {
 		want: "neither\nb 2\nsent\ndrained 7\nbare\n",
 	},
 	{
+		// A select's SEND clause, over the element types it could not carry. The
+		// blocking `ch <- v` handled both of these and the clause handled neither:
+		// an INTERFACE element took the raw pointer where the two words go, and an
+		// ARRAY element was bound with `elem tmp = arr`, which is not C -- and even
+		// past that, the offer helper took a parameter of array type and stored it
+		// with an assignment, where the blocking send crosses by pointer and memcpys.
+		//
+		// The idle clause is there so this is a real select rather than a send
+		// written inside braces: nothing ever sends on it, so which clause runs is
+		// still determined.
+		name: "a select sending an interface and an array",
+		src: `type I interface {
+	n() int
+}
+
+type P struct {
+	a int
+}
+
+func (p *P) n() int { return p.a }
+
+type Row [2]int
+
+var gp P
+
+var arr [2]int
+
+var rv Row
+
+var ci chan I
+
+var ca chan [2]int
+
+var cr chan Row
+
+var idle chan int
+
+var done chan int
+
+func drainI() { v := <-ci; done <- v.n() }
+
+func drainA() { v := <-ca; done <- v[0]*10 + v[1] }
+
+func drainR() { v := <-cr; done <- v[0]*10 + v[1] }
+
+func main() {
+	gp.a = 7
+	arr[0], arr[1] = 3, 4
+	rv[0], rv[1] = 5, 6
+
+	go drainI()
+	select {
+	case ci <- &gp:
+		println("sent iface")
+	case <-idle:
+		println("idle")
+	}
+	println("got", <-done)
+
+	go drainA()
+	select {
+	case ca <- arr:
+		println("sent array")
+	case <-idle:
+		println("idle")
+	}
+	println("got", <-done)
+
+	go drainR()
+	select {
+	case cr <- rv:
+		println("sent Row")
+	case <-idle:
+		println("idle")
+	}
+	println("got", <-done)
+}
+`,
+		want: "sent iface\ngot 7\nsent array\ngot 34\nsent Row\ngot 56\n",
+	},
+	{
 		// An ARRAY of structs holding channels: a worker per element, each with
 		// channels of its own. On a part with eight cores that is the shape the
 		// hardware suggests, and it is what completes the feature -- sends, receives

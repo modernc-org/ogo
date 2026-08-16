@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A select's SEND clause carries an interface or an array element.** The blocking
+  `ch <- v` handled both and the clause handled neither: an interface element took
+  the raw pointer where the two words go, and an array element was bound with
+  `elem tmp = arr`, which is not C. Past that, the offer helper the clause uses took
+  a parameter of array type — which miscompiles on this target — and stored it with
+  an assignment C does not have, where the blocking send crosses by pointer and
+  memcpys. It now takes its value exactly as the blocking send does.
+
 - **A callback held in a struct field is checked like any other callee.** `b.run =
   keep; b.run(&x)` was accepted where `f := keep; f(&x)` was refused, and stored a
   dangling pointer in a package variable — measured, `4242` read back as `32767`. The
