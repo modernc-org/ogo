@@ -17156,28 +17156,26 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 	if len(args) == 0 {
 		return "(" + sliceCName(elem) + "){0}"
 	}
-	// Each value goes into an ARRAY INITIALIZER, which wants its aggregates braced
-	// rather than written as compound literals. Emitted the ordinary way, a string
-	// argument became `(ogo_string){"a", 1}` and a struct one `(P){9}`, and the
-	// target's compiler refused both inside the braces -- "expected pointer to const
-	// char but got __anon_...", naming the compound literal's own anonymous type. So
-	// a variadic of strings or of structs did not compile at all, where a variadic of
-	// ints did. declInit is the flag that spells a string the other way; a composite
-	// literal takes the brace form of its own emitter.
-	var vals []string
-	for _, a := range args {
-		if nm, lit, ok := e.soleCompositeLit(a.ast); ok {
-			vals = append(vals, e.captureC(func() { e.emitCompositeLit(nm, lit, true) }))
-			continue
-		}
-		saved := e.declInit
-		e.declInit = true
-		vals = append(vals, e.captureC(func() { e.emitExpr(a.ast) }))
-		e.declInit = saved
-	}
+	// The values are ASSIGNED into the array one at a time rather than written as its
+	// initializer. The target's compiler refuses an aggregate inside an array
+	// initializer unless it is itself braced: a struct VARIABLE and a struct-returning
+	// CALL each draw "incompatible types in assignment: expected int but got
+	// _struct__P", which names a member of the element rather than the element, while
+	// the same value is accepted as the right-hand side of an assignment. Braces cover
+	// a composite literal and nothing else, so a variadic of structs compiled when
+	// every argument happened to be written as a literal and not when one was a
+	// variable -- the earlier fix here reached the literal spelling only.
+	//
+	// An assignment also wants the ordinary spelling of a value rather than the
+	// static-initializer one, so declInit stays off: a string argument is the
+	// compound literal `(ogo_string){"a", 1}`, which is what an assignment takes.
 	tmp := e.newTmp()
-	n := strconv.Itoa(len(vals))
-	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"] = {"+strings.Join(vals, ", ")+"};\n")
+	n := strconv.Itoa(len(args))
+	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"];\n")
+	for i, a := range args {
+		val := e.captureC(func() { e.emitExpr(a.ast) })
+		e.prologue = append(e.prologue, tmp+"["+strconv.Itoa(i)+"] = "+val+";\n")
+	}
 	return "(" + sliceCName(elem) + "){" + tmp + ", " + n + ", " + n + "}"
 }
 

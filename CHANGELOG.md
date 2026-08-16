@@ -37,6 +37,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   behind it. Both sides must be structs, which leaves an interface target to the
   check that owns it and a mismatch of shape to the checks that own that.
 
+- **A variadic argument that was a VARIABLE of an aggregate type did not compile** —
+  a string, a struct or a slice alike. `count(s, "ccc")` for a `string` `s`,
+  `firsts(p, P{8})` for a struct `p`, and `lens(xs, pool[:])` for a slice `xs` each
+  reached the C backend and drew a diagnostic about C the program never wrote. The
+  pack a call builds was written as an array INITIALIZER, and the target's compiler
+  takes an aggregate there only when it is itself braced — which covers a composite
+  literal and nothing else. The values are assigned into the array one at a time
+  now, a form it accepts for every element type.
+
+  The earlier fix in this area (v0.26.0) reached the literal spelling only, and its
+  own note says why it was missed: the tests varied the variadic's SHAPE — pack,
+  spread, empty, a fixed parameter before it, a method — and used a literal for
+  every argument of every one of them. Varying the shape and not the spelling is
+  what left the second half standing.
+
 - **A variadic argument is checked as the fixed parameter it stands for.** The
   checks a Kind cannot express — a defined type against its base, a value where a
   pointer is wanted and the reverse, and whether a concrete type satisfies an

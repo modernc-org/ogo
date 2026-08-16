@@ -127,15 +127,35 @@ func joined(sep string, xs ...string) int {
 	return len(sep)*100 + count(xs...)
 }
 
+func lens(xs ...[]int) int {
+	n := 0
+	for _, x := range xs {
+		n += len(x)
+	}
+	return n
+}
+
+var pool [3]int
+
 func main() {
 	println("strings", count("a", "bb", "ccc"), count(), count("x"))
 	println("structs", firsts(P{9}, P{8}), firsts(), firsts(P{4}))
 	println("fwd", joined("--", "ab", "c"))
+
+	// Every argument above is a LITERAL, which is the one thing an array
+	// initializer's braces take. A VARIABLE of an aggregate type is the spelling
+	// that did not compile, and it is not particular to structs: a string, a
+	// struct and a slice each drew a diagnostic about C the program never wrote.
+	s := "bb"
+	p := P{7}
+	xs := pool[:]
+	println("vars", count(s, "ccc"), firsts(p, P{8}), lens(xs, pool[:]))
 }
 `,
 		want: `strings 6 0 1
 structs 11 -1 5
 fwd 203
+vars 5 9 6
 `,
 	},
 	{
