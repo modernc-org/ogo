@@ -8388,6 +8388,64 @@ func (e *emitter) derefOperand(ast []int32) (string, bool) {
 	return name, true
 }
 
+// addrOperand recognises `&v` where v is a VARIABLE the emitter knows, answering
+// with its name. It is derefOperand's mirror, and like it takes one operator only.
+func (e *emitter) addrOperand(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp {
+		return "", false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != AND {
+		return "", false
+	}
+	name, ok := e.exprIdent(e.unparenExpr(kids[1].ast))
+	if !ok {
+		return "", false
+	}
+	if _, isVar := e.varType(name); isVar {
+		return name, true
+	}
+	// An array variable carries no C type here -- its extents live in e.arrays --
+	// so it has to be asked for separately or `(&rows).m()` would read `rows` as a
+	// package qualifier.
+	_, isArray := e.arrays[name]
+	return name, isArray
+}
+
+// factorAddrCall matches a parenthesised ADDRESS carrying a method call,
+// `(&v).m(...)`, returning the variable's name and the steps after it.
+//
+// Go admits it for any addressable v, and it means what `v.m()` means: a value
+// receiver copies what the pointer points at, and a pointer receiver is what `v.m()`
+// already takes the address for. So the shorthand IS the lowering, exactly as
+// `(*p).m()` is emitted as `p.m()` (see derefCallSteps).
+//
+// Only the CALL form is matched. `(&v)[i]` is NOT `v[i]` -- for a slice v the first
+// is illegal Go and the second is not -- so accepting the general suffix here would
+// let through a program Go refuses.
+func (e *emitter) factorAddrCall(kids []Node) (string, []Node, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return "", nil, false
+	}
+	name, ok := e.addrOperand(kids[1].ast)
+	if !ok {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 || !derefCallSteps(steps) {
+		return "", nil, false
+	}
+	return name, steps, true
+}
+
 // unparenExpr peels redundant parentheses from an expression, `(p)` and `((p))`
 // alike, returning what they enclose. It is the operand-level twin of unparenKids,
 // which peels a parenthesised factor that carries a SUFFIX; there is nothing to
@@ -13246,7 +13304,16 @@ func (e *emitter) emitDefer(nodes []Node) {
 func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (string, bool) {
 	base := e.soleIdent(head.ast)
 	if base == "" {
-		return "", true
+		// `defer (&v).m(args)`. The head is parenthesised, so it carries no sole
+		// identifier and the capture below would be skipped silently -- and a skipped
+		// capture is not a refusal but a WRONG ANSWER: the receiver would be read at
+		// the return instead of here, so a value receiver would show what the variable
+		// holds then rather than now. `(&v).m()` is `v.m()`, so the base is v and
+		// everything downstream is the shorthand's.
+		var isAddr bool
+		if base, isAddr = e.addrHead(head); !isAddr {
+			return "", true
+		}
 	}
 	steps := suffix[:len(suffix)-1]
 	if len(steps) == 0 {
@@ -13696,6 +13763,14 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		// receiver is the pointer and the shorthand is what is emitted -- the same
 		// equivalence the expression form uses (see derefCallSteps).
 		if name, ok := e.derefHead(head); ok {
+			e.ind()
+			e.emitCallExpr(name, postfix)
+			e.emit(";\n")
+			return
+		}
+		// `(&v).m()` as a statement, which is what `v.m()` means whichever way the
+		// receiver is declared -- the mirror of the dereference above.
+		if name, ok := e.addrHead(head); ok {
 			e.ind()
 			e.emitCallExpr(name, postfix)
 			e.emit(";\n")
@@ -15765,6 +15840,18 @@ func (e *emitter) derefHead(head Node) (string, bool) {
 		return "", false
 	}
 	return e.derefOperand(kids[1].ast)
+}
+
+// addrHead is derefHead for a parenthesised ADDRESS, `(&v).m()` as a statement. The
+// caller has already established that a call follows, which is the only suffix this
+// form is admitted with -- see factorAddrCall for why the general suffix is not.
+func (e *emitter) addrHead(head Node) (string, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", false
+	}
+	return e.addrOperand(kids[1].ast)
 }
 
 // emitDerefAssign emits an assignment whose target is reached through a written-out
@@ -18282,6 +18369,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					return cur.ctype, true
 				}
 			}
+			// `q := (&v).m()` types as `v.m()` does, being the same call.
+			if name, steps, ok := e.factorAddrCall(kids); ok {
+				return e.callResultCType(name, steps)
+			}
 			// `q := (*p).x` -- the same chain, started from a dereference. It is
 			// CLAIMED: a trailing slice step has no fixed shape to be handed back to
 			// here, the fixed shapes all starting from a variable's name.
@@ -19378,6 +19469,12 @@ func (e *emitter) emitExprNode(n Node) {
 				if _, ok := e.emitAccessChain(base, steps); ok {
 					return
 				}
+			}
+			// `(&v).m()` -- the written-out address form of a method call, which is
+			// what `v.m()` means either way its receiver is declared.
+			if name, steps, ok := e.factorAddrCall(kids); ok {
+				e.emitCallExpr(name, steps)
+				return
 			}
 			// `(*p).x` / `(*p)[i]` -- a written-out dereference carrying a suffix.
 			// The chain starts from what p points at, named by the dereference.

@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A method call may be written out through an address**, `(&v).m(args)`, the
+  mirror of the `(*p).x` form already supported. It means what `v.m(args)` means — a
+  value receiver copies what the pointer points at, a pointer receiver is what
+  `v.m()` already takes the address for — so the shorthand is the lowering. It is
+  admitted around a CALL only: `(&v)[i]` is not `v[i]` (the first is illegal Go for a
+  slice `v`), so that stays refused rather than quietly accepted.
+
 - **A method on a struct FIELD or a call RESULT of a defined type is found.**
   `g.t.F()` and `mk().F()` for a `type Celsius int` with a method `F` were refused
   with `type int has no method F` — naming a type the program never wrote, of a

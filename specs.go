@@ -682,6 +682,13 @@
 //	println((*p)[1], len(*p))   // "p[1]" is not an operation, here or in Go
 //	(*p)[2] = 4
 //
+// The ADDRESS may be written out around a method call, "(&v).m(args)", which is the
+// mirror of that and means what "v.m(args)" means: a value receiver copies what the
+// pointer points at, and a pointer receiver is what "v.m()" already takes the address
+// for. It is admitted around a CALL only -- "(&v)[i]" is not "v[i]", the first being
+// illegal Go for a slice v while the second is not, so accepting it would let through
+// a program Go refuses.
+//
 // A method call written that way, "(*p).m()", is the same call as "p.m()".
 //
 // # Interface types

@@ -2079,6 +2079,70 @@ func main() {
 		want: "104 true 5\n50 212\n77 false 104\ntrue\n",
 	},
 	{
+		// `(&v).m()`, the written-out address form of a method call. Go admits it for
+		// any addressable v and it means what `v.m()` means -- a value receiver copies
+		// what the pointer points at, a pointer receiver is what `v.m()` already takes
+		// the address for -- so the shorthand IS the lowering, the same equivalence
+		// `(*p).m()` is emitted through.
+		//
+		// The DEFER line is the one worth having. A defer captures its receiver where
+		// it stands, and the capture is keyed on the head's sole identifier, which a
+		// parenthesised head does not have: without the address form being taught to
+		// the capture too, the deferred call would compile and read the receiver at
+		// the RETURN instead -- printing 10 here where Go prints 0. Not a refusal, a
+		// wrong answer.
+		//
+		// Only the call form is admitted. `(&v)[i]` is not `v[i]` -- for a slice v the
+		// first is illegal Go -- so it stays refused.
+		name: "a method call written out through an address",
+		src: `type Counter struct {
+	n int
+}
+
+type Celsius int32
+
+func (c *Counter) inc(by int) { c.n += by }
+
+func (c Counter) get() int { return c.n }
+
+func (c Counter) show(tag int) { println("show", tag, c.n) }
+
+func (c *Celsius) bump() { *c += 5 }
+
+func (c Celsius) F() int32 { return int32(c)*9/5 + 32 }
+
+var g Counter
+
+func deferred() {
+	defer (&g).inc(3)
+	defer (&g).show(1)
+	(&g).inc(10)
+	println("in deferred", g.n)
+}
+
+func main() {
+	var c Counter
+	(&c).inc(3)
+	(&c).inc(4)
+	println(c.n, (&c).get())
+
+	// A defined type over a scalar, both receiver forms.
+	var t Celsius = 20
+	(&t).bump()
+	println(int32(t), (&t).F(), t.F())
+
+	// The shorthand and the written-out form are the same call.
+	c.inc(1)
+	(&c).inc(1)
+	println(c.n)
+
+	deferred()
+	println("after", g.n)
+}
+`,
+		want: "7 7\n25 77 77\n9\nin deferred 10\nshow 1 0\nafter 13\n",
+	},
+	{
 		// Floating point: float64 (C double) and float32 (C float), their literals,
 		// arithmetic, a float parameter and result, conversions to and from int, and
 		// printing (as %g, concise like Go's fmt). Float division is not guarded --
