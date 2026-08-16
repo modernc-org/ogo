@@ -3344,6 +3344,51 @@ func main() {
 		want: "10 30\n3 3\n80\n7\n9\n10 99 10\n",
 	},
 	{
+		// A defined type over a STRUCT is a different type from the struct it was
+		// defined over, so every way across between them wants a conversion. This is
+		// the escape hatch the refusal leaves, so what it produces is worth pinning:
+		// the same fields, and a COPY of them rather than another name for the same
+		// storage.
+		name: "a conversion between a defined struct type and its base",
+		src: `type Pt struct {
+	x int
+	y int
+}
+
+type Loc Pt
+
+func takePt(p Pt) int { return p.x*10 + p.y }
+
+func takeLoc(l Loc) int { return l.x*100 + l.y }
+
+func asPt(l Loc) Pt { return Pt(l) }
+
+func main() {
+	var l Loc
+	l.x = 1
+	l.y = 2
+	var p Pt
+	p.x = 3
+	p.y = 4
+
+	// Each direction across is a conversion, and carries the fields over.
+	println(takePt(Pt(l)), takeLoc(Loc(p)))
+
+	// It is a value, not another name for l's storage.
+	var q Pt = Pt(l)
+	q.y = 9
+	println(q.x, q.y, l.x, l.y)
+
+	l2 := Loc(q)
+	println(takeLoc(l2))
+
+	// A converted value compares as the type it was converted to.
+	println(asPt(l) == Pt(l), Pt(l) == p)
+}
+`,
+		want: "12 304\n1 9 1 2\n109\ntrue false\n",
+	},
+	{
 		name: "a name C has spoken for, in every position",
 		src: `// Every identifier here is a C keyword or an unshadowable macro. They are
 // ordinary OctoGo identifiers, so a program is entitled to them; the emitter

@@ -5612,7 +5612,12 @@ func (f *File) litElemType(s *Scope, t litType) bool {
 // structTypeOf resolves a name to the struct type it declares. It reports false
 // for a name that is not a type at all, or names one that is not a struct.
 func (f *File) structTypeOf(s *Scope, name Token) (*TypeNodeStruct, bool) {
-	nm := name.Src()
+	return f.structTypeNamed(s, name.Src())
+}
+
+// structTypeNamed is structTypeOf keyed by a plain name, for the callers that hold
+// one written rather than a token -- a rendered parameter or field type.
+func (f *File) structTypeNamed(s *Scope, nm string) (*TypeNodeStruct, bool) {
 	// Through a chain of definitions: `type Q P` for a struct P is that struct, so a
 	// literal of it, and a field of it, are P's.
 	for range 16 { // bounded; a type cycle is reported by its own pass
@@ -5975,24 +5980,44 @@ func (f *File) definedName(s *Scope, name string) (string, bool) {
 // answering only the part its neighbour cannot see.
 //
 // Conservative twice over. It reports only where BOTH sides resolve to a scalar
-// Kind, so a struct, an interface, a pointer, a slice and a channel are left to the
-// checks that own them; and only where the value's type is actually KNOWN, so a
-// field read or a method result -- which carry no name here -- go unchecked rather
-// than misreported. An untyped constant goes wherever it fits, as it does in Go.
+// Kind or where both are STRUCTS, so an interface, a pointer, a slice and a channel
+// are left to the checks that own them; and only where the value's type is actually
+// KNOWN, so a field read or a method result -- which carry no name here -- go
+// unchecked rather than misreported. An untyped constant goes wherever it fits, as
+// it does in Go.
+//
+// A struct is admitted without a Kind because it HAS none: the enum names the
+// predeclared scalars and nothing else, so the Kind gate could never let one
+// through, and a defined type over a struct stayed interchangeable with its base
+// where one over an int did not. Identity is decided by name, which is in hand
+// either way. Both sides must be structs, so an interface target still belongs to
+// checkImplements, and a struct is compared only against another struct rather than
+// against whatever a mismatch of shape would be -- that is assignableKind's and
+// checkPointerValue's to report.
 func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what string) {
 	if wantName == "" {
 		return
 	}
-	wantKind, ok := f.nameKind(s, wantName)
-	if !ok || kindCategory(wantKind) == catUnknown {
-		return
-	}
-	haveKind, ok := f.exprType(s, value)
-	if !ok || kindCategory(haveKind) == catUnknown || isUntypedKind(haveKind) {
-		return
+	var haveKind Kind
+	_, wantStruct := f.structTypeNamed(s, wantName)
+	if !wantStruct {
+		wantKind, ok := f.nameKind(s, wantName)
+		if !ok || kindCategory(wantKind) == catUnknown {
+			return
+		}
+		if haveKind, ok = f.exprType(s, value); !ok || kindCategory(haveKind) == catUnknown || isUntypedKind(haveKind) {
+			return
+		}
 	}
 	have, ok := f.typeIdentity(s, value)
 	if !ok {
+		return
+	}
+	// A struct is compared only against another struct, and a scalar only against
+	// another scalar. This is also what keeps the struct path's `have` a name: it
+	// resolved to a declaration, so it is not the empty string the Kind below
+	// stands in for.
+	if _, haveStruct := f.structTypeNamed(s, have); wantStruct != haveStruct {
 		return
 	}
 	want := ""
@@ -6022,6 +6047,26 @@ func (f *File) definedTypeMismatch(s *Scope, a, b Node) bool {
 	an, aok := f.typeIdentity(s, a)
 	bn, bok := f.typeIdentity(s, b)
 	return aok && bok && an != bn
+}
+
+// structOperandMismatch reports two operands that are values of DIFFERENT defined
+// STRUCT types, naming both. Go compares two structs only where one type is
+// assignable to the other, which for two defined types means they are the same one;
+// two names over one shape are two types. An operand whose type this cannot name --
+// a call result, an element, nil -- is not guessed at, and a pointer is not one of
+// these at all, typeIdentity naming only the value form.
+func (f *File) structOperandMismatch(s *Scope, a, b Node) (an, bn string, mismatched bool) {
+	an, aok := f.typeIdentity(s, a)
+	bn, bok := f.typeIdentity(s, b)
+	if !aok || !bok || an == bn {
+		return "", "", false
+	}
+	_, aStruct := f.structTypeNamed(s, an)
+	_, bStruct := f.structTypeNamed(s, bn)
+	if !aStruct || !bStruct {
+		return "", "", false
+	}
+	return an, bn, true
 }
 
 // operandTypeName names an operand's type for a mismatch report: its defined type
@@ -6739,6 +6784,14 @@ func (f *File) checkComparison(s *Scope, n Node) {
 // Only a comparison (== != < <= > >=) reaches here; a logical operator (&& / ||)
 // is handled by checkComparison, which groups the chain by precedence around it.
 func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
+	// Two structs have no Kind between them, so the scalar gate below returns
+	// before the identity check runs -- which is what let an A and a B of one
+	// shape compare where Go refuses them. Which DEFINED types they are is the
+	// whole question and needs no Kind to answer, so it is asked first.
+	if ln, rn, mismatched := f.structOperandMismatch(s, lNode, rNode); mismatched {
+		f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", ln, rn)
+		return
+	}
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)

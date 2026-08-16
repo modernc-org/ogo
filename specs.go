@@ -1009,12 +1009,13 @@
 // one of those ways. Only its identity differs: which methods it has, and that it
 // is not the same type as what it is defined over.
 //
-// A defined type over a struct is written and used as that struct is. It is not yet
-// DISTINCT from it, which is a gap rather than a rule: a type defined over a struct
-// passes, assigns, returns and compares where that struct is wanted and the other way
-// round, six positions Go refuses in both directions. Over an int or a string base
-// the distinctness above IS enforced. Nothing is miscompiled, the two having one
-// representation, but a program leaning on this will not build under Go.
+// A defined type over a struct is written and used as that struct is -- its fields
+// are read and set, a literal fills it the same way, and it compares -- and it is a
+// distinct type all the same, exactly as one over an int is. It passes, assigns,
+// returns, is sent and compares only where its own name is wanted; a conversion is
+// what carries a value across, in either direction, and copies the fields as any
+// struct value does. Two names over one shape are two types whether or not either
+// was defined over the other.
 //
 // It is also type-checked as the type it is defined over, following a chain of
 // definitions to reach it: a value of one is bounded, converted, compared and passed

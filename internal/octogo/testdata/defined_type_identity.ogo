@@ -9,6 +9,12 @@
 // family of checkImplements and checkPointerValue. It answers only where the
 // value's type is KNOWN: a range value, a field read and a method result carry no
 // name here, and go unchecked rather than misreported.
+//
+// A STRUCT base needs no Kind at all, and is the reason to say so: a struct HAS
+// none -- the enum names the predeclared scalars and nothing else -- so the scalar
+// gate could never admit one, and "type Loc Pt" stayed interchangeable with Pt
+// where "type Celsius int" had not been interchangeable with int since the day the
+// rule shipped. Identity is decided by name either way.
 
 type Celsius int
 
@@ -126,4 +132,105 @@ func deep() {
 	d = Deep(c)
 	d = 3
 	_ = d
+}
+
+// The same rule over a STRUCT base.
+
+type Pt struct {
+	x int
+	y int
+}
+
+type Loc Pt
+
+// Two names over one shape are two types whether or not either was defined over
+// the other, so Other is refused where a Pt is wanted exactly as Loc is.
+type Other struct {
+	x int
+	y int
+}
+
+type Held struct {
+	p Pt
+}
+
+var locs chan Loc
+
+func takePt(p Pt) int   { return p.x }
+func takeLoc(l Loc) int { return l.x }
+
+func givePt() Pt {
+	var l Loc
+
+	// ERROR "cannot use l of type Loc as type Pt in return statement"
+	return l
+}
+
+func structs() {
+	var p Pt
+	var l Loc
+	var o Other
+	var h Held
+
+	// A conversion is how the two meet, as with a scalar base, and it is
+	// unaffected.
+	p = Pt(l)
+	l = Loc(p)
+	takePt(Pt(l))
+	takeLoc(Loc(p))
+
+	// ERROR "cannot use l of type Loc as type Pt in variable declaration"
+	var bad1 Pt = l
+	_ = bad1
+
+	// ERROR "cannot use p of type Pt as type Loc in variable declaration"
+	var bad2 Loc = p
+	_ = bad2
+
+	// ERROR "cannot use l of type Loc as type Pt in assignment"
+	p = l
+
+	// ERROR "cannot use p of type Pt as type Loc in assignment"
+	l = p
+
+	// ERROR "cannot use l of type Loc as type Pt in argument to takePt"
+	takePt(l)
+
+	// ERROR "cannot use p of type Pt as type Loc in argument to takeLoc"
+	takeLoc(p)
+
+	// ERROR "cannot use o of type Other as type Pt in assignment"
+	p = o
+	_ = o
+
+	// Comparison wants one type between its operands, and reports the pair rather
+	// than a use, there being no direction to it.
+	// ERROR "mismatched types Loc and Pt"
+	if l == p {
+	}
+
+	// ERROR "cannot use l of type Loc as type Pt in assignment"
+	h.p = l
+	h.p = p
+
+	// ERROR "cannot use l of type Loc as type Pt in struct literal"
+	bad3 := Held{p: l}
+	_ = bad3
+	good := Held{p: p}
+	_ = good
+
+	// ERROR "cannot use p of type Pt as type Loc in send"
+	locs <- p
+	locs <- l
+
+	// One type on both sides is untouched, whichever way the value was written.
+	p = Pt{1, 2}
+	l = Loc{3, 4}
+	takePt(p)
+	takeLoc(l)
+	other := p
+	if p == other {
+	}
+	_ = p
+	_ = l
 }

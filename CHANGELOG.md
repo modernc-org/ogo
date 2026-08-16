@@ -16,6 +16,43 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **A defined type over a STRUCT is a distinct type**, which it was not. `type Loc Pt`
+  over a struct `Pt` now passes, assigns, returns, is sent and compares only where a
+  `Loc` is wanted, and a conversion is what carries a value across in either
+  direction — `Pt(l)`, `Loc(p)` — copying the fields as any struct value does. Two
+  names over one shape are two types whether or not either was defined over the
+  other, so a same-shaped `Other` is refused where a `Pt` is wanted for the same
+  reason.
+
+  The rule had held for an `int` and a `string` base since the day it shipped and
+  reached structs nowhere, for a reason worth naming: the check was keyed on a Kind,
+  and a struct HAS no Kind — the enum names the predeclared scalars and nothing else
+  — so the scalar gate could never admit one, and the exclusion read as deliberate
+  because it was written down as such. Identity is decided by NAME, which is in hand
+  without a Kind, so the struct case is now answered ahead of that gate rather than
+  behind it. Both sides must be structs, which leaves an interface target to the
+  check that owns it and a mismatch of shape to the checks that own that.
+
+### Behaviour changes
+
+- **A program that used a defined struct type and the struct it was defined over
+  interchangeably no longer builds.** Six positions changed at once — argument,
+  variable declaration, return, assignment, send and `==` — in both directions.
+  Nothing was miscompiled by the old behaviour, the two having one representation;
+  what it admitted was a program that built here and not under Go, which is the
+  contract in reverse. Write the conversion Go wants: `takePt(Pt(l))`.
+
+- **A type ALIAS over a struct is refused along with it.** `type A = B` still parses
+  as a definition — the `=` is read and discarded — so an alias over a struct is now
+  two types where Go has one, exactly as an alias over an `int` already was. That is
+  a false alarm rather than a wrong answer, which is the safe direction of a gap the
+  README already documents; the definition form is what to write until aliases are
+  implemented.
+
 ## v0.27.0
 
 A nil pointer dereference stops the program.
