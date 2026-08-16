@@ -7813,6 +7813,12 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				}
 			}
 			if initExpr != nil {
+				// The provenance the SHORT form records for itself. Without these
+				// `var b B = B{a[:]}` marked nothing where `b := B{a[:]}` marked b,
+				// so storing that struct, or reading the field back out of it, was
+				// accepted -- the same declaration one spelling apart.
+				e.noteDeclFrameHolder(ctype, nm, initExpr)
+				e.bindLitFuncFields(nm, initExpr)
 				e.emitVarDeclInit(ctype, nm, initExpr)
 			} else {
 				e.ind()
@@ -13983,7 +13989,11 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// one the type actually has, and only a field can be a function value.
 		if ft, ok := e.fieldType(recv, []string{method}); ok && e.isFuncCType(ft) {
 			e.emit(e.fieldAccessC(recv, []string{method}) + "(")
-			e.emitCallArgs("", suffix[1].ast)
+			// The BOUND function's own C name, so the call is judged by its
+			// summaries -- the callee really is that function. An unbound field
+			// yields "", which consults nothing and accepts, as the rest of the
+			// analysis does with a callee it cannot name.
+			e.emitCallArgs(e.funcValueOf[funcFieldKey(recv, method)], suffix[1].ast)
 			e.emit(")")
 			return true
 		}
@@ -15977,6 +15987,22 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			}
 		}
 	}
+	// `b.run = keep` binds a function value held in a FIELD, keyed by the path the
+	// call site writes. The binder tracked variables only, so a call through a field
+	// consulted no summaries at all and `b.run(&x)` was accepted where the same call
+	// through a variable was refused -- a dangling pointer stored in a package
+	// variable, silently.
+	if stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+		if steps := postfix[:len(postfix)-1]; len(steps) == 1 && steps[0].sym == Selector {
+			if fld := e.soleIdent(steps[0].ast); fld != "" {
+				if ft, ok := e.fieldType(base, []string{fld}); ok && e.isFuncCType(ft) {
+					if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+						e.bindFuncValue(funcFieldKey(base, fld), rhs[0].ast)
+					}
+				}
+			}
+		}
+	}
 	// A concrete value written into an interface variable: two words rather than one
 	// assignment, and the pair decides which table.
 	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
@@ -16443,6 +16469,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		}
 	}
 	e.noteDeclFrameHolder(ct, name, initExpr)
+	e.bindLitFuncFields(name, initExpr)
 	e.emitVarDeclInit(ct, name, initExpr)
 }
 
@@ -20625,6 +20652,32 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 // Anything else CLEARS the binding rather than leaving a stale one: a variable
 // reassigned from a parameter, a field or another variable holds a function this
 // cannot name, and answering with the previous one would be worse than not knowing.
+// funcFieldKey names a function value held in a struct FIELD for funcValueOf, whose
+// other keys are plain variable names. A field path cannot collide with one: an
+// identifier has no dot in it.
+func funcFieldKey(base, field string) string { return base + "." + field }
+
+// bindLitFuncFields binds the function values a struct LITERAL puts into func-typed
+// fields, `b := B{run: keep}`. It is the literal counterpart of the assignment form,
+// and without it the same callback bound the other way consulted no summaries at
+// all -- so handing it a local's address was accepted where `b.run = keep` was not.
+func (e *emitter) bindLitFuncFields(varName string, initExpr []int32) {
+	nm, lit, isLit := e.soleCompositeLit(initExpr)
+	if !isLit {
+		return
+	}
+	values, fields, ok := e.litFieldValues(nm, lit)
+	if !ok {
+		return
+	}
+	for i, f := range fields {
+		if i >= len(values) || values[i] == nil || !e.isFuncCType(f.ctype) {
+			continue
+		}
+		e.bindFuncValue(funcFieldKey(varName, f.name), values[i].ast)
+	}
+}
+
 func (e *emitter) bindFuncValue(name string, initExpr []int32) {
 	if fn, ok := e.exprIdent(initExpr); ok {
 		if _, isFunc := e.userFunc(fn); isFunc {

@@ -20,6 +20,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A callback held in a struct field is checked like any other callee.** `b.run =
+  keep; b.run(&x)` was accepted where `f := keep; f(&x)` was refused, and stored a
+  dangling pointer in a package variable — measured, `4242` read back as `32767`. The
+  binder that records which function a value holds tracked variables only, so a call
+  through a field consulted *no* leak summaries at all. A struct of callbacks is an
+  ordinary firmware shape, so this is not a corner. Both spellings that bind one are
+  covered — `b.run = keep` and `b := B{run: keep}` — and the call is judged by the
+  bound function's own summaries, so a callback that does not leak still takes a
+  local's address freely.
+
+- **A long `var` declaration records what the short one always did.** `var b B =
+  B{a[:]}` marked nothing where `b := B{a[:]}` marked `b` as holding a reference into
+  the frame, so storing that struct, or reading the field back out of it, escaped —
+  the same declaration one spelling apart.
+
 - **Slicing a local through a chain is refused, as slicing it directly always was.**
   Only the bare `a[:]` shape was recognised as viewing this frame, so `b.arr[:]` for
   a local struct with an array field — the ordinary way a program carries a buffer
@@ -188,6 +203,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   complained about C the program never wrote.
 
 ### Behaviour changes
+
+- **A program that handed a local's address to a callback held in a struct field no
+  longer builds**, if that callback stores it somewhere outliving the frame. It built
+  before and read a dead frame afterwards. The same applies to a struct built by a
+  long `var` declaration from a local's storage.
 
 - **A program that let a chained slice of a local escape no longer builds.**
   `b.arr[:]` for a local `b`, and the rest of the chained forms, built before and

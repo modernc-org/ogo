@@ -7050,6 +7050,48 @@ func main() {
 `,
 		},
 		{
+			// The long declaration's counterpart over PACKAGE storage: recording
+			// provenance there must not have turned into marking every such struct.
+			name: "a holder built by a long declaration over package storage",
+			src: `type B struct {
+	d []int
+}
+
+var pool [4]int
+
+var g B
+
+func fill() {
+	var b B = B{pool[:]}
+	g = b
+}
+
+func main() {
+	fill()
+	println(len(g.d))
+}
+`,
+		},
+		{
+			// And a callback that does not leak is called with a local's address
+			// freely -- the summary is what decides, not the fact that a field holds
+			// the function.
+			name: "a callback held in a struct field that does not leak",
+			src: `type B struct {
+	run func(*int)
+}
+
+func show(p *int) { println(*p) }
+
+func main() {
+	b := B{show}
+	var x int
+	x = 7
+	b.run(&x)
+}
+`,
+		},
+		{
 			// And a local one that never leaves the frame is what the rule is careful
 			// to keep legal -- slicing a local buffer to work on it is the point.
 			name: "a local struct's array field sliced and used in-frame",
@@ -7891,6 +7933,51 @@ func main() {
 			want: "cannot store a slice backed by local v",
 		},
 		{
+			// A LONG declaration recorded no provenance at all, so `var b B = B{a[:]}`
+			// marked nothing where `b := B{a[:]}` marked b -- the same declaration one
+			// spelling apart, and both the struct and the field read out of it escaped.
+			name: "a holder built by a long declaration, stored whole",
+			src: `type B struct {
+	d []int
+}
+
+var g B
+
+func fill() {
+	var a [4]int
+	var b B = B{a[:]}
+	g = b
+}
+
+func main() {
+	fill()
+	println(len(g.d))
+}
+`,
+			want: "cannot store local b, which holds a pointer into local a",
+		},
+		{
+			name: "a holder built by a long declaration, field read out",
+			src: `type B struct {
+	d []int
+}
+
+var g []int
+
+func fill() {
+	var a [4]int
+	var b B = B{a[:]}
+	g = b.d
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store b.d, which holds a pointer into local a",
+		},
+		{
 			// A POINTER field reads out the same way a slice field does.
 			name: "a pointer field read out of a marked holder",
 			src: `type B struct {
@@ -8204,6 +8291,75 @@ func main() {
 	var x int
 	keep(&x)
 	println(*g.p)
+}
+`,
+			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			// A callee reached through a function value held in a struct FIELD. The
+			// binder tracked variables only, so a call through a field consulted NO
+			// summaries -- `b.run(&x)` was accepted where `f := keep; f(&x)` was
+			// refused, and stored a dangling pointer in a package variable. A struct
+			// of callbacks is an ordinary firmware shape, so this is not a corner.
+			name: "a callback held in a struct field, assigned",
+			src: `type B struct {
+	run func(*int)
+}
+
+var g *int
+
+func keep(p *int) { g = p }
+
+func main() {
+	var b B
+	b.run = keep
+	var x int
+	b.run(&x)
+	println(*g)
+}
+`,
+			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			// The same callback bound by a composite LITERAL rather than an
+			// assignment -- the other spelling, and the one a program is more likely
+			// to write.
+			name: "a callback held in a struct field, from a literal",
+			src: `type B struct {
+	run func(*int)
+	n   int
+}
+
+var g *int
+
+func keep(p *int) { g = p }
+
+func main() {
+	b := B{run: keep}
+	var x int
+	b.run(&x)
+	println(*g, b.n)
+}
+`,
+			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			// And bound in a LONG declaration, which recorded no provenance at all:
+			// `var b B = ...` marked nothing where `b := ...` marked b.
+			name: "a callback held in a struct field, long declaration",
+			src: `type B struct {
+	run func(*int)
+}
+
+var g *int
+
+func keep(p *int) { g = p }
+
+func main() {
+	var b B = B{keep}
+	var x int
+	b.run(&x)
+	println(*g)
 }
 `,
 			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
