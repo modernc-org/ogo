@@ -19322,12 +19322,21 @@ func (e *emitter) emitExprNode(n Node) {
 			if litType, lit, ok := e.factorArrayLit(n); ok {
 				name, ok := e.hoistLit(litType, lit)
 				if !ok {
-					// Not "only as a variable's initializer", which this said and
-					// which is no longer true: an array literal stands as an
-					// argument, as a result and as a struct field's value. What is
-					// left is the positions that hoist nothing to point at -- an
-					// append and a channel send -- so the message names the fix
-					// rather than a rule the reader would find contradicted.
+					// An ARRAY literal, in the positions that hoist nothing to point
+					// at: an append and a channel send. C has a value form for one --
+					// the compound literal `(Row){1, 2}` -- and a literal of a DEFINED
+					// array type has always emitted exactly that, falling through to
+					// emitCompositeLit above with the name the program wrote. The
+					// unnamed spelling of the same value had no name to write and was
+					// refused for want of one rather than for want of a form, so
+					// `ch <- Row{1, 2}` compiled where `ch <- [2]int{1, 2}` did not.
+					//
+					// arrayElemTypedef mints that name, the one a `[][2]int` element
+					// is already given, and the two spellings meet.
+					if tn, isArray := e.arrayElemTypedef(litType); isArray {
+						e.emitCompositeLit(tn, lit, e.declInit)
+						return
+					}
 					e.fail("a %s literal cannot stand here; bind it to a variable and use that",
 						e.litTypeName(litType))
 					return

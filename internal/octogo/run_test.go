@@ -4160,6 +4160,50 @@ func main() {
 		want: "4 4 20 66\n2 10 1 4\n99\n2 5 6\n3 7 3 8\n2 10 5\n",
 	},
 	{
+		// An ARRAY LITERAL in the two positions that hoist nothing to point at, an
+		// append and a channel send. C has a value form for one -- the compound
+		// literal `(Row){1, 2}` -- and a literal of a DEFINED array type has always
+		// emitted exactly that. The unnamed spelling of the same value had no name to
+		// write and was refused for want of one rather than for want of a form, so
+		// `ch <- Row{1, 2}` compiled and `ch <- [2]int{1, 2}` did not.
+		//
+		// Both spellings are here, in both positions, because the pair is the whole
+		// point: the same value written two ways must reach the same place.
+		name: "an array literal in an append and a channel send",
+		src: `type Row [2]int
+
+var pool [4][2]int
+
+var rpool [4]Row
+
+var ch chan [2]int
+
+var rch chan Row
+
+func feed() {
+	ch <- [2]int{1, 2}
+	rch <- Row{3, 4}
+}
+
+func main() {
+	xs := pool[:0]
+	xs = append(xs, [2]int{10, 11})
+	xs = append(xs, [2]int{20, 21})
+	println(len(xs), cap(xs), xs[0][1], xs[1][0])
+
+	rs := rpool[:0]
+	rs = append(rs, Row{30, 31})
+	println(len(rs), rs[0][1])
+
+	go feed()
+	a := <-ch
+	b := <-rch
+	println(a[0], a[1], b[0], b[1])
+}
+`,
+		want: "2 4 11 20\n1 31\n1 2 3 4\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what

@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array literal stands in an `append` and a channel send.** `append(rows,
+  [2]int{1, 2})` and `ch <- [3]int{1, 2, 3}` were refused, on the ground that C has
+  no array value for the literal to become. It has one — the compound literal
+  `(T){a, b}` — and a literal of a DEFINED array type had been emitting exactly that
+  in both positions all along, so `ch <- Row{1, 2}` compiled where the identical
+  value written `ch <- [2]int{1, 2}` did not. The unnamed spelling was refused for
+  having no name to write, and the compiler already mints that name for every
+  `[][2]int` element. A call RETURNING an array still has to be bound to a variable
+  first, which is what its own diagnostic asks for.
+
 - **An array whose element is an array can be sliced.** `m[:]` over a `[4][2]int` is
   a `[][2]int` over that storage, and so is `d[1][:]` one rank further in. `[][2]int`
   was already a type a literal could make, so what was missing was the language's own

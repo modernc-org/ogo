@@ -1156,13 +1156,17 @@
 // in a package variable, handing one to another cog or sending one on a channel is
 // refused, exactly as it is for a slice of a local array.
 //
-// An ARRAY literal is narrower, C having no array value for it to become. It stands
-// as an initializer, as an element of another literal, as a "range" operand, as an
-// argument, as a result and as the operand of an index — every position that can
-// bind it to storage first. The two it may not stand in are an "append" argument and
-// a channel send, where there is nothing to bind it to; write it to a variable and
-// pass that. (This said "an initializer, an element, and a range operand" until
-// 2026-08-12, which was three of the six.)
+// An ARRAY literal stands in every one of those positions as well: as an
+// initializer, as an element of another literal, as a "range" operand, as an
+// argument, as a result, as the operand of an index, and -- since 2026-08-16 -- in
+// an "append" argument and a channel send. The last two used to be refused, on the
+// ground that C has no array value for the literal to become; it has one, the
+// compound literal "(T){a, b}", which a literal of a DEFINED array type had been
+// emitting there all along. The unnamed spelling was refused only for having no name
+// to write, and the compiler mints that name.
+//
+// What may NOT stand in those two positions is a call RETURNING an array. Bind the
+// result to a variable and use that, which is what the diagnostic asks for.
 //
 // That declaration may be at package scope as well as inside a function, with the
 // type written or inferred, which is how a program states a lookup table:
