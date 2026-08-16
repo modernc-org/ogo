@@ -6910,8 +6910,8 @@ func (e *emitter) cParamList(ast []int32) []string {
 			out = append(out, sliceCName(elem)+" "+userIdent(name))
 			return
 		}
-		if elem, _, ok := e.arrayType(ta); ok {
-			out = append(out, elem+"* "+paramArgName(name))
+		if a, ok := e.arrayDim(ta); ok {
+			out = append(out, e.arrayParamCType(a)+" "+paramArgName(name))
 			return
 		}
 		ct := e.cType(ta)
@@ -6938,8 +6938,8 @@ func (e *emitter) cParamTypes(sig []int32) []string {
 				out = append(out, sliceCName(elem))
 				return
 			}
-			if elem, _, ok := e.arrayType(ta); ok {
-				out = append(out, elem+"*")
+			if a, ok := e.arrayDim(ta); ok {
+				out = append(out, e.arrayParamCType(a))
 				return
 			}
 			ct := e.cType(ta)
@@ -7156,6 +7156,18 @@ func (e *emitter) variadicElem(sig []int32) (elem string, at int) {
 // the body, since the source never uses it, to stay -Wunused-parameter clean).
 func unnamedParamName(i int) string { return "_ogo_unused" + strconv.Itoa(i) }
 
+// arrayParamCType is the C type an array parameter of shape a is RECEIVED as: a
+// pointer to its element, the callee copying from it into a local of its own. A
+// parameter of array type miscompiles on this target (doc/array-param-corrupts.c),
+// which is what the pointer is for.
+//
+// A rank above one has no element type C can write inline -- `int (*)[2]` would put
+// the parameter's name in the middle of the declarator -- so the ROW's generated
+// typedef names it, the same one a `[][2]int` element is given. Without it,
+// `func take(x [3][2]int)` was refused as an unsupported type though the
+// one-dimensional form had always worked.
+func (e *emitter) arrayParamCType(a arrDim) string { return e.sliceElemOfArray(a) + "*" }
+
 // paramArgName is the C name of a value-array parameter as it is received (a
 // pointer), distinct from the local copy the body sees under the source name.
 func paramArgName(name string) string { return "_ogo_" + userIdent(name) }
@@ -7182,8 +7194,8 @@ func (e *emitter) bindParams(sig []int32) {
 						e.locals[name] = sliceCName(elem)
 						return
 					}
-					if elem, bound, ok := e.arrayType(ta); ok {
-						e.arrays[name] = arrDim{elem: elem, bound: bound}
+					if a, ok := e.arrayDim(ta); ok {
+						e.arrays[name] = a
 						return
 					}
 					if elem, ok := e.sliceType(ta); ok {
@@ -7214,10 +7226,10 @@ func (e *emitter) emitParamCopies(sig []int32) {
 					if synthetic {
 						return // an unnamed array parameter has no in-body copy
 					}
-					if elem, bound, ok := e.arrayType(ta); ok {
+					if a, ok := e.arrayDim(ta); ok {
 						e.includes["string.h"] = true
 						e.ind()
-						e.emit(elem + " " + name + "[" + bound + "];\n")
+						e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
 						e.ind()
 						e.emit("memcpy(" + name + ", " + paramArgName(name) + ", sizeof(" + name + "));\n")
 					}
@@ -7249,7 +7261,7 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 						return
 					}
 					cname := name
-					if _, _, ok := e.arrayType(ta); ok {
+					if _, ok := e.arrayDim(ta); ok {
 						cname = paramArgName(name) // an array parameter is received by pointer
 					}
 					e.ind()
@@ -9368,16 +9380,6 @@ func isScalarCType(ct string) bool {
 		return true
 	}
 	return false
-}
-
-// arrayType recognises a fixed-array type `[N]T`, returning the element C type and
-// the C bound. A slice `[]T` (no bound) or a non-constant bound is not modelled.
-func (e *emitter) arrayType(typeAST []int32) (elem, bound string, ok bool) {
-	a, ok := e.arrayDim(typeAST)
-	if !ok || a.dims() != 1 {
-		return "", "", false // a multi-dimensional array has no single bound
-	}
-	return a.elem, a.bound, true
 }
 
 // arrayDim recognises a fixed array type `[N]T`, including a multi-dimensional

@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A function parameter may be a multi-dimensional array**, `func f(m [3][2]int)`
+  or `[3]R` over a `type R [2]int`, of any rank. The one-dimensional form has always
+  worked — an array parameter travels as a pointer and the callee copies from it,
+  since a parameter of array type miscompiles on this target — and the helper that
+  recognised one returned false for any rank above 1, so the rest were refused as an
+  unsupported type. It is still the value Go passes: the pointer is how it crosses,
+  not what it means.
+
 - **An element of an array of a DEFINED slice type can be indexed.** `named[0][0]`
   over a `[2]L` for `type L []int` was refused where the unnamed `[2][]int` spelling
   of the same thing indexed twice without trouble — the chain walker recognised a

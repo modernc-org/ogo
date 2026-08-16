@@ -4504,6 +4504,61 @@ func main() {
 		want: "3 43 3 4\n22\n40 7\n",
 	},
 	{
+		// A PARAMETER of multi-dimensional array type. The one-dimensional form has
+		// always worked -- an array parameter is received as a pointer and copied
+		// into a local, since a parameter of array type miscompiles on this target --
+		// and the helper that recognised one returned false for any rank above 1, so
+		// `func take(x [3][2]int)` was refused as an unsupported type.
+		//
+		// A rank above one has no element type C can write inline: `int (*)[2]` puts
+		// the parameter's name in the middle of the declarator. The ROW's generated
+		// typedef names it, the same one a `[][2]int` element is given.
+		//
+		// The last line pins that the parameter is a COPY, as Go copies it: the
+		// pointer is how it travels, not what it means.
+		name: "a parameter of multi-dimensional array type",
+		src: `type R [2]int
+
+func sum2(x [3][2]int) int {
+	n := 0
+	for i := 0; i < 3; i++ {
+		n = n*10 + x[i][0] + x[i][1]
+	}
+	return n
+}
+
+func sumR(x [3]R) int { return x[0][0] + x[2][1] }
+
+func deep(x [2][2][2]int) int { return x[1][1][1] }
+
+func mutate(x [2][2]int) int {
+	x[0][0] = 99
+	return x[0][0]
+}
+
+var m [3][2]int
+
+var rs [3]R
+
+var d [2][2][2]int
+
+var mm [2][2]int
+
+func main() {
+	m[0][0], m[0][1] = 1, 2
+	m[1][0], m[1][1] = 3, 4
+	m[2][0], m[2][1] = 5, 6
+	rs[0][0], rs[2][1] = 7, 8
+	d[1][1][1] = 9
+	mm[0][0] = 1
+
+	println(sum2(m), sumR(rs), deep(d))
+	println(mutate(mm), mm[0][0])
+}
+`,
+		want: "381 15 9\n99 1\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what

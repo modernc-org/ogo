@@ -1199,6 +1199,11 @@
 // doc/array-param-corrupts.c). An array of slices is supported too, each element
 // being an ordinary slice header.
 //
+// A function PARAMETER of array type follows the same rule and is written as Go
+// writes it, of any rank -- "func f(m [3][2]int)". It travels as a pointer and the
+// callee copies from it into a local of its own, so it is the value Go passes; the
+// pointer is how it crosses, not what it means.
+//
 // A row of such an array may be sliced -- "m[i][:]", or any sub-range of it --
 // giving a slice over the row's own storage, so a write through it is a write to
 // the array. The ARRAY ITSELF may be sliced the same way: "m[:]" over a [4][2]int
