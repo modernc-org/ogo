@@ -7772,6 +7772,26 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.emitMakeSliceVar(nm, ctype, elem, lenAST, capAST, false)
 				continue
 			}
+			// A DEFINED slice type declared from an existing header views the same
+			// storage, so it inherits where that storage lives -- the entry the short
+			// form records for itself. Without it `var s L = a[:]` over a local a was
+			// a frame-backed slice no sink could see, and storing s in a package
+			// variable was accepted where the "[]int" spelling of the same two lines
+			// was refused.
+			if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
+				e.sliceVars[nm] = sliceElemFromCName(u)
+				_, frame := e.sliceBackingIsFrame(initExpr)
+				if _, _, isLit := e.soleSliceLit(initExpr); isLit {
+					// A literal's backing array is a local of this frame by
+					// construction, with no name of its own for the line above to
+					// have asked about. The "[]T" spelling reaches emitArrayLitVar,
+					// which marks it there; this one does not.
+					frame = true
+				}
+				if frame {
+					e.frameBacked[nm] = true
+				}
+			}
 			if initExpr != nil {
 				e.emitVarDeclInit(ctype, nm, initExpr)
 			} else {
@@ -20109,6 +20129,16 @@ func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
 func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	if name, ok := e.exprIdent(ast); ok {
 		return name, e.frameBacked[name]
+	}
+	// A CONVERSION to a slice type views the same storage: `L(a[:])` is backed by
+	// whatever `a[:]` is. Followed here as well as in frameRefOf, because a
+	// DECLARATION asks this question to decide whether the new variable inherits the
+	// backing, and `s := L(a[:])` inherited nothing.
+	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 &&
+		suffix[len(suffix)-1].sym == CallSuffix && e.convToSliceType(recv, len(suffix)) {
+		if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
+			return e.sliceBackingIsFrame(args[0].ast)
+		}
 	}
 	// `a[:]` / `s[1:2]`: the result views the base's storage, so it is frame-backed
 	// exactly when the base is.

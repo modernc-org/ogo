@@ -6992,6 +6992,33 @@ func main() {
 `,
 		},
 		{
+			// Marking a defined slice's backing must not mark storage that outlives
+			// the call, nor refuse one that never leaves the frame.
+			name: "a defined slice over package storage, and one that stays home",
+			src: `type L []int
+
+var pool [4]int
+
+var g L
+
+func mk() L {
+	var s L = pool[:]
+	return s
+}
+
+func local() int {
+	var s L = L{1, 2, 3}
+	s[0] = 9
+	return len(s) + s[0]
+}
+
+func main() {
+	g = mk()
+	println(len(g), local())
+}
+`,
+		},
+		{
 			name: "parameter, and a re-slice of one",
 			src: `var g = []int{1, 2, 3}
 
@@ -7358,6 +7385,72 @@ func mk() L {
 func main() { println(len(mk())) }
 `,
 			want: "cannot return a slice backed by local a",
+		},
+		{
+			// Declaring a local of a DEFINED slice type from an existing header. The
+			// "[]T" spelling takes the branch that records where the backing lives;
+			// a defined type is a NAME, so it arrived at the generic path instead and
+			// the new variable inherited nothing -- `var s L = a[:]` was a
+			// frame-backed slice no sink could see.
+			//
+			// Three initializers reach it and each had to be taught separately, which
+			// is why all three are here: an existing header, a conversion of one, and
+			// a literal (whose backing is a minted local with no name to have asked
+			// about).
+			name: "a defined slice declared from a local array's slice",
+			src: `type L []int
+
+var g L
+
+func fill() {
+	var a [4]int
+	var s L = a[:]
+	g = s
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local s",
+		},
+		{
+			name: "a defined slice declared from a conversion",
+			src: `type L []int
+
+var g L
+
+func fill() {
+	var a [4]int
+	s := L(a[:])
+	g = s
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local s",
+		},
+		{
+			name: "a defined slice declared from a literal",
+			src: `type L []int
+
+var g L
+
+func fill() {
+	var s L = L{1, 2}
+	g = s
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local s",
 		},
 		{
 			// A method launched on another cog takes its receiver across too. A

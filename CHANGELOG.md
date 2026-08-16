@@ -42,6 +42,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   is unaffected, as is a conversion to a scalar or an array, which yields a value
   that refers to nothing.
 
+  So did **declaring a local of a defined slice type**: `var s L = a[:]` recorded
+  nothing about where the backing lived, because the branch that records it takes
+  the written `[]T` spelling and a defined type is a name. All three initializers
+  that reach it — an existing header, a conversion of one, and a literal — are now
+  recorded. Every combination of the four ways to make a frame-backed slice of a
+  defined type against the four sinks is refused, and slices over package storage
+  still pass freely.
+
 - **A method call may be written out through an address**, `(&v).m(args)`, the
   mirror of the `(*p).x` form already supported. It means what `v.m(args)` means — a
   value receiver copies what the pointer points at, a pointer receiver is what
