@@ -10208,6 +10208,17 @@ func (e *emitter) plainOrSlice(elem string) accessCur {
 	if el, ok := e.sliceElemByName[elem]; ok {
 		return accessCur{elem: el, slice: true}
 	}
+	// A DEFINED slice type is a slice here too. Only the header's own C name was
+	// recognised, so `[2]L` over a `type L []int` reached its element as a plain
+	// value and `named[0][0]` was refused -- where the unnamed `[2][]int` spelling
+	// of the same thing indexed twice without trouble. Every other way of reaching
+	// it worked (len, a copy into a local, a range), which is what made the shape
+	// look supported.
+	if u := e.underlyingCType(elem); u != elem {
+		if el, ok := e.sliceElemByName[u]; ok {
+			return accessCur{elem: el, slice: true}
+		}
+	}
 	// A named ARRAY type carries its extents, so a further index has something to
 	// consume: `[][2]int` reaches its element as ogo_arr_2_int, and `xs[0][1]` is
 	// that element indexed once more.

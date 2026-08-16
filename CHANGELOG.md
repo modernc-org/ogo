@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An element of an array of a DEFINED slice type can be indexed.** `named[0][0]`
+  over a `[2]L` for `type L []int` was refused where the unnamed `[2][]int` spelling
+  of the same thing indexed twice without trouble — the chain walker recognised a
+  slice element by the header's own C name and not through a definition. Every other
+  way of reaching it worked (`len`, a copy into a local, a range), which is what made
+  the shape look supported.
+
 - **A composite literal whose elements are SLICES compiles** — `[3][]int{r0[:],
   r1[:], r2[:]}`, a table of rows, which is how a program states one without a heap.
   Each element rendered as a compound literal, `(ogo_slice_int){r0, 3, 3}`, and the

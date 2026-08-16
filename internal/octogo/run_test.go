@@ -4453,6 +4453,57 @@ func main() {
 		want: "3 324\n2 20 2 30\n2 4\n",
 	},
 	{
+		// Indexing an element of an array whose element is a DEFINED slice type.
+		// `named[0][0]` over a `[2]L` was refused where the unnamed `[2][]int`
+		// spelling of the same thing indexed twice without trouble: the chain walker
+		// classified an element type as a slice by the header's own C name and not
+		// through a definition.
+		//
+		// Every OTHER way of reaching it worked -- len, a copy into a local, a range
+		// -- which is what made the shape look supported. The write through the
+		// double index is here because it is a different path from the read and lands
+		// in the backing array either way.
+		name: "indexing an element of an array of a defined slice type",
+		src: `type L []int
+
+type B struct {
+	rows [2]L
+}
+
+var r0 [3]int
+
+var r1 [4]int
+
+var named [2]L
+
+var b B
+
+func total(rows []L) int {
+	n := 0
+	for _, r := range rows {
+		n += len(r)
+	}
+	return n
+}
+
+func main() {
+	r0[0], r0[1], r0[2] = 1, 2, 3
+	r1[0], r1[3] = 40, 43
+
+	named[0] = L(r0[:])
+	named[1] = L(r1[:])
+	println(named[0][2], named[1][3], len(named[0]), len(named[1]))
+
+	named[0][1] = 22
+	println(r0[1])
+
+	b.rows[1] = L(r1[:])
+	println(b.rows[1][0], total(named[:]))
+}
+`,
+		want: "3 43 3 4\n22\n40 7\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what
