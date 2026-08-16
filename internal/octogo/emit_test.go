@@ -7018,6 +7018,33 @@ func main() {
 `,
 		},
 		{
+			// Merging the marks back out of a block must stay precise: a name the
+			// block DECLARED takes its mark with it, so a later sibling block's
+			// same-named variable does not inherit one it never earned.
+			name: "sibling blocks with the same local name",
+			src: `var pool [4]int
+
+var g []int
+
+func fill() {
+	var a [4]int
+	if len(pool) > 0 {
+		s := a[:]
+		s[0] = 1
+	}
+	if len(pool) > 0 {
+		s := pool[:]
+		g = s
+	}
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+		},
+		{
 			// And a struct given PACKAGE storage is not marked at all, so reading its
 			// slice field out is free.
 			name: "a slice field of an unmarked struct",
@@ -7594,6 +7621,122 @@ func main() {
 }
 `,
 			want: "cannot pass b.d, which holds a pointer into local a",
+		},
+		{
+			// An ARRAY of slices is marked on the array, so reaching an element out of
+			// it is the same read `b.d` is -- and a chain, not a field path, is what
+			// covers both that and `bs[1].d`.
+			name: "an element read out of a marked array of slices",
+			src: `var g []int
+
+func fill() {
+	var a [4]int
+	var xs [2][]int
+	xs[0] = a[:]
+	g = xs[0]
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store xs[0], which holds a pointer into local a",
+		},
+		{
+			name: "a field read out of an element of a marked array of structs",
+			src: `type B struct {
+	d []int
+}
+
+var g []int
+
+func fill() {
+	var a [4]int
+	var bs [2]B
+	bs[1].d = a[:]
+	g = bs[1].d
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store bs[1].d, which holds a pointer into local a",
+		},
+		{
+			// Copying the read into a local first must not launder it: the declaration
+			// inherits the mark, or every refusal above is one `s :=` away from being
+			// bypassed.
+			name: "a holder's field copied into a local, then stored",
+			src: `type B struct {
+	d []int
+}
+
+var g []int
+
+func fill() {
+	var a [4]int
+	var b B
+	b.d = a[:]
+	s := b.d
+	g = s
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local s",
+		},
+		{
+			// A range binds the element under a new name, which inherits the mark from
+			// what is being ranged.
+			name: "a range value over a marked array, stored",
+			src: `var g []int
+
+func fill() {
+	var a [4]int
+	var xs [2][]int
+	xs[0] = a[:]
+	for _, s := range xs {
+		g = s
+	}
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local s",
+		},
+		{
+			// The mark must survive the BLOCK it was applied in. enterScope restored
+			// the mark maps wholesale, so marking a variable declared outside a nested
+			// block was undone on the way out and `g = v` afterwards was accepted --
+			// which put every refusal above one `if` away from being bypassed.
+			name: "a mark applied inside a nested block survives it",
+			src: `var g []int
+
+func fill() {
+	var a [4]int
+	s := a[:]
+	var v []int
+	if len(s) > 0 {
+		v = s
+	}
+	g = v
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local v",
 		},
 		{
 			// A POINTER field reads out the same way a slice field does.

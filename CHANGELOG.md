@@ -34,6 +34,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   A struct given package-level storage is not marked at all, so reading its slice
   field out stays free.
 
+  **Every other way of getting the value out went with it**, since they were all the
+  same gap: an element of a marked array (`xs[0]`, `bs[1].d`), a copy into a local
+  (`s := b.d`), and the value a `range` binds. And one that made all of them
+  bypassable — **a mark applied inside a nested block did not survive the block**, so
+  `if c { v = s }` followed by `g = v` was accepted. The marks are monotone, so a
+  scope now merges them back rather than restoring wholesale; a name the block
+  *declared* still takes its mark with it, so a later sibling block's same-named
+  variable inherits nothing. Eight ways of obtaining the reference against all four
+  sinks — thirty-two programs — are refused.
+
 - **A DEFINED slice type no longer bypasses the lifetime rules.** This is the
   serious one. `type L []int` and then `g = L{1, 2}` into a package variable was
   accepted — where the identical `g = []int{1, 2}` was refused — and stored a slice

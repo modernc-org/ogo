@@ -7261,6 +7261,34 @@ func (e *emitter) enterScope() func() {
 	constUntyped := maps.Clone(e.constUntyped)
 	funcValueOf := maps.Clone(e.funcValueOf)
 	return func() {
+		// The frame marks are MERGED back rather than replaced. They are monotone --
+		// a variable given a reference to this frame keeps it, which is what makes
+		// the analysis sound without per-field tracking -- and restoring the snapshot
+		// wholesale un-marked a variable a nested block had marked: `if c { v = s }`
+		// followed by `g = v` was accepted, a dangling slice stored silently.
+		//
+		// A mark survives only for a name declared OUTSIDE the block, which is what
+		// the snapshot's own environments say. Dropping the rest with the names is
+		// not conservatism lost: nothing can refer to them afterwards, and keeping
+		// them would make a later sibling block's same-named variable inherit a mark
+		// it never earned.
+		outer := func(n string) bool {
+			if _, ok := locals[n]; ok {
+				return true
+			}
+			_, ok := arrays[n]
+			return ok
+		}
+		for n, marked := range e.frameBacked {
+			if marked && outer(n) {
+				frameBacked[n] = true
+			}
+		}
+		for n, origin := range e.frameHolder {
+			if origin != "" && outer(n) {
+				frameHolder[n] = origin
+			}
+		}
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
@@ -7780,15 +7808,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			// was refused.
 			if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
 				e.sliceVars[nm] = sliceElemFromCName(u)
-				_, frame := e.sliceBackingIsFrame(initExpr)
-				if _, _, isLit := e.soleSliceLit(initExpr); isLit {
-					// A literal's backing array is a local of this frame by
-					// construction, with no name of its own for the line above to
-					// have asked about. The "[]T" spelling reaches emitArrayLitVar,
-					// which marks it there; this one does not.
-					frame = true
-				}
-				if frame {
+				if e.initViewsFrame(initExpr) {
 					e.frameBacked[nm] = true
 				}
 			}
@@ -12098,6 +12118,7 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 	}
 	if h.valVar != nil {
 		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
+			e.noteRangeValueHolder(h.rangeExpr, val, elem)
 			// An ARRAY element is COPIED, as Go copies it, and C cannot assign one:
 			// `T v = xs.ptr[i]` is not an initializer it accepts.
 			if a, isArr := e.namedArrays[elem]; isArr && h.rangeDef {
@@ -16417,7 +16438,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		e.sliceVars[name] = sliceElemFromCName(u)
 		// A slice copied from another views the same storage, so it inherits where
 		// that storage lives; otherwise returning the copy would dodge the check.
-		if _, frame := e.sliceBackingIsFrame(initExpr); frame {
+		if e.initViewsFrame(initExpr) {
 			e.frameBacked[name] = true
 		}
 	}
@@ -20201,11 +20222,50 @@ func holderRef(name, origin string) frameRef {
 	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
 }
 
-// fieldHolderRef names a field read out of a marked holder, `b.d`. It says what the
-// program wrote rather than naming the variable, which would send a reader looking
-// at a line they did not write.
-func fieldHolderRef(base string, fields []string, origin string) frameRef {
-	return frameRef{origin: origin, what: base + "." + strings.Join(fields, ".") + ", which holds a pointer into " + origin}
+// noteRangeValueHolder passes a container's frame mark on to the value variable a
+// range binds. `for _, s := range xs` over an xs that holds a reference to this
+// frame binds an s that holds it too, and without this the loop handed the element
+// out under a new name that every sink accepted.
+//
+// The element's own type decides, as it does for a field read: a slice element
+// inherits the backing mark, a pointer or struct element inherits the holder mark,
+// and a scalar element carries nothing.
+func (e *emitter) noteRangeValueHolder(rangeExpr []int32, val, elem string) {
+	r, reaches := e.frameRefOf(rangeExpr)
+	if !reaches {
+		return
+	}
+	if e.isSliceCType(e.underlyingCType(elem)) {
+		e.frameBacked[val] = true
+		return
+	}
+	if e.carriesReference(elem) {
+		e.frameHolder[val] = r.origin
+	}
+}
+
+// initViewsFrame reports whether a slice variable's initializer views storage of
+// this frame, by either route: a backing this frame owns, which sliceBackingIsFrame
+// resolves, or a value read out of something already MARKED as holding one, which
+// only frameRefOf knows about.
+//
+// The declaration has to inherit the mark or a copy launders it: `s := b.d` and
+// `s := xs[0]` would carry out what `g = b.d` and `g = xs[0]` are refused for. It
+// also catches a slice LITERAL, whose backing is a minted local with no name for
+// sliceBackingIsFrame to have asked about.
+func (e *emitter) initViewsFrame(initExpr []int32) bool {
+	if _, frame := e.sliceBackingIsFrame(initExpr); frame {
+		return true
+	}
+	_, ref := e.frameRefOf(initExpr)
+	return ref
+}
+
+// readHolderRef names a value read out of a marked holder -- `b.d`, `xs[0]`,
+// `bs[1].d`. It says what the program WROTE rather than naming the variable, which
+// would send a reader looking at a line they did not write.
+func readHolderRef(read, origin string) frameRef {
+	return frameRef{origin: origin, what: read + ", which holds a pointer into " + origin}
 }
 
 // carriesReference reports whether a value of this C type can hold a reference to
@@ -20271,10 +20331,15 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// reads as suspect too -- and it costs nothing on a scalar field, which cannot
 	// carry a reference at all.
 	if fac, isFac := e.soleFactorNode(ast); isFac {
-		if base, fields, isField := e.factorFieldAccess(slices.Collect(it(fac.ast))); isField {
+		if base, steps, isChain := e.factorAccessChain(slices.Collect(it(fac.ast))); isChain {
 			if origin := e.frameHolder[base]; origin != "" {
-				if ct, known := e.fieldType(base, fields); known && e.carriesReference(ct) {
-					return fieldHolderRef(base, fields, origin), true
+				// The whole chain, not a field path: an ARRAY of slices or of structs
+				// is marked on the array, and `xs[0]` and `bs[1].d` reach out of it
+				// exactly as `b.d` does.
+				if cur, walked := e.accessChainType(base, steps); walked {
+					if ct, valued := e.chainValueCType(cur); valued && e.carriesReference(ct) {
+						return readHolderRef(e.f.exprSource(fac), origin), true
+					}
 				}
 			}
 		}
