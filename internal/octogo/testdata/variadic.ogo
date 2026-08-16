@@ -44,3 +44,57 @@ func shared(a, b ...int) int { return a }
 
 // ERROR cannot use \.\.\. in receiver or result parameter list
 func results() (xs ...int) { return }
+
+// The checks a Kind cannot express reach a variadic argument as they reach a fixed
+// one. They did not: for a fixed parameter they run AHEAD of the known-Kind guard
+// and here they ran behind it, so an element type with no Kind -- a struct, an
+// interface, a pointer -- was left entirely to the C compiler, which then complained
+// about C the program never wrote.
+
+type Celsius int
+
+type Pt struct {
+	x int
+}
+
+type Loc Pt
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+func ints(xs ...int) int     { return len(xs) }
+func pts(ps ...Pt) int       { return len(ps) }
+func ptrs(ps ...*Pt) int     { return len(ps) }
+func shapes(ss ...Shape) int { return len(ss) }
+
+func elements() {
+	var c Celsius
+	var p Pt
+	var l Loc
+	var q Sq
+
+	// Each of these is what its element type asks for.
+	println(ints(1, 2), pts(p, Pt{1}), ptrs(&p), shapes(&q))
+
+	// ERROR cannot use c of type Celsius as type int in argument to ints
+	println(ints(c))
+
+	// ERROR cannot use l of type Loc as type Pt in argument to pts
+	println(pts(l))
+
+	// ERROR cannot use p \(a value\) as \*Pt value in argument to ptrs
+	println(ptrs(p))
+
+	// ERROR an interface holds a pointer here; write &q
+	println(shapes(q))
+
+	// ERROR Pt does not implement Shape \(missing method Area\)
+	println(shapes(&p))
+}

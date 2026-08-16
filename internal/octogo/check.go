@@ -8673,6 +8673,13 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			elem := f.resultType(paramScope, sl.TypeNode)
 			for _, arg := range args[fixed:] {
 				f.checkNilAssignable(s, elem, arg, "argument to "+name.Src())
+				// The checks a Kind cannot express run here, ahead of the
+				// known-Kind guard, exactly as they do for a fixed parameter
+				// below: an element type with no Kind -- a struct, an interface,
+				// a pointer -- is most of what a variadic is called with, and
+				// skipping it left the whole class to the C compiler.
+				f.checkFuncAssign(s, f.funcSig(paramScope, sl.TypeNode), arg, "argument to "+name.Src())
+				f.checkPointerArg(s, elem, arg, name)
 				if !elem.known {
 					continue
 				}

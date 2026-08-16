@@ -37,6 +37,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   behind it. Both sides must be structs, which leaves an interface target to the
   check that owns it and a mismatch of shape to the checks that own that.
 
+- **A variadic argument is checked as the fixed parameter it stands for.** The
+  checks a Kind cannot express — a defined type against its base, a value where a
+  pointer is wanted and the reverse, and whether a concrete type satisfies an
+  interface element — run ahead of the known-Kind guard for a fixed parameter and
+  ran behind it for a variadic one. So `sum(c)` for `sum(ns ...int)` with a
+  `Celsius` `c` was accepted, and the whole class of element types with no Kind —
+  a struct, an interface, a pointer — was left to the C compiler, which then
+  complained about C the program never wrote.
+
 ### Behaviour changes
 
 - **A program that used a defined struct type and the struct it was defined over
@@ -52,6 +61,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   a false alarm rather than a wrong answer, which is the safe direction of a gap the
   README already documents; the definition form is what to write until aliases are
   implemented.
+
+- **A variadic call that passed the wrong element type no longer builds.** A defined
+  type where its base is the element, a value where a pointer element is wanted or
+  the reverse, and a concrete type that does not satisfy an interface element are
+  each reported now instead of being passed on — the first two silently, the rest as
+  a flexcc diagnostic naming C. Go refuses all of them.
 
 ## v0.27.0
 
