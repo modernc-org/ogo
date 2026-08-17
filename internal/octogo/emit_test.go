@@ -3545,6 +3545,68 @@ func TestEmitCMultiDimArrayPartial(t *testing.T) {
 	}
 }
 
+// TestEmitCArrayTargetRefusals pins what a target naming a whole ARRAY will not
+// take. Assignment copies it, which is what Go's assignment of an array is; every
+// other tail is a program Go rejects -- "invalid operation: m[1]++ (non-numeric type
+// [3]int)" -- because no operator is defined on an array.
+//
+// It is pinned because the lowering that made the assignment work sits on the tail,
+// so the same targets now reach every OTHER tail as well. Left unsaid, `m[1]++` would
+// have emitted C that increments the row's decayed pointer and throws it away.
+func TestEmitCArrayTargetRefusals(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "increment a row",
+			src: `var m [2][3]int
+
+func main() {
+	m[1]++
+	println(m[1][0])
+}
+`,
+			want: "cannot update [3]int in place",
+		},
+		{
+			name: "add to a row",
+			src: `var m [2][3]int
+
+func main() {
+	m[1] += m[0]
+	println(m[1][0])
+}
+`,
+			want: "cannot update [3]int in place",
+		},
+		{
+			name: "increment an array field of an element",
+			src: `type H struct{ f [2]int }
+
+var arr [3]H
+
+func main() {
+	arr[1].f++
+	println(arr[1].f[0])
+}
+`,
+			want: "cannot update [2]int in place",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted an operator on an array target:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCRem pins the remainder operator: "%" maps to C's, binds at MulOp
 // precedence, and takes the same zero-divisor guard "/" does, since both are
 // undefined in C. A literal divisor is provably non-zero and skips the guard.

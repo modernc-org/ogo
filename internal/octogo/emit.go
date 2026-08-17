@@ -17007,18 +17007,25 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if chain := postfix[:len(postfix)-1]; stars == "" && !isFieldSend && isAccessChain(chain) {
 		// A slice-valued target is a header assignment, `s[i].v = xs`, which C makes
 		// by copying the struct -- the view changes, the storage it names does not.
-		// Only when an index put it out of the fixed shapes' reach, though: a plain
-		// field target, `b.data = ...`, belongs to them, since they are what knows
-		// how to give a `make` its backing array. An array-valued target is refused
-		// either way, C having no array assignment.
-		if cur, ok := e.accessChainType(base, chain); ok && len(cur.dims) == 0 &&
-			(!cur.slice || hasIndexStep(chain)) {
+		// An ARRAY-valued one is a memcpy of the target's own size, C having no array
+		// assignment: `sheet[0].body = r`, `h.rows[1] = r`.
+		//
+		// Both only once an index has put the target out of the fixed shapes' reach,
+		// though: a plain field target belongs to them, since they are what knows how
+		// to give a `make` its backing array (`b.data = ...`) and what already copies
+		// a whole array field (`s.a = b`, through fieldArray below).
+		indexed := hasIndexStep(chain)
+		if cur, ok := e.accessChainType(base, chain); ok &&
+			(len(cur.dims) == 0 && (!cur.slice || indexed) || len(cur.dims) != 0 && indexed) {
 			t, ok := e.assignTailOf(postfix[len(postfix)-1])
 			if !ok {
 				e.fail("unsupported assignment form for an access chain")
 				return
 			}
 			t.targetCType = cur.ctype
+			if len(cur.dims) != 0 {
+				t.targetArray = arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:], name: cur.name}
+			}
 			e.emitAssignTailOrCopy(func() { e.emitAccessChain(base, chain) }, t)
 			return
 		}
@@ -17689,7 +17696,18 @@ type assignTail struct {
 	// evaluating it twice repeats no side effect. A shift assignment needs that,
 	// since it becomes "t = f(t, n)".
 	targetRepeatable bool
+	// targetArray is the shape of the ARRAY the target names, when it is one -- an
+	// element of an array of arrays, an array-typed field of an element, anything a
+	// chain reaches through an index. C has no array assignment, so writing one is a
+	// memcpy of the target's own size; the shape says how big, and what a receive or
+	// an out-parameter call may be checked against. Zero for every other target,
+	// which is what the paths that set no array target leave it.
+	targetArray arrDim
 }
+
+// isArray reports whether the tail's target is an ARRAY. A zero arrDim has no
+// outermost extent, and every real one does, however small -- `[0]int`'s is "0".
+func (t assignTail) isArray() bool { return t.targetArray.bound != "" }
 
 // cAssignOps maps each compound assignment token to the C operator that applies
 // it. C has no "&^=": Go's `x &^= y` clears in x every bit set in y, which is
@@ -17708,6 +17726,49 @@ var cAssignOps = map[Symbol]string{
 	ANDNOT_ASSIGN: "&=",
 }
 
+// emitArrayTargetAssign writes a whole ARRAY through a target C cannot assign to,
+// dst being the target's already-rendered C text. It is the copy `a = b` and
+// `s.a = b` already take, reached through a target those two shapes cannot name --
+// `m[1] = row`, `sheet[0].body = r`, `h.rows[1] = r`.
+//
+// dst is rendered once and used twice, as the destination and as the operand of the
+// sizeof. That repeats no evaluation: sizeof does not evaluate its operand, so an
+// index inside dst -- and the bounds check around it -- still runs exactly once.
+func (e *emitter) emitArrayTargetAssign(dst string, a arrDim, rhs []int32) {
+	// `m[1] = <-ch` for a channel of arrays: the receive writes through an out
+	// parameter, and the target IS the storage it writes into.
+	if elem, ch, ra, isRecv := e.arrayRecvInit(rhs); isRecv {
+		if a.elem != ra.elem || a.declSuffix() != ra.declSuffix() {
+			e.fail("cannot receive %s into %s", e.goArrayTypeName(ra), e.goArrayTypeName(a))
+			return
+		}
+		e.chanRecvElems[elem] = true
+		e.ind()
+		e.emit(chanRecvCName(elem) + "(" + ch + ", " + dst + ");\n")
+		return
+	}
+	// `m[1] = mk()`: the callee fills storage the caller owns, and the target IS that
+	// storage, so the call writes through it directly -- no copy, which is what the
+	// out-parameter ABI is for.
+	if cname, ra, isCall := e.arrayResultCall(rhs); isCall {
+		if a.elem != ra.elem || a.declSuffix() != ra.declSuffix() {
+			e.fail("cannot assign %s to %s", e.goArrayTypeName(ra), e.goArrayTypeName(a))
+			return
+		}
+		e.emitArrayResultCall(dst, cname, rhs)
+		return
+	}
+	src, ok := e.arraySourceC(rhs)
+	if !ok {
+		e.fail("cannot copy this into %s: it is not an array this can read from",
+			e.goArrayTypeName(a))
+		return
+	}
+	e.includes["string.h"] = true
+	e.ind()
+	e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n")
+}
+
 // emitAssignTailOrCopy emits an indented assignment statement whose target is
 // written by target and whose tail is t, lowering the one case C's own assignment
 // cannot express here: a struct that holds an array is copied with memcpy (see
@@ -17716,6 +17777,21 @@ var cAssignOps = map[Symbol]string{
 // way, and not at all if the copy is refused, so a refusal leaves no half-written
 // statement.
 func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
+	// A whole ARRAY written over. Asked FIRST, ahead of every branch that reads
+	// targetCType: for an array of interfaces the callers set that to the ELEMENT's
+	// type, which would send `grid[1] = row` down the interface path to be written as
+	// two words into storage that holds a row of them.
+	if t.isArray() {
+		if t.op != "=" {
+			// `m[1]++`, `m[1] += r`: Go defines no operator on an array, so this is
+			// a program it rejects rather than a lowering that is missing.
+			e.fail("cannot update %s in place: no operator applies to an array",
+				e.goArrayTypeName(t.targetArray))
+			return
+		}
+		e.emitArrayTargetAssign(e.captureC(target), t.targetArray, t.rhs)
+		return
+	}
 	// A concrete value written to a target of interface type -- a field, an element,
 	// anything a chain reaches -- is wrapped where it stands, the same two words the
 	// plain-variable assignment writes.
@@ -17940,19 +18016,33 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	// index is bounds-checked against the container length.
 	lhs := base
 	lenExpr, elem := "", ""
+	var row arrDim
 	if el, ok := e.sliceElem(base); ok {
 		lhs = base + ".ptr"
 		lenExpr = base + ".len"
 		elem = el
-	} else if text, a, ok := e.arrayBase(base); ok {
-		if a.dims() > 1 {
-			e.fail("a multi-dimensional array must be indexed in every dimension")
-			return
+		// A slice whose ELEMENT is an array, `xs[1] = r` over a `[][2]int`: the
+		// element is a whole array and is written by copying it, exactly as the
+		// array container's row is. The registry that answers this is the one
+		// plainOrSlice reads, which is why the same target reached through a chain
+		// -- `h.xs[1] = r` -- was already right while this emitted
+		// `xs.ptr[i] = (ogo_arr_2_int){7, 8}`, not C.
+		if a, isArr := e.namedArrays[el]; isArr {
+			row = a
 		}
+	} else if text, a, ok := e.arrayBase(base); ok {
 		if _, isPtr := e.arrayPtrVar(base); isPtr {
 			lhs = text
 		}
 		lenExpr, elem = a.bound, a.elem
+		if a.dims() > 1 {
+			// One index into a multi-dimensional array reaches a ROW, `m[1] = r`,
+			// which is itself an array and so is written by copying it. This used
+			// to be refused outright -- there was no lowering for it, and typing
+			// the target as the ELEMENT would have written one int over a row.
+			// Writing a row is how a table of rows is filled.
+			row = a.row()
+		}
 	} else if !e.indexableBase(base) {
 		return
 	}
@@ -17961,7 +18051,7 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		e.fail("unsupported assignment form for an indexed target")
 		return
 	}
-	t.targetCType = elem
+	t.targetCType, t.targetArray = elem, row
 	// The index is evaluated twice by a guarded shift assignment (see shiftAssignC),
 	// which is only sound when evaluating it has no effect. It usually has none: an
 	// index is a name or a literal far more often than it is a call.

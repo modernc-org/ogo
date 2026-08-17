@@ -4754,6 +4754,66 @@ func main() {
 		want: "0 0\n3 4\n8 9\n5 0\n3 9\n99 3 77 4\n",
 	},
 	{
+		// A whole ARRAY written over through a target that is not a plain variable
+		// or a whole field -- a ROW of an array of arrays, an element of a slice of
+		// them, an array-typed field of an element, an element of an array-typed
+		// field. Writing a row is how a table of rows is filled, and none of it
+		// compiled: `m[1] = r` was refused outright ("a multi-dimensional array must
+		// be indexed in every dimension" -- there was no lowering, and typing the
+		// target as the ELEMENT would have written one int over a row), the chain
+		// targets were "only simple and field assignment targets are supported yet",
+		// and the slice element emitted `xs.ptr[i] = (ogo_arr_2_int){7, 8}`, which is
+		// not C.
+		//
+		// All four are the memcpy `a = b` and `s.a = b` already were, reached through
+		// a target those two shapes cannot name, so the lowering sits on the tail and
+		// each site only says how big the array is. That the tail carries it is also
+		// what refuses `m[1]++` and `m[1] += r`, which Go rejects: no operator applies
+		// to an array.
+		name: "writing a whole array through an index",
+		src: `type Row [2]int
+
+type Frame struct {
+	head Row
+	rows [2][2]int
+}
+
+var table [3][2]int
+
+var frames [2]Frame
+
+var back [3]Row
+
+func mkRow() [2]int { return [2]int{5, 6} }
+
+func main() {
+	// A ROW of an array of arrays: one index into two dimensions.
+	table[0] = [2]int{1, 2}
+	table[2] = table[0]
+	println(table[0][0], table[2][1])
+
+	// The same target reached through a slice of arrays, and through a pointer to
+	// the array. The pointer's source is a call, which writes through the target
+	// rather than copying into it.
+	xs := back[:]
+	xs[1] = Row{7, 8}
+	p := &table
+	p[1] = mkRow()
+	println(back[1][0], table[1][0], table[1][1])
+
+	// An array-typed FIELD of an element, and an element of an array-typed field.
+	frames[0].head = Row{3, 4}
+	frames[1].rows[1] = [2]int{9, 10}
+	println(frames[0].head[1], frames[1].rows[1][0])
+
+	// Each is a copy: writing to the destination leaves the source alone.
+	table[2][0] = 99
+	println(table[2][0], table[0][0])
+}
+`,
+		want: "1 2\n7 5 6\n4 9\n99 1\n",
+	},
+	{
 		// A method on an array-typed FIELD. The same method on a struct-typed field
 		// has always worked, in both statement and expression position, so this was
 		// the array case alone: the chain walk reaches an array with no C value type,

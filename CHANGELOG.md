@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A whole ARRAY may be written through an index** — `m[1] = r` for a row of an
+  array of arrays, `xs[1] = r` for an element of a slice of them, `arr[1].f = r` for
+  an array-typed field of an element, `h.rows[1] = r` for an element of an
+  array-typed field. Filling a table a row at a time did not compile: `m[1] = r` was
+  refused with *a multi-dimensional array must be indexed in every dimension*, the
+  chain targets with *only simple and field assignment targets are supported yet*,
+  and the slice element emitted an assignment to an array type, which is not C. All
+  four are the `memcpy` a whole array's assignment already was, reached through a
+  target the plain-variable and whole-field shapes cannot name. `m[1]++` and
+  `m[1] += r` are refused, as Go refuses them: no operator applies to an array.
+
 - **An array reached through a chain may be ASSIGNED, not only declared** — `d = h.f`,
   `d = pool[1]`, `d = h.rows[1]`, and the same sources written into a field. The
   assignment knew two array sources, a variable and a dereferenced pointer to one, and
