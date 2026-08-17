@@ -8098,6 +8098,9 @@ func (e *emitter) emitVarDecl(ast []int32) {
 					e.emitArrayResultCall(nm, cname, initExpr)
 					continue
 				}
+				if !e.checkArrayShape(a, initExpr, "variable declaration") {
+					return
+				}
 				e.includes["string.h"] = true
 				// A self-referential shadowing copy (`var a [N]T = a` with an outer a)
 				// means the outer array; capture it before the new one shadows it, or
@@ -8961,6 +8964,52 @@ func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
 		return "", false
 	}
 	return e.hoistLitVar(typeAST, lit)
+}
+
+// arrayShapeOf resolves the SHAPE of an array-valued expression, where the program
+// wrote enough to read one off: a variable, a dereferenced pointer to one, an array
+// reached through a chain of fields and indexes, or a literal, which carries its own
+// type. It is arraySourceC's pure twin -- same shapes, no text and no temporary --
+// so a caller may ask what it is about to copy before deciding to copy it.
+//
+// It answers false for anything else, and a caller must read that as "not known",
+// never as "not an array": a shape this cannot see is not a mismatch.
+func (e *emitter) arrayShapeOf(ast []int32) (arrDim, bool) {
+	if name, ok := e.exprIdent(ast); ok {
+		return e.arrayVar(name)
+	}
+	if name, ok := e.derefOperand(ast); ok {
+		return e.arrayPtrVar(name)
+	}
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return arrDim{}, false
+	}
+	if a, ok := e.arrayOperandOf(fac); ok {
+		return a, true
+	}
+	if typeAST, _, ok := e.factorArrayLit(fac); ok {
+		return e.arrayDim(typeAST)
+	}
+	return arrDim{}, false
+}
+
+// checkArrayShape refuses a copy whose source array is not the same shape as the
+// destination -- a different element type, or different extents. Go rejects such a
+// program ("cannot use s (variable of type [3]int) as [2]int value in assignment"),
+// and every copy here is sized by the DESTINATION, so one let through read past the
+// end of a shorter source or dropped what did not fit -- silently, with the program
+// running and printing a wrong answer.
+//
+// A source whose shape arrayShapeOf cannot read is passed. This is a check on the
+// shapes that are known, not a new restriction on what may be copied.
+func (e *emitter) checkArrayShape(dst arrDim, ast []int32, what string) bool {
+	src, ok := e.arrayShapeOf(ast)
+	if !ok || src.elem == dst.elem && src.declSuffix() == dst.declSuffix() {
+		return true
+	}
+	e.fail("cannot use %s as %s in %s", e.goArrayTypeName(src), e.goArrayTypeName(dst), what)
+	return false
 }
 
 // arraySourceC names what an array-valued right-hand side is, for a copy to read
@@ -16938,8 +16987,11 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// could cover the form. Emitting the copy makes the two agree and the output
 	// valid.
 	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
-		if _, isArray := e.arrayVar(base); isArray {
+		if dstDim, isArray := e.arrayVar(base); isArray {
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				if !e.checkArrayShape(dstDim, rhs[0].ast, "assignment") {
+					return
+				}
 				// `w = <-ch` for a channel of arrays: the receive writes through an
 				// out parameter, and w IS the storage.
 				if elem, ch, ra, isRecv := e.arrayRecvInit(rhs[0].ast); isRecv {
@@ -17135,6 +17187,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(fields) != 0 && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
 		if fa, isArray := e.fieldArray(base, fields); isArray {
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				if !e.checkArrayShape(fa, rhs[0].ast, "assignment") {
+					return
+				}
 				// `s.v = <-ch`: the field is the storage the receive writes into.
 				if elem, ch, ra, isRecv := e.arrayRecvInit(rhs[0].ast); isRecv {
 					if fa.elem != ra.elem || fa.declSuffix() != ra.declSuffix() {
@@ -17735,6 +17790,9 @@ var cAssignOps = map[Symbol]string{
 // sizeof. That repeats no evaluation: sizeof does not evaluate its operand, so an
 // index inside dst -- and the bounds check around it -- still runs exactly once.
 func (e *emitter) emitArrayTargetAssign(dst string, a arrDim, rhs []int32) {
+	if !e.checkArrayShape(a, rhs, "assignment") {
+		return
+	}
 	// `m[1] = <-ch` for a channel of arrays: the receive writes through an out
 	// parameter, and the target IS the storage it writes into.
 	if elem, ch, ra, isRecv := e.arrayRecvInit(rhs); isRecv {

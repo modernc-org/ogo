@@ -3607,6 +3607,169 @@ func main() {
 	}
 }
 
+// TestEmitCArrayShapeMismatch pins that a copy between arrays of DIFFERENT shape is
+// refused, wherever the copy happens. Go rejects every one of these -- "cannot use s
+// (variable of type [3]int) as [2]int value in assignment" -- and each was accepted,
+// silently: the copy is sized by the DESTINATION, so `var d [2]int; d = s` over a
+// [3]int printed the first two elements and said nothing at all.
+//
+// The element type counts as much as the extents: a [2]uint8 into a [2]int is two
+// bytes read as two ints.
+//
+// The accepting half is here because the check must not narrow what may be copied.
+// A DEFINED array type and the unnamed spelling of the same shape are assignable in
+// both directions, which is Go's rule for a named type and its underlying one, so
+// the comparison is by shape and never by name. (Two DIFFERENT defined names of the
+// same shape are still accepted, where Go refuses them; that is the named-type
+// distinctness question, not this one.)
+func TestEmitCArrayShapeMismatch(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "assign a longer array",
+			src: `var s = [3]int{1, 2, 3}
+
+func main() {
+	var d [2]int
+	d = s
+	println(d[0])
+}
+`,
+			want: "cannot use [3]int as [2]int in assignment",
+		},
+		{
+			name: "assign through a field",
+			src: `type A struct{ f [3]int }
+
+type B struct{ g [2]int }
+
+var a A
+
+var b B
+
+func main() {
+	b.g = a.f
+	println(b.g[0])
+}
+`,
+			want: "cannot use [3]int as [2]int in assignment",
+		},
+		{
+			name: "assign a row of the wrong width",
+			src: `var pool [3][2]int
+
+func main() {
+	pool[1] = [3]int{1, 2, 3}
+	println(pool[1][0])
+}
+`,
+			want: "cannot use [3]int as [2]int in assignment",
+		},
+		{
+			name: "assign a different element type",
+			src: `var s = [2]uint8{1, 2}
+
+func main() {
+	var d [2]int
+	d = s
+	println(d[0])
+}
+`,
+			want: "cannot use [2]uint8 as [2]int in assignment",
+		},
+		{
+			name: "assign through a pointer",
+			src: `var s = [3]int{1, 2, 3}
+
+func main() {
+	p := &s
+	var d [2]int
+	d = *p
+	println(d[0])
+}
+`,
+			want: "cannot use [3]int as [2]int in assignment",
+		},
+		{
+			name: "declare from a longer array",
+			src: `var s = [3]int{1, 2, 3}
+
+func main() {
+	var d [2]int = s
+	println(d[0])
+}
+`,
+			want: "cannot use [3]int as [2]int in variable declaration",
+		},
+		{
+			name: "declare from a field of the wrong width",
+			src: `type H struct{ f [3]int }
+
+var h H
+
+func main() {
+	var d [2]int = h.f
+	println(d[0])
+}
+`,
+			want: "cannot use [3]int as [2]int in variable declaration",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted a copy between arrays of different shape:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+	// Every shape the check must let through: a defined array type and the unnamed
+	// spelling of it, in both directions, and each source arrayShapeOf reads.
+	accepts := `type Row [2]int
+
+type H struct{ f [2]int }
+
+var s = [2]int{1, 2}
+
+var r = Row{3, 4}
+
+var h = H{[2]int{5, 6}}
+
+var pool = [2][2]int{{7, 8}, {9, 10}}
+
+func mk() [2]int { return [2]int{11, 12} }
+
+func main() {
+	var d [2]int
+	d = s
+	d = r
+	d = h.f
+	d = pool[1]
+	d = mk()
+	d = [2]int{13, 14}
+	p := &s
+	d = *p
+	var e2 [2]int = h.f
+	var g Row = s
+	println(d[0], e2[0], g[0])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(accepts)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Errorf("EmitC refused a copy between arrays of the SAME shape: %v", err)
+	}
+}
+
 // TestEmitCRem pins the remainder operator: "%" maps to C's, binds at MulOp
 // precedence, and takes the same zero-divisor guard "/" does, since both are
 // undefined in C. A literal divisor is provably non-zero and skips the guard.

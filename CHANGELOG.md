@@ -185,6 +185,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A copy between arrays of different SHAPE no longer builds.** `var d [2]int; d = s`
+  for a `[3]int` `s` compiled, printed the first two elements and said nothing; so did
+  `b.g = a.f`, `pool[1] = [3]int{1, 2, 3}` and `var d [2]int = s`. Go rejects every one
+  — *cannot use s (variable of type [3]int) as [2]int value in assignment* — and the
+  copy here is sized by the DESTINATION, so what got through read past the end of a
+  shorter source or dropped what did not fit. The element type counts as much as the
+  extents: a `[2]uint8` into a `[2]int` was two bytes read as two ints.
+
+  The comparison is by shape and never by name, so a defined array type and the
+  unnamed spelling of it stay assignable in both directions, as they are in Go. What
+  is checked is what the program wrote down: a source whose shape cannot be read off
+  the expression is passed, not refused. Two *different* defined names of one shape
+  are still accepted, where Go refuses them — that is the named-type distinctness
+  question, and it is open. So is the ARGUMENT position: `use(s)` still passes a
+  `[3]int` to a `[2]int` parameter, the parameter's extents not being recorded
+  anywhere the call can read them.
+
 - **A cycle among the package variables' initializers no longer builds.** `var a int =
   b` beside `var b int = a` compiled and left both zero, each having read the other
   before it was written; Go refuses such a program, there being no order in which
