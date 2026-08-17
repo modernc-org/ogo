@@ -7458,26 +7458,20 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 // and its extents. An array has no C value type, so what this returns is the
 // storage's name, which is what a copy needs.
 func (e *emitter) arrayReturnOperand(ast []int32) (string, arrDim, bool) {
-	if nm, ok := e.exprIdent(ast); ok {
-		if a, ok := e.arrayVar(nm); ok {
-			return e.varRef(nm), a, true
-		}
+	// Whatever the copy can read from, the return can: an array variable, a
+	// dereferenced pointer to one, an array reached through a chain of fields and
+	// indexes, and a literal, which is bound to a temporary of this frame. Nothing
+	// here outlives the copy -- the memcpy IS the return -- so a source local to
+	// this frame, the literal's temporary included, costs nothing.
+	a, ok := e.arrayShapeOf(ast)
+	if !ok {
 		return "", arrDim{}, false
 	}
-	// `return [3]int{1, 2, 3}`: bound to a temporary of this frame, which the copy
-	// into the caller's out parameter then reads. The frame does not outlive the
-	// copy -- the memcpy is the return -- so the literal's storage being local costs
-	// nothing here.
-	if fac, ok := e.soleFactorNode(ast); ok {
-		if typeAST, _, ok := e.factorArrayLit(fac); ok {
-			if a, isArray := e.arrayDim(typeAST); isArray {
-				if name, ok := e.hoistArrayLitExpr(ast); ok {
-					return name, a, true
-				}
-			}
-		}
+	text, ok := e.arraySourceC(ast)
+	if !ok {
+		return "", arrDim{}, false
 	}
-	return "", arrDim{}, false
+	return text, a, true
 }
 
 // arrayResultCType is the C type of the out parameter an array result is passed

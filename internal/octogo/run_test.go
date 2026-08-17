@@ -5207,6 +5207,60 @@ func main() {
 		want: "1 2 3\n",
 	},
 	{
+		// An array RETURNED through a chain. The return knew two sources, an array
+		// variable and an array literal, so returning a row of a table, a field, a
+		// nested field or a dereferenced pointer failed with "an array result must be
+		// returned as a variable or an array literal" -- of a value the program had
+		// written the type of. Returning a row is how a table is read.
+		//
+		// The local case belongs here for the reason the returned literal does: the
+		// memcpy into the caller's storage IS the return, so a source in this frame
+		// does not outlive it.
+		name: "returning an array reached through a chain",
+		src: `type Row [2]int
+
+type Inner struct {
+	g [2]int
+}
+
+type Cal struct {
+	head  Row
+	rows  [2][2]int
+	inner Inner
+}
+
+var cal = Cal{Row{1, 2}, [2][2]int{{3, 4}, {5, 6}}, Inner{[2]int{7, 8}}}
+
+func row(i int) [2]int { return cal.rows[i] }
+
+func head() [2]int { return cal.head }
+
+func nested() [2]int { return cal.inner.g }
+
+func through(p *[2]int) [2]int { return *p }
+
+func local() [2]int {
+	c := Cal{Row{9, 10}, [2][2]int{{0, 0}, {0, 0}}, Inner{[2]int{0, 0}}}
+	return c.head
+}
+
+func main() {
+	a := row(1)
+	b := head()
+	c := nested()
+	d := through(&cal.rows[0])
+	e := local()
+	println(a[0], a[1])
+	println(b[0], c[1], d[0], e[1])
+
+	// The result is a copy: writing to it leaves the table alone.
+	a[0] = 99
+	println(a[0], cal.rows[1][0])
+}
+`,
+		want: "5 6\n1 8 3 10\n99 5\n",
+	},
+	{
 		name: "parentheses where the parser needs them",
 		src: `type Row [3]int
 

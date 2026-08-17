@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array may be RETURNED through a chain** — `return cal.rows[i]` for a row of a
+  table, `return h.f` for an array-typed field, a nested one, and `return *p`. The
+  return knew an array variable and an array literal and nothing else, so every
+  longer route was refused with *an array result must be returned as a variable or an
+  array literal*, of a value whose type the program had written down. Returning a row
+  is how a table is read. A source in the returning frame — a field of a local struct
+  — is sound for the reason a returned literal is: the copy into the caller's storage
+  *is* the return.
+
 - **Two arrays compare correctly when either is reached through a chain.**
   `table[0] == table[1]` answered **false** for two identical rows, and so did
   `a.f == b.f`, `a.rows[0] == b.rows[0]` and `*p == v`. The operand reader took a bare
