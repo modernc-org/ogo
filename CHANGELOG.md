@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`range` over an array of ARRAYS yields rows** — `for _, row := range table` over a
+  `[3][2]int`. The loop declared its value with the array's innermost element type,
+  `int row = table[i]`, which no C compiler accepts. The same loop over a *slice* of
+  rows was always right: a slice's element type is the row's typedef, and that is what
+  tells the loop it has an array to copy, where an array container handed it the
+  innermost element. Rows are copied, as Go copies a range value, in the `:=` form and
+  the `=` one alike.
+
 - **An array may be RETURNED through a chain** — `return cal.rows[i]` for a row of a
   table, `return h.f` for an array-typed field, a nested one, and `return *p`. The
   return knew an array variable and an array literal and nothing else, so every

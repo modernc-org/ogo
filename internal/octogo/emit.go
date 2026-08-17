@@ -12948,11 +12948,26 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
 			e.noteRangeValueHolder(h.rangeExpr, val, elem)
 			// An ARRAY element is COPIED, as Go copies it, and C cannot assign one:
-			// `T v = xs.ptr[i]` is not an initializer it accepts.
-			if a, isArr := e.namedArrays[elem]; isArr && h.rangeDef {
+			// `T v = xs.ptr[i]` is not an initializer it accepts. A ":=" clause
+			// declares the value here; an "=" clause writes into a variable that
+			// already exists, so it emits the copy alone -- and asks first that the
+			// two are the same array, since the copy is sized by the destination.
+			if a, isArr := e.namedArrays[elem]; isArr {
 				lines = append(lines, func() {
-					e.locals[val] = elem
-					e.emitArrayCopy(val, access, a)
+					if h.rangeDef {
+						e.locals[val] = elem
+						e.emitArrayCopy(val, access, a)
+						return
+					}
+					if dst, isArr := e.arrayVar(val); isArr &&
+						(dst.elem != a.elem || dst.declSuffix() != a.declSuffix()) {
+						e.fail("cannot use %s as %s in range clause",
+							e.goArrayTypeName(a), e.goArrayTypeName(dst))
+						return
+					}
+					e.includes["string.h"] = true
+					e.ind()
+					e.emit("memcpy(" + val + ", " + access + ", sizeof(" + val + "));\n")
 				})
 			} else {
 				decl := ""
@@ -12989,7 +13004,12 @@ func (e *emitter) emitRangeArray(h *forHeader, body []int32, key string, a arrDi
 	e.locals[key] = "int"
 	e.ind()
 	e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
-	e.emitLoopBody(body, e.rangeValueInject(h, key, a.elem, base+"["+key+"]"))
+	// sliceElemOfArray, not a.elem: ranging a [2][3]int yields ROWS, and a.elem is
+	// the innermost element, `int`. The row's typedef is what tells the value inject
+	// it has an array to COPY -- the same registry it reads for a slice of arrays,
+	// which is why `for _, row := range xs` was right where `range m` declared
+	// `int row = m[i]` and did not compile.
+	e.emitLoopBody(body, e.rangeValueInject(h, key, e.sliceElemOfArray(a), base+"["+key+"]"))
 }
 
 // rangeArrayResultVar binds a range operand that is a call returning an ARRAY to a

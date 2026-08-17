@@ -12675,6 +12675,62 @@ func main() {
 		want: "10\n20\n60\n7\n",
 	},
 	{
+		// Ranging an array of ARRAYS, whose value is a row. The loop declared the
+		// value with the array's innermost element type -- `int row = table[i]` for a
+		// [3][2]int -- which no C compiler accepts. The same loop over a SLICE of
+		// rows was always right, because a slice's element type is the row's typedef
+		// and the value inject reads exactly that registry to know it has an array
+		// to copy; an array container handed it the innermost element instead.
+		//
+		// The value is a COPY, as Go's range value is, which the third block checks:
+		// a lowering that aliased the row would pass every other line here.
+		name: "range over an array of arrays",
+		src: `type Row [2]int
+
+var table = [3][2]int{{1, 2}, {3, 4}, {5, 6}}
+
+var named = [2]Row{{7, 8}, {9, 10}}
+
+var cube = [2][2][2]int{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}
+
+func main() {
+	sum := 0
+	for i, row := range table {
+		sum += i*100 + row[0] + row[1]
+	}
+	println(sum)
+
+	// A defined row type, and a rank above two: the value is an array either way.
+	nsum := 0
+	for _, row := range named {
+		nsum += row[0] + row[1]
+	}
+	csum := 0
+	for _, plane := range cube {
+		for _, row := range plane {
+			csum += row[0] + row[1]
+		}
+	}
+	println(nsum, csum)
+
+	// Writing to the value leaves the table alone.
+	for _, row := range table {
+		row[0] = 99
+	}
+	println(table[0][0], table[1][0])
+
+	// The assigning form, whose value variable is declared outside the loop and so
+	// still holds the last row afterwards.
+	var last [2]int
+	var at int
+	for at, last = range table {
+	}
+	println(at, last[0], last[1])
+}
+`,
+		want: "321\n34 36\n1 3\n2 5 6\n",
+	},
+	{
 		name: "three-clause for loops",
 		src: `func main() {
 	sum := 0
