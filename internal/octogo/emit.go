@@ -9317,6 +9317,19 @@ func (e *emitter) exprReprCType(ast []int32) (string, bool) {
 // predeclared type or an imported package qualifier.
 func (e *emitter) isUserType(ctype string) bool { return e.isStruct(ctype) || e.namedTypes[ctype] }
 
+// isMethodBase reports whether a C type name can carry a method set. It is
+// isUserType plus a defined ARRAY type, which takes a typedef of its own and so
+// never reaches the namedTypes registry the other two are in. A MINTED array name
+// lands here too and costs nothing: it has no methods, so the funcRet lookup beside
+// this one comes up empty and the call is not read as a dispatch.
+func (e *emitter) isMethodBase(ctype string) bool {
+	if e.isUserType(ctype) {
+		return true
+	}
+	_, isArr := e.namedArrays[ctype]
+	return isArr
+}
+
 // convType reports the C type of a conversion `T(x)` when recv names a type usable
 // in one: a predeclared numeric type, or a named type over such a type. A cast
 // `(T)(x)` expresses it. bool and string are not numeric conversions -- bool has no
@@ -10112,6 +10125,11 @@ type accessCur struct {
 	elem  string   // a slice's or array's element type
 	dims  []string // an array's remaining extents, outermost first
 	slice bool
+	// name is the DEFINED name of an ARRAY the chain has reached, when it was
+	// declared as one. An array has no ctype -- C models no array value type -- so
+	// this is the only thing that says which type it is, and therefore which methods
+	// it has. Empty for an array written out and for every other shape.
+	name string
 }
 
 // accessBase resolves the start of a chain: a slice variable, an array variable, a
@@ -10160,7 +10178,9 @@ func (e *emitter) accessSelect(cur accessCur, field string) (accessCur, bool) {
 		return accessCur{}, false // only a plain struct value has fields
 	}
 	if a, ok := e.structFieldArray(cur.ctype, field); ok {
-		return accessCur{elem: a.elem, dims: a.bounds()}, true
+		// a.name carries the field's DEFINED array type, which is what a method on
+		// it dispatches through: `h.f.sum()` for a `type Row [2]int` field.
+		return accessCur{elem: a.elem, dims: a.bounds(), name: a.name}, true
 	}
 	ct, ok := e.structFieldType(cur.ctype, field)
 	if !ok {
@@ -14575,6 +14595,11 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				continue
 			}
 			bt := methodBaseType(cur.ctype)
+			if bt == "" {
+				// An ARRAY the chain has reached has no C value type, so the DEFINED
+				// name it was declared with is what carries its method set.
+				bt = cur.name
+			}
 			cname := methodCName(bt, field)
 			rts, okm := e.funcRet[cname]
 			// A name the type has no method for is not a dispatch: it is a FIELD,
@@ -14586,7 +14611,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			// The two-step shape `x.run(arg)` makes the same distinction the same
 			// way round; this chain used to take any Selector-then-CallSuffix for a
 			// method and fail when the lookup came up empty.
-			if okm && i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
+			if okm && i+1 < len(steps) && steps[i+1].sym == CallSuffix && bt != "" && e.isMethodBase(bt) {
 				// A void method (no result) is valid as the final step of a call
 				// statement -- `xs[i].update()` mutating an element in place -- so 0
 				// results is admitted; a further step then fails on the empty type. A
@@ -17649,8 +17674,17 @@ func (e *emitter) methodOnField(recv string, suffix []Node) (fields []string, cn
 		fields = append(fields, e.soleIdent(n.ast))
 	}
 	ct, ok := e.fieldType(recv, fields)
-	if !ok || !e.isUserType(methodBaseType(ct)) {
-		return nil, "", false, false
+	if !ok || !e.isMethodBase(methodBaseType(ct)) {
+		// An ARRAY field: fieldType answers with its ELEMENT, the extents living
+		// beside it, so the DEFINED name -- which is what carries the method set --
+		// is only in fieldArray's answer. Without this a MULTI-RESULT method on such
+		// a field reported a target/result count mismatch, the shape having been read
+		// as no method at all.
+		a, isArr := e.fieldArray(recv, fields)
+		if !isArr || a.name == "" {
+			return nil, "", false, false
+		}
+		ct = a.name
 	}
 	cname = methodCName(methodBaseType(ct), e.soleIdent(sels[len(sels)-1].ast))
 	return fields, cname, e.methodPtr[cname], true

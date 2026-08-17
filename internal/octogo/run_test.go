@@ -4687,6 +4687,65 @@ func main() {
 		want: "99 3 103\n5 9 8 6\n1 9\n",
 	},
 	{
+		// A method on an array-typed FIELD. The same method on a struct-typed field
+		// has always worked, in both statement and expression position, so this was
+		// the array case alone: the chain walk reaches an array with no C value type,
+		// and the dispatch keyed on that type being non-empty. The field's DEFINED
+		// name travels with its extents now, which is what the method set hangs off.
+		//
+		// The last line is the one that matters: a value receiver is a COPY, so a
+		// method writing to it leaves the field alone.
+		name: "a method on an array-typed struct field",
+		src: `type Row [2]int
+
+type I struct {
+	g Row
+}
+
+type H struct {
+	f     Row
+	inner I
+}
+
+func (r Row) sum() int { return r[0] + r[1] }
+
+func (r Row) pair() (int, int) { return r[0], r[1] }
+
+func (r Row) clobber() int {
+	r[0] = 99
+	return r[0]
+}
+
+func (r *Row) set(i, v int) { r[i] = v }
+
+var h H
+
+var hs [2]H
+
+func main() {
+	h.f[0], h.f[1] = 3, 4
+	h.inner.g[0], h.inner.g[1] = 5, 6
+
+	println(h.f.sum(), h.inner.g.sum())
+	h.f.set(0, 10)
+	h.inner.g.set(1, 20)
+	println(h.f.sum(), h.inner.g.sum())
+
+	// Through a pointer to the struct, and through an array of structs.
+	p := &h
+	hs[1].f[0] = 7
+	println(p.f.sum(), hs[1].f.sum())
+
+	// A multi-result method on such a field, which takes another path.
+	a, b := h.f.pair()
+	println(a, b)
+
+	println(h.f.clobber(), h.f[0])
+}
+`,
+		want: "7 11\n14 25\n14 7\n10 4\n99 10\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what

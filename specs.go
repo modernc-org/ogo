@@ -1033,9 +1033,12 @@
 // value receiver is a COPY as Go's is. It travels as a pointer -- a parameter of
 // array type corrupts unrelated code on this target -- and the method copies from it
 // on entry, so writing to a value receiver leaves the caller's array alone. The
-// receiver may be a variable, a package-level one, a pointer to either, or a written
-// out "(&v).m()"; reaching one through a struct FIELD or an array ELEMENT is not
-// wired up yet.
+// receiver may be a variable, a package-level one, a pointer to either, a written out
+// "(&v).m()", or a struct FIELD of the type -- "h.f.sum()", at any depth and through
+// a pointer to the struct. An array ELEMENT is the one that is not wired up:
+// "pool[1].m()" over a "[2]Row" is refused, an array of a defined array type being
+// resolved to its extents, so nothing of the element type's name survives to hang a
+// method on.
 //
 // A defined type over a channel is a channel too: a send, a receive and a select
 // clause all reach it. The one thing such a type gives up is a method of its own,

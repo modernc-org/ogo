@@ -20,6 +20,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A method may be called on an array-typed struct field** — `h.f.sum()` and
+  `h.f.set(0, 7)` for a `type Row [2]int` field, at any depth, through a pointer to
+  the struct, and in the multiple-assignment form `a, b := h.f.pair()`. The same
+  method on a *struct*-typed field has always worked in both positions, so this was
+  the array case alone: the chain walk reaches an array with no C value type, and the
+  dispatch keyed on that type being non-empty. The field's defined name travels with
+  its extents now. A value receiver is still a copy, so a method writing to one
+  leaves the field alone.
+
+  An array **element** receiver, `pool[1].m()` over a `[2]Row`, is still refused: an
+  array of a defined array type is resolved to its extents, so nothing of the element
+  type's name survives to hang a method on.
+
 - **An array reached through a chain can be copied** — `x := h.f` for an array-typed
   struct field, a nested one, `z := pool[1]` for an element of an array of arrays,
   and `w := h.rows[1]`. `b := a` over a whole array variable has always been the
