@@ -36,7 +36,12 @@ import (
 //
 // 39 -> 34 closed a category that was plainly wrong rather than merely unaligned: a
 // call spaced off what it is called ON ("pick(0) (3, 4)", "(dbl) (21)", "} ()").
-const gofmtDisagreements = 34
+// 34 -> 31 closed the other one, a numeric literal's base prefix and exponent left in
+// upper case ("0B1010", "2.5E2"). What is left is the alignment of consecutive
+// one-line declarations, which ogo fmt does not do at all, and gofmt's PRECEDENCE
+// spacing, which tightens the higher-binding half of a mixed expression ("i*10 + j",
+// "n%2 == 0", "fib(n-1)").
+const gofmtDisagreements = 31
 
 // TestFormatMatchesGofmt formats every run-corpus program with `ogo fmt` and with
 // real gofmt, and counts how many come out identical.

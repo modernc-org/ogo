@@ -424,6 +424,42 @@ func isOperandEnd(s Symbol) bool {
 	return false
 }
 
+// normalizedNumber lower-cases a numeric literal's base prefix and exponent letter,
+// which is what gofmt writes: "0XFF" becomes "0xFF", "0B1010" becomes "0b1010" and
+// "2.5E2" becomes "2.5e2". The DIGITS are left as written -- gofmt leaves "0xdeadBEEF"
+// alone -- so only the two marker positions change.
+//
+// Anything that is not an INT or a FLOAT token comes back untouched, and so does a
+// literal that is already lower-case, which is nearly all of them.
+func normalizedNumber(ch Symbol, src []byte) []byte {
+	if ch != INT && ch != FLOAT {
+		return src
+	}
+	// Which exponent letter this literal can have depends on its base: "E" is a
+	// decimal exponent and a HEX DIGIT, so lower-casing it inside a hex literal would
+	// rewrite "0xE5" and "0XABCDEF", which gofmt leaves exactly as written. "P" is
+	// the hexadecimal float's exponent and is no digit at all.
+	hex := len(src) > 1 && src[0] == '0' && (src[1] == 'x' || src[1] == 'X')
+	var out []byte
+	for i, b := range src {
+		switch {
+		// The base prefix, which is the second byte of a literal starting with "0".
+		case i == 1 && src[0] == '0' && (b == 'X' || b == 'B' || b == 'O'):
+		case b == 'E' && !hex, b == 'P' && hex:
+		default:
+			continue
+		}
+		if out == nil {
+			out = append(out, src...)
+		}
+		out[i] = b | 0x20 // to lower case
+	}
+	if out == nil {
+		return src
+	}
+	return out
+}
+
 // isAssignOp reports whether s is an assignment operator, for spacing: the plain
 // and short forms, and the compound ones, which are spaced identically ("x += 1").
 func isAssignOp(s Symbol) bool {
@@ -1161,7 +1197,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				tokIdx := n
 				tok := f.p.Token(tokIdx)
 				sep := tok.SepBytes()
-				src := tok.SrcBytes()
+				src := normalizedNumber(Symbol(tok.Ch), tok.SrcBytes())
 				var indentDelta int32
 				if n == c.undentDeclOpen || n == c.undentDeclClose {
 					indentDelta = -1 // a grouped declaration's keyword and closing ")"

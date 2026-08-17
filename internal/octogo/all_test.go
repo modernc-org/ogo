@@ -748,6 +748,36 @@ func main() {
 	formatRoundTrip(t, "call after call", in, want)
 }
 
+// TestFormatNumberCase pins gofmt's normalization of a numeric literal: the base
+// prefix and the exponent letter are lower-cased, and the DIGITS are left exactly as
+// written. Nothing normalized them at all, so `0B1010`, `0X2p+3` and `2.5E2` reached
+// the output as the program spelled them.
+//
+// The hex cases are the reason this is not a blanket lower-casing: "E" is a hex
+// DIGIT, so `0xE5` and `0XABCDEF` keep it, while "P" is no digit and is the
+// hexadecimal float's exponent. Every line was checked against gofmt.
+func TestFormatNumberCase(t *testing.T) {
+	const in = `func main() {
+println(0XFF, 0xff, 0Xab, 0B1010, 0O17, 0o17)
+println(0xE5, 0XABCDEF, 0xdeadBEEF)
+println(1E5, 1e5, 2.5E-2)
+var a float64 = 0X2p+3
+var b float64 = 0x1.8P3
+println(a, b)
+}
+`
+	const want = `func main() {
+	println(0xFF, 0xff, 0xab, 0b1010, 0o17, 0o17)
+	println(0xE5, 0xABCDEF, 0xdeadBEEF)
+	println(1e5, 1e5, 2.5e-2)
+	var a float64 = 0x2p+3
+	var b float64 = 0x1.8p3
+	println(a, b)
+}
+`
+	formatRoundTrip(t, "number case", in, want)
+}
+
 // formatRoundTrip formats in, checks it against want, and formats the result again:
 // a rule that is not idempotent is a rule that fights the next save.
 func formatRoundTrip(t *testing.T, what, in, want string) {
