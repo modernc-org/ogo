@@ -3086,7 +3086,7 @@ func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
 	if !isVar || !d.typeName.IsValid() {
 		return "", false // an unresolved operand: its own check reports it
 	}
-	iface := d.typeName.Src()
+	iface := d.declaredTypeName()
 	if _, isIface := f.interfaceMethodsNamed(s, iface); !isIface {
 		return "", false
 	}
@@ -3105,25 +3105,36 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	iface, hasIface := f.typeSwitchIface(cs, ts)
 	if !hasIface {
 		if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar && d.typeName.IsValid() {
-			f.err(ts.operand.Position(), "invalid operation: %s (variable of type %s) is not an interface", ts.operand.Src(), d.typeName.Src())
+			f.err(ts.operand.Position(), "invalid operation: %s (variable of type %s) is not an interface", ts.operand.Src(), d.declaredTypeName())
 		}
 		return
 	}
 	exprs, isDefault := f.clauseCaseExprs(clause)
-	base, single := Token{}, len(exprs) == 1 && !isDefault
+	base, baseQual := Token{}, Token{}
+	single := len(exprs) == 1 && !isDefault
+	// caseName renders a case's type as WRITTEN, "geo.Quad" and not the bare "Quad"
+	// the token holds: what follows asks the method-set questions BY NAME, and the
+	// bare one resolves in this package rather than where the type lives.
+	caseName := func(nm, ql Token) string {
+		if ql.IsValid() {
+			return ql.Src() + "." + nm.Src()
+		}
+		return nm.Src()
+	}
 	for _, ex := range exprs {
 		// An INTERFACE named bare, `case T:`. It matches on the method set, so it
 		// needs no implements check of its own: what may be asked of the name is
 		// only that it be an interface, which is what recognised it.
-		if nm, isIface := f.caseInterfaceName(cs, ex); isIface {
-			if seen[nm.Src()] {
-				f.err(nm.Position(), "duplicate case %s in type switch", nm.Src())
+		if nm, ql, isIface := f.caseInterfaceName(cs, ex); isIface {
+			written := caseName(nm, ql)
+			if seen[written] {
+				f.err(nm.Position(), "duplicate case %s in type switch", written)
 			}
-			seen[nm.Src()] = true
-			base = nm
+			seen[written] = true
+			base, baseQual = nm, ql
 			continue
 		}
-		nm, isNil, ok := f.caseTypeName(cs, ex)
+		nm, ql, isNil, ok := f.caseTypeName(cs, ex)
 		switch {
 		case !ok:
 			f.err(f.tok(ex.Pos()).Position(), "a type switch case names a pointer type, an interface type, or nil")
@@ -3135,20 +3146,21 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			seen["nil"], single = true, false
 			continue
 		}
-		if seen[nm.Src()] {
-			f.err(nm.Position(), "duplicate case *%s in type switch", nm.Src())
+		written := caseName(nm, ql)
+		if seen[written] {
+			f.err(nm.Position(), "duplicate case *%s in type switch", written)
 		}
-		seen[nm.Src()] = true
-		base = nm
-		if _, isIface := f.interfaceMethodsNamed(cs, nm.Src()); isIface {
+		seen[written] = true
+		base, baseQual = nm, ql
+		if _, isIface := f.interfaceMethodsNamed(cs, written); isIface {
 			continue // interface to interface, which the emitter reports for now
 		}
-		missing, _, wrong, have, want, ok := f.implements(cs, nm.Src(), true, iface)
+		missing, _, wrong, have, want, ok := f.implements(cs, written, true, iface)
 		if ok {
 			continue
 		}
 		head := fmt.Sprintf("impossible type switch case: %s.(type) case *%s: *%s does not implement %s",
-			ts.operand.Src(), nm.Src(), nm.Src(), iface)
+			ts.operand.Src(), written, written, iface)
 		switch {
 		case missing != "":
 			f.err(nm.Position(), "%s (missing method %s)", head, missing)
@@ -3164,11 +3176,16 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	vd := &VarDeclaration{declaration: declaration{token: ts.name}}
 	switch {
 	case single && base.IsValid():
-		vd.typeName, vd.isPtr = base, true
+		// The qualifier travels with the name, or the bound variable carries a type
+		// this package cannot resolve and every field read off it goes unchecked.
+		vd.typeName, vd.typeQual, vd.isPtr = base, baseQual, true
 	default:
 		vd.typeName = f.tok(0)
 		if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar {
-			vd.typeName = d.typeName
+			// Bound at the operand's own type, qualifier and all: several types named
+			// (or none) leaves it the interface, and an imported one is only an
+			// interface under the name that says which package it is from.
+			vd.typeName, vd.typeQual = d.typeName, d.typeQual
 		}
 	}
 	// The clause scope is fresh, so this shadows the statement-scope declaration
@@ -3206,17 +3223,17 @@ func (f *File) clauseCaseExprs(clause Node) (exprs []Node, isDefault bool) {
 // caseTypeName reads a type-switch case expression -- "*T", or "nil" -- as the type
 // it names. A case reads as an EXPRESSION, the grammar having no other place to put
 // one, so "*T" arrives as a deref of a name rather than as a type.
-func (f *File) caseTypeName(s *Scope, ex Node) (name Token, isNil, ok bool) {
+func (f *File) caseTypeName(s *Scope, ex Node) (name, qual Token, isNil, ok bool) {
 	if _, isNil := f.nilOperand(s, ex); isNil {
-		return name, true, true
+		return name, Token{}, true, true
 	}
 	ue, isUE := f.soleUnaryExpr(ex)
 	if !isUE {
-		return name, false, false
+		return name, Token{}, false, false
 	}
 	kids := slices.Collect(it(ue.ast))
 	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
-		return name, false, false
+		return name, Token{}, false, false
 	}
 	star := false
 	for c := range it(kids[0].ast) {
@@ -3225,13 +3242,45 @@ func (f *File) caseTypeName(s *Scope, ex Node) (name Token, isNil, ok bool) {
 		}
 	}
 	if !star {
-		return name, false, false
+		return name, Token{}, false, false
 	}
-	id, isID := f.exprIdent(kids[1])
-	if !isID {
-		return name, false, false
+	if id, isID := f.exprIdent(kids[1]); isID {
+		return id, Token{}, false, true
 	}
-	return id, false, true
+	// `case *geo.Quad:` -- the same case naming another package's type. A case reads
+	// as an EXPRESSION, so this arrives as a deref of a SELECTOR rather than of a
+	// name, which the bare-identifier read above answers no to: every qualified case
+	// was reported as "a type switch case names a pointer type, an interface type, or
+	// nil" about one that names a pointer type.
+	if ql, nm, isQual := f.factorQualifiedIdent(s, kids[1]); isQual {
+		return nm, ql, false, true
+	}
+	return name, Token{}, false, false
+}
+
+// factorQualifiedIdent reads a Factor spelled "qual.member" -- an import qualifier
+// and one selector -- and returns both tokens. It is exprIdent for the qualified
+// spelling, and exists because the positions that read a TYPE out of an expression
+// (a type switch case) have only the expression grammar to read it from.
+func (f *File) factorQualifiedIdent(s *Scope, n Node) (qual, member Token, ok bool) {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return Token{}, Token{}, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return Token{}, Token{}, false
+	}
+	for c := range it(steps[0].ast) {
+		if c.sym == 0 && f.ch(c.tok) == IDENT {
+			member = f.tok(c.tok)
+		}
+	}
+	qual = f.tok(kids[0].tok)
+	if !member.IsValid() || !f.isImportQualifier(s, qual.Src()) {
+		return Token{}, Token{}, false
+	}
+	return qual, member, true
 }
 
 // caseInterfaceName recognises a case naming an INTERFACE type, written bare:
@@ -3242,15 +3291,28 @@ func (f *File) caseTypeName(s *Scope, ex Node) (name Token, isNil, ok bool) {
 // A clause naming an interface matches on the METHOD SET rather than on identity:
 // any dynamic type implementing T takes it, so the first such clause wins and the
 // order the clauses are written in is what decides between two a type satisfies.
-func (f *File) caseInterfaceName(s *Scope, ex Node) (name Token, ok bool) {
-	id, isID := f.exprSoleIdent(ex)
-	if !isID {
-		return Token{}, false
+func (f *File) caseInterfaceName(s *Scope, ex Node) (name, qual Token, ok bool) {
+	if id, isID := f.exprSoleIdent(ex); isID {
+		if _, isIface := f.interfaceMethodsNamed(s, id.Src()); isIface {
+			return id, Token{}, true
+		}
+		return Token{}, Token{}, false
 	}
-	if _, isIface := f.interfaceMethodsNamed(s, id.Src()); !isIface {
-		return Token{}, false
+	// `case geo.Sizer:` -- another package's interface. Asked here rather than left
+	// to the pointer shape below, which it does not have and which would report it as
+	// naming no type at all.
+	fac, isFac := f.soleFactor(ex)
+	if !isFac {
+		return Token{}, Token{}, false
 	}
-	return id, true
+	ql, nm, isQual := f.factorQualifiedIdent(s, fac)
+	if !isQual {
+		return Token{}, Token{}, false
+	}
+	if _, isIface := f.interfaceMethodsNamed(s, ql.Src()+"."+nm.Src()); !isIface {
+		return Token{}, Token{}, false
+	}
+	return nm, ql, true
 }
 
 // markClauseFallthroughs records every "fallthrough" that is legally placed --
@@ -4230,10 +4292,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	inferKinds := len(lhs) == len(rhs)
 	// "v, ok := x.(T)" is two names from one expression, which inferKinds does not
 	// cover: v carries the asserted type and ok is a bool.
-	assertBase, assertOK := Token{}, false
+	assertBase, assertQual, assertOK := Token{}, Token{}, false
 	if len(rhs) == 1 && len(lhs) == 2 {
-		if _, tn, isAssert := f.typeAssertion(rhs[0]); isAssert {
+		if _, tn, isAssert := f.typeAssertion(s, rhs[0]); isAssert {
 			assertBase, assertOK = namedTypeToken(tn)
+			// The qualifier travels with the name: `q, ok := s.(*geo.Quad)` binds a q
+			// of geo's type, and without it q carries a bare "Quad" this package
+			// cannot resolve, so every field and method read off q goes unchecked.
+			assertQual = namedTypeQual(tn)
 			assertOK = assertOK && f.isPointerType(s, tn)
 		}
 	}
@@ -4259,7 +4325,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if assertOK {
 			switch i {
 			case 0:
-				vd.typeName, vd.isPtr = assertBase, true
+				vd.typeName, vd.typeQual, vd.isPtr = assertBase, assertQual, true
 			case 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
 			}
@@ -4788,7 +4854,7 @@ func (f *File) directCallResultCount(s *Scope, e Node) (int, bool) {
 // operand's name with the asserted type. The grammar admits the same Selector for
 // ".(type)", which belongs to a type switch and carries no Type child, so the child
 // is what tells the two apart.
-func (f *File) typeAssertion(n Node) (recv Token, typ TypeNode, ok bool) {
+func (f *File) typeAssertion(s *Scope, n Node) (recv Token, typ TypeNode, ok bool) {
 	fac, isFac := f.soleFactor(n)
 	if !isFac {
 		return recv, nil, false
@@ -4803,7 +4869,7 @@ func (f *File) typeAssertion(n Node) (recv Token, typ TypeNode, ok bool) {
 	}
 	for c := range it(steps[0].ast) {
 		if c.sym == Type {
-			return f.tok(kids[0].tok), f.typ(f.Scope, c), true
+			return f.tok(kids[0].tok), f.typ(s, c), true
 		}
 	}
 	return recv, nil, false
@@ -4811,14 +4877,19 @@ func (f *File) typeAssertion(n Node) (recv Token, typ TypeNode, ok bool) {
 
 // assertedType returns the Type a FactorSuffix asserts, for the "x.(T)" whose
 // suffix is exactly one Selector carrying a type rather than a field name.
-func (f *File) assertedType(suffix Node) (TypeNode, bool) {
+func (f *File) assertedType(s *Scope, suffix Node) (TypeNode, bool) {
 	steps := slices.Collect(it(suffix.ast))
 	if len(steps) != 1 || steps[0].sym != Selector {
 		return nil, false
 	}
 	for c := range it(steps[0].ast) {
 		if c.sym == Type {
-			return f.typ(f.Scope, c), true
+			// Resolved in the LOCAL scope, not the file's. isImportQualifier asks
+			// whether the scope holds a name of its own before answering, and the
+			// file scope holds the import itself -- so passing it made every import
+			// qualifier fail that test, and `s.(*geo.Quad)` was reported as
+			// "geo (package name) is not a type".
+			return f.typ(s, c), true
 		}
 	}
 	return nil, false
@@ -4830,7 +4901,7 @@ func (f *File) assertedType(suffix Node) (TypeNode, bool) {
 // assertion" when it cannot -- the assertion could never hold, so the program says
 // something it cannot have meant.
 func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
-	tn, ok := f.assertedType(suffix)
+	tn, ok := f.assertedType(s, suffix)
 	if !ok {
 		return false
 	}
@@ -4838,7 +4909,7 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 	if !isVar || !d.typeName.IsValid() {
 		return true // an unresolved operand: its own check reports it
 	}
-	iface := d.typeName.Src()
+	iface := d.declaredTypeName()
 	if _, isIface := f.interfaceMethodsNamed(s, iface); !isIface {
 		f.err(id.Position(), "invalid operation: %s (variable of type %s) is not an interface", id.Src(), iface)
 		return true
@@ -4847,7 +4918,12 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 	if !hasBase {
 		return true // an unnamed asserted type: nothing to check it against
 	}
-	if _, isIface := f.interfaceMethodsNamed(s, base.Src()); isIface && !f.isPointerType(s, tn) {
+	// The name as written for the LOOKUPS, the token for the position. Reading the
+	// bare name asked about a "Quad" this package does not have, so an assertion to
+	// another package's type was reported impossible -- "*Quad does not implement
+	// geo.Shape (missing method Area)" of the very type that declares Area.
+	baseName, _ := namedTypeString(tn)
+	if _, isIface := f.interfaceMethodsNamed(s, baseName); isIface && !f.isPointerType(s, tn) {
 		// Asserting to an INTERFACE, `v.(T)`, written without a star: `*T` would be
 		// a pointer TO one. It asks about the method set rather than about identity,
 		// so there is no "impossible" case to check below -- any type implementing T
@@ -4855,18 +4931,18 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 		return true
 	}
 	if !f.isPointerType(s, tn) {
-		f.err(base.Position(), "an interface holds a pointer here; assert *%s", base.Src())
+		f.err(base.Position(), "an interface holds a pointer here; assert *%s", baseName)
 		return true
 	}
-	if _, isIface := f.interfaceMethodsNamed(s, base.Src()); isIface {
+	if _, isIface := f.interfaceMethodsNamed(s, baseName); isIface {
 		return true // interface to interface, which the emitter reports for now
 	}
-	missing, _, wrong, have, want, ok := f.implements(s, base.Src(), true, iface)
+	missing, _, wrong, have, want, ok := f.implements(s, baseName, true, iface)
 	if ok {
 		return true
 	}
 	head := fmt.Sprintf("impossible type assertion: %s.(*%s): *%s does not implement %s",
-		id.Src(), base.Src(), base.Src(), iface)
+		id.Src(), baseName, baseName, iface)
 	switch {
 	case missing != "":
 		f.err(base.Position(), "%s (missing method %s)", head, missing)
@@ -5253,6 +5329,24 @@ func namedTypeToken(tn TypeNode) (Token, bool) {
 			return Token{}, false
 		}
 	}
+}
+
+// namedTypeString renders a named type as WRITTEN, qualifier included: "geo.Quad",
+// not the bare "Quad" namedTypeToken returns. Every by-NAME question -- is this an
+// interface, does it implement one -- is asked in a scope, and the bare name resolves
+// in the asking package, which is not where an imported type lives.
+//
+// namedTypeToken stays for the position: a diagnostic points at the name token, and
+// there is no token spanning both halves.
+func namedTypeString(tn TypeNode) (string, bool) {
+	nm, ok := namedTypeToken(tn)
+	if !ok {
+		return "", false
+	}
+	if q := namedTypeQual(tn); q.IsValid() {
+		return q.Src() + "." + nm.Src(), true
+	}
+	return nm.Src(), true
 }
 
 // namedTypeQual returns a named type's package qualifier ("geo" in "geo.Point"),
@@ -5779,7 +5873,7 @@ func (f *File) interfaceMethods(s *Scope, typeName Token) (map[string]*MethodSpe
 // interfaceMethodsNamed is interfaceMethods keyed by the name alone, for the
 // positions that have a written type rather than a variable's declaration.
 func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodSpecNode, bool) {
-	td, ok := s.find(name).(*TypeDeclaration)
+	td, home, ok := f.typeDeclNamed(s, name)
 	if !ok || td.TypeSpec == nil {
 		return nil, false
 	}
@@ -5788,8 +5882,37 @@ func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodS
 		return nil, false
 	}
 	set := map[string]*MethodSpecNode{}
-	f.collectIfaceMethods(s, it, set, map[string]bool{name: true})
+	// Expanded in the scope the interface was DECLARED in, not the one asking: an
+	// interface of another package embedding one of its own names means that
+	// package's name, and this scope may have no such name or a different one.
+	f.collectIfaceMethods(home, it, set, map[string]bool{name: true})
 	return set, true
+}
+
+// typeDeclNamed resolves a type name as WRITTEN -- "Shape", or the qualified
+// "geo.Shape" -- to its declaration and to the scope that declaration lives in.
+//
+// Every site that asked this asked `s.find(name)`, which answers for an unqualified
+// name only. So another package's INTERFACE was not recognised as one anywhere: a
+// pointer assigned to a variable of it was refused as "cannot use &pq (an address) as
+// geo.Shape value", the implements check silently passed anything, and the only way
+// into another package's interface was to write the conversion `geo.Shape(&pq)`,
+// which is emitted rather than checked.
+func (f *File) typeDeclNamed(s *Scope, name string) (*TypeDeclaration, *Scope, bool) {
+	qual, member, isQual := strings.Cut(name, ".")
+	if !isQual {
+		td, ok := s.find(name).(*TypeDeclaration)
+		return td, s, ok
+	}
+	if !f.isImportQualifier(s, qual) || !token.IsExported(member) {
+		return nil, nil, false
+	}
+	imp, ok := f.Scope.Declarations[qual].(*ImportDeclaration)
+	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
+		return nil, nil, false
+	}
+	td, ok := imp.Import.Pkg.Scope.Declarations[member].(*TypeDeclaration)
+	return td, imp.Import.Pkg.Scope, ok
 }
 
 // collectIfaceMethods adds an interface's methods to set, expanding every EMBEDDED
@@ -5866,7 +5989,7 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 		}
 		return "", "", "", "", "", true
 	}
-	td, isNamed := s.find(concrete).(*TypeDeclaration)
+	td, home, isNamed := f.typeDeclNamed(s, concrete)
 	if !isNamed {
 		// Not a named type: it carries no methods at all, so any non-empty
 		// interface is unsatisfied. An empty one is satisfied by everything.
@@ -5884,8 +6007,11 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 			// get -- and this one did not, which answered one method-set question two
 			// different ways: a type whose promoted method was callable could not be
 			// put in the interface that method set was written for.
-			if owner, promoted := f.methodOwner(s, td.Token(), name); promoted {
-				if otd, ok := s.find(owner.Src()).(*TypeDeclaration); ok {
+			// Resolved in the type's OWN scope: what an imported type embeds is a
+			// name of the package it was declared in, which this one need not have.
+			// For an unqualified concrete type home is this scope, unchanged.
+			if owner, promoted := f.methodOwner(home, td.Token(), name); promoted {
+				if otd, ok := home.find(owner.Src()).(*TypeDeclaration); ok {
 					fd, ptrRecv = otd.methods[name], otd.ptrRecv[name]
 				}
 			}
@@ -6106,13 +6232,20 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		return
 	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
-	if !ok || !d.typeName.IsValid() || d.typeName.Src() == ifaceName {
+	if !ok || !d.typeName.IsValid() {
+		return
+	}
+	// The type as WRITTEN, qualifier included. Reading the bare name asked the
+	// method-set question about a "Quad" this package does not have, so an imported
+	// type was reported as implementing nothing -- "Quad does not implement
+	// geo.Shape (missing method Area)" of a type whose Area is right there.
+	from := d.declaredTypeName()
+	if from == ifaceName {
 		return
 	}
 	if d.isPtr {
 		valueIsPtr = true // a variable already of pointer type
 	}
-	from := d.typeName.Src()
 	// An interface value holds a POINTER to what it carries. Go copies the value in,
 	// allocating for it; there is no heap here, so a value would have to be a
 	// reference to the variable it was made from -- and then assigning to that
@@ -6321,7 +6454,7 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 	}
 	// `e.(*P).n` -- the field is one of what the ASSERTION yielded. See
 	// checkMethodCall, which reads the same prefix for the same reason.
-	if tn, isAssert := f.leadingAssertedType(suffix); isAssert {
+	if tn, isAssert := f.leadingAssertedType(s, suffix); isAssert {
 		nm, named := namedTypeToken(tn)
 		if !named {
 			return
@@ -6548,7 +6681,7 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 	// assertion's Selector carries a Type rather than a field name, so
 	// methodCallMember does not count it, and the member arrived here looking like
 	// one of e's own: that is what "type any has no method foo" was.
-	if tn, isAssert := f.leadingAssertedType(suffix); isAssert {
+	if tn, isAssert := f.leadingAssertedType(s, suffix); isAssert {
 		nm, named := namedTypeToken(tn)
 		if !named {
 			return // an unnamed asserted type: nothing to look a method up on
@@ -6640,14 +6773,14 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 // leadingAssertedType returns the type a suffix's FIRST step asserts, when it is a
 // type assertion carrying more after it. What follows applies to that type rather
 // than to the operand's.
-func (f *File) leadingAssertedType(suffix Node) (TypeNode, bool) {
+func (f *File) leadingAssertedType(s *Scope, suffix Node) (TypeNode, bool) {
 	steps := slices.Collect(it(suffix.ast))
 	if len(steps) < 2 || steps[0].sym != Selector {
 		return nil, false
 	}
 	for c := range it(steps[0].ast) {
 		if c.sym == Type {
-			return f.typ(f.Scope, c), true
+			return f.typ(s, c), true
 		}
 	}
 	return nil, false
@@ -6932,12 +7065,15 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 		f.checkNilAssignable(s, nilTarget(d.kind, d.hasKind, d.typeName), rhsNode, "assignment")
 		f.checkFuncAssign(s, d.funcSig, rhsNode, "assignment")
 		if plainTarget && d.typeName.IsValid() {
-			want := d.typeName.Src()
+			// The type as WRITTEN, qualifier included: an imported interface read as
+			// the bare "Shape" is not an interface in this package's scope, so the
+			// pointer-ness rule spoke where the method-set rule should have.
+			want := d.declaredTypeName()
 			if d.isPtr {
 				want = "*" + want
 			}
 			f.checkPointerValue(s, d.isPtr, want, rhsNode, "assignment")
-			f.checkImplements(s, d.typeName.Src(), rhsNode, "assignment")
+			f.checkImplements(s, d.declaredTypeName(), rhsNode, "assignment")
 			f.checkDefinedType(s, d.typeName.Src(), rhsNode, "assignment")
 		}
 	}
@@ -7388,7 +7524,7 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	// "v := x.(*T)" carries *T, so v's fields and methods are checked as an
 	// explicitly typed pointer's are. Without this v had no type and a field read
 	// off it reached the emitter as a puzzle.
-	if _, tn, isAssert := f.typeAssertion(n); isAssert {
+	if _, tn, isAssert := f.typeAssertion(s, n); isAssert {
 		if base, hasBase := namedTypeToken(tn); hasBase && f.isPointerType(s, tn) {
 			return base, Token{}, true, true
 		}
@@ -10296,6 +10432,12 @@ func (f *File) varSpec(s *Scope, n Node) {
 		kind, hasKind := f.typeKind(s, typ)
 		isPtr := f.isPointerType(s, typ)
 		typeName, _ := namedTypeToken(typ)
+		// The QUALIFIER of a cross-package named type, which every other declaration
+		// path records and this one did not -- so a package-level `var pq geo.Quad`
+		// carried the bare name "Quad", and every question asked of it by name was
+		// asked about a type this package does not have. A LOCAL of the same type
+		// worked, which is what made the gap look like something else.
+		typeQual := namedTypeQual(typ)
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
 		chanElemName := f.chanElemTypeName(s, typ)
@@ -10306,6 +10448,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 				continue
 			}
 			vd.kind, vd.hasKind, vd.isPtr, vd.typeName = kind, hasKind, isPtr, typeName
+			vd.typeQual = typeQual
 			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
 			vd.isChan, vd.chanElemKind, vd.hasChanElemKind = isChan, chanElemKind, hasChanElemKind
 			vd.chanElemName = chanElemName

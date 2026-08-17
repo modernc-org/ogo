@@ -12773,11 +12773,25 @@ func (e *emitter) typeSwitchOperand(ast []int32) (base string, prefix []Node, ok
 // caseIfaceC recognises a type-switch case naming an INTERFACE, `case T:`, and
 // answers with its C name.
 func (e *emitter) caseIfaceC(ex Node) (string, bool) {
-	name, ok := e.exprIdent(ex.ast)
-	if !ok {
+	if name, ok := e.exprIdent(ex.ast); ok {
+		mn := mangle(e.curPkgPrefix, name)
+		return mn, e.isIfaceCType(mn)
+	}
+	// `case geo.Sizer:` -- another package's interface, which arrives as a selector
+	// rather than a name and so has no sole identifier to read.
+	fac, isFac := e.soleFactorNode(ex.ast)
+	if !isFac {
 		return "", false
 	}
-	mn := mangle(e.curPkgPrefix, name)
+	qual, member, isQual := e.qualifiedFactor(fac.ast)
+	if !isQual {
+		return "", false
+	}
+	prefix, isImport := e.importQualifiers[qual]
+	if !isImport {
+		return "", false
+	}
+	mn := mangle(prefix, member)
 	return mn, e.isIfaceCType(mn)
 }
 
@@ -12878,6 +12892,21 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	if tok, isOp := e.unaryOpTok(kids[0].ast); !isOp || e.f.ch(tok) != MUL {
 		return "", false, false
 	}
+	// `case *geo.Quad:` -- another package's type. A case reads as an expression, so
+	// the qualified spelling arrives as a SELECTOR, and it is asked FIRST: soleIdent
+	// reads the leading identifier and stops, so `geo.Quad` answered "geo", which is
+	// not a type here and refused every qualified case as "a type switch case names a
+	// pointer type" about one that does. Mangled into that package's namespace, which
+	// is where its typedef was emitted.
+	if qual, member, isQual := e.qualifiedFactor(kids[1].ast); isQual {
+		if prefix, isImport := e.importQualifiers[qual]; isImport {
+			concrete = mangle(prefix, member)
+			if !e.isStruct(concrete) && !e.isUserType(concrete) {
+				return "", false, false
+			}
+			return concrete, false, true
+		}
+	}
 	name := e.soleIdent(kids[1].ast)
 	if name == "" {
 		return "", false, false
@@ -12887,6 +12916,30 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 		return "", false, false
 	}
 	return concrete, false, true
+}
+
+// qualifiedFactor reads a Factor spelled "qual.member" -- one identifier and one
+// selector -- and returns the two names. It is soleIdent for the qualified spelling,
+// and exists for the positions that read a TYPE out of the expression grammar, which
+// is the only grammar a type switch case has.
+func (e *emitter) qualifiedFactor(ast []int32) (qual, member string, ok bool) {
+	kids := slices.Collect(it(ast))
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", "", false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return "", "", false
+	}
+	for c := range it(steps[0].ast) {
+		if c.sym == 0 && e.f.ch(c.tok) == IDENT {
+			member = e.src(c.tok)
+		}
+	}
+	if member == "" {
+		return "", "", false
+	}
+	return e.src(kids[0].tok), member, true
 }
 
 // emitTypeSwitch lowers a type switch to the chain of table comparisons it is. Each

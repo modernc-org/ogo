@@ -20,6 +20,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Another package's INTERFACE is usable**, which it was not: `var s geo.Shape = &pq`
+  was refused as `cannot use &pq (an address) as geo.Shape value`, and so were the
+  assignment, the argument and the return. Nor was there a way back out — an assertion
+  or a type-switch case naming a qualified concrete type, `s.(*geo.Quad)` and
+  `case *geo.Quad:`, was reported as `geo (package name) is not a type` or as naming
+  no type at all. A case may also name an imported interface, `case geo.Sizer:`.
+
+  One cause under all of it: every method-set question is asked BY NAME, and the name
+  asked with was the bare `Shape`, which resolves in the asking package and finds
+  nothing. So `geo.Shape` was not recognised as an interface anywhere, and the
+  pointer-ness rule — which an interface is exempt from, since what satisfies it is a
+  method set — spoke in its place. Four things had to carry the qualifier with the
+  name: the type lookup, a package-level variable's record of its own type (a LOCAL
+  of an imported type already carried it, which is what made the gap look like
+  something else), the type a case or an assertion names, and the variable either of
+  those binds — `q, ok := s.(*geo.Quad)` gives q geo's type, so what is read off q is
+  checked rather than left to the C compiler.
+
+  Diagnostics improve with it: a refusal now names the type as the program spelled it,
+  `geo.Plain does not implement geo.Shape`, where it used to say `Plain`.
+
 - **A QUALIFIED conversion compiles**, `geo.Celsius(20)` for a type of an imported
   package — and it was refused for *every* kind of target, not just an interface: a
   defined scalar, an array, a slice, a struct and an interface all reported `cannot

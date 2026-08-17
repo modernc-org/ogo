@@ -398,3 +398,15 @@ type FuncDeclaration struct {
 	declaration
 	FuncDecl *FuncDeclNode
 }
+
+// declaredTypeName renders a variable's named type as it was WRITTEN, qualifier
+// included: "geo.Quad", not the bare "Quad" the token holds. The two are one type
+// only inside geo, and every method-set question is asked by name -- so the bare one
+// resolves in this package's scope, finds nothing, and reports a type as carrying no
+// methods when its methods are in the package it came from.
+func (d *VarDeclaration) declaredTypeName() string {
+	if d.typeQual.IsValid() {
+		return d.typeQual.Src() + "." + d.typeName.Src()
+	}
+	return d.typeName.Src()
+}

@@ -14154,6 +14154,72 @@ type hidden struct{ n int }
 	}
 }
 
+// TestCrossPkgInterface pins what an IMPORTED interface reports. Until the
+// method-set questions were asked by the WRITTEN name, none of these was reached:
+// the checker did not recognise "geo.Shape" as an interface at all -- it resolved the
+// bare "Shape" in this package's scope, found nothing, and the pointer-ness rule
+// spoke instead ("cannot use &pq (an address) as geo.Shape value"). So an imported
+// interface accepted nothing and refused everything, both for that one reason.
+//
+// The accepted forms are exercised by multiPkgProgram, which runs on the host shim,
+// through the real backend and on the board. What is pinned here is that each
+// refusal still happens, and that it names the type as the program spelled it.
+func TestCrossPkgInterface(t *testing.T) {
+	const geoSrc = `type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Plain struct{ N int }
+
+type Shape interface {
+	Area() int
+}
+`
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "a type that does not implement it",
+			src:  "var s geo.Shape = &pp\nprintln(s.Area())",
+			want: "cannot use &pp (variable of type *geo.Plain) as geo.Shape value in variable declaration: geo.Plain does not implement geo.Shape (missing method Area)",
+		},
+		{
+			name: "a value where the pointer goes",
+			src:  "var s geo.Shape = pq\nprintln(s.Area())",
+			want: "cannot use pq (variable of type geo.Quad) as geo.Shape value in variable declaration: an interface holds a pointer here; write &pq",
+		},
+		{
+			name: "an impossible assertion to a qualified type",
+			src:  "var s geo.Shape = &pq\nq := s.(*geo.Plain)\nprintln(q.N)",
+			want: "impossible type assertion: s.(*geo.Plain): *geo.Plain does not implement geo.Shape (missing method Area)",
+		},
+		{
+			name: "an impossible case naming a qualified type",
+			src:  "var s geo.Shape = &pq\nswitch s.(type) {\ncase *geo.Plain:\nprintln(1)\n}",
+			want: "impossible type switch case: s.(type) case *geo.Plain: *geo.Plain does not implement geo.Shape (missing method Area)",
+		},
+		{
+			name: "the same qualified case twice",
+			src:  "var s geo.Shape = &pq\nswitch s.(type) {\ncase *geo.Quad:\nprintln(1)\ncase *geo.Quad:\nprintln(2)\n}",
+			want: "duplicate case *geo.Quad in type switch",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			main := "import \"geo\"\n\nvar pq geo.Quad\nvar pp geo.Plain\n\nfunc main() {\n" + test.src + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(main)},
+				"geo/geo.ogo": &fstest.MapFile{Data: []byte(geoSrc)},
+			}
+			if _, err := Build(-1, []string{"main.ogo"}, fsys); err == nil {
+				t.Fatalf("Build accepted %q", test.src)
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("Build error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCMultiPackage builds a program spread over two packages -- a main package
 // importing a local "greet" package -- and runs it on the host shim. It checks that
 // import resolution, cross-package calls (greet.Hello(...)), and a package function's
@@ -14166,7 +14232,8 @@ type hidden struct{ n int }
 // the lowering is about nothing but names.
 // multiPkgWant is what that program prints, on every one of the three.
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
-	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n"
+	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
+	"30\n30\n30\n5\n6\nsizer\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "greet"
@@ -14251,7 +14318,34 @@ ls := greet.L(pool[:])
 println(len(ls), ls[0])
 sh = greet.Shape(&quad)
 println(sh.Area())
+// Another package's INTERFACE, used with NO conversion at all: a declaration, an
+// assignment, an argument, a return, and the two ways back out -- an assertion
+// and a type switch, each naming the qualified concrete type. Every one of these
+// was refused ("cannot use &quad (an address) as greet.Shape value"), so the only
+// way into an imported interface was the conversion above.
+var sh2 greet.Shape = &quad
+println(sh2.Area())
+sh = &quad
+println(area(sh))
+println(mkShape().Area())
+if q, ok := sh2.(*greet.Quad); ok {
+	println(q.W)
 }
+switch x := sh2.(type) {
+case *greet.Quad:
+	println(x.H)
+}
+switch sh2.(type) {
+case greet.Sizer:
+	println("sizer")
+default:
+	println("other")
+}
+}
+
+func area(s greet.Shape) int { return s.Area() }
+
+func mkShape() greet.Shape { return &quad }
 
 const limit = greet.K + 5
 
@@ -14332,6 +14426,12 @@ H int
 }
 
 func (q *Quad) Area() int { return q.W * q.H }
+
+// Sizer is a second interface with the same method set, for a type switch case
+// naming an imported INTERFACE rather than an imported concrete type.
+type Sizer interface {
+Area() int
+}
 `,
 	"greet/loud.ogo": `func Loud(s string) string {
 if len(s) > 0 {
