@@ -14267,6 +14267,66 @@ type struct2 struct {
 }
 `,
 		want: "1 a 2\n3\n8\n1\n3 4 5\n3 6 1\nb m a\n4 7 2\n3 1\n5 7 3\n3\n9 40 4\n",
+	},
+	{
+		// A package variable's initializer may name one declared BELOW it. Go's
+		// package block has no order -- the variables are initialized in DEPENDENCY
+		// order, whatever the source order -- and every one of these was refused with
+		// "cannot infer a type for the package variable c", because the pass that types
+		// them walks the file in source order and typed each as it arrived.
+		//
+		// The ordering was already right: the initializers are topologically sorted
+		// into the synthesized package init, and had been since that was written. Only
+		// the TYPES were bound to source order, which is why the very example the
+		// ordering's own comment gives -- `var a = b + 1` above b -- did not compile.
+		//
+		// Every kind of dependency is here, since each is typed by a different path: a
+		// scalar chain, a slice of a later ARRAY (whose extents live in an environment
+		// of their own), the address of a later variable, a call's result, a field of a
+		// later struct value, and len of a later array. Byte-identical to the same
+		// program under Go.
+		name: "a package variable initialized from a later one",
+		src: `type S struct {
+	N int
+}
+
+func f() int { return 7 }
+
+func mk() S { return S{f() + 1} }
+
+var c = b * 10
+
+var b = a + 1
+
+var a = 5
+
+var gsl = pool[:]
+
+var pool = [3]int{9, 8, 7}
+
+var p = &q
+
+var q = 5
+
+var y = x + 1
+
+var x = f()
+
+var t = s.N
+
+var s = mk()
+
+var n = len(pool)
+
+func main() {
+	println(a, b, c)
+	println(gsl[0], len(gsl), n)
+	println(*p, q)
+	println(x, y)
+	println(s.N, t)
+}
+`,
+		want: "5 6 60\n9 3 3\n5 5\n7 8\n8 8\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
@@ -14533,7 +14593,7 @@ type Shape interface {
 // multiPkgWant is what that program prints, on every one of the three.
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
-	"greet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
+	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n"
 
 var multiPkgProgram = map[string]string{
@@ -14624,6 +14684,10 @@ println(sh.Area())
 // string is inlined at each use, so there was no symbol to read and every one of
 // these reported "greet is not a value with fields or elements", of a package,
 // about a constant that is there.
+// A package variable of greet initialized from one declared in ANOTHER FILE of
+// that package -- a forward reference whichever file is emitted first, and both
+// directions are covered so it is one regardless.
+println(greet.Doubled, greet.FromLoud)
 println(greet.Tag)
 println(len(greet.Tag))
 println(greet.Tag[0])
@@ -14706,6 +14770,9 @@ const Tag = "greet"
 
 const Prompt = "hi"
 
+// FromLoud reads a variable declared in loud.ogo, the package's other file.
+var FromLoud = Quiet + 1
+
 // Vec is an exported type with exported fields and an exported method, used from
 // main through a var declaration (var v greet.Vec).
 type Vec struct {
@@ -14760,7 +14827,13 @@ type Sizer interface {
 Area() int
 }
 `,
-	"greet/loud.ogo": `func Loud(s string) string {
+	"greet/loud.ogo": `// Quiet is read from greet.ogo and Doubled reads Total from it, so whichever of
+// the two files is emitted first, one of them names a variable it has not seen.
+var Quiet = 3
+
+var Doubled = Total * 2
+
+func Loud(s string) string {
 if len(s) > 0 {
 	return "LOUD"
 }

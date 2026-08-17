@@ -20,6 +20,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A package variable's initializer may name one declared BELOW it**, or in another
+  file of the same package. Go's package block has no order — the variables are
+  initialized in *dependency* order, whatever the source order — and `var b = a + 1`
+  above `var a = 5` was refused with `cannot infer a type for the package variable b`.
+
+  The ordering was already right, and had been since it was written: the initializers
+  are topologically sorted into the synthesized package init, and that code's own
+  comment gives `var a = b + 1` above `b` as the example. Only the TYPES were bound to
+  source order — the pass that emits the variables typed each one as it arrived — so
+  the example did not compile. Every kind of dependency now resolves, each of which is
+  typed by a different path: a scalar chain, a slice of a later array (whose extents
+  live in an environment of their own), the address of a later variable, a call's
+  result, a field of a later struct value, and `len` of a later array.
+
+  An initialization CYCLE is still not reported, which `specs.go` has always said.
+
 - **A struct VALUE may stand as an array or slice literal's element**, `[]B{b}` — a
   variable, a call's result, a conversion, anything that is not itself a literal. It
   reached the C compiler, which reports `expected int but got _struct__B` about

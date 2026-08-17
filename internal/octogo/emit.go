@@ -3029,7 +3029,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	forEachFile(func() { e.emitPackageConsts(e.f.AST) })
 	// Package-level variables follow the constants (so a variable's initializer may
 	// fold a constant), each a file-scope `static` recorded in the global type
-	// environment.
+	// environment. Their TYPES are collected first, over every file, so an
+	// initializer may name a variable declared BELOW it or in another file of the
+	// package -- which Go's package block allows and this could not, the emitting
+	// pass having typed each variable as it arrived in source order. Ordering the
+	// INITIALIZERS was already done (see pkgInitStep); this is the other half.
+	forEachFile(func() { e.collectPackageVarTypes(e.f.AST) })
+	e.resolvePkgVarTypes()
 	forEachFile(func() { e.emitPackageVars(e.f.AST) })
 
 	// Pass 0.6: which parameters of which functions let a value escape the frame it
@@ -3472,6 +3478,12 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 type emitter struct {
 	w io.Writer // body buffer during the walk
 	f *File     // file currently being emitted, for token access
+
+	// pkgVarPending holds the package variables whose type has to be INFERRED from
+	// their initializer, gathered before any of them is emitted so one may name
+	// another declared later. Each carries the file and package it was written in,
+	// since inference reads both.
+	pkgVarPending []pkgVarPending
 	// constPreScan runs emitConstDecl for its folded VALUES only -- no C emitted,
 	// no types resolved. See collectConstValues.
 	constPreScan bool
@@ -4908,6 +4920,150 @@ func (e *emitter) collectConstValues(ast []int32) {
 	e.constPreScan = true
 	defer func() { e.constPreScan = false }()
 	e.emitPackageConsts(ast)
+}
+
+// pkgVarPending is one package variable whose C type must be inferred from its
+// initializer, with the file and package prefix that inference reads.
+type pkgVarPending struct {
+	name   string
+	init   []int32
+	file   *File
+	prefix string
+}
+
+// collectPackageVarTypes registers every package variable whose type is WRITTEN and
+// gathers the ones whose type must be inferred, for resolvePkgVarTypes to settle.
+//
+// It exists because an initializer may name a package variable declared BELOW it, or
+// in another file of the same package -- Go's package block has no order -- while the
+// pass that emits them walks the file in source order and typed each variable as it
+// arrived. So `var b = a + 1` above `var a = 5` was refused as "cannot infer a type
+// for the package variable b", of a program Go compiles.
+//
+// It is BEST EFFORT and emits nothing. A shape it does not model is simply not
+// registered here, and the emitting pass then behaves exactly as it did before --
+// which is what keeps this from being a second implementation of that pass.
+func (e *emitter) collectPackageVarTypes(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != SourceFile {
+			continue
+		}
+		for c := range it(n.ast) {
+			if c.sym != TopLevelDecl {
+				continue
+			}
+			for d := range it(c.ast) {
+				if d.sym != VarDecl {
+					continue
+				}
+				e.collectVarDeclTypes(d.ast)
+			}
+		}
+	}
+}
+
+// collectVarDeclTypes is collectPackageVarTypes for one declaration.
+func (e *emitter) collectVarDeclTypes(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != VarSpec {
+			continue
+		}
+		var names []string
+		var typeAST []int32
+		var initExprs [][]int32
+		for s := range it(n.ast) {
+			switch s.sym {
+			case IdentifierList:
+				for id := range it(s.ast) {
+					if id.sym == 0 && e.f.ch(id.tok) == IDENT {
+						names = append(names, e.src(id.tok))
+					}
+				}
+			case Type:
+				typeAST = s.ast
+			case ExpressionList:
+				for _, x := range expressionListItems(s) {
+					initExprs = append(initExprs, x.ast)
+				}
+			}
+		}
+		switch {
+		case typeAST != nil:
+			// An ARRAY lives in an environment of its own -- the emitter keeps arrays
+			// apart from every other variable -- so registering only its C type would
+			// leave `var s = pool[:]` above `var pool [3]int` still unable to say what
+			// it views.
+			if a, isArr := e.arrayDim(typeAST); isArr {
+				for _, nm := range names {
+					if nm != "_" {
+						e.globalArrays[e.globalC(nm)] = a
+					}
+				}
+				continue
+			}
+			ct := e.cType(typeAST)
+			if ct == "" {
+				continue // a type this pass cannot name: left to the emitting pass
+			}
+			for _, nm := range names {
+				if nm != "_" {
+					e.globals[e.globalC(nm)] = ct
+				}
+			}
+		case len(names) == 1 && names[0] != "_" && len(initExprs) == 1 && e.isArrayLitInit(initExprs[0]):
+			// `var pool = [3]int{...}`: the array's extents come from the LITERAL's
+			// written type, inference having no array value type to give.
+			if litType, _, isLit := e.soleArrayLit(initExprs[0]); isLit {
+				if a, isArr := e.arrayDim(litType); isArr {
+					e.globalArrays[e.globalC(names[0])] = a
+				}
+			}
+		case len(names) == 1 && len(initExprs) == 1 && names[0] != "_":
+			e.pkgVarPending = append(e.pkgVarPending, pkgVarPending{
+				name: names[0], init: initExprs[0], file: e.f, prefix: e.curPkgPrefix,
+			})
+		}
+	}
+}
+
+// isArrayLitInit reports whether an initializer is an array literal, the one shape
+// whose type is read off the literal rather than inferred from the value.
+func (e *emitter) isArrayLitInit(initExpr []int32) bool {
+	_, _, ok := e.soleArrayLit(initExpr)
+	return ok
+}
+
+// resolvePkgVarTypes settles the inferred package-variable types, retrying until a
+// round adds nothing: an inferred type comes from its own initializer, which may name
+// another inferred variable, so one pass is not enough for a chain.
+//
+// What is left when a round makes no progress is an initialization CYCLE, or a shape
+// inference does not model. Either way it says nothing: the emitting pass reports it
+// in its own words, and a second message about the same declaration would only
+// compete with that one.
+func (e *emitter) resolvePkgVarTypes() {
+	// Emits nothing and reports nothing, so whatever inference provoked on the way is
+	// discarded -- the emitting pass runs after this and says what is really wrong.
+	savedF, savedPrefix, savedErr, savedPro := e.f, e.curPkgPrefix, e.err, e.prologue
+	defer func() { e.f, e.curPkgPrefix, e.err, e.prologue = savedF, savedPrefix, savedErr, savedPro }()
+	pending := e.pkgVarPending
+	e.pkgVarPending = nil
+	for len(pending) != 0 {
+		var next []pkgVarPending
+		for _, p := range pending {
+			e.f, e.curPkgPrefix, e.prologue = p.file, p.prefix, nil
+			ct, ok := e.inferCType(p.init)
+			if !ok {
+				next = append(next, p)
+				continue
+			}
+			e.globals[e.globalC(p.name)] = ct
+		}
+		if len(next) == len(pending) {
+			return
+		}
+		pending = next
+	}
 }
 
 // emitPackageVars emits the file's package-level variable declarations as C
