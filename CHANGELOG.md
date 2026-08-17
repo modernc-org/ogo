@@ -16,6 +16,41 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **A conversion to an INTERFACE type compiles**, in every position an expression
+  stands in: `s := Shape(&q)`, a long declaration, an assignment, an argument, a
+  return, a struct literal's field, a slice or array literal's element, a channel
+  send, a `go` argument, the receiver of a method call, the operand of a type
+  assertion and of a type switch. Every one was refused with `cannot convert to
+  Shape` — the conversion emitter compares REPRESENTATIONS, and a `Quad*` operand is
+  not the two-word interface struct, so a program had to bind a variable of the
+  interface type and use that. It now builds the same pair the assignment builds.
+
+  `any(x)` is the same conversion under the name the universe holds rather than a
+  declaration, and is the ordinary way a program says "as an interface"; it was
+  refused with a different diagnostic (`cannot infer a type`) for the same reason.
+  Interface-to-interface works too, `Shape(n)` for an `n` whose method set covers
+  Shape's.
+
+  It gets past none of the rules the assignment obeys. `Shape(q)` for a value `q` is
+  refused as `var s Shape = q` is, and says so in those words rather than reporting a
+  failed conversion. A conversion of a LOCAL's address reaches that local exactly as
+  the address does, so it may no more be stored, returned, sent, launched or passed
+  to a function that keeps it — that route is closed at all five sinks, and would
+  otherwise have opened one, the shape being what `L(a[:])` had for slices.
+
+### Diagnostics
+
+- **Three lifetime refusals told the reader to move a backing array that was not
+  there.** A struct's address refused at a send, a return or a `go` was answered with
+  "declare the backing array at package scope", which is right for a slice and
+  nothing else. Each sink phrased its own advice while the one that asked the value
+  what it needed — the interprocedural argument check — got it right. All four ask
+  now, so the refusal names the variable: "declare q at package scope".
+
 ## v0.28.0
 
 References that outlive their frame, and arrays reached by a longer route.

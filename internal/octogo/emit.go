@@ -892,10 +892,10 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 	}
 	base := e.soleIdent(head.ast)
-	crossed := func(what string, at Node) {
+	crossed := func(what, advice string, at Node) {
 		e.fail("%v: cannot pass %s to a goroutine: its storage does not outlive the function, and the "+
-			"goroutine may; declare the backing array at package scope",
-			e.f.tok(at.Pos()).Position(), what)
+			"goroutine may; %s",
+			e.f.tok(at.Pos()).Position(), what, advice)
 	}
 	// `go x.M(args)` is `go f(args)` with the receiver in front: the trampoline's
 	// struct carries it like any other argument, so the cog calls <T>_M(recv, ...)
@@ -957,7 +957,7 @@ func (e *emitter) emitGo(nodes []Node) {
 			cname := methodCName(methodBaseType(rct), name)
 			wantPtr := e.methodPtr[cname]
 			if r, bad := e.receiverFrameRef(base, wantPtr); bad {
-				crossed(r.what, head)
+				crossed(r.what, r.advice(), head)
 				return
 			}
 			text, pro := e.capturePrologue(func() { e.emitAccessChain(base, chain) })
@@ -1012,7 +1012,7 @@ func (e *emitter) emitGo(nodes []Node) {
 		// value receiver is a copy and crosses nothing, unless the value itself holds
 		// a reference to the frame.
 		if r, bad := e.receiverFrameRef(base, wantPtr); bad {
-			crossed(r.what, head)
+			crossed(r.what, r.advice(), head)
 			return
 		}
 		recvCType = methodBaseType(rct)
@@ -1027,7 +1027,7 @@ func (e *emitter) emitGo(nodes []Node) {
 	}
 	args := e.callArgExprs(callSuffix.ast)
 	if x, r, bad := e.frameRefIn(args); bad {
-		crossed(r.what, x)
+		crossed(r.what, r.advice(), x)
 		return
 	}
 	// The argument block holds each value as its PARAMETER's type, not as the type
@@ -4414,6 +4414,14 @@ func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
 	if e.isNilExpr(rhs) {
 		return "{0}", true // the zero interface: no data, no table
 	}
+	// A conversion to the interface this position already has, `[]Shape{Shape(&q)}`.
+	// Its VALUE form is a compound literal, which the target's C compiler refuses
+	// inside an array initializer -- so the operand is unwrapped and braced here,
+	// which is the same two words by the spelling this position takes. The
+	// conversion says nothing the position does not, so dropping it loses nothing.
+	if operand, ok := e.ifaceConvOperand(iface, rhs); ok {
+		return e.ifaceBraceC(iface, operand)
+	}
 	// Already an interface value: its two words, copied as they stand.
 	if ct, ok := e.inferCType(rhs); ok && ct == iface {
 		return e.captureC(func() { e.emitExpr(rhs) }), true
@@ -4423,6 +4431,25 @@ func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
 		return "", false
 	}
 	return "{" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
+}
+
+// ifaceConvOperand recognises a conversion to the given interface type, `Shape(&q)`,
+// and returns the operand. It exists for the brace positions, where the conversion's
+// own value form -- a compound literal -- is the wrong shape; the sibling
+// arrayConvOperand does the same for a defined array type.
+func (e *emitter) ifaceConvOperand(iface string, ast []int32) ([]int32, bool) {
+	recv, suffix, ok := e.directCall(ast)
+	if !ok || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return nil, false
+	}
+	if ct, isType := e.convType(recv); !isType || ct != iface {
+		return nil, false
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	if len(args) != 1 {
+		return nil, false
+	}
+	return args[0].ast, true
 }
 
 // typeAssertion recognises "x.(T)" and resolves the three names its lowering needs:
@@ -5212,8 +5239,8 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 	}
 	if x, r, bad := e.frameRefIn([]Node{op[1]}); bad {
 		e.fail("%v: cannot send %s: its storage does not outlive the function, and the receiver keeps "+
-			"the value; declare the backing array at package scope",
-			e.f.tok(x.Pos()).Position(), r.what)
+			"the value; %s",
+			e.f.tok(x.Pos()).Position(), r.what, r.advice())
 		return
 	}
 	// `ch <- mk(3)`: the send helper takes the element by value, so a struct-
@@ -9370,6 +9397,14 @@ func (e *emitter) convType(recv string) (string, bool) {
 		}
 		return ct, true // int, uint, byte, rune, the fixed-width names
 	}
+	// `any(x)`, the empty interface spelled as a name. It is a conversion like any
+	// other interface's, and the only one whose name is not a declaration -- the
+	// universe holds it -- so it is answered here rather than found in a registry,
+	// exactly as cType answers it. Guarded on nothing having declared that name,
+	// which is what makes it the universe's and not the program's.
+	if recv == "any" && !e.typeNames[mangle(e.curPkgPrefix, "any")] {
+		return e.anonInterfaceOf(nil), true
+	}
 	mn := mangle(e.curPkgPrefix, recv)
 	if e.namedTypes[mn] {
 		return mn, true // `type Celsius int` used as Celsius(x)
@@ -9465,6 +9500,33 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 		// as though it were a function, and the C compiler reported a syntax error
 		// about generated code.
 		e.emitExpr(arg.ast)
+		return
+	}
+	// A conversion to an INTERFACE type -- `Shape(&q)`, or the `any(x)` that spells
+	// the empty one -- builds the two words exactly as an assignment to a variable
+	// of that interface does: the target names the interface, the operand names the
+	// concrete type, and the pair chooses the table. Without it the conversion fell
+	// through to the representation test below, where a `Quad*` operand does not
+	// match the interface struct, and every position was refused ("cannot convert to
+	// Shape") though Go accepts them all. A source that does not implement the
+	// target is reported by the table lookup, which is where the same mistake
+	// written as an assignment is reported.
+	if e.isIfaceCType(ct) {
+		if text, ok := e.ifaceValueC(ct, arg.ast); ok {
+			e.emit(text)
+			return
+		}
+		// The generic "cannot convert to Shape" is no help here: what is wrong is
+		// almost always that a VALUE was written where the interface takes a
+		// pointer, which the assignment form says in those words. A conversion is
+		// how a program gets past the checker's rule -- it checks assignments, not
+		// conversions -- so the same mistake arrives here and deserves the same
+		// answer. Left alone if the table lookup already named a missing method,
+		// which is the other way in.
+		if e.err == nil {
+			e.fail("cannot convert to %s: an interface holds a pointer here, so write "+
+				"the address of a variable, or &T{...}", e.goTypeName(ct))
+		}
 		return
 	}
 	src, ok := e.exprReprCType(arg.ast)
@@ -14524,8 +14586,14 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		// converted value had to be written through a variable. The conversion
 		// consumes the first step; what it leaves is a value of that type, which the
 		// steps after it walk like any other.
+		//
+		// A conversion with NOTHING after it is a chain of one and is answered the
+		// same way. This used to require a further step, which is what a method call
+		// needs and not what the contract here is -- so `switch any(&q).(type)` was
+		// refused with the wrong reason ("bind any to a variable"), the guard having
+		// stripped the `.(type)` before asking.
 		ct, isConv := e.convType(base)
-		if !isConv || len(steps) < 2 || steps[0].sym != CallSuffix {
+		if !isConv || len(steps) == 0 || steps[0].sym != CallSuffix {
 			return "", "", false, false
 		}
 		args := e.callArgExprs(steps[0].ast)
@@ -20652,6 +20720,21 @@ func (r frameRef) advice() string {
 	return "declare " + strings.TrimPrefix(r.origin, "local ") + " at package scope"
 }
 
+// returnAdvice is advice() for a RETURN, where a view has one option it has nowhere
+// else: the CALLER can own the backing array and pass it in, which keeps the function
+// usable without moving storage to package scope.
+//
+// The three sinks that phrase this used to hardcode the backing-array wording, which
+// is right for a slice and wrong for everything else -- a struct address refused at a
+// send was told to move a backing array it does not have. advice() knew the
+// difference and only one sink of four asked it.
+func (r frameRef) returnAdvice() string {
+	if r.view {
+		return "take the backing array from the caller or declare it at package scope"
+	}
+	return r.advice()
+}
+
 // frameRefOf reports whether a single expression reaches this frame's storage.
 //
 // Three shapes do. A slice viewing a local array, which sliceBackingIsFrame resolves.
@@ -20711,7 +20794,10 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		// over the same storage, so whatever the operand referred to, the result
 		// refers to. `g = L(a[:])` for a local a laundered the reference past every
 		// sink -- the plain `g = a[:]` was refused and the conversion of it was not.
-		if e.convToSliceType(recv, len(suffix)) {
+		// A conversion to an INTERFACE type is the same laundering by the other
+		// spelling: the value holds a POINTER to its operand and nothing else, so
+		// `g = Shape(&q)` and `g = any(&q)` reach q exactly as `g = &q` does.
+		if e.convToSliceType(recv, len(suffix)) || e.convToIfaceType(recv, len(suffix)) {
 			if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
 				return e.frameRefOf(args[0].ast)
 			}
@@ -20753,6 +20839,23 @@ func (e *emitter) convToSliceType(recv string, steps int) bool {
 	}
 	u, ok := e.namedUnderlying[mangle(e.curPkgPrefix, recv)]
 	return ok && e.isSliceCType(e.underlyingCType(u))
+}
+
+// convToIfaceType is convToSliceType for an INTERFACE target. An interface value holds
+// a POINTER to its operand -- that is the whole representation on this target -- so a
+// conversion of a local's address is that address by another name, and the reference
+// it carries is the operand's. Without this, enabling the conversion at all would have
+// opened a laundering route past every sink: `g = &q` is refused for a local q and
+// `g = Shape(&q)` was accepted, which is the shape the slice conversion had.
+//
+// `any` is included, being the empty interface under a name the universe holds rather
+// than any declaration; convType answers it the same way.
+func (e *emitter) convToIfaceType(recv string, steps int) bool {
+	if steps != 1 {
+		return false
+	}
+	ct, ok := e.convType(recv)
+	return ok && e.isIfaceCType(ct)
 }
 
 // receiverFrameRef reports a method receiver that reaches this frame's storage when
@@ -20847,9 +20950,8 @@ func (e *emitter) checkReturnBacking(exprs []Node) {
 		// Positioned, unlike most emitter diagnostics: this one refuses a program a
 		// user wrote rather than reporting a shape the emitter cannot lower, so it
 		// needs to say where.
-		e.fail("%v: cannot return %s: its storage does not outlive the function; "+
-			"take the backing array from the caller or declare it at package scope",
-			e.f.tok(x.Pos()).Position(), r.what)
+		e.fail("%v: cannot return %s: its storage does not outlive the function; %s",
+			e.f.tok(x.Pos()).Position(), r.what, r.returnAdvice())
 	}
 }
 

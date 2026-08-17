@@ -736,6 +736,19 @@
 // and a value passes between them. "any" is exactly the empty one, so it and
 // "interface{}" are interchangeable.
 //
+// A CONVERSION names the interface where the position does not:
+//
+//	s := Shape(&q)        // the same two words "var s Shape = &q" builds
+//	a := any(&q)          // and the empty one under the name for it
+//	w := Shape(n)         // an interface whose method set covers Shape's
+//
+// It stands wherever an expression does -- a declaration, an assignment, an
+// argument, a return, a literal's element, a send, the operand of a method call or
+// a type switch. What it does not do is get past the rules the assignment obeys:
+// "Shape(q)" is refused exactly as "var s Shape = q" is, and a conversion of a
+// local's address reaches that local exactly as the address itself does, so it may
+// no more outlive the frame.
+//
 // Go's method-set rule is kept, since it is what makes the address correct: a value
 // of T carries the methods declared on T and *T carries all of them. Taking the
 // address is therefore never the thing that makes a type fail to implement an

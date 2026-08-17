@@ -28,11 +28,16 @@ import (
 //
 // The count also moves when the CORPUS grows, which is not the same thing and is
 // the only reason it has ever gone up: 37 -> 38 when "a variadic of interfaces"
-// arrived writing a method pair on adjacent lines, which is the alignment gap
-// already named above and not a change to the formatter. Raising it for that reason
-// is allowed; raising it because output changed is not. Check which one it is by
-// writing the program as .go and running gofmt on it, as the test does.
-const gofmtDisagreements = 38
+// arrived writing a method pair on adjacent lines, and 38 -> 39 when "a conversion
+// to an interface type" did the same. Both are the alignment gap already named
+// above and not a change to the formatter. Raising it for that reason is allowed;
+// raising it because output changed is not. Check which one it is by writing the
+// program as .go and running gofmt on it, as the test does.
+//
+// That the same gap has now cost two corpus additions in a row is the argument for
+// closing it: a method pair on adjacent lines is ordinary Go, so every new program
+// that writes one lands here.
+const gofmtDisagreements = 39
 
 // TestFormatMatchesGofmt formats every run-corpus program with `ogo fmt` and with
 // real gofmt, and counts how many come out identical.

@@ -13887,6 +13887,86 @@ func main() {
 }
 `,
 		want: "7\n9 1\n40 4\n3\nW 3\n3\n",
+	},
+	{
+		// A conversion to an INTERFACE type, in every position one can stand in bar
+		// the two that need a second cog -- a channel send and a `go` argument,
+		// which the refusal table exercises instead. Every one was refused --
+		// "cannot convert to Shape" -- because the conversion emitter compares
+		// REPRESENTATIONS, and a `Quad*` operand is not the two-word interface
+		// struct. What it needed instead was the pair the interface machinery
+		// already builds at an assignment, an argument and a return.
+		//
+		// `any(x)` is the same conversion under the name the universe holds rather
+		// than a declaration, and is the ordinary way a program says "as an
+		// interface". Interface-to-interface is here too, `Shape(n)` narrowing a
+		// wider one.
+		//
+		// The output is byte-identical to the same program built by Go.
+		name: "a conversion to an interface type",
+		src: `type Shape interface {
+	area() int
+}
+
+type Named interface {
+	area() int
+	name() string
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int    { return q.w * q.h }
+func (q *Quad) name() string { return "quad" }
+
+type Box struct {
+	s Shape
+}
+
+var gq = Quad{3, 4}
+var gr = Quad{5, 6}
+var g Shape
+
+func area(s Shape) int { return s.area() }
+
+func mk() Shape { return Shape(&gq) }
+
+func main() {
+	s := Shape(&gq)
+	println(s.area())
+	var v Shape = Shape(&gr)
+	println(v.area())
+	g = Shape(&gq)
+	println(g.area())
+	println(area(Shape(&gr)))
+	println(mk().area())
+	println(Shape(&gq).area())
+	b := Box{Shape(&gr)}
+	println(b.s.area())
+	t := []Shape{Shape(&gq), Shape(&gr)}
+	println(t[0].area())
+	println(t[1].area())
+	var arr [2]Shape = [2]Shape{Shape(&gr), Shape(&gq)}
+	println(arr[0].area())
+	println(arr[1].area())
+	var n Named = &gq
+	w := Shape(n)
+	println(w.area())
+	println(w.area() == area(n))
+	a := any(&gr)
+	if p, ok := a.(*Quad); ok {
+		println(p.w)
+		println(p.h)
+	}
+	switch x := any(&gq).(type) {
+	case *Quad:
+		println(x.name())
+	}
+}
+`,
+		want: "12\n30\n12\n30\n12\n12\n30\n12\n30\n30\n12\n12\ntrue\n5\n6\nquad\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

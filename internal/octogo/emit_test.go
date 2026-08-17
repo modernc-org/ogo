@@ -8913,6 +8913,225 @@ func main() {
 }
 `,
 		},
+		{
+			// An interface value holds a POINTER, so a conversion to one carries whatever
+			// its operand refers to -- `Shape(&q)` reaches q exactly as `&q` does. Making
+			// the conversion work at all opened a laundering route past every sink, which
+			// is the shape the slice conversion `L(a[:])` had: the plain form was refused
+			// and the converted one was not. All five sinks are here because the check is
+			// one predicate they share and a miss at any of them is a dangling pointer
+			// that BUILDS.
+			name: "an interface conversion of a local's address, stored",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+var g Shape
+
+func fill() {
+	q := Quad{3, 4}
+	g = Shape(&q)
+}
+
+func main() {
+	fill()
+	println(g.area())
+}
+`,
+			want: "cannot store the address of local variable q",
+		},
+		{
+			name: "an interface conversion of a local's address, returned",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+func mk() Shape {
+	q := Quad{3, 4}
+	return Shape(&q)
+}
+
+func main() { println(mk().area()) }
+`,
+			want: "cannot return the address of local variable q",
+		},
+		{
+			name: "an interface conversion of a local's address, sent",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+func work(ch chan Shape) {
+	s := <-ch
+	println(s.area())
+}
+
+func fill(ch chan Shape) {
+	q := Quad{3, 4}
+	ch <- Shape(&q)
+}
+
+func main() {
+	var ch chan Shape
+	go work(ch)
+	fill(ch)
+}
+`,
+			want: "cannot send the address of local variable q",
+		},
+		{
+			name: "an interface conversion of a local's address, handed to a goroutine",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+func show(s Shape) { println(s.area()) }
+
+func main() {
+	q := Quad{3, 4}
+	go show(Shape(&q))
+}
+`,
+			want: "cannot pass the address of local variable q to a goroutine",
+		},
+		{
+			// The interprocedural half: the callee stores its parameter, so the argument
+			// is judged by that summary. The conversion has to be followed here too, the
+			// summary being keyed on what the argument reaches.
+			name: "an interface conversion of a local's address, passed to a storing function",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+var g Shape
+
+func take(s Shape) { g = s }
+
+func fill() {
+	q := Quad{3, 4}
+	take(Shape(&q))
+}
+
+func main() {
+	fill()
+	println(g.area())
+}
+`,
+			want: "cannot pass the address of local variable q to take",
+		},
+		{
+			// `any` is the same conversion under the name the universe holds rather than a
+			// declaration, so it is resolved separately and could have been missed alone.
+			name: "the any spelling of the same conversion",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+var ga any
+
+func fill() {
+	q := Quad{3, 4}
+	ga = any(&q)
+}
+
+func main() {
+	fill()
+	println(ga != nil)
+}
+`,
+			want: "cannot store the address of local variable q",
+		},
+		{
+			// The counterpart over PACKAGE storage, which must still compile: the rule is
+			// about where the storage lives, not about the conversion.
+			name: "an interface conversion over package storage",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+var pq Quad
+var g Shape
+
+func fill() { g = Shape(&pq) }
+
+func main() {
+	fill()
+	println(g.area())
+}
+`,
+		},
+		{
+			// And a local's address converted and used in the SAME frame, which is the
+			// ordinary way a program calls a method through an interface and must not be
+			// refused.
+			name: "an interface conversion that stays home",
+			src: `type Shape interface {
+	area() int
+}
+
+type Quad struct {
+	w int
+	h int
+}
+
+func (q *Quad) area() int { return q.w * q.h }
+
+func main() {
+	q := Quad{3, 4}
+	s := Shape(&q)
+	println(s.area())
+}
+`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}

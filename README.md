@@ -373,7 +373,8 @@ say nothing, there is nowhere to move it to, so the program is refused instead �
 returning a local's address or a slice backed by a local, storing either in a package
 variable, or handing either to another cog as a `go` argument or through a channel. A
 struct holding such a reference counts as one — and so does reading the reference
-back out of it, `b.d` being the same slice header `b` carries — and the requirement
+back out of it, `b.d` being the same slice header `b` carries, and an interface made
+from one, `any(&q)` reaching `q` exactly as `&q` does — and the requirement
 follows a parameter back to the call sites that chose the storage. Declare the buffer
 at package scope and pass a slice of it, which is what the diagnostics ask for:
 
@@ -398,5 +399,7 @@ there is no heap to copy into and a silently aliasing value form would mean
 something Go does not. One may be written where a type is wanted rather than
 declared with a name, `func measure(s interface{ area() int })`, and the empty one
 is spelled `any` as well; identity is by method set, so `any` and `interface{}` are
-one type. The whole-program-optimization pass that would devirtualize the calls is
-still an open question, and opinions are welcome.
+one type. A conversion names the interface where the position does not, `Shape(&q)`
+or `any(&q)`, and builds the same two words the assignment does. The
+whole-program-optimization pass that would devirtualize the calls is still an open
+question, and opinions are welcome.
