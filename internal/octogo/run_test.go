@@ -4687,6 +4687,73 @@ func main() {
 		want: "99 3 103\n5 9 8 6\n1 9\n",
 	},
 	{
+		// ASSIGNING an array reached through a chain -- the same routes the
+		// declaration above copies from, on the right of an `=` rather than a `:=`.
+		// The assignment knew two sources, an array variable and a dereferenced
+		// pointer to one, and anything longer fell past both to the ordinary path,
+		// which emitted `d = h.f;`. That is not C -- gcc says "assignment to
+		// expression with array type" -- and it is exactly the wrong output the plain
+		// `a = b` shape was already a memcpy to avoid. flexcc accepts it as an
+		// extension and copies, so the BOARD was right and silent while the emitted C
+		// was not C, which is why only a host build could see it.
+		//
+		// Both targets are here, a plain variable and a field, because they are two
+		// paths that reach the same source resolution.
+		name: "assigning an array reached through a chain",
+		src: `type Row [2]int
+
+type Inner struct {
+	g [2]int
+}
+
+type Sprite struct {
+	body  Row
+	grid  [2][2]int
+	inner Inner
+}
+
+var sheet [2]Sprite
+
+var scratch Row
+
+var blank Sprite
+
+func main() {
+	sheet[0].body[0] = 3
+	sheet[0].body[1] = 4
+	sheet[1].grid[1][0] = 8
+	sheet[1].grid[1][1] = 9
+	sheet[1].inner.g[0] = 5
+
+	// A field, reached directly.
+	scratch = blank.body
+	println(scratch[0], scratch[1])
+
+	// A field of an ELEMENT, a field then an INDEX, and a nested field.
+	scratch = sheet[0].body
+	println(scratch[0], scratch[1])
+
+	var row [2]int
+	row = sheet[1].grid[1]
+	println(row[0], row[1])
+
+	row = sheet[1].inner.g
+	println(row[0], row[1])
+
+	// The same sources into a FIELD target.
+	blank.body = sheet[0].body
+	blank.inner.g = sheet[1].grid[1]
+	println(blank.body[0], blank.inner.g[1])
+
+	// Each is a copy: writing to the destination leaves the source alone.
+	scratch[0] = 99
+	blank.body[1] = 77
+	println(scratch[0], sheet[0].body[0], blank.body[1], sheet[0].body[1])
+}
+`,
+		want: "0 0\n3 4\n8 9\n5 0\n3 9\n99 3 77 4\n",
+	},
+	{
 		// A method on an array-typed FIELD. The same method on a struct-typed field
 		// has always worked, in both statement and expression position, so this was
 		// the array case alone: the chain walk reaches an array with no C value type,

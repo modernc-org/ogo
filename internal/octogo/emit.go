@@ -8964,9 +8964,10 @@ func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
 }
 
 // arraySourceC names what an array-valued right-hand side is, for a copy to read
-// from: another array variable by its C name, a dereferenced pointer to one, or an
-// array literal by a temporary bound ahead of the statement. Anything else is not
-// something this can copy from and is left to the paths that report it.
+// from: another array variable by its C name, a dereferenced pointer to one, an
+// array reached through a chain of fields and indexes, or an array literal by a
+// temporary bound ahead of the statement. Anything else is not something this can
+// copy from and is left to the paths that report it.
 func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 	if name, ok := e.exprIdent(ast); ok {
 		if _, isArray := e.arrayVar(name); isArray {
@@ -8977,6 +8978,20 @@ func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 	// `b = *p`: what is copied is the array the pointer names, and copying it is
 	// what Go's dereference of a pointer to an array does.
 	if text, _, ok := e.arrayDerefOperand(ast); ok {
+		return text, true
+	}
+	// `d = h.f` / `d = pool[1]`: an array reached through a chain rather than named
+	// directly. These are the shapes a DECLARATION already copies (`x := h.f`); an
+	// assignment fell past every copy path to the ordinary one, which emits
+	// `d = h.f;` -- not C, however willingly flexcc takes it and copies. That is the
+	// same reason the plain `a = b` shape is a memcpy and not an assignment.
+	//
+	// The field form is asked first for the reason it is asked first everywhere: it
+	// keeps the type's NAME, which a walk through an index cannot.
+	if text, _, ok := e.arrayFieldOperand(ast); ok {
+		return text, true
+	}
+	if text, _, ok := e.arrayChainOperand(ast); ok {
 		return text, true
 	}
 	return e.hoistArrayLitExpr(ast)

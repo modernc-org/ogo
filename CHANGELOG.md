@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array reached through a chain may be ASSIGNED, not only declared** — `d = h.f`,
+  `d = pool[1]`, `d = h.rows[1]`, and the same sources written into a field. The
+  assignment knew two array sources, a variable and a dereferenced pointer to one, and
+  anything longer fell past both to the ordinary path, which emitted `d = h.f;`. That
+  is not C — gcc says *assignment to expression with array type* — and it is precisely
+  the output the plain `a = b` shape is a `memcpy` to avoid. flexcc accepts it as an
+  extension and copies, so the board was right and silent while the emitted C was not
+  C; only a host build could see it. The declaration form, `x := h.f`, already copied
+  these; the assignment now reads from the same resolution.
+
 - **A package variable's initializer may name one declared BELOW it**, or in another
   file of the same package. Go's package block has no order — the variables are
   initialized in *dependency* order, whatever the source order — and `var b = a + 1`
