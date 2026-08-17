@@ -8252,6 +8252,52 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 // src (an already-declared array's C name) and copies it by value with memcpy, the
 // lowering of Go's `dst := src` / `var dst [N]T = src` array-value copy (C forbids
 // array assignment). dst is registered so later dst[i] / len(dst) resolve.
+// arrayFieldOperand recognises a read of an ARRAY through a field chain, `h.f` or
+// `b.inner.grid`, answering with the C text naming it and its shape. It is the field
+// form of arrayDerefOperand, for the positions that copy an array by value.
+//
+// The shape comes from the field's own declaration, so a field of a DEFINED array
+// type keeps that type's name -- which is what lets the copy carry its method set.
+func (e *emitter) arrayFieldOperand(ast []int32) (string, arrDim, bool) {
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return "", arrDim{}, false
+	}
+	base, fields, isField := e.factorFieldAccess(slices.Collect(it(fac.ast)))
+	if !isField {
+		return "", arrDim{}, false
+	}
+	a, isArr := e.fieldArray(base, fields)
+	if !isArr {
+		return "", arrDim{}, false
+	}
+	return e.fieldAccessC(base, fields), a, true
+}
+
+// arrayChainOperand recognises a read of an ARRAY through a chain that includes an
+// index, `pool[1]` or `b.rows[0]`, answering with the C text naming it and its shape.
+// It complements arrayFieldOperand: a pure field chain goes there because the field's
+// declaration still knows the type's NAME, which this cannot recover.
+func (e *emitter) arrayChainOperand(ast []int32) (string, arrDim, bool) {
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return "", arrDim{}, false
+	}
+	base, steps, isChain := e.factorAccessChain(slices.Collect(it(fac.ast)))
+	if !isChain {
+		return "", arrDim{}, false
+	}
+	cur, walked := e.accessChainType(base, steps)
+	if !walked || len(cur.dims) == 0 {
+		return "", arrDim{}, false
+	}
+	text, okText := e.accessChainCText(base, steps)
+	if !okText {
+		return "", arrDim{}, false
+	}
+	return text, arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:]}, true
+}
+
 func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 	e.arrays[dst] = a
 	e.includes["string.h"] = true
@@ -16601,6 +16647,23 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	// type it names is the array's typedef, which C cannot initialize from another
 	// array any more than it can assign one, so this has to come first.
 	if src, a, ok := e.arrayDerefOperand(initExpr); ok {
+		e.emitArrayCopy(name, src, a)
+		return
+	}
+	// `x := h.f` where the field is an ARRAY: the same copy again, reached through a
+	// field rather than named directly. Without it the declaration fell through to
+	// inferCType, which types no array operand and reported "cannot infer a type" of
+	// a field whose type the program had written down.
+	if src, a, ok := e.arrayFieldOperand(initExpr); ok {
+		e.emitArrayCopy(name, src, a)
+		return
+	}
+	// `x := pool[1]` where the element is an ARRAY: the same copy through a chain
+	// that includes an index. The field form above is tried first because it keeps
+	// the type's NAME, which a walk through an index cannot -- an array of a defined
+	// array type is flattened to its extents, so `[2]Row` is a [2][2]int by then.
+	// The copy itself is by shape, which is what Go's copy is.
+	if src, a, ok := e.arrayChainOperand(initExpr); ok {
 		e.emitArrayCopy(name, src, a)
 		return
 	}

@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array reached through a chain can be copied** — `x := h.f` for an array-typed
+  struct field, a nested one, `z := pool[1]` for an element of an array of arrays,
+  and `w := h.rows[1]`. `b := a` over a whole array variable has always been the
+  memcpy Go's copy is; every longer route fell through to the type inference instead,
+  which types no array operand, and reported "cannot infer a type" of a field whose
+  type the program had written down. A copy through a *field* keeps the type's name,
+  so it carries its method set; one through an *index* cannot, an array of a defined
+  array type being flattened to its extents.
+
 - **A defined ARRAY type carries methods**, in both receiver forms. `type Row [2]int`
   with `func (r Row) sum() int` and `func (r *Row) set(i, v int)` did not compile at
   all: an array carries no C type — its extents live in a map of their own and

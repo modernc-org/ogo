@@ -3508,10 +3508,16 @@ func TestEmitCMultiDimArrayChecked(t *testing.T) {
 	}
 }
 
-// TestEmitCMultiDimArrayPartial pins a partial index failing rather than emitting
-// wrong C. One index into a [2][3]int yields a [3]int row, which has no C value
-// type -- C cannot assign an array by value -- so typing it as the element emitted
-// `int r = m[1];`, which no C compiler accepts.
+// TestEmitCMultiDimArrayPartial pins the C a partial index into a multi-dimensional
+// array is emitted in. One index into a [2][3]int yields a [3]int ROW, which has no
+// C value type -- C cannot assign an array by value -- so typing it as the element
+// emitted `int r = m[1];`, which no C compiler accepts, and the shape was REFUSED
+// while there was no lowering for it.
+//
+// There is one now, and it is the copy Go makes: the row is declared with its own
+// extent and memcpy\'d, exactly as `b := a` over a whole array is. The assertion
+// moved from "this fails" to "this is what it emits", which keeps the wrong C the
+// refusal guarded against out either way.
 func TestEmitCMultiDimArrayPartial(t *testing.T) {
 	src := `func main() {
 	var m [2][3]int
@@ -3526,8 +3532,16 @@ func TestEmitCMultiDimArrayPartial(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := EmitC(pkg, &buf); err == nil {
-		t.Errorf("EmitC accepted a partial index into a multi-dimensional array:\n%s", buf.String())
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	for _, want := range []string{
+		"\tint r[3];\n",
+		"\tmemcpy(r, m[1], sizeof(r));\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("partial index: missing %q in\n%s", want, got)
+		}
 	}
 }
 

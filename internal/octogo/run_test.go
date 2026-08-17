@@ -4629,6 +4629,64 @@ func main() {
 		want: "7 4\n30 40 70\n11 5 11\n99 5\n10\n",
 	},
 	{
+		// COPYING an array reached through a chain -- a struct field, a nested one,
+		// an element of an array of arrays, a field then an index. `b := a` over a
+		// whole array variable has always been the memcpy Go's copy is; every longer
+		// route to an array fell through to the type inference instead, which types
+		// no array operand, and reported "cannot infer a type" of a field whose type
+		// the program had written down.
+		//
+		// A FIELD keeps the type's NAME, so the copy carries its method set -- the
+		// field's own declaration still knows it. A route through an INDEX cannot: an
+		// array of a defined array type is flattened to its extents, so `[2]Row` is a
+		// [2][2]int by then. The copy is by shape either way, which is what Go's copy
+		// is; only the method set differs.
+		name: "copying an array reached through a chain",
+		src: `type Row [2]int
+
+type I struct {
+	g [3]int
+}
+
+type H struct {
+	f     Row
+	rows  [2][2]int
+	inner I
+}
+
+func (r Row) sum() int { return r[0] + r[1] }
+
+var h H
+
+var pool [2]Row
+
+var m [2][3]int
+
+func main() {
+	h.f[0], h.f[1] = 3, 4
+	h.rows[1][0] = 8
+	h.inner.g[2] = 5
+	pool[1][0] = 9
+	m[0][2] = 6
+
+	x := h.f
+	x[0] = 99
+	println(x[0], h.f[0], x.sum())
+
+	y := h.inner.g
+	z := pool[1]
+	w := h.rows[1]
+	v := m[0]
+	println(y[2], z[0], w[0], v[2])
+
+	// Each is a copy: writing to it leaves the source alone.
+	z[0] = 1
+	println(z[0], pool[1][0])
+}
+`,
+		want: "99 3 103\n5 9 8 6\n1 9\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what
