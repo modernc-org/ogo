@@ -20,6 +20,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Another package's STRING constant is usable**, `geo.Tag`. Every other constant
+  type crossed the boundary — int, float, bool, rune, a wide one, a typed one — and a
+  string did not: it is inlined at each use, a Go constant having no address, so
+  unlike an integer constant (which emits a C `static const`, a name the ordinary
+  cross-package read finds) there was no symbol to resolve to. The read fell through
+  to the chain walker, whose base is a variable, and reported `geo is not a value with
+  fields or elements` — of a package, about a constant that is there.
+
+  It now reads, declares, assigns, passes, compares, `len`s, ranges and initializes a
+  package variable. Indexing and slicing one, `geo.Tag[0]` and `geo.Tag[1:3]`, bind
+  the value to a temporary first, since every chain walker reads its base by name.
+  Concatenation folds: `const banner = geo.Tag + ": " + geo.Prompt` was reported as
+  needing an allocation, of an expression both Go and this compiler evaluate at
+  compile time when the operands are one package's.
+
+- **An indexed literal's INDEX may be any constant expression**, which is what the
+  spec has always said. `[]int{N + 1: 9}`, `[]int{1 << 2: 7}` and a qualified
+  `[]int{geo.K: 9}` were each refused as `an array or slice literal index must be a
+  non-negative integer constant` about one that is: the index was read as a single
+  token — a literal or a bare name — rather than folded. A non-constant index is
+  still refused, which is the folder answering no.
+
 - **Any expression of POINTER type may become an interface value**, not just the
   three shapes that could. `var s Shape = New()` — the ordinary way a constructor is
   used — was refused with `an interface holds a pointer: write the address of a

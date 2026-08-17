@@ -14132,6 +14132,30 @@ func main() {
 }
 `,
 		want: "30\n12\n30\n30\n49\n",
+	},
+	{
+		// An indexed literal's INDEX is any constant expression, which is what Go
+		// says and what the folder already computes everywhere else. It was read as a
+		// SOLE token instead -- a literal or a bare name -- so `N + 1:`, `1 << 2:` and
+		// a qualified `geo.K:` were each refused as "not a non-negative integer
+		// constant" about one that is. A non-constant index is still refused, which is
+		// what the folder answering no means.
+		name: "a constant expression as a literal index",
+		src: `const N = 2
+
+func main() {
+	println(N) // read once: folded into every index below, gcc warns on an unused one
+	xs := []int{N + 1: 9, 5}
+	println(len(xs), xs[3], xs[4])
+	ys := []int{1 << 2: 7}
+	println(len(ys), ys[4])
+	a := [6]int{N * 2: 3}
+	println(a[4])
+	zs := []string{N: "hi"}
+	println(len(zs), zs[2])
+}
+`,
+		want: "2\n5 9 5\n5 7\n3\n3 hi\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
@@ -14398,6 +14422,7 @@ type Shape interface {
 // multiPkgWant is what that program prints, on every one of the three.
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
+	"greet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n"
 
 var multiPkgProgram = map[string]string{
@@ -14483,6 +14508,19 @@ ls := greet.L(pool[:])
 println(len(ls), ls[0])
 sh = greet.Shape(&quad)
 println(sh.Area())
+// Another package's STRING constant. Every other constant type crossed the
+// boundary -- an integer one emits a C "static const", which is a name -- and a
+// string is inlined at each use, so there was no symbol to read and every one of
+// these reported "greet is not a value with fields or elements", of a package,
+// about a constant that is there.
+println(greet.Tag)
+println(len(greet.Tag))
+println(greet.Tag[0])
+println(greet.Tag[1:3])
+println(greet.Tag == "greet")
+println(greet.Tag + "!" + greet.Prompt)
+println(banner)
+println(stored)
 // Another package's INTERFACE, used with NO conversion at all: a declaration, an
 // assignment, an argument, a return, and the two ways back out -- an assertion
 // and a type switch, each naming the qualified concrete type. Every one of these
@@ -14523,6 +14561,13 @@ var vecs = []greet.Vec{{9, 9}, {8, 8}}
 // Storage for the qualified conversions above. The slice's backing is at package
 // scope because a conversion of a local's slice reaches that local, and the
 // lifetime rules follow it through the conversion exactly as they do without one.
+// A constant and a variable built from another package's STRING constants, which
+// is where the fold has to happen at compile time: C evaluates a file-scope
+// initializer before there is anything to read.
+const banner = greet.Tag + ": " + greet.Prompt
+
+var stored = greet.Tag
+
 var pool = [3]int{9, 0, 0}
 var quad = greet.Quad{5, 6}
 var sh greet.Shape
@@ -14543,6 +14588,12 @@ var Total int = 200
 
 // K is an exported constant, same name as main's, read directly from main.
 const K = 100
+
+// Tag and Prompt are exported STRING constants, read from main as values, indexed,
+// sliced, compared, concatenated and folded into a constant of main's own.
+const Tag = "greet"
+
+const Prompt = "hi"
 
 // Vec is an exported type with exported fields and an exported method, used from
 // main through a var declaration (var v greet.Vec).

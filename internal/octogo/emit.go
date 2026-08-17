@@ -8196,29 +8196,15 @@ func (e *emitter) valueIsSliceExpr(v Node) bool {
 }
 
 // litKeyIndex evaluates an array or slice literal's element index -- the "2" in
-// "[]int{2: 5}" -- to a non-negative integer. Only a constant is admitted: an
-// integer literal or a name bound to an integer const, in any base normalizeIntLit
-// produces. A non-constant, negative, or unparsable key yields ok=false.
+// "[]int{2: 5}" -- to a non-negative integer. Only a constant is admitted, which is
+// Go's rule and the spec's; a non-constant or negative key yields ok=false.
 func (e *emitter) litKeyIndex(keyAST []int32) (int, bool) {
-	tok, ok := e.soleToken(keyAST)
-	if !ok {
-		return 0, false
-	}
-	var s string
-	switch e.f.ch(tok) {
-	case INT:
-		s = normalizeIntLit(e.src(tok))
-	case IDENT:
-		v, ok := e.foldedInt(e.src(tok))
-		if !ok {
-			return 0, false
-		}
-		s = v
-	default:
-		return 0, false
-	}
-	n, err := strconv.ParseInt(s, 0, 64)
-	if err != nil || n < 0 {
+	// The whole constant folder rather than a token switch. An index is any constant
+	// expression Go accepts -- `geo.K`, `K + 1`, `1 << 2` -- and reading a SOLE token
+	// answered only for a literal or a bare name, so a qualified constant was refused
+	// as "not a non-negative integer constant" about one that is.
+	n, ok := e.foldConstInt(keyAST)
+	if !ok || n < 0 {
 		return 0, false
 	}
 	return int(n), true
@@ -18320,6 +18306,25 @@ func (e *emitter) factorFieldAccess(kids []Node) (base string, fields []string, 
 	return e.src(kids[0].tok), fields, true
 }
 
+// qualifiedStrConstVal gives the VALUE of an imported package's string constant,
+// `geo.Name`. A string constant has no C symbol -- it is inlined at each use, a Go
+// constant having no address -- so unlike that package's integer constants, which
+// emit a `static const` the ordinary global path finds, there is nothing to name and
+// the read has to produce the literal itself.
+//
+// Without it a qualified string constant was refused wherever it stood: the read fell
+// through to the chain path, whose base is a variable, and reported "geo is not a
+// value with fields or elements" -- of a package, about a constant that is there.
+// Every other constant type crossed the boundary; only a string did not.
+func (e *emitter) qualifiedStrConstVal(base string, fields []string) (string, bool) {
+	prefix, isQual := e.importQualifiers[base]
+	if !isQual || len(fields) != 1 {
+		return "", false
+	}
+	v, ok := e.constStr[mangle(prefix, fields[0])]
+	return v, ok
+}
+
 // qualifiedGlobalRead resolves a read of an exported variable from an imported
 // user package -- `pkg.V`, or a field chain `pkg.V.f` selecting into it -- to the C
 // text and type of the mangled package global. The imported package's variables
@@ -18931,7 +18936,25 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				if _, ctype, ok := e.qualifiedGlobalRead(base, fields); ok {
 					return ctype, true
 				}
+				if _, ok := e.qualifiedStrConstVal(base, fields); ok {
+					return cString, true
+				}
 				return e.fieldType(base, fields)
+			}
+			// `geo.Name[1:3]` -- SLICING another package's string constant, which the
+			// emitter binds to a temporary of this frame. A slice of a string is a
+			// string, and saying so here is what makes println print one: without it
+			// the value was typed as whatever the chain walk made of a base that is a
+			// package name, and `println(geo.Tag[1:3])` printed "9737, 2" -- the
+			// header's two words -- where Go prints "eo".
+			if base, steps, ok := e.factorAccessChain(kids); ok && len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == Index {
+				if field := e.soleIdent(steps[0].ast); field != "" {
+					if _, isConst := e.qualifiedStrConstVal(base, []string{field}); isConst {
+						if _, _, _, isSlice := e.sliceParts(steps[1].ast); isSlice {
+							return cString, true
+						}
+					}
+				}
 			}
 			// `s[i].v[j]` -- the general chain's result type.
 			if base, steps, ok := e.factorAccessChain(kids); ok {
@@ -20042,6 +20065,47 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(text)
 					return
 				}
+				// That package's STRING constant, which has no symbol to name and is
+				// inlined here exactly as one of this package's is.
+				if v, ok := e.qualifiedStrConstVal(base, fields); ok {
+					e.emitFoldedString(v)
+					return
+				}
+			}
+			// `geo.Name[0]` and `geo.Name[1:]` -- indexing or slicing another
+			// package's STRING constant. A constant has no variable, and every chain
+			// walker reads its base by NAME, so there was nothing to start from and
+			// the diagnosis said "geo is not a value with fields or elements" -- of a
+			// package, about a constant that is there. Binding the value to a
+			// temporary hands the rest of the chain the string variable it expects.
+			// An INTEGER constant of another package needs none of this: it emits a
+			// `static const`, which is a name.
+			if base, steps, ok := e.factorAccessChain(kids); ok && len(steps) > 1 && steps[0].sym == Selector {
+				if field := e.soleIdent(steps[0].ast); field != "" {
+					if v, isConst := e.qualifiedStrConstVal(base, []string{field}); isConst {
+						tmp := e.hoist(cString, func() { e.emitFoldedString(v) })
+						e.locals[tmp] = cString
+						rest := steps[1:]
+						// A SLICE step is not one the chain walker emits, so the two
+						// shapes that take one are tried first, exactly as the general
+						// chain below tries them.
+						if len(rest) == 1 && rest[0].sym == Index {
+							if low, high, max, isSlice := e.sliceParts(rest[0].ast); isSlice {
+								if src, okSrc := e.sliceableVar(tmp); okSrc {
+									e.emitSliceExpr(src, low, high, max)
+									return
+								}
+							}
+						}
+						if src, low, high, max, okRow := e.sliceableChainRow(tmp, rest); okRow {
+							e.emitSliceExpr(src, low, high, max)
+							return
+						}
+						if _, ok := e.emitAccessChain(tmp, rest); ok {
+							return
+						}
+					}
+				}
 			}
 			// A chain that alternates indexes and selectors more than once --
 			// `s[i].v[j]` -- which no fixed shape below can match.
@@ -20357,6 +20421,20 @@ func (e *emitter) foldConstString(ast []int32) (string, bool) {
 					ok = false
 				}
 			default:
+				// A QUALIFIED string constant, `geo.Name`, whose halves the walk
+				// below would meet one token at a time: "geo" folds to nothing, so
+				// the whole concatenation was reported as having a non-constant
+				// operand and needing an allocation -- of an expression Go folds at
+				// compile time, and that this compiler folds when both halves are
+				// this package's.
+				if n.sym == Factor {
+					if b2, f2, isField := e.factorFieldAccess(slices.Collect(it(n.ast))); isField {
+						if cv, is := e.qualifiedStrConstVal(b2, f2); is {
+							b.WriteString(cv)
+							continue
+						}
+					}
+				}
 				walk(n.ast)
 			}
 		}
