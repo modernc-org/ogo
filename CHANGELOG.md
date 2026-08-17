@@ -16,7 +16,32 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.28.0
+
+References that outlive their frame, and arrays reached by a longer route.
+
+Six ways a program could hand out a reference to storage that had already gone are
+closed. Each was a build that succeeded and then read a dead frame: a slice literal of
+a defined type, stored or returned or sent or launched; the same header laundered
+through a conversion; a struct built by a long `var` declaration rather than the short
+one; reading a reference back *out* of a struct that held one; slicing a local through
+a chain instead of by its bare name; and a callback kept in a struct field, whose call
+consulted no leak summaries at all. The lifetime rules were right — what was missing
+was the set of spellings they had to recognise. The fix each diagnostic asks for is the
+one it always was: declare the backing array at package scope.
+
+The second arc is the array reached by a longer route than its own name. A method on a
+defined array type did not compile at all, an array carrying no C type to hang one on;
+a copy or an address through a field, a nested field or an element fell through to type
+inference, which types no array operand and reported that it could not infer a type the
+program had written down; a parameter of rank above one was refused as unsupported. The
+shape's name travels with its extents now, so a defined array type is spelled by its
+own name in the emitted C and carries its method set through a field.
+
+A defined type over a struct is a type of its own, in the six positions where it was
+interchangeable with the struct it was defined over. Nothing was miscompiled by that —
+the two have one representation — but a program built here that Go refuses, which is
+the contract backwards.
 
 ### Language
 
