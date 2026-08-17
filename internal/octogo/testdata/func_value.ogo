@@ -89,6 +89,8 @@ func (p *P) bump(k int) int {
 
 var gp P
 
+var gt T
+
 func methodValues() {
 	f := func(n int) int { return n }
 	println(f(1))
@@ -102,6 +104,15 @@ func methodValues() {
 	// ERROR cannot take t.get as a value: a method value copies its receiver
 	g := t.get
 	println(g())
+
+	// A VALUE receiver is refused wherever the receiver LIVES, a package variable
+	// included: what the refusal is about is the copy Go makes at the moment the
+	// value is taken, not the receiver outliving it, which is the separate rule
+	// below. The two read alike and are not, and the README named only the second
+	// until this was measured.
+	// ERROR cannot take gt.get as a value: a method value copies its receiver
+	gv := gt.get
+	println(gv())
 
 	var lp P
 	// ERROR cannot take lp.bump as a value: a method value binds the address of its receiver

@@ -286,6 +286,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   a struct, an interface, a pointer — was left to the C compiler, which then
   complained about C the program never wrote.
 
+### Documentation
+
+- **The README named one of the two shapes a method value is refused in.** It said
+  "a method value whose receiver is not a package-level variable", which is one rule;
+  the other is that a **value receiver** is refused wherever the receiver lives, a
+  package variable included — Go copies the receiver where the value is taken and
+  there is nowhere to copy to. `specs.go` had both, with their reasons, all along.
+  Found by testing each claim in the gap list rather than reading it: every other
+  claim there still holds. The distinguishing case, a value-receiver method value on
+  a package variable, is now pinned by a spec test — which is what was missing for
+  the wording to drift in the first place.
+
+- **The lifetime paragraph now says that reading a reference back OUT of a struct
+  counts too** — `b.d` is the same slice header `b` carries. That became true this
+  release, and a reader meeting the refusal would not have found it described.
+
+
 ### Behaviour changes
 
 - **A program that handed a local's address to a callback held in a struct field no

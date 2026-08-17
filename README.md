@@ -324,8 +324,13 @@ broken.
   all.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
-* A **method value whose receiver is not a package-level variable**: the receiver is
-  bound at compile time, which is what keeps a function value one word
+* A **method value** in two shapes, neither an omission. One with a **value
+  receiver**: Go copies the receiver where the value is made and there is nowhere to
+  copy to, while binding the address instead would alias the variable, so the program
+  would answer differently the moment anything wrote to it. And one whose **receiver
+  is not a package-level variable**, whose address does not outlive the value. A
+  pointer-receiver method on a package variable is taken freely; the receiver is bound
+  at compile time, which is what keeps a function value one word
   (`doc/funcval-cost.c` prices the alternative). Every other function-valued form
   works, `go` through one included.
 * An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
@@ -367,9 +372,10 @@ must not outlive what it refers to. Where Go would move the referent to the heap
 say nothing, there is nowhere to move it to, so the program is refused instead —
 returning a local's address or a slice backed by a local, storing either in a package
 variable, or handing either to another cog as a `go` argument or through a channel. A
-struct holding such a reference counts as one, and the requirement follows a
-parameter back to the call sites that chose the storage. Declare the buffer at
-package scope and pass a slice of it, which is what the diagnostics ask for:
+struct holding such a reference counts as one — and so does reading the reference
+back out of it, `b.d` being the same slice header `b` carries — and the requirement
+follows a parameter back to the call sites that chose the storage. Declare the buffer
+at package scope and pass a slice of it, which is what the diagnostics ask for:
 
 ```
 var buf [64]byte
