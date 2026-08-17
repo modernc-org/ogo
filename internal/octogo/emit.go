@@ -21275,29 +21275,28 @@ func (e *emitter) arrayCompareAt(kids []Node, i int) (op string, a arrDim, ok bo
 	return op, l, true
 }
 
-// arrayOperand reports the array type of a comparison operand that is a plain
-// array variable, local or package-level.
+// arrayOperand reports the array type of a comparison operand: an array variable,
+// a dereferenced pointer to one, an array reached through a chain of fields and
+// indexes, or a literal, which has no C value and is bound to a temporary by
+// emitArrayOperand -- what is needed here is only its extents, to tell it from a
+// value of another type.
+//
+// It reads exactly the shapes arrayShapeOf does, and recognising anything less is
+// not a refusal but a WRONG ANSWER: an operand this declines sends the comparison
+// down C's own "==", which asks whether the two decayed pointers are equal. So
+// `pool[0] == pool[1]` was false for two identical rows, in C the host compiler
+// warns about no more than it warns about comparing any two pointers.
 func (e *emitter) arrayOperand(n Node) (arrDim, bool) {
-	if name, ok := e.exprIdent(n.ast); ok {
-		return e.arrayVar(name)
-	}
-	// An array LITERAL is an operand too, `a == [3]int{1, 2, 3}`. It has no C value,
-	// so the comparison binds it to a temporary (emitArrayOperand); what it needs
-	// here is only its extents, to be told apart from a value of another type.
-	if fac, ok := e.soleFactorNode(n.ast); ok {
-		if typeAST, _, ok := e.factorArrayLit(fac); ok {
-			return e.arrayDim(typeAST)
-		}
-	}
-	return arrDim{}, false
+	return e.arrayShapeOf(n.ast)
 }
 
-// emitArrayOperand emits one side of an array comparison, binding a literal to a
-// temporary first: the helper takes the arrays by pointer, and a literal has no C
-// value to take the address of.
+// emitArrayOperand emits one side of an array comparison. The helper takes the
+// arrays by pointer, so what each side needs is something whose address the call can
+// pass -- which is what arraySourceC names, binding a literal to a temporary since a
+// literal has no C value to take the address of.
 func (e *emitter) emitArrayOperand(n Node) {
-	if name, ok := e.hoistArrayLitExpr(n.ast); ok {
-		e.emit(name)
+	if text, ok := e.arraySourceC(n.ast); ok {
+		e.emit(text)
 		return
 	}
 	e.emitExprNode(n)

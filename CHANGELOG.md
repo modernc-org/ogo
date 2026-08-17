@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Two arrays compare correctly when either is reached through a chain.**
+  `table[0] == table[1]` answered **false** for two identical rows, and so did
+  `a.f == b.f`, `a.rows[0] == b.rows[0]` and `*p == v`. The operand reader took a bare
+  variable and a literal and nothing else, and an operand it declined was not
+  refused — the comparison fell through to C's own `==`, which asks whether the two
+  decayed pointers are equal, never true for two distinct arrays. Neither compiler
+  warns: comparing two pointers is an ordinary thing to write. The reader now takes
+  every shape the copy does.
+
 - **A whole ARRAY may be written through an index** — `m[1] = r` for a row of an
   array of arrays, `xs[1] = r` for an element of a slice of them, `arr[1].f = r` for
   an array-typed field of an element, `h.rows[1] = r` for an element of an

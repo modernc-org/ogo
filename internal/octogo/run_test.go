@@ -10025,6 +10025,62 @@ func main() {
 		want: "true false false true\ntrue\ntrue false\ntrue false\ntrue false\nchained\n",
 	},
 	{
+		// The same comparison with an operand that is not a bare VARIABLE -- a row of
+		// an array of arrays, a struct field, a nested row, a dereferenced pointer.
+		// The case above compares only variables and literals, which is exactly the
+		// two shapes the operand reader knew, and an operand it declined was not
+		// refused: the comparison fell through to C's own "==", which asks whether
+		// the two decayed pointers are equal. So `table[0] == table[1]` was FALSE for
+		// two identical rows, in C that draws no warning from either compiler,
+		// comparing two pointers being an ordinary thing to write.
+		//
+		// The reader now takes every shape the copy does. That the last line puts the
+		// comparison in an `if` is deliberate: a condition is where such a comparison
+		// is usually written, and it is the position a wrong answer is least visible
+		// in.
+		name: "comparing arrays reached through a chain",
+		src: `type Row [2]int
+
+type H struct {
+	f    [2]int
+	rows [2][2]int
+}
+
+var table = [3][2]int{{1, 2}, {1, 2}, {3, 4}}
+
+var named = [2]Row{{5, 6}, {5, 6}}
+
+var a = H{[2]int{1, 2}, [2][2]int{{7, 8}, {9, 10}}}
+
+var b = H{[2]int{1, 2}, [2][2]int{{7, 8}, {0, 0}}}
+
+func main() {
+	// A ROW of an array of arrays, on both sides and on one.
+	println(table[0] == table[1], table[0] == table[2])
+	println(table[0] != table[1], table[0] != table[2])
+
+	// A field, a nested row, a field of a defined array type.
+	println(a.f == b.f, a.rows[0] == b.rows[0], a.rows[1] == b.rows[1])
+	println(named[0] == named[1])
+
+	// A dereferenced pointer, and a mix of a chain with a variable and a literal.
+	p := &table
+	v := [2]int{1, 2}
+	println(p[0] == v, a.f == v, a.f == [2]int{1, 2}, table[2] == v)
+
+	// Inside a condition, which is where such a comparison is usually written.
+	hits := 0
+	for i := 0; i < 3; i++ {
+		if table[i] == v {
+			hits++
+		}
+	}
+	println(hits)
+}
+`,
+		want: "true false\nfalse true\ntrue true false\ntrue\ntrue true true false\n2\n",
+	},
+	{
 		// A deferred call in main capturing an argument. Arguments are captured
 		// where the defer is written, as Go does, into a temporary declared at
 		// function scope -- it has to outlive the block the defer sits in. main was
