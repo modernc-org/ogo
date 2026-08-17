@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **The address of an array reached through a chain can be bound to a variable** —
+  `p := &h.f` for an array-typed struct field, a nested one, and `r := &pool[1]` for
+  an element. `p := &a` over a bare array variable worked, and handing `&h.f` to a
+  *parameter* worked, since the parameter's type says what it is; a declaration has
+  only the type inference to go on and that read a bare name only. The pointer
+  aliases, as Go's does — writing through it is seen in the field, and a
+  pointer-receiver method through it writes there too. The lifetime rules are
+  unaffected: the address of a field of a *local* struct still may not outlive it.
+
 - **A method may be called on an array-typed struct field** — `h.f.sum()` and
   `h.f.set(0, 7)` for a `type Row [2]int` field, at any depth, through a pointer to
   the struct, and in the multiple-assignment form `a, b := h.f.pair()`. The same

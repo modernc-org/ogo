@@ -8298,6 +8298,28 @@ func (e *emitter) arrayChainOperand(ast []int32) (string, arrDim, bool) {
 	return text, arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:]}, true
 }
 
+// arrayOperandOf resolves the shape of an ARRAY a factor names through a chain --
+// `h.f`, `h.inner.g`, `pool[1]`, `h.rows[1]` -- for the callers that want the extents
+// rather than the C text arrayFieldOperand and arrayChainOperand also render.
+//
+// The field form is asked first because it keeps the type's NAME, so a pointer to it
+// is spelled `Row*` rather than by a minted name; a route through an index has no
+// name to keep.
+func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
+	kids := slices.Collect(it(n.ast))
+	if base, fields, isField := e.factorFieldAccess(kids); isField {
+		if a, isArr := e.fieldArray(base, fields); isArr {
+			return a, true
+		}
+	}
+	if base, steps, isChain := e.factorAccessChain(kids); isChain {
+		if cur, walked := e.accessChainType(base, steps); walked && len(cur.dims) != 0 {
+			return arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:], name: cur.name}, true
+		}
+	}
+	return arrDim{}, false
+}
+
 func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 	e.arrays[dst] = a
 	e.includes["string.h"] = true
@@ -18535,6 +18557,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 						if a, isArr := e.arrayVar(nm); isArr {
 							return e.arrayTypedef(a) + "*", true
 						}
+					}
+					// `&h.f` and `&pool[1]`: the same pointer, to an array reached
+					// through a chain rather than named directly. Handing one to a
+					// PARAMETER already worked -- the parameter's type says what it
+					// is -- but a DECLARATION has only this to go on, and reported
+					// "cannot infer a type" of an address the program had written.
+					if a, isArr := e.arrayOperandOf(kids[len(kids)-1]); isArr {
+						return e.arrayTypedef(a) + "*", true
 					}
 					if t, ok := e.inferNode(kids[len(kids)-1]); ok {
 						return t + "*", true

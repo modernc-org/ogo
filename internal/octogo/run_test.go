@@ -4746,6 +4746,64 @@ func main() {
 		want: "7 11\n14 25\n14 7\n10 4\n99 10\n",
 	},
 	{
+		// THE ADDRESS of an array reached through a chain, bound to a variable.
+		// `p := &a` over a bare array variable worked, and handing `&h.f` to a
+		// PARAMETER worked -- the parameter's type says what it is -- but a
+		// DECLARATION has only the inference to go on, and it read a bare name only.
+		//
+		// The pointer ALIASES, which is the whole difference from the copy beside it
+		// in these cases: writing through it is seen in the field, and a
+		// pointer-receiver method through it writes there too.
+		name: "the address of an array reached through a chain",
+		src: `type Row [2]int
+
+type I struct {
+	g Row
+}
+
+type H struct {
+	f     Row
+	inner I
+}
+
+func (r *Row) set(i, v int) { r[i] = v }
+
+func (r Row) sum() int { return r[0] + r[1] }
+
+func take(p *Row) int { return p[0] }
+
+var h H
+
+var pool [2][2]int
+
+var rows [2]Row
+
+func main() {
+	h.f[0], h.f[1] = 3, 4
+	h.inner.g[0] = 5
+	pool[1][0] = 6
+	rows[1][0] = 7
+
+	p := &h.f
+	p[0] = 30
+	println(p[0], h.f[0], len(p), p.sum())
+
+	// A nested field, and an element of an array of arrays.
+	q := &h.inner.g
+	r := &pool[1]
+	s := &rows[1]
+	println(q[0], r[0], s[0])
+
+	// It is the pointer Go would pass, so it goes where a *Row goes.
+	println(take(p), take(&h.inner.g))
+
+	p.set(1, 40)
+	println(h.f[1], h.f.sum())
+}
+`,
+		want: "30 30 2 34\n5 6 7\n30 5\n40 70\n",
+	},
+	{
 		// A pointer to an ARRAY is the one pointer an index applies to: Go's `p[i]`
 		// abbreviates `(*p)[i]`, and so do `len(p)`, `range p` and `p[lo:hi]`. It is
 		// how an array is passed by reference without a slice header, which is what
