@@ -1785,6 +1785,13 @@ type pkgInitStep struct {
 	target string
 	deps   []string
 	stmts  []string
+
+	// srcName and pos are what a diagnostic about this step says: the variable as
+	// the program spells it, and where. The rendered position is kept rather than a
+	// token, since a cycle is reported after every file has been walked and there is
+	// no longer a current file to resolve one against.
+	srcName string
+	pos     string
 }
 
 // deferPkgInit records a statement to run at package initialization, as a step of
@@ -1800,18 +1807,33 @@ func (e *emitter) deferPkgInit(stmt string) {
 // of its own, placed ahead of the assignment. Here there is no enclosing statement
 // for emitStatement to put it before, and without this the temporary is referenced
 // and never declared -- which is what `var g = mk().y` did.
-func (e *emitter) pkgInitAssign(target string, initExpr []int32) {
+func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 	saved := e.prologue
 	e.prologue = nil
 	text := e.exprC(initExpr)
 	pro := e.prologue
 	e.prologue = saved
-	step := pkgInitStep{target: target, deps: e.globalRefs(initExpr)}
+	step := pkgInitStep{
+		target:  target,
+		deps:    e.globalRefs(initExpr),
+		srcName: srcName,
+		pos:     e.astPos(initExpr),
+	}
 	for _, line := range pro {
 		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
 	}
 	step.stmts = append(step.stmts, target+" = "+text+";")
 	e.pkgInit = append(e.pkgInit, step)
+}
+
+// astPos renders the source position an AST begins at, for a diagnostic reported
+// after the walk has moved on: a token index alone would need the file it came from,
+// and by then there is no current one.
+func (e *emitter) astPos(ast []int32) string {
+	for n := range it(ast) {
+		return fmt.Sprintf("%v", e.f.tok(n.Pos()).Position())
+	}
+	return ""
 }
 
 // globalRefs names every package-level variable an initializer could read, as the
@@ -1825,15 +1847,36 @@ func (e *emitter) globalRefs(ast []int32) []string {
 	var walk func([]int32)
 	walk = func(a []int32) {
 		for n := range it(a) {
-			if n.sym != 0 {
+			switch {
+			case n.sym == Selector:
+				// The member of `x.f` is a FIELD or a METHOD name, not a variable,
+				// and neither is the type in `x.(T)`. Reading one as a reference
+				// invented dependencies -- harmless while the list only ORDERED the
+				// initializers, and not once it also decides whether they cycle:
+				// `var a = s.a` was reported as "a refers to itself". The base `x`
+				// is not in here; it is the identifier this suffix hangs off.
+				continue
+			case n.sym == Element:
+				// A keyed element's KEY names a field or a constant index, so only
+				// the VALUE reads anything: `S{q: 1}` refers to no variable q.
+				val := Node{}
+				for c := range it(n.ast) {
+					if c.sym == ElementValue {
+						val = c
+					}
+				}
+				if val.sym != 0 {
+					walk(val.ast)
+					continue
+				}
 				walk(n.ast)
-				continue
-			}
-			if e.f.ch(n.tok) != IDENT {
-				continue
-			}
-			if gn := e.globalC(e.src(n.tok)); !slices.Contains(out, gn) {
-				out = append(out, gn)
+			case n.sym != 0:
+				walk(n.ast)
+			case e.f.ch(n.tok) != IDENT:
+			default:
+				if gn := e.globalC(e.src(n.tok)); !slices.Contains(out, gn) {
+					out = append(out, gn)
+				}
 			}
 		}
 	}
@@ -1912,7 +1955,9 @@ func (e *emitter) pkgInitDefs() string {
 	for i, st := range e.pkgInit {
 		names[i], deps[i] = st.target, st.deps
 	}
-	for _, i := range stableTopoOrder(names, deps) {
+	order, cyclic := stableTopoOrderCycle(names, deps)
+	e.reportInitCycle(names, deps, cyclic)
+	for _, i := range order {
 		for _, stmt := range e.pkgInit[i].stmts {
 			fmt.Fprintf(&b, "\t%s\n", stmt)
 		}
@@ -1923,6 +1968,74 @@ func (e *emitter) pkgInitDefs() string {
 	}
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// reportInitCycle reports a cycle among the package variables' initializers, which
+// is what the ordering pass cannot place. Go refuses such a program -- there is no
+// order that makes every initializer see the value it reads -- and this accepted it,
+// leaving the variables in source order with whatever zeros that produced. specs.go
+// said so, as a known gap; it no longer is.
+//
+// The trace is Go's, and it is worth the walk: which pair closes the ring is what a
+// reader has to know, and a program with three variables in a cycle has three
+// candidate edges.
+func (e *emitter) reportInitCycle(names []string, deps [][]string, cyclic []int) {
+	if len(cyclic) == 0 {
+		return
+	}
+	// A step that assigns nothing (a channel cell, a deferred statement) provides no
+	// name, so it cannot be part of a cycle; it only ends up here by depending on
+	// something that is. The report is about the variables.
+	at := map[string]int{}
+	for _, i := range cyclic {
+		if names[i] != "" && e.pkgInit[i].srcName != "" {
+			at[names[i]] = i
+		}
+	}
+	start := -1
+	for _, i := range cyclic {
+		if _, named := at[names[i]]; named {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return // nothing to name: leave it to whatever else the build reports
+	}
+	// Follow one edge at a time through the cycle until a variable repeats, which is
+	// where the ring closes.
+	path := []int{start}
+	seen := map[int]bool{start: true}
+	for cur := start; ; {
+		next := -1
+		for _, d := range deps[cur] {
+			if j, isCyclic := at[d]; isCyclic {
+				next = j
+				break
+			}
+		}
+		if next < 0 {
+			break
+		}
+		path = append(path, next)
+		if seen[next] {
+			break
+		}
+		seen[next] = true
+		cur = next
+	}
+	first := e.pkgInit[path[0]]
+	if len(path) == 2 && path[0] == path[1] {
+		e.fail("%s: initialization cycle: %s refers to itself", first.pos, first.srcName)
+		return
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: initialization cycle for %s", first.pos, first.srcName)
+	for i := 0; i+1 < len(path); i++ {
+		from, to := e.pkgInit[path[i]], e.pkgInit[path[i+1]]
+		fmt.Fprintf(&b, "\n\t%s: %s refers to %s", from.pos, from.srcName, to.srcName)
+	}
+	e.fail("%s", b.String())
 }
 
 // needsPkgInit reports whether the package has anything to initialize.
@@ -2165,6 +2278,15 @@ func orderTypedefs(units []typedefUnit) []typedefUnit {
 // rather than dropping them, so whatever reads the result reports the problem
 // instead of quietly losing them.
 func stableTopoOrder(names []string, deps [][]string) []int {
+	order, _ := stableTopoOrderCycle(names, deps)
+	return order
+}
+
+// stableTopoOrderCycle is stableTopoOrder with the items it could not place named
+// too. They are exactly the ones in a dependency CYCLE, and whether that is an error
+// is the caller's to decide -- the typedef ordering leaves it to the C compiler,
+// while package initialization reports it as Go does.
+func stableTopoOrderCycle(names []string, deps [][]string) (order, cyclic []int) {
 	provides := make(map[string]bool, len(names))
 	for _, n := range names {
 		if n != "" {
@@ -2197,11 +2319,11 @@ func stableTopoOrder(names []string, deps [][]string) []int {
 			}
 		}
 		if len(deferred) == len(rest) {
-			return append(out, deferred...) // a cycle
+			return append(out, deferred...), deferred // a cycle
 		}
 		rest = deferred
 	}
-	return out
+	return out, nil
 }
 
 // isFuncCType reports whether a C type is one of the minted function-type typedefs.
@@ -3469,6 +3591,14 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if pd := e.pkgInitDefs(); pd != "" {
 		out.WriteString(pd)
 		out.WriteByte('\n')
+	}
+	// Assembly can FAIL: the package initializer's ordering reports a cycle here,
+	// and the pieces written above call into the emitter as well. The error check
+	// before pass 2 covers everything up to the bodies and nothing after them, so
+	// without this a diagnostic raised while assembling was computed and dropped,
+	// and the program compiled as though nothing had been said.
+	if e.err != nil {
+		return e.err
 	}
 	out.Write(body.Bytes())
 	_, err := w.Write(out.Bytes())
@@ -5181,7 +5311,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				continue
 			}
 			e.emit("static " + ct + " " + gn + " = " + e.zeroInitC(ct) + ";\n")
-			e.pkgInitAssign(gn, initExpr)
+			e.pkgInitAssign(gn, names[0], initExpr)
 			continue
 		}
 		if len(names) != 1 && initExpr != nil {
@@ -5311,7 +5441,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// initializers are evaluated at compile time and therefore must be
 				// constant", about C the reader never wrote.
 				e.emit(" = " + e.zeroInitC(ctype))
-				defer e.pkgInitAssign(gn, initExpr)
+				defer e.pkgInitAssign(gn, nm, initExpr)
 			}
 			e.emit(";\n")
 			if e.isChanCType(ctype) {
@@ -9397,7 +9527,7 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 			continue
 		}
 		e.emit("static " + ctype + " " + gn + " = " + e.zeroInitC(ctype) + ";\n")
-		e.pkgInitAssign(gn, inits[i])
+		e.pkgInitAssign(gn, nm, inits[i])
 	}
 }
 

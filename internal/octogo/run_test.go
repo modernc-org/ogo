@@ -14327,6 +14327,41 @@ func main() {
 }
 `,
 		want: "5 6 60\n9 3 3\n5 5\n7 8\n8 8\n",
+	},
+	{
+		// A package variable initialized from a MEMBER of a later one -- a field, a
+		// field of a call's result, an element. What each depends on is read off the
+		// identifiers its initializer mentions, and the member name is not one of them:
+		// it names a field, not a variable. Dropping it is what stopped `var a = s.a`
+		// being reported as referring to itself once that list also decided whether the
+		// initializers CYCLE -- and this pins the other half, that dropping it did not
+		// lose the dependency on s, which still has to be initialized first.
+		name: "a package variable initialized from a member of a later one",
+		src: `type S struct {
+	a int
+	b int
+}
+
+func mk() S { return S{4, 5} }
+
+var x = s.a
+
+var s = mk()
+
+var y = t.b
+
+var t = S{6, 7}
+
+var z = u[1]
+
+var u = [2]int{8, 9}
+
+func main() {
+	println(x, y, z)
+	println(s.a, t.b, u[1])
+}
+`,
+		want: "4 7 9\n4 7 9\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

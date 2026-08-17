@@ -9761,6 +9761,122 @@ func main() {
 	}
 }
 
+// TestEmitCInitCycle pins the refusal of a cycle among the package variables'
+// initializers, and -- as much of the point -- the shapes that are NOT one.
+//
+// Go refuses such a program: there is no order in which every initializer sees the
+// value it reads. This accepted it and left the variables in source order, so each
+// read whatever zero the other still held. The ordering pass had detected the cycle
+// all along and said nothing about it.
+//
+// The accepted cases are here because the dependency list is built from the
+// IDENTIFIERS an initializer mentions, and a member name is not a reference: `var a =
+// s.a` and `var mine = v.mine()` were both reported as referring to themselves once
+// the list started deciding this rather than only ordering.
+func TestEmitCInitCycle(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "two variables",
+			src: `var a int = b
+var b int = a
+
+func main() { println(a, b) }
+`,
+			want: "initialization cycle for a\n\tmain.ogo:1:13: a refers to b\n\tmain.ogo:2:13: b refers to a",
+		},
+		{
+			name: "three variables",
+			src: `var a int = b
+var b int = c
+var c int = a
+
+func main() { println(a, b, c) }
+`,
+			want: "initialization cycle for a\n\tmain.ogo:1:13: a refers to b\n\tmain.ogo:2:13: b refers to c\n\tmain.ogo:3:13: c refers to a",
+		},
+		{
+			name: "a variable referring to itself",
+			src: `var a int = a + 1
+
+func main() { println(a) }
+`,
+			want: "initialization cycle: a refers to itself",
+		},
+		{
+			name: "through a call",
+			src: `func twice(n int) int { return n * 2 }
+
+var a int = twice(b)
+var b int = twice(a)
+
+func main() { println(a, b) }
+`,
+			want: "initialization cycle for a",
+		},
+		{
+			name: "a field named like the variable reading it",
+			src: `type S struct{ a int }
+
+var a = s.a
+var s = S{1}
+
+func main() { println(a) }
+`,
+		},
+		{
+			name: "a method named like the variable it fills",
+			src: `type S struct{ n int }
+
+func (s S) mine() int { return s.n }
+
+var v = S{4}
+var mine = v.mine()
+
+func main() { println(mine) }
+`,
+		},
+		{
+			name: "a literal key named like another variable",
+			src: `type S struct{ q int }
+
+var s = S{q: 1}
+var q = s.q
+
+func main() { println(q) }
+`,
+		},
+		{
+			name: "an ordinary chain, written backwards",
+			src: `var c = b * 10
+var b = a + 1
+var a = 5
+
+func main() { println(a, b, c) }
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC accepted an initialization cycle; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCStructConvRules pins which conversions between two struct types are
 // allowed and which are not. Go's rule is that the underlying types must be
 // IDENTICAL -- the same fields, in the same order, with the same names and types --

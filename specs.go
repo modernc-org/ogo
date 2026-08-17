@@ -2149,8 +2149,17 @@
 // one, a call -- is assigned by the synthesized initializer that runs before main,
 // which is where the ordering applies.
 //
-// A cycle among the initializers is not yet reported; the order such a program
-// ends up with is the order it was written in.
+// A CYCLE among the initializers is refused, as Go refuses one: there is no order
+// in which every initializer sees the value it reads. The diagnostic names the
+// variables and the edges between them, so which pair closes the ring is not left to
+// be worked out:
+//
+//	initialization cycle for a
+//		a refers to b
+//		b refers to a
+//
+// A variable whose initializer reads itself, "var a int = a + 1", is the same rule at
+// its shortest and says so.
 //
 // Variables may also be initialized using functions named init declared in
 // the package block, with no arguments and no result parameters:

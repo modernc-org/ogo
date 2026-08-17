@@ -34,8 +34,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   live in an environment of their own), the address of a later variable, a call's
   result, a field of a later struct value, and `len` of a later array.
 
-  An initialization CYCLE is still not reported, which `specs.go` has always said.
-
 - **A struct VALUE may stand as an array or slice literal's element**, `[]B{b}` — a
   variable, a call's result, a conversion, anything that is not itself a literal. It
   reached the C compiler, which reports `expected int but got _struct__B` about
@@ -165,6 +163,28 @@ shipped section tells a reader on that version that they have behaviour they do 
   otherwise have opened one, the shape being what `L(a[:])` had for slices.
 
 ### Behaviour changes
+
+- **A cycle among the package variables' initializers no longer builds.** `var a int =
+  b` beside `var b int = a` compiled and left both zero, each having read the other
+  before it was written; Go refuses such a program, there being no order in which
+  every initializer sees the value it reads. The ordering pass had detected the cycle
+  all along and said nothing — `specs.go` recorded that as a known gap. The diagnostic
+  is Go's, naming the variables and the edges between them so that which pair closes
+  the ring is not left to be worked out, and `var a int = a + 1` is reported as the
+  same rule at its shortest.
+
+  Two things that are *not* cycles came with it. What an initializer depends on is
+  read off the identifiers it mentions, and a member name is not one of them: `var a =
+  s.a` and `var mine = v.mine()` were each reported as referring to themselves the
+  moment that list started deciding this rather than only ordering. A keyed literal's
+  key is not a reference either. The dependency on the variable being *selected from*
+  is unaffected, which is what keeps the ordering right.
+
+- **A diagnostic raised while the C file is assembled is no longer dropped.** The
+  error check ran before the function bodies and nothing re-checked afterwards, so
+  anything the package initializer, the goroutine trampolines or the include
+  computation reported was computed and discarded, and the program compiled as though
+  nothing had been said. It is what made the cycle report above visible.
 
 - **A program that let the address of a composite literal outlive its frame no longer
   builds.** `&T{...}` has no variable, so the literal is given a temporary of the
@@ -499,7 +519,6 @@ the contract backwards.
 - **The lifetime paragraph now says that reading a reference back OUT of a struct
   counts too** — `b.d` is the same slice header `b` carries. That became true this
   release, and a reader meeting the refusal would not have found it described.
-
 
 ### Behaviour changes
 
@@ -1495,7 +1514,6 @@ leak summary did not follow.
   it with no case of its own. Being predeclared rather than a keyword, it can still
   be shadowed: existing code using `any` as an identifier is unaffected.
 
-
 - **`len` and `cap` of an array reached through a chain**: a ROW of a
   multi-dimensional one, `len(m[0])`, a struct's array field indexed to its row,
   `len(g.rows[0])`, a row through a pointer to the array, and a field reached past an
@@ -1556,7 +1574,6 @@ leak summary did not follow.
   so those say `cannot indirect xs` with no parenthetical, rather than inventing a
   name. Three messages in the family also still differ from Go's in shape; both are
   written down in `specs.go`.
-
 
 - **A suffix that does not apply to its operand now names the operand.** `q.n[0]`,
   `q.n.f`, `q.n()` for an `int` field, and the assignment forms — all programs Go
@@ -2110,7 +2127,6 @@ used as a type now says what it actually is.
   3}` all work; each binds the literal to a temporary of the frame that the copy
   then reads. It is still refused as an operand of an expression, where there is no
   copy to bind it for and C has no array value for it to become.
-
 
 ### Behaviour changes
 
@@ -3013,7 +3029,6 @@ holds it, found one call further away than before.
   An assignment whose target carries a selector, an index or a leading `*` is left to
   the field, index and deref checks: the name in hand there is the target's *base*,
   and what is assigned belongs to the field, element or pointee.
-
 
 - **Three messages now read as Go's do.** `break is not in a loop, switch or select`
   gains Go's comma; `undefined label nope` becomes `break label not defined: nope`
