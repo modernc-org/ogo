@@ -1739,7 +1739,15 @@ func (e *emitter) checkStructCopySrc(ctype string, src []int32) bool {
 	if !ok {
 		return true // not a bare factor: an operator chain, which is not a struct
 	}
-	if _, _, isCall := e.factorCall(kids); !isCall {
+	recv, suffix, isCall := e.factorCall(kids)
+	if !isCall {
+		return true
+	}
+	// A CONVERSION is spelled like a call and is not one: `Arr2(x)` yields a
+	// temporary this frame owns, which has an address, so the copy below is the
+	// ordinary one. Without this it was reported as a copy "from a call" of an
+	// operand that is a variable, which named the wrong thing entirely.
+	if _, used, isConv := e.convChainHead(recv, suffix); isConv && used == len(suffix) {
 		return true
 	}
 	e.fail("cannot copy %s from a call: it holds an array, which the target's C compiler cannot return by value", ctype)
@@ -8167,7 +8175,63 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		e.declInit = saved
 		return
 	}
+	// A struct VALUE standing as an element -- a variable, a call's result, a
+	// conversion, anything that is not a literal. The target's C compiler refuses a
+	// non-braced aggregate inside an ARRAY initializer: `[]B{b}` was reported as
+	// "expected int but got _struct__B", about generated code the program never
+	// wrote, though the same C is valid and the host compiler takes it. It is the
+	// same limit that already makes a slice element and a string element brace here.
+	//
+	// The value is bound to a name first so it is evaluated once however it was
+	// written. A struct holding an ARRAY never reaches this: it is refused above.
+	if brace && e.isStruct(expectType) {
+		base, isName := e.exprIdent(v.ast)
+		if isName {
+			base = e.varRef(base)
+		} else {
+			base = e.hoist(expectType, func() { e.emitExpr(v.ast) })
+		}
+		e.emit(e.structBraceC(base, expectType))
+		return
+	}
 	e.emitExpr(v.ast)
+}
+
+// structBraceC renders a struct VALUE reached by base as the brace initializer an
+// array literal's element position takes: its members in order, each braced in turn
+// where it is itself an aggregate. See emitLitElement for why the braces are needed.
+//
+// A string, a slice and an interface are structs the emitter mints rather than
+// declares, so their members are named here; everything else reads its fields off
+// the registry. A member that is neither is a scalar and stands as it is.
+func (e *emitter) structBraceC(base, ctype string) string {
+	u := e.underlyingCType(ctype)
+	switch {
+	case u == cString:
+		return "{" + base + ".str, " + base + ".len}"
+	case e.isSliceCType(u):
+		return "{" + base + ".ptr, " + base + ".len, " + base + ".cap}"
+	case e.isIfaceCType(u):
+		// Asked before the registry, which holds an interface's name with no fields
+		// under it -- so the generic path would have written "{0}" and zeroed the
+		// value instead of copying it.
+		return "{" + base + ".data, " + base + ".vt}"
+	}
+	fields, ok := e.structs[u]
+	if !ok {
+		return base // a scalar member is itself
+	}
+	if len(fields) == 0 {
+		return "{0}" // an empty struct: its one hidden byte, not "{}" (invalid C)
+	}
+	var parts []string
+	for _, f := range fields {
+		// The C member name, not the Go one: a field whose name collides with a type
+		// takes a trailing underscore, so reading `b.I` for a field named after the
+		// type I produced "unknown identifier I in class _struct__B".
+		parts = append(parts, e.structBraceC(base+"."+e.fieldIdent(f.name), f.ctype))
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 // valueIsSliceExpr reports whether a value is a slice EXPRESSION -- `pool[:]`,
@@ -9608,10 +9672,88 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 			e.fail("a string conversion needs allocation, which the target does not have")
 			return
 		}
+		// Two DISTINCT struct types, `B(a)`. Reached only when the representations
+		// differ, so the same-representation case -- a defined type over the struct,
+		// either direction -- is already answered above and this is the other one:
+		// two names for one shape, neither defined over the other, which Go converts
+		// between and this refused as "cannot convert to B".
+		if ok && e.isStruct(src) && e.isStruct(e.underlyingCType(ct)) {
+			e.emitStructConv(ct, src, arg)
+			return
+		}
 		e.fail("cannot convert to %s", ct)
 		return
 	}
 	e.emitExpr(arg.ast)
+}
+
+// emitStructConv emits a conversion between two struct types of different C names,
+// `B(a)`. Go allows one exactly when the underlying types are IDENTICAL -- the same
+// fields, in the same order, with the same names and types -- and the two are then
+// one shape under two names, so nothing about the value changes.
+//
+// C has no cast between struct types, so it is a COPY: a temporary of the target's
+// type filled from the operand's bytes. memcpy rather than a memberwise literal
+// because identical layouts is exactly what makes copying the bytes right, and
+// because it is the one form flexcc lowers for a struct holding an array -- a
+// memberwise literal cannot initialize an array member from another array at all.
+func (e *emitter) emitStructConv(ct, src string, arg Node) {
+	target := e.underlyingCType(ct)
+	if !e.sameStructLayout(target, src) {
+		// Go's own wording, so what a reader knows from Go carries over. Reported
+		// here rather than by the checker because the field lists the answer needs
+		// are the emitter's.
+		e.fail("cannot convert %s (variable of struct type %s) to type %s",
+			e.f.exprSource(arg), e.goTypeName(src), e.goTypeName(ct))
+		return
+	}
+	if e.pkgScope {
+		// A package variable's initializer has no frame to put the temporary in, and
+		// C evaluates a file-scope initializer before any statement runs.
+		e.fail("a package variable cannot be initialized by a conversion between struct types: " +
+			"it is a copy, and there is no frame here to make it in; assign it in a function")
+		return
+	}
+	from := ""
+	if name, isName := e.exprIdent(arg.ast); isName {
+		from = e.varRef(name)
+	} else {
+		// Evaluated once, and addressable: memcpy takes the address of its source,
+		// which a call's result does not have.
+		from = e.hoist(src, func() { e.emitExpr(arg.ast) })
+	}
+	tmp := e.newTmp()
+	e.includes["string.h"] = true
+	e.prologue = append(e.prologue, target+" "+tmp+";\n")
+	e.prologue = append(e.prologue, "memcpy(&"+tmp+", &"+from+", sizeof("+target+"));\n")
+	e.locals[tmp] = ct
+	e.emit(tmp)
+}
+
+// sameStructLayout reports whether two struct C types have identical layouts in Go's
+// sense: the same fields, in the same order, each with the same name and the same
+// type. That is what makes a conversion between them legal, and it is compared by
+// the field's C type NAME -- two structurally alike fields of different named types
+// are different types in Go too, so string equality is the right test rather than a
+// weaker one.
+func (e *emitter) sameStructLayout(a, b string) bool {
+	fa, okA := e.structs[a]
+	fb, okB := e.structs[b]
+	if !okA || !okB || len(fa) != len(fb) {
+		return false
+	}
+	for i := range fa {
+		x, y := fa[i], fb[i]
+		switch {
+		case x.name != y.name, x.ctype != y.ctype, x.embedded != y.embedded:
+			return false
+		case x.dim.bound != y.dim.bound, x.dim.name != y.dim.name:
+			return false
+		case !slices.Equal(x.dim.inner, y.dim.inner):
+			return false
+		}
+	}
+	return true
 }
 
 // isScalarCType reports whether a C type is one a cast may name: the arithmetic

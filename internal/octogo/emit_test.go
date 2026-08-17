@@ -9761,6 +9761,104 @@ func main() {
 	}
 }
 
+// TestEmitCStructConvRules pins which conversions between two struct types are
+// allowed and which are not. Go's rule is that the underlying types must be
+// IDENTICAL -- the same fields, in the same order, with the same names and types --
+// and the refusals use Go's own wording, so what a reader knows from Go carries over.
+//
+// All of these, the legal one included, used to report "cannot convert to B": the
+// conversion emitter compares REPRESENTATIONS, and two distinct struct types are two
+// C types however alike their fields. The same-representation case -- a defined type
+// over the struct, either direction -- has always worked and is pinned here too, so a
+// change to the new path cannot quietly take it away.
+func TestEmitCStructConvRules(t *testing.T) {
+	const decls = `type Inner struct {
+	N int
+}
+
+type A struct {
+	X int
+	Y int
+}
+
+type Same struct {
+	X int
+	Y int
+}
+
+type Renamed struct {
+	X int
+	Z int
+}
+
+type Retyped struct {
+	X int
+	Y string
+}
+
+type Reordered struct {
+	Y int
+	X int
+}
+
+type Shorter struct {
+	X int
+}
+
+type Longer struct {
+	X int
+	Y int
+	Z int
+}
+
+type Wrapped struct {
+	X int
+	Y Inner
+}
+
+type Defined A
+
+`
+	for _, test := range []struct{ name, src, want string }{
+		{"identical layout", "a := A{1, 2}\nb := Same(a)\nprintln(b.X + b.Y)", ""},
+		{"a defined type over it", "a := A{1, 2}\nb := Defined(a)\nprintln(b.X + b.Y)", ""},
+		{"back from a defined type", "var d Defined\nd.X = 1\na := A(d)\nprintln(a.X)", ""},
+		{"a renamed field", "a := A{1, 2}\nb := Renamed(a)\nprintln(b.X)",
+			"cannot convert a (variable of struct type A) to type Renamed"},
+		{"a retyped field", "a := A{1, 2}\nb := Retyped(a)\nprintln(b.X)",
+			"cannot convert a (variable of struct type A) to type Retyped"},
+		{"the fields reordered", "a := A{1, 2}\nb := Reordered(a)\nprintln(b.X)",
+			"cannot convert a (variable of struct type A) to type Reordered"},
+		{"fewer fields", "a := A{1, 2}\nb := Shorter(a)\nprintln(b.X)",
+			"cannot convert a (variable of struct type A) to type Shorter"},
+		{"more fields", "a := A{1, 2}\nb := Longer(a)\nprintln(b.X)",
+			"cannot convert a (variable of struct type A) to type Longer"},
+		{"a field of another named type", "a := A{1, 2}\nb := Wrapped(a)\nprintln(b.X)",
+			"cannot convert a (variable of struct type A) to type Wrapped"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := decls + "func main() {\n" + test.src + "\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC accepted %q; want %q", test.src, test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCompareRules pins the comparisons the language does not define. Each used
 // to reach the C compiler, which refused the emitted code in its own words
 // ("Expected integer type for parameter of comparison") with nothing in the OctoGo

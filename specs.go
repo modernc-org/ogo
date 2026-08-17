@@ -506,7 +506,22 @@
 //
 // That holds of conversions generally: one between two types of the same
 // representation costs nothing and is the operand itself, while one between scalar
-// types is a conversion of the value and truncates as Go says. A target in ANOTHER
+// types is a conversion of the value and truncates as Go says.
+//
+// Two DISTINCT struct types convert between each other exactly when their underlying
+// types are identical -- the same fields, in the same order, with the same names and
+// types -- which is Go's rule. Neither need be defined over the other:
+//
+//	type Point struct{ X, Y int }
+//	type Vec struct{ X, Y int }
+//
+//	v := Vec(p)   // one shape under two names
+//
+// The value is COPIED, the two being separate C types however alike; a difference in
+// any field's name, type or position is refused in Go's own words, "cannot convert p
+// (variable of struct type Point) to type Other".
+//
+// A target in ANOTHER
 // package is named as it is anywhere else, "geo.Celsius(20)" -- a type spelled where
 // a call looks like it stands, and a conversion rather than a call for every kind of
 // target: a defined scalar, an array, a slice, a struct or an interface.

@@ -14156,6 +14156,117 @@ func main() {
 }
 `,
 		want: "2\n5 9 5\n5 7\n3\n3 hi\n",
+	},
+	{
+		// Two things Go does that this could not, and one is why the other was hard
+		// to see.
+		//
+		// A conversion between two DISTINCT struct types of identical layout, `B(a)`,
+		// was refused as "cannot convert to B". C has no cast between struct types, so
+		// it is lowered as a copy -- memcpy into a temporary of the target's type,
+		// which is exactly what the layouts being identical licenses, and the one form
+		// that works for a struct holding an array.
+		//
+		// And a struct VALUE standing as an array or slice literal's ELEMENT --
+		// `[]B{b}`, a variable, a call's result, a conversion -- reached the target's C
+		// compiler, which refuses a non-braced aggregate inside an array initializer:
+		// "expected int but got _struct__B", about generated code the program never
+		// wrote. Its members braced is the spelling it takes, recursively, since a
+		// nested struct, a string and a slice are each aggregates too.
+		//
+		// The values are all distinct so a member or a table reaching the wrong one
+		// shows. Byte-identical to the same program under Go.
+		name: "a struct conversion, and a struct value as a literal element",
+		src: `type Inner struct {
+	N int
+}
+
+type A struct {
+	X int
+	S string
+	I Inner
+}
+
+type B struct {
+	X int
+	S string
+	I Inner
+}
+
+type Rows struct {
+	V [2]int
+	N int
+}
+
+type Cols struct {
+	V [2]int
+	N int
+}
+
+type Held struct {
+	X int
+	S []int
+}
+
+type Shape interface {
+	Area() int
+}
+
+func (i *Inner) Area() int { return i.N * 10 }
+
+type Boxed struct {
+	X int
+	S Shape
+	P *Inner
+}
+
+var ga = A{1, "a", Inner{2}}
+var gb = B{3, "b", Inner{4}}
+var pool = [3]int{7, 8, 9}
+var held = Held{5, pool[:]}
+var innr = Inner{4}
+var boxed = Boxed{9, &innr, &innr}
+
+func mkB() B { return B{6, "m", Inner{7}} }
+
+func takeB(b B) int { return b.X + b.I.N }
+
+func toB(a A) B { return B(a) }
+
+func main() {
+	b := B(ga)
+	println(b.X, b.S, b.I.N)
+	println(takeB(B(ga)))
+	println(toB(A{8, "t", Inner{9}}).X)
+	var c B
+	c = B(ga)
+	println(c.X)
+	r := Rows{}
+	r.V[0] = 3
+	r.V[1] = 4
+	r.N = 5
+	q := Cols(r)
+	println(q.V[0], q.V[1], q.N)
+
+	bs := []B{gb, mkB(), B(ga)}
+	println(bs[0].X, bs[1].X, bs[2].X)
+	println(bs[0].S, bs[1].S, bs[2].S)
+	println(bs[0].I.N, bs[1].I.N, bs[2].I.N)
+	arr := [2]B{gb, B(ga)}
+	println(arr[0].X, arr[1].X)
+	hs := []Held{held}
+	println(hs[0].X, hs[0].S[0], len(hs[0].S))
+	box := struct2{gb}
+	println(box.b.X)
+	bx := []Boxed{boxed}
+	println(bx[0].X, bx[0].S.Area(), bx[0].P.N)
+}
+
+type struct2 struct {
+	b B
+}
+`,
+		want: "1 a 2\n3\n8\n1\n3 4 5\n3 6 1\nb m a\n4 7 2\n3 1\n5 7 3\n3\n9 40 4\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

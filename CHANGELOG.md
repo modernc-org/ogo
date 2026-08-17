@@ -20,6 +20,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A struct VALUE may stand as an array or slice literal's element**, `[]B{b}` — a
+  variable, a call's result, a conversion, anything that is not itself a literal. It
+  reached the C compiler, which reports `expected int but got _struct__B` about
+  generated code the program never wrote: the target refuses a non-braced aggregate
+  inside an *array* initializer, which is the same limit that already makes a slice
+  element and a string element brace there. Its members braced is the spelling it
+  takes, recursively — a nested struct, a string, a slice and an interface are each
+  aggregates too, and an interface would otherwise have been zeroed rather than
+  copied. A struct holding an array is still refused, with the reason it always gave.
+
+- **Two DISTINCT struct types convert between each other** when their underlying types
+  are identical — the same fields, in the same order, with the same names and types,
+  which is Go's rule and needs neither type defined over the other. `Vec(p)` was
+  refused as `cannot convert to Vec`: the conversion emitter compares
+  *representations*, and two struct types are two C types however alike their fields.
+  C has no cast between them, so the value is copied. A mismatch in any field's name,
+  type or position is now refused in Go's own words — `cannot convert p (variable of
+  struct type Point) to type Other` — where all of them, the legal one included, said
+  the same unhelpful thing before.
+
 - **Another package's STRING constant is usable**, `geo.Tag`. Every other constant
   type crossed the boundary — int, float, bool, rune, a wide one, a typed one — and a
   string did not: it is inlined at each use, a Go constant having no address, so
