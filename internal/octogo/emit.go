@@ -4433,19 +4433,20 @@ func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
 	return "{" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
 }
 
-// ifaceConvOperand recognises a conversion to the given interface type, `Shape(&q)`,
-// and returns the operand. It exists for the brace positions, where the conversion's
-// own value form -- a compound literal -- is the wrong shape; the sibling
-// arrayConvOperand does the same for a defined array type.
+// ifaceConvOperand recognises a conversion to the given interface type -- `Shape(&q)`,
+// or the qualified `geo.Shape(&q)` -- and returns the operand. It exists for the brace
+// positions, where the conversion's own value form -- a compound literal -- is the
+// wrong shape; the sibling arrayConvOperand does the same for a defined array type.
 func (e *emitter) ifaceConvOperand(iface string, ast []int32) ([]int32, bool) {
 	recv, suffix, ok := e.directCall(ast)
-	if !ok || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+	if !ok {
 		return nil, false
 	}
-	if ct, isType := e.convType(recv); !isType || ct != iface {
+	ct, used, isConv := e.convChainHead(recv, suffix)
+	if !isConv || used != len(suffix) || ct != iface {
 		return nil, false
 	}
-	args := e.callArgExprs(suffix[0].ast)
+	args := e.callArgExprs(suffix[used-1].ast)
 	if len(args) != 1 {
 		return nil, false
 	}
@@ -8136,7 +8137,7 @@ func (e *emitter) valueIsSliceExpr(v Node) bool {
 	// A CONVERSION to a slice type renames the same header, so it renders whatever
 	// its operand renders: `L(a[:])` is a compound literal exactly as `a[:]` is.
 	if recv, suffix, isCall := e.directCall(v.ast); isCall && len(suffix) != 0 &&
-		suffix[len(suffix)-1].sym == CallSuffix && e.convToSliceType(recv, len(suffix)) {
+		suffix[len(suffix)-1].sym == CallSuffix && e.convToSliceType(recv, suffix) {
 		if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
 			return e.valueIsSliceExpr(args[0])
 		}
@@ -9426,22 +9427,67 @@ func (e *emitter) convType(recv string) (string, bool) {
 	return "", false
 }
 
-// arrayConvOperand recognises a conversion to a defined ARRAY type, `row(a)`, and
-// returns the operand. Such a conversion is the operand itself: the two types have
-// one representation, so there is nothing to convert.
+// qualConvType is convType for a QUALIFIED name, `geo.Celsius(20)`. A conversion
+// spelled that way was refused for every type -- not just an interface -- because
+// convType takes one identifier and the call machinery, finding an import qualifier,
+// went looking for a function of that name: the declaration reported "cannot infer a
+// type" and the emitted call named a C function the program never defines.
+//
+// The lookup is cType's qualified branch, which has answered this question for a type
+// POSITION all along; only the conversion position was never given it.
+func (e *emitter) qualConvType(qualifier, name string) (string, bool) {
+	prefix, ok := e.importQualifiers[qualifier]
+	if !ok {
+		return "", false
+	}
+	mn := mangle(prefix, name)
+	if _, isArr := e.namedArrays[mn]; isArr || e.namedTypes[mn] || e.isStruct(mn) {
+		return mn, true
+	}
+	return "", false
+}
+
+// convChainHead recognises a conversion opening an access chain and says which type
+// it makes and how many steps it consumes. The unqualified `C(5).twice()` is a call
+// of the type's own name and takes one step; the qualified `geo.Celsius(20).Double()`
+// is a selector naming the type and then the call, and takes two. Either leaves a
+// value of that type, which the steps after it walk like any other.
+//
+// The qualified form is asked first because both shapes start with an identifier that
+// is not a variable: the unqualified test would read `geo` as a type name and answer
+// no, which is right, but only by accident of the order.
+func (e *emitter) convChainHead(base string, steps []Node) (ct string, used int, ok bool) {
+	if len(steps) >= 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+		if ct, ok := e.qualConvType(base, e.soleIdent(steps[0].ast)); ok {
+			return ct, 2, true
+		}
+	}
+	if len(steps) >= 1 && steps[0].sym == CallSuffix {
+		if ct, ok := e.convType(base); ok {
+			return ct, 1, true
+		}
+	}
+	return "", 0, false
+}
+
+// arrayConvOperand recognises a conversion to a defined ARRAY type -- `row(a)`, or
+// the qualified `geo.Row(a)` -- and returns the operand. Such a conversion is the
+// operand itself: the two types have one representation, so there is nothing to
+// convert. Reading only the unqualified shape is what made `geo.Row(a)` copy one
+// element and leave the rest garbage, the generic path treating it as a scalar.
 func (e *emitter) arrayConvOperand(ast []int32) ([]int32, bool) {
 	recv, suffix, ok := e.directCall(ast)
-	if !ok || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+	if !ok {
 		return nil, false
 	}
-	ct, isType := e.convType(recv)
-	if !isType {
+	ct, used, isConv := e.convChainHead(recv, suffix)
+	if !isConv || used != len(suffix) {
 		return nil, false
 	}
 	if _, isArray := e.namedArrays[ct]; !isArray {
 		return nil, false
 	}
-	args := e.callArgExprs(suffix[0].ast)
+	args := e.callArgExprs(suffix[used-1].ast)
 	if len(args) != 1 {
 		return nil, false
 	}
@@ -10797,22 +10843,20 @@ func (e *emitter) derefBase(name string) (string, accessCur, bool) {
 	return "(*" + e.nilCheckedC(e.varRef(name), ct) + ")", e.plainOrSlice(e.elemType(ct)), true
 }
 
-// arrayConvChain matches a leading conversion to a defined array type, `Row(a)`,
-// and answers with the operand's name and the steps that follow it. The operand
+// arrayConvChain matches a leading conversion to a defined array type -- `Row(a)`, or
+// the qualified `geo.Row(a)` -- and answers with the operand's name and the steps that
+// follow it. The operand
 // must be a plain identifier: what makes the unwrap sound is that the conversion
 // names the same storage, which is only true of something that HAS storage.
 func (e *emitter) arrayConvChain(name string, steps []Node) (string, []Node, bool) {
-	if len(steps) < 2 || steps[0].sym != CallSuffix {
-		return "", nil, false
-	}
-	ct, isType := e.convType(name)
-	if !isType {
-		return "", nil, false
+	ct, used, isConv := e.convChainHead(name, steps)
+	if !isConv || used == len(steps) {
+		return "", nil, false // nothing follows the conversion: not a chain
 	}
 	if _, isArray := e.namedArrays[ct]; !isArray {
 		return "", nil, false
 	}
-	args := e.callArgExprs(steps[0].ast)
+	args := e.callArgExprs(steps[used-1].ast)
 	if len(args) != 1 {
 		return "", nil, false
 	}
@@ -10825,7 +10869,7 @@ func (e *emitter) arrayConvChain(name string, steps []Node) (string, []Node, boo
 	// unlike the address-of and the assignment it needs no context -- a slice step
 	// after this conversion is wrong wherever it stands -- and fail keeps the FIRST
 	// error, so this wins over the generic one the typing path would reach.
-	for _, st := range steps[1:] {
+	for _, st := range steps[used:] {
 		if st.sym != Index {
 			continue
 		}
@@ -10834,7 +10878,7 @@ func (e *emitter) arrayConvChain(name string, steps []Node) (string, []Node, boo
 			break
 		}
 	}
-	return base, steps[1:], true
+	return base, steps[used:], true
 }
 
 // isArrayConv reports whether n is (or wraps) a factor whose chain begins with a
@@ -14305,6 +14349,15 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emit(")")
 			return true
 		}
+		// A CONVERSION to a type of that package, `geo.Celsius(20)`, which is not a
+		// call however much it looks like one. Asked before the qualifier path
+		// below, which would emit a geo_Celsius the program never defines.
+		if ct, isConv := e.qualConvType(recv, method); isConv {
+			if args := e.callArgExprs(suffix[1].ast); len(args) == 1 {
+				e.emitConversion(ct, args[0])
+				return true
+			}
+		}
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: the exported function is emitted
 			// in that package's namespace, so the call resolves to the mangled name.
@@ -14592,16 +14645,16 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		// needs and not what the contract here is -- so `switch any(&q).(type)` was
 		// refused with the wrong reason ("bind any to a variable"), the guard having
 		// stripped the `.(type)` before asking.
-		ct, isConv := e.convType(base)
-		if !isConv || len(steps) == 0 || steps[0].sym != CallSuffix {
+		ct, used, isConv := e.convChainHead(base, steps)
+		if !isConv {
 			return "", "", false, false
 		}
-		args := e.callArgExprs(steps[0].ast)
+		args := e.callArgExprs(steps[used-1].ast)
 		if len(args) != 1 {
 			return "", "", false, false
 		}
 		text = e.captureC(func() { e.emitConversion(ct, args[0]) })
-		cur, steps = e.plainOrSlice(ct), steps[1:]
+		cur, steps = e.plainOrSlice(ct), steps[used:]
 	}
 	for i := 0; i < len(steps); i++ {
 		n := steps[i]
@@ -19005,6 +19058,11 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 			}
 			return "", false
 		}
+		// A conversion to a type of that package is its own type, not a function's
+		// result. Asked first, as the emission path asks it first.
+		if ct, isConv := e.qualConvType(recv, e.soleIdent(suffix[0].ast)); isConv {
+			return ct, true
+		}
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: its function's recorded result type
 			// is keyed by its mangled name in that package's namespace.
@@ -20549,7 +20607,7 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	// DECLARATION asks this question to decide whether the new variable inherits the
 	// backing, and `s := L(a[:])` inherited nothing.
 	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 &&
-		suffix[len(suffix)-1].sym == CallSuffix && e.convToSliceType(recv, len(suffix)) {
+		suffix[len(suffix)-1].sym == CallSuffix && e.convToSliceType(recv, suffix) {
 		if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
 			return e.sliceBackingIsFrame(args[0].ast)
 		}
@@ -20797,7 +20855,7 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		// A conversion to an INTERFACE type is the same laundering by the other
 		// spelling: the value holds a POINTER to its operand and nothing else, so
 		// `g = Shape(&q)` and `g = any(&q)` reach q exactly as `g = &q` does.
-		if e.convToSliceType(recv, len(suffix)) || e.convToIfaceType(recv, len(suffix)) {
+		if e.convToSliceType(recv, suffix) || e.convToIfaceType(recv, suffix) {
 			if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
 				return e.frameRefOf(args[0].ast)
 			}
@@ -20833,12 +20891,9 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 // Only a slice result matters to the lifetime rules. A conversion to a scalar or to
 // an array yields a VALUE, which refers to nothing; a conversion to a slice yields
 // the same three words over the same backing.
-func (e *emitter) convToSliceType(recv string, steps int) bool {
-	if steps != 1 {
-		return false
-	}
-	u, ok := e.namedUnderlying[mangle(e.curPkgPrefix, recv)]
-	return ok && e.isSliceCType(e.underlyingCType(u))
+func (e *emitter) convToSliceType(recv string, suffix []Node) bool {
+	ct, used, ok := e.convChainHead(recv, suffix)
+	return ok && used == len(suffix) && e.isSliceCType(e.underlyingCType(ct))
 }
 
 // convToIfaceType is convToSliceType for an INTERFACE target. An interface value holds
@@ -20850,12 +20905,9 @@ func (e *emitter) convToSliceType(recv string, steps int) bool {
 //
 // `any` is included, being the empty interface under a name the universe holds rather
 // than any declaration; convType answers it the same way.
-func (e *emitter) convToIfaceType(recv string, steps int) bool {
-	if steps != 1 {
-		return false
-	}
-	ct, ok := e.convType(recv)
-	return ok && e.isIfaceCType(ct)
+func (e *emitter) convToIfaceType(recv string, suffix []Node) bool {
+	ct, used, ok := e.convChainHead(recv, suffix)
+	return ok && used == len(suffix) && e.isIfaceCType(ct)
 }
 
 // receiverFrameRef reports a method receiver that reaches this frame's storage when

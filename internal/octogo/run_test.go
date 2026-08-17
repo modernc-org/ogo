@@ -14166,7 +14166,7 @@ type hidden struct{ n int }
 // the lowering is about nothing but names.
 // multiPkgWant is what that program prints, on every one of the three.
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
-	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n"
+	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "greet"
@@ -14235,6 +14235,22 @@ println(<-ch)
 // which needs its VALUE at compile time -- the other package emits a symbol,
 // and C evaluates a file-scope initializer before there is one.
 println(limit, wide)
+// A QUALIFIED conversion, greet.T(x): a type name spelled where a call looks
+// like it stands, which is why every one of these was refused ("cannot infer a
+// type") until the conversion was looked for before the function. One per kind
+// of target -- a defined scalar, with a method called on the result; a defined
+// array; a defined slice; and an interface.
+c := greet.Celsius(20)
+println(int(c), greet.Celsius(24).Double())
+var ra [2]int
+ra[0] = 3
+ra[1] = 4
+row := greet.Row(ra)
+println(row[0]+row[1], greet.Row(ra)[1])
+ls := greet.L(pool[:])
+println(len(ls), ls[0])
+sh = greet.Shape(&quad)
+println(sh.Area())
 }
 
 const limit = greet.K + 5
@@ -14244,6 +14260,13 @@ const wide = greet.K * 2
 // Package-scope values of an imported type, laid out statically.
 var unit = greet.Vec{A: 1, B: 1}
 var vecs = []greet.Vec{{9, 9}, {8, 8}}
+
+// Storage for the qualified conversions above. The slice's backing is at package
+// scope because a conversion of a local's slice reaches that local, and the
+// lifetime rules follow it through the conversion exactly as they do without one.
+var pool = [3]int{9, 0, 0}
+var quad = greet.Quad{5, 6}
+var sh greet.Shape
 `,
 	"greet/greet.ogo": `type Point struct{ x, y int }
 
@@ -14287,6 +14310,28 @@ func Hello(n int) int { return scale(n) * 100 }
 func Twice(n int) int { return n * 2 }
 
 func scale(n int) int { return n }
+
+// Celsius, Row, L, Shape and Quad exist so main can spell a QUALIFIED conversion
+// to each kind of target a conversion has: a defined scalar carrying a method, a
+// defined array, a defined slice, and an interface with something implementing it.
+type Celsius int
+
+func (c Celsius) Double() int { return int(c) * 2 }
+
+type Row [2]int
+
+type L []int
+
+type Shape interface {
+Area() int
+}
+
+type Quad struct {
+W int
+H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
 `,
 	"greet/loud.ogo": `func Loud(s string) string {
 if len(s) > 0 {

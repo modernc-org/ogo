@@ -20,6 +20,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A QUALIFIED conversion compiles**, `geo.Celsius(20)` for a type of an imported
+  package — and it was refused for *every* kind of target, not just an interface: a
+  defined scalar, an array, a slice, a struct and an interface all reported `cannot
+  infer a type for the declaration`. The resolver behind a conversion takes one
+  identifier, so a qualified name reached the call machinery instead, which found the
+  import qualifier and went looking for a function of that name. It is a conversion in
+  every position now, including a method called on the result,
+  `geo.Celsius(24).Double()`.
+
+  Two mechanisms had to learn the spelling along with it, or accepting the program
+  would have been worse than refusing it. A conversion to a defined ARRAY type is the
+  operand itself, the two having one representation, and the recogniser that says so
+  reads the unqualified shape — without it `geo.Row(a)` copies one element and leaves
+  the rest garbage. And the lifetime rules: `geo.L(a[:])` and `geo.Shape(&q)` over a
+  local reach that local exactly as the plain spellings do, so a conversion they did
+  not follow would launder the reference past every sink.
+
 - **A conversion to an INTERFACE type compiles**, in every position an expression
   stands in: `s := Shape(&q)`, a long declaration, an assignment, an argument, a
   return, a struct literal's field, a slice or array literal's element, a channel

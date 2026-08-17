@@ -506,7 +506,10 @@
 //
 // That holds of conversions generally: one between two types of the same
 // representation costs nothing and is the operand itself, while one between scalar
-// types is a conversion of the value and truncates as Go says.
+// types is a conversion of the value and truncates as Go says. A target in ANOTHER
+// package is named as it is anywhere else, "geo.Celsius(20)" -- a type spelled where
+// a call looks like it stands, and a conversion rather than a call for every kind of
+// target: a defined scalar, an array, a slice, a struct or an interface.
 //
 // To build a string at run time without allocation, use the predeclared Builder
 // over a caller-owned backing array -- the allocation-free counterpart to Go's

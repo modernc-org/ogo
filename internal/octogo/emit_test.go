@@ -6908,6 +6908,129 @@ func Spawn(p []int) { go Work(p) }
 	}
 }
 
+// TestEmitCQualifiedConvEscape pins the lifetime rules against a QUALIFIED
+// conversion, `geo.L(a[:])` and `geo.Shape(&q)`. Enabling that spelling opened the
+// same laundering route the unqualified one had: the sinks recognise a conversion by
+// SHAPE, and a qualified one is a selector plus a call where the plain one is a call,
+// so every sink accepted a reference to storage that had already gone. Measured
+// before the fix -- both of these built and read a dead frame.
+//
+// The package-scope counterpart of each is here too: what the rule is about is where
+// the storage lives, not how the conversion is spelled.
+func TestEmitCQualifiedConvEscape(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "a qualified slice conversion of a local's slice, stored",
+			src: `import "geo"
+
+var g geo.L
+
+func fill() {
+	var a [4]int
+	g = geo.L(a[:])
+}
+
+func main() {
+	fill()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local a",
+		},
+		{
+			name: "a qualified slice conversion of a local's slice, returned",
+			src: `import "geo"
+
+func mk() geo.L {
+	var a [4]int
+	return geo.L(a[:])
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local a",
+		},
+		{
+			name: "a qualified interface conversion of a local's address, stored",
+			src: `import "geo"
+
+var gs geo.Shape
+
+func fill() {
+	q := geo.Quad{3, 4}
+	gs = geo.Shape(&q)
+}
+
+func main() {
+	fill()
+	println(gs.Area())
+}
+`,
+			want: "cannot store the address of local variable q",
+		},
+		{
+			name: "the same two over package storage",
+			src: `import "geo"
+
+var pool [4]int
+var pq geo.Quad
+var g geo.L
+var gs geo.Shape
+
+func fill() {
+	g = geo.L(pool[:])
+	gs = geo.Shape(&pq)
+}
+
+func main() {
+	fill()
+	println(len(g))
+	println(gs.Area())
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{
+				"main.ogo": &fstest.MapFile{Data: []byte(test.src)},
+				"geo/geo.ogo": &fstest.MapFile{Data: []byte(`type L []int
+
+type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+`)},
+			}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference laundered through a qualified conversion; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {
 		name string
