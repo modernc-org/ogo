@@ -12842,15 +12842,27 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			break
 		}
 		e.emitRangeSlice(h, body, key, e.locals[name], name)
+	// Asked ahead of the slice case, which reads the operand's C type: for a chain
+	// that STARTS at a slice and reaches an array field, `range hs[1].xs`, that type
+	// comes back as the slice's, and the loop then ranged the header rather than the
+	// field. The operand's own shape is what decides, and a slice has none -- this
+	// answers for arrays only, so no slice is claimed here.
+	case e.rangeArray(h.rangeExpr) != nil:
+		text, a, ok := e.rangeArrayBase(h.rangeExpr, h.valVar != nil)
+		if !ok {
+			// The predicate reads the operand's SHAPE and this reads its storage, so
+			// an operand whose shape is known and whose storage cannot be named lands
+			// here. Said rather than ranged over an empty base.
+			e.fail("cannot range over this array: it has no storage to name")
+			return
+		}
+		e.emitRangeArray(h, body, key, a, text)
 	case e.isSliceCType(ct):
 		// Hoist the slice header so .len and .ptr come from one evaluation.
 		hdr := e.newTmp()
 		e.ind()
 		e.emit(ct + " " + hdr + " = " + e.exprC(h.rangeExpr) + ";\n")
 		e.emitRangeSlice(h, body, key, ct, hdr)
-	case e.rangeArray(h.rangeExpr) != nil:
-		text, a, _ := e.rangeArrayBase(h.rangeExpr)
-		e.emitRangeArray(h, body, key, a, text)
 	case ct == cString:
 		// Ranging a string iterates its runes, as Go does (not its bytes): key is the
 		// byte index of each rune's start, the two-variable value is the decoded rune,
@@ -13044,18 +13056,34 @@ func (e *emitter) rangeLitVar(rangeExpr []int32) string {
 // rangeArray returns the array dimension of a range operand that is an array, or
 // nil.
 func (e *emitter) rangeArray(expr []int32) *arrDim {
-	_, a, ok := e.rangeArrayBase(expr)
-	if !ok {
-		return nil
+	// A pointer to an array is ranged AS the array, `range p` being `range *p`, and
+	// is the one spelling arrayShapeOf does not answer for -- it reads the value's
+	// own shape, and a pointer's is a pointer's.
+	if base, ok := e.exprIdent(expr); ok {
+		if a, isPtr := e.arrayPtrVar(base); isPtr {
+			return &a
+		}
 	}
-	return &a
+	if a, ok := e.arrayShapeOf(expr); ok {
+		return &a
+	}
+	return nil
 }
 
 // rangeArrayBase resolves a range operand that is an ARRAY to the C text naming its
-// storage and its extents. Three spellings reach the same array: the variable
-// itself, a pointer to it -- `range p` being `range *p` -- and that dereference
-// written out.
-func (e *emitter) rangeArrayBase(expr []int32) (string, arrDim, bool) {
+// storage and its extents. Four spellings reach the same array: the variable itself,
+// a pointer to it -- `range p` being `range *p` -- that dereference written out, and
+// a chain of fields and indexes, `h.xs` / `h.in.xs` / `pool[1]`.
+//
+// The chain is bound to a POINTER temporary and ranged through that. Go evaluates a
+// range expression ONCE, and a chain written into the loop's base would be evaluated
+// per iteration instead: `range pool[i]` would re-read i -- and re-check its bound --
+// every time round, and would follow i if the body changed it. The pointer is what
+// the `range p` spelling already produces, so nothing downstream is new.
+//
+// It RENDERS, so it is asked exactly once; rangeArray is the pure predicate that
+// decides whether to ask at all.
+func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrDim, bool) {
 	if base, ok := e.exprIdent(expr); ok {
 		if a, isPtr := e.arrayPtrVar(base); isPtr {
 			return "(*" + e.varRef(base) + ")", a, true
@@ -13065,7 +13093,28 @@ func (e *emitter) rangeArrayBase(expr []int32) (string, arrDim, bool) {
 		}
 		return "", arrDim{}, false
 	}
-	return e.arrayDerefOperand(expr)
+	if text, a, ok := e.arrayDerefOperand(expr); ok {
+		return text, a, true
+	}
+	// The field form is asked first because it keeps the type's NAME, so the pointer
+	// is spelled `Row*` rather than by a mint.
+	text, a, ok := e.arrayFieldOperand(expr)
+	if !ok {
+		if text, a, ok = e.arrayChainOperand(expr); !ok {
+			return "", arrDim{}, false
+		}
+	}
+	if !readsElements {
+		// The index-only form, `for i := range h.xs`, reaches no element, so there
+		// is nothing for the base to name and binding one anyway leaves a temporary
+		// the C compiler reports as unused. The extents are what the loop needs, and
+		// they come off the shape.
+		return text, a, true
+	}
+	tmp := e.newTmp()
+	e.ind()
+	e.emit(e.arrayTypedef(a) + "* " + tmp + " = &" + text + ";\n")
+	return "(*" + tmp + ")", a, true
 }
 
 // emitSwitch emits a switch statement as an if / else-if chain. Case bodies are

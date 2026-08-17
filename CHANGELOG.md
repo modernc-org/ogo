@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`range` takes an array reached through a chain** — `for _, v := range b.xs` over an
+  array-typed field, a nested one, `range pool[1]` for a row, and `range xs[1].xs` for
+  a chain that starts at a slice. The operand walk took a bare name, a pointer to an
+  array and that dereference written out, so every longer route fell past it to the
+  integer case and was reported as *ranging an integer yields only the index* — of an
+  array whose type the program had written down. Iterating a struct's own buffer is
+  ordinary Go. The chain is evaluated once, as Go evaluates a range expression, and
+  the array case is now decided by the operand's own shape rather than by the C type
+  of what the chain starts from.
+
 - **`range` over an array of ARRAYS yields rows** — `for _, row := range table` over a
   `[3][2]int`. The loop declared its value with the array's innermost element type,
   `int row = table[i]`, which no C compiler accepts. The same loop over a *slice* of

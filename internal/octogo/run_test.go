@@ -12731,6 +12731,98 @@ func main() {
 		want: "321\n34 36\n1 3\n2 5 6\n",
 	},
 	{
+		// Ranging an array reached through a CHAIN -- an array-typed field, one of a
+		// defined array type, a nested field, an element of an array of arrays, and a
+		// chain that starts at a slice. The operand walk took a bare name, a pointer
+		// to an array and that dereference written out, so every one of these fell
+		// past it to the integer case and was reported as "ranging an integer yields
+		// only the index" -- of an array whose type the program had written down.
+		// Iterating a struct's own buffer is ordinary Go.
+		//
+		// The chain is bound to a POINTER first, so the operand is evaluated once
+		// however many iterations follow, which is what Go does; the last block reads
+		// an index the body then changes, and would follow it otherwise. The
+		// index-only form binds nothing: it reaches no element, so there is no base
+		// to name and a temporary bound anyway is one the C compiler calls unused.
+		//
+		// `range xs[1].xs` is why the array case is asked before the slice one: the
+		// operand's C type there comes back as the SLICE the chain starts from, and
+		// the loop ranged the header rather than the field.
+		name: "range over an array reached through a chain",
+		src: `type Row [3]int
+
+type Inner struct {
+	xs [3]int
+}
+
+type Buf struct {
+	xs    [3]int
+	r     Row
+	rows  [2][3]int
+	inner Inner
+}
+
+var pool = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+
+var b = Buf{[3]int{1, 2, 3}, Row{4, 5, 6}, [2][3]int{{7, 8, 9}, {1, 1, 1}}, Inner{[3]int{2, 2, 2}}}
+
+var bufs [2]Buf
+
+func sum3(xs [3]int) int { return xs[0] + xs[1] + xs[2] }
+
+func main() {
+	// An array-typed FIELD, a field of a defined array type, a nested field, and an
+	// element of an array of arrays -- every route the copy already reads from.
+	n := 0
+	for _, v := range b.xs {
+		n += v
+	}
+	for _, v := range b.r {
+		n += v
+	}
+	for _, v := range b.inner.xs {
+		n += v
+	}
+	for _, v := range pool[1] {
+		n += v
+	}
+	println(n)
+
+	// The index-only form, which reaches no element and so needs no base.
+	m := 0
+	for i := range b.xs {
+		m += b.xs[i]
+	}
+	println(m)
+
+	// A field whose value is a row, and a chain that starts at a SLICE: the
+	// operand's own shape decides, not the type of what the chain starts from.
+	t := 0
+	for _, row := range b.rows {
+		t += sum3(row)
+	}
+	bufs[0] = b
+	bufs[1] = b
+	xs := bufs[:]
+	for _, v := range xs[1].xs {
+		t += v
+	}
+	println(t)
+
+	// The operand is evaluated ONCE, as Go evaluates it: the row is chosen when the
+	// loop starts and does not follow i.
+	i := 0
+	got := 0
+	for _, v := range pool[i] {
+		i = 1
+		got += v
+	}
+	println(got, i)
+}
+`,
+		want: "42\n6\n33\n6 1\n",
+	},
+	{
 		name: "three-clause for loops",
 		src: `func main() {
 	sum := 0
