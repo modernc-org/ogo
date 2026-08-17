@@ -269,6 +269,13 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// type -- so this never tightens a genuine type.
 	case curr == LPAREN && (prev == IDENT || prev == RBRACK):
 		return false
+	// A call binds tight to what it is called ON, whatever produced that: another
+	// call's result ("pick(0)(3, 4)", "chooser()(0)(6)"), a parenthesized callee
+	// ("(dbl)(21)"), or a function literal invoked where it stands ("func() {
+	// ... }()"). Only in a SIGNATURE is ")(" two lists rather than a call, and
+	// gofmt spaces those: "func f(a int) (int, int)".
+	case curr == LPAREN && (prev == RPAREN || prev == RBRACE):
+		return c.inSignature
 	// "func" binds tight to its signature's "(" for a type or literal ("func()",
 	// "func(int) bool"), but a method declaration spaces it off the receiver
 	// ("func (r T) m()").
@@ -594,6 +601,11 @@ type formatterCtx struct {
 	// the first off the name ("xs ...int") and binds the second to the slice
 	// ("sum(xs...)"), and the two are the same token in the same inParams context.
 	inParamDecl bool
+	// inSignature is true inside a function SIGNATURE, where a ")" followed by a "("
+	// is a parameter list followed by a result list and gofmt spaces the two --
+	// "func f(a int) (int, int)". Everywhere else that pair is a call binding tight
+	// to what it is called on, "f(0)(3)".
+	inSignature bool
 	inType      bool
 	inIndex     bool // True inside an Index, where ':' binds tight ("s[0:1]")
 	inArgs      bool // True inside an argument list of MORE THAN ONE argument, where
@@ -1012,19 +1024,19 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					if f.beginsLine(firstIndex(ast[:next])) {
 						c.indentLevel++
 					}
+				case Signature:
+					c.inSignature = true
 				case Receiver:
 					c.inReceiver = true
 				case ImportSpec:
 					c.inImport = true
 				case SimpleExpr:
-					c.inType = false
-					c.inParams = false
+					c.inType, c.inParams, c.inSignature = false, false, false
 					if containsNode(ast[2:next], AddOp) {
 						c.hasAddOp = true
 					}
 				case Expression:
-					c.inType = false
-					c.inParams = false
+					c.inType, c.inParams, c.inSignature = false, false, false
 				case ParamDecl:
 					c.inParamDecl = true
 				case Type, FieldDecl:

@@ -687,6 +687,87 @@ func f(a [3]int, s []int) [2]int {
 	}
 }
 
+// TestFormatCallAfterCall pins a call binding tight to whatever produced the value
+// it is made on: another call's result, a parenthesized callee, and a function
+// literal invoked where it stands. Only the LPAREN after an identifier or a "]" was
+// tightened, so `pick(0)(3, 4)`, `(dbl)(21)` and `func() { ... }()` were spaced off
+// as `pick(0) (3, 4)`, `(dbl) (21)` and `} ()`.
+//
+// The signature is here because it is the one place ")(" is NOT a call: a parameter
+// list followed by a result list, which gofmt spaces. Both spellings were checked
+// against gofmt.
+func TestFormatCallAfterCall(t *testing.T) {
+	const in = `func pick(n int) func(int, int) int {
+if n == 0 {
+return add
+}
+return sub
+}
+
+func add(a int, b int) int { return a + b }
+
+func sub(a int, b int) int { return a - b }
+
+func two(a int, b int) (int, int) { return a, b }
+
+func main() {
+println(pick(0) (3, 4), pick(1) (3, 4))
+dbl := add
+println((dbl) (21, 21))
+n := func() int { return 7 } ()
+println(n)
+defer func() { println("bye") } ()
+x, y := two(1, 2)
+println(x, y)
+}
+`
+	const want = `func pick(n int) func(int, int) int {
+	if n == 0 {
+		return add
+	}
+	return sub
+}
+
+func add(a int, b int) int { return a + b }
+
+func sub(a int, b int) int { return a - b }
+
+func two(a int, b int) (int, int) { return a, b }
+
+func main() {
+	println(pick(0)(3, 4), pick(1)(3, 4))
+	dbl := add
+	println((dbl)(21, 21))
+	n := func() int { return 7 }()
+	println(n)
+	defer func() { println("bye") }()
+	x, y := two(1, 2)
+	println(x, y)
+}
+`
+	formatRoundTrip(t, "call after call", in, want)
+}
+
+// formatRoundTrip formats in, checks it against want, and formats the result again:
+// a rule that is not idempotent is a rule that fights the next save.
+func formatRoundTrip(t *testing.T, what, in, want string) {
+	t.Helper()
+	var out bytes.Buffer
+	if err := FormatFile("t.ogo", []byte(in), &out); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if g := out.String(); g != want {
+		t.Errorf("%s:\n got %q\nwant %q", what, g, want)
+	}
+	var again bytes.Buffer
+	if err := FormatFile("t.ogo", out.Bytes(), &again); err != nil {
+		t.Fatalf("FormatFile round 2: %v", err)
+	}
+	if g, e := again.String(), out.String(); g != e {
+		t.Errorf("%s: formatting is not idempotent:\n first %q\nsecond %q", what, e, g)
+	}
+}
+
 // TestFormatPointerToArraySpacing pins a "[" binding tight to the "*" of a pointer
 // type and to the "&" of an address-of, "*[3]int" and "&[2]int{1, 2}", where the
 // index rule alone spaced them off as "* [3]int". The rule asks only whether the

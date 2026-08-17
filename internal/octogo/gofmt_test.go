@@ -34,10 +34,9 @@ import (
 // raising it because output changed is not. Check which one it is by writing the
 // program as .go and running gofmt on it, as the test does.
 //
-// That the same gap has now cost two corpus additions in a row is the argument for
-// closing it: a method pair on adjacent lines is ordinary Go, so every new program
-// that writes one lands here.
-const gofmtDisagreements = 39
+// 39 -> 34 closed a category that was plainly wrong rather than merely unaligned: a
+// call spaced off what it is called ON ("pick(0) (3, 4)", "(dbl) (21)", "} ()").
+const gofmtDisagreements = 34
 
 // TestFormatMatchesGofmt formats every run-corpus program with `ogo fmt` and with
 // real gofmt, and counts how many come out identical.
