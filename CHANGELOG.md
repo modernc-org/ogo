@@ -20,6 +20,32 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Any expression of POINTER type may become an interface value**, not just the
+  three shapes that could. `var s Shape = New()` — the ordinary way a constructor is
+  used — was refused with `an interface holds a pointer: write the address of a
+  variable`, advice that does not apply to a value already pointing at one; so were a
+  pointer field, `var s Shape = b.p`, and an element of an array of pointers. Only
+  `&x`, `&T{...}` and a bare name of pointer type were recognised.
+
+  As an ARGUMENT it was worse than a refusal: `take(New())` reached the C compiler,
+  which reported `expected _struct__Shape but got pointer to _struct__Quad` about
+  generated code the program never wrote. That is the one shape of failure this
+  compiler is meant not to have.
+
+  The lifetime rules already saw through the new shapes — a pointer field of a struct
+  holding a local's address is refused at every sink, as it was before — and the
+  package-storage counterpart of each is pinned beside it. A bare name that is *not* a
+  pointer is still refused: that is the value form, and there is nowhere to copy to.
+
+- **An INTERFACE-typed argument may cross to a cog**, `go show(&q)` for a
+  `show(Shape)`. It had never worked in any spelling: a `go` statement's argument
+  block holds each value as its *parameter's* type, and the raw pointer was stored in
+  a slot of interface type, which the target's C compiler refused — `expected
+  _struct__Shape but got pointer to _struct__Quad`, about generated code the program
+  never wrote. Every other position wrapped the two words; this one alone did not. All
+  five ways a value gets there work now, including an interface widened from a wider
+  one, which needs a temporary declared where the cog can still see it.
+
 - **Another package's INTERFACE is usable**, which it was not: `var s geo.Shape = &pq`
   was refused as `cannot use &pq (an address) as geo.Shape value`, and so were the
   assignment, the argument and the return. Nor was there a way back out — an assertion
@@ -79,6 +105,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   the address does, so it may no more be stored, returned, sent, launched or passed
   to a function that keeps it — that route is closed at all five sinks, and would
   otherwise have opened one, the shape being what `L(a[:])` had for slices.
+
+### Behaviour changes
+
+- **A program that let the address of a composite literal outlive its frame no longer
+  builds.** `&T{...}` has no variable, so the literal is given a temporary of the
+  enclosing function and the address is that temporary's — `Quad* p = &(Quad){7, 8};`,
+  whose lifetime in C is the enclosing block. Binding it to a variable first was
+  refused already; every *direct* form was accepted, and all five were wrong: stored
+  in a package variable, returned, sent, launched on a cog, and passed to a function
+  that keeps it. `specs.go` has said this was refused since interfaces shipped.
+
+  It is not a rule about interfaces. `func mk() *Quad { return &Quad{1, 2} }` returns
+  the same dead temporary and is refused with them. What `&T{...}` is *for* — a fresh
+  value in an interface, used in the frame that made it, or handed to a function that
+  returns first — is unaffected. The fix the diagnostic asks for is to assign the
+  value to a package variable and use that.
 
 ### Diagnostics
 

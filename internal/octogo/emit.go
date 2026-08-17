@@ -1086,6 +1086,31 @@ func (e *emitter) emitGo(nodes []Node) {
 		first = 1
 	}
 	for i, a := range args {
+		// A concrete value crossing to a cog as an INTERFACE parameter is wrapped
+		// where it stands, the same two words every other position writes. Without
+		// this the raw pointer was stored in a slot of interface type and the
+		// target's C compiler reported "expected _struct__Shape but got pointer to
+		// _struct__Quad" about generated code -- `go show(&q)` for a `show(Shape)`
+		// had never worked, in any spelling.
+		//
+		// Through capturePrologue because building one may need a temporary (an
+		// interface WIDENED from another is statements, not an expression), and it
+		// has to be declared here rather than wherever the prologue is next flushed:
+		// the cog starts at the end of this block.
+		if ct := site.args[i+first]; e.isIfaceCType(ct) {
+			var text string
+			var wrapped bool
+			_, pro := e.capturePrologue(func() { text, wrapped = e.ifaceValueC(ct, a.ast) })
+			if wrapped {
+				for _, line := range pro {
+					e.ind()
+					e.emit(line)
+				}
+				e.ind()
+				e.emit(fmt.Sprintf("%s->a%d = %s;\n", ap, i+first, text))
+				continue
+			}
+		}
 		// A composite literal is built in a variable of its own first. The target's
 		// C compiler refuses one as the right-hand side of an assignment -- "global
 		// initializers are evaluated at compile time and therefore must be
@@ -4321,9 +4346,25 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok boo
 		if ct, ok := e.varType(name); ok && e.isPointer(ct) {
 			return e.elemType(ct), e.varRef(name), false, true
 		}
+		// A bare name that is NOT a pointer is the value form, which this target
+		// refuses on purpose -- there is nowhere to copy the value to. Answering no
+		// here is what makes that refusal reach the reader.
 		return "", "", false, false
 	}
-	return e.ifaceAddrLitOperand(rhs)
+	// Any OTHER expression of pointer type: a call's result, a pointer field, an
+	// element of an array of pointers, a chain reaching one. The value already points
+	// at the concrete value, so the two words are its own text beside the table its
+	// pointee names -- there is nothing to address and nothing to copy.
+	//
+	// Only `&x`, `&T{...}` and a bare name of pointer type could reach an interface
+	// before, so `var s Shape = get()` was refused though Go accepts it -- and as an
+	// ARGUMENT it was not refused at all: the raw pointer went where the two words
+	// belong and the C compiler reported "expected _struct__Shape but got pointer to
+	// _struct__Quad" about generated code.
+	if ct, isTyped := e.inferCType(rhs); isTyped && e.isPointer(ct) {
+		return e.elemType(ct), e.captureC(func() { e.emitExpr(rhs) }), false, true
+	}
+	return "", "", false, false
 }
 
 // ifaceAddrLitOperand gives storage to `&T{...}`, a fresh value with no variable of
@@ -20755,6 +20796,22 @@ func litRef() frameRef {
 // reader could be told to move to package scope, so advice() answers differently.
 const tempOrigin = "a temporary of this function"
 
+// addrLitRef names `&T{...}`. The literal has no variable, so the emitter gives it a
+// temporary of this frame and the address is that temporary's -- which makes it reach
+// this frame exactly as the address of a local does.
+//
+// Binding it to a variable first was refused (ifaceStoreC marks the holder), and
+// every DIRECT form was accepted: stored in a package variable, returned, sent,
+// launched on a cog and passed to a function that keeps it, all five a dangling
+// pointer into a frame that had returned. specs.go had said it was refused since
+// interfaces shipped.
+func addrLitRef() frameRef {
+	return frameRef{
+		origin: tempOrigin,
+		what:   "the address of a composite literal, which has no variable of its own",
+	}
+}
+
 func holderRef(name, origin string) frameRef {
 	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
 }
@@ -20862,6 +20919,11 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// frame's storage by construction -- there is no variable to have marked.
 	if elem, _, ok := e.soleSliceLit(ast); ok && elem != "" {
 		return litRef(), true
+	}
+	// `&T{...}`, the same by another spelling: a struct literal given a frame
+	// temporary to be the address of.
+	if _, _, isAddrLit := e.addrOfCompositeLit(ast); isAddrLit {
+		return addrLitRef(), true
 	}
 	if name, ok := e.addrOfRoot(ast); ok && e.isFrameVar(name) {
 		return addrRef(name), true

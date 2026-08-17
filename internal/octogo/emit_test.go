@@ -9233,6 +9233,489 @@ func main() {
 `,
 		},
 		{
+			// Now that ANY pointer expression may become an interface value, the sinks have
+			// to see through the new shapes too -- a pointer FIELD of a struct holding a
+			// local's address, and an ELEMENT of a local array of pointers. The holder marks
+			// already answered for both, which is why nothing new was needed for them; these
+			// pin it, because a change that widens what may ENTER an interface widens what
+			// can leave the frame inside one.
+			name: "a holder's pointer field into a package interface",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+var g Shape
+
+func fill() {
+	lq := Quad{3, 4}
+	var b Box
+	b.p = &lq
+	g = b.p
+}
+
+func main() {
+	fill()
+	println(g.Area())
+}
+`,
+			want: "cannot store b.p, which holds a pointer into local lq",
+		},
+		{
+			name: "the same through a local interface variable",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+var g Shape
+
+func fill() {
+	lq := Quad{3, 4}
+	var b Box
+	b.p = &lq
+	var s Shape = b.p
+	g = s
+}
+
+func main() {
+	fill()
+	println(g.Area())
+}
+`,
+			want: "cannot store local s, which holds a pointer into local lq",
+		},
+		{
+			name: "an element of a local array of pointers, stored",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+var g Shape
+
+func fill() {
+	lq := Quad{3, 4}
+	var ps [2]*Quad
+	ps[0] = &lq
+	g = ps[0]
+}
+
+func main() {
+	fill()
+	println(g.Area())
+}
+`,
+			want: "cannot store ps[0], which holds a pointer into local lq",
+		},
+		{
+			name: "a holder's pointer field returned as an interface",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+func mk() Shape {
+	lq := Quad{3, 4}
+	var b Box
+	b.p = &lq
+	return b.p
+}
+
+func main() { println(mk().Area()) }
+`,
+			want: "cannot return b.p, which holds a pointer into local lq",
+		},
+		{
+			name: "a holder's pointer field sent as an interface",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+func work(ch chan Shape) {
+	s := <-ch
+	println(s.Area())
+}
+
+func fill(ch chan Shape) {
+	lq := Quad{3, 4}
+	var b Box
+	b.p = &lq
+	ch <- b.p
+}
+
+func main() {
+	var ch chan Shape
+	go work(ch)
+	fill(ch)
+}
+`,
+			want: "cannot send b.p, which holds a pointer into local lq",
+		},
+		{
+			name: "a holder's pointer field handed to a goroutine",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+func show(s Shape) { println(s.Area()) }
+
+func main() {
+	lq := Quad{3, 4}
+	var b Box
+	b.p = &lq
+	go show(b.p)
+}
+`,
+			want: "cannot pass b.p, which holds a pointer into local lq to a goroutine",
+		},
+		{
+			name: "a holder's pointer field to a storing function",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+var g Shape
+
+func keep(s Shape) { g = s }
+
+func fill() {
+	lq := Quad{3, 4}
+	var b Box
+	b.p = &lq
+	keep(b.p)
+}
+
+func main() {
+	fill()
+	println(g.Area())
+}
+`,
+			want: "cannot pass b.p, which holds a pointer into local lq to keep",
+		},
+		{
+			// The counterparts over PACKAGE storage, which must all compile: what the rule
+			// is about is where the storage lives, not which expression reached it.
+			name: "the same pointer shapes over package storage",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+var pq = Quad{3, 4}
+var pbox Box
+var pps [2]*Quad
+var g Shape
+
+func get() *Quad { return &pq }
+
+func fill() {
+	pbox.p = &pq
+	pps[0] = &pq
+	g = pbox.p
+	g = pps[0]
+	g = get()
+}
+
+func main() {
+	fill()
+	println(g.Area())
+}
+`,
+		},
+		{
+			// `&T{...}` has no variable, so the emitter gives the literal a temporary of this
+			// frame and the address is that temporary's -- `Quad* p = &(Quad){7, 8};`, whose
+			// lifetime in C is the enclosing block. BINDING it to a variable first was
+			// refused, and every DIRECT form was accepted: stored, returned, sent, launched
+			// and passed to a function that keeps it, five dangling pointers into a frame
+			// that had returned. specs.go had said this was refused since interfaces
+			// shipped.
+			//
+			// The rule is not about interfaces: a plain `func mk() *Quad { return &Quad{1,
+			// 2} }` returns the same dead temporary, and is refused with it.
+			name: "the address of a composite literal, stored",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+var g Shape
+
+func store() {
+	g = &Quad{7, 8}
+}
+
+func main() {
+	store()
+	println(g.Area())
+}
+`,
+			want: "cannot store the address of a composite literal, which has no variable of its own",
+		},
+		{
+			name: "the address of a composite literal, returned as an interface",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+func mk() Shape { return &Quad{7, 8} }
+
+func main() { println(mk().Area()) }
+`,
+			want: "cannot return the address of a composite literal",
+		},
+		{
+			name: "the address of a composite literal, returned as a pointer",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+func mk() *Quad { return &Quad{7, 8} }
+
+func main() { println(mk().W) }
+`,
+			want: "cannot return the address of a composite literal",
+		},
+		{
+			name: "the address of a composite literal, sent",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+func work(ch chan Shape) {
+	s := <-ch
+	println(s.Area())
+}
+
+func send(ch chan Shape) {
+	ch <- &Quad{7, 8}
+}
+
+func main() {
+	var ch chan Shape
+	go work(ch)
+	send(ch)
+}
+`,
+			want: "cannot send the address of a composite literal",
+		},
+		{
+			name: "the address of a composite literal, handed to a goroutine",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+func show(s Shape) { println(s.Area()) }
+
+func spawn() { go show(&Quad{7, 8}) }
+
+func main() {
+	spawn()
+	println("done")
+}
+`,
+			want: "cannot pass the address of a composite literal",
+		},
+		{
+			name: "the address of a composite literal, to a storing function",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+var g Shape
+
+func keep(s Shape) { g = s }
+
+func pass() { keep(&Quad{7, 8}) }
+
+func main() {
+	pass()
+	println(g.Area())
+}
+`,
+			want: "cannot pass the address of a composite literal",
+		},
+		{
+			// Used inside the frame it belongs to, which is what `&T{...}` is FOR: a fresh
+			// value in an interface without a variable to name it. Handing it to a function
+			// that does not keep it is fine for the same reason -- the callee returns first.
+			name: "the address of a composite literal, used in the frame",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+func take(s Shape) int { return s.Area() }
+
+func main() {
+	var s Shape = &Quad{7, 8}
+	println(s.Area())
+	println(take(&Quad{1, 2}))
+	p := &Quad{3, 4}
+	println(p.W)
+}
+`,
+		},
+		{
+			// And a local's address reaching an interface that stays in the frame, which is
+			// the ordinary use and must not be refused.
+			name: "a holder's pointer field used in the same frame",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Box struct {
+	p *Quad
+}
+
+func main() {
+	lq := Quad{3, 4}
+	var b Box
+	b.p = &lq
+	var s Shape = b.p
+	println(s.Area())
+}
+`,
+		},
+		{
 			// And a local's address converted and used in the SAME frame, which is the
 			// ordinary way a program calls a method through an interface and must not be
 			// refused.

@@ -13967,6 +13967,171 @@ func main() {
 }
 `,
 		want: "12\n30\n12\n30\n12\n12\n30\n12\n30\n30\n12\n12\ntrue\n5\n6\nquad\n",
+	},
+	{
+		// Every expression of POINTER type may become an interface value, not just
+		// the three shapes that could: a call's result, a pointer field, an element of
+		// an array of pointers, and a call whose result comes from any of those. Go
+		// accepts all of them -- `var s Shape = New()` is how a constructor is used --
+		// and each was refused with "an interface holds a pointer: write the address of
+		// a variable", advice that does not apply to a value already pointing at one.
+		//
+		// As an ARGUMENT it was not even refused: the raw pointer went where the two
+		// words belong and the target's C compiler reported "expected _struct__Shape
+		// but got pointer to _struct__Quad" about generated code.
+		//
+		// The values are deliberately distinct -- 12, 30, 49 -- so a table or a data
+		// word reaching the wrong one shows. Byte-identical to the same program under
+		// Go.
+		name: "any pointer expression as an interface value",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Round struct {
+	R int
+}
+
+func (c *Round) Area() int { return c.R * c.R }
+
+type Box struct {
+	p *Quad
+	s Shape
+}
+
+var small = Quad{3, 4}
+var big = Quad{5, 6}
+var disc = Round{7}
+var ptrs [2]*Quad
+var box Box
+var g Shape
+
+func get() *Quad { return &small }
+
+func pick(n int) *Quad {
+	if n == 0 {
+		return &small
+	}
+	return ptrs[1]
+}
+
+func take(s Shape) int { return s.Area() }
+
+func mk() Shape { return get() }
+
+func main() {
+	ptrs[0] = &small
+	ptrs[1] = &big
+	box.p = &big
+	var s Shape = get()
+	println(s.Area())
+	var t Shape = box.p
+	println(t.Area())
+	var u Shape = ptrs[1]
+	println(u.Area())
+	println(take(get()))
+	println(take(box.p))
+	println(take(ptrs[0]))
+	g = get()
+	println(g.Area())
+	g = box.p
+	println(g.Area())
+	println(mk().Area())
+	println(take(pick(1)))
+	v := []Shape{get(), box.p, ptrs[0], &disc}
+	println(v[0].Area())
+	println(v[1].Area())
+	println(v[3].Area())
+	box.s = box.p
+	println(box.s.Area())
+	var arr [2]Shape = [2]Shape{get(), &disc}
+	println(arr[0].Area())
+	println(arr[1].Area())
+	if q, ok := t.(*Quad); ok {
+		println(q.W)
+	}
+}
+`,
+		want: "12\n30\n30\n12\n30\n12\n12\n30\n12\n30\n12\n30\n49\n30\n12\n49\n5\n",
+	},
+	{
+		// An INTERFACE-typed parameter crossing to a cog. `go show(&q)` for a
+		// `show(Shape)` had never worked in ANY spelling: the argument block holds each
+		// value as its parameter's type, and the raw pointer was stored in a slot of
+		// interface type, which the target's C compiler refused -- "expected
+		// _struct__Shape but got pointer to _struct__Quad", about generated code the
+		// program never wrote. Every other position wrapped the two words; this one
+		// alone did not.
+		//
+		// All five ways a value gets there are here, because what decides the table is
+		// the pair (concrete type, interface) and each spelling reaches it differently:
+		// an address, a call's result, a pointer field, an interface WIDENED from a
+		// wider one (which needs a temporary, so the prologue has to land inside this
+		// block and not wherever it is next flushed), and an interface copied as it
+		// stands. Byte-identical to the same program under Go.
+		name: "an interface argument crossing to a cog",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Quad struct {
+	W int
+	H int
+}
+
+func (q *Quad) Area() int { return q.W * q.H }
+
+type Round struct {
+	R int
+}
+
+func (c *Round) Area() int { return c.R * c.R }
+
+type Named interface {
+	Area() int
+	Name() string
+}
+
+func (q *Quad) Name() string { return "quad" }
+
+type Box struct {
+	p *Quad
+}
+
+var big = Quad{5, 6}
+var small = Quad{3, 4}
+var disc = Round{7}
+var box Box
+
+func get() *Quad { return &small }
+
+func work(s Shape, ch chan int) { ch <- s.Area() }
+
+func main() {
+	box.p = &big
+	var ch chan int
+	go work(&big, ch)
+	println(<-ch)
+	go work(get(), ch)
+	println(<-ch)
+	go work(box.p, ch)
+	println(<-ch)
+	var n Named = &big
+	go work(n, ch)
+	println(<-ch)
+	var s Shape = &disc
+	go work(s, ch)
+	println(<-ch)
+}
+`,
+		want: "30\n12\n30\n30\n49\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

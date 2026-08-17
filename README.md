@@ -396,7 +396,8 @@ Interfaces work: an interface value is a pointer to what it carries beside a
 pointer to a statically emitted vtable, with type assertions and type switches on
 top. A pointer is what goes into one -- `var s Shape = &q`, never `= q` -- because
 there is no heap to copy into and a silently aliasing value form would mean
-something Go does not. One may be written where a type is wanted rather than
+something Go does not; any expression already of pointer type goes in as it stands,
+so a constructor's result does, `var s Shape = New()`. One may be written where a type is wanted rather than
 declared with a name, `func measure(s interface{ area() int })`, and the empty one
 is spelled `any` as well; identity is by method set, so `any` and `interface{}` are
 one type. A conversion names the interface where the position does not, `Shape(&q)`

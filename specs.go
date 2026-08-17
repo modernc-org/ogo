@@ -694,6 +694,16 @@
 //
 // A method call written that way, "(*p).m()", is the same call as "p.m()".
 //
+// A composite literal may be ADDRESSED, "p := &T{...}", which is how a value is made
+// without naming a variable for it. Go allocates; there is no heap here, so the
+// literal is given a temporary of the enclosing function and the pointer is that
+// temporary's. The lifetime rule therefore applies to it as to any local -- returning
+// such a pointer, storing it in a package variable, sending it, handing it to a cog,
+// or passing it to a function that keeps it are each refused, and what to do instead
+// is what the diagnostic says: assign the value to a package variable and use that.
+// Using it in the frame that made it, or passing it to a function that returns first,
+// is what the form is for and costs nothing.
+//
 // # Interface types
 //
 // An interface type defines a type set.
@@ -722,8 +732,16 @@
 // A composite literal may be addressed, "&T{...}", and is the way to put a fresh
 // value in an interface. Its storage is a temporary of the enclosing function
 // rather than an allocation, so the lifetime rule applies to it as to any local: an
-// interface made from one may not outlive the function. A call's result has no
-// address in Go either -- bind it to a variable and take that.
+// interface made from one may not outlive the function.
+//
+// ANY expression already of pointer type goes in as it stands -- there is nothing to
+// address and nothing to copy:
+//
+//	var s Shape = New()   // a call's result
+//	var t Shape = b.p     // a pointer field, an element, a chain reaching one
+//
+// What Go has no syntax for is taking the ADDRESS of a call's result, "&f()"; bind it
+// to a variable and take that.
 //
 // An interface type may be written where a type is WANTED rather than declared with
 // a name of its own -- as a parameter, a variable's type, a struct field -- and the
