@@ -12823,6 +12823,60 @@ func main() {
 		want: "42\n6\n33\n6 1\n",
 	},
 	{
+		// A multiple assignment that moves ARRAYS. Every value of one is bound to a
+		// temporary first -- which is what makes `a, b = b, a` a swap -- and an array
+		// has no C value type to declare a temporary of, so inferCType answered no
+		// and the whole statement was "cannot infer the type of a value in a multiple
+		// assignment". That took out `table[i], table[j] = table[j], table[i]`, the
+		// swap every sort of a table of rows is written with.
+		//
+		// The temporary is the copy `b := a` already is, and each target then takes
+		// its own: declared and copied into for a ":=", memcpy'd for an "=". The sort
+		// is here rather than a bare swap because a swap that aliased instead of
+		// copying still prints two plausible numbers, and a sort does not.
+		name: "a multiple assignment moving arrays",
+		src: `type H struct {
+	f [2]int
+}
+
+var table = [4][2]int{{4, 4}, {2, 2}, {3, 3}, {1, 1}}
+
+var h H
+
+var a = [2]int{7, 8}
+
+func main() {
+	// The swap every sort of a table of rows is written with.
+	for i := 0; i < 4; i++ {
+		for j := i + 1; j < 4; j++ {
+			if table[j][0] < table[i][0] {
+				table[i], table[j] = table[j], table[i]
+			}
+		}
+	}
+	println(table[0][0], table[1][0], table[2][0], table[3][0])
+
+	// Declared targets, a field target, a literal value, a mixed list and a blank.
+	p, q := table[0], table[3]
+	p[0] = 99
+	println(p[0], q[0], table[0][0])
+
+	h.f, a = a, [2]int{5, 6}
+	println(h.f[0], a[0])
+
+	var n int
+	var r [2]int
+	n, r = 7, table[2]
+	println(n, r[0])
+
+	var s [2]int
+	_, s = table[0], table[1]
+	println(s[0])
+}
+`,
+		want: "1 2 3 4\n99 4 1\n7 5\n7 3\n2\n",
+	},
+	{
 		name: "three-clause for loops",
 		src: `func main() {
 	sum := 0

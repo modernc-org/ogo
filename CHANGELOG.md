@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A multiple assignment may move ARRAYS** — `table[i], table[j] = table[j], table[i]`,
+  the swap every sort of a table of rows is written with, and `p, q := m[0], m[2]`,
+  a field target, a literal value and a mixed list beside it. Every value of a
+  multiple assignment is bound to a temporary first, which is what makes `a, b = b, a`
+  a swap; an array has no C value type to declare a temporary of, so the whole
+  statement was refused with *cannot infer the type of a value in a multiple
+  assignment*. The temporary is now the copy `b := a` already is, and each target
+  takes its own.
+
 - **`range` takes an array reached through a chain** — `for _, v := range b.xs` over an
   array-typed field, a nested one, `range pool[1]` for a row, and `range xs[1].xs` for
   a chain that starts at a slice. The operand walk took a bare name, a pointer to an

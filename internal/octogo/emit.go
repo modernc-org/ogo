@@ -18349,7 +18349,25 @@ func (e *emitter) declareTargets(define bool, targets []assignTarget) []bool {
 func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []Node) {
 	tmps := make([]string, len(rhs))
 	types := make([]string, len(rhs))
+	dims := make([]arrDim, len(rhs))
 	for i, r := range rhs {
+		// An ARRAY value is bound by COPY. It has no C value type to declare a
+		// temporary of, so inferCType answered no and the whole statement was
+		// "cannot infer the type of a value in a multiple assignment" -- which is
+		// what stopped `m[i], m[j] = m[j], m[i]`, the swap every sort of a table of
+		// rows is written with. The temporary is what makes a swap a swap, and an
+		// array needs one as much as anything else does.
+		if a, isArr := e.arrayShapeOf(r.ast); isArr {
+			src, ok := e.arraySourceC(r.ast)
+			if !ok {
+				e.fail("cannot read %s in a multiple assignment: it is not an array this can copy from",
+					e.goArrayTypeName(a))
+				return
+			}
+			tmps[i], dims[i] = e.newTmp(), a
+			e.emitArrayCopy(tmps[i], src, a)
+			continue
+		}
 		ct, ok := e.inferCType(r.ast)
 		if !ok {
 			e.fail("cannot infer the type of a value in a multiple assignment")
@@ -18363,8 +18381,65 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		e.emit(";\n")
 	}
 	for i, tgt := range targets {
+		if dims[i].bound != "" {
+			e.emitStoreArray(tgt, declare[i], dims[i], tmps[i])
+			continue
+		}
 		e.emitStore(tgt, declare[i], types[i], tmps[i])
 	}
+}
+
+// emitStoreArray writes an ARRAY -- already bound to the temporary val -- to one
+// target of a multiple assignment. C cannot assign an array, so a declared target is
+// declared and copied into and an assigned one is memcpy'd, which is the lowering
+// every other array write takes.
+//
+// The target's own shape is checked against the value's first: the copy is sized by
+// the destination, so a mismatch would read past the end of a shorter source or drop
+// what did not fit.
+func (e *emitter) emitStoreArray(t assignTarget, declare bool, a arrDim, val string) {
+	if t.name == "_" {
+		return
+	}
+	if declare {
+		if !t.plain() {
+			e.fail("non-name %s on the left side of :=", t.name)
+			return
+		}
+		e.emitArrayCopy(t.name, val, a)
+		return
+	}
+	if t.stars != "" {
+		e.fail("a dereferenced array target is not supported yet")
+		return
+	}
+	var dst arrDim
+	text := ""
+	if len(t.chain) == 0 {
+		d, isArr := e.arrayVar(t.name)
+		if !isArr {
+			e.fail("cannot assign %s to %s, which is not an array", e.goArrayTypeName(a), t.name)
+			return
+		}
+		text, dst = e.varRef(t.name), d
+	} else {
+		// Typed before anything is emitted, so an unsupported chain fails without
+		// leaving a half-written statement behind, as the scalar store does.
+		cur, ok := e.accessChainType(t.name, t.chain)
+		if !ok || len(cur.dims) == 0 {
+			e.fail("unsupported array target in a multiple assignment")
+			return
+		}
+		text = e.captureC(func() { e.emitAccessChain(t.name, t.chain) })
+		dst = arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:], name: cur.name}
+	}
+	if dst.elem != a.elem || dst.declSuffix() != a.declSuffix() {
+		e.fail("cannot use %s as %s in assignment", e.goArrayTypeName(a), e.goArrayTypeName(dst))
+		return
+	}
+	e.includes["string.h"] = true
+	e.ind()
+	e.emit("memcpy(" + text + ", " + val + ", sizeof(" + text + "));\n")
 }
 
 // emitDestructure lowers a multi-result call bound to several targets, shared by
