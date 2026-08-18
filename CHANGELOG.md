@@ -295,6 +295,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **A defined SLICE or CHANNEL type is a type of its own too.** `type L []int` and
+  `type M []int` were interchangeable, and so were two defined channel types. It is
+  the array rule one step further: the identity check is gated on a `Kind`, and a
+  slice, a channel and a pointer have none any more than a struct or an array does —
+  the note saying they were "left to the checks that own them" described checks that
+  do not exist. Like is now compared against like, by name.
+
+  An INTERFACE is deliberately excluded: Go assigns to one by *method set*, not by
+  name, so two differently named interfaces stay assignable wherever their methods
+  line up. Two defined POINTER types are still interchangeable, and a defined `func`
+  type is unchecked — the type model carries no node for one.
+
 - **A defined ARRAY type is a type of its own.** `type Row [2]int` and
   `type Col [2]int` were interchangeable — `c = r`, `var d Col = r`, `takeCol(r)`,
   `return r`, `cols <- r` and `r == c` all compiled, where Go wants a conversion. An

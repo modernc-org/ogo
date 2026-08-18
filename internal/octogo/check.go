@@ -5811,6 +5811,49 @@ func (f *File) structTypeNamed(s *Scope, nm string) (*TypeNodeStruct, bool) {
 	return nil, false
 }
 
+// kindlessCategory names the CATEGORY of a type that carries no Kind -- "struct",
+// "array", "slice", "pointer" or "chan" -- and "" for anything else, a predeclared
+// scalar and an interface included.
+//
+// These are exactly the types checkDefinedType could not see. The Kind enum names the
+// predeclared scalars and nothing else, so a gate on one excluded every one of them,
+// and the note saying they were "left to the checks that own them" described checks
+// that do not exist: `type L []int` and `type M []int` were interchangeable, as were
+// two defined channel types and two defined pointer types. Identity needs no Kind --
+// it is a question about names.
+//
+// An INTERFACE is deliberately absent. Go assigns to one by METHOD SET, not by name,
+// so two differently named interfaces are assignable wherever their methods line up;
+// that is checkImplements's question, and name identity would answer it wrongly.
+//
+// A defined FUNC type is absent because the type model carries no node for one, so it
+// resolves to nothing here and goes unchecked rather than misreported.
+func (f *File) kindlessCategory(s *Scope, nm string) string {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		td, ok := s.find(nm).(*TypeDeclaration)
+		if !ok || td.TypeSpec == nil {
+			return ""
+		}
+		switch tn := td.TypeSpec.TypeNode.(type) {
+		case *TypeNodeStruct:
+			return "struct"
+		case *TypeNodeArray:
+			return "array"
+		case *TypeNodeSlice:
+			return "slice"
+		case *TypeNodePointer:
+			return "pointer"
+		case *TypeNodeChan:
+			return "chan"
+		case *TypeNodeIdent:
+			nm = tn.Name.Src() // through a chain of definitions
+		default:
+			return ""
+		}
+	}
+	return ""
+}
+
 // arrayTypeNamed reports whether a name resolves to an ARRAY type, following a chain
 // of definitions as structTypeNamed does -- `type Q Row` for an array Row is one.
 //
@@ -6214,20 +6257,21 @@ func (f *File) definedName(s *Scope, name string) (string, bool) {
 // against whatever a mismatch of shape would be -- that is assignableKind's and
 // checkPointerValue's to report.
 //
-// An ARRAY is admitted on exactly that argument, and was left out of it: it has no
-// Kind either, so `type Row [2]int` and `type Col [2]int` were interchangeable in
-// every position this is called from. The emitter's own array checks compare by
-// SHAPE and deliberately never by name -- a defined type and the unnamed spelling of
-// it are assignable both ways, as they are in Go -- so identity has to be decided
-// here, where the names are.
+// Every OTHER type with no Kind is admitted on exactly that argument, and all of
+// them were left out of it: an array, a slice, a pointer and a channel have no Kind
+// any more than a struct does, so `type Row [2]int` and `type Col [2]int` were
+// interchangeable, and so were `type L []int` and `type M []int`. kindlessCategory
+// names what a type is when its Kind cannot, and like is compared against like.
+// The emitter's own array checks compare by SHAPE and deliberately never by name -- a
+// defined type and the unnamed spelling of it are assignable both ways, as they are
+// in Go -- so identity has to be decided here, where the names are.
 func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what string) {
 	if wantName == "" {
 		return
 	}
 	var haveKind Kind
-	_, wantStruct := f.structTypeNamed(s, wantName)
-	wantArray := f.arrayTypeNamed(s, wantName)
-	if !wantStruct && !wantArray {
+	wantCat := f.kindlessCategory(s, wantName)
+	if wantCat == "" {
 		wantKind, ok := f.nameKind(s, wantName)
 		if !ok || kindCategory(wantKind) == catUnknown {
 			return
@@ -6240,17 +6284,13 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 	if !ok {
 		return
 	}
-	// A struct is compared only against another struct, and a scalar only against
-	// another scalar. This is also what keeps the struct path's `have` a name: it
-	// resolved to a declaration, so it is not the empty string the Kind below
-	// stands in for.
-	if _, haveStruct := f.structTypeNamed(s, have); wantStruct != haveStruct {
-		return
-	}
-	// And an array only against another array, for the same reason: a value of
-	// another shape entirely is a mismatch some other check owns, and reporting it
-	// from here would name the wrong rule.
-	if wantArray != f.arrayTypeNamed(s, have) {
+	// Like against like: a struct only against another struct, an array only against
+	// another array, and a scalar only against another scalar. A value of a different
+	// category is a mismatch some other check owns, and reporting it from here would
+	// name the wrong rule. This is also what keeps a kindless `have` a NAME -- it
+	// resolved to a declaration, so it is not the empty string a predeclared type
+	// leaves behind for the Kind to stand in for.
+	if wantCat != f.kindlessCategory(s, have) {
 		return
 	}
 	want := ""

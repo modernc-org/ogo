@@ -323,3 +323,57 @@ func arrays() {
 	_ = g
 	_ = plain
 }
+
+// A SLICE and a CHANNEL carry no Kind any more than a struct or an array does, and
+// were excluded for exactly as long: `type L []int` and `type M []int` were
+// interchangeable, and so were two defined channel types. kindlessCategory names
+// what such a type is when its Kind cannot, and like is compared against like.
+//
+// An INTERFACE is deliberately not among them: Go assigns to one by METHOD SET
+// rather than by name, so two differently named interfaces are assignable wherever
+// their methods line up. That is checkImplements's question.
+
+type L []int
+
+type M []int
+
+type Ch chan int
+
+type Dh chan int
+
+var lch Ch
+
+func takeM(m M) int { return m[0] }
+
+func lists() {
+	var back [2]int
+	var l L = back[:]
+	var m M
+
+	// The unnamed spelling of the same type is assignable both ways, as in Go.
+	var plain []int = l
+	var l2 L = plain
+	takeM(m)
+	takeM(plain)
+
+	// ERROR "cannot use l of type L as type M in assignment"
+	m = l
+
+	// ERROR "cannot use l of type L as type M in argument to takeM"
+	takeM(l)
+
+	// ERROR "cannot use l of type L as type M in variable declaration"
+	var bad1 M = l
+
+	_ = bad1
+	_ = l2
+	_ = m
+}
+
+func chans() {
+	var d Dh
+
+	// ERROR "cannot use lch of type Ch as type Dh in assignment"
+	d = lch
+	_ = d
+}
