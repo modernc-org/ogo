@@ -5770,6 +5770,60 @@ func main() {
 		want: "7 13 11\n20 15\n3 7 63 7\n1 20\n9 10\n1 2\n90 91 92\n",
 	},
 	{
+		// An ARRAY receiver launched on a cog. `go ws[i].run()` for a struct element
+		// was enabled deliberately -- one cog per element is the worker-pool shape --
+		// and the array spellings were all "unsupported receiver in a go statement",
+		// including `go g.run()` on the array itself. The lookups asked varType and
+		// isUserType, neither of which answers for an array.
+		//
+		// A value receiver crosses as a COPY, which is what a goroutine's receiver
+		// is, and the copy is a memcpy: C assigns no array into the cog's argument
+		// slot. A POINTER receiver crosses as the address and writes the array the
+		// spawner named, which the last block checks.
+		name: "an array receiver on a cog",
+		src: `type Row [2]int
+
+type H struct {
+	r Row
+}
+
+var done chan int
+
+func (r Row) Send() { done <- r[0] + r[1] }
+
+func (r *Row) Bump() {
+	r[0]++
+	done <- r[0]
+}
+
+var pool = [2]Row{{1, 2}, {3, 4}}
+
+var g = Row{5, 6}
+
+var h = H{Row{7, 8}}
+
+func main() {
+	// An ARRAY receiver launched on a cog: an element of an array of a defined array
+	// type, the array itself, and one reached through a field. A value receiver
+	// crosses as a COPY, which is what a goroutine's receiver is.
+	go pool[1].Send()
+	println(<-done)
+
+	go g.Send()
+	println(<-done)
+
+	go h.r.Send()
+	println(<-done)
+
+	// A POINTER receiver crosses as the address, so the cog writes the array the
+	// spawner named.
+	go g.Bump()
+	println(<-done, g[0])
+}
+`,
+		want: "7\n11\n15\n6 6\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

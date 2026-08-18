@@ -950,7 +950,12 @@ func (e *emitter) emitGo(nodes []Node) {
 				return
 			}
 			rct, ok := e.chainValueCType(cur)
-			if !ok || !e.isUserType(methodBaseType(rct)) {
+			if !ok {
+				// An ARRAY has no C VALUE type; its DEFINED name is what says which
+				// type it is, the same fallback the deferred receiver makes.
+				rct = cur.name
+			}
+			if !e.isMethodBase(methodBaseType(rct)) {
 				e.fail("unsupported receiver in a go statement")
 				return
 			}
@@ -990,11 +995,15 @@ func (e *emitter) emitGo(nodes []Node) {
 			}
 			break
 		}
-		rct, isVar := e.varType(base)
 		// A variable of a user type is a method call; an import qualifier is a
 		// function of that package. The variable is asked about first, since a local
 		// of the qualifier's name shadows the import, as it does at an ordinary call.
-		if !isVar || !e.isUserType(methodBaseType(rct)) {
+		//
+		// methodRecvCType rather than varType-plus-isUserType: an ARRAY variable has
+		// no C type, so the pair answered no for one and `go g.run()` was refused
+		// where `go ws[i].run()` for a struct element was not.
+		rct, isVar := e.methodRecvCType(base)
+		if !isVar {
 			prefix, isImport := e.importQualifiers[base]
 			if !isImport {
 				e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
@@ -1082,7 +1091,15 @@ func (e *emitter) emitGo(nodes []Node) {
 	first := 0
 	if recvText != "" {
 		e.ind()
-		e.emit(ap + "->a0 = " + recvText + ";\n")
+		// An ARRAY receiver is COPIED into the slot: C assigns no array, and a value
+		// receiver crossing to a cog is a copy, which is what Go says a goroutine's
+		// receiver is.
+		if _, isArr := e.namedArrays[site.args[0]]; isArr {
+			e.includes["string.h"] = true
+			e.emit("memcpy(" + ap + "->a0, " + recvText + ", sizeof(" + ap + "->a0));\n")
+		} else {
+			e.emit(ap + "->a0 = " + recvText + ";\n")
+		}
 		first = 1
 	}
 	for i, a := range args {

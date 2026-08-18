@@ -295,6 +295,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **An ARRAY receiver may be launched on a cog** — `go pool[1].run()`, `go g.run()`,
+  `go h.r.run()`. `go ws[i].run()` for a *struct* element was enabled deliberately —
+  one cog per element is the worker-pool shape — and every array spelling was
+  *unsupported receiver in a go statement*, the array itself included. A value
+  receiver crosses as a copy, which is what a goroutine's receiver is, and a pointer
+  receiver crosses as the address and writes the array the spawner named.
+
 - **A method may be called on an array ELEMENT** — `pool[1].sum()` over a
   `[2]Row`, through a slice of them, with a pointer receiver, on one two indexes
   in, and on a copy or a `range` value of one. An array of a defined array type is
