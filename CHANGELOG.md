@@ -353,6 +353,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference to a local may no longer be laundered through a METHOD.** The
+  crossing summary ties a caller's parameter to a callee's by recording a call edge,
+  and it recorded none for a method — it resolves a callee by *name*, and a method has
+  none until the receiver's type is known. So one method delegating to another carried
+  no requirement at all: `func (t *H) set(d []int) { t.inner(d) }` where `inner`
+  stores its parameter in the receiver was accepted for a package-level receiver, and
+  left a header over a dead frame. A plain function calling a method on a package
+  variable was the same.
+
+  The edge carries *whose* receiver it is, because that is what says whether the
+  callee's store is a leak here too: delegating to the caller's own receiver asks the
+  question again one call further out, while a package-level receiver answers it
+  outright. A local receiver stays accepted — the storage dies with the call — and so
+  do a delegation that only reads, a scalar argument, and a recursive method.
+
+  A method called on a local or a parameter still records no edge: resolving its type
+  before any body is walked means asking for a C type an *array* parameter has not
+  got, which would poison a pass that is only gathering facts. The direct store
+  through such a receiver is checked at the call site regardless.
+
+
 - **A method may no longer store a frame reference into its RECEIVER.** `h.set(a[:])`
   for a package-level `h` and a `func (t *H) set(d []int) { t.d = d }` left a header
   over a dead frame in storage that outlives the call. The plain-function form of the

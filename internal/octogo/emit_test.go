@@ -7608,6 +7608,178 @@ func main() {
 // is why a LOCAL receiver must keep compiling, the two dying together, and why a
 // receiver that is a PARAMETER does not: its own storage is this frame's, but what it
 // POINTS AT is the caller's, so the same store is the same leak one level up.
+// TestEmitCMethodEdgeEscape pins the requirement travelling through a METHOD call.
+// The crossing summary ties a caller's parameter to a callee's by recording a call
+// edge -- and it recorded none for a method, because it resolves a callee by NAME and
+// a method has none until the receiver's type is known. Its own comment said so, and
+// erring towards accepting is what it chose.
+//
+// So one method delegating to another carried no requirement at all: `func (t *H)
+// set(d []int) { t.inner(d) }` where inner stores d in the receiver was accepted for
+// a package-level h, and left a header over a dead frame.
+//
+// The edge carries WHOSE receiver it is, because that is what says whether the
+// callee's store is a leak here too. Delegating to the caller's own receiver asks the
+// question again one call out; a package-level receiver answers it outright. A local
+// receiver stays accepted -- the storage dies with the call -- and that is the line
+// the accepting half holds, along with a reader, a scalar and a recursive method,
+// which the fixed point must not mistake for a leak.
+func TestEmitCMethodEdgeEscape(t *testing.T) {
+	const decls = `type H struct {
+	d []int
+	n int
+}
+
+var h H
+
+var back [4]int
+
+func (t *H) inner(d []int) { t.d = d }
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "one method delegating to another",
+			src: `func (t *H) set(d []int) { t.inner(d) }
+
+func leak() {
+	var a [4]int
+	h.set(a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "a function calling a method on a package variable",
+			src: `func pass(d []int) { h.inner(d) }
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "three methods deep",
+			src: `func (t *H) b(d []int) { t.inner(d) }
+
+func (t *H) a(d []int) { t.b(d) }
+
+func leak() {
+	var arr [4]int
+	h.a(arr[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local arr",
+		},
+		// The delegation is fine where the storage it ends in is.
+		{
+			name: "package backing through the delegation",
+			src: `func (t *H) set(d []int) { t.inner(d) }
+
+func main() {
+	h.set(back[:])
+	println(len(h.d))
+}
+`,
+		},
+		{
+			name: "local receiver through the delegation",
+			src: `func (t *H) set(d []int) { t.inner(d) }
+
+func main() {
+	var a [4]int
+	var local H
+	local.set(a[:])
+	println(len(local.d))
+}
+`,
+		},
+		// A method that stores nothing, a scalar, and a recursive one: the fixed
+		// point must reach none of them and must terminate on the last.
+		{
+			name: "a delegation that only reads",
+			src: `func (t *H) count(d []int) int { return len(d) }
+
+func (t *H) size(d []int) int { return t.count(d) }
+
+func main() {
+	var a [4]int
+	println(h.size(a[:]))
+}
+`,
+		},
+		{
+			name: "a scalar through the delegation",
+			src: `func (t *H) put(n int) { t.n = n }
+
+func (t *H) set(n int) { t.put(n) }
+
+func main() {
+	var a [4]int
+	h.set(len(a[:]))
+	println(h.n)
+}
+`,
+		},
+		{
+			name: "a recursive method",
+			src: `func (t *H) walk(d []int, i int) int {
+	if i >= len(d) {
+		return 0
+	}
+	return d[i] + t.walk(d, i+1)
+}
+
+func main() {
+	var a [3]int
+	println(h.walk(a[:], 0))
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference laundered through a method; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCRecvStoreEscape(t *testing.T) {
 	const decls = `type H struct {
 	d []int

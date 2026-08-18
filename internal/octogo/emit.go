@@ -6086,12 +6086,34 @@ const (
 
 // crossEdge records that a call passes the caller's parameter `from` straight into
 // the callee's parameter `to`, so whatever the callee does with it, the caller does.
+//
+// recv says whose storage the callee's RECEIVER is, when the call is a method's. That
+// decides what the callee's leakRecv means here: a store into the receiver is a leak
+// to whoever owns it, and the same callee is harmless on a scratch struct and fatal
+// on a package one.
 type crossEdge struct {
 	caller string
 	from   int
 	callee string
 	to     int
+	recv   recvKind
 }
+
+// recvKind classifies a method edge's receiver.
+type recvKind uint8
+
+const (
+	// recvNone: not a method call. The callee's flags mean here what they mean there.
+	recvNone recvKind = iota
+	// recvOwn: the caller's OWN receiver, `t.inner(d)`. What the callee stores in it,
+	// the caller stores in the receiver it was handed -- so leakRecv travels as
+	// leakRecv and the question is asked again one call further out.
+	recvOwn
+	// recvOutlives: a package variable, or one the caller was handed as a parameter.
+	// Either outlives the caller's frame, so a store into it is a store into storage
+	// that outlives -- leakGlobal, which the call sites already understand.
+	recvOutlives
+)
 
 // collectCrossParams seeds the per-parameter crossing summary for the functions of
 // one file, and records the call edges the fixed point later walks.
@@ -6116,10 +6138,11 @@ type crossEdge struct {
 // converges because a parameter only ever goes from not-crossing to crossing.
 func (e *emitter) collectCrossParams(ast []int32) {
 	e.eachFuncDeclAST(ast, func(d []int32) {
-		cname, srcName, params, body, recvName, ok := e.funcParamNames(d)
+		fi, ok := e.funcParamNames(d)
 		if !ok {
 			return
 		}
+		cname, srcName, params, body, recvName := fi.cname, fi.srcName, fi.params, fi.body, fi.recvName
 		// A type switch BINDS a new name to the value it switched on, so a store of
 		// that name is a store of whatever the operand was. Without following it, a
 		// parameter reached a package variable through `switch x := p.(type)` with
@@ -6209,6 +6232,17 @@ func (e *emitter) collectCrossParams(ast []int32) {
 					}
 				}
 			}
+			// The same for a METHOD call, which stmtCalls cannot name. The edge
+			// carries whose receiver it is, because that is what says whether the
+			// callee's leakRecv is a leak here too or the end of the matter.
+			for _, c := range e.stmtMethodCalls(nodes, fi) {
+				for j, a := range c.args {
+					if i := at(e.crossRoot(a.ast)); i >= 0 {
+						e.crossEdges = append(e.crossEdges,
+							crossEdge{caller: cname, from: i, callee: c.callee, to: j, recv: c.recv})
+					}
+				}
+			}
 		})
 	})
 }
@@ -6221,10 +6255,19 @@ func (e *emitter) closeCrossParams() {
 		changed = false
 		for _, g := range e.crossEdges {
 			callee, caller := e.crossParams[g.callee], e.crossParams[g.caller]
-			if g.to >= len(callee) || g.from >= len(caller) || callee[g.to]&^caller[g.from] == 0 {
+			if g.to >= len(callee) || g.from >= len(caller) {
 				continue
 			}
-			caller[g.from] |= callee[g.to]
+			// A store into the callee's RECEIVER is a leak to whoever owns that
+			// receiver, so what it means here depends on which one the call named.
+			flags := callee[g.to]
+			if g.recv == recvOutlives && flags&leakRecv != 0 {
+				flags = flags&^leakRecv | leakGlobal
+			}
+			if flags&^caller[g.from] == 0 {
+				continue
+			}
+			caller[g.from] |= flags
 			changed = true
 		}
 		for _, g := range e.retEdges {
@@ -6260,24 +6303,39 @@ func (e *emitter) returnedExprs(nodes []Node) [][]int32 {
 // is not one at the call sites this feeds, which name arguments positionally. Its
 // NAME is answered separately because a store into it is a leak whose lifetime only
 // the call site knows (see leakRecv).
-func (e *emitter) funcParamNames(d []int32) (cname, srcName string, params []string, body []int32, recvName string, ok bool) {
+func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 	name, sig, body, recv, ok := e.funcParts(d)
 	if !ok || name == "" || body == nil {
-		return "", "", nil, nil, "", false
+		return funcInfo{}, false
 	}
-	cname = mangle(e.curPkgPrefix, name)
+	fi := funcInfo{cname: mangle(e.curPkgPrefix, name), srcName: name, body: body}
 	if recv != nil {
 		rn, rct, _ := e.receiverInfo(recv)
-		cname = methodCName(methodBaseType(rct), name)
-		recvName = rn
+		fi.cname = methodCName(methodBaseType(rct), name)
+		fi.recvName, fi.recvCType = rn, rct
 	}
 	for n := range it(sig) {
 		if n.sym != ParameterList {
 			continue // parameters are the only ParameterList; results are ResultList/Type
 		}
-		e.forEachParam(n.ast, func(nm string, _ []int32, _ bool) { params = append(params, nm) })
+		e.forEachParam(n.ast, func(nm string, _ []int32, _ bool) { fi.params = append(fi.params, nm) })
 	}
-	return cname, name, params, body, recvName, true
+	return fi, true
+}
+
+// funcInfo is what the crossing summary needs of one declaration: how it is named,
+// its parameters and their types, its body, and -- for a method -- the receiver it
+// was declared with. The receiver is not among the parameters: it is not one at the
+// call sites this feeds, which name arguments positionally. Its NAME and TYPE are
+// carried because a store into it is a leak whose lifetime only the call site knows
+// (see leakRecv), and because a method it calls is named after that type.
+type funcInfo struct {
+	cname     string
+	srcName   string
+	params    []string
+	body      []int32
+	recvName  string
+	recvCType string
 }
 
 // eachStmt calls fn with the children of every Statement in ast, at any depth, so a
@@ -6455,6 +6513,92 @@ func (e *emitter) sendValue(nodes []Node) ([]int32, bool) {
 type stmtCall struct {
 	callee string
 	args   []Node
+}
+
+// methodCall is one `recv.m(args)` a statement makes: the method's C name, whose
+// storage the receiver is, and the arguments.
+type methodCall struct {
+	callee string
+	recv   recvKind
+	args   []Node
+}
+
+// stmtMethodCalls finds the METHOD calls a statement makes, which stmtCalls does not:
+// it resolves a callee by name, and a method has none until the receiver's type is
+// known. Without them a parameter handed to a method went unfollowed entirely, so
+// `func (t *H) set(d []int) { t.inner(d) }` -- one method delegating to another --
+// carried no requirement back to its callers and the leak inner made was invisible.
+//
+// Two receivers are resolvable here, and they are the two that leak. The enclosing
+// method's OWN receiver, whose type this declaration states; and a PACKAGE variable,
+// whose type is known because package variables are emitted before this pass runs.
+//
+// Any other receiver is skipped, because resolving its type before a body is walked
+// means asking cType of a written type -- which REFUSES an array, poisoning the
+// emitter's error state from a pass that is only gathering facts. What that leaves
+// unfollowed is a method called on a local or a parameter passing the argument on;
+// narrower than the "no method edges at all" it replaces, and the direct store
+// through such a receiver is checkRecvLeak's, which sees it.
+func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
+	var out []methodCall
+	// The statement-level call, `t.inner(d)`. It is an AssignHead beside a Postfix
+	// and carries no Factor at all, which is why the walk below -- which reads
+	// Factors -- sees nothing of it. stmtCalls makes the same distinction.
+	if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
+		if recv := e.soleIdent(nodes[0].ast); recv != "" {
+			suffix := slices.Collect(it(nodes[1].ast))
+			if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
+				if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+					out = append(out, c)
+				}
+			}
+		}
+	}
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == 0 {
+				continue
+			}
+			if n.sym == Factor {
+				kids := slices.Collect(it(n.ast))
+				if recv, suffix, ok := e.factorCall(kids); ok && len(suffix) == 2 &&
+					suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
+					if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+						out = append(out, c)
+					}
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	for _, n := range nodes {
+		walk(n.ast)
+	}
+	return out
+}
+
+// methodCallOf resolves one `recv.m(args)` against the enclosing declaration.
+func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodCall, bool) {
+	method := e.soleIdent(suffix[0].ast)
+	if method == "" {
+		return methodCall{}, false
+	}
+	ct, kind := "", recvNone
+	switch {
+	case recv == fi.recvName && fi.recvCType != "":
+		ct, kind = fi.recvCType, recvOwn
+	case e.isPackageVar(recv):
+		ct, kind = e.globals[e.globalC(recv)], recvOutlives
+	}
+	if ct == "" || kind == recvNone {
+		return methodCall{}, false
+	}
+	cname := methodCName(methodBaseType(ct), method)
+	if _, isMethod := e.funcRet[cname]; !isMethod {
+		return methodCall{}, false
+	}
+	return methodCall{callee: cname, recv: kind, args: e.callArgExprs(suffix[1].ast)}, true
 }
 
 // stmtCalls finds the calls a statement makes, so that an argument which is one of
