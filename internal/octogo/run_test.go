@@ -5484,6 +5484,93 @@ func main() {
 		want: "7 8 7\n9 10 6\n1 4\n3 4 3\n",
 	},
 	{
+		// A channel variable DECLARED with its type and initialized from another
+		// names the same channel -- which is what a copy of a channel value means in
+		// Go, and what `c := ch` and `c = ch` have always done here. The typed
+		// declaration wrote the alias and then gave the variable a private cell one
+		// line later, so the receive on it waited on a channel nobody could send to
+		// and the program HUNG. A hang is what makes this worth a case of its own: it
+		// builds, it runs, and it says nothing.
+		//
+		// A channel FIELD a declaration's literal fills is the same bug one level
+		// down, and the nested literal is it two levels down. What still mints a cell
+		// is a declaration that fills nothing -- `var w W`, `W{}`, `W{In{}}` -- which
+		// is where this language's channel-is-storage rule lives.
+		name: "a channel declared from another names the same channel",
+		src: `type Ch chan int
+
+type In struct {
+	cmd chan int
+}
+
+type W struct {
+	cmd chan int
+	n   int
+}
+
+type Deep struct {
+	in In
+}
+
+var a Ch
+
+var b chan int
+
+var c chan int
+
+var done chan int
+
+func sendA() { a <- 1 }
+
+func sendB() { b <- 2 }
+
+func sendC() { c <- 3 }
+
+func recvOn(w W) {
+	v := <-w.cmd
+	done <- v
+}
+
+func main() {
+	// A channel variable DECLARED with a type and initialized from another names
+	// the same channel, as Go's copy of a channel value does. It used to be given a
+	// private cell one line after the alias was written, and the receive on it
+	// never returned.
+	var x chan int = a
+	go sendA()
+	println(<-x)
+
+	// The two spellings that always aliased, beside it.
+	y := b
+	go sendB()
+	println(<-y)
+
+	var z chan int
+	z = c
+	go sendC()
+	println(<-z)
+
+	// A channel FIELD the declaration's literal fills, positionally and by key, and
+	// one filled through a nested literal.
+	var w W = W{b, 4}
+	var v W = W{cmd: c, n: 5}
+	var d Deep = Deep{In{a}}
+	println(w.n, v.n)
+
+	go sendB()
+	go recvOn(w)
+	println(<-done)
+
+	go sendC()
+	println(<-v.cmd)
+
+	go sendA()
+	println(<-d.in.cmd)
+}
+`,
+		want: "1\n2\n3\n4 5\n2\n3\n1\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

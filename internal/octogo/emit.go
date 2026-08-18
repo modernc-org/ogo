@@ -5585,12 +5585,44 @@ func (e *emitter) hasChanField(ctype string) bool {
 // still file-scope objects (their locks are taken once, before main), but the field
 // is wired at the declaration rather than at package initialization, because that is
 // where the variable comes into existence.
-func (e *emitter) emitLocalChanFieldCells(nm, ctype string) {
+// lit is the composite literal the declaration was initialized with, or nil. A field
+// that literal fills already refers to whatever the value written there does, so no
+// cell is minted over it: doing so replaced the channel the program wrote with a
+// private one nobody ever sends to, and the first receive on it blocked for ever --
+// `var w W = W{ch}` hung where `w := W{ch}`, which takes another path, did not.
+//
+// A nested struct filled by a nested LITERAL is walked against that literal, so the
+// rule reaches all the way down and an empty one (`W{In{}}`) still gets its cells.
+// One filled by anything else is not walked at all: the value copied in brings
+// whatever channels it has.
+func (e *emitter) emitLocalChanFieldCells(nm, ctype string, lit *Node) {
+	var values []*Node
+	var fields []structField
+	if lit != nil {
+		values, fields, _ = e.litFieldValues(ctype, *lit)
+	}
+	filled := func(name string) (*Node, bool) {
+		for i, f := range fields {
+			if f.name == name && i < len(values) && values[i] != nil {
+				return values[i], true
+			}
+		}
+		return nil, false
+	}
 	for _, fld := range e.structs[ctype] {
+		v, has := filled(fld.name)
 		if !e.isChanCType(fld.ctype) {
 			if _, nested := e.structs[fld.ctype]; nested && fld.dim.bound == "" {
-				e.emitLocalChanFieldCells(nm+"."+e.fieldIdent(fld.name), fld.ctype)
+				switch sub, isLit := e.litValueNode(v); {
+				case !has:
+					e.emitLocalChanFieldCells(nm+"."+e.fieldIdent(fld.name), fld.ctype, nil)
+				case isLit:
+					e.emitLocalChanFieldCells(nm+"."+e.fieldIdent(fld.name), fld.ctype, sub)
+				}
 			}
+			continue
+		}
+		if has {
 			continue
 		}
 		if fld.dim.bound != "" {
@@ -5600,6 +5632,33 @@ func (e *emitter) emitLocalChanFieldCells(nm, ctype string) {
 		e.ind()
 		e.emit(nm + "." + e.fieldIdent(fld.name) + " = &" + e.localChanCell(e.chanElemOfCType(fld.ctype)) + ";\n")
 	}
+}
+
+// litValueNode reads a literal's element as a composite literal of its own, in both
+// spellings: written with its type, `In{ch}`, and type-elided, `{ch}`.
+func (e *emitter) litValueNode(v *Node) (*Node, bool) {
+	if v == nil {
+		return nil, false
+	}
+	if v.sym == CompositeLit {
+		return v, true
+	}
+	if _, lit, ok := e.soleCompositeLit(v.ast); ok {
+		return &lit, true
+	}
+	return nil, false
+}
+
+// declLitNode reads a declaration's initializer as a composite literal, for the
+// channel-cell walk, which must know which fields the literal fills itself.
+func (e *emitter) declLitNode(initExpr []int32) *Node {
+	if initExpr == nil {
+		return nil
+	}
+	if _, lit, ok := e.soleCompositeLit(initExpr); ok {
+		return &lit
+	}
+	return nil
 }
 
 // emitChanSend emits one send on an already-rendered channel, whatever named it: a
@@ -8301,7 +8360,15 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			// ("dynamic allocation not supported"), so the declaration is what
 			// creates it. Acquiring the hardware lock here is what makes the cell
 			// usable, and ties the lock's lifetime to the variable's.
-			if e.isChanCType(ctype) {
+			//
+			// Only a declaration with NO initializer creates one. `var c chan int = ch`
+			// names the channel ch already is -- which is Go's reading too, a channel
+			// value being copied so that the two then refer to one channel -- and the
+			// cell was minted for it anyway, overwriting the alias one line after it
+			// was written with a private cell nobody ever sends to. The first receive
+			// then blocked for ever. `c := ch` and `c = ch` always aliased, so this
+			// was the one spelling of three that did not.
+			if initExpr == nil && e.isChanCType(ctype) {
 				// The declaration owns the cell; the variable is a reference to it.
 				e.ind()
 				e.emit(nm + " = &" + e.localChanCell(e.chanElemOfCType(ctype)) + ";\n")
@@ -8310,7 +8377,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 			// local channel: the declaration owns it. Without this the field would be
 			// a null pointer that builds and then faults at the first send, which is
 			// the worst way for a feature to be missing.
-			e.emitLocalChanFieldCells(nm, ctype)
+			e.emitLocalChanFieldCells(nm, ctype, e.declLitNode(initExpr))
 		}
 	}
 }

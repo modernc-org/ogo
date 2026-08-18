@@ -295,6 +295,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **A channel declared from another no longer HANGS.** `var c chan int = ch` wrote the
+  alias and then gave the variable a private cell one line later, so the receive on it
+  waited on a channel nothing could send to — a program that built, ran and said
+  nothing. `c := ch` and `c = ch` always aliased; the typed declaration was the one
+  spelling of three that did not. The same bug sat one level down in a channel FIELD a
+  declaration's literal fills, `var w W = W{ch}`, and two levels down through a nested
+  literal.
+
+  What still creates a channel is a declaration that fills nothing — `var ch chan int`,
+  `var w W`, `W{}`, `W{In{}}` — which is where this language's channel-is-storage rule
+  lives. A struct copied from another value keeps minting as before.
+
 - **A defined SLICE or CHANNEL type is a type of its own too.** `type L []int` and
   `type M []int` were interchangeable, and so were two defined channel types. It is
   the array rule one step further: the identity check is gated on a `Kind`, and a
