@@ -266,6 +266,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A package ARRAY variable may be initialized by anything a local can be** —
+  `var d = mk()` for a call's result, `var d = src` for another array, `var d = h.f`
+  for a field, a method's result, and `var d = *p`, each with or without the type
+  written. Only a literal was taken: an array has no assignable C value type, so the
+  inferred form was refused as *cannot infer a type for the package variable* and the
+  typed form as *a package array initializer must be an array literal*. C admits
+  neither a call nor an array copy in a static initializer, so the storage stays a
+  file-scope table — zeroed, which is the right starting value — and only the fill
+  moves, to a step of the package initializer ordered against the variables it reads.
+  A table may therefore be declared above the rows it copies. A call's array result
+  filling a composite literal's element at package scope works for the same reason.
+
 - **A call's array result may fill a composite literal's element** — `[]Row{mkRow()}`,
   `[2][2]int{mk(3), {1, 2}}`, `B{mk(4), 9}` and a method's result beside them. It is
   not a copy like the other deferred elements: the result travels through an out

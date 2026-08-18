@@ -5417,6 +5417,73 @@ func main() {
 		want: "7 8\n3 6 2\n4 8 9\n5 6\n",
 	},
 	{
+		// A package ARRAY variable whose initializer is not a LITERAL -- a call's
+		// result, another array, a field, a method's result, a dereferenced pointer.
+		// Only a literal was taken: `var d = mk()` was "cannot infer a type for the
+		// package variable" (an array has no assignable C value type, so inferCType
+		// answers no for every one of these) and the form with the type written was
+		// "a package array initializer must be an array literal". A LOCAL takes all
+		// of them.
+		//
+		// C admits neither a call nor an array copy in a static initializer, so the
+		// storage stays a file-scope table -- zeroed, which is the right starting
+		// value -- and only the FILL moves, to a step of the package initializer
+		// ordered against what it reads. That is what lets `early` be declared above
+		// the `src` it copies.
+		name: "a package array variable filled at init",
+		src: `type Row [2]int
+
+type H struct {
+	f [2]int
+}
+
+type T struct{ n int }
+
+func (t T) row() [2]int { return [2]int{t.n, t.n + 1} }
+
+func mk() [2]int { return [2]int{7, 8} }
+
+func mkGrid() [2][2]int { return [2][2]int{{1, 2}, {3, 4}} }
+
+var h = H{[2]int{5, 6}}
+
+var t = T{9}
+
+// A package ARRAY variable filled from every source a local takes: a call, another
+// array, a field, a method's result, a dereferenced pointer -- with and without the
+// type written, and named or not.
+var fromCall = mk()
+
+var typedCall [2]int = mk()
+
+var namedCall Row = mk()
+
+var fromMethod = t.row()
+
+var fromField = h.f
+
+var grid = mkGrid()
+
+var p = &src
+
+var fromDeref = *p
+
+// Declared ABOVE what it reads: a package's variables are initialized in dependency
+// order, not source order, and these copies are steps of that same ordering.
+var early = src
+
+var src = [2]int{3, 4}
+
+func main() {
+	println(fromCall[0], typedCall[1], namedCall[0])
+	println(fromMethod[0], fromMethod[1], fromField[1])
+	println(grid[0][0], grid[1][1])
+	println(fromDeref[0], early[1], src[0])
+}
+`,
+		want: "7 8 7\n9 10 6\n1 4\n3 4 3\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

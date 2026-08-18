@@ -5314,6 +5314,15 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
 				continue
 			}
+			// `var g = mk()` / `var g = src` / `var g = h.f`: an array from something
+			// that is not a literal. An array has no assignable C value type, so
+			// inferCType answers no for every one of them and the variable was
+			// refused for want of a type -- of a value whose own is in hand. A local
+			// takes all three.
+			if a, isArr := e.pkgArrayInit(initExpr); isArr {
+				e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+				continue
+			}
 			ct, ok := e.inferCType(initExpr)
 			if !ok {
 				e.fail("cannot infer a type for the package variable %q", names[0])
@@ -5349,7 +5358,14 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			if initExpr != nil && len(names) == 1 && names[0] != "_" {
 				litType, lit, isLit := e.soleArrayLit(initExpr)
 				if !isLit {
-					e.fail("a package array initializer must be an array literal")
+					// Not a literal but still an array -- a call's result, another
+					// array, a field. The declared extents are what it is checked
+					// against and filled as.
+					if _, isArr := e.pkgArrayInit(initExpr); isArr {
+						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+						continue
+					}
+					e.fail("a package array initializer must be an array literal, another array, or a call returning one")
 					return
 				}
 				if !e.sameArrayType(a, litType) {
@@ -5900,7 +5916,12 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		_, resTypes := e.resultInfo(sig)
 		e.funcRet[cname] = resTypes
-		if _, arrRet := e.arrayResultOf(sig); arrRet {
+		if a, arrRet := e.arrayResultOf(sig); arrRet {
+			// The extents are recorded HERE and not only where the C signature is
+			// rendered, which happens with the prototypes -- after the package
+			// variables. A package variable filled by such a call had nothing to read
+			// until then, so `var g = mk()` was refused for want of a type.
+			e.funcArrayRet[cname] = a
 			// A function with an array result cannot be used as a VALUE: its C
 			// signature has an out parameter the type would have to describe, and a
 			// function type here is the signature the source wrote. Recorded as
@@ -8568,6 +8589,62 @@ func (e *emitter) flushLitFixups(dst string, fixups []litFixup) {
 		e.ind()
 		e.emit(stmt + "\n")
 	}
+}
+
+// pkgArrayInit resolves the shape of a package variable's ARRAY initializer: any
+// array a value names, or the result of a call that returns one.
+func (e *emitter) pkgArrayInit(initExpr []int32) (arrDim, bool) {
+	if a, ok := e.arrayShapeOf(initExpr); ok {
+		return a, true
+	}
+	if _, a, isCall := e.arrayResultCall(initExpr); isCall {
+		return a, true
+	}
+	return arrDim{}, false
+}
+
+// emitPkgArrayVar declares a package ARRAY variable whose initializer is not a
+// literal -- `var g = mk()`, `var g = src`, `var g = h.f` -- and fills it at package
+// initialization. C admits neither a call nor an array copy in a static initializer,
+// and the zero the declaration gets is the right starting value either way, so the
+// storage is a file-scope table exactly as a literal's is and only the fill moves.
+//
+// The fill is emitArrayTargetAssign, which is what every other whole-array write
+// goes through, so a receive and an out-parameter call come with it. Its statements
+// become one step, ordered against the package variables the initializer reads.
+func (e *emitter) emitPkgArrayVar(gn, srcName string, a arrDim, initExpr []int32) {
+	// Asked here rather than left to the fill, which reports it as an assignment:
+	// this position is a declaration and Go names it one. fail keeps the first
+	// error, so saying it here is what decides the wording.
+	if !e.checkArrayShape(a, initExpr, "variable declaration") {
+		return
+	}
+	e.globalArrays[gn] = a
+	e.emit("static " + a.elem + " " + gn + a.declSuffix() + ";\n")
+	// A temporary the fill hoists out of itself has no enclosing statement here to
+	// go before, so it becomes a step statement of its own -- the care pkgInitAssign
+	// takes, for the same reason.
+	saved, savedIndent := e.prologue, e.indent
+	e.prologue, e.indent = nil, 0
+	text := e.captureC(func() { e.emitArrayTargetAssign(gn, a, initExpr) })
+	pro := e.prologue
+	e.prologue, e.indent = saved, savedIndent
+	if text == "" {
+		return // emitArrayTargetAssign has said why
+	}
+	step := pkgInitStep{
+		target:  gn,
+		deps:    e.globalRefs(initExpr),
+		srcName: srcName,
+		pos:     e.astPos(initExpr),
+	}
+	for _, line := range pro {
+		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		step.stmts = append(step.stmts, line)
+	}
+	e.pkgInit = append(e.pkgInit, step)
 }
 
 // pkgInitLitFixups defers a file-scope literal's copies to the synthesized package
