@@ -20,6 +20,93 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A package ARRAY variable may be initialized by anything a local can be** —
+  `var d = mk()` for a call's result, `var d = src` for another array, `var d = h.f`
+  for a field, a method's result, and `var d = *p`, each with or without the type
+  written. Only a literal was taken: an array has no assignable C value type, so the
+  inferred form was refused as *cannot infer a type for the package variable* and the
+  typed form as *a package array initializer must be an array literal*. C admits
+  neither a call nor an array copy in a static initializer, so the storage stays a
+  file-scope table — zeroed, which is the right starting value — and only the fill
+  moves, to a step of the package initializer ordered against the variables it reads.
+  A table may therefore be declared above the rows it copies. A call's array result
+  filling a composite literal's element at package scope works for the same reason.
+
+- **A call's array result may fill a composite literal's element** — `[]Row{mkRow()}`,
+  `[2][2]int{mk(3), {1, 2}}`, `B{mk(4), 9}` and a method's result beside them. It is
+  not a copy like the other deferred elements: the result travels through an out
+  parameter, so the element *is* the storage the callee fills and the call writes
+  through it. Still refused at PACKAGE scope, for a reason that is not this one — no
+  package variable can be initialized from an array-returning call at all, `var d =
+  mk()` included.
+
+- **A method returning an ARRAY works on an array receiver** — `d := g.doubled()` for
+  a `type Row [2]int`, a type returning its own type. It was *cannot infer a type for
+  the declaration*, and the assigned form emitted C the host compiler rejects: an
+  array result travels through an out parameter, and the lookup deciding whether the
+  call is one asked for a C type an array receiver has not got. The same method on a
+  struct receiver, and a plain function with an array result, always worked. Still
+  refused on an *element* receiver, `pool[1].doubled()`, whose suffix is one step
+  longer than that path takes.
+
+- **A multi-result method may be called on an element** — `a, b := ps[1].two()`. The
+  call shape a destructuring assignment recognises was a run of *selectors*, which
+  admits `m.st.pop()` but not one element in, so this was *multiple assignment
+  requires a single function call on the right-hand side* — of a call. It had nothing
+  to do with arrays: a plain struct element was refused the same way, through a slice
+  of them, with a field on the way to the index, with a pointer receiver and with
+  arguments.
+
+- **An ARRAY receiver may be launched on a cog** — `go pool[1].run()`, `go g.run()`,
+  `go h.r.run()`. `go ws[i].run()` for a *struct* element was enabled deliberately —
+  one cog per element is the worker-pool shape — and every array spelling was
+  *unsupported receiver in a go statement*, the array itself included. A value
+  receiver crosses as a copy, which is what a goroutine's receiver is, and a pointer
+  receiver crosses as the address and writes the array the spawner named.
+
+- **A method may be called on an array ELEMENT** — `pool[1].sum()` over a
+  `[2]Row`, through a slice of them, with a pointer receiver, on one two indexes
+  in, and on a copy or a `range` value of one. An array of a defined array type is
+  resolved to its extents when the declaration is read — a `[2]Row` is a `[2][2]int`
+  by then — so the element's *name*, the only thing carrying its method set, was gone
+  before any walk reached the element. The shape now carries the element's name and
+  how many extents it accounts for, which is what tells `[2]Row` (one index reaches a
+  Row) from `[2][2]Row` (two do).
+
+  `t := pool[1].sum()` types too. Inferring a declaration from a method call on an
+  array receiver asked for a C type the receiver has not got, so it was *cannot infer
+  a type* — even for `t := g.sum()` on the array itself, where the call was fine.
+
+- **A deferred method on an ARRAY receiver no longer reads it at the return.**
+  `defer g.show()` for a `type Row [3]int` g printed what g held at the *end* of the
+  function, and so did `defer h.r.show()` for an array field. Go evaluates a deferred
+  call's receiver where the `defer` stands, and this one was not captured at all: an
+  array variable has no C type, and the capture asked for one. The slot now holds a
+  copy — a `memcpy`, C assigning no array — and a *pointer* receiver goes on capturing
+  the address, so it still sees later writes.
+
+- **A SEND may name a channel two fields deep** — `p.in.cmd <- v`. The send's model
+  carried one field and looked its name up on the *head's* type, so this was read as
+  `p.cmd`: refused as *cannot send to non-channel* where the outer struct had no such
+  field, and checked against the wrong element type where it had one of another type.
+  The helper that found the field already reported that there had not been exactly
+  one; both callers dropped that answer. The whole run is walked now, so the channel
+  checked is the channel sent on — in an ordinary send and in a `select` clause
+  alike — and a wrong value on a nested channel is reported against the right element
+  type.
+
+- **A channel declared from another no longer HANGS.** `var c chan int = ch` wrote the
+  alias and then gave the variable a private cell one line later, so the receive on it
+  waited on a channel nothing could send to — a program that built, ran and said
+  nothing. `c := ch` and `c = ch` always aliased; the typed declaration was the one
+  spelling of three that did not. The same bug sat one level down in a channel FIELD a
+  declaration's literal fills, `var w W = W{ch}`, and two levels down through a nested
+  literal.
+
+  What still creates a channel is a declaration that fills nothing — `var ch chan int`,
+  `var w W`, `W{}`, `W{In{}}` — which is where this language's channel-is-storage rule
+  lives. A struct copied from another value keeps minting as before.
+
 - **A conversion to an ARRAY type is an array value.** `c = Col(r)` emitted `c = r;`,
   which is not C, and `return Col(r)`, `Col(r) == c` and `[1]Col{Col(r)}` each refused
   it for want of an array they were looking straight at. Such a conversion changes
@@ -279,26 +366,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   package-level or caller-supplied backing hands its view out freely, which is the
   idiom the type exists for.
 
-- **A package ARRAY variable may be initialized by anything a local can be** —
-  `var d = mk()` for a call's result, `var d = src` for another array, `var d = h.f`
-  for a field, a method's result, and `var d = *p`, each with or without the type
-  written. Only a literal was taken: an array has no assignable C value type, so the
-  inferred form was refused as *cannot infer a type for the package variable* and the
-  typed form as *a package array initializer must be an array literal*. C admits
-  neither a call nor an array copy in a static initializer, so the storage stays a
-  file-scope table — zeroed, which is the right starting value — and only the fill
-  moves, to a step of the package initializer ordered against the variables it reads.
-  A table may therefore be declared above the rows it copies. A call's array result
-  filling a composite literal's element at package scope works for the same reason.
-
-- **A call's array result may fill a composite literal's element** — `[]Row{mkRow()}`,
-  `[2][2]int{mk(3), {1, 2}}`, `B{mk(4), 9}` and a method's result beside them. It is
-  not a copy like the other deferred elements: the result travels through an out
-  parameter, so the element *is* the storage the callee fills and the call writes
-  through it. Still refused at PACKAGE scope, for a reason that is not this one — no
-  package variable can be initialized from an array-returning call at all, `var d =
-  mk()` included.
-
 - **An array or slice literal's ELEMENTS are type-checked.** `[]int{1, "x"}` reached
   the C compiler, and `[]Col{r}` for another defined array type — or `[]B{a}` for
   another defined struct — was accepted outright. Such a literal's values were left
@@ -307,73 +374,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   answers the three questions a struct literal's field answers: does it satisfy an
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
-
-- **A method returning an ARRAY works on an array receiver** — `d := g.doubled()` for
-  a `type Row [2]int`, a type returning its own type. It was *cannot infer a type for
-  the declaration*, and the assigned form emitted C the host compiler rejects: an
-  array result travels through an out parameter, and the lookup deciding whether the
-  call is one asked for a C type an array receiver has not got. The same method on a
-  struct receiver, and a plain function with an array result, always worked. Still
-  refused on an *element* receiver, `pool[1].doubled()`, whose suffix is one step
-  longer than that path takes.
-
-- **A multi-result method may be called on an element** — `a, b := ps[1].two()`. The
-  call shape a destructuring assignment recognises was a run of *selectors*, which
-  admits `m.st.pop()` but not one element in, so this was *multiple assignment
-  requires a single function call on the right-hand side* — of a call. It had nothing
-  to do with arrays: a plain struct element was refused the same way, through a slice
-  of them, with a field on the way to the index, with a pointer receiver and with
-  arguments.
-
-- **An ARRAY receiver may be launched on a cog** — `go pool[1].run()`, `go g.run()`,
-  `go h.r.run()`. `go ws[i].run()` for a *struct* element was enabled deliberately —
-  one cog per element is the worker-pool shape — and every array spelling was
-  *unsupported receiver in a go statement*, the array itself included. A value
-  receiver crosses as a copy, which is what a goroutine's receiver is, and a pointer
-  receiver crosses as the address and writes the array the spawner named.
-
-- **A method may be called on an array ELEMENT** — `pool[1].sum()` over a
-  `[2]Row`, through a slice of them, with a pointer receiver, on one two indexes
-  in, and on a copy or a `range` value of one. An array of a defined array type is
-  resolved to its extents when the declaration is read — a `[2]Row` is a `[2][2]int`
-  by then — so the element's *name*, the only thing carrying its method set, was gone
-  before any walk reached the element. The shape now carries the element's name and
-  how many extents it accounts for, which is what tells `[2]Row` (one index reaches a
-  Row) from `[2][2]Row` (two do).
-
-  `t := pool[1].sum()` types too. Inferring a declaration from a method call on an
-  array receiver asked for a C type the receiver has not got, so it was *cannot infer
-  a type* — even for `t := g.sum()` on the array itself, where the call was fine.
-
-- **A deferred method on an ARRAY receiver no longer reads it at the return.**
-  `defer g.show()` for a `type Row [3]int` g printed what g held at the *end* of the
-  function, and so did `defer h.r.show()` for an array field. Go evaluates a deferred
-  call's receiver where the `defer` stands, and this one was not captured at all: an
-  array variable has no C type, and the capture asked for one. The slot now holds a
-  copy — a `memcpy`, C assigning no array — and a *pointer* receiver goes on capturing
-  the address, so it still sees later writes.
-
-- **A SEND may name a channel two fields deep** — `p.in.cmd <- v`. The send's model
-  carried one field and looked its name up on the *head's* type, so this was read as
-  `p.cmd`: refused as *cannot send to non-channel* where the outer struct had no such
-  field, and checked against the wrong element type where it had one of another type.
-  The helper that found the field already reported that there had not been exactly
-  one; both callers dropped that answer. The whole run is walked now, so the channel
-  checked is the channel sent on — in an ordinary send and in a `select` clause
-  alike — and a wrong value on a nested channel is reported against the right element
-  type.
-
-- **A channel declared from another no longer HANGS.** `var c chan int = ch` wrote the
-  alias and then gave the variable a private cell one line later, so the receive on it
-  waited on a channel nothing could send to — a program that built, ran and said
-  nothing. `c := ch` and `c = ch` always aliased; the typed declaration was the one
-  spelling of three that did not. The same bug sat one level down in a channel FIELD a
-  declaration's literal fills, `var w W = W{ch}`, and two levels down through a nested
-  literal.
-
-  What still creates a channel is a declaration that fills nothing — `var ch chan int`,
-  `var w W`, `W{}`, `W{In{}}` — which is where this language's channel-is-storage rule
-  lives. A struct copied from another value keeps minting as before.
 
 - **A defined SLICE or CHANNEL type is a type of its own too.** `type L []int` and
   `type M []int` were interchangeable, and so were two defined channel types. It is
