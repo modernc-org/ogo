@@ -5478,7 +5478,7 @@ func compositeLitElements(lit Node) (r []litElement) {
 // are either all positional -- one per field, in declaration order, so their count
 // must match -- or all keyed by field name, which may name any subset of the fields
 // in any order. "T{}" supplies none and zeroes every field.
-func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
+func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node) {
 	id := t.name
 	elements := compositeLitElements(lit)
 	// Resolve the names the values use whatever the literal's type turns out to
@@ -5489,14 +5489,22 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 		f.checkNames(s, el.value)
 	}
 	if !hasID {
+		// A BRACKETED literal, `[]Col{r}` / `[2]int{1, "x"}`, names no type in scope
+		// and so has none of the checks below -- but it does write its element type
+		// down, in the Factor the literal hangs off, and the values are checkable
+		// against it exactly as a defined array type's are.
+		if elem, ok := f.bracketLitElem(s, fac); ok {
+			f.checkElemLit(s, t, elem, lit)
+		}
 		return
 	}
 	// A defined array or slice type, `type Row [3]int` used as `Row{1, 2, 3}`, is
 	// as good a literal type as the written `[3]int{1, 2, 3}` -- a defined type
-	// behaves as what it is defined over. The values of such a literal are checked
-	// where the written form's are (the emitter, which knows the bound), so there
-	// is nothing more to do here.
+	// behaves as what it is defined over. How many values it may take is the
+	// emitter's, which knows the bound; what TYPE each may be is written down here.
 	if f.litElemType(s, t) {
+		elem, _ := f.litElemTypeNode(s, t)
+		f.checkElemLit(s, t, elem, lit)
 		return
 	}
 	// The type is checked even for "T{}", which supplies no values: naming a
@@ -5530,7 +5538,7 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 		if i < len(types) {
 			f.checkImplements(s, f.typeNodeString(types[i], false), el.value, "struct literal")
 			f.checkDefinedType(s, f.typeNodeString(types[i], false), el.value, "struct literal")
-			f.checkLitValue(s, t, types[i], el.value)
+			f.checkLitValue(s, t, types[i], el.value, "struct literal")
 		}
 	}
 	// A positional literal fills every field in order, including any this package
@@ -5569,7 +5577,7 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, lit Node) {
 // every literal of a type from another package, whose field types are written in
 // the DECLARING package's scope and would resolve here to a different type of the
 // same name, or to nothing.
-func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node) {
+func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what string) {
 	if t.qual.IsValid() {
 		return
 	}
@@ -5579,7 +5587,7 @@ func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node) {
 		return
 	}
 	if !assignableKind(ft.kind, vk) {
-		f.err(f.tok(value.Pos()).Position(), "cannot use %s of type %s as type %s in struct literal", f.exprSource(value), kindName(vk), ft.name)
+		f.err(f.tok(value.Pos()).Position(), "cannot use %s of type %s as type %s in %s", f.exprSource(value), kindName(vk), ft.name, what)
 		return
 	}
 	// Same type: a constant may still overflow a sized field, "S{b: 300}" for a
@@ -5645,7 +5653,7 @@ func (f *File) checkKeyedLit(s *Scope, t litType, names []Token, types []TypeNod
 		seen[name] = true
 		f.checkImplements(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
 		f.checkDefinedType(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
-		f.checkLitValue(s, t, fieldType(name), el.value)
+		f.checkLitValue(s, t, fieldType(name), el.value, "struct literal")
 	}
 }
 
@@ -5681,6 +5689,78 @@ func (f *File) litStructType(s *Scope, t litType) (*TypeNodeStruct, bool) {
 
 // litElemType reports whether a composite literal's type names a defined array or
 // slice type, following a chain of definitions to reach one.
+// bracketLitElem reads the element type a BRACKETED composite literal writes down.
+// Factor = "[" [ Expression ] "]" Type [ CompositeLit ]: the element type is the
+// Type, and the CompositeLit is what makes the whole a value rather than a written
+// type. It is the same walk exprLitElemKind makes to infer a declaration's element
+// kind, answering with the type rather than the kind.
+func (f *File) bracketLitElem(s *Scope, fac Node) (TypeNode, bool) {
+	if fac.ast == nil {
+		return nil, false
+	}
+	var elem Node
+	hasElem, hasLit := false, false
+	for c := range it(fac.ast) {
+		switch c.sym {
+		case Type:
+			elem, hasElem = c, true
+		case CompositeLit:
+			hasLit = true
+		}
+	}
+	if !hasElem || !hasLit {
+		return nil, false
+	}
+	return f.typ(s, elem), true
+}
+
+// litElemTypeNode is litElemType answering with the ELEMENT type it walked to, for
+// the caller that checks the values rather than only recognising the literal.
+func (f *File) litElemTypeNode(s *Scope, t litType) (TypeNode, bool) {
+	if t.qual.IsValid() {
+		return nil, false // a cross-package type: only its struct form is modelled
+	}
+	name := t.name.Src()
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		td, ok := s.find(name).(*TypeDeclaration)
+		if !ok || td.TypeSpec == nil {
+			return nil, false
+		}
+		switch tn := td.TypeSpec.TypeNode.(type) {
+		case *TypeNodeArray:
+			return tn.TypeNode, true
+		case *TypeNodeSlice:
+			return tn.TypeNode, true
+		case *TypeNodeIdent:
+			name = tn.Name.Src()
+		default:
+			return nil, false
+		}
+	}
+	return nil, false
+}
+
+// checkElemLit checks the VALUES of an array or slice literal against the element
+// type the literal names. Nothing did: `[]int{1, "x"}` reached the C compiler, and
+// `[]Col{r}` for another defined array type -- or `[]B{a}` for another defined
+// struct -- was accepted outright. The element type is written down in every one of
+// these, so the three questions a struct literal asks of a field's value can be
+// asked of an element's.
+//
+// A KEYED element is checked at its VALUE; the key is an index, which is the
+// emitter's to fold and bound.
+func (f *File) checkElemLit(s *Scope, t litType, elem TypeNode, lit Node) {
+	if elem == nil {
+		return
+	}
+	name := f.typeNodeString(elem, false)
+	for _, el := range compositeLitElements(lit) {
+		f.checkImplements(s, name, el.value, "array or slice literal")
+		f.checkDefinedType(s, name, el.value, "array or slice literal")
+		f.checkLitValue(s, t, elem, el.value, "array or slice literal")
+	}
+}
+
 func (f *File) litElemType(s *Scope, t litType) bool {
 	if t.qual.IsValid() {
 		return false // a cross-package type: only its struct form is modelled
@@ -8158,7 +8238,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 			t = litType{name: sel, qual: id}
 		}
-		f.checkCompositeLit(s, t, hasID, lit)
+		f.checkCompositeLit(s, t, hasID, n, lit)
 	}
 	// Reading the blank identifier -- as an operand, argument, initializer,
 	// condition or return value, whether bare or with a call, selector or index

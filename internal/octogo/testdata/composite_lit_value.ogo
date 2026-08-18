@@ -61,8 +61,76 @@ func overflows() {
 	println(a.g)
 }
 
+// An ARRAY or SLICE literal's values are checked the same way, against the element
+// type the literal writes down. Nothing checked them at all: the values of such a
+// literal were left to the emitter, which knows the bound and counts them, and knows
+// nothing about their types -- so a string in an []int reached the C compiler, and an
+// element of the wrong DEFINED type was accepted outright.
+
+type Row [2]int
+
+type Col [2]int
+
+type A struct {
+	n int
+}
+
+type B struct {
+	n int
+}
+
+type Table [1]Col
+
+func elems() {
+	var i32 int32 = 1
+	var r Row
+	var a A
+	var plain [2]int
+
+	// The element type takes a value of exactly it, an untyped constant that fits,
+	// and -- for a named element -- the unnamed spelling of the same shape, which Go
+	// assigns both ways. A type-elided element names no type and is not this check's.
+	ok1 := []int{1, 2, 3}
+	ok2 := []int32{i32, 2}
+	ok3 := []Row{r, plain}
+	ok4 := [][2]int{r}
+	ok5 := []A{a, {2}}
+	ok6 := [2][2]int{{1, 2}, {3, 4}}
+	ok7 := Table{Col{1, 2}}
+	println(ok1[0], ok2[0], ok3[0][0], ok4[0][0], ok5[0].n, ok6[0][0], ok7[0][0])
+
+	// ERROR "of type string as type int in array or slice literal"
+	bad1 := []int{1, "x"}
+
+	// ERROR "of type string as type int in array or slice literal"
+	bad2 := [2]int{1, "x"}
+
+	// ERROR "cannot use r of type Row as type Col in array or slice literal"
+	bad3 := []Col{r}
+
+	// ERROR "cannot use a of type A as type B in array or slice literal"
+	bad4 := []B{a}
+
+	// A defined ARRAY type's literal is checked at its elements too, which is where
+	// the element type is written.
+	// ERROR "cannot use r of type Row as type Col in array or slice literal"
+	bad5 := Table{r}
+
+	println(bad1[0], bad2[0], bad3[0][0], bad4[0].n, bad5[0][0])
+}
+
+// A constant of the right type may still not fit the element, the same range check
+// a field's value takes.
+func elemOverflows() {
+	// ERROR "constant 300 overflows uint8"
+	a := []uint8{300}
+	println(a[0])
+}
+
 func main() {
 	ok()
 	wrongType()
 	overflows()
+	elems()
+	elemOverflows()
 }
