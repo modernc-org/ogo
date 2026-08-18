@@ -7570,8 +7570,13 @@ func (e *emitter) arrayResultCallOf(recv string, suffix []Node) (string, arrDim,
 	if len(suffix) == 2 && suffix[0].sym == Selector {
 		// A method, `b.triple()`: its C name is the receiver type's, and the
 		// receiver leads the argument list ahead of the out parameter.
-		rct, isVar := e.varType(recv)
-		if !isVar || !e.isUserType(methodBaseType(rct)) {
+		//
+		// methodRecvCType rather than varType-plus-isUserType, the fifth place that
+		// pair was spelled by hand: an ARRAY variable has no C type, so a method with
+		// an array RESULT on an array RECEIVER -- `g.doubled()` for a `type Row
+		// [2]int` -- was not recognised as a call at all.
+		rct, isVar := e.methodRecvCType(recv)
+		if !isVar {
 			return "", arrDim{}, false
 		}
 		cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
@@ -15384,7 +15389,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	if len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
 		cname := e.funcCallC(recv)
 		if len(suffix) == 2 && suffix[0].sym == Selector {
-			if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
+			if rct, ok := e.methodRecvCType(recv); ok {
 				cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
 			}
 		}

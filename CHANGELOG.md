@@ -295,6 +295,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **A method returning an ARRAY works on an array receiver** — `d := g.doubled()` for
+  a `type Row [2]int`, a type returning its own type. It was *cannot infer a type for
+  the declaration*, and the assigned form emitted C the host compiler rejects: an
+  array result travels through an out parameter, and the lookup deciding whether the
+  call is one asked for a C type an array receiver has not got. The same method on a
+  struct receiver, and a plain function with an array result, always worked. Still
+  refused on an *element* receiver, `pool[1].doubled()`, whose suffix is one step
+  longer than that path takes.
+
 - **A multi-result method may be called on an element** — `a, b := ps[1].two()`. The
   call shape a destructuring assignment recognises was a run of *selectors*, which
   admits `m.st.pop()` but not one element in, so this was *multiple assignment

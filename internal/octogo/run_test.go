@@ -5895,6 +5895,54 @@ func main() {
 		want: "3 4\n5 6 9 10\n6 -3 6 5 6 13 14\n3 4\n",
 	},
 	{
+		// A method whose RECEIVER is an array and whose RESULT is one -- a type
+		// returning its own type, which is how such a method is usually written.
+		// `d := g.doubled()` was "cannot infer a type for the declaration" and the
+		// assigned form emitted C the host compiler rejects: an array result travels
+		// through an out parameter, and the lookup deciding whether the call IS one
+		// asked varType, which answers nothing for an array. The same method on a
+		// STRUCT receiver, and a plain function with an array result, both worked.
+		//
+		// Still refused on an ELEMENT receiver, `pool[1].doubled()`: that path takes
+		// a two-step suffix and the chain is three.
+		name: "a method returning an array on an array receiver",
+		src: `type Row [2]int
+
+type Grid [2][2]int
+
+func (r Row) Doubled() Row { return Row{r[0] * 2, r[1] * 2} }
+
+func (r *Row) Swapped() Row { return Row{r[1], r[0]} }
+
+func (g Grid) Flat() Row { return Row{g[0][0], g[1][1]} }
+
+var g = Row{3, 4}
+
+var grid = Grid{{1, 2}, {3, 4}}
+
+func twice(r Row) Row { return r.Doubled() }
+
+func main() {
+	// A method whose RECEIVER is an array and whose RESULT is one -- a type
+	// returning its own type, which is how such a method is usually written. The
+	// call was not recognised at all: an array variable has no C type, and the
+	// lookup asked for one.
+	d := g.Doubled()
+	println(d[0], d[1])
+
+	// Assigned rather than declared, returned from a function, on a pointer
+	// receiver, and on a multi-dimensional array.
+	var e2 Row
+	e2 = g.Doubled()
+	f := twice(g)
+	s := g.Swapped()
+	fl := grid.Flat()
+	println(e2[1], f[0], s[0], s[1], fl[0], fl[1])
+}
+`,
+		want: "6 8\n8 6 4 3 1 4\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.
