@@ -8481,7 +8481,16 @@ func (e *emitter) recordLitFixup(v Node, want arrDim) bool {
 	}
 	a, ok := e.arrayShapeOf(v.ast)
 	if !ok {
-		e.fail("an element of a %s literal must be a literal or an array value",
+		// A CALL returning an array is not a value to copy FROM -- the result
+		// travels through an out parameter -- so arrayShapeOf, which answers for
+		// values, does not see it. The copy is the call itself, writing into the
+		// element, so the shape comes off the callee's result.
+		if _, ra, isCall := e.arrayResultCall(v.ast); isCall {
+			a, ok = ra, true
+		}
+	}
+	if !ok {
+		e.fail("an element of a %s literal must be a literal, an array value or a call returning one",
 			e.goArrayTypeName(want))
 		return false
 	}
@@ -8505,6 +8514,17 @@ func (e *emitter) litFixupCopies(dst string, fixups []litFixup) ([]string, bool)
 			stmt := strings.TrimSuffix(e.captureC(func() { e.emitStructCopy(at, f.ctype, f.src) }), "\n")
 			if stmt == "" {
 				return nil, false // emitStructCopy has said why
+			}
+			out = append(out, stmt)
+			continue
+		}
+		// `[]Row{mk()}`: the callee fills storage the caller owns, and the element IS
+		// that storage, so the call writes through it directly -- no copy, which is
+		// what the out-parameter ABI is for.
+		if cname, _, isCall := e.arrayResultCall(f.src); isCall {
+			stmt := strings.TrimSuffix(e.captureC(func() { e.emitArrayResultCall(at, cname, f.src) }), "\n")
+			if stmt == "" {
+				return nil, false // emitArrayResultCall has said why
 			}
 			out = append(out, stmt)
 			continue

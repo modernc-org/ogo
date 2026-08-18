@@ -6462,7 +6462,7 @@ func main() {
 	println(t[0][0])
 }
 `,
-			want: "must be a literal or an array value",
+			want: "must be a literal, an array value or a call returning one",
 		},
 		{
 			name: "in a channel send, which names no storage",

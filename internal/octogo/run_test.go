@@ -5374,6 +5374,49 @@ func main() {
 		want: "1 2\n1 2 3\ntrue false\n1\n7 2\n1 6\n",
 	},
 	{
+		// A CALL returning an array, as a composite literal's element. It is not a
+		// value to copy FROM -- the result travels through an out parameter -- so it
+		// is not the copy the other deferred elements are: the element IS the storage
+		// the callee fills, and the call writes through it, which is what that ABI is
+		// for. A method's result is the same call one step along.
+		//
+		// At PACKAGE scope this is still refused, and not for a reason that lives
+		// here: no package variable can be initialized from an array-returning call
+		// at all, `var d = mk()` included.
+		name: "a call's array result as a literal's element",
+		src: `type Row [2]int
+
+type Buf struct {
+	xs [2]int
+	n  int
+}
+
+type T struct{ n int }
+
+func (t T) row() [2]int { return [2]int{t.n, t.n + 1} }
+
+func mkRow() Row { return Row{7, 8} }
+
+func mk(k int) [2]int { return [2]int{k, k * 2} }
+
+var t = T{5}
+
+func main() {
+	// A call's array RESULT as a literal's element: the callee fills storage the
+	// caller owns, and the element IS that storage, so the call writes through it.
+	d := []Row{mkRow(), mkRow()}
+	e2 := [2][2]int{mk(3), {1, 2}}
+	b := Buf{mk(4), 9}
+	m := [][2]int{t.row()}
+	println(d[0][0], d[1][1])
+	println(e2[0][0], e2[0][1], e2[1][1])
+	println(b.xs[0], b.xs[1], b.n)
+	println(m[0][0], m[0][1])
+}
+`,
+		want: "7 8\n3 6 2\n4 8 9\n5 6\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

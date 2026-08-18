@@ -266,6 +266,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A call's array result may fill a composite literal's element** — `[]Row{mkRow()}`,
+  `[2][2]int{mk(3), {1, 2}}`, `B{mk(4), 9}` and a method's result beside them. It is
+  not a copy like the other deferred elements: the result travels through an out
+  parameter, so the element *is* the storage the callee fills and the call writes
+  through it. Still refused at PACKAGE scope, for a reason that is not this one — no
+  package variable can be initialized from an array-returning call at all, `var d =
+  mk()` included.
+
 - **An array or slice literal's ELEMENTS are type-checked.** `[]int{1, "x"}` reached
   the C compiler, and `[]Col{r}` for another defined array type — or `[]B{a}` for
   another defined struct — was accepted outright. Such a literal's values were left
