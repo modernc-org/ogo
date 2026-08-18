@@ -3081,7 +3081,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -3780,6 +3780,7 @@ type emitter struct {
 	litFixable         bool                 // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
 	frameBacked        map[string]bool      // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
 	crossParams        map[string][]leak    // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
+	crossInto          map[string][]uint32  // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see storedInPointerParam)
 	retParams          map[string][]bool    // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
 	funcValueOf        map[string]string    // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
 	crossEdges         []crossEdge          // call sites passing a parameter straight on, the graph closeCrossParams walks
@@ -6084,6 +6085,12 @@ const (
 	leakRecv
 )
 
+// intoBits is how many parameters a crossInto mask can name. A store through
+// parameter 32 or later is not summarised; the mask is a word because a function
+// with that many parameters is not the shape this rule exists for, and a wider one
+// would cost every function to serve none.
+const intoBits = 32
+
 // crossEdge records that a call passes the caller's parameter `from` straight into
 // the callee's parameter `to`, so whatever the callee does with it, the caller does.
 //
@@ -6097,6 +6104,31 @@ type crossEdge struct {
 	callee string
 	to     int
 	recv   recvKind
+	// recvAt is which of the CALLER's parameters the receiver is, for recvParam.
+	recvAt int
+	// argOwner says, per argument position, what the caller passed there: one of
+	// its own parameters by index, argOutlives for a package variable, argLocal for
+	// anything else. It is what turns the callee's "stored through my parameter 2"
+	// into a fact about the caller, whose parameter 2 is not the callee's.
+	argOwner []int
+}
+
+const (
+	// argLocal: an argument this cannot follow -- a local, or an expression with no
+	// name to take. Nothing propagates through it; the call site's own check is
+	// what covers the storage chosen there.
+	argLocal = -1
+	// argOutlives: a package variable, which outlives every frame. A store through
+	// it is leakGlobal for the caller, which needs no further question asked.
+	argOutlives = -2
+)
+
+// owner names what the caller passed at argument position j.
+func (g crossEdge) owner(j int) int {
+	if j < 0 || j >= len(g.argOwner) {
+		return argLocal
+	}
+	return g.argOwner[j]
 }
 
 // recvKind classifies a method edge's receiver.
@@ -6113,6 +6145,11 @@ const (
 	// Either outlives the caller's frame, so a store into it is a store into storage
 	// that outlives -- leakGlobal, which the call sites already understand.
 	recvOutlives
+	// recvParam: one of the CALLER's own `*T` parameters, `h.inner(d)` in a function
+	// taking h. Where that points is the caller's caller's business, so the callee's
+	// leakRecv becomes the caller's "stored through parameter recvAt" -- the same
+	// fact crossInto carries for a plain store, asked one call further out.
+	recvParam
 )
 
 // collectCrossParams seeds the per-parameter crossing summary for the functions of
@@ -6165,8 +6202,30 @@ func (e *emitter) collectCrossParams(ast []int32) {
 			}
 			return -1
 		}
+		// owners says what this call passed at each position, in the terms the
+		// CALLER's summary is written in: its own parameters by index, or a package
+		// variable, or something not to be followed. A callee's "stored through my
+		// parameter j" means nothing until it is read through this.
+		owners := func(args []Node) []int {
+			out := make([]int, len(args))
+			for j, a := range args {
+				root := e.crossRoot(a.ast)
+				switch i := at(root); {
+				case i >= 0:
+					out[j] = i
+				case root != "" && e.isPackageVar(root):
+					out[j] = argOutlives
+				default:
+					out[j] = argLocal
+				}
+			}
+			return out
+		}
 		if _, seen := e.crossParams[cname]; !seen {
 			e.crossParams[cname] = make([]leak, len(params))
+		}
+		if _, seen := e.crossInto[cname]; !seen {
+			e.crossInto[cname] = make([]uint32, len(params))
 		}
 		if _, seen := e.retParams[cname]; !seen {
 			e.retParams[cname] = make([]bool, len(params))
@@ -6203,6 +6262,18 @@ func (e *emitter) collectCrossParams(ast []int32) {
 						e.crossParams[cname][i] |= leakRecv
 					}
 				}
+				// A store through a POINTER PARAMETER, `h.d = p` -- the same
+				// setter, written as a plain function rather than a method. WHICH
+				// parameter it reaches is what has to be carried: the call site
+				// decides by the lifetime of the argument at that position, and
+				// `fill(&g, a[:])` and `fill(&local, a[:])` differ in nothing else.
+				if vs, slot := e.storedInPointerParam(fi, nodes); slot >= 0 {
+					for _, v := range vs {
+						if i := at(e.leakRoot(v)); i >= 0 {
+							e.crossInto[cname][i] |= 1 << slot
+						}
+					}
+				}
 			}
 			// A return hands the value back to the caller: which parameter it came
 			// from is what lets the caller follow it to the storage it chose.
@@ -6226,9 +6297,11 @@ func (e *emitter) collectCrossParams(ast []int32) {
 			// argument that is one of this function's parameters ties the two
 			// together.
 			for _, c := range e.stmtCalls(nodes) {
+				owner := owners(c.args)
 				for j, a := range c.args {
 					if i := at(e.crossRoot(a.ast)); i >= 0 {
-						e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
+						e.crossEdges = append(e.crossEdges,
+							crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner})
 					}
 				}
 			}
@@ -6236,10 +6309,11 @@ func (e *emitter) collectCrossParams(ast []int32) {
 			// carries whose receiver it is, because that is what says whether the
 			// callee's leakRecv is a leak here too or the end of the matter.
 			for _, c := range e.stmtMethodCalls(nodes, fi) {
+				owner := owners(c.args)
 				for j, a := range c.args {
 					if i := at(e.crossRoot(a.ast)); i >= 0 {
-						e.crossEdges = append(e.crossEdges,
-							crossEdge{caller: cname, from: i, callee: c.callee, to: j, recv: c.recv})
+						e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
+							callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner})
 					}
 				}
 			}
@@ -6261,8 +6335,40 @@ func (e *emitter) closeCrossParams() {
 			// A store into the callee's RECEIVER is a leak to whoever owns that
 			// receiver, so what it means here depends on which one the call named.
 			flags := callee[g.to]
-			if g.recv == recvOutlives && flags&leakRecv != 0 {
-				flags = flags&^leakRecv | leakGlobal
+			callerInto := e.crossInto[g.caller]
+			into := func(slot int) {
+				if slot < 0 || slot >= intoBits || g.from >= len(callerInto) || callerInto[g.from]&(1<<slot) != 0 {
+					return
+				}
+				callerInto[g.from] |= 1 << slot
+				changed = true
+			}
+			if flags&leakRecv != 0 {
+				switch {
+				case g.recv == recvOutlives:
+					flags = flags&^leakRecv | leakGlobal
+				case g.recv == recvParam:
+					// The receiver is the caller's own parameter, so the callee's
+					// store into it is the caller's store THROUGH that parameter:
+					// the same fact, one call further out, where crossInto says it.
+					into(g.recvAt)
+					flags &^= leakRecv
+				}
+			}
+			// And what the callee stores through ITS parameters, the caller stores
+			// through whatever it passed at those positions -- a package variable
+			// settling the matter here, its own parameter carrying it on.
+			if calleeInto := e.crossInto[g.callee]; g.to < len(calleeInto) {
+				for j := 0; j < intoBits; j++ {
+					if calleeInto[g.to]&(1<<j) == 0 {
+						continue
+					}
+					if owner := g.owner(j); owner == argOutlives {
+						flags |= leakGlobal
+					} else {
+						into(owner)
+					}
+				}
 			}
 			if flags&^caller[g.from] == 0 {
 				continue
@@ -6318,9 +6424,41 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 		if n.sym != ParameterList {
 			continue // parameters are the only ParameterList; results are ResultList/Type
 		}
-		e.forEachParam(n.ast, func(nm string, _ []int32, _ bool) { fi.params = append(fi.params, nm) })
+		e.forEachParam(n.ast, func(nm string, ta []int32, _ bool) {
+			fi.params = append(fi.params, nm)
+			fi.ptrBase = append(fi.ptrBase, e.ptrParamBase(ta))
+		})
 	}
 	return fi, true
+}
+
+// ptrParamBase names the type a parameter written `*T` points at, mangled, or ""
+// for any other parameter. Two things want it, and both are why this reads the
+// WRITTEN type rather than asking cType: a store through such a parameter reaches
+// the caller's storage, and a method called on one is named after that type.
+//
+// cType is what must not be called here. It REFUSES an array by latching the
+// emitter's error state, so asking it about every parameter -- from a pass that is
+// only gathering facts, before any body is emitted -- failed the build of programs
+// that were never in question. Reading the type as written asks nothing of it.
+//
+// Only `*T` for a plain declared T answers. `*pkg.T`, `**T` and a pointer to a
+// slice or an array all yield "" and are simply not summarised: the shape this
+// exists for is the setter taking a pointer to a struct.
+func (e *emitter) ptrParamBase(ta []int32) string {
+	nodes := slices.Collect(it(ta))
+	if len(nodes) != 2 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != MUL || nodes[1].sym != Type {
+		return ""
+	}
+	tok, ok := e.soleToken(nodes[1].ast)
+	if !ok || e.f.ch(tok) != IDENT {
+		return ""
+	}
+	name := mangle(e.curPkgPrefix, e.src(tok))
+	if !e.typeNames[name] {
+		return "" // not a type declared here: nothing to be named after
+	}
+	return name
 }
 
 // funcInfo is what the crossing summary needs of one declaration: how it is named,
@@ -6333,6 +6471,7 @@ type funcInfo struct {
 	cname     string
 	srcName   string
 	params    []string
+	ptrBase   []string
 	body      []int32
 	recvName  string
 	recvCType string
@@ -6364,65 +6503,86 @@ func (e *emitter) crossRoot(ast []int32) string {
 	return name
 }
 
-// storedInPackageVar returns the values a statement stores into a package variable,
-// `g = v`, `g.f = v` or `g[i] = v`. The target's ROOT is what decides: a field or an
-// element of a package variable outlives every frame exactly as the variable does.
-//
-// Only a plain "=" qualifies. A ":=" declares a local, and a compound assignment
-// reads what is there rather than storing what it is given.
 // storedInReceiver returns the values a statement stores into the METHOD's receiver,
 // `t.d = v` -- storedInPackageVar's counterpart for the storage a method is handed
 // rather than the storage it can see. A bare `t = v` is not one: that rebinds the
 // receiver variable itself, which dies with the call.
 func (e *emitter) storedInReceiver(recvName string, nodes []Node) [][]int32 {
-	if recvName == "" || len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
-		return nil
-	}
-	if e.soleIdent(nodes[0].ast) != recvName {
-		return nil
-	}
-	postfix := slices.Collect(it(nodes[1].ast))
+	base, values, suffixed := e.assignThrough(nodes)
 	// At least one selector or index before the operator: a store THROUGH the
 	// receiver, not to it.
-	if len(postfix) < 2 || postfix[len(postfix)-1].sym != PostfixOp {
+	if recvName == "" || base != recvName || !suffixed {
 		return nil
 	}
-	op := slices.Collect(it(postfix[len(postfix)-1].ast))
-	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return nil
-	}
-	var out [][]int32
-	for n := range it(op[1].ast) {
-		if n.sym == Expression {
-			out = append(out, n.ast)
-		}
-	}
-	return out
+	return values
 }
 
-func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
-	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
-		return nil
+// storedInPointerParam returns the values a statement stores through one of the
+// function's `*T` PARAMETERS, `h.d = v`, and which parameter that is.
+//
+// It is storedInReceiver's general form, and the one the summary was missing. A
+// receiver is only the parameter a method call writes to the left of the dot; the
+// same store through the same struct, in a plain function taking it as an argument,
+// escapes exactly as far -- and was accepted, because leakRecv had no way to say
+// "into parameter 2" and nothing else did either.
+//
+//	func fill(h *H, d []int) { h.d = d }   // d is stored through parameter 0
+//
+// Whether that outlives the caller's frame is the CALL SITE's question, as it is
+// for a receiver: `fill(&g, a[:])` leaks and `fill(&local, a[:])` does not.
+func (e *emitter) storedInPointerParam(fi funcInfo, nodes []Node) ([][]int32, int) {
+	base, values, suffixed := e.assignThrough(nodes)
+	if base == "" || !suffixed {
+		return nil, -1
 	}
-	base := e.soleIdent(nodes[0].ast)
-	if base == "" || !e.isPackageVar(base) {
-		return nil
+	for i, nm := range fi.params {
+		if nm == base && i < len(fi.ptrBase) && fi.ptrBase[i] != "" && i < intoBits {
+			return values, i
+		}
+	}
+	return nil, -1
+}
+
+// assignThrough reads a statement of the form `base<suffix> = v...` and answers
+// with the base identifier, the values assigned, and whether any selector or index
+// stood between them -- which is what separates a store INTO a name from a store
+// THROUGH it. The three callers differ only in what they ask of the base.
+//
+// Only a plain "=" qualifies. A ":=" declares a local, and a compound assignment
+// reads what is there rather than storing what it is given.
+func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, suffixed bool) {
+	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return "", nil, false
+	}
+	if base = e.soleIdent(nodes[0].ast); base == "" {
+		return "", nil, false
 	}
 	postfix := slices.Collect(it(nodes[1].ast))
 	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
-		return nil
+		return "", nil, false
 	}
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
 	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return nil
+		return "", nil, false
 	}
-	var out [][]int32
 	for n := range it(op[1].ast) {
 		if n.sym == Expression {
-			out = append(out, n.ast)
+			values = append(values, n.ast)
 		}
 	}
-	return out
+	return base, values, len(postfix) > 1
+}
+
+// storedInPackageVar returns the values a statement stores into a package variable,
+// `g = v`, `g.f = v` or `g[i] = v`. The target's ROOT is what decides: a field or an
+// element of a package variable outlives every frame exactly as the variable does --
+// so unlike the two above, no selector need stand between them.
+func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
+	base, values, _ := e.assignThrough(nodes)
+	if base == "" || !e.isPackageVar(base) {
+		return nil
+	}
+	return values
 }
 
 // leakRoot names the variable a stored value came from: the expression itself when
@@ -6520,6 +6680,7 @@ type stmtCall struct {
 type methodCall struct {
 	callee string
 	recv   recvKind
+	recvAt int
 	args   []Node
 }
 
@@ -6529,16 +6690,19 @@ type methodCall struct {
 // `func (t *H) set(d []int) { t.inner(d) }` -- one method delegating to another --
 // carried no requirement back to its callers and the leak inner made was invisible.
 //
-// Two receivers are resolvable here, and they are the two that leak. The enclosing
-// method's OWN receiver, whose type this declaration states; and a PACKAGE variable,
-// whose type is known because package variables are emitted before this pass runs.
+// Three receivers are resolvable here, and they are the three that leak. The
+// enclosing method's OWN receiver, whose type this declaration states; a PACKAGE
+// variable, whose type is known because package variables are emitted before this
+// pass runs; and a `*T` PARAMETER, whose type ptrParamBase reads as written.
 //
-// Any other receiver is skipped, because resolving its type before a body is walked
-// means asking cType of a written type -- which REFUSES an array, poisoning the
-// emitter's error state from a pass that is only gathering facts. What that leaves
-// unfollowed is a method called on a local or a parameter passing the argument on;
-// narrower than the "no method edges at all" it replaces, and the direct store
-// through such a receiver is checkRecvLeak's, which sees it.
+// That last one was skipped while resolving it meant asking cType -- which REFUSES
+// an array by latching the emitter's error state, from a pass that is only
+// gathering facts. Reading the written type asks nothing of cType, so the case
+// costs nothing it used to.
+//
+// What is still unfollowed is a method called on a LOCAL. Naming it means finding
+// the declaration in the body, and the direct store through such a receiver is
+// checkRecvLeak's, which sees it.
 func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 	var out []methodCall
 	// The statement-level call, `t.inner(d)`. It is an AssignHead beside a Postfix
@@ -6584,12 +6748,17 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 	if method == "" {
 		return methodCall{}, false
 	}
-	ct, kind := "", recvNone
-	switch {
+	ct, kind, at := "", recvNone, argLocal
+	switch i := slices.Index(fi.params, recv); {
 	case recv == fi.recvName && fi.recvCType != "":
 		ct, kind = fi.recvCType, recvOwn
 	case e.isPackageVar(recv):
 		ct, kind = e.globals[e.globalC(recv)], recvOutlives
+	case i >= 0 && i < len(fi.ptrBase) && fi.ptrBase[i] != "" && i < intoBits:
+		// A `*T` PARAMETER. ptrBase read the type as written, so naming the method
+		// costs nothing and risks nothing -- which is what used to leave this case
+		// out. The base is already mangled and starless, as methodBaseType wants.
+		ct, kind, at = fi.ptrBase[i], recvParam, i
 	}
 	if ct == "" || kind == recvNone {
 		return methodCall{}, false
@@ -6598,7 +6767,7 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 	if _, isMethod := e.funcRet[cname]; !isMethod {
 		return methodCall{}, false
 	}
-	return methodCall{callee: cname, recv: kind, args: e.callArgExprs(suffix[1].ast)}, true
+	return methodCall{callee: cname, recv: kind, recvAt: at, args: e.callArgExprs(suffix[1].ast)}, true
 }
 
 // stmtCalls finds the calls a statement makes, so that an argument which is one of
@@ -19756,6 +19925,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	sliceParams := e.funcSliceParams[cname]
 	args := e.callArgExprs(callSuffix)
 	e.checkCrossArgs(cname, args, e.spreadCall(callSuffix))
+	e.checkIntoArgs(cname, args)
 	e.checkArrayArgs(cname, args)
 	// A variadic callee takes one []T where the call wrote however many values.
 	// They are packed into an array of this frame, which is what Go allocates for
@@ -23024,6 +23194,43 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 			"function; %s",
 			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), recv, r.advice())
 		return
+	}
+}
+
+// checkIntoArgs refuses an argument backed by this frame where the callee stores
+// that parameter THROUGH another of its parameters, and the argument at that
+// position outlives this frame. It is checkRecvLeak's rule for a plain function:
+// `fill(&g, a[:])` leaves a header over a dead frame in a package variable, and
+// the same call with a local in place of g is fine, the two dying together.
+//
+// Only a target this can positively identify as outliving answers -- a package
+// variable, or a parameter, whose pointee belongs to the caller. An expression it
+// cannot name is left alone rather than refused on suspicion: over-refusal here
+// would fall on ordinary code that keeps nothing, and the shapes worth catching
+// are the ones a reader would write.
+func (e *emitter) checkIntoArgs(cname string, args []Node) {
+	intos := e.crossInto[cname]
+	for i, a := range args {
+		if i >= len(intos) || intos[i] == 0 {
+			continue
+		}
+		r, ok := e.frameRefOf(a.ast)
+		if !ok {
+			continue
+		}
+		for j := 0; j < len(args) && j < intoBits; j++ {
+			if intos[i]&(1<<j) == 0 {
+				continue
+			}
+			tgt := e.crossRoot(args[j].ast)
+			if tgt == "" || !(e.isPackageVar(tgt) || e.curParams[tgt]) {
+				continue
+			}
+			e.fail("%v: cannot pass %s to %s: it is stored through %s, which outlives this "+
+				"function; %s",
+				e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), tgt, r.advice())
+			return
+		}
 	}
 }
 

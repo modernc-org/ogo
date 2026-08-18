@@ -7780,6 +7780,214 @@ func main() {
 	}
 }
 
+func TestEmitCPointerParamEscape(t *testing.T) {
+	const decls = `type H struct {
+	d []int
+	n int
+}
+
+var h H
+
+var back [4]int
+
+func fill(p *H, d []int) { p.d = d }
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		// The rule leakRecv states for a receiver, asked of the same setter written
+		// as a plain function. Nothing here is a method at all.
+		{
+			name: "a store through a pointer parameter",
+			src: `func leak() {
+	var a [4]int
+	fill(&h, a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "through two plain functions",
+			src: `func outer(p *H, d []int) { fill(p, d) }
+
+func leak() {
+	var a [4]int
+	outer(&h, a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "three functions deep",
+			src: `func mid(p *H, d []int) { fill(p, d) }
+
+func outer(p *H, d []int) { mid(p, d) }
+
+func leak() {
+	var arr [4]int
+	outer(&h, arr[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local arr",
+		},
+		// The callee names the package variable itself, so the question is settled
+		// there rather than carried to this call site -- the argOutlives path.
+		{
+			name: "the callee names the package variable",
+			src: `func outer(d []int) { fill(&h, d) }
+
+func leak() {
+	var a [4]int
+	outer(a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		// A METHOD called on a pointer parameter: the receiver whose type used to be
+		// unresolvable here, and the reason no edge was recorded through it.
+		{
+			name: "a method on a pointer parameter",
+			src: `func (t *H) inner(d []int) { t.d = d }
+
+func pass(p *H, d []int) { p.inner(d) }
+
+func leak() {
+	var a [4]int
+	pass(&h, a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		// Where the storage the chain ends in dies with the reference, all of it is
+		// fine -- the same calls, and nothing to refuse.
+		{
+			name: "package backing through the chain",
+			src: `func outer(p *H, d []int) { fill(p, d) }
+
+func main() {
+	outer(&h, back[:])
+	println(len(h.d))
+}
+`,
+		},
+		{
+			name: "a local target through the chain",
+			src: `func outer(p *H, d []int) { fill(p, d) }
+
+func main() {
+	var a [4]int
+	var local H
+	outer(&local, a[:])
+	println(len(local.d))
+}
+`,
+		},
+		// The frame-backed argument goes to a parameter the callee does NOT store.
+		// Only a per-parameter summary can tell these apart: a rule that asked
+		// merely whether SOME argument outlives would refuse this.
+		{
+			name: "the frame-backed argument goes elsewhere",
+			src: `func two(p *H, keep, scratch []int) {
+	p.d = keep
+	p.n = len(scratch)
+}
+
+func main() {
+	var a [4]int
+	two(&h, back[:], a[:])
+	println(h.n)
+}
+`,
+		},
+		{
+			name: "a scalar through a pointer parameter",
+			src: `func put(p *H, n int) { p.n = n }
+
+func main() {
+	var a [4]int
+	put(&h, len(a[:]))
+	println(h.n)
+}
+`,
+		},
+		{
+			name: "a pointer parameter only read",
+			src: `func size(p *H, d []int) int { return len(p.d) + len(d) }
+
+func main() {
+	var a [4]int
+	println(size(&h, a[:]))
+}
+`,
+		},
+		// The fixed point must terminate on a setter that calls itself.
+		{
+			name: "a recursive setter",
+			src: `func rec(p *H, d []int, n int) {
+	p.d = d
+	if n > 0 {
+		rec(p, d, n-1)
+	}
+}
+
+func main() {
+	var local H
+	rec(&local, back[:], 2)
+	println(len(local.d))
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a store through a pointer parameter; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCRecvStoreEscape(t *testing.T) {
 	const decls = `type H struct {
 	d []int

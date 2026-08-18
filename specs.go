@@ -1531,6 +1531,26 @@
 // That holds however many calls separate the two, across package boundaries, and
 // through mutual recursion.
 //
+// The same summary answers a second question: whether a function KEEPS what it is
+// given. A store through a pointer parameter -- "h.d = d" in a function taking an
+// "h *H" -- or the same store through a method's receiver puts the reference in
+// storage the callee did not choose and cannot see the lifetime of. Whether that
+// outlives the caller's frame is the CALL's business, so it is the call that is
+// judged, and one function is both fine and refused depending on what it is handed:
+//
+//	func fill(h *H, d []int) { h.d = d }
+//
+//	func setup() {
+//		var a [4]int
+//		var local H
+//		fill(&local, a[:])   // fine: the struct and the backing die together
+//		fill(&g, a[:])       // refused: g outlives the frame a lives in
+//	}
+//
+// The question is asked per parameter, so a function that stores one argument and
+// merely measures another constrains only the one it stores. As with the Cog
+// crossing, it holds however many calls separate the two.
+//
 // A reference wrapped in a struct counts as one. Assigning a local's address or a
 // slice of a local array to a field -- or filling the field in a composite literal --
 // marks the variable, and a copy of it carries the mark, so returning it, storing it

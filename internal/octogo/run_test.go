@@ -2196,6 +2196,58 @@ func main() {
 		want: "6 72 32 33\n",
 	},
 	{
+		// A setter taking a POINTER TO the struct rather than a receiver -- the same
+		// store, one that the crossing summary had no way to state. leakRecv says
+		// "into the receiver"; a plain function has none, so `func fill(p *H, d
+		// []int) { p.d = d }` carried nothing to its callers and `fill(&g, a[:])`
+		// left a header over a dead frame in a package variable.
+		//
+		// Everything here is the accepting side of that rule: the storage the chain
+		// ends in dies with the reference, so nothing is refused. The second call is
+		// the one that needs the summary to be PER PARAMETER -- the frame-backed
+		// argument goes to `scratch`, which is only measured, while the parameter
+		// that IS stored gets package backing.
+		name: "a setter taking a pointer to the struct",
+		src: `type H struct {
+	d []int
+	n int
+}
+
+var back = [4]int{5, 6, 7, 8}
+
+func fill(p *H, d []int) { p.d = d }
+
+func outer(p *H, d []int) { fill(p, d) }
+
+func two(p *H, keep, scratch []int) {
+	p.d = keep
+	p.n = len(scratch)
+}
+
+func (t *H) inner(d []int) { t.d = d }
+
+func pass(p *H, d []int) { p.inner(d) }
+
+func main() {
+	var a [4]int
+	a[0], a[1] = 1, 2
+	var local H
+	outer(&local, a[:])
+	println(local.d[0], local.d[1], len(local.d))
+
+	var scratch [3]int
+	two(&local, back[:], scratch[:])
+	println(local.d[0], local.n)
+
+	// A METHOD called on a pointer parameter, the receiver whose type the
+	// summary could not resolve before it read the type as written.
+	pass(&local, a[:])
+	println(local.d[1])
+}
+`,
+		want: "1 2 4\n5 3\n2\n",
+	},
+	{
 		// Builder is a compiler-known string builder over a caller-owned []byte, the
 		// allocation-free answer to strings.Builder. NewBuilder(back[:]) starts a
 		// cursor into the backing; WriteString, WriteByte, WriteRune (UTF-8 encoded)

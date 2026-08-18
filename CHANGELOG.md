@@ -353,6 +353,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference to a local may no longer be stored through a POINTER PARAMETER.**
+  `func fill(h *H, d []int) { h.d = d }` is the ordinary setter written as a plain
+  function rather than a method, and `fill(&g, a[:])` for a package-level `g` left a
+  header over a dead frame — accepted, where the same store through a *receiver* had
+  been refused since the summary learned about receivers. The rule was never about
+  methods: a receiver is just the parameter a method call writes to the left of the
+  dot, and `leakRecv` could say "into the receiver" while nothing could say "into
+  parameter 2".
+
+  The summary now carries which parameters each parameter is stored through, so the
+  call site asks after the lifetime of the argument at *that* position — which is
+  what makes `fill(&local, a[:])` still compile, the struct and the backing dying
+  together. Being per-parameter also keeps a callee that stores one argument and
+  merely measures another from refusing the second: only the stored position is
+  asked about. The requirement propagates through chains of plain functions, and a
+  callee that names the package variable itself settles the question there rather
+  than passing it on.
+
+  A METHOD called on a `*T` parameter is followed too, which it was not: naming it
+  needs the receiver's type, and reading the type *as written* asks nothing of the C
+  type an array parameter has not got — the reason the case was skipped.
+
 - **A reference to a local may no longer be laundered through a METHOD.** The
   crossing summary ties a caller's parameter to a callee's by recording a call edge,
   and it recorded none for a method — it resolves a callee by *name*, and a method has
@@ -368,10 +390,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   outright. A local receiver stays accepted — the storage dies with the call — and so
   do a delegation that only reads, a scalar argument, and a recursive method.
 
-  A method called on a local or a parameter still records no edge: resolving its type
-  before any body is walked means asking for a C type an *array* parameter has not
-  got, which would poison a pass that is only gathering facts. The direct store
-  through such a receiver is checked at the call site regardless.
+  A method called on a LOCAL still records no edge — naming it means finding the
+  declaration in the body. The direct store through such a receiver is checked at the
+  call site regardless. (A method on a *parameter* is followed; see the entry above.)
 
 
 - **A method may no longer store a frame reference into its RECEIVER.** `h.set(a[:])`
