@@ -5634,6 +5634,53 @@ func main() {
 		want: "1\n2\n3\n4\n",
 	},
 	{
+		// A deferred method whose receiver is an ARRAY. Go evaluates a deferred
+		// call's receiver where the DEFER stands, so a value receiver sees what the
+		// array held then -- and it was not captured at all: an array variable has no
+		// C type, and the capture asked varType, which answers nothing for one, so it
+		// was skipped and the receiver read at the RETURN. `defer g.show()` printed
+		// what g held at the end of the function. It built, it ran, and it printed a
+		// plausible wrong answer.
+		//
+		// The slot holds a COPY, which is what the capture is; C assigns no array, so
+		// it is a memcpy, and the slot zeroes with braces because `Row r = 0` is not
+		// an initializer. A POINTER receiver captures the ADDRESS and so does see the
+		// later writes, which is the same rule read the other way and is why the
+		// third defer here answers 91 rather than 2.
+		name: "a deferred method on an array receiver",
+		src: `type Row [3]int
+
+type H struct {
+	r Row
+}
+
+func (r Row) Show() { println(r[0], r[1], r[2]) }
+
+func (r *Row) Bump() { r[0]++ }
+
+var g = Row{1, 2, 3}
+
+var h = H{Row{4, 5, 6}}
+
+// A deferred method captures its receiver where the DEFER stands, so a value
+// receiver sees what the array held then. A POINTER receiver captures the address
+// and so sees the later writes, which is the same rule read the other way.
+func run() {
+	defer g.Show()
+	defer h.r.Show()
+	defer g.Bump()
+	g = Row{90, 91, 92}
+	h.r = Row{93, 94, 95}
+}
+
+func main() {
+	run()
+	println(g[0], h.r[0])
+}
+`,
+		want: "4 5 6\n1 2 3\n91 93\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

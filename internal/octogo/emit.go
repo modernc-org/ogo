@@ -14706,7 +14706,16 @@ func (e *emitter) emitDefer(nodes []Node) {
 	}
 	if d.recvCType != "" {
 		e.ind()
-		e.emit(deferRecvName(d.slot) + " = " + recvText + ";\n")
+		// A captured ARRAY receiver is COPIED. C assigns no array, and the copy is
+		// what makes the capture a capture: a value receiver must see what the array
+		// held where the defer stands.
+		if _, isArr := e.namedArrays[d.recvCType]; isArr {
+			e.includes["string.h"] = true
+			e.emit("memcpy(" + deferRecvName(d.slot) + ", " + recvText + ", sizeof(" +
+				deferRecvName(d.slot) + "));\n")
+		} else {
+			e.emit(deferRecvName(d.slot) + " = " + recvText + ";\n")
+		}
 	}
 	for _, a := range e.callArgExprs(call.ast) {
 		if e.isIntLiteral(a) {
@@ -14786,7 +14795,16 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 	if len(chain) == 0 {
 		ct, ok := e.varType(base)
 		if !ok {
-			return "", true // not a variable: leave it to the call path to report
+			// An ARRAY variable has no C type -- its extents live in e.arrays and
+			// nowhere else -- so the DEFINED name is what says which methods it has,
+			// exactly as methodRecvCType reads it. Without this the capture was
+			// skipped and the receiver read at the RETURN: `defer g.show()` printed
+			// what g held then, which is a wrong answer and not a missing feature.
+			a, isArr := e.arrayVar(base)
+			if !isArr || a.name == "" {
+				return "", true // not a variable: leave it to the call path to report
+			}
+			ct = a.name
 		}
 		ctype, text = ct, e.varRef(base)
 	} else {
@@ -14795,7 +14813,13 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 			return "", true
 		}
 		if ctype, ok = e.chainValueCType(cur); !ok {
-			return "", true
+			// An ARRAY has no C VALUE type, which is what chainValueCType answers
+			// about -- but it does have a name, and a name is what a capture needs to
+			// declare a slot of. `defer h.r.show()` arrives here.
+			if cur.name == "" {
+				return "", true
+			}
+			ctype = cur.name
 		}
 		var pro []string
 		text, pro = e.capturePrologue(func() { e.emitAccessChain(base, chain) })
@@ -14845,7 +14869,18 @@ func (e *emitter) emitDeferDecls() {
 		}
 		if d.recvCType != "" {
 			e.ind()
-			e.emit(d.recvCType + " " + deferRecvName(d.slot) + " = " + e.zeroInitC(d.recvCType) + ";\n")
+			// An ARRAY slot zeroes with braces: zeroInitC answers "0" for a name it
+			// does not know to be one, and `Row r = 0` is an invalid initializer
+			// rather than a warning. A zero-length array names no element to brace,
+			// so it is declared without one -- as the array declarations elsewhere are.
+			zero := " = " + e.zeroInitC(d.recvCType)
+			if a, isArr := e.namedArrays[d.recvCType]; isArr {
+				zero = " = {0}"
+				if a.bound == "0" {
+					zero = ""
+				}
+			}
+			e.emit(d.recvCType + " " + deferRecvName(d.slot) + zero + ";\n")
 		}
 		for i, a := range d.args {
 			if a.inline {

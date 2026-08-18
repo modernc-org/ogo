@@ -295,6 +295,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **A deferred method on an ARRAY receiver no longer reads it at the return.**
+  `defer g.show()` for a `type Row [3]int` g printed what g held at the *end* of the
+  function, and so did `defer h.r.show()` for an array field. Go evaluates a deferred
+  call's receiver where the `defer` stands, and this one was not captured at all: an
+  array variable has no C type, and the capture asked for one. The slot now holds a
+  copy — a `memcpy`, C assigning no array — and a *pointer* receiver goes on capturing
+  the address, so it still sees later writes.
+
 - **A SEND may name a channel two fields deep** — `p.in.cmd <- v`. The send's model
   carried one field and looked its name up on the *head's* type, so this was read as
   `p.cmd`: refused as *cannot send to non-channel* where the outer struct had no such
