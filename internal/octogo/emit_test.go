@@ -7597,6 +7597,179 @@ func main() {
 // reference to a at all -- the first cut of this check refused it, which is an
 // over-refusal of ordinary code. It is asked only where the element type can hold a
 // reference.
+// TestEmitCRecvStoreEscape pins a method that stores a PARAMETER into its RECEIVER --
+// the setter every struct with a buffer has. `h.set(a[:])` for a package-level h left
+// a header over a dead frame in storage that outlives the call; the plain-function
+// form of the same store, and a method storing into a GLOBAL, were both caught
+// already, and only the receiver was not.
+//
+// How long the receiver lives is not knowable in the callee: it is storage the caller
+// chose. So the summary carries a flag of its own and the CALL SITE decides -- which
+// is why a LOCAL receiver must keep compiling, the two dying together, and why a
+// receiver that is a PARAMETER does not: its own storage is this frame's, but what it
+// POINTS AT is the caller's, so the same store is the same leak one level up.
+func TestEmitCRecvStoreEscape(t *testing.T) {
+	const decls = `type H struct {
+	d []int
+	n int
+}
+
+var h H
+
+var back [4]int
+
+func (t *H) set(d []int) { t.d = d }
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "package-level receiver",
+			src: `func leak() {
+	var a [4]int
+	h.set(a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "it is stored in the receiver h, which outlives this function",
+		},
+		{
+			name: "receiver reached through a parameter",
+			src: `func fill(p *H) {
+	var a [4]int
+	p.set(a[:])
+}
+
+func main() {
+	fill(&h)
+	println(len(h.d))
+}
+`,
+			want: "it is stored in the receiver p, which outlives this function",
+		},
+		{
+			name: "the address of a local, into the receiver",
+			src: `type G struct {
+	p *int
+}
+
+var g G
+
+func (t *G) put(p *int) { t.p = p }
+
+func leak() {
+	var x int
+	g.put(&x)
+}
+
+func main() {
+	leak()
+	println(*g.p)
+}
+`,
+			want: "it is stored in the receiver g, which outlives this function",
+		},
+		// A receiver declared HERE dies with the storage it is given.
+		{
+			name: "local receiver",
+			src: `func main() {
+	var a [4]int
+	var local H
+	local.set(a[:])
+	println(len(local.d))
+}
+`,
+		},
+		{
+			name: "local receiver through a pointer",
+			src: `func main() {
+	var a [4]int
+	var local H
+	p := &local
+	p.set(a[:])
+	println(len(local.d))
+}
+`,
+		},
+		// Storage that outlives the receiver is what the setter is for.
+		{
+			name: "package backing",
+			src: `func main() {
+	h.set(back[:])
+	println(len(h.d))
+}
+`,
+		},
+		// A method that only READS its parameter stores nothing, and a scalar carries
+		// no reference however it is stored.
+		{
+			name: "a method that only reads",
+			src: `func (t *H) sum(d []int) int {
+	s := 0
+	for _, v := range d {
+		s += v
+	}
+	return s
+}
+
+func main() {
+	var a [4]int
+	println(h.sum(a[:]))
+}
+`,
+		},
+		{
+			name: "a scalar stored in the receiver",
+			src: `func (t *H) count(n int) { t.n = n }
+
+func main() {
+	var a [4]int
+	h.count(len(a[:]))
+	println(h.n)
+}
+`,
+		},
+		// A VALUE receiver is a copy: storing into it writes the callee's own frame.
+		{
+			name: "value receiver",
+			src: `func (t H) show(d []int) { println(len(d), len(t.d)) }
+
+func main() {
+	var a [4]int
+	h.show(a[:])
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a frame reference stored in a receiver; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCAppendFrameRefEscape(t *testing.T) {
 	for _, test := range []struct {
 		name string

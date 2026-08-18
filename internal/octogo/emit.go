@@ -3774,6 +3774,7 @@ type emitter struct {
 	eqStructs          map[string]bool      // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim    // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string             // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	curParams          map[string]bool      // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
 	litPath            string               // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
 	litFixups          []litFixup           // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
 	litFixable         bool                 // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
@@ -6076,6 +6077,11 @@ const (
 	// leakGlobal: the value is stored where it outlives every frame -- a package
 	// variable, or a field or element of one.
 	leakGlobal
+	// leakRecv: the value is stored into the RECEIVER, whose lifetime the callee
+	// does not know. Whether that outlives the caller's frame is the CALL SITE's
+	// question -- `h.set(a[:])` leaks for a package-level h and is fine for a local
+	// one -- which is why it is a flag of its own rather than folded into leakGlobal.
+	leakRecv
 )
 
 // crossEdge records that a call passes the caller's parameter `from` straight into
@@ -6110,7 +6116,7 @@ type crossEdge struct {
 // converges because a parameter only ever goes from not-crossing to crossing.
 func (e *emitter) collectCrossParams(ast []int32) {
 	e.eachFuncDeclAST(ast, func(d []int32) {
-		cname, srcName, params, body, ok := e.funcParamNames(d)
+		cname, srcName, params, body, recvName, ok := e.funcParamNames(d)
 		if !ok {
 			return
 		}
@@ -6162,6 +6168,16 @@ func (e *emitter) collectCrossParams(ast []int32) {
 				for _, v := range e.storedInPackageVar(nodes) {
 					if i := at(e.leakRoot(v)); i >= 0 {
 						e.crossParams[cname][i] |= leakGlobal
+					}
+				}
+				// A store into the RECEIVER, `t.d = p` -- the setter every struct
+				// with a buffer has. How long that lives is not knowable here: the
+				// receiver belongs to whoever called, so the flag travels to the
+				// call site, which knows whether it picked storage that outlives
+				// its own frame.
+				for _, v := range e.storedInReceiver(recvName, nodes) {
+					if i := at(e.leakRoot(v)); i >= 0 {
+						e.crossParams[cname][i] |= leakRecv
 					}
 				}
 			}
@@ -6239,18 +6255,21 @@ func (e *emitter) returnedExprs(nodes []Node) [][]int32 {
 }
 
 // funcParamNames returns a function or method declaration's C name, the name it was
-// declared with, its parameter names in order, and its body. A method's receiver is
-// not a parameter here: it is not one at the call sites this feeds, which name
-// arguments positionally.
-func (e *emitter) funcParamNames(d []int32) (cname, srcName string, params []string, body []int32, ok bool) {
+// declared with, its parameter names in order, its body, and -- for a method -- the
+// name its receiver was declared with. The receiver is not among the parameters: it
+// is not one at the call sites this feeds, which name arguments positionally. Its
+// NAME is answered separately because a store into it is a leak whose lifetime only
+// the call site knows (see leakRecv).
+func (e *emitter) funcParamNames(d []int32) (cname, srcName string, params []string, body []int32, recvName string, ok bool) {
 	name, sig, body, recv, ok := e.funcParts(d)
 	if !ok || name == "" || body == nil {
-		return "", "", nil, nil, false
+		return "", "", nil, nil, "", false
 	}
 	cname = mangle(e.curPkgPrefix, name)
 	if recv != nil {
-		_, rct, _ := e.receiverInfo(recv)
+		rn, rct, _ := e.receiverInfo(recv)
 		cname = methodCName(methodBaseType(rct), name)
+		recvName = rn
 	}
 	for n := range it(sig) {
 		if n.sym != ParameterList {
@@ -6258,7 +6277,7 @@ func (e *emitter) funcParamNames(d []int32) (cname, srcName string, params []str
 		}
 		e.forEachParam(n.ast, func(nm string, _ []int32, _ bool) { params = append(params, nm) })
 	}
-	return cname, name, params, body, true
+	return cname, name, params, body, recvName, true
 }
 
 // eachStmt calls fn with the children of every Statement in ast, at any depth, so a
@@ -6293,6 +6312,36 @@ func (e *emitter) crossRoot(ast []int32) string {
 //
 // Only a plain "=" qualifies. A ":=" declares a local, and a compound assignment
 // reads what is there rather than storing what it is given.
+// storedInReceiver returns the values a statement stores into the METHOD's receiver,
+// `t.d = v` -- storedInPackageVar's counterpart for the storage a method is handed
+// rather than the storage it can see. A bare `t = v` is not one: that rebinds the
+// receiver variable itself, which dies with the call.
+func (e *emitter) storedInReceiver(recvName string, nodes []Node) [][]int32 {
+	if recvName == "" || len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return nil
+	}
+	if e.soleIdent(nodes[0].ast) != recvName {
+		return nil
+	}
+	postfix := slices.Collect(it(nodes[1].ast))
+	// At least one selector or index before the operator: a store THROUGH the
+	// receiver, not to it.
+	if len(postfix) < 2 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil
+	}
+	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return nil
+	}
+	var out [][]int32
+	for n := range it(op[1].ast) {
+		if n.sym == Expression {
+			out = append(out, n.ast)
+		}
+	}
+	return out
+}
+
 func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
 	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
 		return nil
@@ -6741,6 +6790,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}
@@ -6888,6 +6938,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		prologue: e.prologue, w: e.w,
 	}
 	e.locals = map[string]string{}
+	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}
@@ -7208,6 +7259,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}
@@ -7731,6 +7783,7 @@ func paramArgName(name string) string { return "_ogo_" + userIdent(name) }
 // copy). It reads only the parameter list (before the signature's closing ")"),
 // not the results.
 func (e *emitter) bindParams(sig []int32) {
+	e.curParams = map[string]bool{}
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
@@ -7740,6 +7793,7 @@ func (e *emitter) bindParams(sig []int32) {
 					if synthetic {
 						return // an unnamed parameter binds nothing; the body cannot name it
 					}
+					e.curParams[name] = true
 					if variadic {
 						elem := e.cType(ta)
 						e.needSlice(elem)
@@ -15536,6 +15590,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				e.emit(")")
 				return true
 			}
+			// The receiver is in hand here and nowhere further in, so the
+			// receiver-lifetime rule is asked here rather than threaded through
+			// emitCallArgs, which nine call sites share and only this one is a method.
+			e.checkRecvLeak(cname, recv, e.callArgExprs(suffix[1].ast))
 			e.emit(cname + "(")
 			e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
 			// A variadic parameter is passed even when the call wrote no arguments
@@ -22788,6 +22846,43 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 // The diagnostic has to carry that, because the line it points at contains no `go`
 // and no send -- so it names the callee and the parameter, which is what the reader
 // needs to find the crossing for themselves.
+// checkRecvLeak refuses an argument that reaches this frame's storage where the
+// callee stores that parameter into its RECEIVER and the receiver outlives this
+// frame. `h.set(a[:])` for a package-level h leaves a header over a dead frame in
+// storage that survives the call; the same call on a LOCAL h is fine, the two dying
+// together.
+//
+// Only the call site can tell those apart, which is why the summary carries leakRecv
+// rather than folding it into leakGlobal: the callee stores into storage it did not
+// choose and cannot see the lifetime of.
+//
+// A receiver that is a PARAMETER counts as outliving. isFrameVar says a parameter's
+// own storage is this frame's -- true, and not the question here: what it POINTS AT
+// belongs to the caller, so storing a reference to this frame through it is the same
+// leak one level up.
+func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
+	if recv == "" {
+		return
+	}
+	if e.isFrameVar(recv) && !e.curParams[recv] {
+		return // a local of this frame: it dies with the storage
+	}
+	crosses := e.crossParams[cname]
+	for i, a := range args {
+		if i >= len(crosses) || crosses[i]&leakRecv == 0 {
+			continue
+		}
+		r, ok := e.frameRefOf(a.ast)
+		if !ok {
+			continue
+		}
+		e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives this "+
+			"function; %s",
+			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), recv, r.advice())
+		return
+	}
+}
+
 func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 	crosses := e.crossParams[cname]
 	// The pack a variadic call builds is an array of THIS frame, so a callee that
@@ -22796,7 +22891,13 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 	// slice literal already obeys, asked of an argument list the source did not
 	// write as a slice at all. A spread passes an existing slice instead, and is
 	// judged by where THAT came from, in the loop below.
-	if _, at := e.variadicPack(cname); !spread && at >= 0 && at < len(crosses) && crosses[at] != 0 {
+	// leakRecv is masked out of both tests below: whether a store into the RECEIVER
+	// outlives this frame is checkRecvLeak's question, and it has the receiver.
+	// Letting it through here refused `h.set(a[:])` for a LOCAL h -- safe, the two
+	// dying together -- and said "stored where it outlives every frame" of a store
+	// into a struct that does not.
+	if _, at := e.variadicPack(cname); !spread && at >= 0 && at < len(crosses) &&
+		crosses[at]&(leakCog|leakGlobal) != 0 {
 		why := "is stored where it outlives every frame"
 		if crosses[at]&leakCog != 0 {
 			why = "reaches another cog, which may outlive this function"
@@ -22810,7 +22911,7 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 		return
 	}
 	for i, a := range args {
-		if i >= len(crosses) || crosses[i] == 0 {
+		if i >= len(crosses) || crosses[i]&(leakCog|leakGlobal) == 0 {
 			continue
 		}
 		r, ok := e.frameRefOf(a.ast)

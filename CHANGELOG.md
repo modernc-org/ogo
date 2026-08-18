@@ -353,6 +353,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A method may no longer store a frame reference into its RECEIVER.** `h.set(a[:])`
+  for a package-level `h` and a `func (t *H) set(d []int) { t.d = d }` left a header
+  over a dead frame in storage that outlives the call. The plain-function form of the
+  same store, and a method storing into a *global*, were both caught already; only the
+  receiver was not, its lifetime being something the callee cannot see.
+
+  So the call site decides. A receiver declared in the calling function keeps
+  compiling — the two die together, which is what a scratch struct is — while one
+  reached through a *parameter* does not: its own storage is the frame's, but what it
+  points at is the caller's, so the same store is the same leak one level up. A method
+  that only reads its parameter, a scalar argument, and a value receiver are all
+  untouched.
+
+  Still not followed: a method that passes the parameter to a *second* method which
+  stores it. The analysis records no call edge through a method at all, which it
+  documents as erring towards accepting.
+
+
 - **An APPEND may no longer put a frame reference into a longer-lived slice.**
   `gs = append(gs, a[:])` for a local `a` and a package-backed `gs` left a header over
   a dead frame in storage that survives it — through a door that writes no variable
