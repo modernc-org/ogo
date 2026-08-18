@@ -7567,6 +7567,173 @@ func main() {
 	}
 }
 
+// TestEmitCLitFrameRefEscape pins a frame reference nested inside a COMPOSITE
+// LITERAL. `Box{a[:]}` is a struct holding a slice of this frame, so handing the
+// struct on hands the slice on -- and every door let it through: stored in a package
+// variable, returned, sent, launched on a cog, and passed to a function that keeps
+// it. All five were silent.
+//
+// Binding the value to a variable FIRST was refused all along, the declaration path
+// being the only one that descended into the literal. So the workaround was checked
+// and the plain spelling was not, which is the wrong way round and is what made this
+// worth finding.
+//
+// The accepting half is the line: only a LITERAL is descended into, because an
+// arbitrary expression may mention a frame reference without the value carrying it
+// out -- `len(a[:])` is an int -- and a literal over PACKAGE or caller-supplied
+// storage carries nothing that dies.
+func TestEmitCLitFrameRefEscape(t *testing.T) {
+	const decls = `type Box struct {
+	d []int
+}
+
+type Out struct {
+	in Box
+}
+
+var g Box
+
+var gout Out
+
+var back [4]int
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "stored in a package variable",
+			src: `func leak() {
+	var a [4]int
+	g = Box{a[:]}
+}
+
+func main() {
+	leak()
+	println(len(g.d))
+}
+`,
+			want: "cannot store a slice backed by local a",
+		},
+		{
+			name: "returned",
+			src: `func leak() Box {
+	var a [4]int
+	return Box{a[:]}
+}
+
+func main() { println(len(leak().d)) }
+`,
+			want: "cannot return a slice backed by local a",
+		},
+		{
+			name: "passed to a function that keeps it",
+			src: `func keep(b Box) { g = b }
+
+func leak() {
+	var a [4]int
+	keep(Box{a[:]})
+}
+
+func main() {
+	leak()
+	println(len(g.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "nested one literal deeper",
+			src: `func leak() {
+	var a [4]int
+	gout = Out{Box{a[:]}}
+}
+
+func main() {
+	leak()
+	println(len(gout.in.d))
+}
+`,
+			want: "cannot store a slice backed by local a",
+		},
+		// Storage that outlives the frame carries freely, in a literal as anywhere.
+		{
+			name: "package backing",
+			src: `func fill() Box { return Box{back[:]} }
+
+func main() {
+	g = Box{back[:]}
+	b := fill()
+	println(len(g.d), len(b.d))
+}
+`,
+		},
+		{
+			name: "caller-supplied backing",
+			src: `func keep(buf []int) { g = Box{buf} }
+
+func main() {
+	keep(back[:])
+	println(len(g.d))
+}
+`,
+		},
+		// A literal that only MENTIONS the frame carries nothing out of it: len of a
+		// slice of a local is an int, and descending blindly would refuse it.
+		{
+			name: "a length taken of a local",
+			src: `type P struct {
+	x int
+	y int
+}
+
+var gp P
+
+func mk() P {
+	var a [4]int
+	return P{len(a[:]), 2}
+}
+
+func main() {
+	gp = mk()
+	println(gp.x)
+}
+`,
+		},
+		{
+			name: "used where it stands",
+			src: `func main() {
+	var a [4]int
+	b := Box{a[:]}
+	println(len(b.d), b.d[0])
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a frame reference inside a literal; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {
 		name string

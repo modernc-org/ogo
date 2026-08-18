@@ -22457,6 +22457,20 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			return holderRef(name, origin), true
 		}
 	}
+	// A COMPOSITE LITERAL carries its elements into the value it makes: `Box{a[:]}`
+	// is a struct holding a slice of this frame, so handing the struct on hands the
+	// slice on. Every door had this hole and only the DECLARATION compensated for it,
+	// by descending into the literal itself (noteDeclFrameHolder) -- so binding the
+	// value to a variable first was refused while storing, returning, sending,
+	// launching or passing the literal DIRECTLY was accepted. The workaround was
+	// checked and the plain spelling was not.
+	//
+	// Only a literal is descended into. An arbitrary expression may MENTION a frame
+	// reference without the value carrying it out -- `len(a[:])` is an int -- which is
+	// the same distinction noteDeclFrameHolder makes by looking at the target's type.
+	if r, ok := e.frameRefInLit(ast); ok {
+		return r, true
+	}
 	// Reading a field OUT of a marked holder hands on the reference the holder
 	// carries. `b.d = a[:]` marks b, and handing b on is refused -- but `g = b.d` is
 	// the same header by another spelling, and it was accepted at every sink: a
@@ -22605,6 +22619,28 @@ func (e *emitter) soleSliceLit(ast []int32) (string, Node, bool) {
 		return elem, lit, true
 	}
 	return "", Node{}, false
+}
+
+// frameRefInLit finds a frame reference among the ELEMENTS of a composite literal,
+// in both spellings: named or type-elided (`Box{a[:]}`, `{a[:]}`) and bracketed
+// (`[]Box{{a[:]}}`). Nesting is covered because each element is asked of frameRefOf,
+// which comes back here for a literal of its own.
+func (e *emitter) frameRefInLit(ast []int32) (frameRef, bool) {
+	lit, ok := Node{}, false
+	if _, l, isNamed := e.soleCompositeLit(ast); isNamed {
+		lit, ok = l, true
+	} else if _, l, isBracket := e.soleArrayLit(ast); isBracket {
+		lit, ok = l, true
+	}
+	if !ok {
+		return frameRef{}, false
+	}
+	for _, el := range compositeLitElements(lit) {
+		if r, isRef := e.frameRefOf(el.value.ast); isRef {
+			return r, true
+		}
+	}
+	return frameRef{}, false
 }
 
 // frameRefIn finds the first of several expressions that reaches this frame's storage.

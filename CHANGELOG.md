@@ -353,6 +353,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A frame reference nested in a composite LITERAL no longer escapes.** `Box{a[:]}`
+  is a struct holding a slice of this frame, so handing the struct on hands the slice
+  on — and every door let it through: stored in a package variable, returned, sent on
+  a channel, launched on a cog, and passed to a function that keeps it. All five were
+  silent, and binding the value to a variable first was refused all along, the
+  declaration being the only path that looked inside the literal. The workaround was
+  checked and the plain spelling was not.
+
+  Only a literal is descended into: an expression may *mention* a frame reference
+  without the value carrying it out — `P{len(a[:]), 2}` is two ints — and a literal
+  over package-level or caller-supplied storage carries nothing that dies.
+
+
 - **A Builder's `String()` view may no longer outlive its backing array.** A `Builder`
   is a pointer into a backing array the caller owns, and `String()` hands that storage
   out as a string — so one built over a *local* array was a view of a dead frame the
