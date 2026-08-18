@@ -5305,6 +5305,75 @@ func main() {
 		want: "12 2\n1 21 10\n3 2\n2 9 8 8\n5 7 6\n99 1\n",
 	},
 	{
+		// A conversion to an ARRAY type, as a VALUE. It changes nothing about the
+		// value -- the typedef stands for the same storage, and Go admits one between
+		// array types only where the underlying types are identical -- so it is an
+		// array wherever one may stand. It was not one anywhere: `c = Col(r)` fell
+		// past every copy path and emitted `c = r;`, which is not C, and the return,
+		// the comparison and a literal's element each refused it for want of an array
+		// they were looking straight at.
+		//
+		// The DECLARATION form always worked, `d := Col(r)`, because the chain walk
+		// has seen through such a conversion since it gained arrayConvChain -- so the
+		// one shape a reader reaches for first was the one that was fine.
+		//
+		// The unnamed spelling is here because the grammar admits it only
+		// parenthesised, and it is a different Factor the unwrap has to know.
+		name: "a conversion to an array type as a value",
+		src: `type Row [2]int
+
+type Col [2]int
+
+type Grid [2][2]int
+
+type H struct {
+	c Col
+}
+
+var r = Row{1, 2}
+
+var g = [2][2]int{{3, 4}, {5, 6}}
+
+var c Col
+
+var h H
+
+func take(x Col) int { return x[0] + x[1] }
+
+func mkCol() Col { return Col(r) }
+
+func main() {
+	// A conversion between array types changes nothing about the value, so it IS an
+	// array wherever one may stand: assigned, into a field, returned, compared, an
+	// element of a literal, and one value of a multiple assignment.
+	c = Col(r)
+	h.c = Col(r)
+	println(c[0], h.c[1])
+
+	d := mkCol()
+	println(d[0], d[1], take(Col(r)))
+
+	println(Col(r) == c, Col(r) == Col{9, 9})
+
+	t := [1]Col{Col(r)}
+	println(t[0][0])
+
+	var n int
+	n, c = 7, Col(r)
+	println(n, c[1])
+
+	// The unnamed spelling of the same conversion, which the grammar admits only
+	// parenthesised, and a multi-dimensional one.
+	var u [2]int
+	u = ([2]int)(r)
+	var gr Grid
+	gr = Grid(g)
+	println(u[0], gr[1][1])
+}
+`,
+		want: "1 2\n1 2 3\ntrue false\n1\n7 2\n1 6\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A conversion to an ARRAY type is an array value.** `c = Col(r)` emitted `c = r;`,
+  which is not C, and `return Col(r)`, `Col(r) == c` and `[1]Col{Col(r)}` each refused
+  it for want of an array they were looking straight at. Such a conversion changes
+  nothing about the value — the typedef stands for the same storage, and Go admits one
+  between array types only where the underlying types are identical — so it is an
+  array wherever one may stand. The declaration form, `d := Col(r)`, always worked,
+  the chain walk having seen through it for as long as it has had `arrayConvChain`,
+  which is why the spelling reached for first was the one that was fine. The unnamed
+  spelling `([2]int)(r)`, which the grammar admits only parenthesised, is read the
+  same way.
+
 - **An aggregate VARIABLE may be a composite literal's element** — `[2][2]int{a, b}`
   and `[][2]int{a, b}` for a table built from named rows, `B{a}` and `B{n: 5, xs: a}`
   for an array-typed field, and `[]A{g}` for a struct that itself holds an array. None

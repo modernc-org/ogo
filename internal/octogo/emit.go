@@ -9217,6 +9217,36 @@ func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
 	return e.hoistLitVar(typeAST, lit)
 }
 
+// unwrapArrayConv sees through a conversion to an ARRAY type, `Col(r)`, answering
+// with the operand it converts. The conversion changes nothing about the value -- the
+// typedef stands for the same storage -- and Go admits one between array types only
+// where the underlying types are identical, so the operand IS the array, of the same
+// shape, and every position that copies or compares an array may read it as one.
+//
+// Without this a conversion was not an array value at all: `c = Col(r)` fell past
+// every copy path and emitted `c = r;`, which is not C, and the return, the
+// comparison and a literal's element each refused it for want of an array they were
+// looking straight at. The chain walk has seen through it since factorAccessChain
+// gained arrayConvChain, which is why the DECLARATION form always worked.
+//
+// Anything that is not such a conversion comes back unchanged.
+func (e *emitter) unwrapArrayConv(ast []int32) []int32 {
+	if operand, ok := e.arrayConvOperand(ast); ok {
+		return operand
+	}
+	// `([2]int)(r)` -- the same conversion to an UNNAMED array type, which the
+	// grammar can only spell parenthesised. Only with nothing after it: a suffix
+	// makes it a chain, which the chain walk reads for itself.
+	if fac, isFac := e.soleFactorNode(ast); isFac {
+		if typeAST, arg, steps, isConv := e.factorBracketConv(fac); isConv && len(steps) == 0 {
+			if _, isArray := e.arrayDim(typeAST); isArray {
+				return arg
+			}
+		}
+	}
+	return ast
+}
+
 // arrayShapeOf resolves the SHAPE of an array-valued expression, where the program
 // wrote enough to read one off: a variable, a dereferenced pointer to one, an array
 // reached through a chain of fields and indexes, or a literal, which carries its own
@@ -9226,6 +9256,7 @@ func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
 // It answers false for anything else, and a caller must read that as "not known",
 // never as "not an array": a shape this cannot see is not a mismatch.
 func (e *emitter) arrayShapeOf(ast []int32) (arrDim, bool) {
+	ast = e.unwrapArrayConv(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		return e.arrayVar(name)
 	}
@@ -9269,6 +9300,7 @@ func (e *emitter) checkArrayShape(dst arrDim, ast []int32, what string) bool {
 // temporary bound ahead of the statement. Anything else is not something this can
 // copy from and is left to the paths that report it.
 func (e *emitter) arraySourceC(ast []int32) (string, bool) {
+	ast = e.unwrapArrayConv(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		if _, isArray := e.arrayVar(name); isArray {
 			return e.varRef(name), true
