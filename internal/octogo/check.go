@@ -3683,8 +3683,8 @@ func (f *File) commOp(s *Scope, op Node) {
 		// "case ch <- v": the AssignHead is the channel, the Expression the value.
 		f.checkNames(s, operand)
 		if id, ok := f.assignHeadIdent(assignHead); ok {
-			fld, indexed, _ := f.postfixField([]Node{postfixComm})
-			f.checkSend(s, id, fld, indexed, operand)
+			flds, indexed := f.postfixFields([]Node{postfixComm})
+			f.checkSend(s, id, flds, indexed, operand)
 		}
 	}
 }
@@ -4274,8 +4274,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
 	if op == ARROW {
 		if len(lhs) == 1 && len(rhs) == 1 {
-			fld, indexed, _ := f.postfixField([]Node{postfix})
-			f.checkSend(s, lhs[0], fld, indexed, rhs[0])
+			flds, indexed := f.postfixFields([]Node{postfix})
+			f.checkSend(s, lhs[0], flds, indexed, rhs[0])
 		}
 		return
 	}
@@ -5060,7 +5060,7 @@ func countUnits(n int, unit string) string {
 // value v must match the channel's element type. The channel operand is resolved
 // here -- unlike an "=" target it is not seen by checkAssignment's target loop --
 // so an undefined or blank channel is reported, mirroring checkDerefAssign.
-func (f *File) checkSend(s *Scope, chTok Token, field Token, indexed bool, valNode Node) {
+func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed bool, valNode Node) {
 	if f.blankRead(chTok) { // "_ <- v" reads "_" as a channel
 		return
 	}
@@ -5076,14 +5076,21 @@ func (f *File) checkSend(s *Scope, chTok Token, field Token, indexed bool, valNo
 	// much as a variable is.
 	elem, hasElem, isChan := f.chanElemOf(d)
 	elemName := d.chanElemName
-	if field.IsValid() {
-		elem, hasElem, isChan = f.fieldChanOf(s, chTok, field, indexed)
-		elemName = f.fieldChanElemNameOf(s, chTok, field, indexed)
+	if len(fields) != 0 {
+		// The whole run is walked, so a channel two fields deep is the one the send
+		// is checked against. A run this cannot resolve leaves isChan false and is
+		// reported below, which is what an unresolvable one did before.
+		tn := f.fieldChainTypeNode(s, chTok, fields, indexed)
+		elem, hasElem, isChan = 0, false, false
+		if tn != nil {
+			elem, hasElem, isChan = f.chanElem(s, tn)
+			elemName = f.chanElemTypeName(s, tn)
+		}
 	}
 	if !isChan {
 		at := chTok
-		if field.IsValid() {
-			at = field
+		if len(fields) != 0 {
+			at = fields[len(fields)-1]
 		}
 		f.err(at.Position(), "invalid operation: cannot send to non-channel")
 		return
@@ -7988,47 +7995,36 @@ func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 // fieldChan resolves a struct field as a channel: its element Kind, and whether the
 // field is a channel at all. It follows a defined type over a channel the way
 // chanElem does, that being the same question asked of the field's written type.
+//
+// The indexed variant and the element-NAME pair beside it went with the send's move
+// to a field chain: fieldChainTypeNode answers both questions for a run of any
+// length, so keeping one-field versions with no caller would only be somewhere for
+// the old shape to come back.
 func (f *File) fieldChan(s *Scope, head, field Token) (elem Kind, hasElem, isChan bool) {
-	return f.fieldChanOf(s, head, field, false)
-}
-
-// fieldChanOf is fieldChan for a field reached through an index as well as for one
-// reached directly.
-func (f *File) fieldChanOf(s *Scope, head, field Token, indexed bool) (elem Kind, hasElem, isChan bool) {
-	tn := f.fieldTypeNodeOf(s, head, field, indexed)
+	tn := f.fieldTypeNodeOf(s, head, field, false)
 	if tn == nil {
 		return 0, false, false
 	}
 	return f.chanElem(s, tn)
 }
 
-// fieldChanElemName names a channel field's element type, for the checks a Kind
-// cannot answer -- a named interface has none. It is chanElemTypeName asked of a
-// field rather than of a variable.
-func (f *File) fieldChanElemName(s *Scope, head, field Token) Token {
-	return f.fieldChanElemNameOf(s, head, field, false)
-}
-
-// fieldChanElemNameOf is fieldChanElemName for a field reached through an index too.
-func (f *File) fieldChanElemNameOf(s *Scope, head, field Token, indexed bool) Token {
-	if tn := f.fieldTypeNodeOf(s, head, field, indexed); tn != nil {
-		return f.chanElemTypeName(s, tn)
-	}
-	return Token{}
-}
-
-// postfixField returns the single field a postfix selects, for "b.ch <- v" and
-// "case b.ch <- v", where the channel is a field of the head rather than the head.
-// A longer chain or an index is not one field and is left unresolved.
-func (f *File) postfixField(postfix []Node) (fld Token, indexed, ok bool) {
-	n := 0
+// postfixFields returns the run of fields a postfix selects, for "b.ch <- v",
+// "case b.ch <- v" and "b.in.ch <- v", where the channel is a field of the head
+// rather than the head itself.
+//
+// It used to answer with ONE field and a flag saying whether there had been exactly
+// one -- and both callers dropped the flag, so a two-selector chain was resolved by
+// looking its LAST name up on the HEAD's type. `w.in.cmd <- v` was then checked
+// against `w.cmd`: refused outright where W had no such field, and checked against
+// the wrong element type where it had one of another type.
+func (f *File) postfixFields(postfix []Node) (flds []Token, indexed bool) {
 	for _, p := range postfix {
 		for c := range it(p.ast) {
 			switch c.sym {
 			case Selector:
 				for d := range it(c.ast) {
 					if d.sym == 0 && f.ch(d.tok) == IDENT {
-						fld, n = f.tok(d.tok), n+1
+						flds = append(flds, f.tok(d.tok))
 					}
 				}
 			case Index:
@@ -8039,7 +8035,46 @@ func (f *File) postfixField(postfix []Node) (fld Token, indexed, ok bool) {
 			}
 		}
 	}
-	return fld, indexed, n == 1
+	return flds, indexed
+}
+
+// structFieldTypeNode resolves one field on a WRITTEN type, following a chain of
+// definitions to the struct it names. It is what carries fieldTypeNodeOf past the
+// first step, where the owner is a field's own type rather than a variable's.
+func (f *File) structFieldTypeNode(s *Scope, owner TypeNode, field Token) TypeNode {
+	id, isIdent := owner.(*TypeNodeIdent)
+	if !isIdent || id.Qualifier.IsValid() {
+		return nil
+	}
+	st, isStruct := f.structTypeNamed(s, id.Name.Src())
+	if !isStruct {
+		return nil
+	}
+	for _, fld := range st.Fields {
+		for _, nm := range fld.Names {
+			if nm.Src() == field.Src() {
+				return fld.TypeNode
+			}
+		}
+	}
+	return nil
+}
+
+// fieldChainTypeNode resolves a run of field selectors from a variable, `w.in.cmd`,
+// to the written type of the last one. indexed applies to the first step alone --
+// `ws[i].in.cmd` indexes the variable, not the field.
+func (f *File) fieldChainTypeNode(s *Scope, head Token, fields []Token, indexed bool) TypeNode {
+	if len(fields) == 0 {
+		return nil
+	}
+	tn := f.fieldTypeNodeOf(s, head, fields[0], indexed)
+	for _, fld := range fields[1:] {
+		if tn == nil {
+			return nil
+		}
+		tn = f.structFieldTypeNode(s, tn, fld)
+	}
+	return tn
 }
 
 // receiveFactor reports whether expression n is exactly a receive "<-ch" and,

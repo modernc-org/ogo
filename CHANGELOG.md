@@ -295,6 +295,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **A SEND may name a channel two fields deep** — `p.in.cmd <- v`. The send's model
+  carried one field and looked its name up on the *head's* type, so this was read as
+  `p.cmd`: refused as *cannot send to non-channel* where the outer struct had no such
+  field, and checked against the wrong element type where it had one of another type.
+  The helper that found the field already reported that there had not been exactly
+  one; both callers dropped that answer. The whole run is walked now, so the channel
+  checked is the channel sent on — in an ordinary send and in a `select` clause
+  alike — and a wrong value on a nested channel is reported against the right element
+  type.
+
 - **A channel declared from another no longer HANGS.** `var c chan int = ch` wrote the
   alias and then gave the variable a private cell one line later, so the receive on it
   waited on a channel nothing could send to — a program that built, ran and said

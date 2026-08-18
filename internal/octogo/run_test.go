@@ -5571,6 +5571,69 @@ func main() {
 		want: "1\n2\n3\n4 5\n2\n3\n1\n",
 	},
 	{
+		// The channel a SEND names, two fields deep. The send's model carried one
+		// field and looked its name up on the HEAD's type, so `p.in.cmd <- v` was read
+		// as `p.cmd`: refused outright where the outer struct had no such field, and
+		// checked against the wrong element type where it had one. Both callers of the
+		// helper dropped the flag it returned saying there had not been exactly one
+		// field, which is what let the wrong answer through.
+		//
+		// The flat and indexed spellings are here beside it because they always
+		// worked, and a change to how a chain is read is exactly what would break
+		// them. The select clause is the second production that admits a send.
+		name: "a send on a channel two fields deep",
+		src: `type In struct {
+	cmd chan int
+}
+
+type Ports struct {
+	in  In
+	tx  chan int
+	tag int
+}
+
+var p Ports
+
+var ws [2]Ports
+
+var done chan int
+
+// The channel a send names may be two fields deep, one field deep, or reached
+// through an index. All three are the same channel to the program and were three
+// different answers to the checker: it looked the LAST name up on the HEAD's type,
+// so ` + "`" + `p.in.cmd` + "`" + ` was read as ` + "`" + `p.cmd` + "`" + `.
+func deep() { p.in.cmd <- 1 }
+
+func flat() { p.tx <- 2 }
+
+func elem() { ws[1].tx <- 3 }
+
+func viaSelect() {
+	select {
+	case p.in.cmd <- 4:
+	case v := <-done:
+		println(v)
+	}
+}
+
+func main() {
+	go deep()
+	println(<-p.in.cmd)
+
+	go flat()
+	println(<-p.tx)
+
+	go elem()
+	println(<-ws[1].tx)
+
+	// A send written in a select clause takes the same chain.
+	go viaSelect()
+	println(<-p.in.cmd)
+}
+`,
+		want: "1\n2\n3\n4\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

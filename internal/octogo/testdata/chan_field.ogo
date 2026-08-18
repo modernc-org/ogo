@@ -88,3 +88,44 @@ func wrongElement() {
 	// ERROR cannot use "s" of type string as type int in send
 	p.tx <- "s"
 }
+
+// A channel two fields deep. The send's model carried ONE field and looked its name
+// up on the head's type, so `d.in.cmd <- v` was checked against a `cmd` field of the
+// OUTER struct -- refused outright where there was none, and checked against the
+// wrong element type where there was one of another type. The whole run is walked
+// now, so the channel checked is the channel sent on.
+
+type inner struct {
+	cmd chan int
+	tag string
+}
+
+type deep struct {
+	in  inner
+	cmd chan string
+	n   int
+}
+
+var d deep
+
+func nestedOK() {
+	d.in.cmd <- 1
+	d.cmd <- "s"
+}
+
+func nestedWrongElement() {
+	// The outer struct has a `cmd` of its own, of another element type. Checking
+	// against that one is exactly what this used to do.
+	// ERROR cannot use "s" of type string as type int in send
+	d.in.cmd <- "s"
+}
+
+func nestedNotAChannel() {
+	// ERROR invalid operation: cannot send to non-channel
+	d.in.tag <- 1
+}
+
+func nestedUnknownField() {
+	// ERROR invalid operation: cannot send to non-channel
+	d.in.nosuch <- 1
+}
