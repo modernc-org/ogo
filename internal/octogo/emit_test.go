@@ -7886,6 +7886,53 @@ func main() {
 `,
 			want: "cannot pass a slice backed by local a",
 		},
+		// A written-out dereference is a store through the parameter as much as a
+		// selector is, and it is the only shape a pointer to a SLICE has -- which
+		// also has no type name to be called after, so "is it a pointer at all" is
+		// a separate question from "what does it point at".
+		{
+			name: "a dereference store through a pointer parameter",
+			src: `var gs []int
+
+func set(p *[]int, d []int) { *p = d }
+
+func leak() {
+	var a [4]int
+	set(&gs, a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "a dereference store into a local",
+			src: `func set(p *[]int, d []int) { *p = d }
+
+func main() {
+	var a [4]int
+	var s []int
+	set(&s, a[:])
+	println(len(s))
+}
+`,
+		},
+		{
+			name: "a dereference store of a scalar",
+			src: `var n int
+
+func set(p *int, v int) { *p = v }
+
+func main() {
+	var a [4]int
+	set(&n, len(a[:]))
+	println(n)
+}
+`,
+		},
 		// Where the storage the chain ends in dies with the reference, all of it is
 		// fine -- the same calls, and nothing to refuse.
 		{

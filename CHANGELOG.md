@@ -375,6 +375,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   needs the receiver's type, and reading the type *as written* asks nothing of the C
   type an array parameter has not got — the reason the case was skipped.
 
+  A written-out dereference counts as a store through the parameter, `func set(p
+  *[]int, d []int) { *p = d }`, which is the only shape a pointer to a slice has.
+
 - **A reference to a local may no longer be laundered through a METHOD.** The
   crossing summary ties a caller's parameter to a callee's by recording a call edge,
   and it recorded none for a method — it resolves a callee by *name*, and a method has

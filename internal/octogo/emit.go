@@ -6426,6 +6426,7 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 		}
 		e.forEachParam(n.ast, func(nm string, ta []int32, _ bool) {
 			fi.params = append(fi.params, nm)
+			fi.ptrParam = append(fi.ptrParam, e.isPtrParam(ta))
 			fi.ptrBase = append(fi.ptrBase, e.ptrParamBase(ta))
 		})
 	}
@@ -6443,8 +6444,17 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 // that were never in question. Reading the type as written asks nothing of it.
 //
 // Only `*T` for a plain declared T answers. `*pkg.T`, `**T` and a pointer to a
-// slice or an array all yield "" and are simply not summarised: the shape this
-// exists for is the setter taking a pointer to a struct.
+// slice or an array all yield "", having no name to be called after -- which is why
+// "is this a pointer at all" is isPtrParam's separate question: a store through
+// `*[]int` reaches the caller just as far, and answers no method.
+// isPtrParam says whether a parameter's written type is a pointer, whatever it
+// points at. That is the whole question for a STORE through it -- `*p = d` reaches
+// the caller's storage for `*[]int` exactly as `p.d = d` does for `*H`.
+func (e *emitter) isPtrParam(ta []int32) bool {
+	nodes := slices.Collect(it(ta))
+	return len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == MUL && nodes[1].sym == Type
+}
+
 func (e *emitter) ptrParamBase(ta []int32) string {
 	nodes := slices.Collect(it(ta))
 	if len(nodes) != 2 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != MUL || nodes[1].sym != Type {
@@ -6471,6 +6481,7 @@ type funcInfo struct {
 	cname     string
 	srcName   string
 	params    []string
+	ptrParam  []bool
 	ptrBase   []string
 	body      []int32
 	recvName  string
@@ -6508,10 +6519,10 @@ func (e *emitter) crossRoot(ast []int32) string {
 // rather than the storage it can see. A bare `t = v` is not one: that rebinds the
 // receiver variable itself, which dies with the call.
 func (e *emitter) storedInReceiver(recvName string, nodes []Node) [][]int32 {
-	base, values, suffixed := e.assignThrough(nodes)
-	// At least one selector or index before the operator: a store THROUGH the
-	// receiver, not to it.
-	if recvName == "" || base != recvName || !suffixed {
+	base, values, suffixed, deref := e.assignThrough(nodes)
+	// A selector, an index or a written-out dereference before the operator: a
+	// store THROUGH the receiver, not to it.
+	if recvName == "" || base != recvName || !(suffixed || deref) {
 		return nil
 	}
 	return values
@@ -6531,12 +6542,12 @@ func (e *emitter) storedInReceiver(recvName string, nodes []Node) [][]int32 {
 // Whether that outlives the caller's frame is the CALL SITE's question, as it is
 // for a receiver: `fill(&g, a[:])` leaks and `fill(&local, a[:])` does not.
 func (e *emitter) storedInPointerParam(fi funcInfo, nodes []Node) ([][]int32, int) {
-	base, values, suffixed := e.assignThrough(nodes)
-	if base == "" || !suffixed {
+	base, values, suffixed, deref := e.assignThrough(nodes)
+	if base == "" || !(suffixed || deref) {
 		return nil, -1
 	}
 	for i, nm := range fi.params {
-		if nm == base && i < len(fi.ptrBase) && fi.ptrBase[i] != "" && i < intoBits {
+		if nm == base && i < len(fi.ptrParam) && fi.ptrParam[i] && i < intoBits {
 			return values, i
 		}
 	}
@@ -6550,27 +6561,27 @@ func (e *emitter) storedInPointerParam(fi funcInfo, nodes []Node) ([][]int32, in
 //
 // Only a plain "=" qualifies. A ":=" declares a local, and a compound assignment
 // reads what is there rather than storing what it is given.
-func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, suffixed bool) {
+func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, suffixed, deref bool) {
 	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
-		return "", nil, false
+		return "", nil, false, false
 	}
 	if base = e.soleIdent(nodes[0].ast); base == "" {
-		return "", nil, false
+		return "", nil, false, false
 	}
 	postfix := slices.Collect(it(nodes[1].ast))
 	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
-		return "", nil, false
+		return "", nil, false, false
 	}
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
 	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return "", nil, false
+		return "", nil, false, false
 	}
 	for n := range it(op[1].ast) {
 		if n.sym == Expression {
 			values = append(values, n.ast)
 		}
 	}
-	return base, values, len(postfix) > 1
+	return base, values, len(postfix) > 1, e.derefStars(nodes[0].ast) != ""
 }
 
 // storedInPackageVar returns the values a statement stores into a package variable,
@@ -6578,7 +6589,7 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 // element of a package variable outlives every frame exactly as the variable does --
 // so unlike the two above, no selector need stand between them.
 func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
-	base, values, _ := e.assignThrough(nodes)
+	base, values, _, _ := e.assignThrough(nodes)
 	if base == "" || !e.isPackageVar(base) {
 		return nil
 	}
