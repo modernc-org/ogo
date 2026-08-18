@@ -266,6 +266,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A defined ARRAY type is a type of its own.** `type Row [2]int` and
+  `type Col [2]int` were interchangeable — `c = r`, `var d Col = r`, `takeCol(r)`,
+  `return r`, `cols <- r` and `r == c` all compiled, where Go wants a conversion. An
+  array carries no `Kind`, and the identity check is gated on one, so it could never
+  see an array at all: the same blind spot a defined type over a *struct* sat in
+  until it was admitted for having no Kind either. `Col(r)` is how the two meet and
+  is unaffected.
+
+  A defined array type and the unnamed spelling of the same shape stay assignable
+  both ways, as they are in Go — one of the two is not a defined type, so there is
+  nothing to tell apart. The emitter's own array checks compare by shape and never by
+  name, and keep doing so; identity is the checker's question.
+
+  Still open in this area: an array or slice LITERAL's elements are not type-checked
+  at all, so `[]Col{r}` is accepted — and so are `[]B{a}` for two distinct structs and
+  `[]int{1, "x"}`.
+
 - **An ARGUMENT of the wrong array shape no longer builds.** `use(s)` passed a
   `[3]int` to a `[2]int` parameter, and a `[2]uint8` to a `[2]int` one. Go rejects
   both, and an array parameter is a pointer the callee `memcpy`s the *parameter's* own

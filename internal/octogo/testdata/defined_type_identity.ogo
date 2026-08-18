@@ -234,3 +234,92 @@ func structs() {
 	_ = p
 	_ = l
 }
+
+// An ARRAY base is the struct case over again, and was left out of it: an array
+// carries no Kind either, so "type Row [2]int" and "type Col [2]int" were
+// interchangeable in every position the scalar gate could not see. The emitter has
+// its own array checks and they compare by SHAPE, never by name -- a defined array
+// type and the unnamed spelling of it are assignable both ways, as they are in Go --
+// so identity has to be decided here, where the names are.
+
+type Row [2]int
+
+type Col [2]int
+
+type Grid [2][2]int
+
+type Board [2][2]int
+
+type Frame struct {
+	r Row
+}
+
+var cols chan Col
+
+func takeRow(r Row) int { return r[0] }
+
+func takeCol(c Col) int { return c[0] }
+
+func giveCol() Col {
+	var r Row
+
+	// ERROR "cannot use r of type Row as type Col in return statement"
+	return r
+}
+
+func arrays() {
+	var r Row
+	var c Col
+	var g Grid
+	var b Board
+	var fr Frame
+
+	// A conversion is how the two meet, and it is unaffected.
+	c = Col(r)
+	r = Row(c)
+	takeRow(Row(c))
+	takeCol(Col(r))
+
+	// The unnamed spelling of the same shape is assignable both ways, as in Go:
+	// one of the two is not a defined type, so there is nothing to tell apart.
+	var plain [2]int
+	plain = r
+	r = plain
+
+	// ERROR "cannot use r of type Row as type Col in variable declaration"
+	var bad1 Col = r
+
+	// ERROR "cannot use c of type Col as type Row in assignment"
+	r = c
+
+	// ERROR "cannot use r of type Row as type Col in argument to takeCol"
+	takeCol(r)
+
+	// A rank above one is no different: what is compared is the name.
+	// ERROR "cannot use b of type Board as type Grid in assignment"
+	g = b
+
+	// Comparison reports the pair rather than a use, there being no direction to it.
+	// ERROR "mismatched types Row and Col"
+	if r == c {
+	}
+
+	// ERROR "cannot use c of type Col as type Row in assignment"
+	fr.r = c
+	fr.r = r
+
+	// ERROR "cannot use c of type Col as type Row in struct literal"
+	bad2 := Frame{r: c}
+	_ = bad2
+
+	// ERROR "cannot use r of type Row as type Col in send"
+	cols <- r
+	cols <- c
+
+	// One type on both sides is untouched, whichever way the value was written.
+	takeRow(r)
+	takeCol(c)
+	_ = bad1
+	_ = g
+	_ = plain
+}

@@ -5731,6 +5731,19 @@ func (f *File) structTypeNamed(s *Scope, nm string) (*TypeNodeStruct, bool) {
 	return nil, false
 }
 
+// arrayTypeNamed reports whether a name resolves to an ARRAY type, following a chain
+// of definitions as structTypeNamed does -- `type Q Row` for an array Row is one.
+//
+// It exists for the same reason the struct case does: an array carries no Kind, so
+// every check gated on one silently passes it over.
+func (f *File) arrayTypeNamed(s *Scope, nm string) bool {
+	td, ok := s.find(nm).(*TypeDeclaration)
+	if !ok || td.TypeSpec == nil {
+		return false
+	}
+	return f.isArrayType(s, td.TypeSpec.TypeNode)
+}
+
 // structFields returns the set of field names of a named struct type; ok is
 // false when the name is not a struct (a predeclared type, an interface, or an
 // undefined name), in which case field access is left unchecked.
@@ -6120,13 +6133,21 @@ func (f *File) definedName(s *Scope, name string) (string, bool) {
 // checkImplements, and a struct is compared only against another struct rather than
 // against whatever a mismatch of shape would be -- that is assignableKind's and
 // checkPointerValue's to report.
+//
+// An ARRAY is admitted on exactly that argument, and was left out of it: it has no
+// Kind either, so `type Row [2]int` and `type Col [2]int` were interchangeable in
+// every position this is called from. The emitter's own array checks compare by
+// SHAPE and deliberately never by name -- a defined type and the unnamed spelling of
+// it are assignable both ways, as they are in Go -- so identity has to be decided
+// here, where the names are.
 func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what string) {
 	if wantName == "" {
 		return
 	}
 	var haveKind Kind
 	_, wantStruct := f.structTypeNamed(s, wantName)
-	if !wantStruct {
+	wantArray := f.arrayTypeNamed(s, wantName)
+	if !wantStruct && !wantArray {
 		wantKind, ok := f.nameKind(s, wantName)
 		if !ok || kindCategory(wantKind) == catUnknown {
 			return
@@ -6144,6 +6165,12 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 	// resolved to a declaration, so it is not the empty string the Kind below
 	// stands in for.
 	if _, haveStruct := f.structTypeNamed(s, have); wantStruct != haveStruct {
+		return
+	}
+	// And an array only against another array, for the same reason: a value of
+	// another shape entirely is a mismatch some other check owns, and reporting it
+	// from here would name the wrong rule.
+	if wantArray != f.arrayTypeNamed(s, have) {
 		return
 	}
 	want := ""
@@ -6175,13 +6202,18 @@ func (f *File) definedTypeMismatch(s *Scope, a, b Node) bool {
 	return aok && bok && an != bn
 }
 
-// structOperandMismatch reports two operands that are values of DIFFERENT defined
-// STRUCT types, naming both. Go compares two structs only where one type is
-// assignable to the other, which for two defined types means they are the same one;
+// compositeOperandMismatch reports two operands that are values of DIFFERENT defined
+// COMPOSITE types -- a struct or an array -- naming both. Go compares two of either
+// only where one type is assignable to the other, which for two defined types means
+// they are the same one;
 // two names over one shape are two types. An operand whose type this cannot name --
 // a call result, an element, nil -- is not guessed at, and a pointer is not one of
 // these at all, typeIdentity naming only the value form.
-func (f *File) structOperandMismatch(s *Scope, a, b Node) (an, bn string, mismatched bool) {
+// The two travel together because they fail the same way: neither carries a Kind,
+// so the scalar gate in checkRelOp returns before any identity check runs. Both
+// operands must be of the SAME category -- two structs or two arrays -- so a
+// mismatch of shape is left to whatever owns it.
+func (f *File) compositeOperandMismatch(s *Scope, a, b Node) (an, bn string, mismatched bool) {
 	an, aok := f.typeIdentity(s, a)
 	bn, bok := f.typeIdentity(s, b)
 	if !aok || !bok || an == bn {
@@ -6189,10 +6221,13 @@ func (f *File) structOperandMismatch(s *Scope, a, b Node) (an, bn string, mismat
 	}
 	_, aStruct := f.structTypeNamed(s, an)
 	_, bStruct := f.structTypeNamed(s, bn)
-	if !aStruct || !bStruct {
-		return "", "", false
+	if aStruct && bStruct {
+		return an, bn, true
 	}
-	return an, bn, true
+	if f.arrayTypeNamed(s, an) && f.arrayTypeNamed(s, bn) {
+		return an, bn, true
+	}
+	return "", "", false
 }
 
 // operandTypeName names an operand's type for a mismatch report: its defined type
@@ -6917,11 +6952,12 @@ func (f *File) checkComparison(s *Scope, n Node) {
 // Only a comparison (== != < <= > >=) reaches here; a logical operator (&& / ||)
 // is handled by checkComparison, which groups the chain by precedence around it.
 func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
-	// Two structs have no Kind between them, so the scalar gate below returns
-	// before the identity check runs -- which is what let an A and a B of one
-	// shape compare where Go refuses them. Which DEFINED types they are is the
-	// whole question and needs no Kind to answer, so it is asked first.
-	if ln, rn, mismatched := f.structOperandMismatch(s, lNode, rNode); mismatched {
+	// Two structs have no Kind between them, and neither do two arrays, so the
+	// scalar gate below returns before the identity check runs -- which is what let
+	// an A and a B of one shape compare where Go refuses them. Which DEFINED types
+	// they are is the whole question and needs no Kind to answer, so it is asked
+	// first.
+	if ln, rn, mismatched := f.compositeOperandMismatch(s, lNode, rNode); mismatched {
 		f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", ln, rn)
 		return
 	}
