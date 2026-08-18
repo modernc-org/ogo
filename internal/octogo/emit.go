@@ -15971,9 +15971,16 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if okm && i+1 < len(steps) && steps[i+1].sym == CallSuffix && bt != "" && e.isMethodBase(bt) {
 				// A void method (no result) is valid as the final step of a call
 				// statement -- `xs[i].update()` mutating an element in place -- so 0
-				// results is admitted; a further step then fails on the empty type. A
-				// multi-result method is not a single value and cannot continue a chain.
-				if len(rts) > 1 {
+				// results is admitted; a further step then fails on the empty type.
+				//
+				// A multi-result method is not a single value and cannot CONTINUE a
+				// chain -- but as the last step it is exactly what a destructuring
+				// assignment wants, `a, b := xs[i].two()`, and refusing it here was
+				// what made that "multiple assignment requires a single function call
+				// on the right-hand side" for an element of any kind, struct or array.
+				// Its value is the result STRUCT, which is what the caller reads the
+				// fields off.
+				if len(rts) > 1 && i+1 != len(steps)-1 {
 					return "", "", false, false
 				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
@@ -15985,9 +15992,12 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				}
 				text = cname + "(" + recv + ")"
 				addr = false
-				if len(rts) == 1 {
+				switch {
+				case len(rts) == 1:
 					cur = e.plainOrSlice(rts[0])
-				} else {
+				case len(rts) > 1:
+					cur = accessCur{ctype: e.retStructNameOf(rts)}
+				default:
 					cur = accessCur{} // void: no value to continue with
 				}
 				i++ // consumed the CallSuffix
@@ -19072,6 +19082,12 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	}
 	callee, suffix, ok := e.directCall(rhs)
 	if !ok {
+		// A method reached through a chain that includes an INDEX,
+		// `a, b := xs[i].two()`. Refusing it here said "requires a single function
+		// call" of a call, for an element of any kind -- a plain struct one included.
+		callee, suffix, ok = e.chainCallOf(rhs)
+	}
+	if !ok {
 		e.fail("multiple assignment requires a single function call on the right-hand side")
 		return
 	}
@@ -19105,6 +19121,15 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			recv += ", " + args
 		}
 		e.emit(cn + "(" + recv + ")")
+	} else if len(suffix) > 2 {
+		// A chain receiver: emitCallExpr knows the one- and two-step shapes and not
+		// this one, so the chain walk renders the whole call, receiver included.
+		text, _, _, okc := e.chainCText(callee, suffix)
+		if !okc {
+			e.fail("unsupported call on the right-hand side of a multiple assignment")
+			return
+		}
+		e.emit(text)
 	} else if !e.emitCallExpr(callee, suffix) {
 		e.fail("unsupported call on the right-hand side of a multiple assignment")
 		return
@@ -19234,10 +19259,60 @@ func (e *emitter) methodOnField(recv string, suffix []Node) (fields []string, cn
 	return fields, cname, e.methodPtr[cname], true
 }
 
+// chainCallOf recognises a call whose callee is a method reached through a chain
+// that includes an INDEX, `xs[i].two()`. directCall takes a run of SELECTORS only,
+// and deliberately: widening it would change every caller it has. This is the shape
+// the one position that wants it asks for separately.
+func (e *emitter) chainCallOf(ast []int32) (string, []Node, bool) {
+	fac, okf := e.soleFactorNode(ast)
+	if !okf {
+		return "", nil, false
+	}
+	recv, sfx, okc := e.factorCall(slices.Collect(it(fac.ast)))
+	if !okc || len(sfx) < 3 || sfx[len(sfx)-1].sym != CallSuffix || sfx[len(sfx)-2].sym != Selector {
+		return "", nil, false
+	}
+	if !isAccessChain(sfx[:len(sfx)-1]) {
+		return "", nil, false
+	}
+	return recv, sfx, true
+}
+
+// chainMethodResult resolves a method call whose receiver is reached through a chain
+// that includes an INDEX -- `xs[i].two()`, `b.rows[i].two()` -- to the method's C
+// name and its result types. It is methodOnField's counterpart for a receiver the
+// all-selectors walk cannot describe.
+func (e *emitter) chainMethodResult(base string, steps []Node) (string, []string, bool) {
+	if len(steps) < 3 || steps[len(steps)-1].sym != CallSuffix || steps[len(steps)-2].sym != Selector {
+		return "", nil, false
+	}
+	cur, ok := e.accessChainType(base, steps[:len(steps)-2])
+	if !ok {
+		return "", nil, false
+	}
+	bt := methodBaseType(cur.ctype)
+	if bt == "" {
+		bt = cur.name // an ARRAY the chain reached carries its type in the name
+	}
+	if bt == "" || !e.isMethodBase(bt) {
+		return "", nil, false
+	}
+	cname := methodCName(bt, e.soleIdent(steps[len(steps)-2].ast))
+	rts, isMethod := e.funcRet[cname]
+	return cname, rts, isMethod
+}
+
 func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resTypes []string, ok bool) {
 	if _, cn, _, isField := e.methodOnField(recv, suffix); isField {
 		resTypes, ok = e.funcRet[cn]
 		return cn, resTypes, ok
+	}
+	// A method reached through a CHAIN, `xs[i].two()`. methodOnField above answers
+	// for a run of SELECTORS only, so an index anywhere in the receiver left the
+	// call untyped -- which is what refused `a, b := ps[1].two()` for a plain struct
+	// element, arrays having nothing to do with it.
+	if cn, rts, isChain := e.chainMethodResult(recv, suffix); isChain {
+		return cn, rts, true
 	}
 	if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 		member := e.soleIdent(suffix[0].ast)

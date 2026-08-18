@@ -295,6 +295,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **A multi-result method may be called on an element** — `a, b := ps[1].two()`. The
+  call shape a destructuring assignment recognises was a run of *selectors*, which
+  admits `m.st.pop()` but not one element in, so this was *multiple assignment
+  requires a single function call on the right-hand side* — of a call. It had nothing
+  to do with arrays: a plain struct element was refused the same way, through a slice
+  of them, with a field on the way to the index, with a pointer receiver and with
+  arguments.
+
 - **An ARRAY receiver may be launched on a cog** — `go pool[1].run()`, `go g.run()`,
   `go h.r.run()`. `go ws[i].run()` for a *struct* element was enabled deliberately —
   one cog per element is the worker-pool shape — and every array spelling was

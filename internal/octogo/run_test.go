@@ -5824,6 +5824,77 @@ func main() {
 		want: "7\n11\n15\n6 6\n",
 	},
 	{
+		// A MULTI-RESULT method whose receiver is reached through an INDEX,
+		// `a, b := ps[1].two()`. The call shape a destructuring assignment recognises
+		// was a run of SELECTORS -- which admits `m.st.pop()` and not one element in
+		// -- so this was "multiple assignment requires a single function call on the
+		// right-hand side", of a call. It had nothing to do with arrays: a plain
+		// STRUCT element was refused the same way.
+		//
+		// Two rules met here. The chain walk refuses a multi-result call because such
+		// a call is not a value and cannot CONTINUE a chain -- true, except as the
+		// LAST step, which is exactly where a destructure wants one; its value is the
+		// result struct. And the call shape is widened where the destructure asks for
+		// it rather than in directCall, whose every other caller wants the narrow one.
+		name: "a multi-result method on an element",
+		src: `type Row [2]int
+
+type P struct {
+	x int
+	y int
+}
+
+type H struct {
+	ps [2]P
+}
+
+func (p P) Two() (int, int) { return p.x, p.y }
+
+func (p P) Add(n int) (int, int) { return p.x + n, p.y - n }
+
+func (p *P) Swap() (int, int) {
+	p.x, p.y = p.y, p.x
+	return p.x, p.y
+}
+
+func (r Row) Both() (int, int) { return r[0], r[1] }
+
+var ps = [3]P{{1, 2}, {3, 4}, {5, 6}}
+
+var h = H{[2]P{{7, 8}, {9, 10}}}
+
+var pool = [2]Row{{11, 12}, {13, 14}}
+
+func main() {
+	// A multi-result method whose receiver is reached through an INDEX. The call
+	// shape a destructuring assignment takes was a run of SELECTORS, so an element
+	// of any kind -- a plain struct one included -- was "multiple assignment
+	// requires a single function call on the right-hand side", of a call.
+	a, b := ps[1].Two()
+	println(a, b)
+
+	// Through a slice of them, and with a field on the way to the index.
+	xs := ps[:]
+	c, d := xs[2].Two()
+	e2, f := h.ps[1].Two()
+	println(c, d, e2, f)
+
+	// With arguments, with a POINTER receiver -- which writes the element the
+	// program named -- and on an array element.
+	g2, i := ps[0].Add(5)
+	j, k := ps[2].Swap()
+	l, m := pool[1].Both()
+	println(g2, i, j, k, ps[2].x, l, m)
+
+	// Assigned rather than declared, which is a different path to the same call.
+	var n, o int
+	n, o = ps[1].Two()
+	println(n, o)
+}
+`,
+		want: "3 4\n5 6 9 10\n6 -3 6 5 6 13 14\n3 4\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.
