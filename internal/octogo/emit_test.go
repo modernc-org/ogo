@@ -6281,9 +6281,12 @@ func main() {
 //
 // Three of these used to reach the backend instead, which answered "Internal error,
 // couldn't find object variable with offset 4" and "incompatible types" -- the guard
-// covered parameters and results but not a value receiver, a channel element or a
-// literal's element. Copying between variables is NOT here: that is a memcpy the
-// emitter writes itself.
+// covered parameters and results but not a value receiver or a channel element.
+//
+// What is NOT here is anything the emitter can write a memcpy for: a copy between
+// variables, and -- since the composite-literal fixups -- a literal's element, which
+// is zeroed in place and copied in after the declaration. Only a boundary the calling
+// convention itself owns belongs on this list.
 func TestEmitCArrayFieldABI(t *testing.T) {
 	const header = `type A struct {
 	v [3]int
@@ -6314,11 +6317,6 @@ var g A
 			src:  "var ch chan A\n\nfunc send() { ch <- g }\n\nfunc main() {\n\tgo send()\n\tc := <-ch\n\tprintln(c.n)\n}\n",
 			want: "channel element: A holds an array",
 		},
-		{
-			name: "literal element",
-			src:  "func main() {\n\txs := []A{g}\n\tprintln(xs[0].n)\n}\n",
-			want: "cannot be a literal's element",
-		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
@@ -6336,9 +6334,77 @@ var g A
 	}
 }
 
+// TestEmitCLitElementRefusals pins what an aggregate element of a composite literal
+// will not take. An element C cannot put in an initializer is zeroed there and copied
+// in after the declaration, which needs two things: a value whose shape matches the
+// position, and a literal that HAS a declaration to copy in after.
+//
+// The second is the one worth pinning. A compound literal in expression position --
+// `ch <- [2][2]int{a, a}` -- names no storage, so there is nothing to copy into and
+// no statement to copy in. Emitting the element anyway is what used to happen, and
+// what it emitted was `(ogo_arr_2_2_int){a, a}`, which is not C. A deferred copy
+// nobody emits would be worse still: a literal that silently loses an element.
+func TestEmitCLitElementRefusals(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "a shorter array",
+			src: `var a = [3]int{1, 2, 3}
+
+func main() {
+	t := [1][2]int{a}
+	println(t[0][0])
+}
+`,
+			want: "cannot use [3]int as [2]int in a literal",
+		},
+		{
+			name: "not an array at all",
+			src: `func main() {
+	n := 5
+	t := [1][2]int{n}
+	println(t[0][0])
+}
+`,
+			want: "must be a literal or an array value",
+		},
+		{
+			name: "in a channel send, which names no storage",
+			src: `var a = [2]int{1, 2}
+
+var ch chan [2][2]int
+
+func send() { ch <- [2][2]int{a, a} }
+
+func main() {
+	go send()
+	v := <-ch
+	println(v[0][0])
+}
+`,
+			want: "cannot be an element of a literal written here",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted an element it cannot copy:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCArrayFieldABIAllows pins what is NOT refused: a pointer receiver copies
-// nothing, a copy between variables is a memcpy the emitter writes, and a literal
-// written in place IS the storage rather than a copy into it.
+// nothing, a copy between variables is a memcpy the emitter writes, a literal written
+// in place IS the storage rather than a copy into it, and a literal's element that is
+// such a struct is a memcpy after the declaration -- which used to be refused here and
+// is why this test also names the shape it grew to allow.
 func TestEmitCArrayFieldABIAllows(t *testing.T) {
 	src := `type A struct {
 	v [3]int
@@ -6354,6 +6420,8 @@ func main() {
 	println(x.n, g.bottom())
 	ys := []A{{v: [3]int{1, 2, 3}, n: 4}}
 	println(ys[0].n)
+	zs := []A{g}
+	println(zs[0].n)
 }
 `
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}

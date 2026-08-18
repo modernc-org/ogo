@@ -5234,6 +5234,77 @@ func main() {
 		want: "0 5 0\n0 7 1\n2 3\n",
 	},
 	{
+		// An aggregate VARIABLE as a composite literal's element -- an array where the
+		// position takes one, and a struct that HOLDS an array. Building a table from
+		// named rows did not compile in any spelling: an array element was "an element
+		// of a [2]int literal must itself be a literal", a slice literal's and a struct
+		// field's emitted an initializer C rejects, and a struct holding an array was
+		// refused outright as an ABI boundary it is not.
+		//
+		// C copies no array in an initializer, and the target's C compiler copies no
+		// array-holding struct by assignment at all, so each such element is zeroed at
+		// its position and copied in after the declaration -- the same memcpy every
+		// other copy of one takes. At FILE scope there is no "afterwards" in C, so the
+		// copies become steps of the package initializer, ordered against the variables
+		// they read; the table declared above its rows is what pins that.
+		//
+		// The last line checks it is a copy. A lowering that aliased instead would pass
+		// every other line here.
+		name: "an aggregate variable as a literal's element",
+		src: `type Row [2]int
+
+type Buf struct {
+	xs [2]int
+	n  int
+}
+
+type Wrap struct {
+	b Buf
+}
+
+var r0 = [2]int{1, 2}
+
+var r1 = Row{3, 4}
+
+var buf = Buf{[2]int{5, 6}, 7}
+
+var pool = [2][2]int{{8, 9}, {10, 11}}
+
+// A table built at package scope from rows declared BELOW it: the copies become
+// steps of the package initializer and are ordered against what they read.
+var table = [2][2]int{later, r0}
+
+var later = [2]int{12, 13}
+
+func main() {
+	println(table[0][0], table[1][1])
+
+	// An array VALUE as an element of an array literal, a slice literal, and a
+	// struct literal, positional and keyed, mixed with literals written in place.
+	t := [3][2]int{r0, {20, 21}, pool[1]}
+	println(t[0][0], t[1][1], t[2][0])
+
+	xs := [][2]int{r1, r0}
+	println(xs[0][0], xs[1][1])
+
+	b := Buf{r0, 9}
+	c := Buf{n: 8, xs: pool[0]}
+	println(b.xs[1], b.n, c.xs[0], c.n)
+
+	// A struct that HOLDS an array, as an element: the target's C compiler cannot
+	// copy one by assignment, so this is the memcpy every copy of one takes.
+	ws := []Buf{buf}
+	w := Wrap{buf}
+	println(ws[0].xs[0], ws[0].n, w.b.xs[1])
+
+	// Each is a copy: writing to the literal's storage leaves the source alone.
+	t[0][0] = 99
+	println(t[0][0], r0[0])
+}
+`,
+		want: "12 2\n1 21 10\n3 2\n2 9 8 8\n5 7 6\n99 1\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

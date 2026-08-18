@@ -1714,10 +1714,13 @@ func (e *emitter) emitStructCopy(dst, ctype string, src []int32) {
 	switch name, lit, ok := e.soleCompositeLit(src); {
 	case ok:
 		tmp := e.newTmp()
-		e.ind()
-		e.emit(ctype + " " + tmp + " = ")
-		e.emitCompositeLit(name, lit, true)
-		e.emit(";\n")
+		fixups := e.captureLitFixups(func() {
+			e.ind()
+			e.emit(ctype + " " + tmp + " = ")
+			e.emitCompositeLit(name, lit, true)
+			e.emit(";\n")
+		})
+		e.flushLitFixups(tmp, fixups)
 		from = tmp
 	default:
 		from = e.exprC(src)
@@ -3753,6 +3756,9 @@ type emitter struct {
 	eqStructs          map[string]bool      // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim    // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string             // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	litPath            string               // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
+	litFixups          []litFixup           // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
+	litFixable         bool                 // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
 	frameBacked        map[string]bool      // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
 	crossParams        map[string][]leak    // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
 	retParams          map[string][]bool    // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
@@ -4529,7 +4535,20 @@ func (e *emitter) ifaceAddrLitOperand(rhs []int32) (concrete, data string, temp,
 	if !isLit || e.pkgScope || !e.isStruct(ct) {
 		return "", "", false, false
 	}
-	return ct, "&" + e.hoist(ct, func() { e.emitCompositeLit(ct, lit, true) }), true, true
+	// The literal's own copies go into the prologue behind the declaration hoist put
+	// there, which is where the temporary comes into existence.
+	name := ""
+	fixups := e.captureLitFixups(func() {
+		name = e.hoist(ct, func() { e.emitCompositeLit(ct, lit, true) })
+	})
+	stmts, okCopies := e.litFixupCopies(name, fixups)
+	if !okCopies {
+		return "", "", false, false
+	}
+	for _, stmt := range stmts {
+		e.prologue = append(e.prologue, stmt+"\n")
+	}
+	return ct, "&" + name, true, true
 }
 
 // addrOfCompositeLit reports whether an expression is the address of a composite
@@ -8352,7 +8371,9 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 	//
 	// So `ch <- Row{1: 5}` sent zeros and `append(xs, Row{2: 7})` appended them, both
 	// silently, while `r := Row{1: 5}` was right -- the positions that hoist nothing
-	// to point at are exactly the ones that come here.
+	// to point at are exactly the ones that come here. It is also what puts an
+	// element that is an array VALUE in front of the fixup guard rather than in front
+	// of the struct walk, which had no element type to recognise one by.
 	if a, isArr := e.namedArrays[name]; isArr {
 		values, length, ok := e.litPositions(lit)
 		if !ok {
@@ -8381,6 +8402,10 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 		return
 	}
 	e.emit("{")
+	// The path each element sits at, for anything this literal has to defer to a
+	// copy after the declaration (see recordLitFixup). It grows as the walk descends
+	// and is put back on the way out, so a nested literal names the whole route.
+	litPath := e.litPath
 	for i, v := range values {
 		if i != 0 {
 			e.emit(", ")
@@ -8392,10 +8417,154 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 		var expect structField
 		if i < len(fields) {
 			expect = fields[i] // the field, for a type-elided or nested element
+			e.litPath = litPath + "." + e.fieldIdent(expect.name)
 		}
 		e.emitLitElement(*v, expect, brace)
 	}
+	e.litPath = litPath
 	e.emit("}")
+}
+
+// litFixup is one element of a composite literal that C cannot put in an
+// initializer: an ARRAY, which C will not copy there at all. The position is filled
+// with zeros and the value copied in afterwards, once the storage the literal fills
+// has a name -- which is the only point at which the copy can be written, and the
+// reason this is collected rather than emitted where it is found.
+type litFixup struct {
+	path string  // from the literal's own name: "[1]", ".xs", "[0].xs"
+	src  []int32 // the expression to copy from
+	// ctype is the STRUCT type being copied, for the other element C will not take:
+	// one that HOLDS an array, which the target's compiler cannot copy by assignment
+	// anywhere. Empty for an array element, which is copied by its own size.
+	ctype string
+}
+
+// captureLitFixups renders a literal with a fixup list of its own and answers what
+// it deferred, leaving whatever an enclosing literal had collected untouched.
+func (e *emitter) captureLitFixups(render func()) []litFixup {
+	savedFixups, savedPath, savedOK := e.litFixups, e.litPath, e.litFixable
+	e.litFixups, e.litPath, e.litFixable = nil, "", true
+	render()
+	fixups := e.litFixups
+	e.litFixups, e.litPath, e.litFixable = savedFixups, savedPath, savedOK
+	return fixups
+}
+
+// recordLitFixup defers one element of a composite literal to a copy after the
+// declaration, and reports whether it could. The caller writes the zeros that stand
+// in for it meanwhile.
+//
+// The element's position is e.litPath, built up as the literal is walked, so the
+// copy names the storage the literal fills as soon as that storage has a name.
+// want is what the position declares, and is checked against the value's own shape
+// for the reason every other array copy checks it: the copy is sized by the
+// destination.
+func (e *emitter) recordLitFixup(v Node, want arrDim) bool {
+	if !e.litFixable {
+		// A literal standing where nothing gives it a name -- a compound literal in
+		// expression position. There is no storage to copy into and no statement to
+		// copy in, so this is refused rather than zeroed: a fixup nobody emits is a
+		// literal that silently loses an element.
+		e.fail("a %s value cannot be an element of a literal written here; bind the literal "+
+			"to a variable first", e.goArrayTypeName(want))
+		return false
+	}
+	a, ok := e.arrayShapeOf(v.ast)
+	if !ok {
+		e.fail("an element of a %s literal must be a literal or an array value",
+			e.goArrayTypeName(want))
+		return false
+	}
+	if a.elem != want.elem || a.declSuffix() != want.declSuffix() {
+		e.fail("cannot use %s as %s in a literal", e.goArrayTypeName(a), e.goArrayTypeName(want))
+		return false
+	}
+	e.litFixups = append(e.litFixups, litFixup{path: e.litPath, src: v.ast})
+	return true
+}
+
+// litFixupCopies renders the deferred copies as C statements, into the storage now
+// named by dst. Rendering the sources here rather than where they were found is
+// what puts them in the order the statements run in.
+func (e *emitter) litFixupCopies(dst string, fixups []litFixup) ([]string, bool) {
+	out := make([]string, 0, len(fixups))
+	for _, f := range fixups {
+		at := dst + f.path
+		if f.ctype != "" {
+			// A struct that holds an array takes the memcpy every copy of one takes.
+			stmt := strings.TrimSuffix(e.captureC(func() { e.emitStructCopy(at, f.ctype, f.src) }), "\n")
+			if stmt == "" {
+				return nil, false // emitStructCopy has said why
+			}
+			out = append(out, stmt)
+			continue
+		}
+		src, ok := e.arraySourceC(f.src)
+		if !ok {
+			e.fail("cannot copy this into a literal's element: it is not an array this can read from")
+			return nil, false
+		}
+		e.includes["string.h"] = true
+		out = append(out, "memcpy("+at+", "+src+", sizeof("+at+"));")
+	}
+	return out, true
+}
+
+// recordStructLitFixup defers the other element C will not take: a STRUCT that HOLDS
+// an array, which the target's C compiler cannot copy by assignment anywhere -- so
+// no more here than at a plain `s = t`. It is zeroed in place and memcpy'd in after
+// the declaration, which is what every other copy of such a struct does.
+func (e *emitter) recordStructLitFixup(v Node, ctype string) bool {
+	if !e.litFixable {
+		e.fail("a value of %s cannot be an element of a literal written here: it holds an array, "+
+			"which the target's C compiler cannot copy; bind the literal to a variable first", ctype)
+		return false
+	}
+	if !e.checkStructCopySrc(ctype, v.ast) {
+		return false
+	}
+	e.litFixups = append(e.litFixups, litFixup{path: e.litPath, src: v.ast, ctype: ctype})
+	return true
+}
+
+// flushLitFixups emits the copies a rendered literal deferred. It must run after the
+// declaration the literal initialized and before anything reads it.
+func (e *emitter) flushLitFixups(dst string, fixups []litFixup) {
+	stmts, ok := e.litFixupCopies(dst, fixups)
+	if !ok {
+		return
+	}
+	for _, stmt := range stmts {
+		e.ind()
+		e.emit(stmt + "\n")
+	}
+}
+
+// pkgInitLitFixups defers a file-scope literal's copies to the synthesized package
+// initializer: C admits no call in a static initializer, and the values copied are
+// other package variables, so the step carries their names as dependencies and is
+// ordered against them exactly as an assigned initializer is.
+func (e *emitter) pkgInitLitFixups(target string, fixups []litFixup) {
+	// A source that hoists a temporary out of itself has no enclosing statement here
+	// to put it before, so the temporary becomes a step statement of its own ahead of
+	// the copies -- the same care pkgInitAssign takes.
+	saved := e.prologue
+	e.prologue = nil
+	stmts, ok := e.litFixupCopies(target, fixups)
+	pro := e.prologue
+	e.prologue = saved
+	if !ok {
+		return
+	}
+	step := pkgInitStep{target: target}
+	for _, line := range pro {
+		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
+	}
+	step.stmts = append(step.stmts, stmts...)
+	for _, f := range fixups {
+		step.deps = append(step.deps, e.globalRefs(f.src)...)
+	}
+	e.pkgInit = append(e.pkgInit, step)
 }
 
 // emitLitElement emits one element of a composite literal. Inside a brace
@@ -8431,8 +8600,10 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	// which emitStructLit writes -- so this refuses only an element COPIED from
 	// something else.
 	if e.hasArrayField(expectType) && !e.isCompositeLitExpr(v) {
-		e.fail("a value of %s cannot be a literal's element: it holds an array, which the target's "+
-			"C compiler cannot copy; write the fields, or use a pointer", expectType)
+		if !e.recordStructLitFixup(v, expectType) {
+			return
+		}
+		e.emit(e.zeroBraceC(expectType))
 		return
 	}
 	// An array-typed field takes a nested aggregate, `P{1, [2]int{2, 3}}` or its
@@ -8448,6 +8619,14 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 			e.emitArrayValues(values, expect.dim)
 			return
 		}
+		// The position takes an array and the value is not a literal but a VALUE --
+		// `[][2]int{a, b}`, `B{a}`. C cannot copy an array in an initializer at all,
+		// so the position is zeroed and the copy deferred to after the declaration.
+		if !e.recordLitFixup(v, expect.dim) {
+			return
+		}
+		e.emit("{0}")
+		return
 	}
 	if v.sym == CompositeLit {
 		if !e.isStruct(expectType) {
@@ -8634,6 +8813,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 		return
 	}
 	e.emit("{")
+	litPath := e.litPath
 	for i, v := range values {
 		if i != 0 {
 			e.emit(", ")
@@ -8642,6 +8822,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 			e.emit(e.zeroInitC(elemCType))
 			continue
 		}
+		e.litPath = litPath + "[" + strconv.Itoa(i) + "]"
 		// A named ARRAY element carries its extents, so a `{1, 2}` written for one is
 		// read as a value OF that element rather than as a nested extent of the outer
 		// array -- which is what `[][2]int{{1, 2}, {3, 4}}` needs.
@@ -8666,6 +8847,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 		}
 		e.emitLitElement(*v, fld, true)
 	}
+	e.litPath = litPath
 	e.emit("}")
 }
 
@@ -8779,6 +8961,7 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 	}
 	row := a.row()
 	e.emit("{")
+	litPath := e.litPath
 	for i, v := range values {
 		if i != 0 {
 			e.emit(", ")
@@ -8787,12 +8970,24 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 			e.emit("{0}") // an index the literal skips: the whole row is zero
 			continue
 		}
+		e.litPath = litPath + "[" + strconv.Itoa(i) + "]"
+		// A row written as a VALUE rather than a literal, `[2][2]int{a, b}` -- a
+		// table built from named rows. C cannot copy an array in an initializer, so
+		// the row is zeroed here and copied in after the declaration.
+		if _, isLit := e.arrayLitElement(*v); !isLit {
+			if !e.recordLitFixup(*v, row) {
+				return
+			}
+			e.emit("{0}")
+			continue
+		}
 		rowValues, ok := e.rowValues(*v, row)
 		if !ok {
 			return
 		}
 		e.emitArrayValues(rowValues, row)
 	}
+	e.litPath = litPath
 	e.emit("}")
 }
 
@@ -8862,10 +9057,23 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		} else {
 			e.arrays[name] = a
 		}
-		lead()
-		e.emit(a.elem + " " + name + a.declSuffix() + " = ")
-		e.emitArrayValues(values, a)
-		e.emit(";\n")
+		// An element that is an array VALUE cannot go in the initializer -- C copies
+		// no array there -- so it is zeroed and copied in afterwards. At file scope
+		// there is no "afterwards" in C, and the copy becomes a step of the package
+		// initializer, ordered against the variables it reads like any other.
+		fixups := e.captureLitFixups(func() {
+			lead()
+			e.emit(a.elem + " " + name + a.declSuffix() + " = ")
+			e.emitArrayValues(values, a)
+			e.emit(";\n")
+		})
+		switch {
+		case len(fixups) == 0:
+		case static:
+			e.pkgInitLitFixups(name, fixups)
+		default:
+			e.flushLitFixups(name, fixups)
+		}
 		return
 	}
 	elem, ok := e.litSliceType(typeAST)
@@ -8912,10 +9120,21 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	if a, isArr := e.namedArrays[elem]; isArr {
 		decl, suffix = a.elem, a.declSuffix()
 	}
-	lead()
-	e.emit(decl + " " + backing + "[" + n + "]" + suffix + " = ")
-	e.emitPositionalValues(values, elem)
-	e.emit(";\n")
+	fixups := e.captureLitFixups(func() {
+		lead()
+		e.emit(decl + " " + backing + "[" + n + "]" + suffix + " = ")
+		e.emitPositionalValues(values, elem)
+		e.emit(";\n")
+	})
+	// The copies fill the BACKING array, which is what holds the elements; the header
+	// below only points at it, so it may be built either side of them.
+	switch {
+	case len(fixups) == 0:
+	case static:
+		e.pkgInitLitFixups(backing, fixups)
+	default:
+		e.flushLitFixups(backing, fixups)
+	}
 	lead()
 	e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")
 }
@@ -17649,10 +17868,16 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 		e.emitStructCopy(cn, ctype, initExpr)
 		return
 	}
-	e.ind()
-	e.emit(ctype + " " + cn + " = ")
-	e.emitVarInit(initExpr)
-	e.emit(";\n")
+	// An element of a struct literal that C cannot put in an initializer -- an
+	// ARRAY field filled from a value -- is zeroed there and copied in here, the
+	// declaration being what gives the literal a name to copy into.
+	fixups := e.captureLitFixups(func() {
+		e.ind()
+		e.emit(ctype + " " + cn + " = ")
+		e.emitVarInit(initExpr)
+		e.emit(";\n")
+	})
+	e.flushLitFixups(cn, fixups)
 }
 
 // initRefsName reports whether initExpr reads the variable `name` as a value: a

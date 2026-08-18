@@ -20,6 +20,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An aggregate VARIABLE may be a composite literal's element** — `[2][2]int{a, b}`
+  and `[][2]int{a, b}` for a table built from named rows, `B{a}` and `B{n: 5, xs: a}`
+  for an array-typed field, and `[]A{g}` for a struct that itself holds an array. None
+  of it compiled: an array element was *an element of a [2]int literal must itself be
+  a literal*, a slice literal's and a struct field's emitted an initializer C rejects,
+  and a struct holding an array was refused as an ABI boundary it is not.
+
+  C copies no array in an initializer, and the target's C compiler copies no
+  array-holding struct by assignment at all, so each such element is zeroed at its
+  position and copied in after the declaration — the same `memcpy` every other copy of
+  one takes. At file scope there is no "afterwards" in C, so the copies become steps of
+  the package initializer and are ordered against the variables they read, which means
+  a table may be declared above its rows. A literal written where nothing names storage
+  for it — a channel send, an append — is refused rather than emitted: there is nowhere
+  to copy into.
+
 - **A defined array type's literal is right where nothing declares a variable for
   it.** `ch <- Row{1: 5}` sent ZEROS and `append(xs, Row{2: 7})` appended them —
   silently, with a working binary — while `r := Row{1: 5}` was right all along. Such a
