@@ -5681,6 +5681,95 @@ func main() {
 		want: "4 5 6\n1 2 3\n91 93\n",
 	},
 	{
+		// A method whose receiver is an ELEMENT of an array of a defined array type,
+		// `pool[1].sum()`. An array of one is resolved to its extents when the
+		// declaration is read -- a `[2]Row` is a [2][2]int by then -- so the element's
+		// NAME, which is the only thing carrying its method set, was gone before any
+		// walk reached the element. The same method on a local, a field or a struct
+		// element all worked, which is what made this look like a corner rather than
+		// a dropped fact.
+		//
+		// Two indexes in is here because it is what tells a name from a shape: the
+		// elements of a `[2][2]Row` are `[2]Row`s, and only the SECOND index reaches a
+		// Row.
+		//
+		// The DEFERRED calls are the point of the last block. A deferred method
+		// captures its receiver where the defer stands, and an array receiver was not
+		// captured at all -- read at the RETURN instead, printing what the array held
+		// then. That was wrong for a package array and for an array field before this
+		// spelling existed, so enabling the element would have made a third wrong
+		// answer out of one lowering.
+		name: "a method on an array element",
+		src: `type Row [2]int
+
+type H struct {
+	rows [2]Row
+	r    Row
+}
+
+func (r Row) Sum() int { return r[0] + r[1] }
+
+func (r Row) Add(n int) int { return r[0] + n }
+
+func (r *Row) Set(i, v int) { r[i] = v }
+
+func (r Row) Show() { println(r[0], r[1]) }
+
+var pool = [2]Row{{1, 2}, {3, 4}}
+
+var cube = [2][2]Row{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}
+
+var h = H{[2]Row{{5, 6}, {7, 8}}, Row{9, 10}}
+
+var g = Row{1, 2}
+
+func take(r Row) int { return r.Sum() }
+
+// A deferred method captures its receiver where the defer STANDS, so a value
+// receiver sees what the array held then and not what it holds at the return.
+func deferred() {
+	defer g.Show()
+	defer h.r.Show()
+	defer pool[0].Show()
+	g = Row{90, 90}
+	h.r = Row{91, 91}
+	pool[0] = Row{92, 92}
+}
+
+func main() {
+	// A method on an ELEMENT of an array of a defined array type, and on one two
+	// indexes in -- which is what tells the element's name from its extents.
+	println(pool[1].Sum(), pool[1].Add(10), cube[1][0].Sum())
+
+	// The same through a slice of them, with a pointer receiver, and reached through
+	// a field.
+	xs := pool[:]
+	xs[0].Set(1, 20)
+	println(xs[0][1], h.rows[1].Sum())
+
+	// A declaration typed from such a call, on the array itself and on an element.
+	a := g.Sum()
+	b := pool[1].Sum()
+
+	// A COPY of an element keeps the type, and so does a range value over either
+	// container.
+	r := pool[1]
+	t := r.Sum()
+	for _, v := range pool {
+		t += v.Sum()
+	}
+	for _, v := range xs {
+		t += v.Sum()
+	}
+	println(a, b, t, take(pool[1]))
+
+	deferred()
+	println(g[0], h.r[0], pool[0][0])
+}
+`,
+		want: "7 13 11\n20 15\n3 7 63 7\n1 20\n9 10\n1 2\n90 91 92\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.

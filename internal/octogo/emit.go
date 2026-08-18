@@ -3896,6 +3896,17 @@ type arrDim struct {
 	// and the emitter keeps arrays out of the locals map that answers that for
 	// everything else.
 	name string
+	// elemName is the same for this array's ELEMENT: `Row` for a `[2]Row`. An array
+	// of a defined array type is resolved to its extents like any other -- a `[2]Row`
+	// is a [2][2]int by the time anything walks it -- and that resolution is where
+	// the element's name used to be dropped, so `pool[1].Sum()` had nothing to
+	// dispatch on while `h.r.Sum()` and `r.Sum()` did.
+	//
+	// elemDims is how many extents that name accounts for, which says how far in it
+	// is: a `[2][2]Row`'s elements are `[2]Row`s and only the SECOND index reaches a
+	// Row. Without it the name alone would claim the first.
+	elemName string
+	elemDims int
 }
 
 // dims reports the number of dimensions.
@@ -3905,8 +3916,25 @@ func (a arrDim) dims() int { return 1 + len(a.inner) }
 func (a arrDim) bounds() []string { return append([]string{a.bound}, a.inner...) }
 
 // row is the array one index in: the element type of a [2][3]int is a [3]int.
-// Only meaningful when dims() > 1.
-func (a arrDim) row() arrDim { return arrDim{elem: a.elem, bound: a.inner[0], inner: a.inner[1:]} }
+// Only meaningful when dims() > 1. The element NAME travels with it, so a walk that
+// indexes step by step still knows what a `[2]Row`'s elements are.
+func (a arrDim) row() arrDim {
+	return arrDim{
+		elem: a.elem, bound: a.inner[0], inner: a.inner[1:],
+		name: a.rowName(), elemName: a.elemName, elemDims: a.elemDims,
+	}
+}
+
+// rowName is the DEFINED name the array one index in has: the element's, when one
+// index reaches exactly it. A `[2]Row` reaches a Row; a `[2][2]Row`'s first index
+// reaches a `[2]Row`, which was never given a name of its own, and only its second
+// reaches the Row.
+func (a arrDim) rowName() string {
+	if a.elemName != "" && a.dims()-1 == a.elemDims {
+		return a.elemName
+	}
+	return ""
+}
 
 // declSuffix renders the C declarator brackets, `[2][3]`.
 func (a arrDim) declSuffix() string {
@@ -4135,6 +4163,12 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// directly. The typedef documents the type in the output and keeps the name a
 		// valid C type should anything refer to it by name.
 		if a, ok := e.arrayDim(typeAST); ok {
+			// The name goes IN the shape, not only in the map key. arrayDim already
+			// puts it there when it resolves the name itself, so this is the map
+			// agreeing with it -- and it is what lets a reader of the map tell a
+			// DEFINED array from one the compiler minted a name for, which decides
+			// whether there are methods to look for.
+			a.name = mn
 			e.namedArrays[mn] = a
 			e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";\n", a.elem)
 			continue
@@ -9081,7 +9115,10 @@ func (e *emitter) arrayChainOperand(ast []int32) (string, arrDim, bool) {
 	if !okText {
 		return "", arrDim{}, false
 	}
-	return text, arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:]}, true
+	// cur.name is what an INDEX now hands on -- `pool[1]` over a `[2]Row` reaches a
+	// Row -- so a copy of it keeps the type's method set. Dropping it here is what
+	// left `r := pool[1]; r.Sum()` reading the call as a package qualification.
+	return text, curArrDim(cur), true
 }
 
 // arrayOperandOf resolves the shape of an ARRAY a factor names through a chain --
@@ -10606,7 +10643,15 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 		return arrDim{}, false
 	}
 	if inner, ok := e.arrayDim(elemAST); ok {
-		return arrDim{elem: inner.elem, bound: bound, inner: inner.bounds()}, true
+		// The element's own name, when it has one -- `[2]Row` -- and otherwise
+		// whatever the element carried for ITS element, so a rank above two keeps it
+		// too: the elements of a `[2][2]Row` are `[2]Row`s, which are not named, but
+		// two indexes in there is still a Row.
+		en, ed := inner.name, inner.dims()
+		if en == "" {
+			en, ed = inner.elemName, inner.elemDims
+		}
+		return arrDim{elem: inner.elem, bound: bound, inner: inner.bounds(), elemName: en, elemDims: ed}, true
 	}
 	elem := e.cType(elemAST)
 	if elem == "" {
@@ -11226,6 +11271,27 @@ type accessCur struct {
 	// this is the only thing that says which type it is, and therefore which methods
 	// it has. Empty for an array written out and for every other shape.
 	name string
+	// elemName and elemDims are arrDim's, carried through the walk so that an INDEX
+	// can hand the name on: `pool[1]` over a `[2]Row` reaches a Row, and the walk is
+	// where that has to be worked out -- the extents alone say nothing about it.
+	elemName string
+	elemDims int
+}
+
+// curArray describes an array the chain has reached, from its shape.
+func curArray(a arrDim) accessCur {
+	return accessCur{elem: a.elem, dims: a.bounds(), name: a.name, elemName: a.elemName, elemDims: a.elemDims}
+}
+
+// curArrDim is curArray's inverse: the shape of the array a chain has reached.
+func curArrDim(cur accessCur) arrDim {
+	if len(cur.dims) == 0 {
+		return arrDim{}
+	}
+	return arrDim{
+		elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:],
+		name: cur.name, elemName: cur.elemName, elemDims: cur.elemDims,
+	}
 }
 
 // accessBase resolves the start of a chain: a slice variable, an array variable, a
@@ -11245,7 +11311,7 @@ func (e *emitter) accessBase(base string) (accessCur, bool) {
 	// `(*p)[i].f`, and every step after the first is then the array's. The
 	// dereference is in the text accessBaseText renders, not here.
 	if _, a, ok := e.arrayBase(base); ok {
-		return accessCur{elem: a.elem, dims: a.bounds()}, true
+		return curArray(a), true
 	}
 	if ct, ok := e.varType(base); ok {
 		return accessCur{ctype: ct}, true
@@ -11275,8 +11341,9 @@ func (e *emitter) accessSelect(cur accessCur, field string) (accessCur, bool) {
 	}
 	if a, ok := e.structFieldArray(cur.ctype, field); ok {
 		// a.name carries the field's DEFINED array type, which is what a method on
-		// it dispatches through: `h.f.sum()` for a `type Row [2]int` field.
-		return accessCur{elem: a.elem, dims: a.bounds(), name: a.name}, true
+		// it dispatches through: `h.f.sum()` for a `type Row [2]int` field. a.elemName
+		// carries the same for its ELEMENTS, so `h.rows[1].sum()` has it too.
+		return curArray(a), true
 	}
 	ct, ok := e.structFieldType(cur.ctype, field)
 	if !ok {
@@ -11311,9 +11378,10 @@ func (e *emitter) accessIndex(cur accessCur, prefix string) (next accessCur, len
 		}
 		return accessCur{ctype: "uint8_t"}, prefix + ".len", true // s[i] is a byte, as in Go
 	case len(cur.dims) != 0:
-		rest := cur.dims[1:]
-		if len(rest) != 0 {
-			return accessCur{elem: cur.elem, dims: rest}, cur.dims[0], true
+		if len(cur.dims) > 1 {
+			// One index in. The row takes the element's NAME when one index reaches
+			// exactly it, which is what a method on `pool[1]` dispatches through.
+			return curArray(curArrDim(cur).row()), cur.dims[0], true
 		}
 		return e.plainOrSlice(cur.elem), cur.dims[0], true
 	}
@@ -11429,7 +11497,7 @@ func (e *emitter) plainOrSlice(elem string) accessCur {
 	// consume: `[][2]int` reaches its element as ogo_arr_2_int, and `xs[0][1]` is
 	// that element indexed once more.
 	if a, ok := e.namedArrays[elem]; ok {
-		return accessCur{elem: a.elem, dims: a.bounds()}
+		return curArray(a)
 	}
 	return accessCur{ctype: elem}
 }
@@ -15639,7 +15707,13 @@ func (e *emitter) emitRecvCopy(recvName, recvCType string) {
 // as a package qualification and reported as `unknown package "g"`.
 func (e *emitter) methodRecvCType(recv string) (string, bool) {
 	if ct, ok := e.varType(recv); ok {
-		if e.isUserType(methodBaseType(ct)) {
+		// isMethodBase rather than isUserType, which a defined ARRAY type fails: it
+		// takes a typedef of its own and never reaches the namedTypes registry. A
+		// variable whose recorded C type IS such a name -- a range value over a
+		// `[2]Row` is one, its element type being Row -- would otherwise answer here
+		// and return false, never reaching the array environments below. That is the
+		// same split this function already documents twice.
+		if e.isMethodBase(methodBaseType(ct)) {
 			return ct, true
 		}
 		// A POINTER to a defined array type. Its base carries a method set like any
@@ -16016,7 +16090,14 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 				i++
 				continue
 			}
-			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && cur.ctype != "" && e.isUserType(bt) {
+			if bt == "" {
+				// An ARRAY the chain has reached has no C value type, so the DEFINED
+				// name it was declared with is what carries its method set -- the
+				// same fallback the emission half makes. Without it `t := pool[1].sum()`
+				// could not be typed, while the emission of the very same call could.
+				bt = cur.name
+			}
+			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && bt != "" && e.isMethodBase(bt) {
 				rts, okm := e.funcRet[methodCName(bt, field)]
 				if !okm || len(rts) > 1 {
 					return "", false
@@ -19165,7 +19246,11 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 				return "", res, true
 			}
 		}
-		if rct, isVar := e.varType(recv); isVar && e.isUserType(methodBaseType(rct)) {
+		// methodRecvCType rather than varType-plus-isUserType: an ARRAY variable has
+		// no C type at all, so the pair answered no for one and `t := g.sum()` could
+		// not be typed -- while `var t int; t = g.sum()`, which asks nothing, was
+		// fine. It is the same lookup the call itself dispatches through.
+		if rct, isRecv := e.methodRecvCType(recv); isRecv {
 			cname = methodCName(methodBaseType(rct), member)
 		} else if prefix, isPkg := e.importQualifiers[recv]; isPkg {
 			cname = mangle(prefix, member)
@@ -20409,7 +20494,12 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		}
 		// A single-result method call `x.M()` carries its recorded result type,
 		// keyed by the receiver type's mangled method name.
-		if rct, ok := e.varType(recv); ok && e.isUserType(methodBaseType(rct)) {
+		// methodRecvCType rather than varType-plus-isUserType: an ARRAY variable has
+		// no C type at all -- its extents live in e.arrays and nowhere else -- so the
+		// pair answered no for one and `t := g.sum()` was "cannot infer a type for the
+		// declaration", while `var t int; t = g.sum()`, which asks nothing, worked. It
+		// is the same lookup the call itself dispatches through.
+		if rct, ok := e.methodRecvCType(recv); ok {
 			method := e.soleIdent(suffix[0].ast)
 			// The type's own method, or one promoted from an embedded field: both
 			// resolve to the C name it was declared under.

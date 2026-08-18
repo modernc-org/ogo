@@ -295,6 +295,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface element, is it the same defined type, and does its value fit. A
   type-elided element (`[]P{{1, 2}}`) names no type and is not this check's.
 
+- **A method may be called on an array ELEMENT** — `pool[1].sum()` over a
+  `[2]Row`, through a slice of them, with a pointer receiver, on one two indexes
+  in, and on a copy or a `range` value of one. An array of a defined array type is
+  resolved to its extents when the declaration is read — a `[2]Row` is a `[2][2]int`
+  by then — so the element's *name*, the only thing carrying its method set, was gone
+  before any walk reached the element. The shape now carries the element's name and
+  how many extents it accounts for, which is what tells `[2]Row` (one index reaches a
+  Row) from `[2][2]Row` (two do).
+
+  `t := pool[1].sum()` types too. Inferring a declaration from a method call on an
+  array receiver asked for a C type the receiver has not got, so it was *cannot infer
+  a type* — even for `t := g.sum()` on the array itself, where the call was fine.
+
 - **A deferred method on an ARRAY receiver no longer reads it at the return.**
   `defer g.show()` for a `type Row [3]int` g printed what g held at the *end* of the
   function, and so did `defer h.r.show()` for an array field. Go evaluates a deferred
