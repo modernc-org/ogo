@@ -8341,6 +8341,34 @@ func (e *emitter) soleFactorNode(ast []int32) (Node, bool) {
 // element that is itself a literal, which is C's own spelling for a nested
 // aggregate initializer anyway.
 func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
+	// A literal of an ARRAY type -- a defined one, `Row{1, 2}`, or the typedef minted
+	// for an unnamed one -- is not a struct's braces however alike the two read: its
+	// elements are indexed rather than named, and its rows nest. Sent through the
+	// struct walk, two things went wrong here and nowhere else, because the
+	// DECLARATION form of the same literal goes to emitArrayLitVar and was always
+	// right: an INDEXED literal came out as {0}, the struct walk having found no field
+	// of that name, and a nested row was refused as "a type-elided composite literal
+	// element is only supported for a struct element type yet".
+	//
+	// So `ch <- Row{1: 5}` sent zeros and `append(xs, Row{2: 7})` appended them, both
+	// silently, while `r := Row{1: 5}` was right -- the positions that hoist nothing
+	// to point at are exactly the ones that come here.
+	if a, isArr := e.namedArrays[name]; isArr {
+		values, length, ok := e.litPositions(lit)
+		if !ok {
+			return
+		}
+		if n, err := strconv.Atoi(a.bound); err == nil && length > n {
+			e.fail("too many values in %s literal: %s but the length is %s",
+				e.goArrayTypeName(a), countUnits(length, "value"), a.bound)
+			return
+		}
+		if !brace {
+			e.emit("(" + name + ")")
+		}
+		e.emitArrayValues(values, a)
+		return
+	}
 	values, fields, ok := e.litFieldValues(name, lit)
 	if !ok {
 		return

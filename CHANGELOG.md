@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A defined array type's literal is right where nothing declares a variable for
+  it.** `ch <- Row{1: 5}` sent ZEROS and `append(xs, Row{2: 7})` appended them —
+  silently, with a working binary — while `r := Row{1: 5}` was right all along. Such a
+  literal reads exactly like a struct's, a name and a brace, and in the positions that
+  hoist nothing to point at it went through the struct walk, which knows nothing about
+  indexes or rows; the declaration form goes to the array walk. A defined
+  *multi-dimensional* type was refused there outright, its rows reported as *a
+  type-elided composite literal element*. Both now take the array walk.
+
 - **A multiple assignment may move ARRAYS** — `table[i], table[j] = table[j], table[i]`,
   the swap every sort of a table of rows is written with, and `p, q := m[0], m[2]`,
   a field target, a literal value and a mixed list beside it. Every value of a

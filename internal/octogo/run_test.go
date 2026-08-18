@@ -5194,6 +5194,46 @@ func main() {
 		want: "1 3\n4 9\n0 77\n",
 	},
 	{
+		// A literal of a DEFINED array type, in the positions that declare no variable
+		// to hold it -- a channel send and an append. It reads exactly like a struct
+		// literal, a name and a brace, and went through the struct walk, which knows
+		// nothing about indexes or rows. So `ch <- Row{1: 5}` sent ZEROS and
+		// `append(xs, Row{2: 7})` appended them, silently and with a working binary,
+		// while `r := Row{1: 5}` was right all along -- the declaration form goes to
+		// the array walk, and the positions that hoist nothing to point at are exactly
+		// the ones that did not. A defined MULTI-dimensional type was refused outright
+		// there, its rows being "a type-elided composite literal element".
+		name: "a defined array type's literal where nothing declares it",
+		src: `type Row [3]int
+
+type Grid [2][2]int
+
+var ch chan Row
+
+var back [4]Row
+
+func send() { ch <- Row{1: 5} }
+
+func main() {
+	// An INDEXED literal of a defined array type, where nothing declares a variable
+	// to hold it: a channel send and an append.
+	go send()
+	r := <-ch
+	println(r[0], r[1], r[2])
+
+	xs := back[:0]
+	xs = append(xs, Row{2: 7})
+	xs = append(xs, Row{1, 2, 3})
+	println(xs[0][1], xs[0][2], xs[1][0])
+
+	// A literal of a defined MULTI-dimensional array type, whose rows nest.
+	g := Grid{{1, 2}, {3, 4}}
+	println(g[0][1], g[1][0])
+}
+`,
+		want: "0 5 0\n0 7 1\n2 3\n",
+	},
+	{
 		name: "an array literal returned",
 		src: `// The literal binds to a temporary of this frame, and the copy into the
 // caller's storage IS the return, so the frame outliving it is not in question.
