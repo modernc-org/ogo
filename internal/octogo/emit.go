@@ -2117,7 +2117,7 @@ type funcValueType struct {
 // funcSigCParts renders a Signature as the parts a function type is minted from.
 func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 	_, resTypes := e.cSig(sig)
-	paramTypes := e.cParamTypes(sig)
+	paramTypes, _ := e.cParamTypes(sig)
 	params := strings.Join(paramTypes, ", ")
 	if params == "" {
 		params = "void"
@@ -3064,7 +3064,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -3630,6 +3630,7 @@ type emitter struct {
 	funcSliceParams map[string][]string // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
 	funcVariadic    map[string]int      // same key -> the position of a "...T" parameter, for the pack a call has to build
 	funcArrayRet    map[string]arrDim   // same key -> the extents of an ARRAY result, handed back through a leading out parameter
+	funcArrayParams map[string][]arrDim // same key -> the extents of each ARRAY parameter, which its C type cannot carry: arrayParamCType is a pointer to the element, so a [3]int and a [2]int parameter are the same `int*`
 	// A function literal has no name, and C has no nested functions, so each one is
 	// LIFTED to a file-scope function of a minted name and the expression becomes
 	// that name. Collected while walking a body, so they can only be written out
@@ -4248,7 +4249,8 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 			e.fail("an interface method with more than one result is not supported yet")
 			return nil, false
 		}
-		add(ifaceMethod{name: name, res: res, params: e.cParamTypes(n.ast)})
+		params, _ := e.cParamTypes(n.ast)
+		add(ifaceMethod{name: name, res: res, params: params})
 	}
 	return methods, true
 }
@@ -5906,7 +5908,7 @@ func (e *emitter) collectResults(ast []int32) {
 			// skipped here so cSig is never asked about the array result.
 			e.funcRet[cname] = nil
 			e.funcSliceParams[cname] = e.paramSliceTypes(sig)
-			e.funcParams[cname] = e.cParamTypes(sig)
+			e.funcParams[cname], e.funcArrayParams[cname] = e.cParamTypes(sig)
 			return
 		}
 		if recv == nil {
@@ -5924,7 +5926,7 @@ func (e *emitter) collectResults(ast []int32) {
 		if _, at := e.variadicElem(sig); at >= 0 {
 			e.funcVariadic[cname] = at
 		}
-		e.funcParams[cname] = e.cParamTypes(sig)
+		e.funcParams[cname], e.funcArrayParams[cname] = e.cParamTypes(sig)
 		if len(resTypes) > 1 {
 			e.retStructNameOf(resTypes)
 		}
@@ -6732,7 +6734,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	if _, at := e.variadicElem(sig); at >= 0 {
 		e.funcVariadic[cname] = at
 	}
-	e.funcParams[cname] = e.cParamTypes(sig)
+	e.funcParams[cname], e.funcArrayParams[cname] = e.cParamTypes(sig)
 
 	type state struct {
 		locals                         map[string]string
@@ -7338,8 +7340,9 @@ func (e *emitter) cParamList(ast []int32) []string {
 // That is what a function-type typedef wants: the names are not part of the type,
 // so writing them would make `func(a int)` and `func(b int)` mint two typedefs for
 // what is one type.
-func (e *emitter) cParamTypes(sig []int32) []string {
+func (e *emitter) cParamTypes(sig []int32) ([]string, []arrDim) {
 	var out []string
+	var dims []arrDim
 	for n := range it(sig) {
 		if n.sym != ParameterList {
 			continue
@@ -7349,18 +7352,25 @@ func (e *emitter) cParamTypes(sig []int32) []string {
 				elem := e.cType(ta)
 				e.needSlice(elem)
 				out = append(out, sliceCName(elem))
+				dims = append(dims, arrDim{})
 				return
 			}
 			if a, ok := e.arrayDim(ta); ok {
+				// The extents are answered separately because the C type cannot carry
+				// them: an array parameter is a pointer to the element, so every
+				// [N]int parameter is the same `int*` and a call has nothing to check
+				// its argument against.
 				out = append(out, e.arrayParamCType(a))
+				dims = append(dims, a)
 				return
 			}
 			ct := e.cType(ta)
 			e.refuseArrayStructABI(ct, "parameter "+name)
 			out = append(out, ct)
+			dims = append(dims, arrDim{})
 		})
 	}
-	return out
+	return out, dims
 }
 
 // refuseArrayStructABI rejects passing or returning a struct that holds an array.
@@ -19056,10 +19066,42 @@ func (e *emitter) hoistStructCallArg(arg Node) (string, bool) {
 	return name, true
 }
 
+// checkArrayArgs refuses an argument whose array shape is not the parameter's. Go
+// rejects such a call, and an array parameter is a POINTER the callee memcpys the
+// parameter's own size out of -- an array parameter is a copy, as Go says -- so a
+// shorter argument was read past the end of, with the program running and printing a
+// wrong answer.
+//
+// It is the last position an array flows into that carried no shape check. The others
+// read the destination's extents off the destination; here they cannot be read off the
+// C type at all, arrayParamCType being a pointer to the element, so they are kept
+// beside it (funcArrayParams).
+//
+// An argument whose shape arrayShapeOf cannot read is passed, not refused, for the
+// reason checkArrayShape passes one: this is a check on what the program wrote down.
+func (e *emitter) checkArrayArgs(cname string, args []Node) {
+	dims := e.funcArrayParams[cname]
+	for i, arg := range args {
+		if i >= len(dims) || dims[i].bound == "" {
+			continue // not a parameter, or not an array one
+		}
+		a, ok := e.arrayShapeOf(arg.ast)
+		if !ok {
+			continue
+		}
+		if a.elem != dims[i].elem || a.declSuffix() != dims[i].declSuffix() {
+			e.fail("cannot use %s as %s in argument to %s",
+				e.goArrayTypeName(a), e.goArrayTypeName(dims[i]), cname)
+			return
+		}
+	}
+}
+
 func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	sliceParams := e.funcSliceParams[cname]
 	args := e.callArgExprs(callSuffix)
 	e.checkCrossArgs(cname, args, e.spreadCall(callSuffix))
+	e.checkArrayArgs(cname, args)
 	// A variadic callee takes one []T where the call wrote however many values.
 	// They are packed into an array of this frame, which is what Go allocates for
 	// and this target cannot -- so the lifetime rules see it as a slice literal's

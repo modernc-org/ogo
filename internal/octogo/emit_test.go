@@ -6334,6 +6334,103 @@ var g A
 	}
 }
 
+// TestEmitCArrayArgShape pins the last position an array flows into that carried no
+// shape check: an ARGUMENT. Go rejects each of these, and an array parameter is a
+// pointer the callee memcpys the parameter's OWN size out of, so a shorter argument
+// was read past the end of and the program printed a wrong answer.
+//
+// The extents cannot be read off the parameter's C type here -- every [N]int
+// parameter is the same `int*` -- which is why they had to be recorded beside it, and
+// why this position was the one left. A method's parameter is on the list because its
+// signature is walked by the same code and nothing said so.
+func TestEmitCArrayArgShape(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "a longer array",
+			src: `func use(a [2]int) int { return a[0] }
+
+var s = [3]int{1, 2, 3}
+
+func main() { println(use(s)) }
+`,
+			want: "cannot use [3]int as [2]int in argument to",
+		},
+		{
+			name: "a different element type",
+			src: `func use(a [2]int) int { return a[0] }
+
+var s = [2]uint8{1, 2}
+
+func main() { println(use(s)) }
+`,
+			want: "cannot use [2]uint8 as [2]int in argument to",
+		},
+		{
+			name: "a method's parameter",
+			src: `type T struct{ n int }
+
+func (t T) take(a [2]int) int { return a[1] + t.n }
+
+var s = [3]int{1, 2, 3}
+
+var t T
+
+func main() { println(t.take(s)) }
+`,
+			want: "cannot use [3]int as [2]int in argument to",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Fatalf("EmitC accepted an argument of the wrong shape:\n%s", buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+	// Every spelling the check must let through, including a multi-dimensional
+	// parameter and a defined array type where the unnamed one is declared.
+	accepts := `type Row [2]int
+
+type H struct{ f [2]int }
+
+func use(a [2]int) int { return a[0] + a[1] }
+
+func use2(m [2][2]int) int { return m[1][0] }
+
+var s = [2]int{1, 2}
+
+var r = Row{3, 4}
+
+var h = H{[2]int{5, 6}}
+
+var pool = [2][2]int{{7, 8}, {9, 10}}
+
+func mk() [2]int { return [2]int{11, 12} }
+
+func main() {
+	p := &s
+	println(use(s), use(r), use(h.f), use(pool[1]))
+	println(use(*p), use([2]int{13, 14}), use(mk()), use2(pool))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(accepts)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Errorf("EmitC refused an argument of the RIGHT shape: %v", err)
+	}
+}
+
 // TestEmitCLitElementRefusals pins what an aggregate element of a composite literal
 // will not take. An element C cannot put in an initializer is zeroed there and copied
 // in after the declaration, which needs two things: a value whose shape matches the
