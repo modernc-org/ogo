@@ -266,6 +266,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A Builder's `String()` view may no longer outlive its backing array.** A `Builder`
+  is a pointer into a backing array the caller owns, and `String()` hands that storage
+  out as a string — so one built over a *local* array was a view of a dead frame the
+  moment the function returned. `g = sb.String()` stored it in a package variable and
+  printed the frame's leftovers; returning it was the same. Both are now refused, with
+  the message naming the local whose storage it is, exactly as a slice of a local is.
+
+  What is counted is the *provenance*, not the type: a string that came out of a
+  Builder built over frame storage. An ordinary string — a field, a constant, a
+  method's result — carries no reference and is untouched, and a Builder over a
+  package-level or caller-supplied backing hands its view out freely, which is the
+  idiom the type exists for.
+
 - **A package ARRAY variable may be initialized by anything a local can be** —
   `var d = mk()` for a call's result, `var d = src` for another array, `var d = h.f`
   for a field, a method's result, and `var d = *p`, each with or without the type

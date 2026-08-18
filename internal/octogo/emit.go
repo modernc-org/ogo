@@ -18134,7 +18134,12 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 // carrying it out -- `n := len(a[:])` is an int -- so the type is what says whether
 // there is anything to carry.
 func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
-	if _, isStruct := e.structs[methodBaseType(ctype)]; !isStruct && !e.isPointer(ctype) {
+	// A BUILDER is considered too. It is a pointer into a backing array the caller
+	// owns -- that is the whole point of it -- so one built over a LOCAL array holds
+	// a reference to this frame as surely as a struct with a slice field does, and
+	// it is not in e.structs, being a type the compiler supplies rather than one the
+	// program declares.
+	if _, isStruct := e.structs[methodBaseType(ctype)]; !isStruct && !e.isPointer(ctype) && ctype != "ogo_builder" {
 		return
 	}
 	if r, ok := e.frameRefOf(initExpr); ok {
@@ -22463,6 +22468,27 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// the variable mark already costs -- a second slice field holding package storage
 	// reads as suspect too -- and it costs nothing on a scalar field, which cannot
 	// carry a reference at all.
+	// A method CALL on a marked holder that hands the reference out: `sb.String()`
+	// is a VIEW of the Builder's backing, so it reaches whatever that backing does.
+	// Stored in a package variable it printed the frame's leftovers -- silently, the
+	// one thing these rules exist to stop.
+	//
+	// carriesReference deliberately does not count a STRING, because an ordinary
+	// string field carries no reference and counting it would refuse a great many
+	// structs. What is counted here is not the type but the PROVENANCE: a string that
+	// came out of a marked holder, which an ordinary one never does.
+	if fac, isFac := e.soleFactorNode(ast); isFac {
+		kids := slices.Collect(it(fac.ast))
+		if base, steps, isCall := e.factorCall(kids); isCall && len(steps) == 2 &&
+			steps[0].sym == Selector && steps[1].sym == CallSuffix {
+			if origin := e.frameHolder[base]; origin != "" {
+				if ct, okc := e.callResultCType(base, steps); okc &&
+					(ct == cString || e.carriesReference(ct)) {
+					return readHolderRef(e.f.exprSource(fac), origin), true
+				}
+			}
+		}
+	}
 	if fac, isFac := e.soleFactorNode(ast); isFac {
 		if base, steps, isChain := e.factorAccessChain(slices.Collect(it(fac.ast))); isChain {
 			if origin := e.frameHolder[base]; origin != "" {

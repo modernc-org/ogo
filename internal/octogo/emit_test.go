@@ -7421,6 +7421,152 @@ func (q *Quad) Area() int { return q.W * q.H }
 	}
 }
 
+// TestEmitCBuilderViewEscape pins the lifetime of a Builder's String() VIEW. A
+// Builder is a pointer into a backing array the caller owns, and String() hands that
+// storage out as a string -- so one built over a LOCAL array must not outlive the
+// frame, exactly as a slice of a local must not.
+//
+// It did. `g = sb.String()` for a local backing stored a header over a dead frame in
+// a package variable and printed the frame's leftovers, silently, which is the one
+// thing these rules exist to stop.
+//
+// carriesReference deliberately does not count a STRING -- an ordinary string field
+// carries no reference and counting it would refuse a great many structs -- so what
+// is counted here is the PROVENANCE: a string that came out of a marked holder, which
+// an ordinary one never does. The accepted half is what holds that distinction: a
+// package backing crosses freely, and so does an ordinary string field of a struct
+// that happens to hold a frame slice as well.
+func TestEmitCBuilderViewEscape(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "stored in a package variable",
+			src: `var g string
+
+func build() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("hi")
+	g = sb.String()
+}
+
+func main() {
+	build()
+	println(g)
+}
+`,
+			want: "cannot store sb.String()",
+		},
+		{
+			name: "returned",
+			src: `func build() string {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("hi")
+	return sb.String()
+}
+
+func main() { println(build()) }
+`,
+			want: "cannot return sb.String()",
+		},
+		// A backing that outlives the call hands its view out freely.
+		{
+			name: "package backing",
+			src: `var back [8]byte
+
+var g string
+
+func build() string {
+	sb := NewBuilder(back[:])
+	sb.WriteString("hi")
+	g = sb.String()
+	return sb.String()
+}
+
+func main() { println(build(), g) }
+`,
+		},
+		{
+			name: "caller-owned backing",
+			src: `var back [8]byte
+
+var g string
+
+func format(buf []byte) string {
+	sb := NewBuilder(buf)
+	sb.WriteString("x")
+	return sb.String()
+}
+
+func main() {
+	g = format(back[:])
+	println(g)
+}
+`,
+		},
+		// Read and compared where it stands, which never crosses anything.
+		{
+			name: "used locally",
+			src: `func main() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("ok")
+	if sb.String() == "ok" {
+		println(sb.String(), sb.Len())
+	}
+}
+`,
+		},
+		// An ordinary string field of a struct that also holds a frame slice: not a
+		// view of anything, and refusing it is the over-refusal this avoids.
+		{
+			name: "ordinary string field beside a frame slice",
+			src: `type H struct {
+	name string
+	buf  []byte
+}
+
+var g string
+
+func build() {
+	var back [8]byte
+	h := H{"tag", back[:]}
+	g = h.name
+}
+
+func main() {
+	build()
+	println(g)
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a view of a dead frame; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {
 		name string
