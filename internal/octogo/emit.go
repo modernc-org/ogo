@@ -16398,6 +16398,40 @@ func (e *emitter) spreadAppendArg(elem string, args []Node) (isStr, ok bool) {
 	return false, false
 }
 
+// checkAppendBacking refuses appending a value that reaches this frame's storage into
+// a slice whose own backing outlives the frame.
+//
+// An append writes the value INTO the destination's backing array, so the reference
+// lives exactly as long as that array does. Where the destination is a package-level
+// or caller-supplied backing, that is longer than the frame -- the same error storing
+// into a package variable is, arriving through a door that writes no variable name.
+// `gs = append(gs, a[:])` and `boxes = append(boxes, Box{a[:]})` both left a header
+// over a dead frame in storage that outlived it, silently.
+//
+// Appending into a backing that is ITSELF this frame's is fine: the two die together,
+// which is what a scratch list built in a function is.
+func (e *emitter) checkAppendBacking(elem string, spread bool, args []Node) {
+	if len(args) < 2 {
+		return
+	}
+	if _, frame := e.sliceBackingIsFrame(args[0].ast); frame {
+		return
+	}
+	// A SPREAD copies the source's ELEMENTS, not the header naming them, so
+	// `append(gs, a[:]...)` over an int element stores no reference to a at all --
+	// and refusing it was this check's first answer. What a spread can carry is a
+	// reference held INSIDE an element, so it is asked only where the element type
+	// can hold one.
+	if spread && !e.carriesReference(elem) {
+		return
+	}
+	if n, r, ok := e.frameRefIn(args[1:]); ok {
+		e.fail("%v: cannot append %s: the slice it is appended to outlives this function, "+
+			"and its storage does not; %s",
+			e.f.tok(n.Pos()).Position(), r.what, r.advice())
+	}
+}
+
 // emitAppend emits the single-result append `append(s, x, ...)` through the trapping
 // ogo_append_<T> helper (which panics if the slice is already at cap). Several values
 // nest the calls -- append(s, a, b, c) becomes
@@ -16408,6 +16442,7 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	if !ok {
 		return
 	}
+	e.checkAppendBacking(elem, e.spreadCall(callSuffix), args)
 	e.needPanic()
 	if e.spreadCall(callSuffix) {
 		isStr, ok := e.spreadAppendArg(elem, args)

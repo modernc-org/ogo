@@ -353,6 +353,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **An APPEND may no longer put a frame reference into a longer-lived slice.**
+  `gs = append(gs, a[:])` for a local `a` and a package-backed `gs` left a header over
+  a dead frame in storage that survives it — through a door that writes no variable
+  name, so the store check never saw it. The same for the address of a local, and for
+  a struct holding either.
+
+  Appending into a backing that is *itself* this frame's is unaffected: the two die
+  together, which is what a scratch list built in a function is. So is a spread of
+  scalars, `append(gs, a[:]...)` — it copies the source's elements, not the header
+  naming them, so nothing of the local survives the call.
+
+
 - **A frame reference nested in a composite LITERAL no longer escapes.** `Box{a[:]}`
   is a struct holding a slice of this frame, so handing the struct on hands the slice
   on — and every door let it through: stored in a package variable, returned, sent on

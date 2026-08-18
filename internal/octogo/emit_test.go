@@ -7582,6 +7582,170 @@ func main() {
 // arbitrary expression may mention a frame reference without the value carrying it
 // out -- `len(a[:])` is an int -- and a literal over PACKAGE or caller-supplied
 // storage carries nothing that dies.
+// TestEmitCAppendFrameRefEscape pins what an APPEND may put into a slice. An append
+// writes the value INTO the destination's backing array, so the value lives exactly
+// as long as that array does -- and where the backing outlives the frame, appending a
+// reference to the frame leaves a header over dead storage in storage that survives
+// it. `gs = append(gs, a[:])` did, silently, through a door that writes no variable
+// name for the store check to see.
+//
+// Appending into a backing that is ITSELF this frame's is fine and must stay so: the
+// two die together, which is what a scratch list built in a function is.
+//
+// The SPREAD form is the line worth pinning. It copies the source's ELEMENTS, not the
+// header naming them, so `append(gs, a[:]...)` over an int element stores no
+// reference to a at all -- the first cut of this check refused it, which is an
+// over-refusal of ordinary code. It is asked only where the element type can hold a
+// reference.
+func TestEmitCAppendFrameRefEscape(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "a slice of a local",
+			src: `var back [2][]int
+
+var gs [][]int
+
+func leak() {
+	var a [4]int
+	gs = back[:0]
+	gs = append(gs, a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot append a slice backed by local a",
+		},
+		{
+			name: "the address of a local",
+			src: `var back [2]*int
+
+var gs []*int
+
+func leak() {
+	var x int
+	gs = back[:0]
+	gs = append(gs, &x)
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot append the address of local variable x",
+		},
+		{
+			name: "a struct holding a slice of a local",
+			src: `type Box struct {
+	d []int
+}
+
+var back [2]Box
+
+var boxes []Box
+
+func leak() {
+	var a [4]int
+	boxes = back[:0]
+	boxes = append(boxes, Box{a[:]})
+}
+
+func main() {
+	leak()
+	println(len(boxes))
+}
+`,
+			want: "cannot append a slice backed by local a",
+		},
+		// A backing that dies with the value carries it freely.
+		{
+			name: "into a backing of this frame",
+			src: `func main() {
+	var back [2][]int
+	var a [4]int
+	s := back[:0]
+	s = append(s, a[:])
+	println(len(s), len(s[0]))
+}
+`,
+		},
+		// Scalars carry nothing, however long the backing lives.
+		{
+			name: "scalars into a package backing",
+			src: `var back [4]int
+
+var gs []int
+
+func main() {
+	gs = back[:0]
+	gs = append(gs, 1, 2, 3)
+	println(len(gs))
+}
+`,
+		},
+		// A SPREAD copies elements. An int element carries no reference to the array
+		// it was copied out of, so this is ordinary code and must compile.
+		{
+			name: "spread of a local, scalar elements",
+			src: `var back [8]int
+
+var gs []int
+
+func fill() {
+	a := [3]int{1, 2, 3}
+	gs = back[:0]
+	gs = append(gs, a[:]...)
+}
+
+func main() {
+	fill()
+	println(len(gs))
+}
+`,
+		},
+		{
+			name: "spread of a string",
+			src: `var back [16]byte
+
+var bs []byte
+
+func main() {
+	bs = back[:0]
+	bs = append(bs, "hi"...)
+	println(len(bs))
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted an append of a frame reference; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCLitFrameRefEscape(t *testing.T) {
 	const decls = `type Box struct {
 	d []int
