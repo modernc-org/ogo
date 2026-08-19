@@ -18,6 +18,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **Unsigned arithmetic with a constant on the LEFT gave signed answers on the
+  board.** `4 * u` for a `uint32` u was typed *signed* by the C backend — the
+  product's value was right, so nothing looked wrong until something signedness-
+  sensitive read it, and then `4 * u / 3` returned 3937053355 where Go returns
+  1073741824, `4 * u >> 1` returned 3758096384 where Go returns 1610612736, and
+  `v >= 4*u` answered true where Go answers false. Measured on a P2-EDGE; the host
+  C compiler is correct, so the host tests said nothing.
+
+  Writing the same expression the other way round, `u * 4`, was right all along —
+  which is why it went unnoticed, and why an operand order is worth probing both
+  ways whenever a type can be lost. A constant operand of an unsigned level is now
+  spelled unsigned, `4u * u`, which settles the shapes reordering could not: `100 -
+  u` was wrong the same way.
+
 ### Behaviour changes
 
 - **A float constant that is not whole is refused where an integer is wanted.**

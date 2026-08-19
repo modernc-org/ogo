@@ -1545,6 +1545,46 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// A backend defect, measured on a P2-EDGE: flexcc types `4 * u` -- a signed
+		// constant on the LEFT of an unsigned operand -- as SIGNED. The product's
+		// VALUE is right, so nothing looks wrong until a signedness-sensitive
+		// operation reads it, and then a division, a right shift and an ordering
+		// comparison each take the signed branch and answer wrongly.
+		//
+		// The same expression written the other way round, `u * 4`, was right all
+		// along. That is why it went unnoticed, and it is the reason to probe an
+		// operand order both ways whenever a type can be lost.
+		//
+		// The emitter now spells a constant operand of an unsigned level unsigned,
+		// `4u * u`, which settles the non-commutative shapes too -- a subtraction
+		// cannot be fixed by reordering.
+		name: "unsigned arithmetic with a constant on the left",
+		src: `func main() {
+	var u uint32 = 0x30000000
+	var v uint32 = 0x10000000
+
+	// Each of these read the signed branch of an operation the constant had
+	// wrongly typed.
+	println(4 * u / 3)
+	println(4 * u >> 1)
+	println(v >= (4 * u))
+
+	// The operands the other way round, which was always right.
+	println(u * 4 / 3)
+	println(u * 4 >> 1)
+
+	// A subtraction, which reordering could not have fixed.
+	d := 100 - u
+	println(d >> 1)
+
+	// Signed arithmetic means what it always did.
+	var i int = 7
+	println(4*i/3, -2*i, 100-i)
+}
+`,
+		want: "1073741824\n1610612736\nfalse\n1073741824\n1610612736\n1744830514\n9 -14 93\n",
+	},
+	{
 		// The accepting side of the block-lifetime rule, which exists because Go's
 		// loop variable is per ITERATION (since 1.22) and a body-scoped local has
 		// been per iteration since 1.0. Keeping a reference to either past the

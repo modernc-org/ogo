@@ -17867,6 +17867,59 @@ func isSignedIntCType(ct string) bool {
 // isIntCType reports whether ct is one of the integer C types an OctoGo numeric
 // maps to. It is the printable-integer set: a named type over int (its own typedef
 // name) is not in it, so a slice of one still fails honestly.
+// isUnsignedCType reports whether a C type name is an unsigned integer one.
+func isUnsignedCType(ct string) bool {
+	switch ct {
+	case "unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "uintptr_t":
+		return true
+	}
+	return false
+}
+
+// unsignedLevel reports whether an arithmetic level computes in an UNSIGNED type,
+// which decides how a constant operand of it must be spelled -- see unsignedLitC.
+func (e *emitter) unsignedLevel(ast []int32) bool {
+	ct, ok := e.inferCType(ast)
+	return ok && isUnsignedCType(ct)
+}
+
+// unsignedLitC renders one operand of an unsigned arithmetic level as an UNSIGNED C
+// literal, and reports false for an operand that is not a bare integer literal.
+//
+// It exists for a backend defect, measured on a P2-EDGE. flexcc types `4 * u` --
+// a signed constant on the LEFT of an unsigned operand -- as SIGNED, though the
+// product's value is right, and every signedness-sensitive operation downstream then
+// takes the signed branch:
+//
+//	4 * u / 3     3937053355, where Go and gcc say 1073741824
+//	4 * u >> 1    3758096384, where they say 1610612736
+//	v >= 4 * u    true, where they say false
+//
+// Writing the constant unsigned settles it, and settles the non-commutative shapes
+// with it: `100 - u` was wrong the same way and cannot be fixed by reordering.
+// `u * 4` -- the unsigned operand first -- was right all along, which is why this
+// went unnoticed: the two spellings of one expression disagreed.
+//
+// A literal that already carries a suffix is left alone; cIntLit gives one to a
+// value too wide for a signed long long, which is unsigned already.
+func (e *emitter) unsignedLitC(n Node) (string, bool) {
+	tok, ok := e.soleToken(n.ast)
+	if !ok || e.f.ch(tok) != INT {
+		return "", false
+	}
+	lit := cIntLit(e.src(tok))
+	if len(lit) != 0 && !isCDigit(lit[len(lit)-1]) {
+		return lit, true // already suffixed, so already unsigned
+	}
+	return lit + "u", true
+}
+
+// isCDigit reports whether c ends a C integer literal's digits rather than its
+// suffix. A hex literal's digits include the letters a-f.
+func isCDigit(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+}
+
 func isIntCType(ct string) bool {
 	switch ct {
 	case "int", "unsigned", "int8_t", "int16_t", "int32_t", "int64_t",
@@ -21564,6 +21617,13 @@ func (e *emitter) emitStringCompare(kids []Node) bool {
 // Non-string operands and every other operator emit unchanged, so a chain with no
 // string comparison is identical to emitting the kids in order.
 func (e *emitter) emitKidsStringCompare(kids []Node) {
+	// Whether THIS level computes unsigned, which decides how a constant operand of
+	// it is spelled (see unsignedLitC). Read from the kid list rather than passed
+	// in: a logical or relational chain infers bool and so answers no, and every
+	// arithmetic level answers for itself, which is what keeps a nested one from
+	// inheriting a verdict that is not about it.
+	ct, ctOK := e.inferNodes(kids)
+	unsignedLevel := ctOK && isUnsignedCType(ct)
 	for i := 0; i < len(kids); {
 		if !e.checkCompareAt(kids, i) {
 			return
@@ -21593,7 +21653,11 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 			i += 3
 			continue
 		}
-		e.emitExprNode(kids[i])
+		if lit, ok := e.unsignedLitC(kids[i]); unsignedLevel && ok {
+			e.emit(lit)
+		} else {
+			e.emitExprNode(kids[i])
+		}
 		i++
 	}
 }
@@ -21707,6 +21771,7 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit("(" + narrow + ")")
 		}
 		e.emit("(")
+		unsignedTerm := e.unsignedLevel(n.ast)
 		guardNext, complementNext := false, false
 		for _, c := range kids {
 			switch {
@@ -21753,7 +21818,11 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emitExprNode(c)
 				e.emit(")")
 			default:
-				e.emitExprNode(c)
+				if lit, ok := e.unsignedLitC(c); unsignedTerm && ok {
+					e.emit(lit) // see unsignedLitC
+				} else {
+					e.emitExprNode(c)
+				}
 				guardNext = false
 			}
 		}
