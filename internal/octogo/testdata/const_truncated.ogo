@@ -1,0 +1,77 @@
+// A float constant is representable in an integer type only when it is WHOLE, so
+// 2.0 converts and 2.5 does not. Go refuses the second, and this refused it in only
+// one position -- a constant declaration -- while every other silently truncated to
+// the integer part: a variable declaration, an assignment, a return, an argument, a
+// composite literal element, a channel send and an explicit conversion.
+//
+// The whole-valued forms are unaffected, and so is a run-time conversion of a float
+// VARIABLE, which truncates in Go too.
+
+type S struct{ n int }
+
+// ERROR "constant 1.5 truncated to int"
+const declared int = 1.5
+
+// ERROR "constant 2.5 truncated to int"
+var pkgVar int = 2.5
+
+var ch chan int
+
+func take(n int) int { return n }
+
+func result() int {
+	// ERROR "constant 3.5 truncated to int"
+	return 3.5
+}
+
+func positions() {
+	// ERROR "constant 4.5 truncated to int"
+	var v int = 4.5
+	// ERROR "constant 5.5 truncated to int"
+	v = 5.5
+	// ERROR "constant 6.5 truncated to int"
+	_ = take(6.5)
+	// ERROR "constant 7.5 truncated to int"
+	_ = S{7.5}
+	// ERROR "constant 8.5 truncated to int"
+	_ = []int{8.5}
+	// ERROR "constant 9.5 truncated to int"
+	_ = [1]int{9.5}
+	// ERROR "constant 10.5 truncated to int"
+	ch <- 10.5
+	// ERROR "constant 11.5 truncated to int32"
+	_ = int32(11.5)
+	_ = v
+}
+
+// A float constant that IS whole converts wherever an integer constant does, and a
+// float target takes a float constant as it always did.
+const wholeConst int = 3.0
+
+var wholePkg int = 2.0
+
+func whole() {
+	var v int = 4.0
+	v = 7.0
+	_ = take(5.0)
+	_ = S{10.0}
+	_ = []int{12.0}
+	_ = int32(6.0)
+	ch <- 11.0
+	var big int64 = 3.0
+	var f float64 = 1.5
+	var g float32 = 2.5
+	_, _, _, _ = v, big, f, g
+}
+
+// A constant sent must fit the element type too, which the send never used to ask.
+var small chan int8
+
+func sends() {
+	// ERROR "constant 200 overflows int8"
+	small <- 200
+
+	small <- 100
+}
+
+func run() {}

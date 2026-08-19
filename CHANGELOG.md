@@ -18,6 +18,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Behaviour changes
+
+- **A float constant that is not whole is refused where an integer is wanted.**
+  `var n int = 1.5` compiled and stored 1; so did `n = 1.5`, `return 1.5`,
+  `take(1.5)`, `S{1.5}`, `[]int{1.5}`, `ch <- 1.5` and `int32(2.5)` — every position
+  a constant meets a type except a constant declaration, which was the one that
+  already refused it. Go accepts a constant only where it is *representable*, and
+  1.5 is not an int. `2.0` is whole and still converts wherever an integer constant
+  does, and truncating a float *variable*, `int(x)`, is a run-time conversion that
+  is legal and unchanged.
+
+  Found by writing an ordinary control program; the compiler's own test corpus
+  contained `println(int(3.75))`, which Go rejects — the golden had been written
+  from the implementation and agreed with it.
+
+- **A constant SENT on a channel is range-checked.** `ch <- 200` on a `chan int8`
+  stored −56 and `ch <- 1.5` on a `chan int` stored 1, both silently. The send was
+  the one position that never asked whether the value fits the element type, though
+  an assignment, an argument and a return all did.
+
 ### Language
 
 - **An integer constant may be RETURNED as a float** — `return 0` from a `float64`

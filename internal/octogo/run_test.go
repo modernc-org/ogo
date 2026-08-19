@@ -2345,7 +2345,12 @@ func main() {
 	b := 0.5
 	println(a+b, a-b, a*b, a/b)
 	println(sq(3.0), 10.0/4.0)
-	println(int(3.75), float64(9)/2.0)
+
+	// Truncation is a RUN-TIME conversion, of a variable. Written as a constant,
+	// int(3.75) is refused -- Go's rule is that a constant converts only where it
+	// is representable in the target, and this case used to spell it that way.
+	t := 3.75
+	println(int(t), float64(9)/2.0)
 	var f float32 = 1.5
 	println(f * 2.0)
 	println(-1.5 + 0.5)

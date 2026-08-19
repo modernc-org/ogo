@@ -5110,6 +5110,13 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed bool, va
 		f.checkImplements(s, elemName.Src(), valNode, "send")
 		f.checkDefinedType(s, elemName.Src(), valNode, "send")
 	}
+	// A constant sent must fit the element type, as one must fit a variable it is
+	// assigned to or a parameter it is passed to. The send was the position that
+	// never asked: `ch <- 200` on a chan int8 wrapped to -56 and `ch <- 1.5` on a
+	// chan int truncated to 1, both silently, where Go refuses each.
+	if hasElem {
+		f.checkValueOverflow(s, sizedTarget(elem, Token{}), valNode)
+	}
 	vk, vok := f.exprType(s, valNode)
 	if !hasElem || !vok {
 		return
@@ -9041,6 +9048,16 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 				f.err(callee.Position(), "a string conversion needs allocation, which the target does not have")
 			}
 		}
+		// A conversion to an INTEGER type takes a float constant only when it is
+		// whole, `int32(2.0)` and not `int32(2.5)`. The constant fold knows that and
+		// says so -- but it runs only where a CONSTANT is being declared, so the
+		// same conversion written in an expression, in a `:=` or in a var
+		// initializer truncated silently. specs.go had said it was refused.
+		if len(args) == 1 {
+			if _, _, isInt := intKindRange(d.Kind()); isInt {
+				f.checkValueOverflow(s, sizedTarget(d.Kind(), callee), args[0])
+			}
+		}
 	case *VarDeclaration:
 		// A variable of a function type holds a function, so calling it is a call --
 		// checked against the type's signature, exactly as a named function's call is
@@ -11419,22 +11436,82 @@ func (f *File) checkConstOverflow(s *Scope, cs *ConstSpecNode, pos token.Positio
 	if !pos.IsValid() {
 		pos = cs.Name.Position()
 	}
-	f.reportOverflow(pos, uc.cv, k, id.Name.Src())
+	cv, ok := f.wholeConst(pos, uc.cv, k, id.Name.Src())
+	if !ok {
+		return
+	}
+	f.reportOverflow(pos, cv, k, id.Name.Src())
 }
 
 // checkValueOverflow reports a constant value used where the sized integer type
 // dst is required -- a var initializer, an assignment right-hand side, or a call
 // argument -- whose value does not fit dst, e.g. "var x int8 = 200" -> "constant
 // 200 overflows int8". n is the source value, already name-checked by its caller;
-// constValue folds it only to read the value. A non-integer target, a
-// non-constant n, or a non-integer constant is left alone.
+// the fold serves only to read the value. A non-integer target, or a non-constant n,
+// is left alone; a float constant is checked for being whole first.
 func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
 	if _, _, ok := intKindRange(dst.kind); !ok {
 		return
 	}
-	if cv, ok := f.constValue(s, n); ok {
-		f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
+	cv, ok := f.constNumeric(s, n)
+	if !ok {
+		return
 	}
+	cv, ok = f.wholeConst(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
+	if !ok {
+		return
+	}
+	f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
+}
+
+// wholeConst reduces a numeric constant to the integer value an INTEGER target
+// requires, and reports the float that has no such value: 2.0 converts and 2.5 does
+// not, which is Go's rule that a constant converts only where it is representable.
+// ok is false when it reported, so the caller stops rather than range-checking a
+// value it has already refused.
+//
+// A non-integer target, or a constant that is already an integer, passes through --
+// this is only about the float meeting an integer, which is the case every position
+// but one used to truncate silently.
+func (f *File) wholeConst(pos token.Position, cv constant.Value, kind Kind, name string) (constant.Value, bool) {
+	if _, _, isInt := intKindRange(kind); !isInt || cv == nil || cv.Kind() != constant.Float {
+		return cv, true
+	}
+	whole := constant.ToInt(cv)
+	if whole.Kind() != constant.Int {
+		f.err(pos, "constant %s truncated to %s", cv, name)
+		return nil, false
+	}
+	return whole, true
+}
+
+// constNumeric folds an already name-checked expression to its numeric constant
+// value, an integer or a FLOAT one. It answered for an integer alone while the range
+// checks were all it served; whether a float constant is representable in an integer
+// type is a different question, and needs to see the float to refuse 1.5 and accept
+// 2.0.
+//
+// The diagnostics the fold produces are discarded: n is analysed by its caller, so
+// anything the fold would add here -- including the "is not a constant" it emits for
+// a run-time operand, which is legal in these positions -- is not this check's to
+// report. A file's bodies are checked serially, so trimming the error list back is
+// safe. constArgValue is the variant that must NOT trim; see it for why.
+func (f *File) constNumeric(s *Scope, n Node) (constant.Value, bool) {
+	n0 := len(f.errList)
+	e := f.expression(s, n)
+	f.errList = f.errList[:n0]
+	if e == nil {
+		return nil, false
+	}
+	uc, ok := e.Value().(constVal)
+	if !ok || uc.cv == nil {
+		return nil, false
+	}
+	switch uc.cv.Kind() {
+	case constant.Int, constant.Float:
+		return uc.cv, true
+	}
+	return nil, false
 }
 
 // checkInferredOverflow reports a constant initializer that does not fit the type
@@ -11483,19 +11560,12 @@ func (f *File) reportOverflow(pos token.Position, cv constant.Value, kind Kind, 
 	}
 }
 
-// constValue folds an already name-checked expression to its integer constant
-// value for a range check, returning ok == false when it is not a known integer
-// constant (a variable, a call, a receive, or a non-integer or ill-formed
-// constant). The fold serves only to read the value: n is analysed by its caller,
-// so any diagnostic the fold would add here -- including the "is not a constant"
-// the folder emits for a run-time operand, which is legal in these positions --
-// is discarded. A file's bodies are checked serially, so trimming its error list
-// back is safe.
 // constArgValue folds a conversion's operand to an integer constant, KEEPING the
 // diagnostics the fold itself produced. A constant that overflows a type it is
 // explicitly converted to is reported by that conversion and nowhere else, so
-// constValue's unconditional trimming swallows it: `string(rune(1 << 40))` became a
-// legal program printing U+FFFD, where Go rejects the rune conversion.
+// the unconditional trimming constNumeric does would swallow it: `string(rune(1 <<
+// 40))` became a legal program printing U+FFFD, where Go rejects the rune
+// conversion.
 //
 // The trim is kept for the case it was written for -- an operand that is NOT a
 // constant draws an "is not a constant" from the folder, and a run-time operand is
@@ -11513,20 +11583,6 @@ func (f *File) constArgValue(s *Scope, n Node) (constant.Value, bool) {
 		return nil, false
 	}
 	return cv, true
-}
-
-func (f *File) constValue(s *Scope, n Node) (constant.Value, bool) {
-	n0 := len(f.errList)
-	e := f.expression(s, n)
-	f.errList = f.errList[:n0]
-	if e == nil {
-		return nil, false
-	}
-	uc, ok := e.Value().(constVal)
-	if !ok || uc.cv == nil || uc.cv.Kind() != constant.Int {
-		return nil, false
-	}
-	return uc.cv, true
 }
 
 // sizedTarget builds the overflow-report descriptor for a var or assignment

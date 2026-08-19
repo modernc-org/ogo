@@ -374,7 +374,8 @@
 //     "const one = int32(1) << 16" is a constant expression and may be used
 //     wherever one is, an array bound included. The value must be representable in
 //     the target type ("int8(200)" overflows) and a float converted to an integer
-//     type must be whole ("int32(2.5)" is truncated, and refused).
+//     type must be whole ("int32(2.5)" is truncated, and refused, in every position
+//     the conversion may be written).
 //
 // # Variables and Memory Scoping
 //
@@ -470,6 +471,15 @@
 //   - A conversion in a constant expression makes the constant TYPED, and it types
 //     what it is combined with: with "const one = int32(1) << 16", "50 * one" is an
 //     int32 and "scale := 50 * one" declares one.
+//   - An untyped constant is taken by a context only where it is REPRESENTABLE
+//     there, so a value too large for the type is refused ("var x int8 = 200" is
+//     "constant 200 overflows int8") and so is a float that is not whole ("var n int
+//     = 1.5" is "constant 1.5 truncated to int"). 2.0 is whole and converts wherever
+//     an integer constant does. The rule is asked in every position a constant meets
+//     a type: a variable or constant declaration, an assignment, a return, an
+//     argument, a composite literal's element, a channel send and an explicit
+//     conversion. Truncating a float is a RUN-TIME conversion of a variable,
+//     "int(x)", which is legal and truncates as Go does.
 //
 // A floating-point type represents the set of IEEE-754 values: float32 and
 // float64. Float literals, arithmetic, comparison, and conversion to and from the
