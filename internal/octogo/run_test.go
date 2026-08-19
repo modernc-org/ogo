@@ -1622,6 +1622,11 @@ func (p P) Sum() int {
 	return p.x + p.y
 }
 
+func (p *P) Bump() int {
+	p.x++
+	return p.x
+}
+
 func mk(n int) Fix {
 	return Fix(n)
 }
@@ -1639,10 +1644,21 @@ func main() {
 	d := x - y
 	println(d.Int())
 	p := &P{3, 4}
-	println(p.Sum(), (*p).Sum())
+	println(p.Sum(), (*p).Sum(), (p).Sum())
+
+	// The parenthesised expression may itself be a POINTER. A value method takes
+	// what it points at, a pointer method takes it as it stands -- and the call is
+	// typed by the METHOD's result, not by the address it is called on.
+	v := P{1, 2}
+	println((&v).Sum(), (&P{5, 6}).Sum(), (&P{5, 6}).Bump())
+
+	// Left to right, which needs the effect analysis to see this call shape: the
+	// second of these changes what the third reads.
+	w := P{1, 2}
+	println((&w).Sum(), (&w).Bump(), (&w).Sum())
 }
 `,
-		want: "2\n12\n24\n6\n5 9 3\n2\n7 7\n",
+		want: "2\n12\n24\n6\n5 9 3\n2\n7 7 7\n3 11 6\n3 2 4\n",
 	},
 	{
 		// A backend defect, measured on a P2-EDGE: flexcc types `4 * u` -- a signed

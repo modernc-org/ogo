@@ -41,9 +41,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   was accepted while the plain spelling drew *this form is not supported yet*. It is
   how fixed-point arithmetic reads, which is how this was found.
 
-  The receiver needs no name: a value receiver is passed by value, so the expression
-  is the argument. A *pointer* method is refused, as Go refuses it — the expression
-  is not addressable.
+  The expression may itself be a POINTER, `(&P{5, 6}).Sum()`: a value method takes
+  what it points at and a pointer method takes it as it stands, and the call is
+  typed by the *method's* result rather than by the address it is called on. A
+  pointer method on a non-pointer expression is refused, as Go refuses it — there
+  is nothing to take the address of. Arguments are still evaluated left to right,
+  which needed the effect analysis to learn this call shape.
 
 - **`p2.WaitUntil` waits until the counter REACHES a value**, where `WaitCycles`
   waits a number of cycles. That is the difference between a loop that keeps time

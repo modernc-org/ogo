@@ -8450,6 +8450,14 @@ func (e *emitter) exprHasEffect(ast []int32) bool {
 			if recv, _, isCall := e.factorCall(slices.Collect(it(n.ast))); isCall && !e.pureCall(recv) {
 				return true
 			}
+			// A method called on a PARENTHESISED expression is a call like any
+			// other, and factorCall does not see it -- that one wants a bare
+			// identifier for a base. Without this the arguments of
+			// `println((&v).Sum(), (&v).Bump())` were left to C's unspecified
+			// order, and came out right to left.
+			if _, _, isParenCall := e.parenMethodSteps(slices.Collect(it(n.ast))); isParenCall {
+				return true
+			}
 			if e.exprHasEffect(n.ast) {
 				return true // its arguments may still have effects
 			}
@@ -12307,6 +12315,55 @@ func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 	return name, steps, true
 }
 
+// parenMethodSteps matches a Factor that is a PARENTHESISED expression carrying one
+// or more method calls, and answers with those call steps and the expression's C
+// type.
+//
+// The type is the DEFINED name, not the representation: a method lives in its
+// type's namespace, and exprReprCType would answer int32_t for a `type Fix int32`
+// whose methods are all called Fix_something.
+func (e *emitter) parenMethodSteps(kids []Node) ([]Node, string, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return nil, "", false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 || len(steps)%2 != 0 {
+		return nil, "", false
+	}
+	for i := 0; i < len(steps); i += 2 {
+		if steps[i].sym != Selector || steps[i+1].sym != CallSuffix {
+			return nil, "", false
+		}
+	}
+	ct, ok := e.inferCType(kids[1].ast)
+	if !ok || ct == "" {
+		return nil, "", false
+	}
+	return steps, ct, true
+}
+
+// parenMethodResultType types `(expr).M(...)` as its last method's result, which
+// the emission alone knew: without it a `(&P{1, 2}).Sum()` took the type of the
+// ADDRESS it is called on, and an int result printed as a pointer.
+//
+// A method with no result, or with several, answers no: the first has no value to
+// type and the second is not a single one.
+func (e *emitter) parenMethodResultType(kids []Node) (string, bool) {
+	steps, ct, ok := e.parenMethodSteps(kids)
+	if !ok {
+		return "", false
+	}
+	for i := 0; i < len(steps); i += 2 {
+		rets, isMethod := e.funcRet[methodCName(methodBaseType(ct), e.soleIdent(steps[i].ast))]
+		if !isMethod || len(rets) != 1 {
+			return "", false
+		}
+		ct = rets[0]
+	}
+	return ct, true
+}
+
 // emitParenMethod emits a method called on a PARENTHESISED expression, `(a -
 // b).Scaled()` for a defined type with arithmetic, and reports whether the Factor
 // was that shape.
@@ -12321,24 +12378,8 @@ func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 // A POINTER receiver is refused in Go's own words: the expression is not
 // addressable, and there is nothing to take the address of.
 func (e *emitter) emitParenMethod(kids []Node) bool {
-	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
-		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
-		return false
-	}
-	steps := slices.Collect(it(kids[3].ast))
-	if len(steps) == 0 || len(steps)%2 != 0 {
-		return false
-	}
-	for i := 0; i < len(steps); i += 2 {
-		if steps[i].sym != Selector || steps[i+1].sym != CallSuffix {
-			return false
-		}
-	}
-	// The DEFINED name, not the representation: a method lives in its type's
-	// namespace, and exprReprCType would answer int32_t for a `type Fix int32`
-	// whose methods are all called Fix_something.
-	ct, ok := e.inferCType(kids[1].ast)
-	if !ok || ct == "" {
+	steps, ct, ok := e.parenMethodSteps(kids)
+	if !ok {
 		return false
 	}
 	// Built as text so a CHAIN can wrap it, `(a - b).Add(1).Scale(2)` -- each call
@@ -12349,20 +12390,35 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 		if method == "" {
 			return false
 		}
+		// The expression may itself be a POINTER, `(&P{1, 2}).Sum()`. The method's
+		// base is then what it points at, and which of the two the call wants
+		// decides the receiver: a pointer method takes the pointer as it stands, a
+		// value method takes what it points at. Missing this passed the pointer to
+		// a VALUE receiver, which the host compiler rejected -- and which had been
+		// a clean refusal before the parenthesised form was supported at all.
+		isPtr := e.isPointer(ct)
 		cname := methodCName(methodBaseType(ct), method)
 		rets, isMethod := e.funcRet[cname]
 		if !isMethod {
 			return false
 		}
-		if e.methodPtr[cname] {
-			e.fail("cannot call pointer method %s on %s", method, e.goTypeName(ct))
-			return true
+		recv := text
+		switch {
+		case e.methodPtr[cname]:
+			if !isPtr {
+				// Go's rule, and its words: there is nothing to take the address
+				// of. `(&P{...})` is not this case -- it IS the address.
+				e.fail("cannot call pointer method %s on %s", method, e.goTypeName(ct))
+				return true
+			}
+		case isPtr:
+			recv = "(*" + text + ")"
 		}
 		args := e.argsCText(cname, steps[i+1].ast)
 		if args != "" {
 			args = ", " + args
 		}
-		text = cname + "(" + text + args + ")"
+		text = cname + "(" + recv + args + ")"
 		if i+2 < len(steps) {
 			// Another call follows, so this one's single result is its receiver. A
 			// method with none, or with several, ends the chain here and is left to
@@ -20811,6 +20867,12 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		kids := slices.Collect(it(n.ast))
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.inferNode(kids[1])
+		}
+		// `(a - b).Scaled()` is its method's result, not the parenthesised
+		// expression's type. Asked before unparenKids, which splices the
+		// parentheses away and leaves the shape unrecognisable.
+		if ct, ok := e.parenMethodResultType(kids); ok {
+			return ct, true
 		}
 		kids = e.unparenKids(kids)
 		if elem, _, ok := e.recvOperand(n, kids); ok {
