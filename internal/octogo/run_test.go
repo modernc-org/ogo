@@ -1545,6 +1545,28 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// A package array of strings whose elements are constant but not WRITTEN as
+		// bare literals. Each was emitted as a compound literal, `(ogo_string){...}`,
+		// which the target's compiler rejects in a file-scope initializer ("Bad
+		// constant expression") though the host's accepts it -- so the program did
+		// not build at all, while the same array of plain literals did. The element
+		// takes braces when it FOLDS to a constant string, which is what C cares
+		// about; asking how it was spelled missed the concatenation.
+		name: "a constant concatenation as an array element",
+		src: `const pre = "x"
+
+var parts = [3]string{pre + "y", "a" + "b", "plain"}
+
+var one = [1]string{pre}
+
+func main() {
+	println(parts[0], parts[1], parts[2], one[0])
+	println(len(parts[0]), len(parts[1]))
+}
+`,
+		want: "xy ab plain x\n2 2\n",
+	},
+	{
 		// Ranging a string iterates runes, not bytes, like Go: the index is each
 		// rune's start byte (so it jumps past a multi-byte rune) and the
 		// two-variable value is the decoded rune. `é` (é) is two UTF-8 bytes, so

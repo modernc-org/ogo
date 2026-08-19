@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A constant string element of a package array literal builds on the target
+  again** — `var parts = [2]string{pre + "y", "a" + "b"}` was emitted with a compound
+  literal per element, which the backend rejects in a file-scope initializer (*Bad
+  constant expression*) though the host C compiler accepts it, so the program did not
+  build at all — while the same array written with plain literals did. The brace form
+  the element needs was chosen by asking whether it was *written* as a bare string
+  literal rather than whether it **folds** to one, which a constant concatenation
+  does not satisfy.
+
 - **A package ARRAY variable may be initialized by anything a local can be** —
   `var d = mk()` for a call's result, `var d = src` for another array, `var d = h.f`
   for a field, a method's result, and `var d = *p`, each with or without the type

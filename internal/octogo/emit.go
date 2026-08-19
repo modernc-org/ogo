@@ -9264,9 +9264,16 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	}
 	// A string is a { pointer, length } struct, so an element that is one is a
 	// nested aggregate and takes braces here for the same reason a literal does.
-	// Only a bare string literal qualifies: a call that returns one is an
-	// expression, and bracing what it contains would not be C.
-	if tok, ok := e.soleToken(v.ast); brace && ok && e.f.ch(tok) == STRING {
+	//
+	// What qualifies is an element that FOLDS to a constant string, not merely one
+	// written as a bare literal. The two are the same thing to C -- both reach the
+	// output as the bytes and their length -- and testing the spelling instead left
+	// a constant CONCATENATION, `[2]string{pre + "b", "c"}`, emitting the compound
+	// literal form, which the target's compiler rejects at file scope as "Bad
+	// constant expression". A call that genuinely returns a string does not fold,
+	// and is left to the paths below: bracing what it contains would not be C,
+	// which is what the spelling test was reaching for.
+	if _, isConst := e.foldConstString(v.ast); brace && isConst {
 		saved := e.declInit
 		e.declInit = true
 		e.emitExpr(v.ast)
