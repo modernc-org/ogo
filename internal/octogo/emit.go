@@ -12282,6 +12282,76 @@ func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 	return name, steps, true
 }
 
+// emitParenMethod emits a method called on a PARENTHESISED expression, `(a -
+// b).Scaled()` for a defined type with arithmetic, and reports whether the Factor
+// was that shape.
+//
+// The receiver is an expression with no name, and needs none: a VALUE receiver is
+// passed by value, so the parenthesised expression IS the argument. Every other
+// receiver shape already worked -- a variable, a parenthesised variable, a field, an
+// element, a call's result -- and so did binding the arithmetic to a variable first,
+// which is the workaround being accepted while the plain spelling drew "this form is
+// not supported yet".
+//
+// A POINTER receiver is refused in Go's own words: the expression is not
+// addressable, and there is nothing to take the address of.
+func (e *emitter) emitParenMethod(kids []Node) bool {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 || len(steps)%2 != 0 {
+		return false
+	}
+	for i := 0; i < len(steps); i += 2 {
+		if steps[i].sym != Selector || steps[i+1].sym != CallSuffix {
+			return false
+		}
+	}
+	// The DEFINED name, not the representation: a method lives in its type's
+	// namespace, and exprReprCType would answer int32_t for a `type Fix int32`
+	// whose methods are all called Fix_something.
+	ct, ok := e.inferCType(kids[1].ast)
+	if !ok || ct == "" {
+		return false
+	}
+	// Built as text so a CHAIN can wrap it, `(a - b).Add(1).Scale(2)` -- each call
+	// becomes the receiver of the next, which is what the result type carries.
+	text := e.captureC(func() { e.emitExprNode(kids[1]) })
+	for i := 0; i < len(steps); i += 2 {
+		method := e.soleIdent(steps[i].ast)
+		if method == "" {
+			return false
+		}
+		cname := methodCName(methodBaseType(ct), method)
+		rets, isMethod := e.funcRet[cname]
+		if !isMethod {
+			return false
+		}
+		if e.methodPtr[cname] {
+			e.fail("cannot call pointer method %s on %s", method, e.goTypeName(ct))
+			return true
+		}
+		args := e.argsCText(cname, steps[i+1].ast)
+		if args != "" {
+			args = ", " + args
+		}
+		text = cname + "(" + text + args + ")"
+		if i+2 < len(steps) {
+			// Another call follows, so this one's single result is its receiver. A
+			// method with none, or with several, ends the chain here and is left to
+			// the paths that report it.
+			if len(rets) != 1 {
+				return false
+			}
+			ct = rets[0]
+		}
+	}
+	e.emit(text)
+	return true
+}
+
 // factorDerefChain matches a parenthesised DEREFERENCE carrying a suffix, `(*p).x`
 // and `(*p)[i]`, returning the pointer's name and the steps that follow.
 //
@@ -22250,6 +22320,13 @@ func (e *emitter) emitExprNode(n Node) {
 		// naming an internal node in a program whose source contains no such thing.
 		// Say what could not be done to which operand instead.
 		if n.sym == Factor && containsSym(kids, FactorSuffix) {
+			// A METHOD called on a parenthesised expression, `(a - b).Scaled()`.
+			// Last, so it sees only what nothing above claimed: `(&v).m()` and
+			// `(*p).m()` are parenthesised too, and their own paths adjust the
+			// receiver in ways this one must not.
+			if e.emitParenMethod(slices.Collect(it(n.ast))) {
+				return
+			}
 			e.failSuffixChain(n, kids)
 			return
 		}

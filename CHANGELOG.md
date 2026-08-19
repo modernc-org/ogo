@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A method may be called on a PARENTHESISED expression** — `(raw - lo).Div(span)`,
+  and a chain of them, `(a - b).Add(1).Scale(2)`. Every other receiver shape already
+  worked (a variable, a parenthesised variable, a field, an element, a call's
+  result), and so did binding the arithmetic to a variable first — so the workaround
+  was accepted while the plain spelling drew *this form is not supported yet*. It is
+  how fixed-point arithmetic reads, which is how this was found.
+
+  The receiver needs no name: a value receiver is passed by value, so the expression
+  is the argument. A *pointer* method is refused, as Go refuses it — the expression
+  is not addressable.
+
 - **`p2.WaitUntil` waits until the counter REACHES a value**, where `WaitCycles`
   waits a number of cycles. That is the difference between a loop that keeps time
   and one that drifts — the work a body does is inside the wait rather than after

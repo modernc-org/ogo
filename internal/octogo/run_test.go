@@ -1545,6 +1545,60 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// A METHOD called on a PARENTHESISED expression, which fixed-point code is
+		// written in: `(raw - lo).Div(span)`. Every other receiver shape worked --
+		// a variable, a parenthesised variable, a field, an element, a call's
+		// result -- and so did binding the arithmetic to a variable first, so the
+		// workaround was accepted while the plain spelling drew "this form is not
+		// supported yet".
+		//
+		// The receiver needs no name: a value receiver is passed by value, so the
+		// expression is the argument. A chain wraps, each call becoming the
+		// receiver of the next.
+		name: "a method on a parenthesised expression",
+		src: `type Fix int32
+
+func (a Fix) Add(b Fix) Fix {
+	return a + b
+}
+
+func (a Fix) Scale(n int) Fix {
+	return a * Fix(n)
+}
+
+func (a Fix) Int() int {
+	return int(a)
+}
+
+type P struct{ x, y int }
+
+func (p P) Sum() int {
+	return p.x + p.y
+}
+
+func mk(n int) Fix {
+	return Fix(n)
+}
+
+func main() {
+	var x, y Fix = 5, 3
+	println((x - y).Int())
+	println((x - y).Add(10).Int())
+	println((x + y).Scale(3).Int())
+	println((x - y).Add(1).Scale(2).Int())
+
+	// The shapes that already worked, so the last-resort placement is held to.
+	q := P{1, 2}
+	println((x).Int(), mk(9).Int(), q.Sum())
+	d := x - y
+	println(d.Int())
+	p := &P{3, 4}
+	println(p.Sum(), (*p).Sum())
+}
+`,
+		want: "2\n12\n24\n6\n5 9 3\n2\n7 7\n",
+	},
+	{
 		// A backend defect, measured on a P2-EDGE: flexcc types `4 * u` -- a signed
 		// constant on the LEFT of an unsigned operand -- as SIGNED. The product's
 		// VALUE is right, so nothing looks wrong until a signedness-sensitive
