@@ -18,6 +18,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`p2.WaitUntil` waits until the counter REACHES a value**, where `WaitCycles`
+  waits a number of cycles. That is the difference between a loop that keeps time
+  and one that drifts — the work a body does is inside the wait rather than after
+  it — and the `p2` package had only the second, so the periodic sampler a control
+  program is built around could not be written. flexcc had the intrinsic
+  (`_waitcnt`) all along; it was simply unwrapped. A deadline already past returns
+  at once rather than waiting a counter wrap, verified on the board.
+
+  `p2.GetUs` comes with it, completing the `GetMs`/`GetSec` family.
+
 ### Fixed
 
 - **Unsigned arithmetic with a constant on the LEFT gave signed answers on the

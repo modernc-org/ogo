@@ -55,6 +55,17 @@ static inline uint64_t _ogo_host_nanos(void) {
 static inline uint32_t _cnt(void) { return (uint32_t)(_ogo_host_nanos() / 5); }
 static inline uint32_t _getms(void) { return (uint32_t)(_ogo_host_nanos() / 1000000); }
 static inline uint32_t _getsec(void) { return (uint32_t)(_ogo_host_nanos() / 1000000000); }
+static inline uint32_t _getus(void) { return (uint32_t)(_ogo_host_nanos() / 1000); }
+/* _waitcnt waits until the counter REACHES t, where _waitx waits a duration. The
+   wrap-aware comparison is the hardware's: a t already past returns at once rather
+   than waiting the whole way round. Spun rather than slept, the remaining time being
+   a cycle count this shim measures in the same units _cnt reports. */
+static inline void _waitcnt(uint32_t t) {
+	while ((int32_t)(t - _cnt()) > 0) {
+		struct timespec s = {0, 1000};
+		nanosleep(&s, 0);
+	}
+}
 static inline uint32_t _rnd(void) { return (uint32_t)rand(); }
 static inline uint32_t _rev(uint32_t v) {
 	uint32_t r = 0;

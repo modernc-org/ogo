@@ -1585,6 +1585,58 @@ func main() {
 		want: "1073741824\n1610612736\nfalse\n1073741824\n1610612736\n1744830514\n9 -14 93\n",
 	},
 	{
+		// WaitUntil waits until the system counter REACHES a value, where
+		// WaitCycles waits a duration. That is the difference between a loop that
+		// keeps time and one that drifts, and the p2 package had only the second --
+		// so the drift-free control loop, which is what a periodic sampler is, could
+		// not be written at all. flexcc had the intrinsic (_waitcnt) all along.
+		//
+		// The third line is the point: four periods of work still take four
+		// periods, because the body's time is absorbed by the wait rather than
+		// added to it. With WaitCycles in its place the total would exceed the
+		// upper bound, which is what makes that bound worth asserting.
+		//
+		// Boolean rather than measured output: the host shim's counter and the
+		// board's run at different rates, and only the relations are the same.
+		name: "WaitUntil keeps a period",
+		src: `import "p2"
+
+func main() {
+	// The deadline is reached, not merely approached.
+	t0 := p2.GetCt()
+	p2.WaitUntil(t0 + 1600000)
+	waited := p2.GetCt() - t0
+	println(waited >= 1600000)
+
+	// A deadline already PAST returns at once rather than waiting a whole
+	// counter wrap, which is 27 seconds at 160 MHz.
+	t1 := p2.GetCt()
+	p2.WaitUntil(t1 - 1000000)
+	past := p2.GetCt() - t1
+	println(past < 1000000)
+
+	// Four periods of a body that takes real time still take four periods.
+	period := uint32(1600000)
+	start := p2.GetCt()
+	next := start + period
+	for i := 0; i < 4; i++ {
+		p2.WaitUntil(next)
+		next += period
+		p2.WaitCycles(400000)
+	}
+	total := p2.GetCt() - start
+	println(total >= 4*period, total < 4*period+800000)
+
+	// GetUs completes the GetMs/GetSec family.
+	u0 := p2.GetUs()
+	p2.WaitCycles(1600000)
+	elapsed := p2.GetUs() - u0
+	println(elapsed > 0)
+}
+`,
+		want: "true\ntrue\ntrue true\ntrue\n",
+	},
+	{
 		// The accepting side of the block-lifetime rule, which exists because Go's
 		// loop variable is per ITERATION (since 1.22) and a body-scoped local has
 		// been per iteration since 1.0. Keeping a reference to either past the

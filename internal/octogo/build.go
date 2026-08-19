@@ -75,6 +75,21 @@ func WaitUs(us int)
 
 func WaitCycles(n int)
 
+// WaitUntil pauses until the system counter reaches t, where WaitCycles pauses for a
+// number of cycles. That is the difference between a loop that keeps time and one
+// that drifts: the work a loop body does is inside the wait rather than after it.
+//
+//	next := p2.GetCt() + period
+//	for {
+//		p2.WaitUntil(next)
+//		next += period
+//		...                    // however long this takes, the period holds
+//	}
+//
+// t is an absolute counter value, so it wraps with the counter; a wait for a t
+// already past returns at once rather than waiting a whole wrap around.
+func WaitUntil(t uint32)
+
 // PinStart brings a smart pin up: its mode, its X and Y registers and its direction
 // bit in one call. WritePinMode, WritePinX and WritePinY set the parts separately.
 func PinStart(pin int, mode int, x int, y int)
@@ -91,13 +106,16 @@ func ReadPin(pin int) uint32
 
 func AckPin(pin int)
 
-// GetCt is the system counter, GetMs and GetSec the milliseconds and seconds since
-// reset. GetCt is the one to measure with: it counts every clock.
+// GetCt is the system counter, GetMs, GetUs and GetSec the milliseconds,
+// microseconds and seconds since reset. GetCt is the one to measure with: it counts
+// every clock, and is what WaitUntil takes.
 func GetCt() uint32
 
 func GetMs() uint32
 
 func GetSec() uint32
+
+func GetUs() uint32
 
 // Rnd is the hardware random number generator. Rev reverses the bits of x.
 func Rnd() uint32
