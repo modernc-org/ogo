@@ -16,6 +16,17 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **An integer constant may be RETURNED as a float** — `return 0` from a `float64`
+  function, which Go accepts as an untyped constant taking the result's type. Every
+  other position already did: a variable declaration, an assignment, an argument, a
+  struct or array literal element, a package variable and a comparison. Only the
+  return refused it, having asked the predicate that drives the integer *range*
+  checks, which floats have no place in.
+
 ## v0.29.0
 
 Lifetime rules that hold at every spelling, and the array as a value.

@@ -44,4 +44,27 @@ func badName() int {
 	return missing
 }
 
+// An integer constant returned as a FLOAT result. It is an untyped constant taking
+// the result's type, exactly as `var f float64 = 0` does, and only this position
+// used to refuse it -- the predicate it asked drives the integer RANGE checks, which
+// floats have no place in.
+func zero() float64 { return 0 }
+
+func one() float32 { return 1 }
+
+func neg() float64 { return -3 }
+
+func runeToFloat() float64 { return 'A' }
+
+// A string constant is still not a float, nor an integer one a string.
+func badStringResult() float64 {
+	// ERROR "of type string as type float64 in return statement"
+	return "x"
+}
+
+func badIntAsString() string {
+	// ERROR "cannot use 5 of type int as type string in return statement"
+	return 5
+}
+
 func run() {}

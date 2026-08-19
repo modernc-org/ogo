@@ -1998,7 +1998,14 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 		var assignable bool
 		switch Symbol(tok.Ch) {
 		case INT, CHAR:
-			valName, assignable = "int", isNumericKind(rt.kind)
+			// Any numeric result takes an integer constant, a FLOAT one included:
+			// `return 0` from a float64 function is an untyped constant taking the
+			// result's type, exactly as `var f float64 = 0` does. isNumericKind
+			// alone answered no -- it is the predicate for the integer RANGE checks
+			// and says so, floats having no place in them -- so the one position
+			// that asked it refused what the other six accepted.
+			valName = "int"
+			assignable = isNumericKind(rt.kind) || isFloatKind(rt.kind)
 		case STRING:
 			valName, assignable = "string", rt.kind == PredeclaredString
 		default:
