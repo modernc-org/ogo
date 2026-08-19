@@ -3790,6 +3790,7 @@ type emitter struct {
 	eqStructs          map[string]bool         // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim       // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string                // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	scopeNames         []map[string]bool       // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
 	curParams          map[string]bool         // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
 	litPath            string                  // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
 	litFixups          []litFixup              // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
@@ -8235,6 +8236,10 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 // The maps are small (one entry per name in scope), so copying them per block costs
 // nothing measurable and needs no analysis of what the block declares.
 func (e *emitter) enterScope() func() {
+	// The names visible on the way IN, so a later question can tell which block
+	// declared a variable: one declared here is absent from this snapshot and from
+	// every outer one (see blockDepthOf).
+	e.scopeNames = append(e.scopeNames, e.visibleLocals())
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
@@ -8269,6 +8274,7 @@ func (e *emitter) enterScope() func() {
 				frameHolder[n] = origin
 			}
 		}
+		e.scopeNames = e.scopeNames[:len(e.scopeNames)-1]
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
@@ -18062,6 +18068,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// placed after it saw slice fields only.
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
 	e.checkStoreBacking(base, op)
+	e.checkBlockOutlives(base, op)
 	e.noteFrameHolder(base, op)
 	// `f = keep` rebinds which function f holds; anything else clears the binding.
 	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
@@ -22793,15 +22800,16 @@ func (e *emitter) endsInSliceStep(steps []Node) bool {
 type frameRef struct {
 	origin string // how to name the storage the value reaches, after "a pointer into"
 	what   string // how to name the value
+	name   string // the referent VARIABLE, bare, for a block-lifetime comparison. Empty where the storage is a temporary the emitter minted, which belongs to the block being emitted (see blockDepthOf).
 	view   bool   // the value is itself a slice over that storage
 }
 
 func sliceRef(name string) frameRef {
-	return frameRef{origin: "local " + name, what: "a slice backed by local " + name, view: true}
+	return frameRef{origin: "local " + name, what: "a slice backed by local " + name, name: name, view: true}
 }
 
 func addrRef(name string) frameRef {
-	return frameRef{origin: "local " + name, what: "the address of local variable " + name}
+	return frameRef{origin: "local " + name, what: "the address of local variable " + name, name: name}
 }
 
 // litRef names a slice literal, whose backing array the emitter mints as a local of
@@ -22837,7 +22845,14 @@ func addrLitRef() frameRef {
 }
 
 func holderRef(name, origin string) frameRef {
-	return frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
+	r := frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
+	// The referent is the variable the origin NAMES, not the holder: how long the
+	// holder itself lives says nothing about the storage it points at. A minted
+	// temporary (tempOrigin) names no variable and leaves this empty.
+	if v, isVar := strings.CutPrefix(origin, "local "); isVar {
+		r.name = v
+	}
+	return r
 }
 
 // noteRangeValueHolder passes a container's frame mark on to the value variable a
@@ -23230,6 +23245,51 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 	}
 }
 
+// checkBlockOutlives refuses storing a reference to an inner-block variable where
+// the target outlives that block. It is checkStoreBacking's rule at BLOCK
+// granularity rather than frame: the storage a reference points at must not die
+// before the reference does, and a block is where that can happen without the
+// function returning.
+//
+// This is what makes the loop-variable semantics Go adopted in 1.22 honest here. A
+// per-iteration variable and a reused one differ only where a reference outlives the
+// iteration, which is why Go's own compiler keeps one cell until it escapes -- and
+// where it does escape, matching Go needs one cell per iteration, of a count not
+// known until it runs. That is a heap, so it is refused, exactly as `new` and a map
+// are refused. Every program this accepts means what Go means:
+//
+//	for i := 0; i < 3; i++ {
+//		ps[i] = &i        // refused: ps outlives the iteration i belongs to
+//		bump(&i)          // fine: the address does not outlive the call
+//	}
+//
+// It is NOT only about loop variables, and describing it that way would have been
+// wrong. `x := i * 10` in a loop BODY is a fresh variable per iteration in every
+// version of Go, back to 1.0, and taking its address had the same defect. The rule
+// is written about blocks so both fall out of it.
+func (e *emitter) checkBlockOutlives(base string, op []Node) {
+	if !e.isFrameVar(base) {
+		return // a package target is checkStoreBacking's, and answers differently
+	}
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return // only a plain "=" stores such a value
+	}
+	target := e.blockDepthOf(base)
+	for n := range it(op[1].ast) {
+		if n.sym != Expression {
+			continue
+		}
+		r, ok := e.frameRefOf(n.ast)
+		if !ok || e.blockDepthOf(r.name) <= target {
+			continue
+		}
+		e.fail("%v: cannot store %s in %s: %s does not outlive the block it is declared in, "+
+			"and %s does; declare it where %s is",
+			e.f.tok(n.Pos()).Position(), r.what, base, r.origin, base, base)
+		return
+	}
+}
+
 // crossBackedByFrame finds, among values about to cross to another cog, one that is
 // a slice viewing this frame's storage, and names the local it came from.
 //
@@ -23271,9 +23331,7 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 	if recv == "" {
 		return
 	}
-	if e.isFrameVar(recv) && !e.curParams[recv] {
-		return // a local of this frame: it dies with the storage
-	}
+	local := e.isFrameVar(recv) && !e.curParams[recv]
 	crosses := e.crossParams[cname]
 	for i, a := range args {
 		if i >= len(crosses) || crosses[i]&leakRecv == 0 {
@@ -23283,9 +23341,18 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 		if !ok {
 			continue
 		}
-		e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives this "+
-			"function; %s",
-			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), recv, r.advice())
+		// A local receiver dies with this frame, so the frame question is answered
+		// -- but not the BLOCK question: a receiver declared outside the block the
+		// reference points into still outlives it.
+		outlives := "this function"
+		if local {
+			if e.blockDepthOf(r.name) <= e.blockDepthOf(recv) {
+				continue
+			}
+			outlives = "the block " + r.origin + " is declared in"
+		}
+		e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives %s; %s",
+			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), recv, outlives, r.advice())
 		return
 	}
 }
@@ -23395,12 +23462,23 @@ func (e *emitter) checkIntoArgsIn(intos []uint32, who string, args []Node) {
 				continue
 			}
 			tgt := e.crossRoot(args[j].ast)
-			if tgt == "" || !(e.isPackageVar(tgt) || e.curParams[tgt]) {
+			if tgt == "" {
 				continue
 			}
-			e.fail("%v: cannot pass %s to %s: it is stored through %s, which outlives this "+
-				"function; %s",
-				e.f.tok(a.Pos()).Position(), r.what, who, tgt, r.advice())
+			// Outliving the FRAME is the first question, and outliving the block
+			// the reference points into is the second: a callee that stores through
+			// a pointer to an OUTER-block local keeps the reference past the block
+			// it belongs to without the function ever returning.
+			outlives := "this function"
+			switch {
+			case e.isPackageVar(tgt) || e.curParams[tgt]:
+			case e.blockDepthOf(r.name) > e.blockDepthOf(tgt):
+				outlives = "the block " + r.origin + " is declared in"
+			default:
+				continue
+			}
+			e.fail("%v: cannot pass %s to %s: it is stored through %s, which outlives %s; %s",
+				e.f.tok(a.Pos()).Position(), r.what, who, tgt, outlives, r.advice())
 			return
 		}
 	}
@@ -23522,6 +23600,48 @@ func (e *emitter) calleeSummaryName(recv string) string {
 // one-map question answered "no" for it -- and "return &a[i]" over a local array went
 // unrefused, which is the shape the whole rule exists to stop. The same split has
 // caught isPackageVar before.
+// visibleLocals is the set of local names in scope right now, whatever environment
+// the emitter keeps each kind in.
+func (e *emitter) visibleLocals() map[string]bool {
+	out := make(map[string]bool, len(e.locals)+len(e.arrays))
+	for n := range e.locals {
+		out[n] = true
+	}
+	for n := range e.arrays {
+		out[n] = true
+	}
+	return out
+}
+
+// blockDepthOf says how deeply nested the block declaring name is: 0 for a
+// parameter, 1 for a local of the function body, one more for each block inside it.
+// A name that names nothing local -- a package variable -- is 0, outliving them all.
+//
+// It is counted rather than recorded, from the snapshots enterScope keeps: a
+// variable declared in block k is absent from the snapshots of every block from the
+// outermost through k, and present in the ones taken after. That needs no
+// cooperation from the many places a local is registered, which is what makes it
+// reliable -- a declaration form nobody thought of here still gets a depth.
+//
+// An empty name is the storage the emitter MINTS for a value with no variable of its
+// own -- a slice literal's backing, the temporary behind `&T{...}` -- which belongs
+// to the block being emitted, so it answers with the current depth.
+func (e *emitter) blockDepthOf(name string) int {
+	if name == "" {
+		return len(e.scopeNames)
+	}
+	if !e.isFrameVar(name) {
+		return 0
+	}
+	d := 0
+	for _, seen := range e.scopeNames {
+		if !seen[name] {
+			d++
+		}
+	}
+	return d
+}
+
 func (e *emitter) isFrameVar(name string) bool {
 	if _, local := e.locals[name]; local {
 		return true

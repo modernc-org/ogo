@@ -384,6 +384,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference may no longer outlive the BLOCK of the variable it points at.** Go
+  gives a `for` statement's variable a fresh instance per *iteration* (since 1.22),
+  and a variable declared in a loop *body* has been a fresh one per iteration since
+  Go 1.0. OctoGo gave each declaration one cell and reused it, so `ps[i] = &i` and
+  `x := i * 10; ps[i] = &x` both printed the last value where Go prints one per
+  iteration — silently, and the second of those diverged from *every* version of Go,
+  not just from 1.22.
+
+  Keeping such a reference past the iteration needs one instance per iteration, of a
+  count not known until the loop runs. That is an allocation, so it is refused, as
+  `new` and a map are refused. Where a reference does *not* outlive the iteration,
+  one cell and a fresh one are indistinguishable — which is why Go's own compiler
+  keeps one until it escapes — so every program that still compiles means what Go
+  means. `f(&i)` for a callee that keeps nothing is unaffected, and so is any
+  reference stored where it dies with, or before, what it points at.
+
+  The rule covers the same doors the function-level one does: a store, a store
+  through a pointer parameter, and a store into a method's receiver. Choosing to
+  reject rather than document the divergence keeps the differential-against-Go tests
+  meaningful, which is how much of this compiler's behaviour is verified.
+
 - **A reference to a local may no longer be laundered through an INTERFACE.** Which
   function a call through an interface reaches is the vtable's answer at run time, so
   there is no callee to look an escape summary up by — and none was asked for, which

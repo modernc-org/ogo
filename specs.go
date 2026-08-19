@@ -1573,6 +1573,29 @@
 // the conservative half of a choice whose other half is a dangling reference. An
 // interface whose implementations keep nothing constrains nothing.
 //
+// A reference must not outlive the BLOCK of the variable it points at, which is a
+// finer question than outliving the function and matters for the same reason. Go
+// gives a for statement's variable a fresh instance per ITERATION, and a variable
+// declared in a loop body has been a fresh one per iteration since Go 1.0; keeping
+// a reference to either past the iteration would need one instance per iteration, of
+// a count not known until the loop runs. That is an allocation, and this target has
+// no heap, so it is refused -- exactly as new and a map are refused:
+//
+//	for i := 0; i < 3; i++ {
+//		ps[i] = &i          // refused: ps outlives the iteration i belongs to
+//		x := i * 10
+//		ps[i] = &x          // refused for the same reason
+//		bump(&i)            // fine: the address does not outlive the call
+//	}
+//
+// The rule is what makes the loop variable mean here what it means in Go rather than
+// quietly meaning what it meant before Go 1.22. Where a reference does not outlive
+// the iteration, one instance and a fresh one are indistinguishable, so every
+// program that compiles has Go's meaning; the programs that would tell them apart
+// are the ones that need the heap. It applies to the same doors the function-level
+// rule does: a store, a store through a pointer parameter, and a store into a
+// method's receiver.
+//
 // A reference wrapped in a struct counts as one. Assigning a local's address or a
 // slice of a local array to a field -- or filling the field in a composite literal --
 // marks the variable, and a copy of it carries the mark, so returning it, storing it

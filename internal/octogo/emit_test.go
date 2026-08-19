@@ -7780,6 +7780,246 @@ func main() {
 	}
 }
 
+func TestEmitCBlockLifetime(t *testing.T) {
+	const decls = `type Box struct {
+	p *int
+	d []int
+}
+
+func put(b *Box, p *int) { b.p = p }
+
+func (b *Box) set(p *int) { b.p = p }
+
+func peek(p *int) int { return *p }
+
+var src = [3]int{7, 8, 9}
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		// The Go 1.22 loop variable, which is per ITERATION. Keeping a reference to
+		// it past the iteration needs one cell per iteration, of a count not known
+		// until it runs -- a heap, so it is refused rather than quietly given the
+		// pre-1.22 meaning.
+		{
+			name: "the loop counter's address outlives the iteration",
+			src: `func main() {
+	var ps [3]*int
+	for i := 0; i < 3; i++ {
+		ps[i] = &i
+	}
+	println(*ps[0])
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "the loop counter's address kept in an outer pointer",
+			src: `func main() {
+	var p *int
+	for i := 0; i < 3; i++ {
+		if i == 1 {
+			p = &i
+		}
+	}
+	println(*p)
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "the range value's address outlives the iteration",
+			src: `func main() {
+	var ps [3]*int
+	for i, v := range src {
+		ps[i] = &v
+	}
+	println(*ps[0])
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		// NOT the 1.22 change: a variable declared in the loop BODY has been a fresh
+		// one per iteration since Go 1.0, and this diverged from every version.
+		{
+			name: "a body-scoped local's address outlives the iteration",
+			src: `func main() {
+	var ps [3]*int
+	for i := 0; i < 3; i++ {
+		x := i * 10
+		ps[i] = &x
+	}
+	println(*ps[0])
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		// The same reference reaching the outer storage by the other doors.
+		{
+			name: "carried out inside a composite literal",
+			src: `func main() {
+	var boxes [3]Box
+	for i := 0; i < 3; i++ {
+		boxes[i] = Box{p: &i}
+	}
+	println(*boxes[0].p)
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "a slice over a block-scoped array",
+			src: `func main() {
+	var ss [3][]int
+	for i := 0; i < 3; i++ {
+		var buf [2]int
+		buf[0] = i
+		ss[i] = buf[:]
+	}
+	println(ss[0][0])
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "stored through a pointer parameter into an outer local",
+			src: `func main() {
+	var outer Box
+	for i := 0; i < 3; i++ {
+		put(&outer, &i)
+	}
+	println(*outer.p)
+}
+`,
+			want: "which outlives the block",
+		},
+		{
+			name: "stored into a method receiver declared outside",
+			src: `func main() {
+	var outer Box
+	for i := 0; i < 3; i++ {
+		outer.set(&i)
+	}
+	println(*outer.p)
+}
+`,
+			want: "which outlives the block",
+		},
+		// Where the reference dies with, or before, what it points at, nothing is
+		// refused -- and none of these differ between Go versions either.
+		{
+			name: "a reference within one block",
+			src: `func main() {
+	x := 5
+	var p *int
+	p = &x
+	*p = 7
+	println(x)
+}
+`,
+		},
+		{
+			name: "an outer variable's address stored inside a loop",
+			src: `func main() {
+	x := 5
+	total := 0
+	for i := 0; i < 3; i++ {
+		var q *int
+		q = &x
+		total += *q + i
+	}
+	println(total)
+}
+`,
+		},
+		{
+			name: "a parameter's address in a body local",
+			src: `func run(n int) int {
+	var p *int
+	p = &n
+	*p += 10
+	return n
+}
+
+func main() { println(run(5)) }
+`,
+		},
+		{
+			name: "the address does not outlive the call",
+			src: `func main() {
+	total := 0
+	for i := 0; i < 3; i++ {
+		total += peek(&i)
+	}
+	println(total)
+}
+`,
+		},
+		{
+			name: "a keeper whose target is in the same block",
+			src: `func main() {
+	total := 0
+	for i := 0; i < 3; i++ {
+		var b Box
+		put(&b, &i)
+		total += *b.p
+	}
+	println(total)
+}
+`,
+		},
+		{
+			name: "a method receiver in the same block",
+			src: `func main() {
+	total := 0
+	for i := 0; i < 3; i++ {
+		var b Box
+		b.set(&i)
+		total += *b.p
+	}
+	println(total)
+}
+`,
+		},
+		{
+			name: "a slice and a field within one block",
+			src: `func main() {
+	var buf [4]int
+	buf[0] = 3
+	var s []int
+	s = buf[:]
+	var b Box
+	b.d = buf[:]
+	println(s[0], b.d[0])
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference outliving its block; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCIfaceEscape(t *testing.T) {
 	const decls = `type S interface{ take(d []int) }
 

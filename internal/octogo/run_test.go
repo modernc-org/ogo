@@ -1545,6 +1545,68 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// The accepting side of the block-lifetime rule, which exists because Go's
+		// loop variable is per ITERATION (since 1.22) and a body-scoped local has
+		// been per iteration since 1.0. Keeping a reference to either past the
+		// iteration needs a cell per iteration, of a count known only at run time --
+		// a heap -- so it is refused. Everything here keeps nothing past the block
+		// the storage belongs to, and means exactly what Go means.
+		name: "references that do not outlive their block",
+		src: `type Box struct {
+	p *int
+	d []int
+}
+
+func put(b *Box, p *int) { b.p = p }
+
+func (b *Box) set(p *int) { b.p = p }
+
+func peek(p *int) int { return *p }
+
+var pkg = [4]int{1, 2, 3, 4}
+
+func run(n int) int {
+	// A parameter's address into a body local: the parameter outlives the block.
+	var pp *int
+	pp = &n
+	*pp += 10
+
+	// A pointer, a slice and a struct field, all within one block.
+	x := 5
+	var p *int
+	p = &x
+	var buf [4]int
+	buf[0] = 3
+	var s []int
+	s = buf[:]
+	var b Box
+	b.d = buf[:]
+
+	sum := 0
+	for i := 0; i < 3; i++ {
+		// An OUTER variable's address stored into an INNER target: the reference
+		// dies first, so it never outlives what it points at.
+		var q *int
+		q = &x
+
+		// A keeper and a method whose target lives in this same block, and a
+		// callee that only reads: none of them keeps the address past the
+		// iteration.
+		var local Box
+		put(&local, &i)
+		local.set(&i)
+		sum += *q + *local.p + peek(&i)
+	}
+	return n + *p + s[0] + b.d[0] + pkg[0] + sum
+}
+
+func main() {
+	println(run(5))
+}
+`,
+		want: "48\n",
+	},
+	{
 		// The line an interface method call draws for the lifetime rules. Which
 		// function it reaches is the TABLE's answer at run time, so there is no
 		// callee to look an escape summary up by -- and nothing was asked, which
