@@ -3297,12 +3297,17 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		if e.usesString {
 			out.WriteString(stringTypedef)
 		}
-		out.Write(forwards.Bytes())
-		out.Write(typedefUnits.Bytes())
-		// The Builder typedef follows the string and byte-slice types it embeds.
+		// The Builder typedef PRECEDES the struct typedefs, because a struct field
+		// may hold one -- the same reason the scalar-element slice typedefs do. It
+		// used to follow them, on the grounds that it embeds the string and
+		// byte-slice types; it embeds neither. Its HELPERS take them, and they are
+		// emitted further down, so `struct P { ogo_builder sb; }` named a type C had
+		// not seen yet and the program did not compile at all.
 		if e.usesBuilder {
 			out.WriteString(builderTypedef)
 		}
+		out.Write(forwards.Bytes())
+		out.Write(typedefUnits.Bytes())
 		out.WriteByte('\n')
 	}
 	if e.usesStringPrint {

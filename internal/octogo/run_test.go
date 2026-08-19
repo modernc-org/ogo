@@ -1545,6 +1545,50 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// The predeclared Builder held in a struct FIELD, which a parser that owns
+		// its own line buffer is written with. Two things stood in the way, and
+		// neither was about the field itself.
+		//
+		// The Builder TYPEDEF was emitted after the struct typedefs, on the stated
+		// grounds that it embeds the string and byte-slice types -- it embeds
+		// neither, its helpers do -- so `struct Line { ogo_builder sb; }` named a
+		// type C had not seen and the program did not compile at all.
+		//
+		// And the method set is the COMPILER's rather than a declaration's, which
+		// the variable path knew and the field path did not: `l.sb.Len()` was "type
+		// Builder has no method Len", of a method it certainly has.
+		name: "a Builder in a struct field",
+		src: `var back [32]byte
+
+type Line struct {
+	sb Builder
+	n  int
+}
+
+func (l *Line) Add(c byte) {
+	l.sb.WriteByte(c)
+	l.n++
+}
+
+func (l *Line) Text() string {
+	return l.sb.String()
+}
+
+func main() {
+	var l Line
+	l.sb = NewBuilder(back[:])
+	l.Add('a')
+	l.Add('b')
+	l.Add('c')
+	println(l.Text(), l.n, l.sb.Len())
+	l.sb.Reset()
+	l.sb.WriteString("xy")
+	println(l.sb.String(), l.sb.Len())
+}
+`,
+		want: "abc 3 3\nxy 2\n",
+	},
+	{
 		// A package ARRAY literal whose elements are not constant. C evaluates a
 		// static initializer at compile time, so a call in one is not a program the
 		// backend will take -- and it said so about generated C the program never

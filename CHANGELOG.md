@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A `Builder` may be held in a struct field** — the shape a line parser that owns
+  its buffer is written with. Two things stood in the way, and neither was about the
+  field. The Builder *typedef* was emitted after the struct typedefs, on the stated
+  grounds that it embeds the string and byte-slice types — it embeds neither, its
+  helpers do — so `struct Line { ogo_builder sb; }` named a type C had not seen and
+  the program did not compile at all. And the Builder's method set is the
+  compiler's rather than a declaration's, which the path resolving a method on a
+  *variable* knew and the path resolving one on a *field* did not: `l.sb.Len()` was
+  *type Builder has no method Len*, of a method it certainly has. A misspelled one
+  is still refused.
+
 - **A package ARRAY literal may have computed elements** — `var curve =
   [3]Point{{FromInt(0), FromInt(10)}, …}`, and `[2]int{seed(), 5}`. C evaluates a
   static initializer at compile time, so a call in one is not a program the backend

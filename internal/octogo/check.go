@@ -258,6 +258,7 @@ func (f *File) ch(x int32) (r Symbol) {
 }
 
 func (f *File) err(pos token.Position, s string, args ...any) {
+
 	f.errList.AddErr(pos, s, args...)
 }
 
@@ -8605,6 +8606,17 @@ func (f *File) checkFieldSuffix(s *Scope, id Token, start int32, suffix Node) {
 			// reported as "type int has no method m" -- of a method the program had
 			// declared, against a type it had never written.
 			tname := f.fieldTypeName(s, id, field)
+			// The predeclared Builder again: its method set is the compiler's, not
+			// a declaration's, so namedTypeHasMember -- which reads one -- answers
+			// no for every method it really has. checkMethodCall knew that and this
+			// did not, so a Builder held in a struct FIELD had `p.sb.Len()`
+			// rejected while the same call on a variable was fine.
+			if tname == "Builder" {
+				if !builderMethods[m.Src()] {
+					f.err(m.Position(), "type Builder has no method %s", m.Src())
+				}
+				return
+			}
 			if f.namedTypeHasMember(s, tname, m.Src()) {
 				return
 			}

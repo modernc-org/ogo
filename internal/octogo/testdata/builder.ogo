@@ -31,3 +31,34 @@ func run() {
 	sb.Reset()
 	sb.WriteString("next")
 }
+
+// A Builder held in a struct FIELD has the same method set. Its methods are the
+// compiler's rather than a declaration's, and the path that resolves a method on a
+// field read a declaration -- so every one of them was rejected here while the same
+// call on a variable was fine.
+type line struct {
+	sb Builder
+	n  int
+}
+
+func fields() {
+	var back [32]byte
+	var l line
+	l.sb = NewBuilder(back[:])
+	l.sb.WriteString("hi")
+	l.sb.WriteByte('!')
+	l.sb.WriteRune('e')
+	_ = l.sb.Len()
+	_ = l.sb.String()
+	l.sb.Reset()
+	l.n++
+}
+
+func badField() {
+	var back [32]byte
+	var l line
+	l.sb = NewBuilder(back[:])
+	// ERROR "type Builder has no method Flush"
+	l.sb.Flush()
+}
+
