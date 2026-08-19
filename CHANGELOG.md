@@ -384,6 +384,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference to a local may no longer be laundered through an INTERFACE.** Which
+  function a call through an interface reaches is the vtable's answer at run time, so
+  there is no callee to look an escape summary up by — and none was asked for, which
+  made an interface the way around every lifetime rule a direct call obeys. All three
+  leaks went through it silently: `s.take(a[:])` for an implementation that stores
+  its parameter in a package variable, in its receiver, or hands it to a cog, each
+  leaving a header over a dead frame where the same call written directly on the
+  concrete type had been refused since those rules landed.
+
+  The summaries of **every** implementation are unioned instead. That is
+  conservative in a way worth stating: an implementation that keeps the argument
+  constrains the calls through the interface even where the value assigned is one
+  that does not, so a program that was correct — and compiled — may now be refused.
+  Proving which implementation runs is devirtualization, which does not exist yet;
+  until it does, the choice is between refusing some correct programs and accepting
+  some dangling ones. An interface whose implementations keep nothing is unaffected,
+  and storage that outlives the call may be passed to any of them.
+
+  `leakRecv` becomes a global leak here for the same reason: a store into the
+  receiver is a leak to whoever owns it, and an interface value is a pointer to
+  storage the call site cannot name.
+
 - **A reference to a local may no longer be stored through a POINTER PARAMETER.**
   `func fill(h *H, d []int) { h.d = d }` is the ordinary setter written as a plain
   function rather than a method, and `fill(&g, a[:])` for a package-level `g` left a

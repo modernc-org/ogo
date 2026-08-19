@@ -1545,6 +1545,61 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// The line an interface method call draws for the lifetime rules. Which
+		// function it reaches is the TABLE's answer at run time, so there is no
+		// callee to look an escape summary up by -- and nothing was asked, which
+		// made an interface the way around every rule a direct call obeys. The
+		// summaries of all the implementations are unioned instead.
+		//
+		// Both halves run here: a frame-backed slice may cross an interface whose
+		// implementations keep nothing, and storage that outlives the call may
+		// cross one that keeps.
+		name: "a frame slice crosses an interface that keeps nothing",
+		src: `type Reader interface {
+	sum(d []int) int
+	size() int
+}
+
+type Keeper interface{ keep(d []int) }
+
+type Acc struct{ n int }
+
+func (a *Acc) sum(d []int) int {
+	t := 0
+	for _, v := range d {
+		t += v
+	}
+	a.n = t
+	return t
+}
+
+func (a *Acc) size() int { return a.n }
+
+type Store struct{ d []int }
+
+func (s *Store) keep(d []int) { s.d = d }
+
+var acc Acc
+
+var st Store
+
+var back = [3]int{7, 8, 9}
+
+func main() {
+	var local [4]int
+	local[0], local[1] = 3, 4
+
+	var r Reader = &acc
+	println(r.sum(local[:]), r.size())
+
+	var k Keeper = &st
+	k.keep(back[:])
+	println(st.d[0], len(st.d))
+}
+`,
+		want: "7 7\n7 3\n",
+	},
+	{
 		// A package array of strings whose elements are constant but not WRITTEN as
 		// bare literals. Each was emitted as a compound literal, `(ogo_string){...}`,
 		// which the target's compiler rejects in a file-scope initializer ("Bad

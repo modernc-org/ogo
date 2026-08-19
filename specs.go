@@ -1565,6 +1565,14 @@
 // merely measures another constrains only the one it stores. As with the Cog
 // crossing, it holds however many calls separate the two.
 //
+// A call through an INTERFACE is judged the same way, against every implementation
+// at once. Which one it reaches is not known until it runs, so the requirements of
+// all of them apply: if any implementation of the method keeps what it is given, a
+// frame-backed argument is refused at the call, whichever value the interface
+// happens to hold. That refuses some programs a reader can see are safe, and it is
+// the conservative half of a choice whose other half is a dangling reference. An
+// interface whose implementations keep nothing constrains nothing.
+//
 // A reference wrapped in a struct counts as one. Assigning a local's address or a
 // slice of a local array to a field -- or filling the field in a composite literal --
 // marks the variable, and a copy of it carries the mark, so returning it, storing it

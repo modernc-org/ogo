@@ -7780,6 +7780,190 @@ func main() {
 	}
 }
 
+func TestEmitCIfaceEscape(t *testing.T) {
+	const decls = `type S interface{ take(d []int) }
+
+type H struct {
+	d []int
+	n int
+}
+
+var gs []int
+
+var done chan int
+
+var h H
+
+var s S
+
+var back [4]int
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		// Each of the three leaks, reached through the table instead of by name.
+		// A direct call refused all three; an interface asked nothing at all.
+		{
+			name: "an interface method stores in a package variable",
+			src: `func (t *H) take(d []int) { gs = d }
+
+func leak() {
+	var a [4]int
+	s = &h
+	s.take(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "an interface method stores in its receiver",
+			src: `func (t *H) take(d []int) { t.d = d }
+
+func leak() {
+	var a [4]int
+	s = &h
+	s.take(a[:])
+}
+
+func main() {
+	leak()
+	println(len(h.d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "an interface method hands the argument to a cog",
+			src: `func work(d []int) { done <- len(d) }
+
+func (t *H) take(d []int) { go work(d) }
+
+func leak() {
+	var a [4]int
+	s = &h
+	s.take(a[:])
+	<-done
+}
+
+func main() { leak() }
+`,
+			want: "reaches another cog",
+		},
+		// The union is over EVERY implementation, so one that keeps constrains the
+		// calls even where another is the one assigned. That is the conservative
+		// direction, and the only one available without devirtualization.
+		{
+			name: "one implementation of several keeps it",
+			src: `type A struct{ n int }
+
+func (t *A) take(d []int) { t.n = len(d) }
+
+func (t *H) take(d []int) { gs = d }
+
+var a1 A
+
+func leak() {
+	var arr [4]int
+	s = &a1
+	s.take(arr[:])
+}
+
+func main() {
+	leak()
+	println(a1.n)
+}
+`,
+			want: "cannot pass a slice backed by local arr",
+		},
+		// An interface that keeps nothing keeps nothing, and storage that outlives
+		// the call may be handed to one that does.
+		{
+			name: "an interface method that only reads",
+			src: `type R interface{ sum(d []int) int }
+
+func (t *H) sum(d []int) int { return len(d) }
+
+var r R
+
+func main() {
+	var a [4]int
+	r = &h
+	println(r.sum(a[:]))
+}
+`,
+		},
+		{
+			name: "package backing through a keeping interface",
+			src: `func (t *H) take(d []int) { t.d = d }
+
+func main() {
+	s = &h
+	s.take(back[:])
+	println(len(h.d))
+}
+`,
+		},
+		{
+			name: "a scalar through an interface",
+			src: `type P interface{ put(n int) }
+
+func (t *H) put(n int) { t.n = n }
+
+var p P
+
+func main() {
+	var a [4]int
+	p = &h
+	p.put(len(a[:]))
+	println(h.n)
+}
+`,
+		},
+		{
+			name: "an interface method taking nothing",
+			src: `type N interface{ size() int }
+
+func (t *H) size() int { return t.n }
+
+var n N
+
+func main() {
+	n = &h
+	println(n.size())
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference laundered through an interface; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCPointerParamEscape(t *testing.T) {
 	const decls = `type H struct {
 	d []int
