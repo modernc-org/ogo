@@ -499,10 +499,24 @@
 // (OctoGo Specific): Concatenation with "+" is limited to compile-time constants,
 // which fold to a single literal. A concatenation with a non-constant operand is
 // rejected, since building a new string at run time needs allocation and the
-// target has no heap. For the same reason a conversion that would BUILD a string --
-// string(r) from a rune, string(b) from a byte slice -- is rejected. A conversion
-// that builds nothing is free and is allowed: string(s) of a string, and one to or
-// from a defined type over string, are the same bytes.
+// target has no heap. For the same reason a conversion that would BUILD a string at
+// RUN TIME -- string(r) from a rune variable, string(b) from a byte slice -- is
+// rejected. A conversion that builds nothing is free and is allowed: string(s) of a
+// string, and one to or from a defined type over string, are the same bytes.
+//
+// A CONSTANT operand builds nothing either: string('A') is a constant string, as it
+// is in Go, and folds to the literal bytes at compile time. Every spelling of a
+// constant works -- a rune literal, an integer, a named constant, a constant
+// expression -- and the result stands wherever a string literal does, a constant
+// concatenation included:
+//
+//	var greet = "hi" + string('!')   // folds to "hi!"
+//
+// The bytes are Go's: the UTF-8 encoding of the code point, and "\uFFFD" for a value
+// that is not one. An integer constant beyond U+10FFFF converts to that replacement
+// rather than failing, because the conversion is to string; writing rune(1 << 40) is
+// what fails, and it fails at that conversion. string(rune(0)) is a string of length
+// one holding a NUL, a string here carrying its length rather than ending at one.
 //
 // That holds of conversions generally: one between two types of the same
 // representation costs nothing and is the operand itself, while one between scalar

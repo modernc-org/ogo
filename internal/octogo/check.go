@@ -9017,6 +9017,20 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// emitter, which knows the representation and refuses what it must.
 		if callee.Src() == "string" && len(args) == 1 {
 			if k, ok := f.exprType(s, args[0]); ok && kindCategory(k) != catString {
+				// A CONSTANT operand is not the case this refuses. Go makes
+				// string('A') a constant string, and nothing is allocated or
+				// copied -- the emitter folds it to the literal bytes.
+				//
+				// Its RANGE is deliberately NOT checked here. Go range-checks the
+				// operand against the type it is converted TO, and that type is
+				// string: an integer constant too large for a rune converts to
+				// "\uFFFD" rather than failing, exactly as a run-time one does, and
+				// `string(1 << 40)` is a legal program that prints it. Writing
+				// rune(1 << 40) is what fails, and it fails at that conversion,
+				// which is already checked.
+				if _, isConst := f.constArgValue(s, args[0]); isConst {
+					break
+				}
 				f.err(callee.Position(), "a string conversion needs allocation, which the target does not have")
 			}
 		}
@@ -11470,6 +11484,30 @@ func (f *File) reportOverflow(pos token.Position, cv constant.Value, kind Kind, 
 // the folder emits for a run-time operand, which is legal in these positions --
 // is discarded. A file's bodies are checked serially, so trimming its error list
 // back is safe.
+// constArgValue folds a conversion's operand to an integer constant, KEEPING the
+// diagnostics the fold itself produced. A constant that overflows a type it is
+// explicitly converted to is reported by that conversion and nowhere else, so
+// constValue's unconditional trimming swallows it: `string(rune(1 << 40))` became a
+// legal program printing U+FFFD, where Go rejects the rune conversion.
+//
+// The trim is kept for the case it was written for -- an operand that is NOT a
+// constant draws an "is not a constant" from the folder, and a run-time operand is
+// legal here, judged by the caller instead.
+func (f *File) constArgValue(s *Scope, n Node) (constant.Value, bool) {
+	n0 := len(f.errList)
+	var cv constant.Value
+	if e := f.expression(s, n); e != nil {
+		if uc, ok := e.Value().(constVal); ok && uc.cv != nil && uc.cv.Kind() == constant.Int {
+			cv = uc.cv
+		}
+	}
+	if cv == nil {
+		f.errList = f.errList[:n0]
+		return nil, false
+	}
+	return cv, true
+}
+
 func (f *File) constValue(s *Scope, n Node) (constant.Value, bool) {
 	n0 := len(f.errList)
 	e := f.expression(s, n)

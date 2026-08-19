@@ -1567,6 +1567,56 @@ func main() {
 		want: "xy ab plain x\n2 2\n",
 	},
 	{
+		// A CONSTANT rune converted to a string, which Go makes a constant string
+		// and this refused outright as "a string conversion needs allocation" --
+		// true of the run-time conversion and of nothing here, which allocates and
+		// copies nothing. `println(string('A'))` was an error.
+		//
+		// The encoding is Go's: one to four UTF-8 bytes, and "\uFFFD" for a value
+		// that is no code point -- a surrogate half, a negative, or one past
+		// U+10FFFF, the last of which Go converts rather than refusing (writing
+		// rune(1 << 40) is what fails, at that conversion). string(rune(0)) is a
+		// string of LENGTH ONE holding a NUL, which is why the emitted literal
+		// carries its length beside its bytes rather than relying on the
+		// terminator.
+		name: "a constant rune converts to a string",
+		src: `var arr = [2]string{string('a'), string('b')}
+
+type Box struct{ s string }
+
+var b = Box{string('q')}
+
+var greet = "hi" + string('!')
+
+func take(s string) int { return len(s) }
+
+func main() {
+	println(string('A'), string(rune(66)), string(67))
+	println(string(0xE9), string(0x4E16), string(rune(0x1F600)))
+	println(len(string(rune(0))), len(string('A')), len(string(0xE9)), len(string(0x4E16)))
+	println(len(string(rune(0x1F600))))
+
+	// No code point: each of the three ways, all "\uFFFD".
+	println(string(rune(0xD800)) == "\uFFFD", string(-1) == "\uFFFD", string(1<<40) == "\uFFFD")
+
+	// Every position a string may stand in.
+	s := string('A')
+	println(s, len(s), string('z') > string('a'))
+	println(arr[0], arr[1], b.s, greet)
+	println(take(string('k')))
+	var t string = string('T')
+	t = string('U')
+	println(t, "a"+string('b')+"c", string('x')+string('y'))
+	sw := string('c')
+	switch sw {
+	case "c":
+		println("matched")
+	}
+}
+`,
+		want: "A B C\n\u00e9 \u4e16 \U0001f600\n1 1 2 3\n4\ntrue true true\nA 1 true\na b q hi!\n1\nU abc xy\nmatched\n",
+	},
+	{
 		// Ranging a string iterates runes, not bytes, like Go: the index is each
 		// rune's start byte (so it jumps past a multi-byte rune) and the
 		// two-variable value is the decoded rune. `é` (é) is two UTF-8 bytes, so

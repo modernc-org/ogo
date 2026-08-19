@@ -20,6 +20,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A constant rune converts to a string** — `string('A')`, `string(rune(66))`,
+  `string(67)`, `string(c)` for a named constant, and `string('x'+1)`. Go makes such
+  a conversion a *constant string*, and this refused every one of them as *a string
+  conversion needs allocation, which the target does not have* — true of the run-time
+  conversion, and of nothing here: the bytes are known at compile time and are folded
+  into the literal, allocating and copying nothing. `println(string('A'))` was an
+  error.
+
+  The result stands wherever a string literal does — a local, an argument, a struct
+  or array literal element, a comparison, a switch operand, a package variable — and
+  takes part in constant concatenation, `"hi" + string('!')`.
+
+  The encoding is Go's, one to four UTF-8 bytes, with `"\uFFFD"` for a value that is
+  no code point: a surrogate half, a negative, or one past U+10FFFF. That last is a
+  *conversion*, not an error, because the target type is string — `string(1 << 40)`
+  is a legal program printing the replacement character, while `rune(1 << 40)` is
+  refused at that conversion, as in Go. `string(rune(0))` is a string of length one
+  holding a NUL.
+
+  The run-time conversion — `string(r)` for a rune *variable*, and `string(b)` from
+  a byte slice — is still refused; it needs storage the caller must choose.
+
 - **A constant string element of a package array literal builds on the target
   again** — `var parts = [2]string{pre + "y", "a" + "b"}` was emitted with a compound
   literal per element, which the backend rejects in a file-scope initializer (*Bad

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // cIntLit renders an integer literal as C, appending a "ULL" suffix to a value that
@@ -442,6 +443,21 @@ var cNamedEscape = map[byte]string{
 // A non-ASCII byte goes the same way rather than through as itself: the emitted C
 // then holds no byte a compiler could read as anything but a string, whatever it
 // believes the source encoding to be.
+// runeString is Go's conversion of an integer constant to a string: the UTF-8
+// encoding of that code point, and "\uFFFD" for a value that is not one. Go's own
+// string(rune) answers the surrogate range that way already; what it cannot answer
+// is a value outside int32, which would silently truncate, so that is checked here.
+//
+// The result may hold a NUL and is not a C string: emitFoldedString writes an
+// explicit length beside the bytes, which is what makes string(rune(0)) a string of
+// length one rather than of length zero.
+func runeString(v int64) string {
+	if v < 0 || v > unicode.MaxRune {
+		return string(unicode.ReplacementChar)
+	}
+	return string(rune(v))
+}
+
 func cQuote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -9270,9 +9286,10 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	// output as the bytes and their length -- and testing the spelling instead left
 	// a constant CONCATENATION, `[2]string{pre + "b", "c"}`, emitting the compound
 	// literal form, which the target's compiler rejects at file scope as "Bad
-	// constant expression". A call that genuinely returns a string does not fold,
-	// and is left to the paths below: bracing what it contains would not be C,
-	// which is what the spelling test was reaching for.
+	// constant expression". A constant rune conversion, `string('a')`, is the same
+	// case and is how this was found. A call that genuinely returns a string does
+	// not fold, and is left to the paths below: bracing what it contains would not
+	// be C, which is what the spelling test was reaching for.
 	if _, isConst := e.foldConstString(v.ast); brace && isConst {
 		saved := e.declInit
 		e.declInit = true
@@ -10910,6 +10927,16 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 	src, ok := e.exprReprCType(arg.ast)
 	if !ok || src != e.underlyingCType(ct) {
 		if e.underlyingCType(ct) == cString {
+			// A CONSTANT operand converts at COMPILE TIME: Go makes string('A') a
+			// constant string, and there is nothing to allocate or copy. The
+			// refusal below is about the runtime conversion, which does need
+			// storage this target has no way to choose; it had been refusing both,
+			// so `println(string('A'))` was an error about allocation for an
+			// expression that allocates nothing.
+			if v, isConst := e.constIntValue(arg.ast); isConst {
+				e.emitFoldedString(runeString(v))
+				return
+			}
 			e.fail("a string conversion needs allocation, which the target does not have")
 			return
 		}
@@ -11539,6 +11566,13 @@ func (e *emitter) foldIntToken(tok int32) (int64, bool) {
 	case INT:
 		v, err := strconv.ParseInt(normalizeIntLit(e.src(tok)), 0, 64)
 		return v, err == nil
+	case CHAR:
+		// A rune literal is an untyped integer constant, worth the same as the INT
+		// spelling of its code point -- so `string('A')` and `[3 * 'A']int` fold
+		// alike. Emission was already numeric (emitOperandToken), so nothing that
+		// used to reach the C compiler changes shape.
+		r, ok := runeLitValue(e.src(tok))
+		return int64(r), ok
 	case IDENT:
 		switch s := e.src(tok); s {
 		case "true":
@@ -22253,6 +22287,32 @@ func (e *emitter) emitOperandToken(tok int32) {
 // literal is not a constant expression there); elsewhere the compound literal
 // `(ogo_string){"s", n}` is used. n is the decoded byte length (escapes counted as
 // one byte).
+// constRuneStringFactor folds a Factor that is a `string(x)` conversion with a
+// CONSTANT operand, which is a constant string in Go and so may stand in a constant
+// concatenation. The operand may be an integer -- the rune conversion this exists
+// for -- or itself a constant string, `string("a")`, which converts to its own
+// bytes.
+func (e *emitter) constRuneStringFactor(kids []Node) (string, bool) {
+	name, suffix, ok := e.factorCall(kids)
+	if !ok || name != "string" {
+		return "", false
+	}
+	var args []Node
+	for _, n := range suffix {
+		if n.sym == CallSuffix {
+			args = e.callArgExprs(n.ast)
+			break
+		}
+	}
+	if len(args) != 1 {
+		return "", false
+	}
+	if v, isInt := e.constIntValue(args[0].ast); isInt {
+		return runeString(v), true
+	}
+	return e.foldConstString(args[0].ast)
+}
+
 // foldConstString folds a compile-time-constant string expression to its decoded
 // value: a string literal, a string constant, or a concatenation (with "+") of
 // those. It reports false for anything with a non-constant operand -- a variable --
@@ -22300,11 +22360,21 @@ func (e *emitter) foldConstString(ast []int32) (string, bool) {
 				// compile time, and that this compiler folds when both halves are
 				// this package's.
 				if n.sym == Factor {
-					if b2, f2, isField := e.factorFieldAccess(slices.Collect(it(n.ast))); isField {
+					kids := slices.Collect(it(n.ast))
+					if b2, f2, isField := e.factorFieldAccess(kids); isField {
 						if cv, is := e.qualifiedStrConstVal(b2, f2); is {
 							b.WriteString(cv)
 							continue
 						}
+					}
+					// `"hi" + string('!')`. A constant rune converted to a string
+					// is a constant string, so it concatenates at compile time like
+					// any other -- and without this the walk met the conversion one
+					// token at a time, failed to fold the bare name `string`, and
+					// called the whole expression a runtime concatenation.
+					if cv, is := e.constRuneStringFactor(kids); is {
+						b.WriteString(cv)
+						continue
 					}
 				}
 				walk(n.ast)

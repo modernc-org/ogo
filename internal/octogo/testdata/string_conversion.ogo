@@ -1,7 +1,14 @@
-// A string conversion that BUILDS a string -- string(r) from a rune, string(b) from
-// a byte slice -- must copy its bytes somewhere. The allocation-free target has
-// nowhere to put them, exactly as runtime string concatenation does, so it is
-// refused with a clear message rather than an opaque emit error.
+// A string conversion that BUILDS a string at RUN TIME -- string(r) from a rune
+// variable, string(b) from a byte slice -- must copy its bytes somewhere. The
+// allocation-free target has nowhere to put them, exactly as runtime string
+// concatenation does, so it is refused with a clear message rather than an opaque
+// emit error.
+//
+// A CONSTANT operand is a different matter and is not refused: Go makes string('A')
+// a constant string, and the emitter folds it to the literal bytes, so there is
+// nothing to allocate or copy. Its RANGE is not checked against rune either -- Go
+// converts an integer constant too large for one to "�" rather than failing,
+// and writing rune(1 << 40) is what fails, at that conversion.
 //
 // A conversion that builds nothing is free and is not refused: string(s) of a string
 // is the same bytes, and so is one of a named type over string. Numeric conversions
@@ -21,6 +28,31 @@ func run() {
 	_ = int(x)
 	_ = float64(r)
 	_ = uint8(r)
+}
+
+// A constant operand converts at compile time, in every spelling of one.
+const bang = '!'
+const code = 0x4E16
+
+func folded() {
+	_ = string('A')
+	_ = string(rune(66))
+	_ = string(67)
+	_ = string(bang)
+	_ = string(code)
+	_ = string('x' + 1)
+	_ = "hi" + string('!')
+
+	// Out of rune range is "�", not an error -- the conversion is to string.
+	_ = string(1 << 40)
+	_ = string(-1)
+}
+
+// The explicit rune conversion is where an overflowing constant is reported, and it
+// is reported there whether or not a string conversion encloses it.
+func overflow() {
+	// ERROR "constant 1099511627776 overflows rune"
+	_ = string(rune(1 << 40))
 }
 
 // The free conversions. string(b) from a byte slice is refused too, but by the
