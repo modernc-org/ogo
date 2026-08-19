@@ -20,6 +20,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A package ARRAY literal may have computed elements** — `var curve =
+  [3]Point{{FromInt(0), FromInt(10)}, …}`, and `[2]int{seed(), 5}`. C evaluates a
+  static initializer at compile time, so a call in one is not a program the backend
+  will take — and it said so in words about generated C the program never wrote
+  (*global initializers … must be constant*), which is worse than any refusal. The
+  table is now zeroed and filled at package initialization, ordered against the
+  variables it reads, exactly as the scalar and struct forms already were. An
+  all-constant literal is still a static table.
+
+  A package *slice* literal is refused instead, naming the shape that works
+  (declare an array and slice it): its backing is a file-scope table with no fill
+  yet. A local slice literal is unaffected — it has a frame backing and a statement
+  to fill it in.
+
 - **A method may be called on a PARENTHESISED expression** — `(raw - lo).Div(span)`,
   and a chain of them, `(a - b).Add(1).Scale(2)`. Every other receiver shape already
   worked (a variable, a parenthesised variable, a field, an element, a call's

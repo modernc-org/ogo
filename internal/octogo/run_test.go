@@ -1545,6 +1545,52 @@ func main() {
 		want: "true false true\ntrue false true\n1\n",
 	},
 	{
+		// A package ARRAY literal whose elements are not constant. C evaluates a
+		// static initializer at compile time, so a call in one is not a program the
+		// backend will take -- and it said so about generated C the program never
+		// wrote ("global initializers ... must be constant"), which is worse than
+		// any refusal. The table is zeroed and filled at package initialization
+		// instead, which the scalar and struct forms already did.
+		//
+		// A calibration table computed from a conversion is what this is for, and
+		// what found it.
+		name: "a package array literal with computed elements",
+		src: `type Fix int32
+
+func FromInt(n int) Fix {
+	return Fix(n << 8)
+}
+
+type Point struct {
+	raw Fix
+	val Fix
+}
+
+var scale = FromInt(2)
+
+var curve = [3]Point{
+	{FromInt(0), FromInt(10)},
+	{FromInt(100), scale},
+	{FromInt(200), FromInt(60)},
+}
+
+var plain = [2]int{seed(), 5}
+
+var mixed = [4]int{1, seed(), 3, 4}
+
+func seed() int {
+	return 7
+}
+
+func main() {
+	println(int(curve[0].val>>8), int(curve[1].val>>8), int(curve[2].raw>>8))
+	println(plain[0], plain[1])
+	println(mixed[0], mixed[1], mixed[3])
+}
+`,
+		want: "10 2 200\n7 5\n1 7 4\n",
+	},
+	{
 		// A METHOD called on a PARENTHESISED expression, which fixed-point code is
 		// written in: `(raw - lo).Div(span)`. Every other receiver shape worked --
 		// a variable, a parenthesised variable, a field, an element, a call's

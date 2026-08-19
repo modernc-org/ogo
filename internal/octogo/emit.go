@@ -5384,6 +5384,20 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			// assignable C value type, and a slice literal needs a hoisted backing --
 			// so this precedes the general inference path below.
 			if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
+				// A literal whose elements are not all constant cannot BE a static
+				// initializer: C evaluates one at compile time, and the target's
+				// compiler says so ("global initializers ... must be constant") of
+				// generated code the program never wrote. The table is emitted
+				// zeroed and filled at package initialization instead, which is
+				// what the scalar and struct forms already did -- staticInitOK
+				// answered for an array literal all along and only this position
+				// never asked it.
+				if !e.staticLitElementsOK(lit) {
+					if a, isArr := e.pkgArrayInit(initExpr); isArr {
+						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+						continue
+					}
+				}
 				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
 				continue
 			}
@@ -9763,6 +9777,17 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	decl, suffix := elem, ""
 	if a, isArr := e.namedArrays[elem]; isArr {
 		decl, suffix = a.elem, a.declSuffix()
+	}
+	// A file-scope backing array whose elements are not all constant cannot be
+	// written as a static initializer -- C evaluates one at compile time. The ARRAY
+	// forms are zeroed and filled at package initialization instead; a slice's
+	// backing has no such fill yet, so it is refused HERE with the shape that does
+	// work, rather than emitted and left to the backend to reject in words about
+	// generated C the program never wrote.
+	if static && !e.staticLitElementsOK(lit) {
+		e.fail("a package slice literal's elements must be constant: declare the values as an "+
+			"array and slice it, `var back = [%s]%s{...}` and `var %s = back[:]`", n, e.goTypeName(elem), name)
+		return
 	}
 	fixups := e.captureLitFixups(func() {
 		lead()

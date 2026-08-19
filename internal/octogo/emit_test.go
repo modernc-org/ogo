@@ -7780,6 +7780,101 @@ func main() {
 	}
 }
 
+func TestEmitCPkgLitElements(t *testing.T) {
+	const decls = `type P struct{ a, b int }
+
+func f() int { return 7 }
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		// A package SLICE literal has a file-scope backing array, and no fill for it
+		// yet. Refused with the shape that works, rather than emitted for the
+		// backend to reject in words about generated C.
+		{
+			name: "a package slice literal with a computed element",
+			src: `var a = []P{{f(), f()}}
+
+func main() { println(a[0].a) }
+`,
+			want: "a package slice literal's elements must be constant",
+		},
+		{
+			name: "a package slice of scalars with a computed element",
+			src: `var a = []int{f(), 2}
+
+func main() { println(a[0]) }
+`,
+			want: "a package slice literal's elements must be constant",
+		},
+		// The array forms are filled at package initialization, and everything
+		// constant is still a static table.
+		{
+			name: "a package array with a computed element",
+			src: `var a = [2]int{f(), 2}
+
+func main() { println(a[0], a[1]) }
+`,
+		},
+		{
+			name: "a package array of structs with computed fields",
+			src: `var a = [2]P{{f(), f()}, {1, 2}}
+
+func main() { println(a[0].a, a[1].a) }
+`,
+		},
+		{
+			name: "a package slice of constants",
+			src: `var a = []int{1, 2, 3}
+
+func main() { println(a[0], len(a)) }
+`,
+		},
+		{
+			name: "an array sliced at package scope",
+			src: `var back = [2]P{{f(), f()}, {1, 2}}
+
+var a = back[:]
+
+func main() { println(a[0].a, len(a)) }
+`,
+		},
+		// A LOCAL slice literal has a frame backing and an enclosing statement, so
+		// it takes a computed element as it always did.
+		{
+			name: "a local slice literal with a computed element",
+			src: `func main() {
+	a := []int{f(), 2}
+	println(a[0], a[1])
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a non-constant package literal element; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCBlockLifetime(t *testing.T) {
 	const decls = `type Box struct {
 	p *int
