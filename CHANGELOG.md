@@ -16,7 +16,38 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.29.0
+
+Lifetime rules that hold at every spelling, and the array as a value.
+
+A reference could still reach storage that had gone, by routes the rules did not
+recognise: nested in a composite literal, carried out by an `append`, stored into a
+method's receiver, stored through a pointer parameter, and — past all of them —
+through an interface, where the call names no function and so nothing was asked at
+all. Each was a build that succeeded and then read a dead frame. The rules
+themselves were right; what was missing was the set of spellings they had to see.
+
+Two of them change what compiles rather than only what is caught. A call through an
+interface is judged against every implementation at once, so one that keeps its
+argument constrains the calls even where the value assigned is one that does not —
+refusing some correct programs, because proving which implementation runs is a pass
+that does not exist yet. And a reference may no longer outlive the *block* of the
+variable it points at, which is what makes Go's per-iteration loop variable mean here
+what it means in Go rather than quietly meaning what it meant before Go 1.22: where
+the reference does not outlive the iteration the two are indistinguishable, and where
+it does, matching Go would need a heap.
+
+The second arc is the array reached by a longer route than its own name. A method may
+return one, be called on an element, yield several results from one, run on a cog and
+survive a defer; a package array variable may be initialized by anything a local can
+be; and a call's array result may fill a composite literal's element. A defined array,
+slice or channel type is a type of its own, an argument of the wrong shape no longer
+builds, and a literal's elements are type-checked.
+
+Elsewhere: a constant rune converts to a string, as Go makes it a constant; a channel
+declared from another names that channel rather than hanging; a send may name one two
+fields deep; and another package's interface, string constants and conversions are
+usable.
 
 ### Language
 
