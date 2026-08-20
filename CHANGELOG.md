@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A goroutine that overruns its stack says so.** Each pool slot's 256 longs are
+  now fenced, and a goroutine that runs past them and still returns ends with
+  `panic: goroutine stack overflow` — the one failure in this runtime that had no
+  diagnostic, where cog exhaustion and a stalled stop both have one.
+
+  Measuring it corrected the documentation as well: a goroutine recursing a *hundred*
+  deep already overruns, where the README said two hundred was fine. It printed the
+  right answer and quietly overwrote the neighbouring slot, which is why it read as
+  fine. A goroutine that overruns by much more loses control before the fence can be
+  read, and no check without memory protection can catch that one.
+
 - **`printf` matched `fmt` in two fewer places than it should have.** `%+d` of an
   *unsigned* value dropped the sign — C's `+` flag applies to its signed
   conversions, so `%+u` writes none where fmt writes `+255`. The value is now

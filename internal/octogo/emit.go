@@ -850,7 +850,18 @@ const ogoCogPool = `#define OGO_COGS 8
 // legitimately. It turns a state this protocol did not anticipate into a
 // diagnosable panic instead of a silent hang.
 #define OGO_STOP_SPINS 100000
-typedef struct { int ogo_used; int ogo_done; int ogo_cog; ogo_go_args ogo_args; long ogo_stack[OGO_STACK_LONGS]; } ogo_cog_slot;
+// Both sides are fenced and the HIGH one is what fires: measured on a P2-EDGE, the
+// target's stack grows UP from the base handed to _cogstart. The low fence costs a
+// long and a comparison and the direction is the toolchain's to change.
+//
+// The stack is fenced on BOTH sides. A goroutine that outruns its 256 longs used to
+// scribble over whatever sat next in the pool and then, as often as not, print
+// nothing at all -- the one failure in this runtime with no diagnostic, where cog
+// exhaustion and a stalled stop both have one. Which side an overrun reaches depends
+// on the direction the target's stack grows, so both are watched and the panic says
+// which; the guards cost one long apiece and a comparison when the goroutine ends.
+#define OGO_STACK_GUARD 0x6f676f67L
+typedef struct { int ogo_used; int ogo_done; int ogo_cog; ogo_go_args ogo_args; long ogo_guard_lo; long ogo_stack[OGO_STACK_LONGS]; long ogo_guard_hi; } ogo_cog_slot;
 static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
 static int ogo_cog_lock = -1;
 static void ogo_cog_sweep(void) { // frees every finished slot; caller holds ogo_cog_lock
@@ -901,6 +912,8 @@ static int ogo_cog_claim(void) {
 		}
 		if (got >= 0) {
 			ogo_cog_pool[got].ogo_used = 1;
+			ogo_cog_pool[got].ogo_guard_lo = OGO_STACK_GUARD;
+			ogo_cog_pool[got].ogo_guard_hi = OGO_STACK_GUARD;
 			ogo_cog_pool[got].ogo_done = 0;
 			ogo_cog_pool[got].ogo_cog = -1;
 		}
@@ -925,7 +938,14 @@ static int ogo_cog_claim(void) {
 	}
 }
 static void ogo_cog_release(int slot) { ogo_cog_pool[slot].ogo_used = 0; }
-static void ogo_cog_done(int slot) { ogo_cog_pool[slot].ogo_done = 1; }
+static void ogo_cog_done(int slot) {
+	// Checked HERE, by the goroutine itself as it ends: the slot is still its own,
+	// and this is the last moment anything of it is trustworthy.
+	if (ogo_cog_pool[slot].ogo_guard_lo != OGO_STACK_GUARD || ogo_cog_pool[slot].ogo_guard_hi != OGO_STACK_GUARD) {
+		ogo_panic("goroutine stack overflow");
+	}
+	ogo_cog_pool[slot].ogo_done = 1;
+}
 `
 
 // emitGo emits a `go` statement: claim a pool slot, marshal the arguments into it,

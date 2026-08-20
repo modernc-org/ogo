@@ -318,10 +318,14 @@ broken.
   anyway.
 * A **goroutine's stack is a fixed 256 longs** and cannot be sized per `go`
   statement. Recursion works — `main` runs on the cog's own stack and a goroutine on
-  its pool slot's — but a deep enough call chain in a goroutine overruns that slot
-  with no diagnostic, this part having no memory protection. Measured on a P2-EDGE, a
-  goroutine recursing 200 deep is fine and one recursing 2000 deep prints nothing at
-  all.
+  its pool slot's — but a deep enough call chain in a goroutine overruns that slot,
+  this part having no memory protection. The slot is fenced, so a goroutine that
+  overruns it and still returns ends with `panic: goroutine stack overflow` rather
+  than the silence it used to end with. Measured on a P2-EDGE: a goroutine recursing
+  a hundred deep already trips the fence — and used to print the right answer while
+  quietly overwriting the next slot — and one recursing a few hundred deep loses
+  control before the fence can be read, which no check without memory protection can
+  catch.
 * A `select` may carry at most one send clause, and none alongside a `default` —
   both need a "receiver is ready" signal the rendezvous does not carry.
 * A **method value** in two shapes, neither an omission. One with a **value
