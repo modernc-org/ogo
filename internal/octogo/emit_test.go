@@ -8115,6 +8115,189 @@ func main() { println(run(5)) }
 	}
 }
 
+func TestEmitCLocalRecvEscape(t *testing.T) {
+	const decls = `type H struct {
+	d []int
+	n int
+}
+
+type Other struct{ n int }
+
+var gs []int
+
+var done chan int
+
+var back [4]int
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		// A method on a LOCAL receiver recorded no call edge, so what the callee did
+		// with the parameter said nothing to the caller's callers.
+		{
+			name: "a local receiver's method stores in a package variable",
+			src: `func (t *H) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	var scratch H
+	scratch.stash(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "the receiver declared with a short declaration",
+			src: `func (t *H) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	scratch := H{}
+	scratch.stash(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "a local receiver's method hands the argument to a cog",
+			src: `func work(d []int) { done <- len(d) }
+
+func (t *H) spawn(d []int) { go work(d) }
+
+func pass(d []int) {
+	var scratch H
+	scratch.spawn(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+	<-done
+}
+
+func main() { leak() }
+`,
+			want: "reaches another cog",
+		},
+		// What the callee stores into the receiver ITSELF is not a leak: the
+		// receiver is a local of the caller and dies with it.
+		{
+			name: "a local receiver's method stores in the receiver",
+			src: `func (t *H) take(d []int) { t.d = d }
+
+func sum(d []int) int {
+	var scratch H
+	scratch.take(d)
+	return len(scratch.d)
+}
+
+func main() {
+	var a [4]int
+	println(sum(a[:]))
+}
+`,
+		},
+		{
+			name: "a local receiver's method that only reads",
+			src: `func (t *H) count(d []int) int { return len(d) + t.n }
+
+func f(d []int) int {
+	var scratch H
+	return scratch.count(d)
+}
+
+func main() {
+	var a [4]int
+	println(f(a[:]))
+}
+`,
+		},
+		{
+			name: "package backing through the keeping method",
+			src: `func (t *H) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	var scratch H
+	scratch.stash(d)
+}
+
+func main() {
+	pass(back[:])
+	println(len(gs))
+}
+`,
+		},
+		// The scan has no scopes, so a name declared TWICE with different types
+		// names neither -- guessing would name a wrong method.
+		{
+			name: "the same local name in two blocks",
+			src: `func (t *H) keep(d []int) int { return len(d) }
+
+func (o *Other) keep(d []int) int { return len(d) + 1 }
+
+func f(d []int) int {
+	t := 0
+	{
+		var s H
+		t += s.keep(d)
+	}
+	{
+		var s Other
+		t += s.keep(d)
+	}
+	return t
+}
+
+func main() {
+	var a [4]int
+	println(f(a[:]))
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a leak through a local receiver; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCIfaceEscape(t *testing.T) {
 	const decls = `type S interface{ take(d []int) }
 

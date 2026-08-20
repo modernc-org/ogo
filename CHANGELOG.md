@@ -87,6 +87,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference to a local may no longer be laundered through a method on a LOCAL
+  receiver.** `var scratch H; scratch.stash(d)` recorded no call edge at all, so a
+  method that stores its parameter in a package variable — or hands it to a cog —
+  said nothing to the callers of the function holding the scratch struct, and the
+  reference outlived its frame silently. It was the last receiver shape the crossing
+  summary could not name: the declaration is in the body, so naming it takes a scan
+  of the body.
+
+  What the method stores into the receiver ITSELF is still fine — the receiver is a
+  local and dies with the frame — and a read-only method, or one handed storage that
+  outlives the call, is unaffected. A local name declared twice with different types
+  names neither: the scan has no scopes, and a wrong type would name a wrong method.
+
 - **A float constant that is not whole is refused where an integer is wanted.**
   `var n int = 1.5` compiled and stored 1; so did `n = 1.5`, `return 1.5`,
   `take(1.5)`, `S{1.5}`, `[]int{1.5}`, `ch <- 1.5` and `int32(2.5)` — every position

@@ -6189,6 +6189,12 @@ const (
 	// leakRecv becomes the caller's "stored through parameter recvAt" -- the same
 	// fact crossInto carries for a plain store, asked one call further out.
 	recvParam
+	// recvLocal: a LOCAL of the caller, `var scratch H; scratch.stash(d)`. It dies
+	// with the frame, so what the callee stores INTO it is not a leak and leakRecv
+	// is dropped -- but everything else the callee does with the parameter is one,
+	// and recording no edge at all was how a store into a package variable, made by
+	// a method on a scratch struct, reached its callers unmentioned.
+	recvLocal
 )
 
 // collectCrossParams seeds the per-parameter crossing summary for the functions of
@@ -6386,6 +6392,10 @@ func (e *emitter) closeCrossParams() {
 				switch {
 				case g.recv == recvOutlives:
 					flags = flags&^leakRecv | leakGlobal
+				case g.recv == recvLocal:
+					// The receiver dies with the caller's frame, so what the callee
+					// put in it dies too. Every other flag still travels.
+					flags &^= leakRecv
 				case g.recv == recvParam:
 					// The receiver is the caller's own parameter, so the callee's
 					// store into it is the caller's store THROUGH that parameter:
@@ -6453,7 +6463,7 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 	if !ok || name == "" || body == nil {
 		return funcInfo{}, false
 	}
-	fi := funcInfo{cname: mangle(e.curPkgPrefix, name), srcName: name, body: body}
+	fi := funcInfo{cname: mangle(e.curPkgPrefix, name), srcName: name, body: body, locals: e.localTypeNames(body)}
 	if recv != nil {
 		rn, rct, _ := e.receiverInfo(recv)
 		fi.cname = methodCName(methodBaseType(rct), name)
@@ -6510,6 +6520,111 @@ func (e *emitter) ptrParamBase(ta []int32) string {
 	return name
 }
 
+// localTypeNames maps a body's local variables to the DEFINED type each is declared
+// with -- `var scratch H` and `scratch := H{}` -- read as WRITTEN and kept only when
+// it names a type this package declares.
+//
+// It exists for the one receiver the crossing summary could not name. A method on a
+// LOCAL receiver recorded no call edge at all, so a callee that stores its parameter
+// in a package variable said nothing to ITS callers: `var scratch H;
+// scratch.stash(d)` left a header over a dead frame, accepted.
+//
+// The type is read from the source rather than from cType, which refuses an array by
+// latching the emitter's error state -- the trap that kept this case out when the
+// method edges were first recorded.
+//
+// A name declared TWICE with different types is dropped rather than guessed at. Two
+// blocks may each declare a scratch of their own, and this map has no scopes; a
+// wrong type would name a wrong method, which is worse than naming none.
+func (e *emitter) localTypeNames(body []int32) map[string]string {
+	out := map[string]string{}
+	note := func(name, tname string) {
+		if name == "" || tname == "" {
+			return
+		}
+		mn := mangle(e.curPkgPrefix, tname)
+		if !e.typeNames[mn] {
+			return
+		}
+		if prev, seen := out[name]; seen && prev != mn {
+			out[name] = "" // two declarations disagree: name neither
+			return
+		}
+		out[name] = mn
+	}
+	e.eachStmt(body, func(nodes []Node) {
+		for _, n := range nodes {
+			if n.sym == VarDecl {
+				e.noteVarSpecTypes(n.ast, note)
+			}
+		}
+		// `scratch := H{}`: the type is the literal's own name.
+		if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
+			name := e.soleIdent(nodes[0].ast)
+			for _, v := range e.definedValues(nodes[1].ast) {
+				if tn, _, isLit := e.soleCompositeLit(v); isLit {
+					note(name, tn)
+				}
+			}
+		}
+	})
+	for n, t := range out {
+		if t == "" {
+			delete(out, n)
+		}
+	}
+	return out
+}
+
+// noteVarSpecTypes calls note for every `var name T` in a VarDecl whose type is a
+// bare identifier.
+func (e *emitter) noteVarSpecTypes(ast []int32, note func(name, tname string)) {
+	for sp := range it(ast) {
+		if sp.sym != VarSpec {
+			continue
+		}
+		var names []string
+		tname := ""
+		for c := range it(sp.ast) {
+			switch c.sym {
+			case IdentifierList:
+				for id := range it(c.ast) {
+					if id.sym == 0 && e.f.ch(id.tok) == IDENT {
+						names = append(names, e.src(id.tok))
+					}
+				}
+			case Type:
+				if tok, ok := e.soleToken(c.ast); ok && e.f.ch(tok) == IDENT {
+					tname = e.src(tok)
+				}
+			}
+		}
+		for _, nm := range names {
+			note(nm, tname)
+		}
+	}
+}
+
+// definedValues returns the values of a `:=` short declaration's Postfix, and none
+// for any other operator -- assignThrough's counterpart for the declaring form.
+func (e *emitter) definedValues(ast []int32) [][]int32 {
+	postfix := slices.Collect(it(ast))
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil
+	}
+	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != DEFINE {
+		return nil
+	}
+	var out [][]int32
+	for n := range it(op[1].ast) {
+		if n.sym == Expression {
+			out = append(out, n.ast)
+		}
+	}
+	return out
+}
+
 // funcInfo is what the crossing summary needs of one declaration: how it is named,
 // its parameters and their types, its body, and -- for a method -- the receiver it
 // was declared with. The receiver is not among the parameters: it is not one at the
@@ -6525,6 +6640,9 @@ type funcInfo struct {
 	body      []int32
 	recvName  string
 	recvCType string
+	// locals maps a local variable to the DEFINED type it was declared with, for
+	// the receivers only a body scan can name (see localTypeNames).
+	locals map[string]string
 }
 
 // eachStmt calls fn with the children of every Statement in ast, at any depth, so a
@@ -6809,6 +6927,11 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		// costs nothing and risks nothing -- which is what used to leave this case
 		// out. The base is already mangled and starless, as methodBaseType wants.
 		ct, kind, at = fi.ptrBase[i], recvParam, i
+	case fi.locals[recv] != "":
+		// A LOCAL, whose declaration the body scan read. It dies with the frame, so
+		// a store INTO it is no leak -- but a store THROUGH the parameter into a
+		// package variable is, and with no edge at all nothing said so.
+		ct, kind = fi.locals[recv], recvLocal
 	}
 	if ct == "" || kind == recvNone {
 		return methodCall{}, false
