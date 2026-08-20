@@ -192,6 +192,11 @@ The binary is written beside the package and named after its directory, except
 when a single file is named, which keeps that file's name: ogo build x.ogo writes
 x.binary. -o overrides the path.
 
+A package that declares no func main is a LIBRARY. OctoGo has no package clause,
+so that is what tells the two apart. A library is checked -- fully, the lifetime
+and escape rules included -- and reports what it finds, but links nothing and
+writes no binary, so -o has nothing to write and says so.
+
 Runtime checks are on by default: out-of-range indexing and slicing, division and
 remainder by zero, a shift by a negative count, appending past a slice's capacity,
 a nil pointer dereference and cog exhaustion. Each prints "panic: <what>" and halts

@@ -3054,6 +3054,50 @@ func Release() EmitOption { return func(e *emitter) { e.release = true } }
 // emitted at all -- a test binary replaces it, and emitting it would collide.
 func TestEntry(name string) EmitOption { return func(e *emitter) { e.testEntry = name } }
 
+// HasMain reports whether a package declares func main. OctoGo has no package
+// clause, so this is the whole of what tells a program from a library: a directory
+// declaring main is built into a binary, one that does not is checked and emitted
+// and has nothing to link.
+//
+// A METHOD called main is not one. It belongs to its receiver and is reached
+// through it, exactly as any other method is.
+func HasMain(p *Package) bool {
+	for _, f := range p.Files {
+		if f == nil {
+			continue
+		}
+		for n := range it(f.AST) {
+			if n.sym != SourceFile {
+				continue
+			}
+			for c := range it(n.ast) {
+				if c.sym != TopLevelDecl {
+					continue
+				}
+				for d := range it(c.ast) {
+					if d.sym == FuncDecl && isMainFunc(f, d) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isMainFunc(f *File, decl Node) bool {
+	name := ""
+	for c := range it(decl.ast) {
+		switch {
+		case c.sym == Receiver:
+			return false
+		case c.sym == 0 && Symbol(f.tok(c.tok).Ch) == IDENT && name == "":
+			name = f.tok(c.tok).Src()
+		}
+	}
+	return name == "main"
+}
+
 // TestFuncs names the test functions of a package: a function called Test<Name>
 // taking one parameter and no results, which is the shape "ogo test" generates a
 // runner for. Order is the source order of the files, so a run is reproducible.

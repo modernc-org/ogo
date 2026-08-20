@@ -2372,6 +2372,14 @@
 //
 //	func main() { … }
 //
+// A package that declares no such function is a LIBRARY. Because OctoGo omits the
+// package clause, this is the whole of what distinguishes the two, and there is no
+// declared intent for it to contradict: a directory either declares a main or it
+// does not. A library is checked exactly as any package is and yields no program.
+//
+// A METHOD called main is not one. It belongs to its receiver and is reached
+// through it, as any other method is.
+//
 // Program initialization begins by initializing the imported packages. If
 // multiple packages import the same package, the imported package will be
 // initialized only once.

@@ -5,6 +5,7 @@
 package build
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"slices"
@@ -176,5 +177,96 @@ func TestParseArgs(t *testing.T) {
 	}
 	if _, _, err := parseArgs([]string{"--clock"}); err == nil {
 		t.Error("--clock without an argument: want an error")
+	}
+}
+
+// TestBuildLibrary covers a package that declares no func main. OctoGo has no
+// package clause, so that is the whole of what tells a library from a program, and
+// building one used to reach flexcc and fail there with `could not find function
+// main` -- a C compiler's complaint about a C program the user never wrote.
+func TestBuildLibrary(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ogoModFile), "module example.com/proj\n")
+	if err := os.MkdirAll(filepath.Join(root, "sensor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "sensor", "sensor.ogo"), "func Read() int { return 42 }\n")
+	if err := os.MkdirAll(filepath.Join(root, "util"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "util", "util.ogo"),
+		"import \"example.com/proj/sensor\"\n\nfunc Twice() int { return 2 * sensor.Read() }\n")
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		code int
+		want string // substring of the output, or of the error when code != 0
+	}{
+		{
+			name: "a library is checked and makes no binary",
+			args: []string{filepath.Join(root, "sensor")},
+			want: "[no func main, checked only]",
+		},
+		{
+			// Its imports are resolved as they are for a program, so a library
+			// can be checked on its own without building whatever uses it.
+			name: "a library that imports another package",
+			args: []string{filepath.Join(root, "util")},
+			want: "[no func main, checked only]",
+		},
+		{
+			name: "-o has nothing to write",
+			args: []string{"-o", filepath.Join(t.TempDir(), "x.binary"), filepath.Join(root, "sensor")},
+			code: 2,
+			want: "declares no func main",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			code, err := Build(tc.args, nil, &buf, &buf)
+			got := buf.String()
+			if err != nil {
+				got = err.Error()
+			}
+			if code != tc.code {
+				t.Errorf("code=%d, want %d\n%s", code, tc.code, got)
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("output %q does not contain %q", got, tc.want)
+			}
+		})
+	}
+
+	// No binary anywhere: a library that produced one would be a program.
+	des, err := os.ReadDir(filepath.Join(root, "sensor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, de := range des {
+		if strings.HasSuffix(de.Name(), ".binary") {
+			t.Errorf("a library wrote %s", de.Name())
+		}
+	}
+}
+
+// TestBuildLibraryEmits pins WHY a library is emitted rather than merely checked:
+// the lifetime and escape refusals are made by the emitter, so a library that was
+// only type-checked would be held to far less than the same code is when a program
+// is built from it.
+func TestBuildLibraryEmits(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "lib.ogo"), "func Bad(r int) string { return string(rune(r)) }\n")
+	var buf bytes.Buffer
+	code, err := Build([]string{dir}, nil, &buf, &buf)
+	got := buf.String()
+	if err != nil {
+		got = err.Error()
+	}
+	if code == 0 {
+		t.Fatalf("code=0, want a refusal\n%s", got)
+	}
+	if !strings.Contains(got, "does not outlive the function") {
+		t.Errorf("output %q is not the lifetime refusal", got)
 	}
 }

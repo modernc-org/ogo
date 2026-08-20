@@ -43,6 +43,11 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 	if err != nil || code != 0 {
 		return code, err
 	}
+
+	if bin == "" { // a library: checked, but there is nothing to run
+		return 2, fmt.Errorf("run: no func main to run")
+	}
+
 	return loadp2.Load(loadp2.Options{Binary: bin, Terminal: true}), nil
 }
 
@@ -75,6 +80,20 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 1, err // checker diagnostics
 	}
 
+	// A package that declares no func main is a LIBRARY. OctoGo has no package
+	// clause, so that is the whole of what tells the two apart, and there is no
+	// intent to contradict: a directory either has a main or it has not.
+	//
+	// It is still emitted. The C is where the lifetime and escape refusals are
+	// made, and a library checked without them would be checked far less than the
+	// same code is when a program is built from it. What it does not get is
+	// flexcc: a translation unit with no main does not link, and the diagnostic
+	// for that came from the C compiler, about a C program the user never wrote.
+	library := !octogo.HasMain(pkg)
+	if library && out != "" {
+		return "", 2, fmt.Errorf("build: -o %s: %s declares no func main, so there is no binary to write", out, dir)
+	}
+
 	// Runtime bounds / divide-by-zero checks are on by default (a debug build):
 	// --unchecked omits them, --release reboots on a panic instead of halting.
 	var emitOpts []octogo.EmitOption
@@ -95,6 +114,11 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	var cbuf bytes.Buffer
 	if err := octogo.EmitC(pkg, &cbuf, emitOpts...); err != nil {
 		return "", 1, err
+	}
+
+	if library {
+		fmt.Fprintf(stdout, "ok  \t%s\t[no func main, checked only]\n", dir)
+		return "", 0, nil
 	}
 
 	// flexcc reads its input from disk, so stage the emitted C in a temp dir.

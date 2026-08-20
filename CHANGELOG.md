@@ -31,6 +31,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo build` on a package with no `func main` reported a C compiler's
+  complaint.** It ran the whole pipeline and reached flexcc, which said
+  `error: could not find function main` — about a C program the user never wrote.
+  Such a package is a **library**: OctoGo has no package clause, so declaring a
+  `main` or not is the whole of what tells a program from one. A library is now
+  checked and emitted — the lifetime and escape refusals are made during emission,
+  so checking one any less thoroughly than a program would be a different standard
+  for the same code — and then stops, there being nothing to link:
+
+      $ ogo build ./sensor
+      ok      ./sensor        [no func main, checked only]
+
+  `-o` on a library says it has nothing to write, and `ogo run` says there is no
+  `func main` to run. Both used to reach the backend too.
+
 - **`ogo build --gostack N` sets a goroutine's stack**, 64 to 8192 longs, 256 as
   before by default. It is the other half of the fence below: the panic names the
   limit, and this is how the limit moves. Measured on a P2-EDGE, a goroutine
