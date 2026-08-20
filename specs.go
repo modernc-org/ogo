@@ -1741,7 +1741,13 @@
 // Two flags are refused because the C backend ignores them, and a program that
 // compiles here is meant to mean what it means in Go rather than approximately
 // that: "#", which would write a base prefix, and "0" on a float, which would pad
-// with zeros — "%08.3f". "0" on the integer verbs is honoured, so "%05d" is fine.
+// with zeros — "%08.3f". "0" on the integer verbs is honoured, so "%05d" is fine:
+// the field is written by the compiler rather than by the backend's printf, which
+// pads the DIGITS of a negative number and adds the sign on top of the width.
+//
+// A third is refused in one place only: "+" on a %d of a uint64. The flag is
+// carried by printing the value through a signed conversion, which holds every
+// other unsigned type and not that one.
 //
 // Two verbs do not take a width yet, and say so where they are written: %v, whose
 // rendering is the built-in println's and does its own spacing, and %x of a SIGNED

@@ -1755,6 +1755,383 @@ func main() {
 		want: "h\u00e9llo, \u4e16\u754c\nB 1 1\ntrue true\nmatched\n14 14\nz \U0001f600 4\n",
 	},
 	{
+		// printf against Go's fmt, which is what it is meant to be: every verb the
+		// format accepts, at each type's extremes, with the widths, the alignments
+		// and the flags. Generated, and split three ways because the board's
+		// harness does not carry many more lines than this in one program.
+		//
+		// It found one defect: `%+d` of an UNSIGNED value dropped the sign, C's "+"
+		// flag applying to its signed conversions only. Everything else -- %x of a
+		// negative, %c of a multi-byte rune, %.3s counting RUNES, %T, the zero and
+		// left-align flags -- already matched.
+		name: "printf verbs on signed integers",
+		src: `var v_int8_0 int8 = -128
+var v_int8_1 int8 = -1
+var v_int8_2 int8 = 127
+var v_int16_0 int16 = -32768
+var v_int16_1 int16 = -1
+var v_int16_2 int16 = 32767
+var v_int32_0 int32 = -2147483648
+var v_int32_1 int32 = -1
+var v_int32_2 int32 = 2147483647
+var v_int64_0 int64 = -9223372036854775808
+var v_int64_1 int64 = -1
+var v_int64_2 int64 = 9223372036854775807
+
+func f_int8() {
+	printf("[%d]\n", v_int8_0)
+	printf("[%v]\n", v_int8_0)
+	printf("[%T]\n", v_int8_0)
+	printf("[%8d]\n", v_int8_0)
+	printf("[%-8d|]\n", v_int8_0)
+	printf("[%08d]\n", v_int8_0)
+	printf("[%+d]\n", v_int8_0)
+	printf("[%x]\n", v_int8_0)
+	printf("[%X]\n", v_int8_0)
+	printf("[%d]\n", v_int8_1)
+	printf("[%v]\n", v_int8_1)
+	printf("[%T]\n", v_int8_1)
+	printf("[%8d]\n", v_int8_1)
+	printf("[%-8d|]\n", v_int8_1)
+	printf("[%08d]\n", v_int8_1)
+	printf("[%+d]\n", v_int8_1)
+	printf("[%x]\n", v_int8_1)
+	printf("[%X]\n", v_int8_1)
+	printf("[%d]\n", v_int8_2)
+	printf("[%v]\n", v_int8_2)
+	printf("[%T]\n", v_int8_2)
+	printf("[%8d]\n", v_int8_2)
+	printf("[%-8d|]\n", v_int8_2)
+	printf("[%08d]\n", v_int8_2)
+	printf("[%+d]\n", v_int8_2)
+	printf("[%x]\n", v_int8_2)
+	printf("[%X]\n", v_int8_2)
+}
+
+func f_int16() {
+	printf("[%d]\n", v_int16_0)
+	printf("[%v]\n", v_int16_0)
+	printf("[%T]\n", v_int16_0)
+	printf("[%8d]\n", v_int16_0)
+	printf("[%-8d|]\n", v_int16_0)
+	printf("[%08d]\n", v_int16_0)
+	printf("[%+d]\n", v_int16_0)
+	printf("[%x]\n", v_int16_0)
+	printf("[%X]\n", v_int16_0)
+	printf("[%d]\n", v_int16_1)
+	printf("[%v]\n", v_int16_1)
+	printf("[%T]\n", v_int16_1)
+	printf("[%8d]\n", v_int16_1)
+	printf("[%-8d|]\n", v_int16_1)
+	printf("[%08d]\n", v_int16_1)
+	printf("[%+d]\n", v_int16_1)
+	printf("[%x]\n", v_int16_1)
+	printf("[%X]\n", v_int16_1)
+	printf("[%d]\n", v_int16_2)
+	printf("[%v]\n", v_int16_2)
+	printf("[%T]\n", v_int16_2)
+	printf("[%8d]\n", v_int16_2)
+	printf("[%-8d|]\n", v_int16_2)
+	printf("[%08d]\n", v_int16_2)
+	printf("[%+d]\n", v_int16_2)
+	printf("[%x]\n", v_int16_2)
+	printf("[%X]\n", v_int16_2)
+}
+
+func f_int32() {
+	printf("[%d]\n", v_int32_0)
+	printf("[%v]\n", v_int32_0)
+	printf("[%T]\n", v_int32_0)
+	printf("[%8d]\n", v_int32_0)
+	printf("[%-8d|]\n", v_int32_0)
+	printf("[%08d]\n", v_int32_0)
+	printf("[%+d]\n", v_int32_0)
+	printf("[%x]\n", v_int32_0)
+	printf("[%X]\n", v_int32_0)
+	printf("[%d]\n", v_int32_1)
+	printf("[%v]\n", v_int32_1)
+	printf("[%T]\n", v_int32_1)
+	printf("[%8d]\n", v_int32_1)
+	printf("[%-8d|]\n", v_int32_1)
+	printf("[%08d]\n", v_int32_1)
+	printf("[%+d]\n", v_int32_1)
+	printf("[%x]\n", v_int32_1)
+	printf("[%X]\n", v_int32_1)
+	printf("[%d]\n", v_int32_2)
+	printf("[%v]\n", v_int32_2)
+	printf("[%T]\n", v_int32_2)
+	printf("[%8d]\n", v_int32_2)
+	printf("[%-8d|]\n", v_int32_2)
+	printf("[%08d]\n", v_int32_2)
+	printf("[%+d]\n", v_int32_2)
+	printf("[%x]\n", v_int32_2)
+	printf("[%X]\n", v_int32_2)
+}
+
+func f_int64() {
+	printf("[%d]\n", v_int64_0)
+	printf("[%v]\n", v_int64_0)
+	printf("[%T]\n", v_int64_0)
+	printf("[%8d]\n", v_int64_0)
+	printf("[%-8d|]\n", v_int64_0)
+	printf("[%08d]\n", v_int64_0)
+	printf("[%+d]\n", v_int64_0)
+	printf("[%x]\n", v_int64_0)
+	printf("[%X]\n", v_int64_0)
+	printf("[%d]\n", v_int64_1)
+	printf("[%v]\n", v_int64_1)
+	printf("[%T]\n", v_int64_1)
+	printf("[%8d]\n", v_int64_1)
+	printf("[%-8d|]\n", v_int64_1)
+	printf("[%08d]\n", v_int64_1)
+	printf("[%+d]\n", v_int64_1)
+	printf("[%x]\n", v_int64_1)
+	printf("[%X]\n", v_int64_1)
+	printf("[%d]\n", v_int64_2)
+	printf("[%v]\n", v_int64_2)
+	printf("[%T]\n", v_int64_2)
+	printf("[%8d]\n", v_int64_2)
+	printf("[%-8d|]\n", v_int64_2)
+	printf("[%08d]\n", v_int64_2)
+	printf("[%+d]\n", v_int64_2)
+	printf("[%x]\n", v_int64_2)
+	printf("[%X]\n", v_int64_2)
+}
+
+func main() {
+	f_int8()
+	f_int16()
+	f_int32()
+	f_int64()
+}
+`,
+		want: "[-128]\n[-128]\n[int8]\n[    -128]\n[-128    |]\n[-0000128]\n[-128]\n[-80]\n[-80]\n[-1]\n[-1]\n[int8]\n[      -1]\n[-1      |]\n[-0000001]\n[-1]\n[-1]\n[-1]\n[127]\n[127]\n[int8]\n[     127]\n[127     |]\n[00000127]\n[+127]\n[7f]\n[7F]\n[-32768]\n[-32768]\n[int16]\n[  -32768]\n[-32768  |]\n[-0032768]\n[-32768]\n[-8000]\n[-8000]\n[-1]\n[-1]\n[int16]\n[      -1]\n[-1      |]\n[-0000001]\n[-1]\n[-1]\n[-1]\n[32767]\n[32767]\n[int16]\n[   32767]\n[32767   |]\n[00032767]\n[+32767]\n[7fff]\n[7FFF]\n[-2147483648]\n[-2147483648]\n[int32]\n[-2147483648]\n[-2147483648|]\n[-2147483648]\n[-2147483648]\n[-80000000]\n[-80000000]\n[-1]\n[-1]\n[int32]\n[      -1]\n[-1      |]\n[-0000001]\n[-1]\n[-1]\n[-1]\n[2147483647]\n[2147483647]\n[int32]\n[2147483647]\n[2147483647|]\n[2147483647]\n[+2147483647]\n[7fffffff]\n[7FFFFFFF]\n[-9223372036854775808]\n[-9223372036854775808]\n[int64]\n[-9223372036854775808]\n[-9223372036854775808|]\n[-9223372036854775808]\n[-9223372036854775808]\n[-8000000000000000]\n[-8000000000000000]\n[-1]\n[-1]\n[int64]\n[      -1]\n[-1      |]\n[-0000001]\n[-1]\n[-1]\n[-1]\n[9223372036854775807]\n[9223372036854775807]\n[int64]\n[9223372036854775807]\n[9223372036854775807|]\n[9223372036854775807]\n[+9223372036854775807]\n[7fffffffffffffff]\n[7FFFFFFFFFFFFFFF]\n",
+	},
+	{
+		// The half that found the bug. `%+d` of an unsigned value is printed
+		// through the SIGNED conversion, which carries the same digits and honours
+		// the flag; a uint64 has no signed type wide enough and is refused instead,
+		// so it is absent here.
+		name: "printf verbs on unsigned integers",
+		src: `var v_uint8_0 uint8 = 0
+var v_uint8_1 uint8 = 129
+var v_uint8_2 uint8 = 255
+var v_uint16_0 uint16 = 0
+var v_uint16_1 uint16 = 33000
+var v_uint16_2 uint16 = 65535
+var v_uint32_0 uint32 = 0
+var v_uint32_1 uint32 = 2147483649
+var v_uint32_2 uint32 = 4294967295
+var v_uint64_0 uint64 = 0
+var v_uint64_1 uint64 = 9223372036854775809
+var v_uint64_2 uint64 = 18446744073709551615
+
+func f_uint8() {
+	printf("[%d]\n", v_uint8_0)
+	printf("[%v]\n", v_uint8_0)
+	printf("[%T]\n", v_uint8_0)
+	printf("[%8d]\n", v_uint8_0)
+	printf("[%-8d|]\n", v_uint8_0)
+	printf("[%08d]\n", v_uint8_0)
+	printf("[%+d]\n", v_uint8_0)
+	printf("[%x]\n", v_uint8_0)
+	printf("[%X]\n", v_uint8_0)
+	printf("[%8x]\n", v_uint8_0)
+	printf("[%08x]\n", v_uint8_0)
+	printf("[%d]\n", v_uint8_1)
+	printf("[%v]\n", v_uint8_1)
+	printf("[%T]\n", v_uint8_1)
+	printf("[%8d]\n", v_uint8_1)
+	printf("[%-8d|]\n", v_uint8_1)
+	printf("[%08d]\n", v_uint8_1)
+	printf("[%+d]\n", v_uint8_1)
+	printf("[%x]\n", v_uint8_1)
+	printf("[%X]\n", v_uint8_1)
+	printf("[%8x]\n", v_uint8_1)
+	printf("[%08x]\n", v_uint8_1)
+	printf("[%d]\n", v_uint8_2)
+	printf("[%v]\n", v_uint8_2)
+	printf("[%T]\n", v_uint8_2)
+	printf("[%8d]\n", v_uint8_2)
+	printf("[%-8d|]\n", v_uint8_2)
+	printf("[%08d]\n", v_uint8_2)
+	printf("[%+d]\n", v_uint8_2)
+	printf("[%x]\n", v_uint8_2)
+	printf("[%X]\n", v_uint8_2)
+	printf("[%8x]\n", v_uint8_2)
+	printf("[%08x]\n", v_uint8_2)
+}
+
+func f_uint16() {
+	printf("[%d]\n", v_uint16_0)
+	printf("[%v]\n", v_uint16_0)
+	printf("[%T]\n", v_uint16_0)
+	printf("[%8d]\n", v_uint16_0)
+	printf("[%-8d|]\n", v_uint16_0)
+	printf("[%08d]\n", v_uint16_0)
+	printf("[%+d]\n", v_uint16_0)
+	printf("[%x]\n", v_uint16_0)
+	printf("[%X]\n", v_uint16_0)
+	printf("[%8x]\n", v_uint16_0)
+	printf("[%08x]\n", v_uint16_0)
+	printf("[%d]\n", v_uint16_1)
+	printf("[%v]\n", v_uint16_1)
+	printf("[%T]\n", v_uint16_1)
+	printf("[%8d]\n", v_uint16_1)
+	printf("[%-8d|]\n", v_uint16_1)
+	printf("[%08d]\n", v_uint16_1)
+	printf("[%+d]\n", v_uint16_1)
+	printf("[%x]\n", v_uint16_1)
+	printf("[%X]\n", v_uint16_1)
+	printf("[%8x]\n", v_uint16_1)
+	printf("[%08x]\n", v_uint16_1)
+	printf("[%d]\n", v_uint16_2)
+	printf("[%v]\n", v_uint16_2)
+	printf("[%T]\n", v_uint16_2)
+	printf("[%8d]\n", v_uint16_2)
+	printf("[%-8d|]\n", v_uint16_2)
+	printf("[%08d]\n", v_uint16_2)
+	printf("[%+d]\n", v_uint16_2)
+	printf("[%x]\n", v_uint16_2)
+	printf("[%X]\n", v_uint16_2)
+	printf("[%8x]\n", v_uint16_2)
+	printf("[%08x]\n", v_uint16_2)
+}
+
+func f_uint32() {
+	printf("[%d]\n", v_uint32_0)
+	printf("[%v]\n", v_uint32_0)
+	printf("[%T]\n", v_uint32_0)
+	printf("[%8d]\n", v_uint32_0)
+	printf("[%-8d|]\n", v_uint32_0)
+	printf("[%08d]\n", v_uint32_0)
+	printf("[%+d]\n", v_uint32_0)
+	printf("[%x]\n", v_uint32_0)
+	printf("[%X]\n", v_uint32_0)
+	printf("[%8x]\n", v_uint32_0)
+	printf("[%08x]\n", v_uint32_0)
+	printf("[%d]\n", v_uint32_1)
+	printf("[%v]\n", v_uint32_1)
+	printf("[%T]\n", v_uint32_1)
+	printf("[%8d]\n", v_uint32_1)
+	printf("[%-8d|]\n", v_uint32_1)
+	printf("[%08d]\n", v_uint32_1)
+	printf("[%+d]\n", v_uint32_1)
+	printf("[%x]\n", v_uint32_1)
+	printf("[%X]\n", v_uint32_1)
+	printf("[%8x]\n", v_uint32_1)
+	printf("[%08x]\n", v_uint32_1)
+	printf("[%d]\n", v_uint32_2)
+	printf("[%v]\n", v_uint32_2)
+	printf("[%T]\n", v_uint32_2)
+	printf("[%8d]\n", v_uint32_2)
+	printf("[%-8d|]\n", v_uint32_2)
+	printf("[%08d]\n", v_uint32_2)
+	printf("[%+d]\n", v_uint32_2)
+	printf("[%x]\n", v_uint32_2)
+	printf("[%X]\n", v_uint32_2)
+	printf("[%8x]\n", v_uint32_2)
+	printf("[%08x]\n", v_uint32_2)
+}
+
+func f_uint64() {
+	printf("[%d]\n", v_uint64_0)
+	printf("[%v]\n", v_uint64_0)
+	printf("[%T]\n", v_uint64_0)
+	printf("[%8d]\n", v_uint64_0)
+	printf("[%-8d|]\n", v_uint64_0)
+	printf("[%08d]\n", v_uint64_0)
+	printf("[%x]\n", v_uint64_0)
+	printf("[%X]\n", v_uint64_0)
+	printf("[%8x]\n", v_uint64_0)
+	printf("[%08x]\n", v_uint64_0)
+	printf("[%d]\n", v_uint64_1)
+	printf("[%v]\n", v_uint64_1)
+	printf("[%T]\n", v_uint64_1)
+	printf("[%8d]\n", v_uint64_1)
+	printf("[%-8d|]\n", v_uint64_1)
+	printf("[%08d]\n", v_uint64_1)
+	printf("[%x]\n", v_uint64_1)
+	printf("[%X]\n", v_uint64_1)
+	printf("[%8x]\n", v_uint64_1)
+	printf("[%08x]\n", v_uint64_1)
+	printf("[%d]\n", v_uint64_2)
+	printf("[%v]\n", v_uint64_2)
+	printf("[%T]\n", v_uint64_2)
+	printf("[%8d]\n", v_uint64_2)
+	printf("[%-8d|]\n", v_uint64_2)
+	printf("[%08d]\n", v_uint64_2)
+	printf("[%x]\n", v_uint64_2)
+	printf("[%X]\n", v_uint64_2)
+	printf("[%8x]\n", v_uint64_2)
+	printf("[%08x]\n", v_uint64_2)
+}
+
+func main() {
+	f_uint8()
+	f_uint16()
+	f_uint32()
+	f_uint64()
+}
+`,
+		want: "[0]\n[0]\n[uint8]\n[       0]\n[0       |]\n[00000000]\n[+0]\n[0]\n[0]\n[       0]\n[00000000]\n[129]\n[129]\n[uint8]\n[     129]\n[129     |]\n[00000129]\n[+129]\n[81]\n[81]\n[      81]\n[00000081]\n[255]\n[255]\n[uint8]\n[     255]\n[255     |]\n[00000255]\n[+255]\n[ff]\n[FF]\n[      ff]\n[000000ff]\n[0]\n[0]\n[uint16]\n[       0]\n[0       |]\n[00000000]\n[+0]\n[0]\n[0]\n[       0]\n[00000000]\n[33000]\n[33000]\n[uint16]\n[   33000]\n[33000   |]\n[00033000]\n[+33000]\n[80e8]\n[80E8]\n[    80e8]\n[000080e8]\n[65535]\n[65535]\n[uint16]\n[   65535]\n[65535   |]\n[00065535]\n[+65535]\n[ffff]\n[FFFF]\n[    ffff]\n[0000ffff]\n[0]\n[0]\n[uint32]\n[       0]\n[0       |]\n[00000000]\n[+0]\n[0]\n[0]\n[       0]\n[00000000]\n[2147483649]\n[2147483649]\n[uint32]\n[2147483649]\n[2147483649|]\n[2147483649]\n[+2147483649]\n[80000001]\n[80000001]\n[80000001]\n[80000001]\n[4294967295]\n[4294967295]\n[uint32]\n[4294967295]\n[4294967295|]\n[4294967295]\n[+4294967295]\n[ffffffff]\n[FFFFFFFF]\n[ffffffff]\n[ffffffff]\n[0]\n[0]\n[uint64]\n[       0]\n[0       |]\n[00000000]\n[0]\n[0]\n[       0]\n[00000000]\n[9223372036854775809]\n[9223372036854775809]\n[uint64]\n[9223372036854775809]\n[9223372036854775809|]\n[9223372036854775809]\n[8000000000000001]\n[8000000000000001]\n[8000000000000001]\n[8000000000000001]\n[18446744073709551615]\n[18446744073709551615]\n[uint64]\n[18446744073709551615]\n[18446744073709551615|]\n[18446744073709551615]\n[ffffffffffffffff]\n[FFFFFFFFFFFFFFFF]\n[ffffffffffffffff]\n[ffffffffffffffff]\n",
+	},
+	{
+		// The non-integer half. `%.3s` is a precision in RUNES, so "héllo" gives
+		// "hél" and never half a character; the float values are exactly
+		// representable in 32 bits, float64 being 32-bit on this target.
+		name: "printf verbs on strings, bools, floats and runes",
+		src: `var s0 string = "h\u00e9llo"
+var s1 string = ""
+var b0 bool = true
+var b1 bool = false
+var f0 float64 = 2.5
+var f1 float64 = -0.25
+var r0 rune = 0x4E16
+
+func main() {
+	printf("[%s]\n", s0)
+	printf("[%s]\n", s1)
+	printf("[%v]\n", s0)
+	printf("[%v]\n", s1)
+	printf("[%T]\n", s0)
+	printf("[%T]\n", s1)
+	printf("[%10s|]\n", s0)
+	printf("[%10s|]\n", s1)
+	printf("[%-10s|]\n", s0)
+	printf("[%-10s|]\n", s1)
+	printf("[%.3s]\n", s0)
+	printf("[%.3s]\n", s1)
+	printf("[%t]\n", b0)
+	printf("[%t]\n", b1)
+	printf("[%v]\n", b0)
+	printf("[%v]\n", b1)
+	printf("[%T]\n", b0)
+	printf("[%T]\n", b1)
+	printf("[%f]\n", f0)
+	printf("[%f]\n", f1)
+	printf("[%.2f]\n", f0)
+	printf("[%.2f]\n", f1)
+	printf("[%8.2f]\n", f0)
+	printf("[%8.2f]\n", f1)
+	printf("[%-8.2f|]\n", f0)
+	printf("[%-8.2f|]\n", f1)
+	printf("[%+.1f]\n", f0)
+	printf("[%+.1f]\n", f1)
+	printf("[%v]\n", f0)
+	printf("[%v]\n", f1)
+	printf("[%T]\n", f0)
+	printf("[%T]\n", f1)
+	printf("[%c]\n", r0)
+	printf("[%d]\n", r0)
+	printf("[%v]\n", r0)
+	printf("[%T]\n", r0)
+	printf("100%%\n")
+}
+`,
+		want: "[héllo]\n[]\n[héllo]\n[]\n[string]\n[string]\n[     héllo|]\n[          |]\n[héllo     |]\n[          |]\n[hél]\n[]\n[true]\n[false]\n[true]\n[false]\n[bool]\n[bool]\n[2.500000]\n[-0.250000]\n[2.50]\n[-0.25]\n[    2.50]\n[   -0.25]\n[2.50    |]\n[-0.25   |]\n[+2.5]\n[-0.2]\n[2.5]\n[-0.25]\n[float64]\n[float64]\n[世]\n[19990]\n[19990]\n[int32]\n100%\n",
+	},
+	{
 		// Integer conversions, every sized type to every other, at three values
 		// apiece chosen to expose truncation and sign: each type's extremes and a
 		// value with its high bit set. Nested conversions, conversions through

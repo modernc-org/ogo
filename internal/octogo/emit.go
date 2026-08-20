@@ -574,6 +574,25 @@ const hexPrintHelper = "static void ogo_print_hex(long long v, int upper) {\n" +
 	"\tif (v < 0) { putchar('-'); u = -u; }\n" +
 	"\tif (upper) printf(\"%llX\", u); else printf(\"%llx\", u);\n}\n"
 
+// decPadHelper prints a signed integer zero-padded to a width, as fmt does: the
+// sign first, then the zeros, then the digits, the whole field `width` wide.
+//
+// It exists for a backend defect measured on a P2-EDGE. flexcc's printf applies a
+// zero-padded width to the DIGITS of a negative number and adds the sign on top, so
+// "%08d" of -128 printed "-00000128", nine characters, where Go and the host C
+// compiler both print "-0000128". The host being right is what kept it hidden.
+//
+// plus forces a sign on a non-negative value, which is fmt's '+' flag. The magnitude
+// is negated as UNSIGNED, defined for the most negative value where negating the
+// signed one is not -- the same care ogo_print_hex takes.
+const decPadHelper = "static void ogo_print_dec_pad(long long v, int width, int plus) {\n" +
+	"\tunsigned long long m = (unsigned long long)v; char sign = 0;\n" +
+	"\tif (v < 0) { sign = '-'; m = -m; } else if (plus) sign = '+';\n" +
+	"\tint digits = 1; for (unsigned long long t = m / 10; t != 0; t /= 10) digits++;\n" +
+	"\tif (sign) putchar(sign);\n" +
+	"\tfor (int i = digits + (sign ? 1 : 0); i < width; i++) putchar('0');\n" +
+	"\tprintf(\"%llu\", m);\n}\n"
+
 // stringHelpers print a string header's exact bytes. A string is not
 // null-terminated, so %s is wrong; and the target's printf TRUNCATES "%.*s" at 62
 // characters -- silently, so a 63-character line printed 62 of it and nothing said
@@ -3343,6 +3362,10 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(runePadHelper)
 		out.WriteByte('\n')
 	}
+	if e.usesDecPad {
+		out.WriteString(decPadHelper)
+		out.WriteByte('\n')
+	}
 	if e.usesHexPrint {
 		out.WriteString(hexPrintHelper)
 		out.WriteByte('\n')
@@ -3813,6 +3836,7 @@ type emitter struct {
 	usesRunePrint      bool                    // printf %c is used: emit runePrintHelper
 	usesRunePad        bool                    // printf %c with a width: emit runePadHelper
 	usesHexPrint       bool                    // printf %x of a signed type: emit hexPrintHelper
+	usesDecPad         bool                    // printf %0Nd of a signed value: emit decPadHelper
 	usesStringEq       bool                    // a string == / != appears: emit ogo_string_eq
 	eqStructs          map[string]bool         // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim       // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
@@ -17897,6 +17921,43 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 				upper = "1"
 			}
 			e.emit("), " + upper + ");\n")
+			return true
+		}
+		// `%0Nd` right-aligned. The target's printf pads the DIGITS of a negative
+		// number to the width and adds the sign on top -- "%08d" of -128 gives nine
+		// characters there and eight everywhere else -- so the field is written
+		// here instead. Left-aligned needs none of this: '0' is ignored beside '-'
+		// in C as in fmt, and there is no fill to misplace.
+		if verb == 'd' && item.hasFlag('0') && !item.leftAlign() && isIntCType(ct) {
+			if w, ok := item.width(); ok && w > 0 && ct != "uint64_t" {
+				e.usesDecPad = true
+				e.ind()
+				e.emit("ogo_print_dec_pad((long long)(")
+				value()
+				e.emit(fmt.Sprintf("), %d, %d);\n", w, boolToInt(item.hasFlag('+'))))
+				return true
+			}
+		}
+		// `%+d` of an UNSIGNED value. C's "+" flag applies to the SIGNED
+		// conversions only, so `%+u` drops the sign that fmt writes: Go prints
+		// "+255" and this printed "255". An unsigned value is never negative, so
+		// the signed conversion prints exactly the same digits AND honours the
+		// flag -- for every width and alignment, which is what makes this better
+		// than prepending the character and adjusting the width by hand.
+		if verb == 'd' && item.hasFlag('+') && !isSignedIntCType(ct) && isIntCType(ct) {
+			if ct == "uint64_t" {
+				// No signed type holds it. Refused rather than printed without the
+				// sign, in the same spirit as the two flags above: a program that
+				// compiles here is meant to mean what it means in Go.
+				e.failAt(arg.ast, "printf: the '+' flag on %%%s%c of a uint64 is not "+
+					"supported, no signed type being wide enough to carry the value; "+
+					"drop the flag or convert to int64", spec, verb)
+				return false
+			}
+			e.ind()
+			e.emit("printf(\"%" + spec + "lld\", (long long)(")
+			value()
+			e.emit("));\n")
 			return true
 		}
 		e.ind()

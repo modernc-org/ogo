@@ -5613,6 +5613,15 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			want: "printf: the '#' flag is not supported by the C backend",
 		},
 		{
+			// C's '+' applies to its SIGNED conversions, so an unsigned value is
+			// printed through the signed one to carry the flag. A uint64 has no
+			// signed type wide enough, so it is refused rather than printed without
+			// the sign fmt would write.
+			name: "the + flag on a uint64",
+			src:  "func main() {\n\tprintf(\"%+d\\n\", uint64(1))\n}\n",
+			want: "printf: the '+' flag on %+d of a uint64 is not supported",
+		},
+		{
 			name: "the 0 flag on a float",
 			src:  "func main() {\n\tprintf(\"%08.3f\\n\", 1.5)\n}\n",
 			want: "printf: the '0' flag on %08.3f is not supported by the C backend",

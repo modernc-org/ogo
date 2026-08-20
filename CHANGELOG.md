@@ -18,6 +18,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **`printf` matched `fmt` in two fewer places than it should have.** `%+d` of an
+  *unsigned* value dropped the sign — C's `+` flag applies to its signed
+  conversions, so `%+u` writes none where fmt writes `+255`. The value is now
+  printed through the signed conversion, which carries the same digits and honours
+  the flag; a `uint64` has no signed type wide enough and is refused instead, which
+  is the third such refusal and says so where it is written.
+
+  And `%08d` of a *negative* value printed nine characters where Go prints eight:
+  the backend pads the digits to the width and adds the sign on top. The field is
+  now written by the compiler. The host C compiler is right about both, which is
+  what kept them hidden — they were found by a generated cross of every verb
+  against every type, run on the board, which is now three run cases.
+
 ### Language
 
 - **`string(r)` works for a rune the program COMPUTES**, not only a constant one —
