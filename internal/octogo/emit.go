@@ -19560,8 +19560,75 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 		e.emit(text + ";\n")
 		return
 	}
+	if e.emitHoistedCompound(target, t) {
+		return
+	}
 	target()
 	e.emitAssignTail(t)
+}
+
+// emitHoistedCompound works around a backend miscompile: flexcc gets a COMPOUND
+// assignment wrong when its right operand indexes an array reached through a
+// pointer that a CALL returned. `x -= id(p)->a[1]` leaves x holding garbage, or
+// leaves it untouched, where `x = x - id(p)->a[1]` is right, and so is the same
+// compound assignment through a pointer VARIABLE. doc/compound-call-index.c is the
+// eleven lines of C that show it; gcc compiles them correctly.
+//
+// It reaches ordinary programs because the call is usually OURS: a checked build --
+// the default -- wraps every pointer dereference in the nil guard, so
+// `m.sum -= m.ring[m.at]`, a ring buffer's accumulator through a pointer receiver,
+// emits exactly the shape that breaks. It was found by a moving average that
+// quietly returned a wrong average.
+//
+// Binding the operand to a temporary is enough, and is what the same expression
+// already compiles to when a program writes it in two statements.
+//
+// The operand is rendered ONCE, into the output, because rendering an expression is
+// not free of side effects: one that needs a temporary of its own emits the
+// declaration as it goes, and a speculative render to inspect the text left that
+// declaration behind, unused, for the real render to make a second one. So the
+// decision is taken on the TREE -- an index and a selector somewhere in the operand
+// -- which is deliberately coarser than the shape that breaks. What an unnecessary
+// firing costs is one temporary the backend folds away; what a too-narrow test
+// costs is a wrong answer with no diagnostic, which is what this is.
+func (e *emitter) emitHoistedCompound(target func(), t assignTail) bool {
+	if t.rhs == nil || t.op == "=" || t.complement {
+		return false
+	}
+
+	if !subtreeHasSym(t.rhs, Index) || !subtreeHasSym(t.rhs, Selector) {
+		return false
+	}
+
+	ct, ok := e.inferCType(t.rhs)
+	if !ok || ct == "" {
+		return false
+	}
+
+	// The caller has already indented, so the declaration takes that indent and the
+	// assignment gets its own.
+	tmp := e.newTmp()
+	e.emit(ct + " " + tmp + " = ")
+	e.emitExpr(t.rhs)
+	e.emit(";\n")
+	e.ind()
+	target()
+	e.emit(" " + t.op + " " + tmp + ";\n")
+	return true
+}
+
+// subtreeHasSym reports whether a symbol occurs anywhere in a subtree.
+func subtreeHasSym(ast []int32, want Symbol) bool {
+	for n := range it(ast) {
+		if n.sym == want {
+			return true
+		}
+
+		if n.sym != 0 && subtreeHasSym(n.ast, want) {
+			return true
+		}
+	}
+	return false
 }
 
 // guardedAssignC rewrites a compound assignment whose operator needs a guard --

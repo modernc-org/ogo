@@ -31,6 +31,29 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A compound assignment reading an array field through a pointer computed the
+  wrong answer.** `m.sum -= m.ring[m.at]` — a ring buffer's accumulator, through a
+  pointer receiver — left `m.sum` holding garbage, or left it untouched, and said
+  nothing. A moving average built on it returned a wrong average.
+
+  The fault is the C backend's, and it needs all three of a **compound** operator,
+  an **array** member, and a pointer returned by a **call**: `x = x - p.ring[1]` is
+  right, and so is the same compound assignment through a pointer variable. Remove
+  any one and the answer is correct, which is why it survived — nothing about the
+  source looks unusual. `doc/compound-call-index.c` is the eleven lines of C that
+  show it, and gcc compiles them correctly.
+
+  It reached ordinary programs because the call is the compiler's own: a **checked
+  build, which is the default**, wraps every pointer dereference in the nil guard,
+  and that guard is the call. The compiler now binds such an operand to a temporary
+  first, which is what the same expression already compiles to when a program writes
+  it in two statements.
+
+  **The host C compiler gets this right**, so no host test could have found it. It
+  was found by writing a rheometer's control loop — fixed-point maths, a moving
+  average, a PID loop, a framed protocol, six packages — and diffing what the board
+  printed against what the same program printed under Go.
+
 - **`ogo build` said little about a mistyped path.** Anything that is not a
   directory is taken for a source file, so `ogo build ./sensr` arrived as one and
   was reported by whoever failed to open it — `open sensr: no such file or

@@ -37,6 +37,60 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A ring buffer's accumulator, which is a compound assignment whose right
+		// operand indexes an array field through a pointer receiver. The backend
+		// miscompiles exactly that -- see doc/compound-call-index.c -- because a
+		// checked build wraps the dereference in the nil guard and so hands it a
+		// pointer a CALL returned. It answered with garbage, or with nothing
+		// subtracted at all, and said nothing.
+		//
+		// THE HOST COMPILER GETS THIS RIGHT, so the board half of this case is the
+		// half that tests anything. It is written as a moving average because that
+		// is what found it: the average disagreed with the same program in Go.
+		name: "a compound assignment reading an array field through a pointer",
+		src: `type Mean struct {
+	ring  [4]int32
+	at    int
+	count int
+	sum   int32
+}
+
+func (m *Mean) Push(v int32) int32 {
+	m.sum -= m.ring[m.at]
+	m.ring[m.at] = v
+	m.sum += v
+	m.at = (m.at + 1) % 4
+	if m.count < 4 {
+		m.count++
+	}
+	return m.sum / int32(m.count)
+}
+
+// The same shapes off a pointer VARIABLE and a plain local, which the backend
+// gets right, so a regression here would be ours rather than its.
+func spot() {
+	var m Mean
+	m.ring[1] = 30
+	p := &m
+	x := int32(1000)
+	x -= p.ring[1]
+	println("x", x)
+	p.sum = 1000
+	p.sum -= p.ring[1]
+	println("sum", p.sum)
+}
+
+func main() {
+	var m Mean
+	for i := 0; i < 6; i++ {
+		println(i, m.Push(int32(i+1)*10))
+	}
+	spot()
+}
+`,
+		want: "0 10\n1 15\n2 20\n3 25\n4 35\n5 45\nx 970\nsum 970\n",
+	},
+	{
 		// A nil dereference panics rather than using address zero. It used not to:
 		// address zero on this target is ordinary Hub RAM, not a trap, so a READ
 		// through a nil pointer yielded whatever lives at 0 and a WRITE stored into
