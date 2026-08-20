@@ -19560,11 +19560,48 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 		e.emit(text + ";\n")
 		return
 	}
+	// The same backend miscompile on the other side of the assignment: an indexed
+	// array field reached through a call is broken as the TARGET too, and there it
+	// is a silent no-op. Naming the element's address first leaves an ordinary
+	// pointer variable, which the backend gets right.
+	if tmp, ok := e.hoistCompoundTarget(target, t); ok {
+		target = func() { e.emit("*" + tmp) }
+		e.ind()
+	}
 	if e.emitHoistedCompound(target, t) {
 		return
 	}
 	target()
 	e.emitAssignTail(t)
+}
+
+// hoistCompoundTarget is emitHoistedCompound's mirror, for the TARGET of a compound
+// assignment rather than its operand. `p.ring[i] += v` -- a bin of a histogram, a
+// per-channel total, anything accumulated into an array field through a pointer --
+// adds NOTHING and reports nothing, the backend having the same trouble with a
+// call-returned pointer indexed as an array wherever it stands. `p.ring[i]++` is
+// unaffected, and so is the same statement through a value.
+//
+// The element's ADDRESS is what is named, rather than the pointer: it needs only
+// the element type, which the assignment already carries, and it evaluates the
+// index exactly once, where rewriting to `p.ring[i] = p.ring[i] + v` would evaluate
+// it twice. Both were measured to fix it; see doc/compound-call-index.c.
+//
+// A ++ or -- (rhs == nil) is left alone: the backend gets those right, and they
+// have no operand to go wrong.
+func (e *emitter) hoistCompoundTarget(target func(), t assignTail) (string, bool) {
+	if t.rhs == nil || t.op == "=" || t.targetCType == "" {
+		return "", false
+	}
+
+	text := e.captureC(target)
+	if !strings.Contains(text, "[") || !strings.Contains(text, "(") {
+		return "", false
+	}
+
+	tmp := e.newTmp()
+	e.emit(t.targetCType + "* " + tmp + " = &" + text + ";\n")
+	return tmp, true
 }
 
 // emitHoistedCompound works around a backend miscompile: flexcc gets a COMPOUND

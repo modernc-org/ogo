@@ -49,6 +49,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   first, which is what the same expression already compiles to when a program writes
   it in two statements.
 
+  **The same fault applies with the array field as the assignment's TARGET**, where
+  it is a silent no-op: `h.bins[v%4] += v` added nothing at all, so any per-bin or
+  per-channel total kept in an array field and updated through a pointer simply
+  stayed at zero. `h.bins[i]++` was unaffected, and so was the same statement
+  through a value, which is what kept it looking like something other than a
+  compiler fault. A slice field was never affected — it is reached through its own
+  backing pointer, so no call stands between the pointer and the index.
+
   **The host C compiler gets this right**, so no host test could have found it. It
   was found by writing a rheometer's control loop — fixed-point maths, a moving
   average, a PID loop, a framed protocol, six packages — and diffing what the board

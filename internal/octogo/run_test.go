@@ -37,6 +37,45 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// The same backend miscompile with the indexed array field as the TARGET
+		// rather than the operand, where it is a silent NO-OP: a histogram bin
+		// accumulated nothing at all. A ++ on the same element is unaffected, and
+		// so is the same statement through a value, which is what made it look
+		// like something other than a compiler fault.
+		//
+		// Written as a histogram because that is the shape it costs: any per-bin
+		// or per-channel total kept in an array field, updated through a pointer.
+		// Expected output taken from the same program compiled by Go.
+		name: "a compound assignment INTO an array field through a pointer",
+		src: `type Hist struct {
+	bins [4]int32
+	n    int32
+}
+
+func (h *Hist) Add(v int32) {
+	h.bins[v%4] += v
+	h.n++
+}
+
+func main() {
+	var h Hist
+	p := &h
+	for i := int32(1); i <= 8; i++ {
+		p.Add(i)
+	}
+	println(h.bins[0], h.bins[1], h.bins[2], h.bins[3], h.n)
+
+	// The same statement written straight onto a pointer variable, with a
+	// constant index and with one read out of a field.
+	q := &h
+	q.bins[1] *= 2
+	q.bins[q.n%4] += 7
+	println(q.bins[0], q.bins[1], q.bins[2], q.bins[3])
+}
+`,
+		want: "12 6 8 10 8\n19 12 8 10\n",
+	},
+	{
 		// A ring buffer's accumulator, which is a compound assignment whose right
 		// operand indexes an array field through a pointer receiver. The backend
 		// miscompiles exactly that -- see doc/compound-call-index.c -- because a

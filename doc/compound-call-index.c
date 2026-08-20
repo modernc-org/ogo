@@ -29,8 +29,27 @@
 // ogo_nil_Mean_ptr(m)->ring[...]` and quietly returns a wrong average. That is how
 // it was found: a moving average that disagreed with the same program in Go.
 //
-// Worked around in emitHoistedCompound (internal/octogo/emit.go), which binds such
-// an operand to a temporary.
+// THE SAME FAULT APPLIES TO THE TARGET, where it is a silent NO-OP:
+//
+//	id(&t)->a[1] += 5;   // adds nothing at all
+//	id(&t)->a[1] *= 2;   // likewise
+//	id(&t)->a[1]++;      // CORRECT -- ++ and -- are unaffected
+//	t.a[1] += 5;         // CORRECT through a value
+//	T *h = id(&t); h->a[1] += 5;        // CORRECT -- the pointer is a variable
+//	int *e = &id(&t)->a[1]; *e += 5;    // CORRECT -- the element is named
+//
+// which costs any per-bin or per-channel total kept in an array field and updated
+// through a pointer:
+//
+//	func (h *Hist) Add(v int32) { h.bins[v%4] += v }
+//
+// A SLICE field is not affected: it is reached through its own backing pointer, so
+// no call stands between the pointer and the index.
+//
+// Worked around in emitHoistedCompound (internal/octogo/emit.go), which binds the
+// OPERAND to a temporary, and hoistCompoundTarget, which names the TARGET
+// element's address. The address rather than the pointer, because it needs only
+// the element type and evaluates the index exactly once.
 
 #include <stdio.h>
 
@@ -49,6 +68,14 @@ int main(void) {
 	int y = 1000;
 	y = y - id(&t)->a[1];
 	printf("explicit, the same expression:             y=%d (want 970)\n", y);
+
+	t.a[1] = 100;
+	id(&t)->a[1] += 5;
+	printf("compound INTO the same element:            a=%d (want 105)\n", t.a[1]);
+
+	t.a[1] = 100;
+	id(&t)->a[1]++;
+	printf("++ on the same element:                    a=%d (want 101)\n", t.a[1]);
 
 	return 0;
 }
