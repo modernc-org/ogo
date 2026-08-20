@@ -16,7 +16,35 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.30.0
+
+Two silent wrong answers on the board, and the last hole in the lifetime rules.
+
+A constant on the LEFT of an unsigned operand was typed *signed* by the C backend.
+The value it produced was right, which is what hid it: nothing looked wrong until a
+division, a shift or an ordering comparison read the type, and then each took the
+signed branch and answered wrongly. The same expression with the operands the other
+way round had been right all along. And a guarded division read the type of its own
+left operand, so `3 / b` for a 64-bit `b` was typed `int`, chose a 32-bit zero-guard,
+and aborted a program that divides by a perfectly good number.
+
+Neither was visible on the host, whose C compiler is correct about both. Both are now
+covered by generated crosses that run on the board: mixed-type arithmetic, every
+sized type against every operator with the constant on each side, which found them;
+and 1152 integer conversions, which found nothing and is kept as the cheap half of
+re-checking the backend after a regeneration.
+
+A reference could still outlive its frame through a method on a LOCAL receiver — the
+last receiver shape the crossing summary could not name, because the declaration is
+in the body and naming it takes a scan of the body. With it the escape matrix closes:
+every reference kind, against every sink, through every receiver a call can be made
+on.
+
+Elsewhere: a `Builder` may live in a struct field, a package array literal may have
+computed elements instead of failing to build at all, a method may be called on a
+parenthesised expression — which is how fixed-point arithmetic reads — and
+`p2.WaitUntil` makes the drift-free control loop expressible, the intrinsic having
+been there all along.
 
 ### Language
 
