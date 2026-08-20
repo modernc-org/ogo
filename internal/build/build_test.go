@@ -20,7 +20,7 @@ import (
 // naming, which differs between the single-named-file form and the rest.
 func TestResolvePackage(t *testing.T) {
 	dir := t.TempDir()
-	for _, nm := range []string{"main.ogo", "aux.ogo", "helper_test.ogo", "notes.txt"} {
+	for _, nm := range []string{"main.ogo", "alt.ogo", "helper_test.ogo", "notes.txt"} {
 		if err := os.WriteFile(filepath.Join(dir, nm), []byte("// x\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -50,7 +50,7 @@ func TestResolvePackage(t *testing.T) {
 			// nor a non-.ogo file nor a subdirectory -- and is named after itself.
 			name:  "directory",
 			srcs:  []string{dir},
-			files: []string{"aux.ogo", "main.ogo"},
+			files: []string{"alt.ogo", "main.ogo"},
 			out:   filepath.Join(dir, base+".binary"),
 		},
 		{
@@ -63,8 +63,8 @@ func TestResolvePackage(t *testing.T) {
 		},
 		{
 			name:  "explicit file list",
-			srcs:  []string{filepath.Join(dir, "main.ogo"), filepath.Join(dir, "aux.ogo")},
-			files: []string{"main.ogo", "aux.ogo"},
+			srcs:  []string{filepath.Join(dir, "main.ogo"), filepath.Join(dir, "alt.ogo")},
+			files: []string{"main.ogo", "alt.ogo"},
 			out:   filepath.Join(dir, base+".binary"),
 		},
 		{
@@ -119,7 +119,7 @@ func TestResolvePackage(t *testing.T) {
 		if gotDir != "." {
 			t.Errorf("dir: got %q, want %q", gotDir, ".")
 		}
-		if want := []string{"aux.ogo", "main.ogo"}; !slices.Equal(gotFiles, want) {
+		if want := []string{"alt.ogo", "main.ogo"}; !slices.Equal(gotFiles, want) {
 			t.Errorf("files: got %v, want %v", gotFiles, want)
 		}
 	})
