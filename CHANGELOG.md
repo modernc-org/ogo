@@ -31,6 +31,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo build` said little about a mistyped path.** Anything that is not a
+  directory is taken for a source file, so `ogo build ./sensr` arrived as one and
+  was reported by whoever failed to open it — `open sensr: no such file or
+  directory`, naming the base and not the path that was typed. It now names the
+  path, and a named file that is not a `.ogo` says that instead of being parsed as
+  one.
+
 - **`ogo build` on a package with no `func main` reported a C compiler's
   complaint.** It ran the whole pipeline and reached flexcc, which said
   `error: could not find function main` — about a C program the user never wrote.

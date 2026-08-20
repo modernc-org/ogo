@@ -79,6 +79,19 @@ func TestResolvePackage(t *testing.T) {
 			srcs: []string{empty},
 			err:  "no .ogo source files",
 		},
+		{
+			// Anything that is not a directory is taken for a source file, so a
+			// mistyped path arrives as one and must be reported as the path that
+			// was typed rather than by whoever fails to open its base name.
+			name: "a path that is not there",
+			srcs: []string{filepath.Join(dir, "sensr")},
+			err:  filepath.Join(dir, "sensr") + ": no such file or directory",
+		},
+		{
+			name: "a file that is not .ogo",
+			srcs: []string{filepath.Join(dir, "notes.txt")},
+			err:  "named source files must be .ogo files",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			gotDir, gotFiles, gotOut, err := resolvePackage(test.srcs)

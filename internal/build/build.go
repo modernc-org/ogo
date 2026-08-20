@@ -269,6 +269,17 @@ func resolvePackage(srcs []string) (dir string, files []string, out string, err 
 		dir = srcs[0]
 	default:
 		for _, src := range srcs {
+			// Whatever is not a directory is taken for a source file, so a
+			// mistyped path arrives here as one and used to be reported by
+			// whoever failed to open it: `open sensr: no such file or
+			// directory', naming the base and not the path that was typed.
+			switch _, err := os.Stat(src); {
+			case err != nil:
+				return "", nil, "", fmt.Errorf("build: %s: no such file or directory", src)
+			case filepath.Ext(src) != ".ogo":
+				return "", nil, "", fmt.Errorf("build: %s: named source files must be .ogo files", src)
+			}
+
 			switch d := filepath.Dir(src); {
 			case dir == "":
 				dir = d
