@@ -117,6 +117,36 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A channel another package declares can be used.** `pkg.Ch <- v` and `<-pkg.Ch`
+  were both refused outright — "a send statement needs a channel on the left" and
+  "unsupported operand", from the emitter — so two packages had no way to share one:
+
+      // work
+      var Out chan int32
+      func Square(id int32) { Out <- id * id }
+
+      // main
+      go work.Square(3)
+      println(<-work.Out)
+
+  With no heap this is not the exotic spelling it would be in Go. `make` allocates,
+  so a constructor has nothing to return, and a package-level channel is simply how
+  a channel gets shared. A qualified channel is spelled like a struct field and is
+  not one, which is why it fell through: the field lookup refused a package
+  qualifier and nothing else claimed it.
+
+  The send is now **checked** as a send to the package's own channel is — the target
+  must be a channel, a constant must fit the element type, and the value's type must
+  be assignable to it. Making the path reachable made it checkable: before, a
+  mismatch was reported by the C compiler, about C the user never wrote. A channel
+  of a NAMED element type declared elsewhere is checked for kind but not identity;
+  the name belongs to the callee's scope, and resolving it here would name a
+  different type or none.
+
+  Verified on a P2-EDGE: seven cogs — the whole chip beside `main` — each running an
+  imported package's function and rendezvousing on that package's channels in both
+  directions, matching the same program under Go.
+
 - **`ogo.mod` says where a program's root is**, and with it a `cmd/` layout and a
   package shared by two programs both work. The file holds one line —
   `module example.com/proj` — and a build takes the nearest one at or above the

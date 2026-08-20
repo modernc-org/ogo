@@ -17243,7 +17243,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n9\n"
+	"30\n30\n30\n5\n6\nsizer\n9\n42\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -17374,6 +17374,13 @@ default:
 // directory being BUILT, so chain finds greet beside itself rather than under
 // itself -- which is the layout a program of several packages actually has.
 println(chain.Via(4))
+
+// A goroutine running an IMPORTED package's function, rendezvousing on that
+// package's channels from this one. Both directions: the send names the channel
+// through its package and so does the receive.
+go greet.Answer()
+greet.Relay <- 14
+println(<-greet.Ack)
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -17409,7 +17416,21 @@ var sh greet.Shape
 // root, whichever package writes it.
 func Via(n int) int { return greet.Twice(n) + 1 }
 `,
-	"greet/greet.ogo": `type Point struct{ x, y int }
+	"greet/greet.ogo": `// Relay and Ack are this package's channels, used by whoever imports it. With no
+// heap there is nothing for a constructor to return, so a package-level channel is
+// how two packages come to share one -- the ordinary spelling here rather than the
+// exotic one it would be in Go.
+var Relay chan int
+var Ack chan int
+
+// Answer runs on a COG started by another package and rendezvouses on this
+// package's channels, in both directions.
+func Answer() {
+v := <-Relay
+Ack <- v * 3
+}
+
+type Point struct{ x, y int }
 
 func (p Point) sum() int { return p.x*10 + p.y }
 

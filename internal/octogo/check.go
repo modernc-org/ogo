@@ -5074,6 +5074,17 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed bool, va
 	}
 	d, ok := s.find(chTok.Src()).(*VarDeclaration)
 	if !ok {
+		// A channel a package EXPORTS, `work.Out <- v`. The qualifier names no
+		// variable of this scope, so the declaration is the imported package's --
+		// and until it was fetched, a send to one was checked by NOTHING and the
+		// mismatch was reported by the C compiler, about C the user never wrote.
+		if len(fields) == 1 {
+			if id, isVar := f.importedVarDecl(s, chTok.Src(), fields[0].Src()); isVar {
+				f.checkSendTo(s, id, fields[0], valNode)
+				return
+			}
+		}
+
 		if s.find(chTok.Src()) == nil && !f.isImportQualifier(s, chTok.Src()) {
 			f.err(chTok.Position(), "undefined: %s", chTok.Src())
 		}
@@ -5122,6 +5133,55 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed bool, va
 	if !hasElem || !vok {
 		return
 	}
+	if !assignableKind(elem, vk) {
+		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.exprSource(valNode), kindName(vk), kindName(elem))
+	}
+}
+
+// importedVarDecl resolves `pkg.Name` to the variable an imported package declares,
+// for the positions that need the DECLARATION rather than the type -- a channel's
+// element type is on it and nowhere else.
+func (f *File) importedVarDecl(s *Scope, qual, member string) (*VarDeclaration, bool) {
+	if !f.isImportQualifier(s, qual) || !token.IsExported(member) {
+		return nil, false
+	}
+
+	imp, ok := f.Scope.Declarations[qual].(*ImportDeclaration)
+	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
+		return nil, false
+	}
+
+	d, ok := imp.Import.Pkg.Scope.Declarations[member].(*VarDeclaration)
+	return d, ok
+}
+
+// checkSendTo checks a send to a channel another package declares. It asks what a
+// send to one of this package's channels is asked -- that the target IS a channel,
+// that a constant fits its element type, and that the value's type is assignable to
+// it.
+//
+// What it does not ask is implements/defined-type for a NAMED element: that
+// resolves the element's name, and the name belongs to the callee's scope rather
+// than to this one, where it would name a different type or nothing at all. A
+// channel of a named type declared elsewhere is therefore checked for kind and not
+// for identity, which is narrower than the same send within a package.
+func (f *File) checkSendTo(s *Scope, d *VarDeclaration, at Token, valNode Node) {
+	elem, hasElem, isChan := f.chanElemOf(d)
+	if !isChan {
+		f.err(at.Position(), "invalid operation: cannot send to non-channel")
+		return
+	}
+
+	f.checkEscapeCross(s, valNode, true)
+	if hasElem {
+		f.checkValueOverflow(s, sizedTarget(elem, Token{}), valNode)
+	}
+
+	vk, vok := f.exprType(s, valNode)
+	if !hasElem || !vok {
+		return
+	}
+
 	if !assignableKind(elem, vk) {
 		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.exprSource(valNode), kindName(vk), kindName(elem))
 	}

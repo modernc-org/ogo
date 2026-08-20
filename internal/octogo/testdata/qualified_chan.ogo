@@ -1,0 +1,43 @@
+// A channel another package declares is a channel: `pkg.Ch <- v` sends to it and
+// `<-pkg.Ch` receives from it. With no heap there is nothing for a constructor to
+// return, so a package-level channel is how two packages come to share one, which
+// makes this the ordinary spelling here rather than the exotic one it is in Go.
+//
+// Both used to be refused by the emitter -- "unsupported operand" for the receive
+// and "a send statement needs a channel on the left" for the send -- so a program
+// could not use one at all.
+//
+// The send is checked as a send to this package's own channel is: the target must
+// BE a channel, a constant must fit its element type, and the value's type must be
+// assignable to it. It was checked by nothing until it was reachable, and a
+// mismatch reached the C compiler.
+
+import "p"
+
+func valid() {
+	p.Ch <- 1
+	_ = <-p.Ch
+
+	var v int32 = <-p.Ch
+	_ = v
+}
+
+func wrongType() {
+	// ERROR "cannot use .* of type string as type int32 in send"
+	p.Ch <- "hi"
+}
+
+func constantOutOfRange() {
+	// ERROR "constant 1099511627776 overflows int32"
+	p.Ch <- 1 << 40
+}
+
+func notAChannel() {
+	// ERROR "invalid operation: cannot send to non-channel"
+	p.Notch <- 1
+}
+
+func unexportedChannel() {
+	// ERROR "cannot refer to unexported name p.hidden"
+	p.hidden <- 1
+}

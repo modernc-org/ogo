@@ -770,6 +770,22 @@ func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
 		kids = slices.Collect(it(nodes[0].ast))
 	}
 	if root, fields, isField := e.factorFieldAccess(kids); isField {
+		// A channel a package EXPORTS, `<-work.Out`. Spelled like a field access
+		// and resolved like any other cross-package global, which is asked FIRST
+		// because a package qualifier is not a struct and fieldType would refuse
+		// it -- the refusal a program got instead of the channel.
+		//
+		// With no heap, a package-level channel is how two packages come to share
+		// one: make() allocates, so there is nothing to return from a constructor.
+		// That makes this the ordinary spelling here rather than the exotic one it
+		// would be in Go.
+		if text, ct, okq := e.qualifiedGlobalRead(root, fields); okq {
+			if !e.isChanCType(ct) {
+				return "", "", false
+			}
+			return e.chanElemOfCType(ct), text, true
+		}
+
 		ct, okf := e.fieldType(root, fields)
 		if !okf || !e.isChanCType(ct) {
 			return "", "", false
@@ -18942,6 +18958,21 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		// cell, so a field holding one is an ordinary pointer field and lhs already
 		// names it; only the type has to be looked up through the field rather than
 		// off the root variable.
+		// It may also be a channel a package EXPORTS, `work.Out <- v`, which is
+		// spelled like a field access and is not one. Asked first, and with its own
+		// rendering: lhs was built for a field of a struct and would name the
+		// qualifier as if it were a variable.
+		if len(fields) != 0 {
+			if text, qct, okq := e.qualifiedGlobalRead(base, fields); okq {
+				if !e.isChanCType(qct) {
+					e.fail("a send statement needs a channel on the left")
+					return
+				}
+				e.emitChanSend(text, e.chanElemOfCType(qct), op)
+				return
+			}
+		}
+
 		ct, ok := e.varType(base)
 		if len(fields) != 0 {
 			ct, ok = e.fieldType(base, fields)

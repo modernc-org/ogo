@@ -32,3 +32,9 @@ type t struct{ f int }
 // Add takes two arguments and returns one, so an importer's call can be checked
 // against a signature that is this package's rather than the caller's.
 func Add(a int, b int) int { return a + b }
+
+// Ch and Notch exist for the qualified-channel checks: with no heap, a
+// package-level channel is how two packages come to share one.
+var Ch chan int32
+
+var Notch int32
