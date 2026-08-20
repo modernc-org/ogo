@@ -13,7 +13,8 @@
 // than one send clause, both of which need a "receiver ready" signal the rendezvous
 // cell does not carry (see Select Statements)
 // TODO 20260719 Go statements: per-goroutine stack size. Every goroutine gets the
-// same fixed stack in its pool slot (OGO_STACK_LONGS, 256 longs), which a deep call
+// same fixed stack in its pool slot (256 longs by default, `ogo build --gostack N`
+// for another), which a deep call
 // chain can overrun with no diagnostic -- there is no guard page on this part. A
 // recursive function is the way to reach it: measured on a P2-EDGE, a goroutine
 // recursing 200 deep returns normally and one recursing 2000 deep prints nothing at

@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo build --gostack N` sets a goroutine's stack**, 64 to 8192 longs, 256 as
+  before by default. It is the other half of the fence below: the panic names the
+  limit, and this is how the limit moves. Measured on a P2-EDGE, a goroutine
+  recursing 400 deep panics at the default and returns cleanly at 2048. Seven slots
+  of it sit in hub RAM for the whole run, which is why the default did not simply
+  grow.
+
 - **A goroutine that overruns its stack says so.** Each pool slot's 256 longs are
   now fenced, and a goroutine that runs past them and still returns ends with
   `panic: goroutine stack overflow` — the one failure in this runtime that had no

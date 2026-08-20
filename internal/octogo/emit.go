@@ -842,7 +842,7 @@ func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
 // long ago would read as forever-finishing. The sweep also catches that case
 // directly, in the rare order where the reissue happens between two claims.
 const ogoCogPool = `#define OGO_COGS 8
-#define OGO_STACK_LONGS 256
+#define OGO_STACK_LONGS %d
 // The argument block is a union of every go site's arguments (see goDefs), so it is
 // exactly as wide and as aligned as the widest of them.
 // A backstop, not a timeout: a goroutine reaches its epilogue and its cog stops
@@ -1286,7 +1286,7 @@ func (e *emitter) goDefs() string {
 	}
 	// The argument structs come before the pool that embeds them, the trampolines
 	// after it: they call ogo_cog_done.
-	return b.String() + ogoCogPool + tramps.String()
+	return b.String() + fmt.Sprintf(ogoCogPool, e.goStackLongs()) + tramps.String()
 }
 
 // selectCase is one CommClause of a select: the channel polled, where its value
@@ -3857,6 +3857,7 @@ type emitter struct {
 	usesRunePad        bool                    // printf %c with a width: emit runePadHelper
 	usesHexPrint       bool                    // printf %x of a signed type: emit hexPrintHelper
 	usesDecPad         bool                    // printf %0Nd of a signed value: emit decPadHelper
+	goStack            int                     // longs of stack per goroutine slot, 0 for the default (see goStackLongs)
 	usesStringEq       bool                    // a string == / != appears: emit ogo_string_eq
 	eqStructs          map[string]bool         // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim       // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
@@ -6167,6 +6168,44 @@ func (e *emitter) collectResults(ast []int32) {
 			e.retStructNameOf(resTypes)
 		}
 	})
+}
+
+// defaultGoStackLongs is a goroutine's stack when nothing asks for another. It is
+// what a driver needs and no more: seven slots of it sit in hub RAM for the whole
+// run, so the default buys depth nobody uses at the cost of memory everybody has.
+const defaultGoStackLongs = 256
+
+// minGoStackLongs is as small as a slot may be asked to get. Below this the
+// rendezvous and the trampoline's own frames do not fit, so the program would
+// overrun before its first statement.
+const minGoStackLongs = 64
+
+// maxGoStackLongs bounds the pool at 7 slots x this, a little under half of the
+// P2's 512 KB of hub RAM. A program wanting more than that from a goroutine wants
+// an iterative algorithm.
+const maxGoStackLongs = 8192
+
+// goStackLongs is the stack each goroutine slot gets, the default unless GoStack
+// asked for another.
+func (e *emitter) goStackLongs() int {
+	if e.goStack != 0 {
+		return e.goStack
+	}
+	return defaultGoStackLongs
+}
+
+// GoStack sets the longs of stack each goroutine slot carries. A goroutine that
+// outruns its slot is caught by the fence and panics, which is what makes this
+// worth asking for rather than guessing at: the diagnostic names the limit and this
+// is how the limit moves.
+func GoStack(longs int) EmitOption {
+	return func(e *emitter) { e.goStack = longs }
+}
+
+// GoStackRange is what a caller may ask for, for a diagnostic that names the bounds
+// rather than making the caller find them.
+func GoStackRange() (min, max, def int) {
+	return minGoStackLongs, maxGoStackLongs, defaultGoStackLongs
 }
 
 // leak says how a parameter lets what it was given escape the frame that chose the

@@ -179,7 +179,7 @@ Use "%s help <command>" for more information about a command.
 
 // commandHelp is the per-command detail behind "ogo help <command>".
 var commandHelp = map[string]string{
-	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--clock hz] [package | file.ogo ...]
+	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--clock hz] [--gostack longs] [package | file.ogo ...]
 
 Build compiles a package to a Propeller 2 binary.
 
@@ -212,9 +212,14 @@ crystal is believed.
 	--unchecked   omit the runtime checks
 	--release     reboot the board on a panic instead of halting the cog
 	--clock hz    the system clock to ask for, e.g. 200MHz (default 160 MHz)
+	--gostack longs
+	              stack per goroutine, in longs (default 256, 64..8192). A
+	              goroutine that outruns its slot panics "goroutine stack
+	              overflow"; this is how that limit moves. Seven slots of it
+	              sit in hub RAM for the whole run.
 	--xtal hz     the board's crystal (default 20MHz)
 `,
-	"run": `usage: ogo run [--release] [--unchecked] [--clock hz] [package | file.ogo ...]
+	"run": `usage: ogo run [--release] [--unchecked] [--clock hz] [--gostack longs] [package | file.ogo ...]
 
 Run builds a package exactly as ogo build does, loads the binary onto a connected
 Propeller 2 and opens a terminal on its serial output, reading at 230400 baud so
@@ -281,7 +286,7 @@ the clock instead.
 
 	-seed n       seed the generator (0 uses the current time)
 `,
-	"test": `usage: ogo test [-c] [-p port] [--clock hz] [package]
+	"test": `usage: ogo test [-c] [-p port] [--clock hz] [--gostack longs] [package]
 
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.

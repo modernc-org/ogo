@@ -80,6 +80,9 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 	emitOpts = append(emitOpts, clockOpts...)
+	if flags.goStack != 0 {
+		emitOpts = append(emitOpts, octogo.GoStack(flags.goStack))
+	}
 	var cbuf bytes.Buffer
 	if err := octogo.EmitC(pkg, &cbuf, emitOpts...); err != nil {
 		return "", 1, err
@@ -120,6 +123,10 @@ type buildFlags struct {
 	// any limit of the part.
 	clock int
 	xtal  int
+	// goStack is the longs of stack each goroutine slot carries, 0 for the default.
+	// A goroutine that outruns its slot panics rather than corrupting the pool, so
+	// this is the knob that diagnostic points at.
+	goStack int
 }
 
 // parseHz reads a flag's frequency argument, advancing i past it. It takes plain Hz
@@ -183,6 +190,20 @@ func parseArgs(args []string) (srcs []string, f buildFlags, err error) {
 			if f.clock, err = hz(a, &i); err != nil {
 				return nil, buildFlags{}, err
 			}
+		case a == "--gostack" || a == "-gostack":
+			i++
+			if i >= len(args) {
+				return nil, buildFlags{}, fmt.Errorf("build: %s requires a number of longs", a)
+			}
+			n, cerr := strconv.Atoi(strings.TrimSpace(args[i]))
+			if cerr != nil {
+				return nil, buildFlags{}, fmt.Errorf("build: %s wants a number of longs, got %q", a, args[i])
+			}
+			lo, hi, _ := octogo.GoStackRange()
+			if n < lo || n > hi {
+				return nil, buildFlags{}, fmt.Errorf("build: %s must be between %d and %d longs, got %d", a, lo, hi, n)
+			}
+			f.goStack = n
 		case a == "--xtal" || a == "-xtal":
 			if f.xtal, err = hz(a, &i); err != nil {
 				return nil, buildFlags{}, err

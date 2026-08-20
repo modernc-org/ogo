@@ -316,8 +316,9 @@ broken.
   compiler's, and it names assembly rather than your source, which is the unfriendly
   part. Splitting the function into several is the fix, and is what the code wanted
   anyway.
-* A **goroutine's stack is a fixed 256 longs** and cannot be sized per `go`
-  statement. Recursion works — `main` runs on the cog's own stack and a goroutine on
+* A **goroutine's stack is 256 longs by default** and cannot be sized per `go`
+  statement, though `ogo build --gostack N` sets it for the whole program (64 to
+  8192 longs; seven slots of it sit in hub RAM for the run). Recursion works — `main` runs on the cog's own stack and a goroutine on
   its pool slot's — but a deep enough call chain in a goroutine overruns that slot,
   this part having no memory protection. The slot is fenced, so a goroutine that
   overruns it and still returns ends with `panic: goroutine stack overflow` rather

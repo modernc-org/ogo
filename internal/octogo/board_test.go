@@ -284,6 +284,44 @@ func TestTargetBuildFlags(t *testing.T) {
 	}
 }
 
+// TestTargetGoStack pins the flag that moves a goroutine's stack. The default is
+// what every other target-build test uses, so what is checked here is that the flag
+// is accepted at its bounds, refused outside them, and that a program built with it
+// still builds for the board.
+//
+// What it cannot check without hardware is the part that matters -- that the deeper
+// stack is actually deeper -- which is measured on a P2-EDGE instead: a goroutine
+// recursing 400 deep panics "goroutine stack overflow" at the default and returns
+// cleanly at 2048.
+func TestTargetGoStack(t *testing.T) {
+	ogo := buildOgoCLI(t)
+	const src = "func w() { println(1) }\n\nfunc main() { go w() }\n"
+	for _, test := range []struct{ arg, wantErr string }{
+		{arg: "64"},
+		{arg: "256"},
+		{arg: "8192"},
+		{arg: "63", wantErr: "must be between 64 and 8192"},
+		{arg: "8193", wantErr: "must be between 64 and 8192"},
+		{arg: "many", wantErr: "wants a number of longs"},
+	} {
+		t.Run(test.arg, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			err := boardBuild(ogo, dir, "prog", src, filepath.Join(dir, "prog.binary"), "", "--gostack", test.arg)
+			switch {
+			case test.wantErr == "":
+				if err != nil {
+					t.Errorf("--gostack %s: %v", test.arg, err)
+				}
+			case err == nil:
+				t.Errorf("--gostack %s was accepted; want %q", test.arg, test.wantErr)
+			case !strings.Contains(err.Error(), test.wantErr):
+				t.Errorf("--gostack %s: %v, want %q", test.arg, err, test.wantErr)
+			}
+		})
+	}
+}
+
 // buildOgoCLI builds the ogo command once for a test to shell out to.
 func buildOgoCLI(t *testing.T) string {
 	t.Helper()
