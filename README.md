@@ -348,9 +348,14 @@ broken.
   `append(rows, mk())` and `ch <- mk()` are refused — bind the result to a variable
   and use that, which is what the diagnostic asks for. An array *literal* stands in
   both, as it does everywhere else.
-* An imported package must be a **subdirectory** of the package that imports it, so
-  `import "geo"` reads `geo/` beside the importing files rather than beside their
-  directory. Go's module layout is not implemented.
+* **Every import path names a directory of the package being BUILT**, whoever writes
+  the import. So the packages of a program are subdirectories of the main package's
+  directory, and one of them may import another — `util/` importing `"geo"` finds
+  `geo/` beside itself, because both are under the root. What does *not* work is
+  nesting a package inside the one that imports it (`util/geo/` is not found), nor a
+  `cmd/`-style layout where the main package sits in a subdirectory and the libraries
+  beside it: the root is the directory you build, and there is no module file to say
+  otherwise. Go's module layout is not implemented.
 * A `type` declaration must stand at **package scope**; one inside a function is
   refused.
 * A type **alias**, `type A = B`, parses and is then treated as a definition — the

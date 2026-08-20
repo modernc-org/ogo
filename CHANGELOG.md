@@ -18,6 +18,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Documentation
+
+- **The import rule was documented backwards.** The README said an imported package
+  must be a subdirectory of the package that imports it — which is the one layout
+  that does *not* work. Every import path is read against the directory being
+  **built**, whoever writes the import, so a program's packages are siblings under
+  the main package's directory and one may import another. Re-measured by building
+  each layout: siblings work, `util/geo/` imported by `util` is not found, and a
+  `cmd/` layout — main in a subdirectory, libraries beside it — fails, the root
+  being the directory you build.
+
+  A package importing another package was also untested. `chain/` in the
+  multi-package fixture pins it now, on the host and on the board.
+
 ### Fixed
 
 - **`ogo build --gostack N` sets a goroutine's stack**, 64 to 8192 longs, 256 as

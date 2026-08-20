@@ -17150,10 +17150,11 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n"
+	"30\n30\n30\n5\n6\nsizer\n9\n"
 
 var multiPkgProgram = map[string]string{
-	"main.ogo": `import "greet"
+	"main.ogo": `import "chain"
+import "greet"
 
 // A private helper of main's, same name as one in greet: with per-package name
 // mangling the two do not collide in the single translation unit.
@@ -17275,6 +17276,11 @@ case greet.Sizer:
 default:
 	println("other")
 }
+
+// A package importing ANOTHER package. Every import path is read against the
+// directory being BUILT, so chain finds greet beside itself rather than under
+// itself -- which is the layout a program of several packages actually has.
+println(chain.Via(4))
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -17302,6 +17308,13 @@ var stored = greet.Tag
 var pool = [3]int{9, 0, 0}
 var quad = greet.Quad{5, 6}
 var sh greet.Shape
+`,
+	"chain/chain.ogo": `import "greet"
+
+// chain is imported BY main and imports greet itself, so the build walks two
+// levels. greet is not under chain/ -- an import names a directory of the build
+// root, whichever package writes it.
+func Via(n int) int { return greet.Twice(n) + 1 }
 `,
 	"greet/greet.ogo": `type Point struct{ x, y int }
 

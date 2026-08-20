@@ -318,12 +318,17 @@ still design-only.
   `[]int{1, 4: 9}`) with constant indices -- expanded to positional C initializers
   (gaps zero-filled), a slice's length being the highest index plus one. A
   non-constant index is refused.
-- Multi-package programs work: a user `import "geo"` resolves to a SUBDIRECTORY of
-  the importing package, not a sibling -- the import path is read against
-  `os.DirFS(<the package's own directory>)`, so `geo/` must sit inside the directory
-  being built. Measured 2026-08-12: the subdirectory layout builds and runs, the
-  sibling one fails with `cannot find package "geo"`. (This entry said "sibling"
-  until then.) The whole program -- the main package plus every package it
+- Multi-package programs work: every import path is read against **the directory
+  being BUILT** (`fs.ReadDir(c.fsys, importPath)`, `c.fsys` being `os.DirFS(<the
+  main package's directory>)`), whoever writes the import. So the packages are
+  SIBLINGS under the main package's directory and one may import another --
+  `util/` importing `"geo"` finds `geo/` beside itself. Re-measured 2026-08-20 by
+  building each layout: siblings work, a package nested inside its importer
+  (`util/geo/`) is NOT found, and a `cmd/` layout -- main in a subdirectory,
+  libraries beside it -- fails, the root being the directory you build. (This entry
+  said "sibling" and then "SUBDIRECTORY of the importing package"; both were wrong,
+  the second because it describes the nesting that fails. `chain/` in
+  multiPkgProgram pins the two-level case now.) The whole program -- the main package plus every package it
   imports, transitively -- is emitted into **one C translation unit** in dependency
   order, with top-level symbols mangled into their package's namespace. `import
   "p2"` remains the one dotless, directory-less import, mapping to the hardware
