@@ -59,6 +59,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   is nothing to take the address of. Arguments are still evaluated left to right,
   which needed the effect analysis to learn this call shape.
 
+- **An integer constant may be RETURNED as a float** — `return 0` from a `float64`
+  function, which Go accepts as an untyped constant taking the result's type. Every
+  other position already did: a variable declaration, an assignment, an argument, a
+  struct or array literal element, a package variable and a comparison. Only the
+  return refused it, having asked the predicate that drives the integer *range*
+  checks, which floats have no place in.
+
 - **`p2.WaitUntil` waits until the counter REACHES a value**, where `WaitCycles`
   waits a number of cycles. That is the difference between a loop that keeps time
   and one that drifts — the work a body does is inside the wait rather than after
@@ -70,6 +77,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   `p2.GetUs` comes with it, completing the `GetMs`/`GetSec` family.
 
 ### Fixed
+
+- **`3 / b` for a 64-bit `b` panicked with *integer divide by zero*.** The guarded
+  division helper was chosen from the type of the *left* operand, so a constant
+  dividend typed the whole thing `int` — which picked the 32-bit zero-guard, and that
+  truncated the divisor to its low word. For `0x1000000000000000` the low word is
+  zero, so a program dividing by a perfectly good number aborted. The type is now read
+  from the level, where an untyped constant takes the other operand's type; that is
+  the rule the expression typer already stated, and only this reader of it took the
+  first operand.
 
 - **Unsigned arithmetic with a constant on the LEFT gave signed answers on the
   board.** `4 * u` for a `uint32` u was typed *signed* by the C backend — the
@@ -84,6 +100,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   ways whenever a type can be lost. A constant operand of an unsigned level is now
   spelled unsigned, `4u * u`, which settles the shapes reordering could not: `100 -
   u` was wrong the same way.
+
+### Testing
+
+- **Two generated crosses now run on the board.** Mixed-type integer arithmetic —
+  every sized type against every operator, with the constant on each side — which
+  found both defects above; and 1152 integer conversions, every sized type to every
+  other, with nesting, defined types and a call's result, which found nothing and is
+  kept as the cheap half of re-checking the backend after a regeneration. Float
+  *printing* is deliberately outside both: `float64` is 32-bit on this target, so
+  the digits past the seventh are the host's and not the board's.
 
 ### Behaviour changes
 
@@ -117,15 +143,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   stored −56 and `ch <- 1.5` on a `chan int` stored 1, both silently. The send was
   the one position that never asked whether the value fits the element type, though
   an assignment, an argument and a return all did.
-
-### Language
-
-- **An integer constant may be RETURNED as a float** — `return 0` from a `float64`
-  function, which Go accepts as an untyped constant taking the result's type. Every
-  other position already did: a variable declaration, an assignment, an argument, a
-  struct or array literal element, a package variable and a comparison. Only the
-  return refused it, having asked the predicate that drives the integer *range*
-  checks, which floats have no place in.
 
 ## v0.29.0
 
