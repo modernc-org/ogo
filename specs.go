@@ -509,10 +509,25 @@
 // (OctoGo Specific): Concatenation with "+" is limited to compile-time constants,
 // which fold to a single literal. A concatenation with a non-constant operand is
 // rejected, since building a new string at run time needs allocation and the
-// target has no heap. For the same reason a conversion that would BUILD a string at
-// RUN TIME -- string(r) from a rune variable, string(b) from a byte slice -- is
-// rejected. A conversion that builds nothing is free and is allowed: string(s) of a
-// string, and one to or from a defined type over string, are the same bytes.
+// target has no heap. A conversion whose result is of UNBOUNDED length is rejected
+// for the same reason: string(b) from a byte slice needs as many bytes as the slice
+// is long, and there is nowhere to put them. A conversion that builds nothing is
+// free and is allowed: string(s) of a string, and one to or from a defined type over
+// string, are the same bytes.
+//
+// A conversion from a RUNE is bounded -- four bytes at most -- so it is allowed, and
+// its bytes are a temporary of the block it is written in:
+//
+//	for _, r := range s {
+//		print(string(r))    // fine: used where it is made
+//	}
+//
+// The result is a VIEW of that temporary, so the lifetime rules govern it as they
+// govern a slice over a local array. It may be printed, compared, switched on and
+// passed to a function that does not keep it; it may not be returned, stored where
+// it outlives the block, sent on a channel, or handed to a Cog. Storing one in an
+// array indexed by the loop is the case worth naming, since it looks like it should
+// work: each iteration would hand back the same four bytes.
 //
 // A CONSTANT operand builds nothing either: string('A') is a constant string, as it
 // is in Go, and folds to the literal bytes at compile time. Every spelling of a

@@ -1705,6 +1705,56 @@ func main() {
 		want: "2\n12\n24\n6\n5 9 3\n2\n7 7 7\n3 11 6\n3 2 4\n",
 	},
 	{
+		// `string(r)` for a rune the program COMPUTES, which is what
+		// `for _, r := range s { print(string(r)) }` needs -- about as ordinary as
+		// Go gets, and refused outright until now.
+		//
+		// A rune's UTF-8 is at most four bytes, so the storage is four bytes of the
+		// frame hoisted beside the statement. That bound is the whole argument: a
+		// byte SLICE's length is the slice's, so that conversion is still refused.
+		//
+		// The result is a VIEW of those four bytes, so the lifetime rules police it
+		// exactly as they police a slice over a local array -- see the refusals in
+		// TestEmitCRuneStringEscape. Everything here keeps it inside the block it
+		// was minted in.
+		name: "a computed rune converts to a string",
+		src: `func take(s string) int { return len(s) }
+
+func main() {
+	s := "h\u00e9llo, \u4e16\u754c"
+	for _, r := range s {
+		print(string(r))
+	}
+	println()
+
+	var r rune = 'A'
+	r++
+	t := string(r)
+	println(t, len(t), take(string(r)))
+	println(string(r) == "B", string(r) > "A")
+
+	switch string(r) {
+	case "B":
+		println("matched")
+	}
+
+	// Every rune of the string, converted back and measured: the bytes add up to
+	// the string's own length.
+	n := 0
+	for _, c := range s {
+		n += len(string(c))
+	}
+	println(n, len(s))
+
+	// A byte and a computed code point, the other two spellings of the operand.
+	b := byte('z')
+	i := 0x1F600
+	println(string(b), string(rune(i)), len(string(rune(i))))
+}
+`,
+		want: "h\u00e9llo, \u4e16\u754c\nB 1 1\ntrue true\nmatched\n14 14\nz \U0001f600 4\n",
+	},
+	{
 		// Integer conversions, every sized type to every other, at three values
 		// apiece chosen to expose truncation and sign: each type's extremes and a
 		// value with its high bit set. Nested conversions, conversions through

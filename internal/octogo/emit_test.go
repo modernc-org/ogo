@@ -5835,6 +5835,11 @@ func main() {
 // The free ones are in the same file's `free`: a conversion between two types of the
 // one representation is the operand itself, and emits no cast at all -- C has no
 // cast to a non-scalar type, which is what `(Name)(s)` on a string was.
+// TestEmitCStringConvRefused pins the string conversion that is still refused: the
+// one from a byte SLICE, whose bytes are as many as the slice is long and so cannot
+// be given storage the compiler chooses. The conversion from a RUNE is no longer
+// among them -- its UTF-8 is at most four bytes, taken from the frame and policed by
+// the lifetime rules -- which is why this table has one entry where it had two.
 func TestEmitCStringConvRefused(t *testing.T) {
 	for _, test := range []struct{ name, src string }{
 		{
@@ -5843,14 +5848,6 @@ func TestEmitCStringConvRefused(t *testing.T) {
 
 func main() {
 	b := back[:]
-	println(string(b))
-}
-`,
-		},
-		{
-			name: "from a byte",
-			src: `func main() {
-	var b uint8 = 104
 	println(string(b))
 }
 `,
@@ -8108,6 +8105,148 @@ func main() { println(run(5)) }
 				}
 			case err == nil:
 				t.Errorf("EmitC: accepted a reference outliving its block; want %q\n%s", test.want, buf.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestEmitCRuneStringEscape(t *testing.T) {
+	const decls = `var g string
+
+var out [3]string
+
+var ch chan string
+
+var done chan int
+
+type B struct{ s string }
+
+var gb B
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		// The bytes are a temporary of the block the conversion is written in, so
+		// the result is a view of that block's storage. Every door the lifetime
+		// rules guard applies to it.
+		{
+			name: "stored where it outlives the block",
+			src: `func main() {
+	for i, r := range "abc" {
+		out[i] = string(r)
+	}
+	println(out[0])
+}
+`,
+			want: "cannot store a string converted from a rune",
+		},
+		{
+			name: "returned",
+			src: `func mk(r rune) string { return string(r) }
+
+func main() { println(mk('x')) }
+`,
+			want: "cannot return a string converted from a rune",
+		},
+		{
+			name: "stored in a package variable",
+			src: `func set(r rune) { g = string(r) }
+
+func main() {
+	set('q')
+	println(g)
+}
+`,
+			want: "cannot store a string converted from a rune",
+		},
+		{
+			name: "stored in a package struct's field",
+			src: `func main() {
+	var r rune = 'z'
+	gb.s = string(r)
+	println(gb.s)
+}
+`,
+			want: "cannot store a string converted from a rune",
+		},
+		{
+			name: "sent on a channel",
+			src: `func w(r rune) { ch <- string(r) }
+
+func main() {
+	go w('x')
+	println(<-ch)
+}
+`,
+			want: "cannot send a string converted from a rune",
+		},
+		{
+			name: "handed to a cog",
+			src: `func show(s string) {
+	println(s)
+	done <- 1
+}
+
+func main() {
+	var r rune = 'y'
+	go show(string(r))
+	<-done
+}
+`,
+			want: "cannot pass a string converted from a rune",
+		},
+		// Kept inside the block it was minted in, it is an ordinary string.
+		{
+			name: "used in the statement that makes it",
+			src: `func take(s string) int { return len(s) }
+
+func main() {
+	var r rune = 'k'
+	println(string(r), len(string(r)), take(string(r)))
+	println(string(r) == "k")
+}
+`,
+		},
+		{
+			name: "bound to a local of the same block",
+			src: `func main() {
+	var r rune = 'k'
+	s := string(r)
+	println(s, len(s))
+}
+`,
+		},
+		{
+			name: "a constant rune, which folds and reaches no storage",
+			src: `func mk() string { return string('A') }
+
+func main() {
+	g = string('B')
+	println(mk(), g)
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a rune string outliving its block; want %q\n%s", test.want, buf.String())
 			case !strings.Contains(err.Error(), test.want):
 				t.Errorf("EmitC error %q does not mention %q", err, test.want)
 			}

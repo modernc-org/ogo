@@ -9057,6 +9057,14 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 				if _, isConst := f.constArgValue(s, args[0]); isConst {
 					break
 				}
+				// A RUN-TIME rune converts too: its UTF-8 is at most four bytes,
+				// which the emitter takes from the frame and the lifetime rules
+				// then police. What stays refused is the conversion whose storage
+				// is NOT bounded -- string(b) for a byte slice, whose length is
+				// the slice's.
+				if isNumericKind(k) || k == PredeclaredInt32 {
+					break
+				}
 				f.err(callee.Position(), "a string conversion needs allocation, which the target does not have")
 			}
 		}

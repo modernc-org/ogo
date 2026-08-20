@@ -1,8 +1,12 @@
-// A string conversion that BUILDS a string at RUN TIME -- string(r) from a rune
-// variable, string(b) from a byte slice -- must copy its bytes somewhere. The
-// allocation-free target has nowhere to put them, exactly as runtime string
-// concatenation does, so it is refused with a clear message rather than an opaque
-// emit error.
+// A string conversion whose result is of UNBOUNDED length -- string(b) from a byte
+// slice, whose bytes are as many as the slice is long -- has nowhere to put them on
+// this allocation-free target, exactly as runtime string concatenation has not, so
+// it is refused with a clear message rather than an opaque emit error.
+//
+// A conversion from a RUNE is bounded at four bytes, so it takes them from the frame
+// and the lifetime rules police the result: it may be printed, compared, switched on
+// and passed, and may not be returned, stored where it outlives its block, sent, or
+// handed to a cog.
 //
 // A CONSTANT operand is a different matter and is not refused: Go makes string('A')
 // a constant string, and the emitter folds it to the literal bytes, so there is
@@ -19,7 +23,8 @@ type Name string
 func run() {
 	r := 66
 
-	// ERROR "a string conversion needs allocation"
+	// A RUN-TIME rune converts: its UTF-8 is at most four bytes, which the emitter
+	// takes from the frame and the lifetime rules then police.
 	s := string(rune(r))
 	_ = s
 

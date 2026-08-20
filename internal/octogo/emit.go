@@ -532,6 +532,22 @@ const builderHelpers = "static ogo_builder ogo_builder_new(ogo_slice_uint8_t bac
 	"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
 	"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
 
+// runeStringHelper is `string(r)` for a RUNE the program computes rather than
+// writes: the UTF-8 bytes into a buffer the CALLER supplies, and a string over them.
+//
+// The buffer is the caller's because that is the only storage this target has to
+// offer -- four bytes of the frame, hoisted beside the statement -- and making its
+// lifetime the caller's is what lets the lifetime rules police the result. The
+// encoding is ogo_builder_WriteRune's, U+FFFD for anything that is not a code point.
+const runeStringHelper = "static ogo_string ogo_rune_string(int32_t r, uint8_t* t) {\n" +
+	"\tunsigned int c = (unsigned int)r; ogo_string s; int n;\n" +
+	"\tif (r < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;\n" +
+	"\tif (c < 0x80) { t[0] = (uint8_t)c; n = 1; }\n" +
+	"\telse if (c < 0x800) { t[0] = (uint8_t)(0xC0 | (c >> 6)); t[1] = (uint8_t)(0x80 | (c & 0x3F)); n = 2; }\n" +
+	"\telse if (c < 0x10000) { t[0] = (uint8_t)(0xE0 | (c >> 12)); t[1] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[2] = (uint8_t)(0x80 | (c & 0x3F)); n = 3; }\n" +
+	"\telse { t[0] = (uint8_t)(0xF0 | (c >> 18)); t[1] = (uint8_t)(0x80 | ((c >> 12) & 0x3F)); t[2] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[3] = (uint8_t)(0x80 | (c & 0x3F)); n = 4; }\n" +
+	"\ts.str = (const char*)t; s.len = n; return s;\n}\n"
+
 // runePrintHelper prints a rune as its UTF-8 bytes, which is what Go's %c does --
 // a rune is not a byte, and putchar of one above 127 would emit a single wrong
 // byte silently. Out-of-range and surrogate values print U+FFFD, as a string(rune)
@@ -3493,6 +3509,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 			"\tif (n > 0) { memcpy(dst.ptr, src.str, (unsigned)n); }\n"+
 			"\treturn n;\n}\n", sliceCName("uint8_t"))
 	}
+	if e.usesRuneString {
+		helperDefs.WriteString(runeStringHelper)
+	}
 	if e.usesBuilder {
 		helperDefs.WriteString(builderHelpers)
 	}
@@ -3741,6 +3760,7 @@ type emitter struct {
 	usesResliceStr     bool               // a string is sliced through the helper: emit ogo_reslice_str
 	resliceCalled      bool               // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
 	usesCopyStr        bool               // copy(dst []byte, src string) is used: emit the ogo_copystr helper
+	usesRuneString     bool               // string(r) for a run-time rune is used: emit the ogo_rune_string helper
 	usesBuilder        bool               // the Builder type is used: emit its typedef and method helpers
 	importQualifiers   map[string]string  // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
 	curPkgPrefix       string             // the C symbol prefix of the package whose file is currently being emitted ("" for main)
@@ -11105,6 +11125,24 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 			// expression that allocates nothing.
 			if v, isConst := e.constIntValue(arg.ast); isConst {
 				e.emitFoldedString(runeString(v))
+				return
+			}
+			// A RUN-TIME rune. Its UTF-8 is at most four bytes, so the storage is
+			// four bytes of this frame, hoisted beside the statement -- which is
+			// what makes the result a reference the lifetime rules can police, and
+			// they do: frameRefOf counts it, so a result stored where it outlives
+			// the block it was minted in is refused. Storage is the whole of what
+			// this conversion needs, and a rune's is bounded; a byte SLICE's is
+			// not, which is why that one is still refused below.
+			if src, ok := e.exprReprCType(arg.ast); ok && isIntCType(src) {
+				e.usesRuneString = true
+				e.usesString = true // the helper returns one, and may be the only user
+				e.includes["stdint.h"] = true
+				buf := e.newTmp()
+				e.prologue = append(e.prologue, "uint8_t "+buf+"[4];\n")
+				e.emit("ogo_rune_string(")
+				e.emitExpr(arg.ast)
+				e.emit(", " + buf + ")")
 				return
 			}
 			e.fail("a string conversion needs allocation, which the target does not have")
@@ -23174,6 +23212,47 @@ func sliceRef(name string) frameRef {
 	return frameRef{origin: "local " + name, what: "a slice backed by local " + name, name: name, view: true}
 }
 
+// runeStrRef names the string a run-time `string(r)` makes. Its bytes are a
+// temporary the emitter mints in the block being emitted, so it has no variable to
+// name and answers with the current block's depth, exactly as a slice literal's
+// backing does.
+func runeStrRef() frameRef {
+	return frameRef{
+		origin: tempOrigin,
+		what:   "a string converted from a rune, whose bytes are a temporary of this function",
+		view:   true,
+	}
+}
+
+// runtimeRuneString reports whether an expression is `string(x)` for an x that is
+// not a constant -- the conversion that mints storage. The constant form folds to a
+// literal and reaches no storage at all.
+func (e *emitter) runtimeRuneString(ast []int32) bool {
+	kids, ok := e.soleFactor(ast)
+	if !ok {
+		return false
+	}
+	name, suffix, isCall := e.factorCall(kids)
+	if !isCall || name != "string" {
+		return false
+	}
+	var args []Node
+	for _, n := range suffix {
+		if n.sym == CallSuffix {
+			args = e.callArgExprs(n.ast)
+			break
+		}
+	}
+	if len(args) != 1 {
+		return false
+	}
+	if _, isConst := e.constIntValue(args[0].ast); isConst {
+		return false
+	}
+	src, ok := e.exprReprCType(args[0].ast)
+	return ok && isIntCType(src)
+}
+
 func addrRef(name string) frameRef {
 	return frameRef{origin: "local " + name, what: "the address of local variable " + name, name: name}
 }
@@ -23329,6 +23408,15 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// temporary to be the address of.
 	if _, _, isAddrLit := e.addrOfCompositeLit(ast); isAddrLit {
 		return addrLitRef(), true
+	}
+	// `string(r)` for a RUN-TIME rune: the emitter mints four bytes beside the
+	// statement and the result views them, so it reaches storage of the block it was
+	// written in exactly as a slice literal's backing does. Without this the result
+	// escaped every door -- `g = string(r)` and `return string(r)` handed out a view
+	// of a dead frame, and `out[i] = string(r)` in a loop aliased ONE buffer, so
+	// three iterations printed the last rune three times.
+	if e.runtimeRuneString(ast) {
+		return runeStrRef(), true
 	}
 	if name, ok := e.addrOfRoot(ast); ok && e.isFrameVar(name) {
 		return addrRef(name), true

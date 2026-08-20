@@ -16,6 +16,24 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **`string(r)` works for a rune the program COMPUTES**, not only a constant one —
+  which is what `for _, r := range s { print(string(r)) }` needs, about as ordinary
+  as Go gets and refused outright until now. A rune's UTF-8 is at most four bytes,
+  so the storage is four bytes of the frame, hoisted beside the statement. That
+  bound is the whole argument: `string(b)` for a byte *slice* needs as many bytes as
+  the slice is long, and is still refused.
+
+  The result is a **view** of those four bytes, so the lifetime rules govern it as
+  they govern a slice over a local array. It may be printed, compared, switched on
+  and passed to a function that does not keep it; it may not be returned, stored
+  where it outlives its block, sent on a channel, or handed to a cog. The case worth
+  naming is `out[i] = string(r)` inside a loop, which looks like it should work and
+  is refused: every iteration would hand back the same four bytes.
+
 ## v0.30.0
 
 Two silent wrong answers on the board, and the last hole in the lifetime rules.
