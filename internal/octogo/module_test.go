@@ -172,6 +172,45 @@ func TestBuildModuleResolution(t *testing.T) {
 			},
 		},
 		{
+			name:   "a capital in a package directory",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":     "import \"example.com/proj/Sensor\"\n\nfunc main() { println(Sensor.Read()) }",
+				"Sensor/s.ogo": "func Read() int { return 1 }",
+			},
+			want: "must be lower case",
+		},
+		{
+			// The prefix is a repository name and never reaches a filesystem.
+			name:   "capitals in the module prefix",
+			module: "example.com/BurntSushi/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":          "import \"example.com/BurntSushi/proj/sensor\"\n\nfunc main() { println(sensor.Read()) }",
+				"sensor/sensor.ogo": "func Read() int { return 1 }",
+			},
+		},
+		{
+			// The last element is the qualifier and must be an identifier; an
+			// element that is not has no such constraint.
+			name:   "a hyphen above the package directory",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":             "import \"example.com/proj/my-libs/sensor\"\n\nfunc main() { println(sensor.Read()) }",
+				"my-libs/sensor/s.ogo": "func Read() int { return 1 }",
+			},
+		},
+		{
+			// The rule is the path's, not the module's: without one the whole path
+			// is the directory.
+			name:   "a capital with no module at all",
+			module: "", dir: ".",
+			files: map[string]string{
+				"main.ogo":     "import \"Sensor\"\n\nfunc main() { println(Sensor.Read()) }",
+				"Sensor/s.ogo": "func Read() int { return 1 }",
+			},
+			want: "must be lower case",
+		},
+		{
 			name:   "an embedded package needs no module prefix",
 			module: "example.com/proj", dir: ".",
 			files: map[string]string{

@@ -99,6 +99,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   library. The second used to be unreachable and would otherwise have hung the
   compiler.
 
+  A third is refused everywhere, module or not: **a capital in a package
+  directory**. `foo/` and `Foo/` are one directory on macOS and Windows, so a
+  program holding both cannot be checked out there, let alone built — and the
+  developer who writes it on Linux, where both live happily, would learn that from
+  whoever clones it. The module prefix keeps its capitals, being a repository name
+  that never reaches a filesystem, so `example.com/BurntSushi/proj/sensor` is a
+  path and `example.com/proj/Sensor` is not.
+
 - **`string(r)` works for a rune the program COMPUTES**, not only a constant one —
   which is what `for _, r := range s { print(string(r)) }` needs, about as ordinary
   as Go gets and refused outright until now. A rune's UTF-8 is at most four bytes,

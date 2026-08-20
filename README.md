@@ -362,6 +362,10 @@ broken.
   where the root is, and a line it does not implement, such as `require`, is refused
   rather than ignored. Nesting a package inside the one that imports it is not a
   layout either way — `util/geo/` is found as `<module>/util/geo`, not as `geo`.
+  **A package directory must be lower case** (letters, digits, `_`, `-`), though the
+  module prefix may carry capitals, being a repository name: `foo/` and `Foo/` are
+  one directory on macOS and Windows, so a program naming a capital is refused where
+  it is written rather than where it is cloned.
 * A `type` declaration must stand at **package scope**; one inside a function is
   refused.
 * A type **alias**, `type A = B`, parses and is then treated as a definition — the

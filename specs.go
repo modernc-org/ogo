@@ -2324,10 +2324,25 @@
 // An import path the module does not contain is an error. So is importing the main
 // package, which is a program and not a library.
 //
-// Import paths are slash-separated. An element is made of ASCII letters, digits and
-// the characters '_', '-', '.' and '~' -- a module path is a repository name and
-// needs them -- and no element may be empty, "." or "..", which is what makes a
-// relative or absolute path unspellable as an import.
+// Import paths are slash-separated, and their two halves obey different rules,
+// because only one of them is ever a filesystem path.
+//
+// The module prefix is a repository name and is written as one: ASCII letters,
+// digits and the characters '_', '-', '.' and '~', capitals included, so
+// example.com/BurntSushi/proj is spellable.
+//
+// What follows the prefix is the package's DIRECTORY -- and is the whole path when
+// there is no module -- and must be made of lower-case ASCII letters, digits, '_'
+// and '-'. Lower case is required rather than merely conventional: a program
+// holding both foo/ and Foo/ cannot be checked out on macOS or Windows, where the
+// two are one directory, so a path naming a capital is refused on the machine that
+// writes it rather than on the machine that clones it.
+//
+// The last element of a path is the package's name and must therefore also be an
+// identifier: my-libs/sensor is a path, my-libs on its own is not.
+//
+// No element may be empty, "." or "..", which is what makes a relative or absolute
+// path unspellable as an import.
 //
 // The intrinsic package p2 and the packages the compiler carries as source (testing,
 // strings) are imported by their bare names whether or not there is a module, as Go

@@ -656,6 +656,42 @@ func (c *BuildContext) importIdent(importPath string) (key, dir string, ok bool)
 	return c.pkgPath(dir), dir, true
 }
 
+// validPkgDir reports whether a module-relative package DIRECTORY can exist, beside
+// its siblings, on every filesystem this compiler targets. It is a narrower rule
+// than the one an import path as a whole obeys, and deliberately so: the module
+// prefix of a path is a repository name that never reaches a filesystem, and
+// example.com/BurntSushi/toml has to remain spellable, while what follows it is
+// created by `mkdir` on macOS and Windows too.
+//
+// Lower case is the load-bearing part. A module holding both foo/ and Foo/ cannot be
+// checked out on a case-insensitive filesystem at all, let alone built, and the
+// developer who wrote it -- on Linux, where both exist happily -- learns this from
+// whoever clones it. Refusing the capital reports it on the first build instead.
+func validPkgDir(dir string) (bad, why string) {
+	if dir == "" || dir == "." {
+		return "", ""
+	}
+
+	for _, v := range strings.Split(dir, "/") {
+		if strings.HasPrefix(v, "-") {
+			return v, "must not begin with '-'"
+		}
+
+		for _, c := range v {
+			switch {
+			case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_', c == '-':
+				// ok
+			case c >= 'A' && c <= 'Z':
+				return v, "must be lower case: a directory differing from another only in case is the SAME directory on macOS and Windows"
+			default:
+				return v, "must be made of lower-case ASCII letters, digits, '_' and '-'"
+			}
+		}
+	}
+
+	return "", ""
+}
+
 func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken Token) (p *Package) {
 	if c == nil {
 		return noPkg
@@ -668,6 +704,11 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 		if !intrinsicImports[importPath] {
 			c.syncErr(importPathToken.Position(), "%s", c.notInModule(importPath))
 		}
+		return noPkg
+	}
+
+	if bad, why := validPkgDir(dir); bad != "" {
+		c.syncErr(importPathToken.Position(), "invalid import path %q: package directory %q %s", importPath, bad, why)
 		return noPkg
 	}
 
