@@ -1705,6 +1705,238 @@ func main() {
 		want: "2\n12\n24\n6\n5 9 3\n2\n7 7 7\n3 11 6\n3 2 4\n",
 	},
 	{
+		// Integer conversions, every sized type to every other, at three values
+		// apiece chosen to expose truncation and sign: each type's extremes and a
+		// value with its high bit set. Nested conversions, conversions through
+		// DEFINED types and back, a conversion of a call's result and of a
+		// parenthesised expression come with them -- 1152 in all, generated for the
+		// same reason as the arithmetic matrix below it: the interesting part is the
+		// cross, and hand-written cases keep covering the diagonal.
+		//
+		// Unlike that one, this found NOTHING. It is kept because the class has a
+		// history -- the "int is not int32" arc, and three silently truncating
+		// miscompiles before it -- and because it is the cheap half of re-checking
+		// the backend after a regeneration, which is when a conversion is most
+		// likely to start lying.
+		//
+		// Float printing is deliberately not compared: float64 IS 32-bit on this
+		// target (see specs.go), so the digits past the seventh are the host's and
+		// not the board's, and %g's six are the honest answer here.
+		name: "integer conversions",
+		src: `type Small int8
+type Wide int64
+type UWide uint64
+type Mid uint16
+
+var v_int8_0 int8 = -128
+var v_int8_1 int8 = -1
+var v_int8_2 int8 = 127
+var v_int16_0 int16 = -32768
+var v_int16_1 int16 = -1
+var v_int16_2 int16 = 32767
+var v_int32_0 int32 = -2147483648
+var v_int32_1 int32 = -1
+var v_int32_2 int32 = 2147483647
+var v_int64_0 int64 = -9223372036854775808
+var v_int64_1 int64 = -1
+var v_int64_2 int64 = 9223372036854775807
+var v_uint8_0 uint8 = 0
+var v_uint8_1 uint8 = 129
+var v_uint8_2 uint8 = 255
+var v_uint16_0 uint16 = 0
+var v_uint16_1 uint16 = 33000
+var v_uint16_2 uint16 = 65535
+var v_uint32_0 uint32 = 0
+var v_uint32_1 uint32 = 2147483649
+var v_uint32_2 uint32 = 4294967295
+var v_uint64_0 uint64 = 0
+var v_uint64_1 uint64 = 9223372036854775809
+var v_uint64_2 uint64 = 18446744073709551615
+
+func id64(x int64) int64 { return x }
+
+func c_int8() {
+	println(int8(v_int8_0), int16(v_int8_0), int32(v_int8_0), int64(v_int8_0), uint8(v_int8_0), uint16(v_int8_0), uint32(v_int8_0), uint64(v_int8_0))
+	println(int8(v_int8_0 + 1), int16(v_int8_0 + 1), int32(v_int8_0 + 1), int64(v_int8_0 + 1), uint8(v_int8_0 + 1), uint16(v_int8_0 + 1), uint32(v_int8_0 + 1), uint64(v_int8_0 + 1))
+	println(int64(int8(int32(v_int8_0))), int64(uint8(uint32(v_int8_0))), int64(int16(uint8(v_int8_0))))
+	println(int64(Small(v_int8_0)), int64(Wide(v_int8_0)), uint64(UWide(v_int8_0)), int64(Mid(v_int8_0)))
+	println(int64(int8(Wide(v_int8_0))), uint64(uint32(UWide(v_int8_0))), int64(Mid(Small(v_int8_0))))
+	println(int8(id64(int64(v_int8_0))), int16((int32(v_int8_0))), uint8(int64(v_int8_0)+0))
+	println(int8(v_int8_1), int16(v_int8_1), int32(v_int8_1), int64(v_int8_1), uint8(v_int8_1), uint16(v_int8_1), uint32(v_int8_1), uint64(v_int8_1))
+	println(int8(v_int8_1 + 1), int16(v_int8_1 + 1), int32(v_int8_1 + 1), int64(v_int8_1 + 1), uint8(v_int8_1 + 1), uint16(v_int8_1 + 1), uint32(v_int8_1 + 1), uint64(v_int8_1 + 1))
+	println(int64(int8(int32(v_int8_1))), int64(uint8(uint32(v_int8_1))), int64(int16(uint8(v_int8_1))))
+	println(int64(Small(v_int8_1)), int64(Wide(v_int8_1)), uint64(UWide(v_int8_1)), int64(Mid(v_int8_1)))
+	println(int64(int8(Wide(v_int8_1))), uint64(uint32(UWide(v_int8_1))), int64(Mid(Small(v_int8_1))))
+	println(int8(id64(int64(v_int8_1))), int16((int32(v_int8_1))), uint8(int64(v_int8_1)+0))
+	println(int8(v_int8_2), int16(v_int8_2), int32(v_int8_2), int64(v_int8_2), uint8(v_int8_2), uint16(v_int8_2), uint32(v_int8_2), uint64(v_int8_2))
+	println(int8(v_int8_2 + 1), int16(v_int8_2 + 1), int32(v_int8_2 + 1), int64(v_int8_2 + 1), uint8(v_int8_2 + 1), uint16(v_int8_2 + 1), uint32(v_int8_2 + 1), uint64(v_int8_2 + 1))
+	println(int64(int8(int32(v_int8_2))), int64(uint8(uint32(v_int8_2))), int64(int16(uint8(v_int8_2))))
+	println(int64(Small(v_int8_2)), int64(Wide(v_int8_2)), uint64(UWide(v_int8_2)), int64(Mid(v_int8_2)))
+	println(int64(int8(Wide(v_int8_2))), uint64(uint32(UWide(v_int8_2))), int64(Mid(Small(v_int8_2))))
+	println(int8(id64(int64(v_int8_2))), int16((int32(v_int8_2))), uint8(int64(v_int8_2)+0))
+}
+
+func c_int16() {
+	println(int8(v_int16_0), int16(v_int16_0), int32(v_int16_0), int64(v_int16_0), uint8(v_int16_0), uint16(v_int16_0), uint32(v_int16_0), uint64(v_int16_0))
+	println(int8(v_int16_0 + 1), int16(v_int16_0 + 1), int32(v_int16_0 + 1), int64(v_int16_0 + 1), uint8(v_int16_0 + 1), uint16(v_int16_0 + 1), uint32(v_int16_0 + 1), uint64(v_int16_0 + 1))
+	println(int64(int8(int32(v_int16_0))), int64(uint8(uint32(v_int16_0))), int64(int16(uint8(v_int16_0))))
+	println(int64(Small(v_int16_0)), int64(Wide(v_int16_0)), uint64(UWide(v_int16_0)), int64(Mid(v_int16_0)))
+	println(int64(int8(Wide(v_int16_0))), uint64(uint32(UWide(v_int16_0))), int64(Mid(Small(v_int16_0))))
+	println(int8(id64(int64(v_int16_0))), int16((int32(v_int16_0))), uint8(int64(v_int16_0)+0))
+	println(int8(v_int16_1), int16(v_int16_1), int32(v_int16_1), int64(v_int16_1), uint8(v_int16_1), uint16(v_int16_1), uint32(v_int16_1), uint64(v_int16_1))
+	println(int8(v_int16_1 + 1), int16(v_int16_1 + 1), int32(v_int16_1 + 1), int64(v_int16_1 + 1), uint8(v_int16_1 + 1), uint16(v_int16_1 + 1), uint32(v_int16_1 + 1), uint64(v_int16_1 + 1))
+	println(int64(int8(int32(v_int16_1))), int64(uint8(uint32(v_int16_1))), int64(int16(uint8(v_int16_1))))
+	println(int64(Small(v_int16_1)), int64(Wide(v_int16_1)), uint64(UWide(v_int16_1)), int64(Mid(v_int16_1)))
+	println(int64(int8(Wide(v_int16_1))), uint64(uint32(UWide(v_int16_1))), int64(Mid(Small(v_int16_1))))
+	println(int8(id64(int64(v_int16_1))), int16((int32(v_int16_1))), uint8(int64(v_int16_1)+0))
+	println(int8(v_int16_2), int16(v_int16_2), int32(v_int16_2), int64(v_int16_2), uint8(v_int16_2), uint16(v_int16_2), uint32(v_int16_2), uint64(v_int16_2))
+	println(int8(v_int16_2 + 1), int16(v_int16_2 + 1), int32(v_int16_2 + 1), int64(v_int16_2 + 1), uint8(v_int16_2 + 1), uint16(v_int16_2 + 1), uint32(v_int16_2 + 1), uint64(v_int16_2 + 1))
+	println(int64(int8(int32(v_int16_2))), int64(uint8(uint32(v_int16_2))), int64(int16(uint8(v_int16_2))))
+	println(int64(Small(v_int16_2)), int64(Wide(v_int16_2)), uint64(UWide(v_int16_2)), int64(Mid(v_int16_2)))
+	println(int64(int8(Wide(v_int16_2))), uint64(uint32(UWide(v_int16_2))), int64(Mid(Small(v_int16_2))))
+	println(int8(id64(int64(v_int16_2))), int16((int32(v_int16_2))), uint8(int64(v_int16_2)+0))
+}
+
+func c_int32() {
+	println(int8(v_int32_0), int16(v_int32_0), int32(v_int32_0), int64(v_int32_0), uint8(v_int32_0), uint16(v_int32_0), uint32(v_int32_0), uint64(v_int32_0))
+	println(int8(v_int32_0 + 1), int16(v_int32_0 + 1), int32(v_int32_0 + 1), int64(v_int32_0 + 1), uint8(v_int32_0 + 1), uint16(v_int32_0 + 1), uint32(v_int32_0 + 1), uint64(v_int32_0 + 1))
+	println(int64(int8(int32(v_int32_0))), int64(uint8(uint32(v_int32_0))), int64(int16(uint8(v_int32_0))))
+	println(int64(Small(v_int32_0)), int64(Wide(v_int32_0)), uint64(UWide(v_int32_0)), int64(Mid(v_int32_0)))
+	println(int64(int8(Wide(v_int32_0))), uint64(uint32(UWide(v_int32_0))), int64(Mid(Small(v_int32_0))))
+	println(int8(id64(int64(v_int32_0))), int16((int32(v_int32_0))), uint8(int64(v_int32_0)+0))
+	println(int8(v_int32_1), int16(v_int32_1), int32(v_int32_1), int64(v_int32_1), uint8(v_int32_1), uint16(v_int32_1), uint32(v_int32_1), uint64(v_int32_1))
+	println(int8(v_int32_1 + 1), int16(v_int32_1 + 1), int32(v_int32_1 + 1), int64(v_int32_1 + 1), uint8(v_int32_1 + 1), uint16(v_int32_1 + 1), uint32(v_int32_1 + 1), uint64(v_int32_1 + 1))
+	println(int64(int8(int32(v_int32_1))), int64(uint8(uint32(v_int32_1))), int64(int16(uint8(v_int32_1))))
+	println(int64(Small(v_int32_1)), int64(Wide(v_int32_1)), uint64(UWide(v_int32_1)), int64(Mid(v_int32_1)))
+	println(int64(int8(Wide(v_int32_1))), uint64(uint32(UWide(v_int32_1))), int64(Mid(Small(v_int32_1))))
+	println(int8(id64(int64(v_int32_1))), int16((int32(v_int32_1))), uint8(int64(v_int32_1)+0))
+	println(int8(v_int32_2), int16(v_int32_2), int32(v_int32_2), int64(v_int32_2), uint8(v_int32_2), uint16(v_int32_2), uint32(v_int32_2), uint64(v_int32_2))
+	println(int8(v_int32_2 + 1), int16(v_int32_2 + 1), int32(v_int32_2 + 1), int64(v_int32_2 + 1), uint8(v_int32_2 + 1), uint16(v_int32_2 + 1), uint32(v_int32_2 + 1), uint64(v_int32_2 + 1))
+	println(int64(int8(int32(v_int32_2))), int64(uint8(uint32(v_int32_2))), int64(int16(uint8(v_int32_2))))
+	println(int64(Small(v_int32_2)), int64(Wide(v_int32_2)), uint64(UWide(v_int32_2)), int64(Mid(v_int32_2)))
+	println(int64(int8(Wide(v_int32_2))), uint64(uint32(UWide(v_int32_2))), int64(Mid(Small(v_int32_2))))
+	println(int8(id64(int64(v_int32_2))), int16((int32(v_int32_2))), uint8(int64(v_int32_2)+0))
+}
+
+func c_int64() {
+	println(int8(v_int64_0), int16(v_int64_0), int32(v_int64_0), int64(v_int64_0), uint8(v_int64_0), uint16(v_int64_0), uint32(v_int64_0), uint64(v_int64_0))
+	println(int8(v_int64_0 + 1), int16(v_int64_0 + 1), int32(v_int64_0 + 1), int64(v_int64_0 + 1), uint8(v_int64_0 + 1), uint16(v_int64_0 + 1), uint32(v_int64_0 + 1), uint64(v_int64_0 + 1))
+	println(int64(int8(int32(v_int64_0))), int64(uint8(uint32(v_int64_0))), int64(int16(uint8(v_int64_0))))
+	println(int64(Small(v_int64_0)), int64(Wide(v_int64_0)), uint64(UWide(v_int64_0)), int64(Mid(v_int64_0)))
+	println(int64(int8(Wide(v_int64_0))), uint64(uint32(UWide(v_int64_0))), int64(Mid(Small(v_int64_0))))
+	println(int8(id64(int64(v_int64_0))), int16((int32(v_int64_0))), uint8(int64(v_int64_0)+0))
+	println(int8(v_int64_1), int16(v_int64_1), int32(v_int64_1), int64(v_int64_1), uint8(v_int64_1), uint16(v_int64_1), uint32(v_int64_1), uint64(v_int64_1))
+	println(int8(v_int64_1 + 1), int16(v_int64_1 + 1), int32(v_int64_1 + 1), int64(v_int64_1 + 1), uint8(v_int64_1 + 1), uint16(v_int64_1 + 1), uint32(v_int64_1 + 1), uint64(v_int64_1 + 1))
+	println(int64(int8(int32(v_int64_1))), int64(uint8(uint32(v_int64_1))), int64(int16(uint8(v_int64_1))))
+	println(int64(Small(v_int64_1)), int64(Wide(v_int64_1)), uint64(UWide(v_int64_1)), int64(Mid(v_int64_1)))
+	println(int64(int8(Wide(v_int64_1))), uint64(uint32(UWide(v_int64_1))), int64(Mid(Small(v_int64_1))))
+	println(int8(id64(int64(v_int64_1))), int16((int32(v_int64_1))), uint8(int64(v_int64_1)+0))
+	println(int8(v_int64_2), int16(v_int64_2), int32(v_int64_2), int64(v_int64_2), uint8(v_int64_2), uint16(v_int64_2), uint32(v_int64_2), uint64(v_int64_2))
+	println(int8(v_int64_2 + 1), int16(v_int64_2 + 1), int32(v_int64_2 + 1), int64(v_int64_2 + 1), uint8(v_int64_2 + 1), uint16(v_int64_2 + 1), uint32(v_int64_2 + 1), uint64(v_int64_2 + 1))
+	println(int64(int8(int32(v_int64_2))), int64(uint8(uint32(v_int64_2))), int64(int16(uint8(v_int64_2))))
+	println(int64(Small(v_int64_2)), int64(Wide(v_int64_2)), uint64(UWide(v_int64_2)), int64(Mid(v_int64_2)))
+	println(int64(int8(Wide(v_int64_2))), uint64(uint32(UWide(v_int64_2))), int64(Mid(Small(v_int64_2))))
+	println(int8(id64(int64(v_int64_2))), int16((int32(v_int64_2))), uint8(int64(v_int64_2)+0))
+}
+
+func c_uint8() {
+	println(int8(v_uint8_0), int16(v_uint8_0), int32(v_uint8_0), int64(v_uint8_0), uint8(v_uint8_0), uint16(v_uint8_0), uint32(v_uint8_0), uint64(v_uint8_0))
+	println(int8(v_uint8_0 + 1), int16(v_uint8_0 + 1), int32(v_uint8_0 + 1), int64(v_uint8_0 + 1), uint8(v_uint8_0 + 1), uint16(v_uint8_0 + 1), uint32(v_uint8_0 + 1), uint64(v_uint8_0 + 1))
+	println(int64(int8(int32(v_uint8_0))), int64(uint8(uint32(v_uint8_0))), int64(int16(uint8(v_uint8_0))))
+	println(int64(Small(v_uint8_0)), int64(Wide(v_uint8_0)), uint64(UWide(v_uint8_0)), int64(Mid(v_uint8_0)))
+	println(int64(int8(Wide(v_uint8_0))), uint64(uint32(UWide(v_uint8_0))), int64(Mid(Small(v_uint8_0))))
+	println(int8(id64(int64(v_uint8_0))), int16((int32(v_uint8_0))), uint8(int64(v_uint8_0)+0))
+	println(int8(v_uint8_1), int16(v_uint8_1), int32(v_uint8_1), int64(v_uint8_1), uint8(v_uint8_1), uint16(v_uint8_1), uint32(v_uint8_1), uint64(v_uint8_1))
+	println(int8(v_uint8_1 + 1), int16(v_uint8_1 + 1), int32(v_uint8_1 + 1), int64(v_uint8_1 + 1), uint8(v_uint8_1 + 1), uint16(v_uint8_1 + 1), uint32(v_uint8_1 + 1), uint64(v_uint8_1 + 1))
+	println(int64(int8(int32(v_uint8_1))), int64(uint8(uint32(v_uint8_1))), int64(int16(uint8(v_uint8_1))))
+	println(int64(Small(v_uint8_1)), int64(Wide(v_uint8_1)), uint64(UWide(v_uint8_1)), int64(Mid(v_uint8_1)))
+	println(int64(int8(Wide(v_uint8_1))), uint64(uint32(UWide(v_uint8_1))), int64(Mid(Small(v_uint8_1))))
+	println(int8(id64(int64(v_uint8_1))), int16((int32(v_uint8_1))), uint8(int64(v_uint8_1)+0))
+	println(int8(v_uint8_2), int16(v_uint8_2), int32(v_uint8_2), int64(v_uint8_2), uint8(v_uint8_2), uint16(v_uint8_2), uint32(v_uint8_2), uint64(v_uint8_2))
+	println(int8(v_uint8_2 + 1), int16(v_uint8_2 + 1), int32(v_uint8_2 + 1), int64(v_uint8_2 + 1), uint8(v_uint8_2 + 1), uint16(v_uint8_2 + 1), uint32(v_uint8_2 + 1), uint64(v_uint8_2 + 1))
+	println(int64(int8(int32(v_uint8_2))), int64(uint8(uint32(v_uint8_2))), int64(int16(uint8(v_uint8_2))))
+	println(int64(Small(v_uint8_2)), int64(Wide(v_uint8_2)), uint64(UWide(v_uint8_2)), int64(Mid(v_uint8_2)))
+	println(int64(int8(Wide(v_uint8_2))), uint64(uint32(UWide(v_uint8_2))), int64(Mid(Small(v_uint8_2))))
+	println(int8(id64(int64(v_uint8_2))), int16((int32(v_uint8_2))), uint8(int64(v_uint8_2)+0))
+}
+
+func c_uint16() {
+	println(int8(v_uint16_0), int16(v_uint16_0), int32(v_uint16_0), int64(v_uint16_0), uint8(v_uint16_0), uint16(v_uint16_0), uint32(v_uint16_0), uint64(v_uint16_0))
+	println(int8(v_uint16_0 + 1), int16(v_uint16_0 + 1), int32(v_uint16_0 + 1), int64(v_uint16_0 + 1), uint8(v_uint16_0 + 1), uint16(v_uint16_0 + 1), uint32(v_uint16_0 + 1), uint64(v_uint16_0 + 1))
+	println(int64(int8(int32(v_uint16_0))), int64(uint8(uint32(v_uint16_0))), int64(int16(uint8(v_uint16_0))))
+	println(int64(Small(v_uint16_0)), int64(Wide(v_uint16_0)), uint64(UWide(v_uint16_0)), int64(Mid(v_uint16_0)))
+	println(int64(int8(Wide(v_uint16_0))), uint64(uint32(UWide(v_uint16_0))), int64(Mid(Small(v_uint16_0))))
+	println(int8(id64(int64(v_uint16_0))), int16((int32(v_uint16_0))), uint8(int64(v_uint16_0)+0))
+	println(int8(v_uint16_1), int16(v_uint16_1), int32(v_uint16_1), int64(v_uint16_1), uint8(v_uint16_1), uint16(v_uint16_1), uint32(v_uint16_1), uint64(v_uint16_1))
+	println(int8(v_uint16_1 + 1), int16(v_uint16_1 + 1), int32(v_uint16_1 + 1), int64(v_uint16_1 + 1), uint8(v_uint16_1 + 1), uint16(v_uint16_1 + 1), uint32(v_uint16_1 + 1), uint64(v_uint16_1 + 1))
+	println(int64(int8(int32(v_uint16_1))), int64(uint8(uint32(v_uint16_1))), int64(int16(uint8(v_uint16_1))))
+	println(int64(Small(v_uint16_1)), int64(Wide(v_uint16_1)), uint64(UWide(v_uint16_1)), int64(Mid(v_uint16_1)))
+	println(int64(int8(Wide(v_uint16_1))), uint64(uint32(UWide(v_uint16_1))), int64(Mid(Small(v_uint16_1))))
+	println(int8(id64(int64(v_uint16_1))), int16((int32(v_uint16_1))), uint8(int64(v_uint16_1)+0))
+	println(int8(v_uint16_2), int16(v_uint16_2), int32(v_uint16_2), int64(v_uint16_2), uint8(v_uint16_2), uint16(v_uint16_2), uint32(v_uint16_2), uint64(v_uint16_2))
+	println(int8(v_uint16_2 + 1), int16(v_uint16_2 + 1), int32(v_uint16_2 + 1), int64(v_uint16_2 + 1), uint8(v_uint16_2 + 1), uint16(v_uint16_2 + 1), uint32(v_uint16_2 + 1), uint64(v_uint16_2 + 1))
+	println(int64(int8(int32(v_uint16_2))), int64(uint8(uint32(v_uint16_2))), int64(int16(uint8(v_uint16_2))))
+	println(int64(Small(v_uint16_2)), int64(Wide(v_uint16_2)), uint64(UWide(v_uint16_2)), int64(Mid(v_uint16_2)))
+	println(int64(int8(Wide(v_uint16_2))), uint64(uint32(UWide(v_uint16_2))), int64(Mid(Small(v_uint16_2))))
+	println(int8(id64(int64(v_uint16_2))), int16((int32(v_uint16_2))), uint8(int64(v_uint16_2)+0))
+}
+
+func c_uint32() {
+	println(int8(v_uint32_0), int16(v_uint32_0), int32(v_uint32_0), int64(v_uint32_0), uint8(v_uint32_0), uint16(v_uint32_0), uint32(v_uint32_0), uint64(v_uint32_0))
+	println(int8(v_uint32_0 + 1), int16(v_uint32_0 + 1), int32(v_uint32_0 + 1), int64(v_uint32_0 + 1), uint8(v_uint32_0 + 1), uint16(v_uint32_0 + 1), uint32(v_uint32_0 + 1), uint64(v_uint32_0 + 1))
+	println(int64(int8(int32(v_uint32_0))), int64(uint8(uint32(v_uint32_0))), int64(int16(uint8(v_uint32_0))))
+	println(int64(Small(v_uint32_0)), int64(Wide(v_uint32_0)), uint64(UWide(v_uint32_0)), int64(Mid(v_uint32_0)))
+	println(int64(int8(Wide(v_uint32_0))), uint64(uint32(UWide(v_uint32_0))), int64(Mid(Small(v_uint32_0))))
+	println(int8(id64(int64(v_uint32_0))), int16((int32(v_uint32_0))), uint8(int64(v_uint32_0)+0))
+	println(int8(v_uint32_1), int16(v_uint32_1), int32(v_uint32_1), int64(v_uint32_1), uint8(v_uint32_1), uint16(v_uint32_1), uint32(v_uint32_1), uint64(v_uint32_1))
+	println(int8(v_uint32_1 + 1), int16(v_uint32_1 + 1), int32(v_uint32_1 + 1), int64(v_uint32_1 + 1), uint8(v_uint32_1 + 1), uint16(v_uint32_1 + 1), uint32(v_uint32_1 + 1), uint64(v_uint32_1 + 1))
+	println(int64(int8(int32(v_uint32_1))), int64(uint8(uint32(v_uint32_1))), int64(int16(uint8(v_uint32_1))))
+	println(int64(Small(v_uint32_1)), int64(Wide(v_uint32_1)), uint64(UWide(v_uint32_1)), int64(Mid(v_uint32_1)))
+	println(int64(int8(Wide(v_uint32_1))), uint64(uint32(UWide(v_uint32_1))), int64(Mid(Small(v_uint32_1))))
+	println(int8(id64(int64(v_uint32_1))), int16((int32(v_uint32_1))), uint8(int64(v_uint32_1)+0))
+	println(int8(v_uint32_2), int16(v_uint32_2), int32(v_uint32_2), int64(v_uint32_2), uint8(v_uint32_2), uint16(v_uint32_2), uint32(v_uint32_2), uint64(v_uint32_2))
+	println(int8(v_uint32_2 + 1), int16(v_uint32_2 + 1), int32(v_uint32_2 + 1), int64(v_uint32_2 + 1), uint8(v_uint32_2 + 1), uint16(v_uint32_2 + 1), uint32(v_uint32_2 + 1), uint64(v_uint32_2 + 1))
+	println(int64(int8(int32(v_uint32_2))), int64(uint8(uint32(v_uint32_2))), int64(int16(uint8(v_uint32_2))))
+	println(int64(Small(v_uint32_2)), int64(Wide(v_uint32_2)), uint64(UWide(v_uint32_2)), int64(Mid(v_uint32_2)))
+	println(int64(int8(Wide(v_uint32_2))), uint64(uint32(UWide(v_uint32_2))), int64(Mid(Small(v_uint32_2))))
+	println(int8(id64(int64(v_uint32_2))), int16((int32(v_uint32_2))), uint8(int64(v_uint32_2)+0))
+}
+
+func c_uint64() {
+	println(int8(v_uint64_0), int16(v_uint64_0), int32(v_uint64_0), int64(v_uint64_0), uint8(v_uint64_0), uint16(v_uint64_0), uint32(v_uint64_0), uint64(v_uint64_0))
+	println(int8(v_uint64_0 + 1), int16(v_uint64_0 + 1), int32(v_uint64_0 + 1), int64(v_uint64_0 + 1), uint8(v_uint64_0 + 1), uint16(v_uint64_0 + 1), uint32(v_uint64_0 + 1), uint64(v_uint64_0 + 1))
+	println(int64(int8(int32(v_uint64_0))), int64(uint8(uint32(v_uint64_0))), int64(int16(uint8(v_uint64_0))))
+	println(int64(Small(v_uint64_0)), int64(Wide(v_uint64_0)), uint64(UWide(v_uint64_0)), int64(Mid(v_uint64_0)))
+	println(int64(int8(Wide(v_uint64_0))), uint64(uint32(UWide(v_uint64_0))), int64(Mid(Small(v_uint64_0))))
+	println(int8(id64(int64(v_uint64_0))), int16((int32(v_uint64_0))), uint8(int64(v_uint64_0)+0))
+	println(int8(v_uint64_1), int16(v_uint64_1), int32(v_uint64_1), int64(v_uint64_1), uint8(v_uint64_1), uint16(v_uint64_1), uint32(v_uint64_1), uint64(v_uint64_1))
+	println(int8(v_uint64_1 + 1), int16(v_uint64_1 + 1), int32(v_uint64_1 + 1), int64(v_uint64_1 + 1), uint8(v_uint64_1 + 1), uint16(v_uint64_1 + 1), uint32(v_uint64_1 + 1), uint64(v_uint64_1 + 1))
+	println(int64(int8(int32(v_uint64_1))), int64(uint8(uint32(v_uint64_1))), int64(int16(uint8(v_uint64_1))))
+	println(int64(Small(v_uint64_1)), int64(Wide(v_uint64_1)), uint64(UWide(v_uint64_1)), int64(Mid(v_uint64_1)))
+	println(int64(int8(Wide(v_uint64_1))), uint64(uint32(UWide(v_uint64_1))), int64(Mid(Small(v_uint64_1))))
+	println(int8(id64(int64(v_uint64_1))), int16((int32(v_uint64_1))), uint8(int64(v_uint64_1)+0))
+	println(int8(v_uint64_2), int16(v_uint64_2), int32(v_uint64_2), int64(v_uint64_2), uint8(v_uint64_2), uint16(v_uint64_2), uint32(v_uint64_2), uint64(v_uint64_2))
+	println(int8(v_uint64_2 + 1), int16(v_uint64_2 + 1), int32(v_uint64_2 + 1), int64(v_uint64_2 + 1), uint8(v_uint64_2 + 1), uint16(v_uint64_2 + 1), uint32(v_uint64_2 + 1), uint64(v_uint64_2 + 1))
+	println(int64(int8(int32(v_uint64_2))), int64(uint8(uint32(v_uint64_2))), int64(int16(uint8(v_uint64_2))))
+	println(int64(Small(v_uint64_2)), int64(Wide(v_uint64_2)), uint64(UWide(v_uint64_2)), int64(Mid(v_uint64_2)))
+	println(int64(int8(Wide(v_uint64_2))), uint64(uint32(UWide(v_uint64_2))), int64(Mid(Small(v_uint64_2))))
+	println(int8(id64(int64(v_uint64_2))), int16((int32(v_uint64_2))), uint8(int64(v_uint64_2)+0))
+}
+
+func main() {
+	c_int8()
+	c_int16()
+	c_int32()
+	c_int64()
+	c_uint8()
+	c_uint16()
+	c_uint32()
+	c_uint64()
+}
+`,
+		want: "-128 -128 -128 -128 128 65408 4294967168 18446744073709551488\n-127 -127 -127 -127 129 65409 4294967169 18446744073709551489\n-128 128 128\n-128 -128 18446744073709551488 65408\n-128 4294967168 65408\n-128 -128 128\n-1 -1 -1 -1 255 65535 4294967295 18446744073709551615\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 -1 18446744073709551615 65535\n-1 4294967295 65535\n-1 -1 255\n127 127 127 127 127 127 127 127\n-128 -128 -128 -128 128 65408 4294967168 18446744073709551488\n127 127 127\n127 127 127 127\n127 127 127\n127 127 127\n0 -32768 -32768 -32768 0 32768 4294934528 18446744073709518848\n1 -32767 -32767 -32767 1 32769 4294934529 18446744073709518849\n0 0 0\n0 -32768 18446744073709518848 32768\n0 4294934528 0\n0 -32768 0\n-1 -1 -1 -1 255 65535 4294967295 18446744073709551615\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 -1 18446744073709551615 65535\n-1 4294967295 65535\n-1 -1 255\n-1 32767 32767 32767 255 32767 32767 32767\n0 -32768 -32768 -32768 0 32768 4294934528 18446744073709518848\n-1 255 255\n-1 32767 32767 32767\n-1 32767 65535\n-1 32767 255\n0 0 -2147483648 -2147483648 0 0 2147483648 18446744071562067968\n1 1 -2147483647 -2147483647 1 1 2147483649 18446744071562067969\n0 0 0\n0 -2147483648 18446744071562067968 0\n0 2147483648 0\n0 0 0\n-1 -1 -1 -1 255 65535 4294967295 18446744073709551615\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 -1 18446744073709551615 65535\n-1 4294967295 65535\n-1 -1 255\n-1 -1 2147483647 2147483647 255 65535 2147483647 2147483647\n0 0 -2147483648 -2147483648 0 0 2147483648 18446744071562067968\n-1 255 255\n-1 2147483647 2147483647 65535\n-1 2147483647 65535\n-1 -1 255\n0 0 0 -9223372036854775808 0 0 0 9223372036854775808\n1 1 1 -9223372036854775807 1 1 1 9223372036854775809\n0 0 0\n0 -9223372036854775808 9223372036854775808 0\n0 0 0\n0 0 0\n-1 -1 -1 -1 255 65535 4294967295 18446744073709551615\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 -1 18446744073709551615 65535\n-1 4294967295 65535\n-1 -1 255\n-1 -1 -1 9223372036854775807 255 65535 4294967295 9223372036854775807\n0 0 0 -9223372036854775808 0 0 0 9223372036854775808\n-1 255 255\n-1 9223372036854775807 9223372036854775807 65535\n-1 4294967295 65535\n-1 -1 255\n0 0 0 0 0 0 0 0\n1 1 1 1 1 1 1 1\n0 0 0\n0 0 0 0\n0 0 0\n0 0 0\n-127 129 129 129 129 129 129 129\n-126 130 130 130 130 130 130 130\n-127 129 129\n-127 129 129 129\n-127 129 65409\n-127 129 129\n-1 255 255 255 255 255 255 255\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 255 255 255\n-1 255 65535\n-1 255 255\n0 0 0 0 0 0 0 0\n1 1 1 1 1 1 1 1\n0 0 0\n0 0 0 0\n0 0 0\n0 0 0\n-24 -32536 33000 33000 232 33000 33000 33000\n-23 -32535 33001 33001 233 33001 33001 33001\n-24 232 232\n-24 33000 33000 33000\n-24 33000 65512\n-24 -32536 232\n-1 -1 65535 65535 255 65535 65535 65535\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 65535 65535 65535\n-1 65535 65535\n-1 -1 255\n0 0 0 0 0 0 0 0\n1 1 1 1 1 1 1 1\n0 0 0\n0 0 0 0\n0 0 0\n0 0 0\n1 1 -2147483647 2147483649 1 1 2147483649 2147483649\n2 2 -2147483646 2147483650 2 2 2147483650 2147483650\n1 1 1\n1 2147483649 2147483649 1\n1 2147483649 1\n1 1 1\n-1 -1 -1 4294967295 255 65535 4294967295 4294967295\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 4294967295 4294967295 65535\n-1 4294967295 65535\n-1 -1 255\n0 0 0 0 0 0 0 0\n1 1 1 1 1 1 1 1\n0 0 0\n0 0 0 0\n0 0 0\n0 0 0\n1 1 1 -9223372036854775807 1 1 1 9223372036854775809\n2 2 2 -9223372036854775806 2 2 2 9223372036854775810\n1 1 1\n1 -9223372036854775807 9223372036854775809 1\n1 1 1\n1 1 1\n-1 -1 -1 -1 255 65535 4294967295 18446744073709551615\n0 0 0 0 0 0 0 0\n-1 255 255\n-1 -1 18446744073709551615 65535\n-1 4294967295 65535\n-1 -1 255\n",
+	},
+	{
 		// Mixed-type integer arithmetic, every sized type against every operator,
 		// with the constant on each side in turn. Generated rather than written:
 		// the space is 312 expressions and the interesting part is the CROSS of
