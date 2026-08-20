@@ -16205,9 +16205,21 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 // shifts the way Go does. Everything else -- a variable count, or a constant at or
 // past the width -- goes through the helper.
 func (e *emitter) shiftChainC(kids []Node) (string, bool) {
+	// The LEVEL's type decides, not the first operand's. The operands of an
+	// arithmetic operator are of one type and an untyped constant takes the other's,
+	// so reading the left operand outright typed `3 / b` for a uint64 b as an int:
+	// signed, so the guarded helper was chosen, and the helper it named truncated
+	// the divisor to 32 bits, saw zero in a value whose low word is zero, and
+	// panicked "integer divide by zero" in a program that divides by
+	// 0x1000000000000000. inferNodes is where this rule already lives; only this
+	// reader of it took the first operand.
+	ctype, haveType := e.inferNodes(kids)
 	needed := false
-	for i := 1; i+1 < len(kids); i += 2 {
-		if kids[i].sym == MulOp && (e.shiftNeedsGuard(kids[i], kids[i-1], kids[i+1]) || e.divNeedsGuard(kids[i], kids[i-1], kids[i+1])) {
+	for i := 1; haveType && i+1 < len(kids); i += 2 {
+		if kids[i].sym != MulOp {
+			continue
+		}
+		if e.guardedMulOp(ctype, kids[i], kids[i+1]) {
 			needed = true
 			break
 		}
@@ -16216,7 +16228,13 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		return "", false
 	}
 	text := e.captureC(func() { e.emitExprNode(kids[0]) })
-	ctype, haveType := e.inferCType(kids[0].ast)
+	// The LEVEL's type, not the first operand's. The operands of an arithmetic
+	// operator are of one type and an untyped constant takes the other's, so reading
+	// the left operand outright typed `3 / b` for a uint64 b as an int -- and the
+	// guard chosen from that truncated the divisor to 32 bits, saw zero in a value
+	// whose low word is zero, and panicked "integer divide by zero" in a program
+	// that divides by 0x1000000000000000. inferNodes is where this rule already
+	// lives; only this reader of it took the first operand.
 	for i := 1; i+1 < len(kids); i += 2 {
 		op, rhs := kids[i], kids[i+1]
 		if op.sym != MulOp {
@@ -16224,10 +16242,10 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		}
 		rhsText := e.captureC(func() { e.emitExprNode(rhs) })
 		switch {
-		case haveType && e.shiftNeedsGuard(op, kids[i-1], rhs):
+		case haveType && e.isShiftOp(op) && e.shiftNeedsGuard1(ctype, rhs.ast):
 			fn := e.needShift(e.opText(op.ast), e.underlyingCType(ctype))
 			text = fn + "(" + text + ", " + e.shiftCountC(rhsText, rhs.ast) + ")"
-		case haveType && e.divNeedsGuard(op, kids[i-1], rhs):
+		case haveType && e.isDivOp(op) && e.divNeedsGuard1(ctype, rhs.ast):
 			fn := e.needDiv(e.opText(op.ast), e.underlyingCType(ctype))
 			text = fn + "(" + text + ", " + rhsText + ")"
 		default:
@@ -16240,52 +16258,27 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 	return text, true
 }
 
-// divNeedsGuard reports whether a division step must go through the guarded helper:
-// it is "/" or "%" on a signed integer, and the divisor is not a constant already
-// known to be neither 0 nor -1.
-//
-// An unsigned division needs no guard beyond the zero one ogo_nonzero gives it: it
-// has no most-negative value to overflow, and its divisor is never -1.
-func (e *emitter) divNeedsGuard(op, lhs, rhs Node) bool {
-	switch e.opText(op.ast) {
-	case "/", "%":
-	default:
-		return false
-	}
-	ctype, ok := e.inferCType(lhs.ast)
-	if !ok {
-		return false
-	}
-	if _, signed := cUnsignedOf[e.underlyingCType(ctype)]; !signed {
-		return false
-	}
-	if v, ok := e.foldConstInt(rhs.ast); ok && v != 0 && v != -1 {
-		return false
-	}
-	return true
+// isShiftOp and isDivOp name the operators whose C and Go answers can differ.
+func (e *emitter) isShiftOp(op Node) bool {
+	t := e.opText(op.ast)
+	return t == "<<" || t == ">>"
 }
 
-// shiftNeedsGuard reports whether a shift step must go through the guarded helper:
-// it is a shift at all, the value's C type is a known integer, and the count is not
-// a constant already inside that type's width.
-func (e *emitter) shiftNeedsGuard(op, lhs, rhs Node) bool {
-	switch e.opText(op.ast) {
-	case "<<", ">>":
-	default:
-		return false
+func (e *emitter) isDivOp(op Node) bool {
+	t := e.opText(op.ast)
+	return t == "/" || t == "%"
+}
+
+// guardedMulOp reports whether one step of a Term needs a guarded helper, given the
+// type the LEVEL computes in.
+func (e *emitter) guardedMulOp(ctype string, op, rhs Node) bool {
+	switch {
+	case e.isShiftOp(op):
+		return e.shiftNeedsGuard1(ctype, rhs.ast)
+	case e.isDivOp(op):
+		return e.divNeedsGuard1(ctype, rhs.ast)
 	}
-	ctype, ok := e.inferCType(lhs.ast)
-	if !ok {
-		return false
-	}
-	bits, ok := cIntWidths[e.underlyingCType(ctype)]
-	if !ok {
-		return false // not an integer this target measures a shift against
-	}
-	if v, ok := e.foldConstInt(rhs.ast); ok && v >= 0 && v < int64(bits) {
-		return false
-	}
-	return true
+	return false
 }
 
 // emitMethodReceiver emits a method call's receiver argument, bridging the receiver
@@ -19318,7 +19311,17 @@ func (e *emitter) shiftCountC(text string, rhs []int32) string {
 	return "(int64_t)(" + text + ")"
 }
 
-// divNeedsGuard1 is divNeedsGuard for a value whose C type is already known.
+// divNeedsGuard1 reports whether a division needs the guarded helper, for a value
+// whose C type is already known: the type is a SIGNED integer, and the divisor is
+// not a constant already known to be neither 0 nor -1.
+//
+// An unsigned division needs no guard beyond the zero one ogo_nonzero gives it: it
+// has no most-negative value to overflow, and its divisor is never -1.
+//
+// The type handed in must be the LEVEL's. The pair that read it off the left operand
+// instead is deleted rather than left unused: they typed `3 / b` for a uint64 b as
+// an int, which chose a 32-bit guard for a 64-bit divisor, and a helper that answers
+// the question the wrong way is how the bug comes back.
 func (e *emitter) divNeedsGuard1(ctype string, rhs []int32) bool {
 	if _, signed := cUnsignedOf[e.underlyingCType(ctype)]; !signed {
 		return false

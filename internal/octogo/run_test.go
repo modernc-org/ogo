@@ -1705,6 +1705,182 @@ func main() {
 		want: "2\n12\n24\n6\n5 9 3\n2\n7 7 7\n3 11 6\n3 2 4\n",
 	},
 	{
+		// Mixed-type integer arithmetic, every sized type against every operator,
+		// with the constant on each side in turn. Generated rather than written:
+		// the space is 312 expressions and the interesting part is the CROSS of
+		// type, operator and operand position, which is exactly what hand-written
+		// cases keep missing.
+		//
+		// It exists because two silent defects lived in that cross. The backend
+		// types `4 * u` signed, so a division, a shift and an ordering comparison
+		// downstream all took the signed branch (the value is right, only the type
+		// is wrong -- see the case below). And a guarded division read the type of
+		// its LEFT operand, so `3 / b` for a uint64 b was typed int, chose the
+		// 32-bit zero-guard, saw zero in a divisor whose low word is zero, and
+		// panicked in a program that divides by 0x1000000000000000.
+		//
+		// Both were invisible on the host, whose C compiler is correct here; this
+		// runs on the board, where they were not.
+		name: "mixed-type integer arithmetic",
+		src: `var a_uint8 uint8 = 0xF0
+var b_uint8 uint8 = 0x0F
+var a_uint16 uint16 = 0xF000
+var b_uint16 uint16 = 0x0F00
+var a_uint32 uint32 = 0x30000000
+var b_uint32 uint32 = 0x10000000
+var a_uint64 uint64 = 0x3000000000000000
+var b_uint64 uint64 = 0x1000000000000000
+var a_int8 int8 = 100
+var b_int8 int8 = 7
+var a_int16 int16 = 30000
+var b_int16 int16 = 7
+var a_int32 int32 = 2000000000
+var b_int32 int32 = 7
+var a_int64 int64 = 4000000000000000000
+var b_int64 int64 = 7
+
+func t_uint8() {
+	println(uint64(a_uint8 + b_uint8), uint64(3 + b_uint8), uint64(a_uint8 + 3))
+	println(uint64(a_uint8 - b_uint8), uint64(3 - b_uint8), uint64(a_uint8 - 3))
+	println(uint64(a_uint8 * b_uint8), uint64(3 * b_uint8), uint64(a_uint8 * 3))
+	println(uint64(a_uint8 / b_uint8), uint64(3 / b_uint8), uint64(a_uint8 / 3))
+	println(uint64(a_uint8 % b_uint8), uint64(3 % b_uint8), uint64(a_uint8 % 3))
+	println(uint64(a_uint8 & b_uint8), uint64(3 & b_uint8), uint64(a_uint8 & 3))
+	println(uint64(a_uint8 | b_uint8), uint64(3 | b_uint8), uint64(a_uint8 | 3))
+	println(uint64(a_uint8 ^ b_uint8), uint64(3 ^ b_uint8), uint64(a_uint8 ^ 3))
+	println(uint64(a_uint8 &^ b_uint8), uint64(3 &^ b_uint8), uint64(a_uint8 &^ 3))
+	println(uint64(a_uint8 << 2), uint64(a_uint8 << uint(1)))
+	println(uint64(a_uint8 >> 2), uint64(a_uint8 >> uint(1)))
+	println(a_uint8 >= 4*b_uint8, 4*b_uint8 <= a_uint8, a_uint8 >= b_uint8*4)
+	println(uint64(3 / b_uint8), uint64(3 % b_uint8), uint64(2 * b_uint8 / 3))
+}
+
+func t_uint16() {
+	println(uint64(a_uint16 + b_uint16), uint64(3 + b_uint16), uint64(a_uint16 + 3))
+	println(uint64(a_uint16 - b_uint16), uint64(3 - b_uint16), uint64(a_uint16 - 3))
+	println(uint64(a_uint16 * b_uint16), uint64(3 * b_uint16), uint64(a_uint16 * 3))
+	println(uint64(a_uint16 / b_uint16), uint64(3 / b_uint16), uint64(a_uint16 / 3))
+	println(uint64(a_uint16 % b_uint16), uint64(3 % b_uint16), uint64(a_uint16 % 3))
+	println(uint64(a_uint16 & b_uint16), uint64(3 & b_uint16), uint64(a_uint16 & 3))
+	println(uint64(a_uint16 | b_uint16), uint64(3 | b_uint16), uint64(a_uint16 | 3))
+	println(uint64(a_uint16 ^ b_uint16), uint64(3 ^ b_uint16), uint64(a_uint16 ^ 3))
+	println(uint64(a_uint16 &^ b_uint16), uint64(3 &^ b_uint16), uint64(a_uint16 &^ 3))
+	println(uint64(a_uint16 << 2), uint64(a_uint16 << uint(1)))
+	println(uint64(a_uint16 >> 2), uint64(a_uint16 >> uint(1)))
+	println(a_uint16 >= 4*b_uint16, 4*b_uint16 <= a_uint16, a_uint16 >= b_uint16*4)
+	println(uint64(3 / b_uint16), uint64(3 % b_uint16), uint64(2 * b_uint16 / 3))
+}
+
+func t_uint32() {
+	println(uint64(a_uint32 + b_uint32), uint64(3 + b_uint32), uint64(a_uint32 + 3))
+	println(uint64(a_uint32 - b_uint32), uint64(3 - b_uint32), uint64(a_uint32 - 3))
+	println(uint64(a_uint32 * b_uint32), uint64(3 * b_uint32), uint64(a_uint32 * 3))
+	println(uint64(a_uint32 / b_uint32), uint64(3 / b_uint32), uint64(a_uint32 / 3))
+	println(uint64(a_uint32 % b_uint32), uint64(3 % b_uint32), uint64(a_uint32 % 3))
+	println(uint64(a_uint32 & b_uint32), uint64(3 & b_uint32), uint64(a_uint32 & 3))
+	println(uint64(a_uint32 | b_uint32), uint64(3 | b_uint32), uint64(a_uint32 | 3))
+	println(uint64(a_uint32 ^ b_uint32), uint64(3 ^ b_uint32), uint64(a_uint32 ^ 3))
+	println(uint64(a_uint32 &^ b_uint32), uint64(3 &^ b_uint32), uint64(a_uint32 &^ 3))
+	println(uint64(a_uint32 << 2), uint64(a_uint32 << uint(1)))
+	println(uint64(a_uint32 >> 2), uint64(a_uint32 >> uint(1)))
+	println(a_uint32 >= 4*b_uint32, 4*b_uint32 <= a_uint32, a_uint32 >= b_uint32*4)
+	println(uint64(3 / b_uint32), uint64(3 % b_uint32), uint64(2 * b_uint32 / 3))
+}
+
+func t_uint64() {
+	println(uint64(a_uint64 + b_uint64), uint64(3 + b_uint64), uint64(a_uint64 + 3))
+	println(uint64(a_uint64 - b_uint64), uint64(3 - b_uint64), uint64(a_uint64 - 3))
+	println(uint64(a_uint64 * b_uint64), uint64(3 * b_uint64), uint64(a_uint64 * 3))
+	println(uint64(a_uint64 / b_uint64), uint64(3 / b_uint64), uint64(a_uint64 / 3))
+	println(uint64(a_uint64 % b_uint64), uint64(3 % b_uint64), uint64(a_uint64 % 3))
+	println(uint64(a_uint64 & b_uint64), uint64(3 & b_uint64), uint64(a_uint64 & 3))
+	println(uint64(a_uint64 | b_uint64), uint64(3 | b_uint64), uint64(a_uint64 | 3))
+	println(uint64(a_uint64 ^ b_uint64), uint64(3 ^ b_uint64), uint64(a_uint64 ^ 3))
+	println(uint64(a_uint64 &^ b_uint64), uint64(3 &^ b_uint64), uint64(a_uint64 &^ 3))
+	println(uint64(a_uint64 << 2), uint64(a_uint64 << uint(1)))
+	println(uint64(a_uint64 >> 2), uint64(a_uint64 >> uint(1)))
+	println(a_uint64 >= 4*b_uint64, 4*b_uint64 <= a_uint64, a_uint64 >= b_uint64*4)
+	println(uint64(3 / b_uint64), uint64(3 % b_uint64), uint64(2 * b_uint64 / 3))
+}
+
+func t_int8() {
+	println(uint64(a_int8 + b_int8), uint64(3 + b_int8), uint64(a_int8 + 3))
+	println(uint64(a_int8 - b_int8), uint64(3 - b_int8), uint64(a_int8 - 3))
+	println(uint64(a_int8 * b_int8), uint64(3 * b_int8), uint64(a_int8 * 3))
+	println(uint64(a_int8 / b_int8), uint64(3 / b_int8), uint64(a_int8 / 3))
+	println(uint64(a_int8 % b_int8), uint64(3 % b_int8), uint64(a_int8 % 3))
+	println(uint64(a_int8 & b_int8), uint64(3 & b_int8), uint64(a_int8 & 3))
+	println(uint64(a_int8 | b_int8), uint64(3 | b_int8), uint64(a_int8 | 3))
+	println(uint64(a_int8 ^ b_int8), uint64(3 ^ b_int8), uint64(a_int8 ^ 3))
+	println(uint64(a_int8 &^ b_int8), uint64(3 &^ b_int8), uint64(a_int8 &^ 3))
+	println(uint64(a_int8 << 2), uint64(a_int8 << uint(1)))
+	println(uint64(a_int8 >> 2), uint64(a_int8 >> uint(1)))
+	println(a_int8 >= 4*b_int8, 4*b_int8 <= a_int8, a_int8 >= b_int8*4)
+	println(uint64(3 / b_int8), uint64(3 % b_int8), uint64(2 * b_int8 / 3))
+}
+
+func t_int16() {
+	println(uint64(a_int16 + b_int16), uint64(3 + b_int16), uint64(a_int16 + 3))
+	println(uint64(a_int16 - b_int16), uint64(3 - b_int16), uint64(a_int16 - 3))
+	println(uint64(a_int16 * b_int16), uint64(3 * b_int16), uint64(a_int16 * 3))
+	println(uint64(a_int16 / b_int16), uint64(3 / b_int16), uint64(a_int16 / 3))
+	println(uint64(a_int16 % b_int16), uint64(3 % b_int16), uint64(a_int16 % 3))
+	println(uint64(a_int16 & b_int16), uint64(3 & b_int16), uint64(a_int16 & 3))
+	println(uint64(a_int16 | b_int16), uint64(3 | b_int16), uint64(a_int16 | 3))
+	println(uint64(a_int16 ^ b_int16), uint64(3 ^ b_int16), uint64(a_int16 ^ 3))
+	println(uint64(a_int16 &^ b_int16), uint64(3 &^ b_int16), uint64(a_int16 &^ 3))
+	println(uint64(a_int16 << 2), uint64(a_int16 << uint(1)))
+	println(uint64(a_int16 >> 2), uint64(a_int16 >> uint(1)))
+	println(a_int16 >= 4*b_int16, 4*b_int16 <= a_int16, a_int16 >= b_int16*4)
+	println(uint64(3 / b_int16), uint64(3 % b_int16), uint64(2 * b_int16 / 3))
+}
+
+func t_int32() {
+	println(uint64(a_int32 + b_int32), uint64(3 + b_int32), uint64(a_int32 + 3))
+	println(uint64(a_int32 - b_int32), uint64(3 - b_int32), uint64(a_int32 - 3))
+	println(uint64(a_int32 * b_int32), uint64(3 * b_int32), uint64(a_int32 * 3))
+	println(uint64(a_int32 / b_int32), uint64(3 / b_int32), uint64(a_int32 / 3))
+	println(uint64(a_int32 % b_int32), uint64(3 % b_int32), uint64(a_int32 % 3))
+	println(uint64(a_int32 & b_int32), uint64(3 & b_int32), uint64(a_int32 & 3))
+	println(uint64(a_int32 | b_int32), uint64(3 | b_int32), uint64(a_int32 | 3))
+	println(uint64(a_int32 ^ b_int32), uint64(3 ^ b_int32), uint64(a_int32 ^ 3))
+	println(uint64(a_int32 &^ b_int32), uint64(3 &^ b_int32), uint64(a_int32 &^ 3))
+	println(uint64(a_int32 << 2), uint64(a_int32 << uint(1)))
+	println(uint64(a_int32 >> 2), uint64(a_int32 >> uint(1)))
+	println(a_int32 >= 4*b_int32, 4*b_int32 <= a_int32, a_int32 >= b_int32*4)
+	println(uint64(3 / b_int32), uint64(3 % b_int32), uint64(2 * b_int32 / 3))
+}
+
+func t_int64() {
+	println(uint64(a_int64 + b_int64), uint64(3 + b_int64), uint64(a_int64 + 3))
+	println(uint64(a_int64 - b_int64), uint64(3 - b_int64), uint64(a_int64 - 3))
+	println(uint64(a_int64 * b_int64), uint64(3 * b_int64), uint64(a_int64 * 3))
+	println(uint64(a_int64 / b_int64), uint64(3 / b_int64), uint64(a_int64 / 3))
+	println(uint64(a_int64 % b_int64), uint64(3 % b_int64), uint64(a_int64 % 3))
+	println(uint64(a_int64 & b_int64), uint64(3 & b_int64), uint64(a_int64 & 3))
+	println(uint64(a_int64 | b_int64), uint64(3 | b_int64), uint64(a_int64 | 3))
+	println(uint64(a_int64 ^ b_int64), uint64(3 ^ b_int64), uint64(a_int64 ^ 3))
+	println(uint64(a_int64 &^ b_int64), uint64(3 &^ b_int64), uint64(a_int64 &^ 3))
+	println(uint64(a_int64 << 2), uint64(a_int64 << uint(1)))
+	println(uint64(a_int64 >> 2), uint64(a_int64 >> uint(1)))
+	println(a_int64 >= 4*b_int64, 4*b_int64 <= a_int64, a_int64 >= b_int64*4)
+	println(uint64(3 / b_int64), uint64(3 % b_int64), uint64(2 * b_int64 / 3))
+}
+
+func main() {
+	t_uint8()
+	t_uint16()
+	t_uint32()
+	t_uint64()
+	t_int8()
+	t_int16()
+	t_int32()
+	t_int64()
+}
+`,
+		want: "255 18 243\n225 244 237\n16 45 208\n16 0 80\n0 3 0\n0 3 0\n255 15 243\n255 12 243\n240 0 240\n192 224\n60 120\ntrue true true\n0 3 10\n65280 3843 61443\n57600 61699 61437\n0 11520 53248\n16 0 20480\n0 3 0\n0 0 0\n65280 3843 61443\n65280 3843 61443\n61440 3 61440\n49152 57344\n15360 30720\ntrue true true\n0 3 2560\n1073741824 268435459 805306371\n536870912 4026531843 805306365\n0 805306368 2415919104\n3 0 268435456\n0 3 0\n268435456 0 0\n805306368 268435459 805306371\n536870912 268435459 805306371\n536870912 3 805306368\n3221225472 1610612736\n201326592 402653184\nfalse false false\n0 3 178956970\n4611686018427387904 1152921504606846979 3458764513820540931\n2305843009213693952 17293822569102704643 3458764513820540925\n0 3458764513820540928 10376293541461622784\n3 0 1152921504606846976\n0 3 0\n1152921504606846976 0 0\n3458764513820540928 1152921504606846979 3458764513820540931\n2305843009213693952 1152921504606846979 3458764513820540931\n2305843009213693952 3 3458764513820540928\n13835058055282163712 6917529027641081856\n864691128455135232 1729382256910270464\nfalse false false\n0 3 768614336404564650\n107 10 103\n93 18446744073709551612 97\n18446744073709551548 21 44\n14 0 33\n2 3 1\n4 3 0\n103 7 103\n99 4 103\n96 0 100\n18446744073709551504 18446744073709551560\n25 50\ntrue true true\n0 3 4\n30007 10 30003\n29993 18446744073709551612 29997\n13392 21 24464\n4285 0 10000\n5 3 0\n0 3 0\n30007 7 30003\n30007 4 30003\n30000 0 30000\n18446744073709540544 18446744073709546080\n7500 15000\ntrue true true\n0 3 4\n2000000007 10 2000000003\n1999999993 18446744073709551612 1999999997\n1115098112 21 1705032704\n285714285 0 666666666\n5 3 2\n0 3 0\n2000000007 7 2000000003\n2000000007 4 2000000003\n2000000000 0 2000000000\n18446744073119617024 18446744073414584320\n500000000 1000000000\ntrue true true\n0 3 4\n4000000000000000007 10 4000000000000000003\n3999999999999999993 18446744073709551612 3999999999999999997\n9553255926290448384 21 12000000000000000000\n571428571428571428 0 1333333333333333333\n4 3 1\n0 3 0\n4000000000000000007 7 4000000000000000003\n4000000000000000007 4 4000000000000000003\n4000000000000000000 0 4000000000000000000\n16000000000000000000 8000000000000000000\n1000000000000000000 2000000000000000000\ntrue true true\n0 3 4\n",
+	},
+	{
 		// A backend defect, measured on a P2-EDGE: flexcc types `4 * u` -- a signed
 		// constant on the LEFT of an unsigned operand -- as SIGNED. The product's
 		// VALUE is right, so nothing looks wrong until a signedness-sensitive
