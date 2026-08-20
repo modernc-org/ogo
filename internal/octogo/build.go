@@ -534,7 +534,9 @@ type BuildContext struct {
 
 	errList     ErrList
 	fsys        fs.FS
-	importTasks map[string]*importTask // import path: importTask
+	modulePath  string                 // the module import paths are written against, "" when there is none
+	mainDir     string                 // the main package's directory within fsys
+	importTasks map[string]*importTask // package identity (see importIdent): importTask
 	importGraph map[string]map[string]bool
 	limit       int
 
@@ -550,6 +552,56 @@ func NewBuildContext(fsys fs.FS, limit int) (c *BuildContext) {
 		importGraph: map[string]map[string]bool{},
 		limit:       limit,
 	}
+}
+
+// importDir is the directory within c.fsys that an import path names, and whether
+// the path belongs to the module being built at all. Without a module the path IS
+// the directory, which is what every build did before ogo.mod existed: a program of
+// several packages is one directory tree and the one being built is its root.
+//
+// With a module the path is written as Go writes one, module path and all, and the
+// prefix is stripped here. That is what makes an import mean the same thing in every
+// file that writes it, whichever directory the build was started from.
+func (c *BuildContext) importDir(importPath string) (dir string, ok bool) {
+	if c.modulePath == "" {
+		return importPath, true
+	}
+
+	switch {
+	case importPath == c.modulePath:
+		return ".", true
+	case strings.HasPrefix(importPath, c.modulePath+"/"):
+		return importPath[len(c.modulePath)+1:], true
+	}
+
+	return "", false
+}
+
+// pkgPath is a package's identity inside the compiler: its directory within the
+// module. The module path is surface syntax and is stripped before this, so a
+// dotted or hyphenated one never reaches the C mangler and example.com/proj/sensor
+// is the same package, and the same C symbols, that sensor was before modules.
+//
+// The module root is a package too, and takes the module path's last element -- the
+// name a Go program would import it under. A directory of that name beside it would
+// claim the same identity, which importCollision refuses rather than silently merge.
+func (c *BuildContext) pkgPath(dir string) string {
+	if dir == "." {
+		return path.Base(c.modulePath)
+	}
+
+	return dir
+}
+
+// notInModule explains an import path the module does not contain. A path that
+// names a real directory of the module, written without the module prefix, is the
+// mistake a Go programmer does not make and everyone else does, so it is named.
+func (c *BuildContext) notInModule(importPath string) string {
+	if fi, err := fs.Stat(c.fsys, importPath); err == nil && fi.IsDir() {
+		return fmt.Sprintf("cannot find package %q in module %q, did you mean %q?", importPath, c.modulePath, c.modulePath+"/"+importPath)
+	}
+
+	return fmt.Sprintf("package %q is not in module %q", importPath, c.modulePath)
 }
 
 func (c *BuildContext) syncErr(pos token.Position, s string, args ...any) {
@@ -582,8 +634,49 @@ func (c *BuildContext) findCycle(current, target string, visited map[string]bool
 	return nil
 }
 
+// importIdent is a package's identity within a build -- what the import graph, the
+// cycle check and the one-build-per-package map must agree to call it -- together
+// with the directory to read it from. The identity is the directory, not the path
+// written to reach it: the module prefix is surface syntax, and 'fromPath' arrives
+// here as a package's ImportPath, which is already stripped of it. A graph with one
+// spelling on one side of an edge and the other on the other side connects nothing,
+// and an import cycle then deadlocks on its own task instead of being reported.
+//
+// An embedded or intrinsic package (testing, p2, strings) has no directory and
+// stands for itself, module or no module, as std does in Go.
+func (c *BuildContext) importIdent(importPath string) (key, dir string, ok bool) {
+	if _, embedded := embeddedPkgs[importPath]; embedded || intrinsicImports[importPath] {
+		return importPath, "", true
+	}
+
+	if dir, ok = c.importDir(importPath); !ok {
+		return "", "", false
+	}
+
+	return c.pkgPath(dir), dir, true
+}
+
 func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken Token) (p *Package) {
 	if c == nil {
+		return noPkg
+	}
+
+	key, dir, inModule := c.importIdent(importPath)
+	if !inModule {
+		// An intrinsic import (p2) has no source directory by design and no module
+		// prefix either, and is handled by the emitter.
+		if !intrinsicImports[importPath] {
+			c.syncErr(importPathToken.Position(), "%s", c.notInModule(importPath))
+		}
+		return noPkg
+	}
+
+	// The main package is a program, not a library. Importing it would compile its
+	// files a second time under a package name and send its own imports back round
+	// to whoever imported it, which is a cycle reported as one somewhere far from
+	// the mistake.
+	if dir != "" && dir == c.mainDir {
+		c.syncErr(importPathToken.Position(), "import of main package %q", importPath)
 		return noPkg
 	}
 
@@ -592,9 +685,9 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 	if c.importGraph[fromPath] == nil {
 		c.importGraph[fromPath] = make(map[string]bool)
 	}
-	c.importGraph[fromPath][importPath] = true
+	c.importGraph[fromPath][key] = true
 
-	if cycle := c.findCycle(importPath, fromPath, make(map[string]bool)); cycle != nil {
+	if cycle := c.findCycle(key, fromPath, make(map[string]bool)); cycle != nil {
 		c.importsMu.Unlock()
 
 		// To complete the visual circle for the error message, put 'fromPath' at the front.
@@ -603,10 +696,10 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 		return noPkg
 	}
 
-	task := c.importTasks[importPath]
+	task := c.importTasks[key]
 	if task == nil {
 		task = &importTask{}
-		c.importTasks[importPath] = task
+		c.importTasks[key] = task
 	}
 
 	c.importsMu.Unlock()
@@ -624,7 +717,7 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 				return
 			}
 
-			dirEntries, err := fs.ReadDir(c.fsys, importPath)
+			dirEntries, err := fs.ReadDir(c.fsys, dir)
 			if err != nil {
 				task.p = noPkg
 				// A non-intrinsic import that names no readable directory is a
@@ -637,6 +730,14 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 				return
 			}
 
+			if dir == "." {
+				if fi, err := fs.Stat(c.fsys, path.Base(c.modulePath)); err == nil && fi.IsDir() {
+					task.p = noPkg
+					c.syncErr(importPathToken.Position(), "cannot import module root %q: directory %s beside it claims the same package name %q", importPath, path.Base(c.modulePath), path.Base(c.modulePath))
+					return
+				}
+			}
+
 			var files []string
 			for _, v := range dirEntries {
 				if v.IsDir() {
@@ -646,12 +747,12 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 				switch nm := v.Name(); path.Ext(nm) {
 				case ".ogo":
 					if !strings.HasSuffix(nm, "_test.ogo") {
-						files = append(files, path.Join(importPath, nm))
+						files = append(files, path.Join(dir, nm))
 					}
 				}
 			}
 
-			task.p = c.NewPackage(importPath, files, c.fsys)
+			task.p = c.NewPackage(key, files, c.fsys)
 		}()
 	}
 
@@ -679,9 +780,22 @@ func consolidateErrors(use ErrList, errors ...error) (e ErrList) {
 // 'limit' is the maximum desired concurrency for individual package building
 // when > 0.
 //
-// 'files' must be base names within fsys. Build resolves and import paths
-// a/b/c as paths a/b/c within fsys.
+// 'files' must be base names within fsys. Build resolves an import path a/b/c as
+// the path a/b/c within fsys, which is the module-less form: fsys is the package
+// being built and every package of the program is a directory in it. See
+// BuildModule for a program that declares one.
 func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
+	return BuildModule(limit, "", ".", files, fsys)
+}
+
+// BuildModule builds the main package of a module: 'modulePath' is what its import
+// paths are prefixed with, 'dir' is the main package's own directory within 'fsys'
+// and 'files' are its base names there. An import path is resolved by stripping
+// 'modulePath' and reading the rest as a directory of 'fsys', so an import means the
+// same directory in every file that writes it, whichever package is being built.
+//
+// An empty 'modulePath' with dir "." is the module-less form Build passes.
+func BuildModule(limit int, modulePath, dir string, files []string, fsys fs.FS) (main *Package, err error) {
 	for _, v := range files {
 		if path.Base(v) != v {
 			return noPkg, fmt.Errorf("not a base name: %s", v)
@@ -689,6 +803,8 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 	}
 
 	c := NewBuildContext(fsys, limit)
+	c.modulePath = modulePath
+	c.mainDir = path.Clean(dir)
 
 	defer func() {
 		var errs ErrList
@@ -754,8 +870,24 @@ func Build(limit int, files []string, fsys fs.FS) (main *Package, err error) {
 		err = errs.Err()
 	}()
 
-	main = c.NewPackage("", files, fsys) // main package has no import path
+	// The main package has no import path: its C symbols are unprefixed, whether it
+	// sits at the module root or in a subdirectory of one.
+	main = c.NewPackage("", joinDir(dir, files), fsys)
 	return main, nil
+}
+
+// joinDir places a package's base names in its directory within the module. The
+// module-less build passes ".", where the names are already where they belong.
+func joinDir(dir string, files []string) (r []string) {
+	if dir == "" || dir == "." {
+		return files
+	}
+
+	r = make([]string, len(files))
+	for i, v := range files {
+		r[i] = path.Join(dir, v)
+	}
+	return r
 }
 
 type limiter chan struct{}

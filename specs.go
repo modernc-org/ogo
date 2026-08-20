@@ -2281,13 +2281,57 @@
 // # Program initialization
 //
 // A complete OctoGo program is created by compiling an unimported main package
-// along with all the packages it imports, transitively. The ogo tool builds
-// packages using standard OS file paths (e.g., ogo build <import-path>).
+// along with all the packages it imports, transitively. The ogo tool is given the
+// main package as an ordinary OS path: ogo build ./cmd/firmware.
 //
-// Import paths must be slash-separated, entirely lower-case ASCII letters, the
-// '_' character c and digits, and must not begin with a "." or "/" or end with
-// a "/". Import paths without dots in their first segment are reserved for the
-// standard library.
+// # Import paths and the module root
+//
+// Every import path names a DIRECTORY of the program, and every file importing that
+// directory writes the same path for it. Which directory a path names depends on
+// where the program's root is, and there are two ways to say.
+//
+// A program that declares no module is one directory tree: the directory BEING
+// BUILT is the root, and an import path a/b/c is the directory a/b/c below it. That
+// is enough for a program whose packages sit beside its main package, and no more.
+// A directory outside the one being built cannot be named at all, so two programs
+// cannot share a package, and the same directory has a different path depending on
+// which package the build was started from.
+//
+// A program declares a module by placing an ogo.mod file at its root:
+//
+//	module example.com/proj
+//
+// That is the whole file. It carries one directive and a directive this compiler
+// does not implement is refused rather than ignored -- there are no external
+// dependencies to resolve, every package of a program being a directory inside the
+// module, and a silently accepted `require` would say otherwise. The file is looked
+// for in the package being built and then in each directory above it; the first one
+// found is the root. It is deliberately not go.mod, which an OctoGo project sitting
+// inside a Go repository would find by accident and adopt the wrong root from.
+//
+// Within a module an import path is written as Go writes one, module path and all,
+// and the module path is stripped to give the directory:
+//
+//	import "example.com/proj/sensor"   // the directory sensor at the module root
+//	import "example.com/proj"          // the module root itself, imported as proj
+//
+// So the main package need not be the root: cmd/firmware and cmd/calib may both
+// import example.com/proj/sensor and share the one copy of it. A package is named
+// identically wherever it is imported from, and by which directory the build was
+// started in -- neither the importing package's location nor the working directory
+// takes any part in resolving a path.
+//
+// An import path the module does not contain is an error. So is importing the main
+// package, which is a program and not a library.
+//
+// Import paths are slash-separated. An element is made of ASCII letters, digits and
+// the characters '_', '-', '.' and '~' -- a module path is a repository name and
+// needs them -- and no element may be empty, "." or "..", which is what makes a
+// relative or absolute path unspellable as an import.
+//
+// The intrinsic package p2 and the packages the compiler carries as source (testing,
+// strings) are imported by their bare names whether or not there is a module, as Go
+// imports its standard library.
 //
 // The main package must declare a function main that takes no arguments and
 // returns no value:

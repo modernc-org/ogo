@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing/fstest"
@@ -100,7 +101,12 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 	// The tests are discovered by the parser rather than by reading the text: a
 	// package that does not compile has no tests to find, and says so here.
 	all := append(append([]string{}, files...), testFiles...)
-	pkg, err := octogo.Build(-1, all, os.DirFS(dir))
+	fsys, rel, modulePath, err := moduleContext(dir)
+	if err != nil {
+		return 2, err
+	}
+
+	pkg, err := octogo.BuildModule(-1, modulePath, rel, all, fsys)
 	if err != nil {
 		return 1, err
 	}
@@ -112,12 +118,15 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 
 	// The runner is an ordinary .ogo file compiled with the rest, layered over the
 	// directory rather than written into it.
+	// The runner joins the package, so it is layered where the package lives: at the
+	// module root that is the top of fsys, in a module it is the package's directory.
+	runner := path.Join(rel, testRunnerFile)
 	overlay := overlayFS{
-		FS:    os.DirFS(dir),
-		extra: fstest.MapFS{testRunnerFile: &fstest.MapFile{Data: []byte(testRunnerSrc(names))}},
+		FS:    fsys,
+		extra: fstest.MapFS{runner: &fstest.MapFile{Data: []byte(testRunnerSrc(names))}},
 	}
 	all = append(all, testRunnerFile)
-	pkg, err = octogo.Build(-1, all, overlay)
+	pkg, err = octogo.BuildModule(-1, modulePath, rel, all, overlay)
 	if err != nil {
 		return 1, err
 	}

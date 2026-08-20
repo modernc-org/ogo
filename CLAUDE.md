@@ -318,21 +318,34 @@ still design-only.
   `[]int{1, 4: 9}`) with constant indices -- expanded to positional C initializers
   (gaps zero-filled), a slice's length being the highest index plus one. A
   non-constant index is refused.
-- Multi-package programs work: every import path is read against **the directory
-  being BUILT** (`fs.ReadDir(c.fsys, importPath)`, `c.fsys` being `os.DirFS(<the
-  main package's directory>)`), whoever writes the import. So the packages are
-  SIBLINGS under the main package's directory and one may import another --
-  `util/` importing `"geo"` finds `geo/` beside itself. Re-measured 2026-08-20 by
-  building each layout: siblings work, a package nested inside its importer
-  (`util/geo/`) is NOT found, and a `cmd/` layout -- main in a subdirectory,
-  libraries beside it -- fails, the root being the directory you build. (This entry
-  said "sibling" and then "SUBDIRECTORY of the importing package"; both were wrong,
-  the second because it describes the nesting that fails. `chain/` in
-  multiPkgProgram pins the two-level case now.) The whole program -- the main package plus every package it
+- Multi-package programs work, and **`ogo.mod` says where import paths are read
+  from** (2026-08-20). A one-line `module example.com/proj` marks the root;
+  `moduleContext` (`internal/build/module.go`) searches upward from the package
+  being built for the nearest one and hands `octogo.BuildModule` the module path,
+  the package's directory within the root, and `os.DirFS(<root>)`. An import is
+  then written as Go writes it, prefix and all, and `BuildContext.importDir` strips
+  the prefix to get the directory. So `cmd/firmware` and `cmd/calib` both
+  `import "example.com/proj/sensor"` and share ONE copy of it, and neither the
+  importing package's location nor the working directory takes any part in it.
+  It is deliberately **not** go.mod: searching for one would find *this repo's*
+  go.mod from `_examples/` and adopt `modernc.org/ogo` as the root.
+  **With no ogo.mod nothing changed** -- the directory being BUILT is the root and
+  paths are relative to it (`import "sensor"`), which is what every test, the
+  fuzzer and every `_examples/` program still does; `Build` is `BuildModule` with
+  an empty module path.
+  Two traps found while building this: the package's identity inside the compiler
+  is its **module-relative directory**, not the path written to import it (module
+  paths carry dots, which `cIdent` would hex-escape into the C symbols), and
+  `importGraph`/`importTasks` must be keyed by that identity -- keyed by the
+  written path while `fromPath` arrives as the identity, cycle detection connects
+  nothing and an import cycle **deadlocks** instead of being reported. Importing
+  the main package is refused for the same reason (`mainDir`).
+  The whole program -- the main package plus every package it
   imports, transitively -- is emitted into **one C translation unit** in dependency
   order, with top-level symbols mangled into their package's namespace. `import
   "p2"` remains the one dotless, directory-less import, mapping to the hardware
-  intrinsics. There is no standard library.
+  intrinsics; `testing` and `strings` are likewise bare, module or not. There is no
+  standard library beyond those.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real

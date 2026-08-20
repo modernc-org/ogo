@@ -22,12 +22,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 - **The import rule was documented backwards.** The README said an imported package
   must be a subdirectory of the package that imports it — which is the one layout
-  that does *not* work. Every import path is read against the directory being
-  **built**, whoever writes the import, so a program's packages are siblings under
-  the main package's directory and one may import another. Re-measured by building
-  each layout: siblings work, `util/geo/` imported by `util` is not found, and a
-  `cmd/` layout — main in a subdirectory, libraries beside it — fails, the root
-  being the directory you build.
+  that never worked. Import paths have always been read against a root, and a
+  program's packages sit below it; see **`ogo.mod`** under Language for where that
+  root now comes from.
 
   A package importing another package was also untested. `chain/` in the
   multi-package fixture pins it now, on the host and on the board.
@@ -66,6 +63,41 @@ shipped section tells a reader on that version that they have behaviour they do 
   against every type, run on the board, which is now three run cases.
 
 ### Language
+
+- **`ogo.mod` says where a program's root is**, and with it a `cmd/` layout and a
+  package shared by two programs both work. The file holds one line —
+  `module example.com/proj` — and a build takes the nearest one at or above the
+  package it is given. Import paths are then written as Go writes them, module path
+  included, and name the same directory whoever writes them:
+
+      proj/ogo.mod              module example.com/proj
+      proj/sensor/
+      proj/cmd/firmware/        import "example.com/proj/sensor"
+      proj/cmd/calib/           import "example.com/proj/sensor"
+
+  Both programs compile against the *one* copy of `sensor/`. That could not be
+  written before: the root was whatever directory you happened to build, so a
+  library had to sit below each program that used it, one copy each, kept in step by
+  hand. Neither the importing package's own location nor the working directory takes
+  any part in resolving a path now — the same package built from inside itself
+  produces a byte-identical binary.
+
+  **Without an `ogo.mod` nothing changes.** The directory being built is the root and
+  paths are relative to it (`import "sensor"`), which is every program written so
+  far. A bare path *inside* a module is refused with the path that would have
+  worked, since it is the mistake anyone arriving from Go's rules will not make and
+  everyone else will.
+
+  There is no versioning and there are no external dependencies to resolve: every
+  package of a program is a directory inside the module, so a directive `ogo.mod`
+  does not implement — `require`, say — is refused rather than quietly ignored. It
+  is deliberately not `go.mod`; an OctoGo project inside a Go repository would find
+  the *surrounding* module and take the wrong root from it.
+
+  Two things are newly refused, both only inside a module: an import path the module
+  does not contain, and an import of the main package, which is a program and not a
+  library. The second used to be unreachable and would otherwise have hung the
+  compiler.
 
 - **`string(r)` works for a rune the program COMPUTES**, not only a constant one —
   which is what `for _, r := range s { print(string(r)) }` needs, about as ordinary

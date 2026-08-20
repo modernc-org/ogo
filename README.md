@@ -348,14 +348,20 @@ broken.
   `append(rows, mk())` and `ch <- mk()` are refused — bind the result to a variable
   and use that, which is what the diagnostic asks for. An array *literal* stands in
   both, as it does everywhere else.
-* **Every import path names a directory of the package being BUILT**, whoever writes
-  the import. So the packages of a program are subdirectories of the main package's
-  directory, and one of them may import another — `util/` importing `"geo"` finds
-  `geo/` beside itself, because both are under the root. What does *not* work is
-  nesting a package inside the one that imports it (`util/geo/` is not found), nor a
-  `cmd/`-style layout where the main package sits in a subdirectory and the libraries
-  beside it: the root is the directory you build, and there is no module file to say
-  otherwise. Go's module layout is not implemented.
+* **Every import path names a directory below the program's root**, whoever writes
+  the import — and an `ogo.mod` file is what says where that root is. It holds one
+  line, `module example.com/proj`, and a build looks for the nearest one at or above
+  the package it is given. Import paths are then written as Go writes them, module
+  path included, so `cmd/firmware` and `cmd/calib` may both
+  `import "example.com/proj/sensor"` and share the one copy of it. Neither the
+  importing package's own location nor the working directory takes any part in it.
+  **Without an `ogo.mod`** the directory you build is the root and paths are relative
+  to it (`import "sensor"`), which reaches packages beside the main package and
+  nothing outside it — no `cmd/` layout, and no package shared by two programs.
+  There is no versioning and there are no external dependencies: `ogo.mod` says
+  where the root is, and a line it does not implement, such as `require`, is refused
+  rather than ignored. Nesting a package inside the one that imports it is not a
+  layout either way — `util/geo/` is found as `<module>/util/geo`, not as `geo`.
 * A `type` declaration must stand at **package scope**; one inside a function is
   refused.
 * A type **alias**, `type A = B`, parses and is then treated as a definition — the

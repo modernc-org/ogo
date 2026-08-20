@@ -61,7 +61,16 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 
-	pkg, err := octogo.Build(-1, files, os.DirFS(dir))
+	// An ogo.mod above the package makes its directory part of a module: import
+	// paths are then read against the module's root and carry its path, so a
+	// package is named the same by every file that imports it. Without one the
+	// package's own directory is the root, as it always was.
+	fsys, rel, modulePath, err := moduleContext(dir)
+	if err != nil {
+		return "", 2, err
+	}
+
+	pkg, err := octogo.BuildModule(-1, modulePath, rel, files, fsys)
 	if err != nil {
 		return "", 1, err // checker diagnostics
 	}

@@ -12541,16 +12541,29 @@ func (f *File) declareImportSpec(n Node) (r *ImportSpecNode) {
 // '_' character c and digits, and must not begin with a "." or "/" or end with
 // a "/". Import paths without dots in their first segment are reserved for the
 // standard library.
+// isValidImportPath reports whether a string can be an import path. A path names a
+// directory of the program and, in a module, carries the module's own path in front
+// of it -- and a module path is a domain and a repository, so the dots, hyphens and
+// capitals of example.com/User-Name/proj must be spellable. What stays refused is
+// what does not name a directory below the root: a relative path, an absolute one,
+// and an empty, "." or ".." element anywhere in between.
 func isValidImportPath(s string) bool {
-	if strings.HasPrefix(s, ".") || strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") {
+	if s == "" || strings.HasPrefix(s, ".") || strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") {
 		return false
 	}
 
 	for _, v := range strings.Split(s, "/") {
+		switch v {
+		case "", ".", "..":
+			return false
+		}
+
 		for _, c := range v {
 			switch {
-			case c >= 'a' && c <= 'z' || c == '_' || c >= '0' && c <= '9':
+			case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
 				// ok
+			case c == '_', c == '-', c == '.', c == '~':
+				// ok: a module path is a repository URL without its scheme
 			default:
 				return false
 			}
