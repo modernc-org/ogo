@@ -656,6 +656,36 @@ func (c *BuildContext) importIdent(importPath string) (key, dir string, ok bool)
 	return c.pkgPath(dir), dir, true
 }
 
+// windowsReserved are the MS-DOS device names Windows still reserves. No file or
+// directory may carry one, in any case, with or without an extension -- NUL.txt is
+// NUL -- so a repository holding con/ or aux.ogo cannot be checked out on Windows
+// at all. Git reports the failure against the checkout, far from whoever wrote it,
+// and on Linux there is nothing to notice: the names are ordinary words there, and
+// con, aux and prn are plausible package names on a microcontroller.
+//
+// The list is Microsoft's own (Naming Files, Paths, and Namespaces), COM0 and LPT0
+// included. The superscript variants COM1 and so on are outside the ASCII a package
+// directory is already held to.
+var windowsReserved = func() map[string]bool {
+	r := map[string]bool{"con": true, "prn": true, "aux": true, "nul": true}
+	for c := '0'; c <= '9'; c++ {
+		r["com"+string(c)] = true
+		r["lpt"+string(c)] = true
+	}
+	return r
+}()
+
+// reservedFileName returns the device name a source file's name collides with on
+// Windows, or "". The extension does not save it: aux.ogo is aux.
+func reservedFileName(name string) string {
+	base := strings.TrimSuffix(path.Base(name), ".ogo")
+	if windowsReserved[strings.ToLower(base)] {
+		return base
+	}
+
+	return ""
+}
+
 // validPkgDir reports whether a module-relative package DIRECTORY can exist, beside
 // its siblings, on every filesystem this compiler targets. It is a narrower rule
 // than the one an import path as a whole obeys, and deliberately so: the module
@@ -686,6 +716,10 @@ func validPkgDir(dir string) (bad, why string) {
 			default:
 				return v, "must be made of lower-case ASCII letters, digits, '_' and '-'"
 			}
+		}
+
+		if windowsReserved[v] {
+			return v, "is a device name Windows reserves, where no directory may carry it"
 		}
 	}
 
@@ -787,9 +821,19 @@ func (c *BuildContext) importPkg(fromPath, importPath string, importPathToken To
 
 				switch nm := v.Name(); path.Ext(nm) {
 				case ".ogo":
-					if !strings.HasSuffix(nm, "_test.ogo") {
-						files = append(files, path.Join(dir, nm))
+					if strings.HasSuffix(nm, "_test.ogo") {
+						break
 					}
+
+					// The importing statement is the position there is: a file
+					// has none of its own, and this is what pulled it in.
+					if bad := reservedFileName(nm); bad != "" {
+						c.syncErr(importPathToken.Position(), "package %q has file %s: %q is a device name Windows reserves, where no file may carry it", importPath, nm, bad)
+						task.p = noPkg
+						return
+					}
+
+					files = append(files, path.Join(dir, nm))
 				}
 			}
 
@@ -840,6 +884,10 @@ func BuildModule(limit int, modulePath, dir string, files []string, fsys fs.FS) 
 	for _, v := range files {
 		if path.Base(v) != v {
 			return noPkg, fmt.Errorf("not a base name: %s", v)
+		}
+
+		if bad := reservedFileName(v); bad != "" {
+			return noPkg, fmt.Errorf("%s: %q is a device name Windows reserves, where no file may carry it", v, bad)
 		}
 	}
 

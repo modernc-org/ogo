@@ -365,7 +365,11 @@ broken.
   **A package directory must be lower case** (letters, digits, `_`, `-`), though the
   module prefix may carry capitals, being a repository name: `foo/` and `Foo/` are
   one directory on macOS and Windows, so a program naming a capital is refused where
-  it is written rather than where it is cloned.
+  it is written rather than where it is cloned. The same reasoning refuses the device
+  names Windows reserves — `con`, `prn`, `aux`, `nul`, `com0`–`com9`, `lpt0`–`lpt9` —
+  as a package directory *and* as a source file name (`aux.ogo` is `aux`): nothing
+  on Windows may carry one, so a repository holding `con/` cannot even be checked
+  out there.
 * A `type` declaration must stand at **package scope**; one inside a function is
   refused.
 * A type **alias**, `type A = B`, parses and is then treated as a definition — the

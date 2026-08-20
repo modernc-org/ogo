@@ -99,7 +99,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   library. The second used to be unreachable and would otherwise have hung the
   compiler.
 
-  A third is refused everywhere, module or not: **a capital in a package
+  Two more are refused everywhere, module or not.
+
+  **The device names Windows reserves** — `con`, `prn`, `aux`, `nul`, `com0`–`com9`
+  and `lpt0`–`lpt9` — as a package directory and as a source file's name, where the
+  extension does not save it (`aux.ogo` is `aux`). Nothing on Windows may carry one,
+  in any case, so a repository holding `con/` or `aux.ogo` cannot be checked out
+  there at all. On a unix they are ordinary words, and `con`, `aux` and `prn` are
+  plausible names for a package on a microcontroller — so the mistake is invisible
+  until somebody else clones the project. `console/` and `com/` are unaffected; only
+  the exact names are reserved.
+
+  And **a capital in a package
   directory**. `foo/` and `Foo/` are one directory on macOS and Windows, so a
   program holding both cannot be checked out there, let alone built — and the
   developer who writes it on Linux, where both live happily, would learn that from

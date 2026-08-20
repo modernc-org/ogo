@@ -2344,6 +2344,25 @@
 // No element may be empty, "." or "..", which is what makes a relative or absolute
 // path unspellable as an import.
 //
+// Implementation restriction: a compiler may reject an import path, or the name of
+// a source file, that cannot name a directory or a file on every platform it
+// targets. This compiler rejects the MS-DOS device names Windows still reserves --
+// con, prn, aux, nul, com0 through com9, and lpt0 through lpt9 -- both as a package
+// directory and as a source file's name, where the extension does not save it:
+// aux.ogo is aux. Nothing on Windows may carry one of these names, in any case, so
+// a program holding con/ or aux.ogo cannot be checked out there at all, let alone
+// built. On a unix they are ordinary words, and con, aux and prn are plausible
+// names for a package on a microcontroller, so writing one gives nothing away. The
+// restriction reports the mistake on the machine that writes the program rather
+// than on the machine that clones it.
+//
+// The module prefix is exempt, as it is from the case rule and for the same reason:
+// it is a repository name, and no part of it becomes a directory.
+//
+// What is NOT checked is the directory the compiler is pointed at. The main
+// package's own directory is chosen on the command line and named nowhere in the
+// program, so the program does not carry it anywhere.
+//
 // The intrinsic package p2 and the packages the compiler carries as source (testing,
 // strings) are imported by their bare names whether or not there is a module, as Go
 // imports its standard library.

@@ -104,11 +104,12 @@ func TestBuildModuleLayout(t *testing.T) {
 // cycle then deadlocks on its own build instead of being reported.
 func TestBuildModuleResolution(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		module string
-		dir    string
-		files  map[string]string
-		want   string // "" == builds
+		name      string
+		module    string
+		dir       string
+		files     map[string]string
+		mainFiles []string // nil == main.ogo
+		want      string   // "" == builds
 	}{
 		{
 			name:   "bare path inside a module",
@@ -211,6 +212,53 @@ func TestBuildModuleResolution(t *testing.T) {
 			want: "must be lower case",
 		},
 		{
+			name:   "a package directory Windows reserves",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":  "import \"example.com/proj/aux\"\n\nfunc main() { println(aux.Read()) }",
+				"aux/a.ogo": "func Read() int { return 1 }",
+			},
+			want: "device name Windows reserves",
+		},
+		{
+			name:   "a numbered device name",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":   "import \"example.com/proj/com3\"\n\nfunc main() { println(com3.Read()) }",
+				"com3/c.ogo": "func Read() int { return 1 }",
+			},
+			want: "device name Windows reserves",
+		},
+		{
+			// Only the exact names are reserved, and the module prefix never
+			// becomes a directory.
+			name:   "console is a word, and con may prefix a module",
+			module: "example.com/con/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":      "import \"example.com/con/proj/console\"\n\nfunc main() { println(console.Read()) }",
+				"console/c.ogo": "func Read() int { return 1 }",
+			},
+		},
+		{
+			// The extension does not save it: aux.ogo is aux.
+			name:   "a reserved source file name in an imported package",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":       "import \"example.com/proj/sensor\"\n\nfunc main() { println(sensor.Read()) }",
+				"sensor/aux.ogo": "func Read() int { return 1 }",
+			},
+			want: "device name Windows reserves",
+		},
+		{
+			name:   "a reserved source file name in the main package",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"nul.ogo": "func main() { println(1) }",
+			},
+			mainFiles: []string{"nul.ogo"},
+			want:      "device name Windows reserves",
+		},
+		{
 			name:   "an embedded package needs no module prefix",
 			module: "example.com/proj", dir: ".",
 			files: map[string]string{
@@ -223,7 +271,11 @@ func TestBuildModuleResolution(t *testing.T) {
 			for name, src := range tc.files {
 				fsys[name] = &fstest.MapFile{Data: []byte(src)}
 			}
-			_, err := BuildModule(-1, tc.module, tc.dir, []string{"main.ogo"}, fsys)
+			mainFiles := tc.mainFiles
+			if mainFiles == nil {
+				mainFiles = []string{"main.ogo"}
+			}
+			_, err := BuildModule(-1, tc.module, tc.dir, mainFiles, fsys)
 			switch {
 			case tc.want == "" && err != nil:
 				t.Errorf("unexpected error: %v", err)
