@@ -215,6 +215,34 @@ shipped section tells a reader on that version that they have behaviour they do 
   naming is `out[i] = string(r)` inside a loop, which looks like it should work and
   is refused: every iteration would hand back the same four bytes.
 
+### Behaviour changes
+
+- **A package directory must be lower case, and may not carry a name Windows
+  reserves.** Both refusals apply with or without an `ogo.mod`, so a program that
+  built on v0.30.0 with a `Foo/` package — or with a source file called `aux.ogo` —
+  does not build now:
+
+      invalid import path "example.com/proj/Sensor": package directory "Sensor" must
+      be lower case: a directory differing from another only in case is the SAME
+      directory on macOS and Windows
+
+  Rename the directory or the file. They are refused rather than merely discouraged
+  because neither survives a checkout elsewhere: `foo/` and `Foo/` are one directory
+  on macOS and Windows, and nothing there may be called `con`, `prn`, `aux`, `nul`,
+  `com0`–`com9` or `lpt0`–`lpt9`, extension or not — `aux.ogo` is `aux`. Refusing
+  reports it on the machine that writes the program rather than on the machine that
+  clones it. The module prefix keeps its capitals, being a repository name, so
+  `example.com/BurntSushi/proj/sensor` is a path and `example.com/proj/Sensor` is
+  not.
+
+- **Two failures became diagnostics.** Importing the main package used to hang the
+  compiler and is now refused by name, and `ogo build -o … ./somelibrary` used to
+  reach the C backend and report `could not find function main` — a C compiler's
+  complaint about a C program you never wrote — where it now says the package
+  declares no `func main` and there is nothing to write. Neither could have been in
+  a working build, so this breaks nothing; it is listed because the message a script
+  sees has changed.
+
 ## v0.30.0
 
 Two silent wrong answers on the board, and the last hole in the lifetime rules.
