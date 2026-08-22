@@ -16,7 +16,19 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.31.1
+
+### Documentation
+
+- **The v0.31.0 section was labelled "Unreleased" in the tag that shipped it.** The
+  heading is renamed before tagging, and this once it was not, so
+  `git show v0.31.0:CHANGELOG.md` shows the release's own entries under a heading
+  that says they have not shipped. The tag itself is left alone: proxy.golang.org had
+  already cached it, and a module proxy's cache is immutable, so moving a tag it
+  serves would diverge from the repository permanently. The label is corrected here
+  instead.
+
+## v0.31.0
 
 ### Documentation
 
