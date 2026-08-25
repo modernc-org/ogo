@@ -22423,7 +22423,32 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emitComplement(c.ast, ct, func() { e.emitExprNode(c) })
 			case guardNext && !e.isIntLiteral(c):
 				guardNext = false
-				ct, _ := e.inferCType(c.ast)
+				// A divisor that folds to a nonzero constant needs no guard, however
+				// it is spelled -- a named constant, `(N * 2)`, `(1 << 32)`. Only a
+				// bare literal was recognised: `n % N` paid for a check on every
+				// pass of a loop, and a constant too wide for the guard's int was
+				// truncated to its low word by the call. That word is zero for
+				// 2^32, so `x / (1 << 32)` on an int64 level panicked "integer
+				// divide by zero", and it is 2^31 for 2^31, which the int read as
+				// its own most negative value and divided by. A zero constant is
+				// refused by the checker; the guard stays for what does not fold.
+				if v, ok := e.foldConstInt(c.ast); ok && v != 0 {
+					e.emitExprNode(c)
+					continue
+				}
+				// The guard is chosen by the LEVEL's type, resolved past its
+				// definition. The operands of an arithmetic operator are of one type,
+				// so the level's is the divisor's -- and the divisor's own answer
+				// is the name it was declared with, which for a `type U uint64` is
+				// "U", not "uint64_t": that took the 32-bit guard, and `a / b` over
+				// two of them panicked for a b whose low word is zero and divided
+				// by that word for any other. A `type F float64` was guarded the
+				// same way and had its divisor truncated to an int.
+				ct, ok := e.inferNodes(kids)
+				if !ok {
+					ct, _ = e.inferCType(c.ast)
+				}
+				ct = e.underlyingCType(ct)
 				// A float divisor is never guarded: Go's float division by zero is
 				// ±Inf/NaN, not a panic, and ogo_nonzero(int) would truncate the
 				// divisor (2.5 -> 2), miscompiling the division.

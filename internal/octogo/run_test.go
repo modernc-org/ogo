@@ -37,6 +37,52 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A divisor that folds to a constant needs no guard, however it is spelled,
+		// and a divisor that does not is guarded at the LEVEL's width, resolved past
+		// a type definition. Both used to go wrong in the checked build only, which
+		// is the default:
+		//
+		//   - only a bare literal was left unguarded, so `x / (1 << 32)` on an int64
+		//     level went through the 32-bit guard, which truncated the constant to
+		//     its low word -- zero -- and panicked "integer divide by zero" in a
+		//     program dividing by 2^32; `x / (1 << 31)` divided by the int's most
+		//     negative value instead. The lock-in detector this was found in scales
+		//     a CORDIC angle by exactly `* 36000 / (1 << 32)`;
+		//   - the guard's width was read from the divisor's own type NAME, so a
+		//     `type U uint64` -- spelled "U", not "uint64_t" -- took the 32-bit
+		//     guard: `a / b` panicked for a b whose low word is zero and silently
+		//     divided by that word for any other, and a `type F float64` had its
+		//     divisor truncated to an int, 2.5 to 2.
+		//
+		// The compound forms and the named-constant divisors are here because they
+		// take other paths; `y % (N * 2)` also no longer pays for a check on every
+		// pass of a loop.
+		name: "a constant divisor of any spelling, and a defined 64-bit or float one",
+		src: `type U uint64
+type Q int64
+type F float64
+
+const N = 64
+
+func main() {
+	x := int64(1) << 40
+	y := uint64(1) << 40
+	var q Q = 1 << 40
+	var a, b U = 1 << 40, 1<<33 + 5
+	var f, g F = 5, 2.5
+	println(x/(1<<32), x%(1<<32), x/(1<<31), y/(1<<32), y%(1<<33), q/(1<<32), q%(1<<31))
+	println(y/N, y%(N*2), x/(N/2), x%(N+1))
+	println(a/b, a%b, a/(1<<33))
+	x /= (1 << 32)
+	y %= (1 << 33)
+	q /= N * 2
+	println(x, y, q)
+	printf("%f %f\n", f/g, f/(1<<32))
+}
+`,
+		want: "256 0 512 256 0 256 0\n17179869184 0 34359738368 16\n127 8589933957 128\n256 0 8589934592\n2.000000 0.000000\n",
+	},
+	{
 		// The same backend miscompile with the indexed array field as the TARGET
 		// rather than the operand, where it is a silent NO-OP: a histogram bin
 		// accumulated nothing at all. A ++ on the same element is unaffected, and

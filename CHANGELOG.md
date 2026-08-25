@@ -16,6 +16,31 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A division by a constant that is not a bare literal was guarded at run time, and
+  the guard could be the wrong width.** `x / (1 << 32)` on an int64 -- the way a
+  CORDIC angle in turn/2^32 units is scaled to degrees -- panicked
+  `integer divide by zero` in a checked build, which is the default: only a bare
+  literal was recognised as constant, so the divisor went through the zero guard,
+  and the guard's int truncated 2^32 to its low word. `x / (1 << 31)` divided by the
+  int's most negative value instead, silently. `n % N` for a constant N paid for a
+  check on every pass of a loop, correctly.
+
+  The guard's width was also read from the divisor's own type *name*, so a
+  `type U uint64` -- spelled `U`, not `uint64_t` -- took the 32-bit guard: `a / b`
+  over two of them panicked for a `b` whose low word is zero and silently divided by
+  that word for any other, and a `type F float64` had its divisor truncated to an
+  integer, `5 / 2.5` computing 2.5. A divisor that folds to a constant is now not
+  guarded whatever its spelling, and one that does not is guarded at the width of
+  the type the division computes in, resolved past its definition.
+
+  Found by writing a lock-in detector -- a CORDIC sine table, int64 accumulators, an
+  integer square root -- and running it on the board; the host C compiler warns
+  about the truncation, and the sweep that found it treats a warning as a failure.
+
 ## v0.31.1
 
 ### Documentation
