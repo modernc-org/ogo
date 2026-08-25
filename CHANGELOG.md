@@ -33,6 +33,32 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A 64-bit constant expression computed garbage on the board.** `int64(5) + 1`
+  printed 4294967296000006, `int64(1000) * 1000` printed 4294967302,
+  `uint64(5) + 1` 4294967302, `Ticks(3) * 4` 4294967308 and `int64(-3) * int64(7)`
+  51539607531, silently. The C backend mis-folds nearly every 64-bit constant
+  expression inside a function body -- `(int64_t)(5) + 1`, `5LL + 1`,
+  `4294967296LL - 1` -- at every optimisation level, while the same expression with
+  a variable operand is right, a lone literal is right, and gcc is right about all
+  of it; `doc/int64-constant-fold.c` is the reproducer, and spin2cpp master has the
+  fault too. The compiler left such an expression as written whenever its value
+  fit an int, on the premise that C folds it the same way. It now folds every
+  64-bit constant expression itself and emits one literal, and a 64-bit named
+  constant is inlined at each use rather than declared.
+
+- **A negative constant wider than an int compared as unsigned.** It was spelled
+  as its bit pattern, `0xFFFFFFFF00000001ULL`, which makes any expression it stands
+  in unsigned: `v > -4294967295` was false for an int64 `v` of 5, on the host and
+  on the board alike. In an expression it is now spelled signed, `(-4294967295LL)`;
+  the bit pattern stays inside aggregate initializers, where the backend refuses a
+  unary minus and the element's type does the converting.
+
+- **`-2147483648` was the negation of an unsigned.** Its magnitude does not fit an
+  int, so it was written `2147483648U`, and negating an unsigned gives it back:
+  `var a int64 = -2147483648` was 2147483648 on the host, and
+  `int64(-2147483648) + 1` was garbage on the board. The most negative int is now
+  spelled `(-2147483647 - 1)`.
+
 - **A float converted to a 64-bit integer gave the float's bits, and to a 32-bit
   unsigned one was clamped at 2147483647.** `int64(v)` for a `v` of 3.0 was
   1077936128 -- 0x40400000, the IEEE encoding of 3.0 -- and `uint32(v)` for a `v` of

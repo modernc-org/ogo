@@ -3274,7 +3274,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -3964,6 +3964,9 @@ type emitter struct {
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
+	litDepth           int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
+	constWide          map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
+	foldWideConstsOnly bool                    // the fold reads no 32-bit named constant: a level folded to a literal must keep referencing those (see levelConstLit)
 	usesF2u32          bool                    // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
 	usesF2i64          bool                    // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
 	usesF2u64          bool                    // ogo_f2u64 is called: a float converts to a uint64 (needs both)
@@ -6148,6 +6151,20 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			e.constInt[cname] = intCLit(v)
 		}
 		e.iota = -1
+		// A 64-bit integer constant is inlined at each use, as a string constant is
+		// (below), and declares nothing. The target's C compiler mis-folds a 64-bit
+		// constant expression in a function body (see constSpelling), so every
+		// expression reading one is folded to a literal by levelConstLit -- which
+		// would leave a `static const` nothing names, and the host compiler's
+		// unused-variable warning for it fails the run harness. A narrower constant
+		// keeps its symbol: that compiler computes an expression over a `static
+		// const` object correctly, and the fold leaves those alone.
+		if ut := e.underlyingCType(ctype); cIntWidths[ut] == 64 {
+			if _, folded := e.constInt[cname]; folded {
+				e.constWide[cname] = ut
+				return
+			}
+		}
 		// A constant string -- a literal or a concatenation of constants -- is
 		// recorded decoded and emitted at each use as the folded literal, rather
 		// than as a C variable. A Go constant has no address, so inlining it is
@@ -6182,6 +6199,44 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		e.emit(";\n")
 		e.iota = -1
 	}
+}
+
+// parseCIntLit reads the value back out of a C integer literal intCLit rendered:
+// a decimal with or without a width suffix, or the hexadecimal bit pattern a
+// negative wide value is spelled as. Until this read the suffix, a constant wider
+// than an int -- "1099511627776LL" -- was no constant to the fold at all.
+func parseCIntLit(lit string) (int64, bool) {
+	lit = strings.TrimRight(lit, "ULul")
+	if strings.HasPrefix(lit, "0x") || strings.HasPrefix(lit, "0X") {
+		u, err := strconv.ParseUint(lit[2:], 16, 64)
+		return int64(u), err == nil
+	}
+	if u, err := strconv.ParseUint(lit, 10, 64); err == nil {
+		return int64(u), true
+	}
+	v, err := strconv.ParseInt(lit, 10, 64)
+	return v, err == nil
+}
+
+// wideConstRef renders a read of a 64-bit integer constant by its source name, or
+// reports false for a name that is not one. Such a constant has no C symbol (see
+// emitConstSpecName), so the read is the literal.
+func (e *emitter) wideConstRef(name string) (string, bool) {
+	for _, cname := range []string{name, e.globalC(name)} {
+		if ut, ok := e.constWide[cname]; ok {
+			if v, ok := parseCIntLit(e.constInt[cname]); ok {
+				return e.constSpelling(v, ut), true
+			}
+		}
+	}
+	return "", false
+}
+
+// wideConstName reports whether a constant's C name is one of the 64-bit ones the
+// fold may read while foldWideConstsOnly is set.
+func (e *emitter) wideConstName(cname string) bool {
+	_, ok := e.constWide[cname]
+	return ok
 }
 
 // foldedInt returns a folded integer constant's C literal by its source name,
@@ -6229,7 +6284,11 @@ func (e *emitter) foldedQualifiedIntKids(kids []Node) (string, bool) {
 		v, ok := p2Constants[fields[0]]
 		return v, ok
 	}
-	v, ok := e.constInt[mangle(prefix, fields[0])]
+	gn := mangle(prefix, fields[0])
+	if e.foldWideConstsOnly && !e.wideConstName(gn) {
+		return "", false // see levelConstLit
+	}
+	v, ok := e.constInt[gn]
 	return v, ok
 }
 
@@ -9344,6 +9403,7 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 		return
 	}
 	e.emit("{")
+	e.litDepth++
 	// The path each element sits at, for anything this literal has to defer to a
 	// copy after the declaration (see recordLitFixup). It grows as the walk descends
 	// and is put back on the way out, so a nested literal names the whole route.
@@ -9364,6 +9424,7 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 		e.emitLitElement(*v, expect, brace)
 	}
 	e.litPath = litPath
+	e.litDepth--
 	e.emit("}")
 }
 
@@ -9840,6 +9901,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 	}
 	e.emit("{")
 	litPath := e.litPath
+	e.litDepth++
 	for i, v := range values {
 		if i != 0 {
 			e.emit(", ")
@@ -9874,6 +9936,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 		e.emitLitElement(*v, fld, true)
 	}
 	e.litPath = litPath
+	e.litDepth--
 	e.emit("}")
 }
 
@@ -9991,6 +10054,7 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 	row := a.row()
 	e.emit("{")
 	litPath := e.litPath
+	e.litDepth++
 	for i, v := range values {
 		if i != 0 {
 			e.emit(", ")
@@ -10017,6 +10081,7 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 		e.emitArrayValues(rowValues, row)
 	}
 	e.litPath = litPath
+	e.litDepth--
 	e.emit("}")
 }
 
@@ -11278,6 +11343,17 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
 	if isScalarCType(e.underlyingCType(ct)) {
+		// A CONSTANT converted to a 64-bit type is that constant, spelled at that
+		// width: `int64(-4294967295)` as a cast of a literal reached the target's C
+		// compiler as a 64-bit constant expression, which it mis-folds -- see
+		// constSpelling. The cast of a narrower type stays: the cast is part of the
+		// type of the expression around it, and those constants fold correctly.
+		if ut := e.underlyingCType(ct); cIntWidths[ut] == 64 {
+			if v, ok := e.wideConstValue(arg.ast); ok {
+				e.emit(e.constSpelling(v, ut))
+				return
+			}
+		}
 		// The target's C compiler miscompiles a cast to a 64-bit type applied to a
 		// 64-bit EXPRESSION, yielding a value that varies from run to run; the same
 		// cast of a variable is right. So the operand is bound to one first. Only
@@ -11884,6 +11960,56 @@ func intCLit(v int64) string {
 	}
 }
 
+// constSpelling renders a folded integer constant standing in an EXPRESSION, given
+// the C type of the level it stands at (resolved past a definition; "" when not
+// known). It differs from intCLit, which spells a constant for a declaration, in
+// two ways, both measured on a P2-EDGE against flexprop v7.7.0
+// (doc/int64-constant-fold.c):
+//
+//   - A level of 64-bit type is spelled as ONE literal carrying that width -- 6LL,
+//     20ULL -- because the target's C compiler mis-folds nearly every 64-bit
+//     constant expression inside a function body: `(int64_t)(5) + 1` is
+//     -12884901892, `5LL + 1` is 3689348818177884166, `4294967296LL - 1` is
+//     4294967295. The same expressions with a VARIABLE operand are right, and so is
+//     a lone literal, which is what this leaves it.
+//   - A negative value too wide for an int is spelled SIGNED, `(-4294967295LL)`,
+//     not as the bit pattern intCLit uses: an unsigned long long makes the whole
+//     expression unsigned, so `v > -4294967295` compared as unsigned and was false
+//     for a v of 5, on every C compiler. The bit pattern stays for a value inside
+//     an aggregate initializer, where the target's compiler refuses a unary minus
+//     outright and the element's type does the converting.
+//
+// The most negative values have no magnitude to negate and take C's own spelling.
+func (e *emitter) constSpelling(v int64, ctype string) string {
+	if e.litDepth > 0 {
+		return intCLit(v)
+	}
+	switch ctype {
+	case "uint64_t":
+		return strconv.FormatUint(uint64(v), 10) + "ULL"
+	case "int64_t":
+		return signed64Lit(v)
+	}
+	switch {
+	case v == math.MinInt32:
+		return "(-2147483647 - 1)"
+	case v < math.MinInt32:
+		return signed64Lit(v)
+	}
+	return intCLit(v)
+}
+
+// signed64Lit spells v as a signed long long literal.
+func signed64Lit(v int64) string {
+	switch {
+	case v == math.MinInt64:
+		return "(-9223372036854775807LL - 1)"
+	case v < 0:
+		return "(-" + strconv.FormatInt(-v, 10) + "LL)"
+	}
+	return strconv.FormatInt(v, 10) + "LL"
+}
+
 // constIntValue is foldConstInt for a caller that wants a constant's VALUE rather
 // than a rendering of it: it also sees through a conversion, `int32(4)`, whose
 // value is the operand's -- the checker has already range-checked it against the
@@ -11923,15 +12049,46 @@ func (e *emitter) convFold(kids []Node) (int64, bool) {
 	return e.foldConstInt(args[0].ast)
 }
 
-// wideConstLit renders an expression that folds to a constant too wide for a C int,
-// or reports false for anything else -- an expression that does not fold, or one
-// whose value C computes the same way Go does, which is left as written.
-func (e *emitter) wideConstLit(ast []int32) (string, bool) {
+// levelConstLit renders an expression level that folds to a constant the C compiler
+// must not be left to compute, or reports false for anything else: an expression
+// that does not fold, or one whose value C computes the same way Go does, which is
+// left as written.
+//
+// Two kinds are rendered. A value too wide for a C int, which C would compute in
+// int and get wrong (see intCLit). And any constant expression of 64-BIT type --
+// `int64(5) + 1`, `Ticks(3) * 4`, `uint64(1) << 40 + 1` -- which the target's C
+// compiler mis-folds inside a function body (see constSpelling): for those the fold
+// sees through the conversions, since the literal it renders carries the width the
+// conversion gave. A level of a narrower type keeps its conversions and its shape,
+// a cast being part of the type the expression around it has.
+func (e *emitter) levelConstLit(ast []int32) (string, bool) {
+	ut := ""
+	if ct, ok := e.inferCType(ast); ok {
+		ut = e.underlyingCType(ct)
+	}
+	if cIntWidths[ut] == 64 {
+		if v, ok := e.wideConstValue(ast); ok {
+			return e.constSpelling(v, ut), true
+		}
+	}
 	v, ok := e.foldConstInt(ast)
 	if !ok || fitsCInt(v) {
 		return "", false
 	}
-	return intCLit(v), true
+	return e.constSpelling(v, ut), true
+}
+
+// wideConstValue is constIntValue for a 64-bit level that is about to be rendered
+// as one literal: it sees through conversions, as that does, and reads 64-bit named
+// constants, which are inlined anyway -- but not a 32-bit named constant, whose
+// `static const` symbol the rendered literal would leave unreferenced. An
+// expression reading one is left as written, and the target's C compiler computes
+// it correctly, an object among its operands.
+func (e *emitter) wideConstValue(ast []int32) (int64, bool) {
+	prev := e.foldWideConstsOnly
+	e.foldWideConstsOnly = true
+	defer func() { e.foldWideConstsOnly = prev }()
+	return e.constIntValue(ast)
 }
 
 // foldIntSeq folds a flat "operand (op operand)*" list left-associatively.
@@ -11976,8 +12133,7 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 		// A constant of an imported package, `geo.MaxPoints`. It folds like a
 		// constant of this one; the token switch below sees only a bare name.
 		if v, ok := e.foldedQualifiedIntKids(kids); ok {
-			n, err := strconv.ParseInt(v, 0, 64)
-			return n, err == nil
+			return parseCIntLit(v)
 		}
 		// A prefix operator, either as a bare token or wrapped in a UnaryOp node --
 		// the shape the parser actually builds for "-1", and the reason "-1 << 40"
@@ -12037,9 +12193,11 @@ func (e *emitter) foldIntToken(tok int32) (int64, bool) {
 			}
 			return 0, false
 		default:
+			if e.foldWideConstsOnly && !e.wideConstName(s) && !e.wideConstName(e.globalC(s)) {
+				return 0, false // a 32-bit constant keeps its name; see levelConstLit
+			}
 			if v, ok := e.foldedInt(s); ok {
-				n, err := strconv.ParseInt(v, 0, 64)
-				return n, err == nil
+				return parseCIntLit(v)
 			}
 			return 0, false
 		}
@@ -21043,6 +21201,13 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 	if _, isStr := e.constStr[gn]; isStr {
 		return "", "", false
 	}
+	// A 64-bit integer constant is inlined too (see emitConstSpecName), keeping the
+	// type it was declared with.
+	if ut, isWide := e.constWide[gn]; isWide && len(fields) == 1 {
+		if v, ok := parseCIntLit(e.constInt[gn]); ok {
+			return e.constSpelling(v, ut), e.globals[gn], true
+		}
+	}
 	ct, ok := e.globals[gn]
 	if !ok {
 		// An exported function of that package named as a value, `mathy.Double`.
@@ -22446,7 +22611,7 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		// A constant expression whose value does not fit a C int is emitted as that
 		// value: C would compute it in int and get a different answer (see intCLit).
-		if lit, ok := e.wideConstLit(n.ast); ok {
+		if lit, ok := e.levelConstLit(n.ast); ok {
 			e.emit(lit)
 			return
 		}
@@ -22483,7 +22648,7 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[0])
 			return
 		}
-		if lit, ok := e.wideConstLit(n.ast); ok {
+		if lit, ok := e.levelConstLit(n.ast); ok {
 			e.emit(lit)
 			return
 		}
@@ -22594,8 +22759,18 @@ func (e *emitter) emitExprNode(n Node) {
 		// the target's compiler folds in no aggregate initializer at all. The fold
 		// is over the NODE, not its children: a prefix operator belongs to the node
 		// and foldIntSeq would read it as the first operand of a sequence.
-		if v, ok := e.foldIntNode(n); ok && !fitsCInt(v) {
-			e.emit(intCLit(v))
+		//
+		// The most negative int is folded too, though its VALUE fits: written out,
+		// its magnitude does not, and cIntLit spelled that "2147483648U" -- an
+		// unsigned, whose negation is itself. `var a int64 = -2147483648` was
+		// 2147483648 on the host, and `int64(-2147483648) + 1` was garbage on the
+		// board.
+		if v, ok := e.foldIntNode(n); ok && (!fitsCInt(v) || v == math.MinInt32) {
+			ut := ""
+			if ct, ok := e.inferCType(n.ast); ok {
+				ut = e.underlyingCType(ct)
+			}
+			e.emit(e.constSpelling(v, ut))
 			return
 		}
 		// A receive `<-ch` wraps its operand in the channel's recv helper, so it
@@ -23108,6 +23283,11 @@ func (e *emitter) emitOperandToken(tok int32) {
 			// variable (see emitConstDecl).
 			if v, ok := e.foldedStr(s); ok {
 				e.emitFoldedString(v)
+				return
+			}
+			// So is a 64-bit integer constant (see emitConstSpecName).
+			if lit, ok := e.wideConstRef(s); ok {
+				e.emit(lit)
 				return
 			}
 			e.emit(e.varRef(s)) // a package global is mangled; a local keeps its name

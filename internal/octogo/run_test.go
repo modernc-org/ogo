@@ -37,6 +37,96 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A 64-bit constant expression is folded by the compiler and emitted as ONE
+		// literal, because the target's C compiler mis-folds nearly every one it is
+		// given inside a function body: `int64(5) + 1` printed 4294967296000006 on
+		// the board, `int64(1000) * 1000` 4294967302, `uint64(5) + 1` 4294967302,
+		// `Ticks(3) * 4` 4294967308, `int64(-3) * int64(7)` 51539607531 -- while the
+		// same expressions with a variable operand, and a lone literal, are right.
+		// See doc/int64-constant-fold.c. A 64-bit named constant is inlined at each
+		// use for the same reason (K, W), and a 32-bit one keeps its symbol.
+		//
+		// The comparisons are the other half: a negative constant too wide for an
+		// int was spelled as its unsigned bit pattern, which made `v > -4294967295`
+		// an unsigned comparison -- false for a v of 5, on every C compiler.
+		name: "a 64-bit constant expression is folded, not left to the C compiler",
+		src: `const K int64 = 5
+const W = 1 << 40
+
+type Ticks int64
+
+func main() {
+	y := int64(4294967301)
+	v := int64(5)
+	var u uint64 = 3
+	println(int64(5)+1, int64(1000)*1000, int64(3)*4/2, int64(7)%3, 2*int64(3)-1)
+	println(uint64(5)+1, uint64(1)<<40+1, uint64(7)/2, uint64(9)%4)
+	println(K+1, K*K, int64(W)/2, int64(W)+1, Ticks(3)*4, Ticks(W)+Ticks(1))
+	println(int64(-2147483648)+1, int64(-5)*3, int64(-5)-1, int64(-4294967295)+1)
+	println(v > -4294967295, v < -4294967295, y > 4294967296, v == 5)
+	println(int64(5)+y, y-int64(5), int64(1000)*y, y/int64(4), u+uint64(4)*2, uint64(4)*u)
+	println(int64(1)<<40+1, int64(1)<<40>>3, int64(1)<<32|1)
+	a := int64(5) + 1
+	var b int64 = int64(1000) * 1000
+	c := uint64(3) * 4
+	printf("%d %d %d %d\n", a, b, c, int64(-3)*int64(7))
+}
+`,
+		want: "6 1000000 6 1 5\n6 1099511627777 3 1\n6 25 549755813888 1099511627777 12 1099511627777\n-2147483647 -15 -6 -4294967294\ntrue false true true\n4294967306 4294967296 4294967301000 1073741825 11 12\n1099511627777 137438953472 4294967297\n6 1000000 12 -21\n",
+	},
+	{
+		// The most negative int, and negative constants wider than an int, in every
+		// position: a declaration, a conversion, a slice literal, an array literal, a
+		// comparison, an argument, a builtin, arithmetic. `-2147483648` was written
+		// as a minus applied to "2147483648U" -- an unsigned, whose negation is
+		// itself -- so `var a int64 = -2147483648` was 2147483648 on the host, and
+		// `int64(-2147483648) + 1` was garbage on the board.
+		name: "the most negative int and negative wide constants in every position",
+		src: `type Ticks int64
+
+func take(v int64) int64 { return v }
+
+func main() {
+	var a int64 = -2147483648
+	b := int64(-2147483648)
+	c := -2147483648
+	var d int32 = -2147483648
+	e := []int64{-2147483648, -2147483649, -4294967295, -4294967296, 2147483648}
+	var t Ticks = -2147483648
+	println(a, b, c, d, e[0], e[1], e[2], e[3], e[4], t)
+	v := int64(-5)
+	println(v < -2147483648, v > -2147483648, a == -2147483648, take(-2147483648), a-1, a*2, -a)
+	println(int64(-2147483648)*2, a/(-2147483648), a%(-2147483647))
+	printf("%d %d %d %d\n", a, -2147483648, int64(-2147483648)+1, take(-2147483648)-take(-4294967295))
+	var m [2]int64 = [2]int64{-2147483648, -2147483648 * 2}
+	println(m[0], m[1], min(a, -2147483647), max(v, -2147483648))
+}
+`,
+		want: "-2147483648 -2147483648 -2147483648 -2147483648 -2147483648 -2147483649 -4294967295 -4294967296 2147483648 -2147483648\nfalse true true -2147483648 -2147483649 -4294967296 2147483648\n-4294967296 1 -1\n-2147483648 -2147483648 -2147483647 2147483647\n-2147483648 -4294967296 -2147483648 -5\n",
+	},
+	{
+		// The same constants as PACKAGE-level initializers, which take another path:
+		// zeroed at file scope and assigned at package init.
+		name: "negative wide constants as package-level initializers",
+		src: `type Ticks int64
+
+var g int64 = -4294967295
+var h = [2]int64{-4294967295, -2147483648}
+var k uint64 = 1 << 63
+var m int64 = int64(-5) * 3
+var n = int64(5) + 1
+var t Ticks = Ticks(3) * 4
+var s = [3]int64{int64(1) << 40, -1 << 40, 4294967295}
+var p int32 = -2147483648
+
+func main() {
+	println(g, h[0], h[1], k, m, n, t, s[0], s[1], s[2], p)
+	println(g < 0, h[1] == -2147483648, m*2, n+g)
+}
+`,
+		want: "-4294967295 -4294967295 -2147483648 9223372036854775808 -15 6 12 1099511627776 -1099511627776 4294967295 -2147483648\ntrue true -30 -4294967289\n",
+	},
+	{
 		// A float converting to a 64-bit integer, or to a 32-bit unsigned one. The
 		// target's C compiler converts the first by REINTERPRETING THE FLOAT'S BITS
 		// -- `int64(three)` for a 3.0 printed 1077936128, which is 0x40400000 --
