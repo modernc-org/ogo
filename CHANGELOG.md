@@ -43,6 +43,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   target's double actually has, read at run time, so the same code is right on a host
   with 64-bit doubles. A constant converting to a float32 is folded outright.
 
+- **A package-level slice literal refused a constant element that was not a bare
+  literal.** `var s = []int64{-5}`, `{1 << 40}`, `{int64(7)}`, `{K}` and `{-1.5}` were
+  all "a package slice literal's elements must be constant" while `{4294967295}` was
+  accepted: the element test knew a bare literal and nothing else. It asks the
+  constant fold now, and a folded string counts too. A named constant standing in a
+  static initializer is written as its value, since to the C backend the constant's
+  own symbol is an object rather than a constant expression -- "Bad constant
+  expression" for a bare `K` in the backing array, "Illegal operation on relocatable
+  value" for `K << 2` -- and a signed float literal is written as one literal there,
+  a unary minus being refused in any aggregate initializer.
+
 - **`-9223372036854775808` written out did not build inside an array literal.** The
   magnitude of the most negative int64 fits no int64, so the constant did not fold
   and was written as a minus in front of a `ULL` literal, which the C backend refuses

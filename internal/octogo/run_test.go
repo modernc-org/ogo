@@ -37,6 +37,63 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A package constant named by NOTHING but the package initializer: a
+		// package variable's non-constant initializer, `K * y`, is assigned there.
+		// A package constant is declared only where a body names it (see
+		// pkgConstDecl), and the initializer's text is rendered after the bodies,
+		// so it had to be brought forward to be scanned -- without that, `K` was
+		// undeclared to the C compiler in the one function that used it.
+		name: "a package constant named only in the package initializer",
+		src: `const K = 3
+const L = 7
+
+var y = 4
+var x = K * y
+var z = [2]int{L * y, K}
+
+func main() {
+	println(x, z[0], z[1])
+}
+`,
+		want: "12 28 3\n",
+	},
+	{
+		// Package-level slice and array literals whose elements are constants of
+		// every spelling: a negative literal, a shift, a conversion, a named
+		// constant and arithmetic over one, the most negative int64, a folded string
+		// concatenation, a signed float. Only a bare literal used to pass the
+		// static-initializer test, so `[]int64{-5}` was refused at package level.
+		// The backing arrays are file-scope initializers, where the C backend takes
+		// no unary minus, no `static const` symbol and no non-constant expression --
+		// which is what the spellings emitted for them are measured against here.
+		name: "package-level slice literals with constant elements of every spelling",
+		src: `const K = 40
+const W = 1 << 40
+
+type P struct {
+	x, y int64
+	s    string
+}
+
+var a = []int64{-5, 1 << 40, int64(7) * 3, K, W, -9223372036854775808, 4294967296 - 1}
+var b = []int32{-1, 2, -2147483648, 'x', K << 2}
+var c = []uint8{255, 1 << 7, 'a'}
+var d = []P{{-1, W, "neg"}, {K, -K, "k"}}
+var e = [2]int64{-5, 1 << 40}
+var f = []string{"a", "b" + "c"}
+var g = []bool{true, false, true}
+var h = []float64{-1.5, 2}
+
+func main() {
+	println(a[0], a[1], a[2], a[3], a[4], a[5], a[6], len(a))
+	println(b[0], b[1], b[2], b[3], b[4])
+	println(c[0], c[1], c[2], d[0].x, d[0].y, d[0].s, d[1].x, d[1].y, d[1].s)
+	println(e[0], e[1], f[0], f[1], g[0], g[1], g[2], int(h[0]*2), int(h[1]))
+}
+`,
+		want: "-5 1099511627776 21 40 1099511627776 -9223372036854775808 4294967295 7\n-1 2 -2147483648 120 160\n255 128 97 -1 1099511627776 neg 40 -40 k\n-5 1099511627776 a bc true false true -3 2\n",
+	},
+	{
 		// An integer converting to a float rounds a tie to EVEN, as IEEE 754 and Go
 		// do, from every source width. The target's C compiler rounds a tie away
 		// from zero -- float32(16777217) was 16777218 on the board -- so the

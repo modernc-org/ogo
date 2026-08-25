@@ -2015,12 +2015,32 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 	if _, lit, ok := e.soleArrayLit(initExpr); ok {
 		return e.staticLitElementsOK(lit)
 	}
+	// Anything that folds to an integer constant is one -- a negative literal, a
+	// shift, a conversion, a named constant, arithmetic over those -- and is
+	// emitted as the folded literal (see levelConstLit, constSpelling). Until this
+	// asked the fold, only a bare literal passed, so `[]int64{-5}` and `{1 << 40}`
+	// at package level were refused as non-constant while `{4294967295}` was not.
+	if _, ok := e.constIntValue(initExpr); ok {
+		return true
+	}
+	// A string constant that folds -- a concatenation of literals -- is emitted
+	// as the one literal it folds to.
+	if _, ok := e.foldConstString(initExpr); ok {
+		return true
+	}
+	// A float literal, signed or not: in a static or aggregate initializer the
+	// sign is folded into the literal's own spelling (see the UnaryExpr case of
+	// emitExprNode), so no unary minus reaches the initializer, which the target's
+	// C compiler refuses one in.
+	if _, ok := e.signedFloatLit(initExpr); ok {
+		return true
+	}
 	tok, ok := e.soleToken(initExpr)
 	if !ok {
 		return false
 	}
 	switch e.f.ch(tok) {
-	case INT, STRING:
+	case INT, STRING, FLOAT:
 		return true
 	case IDENT:
 		if _, isConst := e.foldedInt(e.src(tok)); isConst {
@@ -2030,6 +2050,47 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 		return s == "true" || s == "false"
 	}
 	return false
+}
+
+// signedFloatLit recognises a float literal with an optional sign, `-1.5`, and
+// returns the C literal spelling it folds to. It is what lets a signed float stand
+// in a static initializer: written out as a unary minus applied to a literal, the
+// target's C compiler refuses it there, as it refuses every unary minus in an
+// aggregate initializer.
+func (e *emitter) signedFloatLit(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && nodes[0].sym != 0 {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	sign := ""
+	if len(nodes) == 2 {
+		// The prefix operator is a bare token or a UnaryOp node, which is the
+		// shape the parser builds for "-1.5".
+		op, hasOp := int32(0), false
+		if nodes[0].sym == 0 {
+			op, hasOp = nodes[0].tok, true
+		} else if nodes[0].sym == UnaryOp {
+			op, hasOp = e.unaryOpTok(nodes[0].ast)
+		}
+		if !hasOp {
+			return "", false
+		}
+		switch e.f.ch(op) {
+		case SUB:
+			sign = "-"
+		case ADD:
+		default:
+			return "", false
+		}
+		nodes = slices.Collect(it(nodes[1].ast))
+		for len(nodes) == 1 && nodes[0].sym != 0 {
+			nodes = slices.Collect(it(nodes[0].ast))
+		}
+	}
+	if len(nodes) != 1 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != FLOAT {
+		return "", false
+	}
+	return sign + cFloatLit(e.src(nodes[0].tok)), true
 }
 
 // staticLitElementsOK reports whether every element of a composite literal is
@@ -3858,6 +3919,25 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.Write(protos.Bytes())
 		out.WriteByte('\n')
 	}
+	// The package-level integer constants a body names, ahead of the globals (a
+	// variable's initializer at file scope reads none of them by name, being
+	// spelled from the fold, but a function body may -- the package initializer
+	// among them, which is rendered here for that reason and written further
+	// down). See pkgConstDecl.
+	pd := e.pkgInitDefs()
+	if len(e.pkgConstDecls) != 0 {
+		named := bytes.Join([][]byte{helperDefs.Bytes(), globals.Bytes(), e.vtables.Bytes(), body.Bytes(), []byte(pd)}, []byte{'\n'})
+		wrote := false
+		for _, d := range e.pkgConstDecls {
+			if referencedIn(d.cname, named) {
+				out.WriteString(d.text)
+				wrote = true
+			}
+		}
+		if wrote {
+			out.WriteByte('\n')
+		}
+	}
 	if globals.Len() != 0 {
 		out.Write(globals.Bytes())
 		out.WriteByte('\n')
@@ -3900,7 +3980,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	}
 	// The package initializer likewise calls user functions, so it follows the
 	// prototypes too.
-	if pd := e.pkgInitDefs(); pd != "" {
+	if pd != "" {
 		out.WriteString(pd)
 		out.WriteByte('\n')
 	}
@@ -4044,6 +4124,7 @@ type emitter struct {
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
 	litDepth           int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
 	constWide          map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
+	pkgConstDecls      []pkgConstDecl          // package-level integer constants, declared only where a body names them (see emitConstSpecName)
 	foldWideConstsOnly bool                    // the fold reads no 32-bit named constant: a level folded to a literal must keep referencing those (see levelConstLit)
 	usesF2u32          bool                    // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
 	usesF2i64          bool                    // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
@@ -6260,6 +6341,16 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		if pkg {
 			storage = "static const "
 		}
+		if v, folded := e.constInt[cname]; folded && pkg {
+			// A package-level integer constant is declared only if a body names
+			// it: held back here, decided when the output is assembled (see
+			// pkgConstDecl). Its value is the folded literal, so a constant that
+			// references another ("const M = N + 1") does not become the C
+			// initializer "N + 1" -- not a constant expression at file scope.
+			e.pkgConstDecls = append(e.pkgConstDecls, pkgConstDecl{cname, storage + ctype + " " + cname + " = " + v + ";\n"})
+			e.iota = -1
+			return
+		}
 		e.emit(storage + ctype + " " + cname + " = ")
 		switch v, folded := e.constInt[cname]; {
 		case folded:
@@ -6279,6 +6370,37 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		e.emit(";\n")
 		e.iota = -1
 	}
+}
+
+// pkgConstDecl is a package-level integer constant's C declaration, held back until
+// the bodies are emitted and written only if something names it: a constant read
+// inside a static initializer, or one of 64 bits, is spelled as its value instead
+// (see emitOperandToken), and a `static const` nothing references draws an
+// unused-variable warning from the host compiler, which the run harness fails on.
+type pkgConstDecl struct {
+	cname string
+	text  string
+}
+
+// referencedIn reports whether cname occurs as a whole identifier in text.
+func referencedIn(cname string, text []byte) bool {
+	for i := 0; ; {
+		j := bytes.Index(text[i:], []byte(cname))
+		if j < 0 {
+			return false
+		}
+		start, end := i+j, i+j+len(cname)
+		before := start == 0 || !isCIdentByte(text[start-1])
+		after := end == len(text) || !isCIdentByte(text[end])
+		if before && after {
+			return true
+		}
+		i = start + 1
+	}
+}
+
+func isCIdentByte(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
 // parseCIntLit reads the value back out of a C integer literal intCLit rendered:
@@ -23024,6 +23146,16 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(e.constSpelling(v, ut))
 			return
 		}
+		// A signed float literal in a static or aggregate initializer is spelled
+		// as one literal, "-1.5", rather than as a minus applied to one: the
+		// target's C compiler refuses a unary minus in any aggregate initializer,
+		// and so `[]float64{-1.5}` at package level had to be refused before this.
+		if e.litDepth > 0 || e.declInit {
+			if lit, ok := e.signedFloatLit(n.ast); ok {
+				e.emit(lit)
+				return
+			}
+		}
 		// A receive `<-ch` wraps its operand in the channel's recv helper, so it
 		// cannot be emitted as the operator token followed by the operand.
 		if elem, base, ok := e.recvOperand(n, kids); ok {
@@ -23540,6 +23672,18 @@ func (e *emitter) emitOperandToken(tok int32) {
 			if lit, ok := e.wideConstRef(s); ok {
 				e.emit(lit)
 				return
+			}
+			// And so is any integer constant inside a static or aggregate
+			// initializer: there it names a `static const` object, which the
+			// target's C compiler does not take for a constant expression -- "Bad
+			// constant expression" for a bare K in a package slice's backing array,
+			// "Illegal operation on relocatable value" for K << 2. The bounds of an
+			// array are spelled from the fold for the same reason.
+			if e.litDepth > 0 || e.declInit {
+				if v, ok := e.foldedInt(s); ok {
+					e.emit(v)
+					return
+				}
 			}
 			e.emit(e.varRef(s)) // a package global is mangled; a local keeps its name
 		}
