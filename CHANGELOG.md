@@ -20,6 +20,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A float converted to a 64-bit integer gave the float's bits, and to a 32-bit
+  unsigned one was clamped at 2147483647.** `int64(v)` for a `v` of 3.0 was
+  1077936128 -- 0x40400000, the IEEE encoding of 3.0 -- and `uint32(v)` for a `v` of
+  3000000000.0 was 2147483647, on the board, silently. Every narrower conversion was
+  right, which is why it survived: `int(v)` is what most programs write.
+
+  The fault is the C backend's, at every optimisation level, and it is joined by
+  two more of its faults that the fix had to route around: a cast to a 64-bit type
+  as the operand of a `return` leaves the high word uninitialised whenever the value
+  is narrower, and `return v < 0 ? -r : r` over an int64 returns garbage. All three
+  are eleven lines of C each in `doc/float-to-int64.c`, and gcc compiles every one
+  of them correctly. The conversions now go through helpers built on the 32-bit
+  signed conversion, which that compiler gets right, a value past 2^31 being taken
+  apart at 2^32 and converted in halves.
+
+  Found by the same lock-in probe: the check that a converted result matched Go's
+  did, on the host, and did not on the board.
+
 - **A division by a constant that is not a bare literal was guarded at run time, and
   the guard could be the wrong width.** `x / (1 << 32)` on an int64 -- the way a
   CORDIC angle in turn/2^32 units is scaled to degrees -- panicked

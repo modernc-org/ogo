@@ -37,6 +37,47 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A float converting to a 64-bit integer, or to a 32-bit unsigned one. The
+		// target's C compiler converts the first by REINTERPRETING THE FLOAT'S BITS
+		// -- `int64(three)` for a 3.0 printed 1077936128, which is 0x40400000 --
+		// and clamps the second at 2147483647, at every optimisation level, so
+		// these go through helpers built on the 32-bit signed conversion, which it
+		// gets right (ogoF2u32 and the two beside it). Every value is exact in a
+		// 32-bit float, which float64 is on the target, so the host and the board
+		// convert the same numbers; the edges are 2^31, 2^32 - 256, the largest
+		// float below 2^63 and one above it. The host C compiler is right about all
+		// of it, so only the board saw this. See doc/float-to-int64.c.
+		name: "a float converts to a 64-bit or an unsigned integer by value",
+		src: `type Ticks int64
+type Raw uint32
+
+func main() {
+	// Every value here is exact in a 32-bit float, which float64 is on the target,
+	// so the host and the board convert the same numbers.
+	three := 3.0
+	frac := -12345.75
+	var f32 float32 = 36000000
+	big := 3000000000.0
+	wide := 3298534883328.0        // 3 * 2^40
+	neg := -343597383680.0         // -5 * 2^36
+	top := 9223371487098961920.0   // (2^24 - 1) * 2^39, the largest below 2^63
+	over := 9223373136366403584.0  // (2^23 + 1) * 2^40, above 2^63
+	edge := 2147483648.0
+	limit := 4294967040.0 // 2^32 - 256
+	half := 2.5
+	println(int64(three), int64(frac), int64(f32), int64(big), int64(wide), int64(neg), int64(top))
+	println(uint64(three), uint64(f32), uint64(big), uint64(wide), uint64(top), uint64(over))
+	println(uint32(three), uint32(f32), uint32(big), uint32(edge), uint32(limit), uint(big), uintptr(edge))
+	println(int64(half), int64(-half), uint64(half), uint32(half), int32(big-1e9), int(frac), int16(frac), int8(frac))
+	var t Ticks = Ticks(three * 4.0)
+	var r Raw = Raw(big)
+	println(t, r, int64(f32)*2, uint64(f32)+1, int64(three) == 3, uint32(edge) > 2147483647)
+	printf("%d %d %d\n", int64(three*1000000.0), int64(36.0*1000000.0), uint32(3.0*1000000000.0))
+}
+`,
+		want: "3 -12345 36000000 3000000000 3298534883328 -343597383680 9223371487098961920\n3 36000000 3000000000 3298534883328 9223371487098961920 9223373136366403584\n3 36000000 3000000000 2147483648 4294967040 3000000000 2147483648\n2 -2 2 2 2000000000 -12345 -12345 -57\n12 3000000000 72000000 36000001 true true\n3000000 36000000 3000000000\n",
+	},
+	{
 		// A divisor that folds to a constant needs no guard, however it is spelled,
 		// and a divisor that does not is guarded at the LEVEL's width, resolved past
 		// a type definition. Both used to go wrong in the checked build only, which

@@ -2864,6 +2864,66 @@ const ogoNonzero64 = "static long long ogo_nonzero64(long long b) {\n" +
 	"\treturn b;\n" +
 	"}\n"
 
+// ogoF2u32, ogoF2i64 and ogoF2u64 convert a float to the integer types the target's
+// C compiler converts wrongly. Measured on a P2-EDGE against flexprop v7.7.0 at every
+// optimisation level (doc/float-to-int64.c): a cast of a double to a 64-bit integer
+// yields the float's BITS -- (long long)3.0 is 1077936128, which is 0x40400000 --
+// and a cast to a 32-bit unsigned is clamped at 2147483647. The 32-bit SIGNED
+// conversion is correct, and everything here is built on it: a value within its
+// range converts directly, and a wider one is taken apart at 2^32 -- the high word
+// by a division by 2^32, the low word by subtracting the high word back out, both
+// exact in binary floating point -- so that each half goes through it. Truncation
+// is toward zero, as Go's is. A value the target type cannot hold converts to
+// something, as Go's spec also leaves it.
+//
+// Nothing here widens inside a cast, or negates, in the expression a return
+// statement returns. That compiler leaves the high word of `return (int64_t)t;`
+// uninitialised for any t narrower than 64 bits, and returns garbage for
+// `return v < 0 ? -r : r;` over an int64 r -- both measured on the same board,
+// where the assignment `int64_t r = t; return r;` widens correctly, `if (v < 0) {
+// r = -r; }` negates correctly, and the identical cast as a call's argument is
+// fine. These helpers exist to be right on it, so each is a statement of its own.
+const ogoF2u32 = "static uint32_t ogo_f2u32(double v) {\n" +
+	"\tif (v < 2147483648.0) {\n" +
+	"\t\tint32_t t = (int32_t)v;\n" +
+	"\t\tuint32_t r = t;\n" +
+	"\t\treturn r;\n" +
+	"\t}\n" +
+	"\tint32_t t = (int32_t)(v - 2147483648.0);\n" +
+	"\tuint32_t r = t;\n" +
+	"\treturn r + 2147483648u;\n" +
+	"}\n"
+
+const ogoF2i64 = "static int64_t ogo_f2i64(double v) {\n" +
+	"\tif (v > -2147483648.0 && v < 2147483648.0) {\n" +
+	"\t\tint32_t t = (int32_t)v;\n" +
+	"\t\tint64_t r = t;\n" +
+	"\t\treturn r;\n" +
+	"\t}\n" +
+	"\tdouble a = v < 0 ? -v : v;\n" +
+	"\tuint32_t hi = ogo_f2u32(a / 4294967296.0);\n" +
+	"\tuint32_t lo = ogo_f2u32(a - (double)hi * 4294967296.0);\n" +
+	"\tuint64_t u = hi;\n" +
+	"\tu = (u << 32) | lo;\n" +
+	"\tint64_t r = u;\n" +
+	"\tif (v < 0) {\n" +
+	"\t\tr = -r;\n" +
+	"\t}\n" +
+	"\treturn r;\n" +
+	"}\n"
+
+const ogoF2u64 = "static uint64_t ogo_f2u64(double v) {\n" +
+	"\tif (v < 0) {\n" +
+	"\t\tint64_t t = ogo_f2i64(v);\n" +
+	"\t\tuint64_t r = t;\n" +
+	"\t\treturn r;\n" +
+	"\t}\n" +
+	"\tuint32_t hi = ogo_f2u32(v / 4294967296.0);\n" +
+	"\tuint32_t lo = ogo_f2u32(v - (double)hi * 4294967296.0);\n" +
+	"\tuint64_t r = hi;\n" +
+	"\treturn (r << 32) | lo;\n" +
+	"}\n"
+
 // cIntWidths is the bit width of each integer C type this target emits, which is
 // what a shift count is measured against.
 var cIntWidths = map[string]int{
@@ -3507,6 +3567,15 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if e.usesNonzero {
 		helperDefs.WriteString(ogoNonzero)
 	}
+	if e.usesF2u32 {
+		helperDefs.WriteString(ogoF2u32)
+	}
+	if e.usesF2i64 {
+		helperDefs.WriteString(ogoF2i64)
+	}
+	if e.usesF2u64 {
+		helperDefs.WriteString(ogoF2u64)
+	}
 	shiftNames := make([]string, 0, len(e.shiftHelpers))
 	for name := range e.shiftHelpers {
 		shiftNames = append(shiftNames, name)
@@ -3895,6 +3964,9 @@ type emitter struct {
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
+	usesF2u32          bool                    // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
+	usesF2i64          bool                    // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
+	usesF2u64          bool                    // ogo_f2u64 is called: a float converts to a uint64 (needs both)
 	shiftHelpers       map[string][2]string    // guarded shift helper name -> {operator, value C type}
 	divHelpers         map[string][2]string    // guarded signed division helper name -> {operator, value C type}
 	clock              *clockSetting           // a clock the program asks for, instead of the backend's 160 MHz default
@@ -11176,6 +11248,24 @@ func (e *emitter) arrayConvOperand(ast []int32) ([]int32, bool) {
 	return args[0].ast, true
 }
 
+// floatConvHelper names the helper a float converts to the integer C type ct
+// through, marking it for emission, or reports false for a type the target's C
+// compiler converts correctly by a cast.
+func (e *emitter) floatConvHelper(ct string) (string, bool) {
+	switch ct {
+	case "int64_t":
+		e.usesF2u32, e.usesF2i64 = true, true
+		return "ogo_f2i64", true
+	case "uint64_t":
+		e.usesF2u32, e.usesF2i64, e.usesF2u64 = true, true, true
+		return "ogo_f2u64", true
+	case "uint32_t", "unsigned", "uintptr_t":
+		e.usesF2u32 = true
+		return "ogo_f2u32", true
+	}
+	return "", false
+}
+
 // emitConversion emits a conversion `T(x)`.
 //
 // A scalar target is a C cast, which is what makes a narrowing one truncate as Go
@@ -11213,13 +11303,24 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 		// literal argument, or one standing on its own. `int(total(xs[:]))` is the
 		// ordinary spelling that hits it.
 		text := e.captureC(func() { e.emitExpr(arg.ast) })
-		if strings.Contains(text, "){") {
-			if src, ok := e.exprReprCType(arg.ast); ok && src != "" {
-				e.emit("(" + ct + ")" + e.hoist(src, func() { e.emit(text) }))
+		src, srcOK := e.exprReprCType(arg.ast)
+		if strings.Contains(text, "){") && srcOK && src != "" {
+			text = e.hoist(src, func() { e.emit(text) })
+		} else {
+			text = "(" + text + ")"
+		}
+		// A FLOAT converting to a 64-bit integer, or to a 32-bit unsigned one,
+		// goes through a helper instead of a cast: the target's C compiler
+		// converts the first by reinterpreting the float's bits and clamps the
+		// second at 2147483647. See ogoF2u32. A float32 operand promotes to the
+		// helper's double exactly.
+		if srcOK && (src == "double" || src == "float") {
+			if fn, ok := e.floatConvHelper(e.underlyingCType(ct)); ok {
+				e.emit(fn + text)
 				return
 			}
 		}
-		e.emit("(" + ct + ")(" + text + ")")
+		e.emit("(" + ct + ")" + text)
 		return
 	}
 	if _, isArray := e.namedArrays[ct]; isArray {
