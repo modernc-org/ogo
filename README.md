@@ -387,7 +387,12 @@ compatibility but carries no extra precision. The toolchain's `%f` formats to ab
 that many digits as well: at its default six decimals a value that is exact in a
 32-bit float can still print with its last decimal off by one -- `21.0` prints as
 `20.999999` on the board, measured -- while `%.2f` prints `21.00`. The value is
-right; the eighth digit of its rendering is not.
+right; the eighth digit of its rendering is not. The toolchain's integer-to-float
+conversion also rounds an exact tie away from zero where IEEE 754 and Go round to
+even: `float32(16777217)` is 16777218 on the board and 16777216 in Go, and half of
+the integers between 2²⁴ and 2²⁵ are such ties. Arithmetic on floats rounds
+correctly; only the conversion of an integer with more than 24 significant bits
+differs, by one unit in the last place.
 
 **Not planned**, because the target does not permit them: a garbage collector, a
 heap, maps, closures that capture their environment (a function *value* is fine —
