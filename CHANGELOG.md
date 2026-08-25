@@ -33,6 +33,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An integer converted to a float rounded a tie away from zero.** `float32(16777217)`
+  was 16777218 on the board where IEEE 754 and Go round to even, 16777216; half of
+  the integers between 2²⁴ and 2²⁵ are such ties, so a counter past sixteen million
+  converted to a float was one unit off half the time. The C backend's conversion is
+  at fault; its float arithmetic rounds correctly. The compiler now converts an
+  integer of 32 bits or more itself, rounding in integer arithmetic to the width of
+  the float being made -- 24 bits for a float32, and for a float64 the width the
+  target's double actually has, read at run time, so the same code is right on a host
+  with 64-bit doubles. A constant converting to a float32 is folded outright.
+
+- **`-9223372036854775808` written out did not build inside an array literal.** The
+  magnitude of the most negative int64 fits no int64, so the constant did not fold
+  and was written as a minus in front of a `ULL` literal, which the C backend refuses
+  in any aggregate initializer. The pair folds now, and takes the bit-pattern spelling
+  there like every other negative constant too wide for an int.
+
 - **A store through a nil pointer, and any use of a nil pointer to an array, said
   nothing.** The nil check that a read through a pointer and a field access have
   carried since v0.27 missed the assignment `*p = v` -- on the board a silent write

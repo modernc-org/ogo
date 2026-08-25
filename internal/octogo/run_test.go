@@ -37,6 +37,61 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// An integer converting to a float rounds a tie to EVEN, as IEEE 754 and Go
+		// do, from every source width. The target's C compiler rounds a tie away
+		// from zero -- float32(16777217) was 16777218 on the board -- so the
+		// compiler does the conversion itself (ogoU2f). Every value is read back
+		// through the exact float-to-integer conversion, and none converts back out
+		// of range, which Go leaves to the implementation. The expected line is
+		// amd64 Go's: the 386 backend mis-rounds int64(float32(123456789012345)).
+		name: "an integer converts to a float rounding ties to even",
+		src: `// Integer-to-float conversion at the ties, from every source width, read back
+// through the exact float-to-integer conversion so that no float is printed.
+// Every expected value is what round-to-nearest-even gives, which is what Go
+// gives; the toolchain's own conversion rounds a tie away from zero. No value
+// converts back out of range: Go leaves that result to the implementation.
+func main() {
+	i32s := []int32{16777215, 16777216, 16777217, 16777218, 16777219, 16777220, -16777217, -16777219, 33554433, 33554434, 33554435, 33554438, 2147483647, -2147483648}
+	for _, v := range i32s {
+		printf("%d ", int64(float32(v)))
+	}
+	printf("\n")
+	u32s := []uint32{16777217, 33554434, 4294967295, 4294967040, 4294967167}
+	for _, v := range u32s {
+		printf("%d ", int64(float32(v)))
+	}
+	printf("\n")
+	i64s := []int64{16777217, -16777217, 1099511627777, -1099511627777, 3298534883328, 4503599627370497, 9223372036854775807, -9223372036854775808, 123456789012345, -98765432109876543, 8589934591, 8589934593}
+	for _, v := range i64s {
+		printf("%d ", int64(float32(v)))
+	}
+	printf("\n")
+	u64s := []uint64{16777217, 9223372036854775808, 9223372587209064448, 9223372587209064449, 18446742974197923840, 18446742699320016896, 18446743249075830784, 4294967297}
+	for _, v := range u64s {
+		printf("%d ", uint64(float32(v)))
+	}
+	printf("\n")
+	ints := []int{16777217, 33554434, -16777217, 2147483520}
+	for _, v := range ints {
+		printf("%d ", int(float32(v)))
+	}
+	printf("\n")
+	// float64 targets, with values exact in 32 bits as well so that the host and
+	// the target agree
+	printf("%d %d %d %d\n", int64(float64(int32(16777216))), int64(float64(int64(-4194304))), int64(float64(uint32(4194304))), int64(float64(int(65536))))
+	// a narrow integer converts exactly and keeps its cast
+	var b uint8 = 255
+	var h int16 = -32768
+	printf("%d %d %d\n", int(float32(b)), int(float32(h)), int(float64(h)))
+	// arithmetic on the converted values
+	a := float32(16777217)
+	c := float32(int32(3))
+	printf("%d %d %t\n", int64(a*c), int64(a+c), float32(16777217) == float32(16777216))
+}
+`,
+		want: "16777215 16777216 16777216 16777218 16777220 16777220 -16777216 -16777220 33554432 33554432 33554436 33554440 2147483648 -2147483648 \n16777216 33554432 4294967296 4294967040 4294967040 \n16777216 -16777216 1099511627776 -1099511627776 3298534883328 4503599627370496 -9223372036854775808 -9223372036854775808 123456788103168 -98765435851243520 8589934592 8589934592 \n16777216 9223372036854775808 9223373136366403584 9223373136366403584 18446742974197923840 18446742974197923840 18446742974197923840 4294967296 \n16777216 33554432 -16777216 2147483520 \n16777216 -4194304 4194304 65536\n255 -32768 -32768\n50331648 16777220 true\n",
+	},
+	{
 		// Every dereference of a pointer to an array, and a store through any
 		// pointer, on LIVE pointers: the check must cost nothing but the check.
 		// The struct-valued element stores are the ones the C backend drops when

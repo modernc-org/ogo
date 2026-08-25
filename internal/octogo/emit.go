@@ -2924,6 +2924,77 @@ const ogoF2u64 = "static uint64_t ogo_f2u64(double v) {\n" +
 	"\treturn (r << 32) | lo;\n" +
 	"}\n"
 
+// ogoFprec, ogoU2f and ogoI2f convert an integer to a float, rounding to nearest
+// even as IEEE 754 and Go do. The target's C compiler rounds a tie AWAY from zero
+// instead: float32(16777217) is 16777218 on a P2-EDGE where Go gives 16777216, and
+// half of the integers between 2^24 and 2^25 are such ties. Only the conversions are
+// off; float addition, multiplication and division round ties correctly there, and
+// so do the conversions this leans on -- a value below 2^prec, and a power of two,
+// both of which convert exactly.
+//
+// The rounding is done in integer arithmetic on the magnitude: the top prec bits
+// are kept, the rest decide the rounding, and the result is the exact conversion of
+// those bits scaled by an exact power of two. prec is the significand width of the
+// float being made -- 24 for a float32 -- and for a float64 it is read off the
+// double itself at run time (ogo_fprec: 53 on a host, 24 on the target, where
+// double is a 32-bit float), so the same C is right on both.
+//
+// The negative branch spells its steps as statements, for the reason ogoF2i64
+// gives.
+const ogoFprec = "static int ogo_fprec(void) {\n" +
+	"\tstatic int prec = 0;\n" +
+	"\tif (prec == 0) {\n" +
+	"\t\tdouble e = 1;\n" +
+	"\t\tint p = 0;\n" +
+	"\t\twhile (1.0 + e != 1.0) {\n" +
+	"\t\t\te = e / 2;\n" +
+	"\t\t\tp = p + 1;\n" +
+	"\t\t}\n" +
+	"\t\tprec = p;\n" +
+	"\t}\n" +
+	"\treturn prec;\n" +
+	"}\n"
+
+const ogoU2f = "static double ogo_u2f(uint64_t a, int prec) {\n" +
+	"\tif (a >> prec == 0) {\n" +
+	"\t\treturn (double)a;\n" +
+	"\t}\n" +
+	"\tint bits = 64;\n" +
+	"\twhile (a >> (bits - 1) == 0) {\n" +
+	"\t\tbits = bits - 1;\n" +
+	"\t}\n" +
+	"\tint shift = bits - prec;\n" +
+	"\tuint64_t m = a >> shift;\n" +
+	"\tuint64_t rem = a & (((uint64_t)1 << shift) - 1);\n" +
+	"\tuint64_t half = (uint64_t)1 << (shift - 1);\n" +
+	"\tif (rem > half || (rem == half && (m & 1) != 0)) {\n" +
+	"\t\tm = m + 1;\n" +
+	"\t\tif (m >> prec != 0) {\n" +
+	"\t\t\tm = m >> 1;\n" +
+	"\t\t\tshift = shift + 1;\n" +
+	"\t\t}\n" +
+	"\t}\n" +
+	"\tdouble r = (double)m;\n" +
+	"\twhile (shift >= 30) {\n" +
+	"\t\tr = r * 1073741824.0;\n" +
+	"\t\tshift = shift - 30;\n" +
+	"\t}\n" +
+	"\tr = r * (double)((uint32_t)1 << shift);\n" +
+	"\treturn r;\n" +
+	"}\n"
+
+const ogoI2f = "static double ogo_i2f(int64_t v, int prec) {\n" +
+	"\tuint64_t a = (uint64_t)v;\n" +
+	"\tif (v < 0) {\n" +
+	"\t\ta = (uint64_t)0 - a;\n" +
+	"\t}\n" +
+	"\tdouble r = ogo_u2f(a, prec);\n" +
+	"\tif (v < 0) {\n" +
+	"\t\tr = -r;\n" +
+	"\t}\n" +
+	"\treturn r;\n" +
+	"}\n"
+
 // cIntWidths is the bit width of each integer C type this target emits, which is
 // what a shift count is measured against.
 var cIntWidths = map[string]int{
@@ -3576,6 +3647,13 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if e.usesF2u64 {
 		helperDefs.WriteString(ogoF2u64)
 	}
+	if e.usesU2f {
+		helperDefs.WriteString(ogoFprec)
+		helperDefs.WriteString(ogoU2f)
+	}
+	if e.usesI2f {
+		helperDefs.WriteString(ogoI2f)
+	}
 	shiftNames := make([]string, 0, len(e.shiftHelpers))
 	for name := range e.shiftHelpers {
 		shiftNames = append(shiftNames, name)
@@ -3970,6 +4048,8 @@ type emitter struct {
 	usesF2u32          bool                    // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
 	usesF2i64          bool                    // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
 	usesF2u64          bool                    // ogo_f2u64 is called: a float converts to a uint64 (needs both)
+	usesU2f            bool                    // ogo_u2f is called: an integer converts to a float (needs ogo_fprec)
+	usesI2f            bool                    // ogo_i2f is called: a signed integer converts to a float (needs ogo_u2f)
 	shiftHelpers       map[string][2]string    // guarded shift helper name -> {operator, value C type}
 	divHelpers         map[string][2]string    // guarded signed division helper name -> {operator, value C type}
 	clock              *clockSetting           // a clock the program asks for, instead of the backend's 160 MHz default
@@ -11313,6 +11393,61 @@ func (e *emitter) arrayConvOperand(ast []int32) ([]int32, bool) {
 	return args[0].ast, true
 }
 
+// intToFloatC renders an integer of C type src converting to the float C type ct
+// through the round-to-even helpers, or reports false when ct is not a float. The
+// significand width the helper rounds to is 24 for a float, and for a double the one
+// the double actually has, read at run time (see ogoFprec); a float target takes the
+// helper's double back through a cast, which is exact, the value already being a
+// float's.
+//
+// The operand is spelled with the care the target's C compiler needs: a 32-bit one
+// is widened by a cast at the call, without which an argument narrower than the
+// parameter is not widened (see shiftCountC); a 64-bit one is passed as it is, a
+// cast around a 64-bit expression being what that compiler gets wrong; and a
+// CONSTANT is spelled as the 64-bit literal it folds to, since the cast of a
+// negative one, `(int64_t)(-33554434LL)`, arrives with its high word garbage. A
+// constant converting to a float32 is folded outright, by the conversion Go
+// performs, into a literal that is exact for the float it names.
+func (e *emitter) intToFloatC(ct, src, operand string, argAST []int32) (string, bool) {
+	prec := ""
+	switch ct {
+	case "float":
+		prec = "24"
+	case "double":
+		prec = "ogo_fprec()"
+	default:
+		return "", false
+	}
+	unsigned := isUnsignedCType(src)
+	if v, ok := e.constIntValue(argAST); ok {
+		if ct == "float" {
+			f := float32(v)
+			if unsigned {
+				f = float32(uint64(v))
+			}
+			return "(float)" + strconv.FormatFloat(float64(f), 'f', 1, 32), true
+		}
+		if unsigned {
+			operand = strconv.FormatUint(uint64(v), 10) + "ULL"
+		} else {
+			operand = signed64Lit(v)
+		}
+	} else if cIntWidths[src] < 64 {
+		if unsigned {
+			operand = "(uint64_t)" + operand
+		} else {
+			operand = "(int64_t)" + operand
+		}
+	}
+	e.includes["stdint.h"] = true
+	e.usesU2f = true
+	if unsigned {
+		return "(" + ct + ")ogo_u2f(" + operand + ", " + prec + ")", true
+	}
+	e.usesI2f = true
+	return "(" + ct + ")ogo_i2f(" + operand + ", " + prec + ")", true
+}
+
 // floatConvHelper names the helper a float converts to the integer C type ct
 // through, marking it for emission, or reports false for a type the target's C
 // compiler converts correctly by a cast.
@@ -11393,6 +11528,16 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 		if srcOK && (src == "double" || src == "float") {
 			if fn, ok := e.floatConvHelper(e.underlyingCType(ct)); ok {
 				e.emit(fn + text)
+				return
+			}
+		}
+		// An INTEGER of 32 bits or more converting to a float goes through a
+		// helper that rounds to nearest even: the target's C compiler rounds a tie
+		// away from zero, and half of the integers past 2^24 are ties. See ogoU2f.
+		// A narrower integer converts exactly and keeps its cast.
+		if srcOK && cIntWidths[src] >= 32 {
+			if text, ok := e.intToFloatC(e.underlyingCType(ct), src, text, arg.ast); ok {
+				e.emit(text)
 				return
 			}
 		}
@@ -11985,8 +12130,8 @@ func intCLit(v int64) string {
 //
 // The most negative values have no magnitude to negate and take C's own spelling.
 func (e *emitter) constSpelling(v int64, ctype string) string {
-	if e.litDepth > 0 {
-		return intCLit(v)
+	if e.litDepth > 0 || e.declInit {
+		return intCLit(v) // an aggregate or a static initializer: no unary minus there
 	}
 	switch ctype {
 	case "uint64_t":
@@ -12151,6 +12296,15 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 		if hasOp {
 			switch e.f.ch(op) {
 			case SUB:
+				// `-9223372036854775808` is the most negative int64, whose magnitude
+				// no int64 holds, so the operand alone does not fold; the pair does.
+				// Left unfolded, the minus was written in front of a ULL literal,
+				// which the target's C compiler refuses in any aggregate initializer.
+				// Only this one magnitude is read past the int64 range: a larger
+				// literal is an unsigned value, spelled as such where it stands.
+				if e.isMinInt64Magnitude(kids[1:]) {
+					return math.MinInt64, true
+				}
 				v, ok := e.foldIntSeq(kids[1:])
 				return -v, ok
 			case ADD:
@@ -12208,6 +12362,21 @@ func (e *emitter) foldIntToken(tok int32) (int64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// isMinInt64Magnitude reports whether nodes are the single literal 9223372036854775808,
+// the magnitude of the most negative int64, which foldIntNode folds only under a
+// unary minus.
+func (e *emitter) isMinInt64Magnitude(nodes []Node) bool {
+	if len(nodes) != 1 {
+		return false
+	}
+	tok, ok := e.soleToken(nodes[0].ast)
+	if !ok || e.f.ch(tok) != INT {
+		return false
+	}
+	u, err := strconv.ParseUint(normalizeIntLit(e.src(tok)), 0, 64)
+	return err == nil && u == 1<<63
 }
 
 // foldIntOp applies one integer operator during constant folding. A division or
