@@ -383,7 +383,11 @@ Floating point (float32/float64) is supported, exponent literals included
 so float arithmetic, comparison, int conversions and printing all work. Note the
 target has no double-precision hardware, so `float64` is 32-bit here, same as
 `float32` (~7 significant digits, not ~15) -- the name is kept for Go source
-compatibility but carries no extra precision.
+compatibility but carries no extra precision. The toolchain's `%f` formats to about
+that many digits as well: at its default six decimals a value that is exact in a
+32-bit float can still print with its last decimal off by one -- `21.0` prints as
+`20.999999` on the board, measured -- while `%.2f` prints `21.00`. The value is
+right; the eighth digit of its rendering is not.
 
 **Not planned**, because the target does not permit them: a garbage collector, a
 heap, maps, closures that capture their environment (a function *value* is fine —
