@@ -18,6 +18,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Behaviour changes
+
+- **A constant operand a typed operand's type cannot hold is refused, and so is an
+  integer division by a constant zero.** `x + 4294967296`, `x & 0x1FFFFFFFF`,
+  `x == (1 << 32)` and `x + 1.5` for an int32 `x` all compiled; Go refuses each, and
+  now so does this compiler, in Go's words: `constant 4294967296 overflows int32`,
+  `constant 1.5 truncated to int32`. `x / 0`, `x % (1 - 1)` and `x / Zero` compiled
+  too, and panicked at run time; they are `invalid operation: division by zero` where
+  they are written. A binary operand was the one position a constant met a type in
+  without the representability rule being asked -- a declaration, an assignment, an
+  argument, a return, a send and a conversion all asked it. A float divided by a
+  constant zero is still an infinity, as in Go.
+
 ### Fixed
 
 - **A float converted to a 64-bit integer gave the float's bits, and to a 32-bit

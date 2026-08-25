@@ -478,9 +478,14 @@
 //     = 1.5" is "constant 1.5 truncated to int"). 2.0 is whole and converts wherever
 //     an integer constant does. The rule is asked in every position a constant meets
 //     a type: a variable or constant declaration, an assignment, a return, an
-//     argument, a composite literal's element, a channel send and an explicit
-//     conversion. Truncating a float is a RUN-TIME conversion of a variable,
-//     "int(x)", which is legal and truncates as Go does.
+//     argument, a composite literal's element, a channel send, an explicit
+//     conversion, and the operand beside a typed one in a binary operation or a
+//     comparison ("x + 4294967296" for an int32 x is "constant 4294967296 overflows
+//     int32", and "x == (1 << 32)" is too). Truncating a float is a RUN-TIME
+//     conversion of a variable, "int(x)", which is legal and truncates as Go does.
+//   - An integer division or remainder by a CONSTANT zero is refused where it is
+//     written, whatever the dividend -- "x / 0", "x % (1 - 1)", "x / Zero" -- as Go
+//     refuses it. A float divided by a constant zero is an infinity, as in Go.
 //
 // A floating-point type represents the set of IEEE-754 values: float32 and
 // float64. Float literals, arithmetic, comparison, and conversion to and from the

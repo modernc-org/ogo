@@ -7174,6 +7174,10 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 		f.err(pos, "mismatched types %s and %s", f.operandTypeName(s, lNode, lk), f.operandTypeName(s, rNode, rk))
 		return
 	}
+	// A constant compared with a typed operand takes its type, and is refused when
+	// that type cannot hold it: `x == (1 << 32)` for an int32 x is never true, and
+	// Go says so where it is written.
+	f.checkConstOperands(s, lNode, lk, rNode, rk)
 	// Same class: ordering operators are undefined on bool.
 	switch Symbol(f.tok(opNode.Pos()).Ch) {
 	case EQL, NEQ:
@@ -7241,7 +7245,47 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 		// independent of the type being shifted, so "x << n" holds for any integer
 		// n.
 		f.err(pos, "mismatched types %s and %s", f.operandTypeName(s, lNode, lk), f.operandTypeName(s, rNode, rk))
+	case op == SHL || op == SHR:
+		// A shift's count is not converted to the shifted operand's type, and an
+		// untyped left operand takes its type from the context rather than from
+		// the count, so neither operand is checked against the other.
+	default:
+		f.checkConstOperands(s, lNode, lk, rNode, rk)
+		if (op == QUO || op == REM) && f.constZeroDivisor(s, lk, rNode) {
+			// Go refuses an integer division by a constant zero whatever the
+			// dividend is; a constant dividend is folded and reported before this
+			// runs, so this is the typed one. A float dividend is left alone: its
+			// division by zero is an infinity, not an error, in Go too.
+			f.err(pos, "invalid operation: division by zero")
+		}
 	}
+}
+
+// checkConstOperands reports an untyped constant operand of a binary operator that
+// the other operand's type cannot hold or represent: `x + 4294967296` and `x + 1.5`
+// for an int32 x are "constant 4294967296 overflows int32" and "constant 1.5
+// truncated to int32", as they are in Go, where an untyped constant takes the type
+// of the operand beside it. Every other position a constant meets a type in was
+// already checked; this one was not, so `x / (1 << 32)` compiled, and computed
+// in 64 bits. Two typed operands, or two untyped ones, have nothing to check here.
+func (f *File) checkConstOperands(s *Scope, lNode Node, lk Kind, rNode Node, rk Kind) {
+	switch {
+	case isUntypedKind(rk) && !isUntypedKind(lk):
+		f.checkValueOverflow(s, retResult{name: f.operandTypeName(s, lNode, lk), kind: lk}, rNode)
+	case isUntypedKind(lk) && !isUntypedKind(rk):
+		f.checkValueOverflow(s, retResult{name: f.operandTypeName(s, rNode, rk), kind: rk}, lNode)
+	}
+}
+
+// constZeroDivisor reports whether a division's divisor is a constant zero and its
+// dividend is of an integer type -- the pair Go refuses at compile time. A float
+// constant zero counts: it converts to the integer dividend's type first, as 0.
+func (f *File) constZeroDivisor(s *Scope, lk Kind, rNode Node) bool {
+	if _, _, isInt := intKindRange(lk); !isInt {
+		return false
+	}
+	cv, ok := f.constNumeric(s, rNode)
+	return ok && constant.Sign(cv) == 0
 }
 
 // binaryAllowed reports whether a binary operator is defined on operand class c.
@@ -11578,7 +11622,7 @@ func (f *File) wholeConst(pos token.Position, cv constant.Value, kind Kind, name
 // safe. constArgValue is the variant that must NOT trim; see it for why.
 func (f *File) constNumeric(s *Scope, n Node) (constant.Value, bool) {
 	n0 := len(f.errList)
-	e := f.expression(s, n)
+	e := f.levelExpr(s, n)
 	f.errList = f.errList[:n0]
 	if e == nil {
 		return nil, false
@@ -11700,6 +11744,24 @@ type BinaryExpressionNode struct {
 	LHS ExpressionNode
 	Op  Symbol
 	RHS ExpressionNode
+}
+
+// levelExpr evaluates a node of any expression level -- an Expression, or one of
+// the operand levels beneath it -- by the evaluator for its level. The operands a
+// binary operator's check holds are Terms, UnaryExprs and Factors, and expression
+// itself accepts only the top.
+func (f *File) levelExpr(s *Scope, n Node) ExpressionNode {
+	switch n.sym {
+	case SimpleExpr:
+		return f.simpleExpr(s, n)
+	case Term:
+		return f.term(s, n)
+	case UnaryExpr:
+		return f.unaryExpr(s, n)
+	case Factor:
+		return f.factor(s, n)
+	}
+	return f.expression(s, n)
 }
 
 func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
