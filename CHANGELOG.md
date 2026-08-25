@@ -33,6 +33,25 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A store through a nil pointer, and any use of a nil pointer to an array, said
+  nothing.** The nil check that a read through a pointer and a field access have
+  carried since v0.27 missed the assignment `*p = v` -- on the board a silent write
+  into hub address 0, the boot area -- and every dereference of a `*[N]T`: `p[i]`,
+  `p[i] = v`, `range p` with a value, `p[lo:hi]`, `*p` copied out. All of them now
+  panic `nil pointer dereference`; `len(p)` and the index-only `for i := range p`
+  still do not, as in Go, which dereferences nothing there.
+
+  The pointer to an array had been left out on purpose: the C backend drops a store
+  made through the guard's *call* into an element of one, so the guard cost the
+  write it guarded. Measured again, the drop takes a struct-valued element, and the
+  same read of one fails to assemble, while a word goes through either way -- so
+  such a pointer is now checked by a statement of its own ahead of the one that
+  dereferences it, and the dereference stays as it was.
+
+  Two spellings came along: `(*p)++` and `(*p) += v` were refused as unsupported
+  targets, and `*pa = [4]int{1, 2, 3, 4}` through a pointer to an array emitted a C
+  assignment to an array, which is not C.
+
 - **A 64-bit constant expression computed garbage on the board.** `int64(5) + 1`
   printed 4294967296000006, `int64(1000) * 1000` printed 4294967302,
   `uint64(5) + 1` 4294967302, `Ticks(3) * 4` 4294967308 and `int64(-3) * int64(7)`

@@ -20,11 +20,16 @@
 // simple and field assignment targets are supported yet"), so the shape cannot come
 // out of ogo today.
 //
-// IT IS WHY A POINTER TO AN ARRAY CARRIES NO NIL CHECK. Every other pointer's
-// dereference is wrapped in a guard that returns it (see nilCheckedC), and wrapping
-// this one costs the store it was meant to protect -- a far worse bargain than the
-// one it buys. When this is fixed upstream and the backend regenerated, the
-// exclusion in nilCheckedC can go and a `*[N]T` gains the check with the rest.
+// IT IS WHY A POINTER TO AN ARRAY IS NIL-CHECKED BY A STATEMENT OF ITS OWN rather
+// than by the guard call every other pointer's dereference is wrapped in (see
+// nilCheckedC): the guard is called for its panic ahead of the statement and its
+// result dropped, and the dereference stays the plain `(*p)`, which this compiler
+// stores through correctly. Measured 2026-08-25 on a P2-EDGE: the drop is specific to
+// a STRUCT-valued element -- `(*guard(pa))[1] = 7` on an int array lands, and so
+// does `*guard(p) = s` for a struct through a plain pointer -- and the same read,
+// `(*guard(pa))[1]` of a struct element, fails to ASSEMBLE ("Unknown symbol
+// _main__arr__0064_00"). Until 2026-08-25 the pointer to an array carried no check at
+// all on that account.
 //
 // To check whether this is still so, compile it and read the three lines.
 

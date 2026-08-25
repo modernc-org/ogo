@@ -37,6 +37,243 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// Every dereference of a pointer to an array, and a store through any
+		// pointer, on LIVE pointers: the check must cost nothing but the check.
+		// The struct-valued element stores are the ones the C backend drops when
+		// they are made through the guard's call (doc/ptr-to-array-through-call.c),
+		// which is why such a pointer is checked by a statement of its own and
+		// dereferenced plainly; `*pa = [4]int{...}` is the array copy that used to
+		// be emitted as a C assignment to an array; `(*p)++` used to be refused.
+		// `for i := range none` and `len(none)` dereference nothing, in Go too.
+		name: "stores through live pointers, and every dereference of a pointer to an array",
+		src: `type R struct {
+	s string
+	n int
+}
+
+type H struct {
+	q *[2]R
+	a [3]int
+}
+
+func main() {
+	var arr [2]R
+	pr := &arr
+	pr[1] = R{"x", 7}
+	pr[0] = pr[1]
+	var rows [2]R
+	h := H{q: &rows}
+	h.q[0] = R{"field", 9}
+	h.q[1].n = 4
+	ph := &h
+	ph.q[1].s = "deep"
+	var nums [4]int
+	pa := &nums
+	*pa = [4]int{1, 2, 3, 4}
+	pa[1] += 10
+	pa[2]++
+	(*pa)[3] = 40
+	sum := 0
+	for _, v := range pa {
+		sum += v
+	}
+	x := 5
+	p := &x
+	*p = 6
+	*p += 1
+	(*p)++
+	y := 0
+	*p, y = y, *p
+	for i := range pa {
+		nums[i] += i
+	}
+	s := pa[1:3]
+	b := *pa
+	b[0] = 100
+	var none *[4]int
+	for i := range none {
+		sum += i
+	}
+	println(none == nil)
+	println(arr[0].s, arr[0].n, arr[1].s, arr[1].n, rows[0].s, rows[0].n, rows[1].s, rows[1].n)
+	println(nums[0], nums[1], nums[2], nums[3], sum, x, y, len(s), s[0], b[0], nums[0], len(pa), len(none))
+}
+`,
+		want: "true\nx 7 x 7 field 9 deep 4\n1 13 6 43 63 0 8 2 13 100 1 4 4\n",
+	},
+	{
+		// The nil check missed two shapes since it shipped: a STORE through a
+		// pointer -- `*p = v`, on the board a silent write into hub address 0, the
+		// boot area -- and every dereference of a pointer to an ARRAY, which had
+		// been left out because the C backend drops a store made through the guard's
+		// call into an element of one. Each of the following is one such shape, and
+		// each panics before it runs on; `len(p)` and the index-only `for i := range
+		// p` do not, as in Go, and stand in the case above.
+		name: "a store through a nil pointer panics",
+		src: `func main() {
+	var p *int
+	println("before")
+	*p = 5
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a compound store through a nil pointer panics",
+		src: `func main() {
+	var p *int
+	*p += 5
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "an increment through a nil pointer panics",
+		src: `func main() {
+	var p *int
+	(*p)++
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a store through a nil pointer in a multiple assignment panics",
+		src: `func main() {
+	var p *int
+	x := 1
+	*p, x = x, 2
+	println("after", x)
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "an index read through a nil pointer to an array panics",
+		src: `func main() {
+	var pa *[4]int
+	println(pa[2])
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "an index store through a nil pointer to an array panics",
+		src: `func main() {
+	var pa *[4]int
+	pa[2] = 1
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a compound index store through a nil pointer to an array panics",
+		src: `func main() {
+	var pa *[4]int
+	pa[1] += 1
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a range with a value over a nil pointer to an array panics",
+		src: `func main() {
+	var pa *[4]int
+	for i, v := range pa {
+		println(i, v)
+	}
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "slicing a nil pointer to an array panics",
+		src: `func main() {
+	var pa *[4]int
+	s := pa[1:3]
+	println(len(s))
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "copying the array out of a nil pointer to one panics",
+		src: `func main() {
+	var pa *[4]int
+	b := *pa
+	println(b[0])
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "assigning the whole array through a nil pointer to one panics",
+		src: `func main() {
+	var pa *[4]int
+	*pa = [4]int{1, 2, 3, 4}
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "an index read through a nil pointer-to-array field panics",
+		src: `type H struct {
+	q *[4]int
+}
+
+func main() {
+	var h H
+	ph := &h
+	println(ph.q[1])
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "an index store through a nil pointer-to-array field panics",
+		src: `type H struct {
+	q *[4]int
+}
+
+func main() {
+	var h H
+	h.q[1] = 3
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a written-out dereference of a nil pointer to an array panics",
+		src: `func main() {
+	var pa *[4]int
+	(*pa)[0] = 1
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A 64-bit constant expression is folded by the compiler and emitted as ONE
 		// literal, because the target's C compiler mis-folds nearly every one it is
 		// given inside a function body: `int64(5) + 1` printed 4294967296000006 on

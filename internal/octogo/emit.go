@@ -10539,7 +10539,7 @@ func (e *emitter) arrayDerefOperand(ast []int32) (string, arrDim, bool) {
 	if !ok {
 		return "", arrDim{}, false
 	}
-	return "(*" + e.nilCheckedPtrVar(name) + ")", a, true
+	return e.arrayPtrDeref(name), a, true
 }
 
 // hoistLitVar binds a composite literal to a temporary of this frame, declared
@@ -11748,7 +11748,11 @@ func (e *emitter) arrayBase(name string) (string, arrDim, bool) {
 		return e.varRef(name), a, true
 	}
 	if a, ok := e.arrayPtrVar(name); ok {
-		return "(*" + e.nilCheckedPtrVar(name) + ")", a, true
+		// The plain dereference: this is asked as a predicate as often as for its
+		// text -- by len and cap, which dereference nothing, in Go too -- so the
+		// nil check is not requested here. A site that reaches the array asks
+		// arrayPtrDeref for it.
+		return "(*" + e.varRef(name) + ")", a, true
 	}
 	return "", arrDim{}, false
 }
@@ -12373,6 +12377,9 @@ func (e *emitter) accessBase(base string) (accessCur, bool) {
 // accessBaseText is the C text a chain starts from: a variable's name, or a
 // pointer to an array dereferenced, since what the chain walks is the array.
 func (e *emitter) accessBaseText(base string) string {
+	if _, isPtr := e.arrayPtrVar(base); isPtr {
+		return e.arrayPtrDeref(base) // the chain walks the array: a dereference
+	}
 	if text, _, ok := e.arrayBase(base); ok {
 		return text
 	}
@@ -12455,7 +12462,7 @@ func (e *emitter) accessIndex(cur accessCur, prefix string) (next accessCur, len
 // case of accessIndex, which types what this writes.
 func (e *emitter) accessDeref(cur accessCur, prefix string) string {
 	if _, ok := e.arrayPtrCType(cur.ctype); ok {
-		return "(*" + prefix + ")"
+		return e.arrayPtrDerefC(prefix, cur.ctype)
 	}
 	return prefix
 }
@@ -13043,6 +13050,9 @@ func (e *emitter) derefBase(name string) (string, accessCur, bool) {
 	if !ok || !e.isPointer(ct) {
 		return "", accessCur{}, false
 	}
+	if _, isArrPtr := e.arrayPtrVar(name); isArrPtr {
+		return e.arrayPtrDeref(name), e.plainOrSlice(e.elemType(ct)), true
+	}
 	return "(*" + e.nilCheckedC(e.varRef(name), ct) + ")", e.plainOrSlice(e.elemType(ct)), true
 }
 
@@ -13232,7 +13242,7 @@ func (e *emitter) sliceElemOfArray(a arrDim) string {
 // sliceableVar resolves a variable base to slice: a string, a fixed array, a
 // pointer to one, or a slice.
 func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
-	text, a, isArray := e.arrayBase(base)
+	_, a, isArray := e.arrayBase(base)
 	switch {
 	case e.isStringConstName(base):
 		// A string constant has no C variable: every use folds to its literal, so
@@ -13249,8 +13259,9 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 		e.needSlice(elem)
 		if _, isPtr := e.arrayPtrVar(base); isPtr {
 			// `p[lo:hi]` slices the array p points at. The dereference is what
-			// decays to the first element, where a plain array's name already does.
-			return sliceSource{sliceCName(elem), text, a.bound, a.bound}, true
+			// decays to the first element, where a plain array's name already does
+			// -- and it is a dereference, so the pointer takes the nil check.
+			return sliceSource{sliceCName(elem), e.arrayPtrDeref(base), a.bound, a.bound}, true
 		}
 		return sliceSource{sliceCName(elem), base, a.bound, a.bound}, true
 	case e.hasSliceVar(base):
@@ -13770,25 +13781,61 @@ func (e *emitter) nilCheckedC(ptr, ctype string) string {
 	if !e.checks {
 		return ptr
 	}
-	// A pointer to an ARRAY is left unchecked, and this is a backend defect rather
-	// than a choice. flexcc DROPS an assignment made through a pointer-to-array that
-	// came out of a function: given `(*guard(po))[0] = x` it writes nothing at all,
-	// silently, where the host compiler writes. Reduced to a dozen lines of C in
-	// doc/ptr-to-array-through-call.c. Wrapping the pointer in a comma expression
-	// instead of a call fails the same way, so there is no form of the check that
-	// leaves the write intact -- and a check that costs the store it guards would be
-	// a far worse bargain than the one it buys.
-	//
-	// Nothing else in the emitter generates that shape: an assignment through a
-	// CALL's result is refused ("only simple and field assignment targets are
-	// supported yet"), so this defect is reachable only by adding the wrapper, and
-	// not adding it is what keeps it unreachable.
-	if _, isArrPtr := e.arrayPtrCType(ctype); isArrPtr {
-		return ptr
-	}
+	// A pointer to an ARRAY takes the check like the rest, but never in place: the
+	// target's C compiler drops a struct-valued store made into an element of an
+	// array reached through a call -- `(*guard(pa))[0] = s` writes nothing,
+	// silently (doc/ptr-to-array-through-call.c) -- and fails to assemble the same
+	// read, while a word goes through either way and a store through a plain
+	// pointer's guard is right, all measured on a P2-EDGE. So every dereference of
+	// one binds this call's result to a temporary first (arrayPtrDeref) and reaches
+	// the array through that, a plain pointer variable again.
 	e.needPanic()
 	e.nilHelpers[ctype] = true
 	return nilHelperName(ctype) + "(" + ptr + ")"
+}
+
+// arrayPtrDeref renders the array a pointer-to-array VARIABLE points at, for a read
+// or a store of its elements, and asks for the pointer's nil check as a statement
+// of its own ahead of the one being emitted (nilCheckLine). The dereference itself
+// stays the plain `(*p)`: given the guard's CALL in it instead, the target's C
+// compiler drops a struct-valued store into an element and fails to assemble a
+// struct-valued read of one (see nilCheckedC), while a word goes through either
+// way. One spelling for every element type and both directions is what keeps that
+// out of reach, and a check that is a statement leaves no temporary behind, so the
+// callers that ask for this text more than once per statement -- the predicates
+// that share arrayBase -- cost nothing but a repeated line, which nilCheckLine
+// folds. With checks off nothing is asked.
+//
+// A prologue line is safe wherever an expression stands: a statement's prologue is
+// emitted before it, and a loop condition that needs one moves into the loop's
+// body and is re-run each time round (see emitFor).
+func (e *emitter) arrayPtrDeref(name string) string {
+	if ct, ok := e.varType(name); ok {
+		e.nilCheckLine(e.varRef(name), ct)
+	}
+	return "(*" + e.varRef(name) + ")"
+}
+
+// arrayPtrDerefC is arrayPtrDeref for a pointer-to-array reached by any C text --
+// a field, `b.p[i]`, inside an access chain -- with its C type.
+func (e *emitter) arrayPtrDerefC(prefix, ctype string) string {
+	e.nilCheckLine(prefix, ctype)
+	return "(*" + prefix + ")"
+}
+
+// nilCheckLine requests the nil check of a pointer as a statement before the one
+// being emitted -- the guard called for its panic and its result dropped -- once:
+// a line the prologue already holds is not added again, which is what lets a
+// dereference be rendered as often as its callers ask without a check per ask.
+func (e *emitter) nilCheckLine(ptr, ctype string) {
+	if !e.checks {
+		return
+	}
+	line := e.nilCheckedC(ptr, ctype) + ";\n"
+	if slices.Contains(e.prologue, line) {
+		return
+	}
+	e.prologue = append(e.prologue, line)
 }
 
 // nilCheckedPtrVar is nilCheckedC for a pointer VARIABLE, looking its own C type up
@@ -14776,6 +14823,13 @@ func (e *emitter) rangeArray(expr []int32) *arrDim {
 func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrDim, bool) {
 	if base, ok := e.exprIdent(expr); ok {
 		if a, isPtr := e.arrayPtrVar(base); isPtr {
+			// The value form reads through the pointer and takes the nil check,
+			// once, before the loop -- which is where Go evaluates the range
+			// expression. The index-only form dereferences nothing, in Go too, and
+			// a nil pointer counts to N there without complaint.
+			if readsElements {
+				return e.arrayPtrDeref(base), a, true
+			}
 			return "(*" + e.varRef(base) + ")", a, true
 		}
 		if a, isArr := e.arrayVar(base); isArr {
@@ -18810,7 +18864,7 @@ func (e *emitter) emitDerefAssign(name string, postfix []Node) {
 		return
 	}
 	chain := postfix[:len(postfix)-1]
-	if !isAccessChain(chain) {
+	if len(chain) != 0 && !isAccessChain(chain) {
 		e.fail("unsupported assignment target through *%s", name)
 		return
 	}
@@ -19111,11 +19165,35 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 	}
 	if stars != "" {
+		// `*pa = b` for a pointer to an ARRAY: C has no array assignment, and the
+		// backend takes `(*pa) = ...` and writes nothing, so the array is copied as
+		// `b = a` copies one -- through the nil-checked pointer, whose call memcpy is
+		// content to take as its destination.
+		if a, isArrPtr := e.arrayPtrVar(base); isArrPtr && stars == "*" && len(postfix) == 1 && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
+				if !e.checkArrayShape(a, rhs[0].ast, "assignment") {
+					return
+				}
+				if src, ok := e.arraySourceC(rhs[0].ast); ok {
+					e.includes["string.h"] = true
+					e.ind()
+					e.emit("memcpy(" + e.nilCheckedPtrVar(base) + ", " + src + ", sizeof(*" + e.varRef(base) + "));\n")
+					return
+				}
+			}
+		}
 		// Parenthesised, because C's "++" binds tighter than its unary "*": `*p++`
 		// there is `*(p++)`, which increments the POINTER and throws the load away,
 		// where Go's is `(*p)++`. The other tails do not need it -- "=" and the
 		// compound operators bind looser -- but writing one form keeps the target
 		// from depending on which tail follows it.
+		//
+		// A store through the pointer takes the nil check as a read through it does:
+		// address zero on this target is the boot area, and a write there was the
+		// one dereference that said nothing. A deeper `**pp` guards nothing yet.
+		if stars == "*" {
+			lhs = e.nilCheckedPtrVar(base)
+		}
 		lhs = "(" + stars + lhs + ")"
 	}
 
@@ -20166,9 +20244,9 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		if a, isArr := e.namedArrays[el]; isArr {
 			row = a
 		}
-	} else if text, a, ok := e.arrayBase(base); ok {
+	} else if _, a, ok := e.arrayBase(base); ok {
 		if _, isPtr := e.arrayPtrVar(base); isPtr {
-			lhs = text
+			lhs = e.arrayPtrDeref(base)
 		}
 		lenExpr, elem = a.bound, a.elem
 		if a.dims() > 1 {
@@ -20261,7 +20339,11 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 	}
 	e.ind()
 	if len(t.chain) == 0 {
-		e.emit(t.stars + e.varRef(t.name))
+		if t.stars == "*" {
+			e.emit("(*" + e.nilCheckedPtrVar(t.name) + ")") // a store through the pointer takes the nil check
+		} else {
+			e.emit(t.stars + e.varRef(t.name))
+		}
 	} else {
 		e.emitAccessChain(t.name, t.chain)
 	}
@@ -23117,7 +23199,7 @@ func (e *emitter) emitExprNode(n Node) {
 						return
 					}
 					if _, isPtr := e.arrayPtrVar(base); isPtr {
-						e.emit("(*" + e.varRef(base) + ")[") // `p[i]` is `(*p)[i]`
+						e.emit(e.arrayPtrDeref(base) + "[") // `p[i]` is `(*p)[i]`
 					} else {
 						e.emit(base + "[")
 					}

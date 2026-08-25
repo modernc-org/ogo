@@ -291,8 +291,7 @@ broken.
   the `p2` package.
 * Runtime traps for out-of-range indexing and slicing, division and remainder by
   zero, a shift by a negative count, appending past a slice's capacity, and cog
-  exhaustion, and a **nil pointer dereference** (except through a pointer to an
-  array, where the C backend drops a store made through the guard). Each prints
+  exhaustion, and a **nil pointer dereference**. Each prints
   `panic: <what>` and
   halts the offending cog; `--release` reboots the board instead, and `--unchecked`
   omits the checks.

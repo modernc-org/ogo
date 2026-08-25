@@ -710,10 +710,12 @@
 // lives there and a WRITE stores into the boot area, both silently. "--unchecked"
 // omits it with the rest, and then those are again what happens.
 //
-// A pointer to an ARRAY is the one that carries no such check, which is a limit of
-// the C backend rather than a rule: it drops a store made through a pointer-to-array
-// that has been through a function, so the guard would cost the write it guards.
-// "p[i]" on a nil "*[N]T" therefore still reads or writes address zero.
+// The check covers every way a pointer is read or written through: "*p" and "*p =
+// v", "p.f" and "p.f = v", a method called on a nil receiver that touches it, and
+// on a pointer to an array "p[i]", "p[i] = v", "range p" with a value, "p[lo:hi]"
+// and "*p" copied out. "len(p)", "cap(p)" and the index-only "for i := range p"
+// dereference nothing, in Go too, and a nil "*[N]T" counts to N in them without
+// complaint.
 //
 // A pointer to an ARRAY, "*[3]int", is the one pointer an index applies to, and it
 // abbreviates the dereference exactly as Go does: "p[i]" is "(*p)[i]", and so are
