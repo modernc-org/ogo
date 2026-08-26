@@ -3496,6 +3496,18 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// `pkg.F(...)` call resolves into that package's namespace. A p2 import is
 	// unresolved (noPkg) and stays on the intrinsic path.
 	e.importQualifiers = map[string]string{}
+	// Each package's C prefix -> the name a program writes it by, which is the last
+	// element of its import path. %T and every diagnostic that names a type spell a
+	// type of another package with it (see typeDisplay).
+	e.pkgNames = map[string]string{}
+	e.typeDisplay = map[string]string{}
+	for _, p := range pkgs {
+		name := p.ImportPath
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			name = name[i+1:]
+		}
+		e.pkgNames[pkgPrefix(p.ImportPath)] = name
+	}
 	for _, p := range pkgs {
 		for _, f := range p.Files {
 			for _, spec := range f.ImportSpecs {
@@ -4157,6 +4169,8 @@ type emitter struct {
 	usesRuneString     bool               // string(r) for a run-time rune is used: emit the ogo_rune_string helper
 	usesBuilder        bool               // the Builder type is used: emit its typedef and method helpers
 	importQualifiers   map[string]string  // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
+	pkgNames           map[string]string  // package C prefix -> the package name a program writes, for a type's Go spelling
+	typeDisplay        map[string]string  // a type's C name -> its Go spelling, "lib.Temp" for a type of another package
 	curPkgPrefix       string             // the C symbol prefix of the package whose file is currently being emitted ("" for main)
 	clearElems         map[string]bool    // element C types needing the ogo_clear_<T> helper for the clear builtin
 	minElems           map[string]bool    // C types needing the ogo_min_<T> helper for the min builtin
@@ -4586,6 +4600,14 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// type. cType returns the same mangled name for a reference to it, so every
 		// use resolves to the same typedef and the same structs/namedTypes map key.
 		mn := mangle(e.curPkgPrefix, name)
+		// What this type is CALLED, for %T and for the diagnostics: a type of
+		// another package is written `lib.Temp` where its C name is `lib_Temp`, and
+		// printing the C name told the program about the compiler's own symbol.
+		// Recorded per declaration rather than derived from the name, which cannot
+		// tell a mangled name from a source one that looks like it.
+		if e.curPkgPrefix != "" {
+			e.typeDisplay[mn] = e.pkgNames[e.curPkgPrefix] + "." + name
+		}
 		if ifaceAST := e.interfaceTypeAST(typeAST); ifaceAST != nil {
 			e.collectInterfaceType(mn, ifaceAST)
 			continue
@@ -23488,6 +23510,9 @@ func (e *emitter) goTypeName(ct string) string {
 	}
 	if a, ok := e.namedArrays[ct]; ok {
 		return e.goArrayTypeName(a)
+	}
+	if name, ok := e.typeDisplay[ct]; ok {
+		return name // a type of another package, as a program writes it
 	}
 	// A MINTED interface name has no source spelling to return -- the program wrote
 	// the shape, not a name -- so the shape is what a message about it says. Left to

@@ -53,6 +53,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`%T` of a type from another package printed the compiler's symbol.**
+  `printf("%T", t)` for a `lib.Temp` printed `lib_Temp`, the mangled C name, where
+  Go prints `lib.Temp` -- and every diagnostic that names a type said the same.
+  Each type records what a program calls it, so the spelling comes from the
+  declaration rather than from guessing at the symbol.
+
 - **A type of another package lost half its identity at the boundary.** Four
   ways: a method PROMOTED from an embedded field was "type lib.Box has no method
   Sum" and a promoted field "has no field X", so embedding worked inside a
