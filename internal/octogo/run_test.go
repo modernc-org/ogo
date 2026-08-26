@@ -6,6 +6,7 @@ package octogo
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18605,6 +18606,70 @@ if len(s) > 0 {
 return s
 }
 `,
+}
+
+// TestMultiPkgRefusals pins the two things a refusal must get right when the
+// program crosses a package boundary: that the rule fires there at all, and that
+// it names the variable as the program spells it. A store's provenance check is
+// the rule -- a package variable outlives every frame, whichever package declares
+// it -- and the name reaches the emitter already mangled, so an unguarded message
+// would report `geo_Sl` of a program that says `geo.Sl`.
+func TestMultiPkgRefusals(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{
+			name: "a frame-backed slice stored in another package's variable",
+			files: map[string]string{
+				"geo/geo.ogo": "var Sl []int\n",
+				"main.ogo": `import "geo"
+
+func fill() {
+	var back [4]int
+	geo.Sl = back[:]
+}
+
+func main() {
+	fill()
+	println(len(geo.Sl))
+}
+`,
+			},
+			want: "cannot store a slice backed by local back in package variable geo.Sl",
+		},
+		{
+			name: "a field of another package's scalar",
+			files: map[string]string{
+				"geo/geo.ogo": "var N = 7\n",
+				"main.ogo": `import "geo"
+
+func main() {
+	println(geo.N.X)
+}
+`,
+			},
+			want: "geo.N has no field X",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{}
+			for name, src := range test.files {
+				fsys[name] = &fstest.MapFile{Data: []byte(src)}
+			}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			if err == nil {
+				t.Fatalf("expected a refusal mentioning %q, but the program compiled", test.want)
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("error:\n got %v\nwant it to contain %q", err, test.want)
+			}
+		})
+	}
 }
 
 func TestEmitCMultiPackage(t *testing.T) {

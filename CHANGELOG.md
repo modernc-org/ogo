@@ -53,6 +53,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A refusal named the compiler's symbol for an imported variable.** A store
+  the escape rule refuses reported "in package variable `geo_Sl`" of a program
+  that says `geo.Sl` -- the name reaches those checks already mangled -- and so
+  did the two chain refusals that name their base. They spell it as it was
+  written now. The rule itself was right across the boundary: a package variable
+  outlives every frame, whichever package declares it, and a test pins both.
+
 - **An imported package's array or slice variable could not be used at all.**
   `geo.Table[1]` was "geo is not a value with fields or elements",
   `len(geo.Table)` was "len is only supported for strings, arrays and slices

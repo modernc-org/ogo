@@ -12127,7 +12127,7 @@ func (e *emitter) indexableBase(base string) bool {
 	if !ok || !e.isPointer(ct) {
 		return true
 	}
-	e.fail("cannot index %s: only a pointer to an array is indexable", base)
+	e.fail("cannot index %s: only a pointer to an array is indexable", e.displayName(base))
 	return false
 }
 
@@ -14201,6 +14201,25 @@ func (e *emitter) globalC(name string) string { return mangle(e.curPkgPrefix, na
 // mangled name; a local or parameter (which shadows a global, and lives in locals)
 // keeps its source name, as does anything not a known variable (a constant is
 // inlined elsewhere). It is the read counterpart to the global declarations.
+// displayName spells a C name back as the program wrote it, for a diagnostic that
+// names a variable. Only an imported package's global needs it: its name reaches
+// the checks already mangled (see qualifiedChainBase), and reporting `geo_Sl` of a
+// program that says `geo.Sl` describes the compiler's own symbol rather than the
+// source. Every other name is its own.
+func (e *emitter) displayName(name string) string {
+	if _, isGlobal := e.globals[name]; !isGlobal {
+		if _, isArr := e.globalArrays[name]; !isArr {
+			return name
+		}
+	}
+	for qualifier, prefix := range e.importQualifiers {
+		if prefix != "" && strings.HasPrefix(name, prefix+"_") {
+			return qualifier + "." + strings.TrimPrefix(name, prefix+"_")
+		}
+	}
+	return name
+}
+
 func (e *emitter) varRef(name string) string {
 	if _, ok := e.locals[name]; ok {
 		return userIdent(name) // a local or parameter: renamed if C reserved it
@@ -14579,7 +14598,7 @@ func (e *emitter) failSuffixChain(n Node, kids []Node) {
 func (e *emitter) failChainSteps(start int32, base string, steps []Node) bool {
 	cur, ok := e.accessBase(base)
 	if !ok {
-		e.failAtPos(start, "%s is not a value with fields or elements", base)
+		e.failAtPos(start, "%s is not a value with fields or elements", e.displayName(base))
 		return true
 	}
 	for _, step := range steps {
@@ -15719,7 +15738,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		// before the integer range below, which would otherwise report it as one.
 		if base, ok := e.exprIdent(h.rangeExpr); ok {
 			if ct, ok := e.varType(base); ok && e.isPointer(ct) {
-				e.fail("cannot range over %s: only a pointer to an array is rangeable", base)
+				e.fail("cannot range over %s: only a pointer to an array is rangeable", e.displayName(base))
 				return
 			}
 		}
@@ -25836,7 +25855,7 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 	}
 	if n, r, ok := e.frameRefIn(vals); ok {
 		e.fail("%v: cannot store %s in package variable %s: its storage does not outlive the function",
-			e.f.tok(n.Pos()).Position(), r.what, base)
+			e.f.tok(n.Pos()).Position(), r.what, e.displayName(base))
 	}
 }
 
