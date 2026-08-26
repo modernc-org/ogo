@@ -53,6 +53,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Printing an imported package's array printed its address.** `println(lib.
+  Names)` and `printf("%v", lib.Names)` reached the %d default and printed a
+  number where Go prints `[aa bb]` -- the branch that views a bare array as a
+  full-length slice asked for a sole identifier, and a qualified name is not one.
+  A silent wrong answer, not a refusal.
+
 - **A method's receiver and a function value named an unmangled symbol outside
   `main`.** Two more of the same kind as the package-variable fix below, found by
   re-running the sweep with the code in an imported package: `G.Sum()` on a

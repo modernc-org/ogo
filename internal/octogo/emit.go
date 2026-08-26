@@ -19666,11 +19666,24 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	}
 	// A bare array variable decays to a pointer, so it is printed by viewing it as a
 	// full-length slice header rather than as a (meaningless) %d of its address.
+	printArray := func(base string, a arrDim) {
+		e.emitPrintSlice(newline, a.elem, func() {
+			e.emit("(" + sliceCName(a.elem) + "){" + e.varRef(base) + ", " + a.bound + ", " + a.bound + "}")
+		})
+	}
 	if base, ok := e.exprIdent(arg.ast); ok {
 		if a, ok := e.arrayVar(base); ok {
-			e.emitPrintSlice(newline, a.elem, func() {
-				e.emit("(" + sliceCName(a.elem) + "){" + e.varRef(base) + ", " + a.bound + ", " + a.bound + "}")
-			})
+			printArray(base, a)
+			return
+		}
+	}
+	// The same array named through its package, `lib.Names`. It is not a sole
+	// identifier, so the branch above never saw one and the value fell through to
+	// the %d default -- which printed the address of another package's table where
+	// Go prints its elements.
+	if base, steps, ok := e.factorAccessChain(e.factorKids(arg.ast)); ok && len(steps) == 0 {
+		if a, isArr := e.arrayVar(base); isArr {
+			printArray(base, a)
 			return
 		}
 	}
