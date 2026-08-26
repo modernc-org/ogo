@@ -18229,7 +18229,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n"
+	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n374\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18387,6 +18387,9 @@ println(chain.Boil.Int(), chain.Boil.Half().Int(), t.Half().Int(), float32(chain
 // A method on an element of an imported package's array variable, which used
 // to be "chain is not a value with fields or elements".
 println(chain.Table[1].Int(), chain.Table[0].Half().Int())
+// A package reaching into its OWN array, slice and string, which named
+// unmangled symbols in every package but main.
+println(chain.InSum())
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -18465,6 +18468,26 @@ func (t Temp) Int() int { return int(t) }
 // Table is an exported lookup table: an ARRAY variable a method is called on an
 // element of, across the boundary.
 var Table = [2]Temp{-2.5, Boil}
+
+// Ints, Sl and Tag are what THIS package reaches into from inside itself -- an
+// array, a slice over it, a string -- each of which named an unmangled symbol
+// outside main, where the empty prefix made the source name the C name by
+// accident.
+var Ints = [4]int{10, 20, 30, 40}
+var Sl = Ints[:]
+var Tag = "abcd"
+
+func InSum() int {
+	n := 0
+	for _, x := range Ints {
+		n += x
+	}
+	Ints[0] = 11
+	xs := Ints[:2]
+	var dst [2]int
+	copy(dst[:], Sl[1:3])
+	return n + Ints[0] + len(xs) + Sl[3] + int(Tag[1]) + len(Tag[1:]) + dst[0] + Table[1].Int()
+}
 `,
 	"greet/greet.ogo": `// Relay and Ack are this package's channels, used by whoever imports it. With no
 // heap there is nothing for a constructor to return, so a package-level channel is

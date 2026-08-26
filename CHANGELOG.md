@@ -53,6 +53,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package could not use its own array, slice or string variable -- unless it
+  was `main`.** Every name of a package variable that a program reaches INTO --
+  `Ints[0]`, `Ints[i] = v`, `range Ints`, `Ints[:]`, `&Ints`, `copy(dst, Sl)`,
+  `Sl[1:3]`, `Tag[1]`, `println(Ints)` -- was emitted as the source name rather
+  than the package-mangled one, so it named a symbol that does not exist and the
+  build failed with `Unknown symbol 'Ints'` or `Ints is not an array`. In `main`
+  the two spellings are the same text (its prefix is empty), which is why the
+  whole suite, the fuzzer and every example missed it: they are all one package.
+  A package-level array is the one variable kind that is in no registry the
+  name-rendering path consulted -- an array has no C value type -- so an array
+  was wrong in every position, and a slice or a string in the positions that
+  reach through the header.
+
 - **A method could not be called on an element of an imported package's array
   variable.** `geo.Table[1].Int()` was "geo is not a value with fields or
   elements": the chain renderer's import-qualifier head knew that package's

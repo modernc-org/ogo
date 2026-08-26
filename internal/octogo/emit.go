@@ -14127,7 +14127,19 @@ func (e *emitter) varRef(name string) string {
 	if _, ok := e.locals[name]; ok {
 		return userIdent(name) // a local or parameter: renamed if C reserved it
 	}
+	if _, ok := e.arrays[name]; ok {
+		return userIdent(name) // a local ARRAY, which has no C value type to be in locals by
+	}
 	if _, ok := e.globals[e.globalC(name)]; ok {
+		return e.globalC(name)
+	}
+	// A package-level ARRAY is in globalArrays and in no other registry, an array
+	// having no C value type. Asking `globals` alone answered "not a variable" and
+	// left the SOURCE name standing -- which is the mangled name only in main, where
+	// the prefix is empty: in every other package a read, a write, a range, a slice,
+	// an address or a copy of its own array variable reached the C compiler as an
+	// undeclared identifier.
+	if _, ok := e.globalArrays[e.globalC(name)]; ok {
 		return e.globalC(name)
 	}
 	return userIdent(name)
@@ -14172,7 +14184,8 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 		return sliceSource{cString, ptr, n, ""}, true
 	case e.isStringVarName(base):
 		e.usesString = true
-		return sliceSource{cString, base + ".str", base + ".len", ""}, true
+		ref := e.varRef(base)
+		return sliceSource{cString, ref + ".str", ref + ".len", ""}, true
 	case isArray:
 		elem := e.sliceElemOfArray(a)
 		e.needSlice(elem)
@@ -14182,11 +14195,12 @@ func (e *emitter) sliceableVar(base string) (sliceSource, bool) {
 			// -- and it is a dereference, so the pointer takes the nil check.
 			return sliceSource{sliceCName(elem), e.arrayPtrDeref(base), a.bound, a.bound}, true
 		}
-		return sliceSource{sliceCName(elem), base, a.bound, a.bound}, true
+		return sliceSource{sliceCName(elem), e.varRef(base), a.bound, a.bound}, true
 	case e.hasSliceVar(base):
 		elem, _ := e.sliceElem(base)
 		e.needSlice(elem)
-		return sliceSource{sliceCName(elem), base + ".ptr", base + ".len", base + ".cap"}, true
+		ref := e.varRef(base)
+		return sliceSource{sliceCName(elem), ref + ".ptr", ref + ".len", ref + ".cap"}, true
 	}
 	return sliceSource{}, false
 }
@@ -15804,7 +15818,7 @@ func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrD
 			return "(*" + e.varRef(base) + ")", a, true
 		}
 		if a, isArr := e.arrayVar(base); isArr {
-			return base, a, true
+			return e.varRef(base), a, true
 		}
 		return "", arrDim{}, false
 	}
@@ -19534,7 +19548,7 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	if base, ok := e.exprIdent(arg.ast); ok {
 		if a, ok := e.arrayVar(base); ok {
 			e.emitPrintSlice(newline, a.elem, func() {
-				e.emit("(" + sliceCName(a.elem) + "){" + base + ", " + a.bound + ", " + a.bound + "}")
+				e.emit("(" + sliceCName(a.elem) + "){" + e.varRef(base) + ", " + a.bound + ", " + a.bound + "}")
 			})
 			return
 		}
@@ -20732,7 +20746,7 @@ func (e *emitter) selectorFieldsAll(nodes []Node) (fields []string, ok bool) {
 func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenExpr string, ok bool) {
 	if len(pre) == 0 {
 		if el, ok := e.sliceElem(base); ok {
-			return base + ".ptr", el, base + ".len", true
+			return e.varRef(base) + ".ptr", el, e.varRef(base) + ".len", true
 		}
 		if a, ok := e.arrayVar(base); ok {
 			if a.dims() > 1 {
@@ -20741,7 +20755,7 @@ func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenEx
 				// would emit `int r = m[1];`, so leave it to the full-index path.
 				return "", "", "", false
 			}
-			return base, a.elem, a.bound, true
+			return e.varRef(base), a.elem, a.bound, true
 		}
 		return "", "", "", false
 	}
@@ -21296,12 +21310,12 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	// A slice element is addressed through its backing pointer; an array directly,
 	// and a pointer to an array through the dereference `p[i]` abbreviates. The
 	// index is bounds-checked against the container length.
-	lhs := base
+	lhs := e.varRef(base)
 	lenExpr, elem := "", ""
 	var row arrDim
 	if el, ok := e.sliceElem(base); ok {
-		lhs = base + ".ptr"
-		lenExpr = base + ".len"
+		lhs = e.varRef(base) + ".ptr"
+		lenExpr = e.varRef(base) + ".len"
 		elem = el
 		// A slice whose ELEMENT is an array, `xs[1] = r` over a `[][2]int`: the
 		// element is a whole array and is written by copying it, exactly as the
@@ -24490,8 +24504,8 @@ func (e *emitter) emitExprNode(n Node) {
 				lenExpr, closing := "", "]"
 				switch {
 				case e.hasSliceVar(base):
-					e.emit(base + ".ptr[")
-					lenExpr = base + ".len"
+					e.emit(e.varRef(base) + ".ptr[")
+					lenExpr = e.varRef(base) + ".len"
 				case e.isStringConstName(base):
 					// See stringConstParts: the literal stands where the variable
 					// would, since a string constant never becomes one.
@@ -24499,8 +24513,8 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(e.byteReadOpen() + ptr + "[")
 					lenExpr, closing = n, "])"
 				case e.isStringVarName(base):
-					e.emit(e.byteReadOpen() + base + ".str[")
-					lenExpr, closing = base+".len", "])"
+					e.emit(e.byteReadOpen() + e.varRef(base) + ".str[")
+					lenExpr, closing = e.varRef(base)+".len", "])"
 				default:
 					_, a, isArray := e.arrayBase(base)
 					if isArray && a.dims() > 1 {
