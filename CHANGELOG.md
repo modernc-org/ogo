@@ -70,6 +70,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo fmt` wrote an interface method's result list tight.** `Next() (int32,
+  bool)` came back as `Next()(int32, bool)`: a method spec is a signature written
+  without the word `func`, and the rule that spaces a parameter list from a result
+  list keyed on the `func` form alone, so every interface method with several
+  results was reformatted into something gofmt does not write.
+
 - **`%T` of a type from another package printed the compiler's symbol.**
   `printf("%T", t)` for a `lib.Temp` printed `lib_Temp`, the mangled C name, where
   Go prints `lib.Temp` -- and every diagnostic that names a type said the same.

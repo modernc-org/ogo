@@ -1060,7 +1060,13 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					if f.beginsLine(firstIndex(ast[:next])) {
 						c.indentLevel++
 					}
-				case Signature:
+				case Signature, MethodSpec:
+					// A MethodSpec is a signature written without the word "func" --
+					// an interface's `Next() (int32, bool)` -- and its ")(" is the
+					// same pair of lists, which gofmt spaces. Without it the spacing
+					// rule saw a call binding tight to its callee and wrote
+					// `Next()(int32, bool)`, which no interface with several results
+					// escaped.
 					c.inSignature = true
 				case Receiver:
 					c.inReceiver = true
