@@ -4130,6 +4130,7 @@ type emitter struct {
 	constWide          map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
 	pkgConstDecls      []pkgConstDecl          // package-level integer constants, declared only where a body names them (see emitConstSpecName)
 	foldWideConstsOnly bool                    // the fold reads no 32-bit named constant: a level folded to a literal must keep referencing those (see levelConstLit)
+	foldUnsigned       bool                    // the fold computes as a uint64: the level being folded is unsigned (see wideConstValue)
 	usesF2u32          bool                    // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
 	usesF2i64          bool                    // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
 	usesF2u64          bool                    // ogo_f2u64 is called: a float converts to a uint64 (needs both)
@@ -11549,7 +11550,7 @@ func (e *emitter) intToFloatC(ct, src, operand string, argAST []int32) (string, 
 		return "", false
 	}
 	unsigned := isUnsignedCType(src)
-	if v, ok := e.constIntValue(argAST); ok {
+	if v, ok := e.wideConstValue(argAST, unsigned); ok {
 		if ct == "float" {
 			f := float32(v)
 			if unsigned {
@@ -11614,7 +11615,13 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 		// constSpelling. The cast of a narrower type stays: the cast is part of the
 		// type of the expression around it, and those constants fold correctly.
 		if ut := e.underlyingCType(ct); cIntWidths[ut] == 64 {
-			if v, ok := e.wideConstValue(arg.ast); ok {
+			// The OPERAND's level decides how it folds, and a uint64 operand's
+			// division or right shift is unsigned whatever the target.
+			unsigned := isUnsignedCType(ut)
+			if src, ok := e.exprReprCType(arg.ast); ok && cIntWidths[src] == 64 {
+				unsigned = isUnsignedCType(src)
+			}
+			if v, ok := e.wideConstValue(arg.ast, unsigned); ok {
 				e.emit(e.constSpelling(v, ut))
 				return
 			}
@@ -12346,7 +12353,7 @@ func (e *emitter) levelConstLit(ast []int32) (string, bool) {
 		ut = e.underlyingCType(ct)
 	}
 	if cIntWidths[ut] == 64 {
-		if v, ok := e.wideConstValue(ast); ok {
+		if v, ok := e.wideConstValue(ast, isUnsignedCType(ut)); ok {
 			return e.constSpelling(v, ut), true
 		}
 	}
@@ -12363,10 +12370,13 @@ func (e *emitter) levelConstLit(ast []int32) (string, bool) {
 // `static const` symbol the rendered literal would leave unreferenced. An
 // expression reading one is left as written, and the target's C compiler computes
 // it correctly, an object among its operands.
-func (e *emitter) wideConstValue(ast []int32) (int64, bool) {
-	prev := e.foldWideConstsOnly
-	e.foldWideConstsOnly = true
-	defer func() { e.foldWideConstsOnly = prev }()
+//
+// unsigned says the level is a uint64, whose division, remainder and right shift
+// fold differently from an int64's (see foldIntOp).
+func (e *emitter) wideConstValue(ast []int32, unsigned bool) (int64, bool) {
+	prevOnly, prevUnsigned := e.foldWideConstsOnly, e.foldUnsigned
+	e.foldWideConstsOnly, e.foldUnsigned = true, unsigned
+	defer func() { e.foldWideConstsOnly, e.foldUnsigned = prevOnly, prevUnsigned }()
 	return e.constIntValue(ast)
 }
 
@@ -12388,7 +12398,7 @@ func (e *emitter) foldIntSeq(kids []Node) (int64, bool) {
 		if !ok {
 			return 0, false
 		}
-		if acc, ok = foldIntOp(acc, e.opText(op.ast), rhs); !ok {
+		if acc, ok = foldIntOp(acc, e.opText(op.ast), rhs, e.foldUnsigned); !ok {
 			return 0, false
 		}
 	}
@@ -12512,7 +12522,14 @@ func (e *emitter) isMinInt64Magnitude(nodes []Node) bool {
 // foldIntOp applies one integer operator during constant folding. A division or
 // shift the fold cannot perform (a zero divisor, an out-of-range shift) yields
 // ok=false rather than a wrong value.
-func foldIntOp(a int64, op string, b int64) (int64, bool) {
+//
+// unsigned says the level folds as a uint64: a division, a remainder and a right
+// shift then take the value's bits as unsigned, which for a value with its top bit
+// set is a different answer. Until this was asked, `U >> 40` for a `const U uint64
+// = 1 << 63` folded as an arithmetic shift of the most negative int64, and
+// `uint32(U >> 40)` was 4286578688 where Go gives 8388608. Addition, subtraction,
+// multiplication and the bitwise operators are the same bits either way.
+func foldIntOp(a int64, op string, b int64, unsigned bool) (int64, bool) {
 	switch op {
 	case "+":
 		return a + b, true
@@ -12524,10 +12541,16 @@ func foldIntOp(a int64, op string, b int64) (int64, bool) {
 		if b == 0 {
 			return 0, false
 		}
+		if unsigned {
+			return int64(uint64(a) / uint64(b)), true
+		}
 		return a / b, true
 	case "%":
 		if b == 0 {
 			return 0, false
+		}
+		if unsigned {
+			return int64(uint64(a) % uint64(b)), true
 		}
 		return a % b, true
 	case "<<":
@@ -12538,6 +12561,9 @@ func foldIntOp(a int64, op string, b int64) (int64, bool) {
 	case ">>":
 		if b < 0 || b >= 64 {
 			return 0, false
+		}
+		if unsigned {
+			return int64(uint64(a) >> uint(b)), true
 		}
 		return a >> uint(b), true
 	case "&":
@@ -15924,7 +15950,13 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		return "", block, true
 	}
 	if tok, single := e.soleToken(g.tag.ast); single && e.f.ch(tok) == IDENT {
-		return e.src(tok), block, true
+		// A variable switched on is compared by name. A 64-bit CONSTANT is not:
+		// it has no C symbol (see emitConstSpecName), and the name here is used as
+		// one, so it takes the temporary below like any other expression, whose
+		// initializer spells the constant as its literal.
+		if _, isConst := e.wideConstRef(e.src(tok)); !isConst {
+			return e.src(tok), block, true
+		}
 	}
 	if _, tok := e.inferCType(g.tag.ast); !tok {
 		e.fail("cannot infer the type of the switch value")
@@ -17365,6 +17397,9 @@ func (e *emitter) chainReceiver(text, ctype string, addr, wantPtr bool) (string,
 func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, addr, ok bool) {
 	var cur accessCur
 	pendingFn := false
+	// The C name a pending leading function is called by: this package's mangling
+	// of base, or an imported package's of the member a qualifier selects.
+	callee := e.funcCallC(base)
 	switch {
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
@@ -17392,14 +17427,39 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		// stripped the `.(type)` before asking.
 		ct, used, isConv := e.convChainHead(base, steps)
 		if !isConv {
-			return "", "", false, false
+			// An IMPORT QUALIFIER opening the chain, `geo.Huge.Twice()` or
+			// `geo.Sum(a, b).Int()`: the member it selects is that package's
+			// constant, function or variable, and the chain goes on from there
+			// exactly as it does from this package's own. A 64-bit constant is
+			// its literal, having no symbol (see emitConstSpecName); a function
+			// is pending until its call, under its mangled name.
+			prefix, isImport := e.importQualifiers[base]
+			if !isImport || len(steps) == 0 || steps[0].sym != Selector {
+				return "", "", false, false
+			}
+			mn := mangle(prefix, e.soleIdent(steps[0].ast))
+			switch gt, isGlobal := e.globals[mn]; {
+			case e.wideConstName(mn):
+				v, _ := parseCIntLit(e.constInt[mn])
+				text, addr, cur = e.constSpelling(v, e.underlyingCType(gt)), false, e.plainOrSlice(gt)
+			case isGlobal:
+				_, isConst := e.constInt[mn]
+				text, addr, cur = mn, !isConst, e.plainOrSlice(gt)
+			default:
+				if _, isFn := e.funcRet[mn]; !isFn {
+					return "", "", false, false
+				}
+				pendingFn, text, callee = true, mn, mn
+			}
+			steps = steps[1:]
+		} else {
+			args := e.callArgExprs(steps[used-1].ast)
+			if len(args) != 1 {
+				return "", "", false, false
+			}
+			text = e.captureC(func() { e.emitConversion(ct, args[0]) })
+			cur, steps = e.plainOrSlice(ct), steps[used:]
 		}
-		args := e.callArgExprs(steps[used-1].ast)
-		if len(args) != 1 {
-			return "", "", false, false
-		}
-		text = e.captureC(func() { e.emitConversion(ct, args[0]) })
-		cur, steps = e.plainOrSlice(ct), steps[used:]
 	}
 	for i := 0; i < len(steps); i++ {
 		n := steps[i]
@@ -17434,11 +17494,11 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			// Otherwise a call reaches here only on the pending leading function; a
 			// method call is recognised at its Selector and consumes the CallSuffix
 			// there.
-			rts, okr := e.userFunc(base)
+			rts, okr := e.funcRet[callee]
 			if !pendingFn || !okr || len(rts) != 1 {
 				return "", "", false, false
 			}
-			cname := e.funcCallC(base)
+			cname := callee
 			text = cname + "(" + e.argsCText(cname, n.ast) + ")"
 			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
 			// A STRUCT result about to become a METHOD's receiver is bound to a
@@ -22952,13 +23012,143 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 			i += 3
 			continue
 		}
-		if lit, ok := e.unsignedLitC(kids[i]); unsignedLevel && ok {
+		if text, ok := e.constCompareC(kids, i); ok {
+			e.emit(text)
+			i += 3
+			continue
+		}
+		if lit, ok := e.wideCompareLitC(kids, i); ok {
+			e.emit(lit)
+		} else if lit, ok := e.unsignedLitC(kids[i]); unsignedLevel && ok {
 			e.emit(lit)
 		} else {
 			e.emitExprNode(kids[i])
 		}
 		i++
 	}
+}
+
+// constCompareC folds a comparison of two constants at a 64-bit level to its
+// answer, "1" or "0", or reports false for anything else. `geo.Huge > 0`, with the
+// constant inlined as its literal, reached the target's C compiler as a comparison
+// of two constants -- which it folds through its own 64-bit compare helper, and
+// with the int literal unwidened at that call: "Bad number of parameters in call
+// to _int64_cmps: expected 4 found 3". A comparison the compiler can answer itself
+// is not left to it.
+func (e *emitter) constCompareC(kids []Node, i int) (string, bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return "", false
+	}
+	op := e.opText(kids[i+1].ast)
+	if op == "&&" || op == "||" {
+		return "", false
+	}
+	ct, ok := e.compareOperandCType(kids, i)
+	if !ok || cIntWidths[ct] != 64 {
+		return "", false
+	}
+	a, okA := e.wideConstValue(kids[i].ast, isUnsignedCType(ct))
+	b, okB := e.wideConstValue(kids[i+2].ast, isUnsignedCType(ct))
+	if !okA || !okB {
+		return "", false
+	}
+	var r bool
+	if isUnsignedCType(ct) {
+		ua, ub := uint64(a), uint64(b)
+		switch op {
+		case "==":
+			r = ua == ub
+		case "!=":
+			r = ua != ub
+		case "<":
+			r = ua < ub
+		case "<=":
+			r = ua <= ub
+		case ">":
+			r = ua > ub
+		case ">=":
+			r = ua >= ub
+		default:
+			return "", false
+		}
+	} else {
+		switch op {
+		case "==":
+			r = a == b
+		case "!=":
+			r = a != b
+		case "<":
+			r = a < b
+		case "<=":
+			r = a <= b
+		case ">":
+			r = a > b
+		case ">=":
+			r = a >= b
+		default:
+			return "", false
+		}
+	}
+	if r {
+		return "1", true
+	}
+	return "0", true
+}
+
+// wideCompareLitC spells a bare integer literal compared with a 64-bit operand at
+// that operand's width, "0LL" or "0ULL", or reports false for any other operand.
+// The target's C compiler compares 64-bit values through a helper of its own, and
+// does not widen a narrower argument to it when the other argument is a 64-bit
+// EXPRESSION rather than a variable (see shiftCountC): `x % One == 0` failed to
+// compile with "Bad number of parameters in call to _int64_cmps", where `q < 0`
+// over a variable had always been fine.
+func (e *emitter) wideCompareLitC(kids []Node, i int) (string, bool) {
+	tok, ok := e.soleToken(kids[i].ast)
+	if !ok || e.f.ch(tok) != INT {
+		return "", false
+	}
+	ct, ok := e.compareOperandCType(kids, i)
+	if !ok || cIntWidths[ct] != 64 {
+		return "", false
+	}
+	lit := cIntLit(e.src(tok))
+	if strings.ContainsAny(lit, "LlUu") {
+		return "", false // already carries a width
+	}
+	if isUnsignedCType(ct) {
+		return lit + "ULL", true
+	}
+	return lit + "LL", true
+}
+
+// compareOperandCType is the C type of the comparison the operand at i belongs to:
+// the type of the operand across the relational operator from it, resolved past a
+// definition. A kid that is not an operand of a comparison, or one whose partner
+// has no known type, answers false.
+func (e *emitter) compareOperandCType(kids []Node, i int) (string, bool) {
+	partner := -1
+	switch {
+	case i+2 < len(kids) && kids[i+1].sym == RelOp && !e.isLogicalOp(kids[i+1]):
+		partner = i + 2
+	case i >= 2 && kids[i-1].sym == RelOp && !e.isLogicalOp(kids[i-1]):
+		partner = i - 2
+	default:
+		return "", false
+	}
+	for _, k := range []int{partner, i} {
+		if e.operandUntyped(kids[k]) {
+			continue
+		}
+		if ct, ok := e.inferNodes([]Node{kids[k]}); ok {
+			return e.underlyingCType(ct), true
+		}
+	}
+	return "", false
+}
+
+func (e *emitter) isLogicalOp(n Node) bool {
+	op := e.opText(n.ast)
+	return op == "&&" || op == "||"
 }
 
 // emitLogicalKids emits the operand/operator children of an Expression or

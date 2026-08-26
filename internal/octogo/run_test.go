@@ -37,6 +37,91 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A 64-bit constant in every position the language offers: sent on a
+		// channel, appended, a deferred call's argument, a switch tag and a case,
+		// under a unary operator, in struct and array literals, converted, compared,
+		// under compound assignment, printed. Such a constant has no C symbol (see
+		// emitConstSpecName), and this sweep is what found the positions still
+		// naming one -- the switch tag among them -- and the fold of a uint64
+		// constant expression computing as signed: `uint32(U >> 40)` for a
+		// `const U uint64 = 1 << 63` was 4286578688 where Go gives 8388608.
+		name: "a 64-bit constant in every position",
+		src: `type Q int64
+
+const One Q = 1 << 32
+const Two Q = 2 << 32
+const U uint64 = 1 << 63
+
+type P struct {
+	q Q
+	n int
+}
+
+func (q Q) Int() int {
+	return int(q >> 32)
+}
+
+func take(qs ...Q) int {
+	n := 0
+	for _, q := range qs {
+		n += q.Int()
+	}
+	return n
+}
+
+func deferred(q Q) {
+	println("deferred", q.Int())
+}
+
+func sender(c chan Q) {
+	c <- One
+}
+
+func main() {
+	var ch chan Q
+	go sender(ch)
+	got := <-ch
+	println("recv", got.Int())
+	var s []Q = make([]Q, 0, 4)
+	s = append(s, One, Two)
+	s = append(s, Q(3<<32))
+	println("append", len(s), s[0].Int(), s[1].Int(), s[2].Int())
+	defer deferred(Two)
+	switch One {
+	case Two:
+		println("switch: two")
+	case One:
+		println("switch: one")
+	}
+	switch v := Two; v {
+	case One + One:
+		println("case: one+one")
+	}
+	neg := -One
+	println("unary", neg.Int(), (^One)+One+One, (+One).Int())
+	p := P{q: One, n: One.Int()}
+	arr := [2]Q{One, Two}
+	println("lits", p.q.Int(), p.n, arr[0].Int(), arr[1].Int())
+	println("conv", float64(One)/4294967296, int64(One), uint64(Two)>>32, uint32(U>>40), U/3, U%7, uint32(U/(1<<33)))
+	println("cmp", One < Two, One == Q(1<<32), U > 1<<62, U>>1 > 1<<62, One > 0, take(One, Two))
+	for i := range 3 {
+		v := Q(i) << 32
+		if v == Two {
+			println("range", i)
+		}
+	}
+	var x Q = One
+	x += Two
+	x -= One
+	x *= 2
+	x /= Two
+	println("compound", x.Int(), x%One == 0)
+	printf("%d %v %d\n", One, Two, U)
+}
+`,
+		want: "recv 1\nappend 3 1 2 3\nswitch: one\ncase: one+one\nunary -1 4294967295 1\nlits 1 1 1 2\nconv 1 4294967296 2 8388608 3074457345618258602 1 1073741824\ncmp true true true false true 3\nrange 2\ncompound 0 false\n4294967296 8589934592 9223372036854775808\ndeferred 2\n",
+	},
+	{
 		// A method called on a 64-bit CONSTANT, alone and at the head of a chain:
 		// `One.Int()`, `Two.Add(One).Half().Int()`. Such a constant has no C symbol
 		// -- it is inlined at each use (see emitConstSpecName) -- and the receiver
@@ -17810,7 +17895,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n9\n42\n"
+	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -17948,6 +18033,12 @@ println(chain.Via(4))
 go greet.Answer()
 greet.Relay <- 14
 println(<-greet.Ack)
+// A method called on an imported package's 64-bit CONSTANT, alone and at the head
+// of a chain, and on the result of an imported function: each is a chain whose
+// head is an import qualifier, which had no lowering -- "unsupported call in
+// expression" for all three -- and the constant has no C symbol to name (see
+// emitConstSpecName). Found by sweeping the positions a constant can stand in.
+println(chain.Huge.Int(), chain.Huge.Twice().Int(), chain.Sum(chain.Huge, chain.Huge).Int(), chain.Huge > 0)
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -17982,6 +18073,18 @@ var sh greet.Shape
 // levels. greet is not under chain/ -- an import names a directory of the build
 // root, whichever package writes it.
 func Via(n int) int { return greet.Twice(n) + 1 }
+
+// Big and Huge are what main calls methods on across the boundary: a 64-bit
+// constant of an imported type, inlined at each use rather than declared.
+type Big int64
+
+const Huge Big = 5 << 40
+
+func (b Big) Int() int { return int(b >> 40) }
+
+func (b Big) Twice() Big { return b * 2 }
+
+func Sum(a, b Big) Big { return a + b }
 `,
 	"greet/greet.ogo": `// Relay and Ack are this package's channels, used by whoever imports it. With no
 // heap there is nothing for a constructor to return, so a package-level channel is

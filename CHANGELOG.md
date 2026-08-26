@@ -33,6 +33,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method could not be called on an imported package's constant, or on the
+  result of its function.** `geo.Huge.Twice()`, `geo.Huge.Int()` and
+  `geo.Sum(a, b).Int()` were each "unsupported call in expression" -- the chain
+  lowering knew a variable, a same-package function and a conversion at its head,
+  and not an import qualifier -- while `x := geo.Huge; x.Int()` worked. A chain may
+  now start from an imported package's constant, function or variable.
+
 - **An integer converted to a float rounded a tie away from zero.** `float32(16777217)`
   was 16777218 on the board where IEEE 754 and Go round to even, 16777216; half of
   the integers between 2²⁴ and 2²⁵ are such ties, so a counter past sixteen million
@@ -91,9 +98,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   fit an int, on the premise that C folds it the same way. It now folds every
   64-bit constant expression itself and emits one literal, and a 64-bit named
   constant is inlined at each use rather than declared -- where it stands as a
-  method's receiver too, `One.Div(x)`, which the first cut of this left naming a
-  symbol that no longer existed; a pointer method on a constant is refused in Go's
-  words.
+  method's receiver too, `One.Div(x)`, and as a switch tag, `switch One {`, both of
+  which the first cut of this left naming a symbol that no longer existed; a pointer
+  method on a constant is refused in Go's words. The fold computes a `uint64`
+  level as unsigned: its first cut divided and shifted the bits as signed, and
+  `uint32(U >> 40)` for a `const U uint64 = 1 << 63` was 4286578688 where Go gives
+  8388608. A comparison of two such constants is folded to its answer, and a bare
+  literal compared with a 64-bit expression is written at that width, `0LL`: the C
+  backend folds the first through a helper of its own and does not widen the
+  literal for either, "Bad number of parameters in call to _int64_cmps".
 
 - **A negative constant wider than an int compared as unsigned.** It was spelled
   as its bit pattern, `0xFFFFFFFF00000001ULL`, which makes any expression it stands
