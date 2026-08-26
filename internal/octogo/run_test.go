@@ -37,6 +37,97 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A string constant -- of a defined type with methods, and a plain one -- in
+		// every position: sent, appended, a deferred argument, a switch tag and a
+		// case, indexed, sliced, ranged over, in literals, a method's receiver alone
+		// and at the head of a chain, compared, concatenated with a literal, spread
+		// into a []byte, handed to the strings package, printed. A string constant
+		// has no C symbol, and the positions that render a name -- the receiver, the
+		// chain head, the switch tag -- named it: `Start.Len()` reached the C backend
+		// as an undeclared symbol, `Start.Twice().Len()` was refused, and `append(b,
+		// Start...)` was refused for the defined type. The main is split in three:
+		// one function's locals live in the cog's 480 longs.
+		name: "a string constant in every position",
+		src: `import "strings"
+
+type Cmd string
+
+const Start Cmd = "start"
+const Stop Cmd = "stop"
+const S = "abc"
+
+func (c Cmd) Len() int { return len(c) }
+
+func (c Cmd) Is(s string) bool { return string(c) == s }
+
+func (c Cmd) Twice() Cmd { return c }
+
+type P struct {
+	c Cmd
+	s string
+}
+
+func take(cs ...Cmd) int {
+	n := 0
+	for _, c := range cs {
+		n += c.Len()
+	}
+	return n
+}
+
+func deferred(c Cmd) { println("deferred", string(c)) }
+
+func sender(ch chan Cmd) { ch <- Start }
+
+func main() {
+	var ch chan Cmd
+	go sender(ch)
+	got := <-ch
+	println("recv", string(got), got.Len())
+	var cs []Cmd = make([]Cmd, 0, 4)
+	cs = append(cs, Start, Stop)
+	println("append", len(cs), string(cs[0]), string(cs[1]))
+	defer deferred(Stop)
+	switch Start {
+	case Stop:
+		println("switch: stop")
+	case Start:
+		println("switch: start")
+	}
+	switch S {
+	case "abc":
+		println("switch S: abc")
+	}
+	println("len/index/slice", len(S), S[1], S[1:3], len(Start), Start[0], string(Start[1:]))
+	for i, r := range S {
+		if r == 'c' {
+			println("range", i)
+		}
+	}
+	partB()
+}
+
+func partB() {
+	p := P{c: Start, s: S}
+	arr := [2]Cmd{Start, Stop}
+	println("lits", string(p.c), p.s, string(arr[0]), string(arr[1]))
+	println("methods", Start.Len(), Stop.Is("stop"), Start.Twice().Len(), string(Start.Twice()), take(Start, Stop))
+	println("cmp", S == "abc", Start == "start", Start < Stop, S+"x" == "abcx", string(Start)+"!" == "start!")
+	partC()
+}
+
+func partC() {
+	println("strings", strings.HasPrefix(S, "ab"), strings.Index(S, "c"), strings.Contains(string(Start), "tar"), strings.HasSuffix(S, "bc"))
+	var b []byte = make([]byte, 0, 16)
+	b = append(b, S...)
+	b = append(b, Start...)
+	println("bytes", len(b), b[0], b[3], b[3] == byte(Start[0]) && b[7] == byte(Start[4]))
+	printf("%s %v %s %d\n", S, Start, S, len(S))
+}
+`,
+		want: "recv start 5\nappend 2 start stop\nswitch: start\nswitch S: abc\nlen/index/slice 3 98 bc 5 115 tart\nrange 2\nlits start abc start stop\nmethods 5 true 5 start 9\ncmp true true true true true\nstrings true 2 true true\nbytes 8 97 115 true\nabc start abc 3\ndeferred stop\n",
+	},
+	{
 		// A 64-bit constant in every position the language offers: sent on a
 		// channel, appended, a deferred call's argument, a switch tag and a case,
 		// under a unary operator, in struct and array literals, converted, compared,
@@ -17895,7 +17986,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n"
+	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18039,6 +18130,12 @@ println(<-greet.Ack)
 // expression" for all three -- and the constant has no C symbol to name (see
 // emitConstSpecName). Found by sweeping the positions a constant can stand in.
 println(chain.Huge.Int(), chain.Huge.Twice().Int(), chain.Sum(chain.Huge, chain.Huge).Int(), chain.Huge > 0)
+// The same for a STRING constant of an imported defined type: the receiver, the
+// chain, a local inferred from it (which used to lose the type and find no
+// method), and a conversion of the chain's result.
+u := chain.Unit
+up := chain.Unit.Upper()
+println(chain.Unit.Len(), chain.Unit.Upper().Len(), u.Len(), up.Len(), string(chain.Unit.Upper()), len(chain.Unit))
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -18085,6 +18182,21 @@ func (b Big) Int() int { return int(b >> 40) }
 func (b Big) Twice() Big { return b * 2 }
 
 func Sum(a, b Big) Big { return a + b }
+
+// Label and Unit are the string counterparts: a string constant of an imported
+// defined type, called methods on across the boundary and bound to a local.
+type Label string
+
+const Unit Label = "mm"
+
+func (l Label) Len() int { return len(l) }
+
+func (l Label) Upper() Label {
+	if l == "mm" {
+		return "MM"
+	}
+	return l
+}
 `,
 	"greet/greet.ogo": `// Relay and Ack are this package's channels, used by whoever imports it. With no
 // heap there is nothing for a constructor to return, so a package-level channel is

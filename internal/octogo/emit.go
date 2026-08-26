@@ -1118,8 +1118,8 @@ func (e *emitter) emitGo(nodes []Node) {
 		if wantPtr {
 			recvCType += "*"
 		}
-		if lit, isConst := e.wideConstRef(base); isConst && !wantPtr {
-			recvText = lit // a 64-bit constant receiver is its literal (see emitCallExpr)
+		if lit, isConst := e.inlinedConstRef(base); isConst && !wantPtr {
+			recvText = lit // a constant receiver is its literal (see emitCallExpr)
 		} else {
 			recvText = e.captureC(func() { e.emitMethodReceiver(e.varRef(base), rct, wantPtr) })
 		}
@@ -6496,6 +6496,30 @@ func (e *emitter) wideConstRef(name string) (string, bool) {
 	return "", false
 }
 
+// must is the value of a (value, ok) pair whose ok the caller has already checked.
+func must(v string, ok bool) string {
+	if !ok {
+		panic("internal error: must of a missing value")
+	}
+	return v
+}
+
+// inlinedConstRef renders a read of a constant that has no C symbol -- a 64-bit
+// integer constant (see emitConstSpecName) or a string constant (see
+// emitConstDecl) -- by its source name, or reports false for any other name. It is
+// what every position that RENDERS a name asks before writing the name itself: a
+// method's receiver, a chain's head, a switch tag. Those positions named the
+// symbol after the operand path had stopped doing so, twice.
+func (e *emitter) inlinedConstRef(name string) (string, bool) {
+	if lit, ok := e.wideConstRef(name); ok {
+		return lit, true
+	}
+	if v, ok := e.foldedStr(name); ok {
+		return e.captureC(func() { e.emitFoldedString(v) }), true
+	}
+	return "", false
+}
+
 // wideConstName reports whether a constant's C name is one of the 64-bit ones the
 // fold may read while foldWideConstsOnly is set.
 func (e *emitter) wideConstName(cname string) bool {
@@ -8699,8 +8723,8 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 	if len(suffix) == 2 && suffix[0].sym == Selector {
 		rct, _ := e.varType(recv)
 		recvText, addr := e.varRef(recv), true
-		if lit, isConst := e.wideConstRef(recv); isConst {
-			recvText, addr = lit, false // a 64-bit constant receiver is its literal (see emitCallExpr)
+		if lit, isConst := e.inlinedConstRef(recv); isConst {
+			recvText, addr = lit, false // a constant receiver is its literal (see emitCallExpr)
 		}
 		r, ok := e.chainReceiver(recvText, rct, addr, e.methodPtr[cname])
 		if !ok {
@@ -13168,6 +13192,26 @@ func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
 	return e.accessChainTypeAt(cur, steps, false)
 }
 
+// constChainType types a chain whose head accessBase has no answer for: an import
+// qualifier selecting that package's constant, variable or function, or a string
+// constant of this package. The chain typer walks fields and not method calls, so
+// the type is taken from the RENDERER, which knows every head and every step
+// (chainCText), run under capturePrologue so that nothing it writes or hoists
+// reaches the output: the same chain is rendered for real where it stands.
+func (e *emitter) constChainType(base string, steps []Node) (accessCur, bool) {
+	if !e.isStringConstName(base) {
+		if _, isImport := e.importQualifiers[base]; !isImport {
+			return accessCur{}, false
+		}
+	}
+	ctype, ok := "", false
+	e.capturePrologue(func() { _, ctype, _, ok = e.chainCText(base, steps) })
+	if !ok || ctype == "" {
+		return accessCur{}, false
+	}
+	return e.plainOrSlice(ctype), true
+}
+
 // accessChainTypeAt is accessChainType from a value already reached. It models the
 // temporary emitAccessChainAt binds where a step needs a name and the chain has
 // none: a value that can be bound gets one back, and one that cannot -- an array --
@@ -16011,7 +16055,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		// it has no C symbol (see emitConstSpecName), and the name here is used as
 		// one, so it takes the temporary below like any other expression, whose
 		// initializer spells the constant as its literal.
-		if _, isConst := e.wideConstRef(e.src(tok)); !isConst {
+		if _, isConst := e.inlinedConstRef(e.src(tok)); !isConst {
 			return e.src(tok), block, true
 		}
 	}
@@ -17144,7 +17188,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// no C symbol, being inlined at each use (see emitConstSpecName), so the
 			// receiver is its literal. A pointer method has nothing to take the
 			// address of, which is what Go says of it too.
-			if lit, isConst := e.wideConstRef(recv); isConst {
+			if lit, isConst := e.inlinedConstRef(recv); isConst {
 				if e.methodPtr[cname] {
 					e.fail("cannot call pointer method %s on %s", method, e.goTypeName(methodBaseType(rct)))
 					return true
@@ -17458,6 +17502,17 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	// of base, or an imported package's of the member a qualifier selects.
 	callee := e.funcCallC(base)
 	switch {
+	case e.isStringConstName(base):
+		// A chain hanging off a STRING constant, `Start.Twice().Len()`: the
+		// constant has no C symbol (see emitConstDecl) and accessBase refuses it,
+		// so the chain starts from its literal, typed as the constant was declared
+		// -- `Cmd`, whose methods the next step looks up.
+		text, addr = e.captureC(func() { e.emitFoldedString(must(e.foldedStr(base))) }), false
+		if ct, ok := e.varType(base); ok {
+			cur = accessCur{ctype: ct}
+		} else {
+			cur = accessCur{ctype: cString}
+		}
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
 		text, addr = e.varRef(base), true
@@ -17502,6 +17557,10 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			case isGlobal:
 				_, isConst := e.constInt[mn]
 				text, addr, cur = mn, !isConst, e.plainOrSlice(gt)
+				if v, isStr := e.constStr[mn]; isStr {
+					// A string constant of that package: its literal, as at home.
+					text, addr = e.captureC(func() { e.emitFoldedString(v) }), false
+				}
 			default:
 				if _, isFn := e.funcRet[mn]; !isFn {
 					return "", "", false, false
@@ -18031,10 +18090,14 @@ func (e *emitter) spreadAppendArg(elem string, args []Node) (isStr, ok bool) {
 		e.failAt(args[1].ast, "cannot tell the type of the value spread into append")
 		return false, false
 	}
+	// Resolved past a definition: a `type Cmd string` spreads its bytes as a
+	// string does, and a `type Bytes []byte` its elements -- both assignable
+	// where Go takes them, and the same representation here.
+	ut := e.underlyingCType(ct)
 	switch {
-	case e.isSliceCType(ct) && sliceElemFromCName(ct) == elem:
+	case e.isSliceCType(ut) && sliceElemFromCName(ut) == elem:
 		return false, true
-	case ct == cString && elem == "uint8_t":
+	case ut == cString && elem == "uint8_t":
 		return true, true
 	}
 	e.failAt(args[1].ast, "cannot append %s... to []%s", e.goTypeName(ct), e.goTypeName(elem))
@@ -21721,7 +21784,16 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 	// not exist. An integer constant does emit a `static const` definition, so it
 	// resolves through the ordinary global path below (naming the symbol, matching a
 	// same-package read, so the definition is not left unreferenced).
-	if _, isStr := e.constStr[gn]; isStr {
+	if v, isStr := e.constStr[gn]; isStr {
+		// Its literal, with the type it was declared with -- `geo.Unit` of a
+		// `type Name string` is a Name, whose methods a read of it may call.
+		// Answering nothing here left the read to a later shape that typed it a
+		// plain string, so `x := geo.Unit; x.Len()` found no method on x. A chain
+		// INTO the constant, `geo.Tag[1:3]`, is still the shapes' below, which is
+		// what the field count leaves them.
+		if len(fields) == 1 {
+			return e.captureC(func() { e.emitFoldedString(v) }), e.globals[gn], true
+		}
 		return "", "", false
 	}
 	// A 64-bit integer constant is inlined too (see emitConstSpecName), keeping the
@@ -22480,6 +22552,17 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 // user function's recorded result type, or int for a p2 intrinsic (propeller2.h
 // intrinsics all return int).
 func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
+	// A chain longer than the fixed shapes below, hanging off an IMPORT QUALIFIER
+	// or a STRING constant -- `geo.Unit.Upper()`, `Start.Twice().Len()` -- is
+	// typed by the chain typer given the head the renderer gives it (see
+	// chainCText). Without this `x := geo.Unit.Upper()` could not infer a type
+	// for x, and `string(geo.Unit.Upper())` was refused as needing allocation,
+	// its operand having no type to be a string by.
+	if len(suffix) > 2 {
+		if cur, ok := e.constChainType(recv, suffix); ok && cur.ctype != "" {
+			return cur.ctype, true
+		}
+	}
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		if recv == "len" || recv == "cap" || recv == "copy" {

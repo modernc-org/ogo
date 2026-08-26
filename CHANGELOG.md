@@ -44,6 +44,25 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method could not be called on a string constant, nor a chain hung off one,
+  and a local bound to an imported string constant lost its type.** For a `type Cmd
+  string` with methods and `const Start Cmd = "start"`, `Start.Len()` reached the C
+  backend naming a symbol that does not exist -- a string constant is inlined at
+  each use -- and `Start.Twice().Len()` was "unsupported call in expression"; the
+  same through an import qualifier, `geo.Unit.Len()`; and `x := geo.Unit` typed x
+  a plain string, so `x.Len()` found no method and `string(geo.Unit.Upper())` was
+  refused as needing allocation, its operand having no type to be a string by.
+  Every position that renders a name -- a method's receiver, a chain's head, a
+  switch tag -- now asks for an inlined constant's literal first, for string and
+  64-bit constants alike, and a chain from an imported package's constant or
+  function is typed by rendering it. Found by the sweep of every position a string
+  constant can stand in, the sequel to the same sweep for a 64-bit one.
+
+- **`append(b, s...)` refused a string of a defined type.** `append(b, Start...)`
+  for a `Start` of `type Cmd string` was "cannot append Cmd... to []uint8", where Go
+  spreads any string type's bytes onto a `[]byte`; a defined slice type spreads
+  its elements likewise now.
+
 - **A method could not be called on an imported package's constant, or on the
   result of its function.** `geo.Huge.Twice()`, `geo.Huge.Int()` and
   `geo.Sum(a, b).Int()` were each "unsupported call in expression" -- the chain
