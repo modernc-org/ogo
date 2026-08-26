@@ -14246,6 +14246,15 @@ func (e *emitter) varRef(name string) string {
 	if _, ok := e.globalArrays[name]; ok {
 		return name // an imported package's array; see varType
 	}
+	// A FUNCTION of this package used as a value, `f := Double`. Its name is
+	// mangled into its package exactly as a variable's is -- funcCallC is what a
+	// CALL of it uses -- and only main's prefix is empty, so outside main the value
+	// named a symbol that does not exist while the call beside it was right.
+	if cname := e.funcCallC(name); cname != name {
+		if _, isFunc := e.funcRet[cname]; isFunc {
+			return cname
+		}
+	}
 	return userIdent(name)
 }
 
@@ -17852,7 +17861,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				}
 				e.emit(lit)
 			} else {
-				e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
+				// varRef, not the name as written: a package variable's C name is
+				// mangled into its package, and only main's prefix is empty. A
+				// method called on one -- `G.Sum()`, `G.Bump()` -- named a symbol
+				// that does not exist in every other package. The promoted-method
+				// branch above already asked varRef; this one did not.
+				e.emitMethodReceiver(e.varRef(recv), rct, e.methodPtr[cname])
 			}
 			// A variadic parameter is passed even when the call wrote no arguments
 			// for it: the callee takes a []T either way, and an empty one is the

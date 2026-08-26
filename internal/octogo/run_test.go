@@ -18231,7 +18231,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
-	"20 4 10 4 2\n105 2 20 383\n"
+	"20 4 10 4 2\n105 2 20 383\n16 6\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18400,6 +18400,9 @@ for _, v := range chain.Ints {
 }
 xs := chain.Ints[:2]
 println(n, len(xs), xs[1], chain.InSum())
+// A package using its OWN struct variable as a receiver and its own function as
+// a value, both of which named an unmangled symbol outside main.
+println(chain.Own(), chain.Kit.N)
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -18486,6 +18489,29 @@ var Table = [2]Temp{-2.5, Boil}
 var Ints = [4]int{10, 20, 30, 40}
 var Sl = Ints[:]
 var Tag = "abcd"
+
+// Reg, Kit, Shim and Own are this package's own symbols used from INSIDE it in
+// the two positions that named an unmangled C symbol outside main: a struct
+// variable as a method's receiver, and a function taken as a value.
+type Reg struct{ N int }
+
+func (r Reg) Twice() int { return r.N * 2 }
+
+func (r *Reg) Inc() { r.N++ }
+
+var Kit = Reg{4}
+
+func Shim(v int) int { return v + 1 }
+
+func Apply(f func(int) int, v int) int { return f(v) }
+
+func Own() int {
+	f := Shim
+	Kit.Inc()
+	m := Kit.Inc
+	m()
+	return Apply(f, 3) + Kit.Twice()
+}
 
 func InSum() int {
 	n := 0

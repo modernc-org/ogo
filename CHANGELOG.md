@@ -53,6 +53,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method's receiver and a function value named an unmangled symbol outside
+  `main`.** Two more of the same kind as the package-variable fix below, found by
+  re-running the sweep with the code in an imported package: `G.Sum()` on a
+  package struct variable emitted `lib_P_Sum(G)` where the variable is `lib_G`,
+  and `f := Double` emitted the bare `Double` where a CALL of it beside was
+  correctly `lib_Double`. Both named a symbol that does not exist, so a package
+  could not call a method on its own variable, nor take its own function as a
+  value -- unless it was `main`, whose prefix is empty.
+
 - **A refusal named the compiler's symbol for an imported variable.** A store
   the escape rule refuses reported "in package variable `geo_Sl`" of a program
   that says `geo.Sl` -- the name reaches those checks already mangled -- and so
