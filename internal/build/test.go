@@ -110,7 +110,10 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 	if err != nil {
 		return 1, err
 	}
-	names := octogo.TestFuncs(pkg)
+	names, err := octogo.TestFuncs(pkg)
+	if err != nil {
+		return 1, err
+	}
 	if len(names) == 0 {
 		fmt.Fprintf(stdout, "ok  \t%s\t[no tests to run]\n", dir)
 		return 0, nil

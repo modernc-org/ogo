@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A test function with the wrong signature is refused, and `Testfoo` is not a
+  test.** `func TestNoArg()` in a `_test.ogo` was quietly never a test -- `ogo test`
+  built the package and ran everything else -- where `go test` stops with vet's
+  `wrong signature for TestNoArg, must be: func TestNoArg(t *testing.T)`. It says
+  the same now, positioned at the name, for a missing, extra, wrongly typed or
+  by-value parameter and for a result. A function named `Testfoo` -- "Test" followed
+  by a lowercase letter -- was run as a test where Go would not run it, and is not
+  one now; `Test` alone is, as in Go. Found by trying the runner's edges: a package
+  with no tests, a type error in a test file, two test files, and a test of the
+  `main` package all behaved.
+
 - **A constant operand a typed operand's type cannot hold is refused, and so is an
   integer division by a constant zero.** `x + 4294967296`, `x & 0x1FFFFFFFF`,
   `x == (1 << 32)` and `x + 1.5` for an int32 `x` all compiled; Go refuses each, and

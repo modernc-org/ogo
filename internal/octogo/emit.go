@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // cIntLit renders an integer literal as C, appending a "ULL" suffix to a value that
@@ -3311,9 +3312,15 @@ func isMainFunc(f *File, decl Node) bool {
 }
 
 // TestFuncs names the test functions of a package: a function called Test<Name>
-// taking one parameter and no results, which is the shape "ogo test" generates a
+// taking a *testing.T and nothing else, which is the shape "ogo test" generates a
 // runner for. Order is the source order of the files, so a run is reproducible.
-func TestFuncs(p *Package) (out []string) {
+//
+// The name is Go's rule: "Test" followed by nothing, or by a character that is not
+// a lowercase letter -- Test, TestFoo, Test1, Test_x are tests and Testfoo is not,
+// as "go test" also would not run it. A function whose name says it is a test and
+// whose signature does not is an ERROR, in vet's words, rather than a function
+// quietly never run: that is what "go test" does, vet being part of it.
+func TestFuncs(p *Package) (out []string, err error) {
 	for _, f := range p.Files {
 		if f == nil {
 			continue
@@ -3330,53 +3337,103 @@ func TestFuncs(p *Package) (out []string) {
 					if d.sym != FuncDecl {
 						continue
 					}
-					if nm, ok := testFuncName(f, d); ok {
+					nm, ok, err := testFuncName(f, d)
+					if err != nil {
+						return nil, err
+					}
+					if ok {
 						out = append(out, nm)
 					}
 				}
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
-// testFuncName reports whether a FuncDecl is a test function, and its name. It must
-// be a plain function (no receiver) called Test<Something> with exactly one
-// parameter and no results; the parameter's type is checked by the compiler, which
-// sees the generated runner pass a *testing.T.
-func testFuncName(f *File, decl Node) (string, bool) {
+// isTestName reports whether name is a test function's, by Go's rule (see
+// TestFuncs).
+func isTestName(name string) bool {
+	if !strings.HasPrefix(name, "Test") {
+		return false
+	}
+	rest := name[len("Test"):]
+	if rest == "" {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(rest)
+	return !unicode.IsLower(r)
+}
+
+// testFuncName reports whether a FuncDecl is a test function, and its name. A
+// method is never one, and a function is one if its name says so and its signature
+// is exactly `(t *testing.T)`; a name that says so over any other signature is
+// reported as an error, positioned at the name.
+func testFuncName(f *File, decl Node) (string, bool, error) {
 	name := ""
+	var nameTok int32 = -1
 	var sig Node
 	for c := range it(decl.ast) {
 		switch {
 		case c.sym == Receiver:
-			return "", false
+			return "", false, nil
 		case c.sym == Signature:
 			sig = c
 		case c.sym == 0 && Symbol(f.tok(c.tok).Ch) == IDENT && name == "":
-			name = f.tok(c.tok).Src()
+			name, nameTok = f.tok(c.tok).Src(), c.tok
 		}
 	}
-	if !strings.HasPrefix(name, "Test") || len(name) == len("Test") || sig.sym != Signature {
-		return "", false
+	if !isTestName(name) || sig.sym != Signature {
+		return "", false, nil
 	}
 	params, results := 0, false
+	paramType := ""
 	for c := range it(sig.ast) {
 		switch c.sym {
 		case ParameterList:
 			for d := range it(c.ast) {
 				if d.sym == ParamDecl {
 					params++
+					paramType = paramTypeText(f, d)
 				}
 			}
 		case ResultList, Type:
 			results = true
 		}
 	}
-	if params != 1 || results {
-		return "", false
+	if params != 1 || results || paramType != "*testing.T" {
+		return "", false, fmt.Errorf("%v: wrong signature for %s, must be: func %s(t *testing.T)", f.tok(nameTok).Position(), name, name)
 	}
-	return name, true
+	return name, true, nil
+}
+
+// paramTypeText renders a ParamDecl's type as the source spells it, tokens joined
+// without spaces: "*testing.T" for `t *testing.T`, "int" for a type-only `int`.
+// A ParamDecl's children are Type nodes -- the parameter's name is one too, when
+// there is a name -- and the type is the last of them.
+func paramTypeText(f *File, param Node) string {
+	var typ Node
+	for c := range it(param.ast) {
+		if c.sym == Type {
+			typ = c
+		}
+	}
+	if typ.sym != Type {
+		return ""
+	}
+	var toks []string
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			if c.sym == 0 {
+				toks = append(toks, f.tok(c.tok).Src())
+			} else {
+				walk(c.ast)
+			}
+		}
+	}
+	walk(typ.ast)
+	return strings.Join(toks, "")
 }
 
 // reachableFiles returns the files of the main package and every package reachable

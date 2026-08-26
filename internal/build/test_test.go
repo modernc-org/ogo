@@ -57,8 +57,9 @@ func TestSkipped(t *testing.T) { t.Skip() }
 // notATest is not run: the name does not begin with Test.
 func notATest(t *testing.T) { t.Fail() }
 
-// TestX is not run either: a test takes exactly one parameter and returns nothing.
-func TestX(t *testing.T) int { return 0 }
+// Testfoo is not run either: "Test" followed by a lowercase letter is not a test's
+// name, in Go's rule, and "go test" would not run it.
+func Testfoo(t *testing.T) { t.Fail() }
 `
 )
 
@@ -77,13 +78,36 @@ func TestOgoTestCompiles(t *testing.T) {
 	if err != nil || code != 0 {
 		t.Fatalf("ogo test -c: code=%d err=%v\nstdout:\n%s\nstderr:\n%s", code, err, out.String(), errb.String())
 	}
-	// Two tests: TestPushPop and TestSkipped. notATest is not one, and TestX has a
-	// result, so neither is counted.
+	// Two tests: TestPushPop and TestSkipped. notATest and Testfoo are not ones,
+	// so neither is counted.
 	if got := out.String(); !strings.Contains(got, "built 2 tests") {
 		t.Fatalf("expected 2 tests, got:\n%s", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, filepath.Base(dir)+".test.binary")); err != nil {
 		t.Fatalf("no test binary: %v", err)
+	}
+}
+
+// TestOgoTestRefusesMalformedTest: a function named as a test over a signature that
+// is not a test's is an error in vet's words, as it is under "go test", rather than
+// a function quietly never run.
+func TestOgoTestRefusesMalformedTest(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(dir, "ring_test.ogo"), `import "testing"
+
+func TestPushPop(t *testing.T) {}
+
+// TestX has a result, which a test does not.
+func TestX(t *testing.T) int { return 0 }
+`)
+	var out, errb bytes.Buffer
+	code, err := Test([]string{"-c", dir}, nil, &out, &errb)
+	if code == 0 || err == nil {
+		t.Fatalf("ogo test -c accepted a malformed test: code=%d err=%v", code, err)
+	}
+	if want := "ring_test.ogo:6:6: wrong signature for TestX, must be: func TestX(t *testing.T)"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q, want one containing %q", err, want)
 	}
 }
 
