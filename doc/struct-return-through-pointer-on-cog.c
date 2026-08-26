@@ -38,10 +38,13 @@
 // the concrete method is direct, which is correct. See ifaceMethod.out in
 // internal/octogo/emit.go.
 //
-// STILL UNFIXED for a multi-result FUNCTION VALUE (`fn := two; a, b := fn(3)` on a
-// cog), which is the same call through a pointer. That path also draws a flexcc
-// diagnostic about the typedef's return type on the main cog, so it is not a
-// shipped shape; both are one piece of work, to be done together.
+// A multi-result FUNCTION VALUE (`fn := two; a, b := fn(3)`) is the same call
+// through a pointer and took the same treatment: the value points at a void
+// wrapper that writes through an out parameter and calls the real function
+// DIRECTLY. That also silenced a second flexcc complaint this shape drew even on
+// the main cog -- "expected function of 1 args returning ... but got ... unknown
+// type" on every assignment of a struct-returning function to a pointer, which no
+// tag or ordering avoids.
 
 #include <stdio.h>
 #include <propeller2.h>

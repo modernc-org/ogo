@@ -2301,9 +2301,22 @@ func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 	case len(resTypes) == 1:
 		ret = resTypes[0]
 	case len(resTypes) > 1:
-		// The shared result struct, which is what makes two functions of one
-		// signature return one C type and so lets the signature have a typedef.
-		ret = e.retStructNameOf(resTypes)
+		// SEVERAL results are WRITTEN THROUGH an out parameter that leads the list,
+		// and the pointer itself returns nothing -- the shape an array result already
+		// takes, and the one an interface's slot takes for a multi-result method. A
+		// function POINTER whose result is a struct is what the target's C compiler
+		// cannot match against the function assigned to it ("expected function of 1
+		// args returning ... but got ... unknown type"), and CALLING through one on a
+		// spawned cog corrupts the program outright when the struct has padding --
+		// which (int32, bool) has. See doc/struct-return-through-pointer-on-cog.c.
+		// The function itself still returns the struct: a DIRECT call of it is right,
+		// and a direct call is what the wrapper makes (funcValueWrapper).
+		out := e.retStructNameOf(resTypes) + "*"
+		if params == "void" {
+			params = out
+		} else {
+			params = out + ", " + params
+		}
 	}
 	return funcValueType{key: ret + " (*)(" + params + ")", res: resTypes, params: paramTypes}
 }
@@ -3469,7 +3482,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4099,9 +4112,10 @@ type emitter struct {
 	// LIFTED to a file-scope function of a minted name and the expression becomes
 	// that name. Collected while walking a body, so they can only be written out
 	// once every body has been walked -- like the channel cells.
-	liftedProtos []string
-	liftedDefs   []string
-	liftSeq      int
+	liftedProtos      []string
+	liftedDefs        []string
+	liftSeq           int
+	funcValueWrappers map[string]string // a multi-result function -> its void wrapper, minted once (see funcValueWrapper)
 	// methodValueTypes: a method's C name -> its type AS A VALUE, which is its
 	// signature without the receiver. Recorded with the signatures, since the
 	// declaration may be in another package's file by the time a value is made.
@@ -8215,6 +8229,39 @@ func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) 
 		return "", "", false
 	}
 	return base, method, true
+}
+
+// funcValueWrapper names a void wrapper around a function of SEVERAL results, for
+// the value form: it takes the result struct's address ahead of the arguments,
+// calls the function DIRECTLY and writes what that returns. A function value of
+// such a signature points at one of these rather than at the function itself, so no
+// struct is ever returned through a function pointer (see funcSigCParts).
+func (e *emitter) funcValueWrapper(cname string) (string, bool) {
+	res, isFunc := e.funcRet[cname]
+	if !isFunc || len(res) < 2 {
+		return "", false
+	}
+	if had, done := e.funcValueWrappers[cname]; done {
+		return had, true
+	}
+	ret := e.retStructNameOf(res)
+	wrapper := cname + "_ogo_fv"
+	var params, args []string
+	for i, pt := range e.funcParams[cname] {
+		nm := fmt.Sprintf("p%d", i)
+		params = append(params, pt+" "+nm)
+		args = append(args, nm)
+	}
+	sigText := ret + "* " + arrayResultParam
+	if len(params) != 0 {
+		sigText += ", " + strings.Join(params, ", ")
+	}
+	proto := "void " + wrapper + "(" + sigText + ")"
+	body := "\t*" + arrayResultParam + " = " + cname + "(" + strings.Join(args, ", ") + ");\n"
+	e.liftedProtos = append(e.liftedProtos, proto)
+	e.liftedDefs = append(e.liftedDefs, proto+" {\n"+body+"}\n")
+	e.funcValueWrappers[cname] = wrapper
+	return wrapper, true
 }
 
 // liftMethodValue emits a method value as a function of its own with the receiver
@@ -17454,6 +17501,57 @@ func (e *emitter) emitDeferred() {
 // result. It answers only when the callee's results are exactly this function's --
 // two functions of one result list share a result struct, and nothing else can be
 // returned as one.
+// valueOutCallC renders a call through a function VALUE of several results --
+// held in a variable or in a struct field -- writing them into out. Such a value
+// points at a void wrapper taking the result struct's address ahead of the
+// arguments (see funcSigCParts), so every position that wants the results renders
+// the call this way: a multiple assignment, and a return forwarding them.
+func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (string, bool) {
+	switch {
+	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		ct, isVar := e.varType(callee)
+		if !isVar || !e.isFuncCType(ct) || len(e.funcTypeRet[ct]) < 2 {
+			return "", false
+		}
+		text := e.varRef(callee) + "(&" + out
+		if args := e.argsCText(e.funcValueOf[callee], suffix[0].ast); args != "" {
+			text += ", " + args
+		}
+		return text + ")", true
+	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		field := e.soleIdent(suffix[0].ast)
+		ft, isField := e.fieldType(callee, []string{field})
+		if !isField || !e.isFuncCType(ft) || len(e.funcTypeRet[ft]) < 2 {
+			return "", false
+		}
+		text := e.fieldAccessC(callee, []string{field}) + "(&" + out
+		if args := e.argsCText(e.funcValueOf[funcFieldKey(callee, field)], suffix[1].ast); args != "" {
+			text += ", " + args
+		}
+		return text + ")", true
+	}
+	return "", false
+}
+
+// forwardedCallInto is forwardedCallC for a call that WRITES its results rather
+// than returning them -- one through a function value (see valueOutCallC). It
+// reports which of the two it rendered: a written call is a statement of its own,
+// where a returned one is the initializer of the temporary.
+func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, ok bool) {
+	callee, suffix, isCall := e.directCall(ex.ast)
+	if !isCall {
+		return "", false, false
+	}
+	if _, resTypes, okRes := e.callResultInfo(callee, suffix); !okRes || !slices.Equal(resTypes, e.curResultTypes) {
+		return "", false, false
+	}
+	if t, isOut := e.valueOutCallC(callee, suffix, out); isOut {
+		return t, true, true
+	}
+	t, okPlain := e.forwardedCallC(ex)
+	return t, false, okPlain
+}
+
 func (e *emitter) forwardedCallC(ex Node) (string, bool) {
 	callee, suffix, ok := e.directCall(ex.ast)
 	if !ok {
@@ -17545,7 +17643,8 @@ func (e *emitter) emitReturn(nodes []Node) {
 	// counts match. Both functions return the SAME C struct, result structs being
 	// keyed by the result types, so the call is the return value as it stands.
 	if len(exprs) == 1 && len(e.curResultTypes) > 1 {
-		text, ok := e.forwardedCallC(exprs[0])
+		tmp := e.newTmp()
+		text, writes, ok := e.forwardedCallInto(exprs[0], tmp)
 		if !ok {
 			e.fail("a return supplying every result needs a call whose results are exactly %s",
 				strings.Join(e.curResultTypes, ", "))
@@ -17561,9 +17660,15 @@ func (e *emitter) emitReturn(nodes []Node) {
 		// The binding is what a defer needs anyway: Go evaluates the operand and
 		// only then runs the defers, so emitting the call after them would let a
 		// defer change what it reads.
-		tmp := e.newTmp()
 		e.ind()
-		e.emit(e.retStructNameOf(e.curResultTypes) + " " + tmp + " = " + text + ";\n")
+		if writes {
+			// The call writes into the temporary rather than yielding it.
+			e.emit(e.retStructNameOf(e.curResultTypes) + " " + tmp + ";\n")
+			e.ind()
+			e.emit(text + ";\n")
+		} else {
+			e.emit(e.retStructNameOf(e.curResultTypes) + " " + tmp + " = " + text + ";\n")
+		}
 		e.emitDeferred()
 		e.ind()
 		e.emit("return " + tmp + ";\n")
@@ -17879,6 +17984,21 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// function's name is. (Mangling it silently worked in the main package,
 		// whose prefix is empty, and emitted a call to `<pkg>_f` in every other.)
 		if ct, ok := e.varType(recv); ok && e.isFuncCType(ct) {
+			// A value of SEVERAL results writes them through a leading out parameter
+			// (see funcSigCParts), so the call needs somewhere to write: a temporary
+			// of this frame, declared ahead of the statement. Reached only where the
+			// results are discarded -- a multiple assignment takes the same call
+			// apart itself, and binds the temporary it stores from.
+			if rets := e.funcTypeRet[ct]; len(rets) > 1 {
+				tmp := e.newTmp()
+				e.prologue = append(e.prologue, e.retStructNameOf(rets)+" "+tmp+";\n")
+				e.emit(e.varRef(recv) + "(&" + tmp)
+				if args := e.argsCText(e.funcValueOf[recv], suffix[0].ast); args != "" {
+					e.emit(", " + args)
+				}
+				e.emit(")")
+				return true
+			}
 			e.emit(e.varRef(recv) + "(")
 			e.emitCallArgs(e.funcValueOf[recv], suffix[0].ast)
 			e.emit(")")
@@ -17914,6 +18034,18 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// of the method lookup, since a field and a method are told apart by which
 		// one the type actually has, and only a field can be a function value.
 		if ft, ok := e.fieldType(recv, []string{method}); ok && e.isFuncCType(ft) {
+			// Several results are written through a leading out parameter, as for a
+			// value held in a variable (see funcSigCParts).
+			if rets := e.funcTypeRet[ft]; len(rets) > 1 {
+				tmp := e.newTmp()
+				e.prologue = append(e.prologue, e.retStructNameOf(rets)+" "+tmp+";\n")
+				e.emit(e.fieldAccessC(recv, []string{method}) + "(&" + tmp)
+				if args := e.argsCText(e.funcValueOf[funcFieldKey(recv, method)], suffix[1].ast); args != "" {
+					e.emit(", " + args)
+				}
+				e.emit(")")
+				return true
+			}
 			e.emit(e.fieldAccessC(recv, []string{method}) + "(")
 			// The BOUND function's own C name, so the call is judged by its
 			// summaries -- the callee really is that function. An unbound field
@@ -21937,6 +22069,24 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		}
 		return
 	}
+	// A call through a function VALUE of several results writes them through a
+	// leading out parameter, the value pointing at a wrapper rather than at the
+	// function itself (see funcSigCParts). The temporary is declared first and its
+	// address handed over, as for an interface's slot above.
+	// A call through a function VALUE of several results writes them through a
+	// leading out parameter, the value pointing at a wrapper rather than at the
+	// function itself (see funcSigCParts). The temporary is declared first and its
+	// address handed over, as for an interface's slot above.
+	if text, isOut := e.valueOutCallC(callee, suffix, tmp); isOut {
+		e.ind()
+		e.emit(e.retStructNameOf(resTypes) + " " + tmp + ";\n")
+		e.ind()
+		e.emit(text + ";\n")
+		for i, tgt := range targets {
+			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+		}
+		return
+	}
 	e.ind()
 	// Keyed by the result TYPES, not by the callee: a call through a function value
 	// has no callee name to key on, and a named one gives the same struct either way.
@@ -24996,6 +25146,19 @@ func (e *emitter) emitOperandToken(tok int32) {
 				if v, ok := e.foldedInt(s); ok {
 					e.emit(v)
 					return
+				}
+			}
+			// A function of SEVERAL results taken as a VALUE stands for its void
+			// wrapper, never for itself: what a function value points at must not
+			// return a struct (see funcSigCParts). A CALL of the same function does
+			// not come here -- the call path names the callee itself -- so only the
+			// value form is redirected.
+			if cname := e.funcCallC(s); cname != "" {
+				if _, isLocal := e.locals[s]; !isLocal {
+					if w, isWrapped := e.funcValueWrapper(cname); isWrapped {
+						e.emit(w)
+						return
+					}
 				}
 			}
 			e.emit(e.varRef(s)) // a package global is mangled; a local keeps its name

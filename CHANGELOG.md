@@ -81,6 +81,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function value with several results was miscompiled on a goroutine, and
+  drew a backend diagnostic everywhere.** `fn := two; a, b := fn(3)` for a `two`
+  returning `(int32, bool)`: every assignment of such a function to a value drew
+  "expected function of 1 args returning ... but got ... unknown type" from the C
+  backend -- which cannot match a struct-returning function against a function
+  pointer, whatever the struct is called -- and calling one on a spawned cog took
+  the whole program down, the fault documented in
+  `doc/struct-return-through-pointer-on-cog.c`. Such a value now points at a void
+  wrapper that writes the results through an out parameter and calls the function
+  directly, so no struct is returned through a pointer. Held in a package
+  variable, a struct field, a local, an argument or another function's result, and
+  called on either cog.
+
 - **`ogo fmt` wrote an interface method's result list tight.** `Next() (int32,
   bool)` came back as `Next()(int32, bool)`: a method spec is a signature written
   without the word `func`, and the rule that spaces a parameter list from a result

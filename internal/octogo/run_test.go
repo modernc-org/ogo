@@ -38,6 +38,78 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A function value of SEVERAL results, in every position it can be held in:
+		// a package variable, a struct field, a local, an argument, a function's
+		// result, and on another cog. What such a value points at is a void WRAPPER
+		// that writes the results through a leading out parameter, because a
+		// function POINTER returning a struct is what the target's C compiler cannot
+		// match against the function assigned to it -- it warned on every such
+		// assignment -- and calling through one on a spawned cog corrupts the
+		// program outright (doc/struct-return-through-pointer-on-cog.c). The cog is
+		// what the last three lines exercise.
+		name: "a function value with several results",
+		src: `type Box struct {
+	fn func(int32) (int32, bool)
+	n  int
+}
+
+var box Box
+var pkgFn func(int32) (int32, bool)
+var ch chan int32
+
+func two(v int32) (int32, bool) { return v * 2, true }
+
+func none(v int32) (int32, bool) { return 0, false }
+
+func pick(which int) func(int32) (int32, bool) {
+	if which == 0 {
+		return two
+	}
+	return none
+}
+
+func apply(f func(int32) (int32, bool), v int32) int32 {
+	r, ok := f(v)
+	if !ok {
+		return -1
+	}
+	return r
+}
+
+func worker(c chan int32) {
+	f := pick(0)
+	v, _ := f(4)
+	c <- v
+	g := box.fn
+	w, _ := g(5)
+	c <- w
+	h := pkgFn
+	x, _ := h(6)
+	c <- x
+}
+
+func main() {
+	pkgFn = two
+	box.fn = two
+	a, ok := pkgFn(3)
+	println("pkg", a, ok)
+	b, ok2 := box.fn(3)
+	println("field", b, ok2)
+	local := two
+	c, ok3 := local(7)
+	println("local", c, ok3)
+	println("arg", apply(two, 5), apply(local, 6))
+	picked := pick(1)
+	d, ok4 := picked(8)
+	println("picked", d, ok4)
+	go worker(ch)
+	println("cog", <-ch, <-ch, <-ch)
+	local(9)
+}
+`,
+		want: "pkg 6 true\nfield 6 true\nlocal 14 true\narg 10 12\npicked 0 false\ncog 8 10 12\n",
+	},
+	{
 		// An interface method with SEVERAL results, `Next() (int32, bool)`, which was
 		// refused outright. The values travel in the struct a direct call to such a
 		// method already returns -- but the slot WRITES THROUGH a trailing pointer
