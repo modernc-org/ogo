@@ -13174,10 +13174,17 @@ func (e *emitter) factorIndex(kids []Node) (base string, indexAST []int32, ok bo
 		return "", nil, false
 	}
 	suffix := slices.Collect(it(kids[1].ast))
+	name := e.src(kids[0].tok)
+	// An import qualifier at the head, `geo.Table[1:3]`. A SLICE step is not one the
+	// chain walker emits -- the shapes that take one resolve a NAME and slice it --
+	// so the fold has to happen here too, and not only in factorAccessChain.
+	if mn, rest, ok := e.qualifiedChainBase(name, suffix); ok {
+		name, suffix = mn, rest
+	}
 	if len(suffix) != 1 || suffix[0].sym != Index {
 		return "", nil, false
 	}
-	return e.src(kids[0].tok), suffix[0].ast, true
+	return name, suffix[0].ast, true
 }
 
 // factorFieldIndex recognises `base.f...[i]` -- a field-access chain followed by a
@@ -13189,6 +13196,19 @@ func (e *emitter) factorFieldIndex(kids []Node) (base string, fields []string, i
 		return "", nil, nil, false
 	}
 	suffix := slices.Collect(it(kids[1].ast))
+	name := e.src(kids[0].tok)
+	// An import qualifier at the head, `geo.C.Bins[0]`: what follows the fold is an
+	// ordinary field-and-index chain from that package's variable. With NOTHING
+	// left but the index, `geo.Ints[:]`, this is not the shape at all -- it is a
+	// plain index or slice of a name, which factorIndex claims -- and saying so is
+	// what lets it: this claimed it first and answered "not supported", so
+	// `xs := geo.Ints[:2]` could not be typed and `len(geo.Ints[:2])` was refused.
+	if mn, rest, ok := e.qualifiedChainBase(name, suffix); ok {
+		if len(rest) < 2 {
+			return "", nil, nil, false
+		}
+		name, suffix = mn, rest
+	}
 	if len(suffix) < 2 || suffix[len(suffix)-1].sym != Index {
 		return "", nil, nil, false
 	}
@@ -13202,7 +13222,7 @@ func (e *emitter) factorFieldIndex(kids []Node) (base string, fields []string, i
 		}
 		fields = append(fields, fld)
 	}
-	return e.src(kids[0].tok), fields, suffix[len(suffix)-1].ast, true
+	return name, fields, suffix[len(suffix)-1].ast, true
 }
 
 // accessCur is the value reached partway along an access chain: a plain C value, a
@@ -13779,6 +13799,53 @@ func (e *emitter) accessChainTypeAt(cur accessCur, steps []Node, claimed bool) (
 // indexes that mixes both kinds more than once -- the shapes the fixed helpers
 // cannot match. Narrower chains are left to them, so their pinned output is
 // unchanged.
+// qualifiedChainBase folds an import qualifier at the head of a chain into the C
+// name of the member it selects, `geo.Table[1]` becoming a chain from `geo_Table`.
+// Every shape a chain can take -- a read, an index, a slice, a write, len, a range,
+// a copy, an address -- resolves its base as a NAME, and a package qualifier is not
+// one: `geo.Table[1]` was "geo is not a value with fields or elements", `len(geo.
+// Table)` was "len is only supported for strings, arrays and slices", `geo.Ints[0]
+// = 5` was "only simple and field assignment targets are supported yet", and so on
+// for every one of them. Resolved here, once, they are all the shapes this emitter
+// already writes for a global of its own package.
+//
+// Only when a step FOLLOWS the selector: `geo.V` alone is a plain qualified read,
+// which resolves through qualifiedGlobalRead with the constants and the functions,
+// and is left exactly as it was. p2 is not a package with variables -- its members
+// are the compiler's own table of literals -- so it is not folded either.
+func (e *emitter) qualifiedChainBase(base string, steps []Node) (string, []Node, bool) {
+	if len(steps) == 0 || steps[0].sym != Selector || base == "p2" {
+		return "", nil, false
+	}
+	prefix, isImport := e.importQualifiers[base]
+	if !isImport {
+		return "", nil, false
+	}
+	member := e.soleIdent(steps[0].ast)
+	if member == "" {
+		return "", nil, false
+	}
+	mn := mangle(prefix, member)
+	// An ARRAY or a SLICE is folded even with nothing after the selector, because
+	// the shapes that measure or walk one -- len, cap, a slice expression, a range,
+	// a copy, an address -- ask for a NAME and would find a package qualifier
+	// there. An array is in globalArrays and in no other registry (an array has no
+	// C value type, so `globals` does not hold one), which is why asking `globals`
+	// alone left every array shape refused.
+	_, isArr := e.globalArrays[mn]
+	_, isSlice := e.globalSliceVars[mn]
+	if isArr || isSlice {
+		return mn, steps[1:], true
+	}
+	// Every other variable is folded only when a step FOLLOWS the selector: `geo.V`
+	// alone is a plain qualified read, which resolves through qualifiedGlobalRead
+	// with the constants and the functions, and is left exactly as it was.
+	if _, isVar := e.globals[mn]; !isVar || len(steps) < 2 {
+		return "", nil, false
+	}
+	return mn, steps[1:], true
+}
+
 func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return "", nil, false
@@ -13800,6 +13867,11 @@ func (e *emitter) factorAccessChain(kids []Node) (string, []Node, bool) {
 	// happened to be reported.
 	if operand, rest, ok := e.arrayConvChain(name, steps); ok {
 		name, steps = operand, rest
+	}
+	// An import qualifier at the head resolves to the member's C name, so every
+	// reader of a chain sees a plain global. See qualifiedChainBase.
+	if mn, rest, ok := e.qualifiedChainBase(name, steps); ok {
+		name, steps = mn, rest
 	}
 	for _, n := range steps {
 		if n.sym != Index && n.sym != Selector {
@@ -14110,7 +14182,13 @@ func (e *emitter) varType(name string) (string, bool) {
 	if ct, ok := e.locals[name]; ok {
 		return ct, true
 	}
-	ct, ok := e.globals[e.globalC(name)]
+	if ct, ok := e.globals[e.globalC(name)]; ok {
+		return ct, true
+	}
+	// An imported package's global, whose name arrives already mangled -- there is
+	// no source name for it to be mangled FROM here (see qualifiedChainBase). Asked
+	// last, so a name of this package's own always answers first.
+	ct, ok := e.globals[name]
 	return ct, ok
 }
 
@@ -14135,12 +14213,19 @@ func (e *emitter) varRef(name string) string {
 	}
 	// A package-level ARRAY is in globalArrays and in no other registry, an array
 	// having no C value type. Asking `globals` alone answered "not a variable" and
-	// left the SOURCE name standing -- which is the mangled name only in main, where
-	// the prefix is empty: in every other package a read, a write, a range, a slice,
-	// an address or a copy of its own array variable reached the C compiler as an
-	// undeclared identifier.
+	// left the SOURCE name standing, which is the mangled name only in main, where
+	// the prefix is empty: in any other package every use of its own array variable
+	// -- a read, a write, a range, a slice, an address, a copy -- reached the C
+	// compiler as an undeclared identifier, and the whole idiom of a package-scope
+	// backing array was unusable outside main.
 	if _, ok := e.globalArrays[e.globalC(name)]; ok {
 		return e.globalC(name)
+	}
+	if _, ok := e.globals[name]; ok {
+		return name // an imported package's global; see varType
+	}
+	if _, ok := e.globalArrays[name]; ok {
+		return name // an imported package's array; see varType
 	}
 	return userIdent(name)
 }
@@ -18974,7 +19059,10 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 	if a, ok := e.arrays[name]; ok {
 		return a, true
 	}
-	a, ok := e.globalArrays[e.globalC(name)]
+	if a, ok := e.globalArrays[e.globalC(name)]; ok {
+		return a, true
+	}
+	a, ok := e.globalArrays[name] // an imported package's array; see varType
 	return a, ok
 }
 
@@ -20001,6 +20089,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// leading star(s) so the assignment writes through the pointer, not to it. The
 	// only reachable case is a pointer receiver mutating its pointee (`*c = v`).
 	stars := e.derefStars(head.ast)
+	// An import qualifier at the head of the target, `geo.Ints[0] = 5`: the member's
+	// C name is the target's base, and every shape below is the one it writes for a
+	// global of this package. Folded before the provenance checks, which ask what
+	// storage the base IS -- and a package variable's is the same whichever package
+	// declares it.
+	if mn, rest, ok := e.qualifiedChainBase(base, postfix[:len(postfix)-1]); ok {
+		base, postfix = mn, append(rest, postfix[len(postfix)-1])
+	}
 	// Both provenance checks come before the shape-specific paths below, each of which
 	// returns: what a target is given matters wherever in the target it lands, and
 	// both need only the root variable and the operator. A pointer field is what made
@@ -22283,6 +22379,9 @@ func (e *emitter) sliceElem(name string) (string, bool) {
 	}
 	if el, ok := e.globalSliceVars[e.globalC(name)]; ok {
 		return el, true
+	}
+	if el, ok := e.globalSliceVars[name]; ok {
+		return el, true // an imported package's slice; see varType
 	}
 	// A named type over a slice is a slice, `type List []int`: it is not in the two
 	// registries above, which are filled where a slice type is written out, but its

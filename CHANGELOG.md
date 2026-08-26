@@ -53,6 +53,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An imported package's array or slice variable could not be used at all.**
+  `geo.Table[1]` was "geo is not a value with fields or elements",
+  `len(geo.Table)` was "len is only supported for strings, arrays and slices
+  yet", `geo.Ints[0] = 5` was "only simple and field assignment targets are
+  supported yet", `for i, v := range geo.Ints` was "ranging an integer yields
+  only the index", `copy(dst, geo.Ints[:])` was "copy's arguments must both be
+  slices", `p := &geo.Ints` could not be typed, and `xs := geo.Ints[:2]` could
+  not either -- every shape, refused with a different sentence, because each one
+  resolves the head of a chain as a NAME and a package qualifier is not one. The
+  qualifier is folded into the member's C name where the chain is split, so all
+  of them are the shapes the emitter already writes for a global of its own
+  package. A lookup table declared in one package and read from another is the
+  reason this matters, and it did not work.
+
 - **A package could not use its own array, slice or string variable -- unless it
   was `main`.** Every name of a package variable that a program reaches INTO --
   `Ints[0]`, `Ints[i] = v`, `range Ints`, `Ints[:]`, `&Ints`, `copy(dst, Sl)`,
@@ -70,10 +84,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   variable.** `geo.Table[1].Int()` was "geo is not a value with fields or
   elements": the chain renderer's import-qualifier head knew that package's
   constants, functions and plain variables, and an array is none of those. It
-  enters the chain as this package's own arrays do now. The rest of that family
-  is still open -- a plain read `geo.Table[1]`, `len(geo.Table)`, an assignment
-  `geo.Ints[0] = 5` and `range geo.Table` are all refused -- and is the next
-  thing to sweep.
+  enters the chain as this package's own arrays do now, and so does the rest of
+  that family (below).
 
 - **`7 / 2.0` was 3, and `2 * 3.5` printed as an integer's bits.** A binary
   operation over two untyped constants took the kind of its FIRST operand, where
