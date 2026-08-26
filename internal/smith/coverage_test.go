@@ -35,6 +35,8 @@ var generatedConstructs = []struct {
 	{"sized int8/uint8", `\n\s*var z_\d+ u?int8 = `},
 	{"sized int16/uint16", `\n\s*var z_\d+ u?int16 = `},
 	{"sized uint32", `\n\s*var z_\d+ uint32 = `},
+	{"sized int64/uint64", `\n\s*var z_\d+ u?int64 = `},
+	{"64-bit high-half fold", `int\(\(z_\d+>>32\)\)`},
 	{"sized unary minus", `= -\(z_\d+\)`},
 	{"sized complement", `= \^\(z_\d+\)`},
 	{"sized shift", `z_\d+ (<<|>>) `},

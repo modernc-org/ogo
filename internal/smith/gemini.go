@@ -765,9 +765,9 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	case 1:
 		start = hi
 	case 2:
-		start = hi / 2
+		start = int64(uint64(hi) / 2) // by the type's own reading; see pickSized
 	default:
-		start = lo + f.Rand.Int63n(hi-lo+1)
+		start = f.pickSized(k)
 	}
 	cur := NewSized(start, k)
 
@@ -783,7 +783,7 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	stmts := []Node{&VarDeclNode{
 		Name: name,
 		Type: typeName,
-		Expr: &IntLitNode{Value: fmt.Sprint(cur.v)},
+		Expr: &IntLitNode{Value: sizedLitText(cur.v, k)},
 	}}
 
 	bits, _, _ := sizedInfo(k)
@@ -818,7 +818,45 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 			Right: &ConvNode{Type: "int", X: foldNode},
 		},
 	})
+	// At 64 bits the fold above carries only the LOW word: `int(z)` on this target
+	// is a 32-bit truncation, so a value wrong only in its top half would agree with
+	// the VM and the run would pass. The high half goes in as well, through the
+	// shift the program itself must compute -- which is also the operation the
+	// backend has been wrong about before.
+	if bits == 64 {
+		hi, err := cur.binOp(">>", NewSized(32, k))
+		if err == nil {
+			hiSized := hi.(Sized)
+			c2, _ := vm.Eval("^", mem.Load(f.ChecksumName), hiSized.Int32())
+			mem.Store(f.ChecksumName, c2)
+			stmts = append(stmts, &AssignStmtNode{
+				Lhs: f.ChecksumName,
+				Op:  "=",
+				Rhs: &BinaryExprNode{
+					Left: &IdentNode{Name: f.ChecksumName},
+					Op:   "^",
+					Right: &ConvNode{Type: "int", X: &BinaryExprNode{
+						Left:  &IdentNode{Name: name},
+						Op:    ">>",
+						Right: &IntLitNode{Value: "32"},
+					}},
+				},
+			})
+		}
+	}
 	return &BlockNode{Statements: stmts}
+}
+
+// pickSized draws a value of kind k as the BIT PATTERN the VM holds it by. At 64
+// bits the range does not fit the arithmetic a range pick is made of -- an unsigned
+// maximum is not an int64, and a signed span overflows it -- so a full-width draw
+// stands in, which is the same distribution the narrow kinds get from their range.
+func (f *Fuzzer) pickSized(k BasicKind) int64 {
+	if bits, _, ok := sizedInfo(k); ok && bits == 64 {
+		return int64(f.Rand.Uint64())
+	}
+	lo, hi := sizedRange(k)
+	return lo + f.Rand.Int63n(hi-lo+1)
 }
 
 // genSizedFold builds an expression over the sized variable whose value is never
@@ -827,7 +865,7 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 // unstored one can show a compiler computing in the wrong width.
 func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bool) {
 	id := &IdentNode{Name: name}
-	lit := func(v int64) Node { return &IntLitNode{Value: fmt.Sprint(v)} }
+	lit := func(v int64) Node { return &IntLitNode{Value: sizedLitText(v, cur.k)} }
 	switch f.Rand.Intn(6) {
 	case 0:
 		return &UnaryExprNode{Op: "-", X: id}, cur.neg(), true
@@ -841,8 +879,7 @@ func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bo
 		}
 		return &BinaryExprNode{Left: id, Op: "<<", Right: lit(n)}, r.(Sized), true
 	default: // z <op> <literal in range>, the arithmetic that overflows the width
-		lo, hi := sizedRange(cur.k)
-		v := lo + f.Rand.Int63n(hi-lo+1)
+		v := f.pickSized(cur.k)
 		ops := []string{"+", "-", "*"}
 		op := ops[f.Rand.Intn(len(ops))]
 		r, err := cur.binOp(op, NewSized(v, cur.k))
@@ -864,22 +901,20 @@ func (f *Fuzzer) genSizedStep(name string, cur Sized, bits int) (Node, Sized, bo
 		}
 		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: rhs}, v.(Sized), true
 	}
-	lit := func(v int64) Node { return &IntLitNode{Value: fmt.Sprint(v)} }
+	lit := func(v int64) Node { return &IntLitNode{Value: sizedLitText(v, cur.k)} }
 	switch f.Rand.Intn(9) {
 	case 0: // z = -z
 		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &UnaryExprNode{Op: "-", X: &IdentNode{Name: name}}}, cur.neg(), true
 	case 1: // z = ^z
 		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &UnaryExprNode{Op: "^", X: &IdentNode{Name: name}}}, cur.not(), true
 	case 2, 3: // z = z <op> <literal in range>
-		lo, hi := sizedRange(cur.k)
-		v := lo + f.Rand.Int63n(hi-lo+1)
+		v := f.pickSized(cur.k)
 		ops := []string{"+", "-", "*", "&", "|", "^", "&^"}
 		op := ops[f.Rand.Intn(len(ops))]
 		r, err := cur.binOp(op, NewSized(v, cur.k))
 		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(v)}, r, err)
 	case 4: // z = z / <nonzero literal>, z = z % <nonzero literal>
-		lo, hi := sizedRange(cur.k)
-		v := lo + f.Rand.Int63n(hi-lo+1)
+		v := f.pickSized(cur.k)
 		if v == 0 {
 			v = 1
 		}
@@ -898,8 +933,7 @@ func (f *Fuzzer) genSizedStep(name string, cur Sized, bits int) (Node, Sized, bo
 		r, err := cur.binOp(op, NewSized(n, cur.k))
 		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(n)}, r, err)
 	default: // a compound assignment, the other spelling of the same operation
-		lo, hi := sizedRange(cur.k)
-		v := lo + f.Rand.Int63n(hi-lo+1)
+		v := f.pickSized(cur.k)
 		ops := []string{"+=", "-=", "*=", "&=", "|=", "^=", "&^="}
 		op := ops[f.Rand.Intn(len(ops))]
 		r, err := cur.binOp(op[:len(op)-1], NewSized(v, cur.k))

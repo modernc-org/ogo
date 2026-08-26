@@ -241,7 +241,7 @@ type Sized struct {
 // NewSized builds a value of kind k, wrapped into range.
 func NewSized(v int64, k BasicKind) Sized { return Sized{wrapSized(v, k), k} }
 
-func (n Sized) Literal() string { return fmt.Sprint(n.v) }
+func (n Sized) Literal() string { return sizedLitText(n.v, n.k) }
 
 func (n Sized) Type() Type { return BasicType{Kind: n.k} }
 
@@ -268,9 +268,24 @@ func (n Sized) binOp(op string, rhs Value) (Value, error) {
 		return wrap(a * b)
 	case "/", "%":
 		// Division by zero is undefined in C and panics through the emitter's guard.
-		// The most negative value over -1 is fine at these widths: C computes it in
-		// int, where it fits, and the truncation back is what Go's wrap already says.
+		// The most negative value over -1 is fine at the NARROW widths: C computes
+		// them in int, where the quotient fits, and the truncation back is what Go's
+		// wrap already says. At 64 bits it does not fit -- the quotient is one past
+		// the type -- so that one pair is skipped.
 		if b == 0 {
+			return nil, fmt.Errorf("undefined %s: %d %s %d", op, a, op, b)
+		}
+		if !signed {
+			// An unsigned value whose top bit is set is a negative int64 here, so the
+			// division must read both operands as the unsigned numbers they are.
+			// Below 64 bits no pattern reaches that bit and the two agree.
+			ua, ub := uint64(a), uint64(b)
+			if op == "/" {
+				return wrap(int64(ua / ub))
+			}
+			return wrap(int64(ua % ub))
+		}
+		if bits == 64 && a == math.MinInt64 && b == -1 {
 			return nil, fmt.Errorf("undefined %s: %d %s %d", op, a, op, b)
 		}
 		if op == "/" {
@@ -303,14 +318,31 @@ func (n Sized) binOp(op string, rhs Value) (Value, error) {
 		return Bool(a == b), nil
 	case "!=":
 		return Bool(a != b), nil
-	case "<":
-		return Bool(a < b), nil
-	case "<=":
-		return Bool(a <= b), nil
-	case ">":
-		return Bool(a > b), nil
-	case ">=":
-		return Bool(a >= b), nil
+	case "<", "<=", ">", ">=":
+		// Ordered by the type's own reading: an unsigned pattern with its top bit
+		// set is the LARGEST value there and a negative int64 here. Below 64 bits no
+		// pattern reaches that bit, so the two orders agree.
+		x, y := a, b
+		if !signed {
+			switch op {
+			case "<":
+				return Bool(uint64(x) < uint64(y)), nil
+			case "<=":
+				return Bool(uint64(x) <= uint64(y)), nil
+			case ">":
+				return Bool(uint64(x) > uint64(y)), nil
+			}
+			return Bool(uint64(x) >= uint64(y)), nil
+		}
+		switch op {
+		case "<":
+			return Bool(x < y), nil
+		case "<=":
+			return Bool(x <= y), nil
+		case ">":
+			return Bool(x > y), nil
+		}
+		return Bool(x >= y), nil
 	default:
 		panic(todo("%q %v", op, b))
 	}

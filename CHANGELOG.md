@@ -18,6 +18,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Added
+
+- **The fuzzer generates 64-bit arithmetic.** `ogo smith` exercised int8 through
+  uint32 and stopped there, so int64 and uint64 -- where this compiler and the C
+  backend have both been wrong most often -- were tested only by hand-written
+  cases. They are generated now, with the values drawn full-width and the
+  checksum taking BOTH halves of the result (`int(z)` is a 32-bit truncation on
+  this target, so a value wrong only in its top half would have agreed with the
+  oracle). It found two miscompiles in its first run on hardware, both fixed
+  below.
+
 ### Fixed
 
 - **`x % 1` gave x instead of zero.** A remainder is smaller than its divisor, so

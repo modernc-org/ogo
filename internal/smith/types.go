@@ -6,6 +6,7 @@ package octosmith
 
 import (
 	"fmt"
+	"math"
 )
 
 // Type represents an OctoGo data type used during fuzzing.
@@ -30,10 +31,12 @@ const (
 	KindInt16
 	KindUint16
 	KindUint32
+	KindInt64
+	KindUint64
 )
 
 // sizedKinds are the integer types genSizedStmt exercises, narrowest first.
-var sizedKinds = []BasicKind{KindInt8, KindUint8, KindInt16, KindUint16, KindUint32}
+var sizedKinds = []BasicKind{KindInt8, KindUint8, KindInt16, KindUint16, KindUint32, KindInt64, KindUint64}
 
 // sizedInfo is a sized integer type's width and signedness.
 func sizedInfo(k BasicKind) (bits int, signed, ok bool) {
@@ -48,17 +51,41 @@ func sizedInfo(k BasicKind) (bits int, signed, ok bool) {
 		return 16, false, true
 	case KindUint32:
 		return 32, false, true
+	case KindInt64:
+		return 64, true, true
+	case KindUint64:
+		return 64, false, true
 	}
 	return 0, false, false
 }
 
-// sizedRange is a sized integer type's inclusive bounds.
+// sizedRange is a sized integer type's inclusive bounds, as the BIT PATTERNS the
+// VM holds values by: at 64 bits an unsigned maximum does not fit an int64, and the
+// pattern is what every operation here works on anyway (see Sized). So uint64's
+// upper bound comes back as -1, which is that pattern and not a negative number.
 func sizedRange(k BasicKind) (lo, hi int64) {
 	bits, signed, _ := sizedInfo(k)
+	if bits == 64 {
+		if signed {
+			return math.MinInt64, math.MaxInt64
+		}
+		return 0, -1
+	}
 	if signed {
 		return -1 << (bits - 1), 1<<(bits-1) - 1
 	}
 	return 0, 1<<bits - 1
+}
+
+// sizedLitText is how a value of kind k is WRITTEN in the generated program. An
+// unsigned pattern with its top bit set is a large positive number there, where the
+// VM holds it as a negative int64 -- so a uint64 must be spelled from the unsigned
+// reading or the program would say `var z uint64 = -3`, which is not a program.
+func sizedLitText(v int64, k BasicKind) string {
+	if _, signed, ok := sizedInfo(k); ok && !signed {
+		return fmt.Sprint(uint64(v))
+	}
+	return fmt.Sprint(v)
 }
 
 // wrapSized reduces v to what the type k holds, which is what Go's arithmetic does
@@ -99,6 +126,10 @@ func (b BasicType) String() string {
 		return "uint16"
 	case KindUint32:
 		return "uint32"
+	case KindInt64:
+		return "int64"
+	case KindUint64:
+		return "uint64"
 	default:
 		return "unknown"
 	}
