@@ -8287,18 +8287,23 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 		return cn, true
 	}
 	fv := e.methodValueTypes[mcname]
-	if len(fv.res) > 1 {
-		e.fail("a method with more than one result cannot be used as a value yet")
-		return "", false
-	}
-	ret := "void"
-	if len(fv.res) == 1 {
+	// SEVERAL results are written through an out parameter that leads the list, as
+	// for a plain function taken as a value (see funcSigCParts and
+	// funcValueWrapper): what a function value points at may not return a struct.
+	ret, out := "void", ""
+	switch {
+	case len(fv.res) == 1:
 		ret = fv.res[0]
+	case len(fv.res) > 1:
+		out = e.retStructNameOf(fv.res)
 	}
 	cname := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_mv%d", e.liftSeq))
 	e.liftSeq++
 
 	var params, args []string
+	if out != "" {
+		params = append(params, out+"* "+arrayResultParam)
+	}
 	for i, pt := range fv.params {
 		nm := fmt.Sprintf("p%d", i)
 		params = append(params, pt+" "+nm)
@@ -8315,7 +8320,10 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	call += ")"
 	proto := ret + " " + cname + "(" + sigText + ")"
 	body := "\t" + call + ";\n"
-	if ret != "void" {
+	switch {
+	case out != "":
+		body = "\t*" + arrayResultParam + " = " + call + ";\n"
+	case ret != "void":
 		body = "\treturn " + call + ";\n"
 	}
 	e.liftedProtos = append(e.liftedProtos, proto)
@@ -23296,9 +23304,6 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if base, method, ok := e.factorMethodValue(kids); ok {
 				rct, _ := e.varType(base)
 				fv := e.methodValueTypes[methodCName(methodBaseType(rct), method)]
-				if len(fv.res) > 1 {
-					return "", false
-				}
 				return e.funcTypeFor(fv), true
 			}
 			if lit, suffix, ok := e.factorFuncLit(kids); ok {

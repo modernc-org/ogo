@@ -60,6 +60,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Added
 
+- **A method with several results may be used as a value.** `m := g.Next` for a
+  `Next() (int32, bool)` was "a method with more than one result cannot be used as
+  a value yet", and the declaration could not even be typed. It takes the same
+  void wrapper a plain function value of several results takes, with the receiver
+  bound into it, so it is still one word: held in a package variable, a struct
+  field or a local, passed as an argument, and taken again on another cog.
+
 - **An interface method may have several results.** `Next() (int32, bool)` was
   "an interface method with more than one result is not supported yet" -- the one
   shape a reader, a scanner or a queue is written in. The values travel in the

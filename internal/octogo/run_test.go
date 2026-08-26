@@ -38,6 +38,73 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A METHOD value of several results, `m := g.Next`, which was refused: the
+		// value could not be typed and the lift said so. It takes the same void
+		// wrapper a plain function value of several results takes, with the receiver
+		// bound into it -- so it is still one word, and still points at something
+		// that returns nothing (see funcSigCParts). Held in a package variable, a
+		// struct field and a local, passed as an argument, and taken again on
+		// another cog, which is where a struct returned through a pointer would have
+		// taken the program down.
+		name: "a method value with several results",
+		src: `type Counter struct {
+	n int32
+}
+
+func (c *Counter) Next() (int32, bool) {
+	c.n++
+	if c.n > 3 {
+		return 0, false
+	}
+	return c.n, true
+}
+
+var g Counter
+var held func() (int32, bool)
+var ch chan int32
+
+type Box struct {
+	fn func() (int32, bool)
+}
+
+var box Box
+
+func drain(f func() (int32, bool)) int32 {
+	sum := int32(0)
+	for {
+		v, ok := f()
+		if !ok {
+			return sum
+		}
+		sum += v
+	}
+}
+
+func worker(c chan int32) {
+	m := g.Next
+	v, _ := m()
+	c <- v
+	w, _ := held()
+	c <- w
+}
+
+func main() {
+	held = g.Next
+	box.fn = g.Next
+	a, ok := held()
+	println("pkg", a, ok)
+	b, ok2 := box.fn()
+	println("field", b, ok2)
+	g.n = 0
+	println("drain", drain(g.Next))
+	g.n = 0
+	go worker(ch)
+	println("cog", <-ch, <-ch)
+}
+`,
+		want: "pkg 1 true\nfield 2 true\ndrain 6\ncog 1 2\n",
+	},
+	{
 		// A function value of SEVERAL results, in every position it can be held in:
 		// a package variable, a struct field, a local, an argument, a function's
 		// result, and on another cog. What such a value points at is a void WRAPPER

@@ -1429,16 +1429,21 @@
 // address travelling -- which is also why it is always safe to send one to another
 // cog: it names code, not the frame it was made in.
 //
-// A function with more than one result is a value like any other: the struct its
-// results travel in is named after the result TYPES, so two functions of one
-// signature return the same C type and the signature has something to name. A "go"
-// statement takes a value too, "go g(21)" -- a cog's entry point is generated per
-// function TYPE in that case, and the pointer travels in the argument block.
+// A function with more than one result is a value like any other. What the value
+// points at is a small wrapper that writes the results through a pointer the
+// caller supplies rather than returning them: the target's C compiler cannot match
+// a struct-returning function against a function pointer, and calling through one
+// on another cog corrupts the program outright. The wrapper calls the function
+// itself directly, which is correct, so an ordinary call of that function is
+// unaffected. A "go" statement takes a value too, "go g(21)" -- a cog's entry
+// point is generated per function TYPE in that case, and the pointer travels in
+// the argument block.
 //
 // A method value, "gp.bump", is taken with its receiver BOUND: the compiler lifts
 // it to a function of its own that names the receiver, so the value stays an
 // ordinary one-word function pointer and costs nothing that any other function
-// value pays.
+// value pays. A method of several results is taken the same way, its lifted
+// function writing them through the caller's pointer as above.
 //
 // Two forms are refused, and neither is an omission:
 //
