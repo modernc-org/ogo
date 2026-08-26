@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`x % 1` gave x instead of zero.** A remainder is smaller than its divisor, so
+  a division by one leaves nothing over -- and the target's C compiler answered
+  the dividend, for every integer type up to 32 bits, signed and unsigned
+  (`doc/modulo-by-one-returns-the-dividend.c`; the 64-bit case goes through a
+  runtime call and was right). `x % -1` the same. The operation is written as the
+  multiplication by zero it is, which is the same value, evaluates its operand
+  exactly once as Go does, and leaves nothing for a compiler to fold wrongly;
+  `x %= 1` becomes `x *= 0` for the same reason. Found by the oracle fuzzer, on
+  the board.
+
 - **`x &^= K` for a wide constant left x unchanged.** The target's C compiler
   computes `~` wrong in the HIGH word of a 64-bit value -- for a constant and for
   a variable alike, `doc/complement64-high-word.c` has the measurements -- and

@@ -38,6 +38,46 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// `x % 1` is ZERO in Go, whatever x is: a remainder is smaller than its
+		// divisor. The target's C compiler answers x instead, for every integer type
+		// up to 32 bits (doc/modulo-by-one-returns-the-dividend.c), so the operation
+		// is written as the multiplication by zero it is. Every type, both
+		// spellings, the compound form, and a loop where the divisor is what a
+		// constant folded to.
+		name: "modulo by one is zero",
+		src: `type Narrow int8
+
+var seed int = -118
+
+func main() {
+	v := seed
+	neg := -1
+	println("int", v%1, v%neg, v%2, v%3)
+	var z Narrow = -118
+	var negN Narrow = -1
+	println("int8", int(z%1), int(z%negN))
+	var u uint32 = 118
+	println("uint32", int(u%1), int(u%7))
+	var w int64 = -118
+	println("int64", int(w%1), int(w%3))
+	x := seed
+	x %= 1
+	y := seed
+	y = y % 1
+	println("assigned", x, y)
+	var c int16 = 300
+	c %= 1
+	println("int16", int(c), 118%1)
+	n := 0
+	for i := 0; i < 3; i++ {
+		n += i % 1
+	}
+	println("loop", n)
+}
+`,
+		want: "int 0 0 0 -1\nint8 0 0\nuint32 0 6\nint64 0 -1\nassigned 0 0\nint16 0 0\nloop 0\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still

@@ -21703,6 +21703,15 @@ func (e *emitter) emitAssignTail(t assignTail) {
 		e.emit(t.op + ";\n") // "++" or "--"
 		return
 	}
+	// `x %= 1` and `x %= -1` set x to zero, and the target's C compiler leaves x
+	// alone instead (see the "%" case in emitExprNode); `*= 0` is the same value
+	// and the same single evaluation of the target.
+	if t.op == "%=" {
+		if v, ok := e.foldConstInt(t.rhs); ok && (v == 1 || v == -1) {
+			e.emit(" *= 0;\n")
+			return
+		}
+	}
 	e.emit(" " + t.op + " ")
 	if t.complement {
 		// The target's type when it is known: the complement happens in the type
@@ -24550,12 +24559,27 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		e.emit("(")
 		unsignedTerm := e.unsignedLevel(n.ast)
-		guardNext, complementNext, shiftNext := false, false, false
-		for _, c := range kids {
+		guardNext, complementNext, shiftNext, zeroNext := false, false, false, false
+		for i, c := range kids {
 			switch {
 			case c.sym == MulOp:
 				op := e.opText(c.ast)
 				guardNext, complementNext = false, false
+				// `x % 1` and `x % -1` are ZERO in Go, whatever x is -- a remainder
+				// is smaller than its divisor. The target's C compiler answers x
+				// instead, for every type up to 32 bits (the 64-bit path goes
+				// through a runtime call and is right); see
+				// doc/modulo-by-one-returns-the-dividend.c. So the operation is
+				// written as the multiplication by zero it is: the same value, the
+				// operand evaluated exactly once as Go evaluates it, and nothing
+				// left for a compiler to fold wrongly.
+				if op == "%" && i+1 < len(kids) {
+					if v, ok := e.foldConstInt(kids[i+1].ast); ok && (v == 1 || v == -1) {
+						e.emit(" * ")
+						zeroNext = true
+						continue
+					}
+				}
 				if op == "&^" {
 					// C has no "&^". Go defines "a &^ b" as "a AND NOT b", so it
 					// lowers to an AND with the complement of b -- the same rewrite
@@ -24621,6 +24645,9 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emit(fn + "(")
 				e.emitExprNode(c)
 				e.emit(")")
+			case zeroNext:
+				zeroNext = false
+				e.emit("0") // see the "%" case above
 			case shiftNext:
 				shiftNext = false
 				// A constant count as the integer it is; see foldIntegral.
