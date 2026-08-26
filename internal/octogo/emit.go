@@ -18103,7 +18103,15 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				return "", "", false, false
 			}
 			mn := mangle(prefix, e.soleIdent(steps[0].ast))
+			a, isArr := e.globalArrays[mn]
 			switch gt, isGlobal := e.globals[mn]; {
+			case isArr:
+				// An ARRAY variable of that package, `geo.Table[1].Int()`: the chain
+				// enters it as it enters this package's own (curArray), under the
+				// mangled name. It used to fall to the plain-global case, whose
+				// value has no elements, and `geo.Table[1]` was refused as "geo is
+				// not a value with fields or elements".
+				text, addr, cur = mn, true, curArray(a)
 			case e.wideConstName(mn):
 				v, _ := parseCIntLit(e.constInt[mn])
 				text, addr, cur = e.constSpelling(v, e.underlyingCType(gt)), false, e.plainOrSlice(gt)

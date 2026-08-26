@@ -53,6 +53,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method could not be called on an element of an imported package's array
+  variable.** `geo.Table[1].Int()` was "geo is not a value with fields or
+  elements": the chain renderer's import-qualifier head knew that package's
+  constants, functions and plain variables, and an array is none of those. It
+  enters the chain as this package's own arrays do now. The rest of that family
+  is still open -- a plain read `geo.Table[1]`, `len(geo.Table)`, an assignment
+  `geo.Ints[0] = 5` and `range geo.Table` are all refused -- and is the next
+  thing to sweep.
+
 - **`7 / 2.0` was 3, and `2 * 3.5` printed as an integer's bits.** A binary
   operation over two untyped constants took the kind of its FIRST operand, where
   Go takes the wider of the two in the order int, rune, float: `x := 7 / 2.0` was

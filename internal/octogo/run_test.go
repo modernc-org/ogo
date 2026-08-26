@@ -18229,7 +18229,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n"
+	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18384,6 +18384,9 @@ println(chain.Unit.Len(), chain.Unit.Upper().Len(), u.Len(), up.Len(), string(ch
 // one as a shift count, a float32 one compared.
 t := chain.Boil
 println(chain.Boil.Int(), chain.Boil.Half().Int(), t.Half().Int(), float32(chain.G), chain.G*2, 1<<chain.Two, chain.K32 == 0.75)
+// A method on an element of an imported package's array variable, which used
+// to be "chain is not a value with fields or elements".
+println(chain.Table[1].Int(), chain.Table[0].Half().Int())
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -18458,6 +18461,10 @@ const K32 float32 = 0.75
 func (t Temp) Half() Temp { return t / 2 }
 
 func (t Temp) Int() int { return int(t) }
+
+// Table is an exported lookup table: an ARRAY variable a method is called on an
+// element of, across the boundary.
+var Table = [2]Temp{-2.5, Boil}
 `,
 	"greet/greet.ogo": `// Relay and Ack are this package's channels, used by whoever imports it. With no
 // heap there is nothing for a constructor to return, so a package-level channel is
