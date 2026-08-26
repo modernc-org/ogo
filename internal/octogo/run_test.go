@@ -38,6 +38,85 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// An interface method with SEVERAL results, `Next() (int32, bool)`, which was
+		// refused outright. The values travel in the struct a direct call to such a
+		// method already returns -- but the slot WRITES THROUGH a trailing pointer
+		// rather than returning it, because a struct with padding comes back wrong
+		// from a call through a function pointer on a spawned cog, and takes the
+		// program down with it (doc/struct-return-through-pointer-on-cog.c). So the
+		// case is run on both: on this cog through `drain`, and on another through
+		// `feed`, which is where the fault would show.
+		name: "an interface method with several results",
+		src: `type Source interface {
+	Next() (int32, bool)
+	Name() string
+}
+
+type Sweep struct {
+	Data [3]int32
+	At   int
+}
+
+func (s *Sweep) Next() (int32, bool) {
+	if s.At >= len(s.Data) {
+		return 0, false
+	}
+	v := s.Data[s.At]
+	s.At++
+	return v, true
+}
+
+func (s *Sweep) Name() string { return "sweep" }
+
+var src Sweep
+var iface Source
+var ch chan int32
+
+func drain(s Source) int32 {
+	sum := int32(0)
+	for {
+		v, ok := s.Next()
+		if !ok {
+			return sum
+		}
+		sum += v
+	}
+}
+
+func feed(c chan int32) {
+	for {
+		v, ok := iface.Next()
+		if !ok {
+			c <- -1
+			return
+		}
+		c <- v
+	}
+}
+
+func main() {
+	src.Data = [3]int32{2, 3, 4}
+	iface = &src
+	println(drain(iface), iface.Name())
+	src.At = 0
+	go feed(ch)
+	sum := int32(0)
+	for {
+		v := <-ch
+		if v < 0 {
+			break
+		}
+		sum += v
+	}
+	println("cog", sum)
+	src.At = 1
+	v, ok := iface.Next()
+	println(v, ok, src.At)
+}
+`,
+		want: "9 sweep\ncog 9\n3 true 2\n",
+	},
+	{
 		// A compound assignment as the post statement of a three-clause for --
 		// `i += 2`, `i /= 2`, `i <<= 1`, `i &^= 4`, `f += 0.5` -- which the grammar
 		// did not admit: ForPost took "=", ":=", "++" and "--" and nothing else, so

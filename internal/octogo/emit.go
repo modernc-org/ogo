@@ -4686,8 +4686,26 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 // source name, the C result type, and the C parameter types beside the receiver.
 // Declaration order is slot order, which is why this is a slice and not a map.
 type ifaceMethod struct {
-	name   string
-	res    string
+	name string
+	// res is the C return type of the method's slot: "void" for none, the type
+	// itself for one, and the struct several results are returned in -- the same
+	// struct a direct call to such a method returns, so the thunk hands one back
+	// unchanged.
+	res string
+	// resList is what the method returns in the source's terms, so a multiple
+	// assignment through the interface knows how many values there are and what
+	// each one is. res alone cannot say: a struct is one C value.
+	resList []string
+	// out is the result struct a method of SEVERAL results writes through, as a
+	// trailing parameter, rather than returning it. The slot is then a void
+	// function. A struct with padding -- which (int32, bool) has, and most result
+	// lists do -- comes back WRONG from a call through a function pointer on a
+	// spawned cog, and the vtable slot is exactly that call: a worker cog reading
+	// through an interface got {0, false} of a method that returned {2, true}, and
+	// the write went somewhere that took the program down with it. Writing through a
+	// parameter is the same trick an array result already takes, and it is immune to
+	// the shape of what travels. See doc/struct-return-through-pointer-on-cog.c.
+	out    string
 	params []string
 }
 
@@ -4766,17 +4784,18 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 			continue
 		}
 		_, resTypes := e.cSig(n.ast)
-		res := "void"
+		res, out := "void", ""
 		switch len(resTypes) {
 		case 0:
 		case 1:
 			res = resTypes[0]
 		default:
-			e.fail("an interface method with more than one result is not supported yet")
-			return nil, false
+			// SEVERAL results are WRITTEN THROUGH a trailing parameter rather than
+			// returned; see ifaceMethod.out.
+			out = e.retStructNameOf(resTypes)
 		}
 		params, _ := e.cParamTypes(n.ast)
-		add(ifaceMethod{name: name, res: res, params: params})
+		add(ifaceMethod{name: name, res: res, resList: resTypes, out: out, params: params})
 	}
 	return methods, true
 }
@@ -4870,12 +4889,18 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 		for _, p := range m.params {
 			b.WriteString(", " + p)
 		}
+		if m.out != "" {
+			b.WriteString(", " + m.out + "*") // several results; see ifaceMethod.out
+		}
 		b.WriteString(");")
 	}
 	b.WriteString(" };\n")
 	var deps []string
 	for _, m := range methods {
 		deps = append(deps, m.res)
+		if m.out != "" {
+			deps = append(deps, m.out)
+		}
 		deps = append(deps, m.params...)
 	}
 	value := "struct " + mn + " { void* data; const " + vt + "* vt; };\n"
@@ -5419,6 +5444,9 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			fmt.Fprintf(&b, ", %s _ogo_a%d", p, i)
 			args = append(args, fmt.Sprintf("_ogo_a%d", i))
 		}
+		if m.out != "" {
+			fmt.Fprintf(&b, ", %s* _ogo_out", m.out)
+		}
 		recv := "*(" + concrete + "*)_ogo_r"
 		if e.methodPtr[cname] {
 			recv = "(" + concrete + "*)_ogo_r"
@@ -5436,13 +5464,26 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		}
 		call := cname + "(" + strings.Join(append([]string{recv}, args...), ", ") + ")"
 		switch {
+		case m.out != "":
+			// The results are WRITTEN THROUGH the parameter. The call itself returns
+			// the struct and is a DIRECT one, which the target's C compiler gets
+			// right -- it is the call through the vtable's pointer that does not,
+			// and that one returns void now. See ifaceMethod.out.
+			b.WriteString(") { *_ogo_out = " + call + "; }\n")
 		case m.res == "void":
 			b.WriteString(") { " + call + "; }\n")
-		case e.isStruct(m.res):
+		case e.isStruct(m.res) || e.retStructs[m.res] != "":
 			// Bound, not returned where it stands: the target loses a struct member
 			// narrower than a machine word out of `return f();`. The thunk is a
 			// return of a call by construction, so every struct-result method
 			// reached through an interface hit it. See doc/return-nonword-struct.c.
+			//
+			// A method of SEVERAL results returns the struct they travel in, which is
+			// minted rather than declared and so is in retStructs and not in structs.
+			// Asking only the second sent every multi-result method through the plain
+			// return: on a P2 `v, ok := src.Next()` came back {0, false} for a method
+			// that returned {2, true}, and the C compiler warned about a pointer type
+			// in a function that returns no pointer.
 			b.WriteString(") { " + m.res + " _ogo_v = " + call + "; return _ogo_v; }\n")
 		default:
 			b.WriteString(") { return " + call + "; }\n")
@@ -5456,6 +5497,42 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 	b.WriteString(" };\n")
 	e.vtables.WriteString(b.String())
 	return true
+}
+
+// ifaceCallC renders a call through an interface's table. out names the temporary a
+// method of SEVERAL results writes its results into, which such a method takes as a
+// trailing parameter rather than returning (see ifaceMethod.out); it is empty for
+// every other method, and ignored by them.
+func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []int32, out string) string {
+	call := recvText + ".vt->" + userIdent(method) + "(" + recvText + ".data"
+	if args := e.argsCText("", callSuffix); args != "" {
+		call += ", " + args
+	}
+	if out != "" {
+		call += ", &" + out
+	}
+	return call + ")"
+}
+
+// ifaceOutMethod names the result struct a method of several results reached
+// through an interface writes through, for the receiver and member a call names.
+// It answers only for the two-step shape `v.M(...)`, which is where a multiple
+// assignment finds one.
+func (e *emitter) ifaceOutMethod(recv string, suffix []Node) (ifaceCType, method, out string, ok bool) {
+	if len(suffix) != 2 || suffix[0].sym != Selector || suffix[1].sym != CallSuffix {
+		return "", "", "", false
+	}
+	ct, isVar := e.varType(recv)
+	if !isVar || !e.isIfaceCType(ct) {
+		return "", "", "", false
+	}
+	member := e.soleIdent(suffix[0].ast)
+	for _, m := range e.ifaceMethods[ct] {
+		if m.name == member && m.out != "" {
+			return ct, member, m.out, true
+		}
+	}
+	return "", "", "", false
 }
 
 // isInterfaceTypeAST reports whether a Type subtree is an interface type.
@@ -17825,11 +17902,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// the implementations -- the call names no function for them to be
 			// looked up by, and asking nothing made this the way around them.
 			e.checkIfaceArgs(ct, method, e.callArgExprs(suffix[1].ast))
-			e.emit(e.varRef(recv) + ".vt->" + userIdent(method) + "(" + e.varRef(recv) + ".data")
-			if args := e.argsCText("", suffix[1].ast); args != "" {
-				e.emit(", " + args)
-			}
-			e.emit(")")
+			e.emit(e.ifaceCallC(ct, e.varRef(recv), method, suffix[1].ast, ""))
 			return true
 		}
 		// A method call `x.M(args)` on a variable of a user-defined type (struct or
@@ -18361,6 +18434,13 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					}
 				}
 				if slot < 0 {
+					return "", "", false, false
+				}
+				if ms[slot].out != "" {
+					// A method of several results writes through a parameter (see
+					// ifaceMethod.out), so it is not an expression a chain can carry.
+					// The multiple-assignment path emits it; a chain reaching one is
+					// refused by the caller rather than emitted as a void call.
 					return "", "", false, false
 				}
 				call := text + ".vt->" + userIdent(field) + "(" + text + ".data"
@@ -21843,6 +21923,20 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		return
 	}
 	tmp := e.newTmp()
+	// A method of SEVERAL results reached through an interface WRITES THROUGH a
+	// trailing parameter rather than returning (see ifaceMethod.out), so the
+	// temporary is declared first and its address handed over.
+	if ct, method, out, isOut := e.ifaceOutMethod(callee, suffix); isOut {
+		e.checkIfaceArgs(ct, method, e.callArgExprs(suffix[1].ast))
+		e.ind()
+		e.emit(out + " " + tmp + ";\n")
+		e.ind()
+		e.emit(e.ifaceCallC(ct, e.varRef(callee), method, suffix[1].ast, tmp) + ";\n")
+		for i, tgt := range targets {
+			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+		}
+		return
+	}
 	e.ind()
 	// Keyed by the result TYPES, not by the callee: a call through a function value
 	// has no callee name to key on, and a named one gives the same struct either way.
@@ -22063,6 +22157,13 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 		if rct, isVar := e.varType(recv); isVar && e.isIfaceCType(rct) {
 			for _, m := range e.ifaceMethods[rct] {
 				if m.name == member {
+					// The LIST, not the slot: a method of several results writes them
+					// through a parameter and its slot returns void (see
+					// ifaceMethod.out), so the slot says nothing about how many
+					// values the source gets. Asked first for that reason.
+					if len(m.resList) > 1 {
+						return "", m.resList, true
+					}
 					if m.res == "void" {
 						return "", nil, true
 					}

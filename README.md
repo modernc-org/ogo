@@ -434,6 +434,7 @@ so a constructor's result does, `var s Shape = New()`. One may be written where 
 declared with a name, `func measure(s interface{ area() int })`, and the empty one
 is spelled `any` as well; identity is by method set, so `any` and `interface{}` are
 one type. A conversion names the interface where the position does not, `Shape(&q)`
-or `any(&q)`, and builds the same two words the assignment does. The
+or `any(&q)`, and builds the same two words the assignment does. A method may
+return several values, `Next() (int32, bool)`. The
 whole-program-optimization pass that would devirtualize the calls is still an open
 question, and opinions are welcome.

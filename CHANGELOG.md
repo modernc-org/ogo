@@ -60,6 +60,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Added
 
+- **An interface method may have several results.** `Next() (int32, bool)` was
+  "an interface method with more than one result is not supported yet" -- the one
+  shape a reader, a scanner or a queue is written in. The values travel in the
+  struct a direct call to such a method already returns; the vtable slot writes it
+  through a trailing pointer rather than returning it, since a struct with padding
+  comes back wrong from a call through a function pointer on a spawned cog and
+  takes the program down with it (`doc/struct-return-through-pointer-on-cog.c`).
+  A multi-result method reached through a longer chain is refused for now, and so
+  is a multi-result FUNCTION VALUE on a cog, which is the same backend fault by
+  another road.
+
 - **`ogo test ./...` tests every package under a root.** A program of several
   packages had to be tested a directory at a time; a pattern ending in `...` now
   walks the tree and tests each package it finds, in path order, one board run
