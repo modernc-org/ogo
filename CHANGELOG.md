@@ -88,6 +88,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Calling what a call returned was refused for its results.** `a := pick()(3)`
+  was "cannot infer a type for the declaration of a", and `b, ok := pick2()(5)`
+  was "assignment mismatch: 2 variables but pick2 returns 1 value" -- of a second
+  call that returns exactly two. Both sides read the FIRST callee's results, where
+  the values are the second call's: the function type the first call yields is
+  what declares them. The forms that ask nothing -- `println(pick()(3))`, `var a
+  int = pick()(4)`, an argument -- always worked, which is what made the gap look
+  like a type error rather than a missing shape.
+
 - **A function value with several results was miscompiled on a goroutine, and
   drew a backend diagnostic everywhere.** `fn := two; a, b := fn(3)` for a `two`
   returning `(int32, bool)`: every assignment of such a function to a value drew

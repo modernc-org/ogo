@@ -4792,7 +4792,7 @@ func (f *File) exprCallee(n Node) (Token, bool) {
 // single call is named -- "f returns 1 value", as Go words it, which says where the
 // count came from -- and anything else is just counted.
 func (f *File) valueSource(s *Scope, rhs []Node, v int) string {
-	if len(rhs) == 1 {
+	if len(rhs) == 1 && !f.hasLaterCall(rhs[0]) {
 		if callee, ok := f.exprCallee(rhs[0]); ok {
 			if _, isFunc := s.find(callee.Src()).(*FuncDeclaration); isFunc {
 				return fmt.Sprintf("%s returns %s", callee.Src(), countUnits(v, "value"))
@@ -4800,6 +4800,24 @@ func (f *File) valueSource(s *Scope, rhs []Node, v int) string {
 		}
 	}
 	return countUnits(v, "value")
+}
+
+// hasLaterCall reports whether an expression calls what a call returned,
+// `pick()(3)`. The values are then the SECOND call's, so the message must not name
+// the first callee as the one that returns them.
+func (f *File) hasLaterCall(e Node) bool {
+	fac, ok := f.soleFactor(e)
+	if !ok {
+		return false
+	}
+	for c := range it(fac.ast) {
+		if c.sym == FactorSuffix {
+			if _, later, _, _ := f.callInfoAll(c); len(later) != 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // errNoNewVars reports a short declaration that introduces nothing. Every form of
@@ -4867,14 +4885,30 @@ func (f *File) directCallResultCount(s *Scope, e Node) (int, bool) {
 	}
 	// The suffix must be exactly a call with no leading selector or index, so the
 	// callee is the named function itself (not a method or package call).
-	if _, direct, isCall := f.callInfo(suffix); !direct || !isCall {
+	_, later, direct, isCall := f.callInfoAll(suffix)
+	if !direct || !isCall {
 		return 0, false
 	}
 	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
 	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
 		return 0, false
 	}
-	return len(f.flattenResults(s, fd.FuncDecl.Type.Signature)), true
+	res := f.flattenResults(s, fd.FuncDecl.Type.Signature)
+	// A LATER call is of what the previous one returned -- `pick()(3)` calls the
+	// function pick handed back -- so the values are that function's, not pick's.
+	// Counting pick's alone made `a, ok := pick()(3)` "2 variables but pick returns
+	// 1 value", of a program whose second call returns exactly two.
+	for range later {
+		if len(res) != 1 {
+			return 0, false
+		}
+		sig := f.funcSig(s, res[0].typeNode)
+		if sig == nil {
+			return 0, false
+		}
+		res = f.flattenResults(s, sig)
+	}
+	return len(res), true
 }
 
 // soleFactor returns the single Factor of an expression that applies no operator --

@@ -38,6 +38,52 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// Calling what a call RETURNED, `pick()(3)`. The value is the second call's,
+		// which is what neither side knew: the checker counted the first callee's
+		// results ("2 variables but pick2 returns 1 value", of a second call that
+		// returns exactly two) and the emitter could not type the declaration --
+		// while `var a int = pick1()(4)`, which asks nothing, always worked. Every
+		// position: printed, declared, assigned, an argument, destructured, and
+		// discarded, with a method value as the returned function too.
+		name: "calling what a call returned",
+		src: `type Counter struct {
+	n int32
+}
+
+func (c *Counter) Next() (int32, bool) {
+	c.n++
+	return c.n, c.n <= 2
+}
+
+var g Counter
+
+func dbl(v int) int { return v * 2 }
+
+func two(v int) (int, bool) { return v * 2, true }
+
+func pick1() func(int) int { return dbl }
+
+func pick2() func(int) (int, bool) { return two }
+
+func nexter() func() (int32, bool) { return g.Next }
+
+func main() {
+	println(pick1()(3))
+	a := pick1()(4)
+	println(a, dbl(pick1()(5)))
+	b, ok := pick2()(6)
+	println(b, ok)
+	var c int
+	c, ok = pick2()(7)
+	println(c, ok)
+	v, more := nexter()()
+	println(v, more)
+	pick2()(8)
+}
+`,
+		want: "6\n8 20\n12 true\n14 true\n1 true\n",
+	},
+	{
 		// A METHOD value of several results, `m := g.Next`, which was refused: the
 		// value could not be typed and the lift said so. It takes the same void
 		// wrapper a plain function value of several results takes, with the receiver

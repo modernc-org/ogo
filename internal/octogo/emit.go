@@ -17526,6 +17526,23 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			text += ", " + args
 		}
 		return text + ")", true
+	case len(suffix) == 2 && suffix[0].sym == CallSuffix && suffix[1].sym == CallSuffix:
+		// `pick()(3)` -- what the first call yields is a function value, so the
+		// second call takes the out parameter as any call through a value does.
+		ct, okCt := e.callResultCType(callee, suffix[:1])
+		if !okCt || len(e.funcTypeRet[e.underlyingCType(ct)]) < 2 {
+			return "", false
+		}
+		first, okFirst := "", false
+		e.capturePrologue(func() { first = e.captureC(func() { okFirst = e.emitCallExpr(callee, suffix[:1]) }) })
+		if !okFirst {
+			return "", false
+		}
+		text := first + "(&" + out
+		if args := e.argsCText("", suffix[1].ast); args != "" {
+			text += ", " + args
+		}
+		return text + ")", true
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		field := e.soleIdent(suffix[0].ast)
 		ft, isField := e.fieldType(callee, []string{field})
@@ -17900,6 +17917,25 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 // by the statement call path (emitCall) and the expression Factor path. The
 // checker has already verified the callee resolves and the arguments match.
 func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
+	// `pick()(3)` where the second call yields SEVERAL results: they are written
+	// through an out parameter (see funcSigCParts), so the call needs a temporary
+	// of this frame to write into. Reached where the results are discarded -- a
+	// multiple assignment renders the same call itself, into the temporary it
+	// stores from.
+	if len(suffix) == 2 && suffix[0].sym == CallSuffix && suffix[1].sym == CallSuffix {
+		if ct, okCt := e.callResultCType(recv, suffix[:1]); okCt {
+			if rts := e.funcTypeRet[e.underlyingCType(ct)]; len(rts) > 1 {
+				tmp := e.newTmp()
+				text, okOut := e.valueOutCallC(recv, suffix, tmp)
+				if !okOut {
+					return false
+				}
+				e.prologue = append(e.prologue, e.retStructNameOf(rts)+" "+tmp+";\n")
+				e.emit(text)
+				return true
+			}
+		}
+	}
 	// A call whose result is an ARRAY is a statement, not a value: the caller owns
 	// the storage and the callee fills it, so there is no expression for the call to
 	// become. Bind it and use the variable.
@@ -22307,6 +22343,16 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 	if cn, rts, isChain := e.chainMethodResult(recv, suffix); isChain {
 		return cn, rts, true
 	}
+	// `pick()(3)`: the values are the second call's, which the function type the
+	// first one yields declares.
+	if len(suffix) == 2 && suffix[0].sym == CallSuffix && suffix[1].sym == CallSuffix {
+		ct, ok := e.callResultCType(recv, suffix[:1])
+		if !ok {
+			return "", nil, false
+		}
+		rts, isFunc := e.funcTypeRet[e.underlyingCType(ct)]
+		return "", rts, isFunc
+	}
 	if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 		member := e.soleIdent(suffix[0].ast)
 		// A call through an interface takes its result from the method's slot: the
@@ -22385,6 +22431,11 @@ func (e *emitter) directCall(ast []int32) (recv string, suffix []Node, ok bool) 
 			if r, sfx, ok := e.factorCall(kids); ok {
 				switch {
 				case len(sfx) == 1 && sfx[0].sym == CallSuffix:
+					return r, sfx, true
+				case len(sfx) == 2 && sfx[0].sym == CallSuffix && sfx[1].sym == CallSuffix:
+					// `pick()(3)` -- calling what a call returned, whose results are
+					// the SECOND call's. Refusing it here reported "requires a single
+					// function call" of two.
 					return r, sfx, true
 				case len(sfx) >= 2 && sfx[len(sfx)-1].sym == CallSuffix && allSelectors(sfx[:len(sfx)-1]):
 					// `x.m(...)`, and a method on a FIELD: `m.st.pop()`. Only the
@@ -23604,6 +23655,20 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		if cur, ok := e.constChainType(recv, suffix); ok && cur.ctype != "" {
 			return cur.ctype, true
 		}
+	}
+	// `pick()(3)` -- calling what a call returned. The value is the second call's,
+	// so the first call's result type says which function type it is and that
+	// typedef says what the second yields. Without this `a := pick()(3)` had no
+	// type to give a, while `var a int = pick()(3)`, which asks nothing, was fine.
+	if len(suffix) == 2 && suffix[0].sym == CallSuffix && suffix[1].sym == CallSuffix {
+		ct, ok := e.callResultCType(recv, suffix[:1])
+		if !ok {
+			return "", false
+		}
+		if rts := e.funcTypeRet[e.underlyingCType(ct)]; len(rts) == 1 {
+			return rts[0], true
+		}
+		return "", false
 	}
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
