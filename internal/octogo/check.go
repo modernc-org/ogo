@@ -2804,11 +2804,11 @@ func (f *File) inferredKind(s *Scope, n Node) (Kind, bool) {
 // The order of the cases is the order they must be asked in, each being a shape the
 // one below it would answer wrongly or not at all.
 func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
-	switch ek, hasEk, tn, isPtr := f.addressOfInfo(s, init); {
+	switch ek, hasEk, tn, tq, isPtr := f.addressOfInfo(s, init); {
 	case isPtr:
 		// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
 		// `*p` reads and writes are admitted and checked.
-		vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName = true, ek, hasEk, tn
+		vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName, vd.typeQual = true, ek, hasEk, tn, tq
 		if !tn.IsValid() {
 			// `p := &P{1, 2}`: the operand is a literal, not a variable, so
 			// there was no declaration to read the type off -- it is the
@@ -5505,6 +5505,15 @@ func (f *File) checkCrossPkgField(qual, typeName, field Token) {
 			}
 		}
 	}
+	if !found {
+		// A field PROMOTED from an embedded one, resolved in the owning package's
+		// scope for the same reason a promoted method is (see checkCrossPkgMethod).
+		if home, ok := f.importedPkgScope(qual); ok {
+			if fields, isStruct := f.structFields(home, typeName); isStruct {
+				found = fields[field.Src()]
+			}
+		}
+	}
 	switch {
 	case !found:
 		f.err(field.Position(), "type %s.%s has no field %s", qual.Src(), typeName.Src(), field.Src())
@@ -5521,12 +5530,34 @@ func (f *File) checkCrossPkgMethod(qual, typeName, member Token) {
 	if !ok {
 		return
 	}
+	promoted := false
+	if td.methods[member.Src()] == nil {
+		// A method PROMOTED from an embedded field is in the type's method set here
+		// exactly as it is at home, and the walk has to run in the OWNING package's
+		// scope: the embedded type's name is that package's, and this file may have
+		// no such name or a different one. Without it every promoted method of an
+		// imported type was "type lib.Box has no method Sum" -- embedding worked
+		// within a package and vanished at its boundary.
+		if home, ok := f.importedPkgScope(qual); ok {
+			_, promoted = f.methodOwner(home, typeName, member.Src())
+		}
+	}
 	switch {
-	case td.methods[member.Src()] == nil:
+	case td.methods[member.Src()] == nil && !promoted:
 		f.err(member.Position(), "type %s.%s has no method %s", qual.Src(), typeName.Src(), member.Src())
 	case !token.IsExported(member.Src()):
 		f.err(member.Position(), "cannot refer to unexported method %s of type %s.%s", member.Src(), qual.Src(), typeName.Src())
 	}
+}
+
+// importedPkgScope is the package scope behind an import qualifier, which is where
+// that package's own names -- an embedded type, the type of a field -- resolve.
+func (f *File) importedPkgScope(qual Token) (*Scope, bool) {
+	imp, ok := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg || imp.Import.Pkg.Scope == nil {
+		return nil, false
+	}
+	return imp.Import.Pkg.Scope, true
 }
 
 // litElement is one element of a composite literal. A keyed element ("k: v")
@@ -7790,10 +7821,10 @@ func (f *File) soleUnaryExpr(n Node) (Node, bool) {
 // `*p` reads and writes, exactly as an explicit `var p *T` is. For `&s.f` or `&a[i]`
 // the pointer is recorded without an element kind (isPtr only), so `*p` is admitted
 // but its assigned value is left unchecked.
-func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typeName Token, isPtr bool) {
+func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typeName, typeQual Token, isPtr bool) {
 	ue, ok := f.soleUnaryExpr(n)
 	if !ok {
-		return 0, false, Token{}, false
+		return 0, false, Token{}, Token{}, false
 	}
 	var fac Node
 	var ops []Node
@@ -7807,14 +7838,19 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 		}
 	}
 	if !facSet || len(ops) != 1 || f.unaryOp(s, ops[0]) != AND {
-		return 0, false, Token{}, false
+		return 0, false, Token{}, Token{}, false
 	}
 	if id, ok := f.exprIdent(fac); ok {
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
-			return d.kind, d.hasKind, d.typeName, true
+			// The QUALIFIER travels with the name: `p := &s` for an s of an imported
+			// type gives p that package's type, and the bare name is a type this
+			// package does not have. Dropped, `p` was "variable of type Sq" and
+			// passing it where its interface was wanted reported that Sq implements
+			// nothing -- of a type whose method is in the package it came from.
+			return d.kind, d.hasKind, d.typeName, d.typeQual, true
 		}
 	}
-	return 0, false, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
+	return 0, false, Token{}, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
 }
 
 // exprNamedType returns the named type an initializer's value has, when the
@@ -9295,7 +9331,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 				// a pointer -- is most of what a variadic is called with, and
 				// skipping it left the whole class to the C compiler.
 				f.checkFuncAssign(s, f.funcSig(paramScope, sl.TypeNode), arg, "argument to "+name.Src())
-				f.checkPointerArg(s, elem, arg, name)
+				f.checkPointerArg(s, paramScope, elem, arg, name)
 				if !elem.known {
 					continue
 				}
@@ -9319,7 +9355,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			// A function-typed parameter has no predeclared Kind, so this stands
 			// ahead of the known-kind guard below.
 			f.checkFuncAssign(s, f.funcSig(paramScope, p.typeNode), arg, "argument to "+name.Src())
-			f.checkPointerArg(s, p, arg, name)
+			f.checkPointerArg(s, paramScope, p, arg, name)
 			if !p.known {
 				continue
 			}
@@ -9345,11 +9381,44 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 // Both sides must be known before anything is said. An argument whose shape this
 // does not model -- a call, an index, a field -- reports nothing rather than a
 // guess, which is the same rule its neighbours follow.
-func (f *File) checkPointerArg(s *Scope, p retResult, arg Node, name Token) {
-	want := f.isPointerType(s, p.typeNode)
-	f.checkPointerValue(s, want, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
-	f.checkImplements(s, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
-	f.checkDefinedType(s, f.typeNodeString(p.typeNode, false), arg, "argument to "+name.Src())
+func (f *File) checkPointerArg(s, paramScope *Scope, p retResult, arg Node, name Token) {
+	// The PARAMETER's type is resolved in the callee's scope and rendered as this
+	// file would write it: a parameter of another package's function names that
+	// package's type, `Shape`, which is `lib.Shape` here. Rendered as written, every
+	// target-side lookup missed -- so a `lib.Shape` parameter was not recognised as
+	// an interface at all and `lib.Total(&s, &s)` was refused, "cannot use &s (an
+	// address) as Shape value", of a program that is exactly how an interface is
+	// passed. The same call to a function of THIS package was fine, and so was a
+	// local function declared with a `lib.Shape` parameter: only the crossing broke
+	// it. The ARGUMENT keeps the caller's scope, which is where it is written.
+	want := f.isPointerType(paramScope, p.typeNode)
+	wantName := f.qualifiedTypeName(paramScope, f.typeNodeString(p.typeNode, false))
+	f.checkPointerValue(s, want, wantName, arg, "argument to "+name.Src())
+	f.checkImplements(s, wantName, arg, "argument to "+name.Src())
+	f.checkDefinedType(s, wantName, arg, "argument to "+name.Src())
+}
+
+// qualifiedTypeName spells a type name resolved in another package's scope as this
+// file writes it, `Shape` of an imported package becoming `lib.Shape`. A name that
+// package does not declare -- a predeclared type, an already-qualified name, a
+// composite rendering -- is its own.
+func (f *File) qualifiedTypeName(typeScope *Scope, name string) string {
+	if name == "" || typeScope == nil || typeScope == f.Scope || strings.ContainsAny(name, ".*[]") {
+		return name
+	}
+	if _, ok := typeScope.Declarations[name].(*TypeDeclaration); !ok {
+		return name
+	}
+	for qual, d := range f.Scope.Declarations {
+		imp, isImp := d.(*ImportDeclaration)
+		if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+			continue
+		}
+		if imp.Import.Pkg.Scope == typeScope {
+			return qual + "." + name
+		}
+	}
+	return name
 }
 
 // checkPointerValue is that check for every other place a value is assigned to

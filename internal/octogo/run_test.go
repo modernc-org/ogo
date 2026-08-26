@@ -18231,7 +18231,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
-	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n"
+	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18405,6 +18405,12 @@ println(n, len(xs), xs[1], chain.InSum())
 println(chain.Own(), chain.Kit.N)
 // An imported package's array printed whole: its elements, not its address.
 println(chain.Grid)
+// A promoted method and field of an imported type, an imported interface as a
+// parameter, and a pointer variable bound to a value of an imported type.
+pan := chain.Panel{chain.Reg{5}, 6}
+lmp := chain.Lamp{7}
+qp := &lmp
+println(pan.Twice(), pan.N, pan.Tag, chain.Draw(&lmp, qp), qp.Watts())
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -18505,6 +18511,24 @@ var Kit = Reg{4}
 
 // Grid is printed WHOLE from main, which used to print its address.
 var Grid = [2]int{8, 9}
+
+// Panel, Lit and Lamp are the cross-package type-identity shapes: a method and a
+// field PROMOTED from an embedded type, an interface parameter of an imported
+// function, and a pointer variable bound to a value of an imported type.
+type Panel struct {
+	Reg
+	Tag int
+}
+
+type Lit interface {
+	Watts() int
+}
+
+type Lamp struct{ W int }
+
+func (l *Lamp) Watts() int { return l.W }
+
+func Draw(a Lit, b Lit) int { return a.Watts() + b.Watts() }
 
 func Shim(v int) int { return v + 1 }
 
@@ -18669,6 +18693,51 @@ func main() {
 `,
 			},
 			want: "cannot store a slice backed by local back in package variable geo.Sl",
+		},
+		{
+			name: "a value where another package's interface is wanted",
+			files: map[string]string{
+				"geo/geo.ogo": `type Shape interface {
+	Area() int
+}
+
+type Sq struct{ S int }
+
+func (s *Sq) Area() int { return s.S * s.S }
+
+func Total(a Shape) int { return a.Area() }
+`,
+				"main.ogo": `import "geo"
+
+func main() {
+	s := geo.Sq{2}
+	println(geo.Total(s))
+}
+`,
+			},
+			want: "cannot use s (variable of type geo.Sq) as geo.Shape value in argument to Total: an interface holds a pointer here; write &s",
+		},
+		{
+			name: "a type that does not implement another package's interface",
+			files: map[string]string{
+				"geo/geo.ogo": `type Shape interface {
+	Area() int
+}
+
+func Total(a Shape) int { return a.Area() }
+`,
+				"main.ogo": `import "geo"
+
+type Blob struct{ N int }
+
+func main() {
+	b := Blob{2}
+	p := &b
+	println(geo.Total(p))
+}
+`,
+			},
+			want: "Blob does not implement geo.Shape (missing method Area)",
 		},
 		{
 			name: "a field of another package's scalar",

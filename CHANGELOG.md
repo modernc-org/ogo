@@ -53,6 +53,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A type of another package lost half its identity at the boundary.** Four
+  ways: a method PROMOTED from an embedded field was "type lib.Box has no method
+  Sum" and a promoted field "has no field X", so embedding worked inside a
+  package and vanished outside it; passing `&s` to an imported function whose
+  parameter is that package's interface was "cannot use &s (an address) as Shape
+  value", of the one spelling an interface takes here, because the parameter's
+  type was resolved in the CALLER's scope and so was not recognised as an
+  interface at all; and `p := &s` dropped the qualifier from p's type, so `p` was
+  "variable of type Sq" and passing it where its interface was wanted reported
+  that Sq implements nothing -- of a type whose method is in the package it came
+  from. The messages name the qualified type now, and the promotion walk runs in
+  the owning package's scope.
+
 - **Printing an imported package's array printed its address.** `println(lib.
   Names)` and `printf("%v", lib.Names)` reached the %d default and printed a
   number where Go prints `[aa bb]` -- the branch that views a bare array as a
