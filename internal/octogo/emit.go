@@ -14962,7 +14962,7 @@ type forHeader struct {
 	initRHS []int32
 	cond    []int32 // nil for a conditionless loop
 	postLHS []int32 // nil when there is no post statement
-	postOp  Symbol  // ASSIGN, DEFINE, INC or DEC
+	postOp  Symbol  // ASSIGN, DEFINE, INC, DEC, or a compound assignment operator's token
 	postRHS []int32
 	// The list forms of the init and post, for the multiple-assignment shapes
 	// `for i, j := 0, 9; ...; i, j = i+1, j-1`. Each is filled for EVERY clause,
@@ -15166,6 +15166,12 @@ func (e *emitter) parseForPost(n Node, h *forHeader) bool {
 			// separates one target or value from the next
 		case c.sym == 0:
 			h.postOp = e.f.ch(c.tok)
+			seenOp = true
+		case c.sym == AssignOp:
+			// `i += 2`: the operator is the node's token, and the value follows.
+			if tok, ok := e.soleToken(c.ast); ok {
+				h.postOp = e.f.ch(tok)
+			}
 			seenOp = true
 		case c.sym == Expression && !seenOp:
 			h.postLHSs = append(h.postLHSs, c.ast)
@@ -15384,6 +15390,10 @@ func (e *emitter) emitFor(nodes []Node) {
 				case ASSIGN, DEFINE:
 					e.emit(lhs + " = " + e.exprC(h.postRHS))
 				default:
+					if c, ok := cAssignOps[h.postOp]; ok {
+						e.emitPostCompound(lhs, c, h.postRHS, h.postOp == ANDNOT_ASSIGN)
+						return
+					}
 					e.emit(lhs)
 				}
 			})
@@ -15401,6 +15411,22 @@ func (e *emitter) emitFor(nodes []Node) {
 		e.ind()
 		e.emit("}\n")
 	}
+}
+
+// emitPostCompound emits a compound post statement, `i += 2`, as the compound
+// assignment statement's own lowering -- the one that guards a shift or a division
+// and complements the operand of "&^=" -- minus the statement's terminator, C's
+// third clause taking an expression. A lowering that needs more than one
+// statement has no place there and is refused, as a temporary is.
+func (e *emitter) emitPostCompound(lhs, op string, rhs []int32, complement bool) {
+	t := assignTail{op: op, rhs: rhs, complement: complement, targetRepeatable: true}
+	text := strings.TrimSpace(e.captureC(func() { e.emitAssignTailOrCopy(func() { e.emit(lhs) }, t) }))
+	text = strings.TrimSuffix(text, ";")
+	if strings.ContainsAny(text, ";\n") {
+		e.fail("a for-loop post statement may not need a temporary; compute the value in the loop body instead")
+		return
+	}
+	e.emit(text)
 }
 
 // capturePrologue renders through emit and returns the text along with any prologue

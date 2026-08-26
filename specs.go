@@ -1816,6 +1816,9 @@
 //	for i < n { ... }              // while the condition holds
 //	for i := 0; i < n; i++ { ... } // init, condition, post
 //
+// The post statement is an assignment, a compound assignment ("i += 2"), or an
+// increment or decrement; it runs after each execution of the body.
+//
 // A variable introduced by the init statement is scoped to the whole "for" --
 // its condition, its post statement and its body -- and not to the block
 // containing it.
@@ -1926,7 +1929,8 @@
 //	ForAssignRest = "range" HeaderExpression
 //		| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .
 //	ForPost    = HeaderExpression { "," HeaderExpression }
-//		[ ( "=" | ":=" ) HeaderExpression { "," HeaderExpression } | "++" | "--" ] .
+//		[ ( "=" | ":=" ) HeaderExpression { "," HeaderExpression } | "++" | "--"
+//		| AssignOp HeaderExpression ] .
 //
 // The "++" and "--" forms are the increment and decrement statements "x++" and
 // "x--"; they take no operand of their own (the target is the AssignHead) and,

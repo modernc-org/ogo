@@ -37,6 +37,41 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A compound assignment as the post statement of a three-clause for --
+		// `i += 2`, `i /= 2`, `i <<= 1`, `i &^= 4`, `f += 0.5` -- which the grammar
+		// did not admit: ForPost took "=", ":=", "++" and "--" and nothing else, so
+		// the commonest way to step by two was "expected '{'". It is lowered as the
+		// compound assignment statement is, guards included, minus the terminator.
+		name: "a compound assignment as a for post statement",
+		src: `func main() {
+	n := 0
+	for i := 0; i < 10; i += 2 {
+		n++
+	}
+	for i := 64; i > 0; i /= 2 {
+		n += 10
+	}
+	for i := 1; i < 100; i <<= 1 {
+		n += 100
+	}
+	for i := 15; i != 0; i &^= 1 << 2 {
+		n += 1000
+		if n > 10000 {
+			break
+		}
+	}
+	for i := 10; i > 0; i -= 3 {
+		n += 10000
+	}
+	for f := 0.5; f < 2; f += 0.5 {
+		n += 100000
+	}
+	println(n)
+}
+`,
+		want: "350775\n",
+	},
+	{
 		// A float constant -- of a defined type with methods, an untyped one, a
 		// float32 one, a negative one -- in every position: sent, appended, a
 		// deferred argument, a switch tag and a case, in literals at both levels, a

@@ -42,6 +42,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   argument, a return, a send and a conversion all asked it. A float divided by a
   constant zero is still an infinity, as in Go.
 
+### Language
+
+- **A compound assignment can be a `for` statement's post statement.** `for i :=
+  0; i < n; i += 2 {` did not parse -- "expected '{'" at the `+=` -- the grammar's
+  ForPost admitting `=`, `:=`, `++` and `--` and nothing else, so stepping by two
+  was written as `i = i + 2`. Every compound operator is admitted now, `i /= 2`,
+  `i <<= 1` and `i &^= 4` included, and lowered exactly as the statement form is,
+  guards included. The grammar in `specs.go` says so.
+
 ### Fixed
 
 - **`7 / 2.0` was 3, and `2 * 3.5` printed as an integer's bits.** A binary
