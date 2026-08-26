@@ -12481,6 +12481,22 @@ func (e *emitter) emitComplement(ast []int32, ct string, emitOperand func()) {
 	// whole expression 64 bits wide and then REFUSE the printf it fed, so the
 	// workaround for a miscompile broke a build that had worked.
 	if e.constExpr(ast) {
+		// At 64 bits the target's C compiler computes `~` WRONG in the high word --
+		// both for a constant and for a variable, measured in
+		// doc/complement64-high-word.c -- so the one place that still wrote it must
+		// not at that width. The complement of a constant is a constant, so it is
+		// folded rather than spelled: no operator, nothing for the backend to get
+		// wrong, and no widening of the expression around it either.
+		//
+		// `x &^= K` was the shape that reached here: every other complement already
+		// took the long form below. On a P2 it left x unchanged where Go clears the
+		// bits, and the oracle fuzzer found it the day int64 entered the generator.
+		if ut := e.underlyingCType(ct); cIntWidths[ut] == 64 {
+			if v, ok := e.constIntValue(ast); ok {
+				e.emit(e.constSpelling(^v, ut))
+				return
+			}
+		}
 		e.emit("~(")
 		emitOperand()
 		e.emit(")")
@@ -20761,6 +20777,16 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.fail("unsupported compound assignment operator")
 			return
 		}
+		// The TARGET's type, which is the type the operation happens in: `x &^= K`
+		// complements K in x's type, and K's own -- an untyped constant is an int --
+		// says nothing about how wide the complement is. Only the paths that reach
+		// through a chain used to fill this in, so a plain variable left the tail
+		// guessing from the operand.
+		if t.targetCType == "" && stars == "" {
+			if ct, isVar := e.varType(base); isVar {
+				t.targetCType = ct
+			}
+		}
 		// Routed through emitAssignTailOrCopy so a string "+=" is refused there,
 		// centrally, the same as the field and access-chain compound targets.
 		e.emitAssignTailOrCopy(func() { e.emit(lhs) }, t)
@@ -21679,7 +21705,12 @@ func (e *emitter) emitAssignTail(t assignTail) {
 	}
 	e.emit(" " + t.op + " ")
 	if t.complement {
-		ct, _ := e.inferCType(t.rhs)
+		// The target's type when it is known: the complement happens in the type
+		// being written, not in the operand's (see emitComplement).
+		ct := t.targetCType
+		if ct == "" {
+			ct, _ = e.inferCType(t.rhs)
+		}
 		e.emitComplement(t.rhs, ct, func() { e.emitExpr(t.rhs) })
 	} else {
 		e.emitExpr(t.rhs)

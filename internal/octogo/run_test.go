@@ -38,6 +38,37 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// The bitwise complement of a 64-bit value: the target's C compiler computes
+		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
+		// `x &^= K` for a wide constant K -- the one complement the emitter still
+		// spelled with `~`, every other having taken the long form for years. On a
+		// P2 it left x unchanged where Go clears the bits. Found by the oracle
+		// fuzzer the day int64 entered the generator.
+		name: "the complement of a 64-bit constant",
+		src: `var seed int64 = 3869336025161645586
+
+func main() {
+	v := -seed
+	var z int64 = -9223372036854775808
+	println("unary", int(^v>>32), int(^v))
+	var w int64 = -3869336025161645586
+	println("expr", int((z&^w)>>32), int((z&^1)>>32))
+	z &^= -3869336025161645586
+	println("assigned", int(z>>32), int(z))
+	var q int64 = -1
+	q &^= 6635603843458558513
+	println("positive", int(q>>32), int(q))
+	var u uint64 = 0xF0F0F0F0F0F0F0F0
+	u &^= 0xFF00FF00FF00FF00
+	println("unsigned", int(u>>32), int(u))
+	var n int32 = -118
+	n &^= 1431655765
+	println("narrow", int(n))
+}
+`,
+		want: "unary 900899997 1080147473\nexpr 0 -2147483648\nassigned 0 0\npositive -1544971914 409966030\nunsigned 15728880 15728880\nnarrow -1431655798\n",
+	},
+	{
 		// Calling what a call RETURNED, `pick()(3)`. The value is the second call's,
 		// which is what neither side knew: the checker counted the first callee's
 		// results ("2 variables but pick2 returns 1 value", of a second call that

@@ -16,6 +16,19 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **`x &^= K` for a wide constant left x unchanged.** The target's C compiler
+  computes `~` wrong in the HIGH word of a 64-bit value -- for a constant and for
+  a variable alike, `doc/complement64-high-word.c` has the measurements -- and
+  that was the one complement the emitter still spelled with `~`; every other
+  took the long form already. The complement of a constant is a constant, so it
+  is folded now and no operator is emitted at all. A compound assignment also
+  tells its operand what type it is being complemented in, which an untyped
+  constant could not say for itself.
+
 ## v0.32.0
 
 ### Behaviour changes
