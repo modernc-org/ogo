@@ -44,6 +44,45 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`7 / 2.0` was 3, and `2 * 3.5` printed as an integer's bits.** A binary
+  operation over two untyped constants took the kind of its FIRST operand, where
+  Go takes the wider of the two in the order int, rune, float: `x := 7 / 2.0` was
+  refused as "constant 3.5 truncated to int", `const Z = 7 / 2.0` reached C as an
+  integer division, and `printf("%v", 2*3.5)` computed a double and printed it
+  through an int -- 1306764736. Checker and emitter now both take the wider kind,
+  whichever side it stands on; a shift's count contributes nothing, as before.
+
+- **A constant expression is evaluated exactly, as Go's are.** `0.1 + 0.2` is
+  three tenths, so `0.1+0.2 == 0.3` is true in Go, and `1/3.0*3 == 1`; both were
+  handed to C as written, computed in doubles, and false. The emitter folds a
+  constant expression with `go/constant` and spells the result once, rounded to
+  the level's type -- the longest constant prefix of each level, since Go folds
+  `0.1 + 0.2 + x` as `0.3 + x` and `x + 0.1 + 0.2` not at all. A float constant
+  is now inlined at each use, as a string or 64-bit constant is, and declares
+  nothing, which is also what a static initializer needed of it: the target's C
+  compiler takes neither a `static const` name nor a unary minus there.
+
+- **A constant beside a `float32` operand is a `float32`.** `f == 0.3` for a
+  float32 f compares two float32s in Go, and compared f's promotion with the
+  double 0.3 in C: false where Go says true, and `g + 0.2 == 0.3` the same. Such
+  a constant is spelled as a float32 literal, `0.3f`, in a float32 level and in a
+  comparison against one.
+
+- **An integral float constant serves where an integer is wanted.** `1 << Two`,
+  `x[Two]`, `x[Two:]` and `make([]int, Two)` for a `const Two = 2.0` are all Go;
+  the make was "needs a constant capacity", and the shift handed its helper the
+  double 2.0, which the target's C compiler converts to the helper's `int64_t` by
+  the bits -- `1 << Two` was 0 on the board and 4 on the host. Each such position
+  now spells the integer the constant is. The array LENGTH position, `[Two]int`,
+  is still refused ("invalid array bound"), and `len(make([]int, 3))` is still
+  unsupported.
+
+- **`+x` on a float could not be built for the target.** The C backend refuses a
+  unary plus on a double -- "Bad number of parameters in call to _float_add:
+  expected 2 found 1" (`doc/unary-plus-float.c`) -- so `(+Neg).Abs()` failed to
+  build. The operator is the identity in Go and is now dropped for a float
+  operand.
+
 - **A method could not be called on a string constant, nor a chain hung off one,
   and a local bound to an imported string constant lost its type.** For a `type Cmd
   string` with methods and `const Start Cmd = "start"`, `Start.Len()` reached the C

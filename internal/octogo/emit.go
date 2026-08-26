@@ -7,6 +7,8 @@ package octogo
 import (
 	"bytes"
 	"fmt"
+	"go/constant"
+	"go/token"
 	"io"
 	"maps"
 	"math"
@@ -3467,7 +3469,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string][]int32{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4095,43 +4097,44 @@ type emitter struct {
 	// methodValueOf: "<global>.<method>" -> the function already lifted for it, so
 	// the same method value written twice mints one function.
 	methodValueOf      map[string]string
-	funcParams         map[string][]string      // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
-	methodPtr          map[string]bool          // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
-	globals            map[string]string        // package-level constant/variable name -> C type, for typing `x := g`
-	structs            map[string][]structField // struct type name -> its fields, for typedefs, zero-init and field typing
-	namedTypes         map[string]bool          // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
-	typeNames          map[string]bool          // every C type name this program declares, struct or not, for fieldIdent's collision check
-	interfaceTypes     map[string]bool          // source names declared as an interface type
-	ifaceMethods       map[string][]ifaceMethod // mangled interface name -> its methods, in declaration order: the vtable's slot order
-	ifaceVTables       map[string]bool          // "<interface>|<concrete>" pairs a static vtable has been emitted for
-	vtables            bytes.Buffer             // the thunks and static vtables those pairs produced
-	namedUnderlying    map[string]string        // that typedef -> the C type it stands for, so a value of it is represented as what it is
-	namedArrays        map[string]arrDim        // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
-	constInt           map[string]string        // integer-constant name -> its C literal value, for array bounds
-	constStr           map[string]string        // string-constant name -> its decoded value, for folding string concatenation
-	constUntyped       map[string]bool          // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
-	arrays             map[string]arrDim        // local array name -> element type and bound (reset per function)
-	globalArrays       map[string]arrDim        // package-level array name -> element type and bound (persists across functions)
-	sliceVars          map[string]string        // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
-	globalSliceVars    map[string]string        // package-level slice name -> element C type (persists across functions)
-	pkgInit            []pkgInitStep            // the synthesized package initializer, emitted in dependency order
-	initFuncs          []string                 // user init() functions, called after the variable initializers
-	initNames          map[string]string        // init declaration position -> its numbered C name, so both passes agree
-	goSites            []goSite                 // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
-	chanElems          map[string]bool          // element C types that need an ogo_chan_<T> cell and helpers
-	chanInitElems      map[string]bool          // element types whose channel init helper is reached
-	chanSendElems      map[string]bool          // element types whose channel send helper is reached
-	chanRecvElems      map[string]bool          // element types whose blocking receive helper is reached
-	chanTryRecvElems   map[string]bool          // element types whose select tryrecv helper is reached
-	chanTrySendElems   map[string]bool          // element types whose select send helpers (offer/offered/withdraw) are reached
-	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
-	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
-	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
-	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
-	funcTypeParams     map[string][]string      // that typedef -> its parameter C types, for marshalling a `go` through a value
-	retStructs         map[string]string        // result-struct typedef name -> the result types it stands for
-	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
-	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
+	funcParams         map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
+	methodPtr          map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
+	globals            map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
+	structs            map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
+	namedTypes         map[string]bool           // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	typeNames          map[string]bool           // every C type name this program declares, struct or not, for fieldIdent's collision check
+	interfaceTypes     map[string]bool           // source names declared as an interface type
+	ifaceMethods       map[string][]ifaceMethod  // mangled interface name -> its methods, in declaration order: the vtable's slot order
+	ifaceVTables       map[string]bool           // "<interface>|<concrete>" pairs a static vtable has been emitted for
+	vtables            bytes.Buffer              // the thunks and static vtables those pairs produced
+	namedUnderlying    map[string]string         // that typedef -> the C type it stands for, so a value of it is represented as what it is
+	namedArrays        map[string]arrDim         // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
+	constInt           map[string]string         // integer-constant name -> its C literal value, for array bounds
+	constVal           map[string]constant.Value // exact value of a numeric constant, for foldConstVal; a typed one rounded to its type
+	constStr           map[string]string         // string-constant name -> its decoded value, for folding string concatenation
+	constUntyped       map[string]bool           // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
+	arrays             map[string]arrDim         // local array name -> element type and bound (reset per function)
+	globalArrays       map[string]arrDim         // package-level array name -> element type and bound (persists across functions)
+	sliceVars          map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
+	globalSliceVars    map[string]string         // package-level slice name -> element C type (persists across functions)
+	pkgInit            []pkgInitStep             // the synthesized package initializer, emitted in dependency order
+	initFuncs          []string                  // user init() functions, called after the variable initializers
+	initNames          map[string]string         // init declaration position -> its numbered C name, so both passes agree
+	goSites            []goSite                  // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
+	chanElems          map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
+	chanInitElems      map[string]bool           // element types whose channel init helper is reached
+	chanSendElems      map[string]bool           // element types whose channel send helper is reached
+	chanRecvElems      map[string]bool           // element types whose blocking receive helper is reached
+	chanTryRecvElems   map[string]bool           // element types whose select tryrecv helper is reached
+	chanTrySendElems   map[string]bool           // element types whose select send helpers (offer/offered/withdraw) are reached
+	chanElemByName     map[string]string         // ogo_chan_<T> C type name -> its element C type
+	funcValueTypes     map[string]funcValueType  // top-level function C name -> its type as C text, for the name used as a value
+	funcTypeNames      map[string]string         // C function-pointer signature -> the typedef minted for it
+	funcTypeRet        map[string][]string       // that typedef -> the result C types a call through it yields
+	funcTypeParams     map[string][]string       // that typedef -> its parameter C types, for marshalling a `go` through a value
+	retStructs         map[string]string         // result-struct typedef name -> the result types it stands for
+	retStructByKey     map[string]string         // those result types -> the typedef name, so one list answers alike every time
+	typedefUnits       []typedefUnit             // the typedef section, in the order collected; emitted in dependency order
 	anonStructNames    map[string]string
 	anonIfaceNames     map[string]string  // method-set shape -> the minted name of an anonymous interface
 	anonIfaceMinted    map[string]bool    // the minted names, so a message says the SHAPE rather than the name
@@ -6330,6 +6333,9 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			if v, ok := e.constIntValue(initExpr); ok {
 				e.constInt[cname] = intCLit(v)
 			}
+			if v, ok := e.foldConstVal(initExpr); ok {
+				e.constVal[cname] = v // rounded to its type below, once that is known
+			}
 			e.iota = -1
 			return
 		}
@@ -6357,6 +6363,20 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		} else {
 			e.locals[cname] = ctype
 		}
+		// The exact value of a numeric constant, for the fold of every expression
+		// that reads it (foldConstVal). A typed one is rounded to its type first, as
+		// Go rounds a typed constant: `const F float32 = 0.1` holds float32(0.1),
+		// and `F * 3` is computed from that. An untyped one stays exact.
+		e.iota = curIota
+		if v, ok := e.foldConstVal(initExpr); ok {
+			if hasType {
+				v = roundConstTo(v, e.underlyingCType(ctype))
+			}
+			e.constVal[cname] = v
+		} else {
+			delete(e.constVal, cname)
+		}
+		e.iota = -1
 		// A constant written with no type and built only from untyped constants is
 		// itself untyped: it has no type to contribute to an expression it appears
 		// in, and takes the type of whatever it meets. Recorded so inferNodes can
@@ -6385,6 +6405,16 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		if ut := e.underlyingCType(ctype); cIntWidths[ut] == 64 {
 			if _, folded := e.constInt[cname]; folded {
 				e.constWide[cname] = ut
+				return
+			}
+		}
+		// A float constant is inlined at each use as well (foldedFloat) and declares
+		// nothing: an expression reading one is folded exactly (emitFloatPrefixFold),
+		// which would leave a `static const` nothing names, and in a static
+		// initializer the target's C compiler does not take the name for a constant
+		// expression at all, nor a unary minus on one.
+		if ut := e.underlyingCType(ctype); ut == "double" || ut == "float" {
+			if _, folded := e.constVal[cname]; folded {
 				return
 			}
 		}
@@ -6516,6 +6546,9 @@ func (e *emitter) inlinedConstRef(name string) (string, bool) {
 	}
 	if v, ok := e.foldedStr(name); ok {
 		return e.captureC(func() { e.emitFoldedString(v) }), true
+	}
+	if lit, ok := e.foldedFloat(name); ok {
+		return lit, true
 	}
 	return "", false
 }
@@ -12140,6 +12173,10 @@ func (e *emitter) arrayBoundC(sizeAST []int32) (string, bool) {
 	if v, ok := e.constIntValue(sizeAST); ok && v >= 0 {
 		return strconv.FormatInt(v, 10), true
 	}
+	// An integral float constant, `make([]int, Two)`; see foldIntegral.
+	if v, ok := e.foldIntegral(sizeAST); ok && v >= 0 {
+		return strconv.FormatInt(v, 10), true
+	}
 	return "", false
 }
 
@@ -12454,6 +12491,456 @@ func (e *emitter) levelConstLit(ast []int32) (string, bool) {
 //
 // unsigned says the level is a uint64, whose division, remainder and right shift
 // fold differently from an int64's (see foldIntOp).
+// foldConstVal evaluates a constant expression exactly, as Go evaluates every
+// constant expression: 0.1 + 0.2 is three tenths, not the double 0.30000000000000004
+// that C's folding of the same text produces. Handed to C as written, `0.1+0.2 ==
+// 0.3` was false where Go says true, and `1/3.0*3 == 1` likewise. The value is a
+// go/constant one, rounded nowhere until it is spelled (floatSpelling). A named
+// constant contributes the value recorded for it (constVal), a typed one already
+// rounded to its type; a conversion to a float type rounds; a conversion to an
+// integer type takes an integral value only. What does not fold -- a variable, a
+// call, an operator undefined for the operands, a zero divisor -- is reported as not
+// folded and stands as written, which is what every such expression did before.
+func (e *emitter) foldConstVal(ast []int32) (constant.Value, bool) {
+	return e.foldValSeq(slices.Collect(it(ast)))
+}
+
+func (e *emitter) foldValSeq(kids []Node) (constant.Value, bool) {
+	if len(kids) == 0 {
+		return nil, false
+	}
+	acc, ok := e.foldValNode(kids[0])
+	if !ok {
+		return nil, false
+	}
+	for i := 1; i+1 < len(kids); i += 2 {
+		op := kids[i]
+		if op.sym != AddOp && op.sym != MulOp {
+			return nil, false // a RelOp (comparison or logical) is not a number
+		}
+		rhs, ok := e.foldValNode(kids[i+1])
+		if !ok {
+			return nil, false
+		}
+		if acc, ok = foldValOp(acc, e.opText(op.ast), rhs); !ok {
+			return nil, false
+		}
+	}
+	return acc, true
+}
+
+func (e *emitter) foldValNode(n Node) (constant.Value, bool) {
+	switch n.sym {
+	case Expression, SimpleExpr, Term:
+		return e.foldValSeq(slices.Collect(it(n.ast)))
+	case UnaryExpr, Factor:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+			return e.foldValNode(kids[1]) // "(" Expression ")"
+		}
+		if v, ok := e.convFoldVal(kids); ok {
+			return v, true
+		}
+		if v, ok := e.qualifiedConstVal(kids); ok {
+			return v, true
+		}
+		op, hasOp := int32(0), false
+		if len(kids) >= 2 && kids[0].sym == 0 {
+			op, hasOp = kids[0].tok, true
+		} else if len(kids) >= 2 && kids[0].sym == UnaryOp {
+			op, hasOp = e.unaryOpTok(kids[0].ast)
+		}
+		if hasOp {
+			v, ok := e.foldValSeq(kids[1:])
+			if !ok {
+				return nil, false
+			}
+			switch e.f.ch(op) {
+			case SUB:
+				return unaryValOp(token.SUB, v)
+			case ADD:
+				return v, true
+			case XOR:
+				if v.Kind() != constant.Int {
+					return nil, false
+				}
+				return unaryValOp(token.XOR, v)
+			}
+			return nil, false
+		}
+		if len(kids) == 1 {
+			return e.foldValNode(kids[0])
+		}
+		return nil, false // a call, index or selector -- not a constant
+	case 0:
+		return e.foldValToken(n.tok)
+	}
+	return nil, false
+}
+
+func (e *emitter) foldValToken(tok int32) (constant.Value, bool) {
+	var v constant.Value
+	switch e.f.ch(tok) {
+	case INT:
+		v = constant.MakeFromLiteral(e.src(tok), token.INT, 0)
+	case FLOAT:
+		v = constant.MakeFromLiteral(e.src(tok), token.FLOAT, 0)
+	case CHAR:
+		v = constant.MakeFromLiteral(e.src(tok), token.CHAR, 0)
+	case IDENT:
+		s := e.src(tok)
+		if s == "iota" {
+			if e.iota < 0 {
+				return nil, false
+			}
+			return constant.MakeInt64(int64(e.iota)), true
+		}
+		var ok bool
+		if v, ok = e.constVal[s]; !ok {
+			if v, ok = e.constVal[e.globalC(s)]; !ok {
+				return nil, false
+			}
+		}
+	default:
+		return nil, false
+	}
+	switch v.Kind() {
+	case constant.Int, constant.Float:
+		return v, true
+	}
+	return nil, false
+}
+
+// convFoldVal folds a conversion of a constant to a numeric type: to a float type
+// it rounds, as Go's does, so float32(0.1) is what a float32 holds; to an integer
+// type it takes an integral value and nothing else -- int(3.5) is refused by the
+// checker, and stands unfolded here.
+func (e *emitter) convFoldVal(kids []Node) (constant.Value, bool) {
+	recv, suffix, ok := e.factorCall(kids)
+	if !ok || len(suffix) != 1 {
+		return nil, false
+	}
+	ct, isConv := e.convType(recv)
+	if !isConv {
+		return nil, false
+	}
+	ut := e.underlyingCType(ct)
+	_, isInt := cIntWidths[ut]
+	if !isInt && ut != "double" && ut != "float" {
+		return nil, false
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	if len(args) != 1 {
+		return nil, false
+	}
+	v, ok := e.foldConstVal(args[0].ast)
+	if !ok {
+		return nil, false
+	}
+	if isInt {
+		if v = constant.ToInt(v); v.Kind() != constant.Int {
+			return nil, false
+		}
+		return v, true
+	}
+	return roundConstTo(v, ut), true
+}
+
+// qualifiedConstVal is the value of an imported package's constant, `geo.G`,
+// which folds like a constant of this one.
+func (e *emitter) qualifiedConstVal(kids []Node) (constant.Value, bool) {
+	base, fields, ok := e.factorFieldAccess(kids)
+	if !ok || len(fields) != 1 {
+		return nil, false
+	}
+	prefix, isImport := e.importQualifiers[base]
+	if !isImport || base == "p2" {
+		return nil, false
+	}
+	v, ok := e.constVal[mangle(prefix, fields[0])]
+	return v, ok
+}
+
+// foldValOp applies a binary operator to two exact values. Division of two
+// integers truncates, as Go's does (7 / 2 is 3, 7 / 2.0 is 3.5); the bitwise
+// operators and the shifts take integers only. go/constant panics on an operation
+// undefined for its operands, which reads here as "not folded".
+func foldValOp(x constant.Value, op string, y constant.Value) (v constant.Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			v, ok = nil, false
+		}
+	}()
+	ints := x.Kind() == constant.Int && y.Kind() == constant.Int
+	switch op {
+	case "+":
+		return constant.BinaryOp(x, token.ADD, y), true
+	case "-":
+		return constant.BinaryOp(x, token.SUB, y), true
+	case "*":
+		return constant.BinaryOp(x, token.MUL, y), true
+	case "/":
+		if constant.Sign(y) == 0 {
+			return nil, false
+		}
+		if ints {
+			return constant.BinaryOp(x, token.QUO_ASSIGN, y), true
+		}
+		return constant.BinaryOp(x, token.QUO, y), true
+	case "%":
+		if !ints || constant.Sign(y) == 0 {
+			return nil, false
+		}
+		return constant.BinaryOp(x, token.REM, y), true
+	case "&", "|", "^", "&^":
+		if !ints {
+			return nil, false
+		}
+		t := map[string]token.Token{"&": token.AND, "|": token.OR, "^": token.XOR, "&^": token.AND_NOT}[op]
+		return constant.BinaryOp(x, t, y), true
+	case "<<", ">>":
+		x = constant.ToInt(x)
+		count, exact := constant.Uint64Val(constant.ToInt(y))
+		if x.Kind() != constant.Int || !exact || count > 1024 {
+			return nil, false
+		}
+		t := token.SHL
+		if op == ">>" {
+			t = token.SHR
+		}
+		return constant.Shift(x, t, uint(count)), true
+	}
+	return nil, false
+}
+
+func unaryValOp(op token.Token, x constant.Value) (v constant.Value, ok bool) {
+	defer func() {
+		if recover() != nil {
+			v, ok = nil, false
+		}
+	}()
+	return constant.UnaryOp(op, x, 0), true
+}
+
+// roundConstTo rounds an exact value to what the C type ut holds, as a typed
+// constant is rounded to its type: float32 to the nearest float32, double to the
+// nearest double, an integer type to the integer it already is.
+func roundConstTo(v constant.Value, ut string) constant.Value {
+	switch ut {
+	case "float":
+		f, _ := constant.Float32Val(v)
+		return constant.MakeFloat64(float64(f))
+	case "double":
+		f, _ := constant.Float64Val(v)
+		return constant.MakeFloat64(f)
+	}
+	return v
+}
+
+// floatSpelling spells an exact value as a C double literal holding the nearest
+// float64, or the nearest float32 for a `float` level -- the rounding Go applies
+// once, when the exact constant meets its type. The shortest spelling that reads
+// back to the same double is written, with a point or an exponent so C reads a
+// double and not an int. Infinity has no literal and is left unfolded.
+func floatSpelling(v constant.Value, ut string) (string, bool) {
+	if ut == "float" {
+		// A float32 value is spelled as a C float literal, "0.3f": what Go converts
+		// a constant to beside a float32 operand, and the type C then computes in
+		// -- `f == 0.3` for a float32 f compares two float32s in Go, and compared
+		// f's promotion against the double 0.3 in C, false where Go says true. The
+		// shortest spelling that reads back to the same float32.
+		f32, _ := constant.Float32Val(v)
+		if math.IsInf(float64(f32), 0) || math.IsNaN(float64(f32)) {
+			return "", false
+		}
+		s := strconv.FormatFloat(float64(f32), 'g', -1, 32)
+		if !strings.ContainsAny(s, ".e") {
+			s += ".0"
+		}
+		return s + "f", true
+	}
+	f, _ := constant.Float64Val(v)
+	if math.IsInf(f, 0) || math.IsNaN(f) {
+		return "", false
+	}
+	s := strconv.FormatFloat(f, 'g', -1, 64)
+	if !strings.ContainsAny(s, ".e") {
+		s += ".0"
+	}
+	return s, true
+}
+
+// foldIntegral is foldConstInt for the positions that want an integer and take any
+// constant representable as one: `1 << 2.0`, `x[Two]` and `make([]int, Two)` for a
+// `const Two = 2.0`, all of which Go accepts. Spelled as written, the float reached
+// C in an integer's place: the target's C compiler converts a double to the shift
+// helper's int64_t by its bits, so `1 << Two` was 0 on the board and 4 on the host.
+func (e *emitter) foldIntegral(ast []int32) (int64, bool) {
+	if v, ok := e.foldConstInt(ast); ok {
+		return v, true
+	}
+	v, ok := e.foldConstVal(ast)
+	if !ok {
+		return 0, false
+	}
+	iv := constant.ToInt(v)
+	if iv.Kind() != constant.Int {
+		return 0, false
+	}
+	x, exact := constant.Int64Val(iv)
+	return x, exact
+}
+
+// foldedFloat is the spelled value of a float constant named by name, for the
+// static contexts where the name would denote a `static const` object the target's
+// C compiler does not take for a constant expression.
+func (e *emitter) foldedFloat(name string) (string, bool) {
+	if _, isLocal := e.locals[name]; isLocal {
+		return e.floatConstRef(name)
+	}
+	return e.floatConstRef(e.globalC(name))
+}
+
+// floatConstRef is foldedFloat for a constant's C name: a local's own, a package
+// constant's mangled one -- which an imported package's constant is only known by.
+func (e *emitter) floatConstRef(cname string) (string, bool) {
+	v, ok := e.constVal[cname]
+	if !ok {
+		return "", false
+	}
+	ct, isLocal := e.locals[cname]
+	if !isLocal {
+		ct = e.globals[cname]
+	}
+	ut := e.underlyingCType(ct)
+	if ut != "double" && ut != "float" {
+		return "", false
+	}
+	lit, ok := floatSpelling(v, ut)
+	if !ok {
+		return "", false
+	}
+	return e.parenNegative(lit), true
+}
+
+// isFloatConstName reports whether a name is an inlined float constant.
+func (e *emitter) isFloatConstName(base string) bool {
+	_, ok := e.foldedFloat(base)
+	return ok
+}
+
+// parenNegative parenthesises a negative literal where it stands in an expression:
+// written after another operator it would pair with it, `- -2.5` being a decrement
+// to C's scanner without the space and a puzzle with it. A static or aggregate
+// initializer takes it bare, the target's C compiler refusing a parenthesised
+// negative there as it refuses every unary minus (see signedFloatLit).
+func (e *emitter) parenNegative(lit string) string {
+	if !strings.HasPrefix(lit, "-") || e.litDepth > 0 || e.declInit {
+		return lit
+	}
+	return "(" + lit + ")"
+}
+
+// emitFloatPrefixFold emits a float-typed level whose leading operands are
+// constants with those folded to ONE literal, exactly, and reports whether it did.
+//
+// Go folds `0.1 + 0.2 + x` as `0.3 + x`: the constant operands at the head of a
+// level are one constant expression, evaluated exactly and rounded once, and the
+// first variable operand ends it -- `x + 0.1 + 0.2` folds nothing, being (x + 0.1)
+// + 0.2 in doubles as C computes it too. So it is the longest constant prefix that
+// is folded, the rest of the level following it as written. A level of another type
+// is left to its caller: an integer level is folded by levelConstLit where its value
+// needs it and is otherwise exact in C as written.
+func (e *emitter) emitFloatPrefixFold(ast []int32, kids []Node) bool {
+	ct, ok := e.inferCType(ast)
+	if !ok {
+		return false
+	}
+	ut := e.underlyingCType(ct)
+	if ut != "double" && ut != "float" {
+		return false
+	}
+	// The longest constant prefix of at least two operands, or for a float32 level
+	// a lone constant first operand: that one is respelled as a float32 literal
+	// (floatSpelling), as every constant operand of such a level is below.
+	least := 3
+	if ut == "float" {
+		least = 1
+	}
+	for k := len(kids) - (len(kids)+1)%2; k >= least; k -= 2 {
+		v, ok := e.foldValSeq(kids[:k])
+		if !ok {
+			continue
+		}
+		lit, ok := floatSpelling(v, ut)
+		if !ok {
+			return false
+		}
+		if k == len(kids) {
+			e.emit(e.parenNegative(lit))
+			return true
+		}
+		e.emit("(" + lit)
+		e.emitFloatLevelRest(kids[k:], ut)
+		e.emit(")")
+		return true
+	}
+	if ut != "float" {
+		return false
+	}
+	// No constant leads, but a float32 level with a constant operand anywhere in
+	// it still needs that operand spelled as a float32: `g + 0.2` for a float32 g is
+	// a float32 sum in Go, and was g promoted to a double plus the double 0.2 in C.
+	for i := 0; i < len(kids); i += 2 {
+		if _, ok := e.foldValNode(kids[i]); ok {
+			e.emit("(")
+			e.emitFloatLevelRest(kids, ut)
+			e.emit(")")
+			return true
+		}
+	}
+	return false
+}
+
+// emitFloatLevelRest emits the operators and operands of a float level after its
+// folded prefix, a float32 level's constant operands as float32 literals.
+func (e *emitter) emitFloatLevelRest(rest []Node, ut string) {
+	for _, c := range rest {
+		if c.sym == AddOp || c.sym == MulOp {
+			e.emit(" " + e.opText(c.ast) + " ")
+			continue
+		}
+		if ut == "float" {
+			if v, ok := e.foldValNode(c); ok {
+				if lit, ok := floatSpelling(v, ut); ok {
+					e.emit(e.parenNegative(lit))
+					continue
+				}
+			}
+		}
+		e.emitExprNode(c)
+	}
+}
+
+// float32CompareLitC spells a constant operand of a comparison against a float32 as
+// a float32 literal, which is the conversion Go applies to it: `f == 0.3` compares
+// two float32s there, and compared f's promotion against the double 0.3 in C.
+func (e *emitter) float32CompareLitC(kids []Node, i int) (string, bool) {
+	ct, ok := e.compareOperandCType(kids, i)
+	if !ok || ct != "float" {
+		return "", false
+	}
+	v, ok := e.foldValNode(kids[i])
+	if !ok {
+		return "", false
+	}
+	lit, ok := floatSpelling(v, ct)
+	if !ok {
+		return "", false
+	}
+	return e.parenNegative(lit), true
+}
+
 func (e *emitter) wideConstValue(ast []int32, unsigned bool) (int64, bool) {
 	prevOnly, prevUnsigned := e.foldWideConstsOnly, e.foldUnsigned
 	e.foldWideConstsOnly, e.foldUnsigned = true, unsigned
@@ -12762,7 +13249,7 @@ func (e *emitter) accessBase(base string) (accessCur, bool) {
 	// chain from, and the chain's steps read ".str"/".len" off the name. Refusing
 	// it here sends `lit[i]` and `lit[i:j]` to the single-step shapes, which stand
 	// the literal in for the variable (stringConstParts).
-	if e.isStringConstName(base) {
+	if e.isStringConstName(base) || e.isFloatConstName(base) {
 		return accessCur{}, false
 	}
 	if el, ok := e.sliceElem(base); ok {
@@ -13199,7 +13686,7 @@ func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
 // (chainCText), run under capturePrologue so that nothing it writes or hoists
 // reaches the output: the same chain is rendered for real where it stands.
 func (e *emitter) constChainType(base string, steps []Node) (accessCur, bool) {
-	if !e.isStringConstName(base) {
+	if !e.isStringConstName(base) && !e.isFloatConstName(base) {
 		if _, isImport := e.importQualifiers[base]; !isImport {
 			return accessCur{}, false
 		}
@@ -13815,6 +14302,24 @@ func (e *emitter) accessChainCTextAt(prefix string, cur accessCur, steps []Node,
 // With checks on, bounds that are not provably in range go through the reslice
 // helper instead, which panics rather than yielding a header over storage the base
 // does not own.
+// emitSliceBound emits a slice bound, an integral float constant as the integer it
+// is: `a[Two:]` for a `const Two = 2.0` is pointer arithmetic by 2 in Go, and its
+// bound reached C as the double 2.0 -- which the helper's int parameter happened to
+// convert in a checked build, and which an unchecked one added to a pointer.
+func (e *emitter) emitSliceBound(ast []int32) {
+	if _, isInt := e.foldConstInt(ast); !isInt {
+		if v, ok := e.foldIntegral(ast); ok {
+			e.emit(intCLit(v))
+			return
+		}
+	}
+	e.emitExpr(ast)
+}
+
+func (e *emitter) sliceBoundC(ast []int32) string {
+	return e.captureC(func() { e.emitSliceBound(ast) })
+}
+
 func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
 	cname, ptr, baseLen, baseCap := src.cname, src.ptr, src.baseLen, src.baseCap
 	if max != nil && baseCap == "" {
@@ -13845,18 +14350,18 @@ func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
 	e.emit(ptr)
 	if low != nil {
 		e.emit(" + ")
-		e.emitExpr(low)
+		e.emitSliceBound(low)
 	}
 	// len: (high, or base's length when omitted) - low.
 	e.emit(", ")
 	if high != nil {
-		e.emitExpr(high)
+		e.emitSliceBound(high)
 	} else {
 		e.emit(baseLen)
 	}
 	if low != nil {
 		e.emit(" - ")
-		e.emitExpr(low)
+		e.emitSliceBound(low)
 	}
 	// cap (slices only): max when a third bound sets one, else cap(base), less low
 	// either way -- so without one the result can still be re-sliced to the end of
@@ -13864,13 +14369,13 @@ func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
 	if baseCap != "" {
 		e.emit(", ")
 		if max != nil {
-			e.emitExpr(max)
+			e.emitSliceBound(max)
 		} else {
 			e.emit(baseCap)
 		}
 		if low != nil {
 			e.emit(" - ")
-			e.emitExpr(low)
+			e.emitSliceBound(low)
 		}
 	}
 	e.emit("}")
@@ -14131,19 +14636,19 @@ func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, 
 	}
 	e.emit(ptr + ", " + capExpr + ", ")
 	if low != nil {
-		e.emitExpr(low)
+		e.emitSliceBound(low)
 	} else {
 		e.emit("0")
 	}
 	e.emit(", ")
 	if high != nil {
-		e.emitExpr(high)
+		e.emitSliceBound(high)
 	} else {
 		e.emit(baseLen)
 	}
 	if max != nil {
 		e.emit(", ")
-		e.emitExpr(max)
+		e.emitSliceBound(max)
 	}
 	e.emit(")")
 }
@@ -14286,14 +14791,22 @@ func (e *emitter) nilCheckedPtrVar(name string) string {
 // or the index is a constant provably in range. lenExpr is the container's length:
 // a slice's ".len", or an array's compile-time bound.
 func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
+	idx := func() { e.emitExpr(idxAST) }
+	// An integral float constant, `x[Two]`, as the integer it is (foldIntegral):
+	// written out it is a double, which C does not index by.
+	if _, isInt := e.foldConstInt(idxAST); !isInt {
+		if v, ok := e.foldIntegral(idxAST); ok {
+			idx = func() { e.emit(intCLit(v)) }
+		}
+	}
 	if !e.checks || lenExpr == "" || e.constIndexInRange(idxAST, lenExpr) {
-		e.emitExpr(idxAST)
+		idx()
 		return
 	}
 	e.needPanic()
 	e.usesBound = true
 	e.emit("ogo_bound(")
-	e.emitExpr(idxAST)
+	idx()
 	e.emit(", " + lenExpr + ")")
 }
 
@@ -17308,6 +17821,14 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 			return "", false
 		}
 		rhsText := e.captureC(func() { e.emitExprNode(rhs) })
+		if e.isShiftOp(op) {
+			// A constant count is spelled as the integer it is: `1 << Two` for a
+			// `const Two = 2.0` is a shift by two in Go, and its count reached C as
+			// a double (see foldIntegral).
+			if v, ok := e.foldIntegral(rhs.ast); ok {
+				rhsText = intCLit(v)
+			}
+		}
 		switch {
 		case haveType && e.isShiftOp(op) && e.shiftNeedsGuard1(ctype, rhs.ast):
 			fn := e.needShift(e.opText(op.ast), e.underlyingCType(ctype))
@@ -17513,6 +18034,12 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		} else {
 			cur = accessCur{ctype: cString}
 		}
+	case e.isFloatConstName(base):
+		// A FLOAT constant the same, `Boil.Half().Int()`: its literal, typed as
+		// declared.
+		text, addr = must(e.foldedFloat(base)), false
+		ct, _ := e.varType(base)
+		cur = accessCur{ctype: ct}
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
 		text, addr = e.varRef(base), true
@@ -17560,6 +18087,9 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if v, isStr := e.constStr[mn]; isStr {
 					// A string constant of that package: its literal, as at home.
 					text, addr = e.captureC(func() { e.emitFoldedString(v) }), false
+				}
+				if lit, isFloat := e.floatConstRef(mn); isFloat {
+					text, addr = lit, false // a float constant of that package, likewise
 				}
 			default:
 				if _, isFn := e.funcRet[mn]; !isFn {
@@ -20665,7 +21195,7 @@ func (e *emitter) shiftNeedsGuard1(ctype string, rhs []int32) bool {
 	if !ok {
 		return false
 	}
-	if v, ok := e.foldConstInt(rhs); ok && v >= 0 && v < int64(bits) {
+	if v, ok := e.foldIntegral(rhs); ok && v >= 0 && v < int64(bits) {
 		return false
 	}
 	return true
@@ -21803,6 +22333,10 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 			return e.constSpelling(v, ut), e.globals[gn], true
 		}
 	}
+	// And a float constant, likewise.
+	if lit, ok := e.floatConstRef(gn); ok && len(fields) == 1 {
+		return lit, e.globals[gn], true
+	}
 	ct, ok := e.globals[gn]
 	if !ok {
 		// An exported function of that package named as a value, `mathy.Double`.
@@ -22114,11 +22648,24 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 	//
 	// When every operand is untyped the first still answers, which is what it
 	// always did -- an all-untyped expression takes its default type.
+	//
+	// Not quite: among untyped operands the WIDEST decides, in Go's order int,
+	// rune, float. `7 / 2.0` is 3.5, an untyped float constant, and `2 * 3.5` is
+	// 7.0; the first operand's answer typed both an int, so the one was divided as
+	// integers to 3 and the other was computed as a double and printed as an int,
+	// 1306764736. A shift's count is left out of it, as the checker leaves it out
+	// (operandsType): `1 << 2.0` is an int.
 	var first Node
-	firstSet := false
+	firstSet, afterShift := false, false
+	widest, widestRank := "", 0
 	for _, n := range nodes {
 		switch n.sym {
 		case AddOp, MulOp, UnaryOp:
+			if n.sym == MulOp {
+				if op := e.opText(n.ast); op == "<<" || op == ">>" {
+					afterShift = true
+				}
+			}
 			continue // an operator; the type comes from the operand(s)
 		case 0:
 			switch e.f.ch(n.tok) {
@@ -22130,14 +22677,38 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 			first, firstSet = n, true
 		}
 		if e.operandUntyped(n) {
+			if !afterShift {
+				if ct, ok := e.inferNode(n); ok {
+					if r := untypedCTypeRank(ct); r > widestRank {
+						widest, widestRank = ct, r
+					}
+				}
+			}
 			continue
 		}
 		return e.inferNode(n)
+	}
+	if widestRank > 1 {
+		return widest, true
 	}
 	if firstSet {
 		return e.inferNode(first)
 	}
 	return "", false
+}
+
+// untypedCTypeRank orders the default types of the untyped numeric kinds as
+// untypedRank orders the kinds: int, then rune, then float.
+func untypedCTypeRank(ct string) int {
+	switch ct {
+	case "int":
+		return 1
+	case "int32_t":
+		return 2
+	case "double":
+		return 3
+	}
+	return 0
 }
 
 // operandUntyped reports whether an operand is an untyped constant, contributing
@@ -23157,7 +23728,9 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 			i += 3
 			continue
 		}
-		if lit, ok := e.wideCompareLitC(kids, i); ok {
+		if lit, ok := e.float32CompareLitC(kids, i); ok {
+			e.emit(lit)
+		} else if lit, ok := e.wideCompareLitC(kids, i); ok {
 			e.emit(lit)
 		} else if lit, ok := e.unsignedLitC(kids[i]); unsignedLevel && ok {
 			e.emit(lit)
@@ -23351,6 +23924,9 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(lit)
 			return
 		}
+		if e.emitFloatPrefixFold(n.ast, kids) {
+			return
+		}
 		// A string-typed additive expression is concatenation. C cannot add two
 		// ogo_string structs, and the target has no heap to build a new one at
 		// runtime, so a concatenation of constants is folded to a single literal and
@@ -23388,6 +23964,9 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(lit)
 			return
 		}
+		if e.emitFloatPrefixFold(n.ast, kids) {
+			return
+		}
 		narrow := e.narrowCType(n.ast) // see narrowCType
 		if text, ok := e.shiftChainC(kids); ok {
 			if narrow != "" {
@@ -23401,7 +23980,7 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		e.emit("(")
 		unsignedTerm := e.unsignedLevel(n.ast)
-		guardNext, complementNext := false, false
+		guardNext, complementNext, shiftNext := false, false, false
 		for _, c := range kids {
 			switch {
 			case c.sym == MulOp:
@@ -23419,6 +23998,7 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 				e.emit(" " + op + " ")
 				guardNext = e.checks && (op == "/" || op == "%")
+				shiftNext = op == "<<" || op == ">>"
 			case complementNext:
 				complementNext = false
 				ct, _ := e.inferNode(c)
@@ -23471,6 +24051,14 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emit(fn + "(")
 				e.emitExprNode(c)
 				e.emit(")")
+			case shiftNext:
+				shiftNext = false
+				// A constant count as the integer it is; see foldIntegral.
+				if v, ok := e.foldIntegral(c.ast); ok {
+					e.emit(intCLit(v))
+					continue
+				}
+				e.emitExprNode(c)
 			default:
 				if lit, ok := e.unsignedLitC(c); unsignedTerm && ok {
 					e.emit(lit) // see unsignedLitC
@@ -23517,6 +24105,32 @@ func (e *emitter) emitExprNode(n Node) {
 			if lit, ok := e.signedFloatLit(n.ast); ok {
 				e.emit(lit)
 				return
+			}
+			// A float constant expression there is spelled as its value: `-Neg`
+			// names a `static const` object under a unary minus, neither of which
+			// that compiler takes in an initializer.
+			if ct, ok := e.inferCType(n.ast); ok {
+				if ut := e.underlyingCType(ct); ut == "double" || ut == "float" {
+					if v, ok := e.foldValNode(n); ok {
+						if lit, ok := floatSpelling(v, ut); ok {
+							e.emit(lit)
+							return
+						}
+					}
+				}
+			}
+		}
+		// A unary plus on a float is dropped: it is the identity in Go, and the
+		// target's C compiler lowers it wrongly -- "Bad number of parameters in call
+		// to _float_add: expected 2 found 1" for `+x` of a double.
+		if n.sym == UnaryExpr && len(kids) == 2 {
+			if tok, ok := e.prefixOpTok(kids[0]); ok && e.f.ch(tok) == ADD {
+				if ct, ok := e.inferNode(kids[1]); ok {
+					if ut := e.underlyingCType(ct); ut == "double" || ut == "float" {
+						e.emitExprNode(kids[1])
+						return
+					}
+				}
 			}
 		}
 		// A receive `<-ch` wraps its operand in the channel's recv helper, so it
@@ -23967,6 +24581,18 @@ func (e *emitter) emitExprNode(n Node) {
 }
 
 // unaryOpTok returns the operator token of a UnaryOp node.
+// prefixOpTok is the token of a prefix operator standing as a node's first child,
+// which the parser builds as a bare token or as a UnaryOp node.
+func (e *emitter) prefixOpTok(k Node) (int32, bool) {
+	if k.sym == 0 {
+		return k.tok, true
+	}
+	if k.sym == UnaryOp {
+		return e.unaryOpTok(k.ast)
+	}
+	return 0, false
+}
+
 func (e *emitter) unaryOpTok(ast []int32) (int32, bool) {
 	for n := range it(ast) {
 		if n.sym == 0 {
@@ -24033,6 +24659,11 @@ func (e *emitter) emitOperandToken(tok int32) {
 			}
 			// So is a 64-bit integer constant (see emitConstSpecName).
 			if lit, ok := e.wideConstRef(s); ok {
+				e.emit(lit)
+				return
+			}
+			// And a float constant, for the same reasons (see emitConstSpecName).
+			if lit, ok := e.foldedFloat(s); ok {
 				e.emit(lit)
 				return
 			}

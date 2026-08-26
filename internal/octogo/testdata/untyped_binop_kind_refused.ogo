@@ -1,0 +1,10 @@
+// A float-kinded constant expression is refused where an integer is wanted, as it
+// is in Go, whichever side the float stands on.
+
+func main() {
+	// ERROR constant 3.5 truncated to int
+	var i int = 7 / 2.0
+	// ERROR constant 3.5 truncated to int
+	var j int = 2.0 * 7 / 4
+	println(i, j)
+}

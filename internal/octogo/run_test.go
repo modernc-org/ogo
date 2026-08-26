@@ -37,6 +37,214 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A float constant -- of a defined type with methods, an untyped one, a
+		// float32 one, a negative one -- in every position: sent, appended, a
+		// deferred argument, a switch tag and a case, in literals at both levels, a
+		// method's receiver alone and at the head of a chain, converted, compared,
+		// on either side of a variable, a variadic argument, a range and a
+		// three-clause bound, a compound target, a field, through a pointer, a
+		// select, printed. A float constant is now inlined at each use and declares
+		// nothing, and `(+Neg).Abs()` drops its unary plus, which the target's C
+		// compiler cannot lower on a double (doc/unary-plus-float.c). The values are
+		// exact in float32, so the same output is right on the board, where float64
+		// is 32 bits wide. The main is split in three for the cog's 480 longs.
+		name: "a float constant in every position",
+		src: `type Temp float64
+
+type F32 float32
+
+const Boil Temp = 100.5
+const Neg Temp = -2.5
+const Pi = 3.25
+const Two = 2.0
+const Half = .5
+const E2 = 1e2
+const K32 F32 = 0.75
+const Big = 1 << 40
+const Z = 3.5
+const Zi = 7 / 2
+
+type P struct {
+	t Temp
+	n int
+}
+
+var gt = Boil * 2
+var garr = [2]Temp{Neg, Boil}
+var gp = P{t: Neg, n: int(Two)}
+var gf float64 = Big
+var gf32 F32 = K32
+
+func (t Temp) Int() int { return int(t) }
+
+func (t Temp) Half() Temp { return t / 2 }
+
+func (t Temp) Abs() Temp {
+	if t < 0 {
+		return -t
+	}
+	return t
+}
+
+func take(ts ...Temp) Temp {
+	s := Temp(0)
+	for _, t := range ts {
+		s += t
+	}
+	return s
+}
+
+func deferred(t Temp) { printf("deferred %v\n", t) }
+
+func takesF(f float64) float64 { return f * 2 }
+
+func sender(ch chan Temp) { ch <- Boil }
+
+func worker(ch chan Temp, t Temp) { ch <- t.Half() }
+
+func partA() {
+	var ch chan Temp
+	go sender(ch)
+	got := <-ch
+	printf("recv %v %d\n", got, got.Int())
+	go worker(ch, Neg)
+	printf("worker %v\n", <-ch)
+	var ts []Temp = make([]Temp, 0, 4)
+	ts = append(ts, Boil, Neg)
+	ts = append(ts, Temp(Two))
+	printf("append %d %v %v %v\n", len(ts), ts[0], ts[1], ts[2])
+	defer deferred(Neg)
+	switch Boil {
+	case Neg:
+		println("switch: neg")
+	case Boil:
+		println("switch: boil")
+	}
+	switch v := Neg; v {
+	case Boil + Neg:
+		println("case: sum")
+	case Neg:
+		println("case: neg")
+	}
+	neg := -Boil
+	printf("unary %v %v %v\n", neg, (+Neg).Abs(), -Neg)
+	p := P{t: Boil, n: int(Two)}
+	arr := [2]Temp{Boil, Neg}
+	printf("lits %v %d %v %v %v %v %v %d %v\n", p.t, p.n, arr[0], arr[1], gt, garr[0], gp.t, gp.n, gf32)
+}
+
+func partB() {
+	printf("conv %v %v %d %d %v %v %v\n", float32(Boil), float64(Neg), int(Two), int64(Boil*2), Temp(3), uint8(Two), F32(Pi))
+	var i int = Two
+	var n int = 3 * Two
+	printf("untyped %d %d %v %v %v %v %v\n", i, n, gf/1073741824, Z, Zi, 7/2.0, float64(7)/2)
+	x := [4]int{1, 2, 3, 4}
+	ms := make([]int, 2)
+	printf("index %d %d %d %d\n", x[Two], x[Two:][0], 1<<Two, len(ms))
+	printf("cmp %t %t %t %t %t %t\n", Boil > Neg, Boil == Temp(100.5), Neg < 0, Pi > 3, K32 < 1, Half*2 == Two)
+	var t Temp = 7
+	var g F32 = K32
+	printf("mixed %v %v %v %v %v %v %t\n", t*3, 3*t, t/4, 14/t, g*2, 2*g, g == K32)
+	m := 3
+	printf("order %v %v %v %v\n", float64(m)*Pi, Pi*float64(m), Boil*Temp(m), Temp(m)*Boil)
+	printf("take %v %v\n", take(Boil, Neg), takesF(Pi)+takesF(Two)+takesF(2))
+}
+
+func partC() {
+	twice := Boil + Boil
+	for i := range 3 {
+		v := Temp(i) * Boil
+		if v == twice {
+			println("range", i)
+		}
+	}
+	cnt := 0
+	for f := Half; f < Two; f = f + Half {
+		cnt++
+	}
+	println("for", cnt)
+	var x Temp = Boil
+	x += Neg
+	x -= Two
+	x *= 2
+	x /= 4
+	printf("compound %v %d\n", x, x.Int())
+	p := P{}
+	p.t = Boil
+	p.t += Neg
+	pt := &p.t
+	*pt = *pt + Two
+	*pt *= Two
+	printf("field %v %v\n", p.t, gp.t.Abs())
+	var ch chan Temp
+	go sender(ch)
+	select {
+	case v := <-ch:
+		printf("select %v\n", v.Half())
+	}
+	printf("chain %d %v %d %v\n", Boil.Int(), Boil.Half(), Boil.Half().Int(), Neg.Abs().Half())
+	printf("%v %v %v %.2f %d\n", Boil, Neg, K32, Pi, Boil.Int())
+	printf("%v %v %v\n", E2, Half, -Pi)
+}
+
+func main() {
+	partA()
+	partB()
+	partC()
+}
+`,
+		want: "recv 100.5 100\nworker -1.25\nappend 3 100.5 -2.5 2\nswitch: boil\ncase: neg\nunary -100.5 2.5 2.5\nlits 100.5 2 100.5 -2.5 201 -2.5 -2.5 2 0.75\ndeferred -2.5\nconv 100.5 -2.5 2 201 3 2 3.25\nuntyped 2 6 1024 3.5 3 3.5 3.5\nindex 3 3 4 2\ncmp true true true true true false\nmixed 21 21 1.75 2 1.5 1.5 true\norder 9.75 9.75 301.5 301.5\ntake 98 14.5\nrange 2\nfor 3\ncompound 48 48\nfield 200 2.5\nselect 50.25\nchain 100 50.25 50 1.25\n100.5 -2.5 0.75 3.25 100\n100 0.5 -3.25\n",
+	},
+	{
+		// Untyped constant arithmetic as Go defines it. `7 / 2.0` is 3.5, the
+		// untyped FLOAT kind winning over the int one whichever side it is on; the
+		// first operand used to decide, so `7 / 2.0` was 3 and `2 * 3.5` a double
+		// printed as an int. A constant expression is evaluated EXACTLY: 0.1 + 0.2 is
+		// three tenths, so `0.1+0.2 == 0.3` is true, as is `1/3.0*3 == 1`; handed to
+		// C as written, both were computed in doubles and false. A constant beside
+		// a float32 operand is a float32, `f == 0.3` comparing two of them, where C
+		// promoted f and compared it with the double 0.3. And an integral float
+		// constant serves where an integer is wanted -- an index, a shift count, a
+		// make size -- spelled as the integer it is: `1 << Two` handed the shift
+		// helper a double, which the target's C compiler converts to its int64_t by
+		// the bits, and shifted by that.
+		name: "untyped constant arithmetic is exact and takes the wider kind",
+		src: `type Temp float64
+
+const Z = 7 / 2.0
+const W = 7.0 / 2
+const X = 0.1 + 0.2
+const F float32 = 0.1
+const Two = 2.0
+const Neg Temp = -2.5
+
+func (t Temp) Abs() Temp {
+	if t < 0 {
+		return -t
+	}
+	return t
+}
+
+func main() {
+	x := 7 / 2.0
+	r := 1 + 'a'
+	var f float64 = 7 / 2
+	var g float64 = Z * 2
+	printf("%v %v %v %v %v %v %v %v\n", Z, W, x, f, g, 9/2.0, 2*3.5, 1<<2.0)
+	printf("%T %v %T %v %T\n", r, r, 7/2.0, 7/2.0, 1<<2.0)
+	println(0.1+0.2 == 0.3, 1/3.0*3 == 1, X == 0.3, X+0.1 == 0.4, 0.3 == 0.1+0.2)
+	var s float32 = 0.3
+	var t float32 = 0.1
+	println(s == 0.3, F*3 == 0.3, t*3 == 0.3, t+0.2 == 0.3, s > 0.29, 0.3 == s)
+	a := [4]int{1, 2, 3, 4}
+	m := make([]int, Two)
+	println(a[Two], a[Two:][0], len(a[:Two]), 1<<Two, 16>>Two, len(m))
+	println((+Neg).Abs(), -Neg, +Neg)
+}
+`,
+		want: "3.5 3.5 3.5 3 7 4.5 7 4\nint32 98 float64 3.5 int\ntrue true true true true\ntrue true true true true true\n3 3 2 4 4 2\n2.5 2.5 -2.5\n",
+	},
+	{
 		// A string constant -- of a defined type with methods, and a plain one -- in
 		// every position: sent, appended, a deferred argument, a switch tag and a
 		// case, indexed, sliced, ranged over, in literals, a method's receiver alone
@@ -17986,7 +18194,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n"
+	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18136,6 +18344,11 @@ println(chain.Huge.Int(), chain.Huge.Twice().Int(), chain.Sum(chain.Huge, chain.
 u := chain.Unit
 up := chain.Unit.Upper()
 println(chain.Unit.Len(), chain.Unit.Upper().Len(), u.Len(), up.Len(), string(chain.Unit.Upper()), len(chain.Unit))
+// The FLOAT counterparts: methods on an imported float constant and on a chain
+// from it, a local bound to it, an untyped one converted and scaled, an integral
+// one as a shift count, a float32 one compared.
+t := chain.Boil
+println(chain.Boil.Int(), chain.Boil.Half().Int(), t.Half().Int(), float32(chain.G), chain.G*2, 1<<chain.Two, chain.K32 == 0.75)
 }
 
 func area(s greet.Shape) int { return s.Area() }
@@ -18197,6 +18410,19 @@ func (l Label) Upper() Label {
 	}
 	return l
 }
+
+// Temp, Boil, G, Two and K32 are the float counterparts: a float constant of an
+// imported defined type, an untyped one, an integral one, a float32 one.
+type Temp float64
+
+const Boil Temp = 100.5
+const G = 9.75
+const Two = 2.0
+const K32 float32 = 0.75
+
+func (t Temp) Half() Temp { return t / 2 }
+
+func (t Temp) Int() int { return int(t) }
 `,
 	"greet/greet.ogo": `// Relay and Ack are this package's channels, used by whoever imports it. With no
 // heap there is nothing for a constructor to return, so a package-level channel is

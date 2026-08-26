@@ -389,7 +389,9 @@ that many digits as well: at its default six decimals a value that is exact in a
 right; the eighth digit of its rendering is not. (The toolchain's own
 integer-to-float conversion rounds an exact tie away from zero where IEEE 754 and
 Go round to even; the compiler does that conversion itself, so `float32(16777217)`
-is 16777216 here as it is in Go.)
+is 16777216 here as it is in Go.) Constant expressions are evaluated exactly, as
+Go evaluates them -- `0.1+0.2 == 0.3` is true, `7 / 2.0` is 3.5 -- and a constant
+beside a `float32` operand is a `float32`, so `f == 0.3` compares two of them.
 
 **Not planned**, because the target does not permit them: a garbage collector, a
 heap, maps, closures that capture their environment (a function *value* is fine —

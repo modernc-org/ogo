@@ -1,0 +1,16 @@
+// The kind of a binary operation over untyped constants is the wider of the two,
+// in the order int, rune, float -- as Go's rule has it -- whichever side each is on.
+// COMPILE
+
+const Z = 7 / 2.0
+const W = 7.0 / 2
+
+func main() {
+	x := 7 / 2.0
+	y := 2 * 3.5
+	var f float64 = 7 / 2
+	var g float64 = Z + W
+	var r rune = 1 + 'a'
+	var s rune = 'a' + 1
+	println(x, y, f, g, r, s)
+}

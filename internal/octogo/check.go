@@ -2610,9 +2610,34 @@ func (f *File) operandsType(s *Scope, n Node) (Kind, bool) {
 			if ok && !isUntypedKind(k) && !shift {
 				return k, true
 			}
+			// Untyped operands only: the kind is the WIDEST of them, in Go's order
+			// int, rune, float -- `7 / 2.0` is an untyped float constant, 3.5, not
+			// the int the left operand alone would make it. The first operand used
+			// to decide, which typed `x := 7 / 2.0` an int and refused it as "3.5
+			// truncated to int", and gave `2 * 3.5` to the emitter as an int. A
+			// shift's count contributes nothing, as above.
+			if ok && firstOK && !shift && untypedRank(k) > untypedRank(first) {
+				first = k
+			}
 		}
 	}
 	return first, firstOK
+}
+
+// untypedRank orders the untyped numeric kinds as Go's rule for a binary operation
+// over two untyped constants does: the result has the kind that appears later in
+// int, rune, float. The kinds outside that list never meet a numeric one in a
+// binary operation that type-checks, and rank below all of them.
+func untypedRank(k Kind) int {
+	switch k {
+	case UntypedInt:
+		return 1
+	case UntypedRune:
+		return 2
+	case UntypedFloat:
+		return 3
+	}
+	return 0
 }
 
 // exprType conservatively determines the type Kind of an expression, reporting
