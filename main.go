@@ -296,6 +296,11 @@ the clock instead.
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.
 
+The package is the current directory unless one is named. A pattern ending in
+"..." -- "ogo test ./..." -- tests every package under that root instead, in path
+order, one board run each; a package that fails to build is reported and the rest
+still run, and the whole run fails if any package did.
+
 A test is a function named Test<Something> taking a *testing.T, in a file whose
 name ends _test.ogo. The testing package is imported by name and needs nothing on
 disk. There is no Errorf -- formatting needs allocation this target does not have

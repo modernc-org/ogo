@@ -111,6 +111,53 @@ func TestX(t *testing.T) int { return 0 }
 	}
 }
 
+// TestOgoTestPattern: `ogo test ./...` tests every package under a root, in path
+// order, and reports each one -- which is how a program of several packages is
+// tested in one command. testdata and the dot- and underscore-prefixed directories
+// are not packages.
+func TestOgoTestPattern(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "ring", "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(root, "ring", "ring_test.ogo"), testPkgTestSrc)
+	write(t, filepath.Join(root, "plain", "plain.ogo"), "func Nothing() int { return 0 }\n")
+	write(t, filepath.Join(root, "testdata", "skipme.ogo"), "not ogo at all\n")
+	write(t, filepath.Join(root, "_scratch", "skipme.ogo"), "not ogo at all\n")
+
+	var out, errb bytes.Buffer
+	code, err := Test([]string{"-c", filepath.Join(root, "...")}, nil, &out, &errb)
+	if err != nil || code != 0 {
+		t.Fatalf("ogo test -c ./...: code=%d err=%v\nstdout:\n%s\nstderr:\n%s", code, err, out.String(), errb.String())
+	}
+	got := out.String()
+	for _, want := range []string{"plain\t[no test files]", "ring\t[built 2 tests, not run]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output:\n%s\nwant a line containing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "testdata") || strings.Contains(got, "_scratch") {
+		t.Errorf("output:\n%s\nwant no testdata or _scratch package", got)
+	}
+	// Path order, so a run reads the same way twice.
+	if i, j := strings.Index(got, "plain"), strings.Index(got, "ring"); i > j {
+		t.Errorf("output:\n%s\nwant plain before ring", got)
+	}
+}
+
+// TestOgoTestPatternMatchesNothing: a pattern that matches no package is an error,
+// not a silent success -- a run that tested nothing must not read as one that
+// passed.
+func TestOgoTestPatternMatchesNothing(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	code, err := Test([]string{"-c", filepath.Join(root, "...")}, nil, &out, &out)
+	if code == 0 || err == nil {
+		t.Fatalf("an empty tree passed: code=%d err=%v out=%s", code, err, out.String())
+	}
+	if want := "matched no packages"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q, want one containing %q", err, want)
+	}
+}
+
 // TestOgoTestNoFiles: a package with no _test.ogo is not an error, as in Go.
 func TestOgoTestNoFiles(t *testing.T) {
 	dir := t.TempDir()
@@ -170,6 +217,11 @@ func TestRunnerSrc(t *testing.T) {
 
 func write(t *testing.T, path, src string) {
 	t.Helper()
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}

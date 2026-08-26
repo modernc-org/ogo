@@ -51,6 +51,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   `i <<= 1` and `i &^= 4` included, and lowered exactly as the statement form is,
   guards included. The grammar in `specs.go` says so.
 
+### Added
+
+- **`ogo test ./...` tests every package under a root.** A program of several
+  packages had to be tested a directory at a time; a pattern ending in `...` now
+  walks the tree and tests each package it finds, in path order, one board run
+  each. A package that fails to build is reported and the rest still run, as
+  under `go test`, and the run fails as a whole if any package did. A pattern
+  matching no package is an error rather than a silent success -- a run that
+  tested nothing must not read like one that passed.
+
 ### Fixed
 
 - **`%T` of a type from another package printed the compiler's symbol.**

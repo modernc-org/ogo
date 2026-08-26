@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing/fstest"
 	"time"
@@ -80,15 +81,103 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 		return 2, err
 	}
 
+	opts := testOptions{compileOnly: compileOnly, port: port, clockOpts: clockOpts}
 	dir := "."
 	switch {
 	case len(rest) == 0:
+	case len(rest) == 1 && strings.HasSuffix(rest[0], "..."):
+		// `ogo test ./...` -- every package under a root, which is how a program of
+		// several packages is tested in one command. Each is built and run in turn:
+		// the board runs one binary at a time, so there is nothing to overlap.
+		dirs, err := packageDirs(rest[0])
+		if err != nil {
+			return 2, err
+		}
+		worst := 0
+		for _, d := range dirs {
+			code, err := testPackage(d, opts, stdout, stderr)
+			if err != nil {
+				// Reported and passed over, as `go test ./...` does with a package
+				// that does not build: the other packages are still worth running,
+				// and the run fails as a whole at the end.
+				fmt.Fprintln(stderr, err)
+				fmt.Fprintf(stdout, "FAIL\t%s\t[build failed]\n", d)
+				if code == 0 {
+					code = 1
+				}
+			}
+			if code > worst {
+				worst = code
+			}
+		}
+		return worst, nil
 	case len(rest) == 1 && isDir(rest[0]):
 		dir = rest[0]
 	default:
 		return 2, fmt.Errorf("test: expected at most one package directory")
 	}
+	return testPackage(dir, opts, stdout, stderr)
+}
 
+// testOptions is what every package in a run is tested with -- the same flags,
+// whether one package was named or a whole tree matched.
+type testOptions struct {
+	compileOnly bool
+	port        string
+	clockOpts   []octogo.EmitOption
+}
+
+// packageDirs expands a `.../...` pattern to the package directories under its
+// root, in path order. A package is a directory holding at least one .ogo file;
+// testdata and the dot- and underscore-prefixed directories are not packages, as
+// they are not to the Go tool either.
+func packageDirs(pattern string) ([]string, error) {
+	root := strings.TrimSuffix(pattern, "...")
+	root = strings.TrimSuffix(root, string(filepath.Separator))
+	root = strings.TrimSuffix(root, "/")
+	if root == "" {
+		root = "."
+	}
+	if !isDir(root) {
+		return nil, fmt.Errorf("test: %s: no such directory", root)
+	}
+	var dirs []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if base := filepath.Base(p); p != root && (base == "testdata" || strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_")) {
+			return filepath.SkipDir
+		}
+		ents, err := os.ReadDir(p)
+		if err != nil {
+			return err
+		}
+		for _, e := range ents {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".ogo") {
+				dirs = append(dirs, p)
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("test: %s: %v", pattern, err)
+	}
+	if len(dirs) == 0 {
+		return nil, fmt.Errorf("test: %s matched no packages", pattern)
+	}
+	slices.Sort(dirs)
+	return dirs, nil
+}
+
+// testPackage builds and runs one package's tests. It is the whole of what a named
+// package does, and one step of what a pattern does.
+func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, error) {
+	compileOnly, port, clockOpts := opts.compileOnly, opts.port, opts.clockOpts
 	files, testFiles, err := testPackageFiles(dir)
 	if err != nil {
 		return 2, err
