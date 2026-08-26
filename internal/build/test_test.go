@@ -173,6 +173,29 @@ func TestOgoTestNoFiles(t *testing.T) {
 	}
 }
 
+// TestOgoTestNoFilesStillChecks: a package with no tests is compiled anyway, so a
+// tree where something does not build cannot report every package "ok".
+func TestOgoTestNoFilesStillChecks(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "ring", "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(root, "ring", "ring_test.ogo"), testPkgTestSrc)
+	write(t, filepath.Join(root, "broken", "broken.ogo"), "func Bad() int { return \"x\" }\n")
+
+	var out, errb bytes.Buffer
+	code, err := Test([]string{"-c", filepath.Join(root, "...")}, nil, &out, &errb)
+	if code == 0 {
+		t.Fatalf("a tree with a package that does not build passed: err=%v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errb.String())
+	}
+	if got := out.String(); !strings.Contains(got, "FAIL\tbroken") && !strings.Contains(got, "FAIL\t"+filepath.Join(root, "broken")) {
+		t.Errorf("output:\n%s\nwant a FAIL line for the broken package", got)
+	}
+	// The package that does build is still tested: one bad package does not stop
+	// the run.
+	if got := out.String(); !strings.Contains(got, "built 2 tests") {
+		t.Errorf("output:\n%s\nwant the other package still built", got)
+	}
+}
+
 // TestOgoTestReportsCheckerErrors: a test file that does not compile is reported as
 // itself, not as a missing test.
 func TestOgoTestReportsCheckerErrors(t *testing.T) {

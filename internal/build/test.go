@@ -183,6 +183,19 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		return 2, err
 	}
 	if len(testFiles) == 0 {
+		// No tests to run, but the package is still CHECKED. Reporting "ok" of
+		// something never compiled is how `ogo test ./...` over a tree could report
+		// every package green while the program did not build at all -- and a
+		// package with no tests yet is exactly where that hides. The checker is
+		// where a program's errors are found; the C stage is left to a build, which
+		// is what compiles it for real.
+		fsys, rel, modulePath, err := moduleContext(dir)
+		if err != nil {
+			return 2, err
+		}
+		if _, err := octogo.BuildModule(-1, modulePath, rel, files, fsys); err != nil {
+			return 1, err
+		}
 		fmt.Fprintf(stdout, "ok  \t%s\t[no test files]\n", dir)
 		return 0, nil
 	}

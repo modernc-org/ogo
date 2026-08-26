@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A package with no test files is compiled anyway.** `ogo test` reported
+  "ok ... [no test files]" of a package it never compiled, so `ogo test ./...`
+  over a tree could report every package green while the program did not build --
+  and a package with no tests yet is exactly where that hides. Such a package is
+  checked now and its errors reported; a package that does not build fails the run.
+  The C stage is still left to a build, which is what compiles it for real.
+
 - **A test function with the wrong signature is refused, and `Testfoo` is not a
   test.** `func TestNoArg()` in a `_test.ogo` was quietly never a test -- `ogo test`
   built the package and ran everything else -- where `go test` stops with vet's
