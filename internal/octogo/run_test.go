@@ -37,6 +37,47 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A method called on a 64-bit CONSTANT, alone and at the head of a chain:
+		// `One.Int()`, `Two.Add(One).Half().Int()`. Such a constant has no C symbol
+		// -- it is inlined at each use (see emitConstSpecName) -- and the receiver
+		// positions named it anyway, so `One.Div(x)` in a test file was "Unknown
+		// symbol 'One'" to the C backend. Found by running ogo test on a fixed-point
+		// package. A pointer method on a constant is refused in Go's words.
+		name: "a method called on a 64-bit constant",
+		src: `type Q int64
+
+const One Q = 1 << 32
+const Two Q = 2 << 32
+const Small int32 = 5
+
+type N int32
+
+const Ten N = 10
+
+func (q Q) Int() int {
+	return int(q >> 32)
+}
+
+func (q Q) Add(r Q) Q {
+	return q + r
+}
+
+func (n N) Double() N {
+	return n * 2
+}
+
+func (q Q) Half() Q {
+	return q / 2
+}
+
+func main() {
+	sum := One + Two
+	println(One.Int(), Two.Add(One).Int(), One.Add(Two).Half().Int(), Ten.Double(), Q(3<<32).Int(), sum.Int())
+}
+`,
+		want: "1 3 1 20 3 3\n",
+	},
+	{
 		// A package constant named by NOTHING but the package initializer: a
 		// package variable's non-constant initializer, `K * y`, is assigned there.
 		// A package constant is declared only where a body names it (see

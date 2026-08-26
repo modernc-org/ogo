@@ -1117,7 +1117,11 @@ func (e *emitter) emitGo(nodes []Node) {
 		if wantPtr {
 			recvCType += "*"
 		}
-		recvText = e.captureC(func() { e.emitMethodReceiver(e.varRef(base), rct, wantPtr) })
+		if lit, isConst := e.wideConstRef(base); isConst && !wantPtr {
+			recvText = lit // a 64-bit constant receiver is its literal (see emitCallExpr)
+		} else {
+			recvText = e.captureC(func() { e.emitMethodReceiver(e.varRef(base), rct, wantPtr) })
+		}
 		site = goSite{callee: cname, args: []string{recvCType}, id: len(e.goSites)}
 	default:
 		e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
@@ -8636,7 +8640,11 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 	// A method's receiver leads, ahead of the out parameter.
 	if len(suffix) == 2 && suffix[0].sym == Selector {
 		rct, _ := e.varType(recv)
-		r, ok := e.chainReceiver(e.varRef(recv), rct, true, e.methodPtr[cname])
+		recvText, addr := e.varRef(recv), true
+		if lit, isConst := e.wideConstRef(recv); isConst {
+			recvText, addr = lit, false // a 64-bit constant receiver is its literal (see emitCallExpr)
+		}
+		r, ok := e.chainReceiver(recvText, rct, addr, e.methodPtr[cname])
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", recv)
 			return
@@ -12670,6 +12678,12 @@ func (e *emitter) accessBase(base string) (accessCur, bool) {
 func (e *emitter) accessBaseText(base string) string {
 	if _, isPtr := e.arrayPtrVar(base); isPtr {
 		return e.arrayPtrDeref(base) // the chain walks the array: a dereference
+	}
+	// A chain hanging off a 64-bit CONSTANT, `Two.Add(One).Int()`: the constant
+	// has no C symbol (see emitConstSpecName), so the chain starts from its
+	// literal.
+	if lit, isConst := e.wideConstRef(base); isConst {
+		return lit
 	}
 	if text, _, ok := e.arrayBase(base); ok {
 		return text
@@ -17037,7 +17051,19 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// emitCallArgs, which nine call sites share and only this one is a method.
 			e.checkRecvLeak(cname, recv, e.callArgExprs(suffix[1].ast))
 			e.emit(cname + "(")
-			e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
+			// A method called on a 64-bit CONSTANT, `One.Div(x)`: the constant has
+			// no C symbol, being inlined at each use (see emitConstSpecName), so the
+			// receiver is its literal. A pointer method has nothing to take the
+			// address of, which is what Go says of it too.
+			if lit, isConst := e.wideConstRef(recv); isConst {
+				if e.methodPtr[cname] {
+					e.fail("cannot call pointer method %s on %s", method, e.goTypeName(methodBaseType(rct)))
+					return true
+				}
+				e.emit(lit)
+			} else {
+				e.emitMethodReceiver(recv, rct, e.methodPtr[cname])
+			}
 			// A variadic parameter is passed even when the call wrote no arguments
 			// for it: the callee takes a []T either way, and an empty one is the
 			// zero header rather than nothing at all.
@@ -17343,6 +17369,13 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
 		text, addr = e.varRef(base), true
+		// A chain hanging off a 64-bit CONSTANT, `Two.Add(One).Int()`: the
+		// constant has no C symbol (see emitConstSpecName), so the chain starts
+		// from its literal, which is no lvalue -- a pointer method on it is what
+		// Go refuses too.
+		if lit, isConst := e.wideConstRef(base); isConst {
+			text, addr = lit, false
+		}
 	case e.isChainFunc(base):
 		pendingFn, text = true, base
 	default:

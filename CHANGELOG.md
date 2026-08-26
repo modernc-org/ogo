@@ -90,7 +90,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   fault too. The compiler left such an expression as written whenever its value
   fit an int, on the premise that C folds it the same way. It now folds every
   64-bit constant expression itself and emits one literal, and a 64-bit named
-  constant is inlined at each use rather than declared.
+  constant is inlined at each use rather than declared -- where it stands as a
+  method's receiver too, `One.Div(x)`, which the first cut of this left naming a
+  symbol that no longer existed; a pointer method on a constant is refused in Go's
+  words.
 
 - **A negative constant wider than an int compared as unsigned.** It was spelled
   as its bit pattern, `0xFFFFFFFF00000001ULL`, which makes any expression it stands
