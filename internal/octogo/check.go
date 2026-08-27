@@ -4597,7 +4597,14 @@ func (f *File) methodValueParts(s *Scope, head, field Token) (fd *FuncDeclNode, 
 	if !isVar || !d.typeName.IsValid() {
 		return nil, false, false, false
 	}
-	td, isType := s.find(d.typeName.Src()).(*TypeDeclaration)
+	// The type that DECLARES the method, which is the variable's own or one it
+	// embeds: a promoted method is in the method set exactly as a declared one is,
+	// and asking the variable's type alone made `V.Base2` a missing FIELD.
+	owner, isMethod := f.methodOwner(s, d.typeName, field.Src())
+	if !isMethod {
+		return nil, false, false, false
+	}
+	td, isType := s.find(owner.Src()).(*TypeDeclaration)
 	if !isType {
 		return nil, false, false, false
 	}
@@ -5417,9 +5424,16 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		// `lib.V.hidden()` called its unexported method, both silently.
 		if vd, isVar := d.(*VarDeclaration); isVar {
 			if member, isCall, ok := f.qualifiedMember(suffix); ok && vd.typeName.IsValid() {
-				if isCall {
+				switch {
+				case isCall:
 					f.checkCrossPkgMethod(qual, vd.typeName, member)
-				} else {
+				case f.crossPkgIsMethod(qual, vd.typeName, member):
+					// Not a field but a METHOD, uncalled: a method value. What it
+					// binds is the address of a package-level variable, which is what
+					// the other package's is, so the only question left is the one the
+					// same-package form asks too.
+					f.checkCrossPkgMethodValue(qual, m, vd.typeName, member)
+				default:
 					f.checkCrossPkgField(qual, vd.typeName, member)
 				}
 			}
@@ -5753,6 +5767,76 @@ func (f *File) checkCrossPkgMethod(qual, typeName, member Token) {
 	case !token.IsExported(member.Src()):
 		f.err(member.Position(), "cannot refer to unexported method %s of type %s.%s", member.Src(), qual.Src(), typeName.Src())
 	}
+}
+
+// crossPkgIsMethod reports whether member names a method of the imported type
+// qual.typeName -- promoted ones included, resolved in the OWNING package's scope
+// for the reason checkCrossPkgMethod gives. It is what tells `lib.V.M` used as a
+// value from an ordinary field read of `lib.V`, which is otherwise the same shape.
+func (f *File) crossPkgIsMethod(qual, typeName, member Token) bool {
+	td, _, ok := f.importedStruct(qual, typeName)
+	if !ok {
+		return false
+	}
+	if td.methods[member.Src()] != nil {
+		return true
+	}
+	home, ok := f.importedPkgScope(qual)
+	if !ok {
+		return false
+	}
+	_, promoted := f.methodOwner(home, typeName, member.Src())
+	return promoted
+}
+
+// checkCrossPkgMethodValue applies to `lib.V.M` the two rules the same-package form
+// obeys (see reportUnsupportedFuncValue), of which only one can fail here: a
+// VALUE-receiver method is refused because Go copies the receiver at the moment the
+// value is made and there is no heap to copy into, while binding the address instead
+// would alias the variable. The other rule -- that the receiver be a package-level
+// variable -- is what a package's exported variable already is.
+//
+// The export rules are checkCrossPkgMethod's, which a method value has to satisfy
+// exactly as a call does.
+func (f *File) checkCrossPkgMethodValue(qual, varName, typeName, member Token) {
+	f.checkCrossPkgMethod(qual, typeName, member)
+	td, ok := f.importedMethodOwner(qual, typeName, member)
+	if !ok {
+		return
+	}
+	if !td.ptrRecv[member.Src()] {
+		// Named as the program wrote it. The receiver's TYPE is what the rule is
+		// about, but `lib.Counter.Get` is not a thing anyone can go and look at,
+		// while `lib.V.Get` is the expression that has to change.
+		f.err(member.Position(), "cannot take %s.%s.%s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here",
+			qual.Src(), varName.Src(), member.Src())
+	}
+}
+
+// importedMethodOwner is the imported type declaration that DECLARES member: the
+// named one, or the one it embeds that a promoted method comes from. Resolved in
+// the owning package's scope, since the embedded type's name is that package's.
+func (f *File) importedMethodOwner(qual, typeName, member Token) (*TypeDeclaration, bool) {
+	td, _, ok := f.importedStruct(qual, typeName)
+	if !ok {
+		return nil, false
+	}
+	if td.methods[member.Src()] != nil {
+		return td, true
+	}
+	home, ok := f.importedPkgScope(qual)
+	if !ok {
+		return nil, false
+	}
+	owner, promoted := f.methodOwner(home, typeName, member.Src())
+	if !promoted {
+		return nil, false
+	}
+	od, isType := home.Declarations[owner.Src()].(*TypeDeclaration)
+	if !isType || od.methods[member.Src()] == nil {
+		return nil, false
+	}
+	return od, true
 }
 
 // importedPkgScope is the package scope behind an import qualifier, which is where

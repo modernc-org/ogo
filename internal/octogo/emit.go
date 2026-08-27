@@ -8307,15 +8307,23 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 // factorMethodValue recognises "x.M" standing as a VALUE: an identifier and a
 // single Selector, with no call after it. A call is factorCall's, and a field read
 // resolves to a field rather than to a method, so neither reaches here.
+//
+// Another package's variable, `lib.V.M`, is the same shape one selector deeper. The
+// qualifier is folded away first, leaving the receiver's already-mangled C name as
+// the base -- which is what varType and varRef read an imported global by, so
+// nothing below this line knows the difference.
 func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) {
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return "", "", false
 	}
 	steps := slices.Collect(it(kids[1].ast))
+	base = e.src(kids[0].tok)
+	if folded, rest, isQual := e.qualifiedChainBase(base, steps); isQual {
+		base, steps = folded, rest
+	}
 	if len(steps) != 1 || steps[0].sym != Selector {
 		return "", "", false
 	}
-	base = e.src(kids[0].tok)
 	method = e.soleIdent(steps[0].ast)
 	if base == "" || method == "" {
 		return "", "", false
@@ -8324,10 +8332,39 @@ func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) 
 	if !isVar || !e.isUserType(methodBaseType(rct)) {
 		return "", "", false
 	}
-	if _, isMethod := e.methodValueTypes[methodCName(methodBaseType(rct), method)]; !isMethod {
+	if _, _, _, isMethod := e.methodValueBinding(base, method); !isMethod {
 		return "", "", false
 	}
 	return base, method, true
+}
+
+// methodValueBinding resolves "x.M" taken as a VALUE: the method's C name, the
+// embedded sub-object its receiver is bound to -- empty for a method the variable's
+// own type declares -- and its type as a value, which is its signature without the
+// receiver.
+//
+// A method PROMOTED from an embedded field is in the method set exactly as a
+// declared one is, and is taken as a value the same way; all that differs is which
+// sub-object the lifted function binds. Every site that reads a method value asks
+// here, so recognising it, typing its declaration and lifting it cannot disagree
+// about which of the two it is.
+func (e *emitter) methodValueBinding(base, method string) (cname, recvPath string, fv funcValueType, ok bool) {
+	rct, isVar := e.varType(base)
+	if !isVar {
+		return "", "", funcValueType{}, false
+	}
+	cname = methodCName(methodBaseType(rct), method)
+	if fv, ok = e.methodValueTypes[cname]; ok {
+		return cname, "", fv, true
+	}
+	cn, path, _, okp := e.promotedMethod(rct, method)
+	if !okp || len(path) == 0 {
+		return "", "", funcValueType{}, false
+	}
+	if fv, ok = e.methodValueTypes[cn]; !ok {
+		return "", "", funcValueType{}, false
+	}
+	return cn, e.embeddedPathC(rct, path), fv, true
 }
 
 // funcValueWrapper names a void wrapper around a function of SEVERAL results, for
@@ -8363,6 +8400,13 @@ func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 	return wrapper, true
 }
 
+// mustVarType is varType for a name already known to be a variable, for the one
+// place that needs the type only to name what it is refusing.
+func (e *emitter) mustVarType(name string) string {
+	ct, _ := e.varType(name)
+	return ct
+}
+
 // liftMethodValue emits a method value as a function of its own with the receiver
 // bound, and returns that function's name -- which is what the expression becomes,
 // an ordinary one-word function pointer like any other function value.
@@ -8374,18 +8418,20 @@ func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 // (doc/funcval-cost.c). Binding the receiver at compile time instead needs no
 // representation at all, and the checker refuses what it cannot bind.
 func (e *emitter) liftMethodValue(base, method string) (string, bool) {
-	rct, _ := e.varType(base)
-	bt := methodBaseType(rct)
-	mcname := methodCName(bt, method)
+	// A PROMOTED method is bound to the embedded sub-object the source did not name
+	// and C requires: `V.Base2` binds `&V.Base`, exactly as the call form does.
+	mcname, recvPath, fv, _ := e.methodValueBinding(base, method)
+	if mcname == "" {
+		mcname = methodCName(methodBaseType(e.mustVarType(base)), method)
+	}
 	if !e.methodPtr[mcname] {
-		e.fail("cannot take %s.%s as a value: only a pointer-receiver method may be taken here", base, method)
+		e.fail("cannot take %s.%s as a value: only a pointer-receiver method may be taken here", e.displayName(base), method)
 		return "", false
 	}
-	key := e.varRef(base) + "." + method
+	key := e.varRef(base) + recvPath + "." + method
 	if cn, done := e.methodValueOf[key]; done {
 		return cn, true
 	}
-	fv := e.methodValueTypes[mcname]
 	// SEVERAL results are written through an out parameter that leads the list, as
 	// for a plain function taken as a value (see funcSigCParts and
 	// funcValueWrapper): what a function value points at may not return a struct.
@@ -8412,7 +8458,7 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	if len(params) != 0 {
 		sigText = strings.Join(params, ", ")
 	}
-	call := mcname + "(&" + e.varRef(base)
+	call := mcname + "(&" + e.varRef(base) + recvPath
 	if len(args) != 0 {
 		call += ", " + strings.Join(args, ", ")
 	}
@@ -18755,6 +18801,29 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			}
 			cname := methodCName(bt, field)
 			rts, okm := e.funcRet[cname]
+			// A method PROMOTED from an embedded field is called on that field, which
+			// the source did not name and C requires: the receiver text reaches into
+			// the sub-object and the call is the OWNING type's. Without this a chain
+			// was refused the moment a promoted method appeared in it -- which is
+			// every method call on another package's variable of an embedding type,
+			// `lib.Deck.Twice()`, the qualified head having no other path.
+			if !okm && i+1 < len(steps) && steps[i+1].sym == CallSuffix && bt != "" && e.isMethodBase(bt) {
+				pct := cur.ctype
+				if pct == "" {
+					pct = bt
+				}
+				if cn, path, rt, okp := e.promotedMethod(pct, field); okp && len(path) != 0 {
+					if prts, isM := e.funcRet[cn]; isM {
+						cname, rts, okm = cn, prts, true
+						text += e.embeddedPathC(pct, path)
+						// Reaching THROUGH a pointer yields an lvalue whatever the
+						// pointer itself was, which is what a pointer receiver on the
+						// promoted method needs to take the address of.
+						addr = addr || e.isPointer(pct)
+						cur = e.plainOrSlice(rt)
+					}
+				}
+			}
 			// A name the type has no method for is not a dispatch: it is a FIELD,
 			// and a field holding a function value is called through rather than
 			// dispatched to -- `table[i].run(arg)`, the dispatch table every command
@@ -23492,8 +23561,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// a named function used as a value gets.
 			// "gq.Bump" has the method's type without its receiver.
 			if base, method, ok := e.factorMethodValue(kids); ok {
-				rct, _ := e.varType(base)
-				fv := e.methodValueTypes[methodCName(methodBaseType(rct), method)]
+				_, _, fv, _ := e.methodValueBinding(base, method)
 				return e.funcTypeFor(fv), true
 			}
 			if lit, suffix, ok := e.factorFuncLit(kids); ok {

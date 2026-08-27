@@ -42,6 +42,33 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A method value may be taken of another package's variable**, and of a PROMOTED
+  method:
+
+  ```go
+  p := lib.Kit.Inc   // lib.Kit is that package's own variable
+  s := lib.Deck.Step // Step is declared on a type lib.Deck embeds
+  ```
+
+  Both were "type lib.Counter has no field Bump" -- the walk asked the variable's
+  type for a FIELD and never for a method, so the one receiver a method value can
+  bind, a package-level variable, was unreachable across a package boundary. The
+  promoted half was missing at home too: `V.Base2` for an embedded Base was a
+  missing field in its own package.
+
+  What is refused is unchanged and now says so where it is written rather than in
+  the emitter: a value-receiver method (`cannot take lib.V.Get as a value: a method
+  value copies its receiver`, naming the expression the program wrote rather than a
+  type nobody can go and look at) and an unexported one.
+
+- **A promoted method may be called on another package's variable.**
+  `lib.Deck.Twice()` for a `Twice` declared on a type `lib.Deck` embeds was
+  "unsupported call in expression". A qualified head has one path into the chain
+  renderer and that path took any Selector-then-CallSuffix for a method the type
+  itself declares, so a promoted one ended the chain. Reading a promoted FIELD the
+  same way, `lib.Deck.N`, already worked, which is what made the gap look like a
+  missing feature of calls rather than of promotion.
+
 - **An interface may embed another package's interface**, written qualified:
 
   ```go

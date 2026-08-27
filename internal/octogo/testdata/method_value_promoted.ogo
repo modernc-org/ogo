@@ -1,0 +1,35 @@
+// A method value binds its receiver at compile time, so what may be taken is a
+// POINTER-receiver method on a package-level variable -- see reportUnsupportedFuncValue.
+// A method PROMOTED from an embedded field is in the method set exactly as a
+// declared one is, and is taken the same way; what differs is only which sub-object
+// the lifted function binds.
+
+type Base struct{ b int }
+
+func (p *Base) Step() int { p.b++; return p.b }
+func (p Base) Val() int   { return p.b }
+
+type Counter struct {
+	Base
+	n int
+}
+
+func (c *Counter) Bump() int { c.n += 3; return c.n }
+
+var V Counter
+
+func main() {
+	own := V.Bump
+	prom := V.Step
+	println(own(), prom())
+	// ERROR cannot take V.Val as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here
+	bad := V.Val
+	println(bad())
+	// ERROR type Counter has no field Nope
+	miss := V.Nope
+	println(miss())
+	var loc Counter
+	// ERROR cannot take loc.Step as a value: a method value binds the address of its receiver, so loc must be a package-level variable
+	l := loc.Step
+	println(l())
+}

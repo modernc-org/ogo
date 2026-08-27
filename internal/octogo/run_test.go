@@ -18594,7 +18594,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n"
+	"9 4 9\n9 7\n6 3\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18785,6 +18785,16 @@ printf("%T %T\n", chain.Kit, lmp)
 // passed where the embedded interface itself is wanted.
 var bx Boxed = &crate
 println(bx.Area(), bx.Tag(), area(bx))
+// A method value of ANOTHER PACKAGE's variable: what is bound is the address of
+// that package's global, and the second is PROMOTED from the type it embeds, so
+// what is bound is the address of the embedded sub-object inside it.
+watts := chain.Bulb.Watts
+inc := chain.Kit.Inc
+inc()
+println(watts(), chain.Kit.N)
+pi := chain.Deck.Inc
+pi()
+println(chain.Deck.Twice(), chain.Deck.N)
 }
 
 // Boxed embeds an imported interface, written AFTER a method of its own so that
@@ -18924,6 +18934,10 @@ func Draw(a Lit, b Lit) int { return a.Watts() + b.Watts() }
 // from main, where the root of that address is the package qualifier rather than
 // a variable of the importing package.
 var Bulb = Lamp{9}
+
+// Deck is a package-level value of an embedding type, for a PROMOTED method taken
+// as a value from outside this package.
+var Deck = Panel{Reg{2}, 3}
 
 func Shim(v int) int { return v + 1 }
 
@@ -19201,6 +19215,44 @@ func main() {
 `,
 			},
 			want: "cannot use geo.V of type geo.T as type int in variable declaration",
+		},
+		{
+			name: "a method value of another package's variable with a value receiver",
+			files: map[string]string{
+				"geo/geo.ogo": `type Pt struct{ X int }
+
+func (p Pt) Get() int { return p.X }
+
+var V = Pt{3}
+`,
+				"main.ogo": `import "geo"
+
+func main() {
+	m := geo.V.Get
+	println(m())
+}
+`,
+			},
+			want: "cannot take geo.V.Get as a value: a method value copies its receiver",
+		},
+		{
+			name: "a method value of another package's unexported method",
+			files: map[string]string{
+				"geo/geo.ogo": `type Pt struct{ X int }
+
+func (p *Pt) bump() int { p.X++; return p.X }
+
+var V = Pt{3}
+`,
+				"main.ogo": `import "geo"
+
+func main() {
+	m := geo.V.bump
+	println(m())
+}
+`,
+			},
+			want: "cannot refer to unexported method bump of type geo.Pt",
 		},
 		{
 			name: "embedding another package's unexported interface",
