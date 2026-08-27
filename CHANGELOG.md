@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **`go` and `defer` take a CALL, and two shapes end in one without being one.**
+  `defer int(x)` and `defer Q(x)` compiled and did nothing at all -- a conversion
+  computes a value and throws it away, which is never what a defer meant -- while
+  `go int(x)` reached the emitter, which said "only `go f(args)` on a package
+  function or a variable holding one is supported yet", describing a missing feature
+  rather than the mistake. Both are `requires function call, not conversion int(x)`
+  now, in Go's words and at the operand. The built-ins whose whole purpose is the
+  value they return -- `append`, `cap`, `len`, `make` -- are `defer discards result
+  of len(xs)`, likewise Go's. `copy`, `println` and `panic` return nothing anyone
+  wants at a defer and stay valid, as in Go.
+
 - **A label's scope is the whole function, and an unused one is an error.** Two
   SIBLING labels of one name compiled: the duplicate check asked the stack of
   ENCLOSING labels, which a sibling has already been popped from, so it saw only the

@@ -1,0 +1,31 @@
+// "go" and "defer" take a CALL, and two shapes end in one without being one.
+//
+// A conversion computes a value and throws it away, which is never what either
+// statement meant. A built-in whose whole purpose is the value it returns is the
+// same mistake with a different spelling, and Go names it by what goes wrong. The
+// built-ins that return nothing anyone wants at a defer -- copy, println, panic --
+// are as valid here as there.
+
+type Q int
+
+func work(n int) int { return n }
+
+func main() {
+	xs := []int{1, 2}
+	x := 1
+	defer println(x)
+	go work(x)
+	// ERROR defer requires function call, not conversion int\(x\)
+	defer int(x)
+	// ERROR go requires function call, not conversion Q\(x\)
+	go Q(x)
+	// ERROR defer discards result of len\(xs\)
+	defer len(xs)
+	// ERROR go discards result of append\(xs, 1\)
+	go append(xs, 1)
+	// ERROR defer discards result of make\(\[\]int, 1\)
+	defer make([]int, 1)
+	// ERROR defer discards result of cap\(xs\)
+	defer cap(xs)
+	println(xs[0])
+}

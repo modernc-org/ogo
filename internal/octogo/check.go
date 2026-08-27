@@ -1864,6 +1864,9 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 		f.err(pos, "%s statement must be a function call", kw)
 		return
 	}
+	if f.reportNotACall(s, head, stmt, kw) {
+		return
+	}
 	f.checkSelectors(s, head, stmt)
 	f.checkIndexExprs(s, stmt) // the "i" in a "go a[i].m()" callee
 	argList, later, direct, isCall := f.callInfoAll(stmt)
@@ -1879,6 +1882,40 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 			f.checkMethodCall(s, id, m, argList, stmt)
 		}
 	}
+}
+
+// reportNotACall reports the two shapes that END IN A CALL and are still not one, so
+// endsInCall admits them and Go does not.
+//
+// A CONVERSION -- `defer int(x)`, `defer Q(x)` -- computes a value and throws it
+// away, which is never what a defer meant; `defer int(x)` compiled and did nothing
+// at all. `go int(x)` reached the emitter, which said "only `go f(args)` on a
+// package function or a variable holding one is supported yet", describing a missing
+// feature rather than the mistake.
+//
+// And the built-in functions whose whole purpose is the value they return: append,
+// cap, len and make. Go names those by what goes wrong -- "discards result of" --
+// and admits the ones that return nothing anyone wants at a defer, `copy`,
+// `println`, `panic`, which are as valid here as there.
+//
+// Only when the call IS the statement: `defer Q(x).M()` is a method call on a
+// conversion, which is an ordinary defer, and a selector after the call says so.
+func (f *File) reportNotACall(s *Scope, head, stmt Node, kw string) bool {
+	id, ok := f.assignHeadIdent(head)
+	if !ok || hasSelectorChild(stmt) {
+		return false
+	}
+	switch id.Src() {
+	case "append", "cap", "len", "make":
+		f.err(id.Position(), "%s discards result of %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
+		return true
+	}
+	switch s.find(id.Src()).(type) {
+	case *PredeclaredType, *TypeDeclaration:
+		f.err(id.Position(), "%s requires function call, not conversion %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
+		return true
+	}
+	return false
 }
 
 // checkIf checks an if statement, including any "else if" chain:
