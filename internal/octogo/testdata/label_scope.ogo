@@ -1,0 +1,32 @@
+// A label's scope is the WHOLE FUNCTION, not the block it stands in: two SIBLING
+// labels of one name collide as surely as nested ones do. And a label nothing names
+// is an error, as in Go -- a label is written to be jumped to, so one no break or
+// continue reaches is either a typo in the break that meant to name it or a leftover
+// of a loop since restructured, and both read as working code.
+//
+// Labels live in a namespace of their own, so one may share a name with a variable.
+
+func main() {
+	L := 1
+L:
+	for i := 0; i < 2; i++ {
+		break L
+	}
+	println(L)
+A:
+	for i := 0; i < 2; i++ {
+		if i == 1 {
+			continue A
+		}
+	}
+	// ERROR label A already declared, previous declaration at
+A:
+	for i := 0; i < 2; i++ {
+		break A
+	}
+	// ERROR label U declared and not used
+U:
+	for i := 0; i < 2; i++ {
+		println(i)
+	}
+}

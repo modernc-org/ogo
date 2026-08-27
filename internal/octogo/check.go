@@ -229,6 +229,8 @@ type File struct {
 	switchDepth       int               // number of enclosing "switch" statements, so a "break" in one is recognised as placed
 	selectDepth       int               // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
 	labels            []labelFrame      // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
+	labelDecls        map[string]Token  // every label DECLARED in the function being checked: Go scopes a label to the whole function, not to a block, so two sibling ones collide and an unreferenced one is an error
+	labelUsed         map[string]bool   // the labels a break or continue named, for the unused report
 	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
 	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	clauseFallthrough map[string]bool   // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
@@ -586,6 +588,8 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	f.writeTargets = map[string]bool{}
 	f.clauseFallthrough = map[string]bool{}
 	f.makeTypeArgs = map[string]bool{}
+	f.labelDecls = map[string]Token{}
+	f.labelUsed = map[string]bool{}
 	var results []retResult
 	var body Node
 	hasBody := false
@@ -604,6 +608,7 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 			body, hasBody = n, true
 		}
 	}
+	f.reportUnusedLabels()
 	if !hasBody {
 		return
 	}
@@ -1559,12 +1564,38 @@ func (f *File) checkLabeledStatement(s *Scope, results []retResult, head, postfi
 		f.checkStatement(s, results, inner)
 		return
 	}
-	if _, dup := f.findLabel(name.Src()); dup {
-		f.err(name.Position(), "label %s already declared", name.Src())
+	// A label's scope is the WHOLE FUNCTION, not the block it stands in, so two
+	// SIBLING labels of one name collide as surely as nested ones. Asking findLabel
+	// -- the stack of ENCLOSING labels, which a sibling has already been popped from
+	// -- saw only the nested case.
+	if prev, dup := f.labelDecls[name.Src()]; dup {
+		f.err(name.Position(), "label %s already declared, previous declaration at %v", name.Src(), prev.Position())
+	} else {
+		f.labelDecls[name.Src()] = name
 	}
 	f.labels = append(f.labels, labelFrame{name: name.Src(), kind: f.labelKindOf(inner)})
 	f.checkStatement(s, results, inner)
 	f.labels = f.labels[:len(f.labels)-1]
+}
+
+// reportUnusedLabels reports every label of the function just checked that no break
+// or continue named. Go makes an unreferenced label an error rather than a warning,
+// and it is worth having: a label is written to be jumped to, so one nothing names is
+// either a typo in the break that meant to name it or a leftover of a loop that has
+// since been restructured, and both read as working code.
+//
+// In source order, so the report does not depend on map iteration.
+func (f *File) reportUnusedLabels() {
+	var unused []Token
+	for name, tok := range f.labelDecls {
+		if !f.labelUsed[name] {
+			unused = append(unused, tok)
+		}
+	}
+	slices.SortFunc(unused, func(a, b Token) int { return a.Position().Offset - b.Position().Offset })
+	for _, tok := range unused {
+		f.err(tok.Position(), "label %s declared and not used", tok.Src())
+	}
 }
 
 // checkBreak validates a "break", labeled or not. A plain break needs an enclosing
@@ -1577,6 +1608,7 @@ func (f *File) checkBreak(breakTok Token, label Token, hasLabel bool) {
 		}
 		return
 	}
+	f.labelUsed[label.Src()] = true
 	fr, ok := f.findLabel(label.Src())
 	switch {
 	case !ok:
@@ -1595,6 +1627,7 @@ func (f *File) checkContinue(continueTok Token, label Token, hasLabel bool) {
 		}
 		return
 	}
+	f.labelUsed[label.Src()] = true
 	fr, ok := f.findLabel(label.Src())
 	switch {
 	case !ok:
@@ -4683,7 +4716,13 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		f.declareParamList(ls, sig.Params, roleParam)
 		f.declareParamList(ls, sig.Results, roleResult)
 		f.reportCaptures(s, ls, body)
+		// A literal is a function of its own, and a label's scope is a function: its
+		// labels neither collide with the enclosing function's nor satisfy them.
+		savedLabels, savedDecls, savedUsed := f.labels, f.labelDecls, f.labelUsed
+		f.labels, f.labelDecls, f.labelUsed = nil, map[string]Token{}, map[string]bool{}
 		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
+		f.reportUnusedLabels()
+		f.labels, f.labelDecls, f.labelUsed = savedLabels, savedDecls, savedUsed
 	}
 }
 

@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A label's scope is the whole function, and an unused one is an error.** Two
+  SIBLING labels of one name compiled: the duplicate check asked the stack of
+  ENCLOSING labels, which a sibling has already been popped from, so it saw only the
+  nested case. And nothing reported a label no break or continue names -- which Go
+  makes an error, and which is worth having: a label is written to be jumped to, so
+  one nothing reaches is either a typo in the break that meant to name it or a
+  leftover of a loop since restructured, and both read as working code. A function
+  LITERAL is a function of its own here, its labels neither colliding with the
+  enclosing function's nor satisfying them.
+
 - **A method's receiver type is checked.** Nothing asked what a method was declared
   ON, so `func (n int) g() int` compiled -- a method on a predeclared type, emitted
   as a function no selector could ever reach -- and so did `func (p P) g() int` for
