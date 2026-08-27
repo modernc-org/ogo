@@ -25160,9 +25160,7 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 			}
 		}
-		for _, c := range kids {
-			e.emitExprNode(c)
-		}
+		e.emitUnaryKids(kids)
 	case AddOp, MulOp, RelOp:
 		e.emit(" " + e.opText(n.ast) + " ")
 	case UnaryOp:
@@ -25188,6 +25186,48 @@ func (e *emitter) prefixOpTok(k Node) (int32, bool) {
 		return e.unaryOpTok(k.ast)
 	}
 	return 0, false
+}
+
+// emitUnaryKids writes a unary expression's prefix operators and its operand.
+//
+// A sign whose operand begins with the SAME sign takes parentheses: `- -v` written
+// out is `--v`, which C reads as a DECREMENT -- it changed v, silently, where Go
+// negates twice and changes nothing, and `+ +w` incremented w the same way. Only
+// that pair needs them, so every other unary expression is emitted exactly as
+// before. The prefixes arrive as a flat list, so the rest of the list is written
+// through here again rather than node by node: `- - -v` needs the parentheses at
+// both places, not only the outermost.
+func (e *emitter) emitUnaryKids(kids []Node) {
+	for i, c := range kids {
+		if c.sym == UnaryOp && i+1 < len(kids) {
+			if tok, ok := e.unaryOpTok(c.ast); ok {
+				if ch := e.f.ch(tok); (ch == SUB || ch == ADD) && e.firstTokenCh(kids[i+1:]) == ch {
+					e.emitOperandToken(tok)
+					e.emit("(")
+					e.emitUnaryKids(kids[i+1:])
+					e.emit(")")
+					return
+				}
+			}
+		}
+		e.emitExprNode(c)
+	}
+}
+
+// firstTokenCh is the kind of the first token these nodes will emit, or 0 for
+// none. It is what tells `- -v` from `-v`: the operand of a sign is asked whether
+// it begins with the same sign, which is the one case that may not be written out
+// as it stands (see the UnaryExpr case in emitExprNode).
+func (e *emitter) firstTokenCh(nodes []Node) Symbol {
+	for _, n := range nodes {
+		if n.sym == 0 {
+			return e.f.ch(n.tok)
+		}
+		if ch := e.firstTokenCh(slices.Collect(it(n.ast))); ch != 0 {
+			return ch
+		}
+	}
+	return 0
 }
 
 func (e *emitter) unaryOpTok(ast []int32) (int32, bool) {

@@ -347,8 +347,32 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// Inside an index or slice subscript, gofmt renders binary operators tight to
 	// keep it compact ("xs[:n+1]", "a[i+1]", "xs[a+b*c]", "xs[a&b]"). Commas (in a
 	// call), ":" and the brackets are handled by the cases above; this covers the
+	// TWO sign tokens in a row are spaced, whichever of them is unary: "- -v" and
+	// "v - -4" are those two expressions, while "--v" is a decrement -- which this
+	// language does not even have as a prefix -- and "v--4" is not a program at all.
+	// Written tight, `ogo fmt` turned `println(- -v)` into `println(--v)`, which the
+	// parser then refused: a formatter may not change what it is given.
+	case (curr == SUB || curr == ADD) && prev == curr:
+		return true
+	// The other side of that pair: the gap BEFORE a binary "+"/"-" whose operand
+	// begins with the same sign. gofmt spaces both sides, and this is the side the
+	// tightening rule below would otherwise take.
+	case (curr == SUB || curr == ADD) && isOperandEnd(prev) && c.nextTok == curr:
+		return true
 	// add- and mul-level operators the rules below would otherwise space.
 	case (c.inIndex || c.inArgs) && tightBinaryGap(prevPrev, prev, curr):
+		return false
+	// A unary "+" or "-" binds to its operand, and where gofmt has already bound the
+	// operator to what precedes it -- a call argument, an index -- it binds the sign
+	// too: "v%-1", "v*-2", "f(a&^-5)". This gap fell through to the add-level rule
+	// below and took a space, so every such expression came out as "v% -1", which
+	// gofmt does not write.
+	//
+	// The exception is a sign that would RUN INTO the operator: "v - -4", where
+	// "--" is a different token. gofmt spaces both sides there, and the rule just
+	// after this one does the other side.
+	case (c.inIndex || c.inArgs) && (curr == SUB || curr == ADD) && !isOperandEnd(prev) &&
+		(isAddOp(prev) || isMulOp(prev)):
 		return false
 	// Unambiguous unary operators never need a space after them
 	case prev == NOT || prev == TILDE:
@@ -387,6 +411,16 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		return !c.hasAddOp
 	}
 	return true
+}
+
+// tokAfter is the token following the one at n, or 0 at the end of the file. The
+// last token has nothing after it and asking for one panics, which is what the
+// lookahead the spacing rules need must not do.
+func (f *formatter) tokAfter(n int32) Symbol {
+	if int(n)+1 >= f.p.sc.Len() {
+		return 0
+	}
+	return Symbol(f.p.Token(n + 1).Ch)
 }
 
 func (f *formatter) needsSpace(prev, curr Symbol, c formatterCtx) bool {
@@ -619,6 +653,10 @@ func (f *formatter) beginsLine(idx int32) bool {
 }
 
 type formatterCtx struct {
+	// nextTok is the token AFTER the one this gap precedes, which two rules need:
+	// a binary "+"/"-" directly before a unary one of the same sign takes a space,
+	// so the pair cannot be read as "++" or "--" (see needsSpace).
+	nextTok           Symbol
 	indentLevel       int32
 	undentLBraceIndex int32
 	undentRBraceIndex int32
@@ -1277,7 +1315,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					sepIndent++
 				}
 
-				f.formatSep(seps, sepIndent, Symbol(tok.Ch), c)
+				sepCtx := c
+				sepCtx.nextTok = f.tokAfter(tokIdx)
+				f.formatSep(seps, sepIndent, Symbol(tok.Ch), sepCtx)
 				f.tabs(f.nl, c.indentLevel+indentDelta)
 
 				// Inject Elastic Col2 Padding

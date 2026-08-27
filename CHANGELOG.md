@@ -50,6 +50,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`- -v` decremented v, and `ogo fmt` turned it into a program that would not
+  build.** Two unary signs in a row were written out as they stand, in both
+  places: the emitter sent `- -v` to the C compiler as `--v` -- a pre-decrement,
+  which changed the variable and yielded one less than Go's double negation, with
+  `+ +w` incrementing w the same way -- and the formatter rewrote the source
+  itself as `--v`, which this language has no prefix decrement to parse. A sign
+  whose operand begins with the same sign now takes parentheses when emitted and
+  keeps its space when formatted.
+
+- **`ogo fmt` spaced a unary sign off the operator before it.** `v%-1`, `v*-2`,
+  `f(a&^-5)`, `a[v*-1+7]` came back as `v% -1` and so on, which gofmt does not
+  write: where gofmt has bound the operator to what precedes it, it binds the sign
+  too. Both sides of a `-` before a `-` stay spaced, as gofmt writes them.
+
 - **`x % 1` gave x instead of zero.** A remainder is smaller than its divisor, so
   a division by one leaves nothing over -- and the target's C compiler answered
   the dividend, for every integer type up to 32 bits, signed and unsigned

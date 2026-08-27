@@ -38,6 +38,33 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A unary sign beside a binary operator, in every spelling gofmt writes
+		// tight -- `v%-1`, `v*-2`, `v&^-5`, `a[v*-1+7]` -- and the two it does not:
+		// `- -v` and `v - -4`, where the pair would run into `--`. This case is in
+		// the corpus for the FORMATTER as much as for the compiler
+		// (TestFormatMatchesGofmt reads these programs): `ogo fmt` used to write
+		// `- -v` as `--v`, which the parser then refused, so formatting a valid
+		// program produced one that would not build.
+		name: "a unary sign beside a binary operator",
+		src: `func g(a, b int) int { return a - b }
+
+func main() {
+	v := 7
+	w := 3
+	a := [8]int{1, 2, 3, 4, 5, 6, 7, 8}
+	println(v%-1, v*-2, v+-3, v&^-5, v/-6, v|-2)
+	println(g(v%-1, v*-2), g(v&^-5, v>>1))
+	println(a[v-1], a[-v+7], a[v*-1+7])
+	println(- -v, -(-v), - -w+1)
+	println(v - -4)
+	x := v % -1
+	y := v * -2
+	println(x, y, v-(-w))
+}
+`,
+		want: "0 -14 4 4 -1 -1\n14 1\n7 1 1\n7 7 4\n11\n0 -14 10\n",
+	},
+	{
 		// `x % 1` is ZERO in Go, whatever x is: a remainder is smaller than its
 		// divisor. The target's C compiler answers x instead, for every integer type
 		// up to 32 bits (doc/modulo-by-one-returns-the-dividend.c), so the operation
