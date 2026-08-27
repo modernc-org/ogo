@@ -1,0 +1,42 @@
+// What a method may be declared ON: a type DEFINED in this package, and not one
+// whose underlying type is a pointer or an interface. A pointer type's method set is
+// empty in Go, so a method declared with one could never be reached through a
+// selector nor implement anything -- which is why Go refuses it rather than leaving
+// it unreachable, and so does this.
+
+type T struct{ n int }
+
+type P *T
+
+type I interface {
+	F() int
+}
+
+type S []int
+
+type Q int
+
+func (t T) ok1() int   { return t.n }
+func (t *T) ok2() int  { return t.n }
+func (s S) ok3() int   { return len(s) }
+func (q Q) ok4() int   { return int(q) }
+
+// ERROR invalid receiver type P \(pointer or interface type\)
+func (p P) bad1() int { return 1 }
+
+// ERROR invalid receiver type P \(pointer or interface type\)
+func (p *P) bad2() int { return 1 }
+
+// ERROR invalid receiver type I \(pointer or interface type\)
+func (i I) bad3() int { return 1 }
+
+// ERROR cannot define new methods on non-local type int
+func (n int) bad4() int { return 1 }
+
+// ERROR undefined: Nope
+func (x Nope) bad5() int { return 1 }
+
+func main() {
+	var t T
+	println(t.ok1(), t.ok2())
+}

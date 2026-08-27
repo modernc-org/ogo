@@ -592,6 +592,7 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Receiver:
+			f.checkReceiverType(pkg, n)
 			f.declareReceiver(fs, n)
 		case Signature:
 			sig := f.signature(fs, n)
@@ -7306,6 +7307,84 @@ func (f *File) receiverTypeName(recv Node) (name Token) {
 		}
 	}
 	return name
+}
+
+// receiverIdents lists a Receiver's identifiers in traversal order: the receiver's
+// own name if it has one, then the type, whose last two are the qualifier and the
+// member when it is written as another package's.
+func (f *File) receiverIdents(recv Node) (out []Token) {
+	for c := range it(recv.ast) {
+		if c.sym == 0 {
+			if t := f.tok(c.tok); Symbol(t.Ch) == IDENT {
+				out = append(out, t)
+			}
+			continue
+		}
+		out = append(out, f.receiverIdents(c)...)
+	}
+	return out
+}
+
+// receiverIsQualified reports a receiver whose type is written with a package
+// qualifier, "(l lib.Leaf)". A PERIOD anywhere in the subtree is the question: the
+// only thing a receiver can carry one for is a qualified type name.
+func (f *File) receiverIsQualified(recv Node) bool {
+	for c := range it(recv.ast) {
+		if c.sym == 0 {
+			if Symbol(f.tok(c.tok).Ch) == PERIOD {
+				return true
+			}
+			continue
+		}
+		if f.receiverIsQualified(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkReceiverType applies Go's rules for what a method may be declared ON: a type
+// DEFINED in this package, and not one whose underlying type is a pointer or an
+// interface.
+//
+// Nothing asked before. `func (n int) g() int` compiled -- a method on a predeclared
+// type, emitted as a function no selector could ever reach -- and so did `func (p P)
+// g() int` for a `type P *T`, which is a receiver Go has no method set for at all: a
+// pointer type's method set is empty, so nothing could implement anything with it.
+// An INTERFACE receiver is refused for the same reason and in the same words Go uses.
+//
+// Run in phase 4 rather than beside registerMethod, which shares its loop with the
+// type declarations it would have to read: a method written above its type would see
+// an unresolved TypeSpec and the rule would depend on source order.
+func (f *File) checkReceiverType(s *Scope, recv Node) {
+	name := f.receiverTypeName(recv)
+	if !name.IsValid() {
+		return
+	}
+	if f.receiverIsQualified(recv) {
+		// Another package's type. Named as the program wrote it: the qualifier is
+		// the identifier before the member, which receiverTypeName passes over.
+		written := name.Src()
+		if ids := f.receiverIdents(recv); len(ids) >= 2 {
+			written = ids[len(ids)-2].Src() + "." + written
+		}
+		f.err(name.Position(), "cannot define new methods on non-local type %s", written)
+		return
+	}
+	switch d := s.find(name.Src()).(type) {
+	case *TypeDeclaration:
+		if d.TypeSpec == nil {
+			return
+		}
+		switch d.TypeSpec.TypeNode.(type) {
+		case *TypeNodePointer, *TypeNodeInterface:
+			f.err(name.Position(), "invalid receiver type %s (pointer or interface type)", name.Src())
+		}
+	case *PredeclaredType:
+		f.err(name.Position(), "cannot define new methods on non-local type %s", name.Src())
+	case nil:
+		f.err(name.Position(), "undefined: %s", name.Src())
+	}
 }
 
 // receiverIsPtr reports a method declared with a pointer receiver, "(p *T)". The

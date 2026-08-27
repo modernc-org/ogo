@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A method's receiver type is checked.** Nothing asked what a method was declared
+  ON, so `func (n int) g() int` compiled -- a method on a predeclared type, emitted
+  as a function no selector could ever reach -- and so did `func (p P) g() int` for
+  a `type P *T`, a receiver Go has no method set for at all: a pointer type's method
+  set is empty, so nothing declared with one could implement anything. An INTERFACE
+  receiver went the same way. The rule is Go's and so are its words: `invalid
+  receiver type P (pointer or interface type)`, `cannot define new methods on
+  non-local type int`, and the same for another package's, `geo.Pt`.
+
 - **A struct's embedded field is checked where it is written.** Four different
   mistakes shared one emitter message with no position -- "an embedded field must be
   a struct type of this package, and an untyped field is not a field" -- and another

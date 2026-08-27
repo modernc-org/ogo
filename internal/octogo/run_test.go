@@ -19232,6 +19232,19 @@ func main() {
 			want: "cannot use geo.V of type geo.T as type int in variable declaration",
 		},
 		{
+			name: "a method on another package's type",
+			files: map[string]string{
+				"geo/geo.ogo": "type Pt struct{ X int }\n",
+				"main.ogo": `import "geo"
+
+func (p geo.Pt) twice() int { return p.X * 2 }
+
+func main() { var q geo.Pt; println(q.X) }
+`,
+			},
+			want: "cannot define new methods on non-local type geo.Pt",
+		},
+		{
 			name: "embedding another package's unexported struct",
 			files: map[string]string{
 				"geo/geo.ogo": "type pt struct{ X int }\n",
