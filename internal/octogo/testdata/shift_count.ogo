@@ -1,0 +1,23 @@
+// A CONSTANT shift count must be a non-negative integer, as it must in Go: the
+// count is converted to an unsigned integer type, so -1 does not fit and 1.5 is
+// not one. A count that is not constant is left to run time, where a negative one
+// panics -- which is also what Go does with it.
+
+const N = -1
+
+func main() {
+	x := 4
+	// ERROR invalid operation: negative shift count -1 \(untyped int constant\)
+	println(x << -1)
+	// ERROR invalid operation: negative shift count -2 \(untyped int constant\)
+	println(x >> -2)
+	// ERROR invalid operation: negative shift count N \(untyped int constant -1\)
+	println(x << N)
+	// ERROR 1.5 \(untyped float constant\) truncated to uint
+	println(x << 1.5)
+	// ERROR invalid operation: negative shift count -1 \(untyped int constant\)
+	x <<= -1
+	// ERROR invalid operation: negative shift count -1 \(untyped int constant\)
+	println(1 << -1)
+	println(x)
+}

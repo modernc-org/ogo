@@ -1,0 +1,21 @@
+// The counts a shift may have: a non-negative constant, a variable of any integer
+// type, and a count at or past the width -- which Go defines (the result is 0, or
+// -1 for an arithmetic right shift of a negative value) and which this compiler
+// guards rather than refuses. A NEGATIVE variable count is not an error either: it
+// panics when the program runs, as it does in Go.
+// COMPILE
+
+const N = 3
+
+func main() {
+	x := 4
+	n := 2
+	var u uint8 = 1
+	println(x<<1, x>>n, x<<0, x<<N, x<<40)
+	println(x << int(u))
+	x <<= 2
+	x >>= N
+	println(x)
+	var neg int = -1
+	println(x << neg)
+}

@@ -4164,6 +4164,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for _, e := range rhs {
 			f.checkNames(s, e)
 		}
+		if isShiftAssign(op) && len(rhs) == 1 {
+			f.checkShiftCount(s, rhs[0]) // `x <<= -1` is the same error as `x << -1`
+		}
 		if !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 {
 			f.checkAssignType(s, lhs[0], rhs[0], !lhsSuffixed[0])
 		}
@@ -7338,7 +7341,9 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 	case op == SHL || op == SHR:
 		// A shift's count is not converted to the shifted operand's type, and an
 		// untyped left operand takes its type from the context rather than from
-		// the count, so neither operand is checked against the other.
+		// the count, so neither operand is checked against the other. The COUNT
+		// itself is checked, though: see checkShiftCount.
+		f.checkShiftCount(s, rNode)
 	default:
 		f.checkConstOperands(s, lNode, lk, rNode, rk)
 		if (op == QUO || op == REM) && f.constZeroDivisor(s, lk, rNode) {
@@ -7349,6 +7354,39 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 			f.err(pos, "invalid operation: division by zero")
 		}
 	}
+}
+
+// checkShiftCount reports a CONSTANT shift count that is not a non-negative
+// integer, which Go refuses where it stands: a count is converted to an unsigned
+// integer type, so -1 does not fit and 1.5 is not one. A count that is not constant
+// is left to run time, where a negative one panics -- as it does in Go.
+//
+// Without this, `x << -1` compiled and panicked when the program ran, on a board,
+// where Go had refused to build it at all.
+func (f *File) checkShiftCount(s *Scope, n Node) {
+	cv, ok := f.constNumeric(s, n)
+	if !ok {
+		return
+	}
+	pos := f.tok(n.Pos()).Position()
+	src := f.exprSource(n)
+	if cv.Kind() == constant.Float {
+		if iv := constant.ToInt(cv); iv.Kind() != constant.Int {
+			f.err(pos, "%s (untyped float constant) truncated to uint", src)
+			return
+		}
+	}
+	if constant.Sign(cv) >= 0 {
+		return
+	}
+	// Go names the constant and, where the two differ, what it stands for: a
+	// literal count reads "-1 (untyped int constant)" and a named one
+	// "N (untyped int constant -1)".
+	if src == cv.String() {
+		f.err(pos, "invalid operation: negative shift count %s (untyped int constant)", src)
+		return
+	}
+	f.err(pos, "invalid operation: negative shift count %s (untyped int constant %s)", src, cv)
 }
 
 // checkConstOperands reports an untyped constant operand of a binary operator that

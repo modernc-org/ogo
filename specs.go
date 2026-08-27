@@ -452,8 +452,11 @@
 //     and not what a 32-bit shift would give.
 //   - A shift by a count at least as wide as the value's type yields 0, or -1 for a
 //     right shift of a negative value, as in Go -- not C's count-modulo-the-width. A
-//     negative count is a run-time panic. A count that is a constant already inside
-//     the width costs nothing extra; any other goes through a guard.
+//     CONSTANT count must be a non-negative integer, which is a compile-time error
+//     where it is not, as in Go: a count is converted to an unsigned type, so -1
+//     does not fit and 1.5 is not one. A negative count that is not constant is a
+//     run-time panic. A count that is a constant already inside the width costs
+//     nothing extra; any other goes through a guard.
 //   - The most negative value of a signed type divided by -1 is itself, with a
 //     remainder of 0, as in Go: the quotient is not representable, so the two's-
 //     complement overflow stands rather than being undefined as it is in C.

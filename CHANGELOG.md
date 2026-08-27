@@ -93,6 +93,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A constant shift count must be a non-negative integer.** `x << -1` compiled
+  and panicked when the program ran -- on a board, where a panic is a halted
+  cog -- while Go refuses to build it at all: a count is converted to an unsigned
+  integer type, so -1 does not fit and 1.5 is not one. It is refused where it
+  stands now, in Go's own words, for `<<`, `>>` and `<<=`/`>>=` alike. A count
+  that is NOT constant is unchanged: it is checked at run time, where a negative
+  one panics, as it does in Go.
+
 - **A package with no test files is compiled anyway.** `ogo test` reported
   "ok ... [no test files]" of a package it never compiled, so `ogo test ./...`
   over a tree could report every package green while the program did not build --
