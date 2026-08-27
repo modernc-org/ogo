@@ -920,13 +920,21 @@
 //
 // Two embedded interfaces may declare the same method, which is one method -- a
 // table has one slot per name. The name embedded may be declared anywhere in the
-// package, before or after. An interface that embeds itself, directly or through
-// others, defines its method set in terms of itself and is refused; embedding a
-// type that is not an interface is Go's type-constraint syntax, which belongs to
-// generics and is refused as well. Only a same-package name may be embedded.
+// package, before or after, and it may be ANOTHER PACKAGE'S, written qualified:
+//
+//	type ReadCloser interface {
+//		io.Reader
+//		Close() int
+//	}
+//
+// An interface that embeds itself, directly or through others, defines its method
+// set in terms of itself and is refused; embedding a type that is not an interface
+// is Go's type-constraint syntax, which belongs to generics and is refused as well.
+// A qualified name must be an EXPORTED interface of an imported package, as every
+// other qualified name must be.
 //
 //	InterfaceType = "interface" "{" { MethodSpec ";" } [ MethodSpec ] "}" .
-//	MethodSpec = identifier [ "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] ] .
+//	MethodSpec = identifier [ "." identifier | "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] ] .
 //
 // # Channel types
 //

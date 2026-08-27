@@ -6413,11 +6413,12 @@ func (f *File) collectIfaceMethods(s *Scope, it *TypeNodeInterface, set map[stri
 			}
 			continue
 		}
-		if seen[m.Name.Src()] {
+		name := m.EmbeddedName()
+		if seen[name] {
 			continue
 		}
-		seen[m.Name.Src()] = true
-		td, ok := s.find(m.Name.Src()).(*TypeDeclaration)
+		seen[name] = true
+		td, home, ok := f.typeDeclNamed(s, name)
 		if !ok || td.TypeSpec == nil {
 			continue // not a type: reported where the embedding is checked
 		}
@@ -6425,7 +6426,9 @@ func (f *File) collectIfaceMethods(s *Scope, it *TypeNodeInterface, set map[stri
 		if !ok {
 			continue // not an interface: likewise
 		}
-		f.collectIfaceMethods(s, inner, set, seen)
+		// In the scope the EMBEDDED interface was declared in, not this one: what it
+		// embeds in turn is written in its own package's terms.
+		f.collectIfaceMethods(home, inner, set, seen)
 	}
 }
 
@@ -11124,7 +11127,46 @@ func (f *File) checkTypeCycle(s *Scope, cd *TypeDeclaration) {
 	ts.gate.open()
 	f.walkTypeCycle(s, ts.TypeNode)
 	ts.gate.close()
+	f.checkIfaceEmbedNames(s, ts)
 	f.checkIfaceEmbedCycle(s, ts)
+}
+
+// checkIfaceEmbedNames reports an embedded name that names nothing, or names
+// something that is not an interface. Both used to reach the emitter, which says so
+// without a position and only for a program that gets that far; and an UNEXPORTED
+// name of another package reached it and was quietly embedded, since the emitter
+// keys interfaces by their C symbol and a C symbol has no case rule in it.
+//
+// Go accepts a non-interface here -- since 1.18 it is a type constraint, an
+// interface usable only as a type parameter's bound. There are no type parameters
+// here, so what it accepts is a type that could never be written anywhere, and
+// saying so at the declaration beats a later diagnostic about a use.
+func (f *File) checkIfaceEmbedNames(s *Scope, ts *TypeSpecNode) {
+	it, ok := ts.TypeNode.(*TypeNodeInterface)
+	if !ok {
+		return
+	}
+	for i := range it.Methods {
+		m := &it.Methods[i]
+		if !m.Embedded || !m.Name.IsValid() {
+			continue
+		}
+		name := m.EmbeddedName()
+		if m.Pkg.IsValid() && !f.isImportQualifier(s, m.Pkg.Src()) {
+			// The QUALIFIER is what is undefined, and naming the whole would say the
+			// package has no such member when there is no such package.
+			f.err(m.Pkg.Position(), "undefined: %s", m.Pkg.Src())
+			continue
+		}
+		td, _, ok := f.typeDeclNamed(s, name)
+		if !ok || td.TypeSpec == nil {
+			f.err(m.Name.Position(), "undefined: %s", name)
+			continue
+		}
+		if _, ok := td.TypeSpec.TypeNode.(*TypeNodeInterface); !ok {
+			f.err(m.Name.Position(), "cannot embed %s in an interface: it is not an interface type", name)
+		}
+	}
 }
 
 // checkIfaceEmbedCycle reports an interface that EMBEDS itself, directly or through
@@ -11137,21 +11179,27 @@ func (f *File) checkIfaceEmbedCycle(s *Scope, ts *TypeSpecNode) {
 	if !ok || !ts.Name.IsValid() {
 		return
 	}
-	var reaches func(*TypeNodeInterface, map[string]bool) bool
-	reaches = func(cur *TypeNodeInterface, seen map[string]bool) bool {
+	var reaches func(*Scope, *TypeNodeInterface, map[string]bool) bool
+	reaches = func(s *Scope, cur *TypeNodeInterface, seen map[string]bool) bool {
 		for i := range cur.Methods {
 			m := &cur.Methods[i]
 			if !m.Embedded || !m.Name.IsValid() {
 				continue
 			}
-			if m.Name.Src() == ts.Name.Src() {
+			name := m.EmbeddedName()
+			// A QUALIFIED name cannot close a cycle: it names another package, and
+			// that package cannot import this one back. It is followed for the names
+			// it in turn embeds, but it is never the type being declared here --
+			// which a bare comparison of the members would claim it was, for a
+			// `lib.Reader` embedded in a Reader.
+			if !m.Pkg.IsValid() && name == ts.Name.Src() {
 				return true
 			}
-			if seen[m.Name.Src()] {
+			if seen[name] {
 				continue
 			}
-			seen[m.Name.Src()] = true
-			td, ok := s.find(m.Name.Src()).(*TypeDeclaration)
+			seen[name] = true
+			td, home, ok := f.typeDeclNamed(s, name)
 			if !ok || td.TypeSpec == nil {
 				continue
 			}
@@ -11159,13 +11207,13 @@ func (f *File) checkIfaceEmbedCycle(s *Scope, ts *TypeSpecNode) {
 			if !ok {
 				continue
 			}
-			if reaches(inner, seen) {
+			if reaches(home, inner, seen) {
 				return true
 			}
 		}
 		return false
 	}
-	if reaches(it, map[string]bool{ts.Name.Src(): true}) {
+	if reaches(s, it, map[string]bool{ts.Name.Src(): true}) {
 		f.err(ts.Name.Position(), "invalid recursive type %s", ts.Name.Src())
 	}
 }
@@ -11532,15 +11580,33 @@ func (t *TypeNodeStruct) Type() Typ {
 
 // MethodSpecNode describes the MethodSpec production.
 //
-//	MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+//	MethodSpec = identifier [ "." identifier | "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] ] .
 type MethodSpecNode struct {
 	Name    Token
 	Params  *ParameterListNode
 	Results *ParameterListNode
+	// Pkg is the qualifier of an embedded name written as another package's,
+	// `lib.Reader`; Name is then the member. Only an embedded name may carry one --
+	// a method is DECLARED here and has nowhere else to come from.
+	Pkg Token
 	// Embedded marks a spec that is an interface NAME standing alone rather than a
-	// method. The production left-factors to `identifier [ "(" ... ]`, so the
-	// parenthesis is what tells them apart.
+	// method. The production left-factors to `identifier [ "." identifier | "(" ...
+	// ]`, so the parenthesis is what tells them apart.
 	Embedded bool
+}
+
+// EmbeddedName is an embedded interface's name as WRITTEN -- "Reader", or the
+// qualified "lib.Reader". It is what resolves the name (typeDeclNamed reads either
+// form) and what a diagnostic should spell, since a bare "Reader" for a name the
+// program wrote qualified names nothing a reader can find.
+func (m *MethodSpecNode) EmbeddedName() string {
+	if !m.Name.IsValid() {
+		return ""
+	}
+	if m.Pkg.IsValid() {
+		return m.Pkg.Src() + "." + m.Name.Src()
+	}
+	return m.Name.Src()
 }
 
 // TypeNodeInterface describes the InterfaceType production.
@@ -11782,12 +11848,13 @@ func (f *File) interfaceType(s *Scope, n Node) (r *TypeNodeInterface) {
 	return r
 }
 
-// MethodSpec = identifier "(" [ ParameterList ] ")" [ Type | "(" ParameterList ")" ] .
+// MethodSpec = identifier [ "." identifier | "(" [ ParameterList ] ")" [ Type | "(" ResultList ")" ] ] .
 //
 // The signature part mirrors Signature: the first ")" separates parameters from
 // results.
 func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
 	r.Embedded = true // until a "(" says otherwise
+	qualified := false
 	for n := range it(n.ast) {
 		switch n.sym {
 		case ParameterList:
@@ -11801,7 +11868,15 @@ func (f *File) methodSpec(s *Scope, n Node) (r MethodSpecNode) {
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
+				if qualified {
+					// The second identifier of `lib.Reader`: what was read as the
+					// name is the package, and this is the member.
+					r.Pkg, r.Name = r.Name, tok
+					break
+				}
 				r.Name = tok
+			case PERIOD:
+				qualified = true
 			case LPAREN, RPAREN:
 				r.Embedded = false // a signature, so this is a method
 			default:

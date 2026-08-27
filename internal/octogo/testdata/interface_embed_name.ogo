@@ -1,0 +1,30 @@
+// An interface embeds a NAME, and the name must be an interface's. Go accepts a
+// non-interface there -- since 1.18 it is a type constraint, an interface usable
+// only as a type parameter's bound. There are no type parameters here, so what it
+// would accept is a type that could never be written anywhere, and saying so at the
+// declaration beats a diagnostic about some later use.
+
+type S struct{ n int }
+
+type Closer interface {
+	Close() int
+}
+
+type Good interface {
+	Closer
+	Read() int
+}
+
+type BadKind interface {
+	// ERROR cannot embed S in an interface: it is not an interface type
+	S
+	Read() int
+}
+
+type BadName interface {
+	// ERROR undefined: Nope
+	Nope
+	Read() int
+}
+
+func main() {}

@@ -18593,7 +18593,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
-	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n"
+	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
+	"9 4 9\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18780,7 +18781,27 @@ println(chain.Draw(&chain.Bulb, qp), lit.Watts())
 // %T of a type of another package: what the program calls it, not the C symbol
 // the compiler mangled it to.
 printf("%T %T\n", chain.Kit, lmp)
+// An interface of main's EMBEDDING one of another package's, and a value of it
+// passed where the embedded interface itself is wanted.
+var bx Boxed = &crate
+println(bx.Area(), bx.Tag(), area(bx))
 }
+
+// Boxed embeds an imported interface, written AFTER a method of its own so that
+// the two tables lay their slots out differently: greet.Shape's Area is slot 0
+// while Boxed's is slot 1. A Boxed passed where a greet.Shape is wanted therefore
+// has to be re-tabled rather than handed over as it stands.
+type Boxed interface {
+	Tag() int
+	greet.Shape
+}
+
+type Crate struct{ w int }
+
+func (c *Crate) Area() int { return c.w * c.w }
+func (c *Crate) Tag() int  { return c.w + 1 }
+
+var crate = Crate{3}
 
 func area(s greet.Shape) int { return s.Area() }
 
@@ -19180,6 +19201,41 @@ func main() {
 `,
 			},
 			want: "cannot use geo.V of type geo.T as type int in variable declaration",
+		},
+		{
+			name: "embedding another package's unexported interface",
+			files: map[string]string{
+				"geo/geo.ogo": `type reader interface {
+	Read() int
+}
+`,
+				"main.ogo": `import "geo"
+
+type W interface {
+	geo.reader
+	Close() int
+}
+
+func main() { var w W; println(w == nil) }
+`,
+			},
+			want: "undefined: geo.reader",
+		},
+		{
+			name: "embedding another package's non-interface",
+			files: map[string]string{
+				"geo/geo.ogo": "type S struct{ n int }\n",
+				"main.ogo": `import "geo"
+
+type W interface {
+	geo.S
+	Close() int
+}
+
+func main() { var w W; println(w == nil) }
+`,
+			},
+			want: "cannot embed geo.S in an interface: it is not an interface type",
 		},
 		{
 			name: "the address of another package's constant",

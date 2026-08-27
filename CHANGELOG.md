@@ -18,6 +18,49 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Behaviour changes
+
+- **An address may not be taken of a constant or a function.** `&K` and `&f`
+  compiled, and `&pkg.K` did too; `&7` reached the C compiler, which called it
+  "Cannot take address of e". A constant has no storage and a function's name is
+  not a variable, so neither has an address -- Go says exactly that, and so does
+  this now. A variable, a field, an element and a composite literal are unchanged.
+
+- **A local that shadows an import is the local.** `lib := 1; lib.Take(2)`
+  compiled and CALLED THE IMPORT: the emitter resolves a qualified name against
+  the package, and nothing had asked whether the name was a variable here. It ran
+  a program that says something else. A selection on such a variable is refused
+  now, in Go's words.
+
+- **An embedded name that is not an interface, or is nothing, is refused where it
+  is written.** Both reached the emitter, which says so with no position and only
+  for a program that gets that far -- and another package's UNEXPORTED interface
+  reached it and was quietly embedded, the emitter keying interfaces by their C
+  symbol and a C symbol carrying no case rule. The three are `undefined: Nope`,
+  `undefined: lib.reader` and `cannot embed lib.S in an interface: it is not an
+  interface type`, at the name.
+
+### Language
+
+- **An interface may embed another package's interface**, written qualified:
+
+  ```go
+  type ReadCloser interface {
+  	io.Reader
+  	Close() int
+  }
+  ```
+
+  The grammar admitted a bare name only, so the one thing embedding is for across a
+  package boundary -- naming an interface someone else declared -- did not parse.
+  MethodSpec takes the qualified form now, which egg accepts as LL(1): the token
+  after the identifier tells the three cases apart. The name must be an EXPORTED
+  interface of an imported package, as every other qualified name must be.
+
+  A value of the embedding interface passed where the EMBEDDED one is wanted is
+  re-tabled rather than handed over as it stands: the two lay their slots out
+  differently as soon as the embedding one declares a method of its own first.
+
 ### Added
 
 - **The fuzzer generates goroutines and channels.** A `go` statement starts a
@@ -103,18 +146,6 @@ shipped section tells a reader on that version that they have behaviour they do 
 ## v0.32.0
 
 ### Behaviour changes
-
-- **An address may not be taken of a constant or a function.** `&K` and `&f`
-  compiled, and `&pkg.K` did too; `&7` reached the C compiler, which called it
-  "Cannot take address of e". A constant has no storage and a function's name is
-  not a variable, so neither has an address -- Go says exactly that, and so does
-  this now. A variable, a field, an element and a composite literal are unchanged.
-
-- **A local that shadows an import is the local.** `lib := 1; lib.Take(2)`
-  compiled and CALLED THE IMPORT: the emitter resolves a qualified name against
-  the package, and nothing had asked whether the name was a variable here. It ran
-  a program that says something else. A selection on such a variable is refused
-  now, in Go's words.
 
 - **Four things another package could do that Go forbids.** An acceptance-parity
   probe across a package boundary -- programs Go REJECTS, run through this
