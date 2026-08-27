@@ -50,6 +50,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo fmt` printed nothing for a file that needed no change.** With no flags
+  the formatted source goes to standard output, as gofmt does and as the
+  command's own help says -- but only a CHANGED file was printed, so
+  `ogo fmt x.ogo > y.ogo` wrote an empty y.ogo whenever x was already formatted.
+  `-l` and `-w` are unchanged: they have nothing to list or rewrite there.
+
 - **`- -v` decremented v, and `ogo fmt` turned it into a program that would not
   build.** Two unary signs in a row were written out as they stand, in both
   places: the emitter sent `- -v` to the C compiler as `--v` -- a pre-decrement,

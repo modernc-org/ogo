@@ -130,26 +130,31 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 			}
 
 			res := buf.Bytes()
-			if !bytes.Equal(src, res) {
-				// Formatting changed the file
-				if list {
+			// With no flags the result goes to stdout WHETHER OR NOT it differs, as
+			// gofmt does and as this command's own help says. Printing only a
+			// changed file made `ogo fmt x.ogo > y.ogo` write nothing at all when x
+			// was already formatted -- an empty file where the source was asked for.
+			if !list && !write {
+				mu.Lock()
+				stdout.Write(res)
+				mu.Unlock()
+				return
+			}
+			if bytes.Equal(src, res) {
+				return // -l lists what differs, -w rewrites it; neither has anything to do
+			}
+			if list {
+				mu.Lock()
+				fmt.Fprintln(stdout, f)
+				mu.Unlock()
+			}
+			if write {
+				// Use same permissions as standard tools
+				if err := os.WriteFile(f, res, 0644); err != nil {
 					mu.Lock()
-					fmt.Fprintln(stdout, f)
+					fmt.Fprintf(stderr, "write error %s: %v\n", f, err)
 					mu.Unlock()
-				}
-				if write {
-					// Use same permissions as standard tools
-					if err := os.WriteFile(f, res, 0644); err != nil {
-						mu.Lock()
-						fmt.Fprintf(stderr, "write error %s: %v\n", f, err)
-						mu.Unlock()
-						rc = 1
-					}
-				}
-				if !list && !write {
-					mu.Lock()
-					stdout.Write(res)
-					mu.Unlock()
+					rc = 1
 				}
 			}
 		}(file)

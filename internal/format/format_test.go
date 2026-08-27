@@ -47,6 +47,36 @@ func TestExcludeSpelling(t *testing.T) {
 	}
 }
 
+// TestNoFlagsPrintsAnUnchangedFile: with no flags the formatted source goes to
+// stdout WHETHER OR NOT it differs, as gofmt does. It used to be printed only when
+// formatting changed something, so `ogo fmt x.ogo > y.ogo` on an already-formatted
+// file wrote an empty y.ogo -- the source asked for, replaced by nothing.
+func TestNoFlagsPrintsAnUnchangedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.ogo")
+	const formatted = "func main() {\n\tprintln(1)\n}\n"
+	if err := os.WriteFile(path, []byte(formatted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if rc, err := SubCommand([]string{path}, nil, &out, &errb); err != nil || rc != 0 {
+		t.Fatalf("rc=%d err=%v stderr=%q", rc, err, errb.String())
+	}
+	if got := out.String(); got != formatted {
+		t.Errorf("stdout = %q, want the file itself %q", got, formatted)
+	}
+	// -l has nothing to list, and -w nothing to write: neither prints the source.
+	for _, flag := range []string{"-l", "-w"} {
+		var lout, lerr bytes.Buffer
+		if rc, err := SubCommand([]string{flag, path}, nil, &lout, &lerr); err != nil || rc != 0 {
+			t.Fatalf("%s: rc=%d err=%v stderr=%q", flag, rc, err, lerr.String())
+		}
+		if got := lout.String(); got != "" {
+			t.Errorf("%s on an unchanged file printed %q", flag, got)
+		}
+	}
+}
+
 // TestNoFlagsWritesNothing pins what "ogo fmt" with no flags does: it prints the
 // formatted source and leaves the file alone. The help said "compared and nothing
 // is written", which read as though it printed nothing either.
