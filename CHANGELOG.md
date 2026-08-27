@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Added
 
+- **The fuzzer generates goroutines and channels.** A `go` statement starts a
+  real core on this target, and nothing in the generated corpus had ever exercised
+  the lowering behind it -- claiming a cog, marshalling the arguments into its
+  slot, the rendezvous itself -- though every one of those has had a bug. They are
+  generated now: a worker sends what it computes from the argument it was started
+  with, main takes each value and folds it into the checksum. A channel is a
+  synchronous rendezvous, so the values arrive in the order they were sent
+  whatever the two cores do, which is what lets the oracle predict them at all. At
+  most two workers per program, each started once at the top level of main: a cog
+  is a physical core, and a spawn inside a loop asks for one per iteration.
+
 - **The fuzzer generates calls through a function value.** A value is a C
   function pointer, and one of a function returning SEVERAL results points at a
   wrapper that writes them through a parameter -- a different lowering from the

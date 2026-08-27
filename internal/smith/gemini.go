@@ -97,6 +97,20 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		f.genDeferProc()
 	}
 
+	// 4.6. Workers for main to start on cogs of their own. Two at most, and each
+	// started once at the top level of main: a cog is a physical core (see
+	// genCogStmt).
+	var cogs []*cogWorker
+	for i, n := 0, f.Rand.Intn(3); i < n; i++ {
+		cogs = append(cogs, f.genCogWorker())
+	}
+	// The statement each is started at, so a spawn sits among ordinary statements
+	// rather than always first.
+	spawnAt := map[int]*cogWorker{}
+	for i, w := range cogs {
+		spawnAt[f.Rand.Intn(18)+i] = w
+	}
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -107,7 +121,16 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 
 	// Generate 20 sequential statements to mutate the checksum
 	for i := 0; i < 20; i++ {
-		stmtNode := f.genStatement(vm, mem)
+		// The spawn REPLACES this statement rather than following one: generating a
+		// statement and discarding it would leave the VM holding declarations and a
+		// checksum the program never computed -- which is a generator bug that
+		// looks exactly like a miscompile.
+		var stmtNode Node
+		if w, ok := spawnAt[i]; ok {
+			stmtNode = f.genCogStmt(w, vm, mem)
+		} else {
+			stmtNode = f.genStatement(vm, mem)
+		}
 		stmtNode.Write(f.Out, 1)
 		fmt.Fprint(f.Out, "\n")
 	}
@@ -394,10 +417,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genElementSwap(vm, mem) // 2% chance for an element swap
 	case r < 0.615:
 		return f.genDestructure(vm, mem) // 1.5% chance for a two-result call
-	case r < 0.618:
-		return f.genMinMax(vm, mem) // 0.3% chance for a min or max
-	case r < 0.62:
-		return f.genFuncValueStmt(vm, mem) // 0.2% chance for a call through a function value
+	case r < 0.617:
+		return f.genMinMax(vm, mem) // 0.2% chance for a min or max
+	case r < 0.625:
+		return f.genFuncValueStmt(vm, mem) // 0.8% chance for a call through a function value
 	case r < 0.63:
 		return f.genDeferCall(vm, mem) // 1% chance for a call that defers
 	case r < 0.66:
@@ -1212,6 +1235,89 @@ func (f *Fuzzer) genDestructure(vm Machine, mem Memory) Node {
 	return &DestructureNode{A: a, B: b, Call: &CallNode{Fn: fn.Name, Args: argNodes}}
 }
 
+// GoNode is a `go` statement starting a generated worker on a cog of its own.
+type GoNode struct {
+	Fn, Chan string
+	Arg      Node
+}
+
+func (n *GoNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "go %s(%s, ", n.Fn, n.Chan)
+	n.Arg.Write(w, 0)
+	fmt.Fprint(w, ")")
+}
+
+// RecvNode receives one value from a channel into a fresh name.
+type RecvNode struct {
+	Name, Chan string
+}
+
+func (n *RecvNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s := <-%s", n.Name, n.Chan)
+}
+
+// cogWorker is a generated function meant to run on a cog of its own: it sends a
+// fixed number of values into its channel and returns, which frees the cog.
+//
+// What it puts under test is the whole concurrency lowering -- claiming a cog,
+// marshalling the arguments into the slot, the rendezvous itself -- against an
+// oracle that can predict it: a channel here is a SYNCHRONOUS rendezvous, so the
+// values arrive in the order they were sent however the two cogs are scheduled.
+// The body is total for the same reason a function's is (see pureOps), since it is
+// evaluated at generation time against the argument the spawn passes.
+type cogWorker struct {
+	Name, Chan, Param string
+	Sends             []Node
+}
+
+// genCogWorker writes a worker and its channel, both at package scope: a `go`
+// statement's argument must outlive the statement, and the channel is what main
+// takes the results from.
+func (f *Fuzzer) genCogWorker() *cogWorker {
+	w := &cogWorker{Name: f.newVarName("cog"), Chan: f.newVarName("ch"), Param: f.newVarName("p")}
+	for i, n := 0, 1+f.Rand.Intn(2); i < n; i++ {
+		w.Sends = append(w.Sends, f.genPureExpr([]string{w.Param}, 0))
+	}
+	fmt.Fprintf(f.Out, "var %s chan int\n\n", w.Chan)
+	fmt.Fprintf(f.Out, "func %s(c chan int, %s int) {\n", w.Name, w.Param)
+	for _, send := range w.Sends {
+		writeIndent(f.Out, 1)
+		fmt.Fprint(f.Out, "c <- ")
+		send.Write(f.Out, 0)
+		fmt.Fprint(f.Out, "\n")
+	}
+	fmt.Fprint(f.Out, "}\n\n")
+	return w
+}
+
+// genCogStmt starts a worker and takes everything it sends, folding each value into
+// the checksum in the order it arrives.
+//
+// It is generated only at the TOP level of main, and each worker only once: a cog
+// is a physical core, of which there are eight, and a spawn inside a loop would ask
+// for one per iteration -- which is a program that runs out of cogs rather than a
+// compiler that got something wrong.
+func (f *Fuzzer) genCogStmt(w *cogWorker, vm Machine, mem Memory) Node {
+	argNode, argVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
+	args := map[string]Int32{w.Param: argVal.(Int32)}
+	stmts := []Node{&GoNode{Fn: w.Name, Chan: w.Chan, Arg: argNode}}
+	fn := &FuncDef{Name: w.Name, Params: []string{w.Param}}
+	for _, send := range w.Sends {
+		name := f.newVarName("r")
+		stmts = append(stmts, &RecvNode{Name: name, Chan: w.Chan})
+		newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), f.evalBody(fn, send, args, vm))
+		mem.Store(f.ChecksumName, newSum)
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: &IdentNode{Name: name}},
+		})
+	}
+	return &BlockNode{Statements: stmts}
+}
+
 // genFuncValueStmt binds a generated function to a VALUE and calls through it,
 // which is a different lowering from calling the function by name: the value is a
 // C function pointer, and one whose function returns SEVERAL results points at a
@@ -1226,7 +1332,7 @@ func (f *Fuzzer) genDestructure(vm Machine, mem Memory) Node {
 // no way to use.
 func (f *Fuzzer) genFuncValueStmt(vm Machine, mem Memory) Node {
 	want := 1
-	if f.Rand.Float32() < 0.4 {
+	if f.Rand.Float32() < 0.5 {
 		want = 2
 	}
 	cands := f.funcsWithResults(want)
