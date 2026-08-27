@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Added
 
+- **The fuzzer generates calls through a function value.** A value is a C
+  function pointer, and one of a function returning SEVERAL results points at a
+  wrapper that writes them through a parameter -- a different lowering from the
+  call by name, and the newest one in the compiler. Both forms are generated now,
+  bound with a written type and called with generated arguments, so every seed
+  exercises them. 300 programs on the board and 20,000 on the host agree with the
+  oracle.
+
 - **The fuzzer generates 64-bit arithmetic.** `ogo smith` exercised int8 through
   uint32 and stopped there, so int64 and uint64 -- where this compiler and the C
   backend have both been wrong most often -- were tested only by hand-written

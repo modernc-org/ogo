@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // newVarName returns a unique variable name (see Fuzzer.VarSeq for why a counter
@@ -393,8 +394,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genElementSwap(vm, mem) // 2% chance for an element swap
 	case r < 0.615:
 		return f.genDestructure(vm, mem) // 1.5% chance for a two-result call
+	case r < 0.618:
+		return f.genMinMax(vm, mem) // 0.3% chance for a min or max
 	case r < 0.62:
-		return f.genMinMax(vm, mem) // 0.5% chance for a min or max
+		return f.genFuncValueStmt(vm, mem) // 0.2% chance for a call through a function value
 	case r < 0.63:
 		return f.genDeferCall(vm, mem) // 1% chance for a call that defers
 	case r < 0.66:
@@ -1207,6 +1210,69 @@ func (f *Fuzzer) genDestructure(vm Machine, mem Memory) Node {
 	f.CurrentEnv.Declare(a, BasicType{Kind: KindInt}, false)
 	f.CurrentEnv.Declare(b, BasicType{Kind: KindInt}, false)
 	return &DestructureNode{A: a, B: b, Call: &CallNode{Fn: fn.Name, Args: argNodes}}
+}
+
+// genFuncValueStmt binds a generated function to a VALUE and calls through it,
+// which is a different lowering from calling the function by name: the value is a
+// C function pointer, and one whose function returns SEVERAL results points at a
+// wrapper that writes them through a parameter rather than returning them -- what
+// a pointer returns being the shape the target's C compiler cannot match, and
+// cannot call on a spawned cog. The oracle predicts the call the same way it
+// predicts a direct one: which function the value holds is known where it is
+// written, so the body is re-evaluated against the same arguments.
+//
+// The block is self-contained -- nothing it declares is put in the environment --
+// so no later statement can name a value whose type the expression generator has
+// no way to use.
+func (f *Fuzzer) genFuncValueStmt(vm Machine, mem Memory) Node {
+	want := 1
+	if f.Rand.Float32() < 0.4 {
+		want = 2
+	}
+	cands := f.funcsWithResults(want)
+	if len(cands) == 0 {
+		want, cands = 1, f.funcsWithResults(1)
+	}
+	if len(cands) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	fn := cands[f.Rand.Intn(len(cands))]
+	ints := make([]string, len(fn.Params))
+	for i := range ints {
+		ints[i] = "int"
+	}
+	typeText := "func(" + strings.Join(ints, ", ") + ") int"
+	if want == 2 {
+		typeText = "func(" + strings.Join(ints, ", ") + ") (int, int)"
+	}
+	args := map[string]Int32{}
+	var argNodes []Node
+	for _, p := range fn.Params {
+		node, val, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
+		argNodes = append(argNodes, node)
+		args[p] = val.(Int32)
+	}
+	name := f.newVarName("fv")
+	stmts := []Node{&VarDeclNode{Name: name, Type: typeText, Expr: &IdentNode{Name: fn.Name}}}
+	fold := func(v Int32, rhs Node) {
+		newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, newSum)
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: rhs},
+		})
+	}
+	call := &CallNode{Fn: name, Args: argNodes}
+	if want == 1 {
+		fold(f.evalCall(fn, args, vm), call)
+		return &BlockNode{Statements: stmts}
+	}
+	a, b := f.newVarName("d"), f.newVarName("d")
+	stmts = append(stmts, &DestructureNode{A: a, B: b, Call: call})
+	fold(f.evalBody(fn, fn.Body, args, vm), &IdentNode{Name: a})
+	fold(f.evalBody(fn, fn.Body2, args, vm), &IdentNode{Name: b})
+	return &BlockNode{Statements: stmts}
 }
 
 // genMinMax declares a variable holding min or max over two to four generated
