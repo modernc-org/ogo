@@ -19182,6 +19182,34 @@ func main() {
 			want: "cannot use geo.V of type geo.T as type int in variable declaration",
 		},
 		{
+			name: "the address of another package's constant",
+			files: map[string]string{
+				"geo/geo.ogo": "const K = 7\n",
+				"main.ogo": `import "geo"
+
+func main() {
+	p := &geo.K
+	println(*p)
+}
+`,
+			},
+			want: "invalid operation: cannot take address of geo.K",
+		},
+		{
+			name: "a local shadowing an import",
+			files: map[string]string{
+				"geo/geo.ogo": "func Take(n int) int { return n }\n",
+				"main.ogo": `import "geo"
+
+func main() {
+	geo := 1
+	println(geo.Take(2))
+}
+`,
+			},
+			want: "type int has no method Take",
+		},
+		{
 			name: "a field of another package's scalar",
 			files: map[string]string{
 				"geo/geo.ogo": "var N = 7\n",

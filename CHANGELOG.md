@@ -104,6 +104,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **An address may not be taken of a constant or a function.** `&K` and `&f`
+  compiled, and `&pkg.K` did too; `&7` reached the C compiler, which called it
+  "Cannot take address of e". A constant has no storage and a function's name is
+  not a variable, so neither has an address -- Go says exactly that, and so does
+  this now. A variable, a field, an element and a composite literal are unchanged.
+
+- **A local that shadows an import is the local.** `lib := 1; lib.Take(2)`
+  compiled and CALLED THE IMPORT: the emitter resolves a qualified name against
+  the package, and nothing had asked whether the name was a variable here. It ran
+  a program that says something else. A selection on such a variable is refused
+  now, in Go's words.
+
 - **Four things another package could do that Go forbids.** An acceptance-parity
   probe across a package boundary -- programs Go REJECTS, run through this
   compiler -- found that it accepted all four: reading another package's

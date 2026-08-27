@@ -7044,6 +7044,25 @@ func endsInCall(postfix Node) bool {
 	return last == CallSuffix
 }
 
+// shadowedImportMember reports a selection on a variable that SHADOWS an import of
+// the same name -- `lib := 1; lib.Take(2)` -- where the variable's own type has no
+// such member. The emitter resolves a qualified name against the package, so
+// without this the selection quietly called the IMPORT's function: the program
+// compiled and ran something it does not say, where Go refuses it outright.
+//
+// It asks only about a variable whose type was inferred to a predeclared SCALAR
+// and about a name that is also an import. A defined type can reach here with its
+// name unrecorded -- `d := x - y` for a Fix x is an int32 with no name and has
+// every method Fix has -- so refusing every nameless scalar would reject valid
+// programs. The narrow question has no such doubt: an import's name is not a type.
+func (f *File) shadowedImportMember(d *VarDeclaration, head Token) bool {
+	if !d.hasKind || d.isPtr || d.isChan || d.hasElemKind || d.isFunc || d.builderVar {
+		return false
+	}
+	_, isImport := f.Scope.Declarations[head.Src()].(*ImportDeclaration)
+	return isImport
+}
+
 // checkFieldAccess reports a selection "head.field" when head is a variable whose
 // type has no such field: a predeclared scalar (int, bool, string, ...) has no
 // fields at all, and a named struct type is checked field by field. A pointer,
@@ -7063,6 +7082,9 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 		d = &VarDeclaration{typeName: nm, typeQual: namedTypeQual(tn)}
 	}
 	if !d.typeName.IsValid() {
+		if f.shadowedImportMember(d, head) {
+			f.err(field.Position(), "type %s has no field %s", kindName(d.kind), field.Src())
+		}
 		return
 	}
 	if d.hasKind {
@@ -7302,6 +7324,9 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 		return
 	}
 	if !d.typeName.IsValid() {
+		if f.shadowedImportMember(d, head) {
+			f.err(member.Position(), "type %s has no method %s", kindName(d.kind), member.Src())
+		}
 		return
 	}
 	if d.typeQual.IsValid() {
@@ -7456,6 +7481,66 @@ func (f *File) checkNames(s *Scope, n Node) {
 		f.checkBinary(s, n, Term, AddOp)
 	case Term:
 		f.checkBinary(s, n, UnaryExpr, MulOp)
+	}
+}
+
+// checkAddressable reports an address taken of something that has none: a
+// constant, a function, or either of those read from another package. Go names the
+// same three, and for the same reason -- a constant has no storage and a function's
+// name is not a variable -- while this compiler accepted `&K` and `&f` outright and
+// let `&7` reach the C compiler, which called it "Cannot take address of e".
+//
+// A composite literal is addressable here, `&T{...}`, which is how an interface is
+// given something to hold; a variable, a field, an element and a dereference are
+// all addressable as they are in Go.
+func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
+	kids := slices.Collect(it(fac.ast))
+	var id Token
+	var suffix Node
+	hasID, hasSuffix, hasLit := false, false, false
+	for _, c := range kids {
+		switch c.sym {
+		case FactorSuffix:
+			suffix, hasSuffix = c, true
+		case CompositeLit:
+			hasLit = true
+		case 0:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !hasID {
+				id, hasID = tok, true
+			}
+		}
+	}
+	if hasLit || !hasID {
+		return // `&T{...}`, or an operand this does not model
+	}
+	pos := f.tok(op.Pos()).Position()
+	what := func(name string) {
+		f.err(pos, "invalid operation: cannot take address of %s", name)
+	}
+	if !hasSuffix {
+		switch s.find(id.Src()).(type) {
+		case *ConstDeclaration, *FuncDeclaration, *PredeclaredFunc:
+			what(id.Src())
+		}
+		return
+	}
+	// `&pkg.K` and `&pkg.F`: the member is that package's, so it is looked up
+	// there. A field or an element of a package variable IS addressable, and is
+	// left alone by the same lookup.
+	if !f.isImportQualifier(s, id.Src()) {
+		return
+	}
+	member, more, ok := f.qualifiedFirstMember(suffix)
+	if !ok || more {
+		return
+	}
+	imp, isImp := f.Scope.Declarations[id.Src()].(*ImportDeclaration)
+	if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+		return
+	}
+	switch imp.Import.Pkg.Scope.Declarations[member.Src()].(type) {
+	case *ConstDeclaration, *FuncDeclaration:
+		what(id.Src() + "." + member.Src())
 	}
 }
 
@@ -8095,6 +8180,9 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	// an as-yet-undetermined type is left alone. Their result types are not
 	// modelled, so the check stops here in either case.
 	switch inner := ops[len(ops)-1]; f.unaryOp(s, inner) {
+	case AND:
+		f.checkAddressable(s, inner, fac)
+		return
 	case MUL:
 		// Asked of the operand's POINTERNESS rather than of its Kind. A Kind answers
 		// only for a predeclared type, so a slice, an array or a struct operand read

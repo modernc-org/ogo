@@ -1,0 +1,25 @@
+// What an address may be taken of: a variable, a field, an element, and a
+// composite literal -- which is how an interface is given something to hold. A
+// constant has no storage and a function's name is not a variable, so neither has
+// an address, exactly as in Go.
+
+const K = 1
+
+type T struct{ n int }
+
+func f() int { return 1 }
+
+func main() {
+	var t T
+	var a [2]int
+	p := &t
+	q := &t.n
+	r := &a[1]
+	l := &T{5}
+	println(p.n, *q, *r, l.n)
+	// ERROR invalid operation: cannot take address of K
+	pk := &K
+	// ERROR invalid operation: cannot take address of f
+	pf := &f
+	println(pk != nil, pf != nil)
+}
