@@ -93,6 +93,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **Four things another package could do that Go forbids.** An acceptance-parity
+  probe across a package boundary -- programs Go REJECTS, run through this
+  compiler -- found that it accepted all four: reading another package's
+  UNEXPORTED field (`lib.V.hidden`) and calling its unexported method, assigning
+  to another package's constant (`lib.K = 2`), and using a value of an imported
+  DEFINED type where its underlying type is wanted (`var x int = lib.V` for a
+  `V lib.T`). The first two are encapsulation: private state was readable and
+  private behaviour callable, silently. Each is refused now, and the checker
+  gained what it was missing to see them -- a qualified read has a Kind and a type
+  NAME now, where before it had neither, so every check keyed on one was skipped
+  for it.
+
 - **A constant shift count must be a non-negative integer.** `x << -1` compiled
   and panicked when the program ran -- on a board, where a panic is a halted
   cog -- while Go refuses to build it at all: a count is converted to an unsigned

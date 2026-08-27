@@ -19105,6 +19105,74 @@ func main() {
 			want: "Blob does not implement geo.Shape (missing method Area)",
 		},
 		{
+			name: "another package's unexported field",
+			files: map[string]string{
+				"geo/geo.ogo": `type S struct {
+	Open   int
+	hidden int
+}
+
+var V = S{1, 2}
+`,
+				"main.ogo": `import "geo"
+
+func main() {
+	println(geo.V.hidden)
+}
+`,
+			},
+			want: "cannot refer to unexported field hidden of type geo.S",
+		},
+		{
+			name: "another package's unexported method",
+			files: map[string]string{
+				"geo/geo.ogo": `type S struct{ N int }
+
+func (s S) hidden() int { return s.N }
+
+var V = S{1}
+`,
+				"main.ogo": `import "geo"
+
+func main() {
+	println(geo.V.hidden())
+}
+`,
+			},
+			want: "cannot refer to unexported method hidden of type geo.S",
+		},
+		{
+			name: "assigning to another package's constant",
+			files: map[string]string{
+				"geo/geo.ogo": "const K = 1\n",
+				"main.ogo": `import "geo"
+
+func main() {
+	geo.K = 2
+	println(geo.K)
+}
+`,
+			},
+			want: "cannot assign to geo.K",
+		},
+		{
+			name: "another package's defined type is not its underlying one",
+			files: map[string]string{
+				"geo/geo.ogo": `type T int
+
+var V T = 1
+`,
+				"main.ogo": `import "geo"
+
+func main() {
+	var x int = geo.V
+	println(x)
+}
+`,
+			},
+			want: "cannot use geo.V of type geo.T as type int in variable declaration",
+		},
+		{
 			name: "a field of another package's scalar",
 			files: map[string]string{
 				"geo/geo.ogo": "var N = 7\n",

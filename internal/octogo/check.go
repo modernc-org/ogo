@@ -2738,6 +2738,15 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 	}
 	switch {
 	case hasSuffix:
+		// `pkg.V` -- a variable or constant of an imported package. Its type is
+		// that package's business and is resolved there; without this the read had
+		// NO type here at all, so every check keyed on one was skipped for it and
+		// `var x int = geo.V` went unexamined whatever V is.
+		if hasLit {
+			if k, ok := f.qualifiedKind(s, lit, suffix); ok {
+				return k, true
+			}
+		}
 		// A call to a named function or a method with a single predeclared result
 		// has that result's type; a field selection "v.field" has the field's type;
 		// and an index "a[i]" of an array or slice has the element type. A
@@ -4127,7 +4136,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
+					break
 				}
+				// `pkg.K = 2`: what a qualifier selects may be a constant, a function
+				// or a type, none of which can be assigned to. The qualifier is not a
+				// variable, so the case below never saw one and every such assignment
+				// was accepted.
+				f.checkQualifiedAssign(s, tok, postfix)
 			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
@@ -4154,7 +4169,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
+					break
 				}
+				// `pkg.K = 2`: what a qualifier selects may be a constant, a function
+				// or a type, none of which can be assigned to. The qualifier is not a
+				// variable, so the case below never saw one and every such assignment
+				// was accepted.
+				f.checkQualifiedAssign(s, tok, postfix)
 			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
@@ -4262,7 +4283,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
+					break
 				}
+				// `pkg.K = 2`: what a qualifier selects may be a constant, a function
+				// or a type, none of which can be assigned to. The qualifier is not a
+				// variable, so the case below never saw one and every such assignment
+				// was accepted.
+				f.checkQualifiedAssign(s, tok, postfix)
 			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
@@ -5383,6 +5410,21 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		// answerable across the boundary -- a parameter of the callee's own named
 		// type resolves, an argument of the caller's is judged by its own kind -- and
 		// the count is what was going to the C compiler as "Bad number of parameters".
+		// `pkg.V.member`: what follows a package VARIABLE belongs to that variable's
+		// type, which is the imported package's, so it is resolved and export-checked
+		// there. Nothing checked it before -- the walk stopped at the variable -- so
+		// `lib.V.hidden` read another package's unexported field, and
+		// `lib.V.hidden()` called its unexported method, both silently.
+		if vd, isVar := d.(*VarDeclaration); isVar {
+			if member, isCall, ok := f.qualifiedMember(suffix); ok && vd.typeName.IsValid() {
+				if isCall {
+					f.checkCrossPkgMethod(qual, vd.typeName, member)
+				} else {
+					f.checkCrossPkgField(qual, vd.typeName, member)
+				}
+			}
+			return
+		}
 		fd, isFunc := d.(*FuncDeclaration)
 		if !isFunc || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
 			return
@@ -5458,6 +5500,132 @@ func (f *File) selectorMember(n Node) (Token, bool) {
 		}
 	}
 	return Token{}, false
+}
+
+// qualifiedMember reads the SECOND selector of a qualified chain -- the member of
+// `pkg.V.member` -- and reports whether a call follows it, which is what tells a
+// method from a field. A chain with only the package member, or a longer one this
+// does not model, answers no.
+func (f *File) qualifiedMember(suffix Node) (member Token, isCall, ok bool) {
+	sels := 0
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Selector:
+			sels++
+			if sels == 2 {
+				if member, ok = f.selectorMember(c); !ok {
+					return Token{}, false, false
+				}
+			}
+		case CallSuffix:
+			if sels == 2 {
+				return member, true, true
+			}
+		case Index:
+			return Token{}, false, false // an index reaches an element, not this member
+		}
+	}
+	return member, false, sels == 2
+}
+
+// checkQualifiedAssign reports an assignment to something an import qualifier
+// selects that is not a variable: another package's constant, function or type.
+// The member itself is resolved there, so a misspelling is left to the reads'
+// own report rather than being called unassignable.
+func (f *File) checkQualifiedAssign(s *Scope, qual Token, postfix Node) {
+	member, _, ok := f.qualifiedFirstMember(postfix)
+	if !ok {
+		return
+	}
+	imp, isImp := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+		return
+	}
+	switch imp.Import.Pkg.Scope.Declarations[member.Src()].(type) {
+	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration:
+		f.err(member.Position(), "cannot assign to %s.%s", qual.Src(), member.Src())
+	}
+}
+
+// qualifiedFirstMember reads the first selector of a qualified chain and reports
+// whether anything follows it -- a further selector, an index or a call.
+func (f *File) qualifiedFirstMember(suffix Node) (member Token, more, ok bool) {
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Selector:
+			if ok {
+				return member, true, true
+			}
+			if member, ok = f.selectorMember(c); !ok {
+				return Token{}, false, false
+			}
+		case CallSuffix, Index:
+			if ok {
+				return member, true, true
+			}
+		}
+	}
+	return member, false, ok
+}
+
+// qualifiedVarTypeName names the type of `pkg.V` for type identity: the qualified
+// spelling when the variable was declared with a DEFINED type of that package, the
+// empty string when it was declared with a predeclared one, and not-ok when there
+// is no such variable or its type is not written as a name.
+func (f *File) qualifiedVarTypeName(s *Scope, qual, member Token) (string, bool) {
+	imp, isImp := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+		return "", false
+	}
+	vd, isVar := imp.Import.Pkg.Scope.Declarations[member.Src()].(*VarDeclaration)
+	if !isVar || !vd.typeName.IsValid() {
+		return "", false
+	}
+	name := qual.Src() + "." + vd.typeName.Src()
+	if _, _, ok := f.typeDeclNamed(s, name); ok {
+		return name, true
+	}
+	if _, isPre := imp.Import.Pkg.Scope.Declarations[vd.typeName.Src()].(*TypeDeclaration); isPre {
+		return name, true
+	}
+	return "", true // declared with a predeclared type: no defined identity of its own
+}
+
+// qualifiedKind is the Kind of `pkg.V`, a variable or constant read from an
+// imported package: the declaration is that package's, so it is looked up there.
+// Only the two-token form answers -- a call or a further step is someone else's --
+// and only where the member is exported, which checkQualifiedRef reports on.
+func (f *File) qualifiedKind(s *Scope, qual Token, suffix Node) (Kind, bool) {
+	if !f.isImportQualifier(s, qual.Src()) {
+		return 0, false
+	}
+	member, isCall, ok := Token{}, false, false
+	n := 0
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Selector:
+			n++
+			if n == 1 {
+				member, ok = f.selectorMember(c)
+			}
+		case CallSuffix, Index:
+			isCall = true
+		}
+	}
+	if !ok || n != 1 || isCall {
+		return 0, false
+	}
+	imp, isImp := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+		return 0, false
+	}
+	switch d := imp.Import.Pkg.Scope.Declarations[member.Src()].(type) {
+	case *VarDeclaration:
+		if d.hasKind {
+			return d.kind, true
+		}
+	}
+	return 0, false
 }
 
 // namedTypeToken returns the name of a named type, following pointers ("*T" and
@@ -6372,8 +6540,22 @@ func sortedNames(set map[string]*MethodSpecNode) []string {
 // "no" both for a value of type int and for a value whose type is unknown, and the
 // two must lead to opposite conclusions.
 func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
-	if nm, ql, isPtr, ok := f.exprNamedType(s, n); ok && nm.IsValid() && !isPtr && !ql.IsValid() {
+	if nm, ql, isPtr, ok := f.exprNamedType(s, n); ok && nm.IsValid() && !isPtr {
+		// A type of another package is named by the qualified spelling, `geo.Temp`,
+		// which is how this file writes it and what tells it from an `int` -- and
+		// from a `Temp` of its own. Excluded before, so `var x int = geo.V` for a V
+		// of a defined type went unchecked: the two share a Kind, and the name was
+		// the only thing that could have told them apart.
+		if ql.IsValid() {
+			return f.definedName(s, ql.Src()+"."+nm.Src())
+		}
 		return f.definedName(s, nm.Src())
+	}
+	// A read from an imported package, `geo.V`: what names its type is the type the
+	// VARIABLE was declared with THERE, spelled as this file writes it. Asked before
+	// the field read below, which would take `geo` for a struct and find nothing.
+	if head, member, ok := f.exprFieldRead(n); ok && f.isImportQualifier(s, head.Src()) {
+		return f.qualifiedVarTypeName(s, head, member)
 	}
 	// A field read, "b.w": the field's declared type is what names it.
 	// exprFieldRead is exactly a plain two-name read -- an index or a call
@@ -6400,6 +6582,13 @@ func (f *File) definedName(s *Scope, name string) (string, bool) {
 		return name, true
 	case *PredeclaredType:
 		return "", true
+	}
+	// A qualified name resolves in the package it names, where a defined type of
+	// that package is a defined type here too -- under the name this file writes.
+	if strings.Contains(name, ".") {
+		if _, _, ok := f.typeDeclNamed(s, name); ok {
+			return name, true
+		}
 	}
 	return "", false
 }
@@ -6471,6 +6660,12 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 	want := ""
 	if _, defined := s.find(wantName).(*TypeDeclaration); defined {
 		want = wantName
+	} else if strings.Contains(wantName, ".") {
+		// The wanted type may be another package's too, `var x geo.Temp = ...`, and
+		// is then named the same way the value's is (see typeIdentity).
+		if _, _, ok := f.typeDeclNamed(s, wantName); ok {
+			want = wantName
+		}
 	}
 	if have == want {
 		return
