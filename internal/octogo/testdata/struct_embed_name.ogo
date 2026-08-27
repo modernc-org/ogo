@@ -1,0 +1,45 @@
+// A struct embeds a NAME, and the name must be a struct type's -- this package's or,
+// written qualified, another's. Go promotes through more than that: a defined type of
+// any underlying type, and an interface, whose methods become a dispatch through
+// whatever the field holds. Neither is built here, and saying so at the declaration
+// beats a diagnostic about some later use.
+
+type Leaf struct{ L int }
+
+func (l Leaf) Read() int { return l.L }
+
+type Count int
+
+func (c Count) Val() int { return int(c) }
+
+type Reader interface {
+	Read() int
+}
+
+type Good struct {
+	Leaf
+	G int
+}
+
+type BadKind struct {
+	// ERROR cannot embed Count: only a struct type may be embedded here
+	Count
+	B int
+}
+
+type BadIface struct {
+	// ERROR cannot embed Reader: only a struct type may be embedded here
+	Reader
+	B int
+}
+
+type BadName struct {
+	// ERROR undefined: Nope
+	Nope
+	B int
+}
+
+func main() {
+	var g Good
+	println(g.Read(), g.L, g.G)
+}

@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A struct's embedded field is checked where it is written.** Four different
+  mistakes shared one emitter message with no position -- "an embedded field must be
+  a struct type of this package, and an untyped field is not a field" -- and another
+  package's UNEXPORTED struct did not even get that: `lib.leaf` was quietly
+  embedded, the emitter keying structs by their C symbol and a C symbol carrying no
+  case rule. They are `undefined: Nope`, `undefined: lib.leaf` and `cannot embed
+  lib.Count: only a struct type may be embedded here` now, at the name. That last
+  one also covers embedding an INTERFACE, which used to be accepted at the
+  declaration and refused at the use, as "type M has no method Read".
+
 - **An address may not be taken of a constant or a function.** `&K` and `&f`
   compiled, and `&pkg.K` did too; `&7` reached the C compiler, which called it
   "Cannot take address of e". A constant has no storage and a function's name is
@@ -41,6 +51,31 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface type`, at the name.
 
 ### Language
+
+- **A struct may embed another package's struct**, written qualified:
+
+  ```go
+  type Mid struct {
+  	lib.Leaf
+  	M int
+  }
+  ```
+
+  The grammar already admitted it and nothing else did. The field list read the two
+  identifiers as two NAMES, so the struct had two fields nothing could refer to --
+  `Mid{a, b}` was "2 values but 3 fields" -- and no embedding at all: `V.Read()` was
+  "type Mid has no method Read" and `V.L` "has no field L". The field is named after
+  the type UNQUALIFIED, as in Go, so what is embedded is reached as `V.Leaf`, and
+  every promotion the language has follows through it: a field, a value-receiver
+  method, a pointer-receiver one, a method VALUE, two levels with the deeper one
+  crossing the boundary from inside the other package, and an interface of that
+  package satisfied by a method promoted from its own type. Verified on the board
+  against the same program in Go, in eleven positions.
+
+  The three walks behind promotion -- the field set, the selector-depth count that
+  reports an ambiguous one, and the method-set search -- now carry the SCOPE a name
+  resolves in rather than assuming the asking one. What an imported type embeds is a
+  name of its own package, which this one need not have and may have differently.
 
 - **A method value may be taken of another package's variable**, and of a PROMOTED
   method:

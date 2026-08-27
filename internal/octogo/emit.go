@@ -5686,11 +5686,24 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 				continue
 			}
 		}
+		// ANOTHER PACKAGE's struct embedded, `lib.Leaf`. The field is named after the
+		// type UNQUALIFIED -- Go names it `V.Leaf` whichever package declared it --
+		// and everything promotion does from here reads e.structs by C type, where an
+		// imported struct already sits.
+		if ctype == "" && len(names) == 2 && !star {
+			if prefix, isImport := e.importQualifiers[names[0]]; isImport {
+				mn := mangle(prefix, names[1])
+				if _, isStruct := e.structs[mn]; isStruct {
+					out = append(out, structField{name: names[1], ctype: mn, embedded: true})
+					continue
+				}
+			}
+		}
 		if star {
 			// "*T" embedded: Go promotes through the pointer, and a nil one panics at
 			// the selector. Refused rather than silently embedded by value, which is
 			// what treating the name as the type would have done.
-			e.fail("an embedded pointer field is not supported yet; embed %s by value", strings.Join(names, ", "))
+			e.fail("an embedded pointer field is not supported yet; embed %s by value", strings.Join(names, "."))
 			return out
 		}
 		if ctype == "" || len(names) == 0 {

@@ -4600,12 +4600,8 @@ func (f *File) methodValueParts(s *Scope, head, field Token) (fd *FuncDeclNode, 
 	// The type that DECLARES the method, which is the variable's own or one it
 	// embeds: a promoted method is in the method set exactly as a declared one is,
 	// and asking the variable's type alone made `V.Base2` a missing FIELD.
-	owner, isMethod := f.methodOwner(s, d.typeName, field.Src())
+	td, isMethod := f.methodOwner(s, d.typeName, field.Src())
 	if !isMethod {
-		return nil, false, false, false
-	}
-	td, isType := s.find(owner.Src()).(*TypeDeclaration)
-	if !isType {
 		return nil, false, false, false
 	}
 	m := td.methods[field.Src()]
@@ -5828,12 +5824,8 @@ func (f *File) importedMethodOwner(qual, typeName, member Token) (*TypeDeclarati
 	if !ok {
 		return nil, false
 	}
-	owner, promoted := f.methodOwner(home, typeName, member.Src())
-	if !promoted {
-		return nil, false
-	}
-	od, isType := home.Declarations[owner.Src()].(*TypeDeclaration)
-	if !isType || od.methods[member.Src()] == nil {
+	od, promoted := f.methodOwner(home, typeName, member.Src())
+	if !promoted || od.methods[member.Src()] == nil {
 		return nil, false
 	}
 	return od, true
@@ -6298,7 +6290,13 @@ func (f *File) arrayTypeNamed(s *Scope, nm string) bool {
 // false when the name is not a struct (a predeclared type, an interface, or an
 // undefined name), in which case field access is left unchecked.
 func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
-	td, ok := s.find(typeName.Src()).(*TypeDeclaration)
+	return f.structFieldsNamed(s, typeName.Src())
+}
+
+// structFieldsNamed is structFields keyed by the name as written, which may be
+// another package's `lib.Leaf`.
+func (f *File) structFieldsNamed(s *Scope, name string) (map[string]bool, bool) {
+	td, home, ok := f.typeDeclNamed(s, name)
 	if !ok || td.TypeSpec == nil {
 		return nil, false
 	}
@@ -6315,8 +6313,12 @@ func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
 		// own name in scope AND promotes what it holds. Go's rule is breadth-first,
 		// the shallowest winning; a name already at this level is not overwritten by
 		// a deeper one.
-		if emb, isEmb := embeddedFieldName(fld); isEmb {
-			inner, okInner := f.structFields(s, emb)
+		//
+		// Walked in the scope the struct was DECLARED in, not the one asking: what an
+		// imported type embeds is a name of its own package, which this one need not
+		// have and may have differently.
+		if emb, isEmb := embeddedTypeName(fld); isEmb {
+			inner, okInner := f.structFieldsNamed(home, emb)
 			if !okInner {
 				continue
 			}
@@ -6330,8 +6332,10 @@ func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
 	return fields, true
 }
 
-// embeddedFieldName returns the type name of an embedded field -- one written as a
-// bare type name, which is one name and no type of its own.
+// embeddedFieldName returns the FIELD name of an embedded field -- one written as a
+// bare type name, which is one name and no type of its own. For `lib.Leaf` that is
+// the member alone: Go names an embedded field after the type, unqualified, so the
+// field is `V.Leaf` whichever package declared the type.
 func embeddedFieldName(fld ParameterDeclNode) (Token, bool) {
 	if fld.TypeNode != nil || len(fld.Names) != 1 {
 		return Token{}, false
@@ -6339,9 +6343,32 @@ func embeddedFieldName(fld ParameterDeclNode) (Token, bool) {
 	return fld.Names[0], true
 }
 
-// embeddedFields names the types a struct embeds, in declaration order.
-func (f *File) embeddedFields(s *Scope, typeName Token) []Token {
-	td, ok := s.find(typeName.Src()).(*TypeDeclaration)
+// embeddedTypeName is the embedded type as WRITTEN -- "Leaf", or the qualified
+// "lib.Leaf". It is what resolves the type (typeDeclNamed reads either form), while
+// embeddedFieldName is what the field is called.
+func embeddedTypeName(fld ParameterDeclNode) (string, bool) {
+	tok, ok := embeddedFieldName(fld)
+	if !ok {
+		return "", false
+	}
+	if fld.EmbeddedPkg.IsValid() {
+		return fld.EmbeddedPkg.Src() + "." + tok.Src(), true
+	}
+	return tok.Src(), true
+}
+
+// embRef is a type a struct EMBEDS, as written, together with the scope that name
+// resolves in: a qualified `lib.Leaf` names another package's type, and what THAT
+// type embeds in turn is a name of ITS package, which this one need not have.
+type embRef struct {
+	name  string
+	scope *Scope
+}
+
+// embeddedFields names the types a struct embeds, in declaration order, each with
+// the scope to resolve it in.
+func (f *File) embeddedFields(s *Scope, typeName string) []embRef {
+	td, home, ok := f.typeDeclNamed(s, typeName)
 	if !ok || td.TypeSpec == nil {
 		return nil
 	}
@@ -6349,10 +6376,10 @@ func (f *File) embeddedFields(s *Scope, typeName Token) []Token {
 	if !ok {
 		return nil
 	}
-	var out []Token
+	var out []embRef
 	for _, fld := range st.Fields {
-		if emb, isEmb := embeddedFieldName(fld); isEmb {
-			out = append(out, emb)
+		if emb, isEmb := embeddedTypeName(fld); isEmb {
+			out = append(out, embRef{name: emb, scope: home})
 		}
 	}
 	return out
@@ -6363,12 +6390,12 @@ func (f *File) embeddedFields(s *Scope, typeName Token) []Token {
 // AND methods together: the shallowest wins, and two at that depth make the
 // selector ambiguous rather than picking one.
 func (f *File) selectorDepth(s *Scope, typeName Token, name string) (count int) {
-	level := []Token{typeName}
+	level := []embRef{{name: typeName.Src(), scope: s}}
 	for depth := 0; depth < 16 && len(level) != 0; depth++ {
 		count = 0
-		var next []Token
+		var next []embRef
 		for _, t := range level {
-			td, ok := s.find(t.Src()).(*TypeDeclaration)
+			td, home, ok := f.typeDeclNamed(t.scope, t.name)
 			if !ok || td.TypeSpec == nil {
 				continue
 			}
@@ -6386,7 +6413,8 @@ func (f *File) selectorDepth(s *Scope, typeName Token, name string) (count int) 
 					}
 				}
 				if emb, isEmb := embeddedFieldName(fld); isEmb && emb.Src() != name {
-					next = append(next, emb)
+					tn, _ := embeddedTypeName(fld)
+					next = append(next, embRef{name: tn, scope: home})
 				}
 			}
 		}
@@ -6409,21 +6437,31 @@ func (f *File) reportAmbiguousSelector(s *Scope, base Token, typeName Token, mem
 	return true
 }
 
-// methodOwner names the type whose declaration carries a method reachable on
-// typeName: typeName itself, or a type it embeds, breadth-first as Go promotes.
-func (f *File) methodOwner(s *Scope, typeName Token, method string) (Token, bool) {
-	level := []Token{typeName}
+// methodOwner is the type declaration carrying a method reachable on typeName:
+// typeName's own, or that of a type it embeds, breadth-first as Go promotes.
+//
+// The DECLARATION rather than its name, because the name alone does not say where to
+// look it up: an imported type's method is declared in that package's scope, and
+// every caller had to be handed the right one to resolve in.
+func (f *File) methodOwner(s *Scope, typeName Token, method string) (*TypeDeclaration, bool) {
+	return f.methodOwnerNamed(s, typeName.Src(), method)
+}
+
+// methodOwnerNamed is methodOwner keyed by the name as written, which may be another
+// package's `lib.Leaf`.
+func (f *File) methodOwnerNamed(s *Scope, typeName, method string) (*TypeDeclaration, bool) {
+	level := []embRef{{name: typeName, scope: s}}
 	for depth := 0; depth < 16 && len(level) != 0; depth++ {
-		var next []Token
+		var next []embRef
 		for _, t := range level {
-			if td, ok := s.find(t.Src()).(*TypeDeclaration); ok && td.methods[method] != nil {
-				return t, true
+			if td, _, ok := f.typeDeclNamed(t.scope, t.name); ok && td.methods[method] != nil {
+				return td, true
 			}
-			next = append(next, f.embeddedFields(s, t)...)
+			next = append(next, f.embeddedFields(t.scope, t.name)...)
 		}
 		level = next
 	}
-	return Token{}, false
+	return nil, false
 }
 
 // interfaceMethods returns the method set of a named interface type, keyed by name,
@@ -6576,10 +6614,8 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 			// Resolved in the type's OWN scope: what an imported type embeds is a
 			// name of the package it was declared in, which this one need not have.
 			// For an unqualified concrete type home is this scope, unchanged.
-			if owner, promoted := f.methodOwner(home, td.Token(), name); promoted {
-				if otd, ok := home.find(owner.Src()).(*TypeDeclaration); ok {
-					fd, ptrRecv = otd.methods[name], otd.ptrRecv[name]
-				}
+			if otd, promoted := f.methodOwner(home, td.Token(), name); promoted {
+				fd, ptrRecv = otd.methods[name], otd.ptrRecv[name]
 			}
 		}
 		if fd == nil {
@@ -7439,10 +7475,8 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 	if fd == nil {
 		// A method PROMOTED from an embedded field is in this type's method set, and
 		// is checked against the signature the embedded type declared it with.
-		if owner, promoted := f.methodOwner(s, d.typeName, member.Src()); promoted {
-			if otd, ok := s.find(owner.Src()).(*TypeDeclaration); ok {
-				fd = otd.methods[member.Src()]
-			}
+		if otd, promoted := f.methodOwner(s, d.typeName, member.Src()); promoted {
+			fd = otd.methods[member.Src()]
 		}
 	}
 	if fd == nil {
@@ -9408,10 +9442,8 @@ func (f *File) namedTypeHasMember(s *Scope, name, member string) bool {
 	if td.methods[member] != nil {
 		return true
 	}
-	if owner, promoted := f.methodOwner(s, td.Token(), member); promoted {
-		if otd, isType := s.find(owner.Src()).(*TypeDeclaration); isType && otd.methods[member] != nil {
-			return true
-		}
+	if otd, promoted := f.methodOwner(s, td.Token(), member); promoted && otd.methods[member] != nil {
+		return true
 	}
 	fields, isStruct := f.structFields(s, td.Token())
 	return isStruct && fields[member]
@@ -11073,6 +11105,10 @@ type ParameterDeclNode struct {
 	Names    []Token
 	TypeNode TypeNode
 	Variadic bool // written "...T"; TypeNode is the []T it means
+	// EmbeddedPkg is the qualifier of a field embedded as another package's type,
+	// `lib.Leaf`; Names then holds the member alone, which is also the field's own
+	// name -- Go names an embedded field after the type, unqualified.
+	EmbeddedPkg Token
 }
 
 // ParameterListNode describes the ParameterList production. Results reuse it too,
@@ -11212,7 +11248,45 @@ func (f *File) checkTypeCycle(s *Scope, cd *TypeDeclaration) {
 	f.walkTypeCycle(s, ts.TypeNode)
 	ts.gate.close()
 	f.checkIfaceEmbedNames(s, ts)
+	f.checkStructEmbedNames(s, ts)
 	f.checkIfaceEmbedCycle(s, ts)
+}
+
+// checkStructEmbedNames reports a struct's embedded field that names nothing, or
+// names something a field of this shape may not be. Every one of them reached the
+// emitter, which says so with no position and in one sentence covering four
+// different mistakes -- and another package's UNEXPORTED struct reached it and was
+// quietly embedded, the emitter keying structs by their C symbol and a C symbol
+// carrying no case rule.
+//
+// A non-struct is what Go DOES allow and this does not yet: a defined type's methods
+// promote through an embedding of it whatever its underlying type is. Said plainly
+// here rather than as "must be a struct type of this package", which was written
+// when another package's could not be embedded either.
+func (f *File) checkStructEmbedNames(s *Scope, ts *TypeSpecNode) {
+	st, ok := ts.TypeNode.(*TypeNodeStruct)
+	if !ok {
+		return
+	}
+	for _, fld := range st.Fields {
+		tok, isEmb := embeddedFieldName(fld)
+		if !isEmb {
+			continue
+		}
+		name, _ := embeddedTypeName(fld)
+		if fld.EmbeddedPkg.IsValid() && !f.isImportQualifier(s, fld.EmbeddedPkg.Src()) {
+			f.err(fld.EmbeddedPkg.Position(), "undefined: %s", fld.EmbeddedPkg.Src())
+			continue
+		}
+		td, _, resolved := f.typeDeclNamed(s, name)
+		if !resolved || td.TypeSpec == nil {
+			f.err(tok.Position(), "undefined: %s", name)
+			continue
+		}
+		if _, isStruct := td.TypeSpec.TypeNode.(*TypeNodeStruct); !isStruct {
+			f.err(tok.Position(), "cannot embed %s: only a struct type may be embedded here", name)
+		}
+	}
 }
 
 // checkIfaceEmbedNames reports an embedded name that names nothing, or names
@@ -11871,6 +11945,7 @@ func (f *File) structType(s *Scope, n Node) (r *TypeNodeStruct) {
 //
 //	| identifier [ "." identifier | { "," identifier } Type ] .
 func (f *File) fieldDecl(s *Scope, n Node) (r ParameterDeclNode) {
+	qualified := false
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Type:
@@ -11878,9 +11953,20 @@ func (f *File) fieldDecl(s *Scope, n Node) (r ParameterDeclNode) {
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:
+				if qualified && len(r.Names) == 1 {
+					// The second identifier of an embedded `lib.Leaf`: what was read
+					// as the name is the package, and the member is both the type and
+					// the field's name. Read as two NAMES, as it used to be, the
+					// struct had two fields nothing could refer to -- `Mid{a, b}` was
+					// "2 values but 3 fields" -- and no embedding at all.
+					r.EmbeddedPkg, r.Names[0] = r.Names[0], tok
+					break
+				}
 				r.Names = append(r.Names, tok)
-			case COMMA, PERIOD, MUL:
-				// ok: multiple names, or an embedded/qualified field
+			case PERIOD:
+				qualified = true
+			case COMMA, MUL:
+				// ok: multiple names, or an embedded pointer
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}

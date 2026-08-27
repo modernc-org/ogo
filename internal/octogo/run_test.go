@@ -18594,7 +18594,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18795,6 +18795,11 @@ println(watts(), chain.Kit.N)
 pi := chain.Deck.Inc
 pi()
 println(chain.Deck.Twice(), chain.Deck.N)
+// A struct of main's embedding one of another package's: a promoted field, a
+// promoted value-receiver method and a promoted pointer-receiver one.
+println(framed.N, framed.Twice(), framed.F)
+framed.Inc()
+println(framed.N, framed.Reg.N, framed.Twice())
 }
 
 // Boxed embeds an imported interface, written AFTER a method of its own so that
@@ -18805,6 +18810,16 @@ type Boxed interface {
 	Tag() int
 	greet.Shape
 }
+
+// Framed embeds ANOTHER PACKAGE's struct: the field is named after the type
+// unqualified, f.Reg, and what that type declares -- a field and both kinds of
+// method -- promotes through it exactly as a same-package embedding does.
+type Framed struct {
+	chain.Reg
+	F int
+}
+
+var framed = Framed{chain.Reg{8}, 9}
 
 type Crate struct{ w int }
 
@@ -19215,6 +19230,22 @@ func main() {
 `,
 			},
 			want: "cannot use geo.V of type geo.T as type int in variable declaration",
+		},
+		{
+			name: "embedding another package's unexported struct",
+			files: map[string]string{
+				"geo/geo.ogo": "type pt struct{ X int }\n",
+				"main.ogo": `import "geo"
+
+type M struct {
+	geo.pt
+	N int
+}
+
+func main() { var m M; println(m.N) }
+`,
+			},
+			want: "undefined: geo.pt",
 		},
 		{
 			name: "a method value of another package's variable with a value receiver",

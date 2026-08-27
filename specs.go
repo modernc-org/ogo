@@ -693,10 +693,16 @@
 // the same name, and two reachable at the same depth make the selector ambiguous
 // rather than one of them being picked. Both are as in Go.
 //
-// (OctoGo Specific): the embedded type must be a struct of this package. An
-// embedded POINTER, "*base", is not supported yet -- Go promotes through it and
-// panics at the selector when it is nil -- nor is an embedded predeclared type,
-// "struct{ int }", nor one named through an import.
+// The embedded type may be ANOTHER PACKAGE'S, written qualified. The field is then
+// named after the type UNQUALIFIED, as in Go: what "struct{ lib.Leaf }" embeds is
+// reached as "v.Leaf".
+//
+// (OctoGo Specific): the embedded type must be a STRUCT. An embedded POINTER,
+// "*base", is not supported yet -- Go promotes through it and panics at the selector
+// when it is nil -- nor is a defined type of some other underlying type,
+// "struct{ Count }" for a "type Count int", nor an interface, "struct{ Reader }",
+// which Go promotes to a dispatch through whatever the field holds, nor a
+// predeclared type, "struct{ int }".
 //
 // # Pointer types
 //
