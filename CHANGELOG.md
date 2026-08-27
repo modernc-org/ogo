@@ -50,6 +50,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **The address of an imported package variable could not be an interface value.**
+  `lib.Use(&lib.V)` reached the C compiler as a raw pointer where the two words
+  belong -- "expected _struct__lib_I but got pointer to _struct__lib_T" -- and
+  `var i lib.I = &lib.V` was refused with advice to write the address of a
+  variable, of a program that had written exactly that: the root of such an
+  address is the package QUALIFIER, which is not a variable, so the recogniser
+  answered no. A package variable outlives every frame, which makes it the safest
+  thing an interface can be given. The mirror case is now the checker's too:
+  passing `lib.V` itself, where its methods are on the pointer, is refused in one
+  sentence instead of reaching the C compiler.
+
 - **`ogo fmt` printed nothing for a file that needed no change.** With no flags
   the formatted source goes to standard output, as gofmt does and as the
   command's own help says -- but only a CHANGED file was printed, so

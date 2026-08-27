@@ -18593,7 +18593,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
-	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\nchain.Reg chain.Lamp\n"
+	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -18773,6 +18773,10 @@ pan := chain.Panel{chain.Reg{5}, 6}
 lmp := chain.Lamp{7}
 qp := &lmp
 println(pan.Twice(), pan.N, pan.Tag, chain.Draw(&lmp, qp), qp.Watts())
+// The address of an imported package VARIABLE where that package's interface is
+// wanted: as an argument, and bound to a variable of the interface type.
+var lit chain.Lit = &chain.Bulb
+println(chain.Draw(&chain.Bulb, qp), lit.Watts())
 // %T of a type of another package: what the program calls it, not the C symbol
 // the compiler mangled it to.
 printf("%T %T\n", chain.Kit, lmp)
@@ -18894,6 +18898,11 @@ type Lamp struct{ W int }
 func (l *Lamp) Watts() int { return l.W }
 
 func Draw(a Lit, b Lit) int { return a.Watts() + b.Watts() }
+
+// Bulb is this package's own variable, handed to its own interface BY ADDRESS
+// from main, where the root of that address is the package qualifier rather than
+// a variable of the importing package.
+var Bulb = Lamp{9}
 
 func Shim(v int) int { return v + 1 }
 

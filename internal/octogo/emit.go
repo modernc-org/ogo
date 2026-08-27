@@ -5057,6 +5057,15 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok boo
 	if concrete, data, temp, ok := e.ifaceAddrLitOperand(rhs); ok {
 		return concrete, data, temp, ok
 	}
+	// `&pkg.V` -- the address of another package's variable. Its root is the
+	// QUALIFIER, which is not a variable, so the branch below answered no and the
+	// raw pointer went where the two words belong: as an argument the C compiler
+	// reported "expected _struct__lib_I but got pointer to _struct__lib_T", and in a
+	// declaration the refusal said to write the address of a variable, of a program
+	// that had written exactly that.
+	if ct, data, ok := e.ifaceAddrQualified(rhs); ok {
+		return ct, data, false, true
+	}
 	if root, isAddr := e.addrOfRoot(rhs); isAddr {
 		ct, ok := e.varType(root)
 		if !ok {
@@ -7749,6 +7758,51 @@ func headOf(nodes []Node) Node {
 
 // addrOfRoot reports whether an expression is the address of a variable -- `&x`,
 // `&x.f`, `&x[i]` -- and names the variable.
+// ifaceAddrQualified answers for `&pkg.V`, and for a field or element of one: the
+// concrete type is what that package declared the variable, and the data pointer is
+// the address of its mangled symbol. A package variable outlives every frame, so
+// there is no lifetime question here -- it is the safest thing an interface can be
+// given.
+func (e *emitter) ifaceAddrQualified(ast []int32) (concrete, data string, ok bool) {
+	fac, isAddr := e.addrOperandFactor(ast)
+	if !isAddr {
+		return "", "", false
+	}
+	base, fields, isField := e.factorFieldAccess(slices.Collect(it(fac.ast)))
+	if !isField {
+		return "", "", false
+	}
+	if _, isImport := e.importQualifiers[base]; !isImport {
+		return "", "", false
+	}
+	text, ctype, okRead := e.qualifiedGlobalRead(base, fields)
+	if !okRead || ctype == "" {
+		return "", "", false
+	}
+	return ctype, "&" + text, true
+}
+
+// addrOperandFactor is the Factor an address-of applies to, `&x` yielding x. It is
+// the unwrapping addrOfRoot does, kept apart so a caller that wants the operand
+// rather than its root name can have it.
+func (e *emitter) addrOperandFactor(ast []int32) (Node, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return Node{}, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) < 2 || kids[0].sym != UnaryOp {
+		return Node{}, false
+	}
+	if tok, okOp := e.unaryOpTok(kids[0].ast); !okOp || e.f.ch(tok) != AND {
+		return Node{}, false
+	}
+	return kids[len(kids)-1], true
+}
+
 func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
 	nodes := slices.Collect(it(ast))
 	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {

@@ -6729,6 +6729,73 @@ func (f *File) operandTypeName(s *Scope, n Node, k Kind) string {
 	return kindName(k)
 }
 
+// checkImplementsNamed is the tail of checkImplements for a value whose type is
+// known by NAME rather than through a local declaration -- a read from another
+// package. It asks the same two questions in the same order: an interface holds a
+// pointer here, and does this type's method set satisfy that interface.
+func (f *File) checkImplementsNamed(s *Scope, ifaceName string, value Node, from, shown string, valueIsPtr bool, what string) {
+	if from == "" || from == ifaceName {
+		return
+	}
+	pos := f.tok(value.Pos()).Position()
+	if !valueIsPtr {
+		if _, fromIface := f.interfaceMethodsNamed(s, from); !fromIface {
+			f.err(pos, "cannot use %s (variable of type %s) as %s value in %s: "+
+				"an interface holds a pointer here; write &%s", shown, from, ifaceName, what, shown)
+			return
+		}
+	}
+	missing, ptrRecv, wrong, have, want, ok := f.implements(s, from, valueIsPtr, ifaceName)
+	if ok {
+		return
+	}
+	kind := "variable of type " + from
+	if valueIsPtr && !strings.HasPrefix(shown, "&") {
+		kind = "variable of type *" + from
+	}
+	head := fmt.Sprintf("cannot use %s (%s) as %s value in %s: %s does not implement %s",
+		shown, kind, ifaceName, what, from, ifaceName)
+	switch {
+	case missing != "":
+		f.err(pos, "%s (missing method %s)", head, missing)
+	case ptrRecv != "":
+		f.err(pos, "%s (method %s has pointer receiver)", head, ptrRecv)
+	default:
+		f.err(pos, "%s (wrong type for method %s)\n\thave %s%s\n\twant %s%s", head, wrong,
+			wrong, strings.TrimPrefix(have, "func"), wrong, strings.TrimPrefix(want, "func"))
+	}
+}
+
+// qualifiedValueType names the type of `pkg.V` or `&pkg.V` for the method-set
+// checks: the type that package declared the variable with, spelled as this file
+// writes it, and whether what stands here is already a pointer.
+func (f *File) qualifiedValueType(s *Scope, value Node) (from string, isPtr, ok bool) {
+	n := value
+	if root, suffixed, isAddr := f.addressOperandRoot(s, value); isAddr && suffixed && f.isImportQualifier(s, root.Src()) {
+		// `&pkg.V`: the address of another package's variable, whose root is the
+		// qualifier rather than a variable of this one.
+		isPtr = true
+	} else if isAddr {
+		return "", false, false
+	}
+	head, member, isRead := f.exprFieldRead(n)
+	if !isRead || !f.isImportQualifier(s, head.Src()) {
+		return "", false, false
+	}
+	imp, isImp := f.Scope.Declarations[head.Src()].(*ImportDeclaration)
+	if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+		return "", false, false
+	}
+	vd, isVar := imp.Import.Pkg.Scope.Declarations[member.Src()].(*VarDeclaration)
+	if !isVar || !vd.typeName.IsValid() {
+		return "", false, false
+	}
+	if vd.isPtr {
+		isPtr = true
+	}
+	return head.Src() + "." + vd.typeName.Src(), isPtr, true
+}
+
 // checkImplements reports a concrete value assigned where an interface is wanted
 // whose method set it does not satisfy, in the two ways that can happen: a method
 // missing, and a method present with another signature. The wording is Go's, down
@@ -6753,7 +6820,16 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			id, valueIsPtr, ok = root, true, true
 		}
 	}
+	// `pkg.V` and `&pkg.V`: the variable is another package's, so it is looked up
+	// there rather than here. Without this the question was not asked at all, and
+	// `lib.Use(lib.V)` for a V whose METHODS are on its pointer reached the C
+	// compiler, which reported the two words against the struct -- where a local of
+	// the same type is told, in one sentence, to write its address.
 	if !ok {
+		if from, isPtr, isQual := f.qualifiedValueType(s, value); isQual {
+			f.checkImplementsNamed(s, ifaceName, value, from, f.exprSource(value), isPtr, what)
+			return
+		}
 		return
 	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
