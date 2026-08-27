@@ -14002,6 +14002,41 @@ func main() {
 		want: "0 0 0 3\n0 0\n",
 	},
 	{
+		name: "a deferred builtin reads its captured arguments",
+		src: `var a [2]int
+var b [2]int
+var c [2]int
+
+func f() {
+	xs := a[:]
+	ys := b[:]
+	zs := c[:]
+	// The arguments are evaluated HERE, so the deferred copy must use b's header
+	// and not the one ys holds at the return.
+	defer copy(xs, ys)
+	ys = zs
+	println(xs[0], xs[1], ys[0], ys[1])
+}
+
+func g() {
+	xs := a[:]
+	defer clear(xs)
+	println(xs[0], xs[1])
+}
+
+func main() {
+	a[0], a[1] = 1, 2
+	b[0], b[1] = 3, 4
+	c[0], c[1] = 9, 9
+	f()
+	println(a[0], a[1])
+	g()
+	println(a[0], a[1])
+}
+`,
+		want: "1 2 9 9\n3 4\n3 4\n0 0\n",
+	},
+	{
 		name: "defer captures at the defer, not the return",
 		src: `func step(n int) {
 	println(n)

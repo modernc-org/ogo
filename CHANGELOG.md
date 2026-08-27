@@ -185,6 +185,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A deferred `copy` or `clear` said something untrue.** `defer copy(xs, ys)` was
+  "copy's arguments must both be slices" of two slices, and `defer clear(xs)` was
+  "clear is only supported on a slice yet" of a slice. The arguments HAD been
+  captured into temporaries at the defer statement, as Go evaluates them; what had
+  not was the type -- the replay is emitted after the block scope the expressions
+  were written in has been left, so inferCType answered nothing there and each
+  builtin reported what it concluded from the silence. A false statement about the
+  program reads as a bug in the program. Both read the captured temporary now, the
+  way a deferred `print` already did, and the capture is verified on the board: a
+  deferred copy uses the slice header its argument held at the defer, not at the
+  return.
+
 - **The address of an imported package variable could not be an interface value.**
   `lib.Use(&lib.V)` reached the C compiler as a raw pointer where the two words
   belong -- "expected _struct__lib_I but got pointer to _struct__lib_T" -- and

@@ -19395,8 +19395,8 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 		e.fail("copy takes exactly two arguments -- copy(dst, src)")
 		return
 	}
-	dstCT, dok := e.inferCType(args[0].ast)
-	srcCT, sok := e.inferCType(args[1].ast)
+	dstCT, dok := e.replayOrInferCType(0, args[0])
+	srcCT, sok := e.replayOrInferCType(1, args[1])
 	// copy(dst []byte, src string): Go's byte-slice-from-string copy. The string's
 	// bytes are copied into the byte slice, min(len(dst), len(src)) of them, with no
 	// allocation -- the destination is the caller's storage. This is what lets a
@@ -19406,9 +19406,9 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 		e.usesCopyStr = true
 		e.includes["string.h"] = true
 		e.emit("ogo_copystr(")
-		e.emitExpr(args[0].ast)
+		e.emitReplayArg(0, args[0])
 		e.emit(", ")
-		e.emitExpr(args[1].ast)
+		e.emitReplayArg(1, args[1])
 		e.emit(")")
 		return
 	}
@@ -19425,9 +19425,9 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	e.copyElems[elem] = true
 	e.includes["string.h"] = true
 	e.emit(copyCName(elem) + "(")
-	e.emitExpr(args[0].ast)
+	e.emitReplayArg(0, args[0])
 	e.emit(", ")
-	e.emitExpr(args[1].ast)
+	e.emitReplayArg(1, args[1])
 	e.emit(")")
 }
 
@@ -19443,7 +19443,7 @@ func (e *emitter) emitClear(callSuffix []int32) {
 		e.fail("clear takes exactly one argument -- clear(s)")
 		return
 	}
-	ct, ok := e.inferCType(args[0].ast)
+	ct, ok := e.replayOrInferCType(0, args[0])
 	if !ok || !e.isSliceCType(ct) {
 		e.fail("clear is only supported on a slice yet")
 		return
@@ -19453,8 +19453,25 @@ func (e *emitter) emitClear(callSuffix []int32) {
 	e.clearElems[elem] = true
 	e.includes["string.h"] = true
 	e.emit(clearCName(elem) + "(")
-	e.emitExpr(args[0].ast)
+	e.emitReplayArg(0, args[0])
 	e.emit(")")
+}
+
+// replayOrInferCType types a builtin's argument: during a defer REPLAY from the
+// temporary captured at the defer statement, and from the expression everywhere
+// else. The replay is emitted after the block scope the expression was written in
+// has been left, so inferCType answers nothing there -- and a builtin that types its
+// arguments then reported what it concluded from the silence. `defer copy(xs, ys)`
+// was "copy's arguments must both be slices" of two slices, and `defer clear(xs)`
+// was "clear is only supported on a slice yet" of a slice, both of them a false
+// statement about the program rather than a limit of the compiler.
+func (e *emitter) replayOrInferCType(idx int, arg Node) (string, bool) {
+	if e.deferReplay >= 0 && idx < len(e.deferReplayArgs) {
+		if ct := e.deferReplayArgs[idx].ctype; ct != "" {
+			return ct, true
+		}
+	}
+	return e.inferCType(arg.ast)
 }
 
 // isOrderedCType reports whether a C type is one min and max can order: the
@@ -19603,7 +19620,12 @@ func (e *emitter) printArgCType(idx int, arg Node) (string, bool) {
 	return e.exprReprCType(arg.ast)
 }
 
-func (e *emitter) emitPrintArg(idx int, arg Node) {
+// emitReplayArg emits an argument's VALUE: during a defer REPLAY the temporary
+// captured at the defer statement, and the expression itself everywhere else. Go
+// evaluates a deferred call's arguments where the defer stands, and the replay is
+// emitted after the block scope they were written in has been left, so the
+// expression would not even resolve there.
+func (e *emitter) emitReplayArg(idx int, arg Node) {
 	if e.deferReplay >= 0 && idx < len(e.deferReplayArgs) {
 		if a := e.deferReplayArgs[idx]; a.inline {
 			e.emitExpr(a.expr)
@@ -19852,7 +19874,7 @@ func (e *emitter) staticTypeName(idx int, arg Node) (string, bool) {
 func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	verb, spec := item.verb, item.spec
 	ct, known := e.printArgCType(idx, arg)
-	value := func() { e.emitPrintArg(idx, arg) }
+	value := func() { e.emitReplayArg(idx, arg) }
 	wrong := func(want string) bool {
 		e.failAt(arg.ast, "printf: %%%c wants %s, not %s", verb, want, e.goTypeName(ct))
 		return false
@@ -20130,12 +20152,12 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 			} else {
 				e.emit("ogo_print_str(")
 			}
-			e.emitPrintArg(idx, arg)
+			e.emitReplayArg(idx, arg)
 			e.emit(");\n")
 			return
 		}
 		if e.isSliceCType(ct) {
-			e.emitPrintSlice(newline, sliceElemFromCName(ct), func() { e.emitPrintArg(idx, arg) })
+			e.emitPrintSlice(newline, sliceElemFromCName(ct), func() { e.emitReplayArg(idx, arg) })
 			return
 		}
 	}
@@ -20190,7 +20212,7 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	} else {
 		e.emit("printf(\"" + verb + "\", ")
 	}
-	e.emitPrintArg(idx, arg)
+	e.emitReplayArg(idx, arg)
 	e.emit(");\n")
 }
 
@@ -20215,13 +20237,13 @@ func (e *emitter) emitPrintAddress(newline bool, ct string, idx int, arg Node) {
 		// argument may be a call. A block keeps that in source order.
 		tmp := e.newTmp()
 		e.emit("{ " + ct + " " + tmp + " = ")
-		e.emitPrintArg(idx, arg)
+		e.emitReplayArg(idx, arg)
 		e.emit("; printf(\"" + form + nl + "\", (unsigned)(uintptr_t)" + tmp +
 			".data, (unsigned)(uintptr_t)" + tmp + ".vt); }\n")
 		return
 	}
 	e.emit("printf(\"" + form + nl + "\", (unsigned)(uintptr_t)")
-	e.emitPrintArg(idx, arg)
+	e.emitReplayArg(idx, arg)
 	e.emit(");\n")
 }
 
@@ -20297,7 +20319,7 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 			if e.isBoolPrint(i, arg) {
 				e.emitBoolWord(i, arg)
 			} else {
-				e.emitPrintArg(i, arg)
+				e.emitReplayArg(i, arg)
 			}
 		}
 		e.emit(");\n")
@@ -20326,7 +20348,7 @@ func (e *emitter) isBoolPrint(idx int, arg Node) bool {
 // ternary, so println(b) prints the word rather than 1 or 0.
 func (e *emitter) emitBoolWord(idx int, arg Node) {
 	e.emit("(")
-	e.emitPrintArg(idx, arg)
+	e.emitReplayArg(idx, arg)
 	e.emit(") ? \"true\" : \"false\"")
 }
 
