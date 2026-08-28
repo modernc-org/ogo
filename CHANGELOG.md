@@ -16,6 +16,26 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **`for v := range ch` receives until the channel is closed.** It is the loop that
+  pairs with the `close` v0.33.0 shipped, and it was refused -- "cannot range over a
+  channel" -- for a reason the comment beside it stated and which no longer held: a
+  channel had no close. The single variable holds the ELEMENT, since a channel has
+  no index to put in a first one, so a second is refused as it is for a range over an
+  integer.
+
+  An assigning clause, `for last = range ch`, writes its variable only on a receive
+  that SUCCEEDED. The comma-ok receive yields the element's zero once the channel is
+  closed -- which is right for `v, ok := <-ch`, where Go yields it too, and wrong for
+  a loop, which would have left `last` holding 0 rather than the last value it saw.
+  Verified on the board against the same program in Go, across all seven shapes: a
+  scalar element, a struct element, `break` and `continue` inside the body, an
+  element of a bank of channels, the assigning form, and `for range ch` with no
+  variable at all.
+
 ## v0.33.0
 
 ### Behaviour changes

@@ -2447,21 +2447,30 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 // channel and a value variable over an integer.
 func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	f.checkNames(s, fi.rangeExpr)
-	elem, hasElem, isInt := f.rangeElem(s, fi.rangeExpr)
+	elem, hasElem, isInt, isChan := f.rangeElem(s, fi.rangeExpr)
 	declared := false
-	if fi.hasKey && fi.rangeDefine {
+	switch {
+	case fi.hasKey && fi.rangeDefine && isChan:
+		// A channel yields its ELEMENT, and only that: what a slice puts in the first
+		// variable is an index, and a channel has none. So the one variable a range
+		// over a channel may declare takes the element's type, not int.
+		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem)
+	case fi.hasKey && fi.rangeDefine:
 		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true)
-	} else if fi.hasKey {
+	case fi.hasKey:
 		f.checkRangeTarget(s, fi.keyVar)
 	}
 	if fi.hasVal {
 		if isInt {
 			f.err(f.tok(fi.valVar.Pos()).Position(), "range over integer permits only one iteration variable")
 		}
+		if isChan {
+			f.err(f.tok(fi.valVar.Pos()).Position(), "range over a channel permits only one iteration variable")
+		}
 		// Declare the value variable even in the rejected integer case, so a use of
 		// it in the body does not pile a second "undefined" error on the first.
 		if fi.rangeDefine {
-			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt) || declared
+			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt && !isChan) || declared
 		} else {
 			f.checkRangeTarget(s, fi.valVar)
 		}
@@ -2485,34 +2494,46 @@ func (f *File) checkRangeTarget(s *Scope, v Node) {
 }
 
 // rangeElem classifies a range operand: an aggregate (slice or array) yields its
-// element kind, an integer yields isInt. A channel is rejected.
-func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt bool) {
+// element kind, an integer yields isInt, and a CHANNEL yields its element kind with
+// isChan -- ranging one receives until it is closed, which is what close was built
+// for (see checkRange for why the element lands in the first variable).
+func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan bool) {
 	if id, ok := f.exprSoleIdent(expr); ok {
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
 			switch {
 			case d.isChan:
-				f.err(id.Position(), "cannot range over a channel")
-				return 0, false, false
+				return d.chanElemKind, d.hasChanElemKind, false, true
 			case d.isPtr && !f.mayPointToArray(s, d):
 				// A pointer to an ARRAY is rangeable in Go, over the array it points
 				// at; no other pointer is. What the type model cannot resolve is
 				// left to the emitter, exactly as an index on one is -- see
 				// indexingPointer.
 				f.err(id.Position(), "cannot range over a pointer")
-				return 0, false, false
+				return 0, false, false, false
 			case d.isPtr:
-				return 0, false, false // the pointee's element is the emitter's to infer
+				return 0, false, false, false // the pointee's element is the emitter's to infer
 			case d.hasElemKind:
-				return d.elemKind, true, false // slice or array
+				return d.elemKind, true, false, false // slice or array
+			}
+		}
+	}
+	// `range work[i]` over a bank of channels: the element of the ARRAY is the
+	// channel, and the channel's element is what the loop yields. Without this the
+	// loop variable took the default int and `total += v` was "cannot use v of type
+	// int as type int32" of the element's own type.
+	if head, ok := f.exprIndexedIdent(expr); ok {
+		if d, isVar := s.find(head.Src()).(*VarDeclaration); isVar {
+			if ek, hasEk, isCh, _ := f.chanElemOfElement(s, d); isCh {
+				return ek, hasEk, false, true
 			}
 		}
 	}
 	if k, ok := f.exprType(s, expr); ok && kindCategory(k) == catNumeric {
-		return 0, false, true
+		return 0, false, true, false
 	}
 	// An operand whose kind cannot be pinned down (a make() slice, a complex
 	// expression) is left to the emitter, which infers its C type directly.
-	return 0, false, false
+	return 0, false, false, false
 }
 
 // declareRangeVar introduces a range key or value variable. A `:=` range declares

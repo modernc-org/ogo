@@ -16243,6 +16243,81 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			return
 		}
 		e.emitRangeArray(h, body, key, a, text)
+	case e.isChanCType(ct):
+		// Ranging a channel receives until it is CLOSED, which is the whole of what
+		// close was built for: the loop ends when the producer says it has finished
+		// rather than on a sentinel both sides had to agree on. Asked before the
+		// slice case, which reads the operand's C type and would not recognise one.
+		//
+		// The single variable holds the ELEMENT -- a channel has no index to put in a
+		// first one -- and the checker refuses a second.
+		elem := e.chanElemOfCType(ct)
+		e.chanRecv2Elems[elem] = true
+		src := e.newTmp()
+		e.ind()
+		e.emit(ct + " " + src + " = " + e.exprC(h.rangeExpr) + ";\n")
+		val := ""
+		if h.keyVar != nil {
+			if v := e.exprC(h.keyVar); v != "_" {
+				val = v
+			}
+		}
+		// `for range ch` and `for _ := range ch` receive and discard, which still has
+		// to happen: the receive is the loop's own step, and dropping it would spin.
+		slot, declare := val, h.rangeDef
+		if slot == "" {
+			slot, declare = e.newTmp(), true
+		}
+		if declare {
+			e.locals[slot] = elem
+		}
+		// An ASSIGNING clause, `for last = range ch`, writes the program's OWN
+		// variable, and Go writes it only on a receive that succeeded. The helper
+		// zeroes what it writes through when the channel has closed -- which is right
+		// for `v, ok := <-ch`, where Go yields the zero too, and wrong here: the loop
+		// left `last` holding 0 rather than the last value it saw. So the assigning
+		// form receives into a temporary and copies after the test.
+		into := slot
+		if !declare {
+			into = e.newTmp()
+		}
+		a, elemIsArray := e.namedArrays[elem]
+		decl := func(name string) {
+			e.ind()
+			if elemIsArray {
+				e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+				return
+			}
+			e.emit(elem + " " + name + ";\n")
+		}
+		e.ind()
+		e.emit("while (1) {\n")
+		e.emitLoopBody(body, func() {
+			// Declared INSIDE the loop, which is both C's scope rule and Go's: two
+			// sibling `for v := range` loops in one function each own their v, and
+			// declaring it outside made the second a redefinition the target's C
+			// compiler warns about and then ignores.
+			decl(into)
+			e.ind()
+			e.emit("if (!ogo_chan_recv2_" + sanitizeElem(elem) + "(" + src + ", " +
+				e.recvOutArg(elem, into) + ")) {\n")
+			e.indent++
+			e.ind()
+			e.emit("break;\n")
+			e.indent--
+			e.ind()
+			e.emit("}\n")
+			if declare {
+				return
+			}
+			e.ind()
+			if elemIsArray {
+				e.includes["string.h"] = true
+				e.emit("memcpy(" + slot + ", " + into + ", sizeof " + into + ");\n")
+				return
+			}
+			e.emit(slot + " = " + into + ";\n")
+		})
 	case e.isSliceCType(ct):
 		// Hoist the slice header so .len and .ptr come from one evaluation.
 		hdr := e.newTmp()

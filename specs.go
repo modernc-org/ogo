@@ -981,6 +981,19 @@
 // A receive-only channel type cannot be spelled here, so "close" is not restricted
 // by direction the way Go restricts it.
 //
+// A "for range" over a channel receives until it is closed, which is the loop that
+// pairs with it:
+//
+//	for v := range ch {
+//		// v is the element; the loop ends when the producer closes ch
+//	}
+//
+// The single variable holds the ELEMENT -- a channel has no index to put in a first
+// one -- so a second is refused, as it is for a range over an integer. An assigning
+// clause, "for last = range ch", writes its variable only on a receive that
+// succeeded, so after the loop it holds the last value rather than the zero the
+// closed channel yields.
+//
 // # Blocks
 //
 // A block is a possibly empty sequence of declarations and statements within

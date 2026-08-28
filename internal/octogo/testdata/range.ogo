@@ -34,11 +34,23 @@ func int_two_vars() {
 	}
 }
 
-// A channel has no close, so it cannot be ranged.
+// Ranging a channel receives until it is CLOSED, which is what close is for. The
+// single variable holds the ELEMENT -- a channel has no index to put in a first one
+// -- so a second is refused, as it is for a range over an integer.
 func over_channel() {
 	var ch chan int
-	// ERROR "cannot range over a channel"
 	for v := range ch {
 		println(v)
+	}
+	for range ch {
+		println("one")
+	}
+	var last int
+	for last = range ch {
+	}
+	println(last)
+	// ERROR "range over a channel permits only one iteration variable"
+	for k, v := range ch {
+		println(k, v)
 	}
 }

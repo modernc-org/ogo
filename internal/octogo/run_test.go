@@ -14002,6 +14002,108 @@ func main() {
 		want: "0 0 0 3\n0 0\n",
 	},
 	{
+		name: "range over a channel",
+		src: `type samp struct {
+	n  int32
+	id int32
+}
+
+var a chan int32
+var b chan samp
+var c chan int32
+var work [2]chan int32
+var rest chan int32
+var quiet chan int32
+
+func feedA() {
+	for i := int32(1); i <= 4; i++ {
+		a <- i * i
+	}
+	close(a)
+}
+
+func feedB() {
+	b <- samp{n: 3, id: 1}
+	b <- samp{n: 5, id: 2}
+	close(b)
+}
+
+func feedC() {
+	for i := int32(0); i < 5; i++ {
+		c <- i
+	}
+	close(c)
+}
+
+func feedWork() {
+	work[1] <- 7
+	work[1] <- 8
+	close(work[1])
+}
+
+func feedRest() {
+	rest <- 10
+	rest <- 20
+	close(rest)
+}
+
+func feedQuiet() {
+	quiet <- 1
+	quiet <- 2
+	quiet <- 3
+	close(quiet)
+}
+
+func main() {
+	go feedA()
+	sum := int32(0)
+	for v := range a {
+		sum += v
+	}
+	println("a", sum)
+	go feedB()
+	for s := range b {
+		println("b", s.n, s.id)
+	}
+	// break and continue inside the loop
+	go feedC()
+	seen := int32(0)
+	for v := range c {
+		if v == 0 {
+			continue
+		}
+		if v == 4 {
+			break
+		}
+		seen += v
+	}
+	println("c", seen)
+	// an element of a bank of channels
+	go feedWork()
+	total := int32(0)
+	for v := range work[1] {
+		total += v
+	}
+	println("work", total)
+	// The ASSIGNING clause writes the program's own variable, and Go writes it only
+	// on a receive that succeeded -- so it holds the LAST value, not the zero the
+	// closed channel yields after it.
+	var last int32
+	go feedRest()
+	for last = range rest {
+	}
+	println("last", last)
+	go feedQuiet()
+	n := 0
+	for range quiet {
+		n++
+	}
+	println("quiet", n)
+}
+`,
+		want: "a 30\nb 3 1\nb 5 2\nc 6\nwork 15\nlast 20\nquiet 3\n",
+	},
+	{
 		name: "close and the comma-ok receive",
 		src: `type samp struct {
 	n  int32
