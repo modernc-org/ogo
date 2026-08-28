@@ -14002,6 +14002,57 @@ func main() {
 		want: "0 0 0 3\n0 0\n",
 	},
 	{
+		name: "close and the comma-ok receive",
+		src: `type samp struct {
+	n  int32
+	ok bool
+}
+
+var ch chan int32
+var st chan samp
+var q chan int32
+
+func feed() {
+	for i := int32(1); i <= 3; i++ {
+		ch <- i
+	}
+	close(ch)
+}
+
+func feedStruct() {
+	st <- samp{n: 7, ok: true}
+	close(st)
+}
+
+func main() {
+	go feed()
+	for {
+		v, more := <-ch
+		if !more {
+			println("drained")
+			break
+		}
+		println("got", v)
+	}
+	// A closed channel yields the element's zero at once and for ever, so a
+	// blocking receive past the end reads it rather than waiting.
+	println(<-ch, <-ch)
+	go feedStruct()
+	s, more := <-st
+	println(s.n, s.ok, more)
+	z, more2 := <-st
+	println(z.n, z.ok, more2)
+	// The assignment form, and a channel closed before anything was sent.
+	var v int32
+	var ok bool
+	close(q)
+	v, ok = <-q
+	println(v, ok)
+}
+`,
+		want: "got 1\ngot 2\ngot 3\ndrained\n0 0\n7 true true\n0 false false\n0 false\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

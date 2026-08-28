@@ -2022,7 +2022,6 @@ func TestEmitCUnsupportedBuiltins(t *testing.T) {
 	refused := map[string]string{
 		"delete":  "func main() {\n\tvar m int\n\tdelete(m, 1)\n}\n",
 		"recover": "func main() {\n\trecover()\n}\n",
-		"close":   "func f(ch chan int) {\n\tclose(ch)\n}\n\nfunc main() {\n\tvar ch chan int\n\tf(ch)\n}\n",
 	}
 	for name, src := range refused {
 		t.Run(name, func(t *testing.T) {
@@ -4734,7 +4733,7 @@ func TestEmitCChannel(t *testing.T) {
 		// element points at rather than to the field, so `chan *P` got a field the
 		// compiler was free to cache -- the one word two cogs poll. See
 		// chanTypedefDefDim.
-		"typedef struct { int lock; volatile int full; volatile int taken; int volatile val; } ogo_chan_int_cell;\n",
+		"typedef struct { int lock; volatile int full; volatile int taken; volatile int closed; int volatile val; } ogo_chan_int_cell;\n",
 		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
 		// A locally declared channel's cell is a file-scope static, one per
 		// declaration site, and its lock is taken once at package init -- not a

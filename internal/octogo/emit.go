@@ -2617,7 +2617,11 @@ func chanTypedefDefDim(elem string, a arrDim, isArr bool) string {
 	if isArr {
 		member = a.elem + " volatile val" + a.declSuffix()
 	}
-	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; %[1]s; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
+	// `closed` is a word every channel carries whether the program closes one or
+	// not: a receive has to ask, and making the CELL depend on what some other part
+	// of the program does would put two shapes of the same type in one translation
+	// unit. It is one long per channel, and the hardware bounds channels to 16.
+	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; volatile int closed; %[1]s; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
 		member, chanCellCName(elem), chanCName(elem))
 }
 
@@ -2632,6 +2636,7 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	}
 	ch->full = 0;
 	ch->taken = 0;
+	ch->closed = 0;
 }
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 	}
@@ -2660,6 +2665,12 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	// initializer only quiets flexcc, whose flow analysis cannot prove the first
 	// loop exits solely through the break that follows the assignment.
 	while (1) { // wait for the cell to be free, then deposit
+		if (ch->closed) {
+			// Go panics here rather than dropping the value, and so does this: a
+			// send after the close is the producer and the closer disagreeing about
+			// who was finished, which no value can be delivered through.
+			ogo_panic("send on closed channel");
+		}
 		if (!ch->full && _locktry(ch->lock)) {
 			if (!ch->full) {
 				mine = ch->taken;
@@ -2755,6 +2766,51 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 }
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), tryOut, tryStore)
 	}
+	if e.chanCloseElems[elem] {
+		// Closing is one flag under the lock. Closing twice is a program error in Go
+		// and is one here: the second close would tell every receiver the channel had
+		// ended twice over, which is not a state anything can act on.
+		fmt.Fprintf(&b, `static void ogo_chan_close_%[7]s(%[1]s ch) {
+	while (1) {
+		if (_locktry(ch->lock)) {
+			if (ch->closed) {
+				_lockrel(ch->lock);
+				ogo_panic("close of closed channel");
+			}
+			ch->closed = 1;
+			_lockrel(ch->lock);
+			return;
+		}
+		_waitx(1);
+	}
+}
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
+	}
+	if e.chanRecv2Elems[elem] {
+		// The comma-ok receive: 1 and the value, or 0 and the element's zero. A value
+		// already in the cell is taken even after the close, so nothing sent before it
+		// is lost -- which is Go's rule and the only one a producer can rely on.
+		fmt.Fprintf(&b, `static int ogo_chan_recv2_%[7]s(%[1]s ch, %[8]s) {
+	while (1) {
+		if (ch->full && _locktry(ch->lock)) {
+			if (ch->full) {
+				%[9]s
+				ch->full = 0;
+				ch->taken++;
+				_lockrel(ch->lock);
+				return 1;
+			}
+			_lockrel(ch->lock);
+		}
+		if (ch->closed && !ch->full) {
+			%[10]s
+			return 0;
+		}
+		_waitx(1);
+	}
+}
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), tryOut, tryStore, e.chanZeroOut(elem))
+	}
 	if e.chanRecvElems[elem] {
 		fmt.Fprintf(&b, `static %[8]s %[4]s(%[1]s ch%[9]s) {
 	while (1) {
@@ -2768,12 +2824,69 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 			}
 			_lockrel(ch->lock);
 		}
+		if (ch->closed && !ch->full) {
+			// A closed channel yields the element's zero value at once and for
+			// ever, as in Go. Without this a receive after the last value simply
+			// waited, and a program whose producer had finished hung with no way
+			// to say what it was waiting for.
+			%[12]s
+		}
 		_waitx(1);
 	}
 }
-`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), recvRet, recvSig, recvTake, recvOut)
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), recvRet, recvSig, recvTake, recvOut, e.chanRecvClosed(elem, recvRet))
 	}
 	return b.String()
+}
+
+// chanZeroOut writes the element's zero through the out parameter of a comma-ok
+// receive, which is what a receive from a closed channel yields.
+func (e *emitter) chanZeroOut(elem string) string {
+	if _, isArr := e.namedArrays[elem]; isArr {
+		e.includes["string.h"] = true
+		return "memset(out, 0, sizeof ch->val);"
+	}
+	// Through a DECLARATION, not `*out = {0}`: a braced initializer is only valid
+	// where something is being declared, which `return {0}` and an assignment are
+	// not. flexcc said "syntax error, unexpected {" about C the program never wrote.
+	return elem + " z = " + e.zeroInitC(elem) + ";\n\t\t\t*out = z;"
+}
+
+// chanRecvClosed is what the BLOCKING receive does once the channel is closed and
+// empty: it yields the element's zero, by return for an ordinary element and through
+// the out parameter for an array one.
+func (e *emitter) chanRecvClosed(elem, recvRet string) string {
+	if _, isArr := e.namedArrays[elem]; isArr {
+		e.includes["string.h"] = true
+		return "memset(out, 0, sizeof ch->val);\n\t\t\treturn;"
+	}
+	return recvRet + " z = " + e.zeroInitC(recvRet) + ";\n\t\t\treturn z;"
+}
+
+// recvChanOf recognises an expression that is exactly a receive, `<-ch`, and answers
+// with the element's C type and the channel's C text. It is arrayRecvInit's question
+// without the array part, for the positions that want the receive whatever the
+// element is.
+func (e *emitter) recvChanOf(ast []int32) (elem, chText string, ok bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && nodes[0].sym != 0 && nodes[0].sym != UnaryExpr {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", "", false
+	}
+	n := nodes[0]
+	return e.recvOperand(n, slices.Collect(it(n.ast)))
+}
+
+// recvOutArg is what the comma-ok receive writes through: the address of an ordinary
+// value, and an ARRAY as it stands, which decays to the pointer the helper memcpys
+// into.
+func (e *emitter) recvOutArg(elem, val string) string {
+	if _, isArr := e.namedArrays[elem]; isArr {
+		return val
+	}
+	return "&" + val
 }
 
 // arrayRecvInit recognises `<-ch` for a channel whose element is an ARRAY, and
@@ -3482,7 +3595,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4152,6 +4265,8 @@ type emitter struct {
 	chanSendElems      map[string]bool           // element types whose channel send helper is reached
 	chanRecvElems      map[string]bool           // element types whose blocking receive helper is reached
 	chanTryRecvElems   map[string]bool           // element types whose select tryrecv helper is reached
+	chanCloseElems     map[string]bool           // element types whose close helper the program reaches
+	chanRecv2Elems     map[string]bool           // element types whose comma-ok receive helper the program reaches
 	chanTrySendElems   map[string]bool           // element types whose select send helpers (offer/offered/withdraw) are reached
 	chanElemByName     map[string]string         // ogo_chan_<T> C type name -> its element C type
 	funcValueTypes     map[string]funcValueType  // top-level function C name -> its type as C text, for the name used as a value
@@ -18257,6 +18372,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitCopy(suffix[0].ast)
 			return true
 		}
+		if _, isUser := e.userFunc(recv); !isUser && recv == "close" {
+			e.emitClose(suffix[0].ast)
+			return true
+		}
 		if _, isUser := e.userFunc(recv); !isUser && recv == "clear" {
 			e.emitClear(suffix[0].ast)
 			return true
@@ -19561,6 +19680,31 @@ func (e *emitter) emitClear(callSuffix []int32) {
 	e.clearElems[elem] = true
 	e.includes["string.h"] = true
 	e.emit(clearCName(elem) + "(")
+	e.emitReplayArg(0, args[0])
+	e.emit(")")
+}
+
+// emitClose emits the `close(ch)` builtin: one flag under the channel's lock, after
+// which every receive yields the element's zero at once instead of waiting.
+//
+// It is what lets a producer say it is finished. Without it the only way to end a
+// stream was a sentinel value the consumer had to agree on, and a consumer that
+// waited for one more value than the producer sent simply hung -- with nothing in
+// the program saying what it was waiting for.
+func (e *emitter) emitClose(callSuffix []int32) {
+	args := e.callArgExprs(callSuffix)
+	if len(args) != 1 {
+		e.fail("close takes exactly one argument -- close(ch)")
+		return
+	}
+	ct, ok := e.replayOrInferCType(0, args[0])
+	if !ok || !e.isChanCType(ct) {
+		e.fail("invalid operation: close's argument must be a channel")
+		return
+	}
+	elem := e.chanElemOfCType(ct)
+	e.chanCloseElems[elem] = true
+	e.emit("ogo_chan_close_" + sanitizeElem(elem) + "(")
 	e.emitReplayArg(0, args[0])
 	e.emit(")")
 }
@@ -22537,6 +22681,30 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.ind()
 		e.emit("int " + okTmp + " = " + e.assertOKC(operand, iface, target) + ";\n")
 		e.emitStore(targets[0], declare[0], target+"*", okTmp+" ? "+e.assertValueC(operand, target)+" : 0")
+		e.emitStore(targets[1], declare[1], cBool, okTmp)
+		return
+	}
+	// "v, ok := <-ch": the comma-ok receive, whose second value is false once the
+	// channel is closed and drained. It is not a call, so the two paths below cannot
+	// see it, and it used to be "multiple assignment requires a single function call
+	// on the right-hand side" -- a true statement about a shape Go does not require
+	// a call for.
+	if elem, chText, okRecv := e.recvChanOf(rhs); okRecv {
+		if len(targets) != 2 {
+			e.fail("a receive yields one value, or two in the comma-ok form")
+			return
+		}
+		e.chanRecv2Elems[elem] = true
+		val, okTmp := e.newTmp(), e.newTmp()
+		e.ind()
+		if a, isArr := e.namedArrays[elem]; isArr {
+			e.emit(a.elem + " " + val + a.declSuffix() + ";\n")
+		} else {
+			e.emit(elem + " " + val + ";\n")
+		}
+		e.ind()
+		e.emit("int " + okTmp + " = ogo_chan_recv2_" + sanitizeElem(elem) + "(" + chText + ", " + e.recvOutArg(elem, val) + ");\n")
+		e.emitStore(targets[0], declare[0], elem, val)
 		e.emitStore(targets[1], declare[1], cBool, okTmp)
 		return
 	}

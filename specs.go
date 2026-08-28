@@ -966,6 +966,21 @@
 // receive still happens, so on a rendezvous channel that is how one goroutine
 // waits for another.
 //
+// "close(ch)" says no more values will be sent. Every receive on a closed channel
+// then yields the element's zero value at once instead of waiting, and the comma-ok
+// form reports which of the two it got:
+//
+//	v, more := <-ch
+//	if !more {
+//		// the producer has finished
+//	}
+//
+// A value already in the cell is taken even after the close, so nothing sent before
+// it is lost. Sending on a closed channel and closing a closed channel both panic,
+// as in Go: each is the producer and the closer disagreeing about who was finished.
+// A receive-only channel type cannot be spelled here, so "close" is not restricted
+// by direction the way Go restricts it.
+//
 // # Blocks
 //
 // A block is a possibly empty sequence of declarations and statements within

@@ -82,6 +82,32 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`close(ch)` and the comma-ok receive.** A producer had no way to say it was
+  finished. The only end-of-stream was a sentinel value the consumer had to agree
+  on, and a consumer that waited for one value more than the producer sent simply
+  hung -- with nothing in the program saying what it was waiting for. `close` was
+  "the close builtin is not supported yet" and `v, ok := <-ch` was "multiple
+  assignment requires a single function call on the right-hand side", a true
+  statement about a shape Go does not require a call for.
+
+  ```go
+  for {
+  	v, more := <-ch
+  	if !more {
+  		break
+  	}
+  	// ...
+  }
+  ```
+
+  The cell carries a closed flag, set once under its lock. Every receive then yields
+  the element's zero value at once instead of waiting, and a value already in the
+  cell is taken even after the close, so nothing sent before it is lost. Sending on
+  a closed channel and closing a closed channel both panic, as in Go. Verified on
+  the board against the same programs in Go, for a scalar element, a struct element,
+  the declaration and the assignment forms, and a channel closed before anything was
+  sent.
+
 - **A struct may hold an array of channels.** `type bank struct { q [4]chan req
   ... }` was "a channel field that is an array is not supported yet", which is how a
   bank of channels is packaged once it has a name or an output channel to carry
