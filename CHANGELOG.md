@@ -20,6 +20,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A written-out dereference applies to the whole target, not to its head.**
+  `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
+  Go's alike, and every assignment target that reached its pointer through a chain
+  read the `*` as the HEAD's instead. A field target emitted `(*h) = v`, which is not
+  C at all and the C compiler said so about C the program never wrote; an INDEXED one
+  dropped the star and emitted `a[i] = v`, valid C that stores into the pointer
+  rather than through it. The compound forms went the same way, `*h.p += 1` and
+  `*h.p++` included. `**h.pp = v` was the shape that worked, and only by accident:
+  the line that replaced the target with the head is the single-star nil check.
+
+  All of them work now -- a field, an element, two selectors deep, an element of a
+  slice field, a struct pointee -- and take the nil check the plain `*p = v` takes. A
+  pointer to an ARRAY reached through a chain is refused instead, at the dereference
+  and saying so, which is what its read side (`(*h.pa)[1]`) already did.
+
+  The value is checked against the POINTEE's type now as well: `*h.p = true` for a
+  `p *int` is `cannot use true of type bool as type int in assignment`, where before
+  the mismatch was left to the C compiler. Only the field form asks -- an element's
+  (`*a[i] = v`) is still unchecked.
+
 - **A `select` knows a channel is closed.** A closed channel is always ready, and
   the poll's non-blocking receive did not say so: a `select` with no default polled
   it for ever, and one WITH a default took the default -- a silent wrong answer,

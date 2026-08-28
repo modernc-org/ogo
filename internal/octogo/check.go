@@ -4448,7 +4448,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			if base, ok := f.derefAssignTarget(head, postfix); ok {
 				f.checkDerefAssign(s, base, rhs[0])
 			} else if base, field, ok := f.derefFieldAssignTarget(head, postfix); ok {
-				f.checkDerefFieldAssign(s, base, field)
+				f.checkDerefFieldAssign(s, base, field, rhs[0])
 			} else if base, ok := f.indexAssignTarget(head, postfix); ok {
 				f.checkIndexAssign(s, base, rhs[0])
 			}
@@ -8402,12 +8402,23 @@ func (f *File) derefFieldAssignTarget(head, postfix Node) (base, field Token, ok
 // Without it the star reached the emitter, which wrote it in front of the field and
 // left "invalid type argument of unary *" to the C compiler: a diagnostic about the
 // emitted C, in a program Go rejects outright.
-func (f *File) checkDerefFieldAssign(s *Scope, base, field Token) {
+func (f *File) checkDerefFieldAssign(s *Scope, base, field Token, rhsNode Node) {
 	tn := f.fieldTypeNode(s, base, field)
-	if tn == nil || f.isPointerType(s, tn) {
+	if tn == nil {
 		return
 	}
-	f.err(base.Position(), "invalid operation: cannot indirect %s.%s", base.Src(), field.Src())
+	if !f.isPointerType(s, tn) {
+		f.err(base.Position(), "invalid operation: cannot indirect %s.%s", base.Src(), field.Src())
+		return
+	}
+	// What is written through is the POINTEE, so the value is checked against its
+	// type -- the same check `*p = v` takes through checkDerefAssign, which reads
+	// the pointee's Kind off the variable's declaration where this reads it off the
+	// field's written type. Nothing asked it before, so `*h.p = "s"` for a `p *int`
+	// was reported by the C compiler and not here.
+	if k, ok := f.elemTypeKind(s, tn); ok {
+		f.checkElemAssignType(s, k, rhsNode)
+	}
 }
 
 // indexAssignTarget reports the base identifier of an element assignment target

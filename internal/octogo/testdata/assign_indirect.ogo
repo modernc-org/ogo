@@ -38,3 +38,26 @@ func arrays() {
 	n[0] = 1
 	_ = n
 }
+
+// A dereference reaching its pointer through a FIELD is the field's, not the head's,
+// the "*" binding looser than the selector. What is written through is the pointee,
+// so the value is checked against its type -- which nothing asked before, so
+// `*h.p = "s"` was reported by the C compiler and not here.
+type holder struct {
+	p *int
+	v int
+}
+
+func fields() {
+	var val int
+	var h holder
+	h.p = &val
+
+	*h.p = 5
+
+	// ERROR "cannot use true of type bool as type int in assignment"
+	*h.p = true
+
+	// ERROR "invalid operation: cannot indirect h.v"
+	*h.v = 1
+}

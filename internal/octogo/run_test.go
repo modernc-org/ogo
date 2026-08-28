@@ -14196,6 +14196,92 @@ func main() {
 		want: "default\nrecv 7\nrecv 0\nrecv 0\nagain 0\n",
 	},
 	{
+		// A written-out dereference applies to the WHOLE target, not to its head:
+		// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence
+		// and Go's alike. Every target that reached its pointer through a chain used
+		// to read the star as the head's -- the field path wrote `(*h) = v`, which is
+		// not C at all, and the index path dropped the star for `a[i] = v`, valid C
+		// that stores into the POINTER. The double dereference was the one that
+		// worked, and only because the single-star nil check is what replaced the
+		// target with the head.
+		name: "an assignment through a pointer reached by a chain",
+		src: `type inner struct {
+	p *int
+}
+
+type outer struct {
+	in inner
+}
+
+type pt struct {
+	x int
+	y int
+}
+
+type holder struct {
+	p  *int
+	pp **int
+	ps []*int
+	sp *pt
+}
+
+var n int
+var m int
+var q pt
+var gp *int
+var a [2]*int
+var back [2]*int
+var h holder
+var o outer
+
+func main() {
+	h.p = &n
+	*h.p = 5
+	println("field", n, *h.p)
+	a[0] = &m
+	*a[0] = 7
+	println("elem", m, *a[0])
+	o.in.p = &n
+	*o.in.p = 11
+	println("deep", n)
+	*h.p += 4
+	*h.p++
+	println("compound", n)
+	gp = &n
+	h.pp = &gp
+	**h.pp = 21
+	println("double", n)
+	h.sp = &q
+	*h.sp = pt{3, 4}
+	println("struct", q.x, q.y)
+	h.ps = back[:]
+	h.ps[1] = &m
+	*h.ps[1] = 9
+	println("slice", m)
+}
+`,
+		want: "field 5 5\nelem 7 7\ndeep 11\ncompound 16\ndouble 21\nstruct 3 4\nslice 9\n",
+	},
+	{
+		// The nil check reaches the chain's dereference as it reaches a variable's:
+		// address zero on this target is the boot area, and a store there is the one
+		// dereference that would say nothing.
+		name: "a store through a nil pointer field panics",
+		src: `type holder struct {
+	p *int
+}
+
+var h holder
+
+func main() {
+	*h.p = 5
+	println(1)
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A send CLAUSE on a closed channel panics, as the blocking send does and as
 		// Go does from inside a select -- and Go panics whether or not another clause
 		// is ready, so the offer asks on the way in. It used to offer a value nothing

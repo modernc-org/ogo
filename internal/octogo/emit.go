@@ -21150,6 +21150,71 @@ func (e *emitter) sendChanExpr(head Node, steps []Node) (elem, text string, ok b
 	return e.chanElemOfCType(ct), e.captureC(func() { e.emitCallExpr(recv, steps) }), true
 }
 
+// emitChainDerefAssign emits an assignment whose target is a written-out
+// dereference of something reached through a CHAIN: `*h.p = v`, `*a[i] = v`,
+// `*o.in.p += 1`. The "*" binds looser than a selector or an index, here as in Go, so
+// it applies to what the chain reaches and not to its head -- which is the whole of
+// what went wrong before: the field path replaced the target with the HEAD's own
+// guarded name and wrote `(*h) = v`, C the program never asked for, while the index
+// path dropped the star outright and wrote `a[i] = v`, valid C that stores into the
+// POINTER.
+//
+// It is the counterpart of emitDerefAssign, which takes the dereference at the
+// target's BASE, `(*p).x = v`. The two are told apart by where the parentheses are,
+// and the grammar keeps them apart: AssignHead is `{ "*" } ( identifier | "("
+// Expression ")" )`.
+func (e *emitter) emitChainDerefAssign(head Node, base, stars string, postfix []Node) {
+	steps := postfix[:len(postfix)-1]
+	fail := func(why string) {
+		e.failAtPos(head.Pos(), "cannot assign through this dereference: %s", why)
+	}
+	if !isAccessChain(steps) {
+		fail("only a run of fields and indexes may stand between them")
+		return
+	}
+	text, ct, _, ok := e.chainCText(base, steps)
+	if !ok {
+		fail("the target this reaches cannot be named")
+		return
+	}
+	// One pointer level per star. A target the chain reaches that is not a pointer
+	// as deep as the stars go is refused rather than dereferenced anyway.
+	pointee := ct
+	for range len(stars) {
+		if !e.isPointer(pointee) {
+			fail("what it reaches is not a pointer that deep")
+			return
+		}
+		pointee = e.elemType(pointee)
+	}
+	if _, isArr := e.namedArrays[pointee]; isArr {
+		// C has no array assignment, so this would be a memcpy of the pointee's own
+		// size -- which the plain-variable target does and the READ side of the same
+		// shape does not do at all (`(*h.pa)[1]` is refused). Said here rather than
+		// emitted as a store the target's C compiler takes and drops.
+		fail("the pointee is an array, which is not supported through a chain yet")
+		return
+	}
+	t, okTail := e.assignTailOf(postfix[len(postfix)-1])
+	if !okTail {
+		fail("this assignment form is not supported here")
+		return
+	}
+	t.targetCType = pointee
+	// The nil check guards the outermost dereference, the one whose pointer this
+	// expression names, and only when there is exactly one -- a deeper `**pp` guards
+	// nothing yet, as it does not for a plain variable either.
+	guarded := text
+	if stars == "*" {
+		guarded = e.nilCheckedC(text, ct)
+	}
+	// Parenthesised because C's "++" binds tighter than its unary "*": `*p++` there
+	// is `*(p++)`, which increments the pointer and throws the load away, where Go's
+	// is `(*p)++`.
+	target := "(" + stars + guarded + ")"
+	e.emitAssignTailOrCopy(func() { e.emit(target) }, t)
+}
+
 // emitAssignment handles a single-target assignment `lhs = expr`, a field
 // assignment `base.f = expr`, a short declaration `lhs := expr`, and increment /
 // decrement. The PostfixOp is the postfix's last element; any Selectors before it
@@ -21218,6 +21283,16 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	e.checkStoreBacking(base, op)
 	e.checkBlockOutlives(base, op)
 	e.noteFrameHolder(base, op)
+	// A written-out dereference applies to the WHOLE target and not to its head:
+	// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
+	// Go's alike. Claimed here, ahead of every shape below, because each of those
+	// reads the star as the head's: the field path wrote `(*h) = v` and the index
+	// path dropped the star for `a[i] = v`, a store into the POINTER that is valid C
+	// and the wrong program.
+	if stars != "" && len(postfix) > 1 {
+		e.emitChainDerefAssign(head, base, stars, postfix)
+		return
+	}
 	// `f = keep` rebinds which function f holds; anything else clears the binding.
 	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
 		if ct, ok := e.varType(base); ok && e.isFuncCType(ct) {
