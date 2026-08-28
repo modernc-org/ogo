@@ -20,6 +20,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An interface compares with a concrete value.** `s == &q` is how a SENTINEL is
+  recognised -- the whole reason an exported error variable exists -- and it did not
+  work: the concrete operand was compared as it stood, an interface's two words
+  against one pointer. The target's C compiler only WARNED about that, so `ogo build`
+  wrote a binary; the host compiler refuses it outright, which is why no test could
+  hold the shape. Go converts the concrete side to the interface and compares the
+  pair, and so does this now -- the table for that (type, interface) pair beside the
+  pointer, the same identity a type assertion tests. Both operand orders, `!=`
+  included, and through a field or an element.
+
+  A concrete operand that does NOT implement the interface is a program Go rejects,
+  and it is refused here now, in the words an assignment of the same value gets:
+  `cannot use &t (variable of type *tri) as Shape value in comparison: tri does not
+  implement Shape (missing method Area)`. A scalar one is `mismatched types Shape
+  and int`. Both used to reach the C backend.
+
 - **A written-out dereference applies to the whole target, not to its head.**
   `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
   Go's alike, and every assignment target that reached its pointer through a chain

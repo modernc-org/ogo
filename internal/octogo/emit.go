@@ -24944,8 +24944,47 @@ func (e *emitter) ifaceCompareAt(kids []Node, i int) (op string, l, r Node, ok b
 		return op, l, r, true
 	case rok && e.isIfaceCType(rct) && e.isNilExpr(l.ast):
 		return op, r, l, true // the interface first, so the nil case reads one way
+	// One side an interface and the other a CONCRETE value, `err == &ErrTimeout`.
+	// Go compares those too -- the non-interface operand is converted to the
+	// interface type and the same two words are compared -- and it is how a sentinel
+	// is recognised, which is the whole of what an exported error variable is for.
+	// The interface is returned first either way, so the emitter needs no second
+	// order to handle.
+	case lok && e.isIfaceCType(lct) && e.ifaceComparableConcrete(lct, r):
+		return op, l, r, true
+	case rok && e.isIfaceCType(rct) && e.ifaceComparableConcrete(rct, l):
+		return op, r, l, true
 	}
 	return "", Node{}, Node{}, false
+}
+
+// ifaceComparableConcrete reports whether n is a concrete value this interface can
+// be compared with: a pointer whose pointee implements it. It also MINTS the table
+// for the pair, which is what the comparison is against -- one table per (concrete,
+// interface) pair is what makes a pointer comparison the whole of the type test, the
+// same identity an assertion uses.
+//
+// A type that does not implement the interface answers false and the comparison
+// falls through to the ordinary path, which is where the mismatch is reported.
+func (e *emitter) ifaceComparableConcrete(iface string, n Node) bool {
+	if e.isNilExpr(n.ast) {
+		return false // nil is the other case above, and needs no table
+	}
+	ct, ok := e.inferCType(n.ast)
+	if !ok || !e.isPointer(ct) {
+		return false
+	}
+	concrete, _, _, isOperand := e.ifaceOperand(n.ast)
+	if !isOperand {
+		return false
+	}
+	// Asked without emitting: needVTable reports a missing method as a failure, and
+	// a concrete type that does not implement this interface is a comparison Go
+	// rejects rather than a compilation this cannot do.
+	if !e.implementsIface(concrete, iface) {
+		return false
+	}
+	return e.needVTable(iface, concrete)
 }
 
 // emitIfaceCompareTriple emits an interface equality. Each operand is rendered
@@ -24958,11 +24997,25 @@ func (e *emitter) emitIfaceCompareTriple(op string, l, r Node) {
 		e.emit("(" + lt + ".vt " + op + " 0)")
 		return
 	}
-	rt := e.captureC(func() { e.emitStructOperand(r) })
 	join, eq := " && ", "=="
 	if op == "!=" {
 		join, eq = " || ", "!="
 	}
+	// A CONCRETE operand is the pair the interface would hold if it held that value:
+	// the table emitted for (this interface, that type), and the pointer itself. So
+	// the comparison is the same two words, written out rather than read out.
+	if rct, ok := e.inferCType(r.ast); ok && !e.isIfaceCType(rct) {
+		concrete, data, _, isOperand := e.ifaceOperand(r.ast)
+		if !isOperand {
+			e.fail("cannot compare an interface with this value")
+			return
+		}
+		lct, _ := e.inferCType(l.ast)
+		e.emit("(" + lt + ".vt " + eq + " &" + ifaceVTVar(lct, concrete) + join +
+			lt + ".data " + eq + " (void*)" + data + ")")
+		return
+	}
+	rt := e.captureC(func() { e.emitStructOperand(r) })
 	e.emit("(" + lt + ".vt " + eq + " " + rt + ".vt" + join + lt + ".data " + eq + " " + rt + ".data)")
 }
 

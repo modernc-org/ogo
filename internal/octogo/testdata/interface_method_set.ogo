@@ -272,3 +272,32 @@ func promotedShort() {
 	var n NeedsTwo = &o
 	_ = n
 }
+
+// A comparison between an interface and a CONCRETE value asks the same question an
+// assignment asks: Go converts the concrete side to the interface, so a type that
+// does not implement it is a mismatch. Nothing asked before, and the C backend only
+// WARNED about the two words against one -- so a program Go rejects built here.
+func compare() {
+	var s Shape
+	var q sq
+	var t tri
+	var n int
+
+	// nil compares with any interface, and so does another value of the same one.
+	_ = s == nil
+	_ = s != nil
+	_ = s == &q
+
+	// ERROR "tri does not implement Shape \(missing method Area\)"
+	_ = s == &t
+
+	// ERROR "mismatched types Shape and int"
+	_ = s == n
+
+	// ERROR "mismatched types Shape and int"
+	_ = s != 3
+
+	_ = q
+	_ = t
+	_ = n
+}

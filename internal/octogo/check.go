@@ -7063,6 +7063,36 @@ func (f *File) compositeOperandMismatch(s *Scope, a, b Node) (an, bn string, mis
 	return "", "", false
 }
 
+// ifaceComparisonOperands recognises a comparison between an INTERFACE operand and
+// a concrete one, answering with the interface's name and the other operand. It is
+// what lets a sentinel be recognised -- `err == &ErrTimeout` -- and the reason the
+// pair needs asking about at all: Go compares them by converting the concrete side,
+// so a type that does not implement the interface is a program Go rejects.
+//
+// nil is not one of these: it compares with every interface and carries no type.
+// Neither is a second interface, whose comparison is by dynamic type on both sides.
+func (f *File) ifaceComparisonOperands(s *Scope, a, b Node) (iface string, other Node, ok bool) {
+	for _, pair := range [][2]Node{{a, b}, {b, a}} {
+		nm, named := f.typeIdentity(s, pair[0])
+		if !named || nm == "" {
+			continue
+		}
+		if _, isIface := f.interfaceMethodsNamed(s, nm); !isIface {
+			continue
+		}
+		if _, isNil := f.nilOperand(s, pair[1]); isNil {
+			continue
+		}
+		if on, oNamed := f.typeIdentity(s, pair[1]); oNamed && on != "" {
+			if _, otherIface := f.interfaceMethodsNamed(s, on); otherIface {
+				continue
+			}
+		}
+		return nm, pair[1], true
+	}
+	return "", Node{}, false
+}
+
 // operandTypeName names an operand's type for a mismatch report: its defined type
 // where it has one, and otherwise the predeclared type its Kind names.
 func (f *File) operandTypeName(s *Scope, n Node, k Kind) string {
@@ -8030,6 +8060,23 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 	if ln, rn, mismatched := f.compositeOperandMismatch(s, lNode, rNode); mismatched {
 		f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", ln, rn)
 		return
+	}
+	// One operand an INTERFACE and the other a concrete value: Go converts the
+	// concrete side to the interface and compares the pair, so what a comparison
+	// asks is what an assignment asks -- does this type implement it. Nothing asked
+	// before, and the C backend only WARNED about the two words against one, so
+	// `ogo build` wrote a binary for a program Go rejects.
+	if iface, other, isIface := f.ifaceComparisonOperands(s, lNode, rNode); isIface {
+		// A scalar operand is a mismatch whatever the interface is -- an interface
+		// value is two words and a Kind describes one -- and checkImplements has no
+		// declaration to look a constant up in. An ADDRESS is excluded: exprType
+		// answers for what it points AT, so `&count` would be named "int" here.
+		_, _, isAddr := f.addressOperandRoot(s, other)
+		if k, hasKind := f.exprType(s, other); hasKind && !isAddr {
+			f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", iface, kindName(k))
+			return
+		}
+		f.checkImplements(s, iface, other, "comparison")
 	}
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)

@@ -14263,6 +14263,61 @@ func main() {
 		want: "field 5 5\nelem 7 7\ndeep 11\ncompound 16\ndouble 21\nstruct 3 4\nslice 9\n",
 	},
 	{
+		// An interface compares with a CONCRETE value, which is how a sentinel is
+		// recognised -- the pattern an exported error variable exists for. Go
+		// converts the concrete side to the interface and compares the same two
+		// words, so this is the pair comparison written out rather than read out.
+		// Before, the operand was compared as it stood: two words against one, which
+		// the target's C compiler only WARNED about, so `ogo build` wrote a binary
+		// for it.
+		name: "an interface compared with a concrete value",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type Rect struct {
+	w int
+	h int
+}
+
+func (r *Rect) Area() int { return r.w * r.h }
+
+type box struct {
+	s Shape
+}
+
+var a Sq
+var b Sq
+var r Rect
+var pool [2]Shape
+var bx box
+
+func same(x Shape, y Shape) bool { return x == y }
+
+func main() {
+	a.s = 2
+	b.s = 3
+	r.w, r.h = 2, 2
+	var s Shape = &a
+	println(s == &a, &a == s, s != &a, s != &b)
+	// a different concrete type of the same area: the TABLE tells them apart
+	println(s == &r, s != &r)
+	println(s == nil, s != nil, same(s, &a))
+	bx.s = &r
+	pool[0] = &a
+	pool[1] = &r
+	println(bx.s == &r, pool[0] == &a, pool[1] == &a)
+	var z Shape
+	println(z == &a, z != &a)
+}
+`,
+		want: "true true false true\nfalse true\nfalse true true\ntrue true false\nfalse true\n",
+	},
+	{
 		// The nil check reaches the chain's dereference as it reaches a variable's:
 		// address zero on this target is the boot area, and a store there is the one
 		// dereference that would say nothing.
