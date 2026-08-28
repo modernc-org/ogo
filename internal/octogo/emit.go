@@ -2780,6 +2780,13 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 		// select with `case ch <- arr:` did not compile at all, though the blocking
 		// `ch <- arr` always did.
 		fmt.Fprintf(&b, `static int ogo_chan_offer_%[7]s(%[1]s ch, %[8]s, int* mine) {
+	if (ch->closed) {
+		// As the blocking send does, and as Go does from inside a select: a send
+		// clause on a closed channel panics rather than offering a value nothing can
+		// take. Go panics there whether or not another clause is ready, so this is
+		// asked on the way in and not only when the clause would have been chosen.
+		ogo_panic("send on closed channel");
+	}
 	if (!ch->full && _locktry(ch->lock)) {
 		if (!ch->full) {
 			*mine = ch->taken;
@@ -2816,6 +2823,11 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), sendParam, sendStore)
 	}
 	if e.chanTryRecvElems[elem] {
+		// A CLOSED channel is always ready, which is what a select needs to know
+		// about one: the clause takes the element's zero at once rather than waiting
+		// for a sender that has said it will not come. Reporting "nothing yet"
+		// instead made a select with no default poll for ever, and a select WITH one
+		// take the default -- a silent wrong answer, where Go takes the receive.
 		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[8]s) {
 	if (ch->full && _locktry(ch->lock)) {
 		if (ch->full) {
@@ -2827,9 +2839,13 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 		}
 		_lockrel(ch->lock);
 	}
+	if (ch->closed && !ch->full) {
+		%[10]s
+		return 1;
+	}
 	return 0;
 }
-`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), tryOut, tryStore)
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), tryOut, tryStore, e.chanZeroOut(elem))
 	}
 	if e.chanCloseElems[elem] {
 		// Closing is one flag under the lock. Closing twice is a program error in Go

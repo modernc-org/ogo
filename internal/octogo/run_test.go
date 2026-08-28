@@ -14155,6 +14155,69 @@ func main() {
 		want: "got 1\ngot 2\ngot 3\ndrained\n0 0\n7 true true\n0 false false\n0 false\n",
 	},
 	{
+		// A CLOSED channel is always ready, and a select has to know it: the poll's
+		// non-blocking receive reported "nothing yet" for one, so a select with no
+		// default polled for ever and a select WITH one took the default -- a silent
+		// wrong answer, where Go takes the receive and its zero. The receive, the
+		// comma-ok receive and `for range` all knew; the select's own half did not.
+		name: "a select on a closed channel",
+		src: `var c chan int
+var d chan int
+
+func feed() {
+	c <- 7
+	close(c)
+}
+
+func main() {
+	select {
+	case v := <-d:
+		println("d", v)
+	default:
+		println("default")
+	}
+	go feed()
+	for i := 0; i < 3; i++ {
+		select {
+		case v := <-c:
+			println("recv", v)
+		case w := <-d:
+			println("other", w)
+		}
+	}
+	select {
+	case v := <-c:
+		println("again", v)
+	default:
+		println("default")
+	}
+}
+`,
+		want: "default\nrecv 7\nrecv 0\nrecv 0\nagain 0\n",
+	},
+	{
+		// A send CLAUSE on a closed channel panics, as the blocking send does and as
+		// Go does from inside a select -- and Go panics whether or not another clause
+		// is ready, so the offer asks on the way in. It used to offer a value nothing
+		// could take and poll until the other clause fired, or for ever.
+		name: "a select send clause on a closed channel panics",
+		src: `var c chan int
+var d chan int
+
+func main() {
+	close(c)
+	select {
+	case c <- 1:
+		println("sent")
+	case v := <-d:
+		println("got", v)
+	}
+}
+`,
+		want:   "panic: send on closed channel",
+		panics: true,
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

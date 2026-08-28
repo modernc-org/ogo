@@ -2127,6 +2127,11 @@
 // The offer stands between rounds and is taken back whenever another clause is
 // ready to proceed, since proceeding there would otherwise communicate twice.
 //
+// A CLOSED channel is always ready: a receive clause on one proceeds at once with
+// the element's zero value, so it wins over a default rather than leaving it to run.
+// A send clause on one panics, as a plain send does, and it panics on entering the
+// select whether or not another clause is ready.
+//
 // Two limits follow from the rendezvous having no scheduler behind it, and both
 // are refused rather than approximated. A select may carry at most one send
 // clause: two offers cannot stand at once, because a receiver taking each would

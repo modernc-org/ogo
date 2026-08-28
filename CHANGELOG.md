@@ -20,6 +20,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A `select` knows a channel is closed.** A closed channel is always ready, and
+  the poll's non-blocking receive did not say so: a `select` with no default polled
+  it for ever, and one WITH a default took the default -- a silent wrong answer,
+  where Go takes the receive and its zero value. The blocking receive, the comma-ok
+  receive and `for range` all learned this when `close` shipped in v0.33.0; the
+  select's own half was the one that did not, which is why the `done` channel that
+  a select waits on had to be written as a send rather than a close.
+
+  A send CLAUSE on a closed channel panics now, `panic: send on closed channel`, as
+  the blocking send does. Go panics there whether or not another clause is ready, so
+  the offer asks on the way in rather than only when the clause would be chosen;
+  before, it offered a value nothing could take and polled until some other clause
+  fired, or for ever.
+
 - **A channel is an EXPRESSION, and it is evaluated once.** Where a channel is
   written -- a send, a receive, a bare receive statement, a `select` clause -- the
   operand may now be any expression of channel type: a call's result, a method's, a
