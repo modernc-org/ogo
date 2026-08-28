@@ -32,6 +32,12 @@ int16
 int32
 // int8 is the set of all signed 8-bit integers. Range: -128 through 127.
 int8
+// error is the conventional interface for representing an error condition, with
+// the nil value representing no error. It is interface{ Error() string } under a
+// name the universe holds, so a value of it is a pointer beside a table like every
+// other interface value here -- which means a sentinel error is a package-level
+// variable whose address is returned, there being no heap to make one in.
+error
 // nil is an untyped nil constant
 nil
 // rune is an alias for int32 and is equivalent to int32 in all ways. It is
@@ -104,16 +110,29 @@ type PredeclaredFunc struct {
 // Universe binds predefined declarations.
 var Universe = newScope(nil, UniverseScope)
 
-func init() {
+// errorSpecSrc carries the two names the predeclared error interface is written
+// with that are not declarations of their own: the method's, and its result type's.
+// A Token comes from a scanner and not from a literal -- it is an index into a
+// source -- so they are scanned rather than made up.
+const errorSpecSrc = `Error
+string
+`
+
+// errorNames holds the tokens scanned from errorSpecSrc, by name.
+var errorNames = map[string]Token{}
+
+// scanNames returns every identifier in a source, by name. It is how the universe's
+// declarations get tokens: the doc comments beside them are the point, and a token
+// is what carries a position back to one.
+func scanNames(fn, src string) map[string]Token {
 	var p Parser
-	sc := NewRecScanner("builtin.ogo", []byte(preclaredNames), p.scan, int(white_space))
+	sc := NewRecScanner(fn, []byte(src), p.scan, int(white_space))
 	names := map[string]Token{}
-out:
 	for {
 		tok := sc.Scan()
 		switch tok.Ch {
 		case rune(TOK_EOF):
-			break out
+			return names
 		case rune(TOK_003b): // ';'
 			// ok
 		case rune(identifier):
@@ -122,6 +141,11 @@ out:
 			panic(todo("%v: internal error: %v", tok.Position(), tok))
 		}
 	}
+}
+
+func init() {
+	names := scanNames("builtin.ogo", preclaredNames)
+	errorNames = scanNames("builtin.ogo", errorSpecSrc)
 
 	//TODO len(), cap()
 
@@ -163,6 +187,22 @@ out:
 	Universe.Declarations["any"] = &TypeDeclaration{
 		declaration: declaration{token: anyTok},
 		TypeSpec:    &TypeSpecNode{Name: anyTok, TypeNode: &TypeNodeInterface{}},
+	}
+
+	// error is registered the same way, as the one-method interface it is in Go.
+	// Everything the interface machinery does then works for it with no case of its
+	// own: a concrete pointer assigned in, `err != nil`, the call through the table,
+	// a type assertion or switch back out. What it is NOT is a Kind -- an error value
+	// is two words, and a Kind describes a scalar.
+	errTok := names["error"]
+	Universe.Declarations["error"] = &TypeDeclaration{
+		declaration: declaration{token: errTok},
+		TypeSpec: &TypeSpecNode{Name: errTok, TypeNode: &TypeNodeInterface{
+			Methods: []MethodSpecNode{{
+				Name:    errorNames["Error"],
+				Results: &ParameterListNode{List: []ParameterDeclNode{{TypeNode: &TypeNodeIdent{Name: errorNames["string"]}}}},
+			}},
+		}},
 	}
 
 	// int and uint are types of their own, 32 bits wide on the target but distinct

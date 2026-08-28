@@ -1,0 +1,73 @@
+// error is a predeclared type: the interface { Error() string } that Go's universe
+// holds, and not a package's declaration. Everything an interface is checked for is
+// checked for it -- what may be put in, what may be compared with it, what may
+// declare a method on it -- with no rule of its own.
+//
+// With no heap an error value is a pointer to a package-level variable, which is
+// what a package has instead of errors.New; the value form is refused here as it is
+// for every other interface.
+
+type parseErr struct {
+	at int
+}
+
+func (e *parseErr) Error() string { return "bad" }
+
+// blob has no Error method, so it is not an error.
+type blob struct {
+	n int
+}
+
+// valErr declares Error on the VALUE, so the value form is what Go's method set
+// carries -- and this target still wants the address.
+type valErr struct{}
+
+func (e valErr) Error() string { return "v" }
+
+var pe parseErr
+var bl blob
+var ve valErr
+
+// An interface may EMBED error, which is how a richer failure type is written.
+type Failer interface {
+	error
+	Retryable() bool
+}
+
+func good() error {
+	return &pe
+}
+
+func bad() error {
+	// ERROR "blob does not implement error \(missing method Error\)"
+	return &bl
+}
+
+func decls() {
+	var e error = &pe
+
+	// ERROR "an interface holds a pointer here; write &ve"
+	var v error = ve
+
+	// ERROR "blob does not implement error \(missing method Error\)"
+	var b error = &bl
+
+	// A comparison with a concrete value is the sentinel test, and asks the same
+	// question the declarations above ask.
+	_ = e == &pe
+	_ = e != nil
+
+	// ERROR "cannot use &bl \(variable of type \*blob\) as error value in comparison"
+	_ = e == &bl
+
+	// ERROR "mismatched types error and int"
+	_ = e == 3
+
+	_ = v
+	_ = b
+}
+
+// A method may not be declared on error: it is an interface, and not this package's
+// type either way.
+// ERROR "invalid receiver type error \(pointer or interface type\)"
+func (e error) Wrap() int { return 1 }

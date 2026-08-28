@@ -302,6 +302,13 @@ broken.
 
 **Does not work yet**, in rough order of how likely you are to hit it:
 
+* **There is no `errors` package**, so no `errors.New`, `fmt.Errorf`, `errors.Is` or
+  `errors.As`. The predeclared `error` itself works — `func read() (int, error)`,
+  `err != nil`, `err.Error()`, an interface embedding it, a type switch on it — but a
+  value has to live somewhere, and with no heap that means a package-level variable
+  of your own error type whose address you return. A caller recognises one by
+  comparing against it, `err == &dev.ErrTimeout`, which is what `errors.Is` does for
+  a sentinel anyway.
 * **The standard library is three packages.** `strings` is the allocation-free part
   of Go's — the functions that answer a question about a string or return a
   substring of one, each meaning exactly what Go's of the same name means, checked

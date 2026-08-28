@@ -20,6 +20,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`error` is a predeclared type.** Go's `interface{ Error() string }` under the
+  name the universe holds it by, so `func read() (int, error)` compiles, `err != nil`
+  asks whether the interface carries a table, `err.Error()` calls through it, and a
+  type switch or assertion reads the concrete type back out. It is ONE type across
+  every package, belonging to none of them, so a package returns an error another
+  package checks. An interface may EMBED it -- `interface { error; Retryable() bool }`
+  -- which had no AST to read, the universe being no file.
+
+  Every rule an interface obeys here it obeys: a POINTER goes in, never a value. With
+  no heap there is no `errors.New` to make one with, so a package exports a variable
+  of its own error type and hands out its address, and a caller recognises it by
+  identity: `err == &dev.ErrTimeout`. That is the sentinel comparison the entry below
+  makes work, and the two ship together for that reason.
+
+  There is still no `errors` package -- no `New`, `Errorf`, `Is` or `As`.
+
 - **An interface compares with a concrete value.** `s == &q` is how a SENTINEL is
   recognised -- the whole reason an exported error variable exists -- and it did not
   work: the concrete operand was compared as it stood, an interface's two words

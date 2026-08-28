@@ -5000,6 +5000,16 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 				continue
 			}
 			seen[mn] = true
+			// `error` embedded, which is the shape a richer failure interface is
+			// written in -- `interface { error; Retryable() bool }`. It has no AST to
+			// read: the universe holds it, not any file, so its one method is
+			// contributed here as the universe spells it.
+			if qual == "" && name == "error" && !e.typeNames[mangle(e.curPkgPrefix, "error")] {
+				for _, m := range e.errorIfaceMethods() {
+					add(m)
+				}
+				continue
+			}
 			inner, ok := e.ifaceASTs[mn]
 			if !ok {
 				e.fail("cannot embed %s in an interface: it is not an interface type", written)
@@ -5092,6 +5102,23 @@ func (e *emitter) anonInterfaceType(ifaceAST []int32) string {
 
 // anonInterfaceOf is anonInterfaceType from the method set itself, for the caller
 // that has no AST to read one from: `any`, which is the empty one spelled as a name.
+// errorIfaceCType is the C type of the predeclared `error`, which is
+// `interface{ Error() string }` and nothing more. It is minted as an ANONYMOUS
+// interface, keyed by that method set, so every package naming `error` reaches the
+// same C type and the same table shape -- which is what lets one package return an
+// error another package checks. A named type would be mangled into the package that
+// happened to mention it first.
+func (e *emitter) errorIfaceCType() string {
+	return e.anonInterfaceOf(e.errorIfaceMethods())
+}
+
+// errorIfaceMethods is what `error` declares: one method, taking nothing and
+// returning a string. Spelled once, since the type is minted from it and an
+// interface EMBEDDING error contributes it.
+func (e *emitter) errorIfaceMethods() []ifaceMethod {
+	return []ifaceMethod{{name: "Error", res: cString, resList: []string{cString}}}
+}
+
 func (e *emitter) anonInterfaceOf(methods []ifaceMethod) string {
 	slices.SortFunc(methods, func(a, b ifaceMethod) int { return strings.Compare(a.name, b.name) })
 	var key strings.Builder
@@ -12022,6 +12049,11 @@ func (e *emitter) cType(ast []int32) string {
 	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT && e.src(tok) == "any" && !e.typeNames[mangle(e.curPkgPrefix, "any")] {
 		return e.anonInterfaceOf(nil)
 	}
+	// `error`, the one-method interface the universe holds, answered here for the
+	// same reason: it resolves to no declared type of any file.
+	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT && e.src(tok) == "error" && !e.typeNames[mangle(e.curPkgPrefix, "error")] {
+		return e.errorIfaceCType()
+	}
 
 	var toks []int32
 	nonTerminal := false
@@ -12165,6 +12197,10 @@ func (e *emitter) convType(recv string) (string, bool) {
 	// which is what makes it the universe's and not the program's.
 	if recv == "any" && !e.typeNames[mangle(e.curPkgPrefix, "any")] {
 		return e.anonInterfaceOf(nil), true
+	}
+	// `error(x)`, the universe's other interface, for the same reason.
+	if recv == "error" && !e.typeNames[mangle(e.curPkgPrefix, "error")] {
+		return e.errorIfaceCType(), true
 	}
 	mn := mangle(e.curPkgPrefix, recv)
 	if e.namedTypes[mn] {

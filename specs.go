@@ -828,6 +828,24 @@
 // and a value passes between them. "any" is exactly the empty one, so it and
 // "interface{}" are interchangeable.
 //
+// "error" is the universe's other interface, "interface{ Error() string }" under a
+// name, and it obeys every rule above: a POINTER goes in, an interface may embed it,
+// and it is one type across every package because it belongs to none of them.
+//
+//	func read() (int, error)      // what a failing operation returns
+//	if err != nil { ... }         // the zero interface carries no table
+//	if err == &ErrTimeout { ... } // a SENTINEL, compared by identity
+//
+// With no heap there is no errors.New: a value has to live somewhere, so a package
+// exports a variable of its own error type and hands out its address. That makes a
+// sentinel comparison the ordinary way to recognise one, and a type switch or an
+// assertion the way to read what it carries.
+//
+// A comparison between an interface and a CONCRETE value is one of these: Go
+// converts the concrete side to the interface and compares the same two words, so a
+// type that does not implement the interface is refused exactly as it would be in an
+// assignment.
+//
 // A CONVERSION names the interface where the position does not:
 //
 //	s := Shape(&q)        // the same two words "var s Shape = &q" builds

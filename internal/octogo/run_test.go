@@ -14318,6 +14318,135 @@ func main() {
 		want: "true true false true\nfalse true\nfalse true true\ntrue true false\nfalse true\n",
 	},
 	{
+		// error, the predeclared interface. It is interface{ Error() string } under a
+		// name the universe holds, so everything the interface machinery does works
+		// for it -- and with no heap a sentinel is a package-level variable whose
+		// address is returned, there being nowhere to make one at run time.
+		name: "the predeclared error interface",
+		src: `type parseErr struct {
+	at int
+}
+
+func (e *parseErr) Error() string { return "bad input" }
+
+type rangeErr struct {
+	lo int
+	hi int
+}
+
+func (e *rangeErr) Error() string { return "out of range" }
+
+func (e *rangeErr) Retryable() bool { return false }
+
+// An interface EMBEDDING error, which is how a richer failure type is written.
+type Failer interface {
+	error
+	Retryable() bool
+}
+
+var errParse parseErr
+var errRange rangeErr
+
+var errs [3]error
+var ch chan error
+var done chan int
+
+type job struct {
+	id  int
+	err error
+}
+
+func parse(s string) (int, error) {
+	if len(s) == 0 {
+		return 0, &errParse
+	}
+	n := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return 0, &errParse
+		}
+		n = n*10 + int(c) - int('0')
+	}
+	if n > 999 {
+		return 0, &errRange
+	}
+	return n, nil
+}
+
+func report(s string) {
+	n, err := parse(s)
+	if err != nil {
+		println(s, "->", err.Error(), err == &errRange)
+		return
+	}
+	println(s, "->", n)
+}
+
+func classify(err error) string {
+	switch e := err.(type) {
+	case *rangeErr:
+		_ = e
+		return "range"
+	case *parseErr:
+		return "parse"
+	}
+	if err == nil {
+		return "none"
+	}
+	return "unknown"
+}
+
+func take() {
+	e := <-ch
+	println("chan", e.Error())
+	done <- 1
+}
+
+func main() {
+	report("123")
+	report("")
+	report("1000")
+	println(classify(&errParse), classify(&errRange), classify(nil))
+	var e error
+	println(e == nil)
+	e = &errRange
+	println(e == nil, e.Error())
+	// an array with a nil element among the errors, and a struct field
+	errs[0] = &errParse
+	errs[2] = &errRange
+	for i := 0; i < 3; i++ {
+		if errs[i] == nil {
+			println(i, "nil")
+			continue
+		}
+		println(i, errs[i].Error())
+	}
+	var j job
+	j.err = &errRange
+	println(j.id, j.err == &errRange)
+	// the embedding interface, and error widened back out of it
+	var f Failer = &errRange
+	println(f.Error(), f.Retryable())
+	var w error = f
+	println(w.Error())
+	// through a channel
+	go take()
+	ch <- &errParse
+	<-done
+	// the comma-ok assertion back to the concrete type
+	if r, ok := w.(*rangeErr); ok {
+		r.hi = 9
+		println("asserted", r.hi)
+	}
+}
+`,
+		want: "123 -> 123\n -> bad input false\n1000 -> out of range true\n" +
+			"parse range none\ntrue\nfalse out of range\n" +
+			"0 bad input\n1 nil\n2 out of range\n0 true\n" +
+			"out of range false\nout of range\nchan bad input\nasserted 9\n",
+	},
+	{
 		// The nil check reaches the chain's dereference as it reaches a variable's:
 		// address zero on this target is the boot area, and a store there is the one
 		// dereference that would say nothing.
@@ -19309,7 +19438,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n12 true\n0 chain: off true\nchain: off 7\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -19515,6 +19644,25 @@ println(chain.Deck.Twice(), chain.Deck.N)
 println(framed.N, framed.Twice(), framed.F)
 framed.Inc()
 println(framed.N, framed.Reg.N, framed.Twice())
+// The predeclared error, across a package boundary. It is the universe's type
+// and not any package's, so the two sides have to agree on one C type and one
+// table shape -- and the SENTINEL comparison is what a caller does with an
+// exported error variable, which with no heap is the only way to have one.
+watt, err := chain.Power(true)
+println(watt, err == nil)
+watt, err = chain.Power(false)
+println(watt, err.Error(), err == &chain.ErrOff)
+// An interface of this package EMBEDDING error, satisfied by that package's type.
+var f Failing = &chain.ErrOff
+println(f.Error(), f.Pin())
+}
+
+// Failing embeds the predeclared error beside a method of its own, which is how a
+// richer failure type is written in Go. error has no AST to read -- the universe
+// holds it, not any file -- so its one method is contributed from the universe.
+type Failing interface {
+	error
+	Pin() int
 }
 
 // Boxed embeds an imported interface, written AFTER a method of its own so that
@@ -19679,6 +19827,25 @@ func Own() int {
 	m := Kit.Inc
 	m()
 	return Apply(f, 3) + Kit.Twice()
+}
+
+// offErr and ErrOff are the error shapes across a boundary: a concrete type whose
+// Error method makes it an error, and the exported SENTINEL a caller compares
+// against. With no heap an error value is a pointer to a package variable, so an
+// exported one is what a package has instead of errors.New.
+type offErr struct{ N int }
+
+func (e *offErr) Error() string { return "chain: off" }
+
+func (e *offErr) Pin() int { return e.N }
+
+var ErrOff = offErr{7}
+
+func Power(on bool) (int, error) {
+	if !on {
+		return 0, &ErrOff
+	}
+	return 12, nil
 }
 
 func InSum() int {
