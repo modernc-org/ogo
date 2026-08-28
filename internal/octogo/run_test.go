@@ -14002,6 +14002,32 @@ func main() {
 		want: "0 0 0 3\n0 0\n",
 	},
 	{
+		name: "a print evaluates every argument before it writes anything",
+		src: `var ch chan int32
+
+func f(n int32) int32 {
+	println("  side", n)
+	return n * 2
+}
+
+func worker() { ch <- 7 }
+
+func main() {
+	println("A", f(1))
+	println("B", f(2), f(3))
+	print("C", f(4))
+	println()
+	printf("D %d %d\n", f(5), f(6))
+	// The receive is an argument too: nothing may be written before it completes,
+	// which on hardware is the difference between a line and a hang mid-line.
+	go worker()
+	println("E", <-ch)
+}
+`,
+		want: "  side 1\nA 2\n  side 2\n  side 3\nB 4 6\n  side 4\nC8\n" +
+			"  side 5\n  side 6\nD 10 12\nE 7\n",
+	},
+	{
 		name: "a deferred builtin reads its captured arguments",
 		src: `var a [2]int
 var b [2]int

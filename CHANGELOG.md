@@ -185,6 +185,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A print wrote part of its line before it had evaluated the rest of it.**
+  `println`, `print` and `printf` lower to ONE printf per argument whenever the
+  arguments are not all plain scalars, and that lowering has an order in it:
+  argument i was WRITTEN before argument i+1 was EVALUATED. Go evaluates every
+  argument first and prints afterwards, so anything an argument printed for itself
+  came out INSIDE the line -- `println("A", f(1))` for an f that prints gave
+  `A  side 1` and then `2`, where Go gives `  side 1` and then `A 2`.
+
+  On hardware the same shape reads as a HANG. `println("sum", <-ch)` wrote `sum`
+  and then blocked on the receive, mid-line, with another cog's output interleaving
+  into it character by character -- which is how this was found: a three-cog
+  rheometer loop printed `wsourmk er starts`. Every argument is bound to a
+  temporary ahead of the statement now, in source order, so nothing the print emits
+  can change state. A print of plain values is unchanged, and so is one with a
+  single argument -- there is nothing written before it.
+
 - **A deferred `copy` or `clear` said something untrue.** `defer copy(xs, ys)` was
   "copy's arguments must both be slices" of two slices, and `defer clear(xs)` was
   "clear is only supported on a slice yet" of a slice. The arguments HAD been

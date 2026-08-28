@@ -4251,6 +4251,7 @@ type emitter struct {
 	eqStructs          map[string]bool         // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim       // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string                // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	printArgs          []printArg              // a print's arguments already bound to temporaries, so nothing the print itself emits can change state (see hoistPrintArgs)
 	scopeNames         []map[string]bool       // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
 	curParams          map[string]bool         // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
 	litPath            string                  // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
@@ -19604,6 +19605,59 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 // variable that has since changed or gone out of scope, and which Go evaluated at
 // the defer. The expression is still what the format verb is chosen from; the
 // temporary has the same type by construction.
+// printArg is one print argument bound to a temporary ahead of the print, with the
+// type that binding gave it.
+type printArg struct {
+	name  string
+	ctype string
+}
+
+// hoistPrintArgs binds every argument of a print to a temporary, in source order,
+// ahead of the statement -- and reports whether it did.
+//
+// print, println and printf lower to ONE printf per argument whenever the arguments
+// are not all plain scalars, and that is a lowering with an order in it: argument i
+// is WRITTEN before argument i+1 is EVALUATED. Go evaluates every argument first and
+// prints afterwards, so anything an argument printed for itself came out INSIDE the
+// line here -- `println("A", f(1))` for an f that prints gave "A  side 1\n2" where
+// Go gives "  side 1\nA 2". On hardware the same shape reads as a hang: `println("sum",
+// <-ch)` wrote "sum" and then blocked on the receive, mid-line, with another cog's
+// output interleaving into it character by character.
+//
+// Only when an argument can change state, so a print of plain values still emits
+// exactly what it did. And only when every argument's type is nameable, since a
+// temporary needs one: an argument this cannot type leaves the whole print as it was
+// rather than hoisting some of them.
+func (e *emitter) hoistPrintArgs(args []Node) bool {
+	effect := false
+	for _, a := range args {
+		if e.exprHasEffect(a.ast) {
+			effect = true
+			break
+		}
+	}
+	if !effect {
+		return false
+	}
+	cts := make([]string, len(args))
+	for i, a := range args {
+		ct, ok := e.inferCType(a.ast)
+		if !ok || ct == "" {
+			return false
+		}
+		cts[i] = ct
+	}
+	// Bound only after every type is known, so a print this cannot hoist wholly
+	// hoists nothing and no temporary is declared for a statement that will not use
+	// it.
+	hoisted := make([]printArg, len(args))
+	for i, a := range args {
+		hoisted[i] = printArg{name: e.hoist(cts[i], func() { e.emitExpr(a.ast) }), ctype: cts[i]}
+	}
+	e.printArgs = hoisted
+	return true
+}
+
 // printArgCType is the C representation type a print argument's value has, which is
 // what chooses the format. During a defer replay it comes from the temporary
 // captured at the defer statement rather than from the expression: the replay is
@@ -19616,6 +19670,9 @@ func (e *emitter) printArgCType(idx int, arg Node) (string, bool) {
 		if ct := e.deferReplayArgs[idx].ctype; ct != "" {
 			return e.underlyingCType(ct), true
 		}
+	}
+	if idx < len(e.printArgs) {
+		return e.underlyingCType(e.printArgs[idx].ctype), true
 	}
 	return e.exprReprCType(arg.ast)
 }
@@ -19634,12 +19691,25 @@ func (e *emitter) emitReplayArg(idx int, arg Node) {
 		}
 		return
 	}
+	if idx < len(e.printArgs) {
+		e.emit(e.printArgs[idx].name)
+		return
+	}
 	e.emitExpr(arg.ast)
 }
 
 func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	e.includes["stdio.h"] = true
+	// The arguments are evaluated BEFORE anything is written, as in Go. A single
+	// argument is already in that order -- there is nothing written before it -- so
+	// only the several-argument form asks.
+	if len(args) > 1 {
+		saved := e.printArgs
+		e.printArgs = nil
+		e.hoistPrintArgs(args)
+		defer func() { e.printArgs = saved }()
+	}
 	switch {
 	case len(args) == 0:
 		e.ind()
@@ -19807,6 +19877,15 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 		return
 	}
 	e.includes["stdio.h"] = true
+	// As in emitPrint: every argument is evaluated before anything is written. The
+	// format itself is a constant, so only the arguments after it are hoisted, and
+	// they are indexed from zero exactly as the verbs read them.
+	if len(rest) > 1 {
+		saved := e.printArgs
+		e.printArgs = nil
+		e.hoistPrintArgs(rest)
+		defer func() { e.printArgs = saved }()
+	}
 	next := 0
 	lit := ""
 	flush := func() {
