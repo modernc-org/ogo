@@ -14002,6 +14002,64 @@ func main() {
 		want: "0 0 0 3\n0 0\n",
 	},
 	{
+		name: "a channel bound to a name is that channel",
+		src: `type ports struct {
+	tx chan int32
+	rx chan int32
+}
+
+var up chan int32
+var down chan int32
+var p ports
+
+func echo() {
+	// A driver binds the package cells to locals and works through those, which
+	// is the ordinary shape when the channel is a global.
+	in := up
+	out := down
+	for i := 0; i < 3; i++ {
+		v := <-in
+		out <- v * 10
+	}
+}
+
+func relay() {
+	c := p.tx
+	d := p.rx
+	for i := 0; i < 2; i++ {
+		d <- <-c + 1
+	}
+}
+
+func main() {
+	p.tx = up
+	p.rx = down
+	go echo()
+	send := up
+	recv := down
+	for i := int32(1); i <= 3; i++ {
+		send <- i
+		println("echo", i, <-recv)
+	}
+	go relay()
+	for i := int32(7); i <= 8; i++ {
+		p.tx <- i
+		println("relay", i, <-p.rx)
+	}
+	x := up
+	go relay2(x)
+	x <- 4
+	println("sel", <-down)
+}
+
+func relay2(c chan int32) {
+	v := <-c
+	down <- v + 100
+}
+`,
+		want: "echo 1 10\necho 2 20\necho 3 30\nrelay 7 8\nrelay 8 9\nsel 104\n",
+	},
+	{
 		name: "a print evaluates every argument before it writes anything",
 		src: `var ch chan int32
 

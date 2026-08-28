@@ -185,6 +185,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A channel bound to a name could be received from but not sent to.** `ch := q;
+  ch <- 1` was "invalid operation: cannot send to non-channel" of a channel, while
+  `<-ch`, `f(ch)` and `go f(ch)` all worked on the same variable. The receive
+  resolves channel-ness by walking the expression; the SEND asks the declaration,
+  which recorded nothing about channels for a variable with no written type. So the
+  direction the program happened to write decided whether the compiler knew what it
+  had. `var ch chan T = q` worked throughout, which is what made this look like a
+  quirk of `:=` rather than the missing half of an inference. The element's NAME is
+  carried too, so a channel of a named type is still checked for identity through
+  the binding.
+
 - **A print wrote part of its line before it had evaluated the rest of it.**
   `println`, `print` and `printf` lower to ONE printf per argument whenever the
   arguments are not all plain scalars, and that lowering has an order in it:

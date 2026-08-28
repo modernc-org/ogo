@@ -2897,6 +2897,10 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 				vd.typeName, vd.typeQual = nm, ql
 			}
 		}
+	case f.inferChanFrom(s, vd, init):
+		// `ch := q` / `var ch = q` / `ch := b.q`: ch IS that channel -- a channel
+		// value is a pointer to its statically allocated cell, so binding one to a
+		// name is a second name for the same cell and nothing is copied.
 	case f.isNewBuilderCall(s, init):
 		// `sb := NewBuilder(back[:])`: sb holds a Builder, whose method set
 		// the compiler knows. The callee is predeclared, so exprNamedType --
@@ -2952,6 +2956,31 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			vd.kind, vd.hasKind = k, true
 		}
 	}
+}
+
+// inferChanFrom records a variable's channel-ness from its initializer, and reports
+// whether it did.
+//
+// A RECEIVE resolved this for itself -- exprChan walks the expression -- so `ch :=
+// q; <-ch` worked, passing ch to a function worked, and `go f(ch)` worked. The SEND
+// asks the DECLARATION, which carried nothing about channels for a variable with no
+// written type, so `ch := q; ch <- 1` was "invalid operation: cannot send to
+// non-channel" of a channel. Only the direction the program wrote decided whether
+// the compiler knew what it had.
+func (f *File) inferChanFrom(s *Scope, vd *VarDeclaration, init Node) bool {
+	elem, hasElem, isChan := f.exprChan(s, init)
+	if !isChan {
+		return false
+	}
+	vd.isChan, vd.chanElemKind, vd.hasChanElemKind = true, elem, hasElem
+	// The element's NAME as well as its Kind: a channel of a named type is checked
+	// for identity, and a named interface element has no Kind at all to be checked by.
+	if id, ok := f.exprIdent(init); ok {
+		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar {
+			vd.chanElemName = d.chanElemName
+		}
+	}
+	return true
 }
 
 // identKind returns the type Kind bound to a name when it is a variable with a
