@@ -82,6 +82,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array of channels is a bank of channels.** `var q [7]chan req` -- one
+  request channel per worker cog, indexed by worker number -- allocated NOTHING: the
+  array was emitted as what it is in C, an array of pointers, and every element
+  stayed null. The checker accepted `<-q[0]` through one path and refused `q[0] <-
+  v` through another, so the half that compiled read rubbish off address zero. A
+  local one did the same without even a refusal to warn about it.
+
+  Each element owns a cell now, on the rule a channel variable and a struct's
+  channel field already obey: the DECLARATION owns the cell. Sending, receiving,
+  binding an element to a name and handing one to a cog all work, at package scope
+  and in a function. Seven worker cogs driven through one -- the whole machine, one
+  cog left for main -- match the same program in Go on the board.
+
 - **A struct may embed another package's struct**, written qualified:
 
   ```go

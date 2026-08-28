@@ -6086,6 +6086,9 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					// channel field: `var ws [8]worker` is eight workers with a channel
 					// each, which is the shape this target is for -- one per cog.
 					e.emitChanFieldCellsArray(gn, a)
+					// And an array whose ELEMENT is itself a channel, `var qs [7]chan
+					// req`, on the same rule: one cell per element.
+					e.emitChanElemCellsArray(gn, a)
 				}
 			}
 			continue
@@ -6264,6 +6267,89 @@ func (e *emitter) emitChanFieldCellsArray(gn string, a arrDim) {
 			idx[d] = 0
 		}
 	}
+}
+
+// emitLocalChanElemCells is emitChanElemCellsArray for a LOCAL array of channels:
+// the cells are still file-scope objects, their locks taken once before main, but
+// each element is wired at the declaration rather than at package initialization --
+// which is where a local channel variable's own cell is wired, and for the same
+// reason.
+func (e *emitter) emitLocalChanElemCells(nm string, a arrDim) {
+	if !e.isChanCType(a.elem) {
+		return
+	}
+	subs, ok := e.arrayIndexSuffixes(a)
+	if !ok {
+		return
+	}
+	elem := e.chanElemOfCType(a.elem)
+	for _, sub := range subs {
+		e.ind()
+		e.emit(nm + sub + " = &" + e.localChanCell(elem) + ";\n")
+	}
+}
+
+// emitChanElemCellsArray mints a rendezvous cell for every element of an array whose
+// ELEMENT TYPE is a channel, and wires each element to its cell at package
+// initialization -- the same rule a channel variable and a struct's channel field
+// obey: the DECLARATION owns the cell.
+//
+// Without this the array was emitted as what it is in C, an array of pointers, and
+// nothing ever set them: `var qs [2]chan int32` left every element NULL, and
+// `<-qs[0]` -- which the checker accepts -- was a receive on a null channel. The
+// element-per-cog bank of channels is the shape an eight-cog machine is written in,
+// and it was the one array of channels that allocated nothing.
+func (e *emitter) emitChanElemCellsArray(gn string, a arrDim) {
+	if !e.isChanCType(a.elem) {
+		return
+	}
+	subs, ok := e.arrayIndexSuffixes(a)
+	if !ok {
+		return
+	}
+	elem := e.chanElemOfCType(a.elem)
+	cell := gn + "_cells"
+	e.emit("static " + chanCellCName(elem) + " " + cell + a.declSuffix() + ";\n")
+	e.chanInitElems[elem] = true
+	for _, sub := range subs {
+		e.deferPkgInit(gn + sub + " = &" + cell + sub + ";")
+		e.deferPkgInit(chanInitCName(elem) + "(" + gn + sub + ");")
+	}
+}
+
+// arrayIndexSuffixes lists every element of an array as the C subscript run that
+// reaches it, "[0][1]", in row-major order -- which is the order the declarator
+// lays them out in. A bound that is not a constant answers no; every array here has
+// one, and a walk that assumed so would emit a subscript from a parse failure.
+func (e *emitter) arrayIndexSuffixes(a arrDim) ([]string, bool) {
+	bounds := a.bounds()
+	counts := make([]int, len(bounds))
+	total := 1
+	for i, b := range bounds {
+		n, err := strconv.Atoi(b)
+		if err != nil || n < 0 {
+			e.fail("a channel in an array needs a constant bound, got %q", b)
+			return nil, false
+		}
+		counts[i], total = n, total*n
+	}
+	out := make([]string, 0, total)
+	idx := make([]int, len(counts))
+	for k := 0; k < total; k++ {
+		sub := ""
+		for _, i := range idx {
+			sub += "[" + strconv.Itoa(i) + "]"
+		}
+		out = append(out, sub)
+		for d := len(idx) - 1; d >= 0; d-- {
+			idx[d]++
+			if idx[d] < counts[d] {
+				break
+			}
+			idx[d] = 0
+		}
+	}
+	return out, true
 }
 
 // hasChanField reports whether a struct type holds a channel, at any depth. It is
@@ -9720,6 +9806,13 @@ func (e *emitter) emitVarDecl(ast []int32) {
 						continue
 					}
 					e.emit(elem + " " + nm + a.declSuffix() + " = {0};\n")
+					// An array whose ELEMENT is a channel owns a cell per element,
+					// on the rule a local channel already obeys: the declaration
+					// owns the cell, and the cell is static so it outlives every
+					// frame. Without this every element stayed a null pointer, and
+					// -- since the checker accepts `<-qs[0]` -- the program built
+					// and read rubbish off address zero rather than saying anything.
+					e.emitLocalChanElemCells(nm, a)
 					continue
 				}
 				// A literal initializer is aggregate initialization, not a copy.
@@ -22082,6 +22175,23 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 			row = a.row()
 		}
 	} else if !e.indexableBase(base) {
+		return
+	}
+	// `qs[i] <- v` for a `var qs [7]chan req`: the ELEMENT is the channel, so this
+	// is the ordinary send with the element as its left-hand side. The assignment
+	// path below has no lowering for a send and reported the shape it could not read
+	// rather than the reason, which for a bank of channels was no reason at all.
+	if op := slices.Collect(it(opNode.ast)); len(op) != 0 && op[0].sym == 0 && e.f.ch(op[0].tok) == ARROW {
+		if !e.isChanCType(elem) {
+			e.fail("a send statement needs a channel on the left")
+			return
+		}
+		target := e.captureC(func() {
+			e.emit(lhs + "[")
+			e.emitIndex(idx, lenExpr)
+			e.emit("]")
+		})
+		e.emitChanSend(target, e.chanElemOfCType(elem), op)
 		return
 	}
 	t, ok := e.assignTailOf(opNode)

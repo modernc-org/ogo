@@ -749,6 +749,7 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
 		vd.chanElemName = f.chanElemTypeName(s, tn)
 		vd.elemTypeName = f.elemTypeName(s, tn)
+		vd.elemTypeNode = f.arrayElemTypeNode(tn)
 	}
 	if err := s.add(vd); err != nil {
 		f.err(tok.Position(), "%v", err)
@@ -1005,9 +1006,10 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode, role varRole)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
 		chanElemName := f.chanElemTypeName(s, p.TypeNode)
 		elemName := f.elemTypeName(s, p.TypeNode)
+		elemTypeNode := f.arrayElemTypeNode(p.TypeNode)
 		funcSig := f.funcSig(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -3930,6 +3932,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var kind, elemKind, chanElemKind Kind
 		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
 		var typeName, typeQual, chanElemName, elemName Token
+		var elemTypeNode TypeNode
 		var funcSig *SignatureNode
 		var declType TypeNode
 		var initExprs []Node
@@ -3955,6 +3958,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
 						chanElemName = f.chanElemTypeName(s, tn)
 						elemName = f.elemTypeName(s, tn)
+						elemTypeNode = f.arrayElemTypeNode(tn)
 						funcSig = f.funcSig(s, tn)
 					}
 				}
@@ -3986,7 +3990,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkInferredOverflow(s, e)
 		}
 		for i, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, funcSig: funcSig, isFunc: funcSig != nil}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}
 			if declType == nil && len(names) == len(initExprs) {
 				// No type written: the variable takes the one its own initializer
 				// gives it, exactly as ":=" does. A multi-result call feeding
@@ -5293,6 +5297,12 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed bool, va
 	// much as a variable is.
 	elem, hasElem, isChan := f.chanElemOf(d)
 	elemName := d.chanElemName
+	if indexed && len(fields) == 0 {
+		// `qs[i] <- v` for a `var qs [7]chan req`: what is sent to is the ELEMENT,
+		// and the element is the channel. A bank of channels indexed by worker
+		// number is the shape an eight-cog machine is written in.
+		elem, hasElem, isChan, elemName = f.chanElemOfElement(s, d)
+	}
 	if len(fields) != 0 {
 		// The whole run is walked, so a channel two fields deep is the one the send
 		// is checked against. A run this cannot resolve leaves isChan false and is
@@ -8905,7 +8915,116 @@ func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 	if head, field, ok := f.exprFieldRead(n); ok {
 		return f.fieldChan(s, head, field)
 	}
+	// `<-qs[i]` / `c := qs[i]`: an element of an array of channels is a channel, and
+	// is one wherever a name is. Answering no here while the SEND answered yes is how
+	// the two halves of the same array came to disagree.
+	if head, ok := f.exprIndexedIdent(n); ok {
+		if d, isVar := s.find(head.Src()).(*VarDeclaration); isVar {
+			e, he, ic, _ := f.chanElemOfElement(s, d)
+			return e, he, ic
+		}
+	}
 	return 0, false, false
+}
+
+// arrayElemTypeNode is the ELEMENT type of an array or slice type node, and nil for
+// anything else. It is what a declaration keeps for the element questions no flat
+// field can carry -- a channel element has neither a Kind nor a name.
+func (f *File) arrayElemTypeNode(tn TypeNode) TypeNode {
+	switch t := tn.(type) {
+	case *TypeNodeArray:
+		return t.TypeNode
+	case *TypeNodeSlice:
+		return t.TypeNode
+	}
+	return nil
+}
+
+// exprIndexedIdent reports whether an expression is exactly `name[i]` -- one
+// identifier with a single index after it and nothing else -- and returns the name.
+// It is the shape a bank of channels is reached by, and the one exprIdent declines
+// because the index is an extra child.
+func (f *File) exprIndexedIdent(n Node) (Token, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
+		var next Node
+		found, multi := false, false
+		for c := range it(n.ast) {
+			switch c.sym {
+			case SimpleExpr, Term, UnaryExpr, Factor:
+				if found {
+					multi = true
+				}
+				next, found = c, true
+			case RelOp, AddOp, MulOp, UnaryOp:
+				multi = true
+			}
+		}
+		if !found || multi {
+			return Token{}, false
+		}
+		n = next
+	}
+	if n.sym != Factor {
+		return Token{}, false
+	}
+	var name Token
+	var suffix Node
+	nameSet, suffixSet, extra := false, false, false
+	for c := range it(n.ast) {
+		switch c.sym {
+		case FactorSuffix:
+			if suffixSet {
+				extra = true
+			}
+			suffix, suffixSet = c, true
+		case 0:
+			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !nameSet {
+				name, nameSet = tok, true
+			} else {
+				extra = true
+			}
+		default:
+			extra = true
+		}
+	}
+	if !nameSet || !suffixSet || extra {
+		return Token{}, false
+	}
+	indexes := 0
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Index:
+			indexes++
+		case Selector, CallSuffix:
+			return Token{}, false
+		}
+	}
+	if indexes != 1 {
+		return Token{}, false
+	}
+	return name, true
+}
+
+// chanElemOfElement answers the channel questions about a variable's ELEMENT: the
+// element type of `var qs [7]chan req` is a channel, so `qs[i]` is one.
+//
+// The declared TypeNode is what says so. A channel has no Kind, so elemKind cannot
+// carry it and the declaration's own channel fields describe the variable rather
+// than its elements -- which is why an array of channels answered "not a channel" to
+// a send and, through a different path, "channel" to a receive.
+func (f *File) chanElemOfElement(s *Scope, d *VarDeclaration) (elem Kind, hasElem, isChan bool, elemName Token) {
+	inner := d.elemTypeNode
+	if inner == nil && d.VarSpec != nil {
+		inner = f.arrayElemTypeNode(d.VarSpec.TypeNode)
+	}
+	if inner == nil {
+		return 0, false, false, Token{}
+	}
+	elem, hasElem, isChan = f.chanElem(s, inner)
+	if !isChan {
+		return 0, false, false, Token{}
+	}
+	return elem, hasElem, true, f.chanElemTypeName(s, inner)
 }
 
 // fieldChan resolves a struct field as a channel: its element Kind, and whether the
@@ -11710,6 +11829,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
 		chanElemName := f.chanElemTypeName(s, typ)
 		elemName := f.elemTypeName(s, typ)
+		elemTypeNode := f.arrayElemTypeNode(typ)
 		funcSig := f.funcSig(s, typ)
 		for i, vd := range varDecls {
 			if vd == nil {
@@ -11720,6 +11840,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
 			vd.isChan, vd.chanElemKind, vd.hasChanElemKind = isChan, chanElemKind, hasChanElemKind
 			vd.chanElemName = chanElemName
+			vd.elemTypeNode = elemTypeNode
 			vd.elemTypeName = elemName
 			vd.funcSig, vd.isFunc = funcSig, funcSig != nil
 			if typ == nil && len(varDecls) == len(initExprs) {

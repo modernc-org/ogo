@@ -391,6 +391,12 @@ type VarDeclaration struct {
 	hasChanElemKind bool  // chanElemKind is meaningful
 	chanElemName    Token // the element type's NAME, for a check a Kind cannot answer
 	elemTypeName    Token // an array's or slice's element type NAME, for a field reached through an index
+
+	// elemTypeNode is an array's or slice's ELEMENT type as resolved, kept for the
+	// questions no flat field can carry: a channel has no Kind and no name, so `var
+	// qs [7]chan req` records nothing about its elements without this, and `qs[i]`
+	// could not be told from an ordinary element.
+	elemTypeNode TypeNode
 }
 
 // FuncDeclaration represents a named function.

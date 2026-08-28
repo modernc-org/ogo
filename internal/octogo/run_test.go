@@ -14002,6 +14002,66 @@ func main() {
 		want: "0 0 0 3\n0 0\n",
 	},
 	{
+		name: "a bank of channels, one per worker",
+		src: `const nw = 3
+
+type req struct {
+	op int32
+	a  int32
+	b  int32
+}
+
+var q [nw]chan req
+var reply chan int32
+
+func apply(r req) int32 {
+	if r.op == 0 {
+		return r.a + r.b
+	}
+	return r.a * r.b
+}
+
+func worker(id int32) {
+	// The element is bound to a name and worked through, which is how a driver
+	// reads once the channel it serves is picked by index.
+	in := q[id]
+	for i := 0; i < 2; i++ {
+		r := <-in
+		reply <- apply(r) + id*100
+	}
+}
+
+func main() {
+	for i := int32(0); i < nw; i++ {
+		go worker(i)
+	}
+	sum := int32(0)
+	for round := int32(0); round < 2; round++ {
+		// Every worker is given one request, then every reply is taken. The
+		// replies arrive in whatever order the cogs get there, so the SUM is what
+		// this can be checked by.
+		for i := int32(0); i < nw; i++ {
+			q[i] <- req{op: round, a: 10 + i, b: 3}
+		}
+		for i := int32(0); i < nw; i++ {
+			sum += <-reply
+		}
+		println("round", round, sum)
+	}
+	// A LOCAL array of channels owns a cell per element too, on the same rule: the
+	// declaration owns it.
+	var local [2]chan int32
+	go pair(local[0], local[1])
+	local[0] <- 4
+	println("local", <-local[1])
+	println("sum", sum)
+}
+
+func pair(in chan int32, out chan int32) { out <- <-in * 5 }
+`,
+		want: "round 0 342\nround 1 741\nlocal 20\nsum 741\n",
+	},
+	{
 		name: "a channel bound to a name is that channel",
 		src: `type ports struct {
 	tx chan int32
