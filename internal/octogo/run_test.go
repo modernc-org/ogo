@@ -14002,6 +14002,48 @@ func main() {
 		want: "0 0 0 3\n0 0\n",
 	},
 	{
+		name: "a struct packaging a bank of channels",
+		src: `const nw = 3
+
+type bank struct {
+	q    [nw]chan int32
+	out  chan int32
+	name string
+}
+
+var b bank
+
+func worker(id int32) {
+	// A field element bound to a name, which is how a driver reads once the
+	// channel it serves is picked by index.
+	in := b.q[id]
+	for i := 0; i < 2; i++ {
+		v := <-in
+		b.out <- v*10 + id
+	}
+}
+
+func main() {
+	b.name = "bank"
+	for i := int32(0); i < nw; i++ {
+		go worker(i)
+	}
+	sum := int32(0)
+	for round := int32(0); round < 2; round++ {
+		for i := int32(0); i < nw; i++ {
+			b.q[i] <- 1 + i + round*10
+		}
+		for i := int32(0); i < nw; i++ {
+			sum += <-b.out
+		}
+		println("round", round, sum)
+	}
+	println(b.name, sum)
+}
+`,
+		want: "round 0 63\nround 1 426\nbank 426\n",
+	},
+	{
 		name: "a bank of channels, one per worker",
 		src: `const nw = 3
 

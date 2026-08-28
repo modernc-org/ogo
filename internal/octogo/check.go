@@ -3827,8 +3827,8 @@ func (f *File) commOp(s *Scope, op Node) {
 		// "case ch <- v": the AssignHead is the channel, the Expression the value.
 		f.checkNames(s, operand)
 		if id, ok := f.assignHeadIdent(assignHead); ok {
-			flds, indexed := f.postfixFields([]Node{postfixComm})
-			f.checkSend(s, id, flds, indexed, operand)
+			flds, headIdx, tailIdx := f.postfixFields([]Node{postfixComm})
+			f.checkSend(s, id, flds, headIdx, tailIdx, operand)
 		}
 	}
 }
@@ -4441,8 +4441,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
 	if op == ARROW {
 		if len(lhs) == 1 && len(rhs) == 1 {
-			flds, indexed := f.postfixFields([]Node{postfix})
-			f.checkSend(s, lhs[0], flds, indexed, rhs[0])
+			flds, headIdx, tailIdx := f.postfixFields([]Node{postfix})
+			f.checkSend(s, lhs[0], flds, headIdx, tailIdx, rhs[0])
 		}
 		return
 	}
@@ -5270,7 +5270,7 @@ func countUnits(n int, unit string) string {
 // value v must match the channel's element type. The channel operand is resolved
 // here -- unlike an "=" target it is not seen by checkAssignment's target loop --
 // so an undefined or blank channel is reported, mirroring checkDerefAssign.
-func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed bool, valNode Node) {
+func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailIndexed bool, valNode Node) {
 	if f.blankRead(chTok) { // "_ <- v" reads "_" as a channel
 		return
 	}
@@ -5308,6 +5308,11 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed bool, va
 		// is checked against. A run this cannot resolve leaves isChan false and is
 		// reported below, which is what an unresolvable one did before.
 		tn := f.fieldChainTypeNode(s, chTok, fields, indexed)
+		if tailIndexed {
+			// `b.q[i] <- v`: the field is an ARRAY of channels and what is sent to is
+			// its element.
+			tn = f.arrayElemTypeNode(tn)
+		}
 		elem, hasElem, isChan = 0, false, false
 		if tn != nil {
 			elem, hasElem, isChan = f.chanElem(s, tn)
@@ -9052,7 +9057,7 @@ func (f *File) fieldChan(s *Scope, head, field Token) (elem Kind, hasElem, isCha
 // looking its LAST name up on the HEAD's type. `w.in.cmd <- v` was then checked
 // against `w.cmd`: refused outright where W had no such field, and checked against
 // the wrong element type where it had one of another type.
-func (f *File) postfixFields(postfix []Node) (flds []Token, indexed bool) {
+func (f *File) postfixFields(postfix []Node) (flds []Token, headIndexed, tailIndexed bool) {
 	for _, p := range postfix {
 		for c := range it(p.ast) {
 			switch c.sym {
@@ -9062,15 +9067,24 @@ func (f *File) postfixFields(postfix []Node) (flds []Token, indexed bool) {
 						flds = append(flds, f.tok(d.tok))
 					}
 				}
+				tailIndexed = false
 			case Index:
-				// `ws[i].cmd <- v`: an index on the way to the field. What the field
-				// IS does not depend on which element, so one lookup answers for every
-				// index; only the address varies.
-				indexed = true
+				// WHERE the index sits decides what it indexes. Before any selector
+				// it is the HEAD's -- `ws[i].cmd <- v`, where what the field IS does
+				// not depend on which element and one lookup answers for every index.
+				// After the last one it is the FIELD's -- `b.q[i] <- v` over a
+				// `q [4]chan T`, where the field is the array and the channel is its
+				// ELEMENT. One flag could not tell them apart, and a channel array
+				// field was read as a head index into a variable that is not an array.
+				if len(flds) == 0 {
+					headIndexed = true
+				} else {
+					tailIndexed = true
+				}
 			}
 		}
 	}
-	return flds, indexed
+	return flds, headIndexed, tailIndexed
 }
 
 // structFieldTypeNode resolves one field on a WRITTEN type, following a chain of

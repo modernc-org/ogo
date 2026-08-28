@@ -6220,11 +6220,25 @@ func (e *emitter) emitChanFieldCells(gn, ctype string) {
 			}
 			continue
 		}
-		if fld.dim.bound != "" {
-			e.fail("a channel field that is an array is not supported yet")
-			return
-		}
 		elem := e.chanElemOfCType(fld.ctype)
+		if fld.dim.bound != "" {
+			// A field that is an ARRAY of channels, `q [4]chan req`: a cell per
+			// element, on the same rule -- the declaration owns them. A struct is
+			// how a bank of channels is packaged once it has anything else to carry.
+			subs, ok := e.arrayIndexSuffixes(fld.dim)
+			if !ok {
+				return
+			}
+			cells := userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cells"
+			e.emit("static " + chanCellCName(elem) + " " + cells + fld.dim.declSuffix() + ";\n")
+			e.chanInitElems[elem] = true
+			for _, sub := range subs {
+				at := gn + "." + e.fieldIdent(fld.name) + sub
+				e.deferPkgInit(at + " = &" + cells + sub + ";")
+				e.deferPkgInit(chanInitCName(elem) + "(" + at + ");")
+			}
+			continue
+		}
 		cell := userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell"
 		e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
 		e.deferPkgInit(gn + "." + e.fieldIdent(fld.name) + " = &" + cell + ";")
@@ -22109,6 +22123,23 @@ func (e *emitter) emitFieldIndexAssign(base string, fields []string, index, opNo
 	low, _, _, isSlice := e.sliceParts(index.ast)
 	if isSlice {
 		e.fail("slicing a slice-field target is not supported yet")
+		return
+	}
+	// `b.q[i] <- v` for a `q [4]chan req`: the field is the array and the ELEMENT is
+	// the channel, so this is the ordinary send with that element on the left. Asked
+	// before assignTailOf, which has no reading for a send and reported the shape.
+	if op := slices.Collect(it(opNode.ast)); len(op) != 0 && op[0].sym == 0 && e.f.ch(op[0].tok) == ARROW {
+		expr, elem, lenExpr, okc := e.indexedContainer(base, fields)
+		if !okc {
+			e.fail("unsupported indexed field assignment target")
+			return
+		}
+		if !e.isChanCType(elem) {
+			e.fail("a send statement needs a channel on the left")
+			return
+		}
+		target := e.captureC(func() { e.emitIndexSelect(expr, lenExpr, low, elem, nil) })
+		e.emitChanSend(target, e.chanElemOfCType(elem), op)
 		return
 	}
 	t, ok := e.assignTailOf(opNode)

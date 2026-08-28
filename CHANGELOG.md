@@ -82,6 +82,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A struct may hold an array of channels.** `type bank struct { q [4]chan req
+  ... }` was "a channel field that is an array is not supported yet", which is how a
+  bank of channels is packaged once it has a name or an output channel to carry
+  alongside it. Each element owns a cell, as an array variable's elements now do,
+  and `b.q[i] <- v` sends to it.
+
+  The send needed the checker to tell WHERE an index sits. One flag said only that
+  the target had one somewhere, and the send read it as an index on the HEAD --
+  `ws[i].cmd <- v`, where what the field is does not depend on which element. An
+  index AFTER the last selector is the field's own, and the field is then the array
+  while the channel is its element. The two are told apart now.
+
 - **An array of channels is a bank of channels.** `var q [7]chan req` -- one
   request channel per worker cog, indexed by worker number -- allocated NOTHING: the
   array was emitted as what it is in C, an array of pointers, and every element
