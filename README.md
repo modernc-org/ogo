@@ -344,6 +344,11 @@ broken.
 * `goto`.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.
+* A **select's SEND clause takes a channel named by a variable, a field or an
+  element, not by a call**: `case ws[i].cmd <- v` is a clause, `case qof(i) <- v` is a
+  syntax error. The clause's grammar admits selectors and indexes only. Every other
+  position a channel is written in — a send, a receive, a bare receive statement, a
+  select's *receive* clause — takes any expression of channel type.
 * A **call returning an array cannot stand in an `append` or a channel send**:
   `append(rows, mk())` and `ch <- mk()` are refused — bind the result to a variable
   and use that, which is what the diagnostic asks for. An array *literal* stands in

@@ -3003,6 +3003,11 @@ func (f *File) inferChanFrom(s *Scope, vd *VarDeclaration, init Node) bool {
 			vd.chanElemName = d.chanElemName
 		}
 	}
+	// `c := qof(i)`: the name comes off the result's written type, there being no
+	// declaration of the channel to read it from.
+	if tn, _ := f.callChanTypeNode(s, init); tn != nil {
+		vd.chanElemName = f.chanElemTypeName(s, tn)
+	}
 	return true
 }
 
@@ -3849,7 +3854,7 @@ func (f *File) commOp(s *Scope, op Node) {
 		f.checkNames(s, operand)
 		if id, ok := f.assignHeadIdent(assignHead); ok {
 			flds, headIdx, tailIdx := f.postfixFields([]Node{postfixComm})
-			f.checkSend(s, id, flds, headIdx, tailIdx, operand)
+			f.checkSend(s, id, flds, headIdx, tailIdx, postfixComm, operand)
 		}
 	}
 }
@@ -4463,7 +4468,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if op == ARROW {
 		if len(lhs) == 1 && len(rhs) == 1 {
 			flds, headIdx, tailIdx := f.postfixFields([]Node{postfix})
-			f.checkSend(s, lhs[0], flds, headIdx, tailIdx, rhs[0])
+			f.checkSend(s, lhs[0], flds, headIdx, tailIdx, postfix, rhs[0])
 		}
 		return
 	}
@@ -4952,6 +4957,46 @@ func (f *File) exprCallee(n Node) (Token, bool) {
 	return id, true
 }
 
+// exprMethodCall returns the receiver and the method an expression calls, when the
+// expression is exactly one such call -- "p.M()" and nothing more. It is exprCallee
+// for a call written on a selector, which that one declines: it wants a bare name.
+// A qualified call into another package, "pkg.F()", matches the same shape and is
+// told apart by its head naming no variable of this scope.
+func (f *File) exprMethodCall(n Node) (recv, member Token, ok bool) {
+	var ids []Token
+	sawSelector, sawCall, extra := false, false, false
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			switch c.sym {
+			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix:
+				walk(c.ast)
+			case Selector:
+				sawSelector = true
+				walk(c.ast)
+			case CallSuffix:
+				sawCall = true
+			case 0:
+				switch f.ch(c.tok) {
+				case IDENT:
+					ids = append(ids, f.tok(c.tok))
+				case PERIOD:
+					// the selector's own separator
+				default:
+					extra = true
+				}
+			default:
+				extra = true
+			}
+		}
+	}
+	walk(n.ast)
+	if extra || !sawSelector || !sawCall || len(ids) != 2 {
+		return Token{}, Token{}, false
+	}
+	return ids[0], ids[1], true
+}
+
 // valueSource phrases the right-hand side of an assignment-mismatch diagnostic. A
 // single call is named -- "f returns 1 value", as Go words it, which says where the
 // count came from -- and anything else is just counted.
@@ -5291,8 +5336,33 @@ func countUnits(n int, unit string) string {
 // value v must match the channel's element type. The channel operand is resolved
 // here -- unlike an "=" target it is not seen by checkAssignment's target loop --
 // so an undefined or blank channel is reported, mirroring checkDerefAssign.
-func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailIndexed bool, valNode Node) {
+func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailIndexed bool, postfix Node, valNode Node) {
 	if f.blankRead(chTok) { // "_ <- v" reads "_" as a channel
+		return
+	}
+	// `qof(i) <- v`, `bank.Ch(i) <- v`: what is sent to is a CALL's result, so the
+	// head names a function or a receiver rather than the channel and the element
+	// type is the result's. A call the result type cannot be resolved for -- another
+	// package's, or one through a function value -- is left unchecked rather than
+	// reported, since nothing here knows what it returns.
+	if _, isCall := f.callSuffixArgs(postfix); isCall {
+		var member Token
+		if len(fields) == 1 {
+			member = fields[0]
+		}
+		results, resolved := f.callResults(s, chTok, member)
+		if !resolved || len(fields) > 1 {
+			return // nothing here knows what this call returns
+		}
+		tn, _ := f.chanOfResults(s, results)
+		if tn == nil {
+			// A call yielding no value, or several, is no more a channel than one
+			// yielding an int is: there is nothing to send to either way.
+			f.err(chTok.Position(), "invalid operation: cannot send to non-channel")
+			return
+		}
+		elem, hasElem, _ := f.chanElem(s, tn)
+		f.checkSentValue(s, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
 		return
 	}
 	d, ok := s.find(chTok.Src()).(*VarDeclaration)
@@ -5348,6 +5418,21 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 		f.err(at.Position(), "invalid operation: cannot send to non-channel")
 		return
 	}
+	f.checkSentValue(s, elem, hasElem, elemName, valNode)
+}
+
+// checkSentValue checks the value a send hands over against the channel's element
+// type: that it does not outlive its storage, that a named element's identity and
+// interface are satisfied, that a constant fits, and that the two types are
+// assignable. It is the half of a send that does not depend on how the channel was
+// named, so every spelling of one -- a variable, a field, an element, another
+// package's, a call's result -- is checked alike.
+//
+// An invalid elemName skips the identity checks, which is what a channel declared in
+// ANOTHER package gets: they resolve the element's name, and the name belongs to the
+// callee's scope rather than to this one, where it would mean a different type or
+// nothing at all.
+func (f *File) checkSentValue(s *Scope, elem Kind, hasElem bool, elemName Token, valNode Node) {
 	f.checkEscapeCross(s, valNode, true)
 	// A channel of interface type asks implements, as every other position a value
 	// meets a named type does. The element's Kind cannot answer it -- a named
@@ -5406,19 +5491,7 @@ func (f *File) checkSendTo(s *Scope, d *VarDeclaration, at Token, valNode Node) 
 		return
 	}
 
-	f.checkEscapeCross(s, valNode, true)
-	if hasElem {
-		f.checkValueOverflow(s, sizedTarget(elem, Token{}), valNode)
-	}
-
-	vk, vok := f.exprType(s, valNode)
-	if !hasElem || !vok {
-		return
-	}
-
-	if !assignableKind(elem, vk) {
-		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.exprSource(valNode), kindName(vk), kindName(elem))
-	}
+	f.checkSentValue(s, elem, hasElem, Token{}, valNode)
 }
 
 // checkRecvAssign checks a receive assignment "target = <-ch": when the right-
@@ -5451,7 +5524,12 @@ func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
 func (f *File) checkReceiveOperand(s *Scope, chanExpr Node) {
 	f.checkNames(s, chanExpr)
 	if _, _, isChan := f.exprChan(s, chanExpr); !isChan {
-		if _, known := f.exprType(s, chanExpr); known {
+		// A CALL that yields something other than one channel is refused here too:
+		// its type is not one exprType can report, so without this the operand
+		// reached the emitter and was named as an unsupported operand -- a missing
+		// feature, where Go rejects the program.
+		_, notChan := f.callChanTypeNode(s, chanExpr)
+		if _, known := f.exprType(s, chanExpr); known || notChan {
 			f.err(f.tok(chanExpr.Pos()).Position(), "invalid operation: cannot receive from non-channel")
 		}
 	}
@@ -8538,7 +8616,12 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 		return
 	case ARROW:
 		if _, _, isChan := f.exprChan(s, fac); !isChan {
-			if _, known := f.exprType(s, fac); known {
+			// A CALL that yields something other than one channel is refused here
+			// too. Its type is not one exprType can report, so without this the
+			// operand reached the emitter, which named it an unsupported operand --
+			// a missing feature, where Go rejects the program.
+			_, notChan := f.callChanTypeNode(s, fac)
+			if _, known := f.exprType(s, fac); known || notChan {
 				f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot receive from non-channel")
 			}
 		}
@@ -8950,7 +9033,37 @@ func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 			return e, he, ic
 		}
 	}
+	// `<-qof(i)` / `c := bank.Ch(i)`: a call's result is a channel when the function
+	// returns one, and where a value came from does not change what it is.
+	if tn, _ := f.callChanTypeNode(s, n); tn != nil {
+		return f.chanElem(s, tn)
+	}
 	return 0, false, false
+}
+
+// callChanTypeNode reads an expression that is exactly a CALL. tn is the channel
+// type the call yields, when it yields exactly one channel; it answers both of the
+// questions a channel raises -- the element's Kind, and its NAME, which a named or
+// interface element needs and which no Kind carries. notChan says the opposite is
+// KNOWN, so a caller can refuse the operand rather than leave it to whatever comes
+// after. Both empty means nothing here knows what the expression is: not a call, or
+// one whose callee this package cannot see.
+//
+// With no heap a function returning a channel is not the exotic shape it would be in
+// Go: make() has nothing to allocate, so a channel is declared once and named again,
+// and an accessor over a statically declared bank is how a package hands one out.
+func (f *File) callChanTypeNode(s *Scope, n Node) (tn TypeNode, notChan bool) {
+	var results []retResult
+	resolved := false
+	if callee, isCall := f.exprCallee(n); isCall {
+		results, resolved = f.callResults(s, callee, Token{})
+	} else if recv, member, isMethod := f.exprMethodCall(n); isMethod {
+		results, resolved = f.callResults(s, recv, member)
+	}
+	if !resolved {
+		return nil, false
+	}
+	return f.chanOfResults(s, results)
 }
 
 // arrayElemTypeNode is the ELEMENT type of an array or slice type node, and nil for
@@ -9730,6 +9843,53 @@ func (f *File) funcSingleResultName(s *Scope, callee Token) string {
 		return results[0].name
 	}
 	return ""
+}
+
+// callResults is the result list of the function or method a call names, and
+// whether the callee was resolved at all. An invalid member asks about a plain
+// function call, "qof(i)"; a valid one about a method call, "bank.Ch(i)". A callee
+// this package cannot see -- another package's, or a call through a function value
+// -- answers false, and what such a call returns is left unknown rather than
+// guessed at.
+func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
+	if !member.IsValid() {
+		fd, ok := s.find(callee.Src()).(*FuncDeclaration)
+		if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
+			return nil, false
+		}
+		return f.flattenResults(s, fd.FuncDecl.Type.Signature), true
+	}
+	d, ok := s.find(callee.Src()).(*VarDeclaration)
+	if !ok || !d.typeName.IsValid() {
+		return nil, false
+	}
+	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	if !ok {
+		return nil, false
+	}
+	fd := td.methods[member.Src()]
+	if fd == nil || fd.Type == nil {
+		return nil, false
+	}
+	return f.flattenResults(s, fd.Type.Signature), true
+}
+
+// chanOfResults reads a call's result list as a channel operand: tn is the channel
+// type when the call yields exactly one channel, and notChan says it is KNOWN not to
+// be one -- several results, or a single result that is not a channel. A call
+// yielding nothing is neither: it is reported as "(no value) used as value" wherever
+// a value is read, and saying it again here would say it twice.
+func (f *File) chanOfResults(s *Scope, results []retResult) (tn TypeNode, notChan bool) {
+	if len(results) == 0 {
+		return nil, false
+	}
+	if len(results) != 1 {
+		return nil, true
+	}
+	if _, _, isChan := f.chanElem(s, results[0].typeNode); !isChan {
+		return nil, true
+	}
+	return results[0].typeNode, false
 }
 
 // methodSingleResultName is funcSingleResultName for a method call, "p.m()".

@@ -18699,6 +18699,143 @@ func main() {
 }
 `,
 		want: "4 7 9\n4 7 9\n",
+	},
+	{
+		// A channel operand is an EXPRESSION, so a call that returns one names a
+		// channel exactly as a variable does. With no heap that is how a package
+		// hands one out: make() has nothing to allocate, so a channel is declared
+		// once and an accessor over the bank is what other code calls.
+		//
+		// Both directions, since the two used to resolve the channel by different
+		// routes -- a receive walks the expression and a send asked the declaration
+		// -- and a send to a call was the half that had no answer.
+		name: "a channel from a call",
+		src: `var q [3]chan int
+
+func qof(i int) chan int { return q[i] }
+
+func worker() {
+	v := <-qof(0)
+	qof(1) <- v * 10
+}
+
+func main() {
+	go worker()
+	qof(0) <- 7
+	println(<-qof(1))
+	select {
+	case v := <-qof(2):
+		println("two", v)
+	default:
+		println("none")
+	}
+}
+`,
+		want: "70\nnone\n",
+	},
+	{
+		// The same through a METHOD, a parenthesised operand and a POINTER to a
+		// channel. A parenthesised channel was refused before this whether it held a
+		// call or a plain name, and `*p <- v` emitted a call to `ogo_chan_send_`, a
+		// helper of no element type at all -- the pointer read as the channel,
+		// because the two share a C type-name prefix.
+		//
+		// The pointer is written both as a variable and as a FIELD, `*h.p <- v`,
+		// where the "*" binds looser than the selector and so applies to the field
+		// rather than to the struct. That pair is here because the receive side of it
+		// already worked: `<-*h.p` renders the expression whole, while the send
+		// resolved its channel from the head alone and refused a chain it could not
+		// name -- the two directions disagreeing about the same operand.
+		name: "a channel through a method, parentheses and a pointer",
+		src: `type bank struct {
+	in  chan int
+	out chan int
+}
+
+type holder struct {
+	p *chan int
+}
+
+var b bank
+var h holder
+var done chan int
+
+func (k *bank) In() chan int {
+	return k.in
+}
+
+func (k *bank) Out() chan int {
+	return k.out
+}
+
+func worker() {
+	v := <-b.In()
+	p := &b.out
+	*p <- v + 1
+	(b.out) <- v + 2
+	*h.p <- v + 3
+	done <- 1
+}
+
+func main() {
+	h.p = &b.out
+	go worker()
+	b.In() <- 10
+	println(<-b.Out())
+	println(<-(b.out))
+	println(<-*h.p)
+	<-done
+}
+`,
+		want: "11\n12\n13\n",
+	},
+	{
+		// Every channel operand is evaluated ONCE, as Go evaluates it: a receive, a
+		// comma-ok receive, a range, a select clause and a send are five operations
+		// and five calls. The select was the one that re-ran it -- its poll rendered
+		// the operand afresh every round, so the count depended on how long the
+		// select happened to wait, and a clause over a bank polled a different
+		// channel each time.
+		name: "a channel operand is evaluated once",
+		src: `var q [3]chan int
+var done chan int
+var calls int
+
+func qof(i int) chan int {
+	calls++
+	return q[i]
+}
+
+func feed() {
+	q[0] <- 1
+	q[0] <- 2
+	close(q[0])
+	q[2] <- 3
+	<-q[1]
+	done <- 1
+}
+
+func main() {
+	go feed()
+	println("recv", <-qof(0))
+	println("calls", calls)
+	v, ok := <-qof(0)
+	println("commaok", v, ok, "calls", calls)
+	for w := range qof(0) {
+		println("range", w)
+	}
+	println("calls", calls)
+	select {
+	case x := <-qof(2):
+		println("select", x)
+	}
+	println("calls", calls)
+	qof(1) <- 9
+	println("calls", calls)
+	<-done
+}
+`,
+		want: "recv 1\ncalls 1\ncommaok 2 true calls 2\ncalls 3\nselect 3\ncalls 4\ncalls 5\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

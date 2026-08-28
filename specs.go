@@ -2247,6 +2247,21 @@
 //     (Note: Simplified assignment syntax).  The expression blocks
 //     the current Cog until a sender has deposited a value.
 //
+//   - The channel is an EXPRESSION, in either direction and in a select clause:
+//     a variable, a struct field, an element of a bank, a package's exported
+//     channel, a parenthesised operand, a dereferenced pointer to one, or the
+//     result of a call. Because there is no heap, a function returning a channel
+//     is the ordinary way a package hands one out rather than the exotic one it
+//     would be in Go: make allocates and is therefore rejected, so a channel is
+//     declared once and an accessor over the declaration is what other code
+//     calls. Each such operand is evaluated exactly once, where the statement
+//     stands, as Go evaluates it -- including every clause of a select, whose
+//     operands are evaluated in source order upon entering it.
+//
+//     One position does not admit a call: a select's SEND clause, whose grammar
+//     (PostfixComm) takes selectors and indexes only. "case ws[i].cmd <- v" is a
+//     clause and "case qof(i) <- v" is a syntax error.
+//
 // # Synchronization via Hardware Locks
 //
 // Because there is no software thread scheduler, blocked Cogs do not "sleep"

@@ -45,3 +45,58 @@ func recvOperand() {
 	_ = ch
 	_ = n
 }
+
+// A channel operand is an EXPRESSION, so a call yielding one names a channel as a
+// variable does -- and a call yielding anything else is rejected in both directions.
+// A call whose result this package cannot see is left alone rather than guessed at.
+type bank struct {
+	q chan int
+}
+
+var b bank
+
+func (k *bank) Ch() chan int { return k.q }
+
+func qof() chan int { return b.q }
+
+func two() (chan int, int) { return b.q, 1 }
+
+func none() {}
+
+func plain() int { return 1 }
+
+func callOperand() {
+	qof() <- 1
+	<-qof()
+	b.Ch() <- 1
+	<-b.Ch()
+
+	// ERROR "cannot send to non-channel"
+	plain() <- 1
+
+	// ERROR "cannot receive from non-channel"
+	<-plain()
+
+	// ERROR "cannot send to non-channel"
+	two() <- 1
+
+	// ERROR "cannot receive from non-channel"
+	<-two()
+
+	// ERROR "cannot send to non-channel"
+	none() <- 1
+
+	// ERROR "none.. .no value. used as value"
+	<-none()
+}
+
+// The value a send hands over is checked against the element type wherever the
+// channel came from: a call's result was checked by nothing, so the mismatch was
+// reported by the C compiler about C the program never wrote.
+func callSendValue() {
+	// ERROR "cannot use true of type bool as type int in send"
+	qof() <- true
+
+	// ERROR "cannot use .s. of type string as type int in send"
+	b.Ch() <- "s"
+}

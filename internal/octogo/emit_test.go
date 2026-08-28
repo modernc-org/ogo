@@ -4752,6 +4752,54 @@ func TestEmitCChannel(t *testing.T) {
 	}
 }
 
+// TestEmitCChanExpr pins the channel operand that is an EXPRESSION rather than a
+// place: a call's result, a parenthesised operand, and a dereference. Each is handed
+// to one helper call, which is what makes it evaluated once -- Go's rule for a
+// channel operand, and the reason a select binds its own before polling.
+//
+// The pointer case is the one that used to emit broken C. A `*chan int` is spelled
+// `ogo_chan_int*`, which shares the channel prefix, so the pointer read as the
+// channel and its element -- looked up under the whole name -- came back empty:
+// `*p <- v` called `ogo_chan_send_`, a helper of no element type at all.
+func TestEmitCChanExpr(t *testing.T) {
+	src := `var q [2]chan int
+
+func qof(i int) chan int { return q[i] }
+
+func main() {
+	qof(0) <- 2
+	println(<-qof(1))
+	(q[0]) <- 3
+	p := &q[1]
+	*p <- 4
+	println(<-*p)
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+
+	for _, want := range []string{
+		"ogo_chan_int qof(int i);\n",
+		"\togo_chan_send_int(qof(0), 2);\n",
+		"\tprintf(\"%d\\n\", ogo_chan_recv_int(qof(1)));\n",
+		"\togo_chan_send_int(q[0], 3);\n",
+		"\togo_chan_send_int((*p), 4);\n",
+		"\tprintf(\"%d\\n\", ogo_chan_recv_int((*p)));\n",
+	} {
+		if got := buf.String(); !strings.Contains(got, want) {
+			t.Errorf("EmitC channel expression: missing %q in\n%s", want, got)
+		}
+	}
+}
+
 // TestEmitCPackageInit pins the synthesized package initializer. C requires a
 // file-scope initializer to be a constant expression, so `var b = a + 3` and
 // `var c = five()` were emitted verbatim and rejected outright by the C compiler
@@ -4878,6 +4926,10 @@ func main() {
 //
 // The done flag is set before the clause body, not after, so a `break` written in
 // the body belongs to the user's own loop rather than escaping the poll.
+//
+// Each clause's channel is bound to a temporary ahead of the poll, which is what
+// makes it evaluated ONCE as Go evaluates it: the poll re-reads whatever stands in
+// the test, so an operand naming a call or an indexed bank was re-run every round.
 func TestEmitCSelect(t *testing.T) {
 	src := `func worker(ch chan int) {
 	ch <- 7
@@ -4912,11 +4964,12 @@ func main() {
 
 	for _, want := range []string{
 		"static int ogo_chan_tryrecv_int(ogo_chan_int ch, int* out) {\n",
-		"\t\tdo {\n", // default: one pass
-		"\t\t\tif (ogo_chan_tryrecv_int(ch, &_ogo_t1)) {\n",
+		"\t\togo_chan_int _ogo_t1 = ch;\n", // the clause's channel, evaluated once
+		"\t\tdo {\n",                       // default: one pass
+		"\t\t\tif (ogo_chan_tryrecv_int(_ogo_t1, &_ogo_t2)) {\n",
 		"\t\t} while (0);\n",
-		"\t\twhile (!_ogo_t4) {\n", // no default: poll
-		"\t\t\tif (!_ogo_t4) { _waitx(1); }\n",
+		"\t\twhile (!_ogo_t5) {\n", // no default: poll
+		"\t\t\tif (!_ogo_t5) { _waitx(1); }\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC select: missing %q in\n%s", want, got)

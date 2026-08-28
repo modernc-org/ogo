@@ -20,6 +20,46 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A channel is an EXPRESSION, and it is evaluated once.** Where a channel is
+  written -- a send, a receive, a bare receive statement, a `select` clause -- the
+  operand may now be any expression of channel type: a call's result, a method's, a
+  parenthesised operand, or a dereferenced pointer to a channel, beside the variable,
+  field, element and package-exported spellings that already worked. With no heap
+  that is the ORDINARY shape rather than an exotic one: `make` allocates and is
+  refused, so a channel is declared once and an accessor over the declaration --
+  `func qof(i int) chan req { return q[i] }` -- is how a package hands one out.
+
+  Every such operand is evaluated exactly once, where the statement stands, as Go
+  evaluates it. That was already true of a receive and a send and was NOT true of a
+  `select`: its poll re-rendered the clause's channel on every round, so
+  `case <-qs[pick()]` called `pick` once per round rather than once, and polled
+  whatever channel that round's answer named. Go evaluates a select's operands in
+  source order upon entering it, and so does this now.
+
+  Two spellings were worse than refused. `*p <- v` for a `p *chan int` emitted a call
+  to `ogo_chan_send_`, a helper of no element type at all, so what the program got
+  was the C compiler's complaint about C it never wrote -- a pointer to a channel and
+  a channel share a C type-name prefix, and the prefix was the whole test. And a
+  receive from a call inside a `print` was DROPPED, leaving "cannot print a value of
+  type ogo_chan_int" about a channel the program did not print.
+
+  A dereference reaching the pointer through a chain, `*h.p <- v`, is a send now too.
+  Its receive already worked, which is the shape worth naming: a receive renders the
+  operand whole while a send resolved its channel from the head alone, so the two
+  directions disagreed about the same expression. The `*` binds looser than the
+  selector, here as in Go, so it applies to the field and not to the struct.
+
+  A send whose channel comes from a call is checked like any other now -- the value
+  against the element type, a constant for fit, a named element for identity -- where
+  before it was checked by nothing and the mismatch was left to the C compiler. A
+  call that yields no channel is refused in Go's words at the operand,
+  `invalid operation: cannot send to non-channel`, in both directions and whether it
+  yields the wrong type, several values or none.
+
+  One position does not take a call: a select's SEND clause. Its grammar admits
+  selectors and indexes only, so `case ws[i].cmd <- v` is a clause and
+  `case qof(i) <- v` is a syntax error.
+
 - **`for v := range ch` receives until the channel is closed.** It is the loop that
   pairs with the `close` v0.33.0 shipped, and it was refused -- "cannot range over a
   channel" -- for a reason the comment beside it stated and which no longer held: a

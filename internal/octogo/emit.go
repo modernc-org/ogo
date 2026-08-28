@@ -737,14 +737,35 @@ func chanTryRecvCName(elem string) string { return "ogo_chan_tryrecv_" + sanitiz
 // element C type and the C name of the channel. Shared by emission and inference so
 // the two cannot disagree about what a receive yields.
 func (e *emitter) recvOperand(n Node, kids []Node) (elem, base string, ok bool) {
-	if n.sym != UnaryExpr || len(kids) != 2 || kids[0].sym != UnaryOp {
+	if n.sym != UnaryExpr || len(kids) < 2 || kids[0].sym != UnaryOp {
 		return "", "", false
 	}
 	tok, ok := e.unaryOpTok(kids[0].ast)
 	if !ok || e.f.ch(tok) != ARROW {
 		return "", "", false
 	}
-	return e.chanOperand(kids[1].ast)
+	if len(kids) == 2 {
+		return e.chanOperand(kids[1])
+	}
+	// `<-*p`: another unary operator stands between the arrow and the factor.
+	// UnaryExpr is `{ UnaryOp } Factor`, so what follows the arrow is a UnaryExpr in
+	// its own right -- one the parse builds no node for, the children of a level
+	// being a flat list rather than a nesting.
+	return e.chanOperand(Node{sym: UnaryExpr, ast: afterFirstChild(n.ast)})
+}
+
+// afterFirstChild returns a node's flat AST with its first child dropped. The
+// children of a node are laid out contiguously, so dropping one is a slice -- which
+// is what lets a run of unary operators be re-entered as an expression of its own.
+func afterFirstChild(ast []int32) []int32 {
+	switch {
+	case len(ast) == 0:
+		return nil
+	case ast[0] < 0: // a non-terminal: [-SymbolID, Size, Children...]
+		return ast[2+ast[1]:]
+	default:
+		return ast[1:] // a terminal: one token index
+	}
 }
 
 // chanOperand resolves an expression that names a channel to the channel's element
@@ -752,7 +773,13 @@ func (e *emitter) recvOperand(n Node, kids []Node) (elem, base string, ok bool) 
 // "<-": recvOperand reaches it with the operator inside a unary expression, and a
 // bare receive statement reaches it with the operator on the statement, so the two
 // cannot disagree about what channel is being read.
-func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
+//
+// It takes the operand's NODE rather than its children, because the general case
+// below types and renders the expression whole and both of those read a node: the
+// children of a parenthesised operand are "(", the expression and ")", which no
+// expression walker recognises as anything.
+func (e *emitter) chanOperand(n Node) (elem, base string, ok bool) {
+	ast := n.ast
 	if name, isName := e.exprIdent(ast); isName {
 		ct, isVar := e.varType(name)
 		if !isVar || !e.isChanCType(ct) {
@@ -798,15 +825,27 @@ func (e *emitter) chanOperand(ast []int32) (elem, base string, ok bool) {
 	// A channel field reached through an INDEX, `ws[i].cmd`. The chain walker knows
 	// how to render one and what type it reaches, which is more than the fixed
 	// field path can do.
-	root, steps, isChain := e.factorAccessChain(kids)
-	if !isChain {
+	if root, steps, isChain := e.factorAccessChain(kids); isChain {
+		if text, ct, _, okc := e.chainCText(root, steps); okc && e.isChanCType(ct) {
+			return e.chanElemOfCType(ct), text, true
+		}
+	}
+	// Any other expression whose type is a channel: a call's result `<-qof(i)`, a
+	// parenthesised operand `<-(ch)`, a dereference `<-*p`, a method's result
+	// `<-bank.Ch(i)`. A channel is an ordinary value, so an expression that HAS one
+	// names one -- and with no heap, a function returning a channel is how a package
+	// hands out one it owns, make() having nothing to allocate.
+	//
+	// The shapes above are asked first because they assemble their C text out of
+	// parts, which is what a place needs and an expression does not; this renders the
+	// expression as it stands. What comes back is evaluated ONCE wherever it lands: a
+	// send and a receive each hand it to a single helper call, and a select -- whose
+	// poll would otherwise re-run it every round -- binds it before the loop.
+	ct, isTyped := e.inferNode(n)
+	if !isTyped || !e.isChanCType(ct) {
 		return "", "", false
 	}
-	text, ct, _, okc := e.chainCText(root, steps)
-	if !okc || !e.isChanCType(ct) {
-		return "", "", false
-	}
-	return e.chanElemOfCType(ct), text, true
+	return e.chanElemOfCType(ct), e.captureC(func() { e.emitExprNode(n) }), true
 }
 
 // goSite is one `go` statement: the callee's C name and the C types of its
@@ -1397,16 +1436,30 @@ func (e *emitter) emitSelect(ast []int32) {
 	e.ind()
 	e.emit("{\n")
 	e.indent++
-	// A send clause's value is evaluated once, where the select stands, as Go
-	// evaluates it -- not afresh on every round of the poll.
+	// Every clause's CHANNEL, and a send clause's value, is evaluated once where the
+	// select stands and in source order, as Go evaluates them -- not afresh on every
+	// round of the poll below.
+	//
+	// The channels used not to be bound at all: the clause's C text was re-rendered
+	// inside the loop, so `case <-qs[pick()]` called pick on every round, polled a
+	// different channel each time, and called it a number of times that depended on
+	// how long the select happened to wait. It is also what lets the operand be a
+	// CALL: a rendezvous cannot be waited on by asking for it again.
 	var send *selectCase
 	var valTmp, offered, mine string
 	for i := range cases {
-		if cases[i].send {
-			send = &cases[i]
+		c := &cases[i]
+		if c.def {
+			continue
 		}
-	}
-	if send != nil {
+		ch := e.newTmp()
+		e.ind()
+		e.emit(chanCName(c.elem) + " " + ch + " = " + c.ch + ";\n")
+		c.ch = ch
+		if !c.send {
+			continue
+		}
+		send = c
 		e.chanTrySendElems[send.elem] = true
 		valTmp, offered, mine = e.newTmp(), e.newTmp(), e.newTmp()
 		switch a, isArr := e.namedArrays[send.elem]; {
@@ -1427,6 +1480,8 @@ func (e *emitter) emitSelect(ast []int32) {
 			}
 			e.emit(";\n")
 		}
+	}
+	if send != nil {
 		e.ind()
 		e.emit("int " + offered + " = 0, " + mine + " = 0;\n")
 	}
@@ -1696,7 +1751,7 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 // selectChan resolves the channel a clause polls: a variable, or a field of one --
 // chanOperand answers for both, a channel being a pointer either way.
 func (e *emitter) selectChan(n Node, c *selectCase) bool {
-	elem, text, ok := e.chanOperand(n.ast)
+	elem, text, ok := e.chanOperand(n)
 	if !ok {
 		e.fail("a select clause needs a channel operand: a variable or a field of one")
 		return false
@@ -2550,8 +2605,18 @@ func (e *emitter) chanElemOfCType(ctype string) string {
 // isChanCType reports whether a C type is a channel cell, a defined type over one
 // included -- what it is asked for is the representation, and a value of
 // `type Ch chan int` is a channel.
+//
+// A POINTER to a channel is not one. It is spelled `ogo_chan_int*`, which shares
+// the prefix and is one indirection further out, so the prefix alone answered yes:
+// `*p <- v` for a `p *chan int` then read the POINTER as the channel and looked its
+// element up under the whole name, which is in no table -- the send emitted a call
+// to `ogo_chan_send_`, a helper of no element type at all, and the C compiler
+// reported it about C the program never wrote. A channel type name never ends in a
+// star, an element's own being spelled "_ptr" (see sanitizeElem), so the star is
+// what tells the two apart.
 func (e *emitter) isChanCType(ctype string) bool {
-	return strings.HasPrefix(e.underlyingCType(ctype), chanTypePrefix)
+	u := e.underlyingCType(ctype)
+	return strings.HasPrefix(u, chanTypePrefix) && !strings.HasSuffix(u, "*")
 }
 
 // chanRuntimeDefs returns the typedef for `chan elem` plus the helpers the
@@ -21003,6 +21068,72 @@ func (e *emitter) emitDerefAssign(name string, postfix []Node) {
 	e.emitAssignTailOrCopy(func() { e.emitAccessChainAt(text, cur, chain, true) }, t)
 }
 
+// sendPostfixOp answers with the children of a send's PostfixOp -- the "<-" and the
+// value -- and whether the postfix ends in a send at all.
+func (e *emitter) sendPostfixOp(postfix []Node) ([]Node, bool) {
+	tail := postfix[len(postfix)-1]
+	if tail.sym != PostfixOp {
+		return nil, false
+	}
+	op := slices.Collect(it(tail.ast))
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ARROW {
+		return nil, false
+	}
+	return op, true
+}
+
+// sendChanExpr resolves the channel of a send whose left side is an expression
+// rather than a place, answering with the element's C type and the channel's C
+// text. Anything else answers false and is left to the target shapes, which render
+// a variable, a field or an element from their parts.
+func (e *emitter) sendChanExpr(head Node, steps []Node) (elem, text string, ok bool) {
+	// `(ch) <- v`, and with it every operand parentheses can hold: chanOperand reads
+	// what is inside them as it reads any other channel operand.
+	kids := slices.Collect(it(head.ast))
+	if len(steps) == 0 && len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN &&
+		kids[1].sym == Expression {
+		return e.chanOperand(kids[1])
+	}
+	// `*p <- v` for a `p *chan T`, and `*h.p <- v` where the pointer is a field: what
+	// is sent to is the channel the pointer points at. The "*" binds looser than a
+	// selector, here as in Go, so it applies to the whole chain and not to its head.
+	// Rendered with the nil check any written dereference carries.
+	if e.derefStars(head.ast) == "*" {
+		name := e.soleIdent(head.ast)
+		if len(steps) == 0 {
+			t, cur, okDeref := e.derefBase(name)
+			if !okDeref || !e.isChanCType(cur.ctype) {
+				return "", "", false
+			}
+			return e.chanElemOfCType(cur.ctype), t, true
+		}
+		if name == "" || !isAccessChain(steps) {
+			return "", "", false
+		}
+		t, ct, _, okChain := e.chainCText(name, steps)
+		if !okChain || !e.isPointer(ct) {
+			return "", "", false
+		}
+		pointee := e.elemType(ct)
+		if !e.isChanCType(pointee) {
+			return "", "", false
+		}
+		return e.chanElemOfCType(pointee), "(*" + e.nilCheckedC(t, ct) + ")", true
+	}
+	// `qof(i) <- v`, `bank.Ch(i) <- v`: a function may return a channel, and with no
+	// heap that is how a package hands one out -- make() has nothing to allocate, so
+	// a channel is declared once and named again rather than created and returned.
+	recv := e.soleIdent(head.ast)
+	if recv == "" || e.derefStars(head.ast) != "" || !containsSym(steps, CallSuffix) {
+		return "", "", false
+	}
+	ct, okCall := e.callResultCType(recv, steps)
+	if !okCall || !e.isChanCType(ct) {
+		return "", "", false
+	}
+	return e.chanElemOfCType(ct), e.captureC(func() { e.emitCallExpr(recv, steps) }), true
+}
+
 // emitAssignment handles a single-target assignment `lhs = expr`, a field
 // assignment `base.f = expr`, a short declaration `lhs := expr`, and increment /
 // decrement. The PostfixOp is the postfix's last element; any Selectors before it
@@ -21011,6 +21142,23 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
 		e.fail("unsupported assignment target")
 		return
+	}
+	// A send is not an assignment. It stores nothing -- it hands a value to whoever
+	// is receiving -- and what stands on its left is an EXPRESSION of channel type
+	// rather than a place. Three spellings are expressions no target could be: a
+	// call's result `qof(i) <- v`, a parenthesised operand `(ch) <- v`, and a
+	// dereference `*p <- v`. Resolved here, ahead of the target shapes, which would
+	// each in turn decline them and leave the last to report the left side as a
+	// target it did not know how to build.
+	//
+	// A channel named by a variable, a field or an element keeps its own path below:
+	// those assemble the channel's C text out of parts, which is what a place needs
+	// and an expression does not.
+	if op, isSend := e.sendPostfixOp(postfix); isSend {
+		if elem, text, ok := e.sendChanExpr(head, postfix[:len(postfix)-1]); ok {
+			e.emitChanSend(text, elem, op)
+			return
+		}
 	}
 	// `(*p).x = v` / `(*p)[i] = v` -- a written-out dereference as the target's
 	// base, which the grammar admits as AssignHead's parenthesised alternative.
@@ -26188,7 +26336,7 @@ func (e *emitter) emitRecvStmt(nodes []Node) {
 		if n.sym != Expression {
 			continue
 		}
-		elem, base, ok := e.chanOperand(n.ast)
+		elem, base, ok := e.chanOperand(n)
 		if !ok {
 			e.fail("a receive statement needs a plain channel operand")
 			return
