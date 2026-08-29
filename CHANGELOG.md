@@ -16,6 +16,22 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **An intermediate of a sized-integer expression kept C's extra bits.** With
+  `var k uint16 = 40000`, `k*3/2` printed 60000 where Go says 27232: Go wraps
+  after EVERY operation in the operand's type, so `k*3` is 54464 before the
+  division, while the emitted C wrapped only the level's final result, having
+  computed the chain in `int`. Every `int8`, `uint8`, `int16` and `uint16`
+  expression of more than one operator in a row was affected -- `b*b/b`, `s+s-t`,
+  `-c*2/3` -- and only where the intermediate overflowed, which is exactly when
+  byte arithmetic is written that way on purpose. A parenthesised intermediate or
+  one stored in a variable was already right. Now each operation is narrowed as Go
+  narrows it. Found by a fixed-point probe program diffed against Go on the board;
+  the fuzzer had never produced a chain of two sized operations whose first one
+  overflows.
 ## v0.34.0
 
 ### Language

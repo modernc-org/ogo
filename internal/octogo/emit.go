@@ -3396,6 +3396,23 @@ func (e *emitter) narrowCTypeNode(n Node) string {
 	return narrowOf(e.underlyingCType(ct), ct)
 }
 
+// narrowLevelPrefix is the level made of n's first count children -- `k * 3` out of
+// `k * 3 / 2` -- as a node of the same kind, so that it can be emitted, typed and
+// narrowed like any other level. A level's children lie one after another in the
+// flat AST, each terminal one token index and each nonterminal its header and
+// its size, so the prefix is a leading slice of the level's own ast.
+func narrowLevelPrefix(n Node, count int) Node {
+	i := 0
+	for k := 0; k < count && i < len(n.ast); k++ {
+		if n.ast[i] < 0 {
+			i += 2 + int(n.ast[i+1])
+		} else {
+			i++
+		}
+	}
+	return Node{sym: n.sym, ast: n.ast[:i]}
+}
+
 func narrowOf(underlying, ct string) string {
 	if w, ok := cIntWidths[underlying]; !ok || w >= 32 {
 		return ""
@@ -25675,6 +25692,18 @@ func (e *emitter) emitExprNode(n Node) {
 		// C computed this in int if the operands are narrower than one; Go computes
 		// in their own type. See narrowCType.
 		if nc := e.narrowCType(n.ast); nc != "" {
+			if len(kids) > 3 {
+				// EVERY operation wraps in Go, not only the last: `s + s - t` on an
+				// int16 wraps the sum before the difference is taken. One cast
+				// around the whole level wrapped only the total, so the intermediate
+				// kept C's extra bits (see narrowLevelPrefix).
+				e.emit("(" + nc + ")(")
+				e.emitExprNode(narrowLevelPrefix(n, len(kids)-2))
+				e.emitExprNode(kids[len(kids)-2])
+				e.emitExprNode(kids[len(kids)-1])
+				e.emit(")")
+				return
+			}
 			e.emit("(" + nc + ")")
 		}
 		e.emit("(")
@@ -25705,6 +25734,17 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		if narrow != "" {
 			e.emit("(" + narrow + ")")
+			if len(kids) > 3 {
+				// The level's first operations become a level of their own, cast
+				// like any other, and only the last operator and operand stay here:
+				// `k*3/2` on a uint16 is (uint16_t)((uint16_t)(k * 3) / 2), which
+				// wraps the product as Go does, where (uint16_t)(k * 3 / 2) divided
+				// C's unwrapped 120000 and printed 60000 for Go's 27232. The last
+				// operator keeps the treatment below -- the guarded divisor, the
+				// remainder by one, the shift helper -- which is why the loop runs
+				// over the rewritten three rather than the prefix being emitted here.
+				kids = []Node{narrowLevelPrefix(n, len(kids)-2), kids[len(kids)-2], kids[len(kids)-1]}
+			}
 		}
 		e.emit("(")
 		unsignedTerm := e.unsignedLevel(n.ast)

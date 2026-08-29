@@ -12366,6 +12366,9 @@ type pair struct {
 
 func scale(v uint8) uint8 { return v * 3 }
 
+func take16(v uint16) int { return int(v) }
+func chain(v uint8) uint8 { return v * 3 / 2 }
+
 func main() {
 	var a uint8 = 200
 	var b uint8 = 100
@@ -12397,10 +12400,26 @@ func main() {
 	// A narrow value in a wider context keeps its own arithmetic.
 	var w int32 = 1000
 	println(w + int32(a*3))
+
+	// Two operations in a row, the first of which overflows: Go wraps after EACH
+	// one, in the operand's type, so k*3 is 54464 before it is halved. A
+	// parenthesised intermediate, (k*3)/2, was always right; the flat chain
+	// wrapped only its total and printed 60000 -- found by a fixed-point probe
+	// program diffed against Go on the board, in what a driver's byte arithmetic
+	// looks like. Printed, compared, passed, converted, stored, and on a defined
+	// type.
+	var k uint16 = 40000
+	var j uint16 = 30000
+	println(k*3/2, k*3%7, k+j-k, a*a/a, a*3/2, s*3/2, -s*2/3, c*3/2, c*c/7, -c*2/3)
+	println(k*3 > 50000, k*3/2 == 27232, take16(k*3/2), chain(a), uint32(k*3/2), int(c*3/2))
+	x := k*3/2 + 1
+	y := c*3/2 - 1
+	println(x, y, n*3/2, n*n/n)
 }
 `,
 		want: "44 156 88 32 56 55\n-56 44 -112 -100 -101\n54464 48928 5536 5535\n" +
-			"-5536 -30000 -30001\n88 56 55\n88 56 -5536\n88 56 55\n88\n600 300\n1088\n",
+			"-5536 -30000 -30001\n88 56 55\n88 56 -5536\n88 56 55\n88\n600 300\n1088\n" +
+			"27232 4 30000 0 44 12232 1845 22 2 18\ntrue true 27232 44 27232 22\n27233 21 44 0\n",
 	},
 	{
 		// Clearing bits in a variable from that same variable -- `x = mask &^ x`,

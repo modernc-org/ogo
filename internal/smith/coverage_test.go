@@ -73,6 +73,11 @@ var generatedConstructs = []struct {
 	// spotted by its bytes rather than by an escape.
 	{"multibyte string literal", `var t_\d+ string = "[^"]*[^\x00-\x7f]`},
 	{"sized fold of an unstored expression", `int\((\(z_\d+ |-\(z_\d+|\^\(z_\d+)`},
+	// Two operations in a row with NO parenthesis between them, the shape every
+	// other generated expression cannot take (BinaryExprNode parenthesises). The
+	// first may overflow the type, and Go wraps it before the second is applied;
+	// a compiler wrapping only the total agreed with the VM on every other fold.
+	{"sized chain of two operations", `int\(\(z_\d+ [-+*] -?\d+ [-+*/%] -?\d+\)\)`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
 	{"element swap", `\w+\[\d+\], \w+\[\d+\] = `},

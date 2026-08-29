@@ -892,11 +892,28 @@ func (f *Fuzzer) pickSized(k BasicKind) int64 {
 func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bool) {
 	id := &IdentNode{Name: name}
 	lit := func(v int64) Node { return &IntLitNode{Value: sizedLitText(v, cur.k)} }
-	switch f.Rand.Intn(6) {
+	switch f.Rand.Intn(7) {
 	case 0:
 		return &UnaryExprNode{Op: "-", X: id}, cur.neg(), true
 	case 1:
 		return &UnaryExprNode{Op: "^", X: id}, cur.not(), true
+	case 3: // two operations in a row, the first free to overflow; see SizedChainNode
+		levels := [2][2][]string{{{"*"}, {"/", "%", "*"}}, {{"+", "-"}, {"+", "-"}}}
+		lv := levels[f.Rand.Intn(2)]
+		op1, op2 := lv[0][f.Rand.Intn(len(lv[0]))], lv[1][f.Rand.Intn(len(lv[1]))]
+		v1, v2 := f.pickSized(cur.k), int64(2+f.Rand.Intn(7)) // a small nonzero divisor
+		if op2 == "+" || op2 == "-" {
+			v2 = f.pickSized(cur.k)
+		}
+		mid, err := cur.binOp(op1, NewSized(v1, cur.k))
+		if err != nil {
+			return nil, cur, false
+		}
+		r, err := mid.(Sized).binOp(op2, NewSized(v2, cur.k))
+		if err != nil {
+			return nil, cur, false
+		}
+		return &SizedChainNode{X: name, Op1: op1, Lit1: sizedLitText(v1, cur.k), Op2: op2, Lit2: sizedLitText(v2, cur.k)}, r.(Sized), true
 	case 2: // a shift, whose result leaves the type at the top end
 		n := int64(f.Rand.Intn(bits))
 		r, err := cur.binOp("<<", NewSized(n, cur.k))
@@ -1678,6 +1695,23 @@ func (n *BinaryExprNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, " %s ", n.Op)
 	n.Right.Write(w, 0)
 	fmt.Fprint(w, ")")
+}
+
+// SizedChainNode is two operations in a row on a sized variable with nothing
+// between them, `z * 7 / 2` -- the one shape BinaryExprNode cannot print, since it
+// parenthesises every operand, and `(z * 7) / 2` was right all along. Go wraps the
+// product in the variable's type before dividing it, and the compiler used to wrap
+// only the quotient, so a uint16 of 40000 gave 60000 for Go's 27232 (see the
+// "arithmetic narrower than int" run case). Both operators are of one precedence,
+// so the flat spelling parses as the left fold the VM computed.
+type SizedChainNode struct {
+	X          string
+	Op1, Op2   string
+	Lit1, Lit2 string
+}
+
+func (n *SizedChainNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "(%s %s %s %s %s)", n.X, n.Op1, n.Lit1, n.Op2, n.Lit2)
 }
 
 type IntLitNode struct{ Value string }
