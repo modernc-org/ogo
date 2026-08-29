@@ -86,6 +86,7 @@ var generatedConstructs = []struct {
 	// returned with a garbage high word.
 	{"widening function", `\nfunc fn_\d+\([^)]*\) int64 \{\n\treturn int64\(`},
 	{"sized variable from a widening call", `\n\s*var z_\d+ int64 = fn_\d+\(`},
+	{"defined int64 variable from a widening call", `\n\s*var z_\d+ D_\d+ = D_\d+\(fn_\d+\(`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
 	{"element swap", `\w+\[\d+\], \w+\[\d+\] = `},

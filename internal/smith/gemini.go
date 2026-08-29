@@ -88,6 +88,12 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	for i, n := 0, f.Rand.Intn(4); i < n; i++ {
 		f.genFuncDecl()
 	}
+	// At least one widening function, so that an int64 variable drawn below has
+	// one to be initialized from (see FuncDef.Wide): drawn by chance alone, a
+	// sample of two dozen programs declared four and called none.
+	if len(f.wideFuncs()) == 0 {
+		f.genWideFuncDecl()
+	}
 
 	// 4.5. A procedure carrying a deferred call, for main to call. It has to be a
 	// procedure rather than one of the functions above: a defer runs at its
@@ -227,6 +233,22 @@ func (f *Fuzzer) genFuncDecl() *FuncDef {
 	case r < 0.5:
 		fn.Wide = true // see FuncDef.Wide
 	}
+	return f.declareFunc(fn)
+}
+
+// genWideFuncDecl declares a widening function (see FuncDef.Wide), for the program
+// that drew none by chance.
+func (f *Fuzzer) genWideFuncDecl() *FuncDef {
+	fn := &FuncDef{Name: f.newVarName("fn"), Wide: true}
+	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
+		fn.Params = append(fn.Params, f.newVarName("p"))
+	}
+	fn.Body = f.genPureExpr(fn.Params, 0)
+	return f.declareFunc(fn)
+}
+
+// declareFunc records a generated function and writes its declaration.
+func (f *Fuzzer) declareFunc(fn *FuncDef) *FuncDef {
 	f.Funcs = append(f.Funcs, fn)
 	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2, Wide: fn.Wide}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
@@ -801,6 +823,11 @@ func (f *Fuzzer) genStringStmt(vm Machine, mem Memory) Node {
 // the checker range-checks.
 func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	k := sizedKinds[f.Rand.Intn(len(sizedKinds))]
+	// int64 more often than one kind in seven when there is a widening function
+	// to draw from: a sample of two dozen programs had no int64 variable at all.
+	if len(f.wideFuncs()) != 0 && f.Rand.Float32() < 0.3 {
+		k = KindInt64
+	}
 	lo, hi := sizedRange(k)
 	name := f.newVarName("z")
 
@@ -829,12 +856,13 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 		typeName = d
 	}
 	var init Node = &IntLitNode{Value: sizedLitText(cur.v, k)}
-	// An int64 is drawn from a WIDENING function half the time one exists: its
-	// `return int64(p)` is the shape the target got wrong (see FuncDef.Wide), and
-	// the value then flows into every step and fold below like any other. Only
-	// the predeclared spelling: a defined type over int64 would need a
-	// conversion around the call.
-	if wide := f.wideFuncs(); k == KindInt64 && typeName == "int64" && len(wide) != 0 && f.Rand.Float32() < 0.5 {
+	// An int64 is drawn from a WIDENING function three times in four when one
+	// exists: its `return int64(p)` is the shape the target got wrong (see
+	// FuncDef.Wide), and the value then flows into every step and fold below like
+	// any other. A defined type over int64 takes the call through a conversion,
+	// `D(fn(x))`, which is a 64-bit cast of a 64-bit call -- a shape of its own
+	// the emitter binds first.
+	if wide := f.wideFuncs(); k == KindInt64 && len(wide) != 0 && f.Rand.Float32() < 0.75 {
 		fn := wide[f.Rand.Intn(len(wide))]
 		args := map[string]Int32{}
 		var argNodes []Node
@@ -845,6 +873,9 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 		}
 		cur = NewSized(int64(f.evalCall(fn, args, vm)), k)
 		init = &CallNode{Fn: fn.Name, Args: argNodes}
+		if typeName != "int64" {
+			init = &ConvNode{Type: typeName, X: init}
+		}
 	}
 	stmts := []Node{&VarDeclNode{
 		Name: name,

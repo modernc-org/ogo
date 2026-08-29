@@ -155,7 +155,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   operand is a widening conversion, `func f(p int) int64 { return int64(p) }`,
   whose calls initialize `int64` variables that every other sized construct then
   works on. Both are pinned by the generator-coverage test, so they keep
-  appearing; on the board, the oracle checks them against the VM every run.
+  appearing; on the board, the oracle checks them against the VM every run --
+  and does catch the fault: with the return workaround removed, four of the two
+  dozen sample programs fail their checksum on a P2-EDGE.
 
 ## v0.34.0
 
