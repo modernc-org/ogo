@@ -2443,26 +2443,27 @@ func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 		params = "void"
 	}
 	ret := "void"
-	switch {
-	case len(resTypes) == 1:
-		ret = resTypes[0]
-	case len(resTypes) > 1:
-		// SEVERAL results are WRITTEN THROUGH an out parameter that leads the list,
-		// and the pointer itself returns nothing -- the shape an array result already
-		// takes, and the one an interface's slot takes for a multi-result method. A
-		// function POINTER whose result is a struct is what the target's C compiler
-		// cannot match against the function assigned to it ("expected function of 1
-		// args returning ... but got ... unknown type"), and CALLING through one on a
-		// spawned cog corrupts the program outright when the struct has padding --
-		// which (int32, bool) has. See doc/struct-return-through-pointer-on-cog.c.
-		// The function itself still returns the struct: a DIRECT call of it is right,
-		// and a direct call is what the wrapper makes (funcValueWrapper).
-		out := e.retStructNameOf(resTypes) + "*"
+	if out := e.outResultOf(resTypes); out != "" {
+		// SEVERAL results, and a single STRUCT one, are WRITTEN THROUGH an out
+		// parameter that leads the list, and the pointer itself returns nothing --
+		// the shape an array result already takes, and the one an interface's slot
+		// takes for such a method. A function POINTER whose result is a struct is
+		// what the target's C compiler cannot match against the function assigned
+		// to it ("expected function of 1 args returning ... but got ... unknown
+		// type"), and CALLING through one on a spawned cog corrupts the program
+		// outright when the struct has padding -- which (int32, bool) has, and so
+		// does a `struct { seq, val int; tag byte }`. See outResultOf and
+		// doc/struct-return-through-pointer-on-cog.c. The function itself still
+		// returns the struct: a DIRECT call of it is right, and a direct call is
+		// what the wrapper makes (funcValueWrapper).
+		out += "*"
 		if params == "void" {
 			params = out
 		} else {
 			params = out + ", " + params
 		}
+	} else if len(resTypes) == 1 {
+		ret = resTypes[0]
 	}
 	return funcValueType{key: ret + " (*)(" + params + ")", res: resTypes, params: paramTypes}
 }
@@ -4559,6 +4560,7 @@ type emitter struct {
 	eqStructs          map[string]bool         // struct C types compared with == / !=: emit an ogo_eq_<T> helper
 	eqArrays           map[string]arrDim       // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue           []string                // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	discardCall        bool                    // the call about to be emitted is a statement that throws its value away (see emitCallStmtExpr)
 	printArgs          []printArg              // a print's arguments already bound to temporaries, so nothing the print itself emits can change state (see hoistPrintArgs)
 	scopeNames         []map[string]bool       // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
 	curParams          map[string]bool         // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
@@ -5010,10 +5012,10 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 // Declaration order is slot order, which is why this is a slice and not a map.
 type ifaceMethod struct {
 	name string
-	// res is the C return type of the method's slot: "void" for none, the type
-	// itself for one, and the struct several results are returned in -- the same
-	// struct a direct call to such a method returns, so the thunk hands one back
-	// unchanged.
+	// res is the method's result type as declared: "void" for none, the type
+	// itself for one -- a struct included, though the slot then returns void and
+	// writes it through out (see slotRet) -- and "void" for several, which resList
+	// carries. It is what types a call through the slot.
 	res string
 	// resList is what the method returns in the source's terms, so a multiple
 	// assignment through the interface knows how many values there are and what
@@ -5145,15 +5147,13 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 			continue
 		}
 		_, resTypes := e.cSig(n.ast)
-		res, out := "void", ""
-		switch len(resTypes) {
-		case 0:
-		case 1:
+		// SEVERAL results, and a single STRUCT one, are WRITTEN THROUGH a trailing
+		// parameter rather than returned; see ifaceMethod.out and outResultOf. res
+		// keeps the declared type either way, being what types a call through the
+		// slot; the slot itself is typed by slotRet.
+		res, out := "void", e.outResultOf(resTypes)
+		if len(resTypes) == 1 {
 			res = resTypes[0]
-		default:
-			// SEVERAL results are WRITTEN THROUGH a trailing parameter rather than
-			// returned; see ifaceMethod.out.
-			out = e.retStructNameOf(resTypes)
 		}
 		params, _ := e.cParamTypes(n.ast)
 		add(ifaceMethod{name: name, res: res, resList: resTypes, out: out, params: params})
@@ -5280,7 +5280,7 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 	// member, which C requires and which used to be a filler byte.
 	fmt.Fprintf(&b, "struct %s { const char* %s;", vt, vtTypeField)
 	for _, m := range methods {
-		fmt.Fprintf(&b, " %s (*%s)(void*", m.res, userIdent(m.name))
+		fmt.Fprintf(&b, " %s (*%s)(void*", slotRet(m), userIdent(m.name))
 		for _, p := range m.params {
 			b.WriteString(", " + p)
 		}
@@ -5842,7 +5842,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			return false
 		}
 		thunk := ifaceThunkName(iface, concrete, m.name)
-		fmt.Fprintf(&b, "static %s %s(void* _ogo_r", m.res, thunk)
+		fmt.Fprintf(&b, "static %s %s(void* _ogo_r", slotRet(m), thunk)
 		var args []string
 		for i, p := range m.params {
 			fmt.Fprintf(&b, ", %s _ogo_a%d", p, i)
@@ -5932,7 +5932,7 @@ func (e *emitter) ifaceOutMethod(recv string, suffix []Node) (ifaceCType, method
 	}
 	member := e.soleIdent(suffix[0].ast)
 	for _, m := range e.ifaceMethods[ct] {
-		if m.name == member && m.out != "" {
+		if m.name == member && m.out != "" && len(m.resList) > 1 {
 			return ct, member, m.out, true
 		}
 	}
@@ -8427,6 +8427,79 @@ func (e *emitter) retStructName(fn string) string { return e.retStructNameOf(e.f
 // shape they return the same struct and the function type is spellable -- the same
 // reasoning anonStructType already uses for an anonymous struct, where Go gives two
 // of them one identity when their fields match.
+// outResultOf names the struct a function's results travel in when they cannot be
+// RETURNED through a function pointer, or "" when they can. Several results always
+// take it, in the struct minted for them (retStructNameOf); so does a single result
+// that is a user struct. The target's C compiler cannot match a struct-returning
+// function against a pointer to it ("expected function of 1 args returning ... but
+// got ... unknown type"), and a call through such a pointer on a spawned cog
+// corrupts the program outright when the struct has padding -- a `Process(f Frame)
+// Frame` reached through an interface from a goroutine took the whole program down
+// (doc/struct-return-through-pointer-on-cog.c). A one-word struct would travel
+// safely, but the shape is not what decides it: every user struct takes the out
+// parameter, so nothing depends on a layout this emitter does not compute. A
+// string, a slice or an interface value is a struct the emitter minted, has no
+// padding, and returns as it always has.
+func (e *emitter) outResultOf(res []string) string {
+	switch {
+	case len(res) > 1:
+		return e.retStructNameOf(res)
+	case len(res) == 1 && e.isStruct(res[0]) && !e.isIfaceCType(res[0]) && !e.isSliceCType(res[0]) && res[0] != cString:
+		return res[0]
+	}
+	return ""
+}
+
+// emitOutValueCall emits a call whose ONE struct result is written through an out
+// parameter (see outResultOf); callC renders the call given the temporary's name.
+// The temporary is declared ahead of the statement. Where the value is used, the
+// call is made ahead of the statement too and the expression is the temporary;
+// where the statement throws the value away, the call is the statement itself, so
+// no bare `tmp;` is left standing for a C compiler to warn about.
+func (e *emitter) emitOutValueCall(out string, discard bool, callC func(tmp string) string) {
+	tmp := e.newTmp()
+	e.prologue = append(e.prologue, out+" "+tmp+";\n")
+	if discard {
+		e.emit(callC(tmp))
+		return
+	}
+	e.prologue = append(e.prologue, callC(tmp)+";\n")
+	e.emit(tmp)
+}
+
+// emitCallStmtExpr is emitCallExpr for a call standing as a STATEMENT, whose value
+// is thrown away: a struct result written through an out parameter is then not
+// hoisted ahead of the statement but written by the statement (emitOutValueCall).
+// The flag is consumed at emitCallExpr's entry, so the calls in the arguments do
+// not see it.
+func (e *emitter) emitCallStmtExpr(recv string, postfix []Node) bool {
+	e.discardCall = true
+	ok := e.emitCallExpr(recv, postfix)
+	e.discardCall = false
+	return ok
+}
+
+// ifaceSingleOut reports the struct a single-result method of an interface writes
+// through its out parameter, when it has one (see outResultOf).
+func (e *emitter) ifaceSingleOut(ifaceCType, method string) (string, bool) {
+	for _, m := range e.ifaceMethods[ifaceCType] {
+		if m.name == method {
+			return m.out, m.out != "" && len(m.resList) == 1
+		}
+	}
+	return "", false
+}
+
+// slotRet is the C return type of an interface slot, and of the thunk filling it:
+// void where the result travels through the out parameter, the result itself
+// otherwise. res keeps the declared type either way, being what types a call.
+func slotRet(m ifaceMethod) string {
+	if m.out != "" {
+		return "void"
+	}
+	return m.res
+}
+
 func (e *emitter) retStructNameOf(res []string) string {
 	if len(res) < 2 {
 		return ""
@@ -8823,13 +8896,13 @@ func (e *emitter) methodValueBinding(base, method string) (cname, recvPath strin
 // struct is ever returned through a function pointer (see funcSigCParts).
 func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 	res, isFunc := e.funcRet[cname]
-	if !isFunc || len(res) < 2 {
+	ret := e.outResultOf(res) // several results, or one struct: see outResultOf
+	if !isFunc || ret == "" {
 		return "", false
 	}
 	if had, done := e.funcValueWrappers[cname]; done {
 		return had, true
 	}
-	ret := e.retStructNameOf(res)
 	wrapper := cname + "_ogo_fv"
 	var params, args []string
 	for i, pt := range e.funcParams[cname] {
@@ -8884,12 +8957,9 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	// SEVERAL results are written through an out parameter that leads the list, as
 	// for a plain function taken as a value (see funcSigCParts and
 	// funcValueWrapper): what a function value points at may not return a struct.
-	ret, out := "void", ""
-	switch {
-	case len(fv.res) == 1:
+	ret, out := "void", e.outResultOf(fv.res) // several results, or one struct
+	if out == "" && len(fv.res) == 1 {
 		ret = fv.res[0]
-	case len(fv.res) > 1:
-		out = e.retStructNameOf(fv.res)
 	}
 	cname := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_mv%d", e.liftSeq))
 	e.liftSeq++
@@ -18230,7 +18300,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		ct, isVar := e.varType(callee)
-		if !isVar || !e.isFuncCType(ct) || len(e.funcTypeRet[ct]) < 2 {
+		if !isVar || !e.isFuncCType(ct) || e.outResultOf(e.funcTypeRet[ct]) == "" {
 			return "", false
 		}
 		text := e.varRef(callee) + "(&" + out
@@ -18242,7 +18312,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 		// `pick()(3)` -- what the first call yields is a function value, so the
 		// second call takes the out parameter as any call through a value does.
 		ct, okCt := e.callResultCType(callee, suffix[:1])
-		if !okCt || len(e.funcTypeRet[e.underlyingCType(ct)]) < 2 {
+		if !okCt || e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) == "" {
 			return "", false
 		}
 		first, okFirst := "", false
@@ -18258,7 +18328,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		field := e.soleIdent(suffix[0].ast)
 		ft, isField := e.fieldType(callee, []string{field})
-		if !isField || !e.isFuncCType(ft) || len(e.funcTypeRet[ft]) < 2 {
+		if !isField || !e.isFuncCType(ft) || e.outResultOf(e.funcTypeRet[ft]) == "" {
 			return "", false
 		}
 		text := e.fieldAccessC(callee, []string{field}) + "(&" + out
@@ -18579,7 +18649,7 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		// equivalence the expression form uses (see derefCallSteps).
 		if name, ok := e.derefHead(head); ok {
 			e.ind()
-			e.emitCallExpr(name, postfix)
+			e.emitCallStmtExpr(name, postfix)
 			e.emit(";\n")
 			return
 		}
@@ -18587,7 +18657,7 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		// receiver is declared -- the mirror of the dereference above.
 		if name, ok := e.addrHead(head); ok {
 			e.ind()
-			e.emitCallExpr(name, postfix)
+			e.emitCallStmtExpr(name, postfix)
 			e.emit(";\n")
 			return
 		}
@@ -18610,12 +18680,12 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 			return
 		}
 		e.ind()
-		e.emitCallExpr(name, rest)
+		e.emitCallStmtExpr(name, rest)
 		e.emit(";\n")
 		return
 	}
 	e.ind()
-	if !e.emitCallExpr(recv, postfix) {
+	if !e.emitCallStmtExpr(recv, postfix) {
 		e.fail("only <pkg>.<Func>(args) or builtin(args) call statements are supported yet")
 		return
 	}
@@ -18629,6 +18699,8 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 // by the statement call path (emitCall) and the expression Factor path. The
 // checker has already verified the callee resolves and the arguments match.
 func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
+	discard := e.discardCall // see emitCallStmtExpr
+	e.discardCall = false
 	// An UNQUALIFIED call to a math intrinsic, which happens only inside the math
 	// package's own source: Round and Trunc are written in OctoGo over Floor, Ceil
 	// and Abs. Without this they would emit calls to math_Floor, which is declared
@@ -18649,14 +18721,21 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	// stores from.
 	if len(suffix) == 2 && suffix[0].sym == CallSuffix && suffix[1].sym == CallSuffix {
 		if ct, okCt := e.callResultCType(recv, suffix[:1]); okCt {
-			if rts := e.funcTypeRet[e.underlyingCType(ct)]; len(rts) > 1 {
+			if rts := e.funcTypeRet[e.underlyingCType(ct)]; e.outResultOf(rts) != "" {
 				tmp := e.newTmp()
 				text, okOut := e.valueOutCallC(recv, suffix, tmp)
 				if !okOut {
 					return false
 				}
-				e.prologue = append(e.prologue, e.retStructNameOf(rts)+" "+tmp+";\n")
-				e.emit(text)
+				e.prologue = append(e.prologue, e.outResultOf(rts)+" "+tmp+";\n")
+				if discard || len(rts) > 1 {
+					e.emit(text)
+					return true
+				}
+				// One struct result that is USED: the call goes ahead of the
+				// statement and the expression is the temporary (see emitOutValueCall).
+				e.prologue = append(e.prologue, text+";\n")
+				e.emit(tmp)
 				return true
 			}
 		}
@@ -18762,14 +18841,18 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// of this frame, declared ahead of the statement. Reached only where the
 			// results are discarded -- a multiple assignment takes the same call
 			// apart itself, and binds the temporary it stores from.
-			if rets := e.funcTypeRet[ct]; len(rets) > 1 {
-				tmp := e.newTmp()
-				e.prologue = append(e.prologue, e.retStructNameOf(rets)+" "+tmp+";\n")
-				e.emit(e.varRef(recv) + "(&" + tmp)
-				if args := e.argsCText(e.funcValueOf[recv], suffix[0].ast); args != "" {
-					e.emit(", " + args)
-				}
-				e.emit(")")
+			if rets := e.funcTypeRet[ct]; e.outResultOf(rets) != "" {
+				// One struct result takes the same parameter and is USED: it is
+				// hoisted ahead of the statement unless the statement throws it away
+				// (emitOutValueCall).
+				args := e.argsCText(e.funcValueOf[recv], suffix[0].ast)
+				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
+					call := e.varRef(recv) + "(&" + tmp
+					if args != "" {
+						call += ", " + args
+					}
+					return call + ")"
+				})
 				return true
 			}
 			e.emit(e.varRef(recv) + "(")
@@ -18795,6 +18878,14 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// the implementations -- the call names no function for them to be
 			// looked up by, and asking nothing made this the way around them.
 			e.checkIfaceArgs(ct, method, e.callArgExprs(suffix[1].ast))
+			if out, single := e.ifaceSingleOut(ct, method); single {
+				// One struct result, written through the out parameter; see
+				// outResultOf.
+				e.emitOutValueCall(out, discard, func(tmp string) string {
+					return e.ifaceCallC(ct, e.varRef(recv), method, suffix[1].ast, tmp)
+				})
+				return true
+			}
 			e.emit(e.ifaceCallC(ct, e.varRef(recv), method, suffix[1].ast, ""))
 			return true
 		}
@@ -18809,14 +18900,15 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		if ft, ok := e.fieldType(recv, []string{method}); ok && e.isFuncCType(ft) {
 			// Several results are written through a leading out parameter, as for a
 			// value held in a variable (see funcSigCParts).
-			if rets := e.funcTypeRet[ft]; len(rets) > 1 {
-				tmp := e.newTmp()
-				e.prologue = append(e.prologue, e.retStructNameOf(rets)+" "+tmp+";\n")
-				e.emit(e.fieldAccessC(recv, []string{method}) + "(&" + tmp)
-				if args := e.argsCText(e.funcValueOf[funcFieldKey(recv, method)], suffix[1].ast); args != "" {
-					e.emit(", " + args)
-				}
-				e.emit(")")
+			if rets := e.funcTypeRet[ft]; e.outResultOf(rets) != "" {
+				args := e.argsCText(e.funcValueOf[funcFieldKey(recv, method)], suffix[1].ast)
+				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
+					call := e.fieldAccessC(recv, []string{method}) + "(&" + tmp
+					if args != "" {
+						call += ", " + args
+					}
+					return call + ")"
+				})
 				return true
 			}
 			e.emit(e.fieldAccessC(recv, []string{method}) + "(")
@@ -19301,6 +19393,19 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if len(rts) != 1 {
 					return "", "", false, false
 				}
+				if out := e.outResultOf(rts); out != "" {
+					// A single STRUCT result is written through the out parameter
+					// (see outResultOf), into a temporary the chain carries on. The
+					// element is bound first for the reason given just below.
+					tmp := e.newTmp()
+					call := e.hoist(cur.ctype, func() { e.emit(text) }) + "(&" + tmp
+					if args := e.argsCText("", n.ast); args != "" {
+						call += ", " + args
+					}
+					e.prologue = append(e.prologue, out+" "+tmp+";\n", call+");\n")
+					cur, text, addr = e.plainOrSlice(out), tmp, true
+					continue
+				}
 				// A call made DIRECTLY through an array element of function-pointer
 				// type reaches the wrong function on the P2: every element calls
 				// whatever the first one holds. Measured on a P2-EDGE, constant and
@@ -19352,16 +19457,27 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if slot < 0 {
 					return "", "", false, false
 				}
-				if ms[slot].out != "" {
-					// A method of several results writes through a parameter (see
-					// ifaceMethod.out), so it is not an expression a chain can carry.
-					// The multiple-assignment path emits it; a chain reaching one is
-					// refused by the caller rather than emitted as a void call.
-					return "", "", false, false
-				}
 				call := text + ".vt->" + userIdent(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
+				}
+				if out := ms[slot].out; out != "" {
+					if len(ms[slot].resList) > 1 {
+						// A method of several results writes through a parameter (see
+						// ifaceMethod.out), so it is not an expression a chain can
+						// carry. The multiple-assignment path emits it; a chain reaching
+						// one is refused by the caller rather than emitted as a void call.
+						return "", "", false, false
+					}
+					// A single STRUCT result comes back through the out parameter as
+					// well (see outResultOf), into a temporary of this frame that the
+					// chain carries on as an lvalue: `s.Process(f).val`.
+					tmp := e.newTmp()
+					e.prologue = append(e.prologue, out+" "+tmp+";\n", call+", &"+tmp+");\n")
+					text, addr = tmp, true
+					cur = e.plainOrSlice(out)
+					i++ // consumed the CallSuffix
+					continue
 				}
 				text, addr = call+")", false
 				if ms[slot].res == "void" {

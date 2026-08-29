@@ -16245,6 +16245,74 @@ func main() {
 		want: "0 0\n-1 0\n0 0\n0 1099511627776\n0\n-1\n12 6 -2147483648\n",
 	},
 	{
+		// A struct returned through a function POINTER, on every path one can be
+		// called through: an interface's slot, a function value in a variable, in a
+		// struct field, from a call (`pick()(3)`), and a method value -- used, thrown
+		// away, and carried on by a chain (`st.Process(f).val`), in a loop's
+		// condition, and on a spawned cog. That last one is the shape that found
+		// it: the target's C compiler miscompiles a struct WITH PADDING returned
+		// through a pointer on a cog, and Frame is one (int, int, byte). A method
+		// of several results had long been routed around it, through a trailing
+		// out parameter; a single struct result took the raw path and a
+		// three-cog pipeline printed nothing at all. Every struct result travels
+		// through the parameter now (outResultOf); the direct call is unchanged.
+		name: "a struct result through a function pointer",
+		src: `type Frame struct {
+	seq int
+	val int
+	tag byte
+}
+
+type Stage interface{ Process(f Frame) Frame }
+
+type Scale struct{ k int }
+
+func (s *Scale) Process(f Frame) Frame { f.val *= s.k; return f }
+
+var sc = Scale{3}
+var st Stage = &sc
+
+func build(n int) Frame { return Frame{n, n * n, 'x'} }
+
+type Holder struct{ fn func(int) Frame }
+
+func pick() func(int) Frame { return build }
+
+func worker(out chan Frame) {
+	for i := 0; i < 3; i++ {
+		out <- st.Process(build(i + 1))
+	}
+}
+
+func main() {
+	var ch chan Frame
+	go worker(ch)
+	for i := 0; i < 3; i++ {
+		f := <-ch
+		println(f.seq, f.val, string(rune(f.tag)))
+	}
+	println(st.Process(build(4)).val, st.Process(build(5)).seq)
+	st.Process(build(6))
+	mk := build
+	println(mk(7).val)
+	mk(8)
+	h := Holder{build}
+	println(h.fn(9).val)
+	println(pick()(10).val)
+	step := sc.Process
+	println(step(build(11)).val)
+	g := step(build(12))
+	println(g.seq, g.val)
+	for i := 0; i < 2; i++ {
+		if st.Process(build(i)).val > 0 {
+			println("positive", i)
+		}
+	}
+}
+`,
+		want: "1 3 x\n2 12 x\n3 27 x\n48 5\n49\n81\n100\n363\n12 432\npositive 1\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

@@ -23,6 +23,12 @@
 // So: larger than one word AND holding padding. A one-word struct is returned in a
 // register and never reaches the faulty path.
 //
+// COVERED for a SINGLE struct result too, since 2026-08-29: `Process(f Frame)
+// Frame` through an interface from a goroutine printed nothing at all, the cog
+// dying exactly as below; every user-struct result of a call through a pointer --
+// an interface slot, a function value, a method value -- now takes the out
+// parameter the several-results case already took (outResultOf in emit.go).
+//
 // It reaches ordinary OctoGo through an interface method with several results --
 // `Next() (int32, bool)`, whose result struct is {int32_t, _Bool} and so is
 // exactly the failing shape -- called on a goroutine, which is a cog:

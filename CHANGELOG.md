@@ -20,6 +20,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method returning a struct, called through an interface from a goroutine,
+  took the program down.** `Process(f Frame) Frame` reached through a `Stage`
+  interface on a spawned cog -- a filter stage in a pipeline of cogs -- printed
+  nothing at all: the target's C compiler miscompiles a struct with padding
+  returned through a function POINTER on a cog, and `Frame{seq, val int; tag
+  byte}` is such a struct. The emitter already routed a method of SEVERAL
+  results around this by writing them through a trailing parameter; a single
+  struct result took the raw path, on an interface slot and on a function value
+  alike, and the build even said so -- `warning: incompatible pointer types ...
+  returning unknown type` is the backend failing to match the two. Every struct
+  result now travels the same way as several do: through an interface's slot,
+  through a function value held in a variable or a struct field, through
+  `pick()(3)`, and through a method value. A direct call is unchanged. Found by
+  a three-cog pipeline probe diffed against Go on the board.
+
 - **An intermediate of a sized-integer expression kept C's extra bits.** With
   `var k uint16 = 40000`, `k*3/2` printed 60000 where Go says 27232: Go wraps
   after EVERY operation in the operand's type, so `k*3` is 54464 before the
