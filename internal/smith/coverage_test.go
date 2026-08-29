@@ -81,6 +81,9 @@ var generatedConstructs = []struct {
 	// A negation feeding an addition or subtraction in one expression, which the
 	// target miscompiled for a 64-bit value with its inliner on.
 	{"sized negation beside an addition", `int\(\(-z_\d+ [-+] -?\d+\)\)`},
+	// The high half of a 64-bit fold EXPRESSION, not only of the variable: the
+	// negation fault above corrupted only the high word, which int(...) drops.
+	{"64-bit fold expression high half", `int\(\(\(-z_\d+ [-+] -?\d+\)>>32\)\)`},
 	// A function whose whole return operand is a widening conversion, and a sized
 	// variable drawn from a call of one: `return int64(p)` is what the target
 	// returned with a garbage high word.

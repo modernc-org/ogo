@@ -900,9 +900,9 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	// exactly the blind spot the hand-written corpus had, and why `a * 3` printing
 	// 600 instead of 88 went unnoticed for so long. Only a value used WITHOUT being
 	// stored can tell the two apart.
-	folded, foldNode := cur.Int32(), Node(&IdentNode{Name: name})
+	folded, foldNode, foldVal, haveFold := cur.Int32(), Node(&IdentNode{Name: name}), cur, false
 	if node, v, ok := f.genSizedFold(name, cur, bits); ok {
-		folded, foldNode = v.Int32(), node
+		folded, foldNode, foldVal, haveFold = v.Int32(), node, v, true
 	}
 	newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), folded)
 	mem.Store(f.ChecksumName, newChecksum)
@@ -940,6 +940,30 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 				},
 			})
 		}
+		// And the high half of the FOLD EXPRESSION, which the variable's says
+		// nothing about: `int((-z - 5))` is the low word of a negation the target
+		// got wrong only in its high word, and a sample of two dozen programs
+		// passed with the workaround for that removed. The expression is written
+		// again rather than bound, so it is computed as an operand once more.
+		if haveFold {
+			if fhi, err := foldVal.binOp(">>", NewSized(32, k)); err == nil {
+				c3, _ := vm.Eval("^", mem.Load(f.ChecksumName), fhi.(Sized).Int32())
+				mem.Store(f.ChecksumName, c3)
+				stmts = append(stmts, &AssignStmtNode{
+					Lhs: f.ChecksumName,
+					Op:  "=",
+					Rhs: &BinaryExprNode{
+						Left: &IdentNode{Name: f.ChecksumName},
+						Op:   "^",
+						Right: &ConvNode{Type: "int", X: &BinaryExprNode{
+							Left:  foldNode,
+							Op:    ">>",
+							Right: &IntLitNode{Value: "32"},
+						}},
+					},
+				})
+			}
+		}
 	}
 	return &BlockNode{Statements: stmts}
 }
@@ -963,7 +987,11 @@ func (f *Fuzzer) pickSized(k BasicKind) int64 {
 func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bool) {
 	id := &IdentNode{Name: name}
 	lit := func(v int64) Node { return &IntLitNode{Value: sizedLitText(v, cur.k)} }
-	switch f.Rand.Intn(8) {
+	choice := f.Rand.Intn(8)
+	if bits == 64 && f.Rand.Float32() < 0.4 {
+		choice = 4 // the negation chain, more often where the target got it wrong
+	}
+	switch choice {
 	case 0:
 		return &UnaryExprNode{Op: "-", X: id}, cur.neg(), true
 	case 1:
@@ -971,7 +999,10 @@ func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bo
 	case 4: // a negation feeding an addition or subtraction; see SizedNegChainNode
 		ops := []string{"+", "-"}
 		op := ops[f.Rand.Intn(len(ops))]
-		v := f.pickSized(cur.k)
+		// A SMALL constant, as user code writes `-x - 3` and as the fault was
+		// measured; a full-width one takes a different path through the
+		// target's 64-bit arithmetic.
+		v := int64(1 + f.Rand.Intn(100))
 		r, err := cur.neg().binOp(op, NewSized(v, cur.k))
 		if err != nil {
 			return nil, cur, false

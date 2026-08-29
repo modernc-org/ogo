@@ -156,8 +156,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   whose calls initialize `int64` variables that every other sized construct then
   works on. Both are pinned by the generator-coverage test, so they keep
   appearing; on the board, the oracle checks them against the VM every run --
-  and does catch the fault: with the return workaround removed, four of the two
-  dozen sample programs fail their checksum on a P2-EDGE.
+  and does catch the faults: with the return workaround removed, four of the two
+  dozen sample programs fail their checksum on a P2-EDGE, and with the negation
+  spelling removed, two. The second needed the fold to take the HIGH half of
+  the folded expression as well as its low word, `int((-z - 3)>>32)`: the
+  negation fault corrupts only the high word, which `int(...)` drops.
 
 ## v0.34.0
 
