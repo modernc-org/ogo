@@ -78,6 +78,14 @@ var generatedConstructs = []struct {
 	// first may overflow the type, and Go wraps it before the second is applied;
 	// a compiler wrapping only the total agreed with the VM on every other fold.
 	{"sized chain of two operations", `int\(\(z_\d+ [-+*] -?\d+ [-+*/%] -?\d+\)\)`},
+	// A negation feeding an addition or subtraction in one expression, which the
+	// target miscompiled for a 64-bit value with its inliner on.
+	{"sized negation beside an addition", `int\(\(-z_\d+ [-+] -?\d+\)\)`},
+	// A function whose whole return operand is a widening conversion, and a sized
+	// variable drawn from a call of one: `return int64(p)` is what the target
+	// returned with a garbage high word.
+	{"widening function", `\nfunc fn_\d+\([^)]*\) int64 \{\n\treturn int64\(`},
+	{"sized variable from a widening call", `\n\s*var z_\d+ int64 = fn_\d+\(`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
 	{"element swap", `\w+\[\d+\], \w+\[\d+\] = `},

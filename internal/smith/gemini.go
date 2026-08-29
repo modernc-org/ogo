@@ -180,6 +180,14 @@ type FuncDef struct {
 	// the same way it predicts one. Such a function is not usable in expression
 	// position, so genCall skips it and genDestructure is what calls it.
 	Body2 Node
+	// Wide makes this `func f(p int) int64 { return int64(<body>) }`: a widening
+	// conversion as the whole return operand, which the target returned with a
+	// garbage high word (see "a 64-bit result returned through a temporary" among
+	// the run cases). Its type is not the `func(int) int` the other consumers
+	// assume, so funcsWithResults leaves it out and wideFuncs is how it is found:
+	// its call initializes a sized int64 variable, from where the sized machinery
+	// takes the value on.
+	Wide bool
 }
 
 // results reports how many values a generated function returns.
@@ -211,13 +219,16 @@ func (f *Fuzzer) genFuncDecl() *FuncDef {
 		fn.Params = append(fn.Params, f.newVarName("p"))
 	}
 	fn.Body = f.genPureExpr(fn.Params, 0)
-	if f.Rand.Float32() < 0.3 {
+	switch r := f.Rand.Float32(); {
+	case r < 0.3:
 		// A two-result function, for the destructuring call sites. The second body
 		// is generated the same way and is total for the same reason.
 		fn.Body2 = f.genPureExpr(fn.Params, 0)
+	case r < 0.5:
+		fn.Wide = true // see FuncDef.Wide
 	}
 	f.Funcs = append(f.Funcs, fn)
-	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2}).Write(f.Out, 0)
+	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2, Wide: fn.Wide}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
 	return fn
 }
@@ -280,7 +291,18 @@ func (f *Fuzzer) evalBody(fn *FuncDef, body Node, args map[string]Int32, vm Mach
 func (f *Fuzzer) funcsWithResults(n int) []*FuncDef {
 	var out []*FuncDef
 	for _, fn := range f.Funcs {
-		if fn.results() == n {
+		if fn.results() == n && !fn.Wide {
+			out = append(out, fn)
+		}
+	}
+	return out
+}
+
+// wideFuncs returns the generated functions returning int64 (see FuncDef.Wide).
+func (f *Fuzzer) wideFuncs() []*FuncDef {
+	var out []*FuncDef
+	for _, fn := range f.Funcs {
+		if fn.Wide {
 			out = append(out, fn)
 		}
 	}
@@ -806,10 +828,28 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	if d, ok := f.SizedDefined[k]; ok {
 		typeName = d
 	}
+	var init Node = &IntLitNode{Value: sizedLitText(cur.v, k)}
+	// An int64 is drawn from a WIDENING function half the time one exists: its
+	// `return int64(p)` is the shape the target got wrong (see FuncDef.Wide), and
+	// the value then flows into every step and fold below like any other. Only
+	// the predeclared spelling: a defined type over int64 would need a
+	// conversion around the call.
+	if wide := f.wideFuncs(); k == KindInt64 && typeName == "int64" && len(wide) != 0 && f.Rand.Float32() < 0.5 {
+		fn := wide[f.Rand.Intn(len(wide))]
+		args := map[string]Int32{}
+		var argNodes []Node
+		for _, p := range fn.Params {
+			node, val, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
+			argNodes = append(argNodes, node)
+			args[p] = val.(Int32)
+		}
+		cur = NewSized(int64(f.evalCall(fn, args, vm)), k)
+		init = &CallNode{Fn: fn.Name, Args: argNodes}
+	}
 	stmts := []Node{&VarDeclNode{
 		Name: name,
 		Type: typeName,
-		Expr: &IntLitNode{Value: sizedLitText(cur.v, k)},
+		Expr: init,
 	}}
 
 	bits, _, _ := sizedInfo(k)
@@ -892,11 +932,20 @@ func (f *Fuzzer) pickSized(k BasicKind) int64 {
 func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bool) {
 	id := &IdentNode{Name: name}
 	lit := func(v int64) Node { return &IntLitNode{Value: sizedLitText(v, cur.k)} }
-	switch f.Rand.Intn(7) {
+	switch f.Rand.Intn(8) {
 	case 0:
 		return &UnaryExprNode{Op: "-", X: id}, cur.neg(), true
 	case 1:
 		return &UnaryExprNode{Op: "^", X: id}, cur.not(), true
+	case 4: // a negation feeding an addition or subtraction; see SizedNegChainNode
+		ops := []string{"+", "-"}
+		op := ops[f.Rand.Intn(len(ops))]
+		v := f.pickSized(cur.k)
+		r, err := cur.neg().binOp(op, NewSized(v, cur.k))
+		if err != nil {
+			return nil, cur, false
+		}
+		return &SizedNegChainNode{X: name, Op: op, Lit: sizedLitText(v, cur.k)}, r.(Sized), true
 	case 3: // two operations in a row, the first free to overflow; see SizedChainNode
 		levels := [2][2][]string{{{"*"}, {"/", "%", "*"}}, {{"+", "-"}, {"+", "-"}}}
 		lv := levels[f.Rand.Intn(2)]
@@ -1714,6 +1763,20 @@ func (n *SizedChainNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, "(%s %s %s %s %s)", n.X, n.Op1, n.Lit1, n.Op2, n.Lit2)
 }
 
+// SizedNegChainNode is a negation feeding an addition or subtraction in one
+// expression, `(-z + 5)`: the shape the target miscompiled for a 64-bit z with its
+// inliner on -- the high word never negated -- while `-z` alone and `-(z + 5)`
+// were right (see "a 64-bit negation beside an addition" among the run cases).
+// The unary minus binds tighter than the operator, so this is what the VM's
+// neg-then-binOp computes.
+type SizedNegChainNode struct {
+	X, Op, Lit string
+}
+
+func (n *SizedNegChainNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "(-%s %s %s)", n.X, n.Op, n.Lit)
+}
+
 type IntLitNode struct{ Value string }
 
 func (n *IntLitNode) Write(w io.Writer, indent int) { fmt.Fprint(w, n.Value) }
@@ -1938,6 +2001,7 @@ type FuncDeclNode struct {
 	Params []string
 	Body   Node
 	Body2  Node // non-nil for a two-result function
+	Wide   bool // the result is int64(Body); see FuncDef.Wide
 }
 
 func (n *FuncDeclNode) Write(w io.Writer, indent int) {
@@ -1949,14 +2013,23 @@ func (n *FuncDeclNode) Write(w io.Writer, indent int) {
 		}
 		fmt.Fprintf(w, "%s int", p)
 	}
-	if n.Body2 != nil {
+	switch {
+	case n.Body2 != nil:
 		fmt.Fprint(w, ") (int, int) {\n")
-	} else {
+	case n.Wide:
+		fmt.Fprint(w, ") int64 {\n")
+	default:
 		fmt.Fprint(w, ") int {\n")
 	}
 	writeIndent(w, indent+1)
 	fmt.Fprint(w, "return ")
-	n.Body.Write(w, 0)
+	if n.Wide {
+		fmt.Fprint(w, "int64(")
+		n.Body.Write(w, 0)
+		fmt.Fprint(w, ")")
+	} else {
+		n.Body.Write(w, 0)
+	}
 	if n.Body2 != nil {
 		fmt.Fprint(w, ", ")
 		n.Body2.Write(w, 0)

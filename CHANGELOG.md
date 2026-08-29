@@ -147,6 +147,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   narrows it. Found by a fixed-point probe program diffed against Go on the board;
   the fuzzer had never produced a chain of two sized operations whose first one
   overflows.
+
+### Testing
+
+- **The fuzzer generates the two shapes that were miscompiled today.** A 64-bit
+  negation beside an addition, `(-z - 5)`, and a function whose whole return
+  operand is a widening conversion, `func f(p int) int64 { return int64(p) }`,
+  whose calls initialize `int64` variables that every other sized construct then
+  works on. Both are pinned by the generator-coverage test, so they keep
+  appearing; on the board, the oracle checks them against the VM every run.
+
 ## v0.34.0
 
 ### Language
