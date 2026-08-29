@@ -50,6 +50,29 @@
 // OPERAND to a temporary, and hoistCompoundTarget, which names the TARGET
 // element's address. The address rather than the pointer, because it needs only
 // the element type and evaluates the index exactly once.
+//
+// REPORTED as flexprop issue 106 and FIXED UPSTREAM by spin2cpp 2bd01c4, "fix for
+// function array dereference bugs" (2026-08-28). The fault was in the transform
+// that rewrites `M op= N` into `M := M op N`: an ARRAYREF whose base had side
+// effects was given a temporary even when the base was a member reference, and
+// taking a temporary of an array-typed member is what went wrong. Eric Smith's own
+// suggested workaround was the long form, `x = x + expr`, which the table above
+// already shows correct.
+//
+// VERIFIED on a P2-EDGE 2026-08-29, all EIGHTEEN spellings from the issue, pinned
+// against master, with the flags ogo build passes:
+//
+//	                                     pinned v7.7.0    master 2bd01c4   gcc
+//	x -= id(p)->a[1]                     -1571814688      970              970
+//	x -= (*id(p)).a[1]                      83711123      970              970
+//	x += id(p)->a[1]                       -60640451     1030             1030
+//	id(p)->a[1] += 5                             100      105              105
+//	id(p)->a[1] *= 2                             100      200              200
+//	(the other thirteen)                     correct  correct          correct
+//
+// The workaround STAYS until the pin moves: internal/flexcc is a transpiled copy of
+// v7.7.0, and the fix is not in any release yet. This file is the check -- compile
+// it with the pinned backend and it is still wrong.
 
 #include <stdio.h>
 

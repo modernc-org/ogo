@@ -22364,7 +22364,10 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 // The element's ADDRESS is what is named, rather than the pointer: it needs only
 // the element type, which the assignment already carries, and it evaluates the
 // index exactly once, where rewriting to `p.ring[i] = p.ring[i] + v` would evaluate
-// it twice. Both were measured to fix it; see doc/compound-call-index.c.
+// it twice. Both were measured to fix it; see doc/compound-call-index.c, which also
+// records that the backend fault is FIXED UPSTREAM (spin2cpp 2bd01c4) and verified
+// on hardware -- so this goes when the pin reaches a release that carries it, and
+// not before.
 //
 // A ++ or -- (rhs == nil) is left alone: the backend gets those right, and they
 // have no operand to go wrong.
@@ -22397,7 +22400,9 @@ func (e *emitter) hoistCompoundTarget(target func(), t assignTail) (string, bool
 // quietly returned a wrong average.
 //
 // Binding the operand to a temporary is enough, and is what the same expression
-// already compiles to when a program writes it in two statements.
+// already compiles to when a program writes it in two statements. Reported as
+// flexprop issue 106 and fixed upstream; the pin still carries the fault, so this
+// stays until it moves (see doc/compound-call-index.c).
 //
 // The operand is rendered ONCE, into the output, because rendering an expression is
 // not free of side effects: one that needs a temporary of its own emits the
