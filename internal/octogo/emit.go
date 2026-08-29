@@ -26723,6 +26723,21 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit("))")
 					return
 				}
+				// A 64-bit negation is spelled as a subtraction from zero. With its
+				// small-function inliner on, the target's C compiler miscompiles a
+				// 64-bit unary minus whose result meets an addition or subtraction in
+				// the same expression: `-x - 3` for an int64 x of 5 was 4294967288,
+				// the high word never negated, while `-x` alone, `-(x + 3)` and
+				// `0 - x - 3` were right, and binding `-x` to a variable first did
+				// not help, the optimizer folding it back. `(0 - x)` was right in
+				// every context measured (doc/negate64-then-add.c). It is what a
+				// negation is, and costs the same.
+				if ct, ok := e.inferNode(kids[1]); ok && cIntWidths[e.underlyingCType(ct)] == 64 {
+					e.emit("(0 - (")
+					e.emitExprNode(kids[1])
+					e.emit("))")
+					return
+				}
 			}
 		}
 		// A Factor carrying a SUFFIX that nothing above claimed. Emitting its

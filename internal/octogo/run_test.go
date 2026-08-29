@@ -16427,6 +16427,47 @@ func main() {
 		want: "10\n110\n709\n",
 	},
 	{
+		// A 64-bit unary minus is emitted as a subtraction from zero. With its
+		// small-function inliner on, the target's C compiler miscompiles a 64-bit
+		// negation whose result meets an addition or subtraction in the same
+		// expression: `-x - 3` for an x of 5 was 4294967288, the high word never
+		// negated, while `-x` alone, `-(x + 3)` and `0 - x - 3` were right and a
+		// negation bound to a variable first was folded back into the fault
+		// (doc/negate64-then-add.c). Found by a 64-bit arithmetic probe diffed
+		// against Go, as the dividend `-big - 3` of a division. The host has never
+		// had the fault; every line matches real Go.
+		name: "a 64-bit negation beside an addition",
+		src: `func id(v int64) int64 { return v }
+
+func neg3(x int64) int64 { return -x - 3 }
+
+func main() {
+	big := id(1 << 40)
+	five := id(5)
+	var u uint64 = 1 << 40
+	a := -big - 3
+	b := -big + 3
+	c := -five - 3
+	d := 3 - -five
+	println(a, b, c, d, neg3(big), neg3(five))
+	e := -big - big
+	f := -five*2 - 1
+	g := -(big + 3)
+	h := -u - 3
+	i := -u + u
+	j := -(-big) - 3
+	println(e, f, g, h, i, j)
+	var acc int64
+	for _, k := range [3]int64{1, 2, -7} {
+		n := -big - 3
+		acc += n / k
+	}
+	println(acc)
+}
+`,
+		want: "-1099511627779 -1099511627773 -8 8 -1099511627779 -8\n-2199023255552 -11 -1099511627779 18446742974197923837 0 1099511627773\n-1492194351986\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

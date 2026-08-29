@@ -43,6 +43,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`-x - 3` on an `int64` was wrong.** With its small-function inliner on, the
+  target's C compiler miscompiles a 64-bit negation whose result meets an
+  addition or subtraction in the same expression -- `-x - 3` for an x of 5 was
+  4294967288, the high word never negated -- while `-x` alone, `-(x + 3)` and
+  `0 - x - 3` are right, and binding the negation to a variable first does not
+  help, the optimizer folding the copy away. A 64-bit unary minus is now emitted
+  as a subtraction from zero, which is right in every context measured
+  (`doc/negate64-then-add.c`). Found by a 64-bit arithmetic probe diffed against
+  Go, as a division whose dividend was `-big - 3`. Latent under v7.7.0's flags
+  since the optimizer pass that carries it was turned off then.
+
 - **A `go` statement passed an array by reference.** `go f(arr, ch)` handed the
   cog a pointer to the caller's array where Go copies the array at the `go`
   statement: `arr[0] = 100` written after it reached the cog (109 for Go's 10),
