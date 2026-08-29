@@ -5811,10 +5811,15 @@ func main() {
 	go work(5)
 	println(<-ch)
 
+	// A literal with PARAMETERS, called where it stands: a literal cannot capture,
+	// so this is how a value reaches a goroutine written in place.
+	go func(c chan int, k int) { c <- k * 3 }(ch, 4)
+	println(<-ch)
+
 	println("body done")
 }
 `,
-		want: "21\n10\nbody done\nfirst deferred\nsecond deferred\n",
+		want: "21\n10\n12\nbody done\nfirst deferred\nsecond deferred\n",
 	},
 	{
 		// A method value: a method taken as a value, with its receiver bound. Go
@@ -18342,9 +18347,9 @@ func main() {
 		// printf is print/println's formatted sibling: the same compiler magic over a
 		// CONSTANT format, which is what lets every verb be checked against its
 		// argument here rather than going wrong at run time. Output was diffed against
-		// the same program written for Go's fmt.Printf, and differs from it in exactly
-		// one place: %T of a defined type prints "Celsius" where Go prints
-		// "main.Celsius", there being no package clause to qualify it with.
+		// the same program written for Go's fmt.Printf, and matches it line for
+		// line -- %T of a defined type included, "main.Celsius": the package clause
+		// this language lacks is what Go spells there, so it is spelled here too.
 		name: "printf formats every verb as Go does",
 		src: `type Celsius int
 
@@ -18371,16 +18376,24 @@ func main() {
 	printf("v: %v %v %v %v %v\n", n, s, b, f, xs)
 	printf("arr: %v\n", a)
 	printf("c: %c%c%c %c %c\n", 'H', 'i', '!', 'é', 955)
+	printf("o: %o %o %o %5o %-5o| b: %b %b %b %b\n", 8, -8, u, u, u, 5, -5, u, 0)
+	printf("e: %e %.2e %8.3e\n", 12345.678, 0.00025, -1e10)
+	printf("exp: %v %v\n", 1e10, 1e-7)
+	println(1e10, 1e-7, 2.5e8, 123456.0)
 	printf("no verbs\n")
 }
 `,
 		want: `d=42 s=hi t=true f=1.500000 u=7 c=3
 big=-5000000000 ub=4000000000 hex=ff HEX=FF 100%
 neg: -ff -FF | -1 -80000000 -10000000000 | 0 ee6b2800
-T: int string bool float64 Celsius uint32
+T: int string bool float64 main.Celsius uint32
 v: 42 hi true 1.5 [1 2 3]
 arr: [hi yo]
 c: Hi! é λ
+o: 10 -10 7     7 7    | b: 101 -101 111 0
+e: 1.234568e+04 2.50e-04 -1.000e+10
+exp: 1e+10 1e-07
+1e+10 1e-07 2.5e+08 123456
 no verbs
 `,
 	},
@@ -18432,9 +18445,9 @@ func main() {
 	printf("nil=%T\n", nilf)
 }
 `,
-		want: `*Sq area=16
-*Circ area=12
-*Sq
+		want: `*main.Sq area=16
+*main.Circ area=12
+*main.Sq
 3
 nil=<nil>
 `,

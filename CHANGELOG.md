@@ -18,7 +18,34 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A function literal started with `go` may take arguments.** `go func(c chan
+  int, n int) { ... }(ch, 3)` is how a value reaches a goroutine written in
+  place, a literal being unable to capture one; the lifted literal's parameters
+  travel to the cog in the trampoline's block exactly as `go f(ch, 3)` sends
+  them, and the lifetime rule guards them the same way (`go func(p *int)
+  {...}(&local)` is refused as `go f(&local)` is). Only the parameterless form was
+  accepted before. A deferred literal still takes none.
+
+- **`printf` has `%o`, `%b` and `%e`.** Octal and binary integers, a negative
+  one as a sign and its magnitude as Go prints it (`-101` for `%b` of -5), and a
+  float in exponent form, flags, width and precision passing through as for
+  `%f`. `%b` takes no width yet, and says so.
+
 ### Fixed
+
+- **`%T` of a type declared by the main package prints `main.Temp`**, as Go's
+  does, where it printed `Temp`; an interface's dynamic type reads `*main.Sq`.
+  A type of another package was already `lib.Temp`. Diagnostics keep the bare
+  spelling, as Go's own compiler does.
+
+- **A float printed in exponent form had a capital `E`.** `println(1e10)` printed
+  `1E+10` where Go prints `1e+10`: the target's printf writes the letter in
+  capitals. `println`, `%v`, `%g` and `%e` now go through a helper that
+  lowercases it. The digits are still the target's six significant ones under
+  `%g` where Go prints the shortest exact form, which is the documented
+  difference and remains.
 
 - **A signature naming another package's type was compared by its spelling.**
   `type Mapper func(Vec) Vec` in `geom` is written `func(geom.Vec) geom.Vec`

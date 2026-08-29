@@ -668,6 +668,30 @@ const hexPrintHelper = "static void ogo_print_hex(long long v, int upper) {\n" +
 	"\tif (v < 0) { putchar('-'); u = -u; }\n" +
 	"\tif (upper) printf(\"%llX\", u); else printf(\"%llx\", u);\n}\n"
 
+// basePrintHelper prints an integer in octal or binary as Go prints it: a sign and
+// the magnitude for a negative signed value ("-101" for %b of -5), where C's %o
+// would print the two's complement and C has no %b at all. The magnitude is
+// negated as UNSIGNED, for the same reason ogo_print_hex negates it so.
+const basePrintHelper = "static void ogo_print_base(long long v, int base, int sgn) {\n" +
+	"\tunsigned long long u = (unsigned long long)v;\n" +
+	"\tif (sgn && v < 0) { putchar('-'); u = -u; }\n" +
+	"\tif (base == 8) { printf(\"%llo\", u); return; }\n" +
+	"\tchar b[65]; int i = 64; b[i] = 0;\n" +
+	"\tdo { b[--i] = (char)('0' + (int)(u & 1)); u >>= 1; } while (u);\n" +
+	"\tprintf(\"%s\", b + i);\n}\n"
+
+// floatPrintHelper prints a float through the C format given and lowercases the
+// exponent's letter: the target's printf writes 1E+10 where Go and the host C
+// library write 1e+10. The digits stay the target's -- six significant ones under
+// %g where Go prints the shortest form that reads back exactly, which is the
+// documented difference -- so the letter was a second difference in what should
+// be one.
+const floatPrintHelper = "static void ogo_print_flt(const char* fmt, double v) {\n" +
+	"\tchar b[48];\n" +
+	"\tsnprintf(b, sizeof b, fmt, v);\n" +
+	"\tfor (char* p = b; *p; p++) { if (*p == 'E') { *p = 'e'; } }\n" +
+	"\tprintf(\"%s\", b);\n}\n"
+
 // decPadHelper prints a signed integer zero-padded to a width, as fmt does: the
 // sign first, then the zeros, then the digits, the whole field `width` wide.
 //
@@ -1127,11 +1151,13 @@ func (e *emitter) emitGo(nodes []Node) {
 	var recvText, recvCType string
 	switch {
 	case lit.sym == FuncLiteral:
-		// `go func() { ... }()`: a cog's entry point is generated per function, and a
-		// lifted literal IS one. It takes no arguments for now, which is what a cog
-		// entry usually wants anyway -- what it shares, it shares through a channel.
-		if len(suffix) != 1 || suffix[0].sym != CallSuffix || len(e.callArgExprs(suffix[0].ast)) != 0 {
-			e.fail("a function literal started with go takes no arguments yet")
+		// `go func(c chan int) { ... }(ch)`: a cog's entry point is generated per
+		// function, and a lifted literal IS one, its parameters registered as any
+		// function's are -- so the arguments travel to the cog in the trampoline's
+		// block exactly as `go f(ch)` sends them. A literal cannot capture, which is
+		// what makes parameters the way a value reaches one.
+		if len(suffix) != 1 || suffix[0].sym != CallSuffix {
+			e.fail("a function literal started with go is called where it stands: `go func(...) { ... }(args)`")
 			return
 		}
 		cname, ok := e.liftFuncLit(lit)
@@ -3817,6 +3843,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// type of another package with it (see typeDisplay).
 	e.pkgNames = map[string]string{}
 	e.typeDisplay = map[string]string{}
+	e.userTypeNames = map[string]string{}
 	for _, p := range pkgs {
 		name := p.ImportPath
 		if i := strings.LastIndex(name, "/"); i >= 0 {
@@ -4023,6 +4050,14 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// After runePrintHelper, which it calls.
 	if e.usesRunePad {
 		out.WriteString(runePadHelper)
+		out.WriteByte('\n')
+	}
+	if e.usesFloatPrint {
+		out.WriteString(floatPrintHelper)
+		out.WriteByte('\n')
+	}
+	if e.usesBasePrint {
+		out.WriteString(basePrintHelper)
 		out.WriteByte('\n')
 	}
 	if e.usesDecPad {
@@ -4522,6 +4557,9 @@ type emitter struct {
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
+	usesFloatPrint     bool                    // ogo_print_flt is called: a float printed through %g or %e (see floatPrintHelper)
+	usesBasePrint      bool                    // ogo_print_base is called: %o of a negative value, or any %b (see basePrintHelper)
+	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
 	litDepth           int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
 	constWide          map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
@@ -4933,6 +4971,7 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		if e.curPkgPrefix != "" {
 			e.typeDisplay[mn] = e.pkgNames[e.curPkgPrefix] + "." + name
 		}
+		e.userTypeNames[mn] = name
 		if ifaceAST := e.interfaceTypeAST(typeAST); ifaceAST != nil {
 			e.collectInterfaceType(mn, ifaceAST)
 			continue
@@ -5894,7 +5933,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		}
 	}
 	fmt.Fprintf(&b, "static const %s %s = { %q", ifaceVTName(iface), ifaceVTVar(iface, concrete),
-		"*"+e.goTypeName(concrete)) // what goes in is a POINTER, so that is the dynamic type
+		"*"+e.typeNameForT(concrete)) // what goes in is a POINTER, so that is the dynamic type
 	for _, m := range methods {
 		b.WriteString(", " + ifaceThunkName(iface, concrete, m.name))
 	}
@@ -20565,7 +20604,7 @@ func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb st
 		// form that reads back exactly, so 1234567.0 prints 1.23457e+06 there and
 		// 1.234567e+06 here. Accepting it would buy a rarely-used verb with a silent
 		// output difference.
-		case 'd', 'x', 'X', 's', 't', 'v', 'f', 'T', 'c':
+		case 'd', 'x', 'X', 'o', 'b', 's', 't', 'v', 'f', 'e', 'T', 'c':
 			if lit != "" {
 				items = append(items, printfItem{lit: lit})
 				lit = ""
@@ -20681,7 +20720,28 @@ func (e *emitter) staticTypeName(idx int, arg Node) (string, bool) {
 	if !ok || e.isIfaceCType(ct) {
 		return "", false
 	}
-	return e.goTypeName(ct), true
+	return e.typeNameForT(ct), true
+}
+
+// typeNameForT spells a type as Go's %T does: a type the program declares carries
+// its package, `main.Temp` and `lib.Temp` alike, where a diagnostic of the same
+// package says `Temp` -- as Go's own compiler does -- so goTypeName is not this. A
+// pointer and a slice are spelled around what they hold; a predeclared type is
+// its name.
+func (e *emitter) typeNameForT(ct string) string {
+	if strings.HasSuffix(ct, "*") {
+		return "*" + e.typeNameForT(strings.TrimSuffix(ct, "*"))
+	}
+	if e.isSliceCType(ct) {
+		return "[]" + e.typeNameForT(sliceElemFromCName(ct))
+	}
+	if name, ok := e.typeDisplay[ct]; ok {
+		return name
+	}
+	if name, ok := e.userTypeNames[ct]; ok {
+		return "main." + name
+	}
+	return e.goTypeName(ct)
 }
 
 // emitPrintfVerb emits one verb's argument, checking the verb against the type it
@@ -20715,7 +20775,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			spec, verb)
 		return false
 	}
-	if item.hasFlag('0') && (verb == 'f' || verb == 'g') {
+	if item.hasFlag('0') && (verb == 'f' || verb == 'g' || verb == 'e') {
 		e.failAt(arg.ast, "printf: the '0' flag on %%%s%c is not supported by the C "+
 			"backend, which pads a float with spaces instead of zeros; it does honour "+
 			"'0' on the integer verbs", spec, verb)
@@ -20813,15 +20873,24 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		e.emit("printf(\"%" + spec + "s\", (")
 		value()
 		e.emit(") ? \"true\" : \"false\");\n")
-	case 'f', 'g':
+	case 'f', 'g', 'e':
 		if !isFloatCType(ct) {
 			return wrong("a float")
 		}
 		// %f is fixed-point with six decimals, as C's is and as Go's is; %g is the
-		// shortest form, which is what %v of a float asks for. Flags, width and
-		// precision mean the same in both, so they pass straight through.
+		// shortest form, which is what %v of a float asks for; %e is the exponent
+		// form. Flags, width and precision mean the same in both, so they pass
+		// straight through -- %g and %e by way of the helper that lowercases the
+		// exponent's letter (see floatPrintHelper).
 		e.ind()
-		e.emit("printf(\"%" + spec + string(verb) + "\", ")
+		if verb == 'f' {
+			e.emit("printf(\"%" + spec + "f\", ")
+			value()
+			e.emit(");\n")
+			return true
+		}
+		e.usesFloatPrint = true
+		e.emit("ogo_print_flt(\"%" + spec + string(verb) + "\", ")
 		value()
 		e.emit(");\n")
 	case 'c':
@@ -20846,9 +20915,23 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		e.emit("ogo_print_rune((int32_t)(")
 		value()
 		e.emit("));\n")
-	case 'd', 'x', 'X':
+	case 'd', 'x', 'X', 'o', 'b':
 		if !isIntCType(ct) {
 			return wrong("an integer")
+		}
+		if verb == 'b' {
+			// C has no %b: the helper prints the digits, and a negative signed value
+			// as a sign and its magnitude, as %x below. A width would have to be
+			// filled around that sign by hand, so there is none yet.
+			if spec != "" {
+				return noSpec("%b is printed by a helper here")
+			}
+			e.usesBasePrint = true
+			e.ind()
+			e.emit("ogo_print_base((long long)(")
+			value()
+			e.emit("), 2, " + strconv.Itoa(boolToInt(isSignedIntCType(ct))) + ");\n")
+			return true
 		}
 		if verb != 'd' && isSignedIntCType(ct) {
 			// A negative value prints as a sign and its magnitude, as in Go. C's %x
@@ -20859,6 +20942,14 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 				// sides of the sign depending on the flag. Getting that subtly wrong
 				// is worse than saying so.
 				return noSpec("a negative %x prints as sign and magnitude here")
+			}
+			if verb == 'o' {
+				e.usesBasePrint = true
+				e.ind()
+				e.emit("ogo_print_base((long long)(")
+				value()
+				e.emit("), 8, 1);\n")
+				return true
 			}
 			e.usesHexPrint = true
 			e.ind()
@@ -21023,6 +21114,19 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	// wrapping negative.
 	verb := e.scalarPrintVerbOf(idx, arg)
 	e.ind()
+	if verb == "%g" {
+		// A float goes through the helper, which lowercases the exponent's letter
+		// the target's printf writes in capitals (see floatPrintHelper).
+		e.usesFloatPrint = true
+		e.emit("ogo_print_flt(\"%g\", ")
+		e.emitReplayArg(idx, arg)
+		e.emit(");\n")
+		if newline {
+			e.ind()
+			e.emit("printf(\"\\n\");\n")
+		}
+		return
+	}
 	if newline {
 		e.emit("printf(\"" + verb + "\\n\", ")
 	} else {
@@ -21094,7 +21198,9 @@ func (e *emitter) emitPrintSlice(newline bool, elem string, emitArg func()) {
 func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 	allScalar := true
 	for i, arg := range args {
-		if !e.isScalarPrint(i, arg) {
+		// A float is printed by a helper rather than by a conversion (see
+		// floatPrintHelper), so it takes the one-per-statement path too.
+		if !e.isScalarPrint(i, arg) || e.scalarPrintVerbOf(i, arg) == "%g" {
 			allScalar = false
 			break
 		}

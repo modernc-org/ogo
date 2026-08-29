@@ -1797,15 +1797,18 @@
 // fmt package, and it formats as fmt does:
 //
 //	%d %x %X    an integer, in decimal or hexadecimal
+//	%o %b       an integer, in octal or binary
 //	%s          a string
 //	%t          a bool, as the word true or false
 //	%f          a float, fixed-point
+//	%e          a float, in exponent form
 //	%c          the character an integer names, encoded as UTF-8
 //	%v          the value in its default form — what println would print, down to
 //	            "[1 2 3]" for a slice. Not a pointer, a func value, an interface
 //	            or a struct: fmt renders those differently from the built-in
 //	            println, and this does not render them yet
-//	%T          the value's type
+//	%T          the value's type, spelled as Go spells it: "main.Celsius" for a
+//	            type this package declares, "lib.Temp" for an imported one
 //	%%          a literal percent
 //
 // A verb may carry fmt's flags, width and precision — "%6.2f", "%-8s", "%+05d",
@@ -1825,11 +1828,12 @@
 // carried by printing the value through a signed conversion, which holds every
 // other unsigned type and not that one.
 //
-// Two verbs do not take a width yet, and say so where they are written: %v, whose
-// rendering is the built-in println's and does its own spacing, and %x of a SIGNED
-// integer, which prints as a sign and a magnitude here — Go puts the fill on
-// different sides of that sign depending on the flag, and getting it subtly wrong
-// would be worse than declining. %x of an unsigned integer takes a width.
+// Three verbs do not take a width yet, and say so where they are written: %v,
+// whose rendering is the built-in println's and does its own spacing; %x and %o of
+// a SIGNED integer, which print as a sign and a magnitude here — Go puts the fill
+// on different sides of that sign depending on the flag, and getting it subtly
+// wrong would be worse than declining; and %b, which a helper prints. %x and %o
+// of an unsigned integer take a width.
 //
 // A verb that does not suit its argument, an unknown verb, and a count of verbs
 // that does not match the count of arguments are each refused where the call is
