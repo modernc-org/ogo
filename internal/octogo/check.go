@@ -9609,6 +9609,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			case directCall:
 			case hasSelector && f.isImportQualifier(s, id.Src()):
 				f.checkQualifiedRef(s, id, suffix)
+			case f.isImportQualifier(s, id.Src()):
+				// The qualifier standing alone, `x := lib`, or with a suffix that
+				// does not select through it. A package name is not a value, which
+				// is what Go says of it; "undefined" said the import written two
+				// lines up was not there at all.
+				f.err(id.Position(), "use of package %s not in selector", id.Src())
 			default:
 				f.err(id.Position(), "undefined: %s", id.Src())
 			}
@@ -13711,6 +13717,53 @@ func (f *File) qualifiedConst(s *Scope, n Node) (ExpressionNode, bool) {
 	return cd.ConstSpec.Value.Expr(), true
 }
 
+// qualifiedFactor reports whether a factor's head identifier is an IMPORT
+// QUALIFIER, and answers with the reference as written -- "lib.Cur", "lib.Two" --
+// and whether a selector followed it at all. It is qualifiedConst's question
+// without the "and is it a constant", for the folder to say something true about a
+// qualified reference it cannot fold.
+//
+// Imports live in the FILE scope, which a body's scope chain does not reach, so the
+// name walk finds nothing under the qualifier; that is the whole of why every one of
+// these read as undefined.
+func (f *File) qualifiedFactor(s *Scope, n Node) (written string, selected, ok bool) {
+	var qual, member Token
+	seen := 0
+	for c := range it(n.ast) {
+		switch c.sym {
+		case FactorSuffix:
+			// Only the FIRST selector names the package's member; anything after it
+			// -- a call's parentheses, an index, a further field -- operates on what
+			// that member is, which this does not model and does not need to.
+			for d := range it(c.ast) {
+				if d.sym != Selector || member.IsValid() {
+					continue
+				}
+				for e := range it(d.ast) {
+					if e.sym == 0 && f.ch(e.tok) == IDENT {
+						member = f.tok(e.tok)
+						break
+					}
+				}
+			}
+		case 0:
+			if f.ch(c.tok) != IDENT {
+				return "", false, false
+			}
+			qual, seen = f.tok(c.tok), seen+1
+		default:
+			return "", false, false
+		}
+	}
+	if seen != 1 || !f.isImportQualifier(s, qual.Src()) {
+		return "", false, false
+	}
+	if !member.IsValid() {
+		return qual.Src(), false, true
+	}
+	return qual.Src() + "." + member.Src(), true, true
+}
+
 func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	// A conversion of a constant, `int32(1)` or `float64(n)`, which Go folds like
 	// any other constant expression -- and which is how a scale factor is written:
@@ -13725,6 +13778,27 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	// imports live in the file scope -- and came out as "undefined: geo".
 	if v, ok := f.qualifiedConst(s, n); ok {
 		return v
+	}
+	// Any OTHER qualified reference: `lib.Cur`, `lib.Two()`, or the qualifier
+	// standing alone. Each has the same trouble the constant had and none of them
+	// was answered, so all three reported "undefined: lib" of an import written two
+	// lines up -- and a switch case naming one, which needs no constant at all, did
+	// not compile. What they have in common is an unknown value; what differs is
+	// only what is said about it.
+	if written, selected, isQual := f.qualifiedFactor(s, n); isQual {
+		switch {
+		case !selected:
+			// A package name is not a value: it may only be selected through. Go's
+			// own words, and true in every context, so it is said before the two
+			// that have a message of their own.
+			f.err(f.tok(n.Pos()).Position(), "use of package %s not in selector", written)
+		case !f.inArrayBound && !f.inCaseExpr:
+			// The same thing a local non-constant name is told, and silent in the
+			// same two contexts: an array bound has arrayBound's own "non-constant
+			// array bound", and a case expression is compared at run time.
+			f.err(f.tok(n.Pos()).Position(), "%s is not a constant", written)
+		}
+		return constVal{cv: constant.MakeUnknown()}
 	}
 	//TODO 	var ident *FactorNodeIdent
 	for n := range it(n.ast) {

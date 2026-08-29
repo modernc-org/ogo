@@ -20,6 +20,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A `switch` case may name another package's variable or function.**
+  `case strings.HasPrefix(s, "get"):` -- ordinary Go, and the shape a command
+  dispatcher is written in -- was refused with `undefined: strings`, naming an import
+  written two lines up. A case expression is folded like a constant expression, and
+  the folder resolves names on the body's scope chain, which the FILE scope holding
+  the imports is not on. A qualified CONSTANT was folded by a path of its own, so
+  only that one spelling worked.
+
+  The same root cause gave three more wrong messages, all now what Go says:
+  `const K = lib.Cur` is `lib.Cur is not a constant` rather than `undefined: lib`;
+  `var a [lib.Cur]int` is `non-constant array bound`; and a qualifier standing alone,
+  `x := lib` or `case lib:`, is `use of package lib not in selector`.
+
 - **`error` is a predeclared type.** Go's `interface{ Error() string }` under the
   name the universe holds it by, so `func read() (int, error)` compiles, `err != nil`
   asks whether the interface carries a table, `err.Error()` calls through it, and a

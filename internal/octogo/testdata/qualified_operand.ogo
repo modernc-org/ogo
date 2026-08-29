@@ -1,0 +1,50 @@
+// A package QUALIFIER resolves through the file scope, which a body's scope chain
+// does not reach -- so every place that walks names in the ordinary way finds
+// nothing under it. The constant folder was one of those, and it reported
+// "undefined: p" of an import written two lines up: in a switch CASE, which needs no
+// constant at all and so did not compile; in a const declaration and an array bound,
+// where the answer is that the reference is not constant, not that it is not there.
+//
+// A qualifier standing alone is neither: a package name is not a value, and Go says
+// so in words this now uses.
+
+import "p"
+
+const local = 3
+
+// A case expression is compared at run time, so a qualified variable or call needs
+// no constant value. A qualified CONSTANT folds, as it always did.
+func cases() {
+	n := 1
+	switch n {
+	case p.Cur:
+	case p.Two():
+	case p.Max:
+	case local:
+	}
+
+	switch n {
+	// ERROR "use of package p not in selector"
+	case p:
+	}
+
+	switch n {
+	// ERROR "undefined: nope"
+	case nope:
+	}
+}
+
+// A const declaration wants a constant, and says which reference is not one.
+// ERROR "p.Cur is not a constant"
+const fromVar = p.Cur
+
+// An array bound has its own contextual message and keeps it.
+// ERROR "non-constant array bound"
+var sized [p.Cur]int
+
+// The qualifier alone, in an ordinary expression rather than a folded one.
+func bare() {
+	// ERROR "use of package p not in selector"
+	x := p
+	_ = x
+}

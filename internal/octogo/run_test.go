@@ -19438,7 +19438,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n12 true\n0 chain: off true\nchain: off 7\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n12 true\n0 chain: off true\nchain: off 7\ncur\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -19644,17 +19644,44 @@ println(chain.Deck.Twice(), chain.Deck.N)
 println(framed.N, framed.Twice(), framed.F)
 framed.Inc()
 println(framed.N, framed.Reg.N, framed.Twice())
-// The predeclared error, across a package boundary. It is the universe's type
-// and not any package's, so the two sides have to agree on one C type and one
-// table shape -- and the SENTINEL comparison is what a caller does with an
-// exported error variable, which with no heap is the only way to have one.
-watt, err := chain.Power(true)
-println(watt, err == nil)
-watt, err = chain.Power(false)
-println(watt, err.Error(), err == &chain.ErrOff)
-// An interface of this package EMBEDDING error, satisfied by that package's type.
-var f Failing = &chain.ErrOff
-println(f.Error(), f.Pin())
+errors()
+qualifiedCases()
+}
+
+// A function of its own, not more of main: one function's locals live in COG RAM,
+// of which there are 480 longs for all of them together, and main was already close
+// to it.
+//
+// The predeclared error, across a package boundary. It is the universe's type and
+// not any package's, so the two sides have to agree on one C type and one table
+// shape -- and the SENTINEL comparison is what a caller does with an exported error
+// variable, which with no heap is the only way to have one.
+func errors() {
+	watt, err := chain.Power(true)
+	println(watt, err == nil)
+	watt, err = chain.Power(false)
+	println(watt, err.Error(), err == &chain.ErrOff)
+	// An interface of this package EMBEDDING error, satisfied by that package's type.
+	var f Failing = &chain.ErrOff
+	println(f.Error(), f.Pin())
+}
+
+// A qualified reference as a switch CASE. The case is folded like a constant
+// expression, and an import resolves through the FILE scope which that walk does not
+// reach -- so a variable's or a call's qualifier read as undefined, and only a
+// constant's got through.
+func qualifiedCases() {
+	chain.Cur = 5
+	switch chain.Cur {
+	case chain.Cap:
+		println("cap")
+	case chain.Pair():
+		println("pair")
+	case chain.Cur:
+		println("cur")
+	default:
+		println("none")
+	}
 }
 
 // Failing embeds the predeclared error beside a method of its own, which is how a
@@ -19847,6 +19874,15 @@ func Power(on bool) (int, error) {
 	}
 	return 12, nil
 }
+
+// Cur, Cap and Pair are what a switch CASE names across a boundary: a variable, a
+// constant and a call. Only the constant folded before, so the other two reported
+// their own qualifier undefined.
+var Cur int
+
+const Cap = 7
+
+func Pair() int { return 2 }
 
 func InSum() int {
 	n := 0
