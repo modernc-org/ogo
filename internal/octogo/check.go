@@ -10384,8 +10384,18 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// functions (len, cap, append, ...) are not modelled yet -- see the
 		// Universe init TODO -- so exempt their names rather than misreport a
 		// legitimate builtin call as undefined.
-		if !isBuiltinFuncName(callee.Src()) {
+		switch {
+		case !isBuiltinFuncName(callee.Src()):
 			f.err(callee.Position(), "undefined: %s", callee.Src())
+		case unimplementedBuiltin(callee.Src()):
+			// A builtin the compiler does not implement, said HERE so that every
+			// position sees it. The emitter refuses these too, but only where a call
+			// reaches it: as a VALUE the call was typed first, and the declaration
+			// failed with "cannot infer a type for the declaration of r" -- which
+			// names a missing inference where the program named a missing builtin.
+			// `r := recover()` inside a deferred literal is how Go's whole
+			// recovery idiom is written, so that was the message it got.
+			f.err(callee.Position(), "the %s builtin is not supported yet", callee.Src())
 		}
 	}
 }
@@ -10399,6 +10409,21 @@ func isBuiltinFuncName(name string) bool {
 	case "append", "cap", "clear", "close", "complex", "copy", "delete",
 		"imag", "len", "make", "max", "min", "new", "panic", "print",
 		"println", "real", "recover":
+		return true
+	}
+	return false
+}
+
+// unimplementedBuiltin reports whether name is one of Go's predeclared functions
+// that this compiler does not implement. complex, imag and real want complex
+// numbers and delete wants a map, neither of which exists here; recover wants a
+// panic to unwind out of, and a panic on this target halts the cog it ran on.
+//
+// make and new are NOT here: they allocate, and are refused as such wherever they
+// are written, which says more than "not supported yet" does.
+func unimplementedBuiltin(name string) bool {
+	switch name {
+	case "complex", "delete", "imag", "real", "recover":
 		return true
 	}
 	return false

@@ -1846,11 +1846,15 @@
 // package clause here to qualify it with. An interface holding nothing prints
 // "<nil>".
 //
-// The other Go built-ins are recognized by the checker but not yet emitted:
-// close, complex, delete, imag, real and recover each report "the X built-in is
-// not supported yet". The exception is new, which — together with every make form
-// other than the slice form above — is rejected outright as "dynamic allocation
-// not supported", a heap having no place on the target.
+// Five Go built-ins are recognized and refused, wherever they are written and
+// whether the call stands as a statement or as a value: complex, delete, imag,
+// real and recover each report "the X builtin is not supported yet". The first four
+// want a type this target does not have -- a complex number, a map -- and recover
+// wants a panic to unwind out of, where a panic here halts the cog it ran on.
+//
+// new is the exception, and so is every make form other than the slice one above:
+// those are rejected as "dynamic allocation not supported", a heap having no place
+// on the target, which says more about them than "not supported yet" would.
 //
 // # Statements
 //

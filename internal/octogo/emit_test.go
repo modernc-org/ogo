@@ -6,6 +6,7 @@ package octogo
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -2012,33 +2013,42 @@ func TestEmitCMinMax(t *testing.T) {
 	}
 }
 
-// TestEmitCUnsupportedBuiltins pins that a predeclared builtin the emitter does not
-// implement is refused by name rather than emitted as a call to a nonexistent C
-// function, which is what copy silently did before it was implemented. The checker
-// exempts every builtin name from its undefined check, so the emitter is the only
-// place this can be caught. A user function that shadows a builtin name is a real
-// call and must still emit.
+// TestEmitCUnsupportedBuiltins pins that a predeclared builtin this compiler does
+// not implement is refused BY NAME rather than emitted as a call to a nonexistent C
+// function, which is what copy silently did before it was implemented.
+//
+// The refusal is the CHECKER's, so every position sees it. It used to be the
+// emitter's alone, which meant only a call reaching emitCallExpr was named: as a
+// VALUE the call was typed first, and `r := recover()` -- how Go's whole recovery
+// idiom is written -- came back "cannot infer a type for the declaration of r",
+// naming a missing inference where the program named a missing builtin. The
+// emitter's refusal stays as a backstop for a name added to isBuiltinFuncName and
+// to neither implementation nor unimplementedBuiltin.
+//
+// A user function that shadows a builtin name is a real call and must still emit.
 func TestEmitCUnsupportedBuiltins(t *testing.T) {
-	refused := map[string]string{
-		"delete":  "func main() {\n\tvar m int\n\tdelete(m, 1)\n}\n",
-		"recover": "func main() {\n\trecover()\n}\n",
+	// Each in STATEMENT position and as a VALUE, which used to reach different
+	// answers.
+	refused := map[string][]string{
+		"delete":  {"func main() {\n\tvar m int\n\tdelete(m, 1)\n}\n", "func main() {\n\tvar m int\n\tx := delete(m, 1)\n\t_ = x\n}\n"},
+		"recover": {"func main() {\n\trecover()\n}\n", "func main() {\n\tif r := recover(); r != nil {\n\t\tprintln(1)\n\t}\n}\n"},
+		"complex": {"func main() {\n\tcomplex(1.0, 2.0)\n}\n", "func main() {\n\tc := complex(1.0, 2.0)\n\t_ = c\n}\n"},
+		"real":    {"func main() {\n\treal(3)\n}\n", "func main() {\n\tprintln(real(3))\n}\n"},
+		"imag":    {"func main() {\n\timag(3)\n}\n", "func main() {\n\tprintln(imag(3))\n}\n"},
 	}
-	for name, src := range refused {
-		t.Run(name, func(t *testing.T) {
-			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
-			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				t.Fatalf("Build: %v", err)
-			}
-			var buf bytes.Buffer
-			err = EmitC(pkg, &buf)
-			if err == nil {
-				t.Fatalf("EmitC accepted the unimplemented %s builtin:\n%s", name, buf.String())
-			}
-			if want := "the " + name + " builtin is not supported yet"; !strings.Contains(err.Error(), want) {
-				t.Errorf("EmitC error %q does not name the %s builtin", err, name)
-			}
-		})
+	for name, srcs := range refused {
+		for i, src := range srcs {
+			t.Run(name+"/"+strconv.Itoa(i), func(t *testing.T) {
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				_, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					t.Fatalf("Build accepted the unimplemented %s builtin:\n%s", name, src)
+				}
+				if want := "the " + name + " builtin is not supported yet"; !strings.Contains(err.Error(), want) {
+					t.Errorf("Build error %q does not name the %s builtin", err, name)
+				}
+			})
+		}
 	}
 
 	t.Run("user shadow", func(t *testing.T) {

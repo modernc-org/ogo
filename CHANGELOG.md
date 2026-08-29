@@ -20,6 +20,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An unimplemented built-in is named wherever it is written.** `complex`,
+  `delete`, `imag`, `real` and `recover` were refused only where a call reached the
+  emitter -- as a statement. As a VALUE the call was typed first, so
+  `r := recover()` came back `cannot infer a type for the declaration of "r"`,
+  naming a missing inference where the program named a missing built-in; a receiving
+  `var r any = recover()` was told an interface holds a pointer. That matters most
+  for `recover`, since `if r := recover(); r != nil` inside a deferred literal is how
+  Go's whole recovery idiom is written. The refusal is the checker's now, so every
+  position gets `the recover builtin is not supported yet` at the call.
+
+  `close` is off that list: it shipped in v0.33.0, and the spec had gone on saying it
+  was refused.
+
 - **A `switch` case may name another package's variable or function.**
   `case strings.HasPrefix(s, "get"):` -- ordinary Go, and the shape a command
   dispatcher is written in -- was refused with `undefined: strings`, naming an import
