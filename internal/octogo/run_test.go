@@ -16327,6 +16327,106 @@ func main() {
 		want: "1 3 x\n2 12 x\n3 27 x\n48 5\n49 49000000000 false\n9000000000 16\n81\n100\n363\n12 432\npositive 1\n",
 	},
 	{
+		// A 64-bit result that is not a plain variable is returned through a
+		// temporary. The target's C compiler returns a garbage high word for
+		// `return (int64_t)n;` -- a widening conversion as the whole operand,
+		// signed or unsigned, however nested, at every optimization level -- while
+		// `int64_t r = n; return r;` is right, and so is the same conversion inside
+		// a larger expression (doc/return-widening-cast.c). fib(20) printed
+		// 282076272138861 for 6765 on the board, found by a driver probe diffed
+		// against Go: the base case of every recursive function that widens its
+		// argument is written `return int64(n)`. The host has never had the fault,
+		// so the board is what this case is for; every line matches real Go.
+		name: "a 64-bit result returned through a temporary",
+		src: `type Ticks int64
+
+func wide(n int) int64 { return int64(n) }
+
+func wideU(n uint8) uint64 { return uint64(n) }
+
+func chain(n int) int64 { return int64(int32(n)) }
+
+func ticks(n int) Ticks { return Ticks(n) * 1000 }
+
+func neg(r int64) int64 { return -r }
+
+func sum(a, b int64) int64 { return a + b }
+
+func big(v int) int64 { return int64(v) * 1000000000 }
+
+func viaVar(n int) int64 {
+	r := int64(n)
+	return r
+}
+func fib(n int) int64 {
+	if n < 2 {
+		return int64(n)
+	}
+	a := n - 1
+	b := n - 2
+	return fib(a) + fib(b)
+}
+
+func pair(n int) (int64, int) { return int64(n), n }
+
+func main() {
+	println(wide(5), wide(-3), wideU(200), chain(-7), int64(ticks(3)))
+	println(neg(wide(9)), sum(wide(1), wide(2)), big(3), viaVar(-7))
+	println(fib(20), fib(30))
+	a, b := pair(-4)
+	var c int64 = wide(7)
+	println(a, b, c+1, wide(3)*wide(4), sum(1<<40, 1))
+}
+`,
+		want: "5 -3 200 -7 3000\n-9 3 3000000000 -7\n6765 832040\n-4 -4 8 12 1099511627777\n",
+	},
+	{
+		// A go statement COPIES an array argument, as Go does at the go statement:
+		// the slot held a pointer to the caller's array before, so a write after
+		// the go statement reached the cog (109 for Go's 10) and a caller returning
+		// first left the cog a dangling frame. The goroutine waits on a gate so the
+		// caller's write is certain to come first; an array literal, which did not
+		// compile as a go argument at all, and a defined two-dimensional array
+		// type take the same path. Every line matches real Go.
+		name: "a go statement copies an array argument",
+		src: `type Grid [2][3]int
+
+func worker(ids [4]int, gate chan int, out chan int) {
+	<-gate
+	s := 0
+	for _, v := range ids {
+		s += v
+	}
+	out <- s
+}
+
+func rows(g Grid, out chan int) {
+	out <- g[0][0]*100 + g[1][2]
+}
+
+var gate chan int
+var ch chan int
+
+func main() {
+	arr := [4]int{1, 2, 3, 4}
+	go worker(arr, gate, ch)
+	arr[0] = 100
+	gate <- 1
+	println(<-ch)
+	go worker([4]int{5, 6, -2, 101}, gate, ch)
+	gate <- 1
+	println(<-ch)
+	var g Grid
+	g[0][0] = 7
+	g[1][2] = 9
+	go rows(g, ch)
+	g[1][2] = 0
+	println(<-ch)
+}
+`,
+		want: "10\n110\n709\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a
@@ -18353,6 +18453,25 @@ func main() {
 		name: "printf formats every verb as Go does",
 		src: `type Celsius int
 
+// String makes Celsius a Stringer: %v and %s print what it returns, as fmt's do,
+// while %d prints the number and println never calls it, as Go's do not.
+func (c Celsius) String() string {
+	if c < 0 {
+		return "cold"
+	}
+	return "warm"
+}
+
+type Pt struct{ X, Y int }
+
+func (p *Pt) String() string { return "pt" }
+
+type perr struct{ msg string }
+
+func (e *perr) Error() string { return e.msg }
+
+var errBusy = perr{"busy"}
+
 func main() {
 	n := 42
 	s := "hi"
@@ -18380,6 +18499,11 @@ func main() {
 	printf("e: %e %.2e %8.3e\n", 12345.678, 0.00025, -1e10)
 	printf("exp: %v %v\n", 1e10, 1e-7)
 	println(1e10, 1e-7, 2.5e8, 123456.0)
+	p := Pt{1, 2}
+	var err error = &errBusy
+	var none error
+	printf("str: %v %s %d %-6v| %5s %v %s %v %s %v\n", c, Celsius(-4), c, c, c, &p, &p, err, err, none)
+	println(c)
 	printf("no verbs\n")
 }
 `,
@@ -18394,6 +18518,8 @@ o: 10 -10 7     7 7    | b: 101 -101 111 0
 e: 1.234568e+04 2.50e-04 -1.000e+10
 exp: 1e+10 1e-07
 1e+10 1e-07 2.5e+08 123456
+str: warm cold 3 warm  |  warm pt pt busy busy <nil>
+3
 no verbs
 `,
 	},

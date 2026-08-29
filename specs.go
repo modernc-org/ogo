@@ -1806,7 +1806,10 @@
 //	%v          the value in its default form — what println would print, down to
 //	            "[1 2 3]" for a slice. Not a pointer, a func value, an interface
 //	            or a struct: fmt renders those differently from the built-in
-//	            println, and this does not render them yet
+//	            println, and this does not render them yet. Except, as in fmt, a
+//	            value whose type has a String() string method, which prints what
+//	            that returns, and an error, which prints its Error(); %s does
+//	            the same for both
 //	%T          the value's type, spelled as Go spells it: "main.Celsius" for a
 //	            type this package declares, "lib.Temp" for an imported one
 //	%%          a literal percent

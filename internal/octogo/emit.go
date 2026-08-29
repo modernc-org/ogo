@@ -970,6 +970,12 @@ type goSite struct {
 	callee string
 	args   []string
 	id     int
+	// arrays holds, by slot, the ARRAY parameters: the slot is declared as the array
+	// itself and the argument is copied into it at the go statement, as Go copies
+	// an array argument. The parameter's C type is a pointer to the element, and a
+	// slot of that type aliased the caller's array: a write after the go statement
+	// reached the cog, and a caller returning left the cog a dangling frame.
+	arrays map[int]arrDim
 	// fnCType is the function typedef when the callee is a VALUE rather than a name:
 	// `go g(21)` for a g holding a function. There is no name to generate an entry
 	// point against, so the pointer travels in the argument block like an argument
@@ -1315,6 +1321,12 @@ func (e *emitter) emitGo(nodes []Node) {
 				return
 			}
 		}
+		if dims := e.funcArrayParams[site.callee]; site.fnCType == "" && i < len(dims) && dims[i].bound != "" {
+			if site.arrays == nil {
+				site.arrays = map[int]arrDim{}
+			}
+			site.arrays[len(site.args)] = dims[i] // see goSite.arrays
+		}
 		site.args = append(site.args, ct)
 	}
 	e.goSites = append(e.goSites, site)
@@ -1380,6 +1392,32 @@ func (e *emitter) emitGo(nodes []Node) {
 				continue
 			}
 		}
+		// An ARRAY argument is COPIED into its slot, which is declared as the array
+		// (see goSite.arrays): Go copies an array at the go statement, and the slot
+		// of pointer type it used to have aliased the caller's -- `go f(arr, ch);
+		// arr[0] = 100` reached the cog with the 100. A literal is built in an
+		// array of its own first, C assigning no array.
+		if ad, isArr := site.arrays[i+first]; isArr {
+			e.includes["string.h"] = true
+			rhs := e.captureC(func() { e.emitExpr(a.ast) })
+			// A compound literal, `(ogo_arr_4_int){5, 6, -2, 101}`, is bound to a
+			// variable of its type: the target's memcpy is a MACRO, which reads
+			// the commas inside the braces as arguments of its own.
+			if strings.HasPrefix(rhs, "(") && strings.Contains(rhs, "){") {
+				tmp := e.newTmp()
+				e.ind()
+				e.emit(rhs[1:strings.Index(rhs, "){")] + " " + tmp + " = " + rhs[strings.Index(rhs, "){")+1:] + ";\n")
+				rhs = tmp
+			} else if strings.HasPrefix(rhs, "{") {
+				tmp := e.newTmp()
+				e.ind()
+				e.emit(ad.elem + " " + tmp + ad.declSuffix() + " = " + rhs + ";\n")
+				rhs = tmp
+			}
+			e.ind()
+			e.emit(fmt.Sprintf("memcpy(%s->a%d, %s, sizeof(%s->a%d));\n", ap, i+first, rhs, ap, i+first))
+			continue
+		}
 		// A composite literal is built in a variable of its own first. The target's
 		// C compiler refuses one as the right-hand side of an assignment -- "global
 		// initializers are evaluated at compile time and therefore must be
@@ -1435,6 +1473,10 @@ func (e *emitter) goDefs() string {
 			fmt.Fprintf(&b, " %s fn;", s.fnCType)
 		}
 		for i, a := range s.args {
+			if ad, isArr := s.arrays[i]; isArr {
+				fmt.Fprintf(&b, " %s a%d%s;", ad.elem, i, ad.declSuffix()) // the array itself; see goSite.arrays
+				continue
+			}
 			fmt.Fprintf(&b, " %s a%d;", a, i)
 		}
 		fmt.Fprintf(&b, " } %s;\n", goArgsCName(s.id))
@@ -18652,6 +18694,23 @@ func (e *emitter) exprIsLiteral(ast []int32) bool {
 // `return nil` in a slice-returning function yields the zero slice header, not the
 // integer 0, which is only nil's pointer form.
 func (e *emitter) emitReturnValue(i int, ex Node) {
+	// A 64-bit result that is not a plain variable is returned through a temporary
+	// of the result type. The target's compiler returns a garbage high word for
+	// `return (int64_t)n;` -- a widening cast as the whole operand, however nested,
+	// signed or unsigned, inlined or not, at every optimization level -- while
+	// `int64_t r = n; return r;` is right, and so is the same cast inside a larger
+	// expression (doc/return-widening-cast.c). The runtime helpers in this file have
+	// kept that rule by hand since 2026-08-25; `return int64(n)` is how a program
+	// writes it, the base case of every recursive function that widens its
+	// argument, and fib(20) came back 282076272138861 on the board. The temporary
+	// costs nothing the variable form does not, so every 64-bit result but a bare
+	// name takes it rather than only the shape measured.
+	if i < len(e.curResultTypes) {
+		if ct := e.curResultTypes[i]; cIntWidths[e.underlyingCType(ct)] == 64 && e.soleIdent(ex.ast) == "" {
+			e.emit(e.hoist(ct, func() { e.emitExpr(ex.ast) }))
+			return
+		}
+	}
 	if i < len(e.curResultTypes) {
 		// A nil slice is the all-zero header. The interface case is not here: it
 		// belongs to ifaceValueC below, which every position wanting an interface
@@ -19695,19 +19754,31 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 // C type a call chain yields, for inferCType/callResultCType.
 func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 	var cur accessCur
-	pendingFn := false
+	pendingFn, pendingConv := false, false
 	switch {
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
 	case e.isChainFunc(base):
 		pendingFn = true
 	default:
-		return "", false
+		// A CONVERSION at the head, `Color(7).String()`: the call is the
+		// conversion, and what it yields is the type named, whose method the chain
+		// goes on to. Untyped before, so `s := Color(7).String()` could not infer a
+		// type for s while println of the same call printed it.
+		ct, isConv := e.convType(base)
+		if !isConv || len(steps) == 0 || steps[0].sym != CallSuffix {
+			return "", false
+		}
+		cur, pendingConv = e.plainOrSlice(ct), true
 	}
 	for i := 0; i < len(steps); i++ {
 		n := steps[i]
 		switch n.sym {
 		case CallSuffix:
+			if pendingConv {
+				pendingConv = false
+				continue
+			}
 			if !pendingFn && e.isFuncCType(cur.ctype) {
 				// A call on a function VALUE the chain has reached -- a variable of a
 				// function type, `m(v).Dot(w)` -- yields its one result, and the chain
@@ -20744,6 +20815,51 @@ func (e *emitter) typeNameForT(ct string) string {
 	return e.goTypeName(ct)
 }
 
+// stringerCallC renders, for a value of C type ct bound to tmp, the call fmt makes
+// for %v and %s when the value has one to make: an interface's Error() or, failing
+// that, its String(), through its table (isIface reports that form, whose table
+// may be null); a String() declared on the value's own type or promoted from a
+// type it embeds, with a value receiver; and on a POINTER, a String() with either
+// receiver, which is the method set Go gives *T. A value whose type declares
+// String() on a pointer receiver is not a Stringer to fmt, which holds a copy, and
+// is not one here.
+func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) {
+	if e.isIfaceCType(ct) {
+		for _, want := range []string{"Error", "String"} {
+			for _, m := range e.ifaceMethods[ct] {
+				if m.name == want && m.res == cString && len(m.params) == 0 && m.out == "" {
+					return tmp + ".vt->" + userIdent(m.name) + "(" + tmp + ".data)", true, true
+				}
+			}
+		}
+		return "", false, false
+	}
+	isPtr := e.isPointer(ct)
+	base := ct
+	if isPtr {
+		base = strings.TrimSuffix(ct, "*")
+	}
+	if !e.isMethodBase(methodBaseType(base)) {
+		return "", false, false
+	}
+	cname, path, _, found := e.promotedMethod(base, "String")
+	if !found || len(e.funcRet[cname]) != 1 || e.funcRet[cname][0] != cString || len(e.funcParams[cname]) != 0 {
+		return "", false, false
+	}
+	ptrRecv := e.methodPtr[cname]
+	if ptrRecv && !isPtr {
+		return "", false, false
+	}
+	recv := tmp + e.embeddedPathC(ct, path)
+	switch {
+	case isPtr && ptrRecv && len(path) != 0:
+		recv = "&(" + recv + ")"
+	case isPtr && !ptrRecv && len(path) == 0:
+		recv = "(*" + tmp + ")"
+	}
+	return cname + "(" + recv + ")", false, true
+}
+
 // emitPrintfVerb emits one verb's argument, checking the verb against the type it
 // was given. A verb that does not suit its argument is refused here: the format is
 // constant and the type is known, so there is nothing left to find out at run time.
@@ -20806,6 +20922,46 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		e.emit("; printf(\"%" + spec + "s\", " + tmp + ".vt ? " + tmp + ".vt->" + vtTypeField +
 			" : \"<nil>\"); }\n")
 		return true
+	}
+	// fmt's rule for %v and %s before either verb's own: a value whose type has a
+	// String() string, or an interface declaring Error() or String(), prints what
+	// that returns. See stringerCallC for exactly which.
+	// Asked of the DECLARED type, as %T is: a constant of `type Color int` is an
+	// int in its representation and a Color to fmt, which is what has the method.
+	if dct, declared := e.printfArgType(idx, arg); (verb == 'v' || verb == 's') && declared {
+		tmp := e.newTmp()
+		if text, isIface, ok := e.stringerCallC(dct, tmp); ok {
+			// Bound in a block first: the value may be a call, whose field a chain
+			// must not read off the returned struct (doc/return-nonword-struct.c),
+			// and a block keeps the arguments in source order where the prologue
+			// would not.
+			e.usesStringPrint = true
+			print := "ogo_print_str(" + text + ")"
+			if spec != "" {
+				w, _ := item.width()
+				pr, hasP := item.precision()
+				if !hasP {
+					pr = -1
+				}
+				e.usesStringPad = true
+				print = fmt.Sprintf("ogo_print_str_pad(%s, %d, %d, %d)", text, w, pr, boolToInt(item.leftAlign()))
+			}
+			e.ind()
+			e.emit("{ " + dct + " " + tmp + " = ")
+			value()
+			if isIface {
+				// An interface carrying no table carries no dynamic type, which fmt
+				// prints as <nil> for %v and as its complaint for %s.
+				none := "<nil>"
+				if verb == 's' {
+					none = "%!s(<nil>)"
+				}
+				e.emit("; if (" + tmp + ".vt) { " + print + "; } else { printf(\"" + strings.ReplaceAll(none, "%", "%%") + "\"); } }\n")
+				return true
+			}
+			e.emit("; " + print + "; }\n")
+			return true
+		}
 	}
 	if verb == 'v' {
 		if spec != "" {

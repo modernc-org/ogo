@@ -28,12 +28,46 @@ shipped section tells a reader on that version that they have behaviour they do 
   {...}(&local)` is refused as `go f(&local)` is). Only the parameterless form was
   accepted before. A deferred literal still takes none.
 
+- **`%v` and `%s` print what a `String()` or `Error()` method returns**, which is
+  fmt's rule: a value whose type declares `String() string` -- on itself or
+  promoted from a struct it embeds, with a value receiver; on either receiver
+  for a pointer -- and an interface declaring `Error()` or `String()`, dispatched
+  through its table, `<nil>` for an empty one. A constant of such a type counts
+  by its declared type. `%d` of the same value prints the number, as fmt does,
+  and the built-in `println` does not call methods, as Go's does not.
+
 - **`printf` has `%o`, `%b` and `%e`.** Octal and binary integers, a negative
   one as a sign and its magnitude as Go prints it (`-101` for `%b` of -5), and a
   float in exponent form, flags, width and precision passing through as for
   `%f`. `%b` takes no width yet, and says so.
 
 ### Fixed
+
+- **A `go` statement passed an array by reference.** `go f(arr, ch)` handed the
+  cog a pointer to the caller's array where Go copies the array at the `go`
+  statement: `arr[0] = 100` written after it reached the cog (109 for Go's 10),
+  and a caller returning first left the cog a dangling frame. The slot now holds
+  the array and the argument is copied into it, as an array receiver already
+  was; an array literal as the argument, which did not compile at all, is built
+  in an array of its own first.
+
+- **A method called on a conversion's result could not be typed.** `s :=
+  Color(7).String()` was `cannot infer a type for the declaration of "s"`, and
+  the same call was refused as a printf argument and under `len`, while a
+  `println` of it printed. The chain typer now knows a conversion at the head.
+
+- **A function returning `int64(n)` returned garbage.** The target's C compiler
+  returns a garbage high word for `return (int64_t)n;` -- a widening conversion
+  as the whole return operand, signed or unsigned, however nested, at every
+  optimization level -- while the same value bound to a variable of the result
+  type first is right, and so is the same conversion inside a larger expression.
+  The base case of every recursive function that widens its argument is written
+  that way: `fib(20)` printed 282076272138861 for 6765 on the board, found by a
+  driver probe diffed against Go. Every 64-bit result that is not a plain
+  variable now returns through a temporary (`doc/return-widening-cast.c`). The
+  compiler's own runtime helpers had kept that rule by hand since v0.29.0; user
+  code had not, and no run case returned a bare conversion from a 64-bit
+  function.
 
 - **`%T` of a type declared by the main package prints `main.Temp`**, as Go's
   does, where it printed `Temp`; an interface's dynamic type reads `*main.Sq`.
