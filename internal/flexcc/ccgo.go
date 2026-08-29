@@ -201,8 +201,8 @@ func (cc *CC) init6() {
 	*(*uintptr)(unsafe.Add(p, 280)) = __ccgo_fp(s__NuReplaceSwapCBxx)
 	*(*uintptr)(unsafe.Add(p, 304)) = __ccgo_fp(s__NuReplaceSecond)
 	*(*uintptr)(unsafe.Add(p, 328)) = __ccgo_fp(s__NuReplaceSecond)
-	*(*uintptr)(unsafe.Add(p, 616)) = __ccgo_fp(s__NuReplaceWithDrop)
-	*(*uintptr)(unsafe.Add(p, 640)) = __ccgo_fp(s__NuReplaceDup)
+	*(*uintptr)(unsafe.Add(p, 640)) = __ccgo_fp(s__NuReplaceWithDrop)
+	*(*uintptr)(unsafe.Add(p, 664)) = __ccgo_fp(s__NuReplaceDup)
 }
 
 func (cc *CC) init7() {
@@ -1853,51 +1853,51 @@ const _NU_OP_ADD_SUPER = 15
 
 const _NU_OP_ADD_VBASE = 13
 
-const _NU_OP_ADD_xBASE = 150
+const _NU_OP_ADD_xBASE = 151
 
-const _NU_OP_ALIGN = 145
+const _NU_OP_ALIGN = 146
 
 const _NU_OP_AND = 21
 
-const _NU_OP_ANY = 151
+const _NU_OP_ANY = 152
 
-const _NU_OP_BNZ = 130
+const _NU_OP_BNZ = 131
 
-const _NU_OP_BRA = 126
+const _NU_OP_BRA = 127
 
-const _NU_OP_BRA3 = 128
+const _NU_OP_BRA3 = 129
 
-const _NU_OP_BREAK = 118
+const _NU_OP_BREAK = 119
 
-const _NU_OP_BZ = 129
+const _NU_OP_BZ = 130
 
-const _NU_OP_CALL = 121
+const _NU_OP_CALL = 122
 
-const _NU_OP_CALLA = 123
+const _NU_OP_CALLA = 124
 
-const _NU_OP_CALLM = 122
+const _NU_OP_CALLM = 123
 
-const _NU_OP_CBEQ = 131
+const _NU_OP_CBEQ = 132
 
-const _NU_OP_CBGES = 138
+const _NU_OP_CBGES = 139
 
-const _NU_OP_CBGEU = 140
+const _NU_OP_CBGEU = 141
 
-const _NU_OP_CBGTS = 137
+const _NU_OP_CBGTS = 138
 
-const _NU_OP_CBGTU = 139
+const _NU_OP_CBGTU = 140
 
-const _NU_OP_CBLES = 134
+const _NU_OP_CBLES = 135
 
-const _NU_OP_CBLEU = 136
+const _NU_OP_CBLEU = 137
 
-const _NU_OP_CBLTS = 133
+const _NU_OP_CBLTS = 134
 
-const _NU_OP_CBLTU = 135
+const _NU_OP_CBLTU = 136
 
-const _NU_OP_CBNE = 132
+const _NU_OP_CBNE = 133
 
-const _NU_OP_CBxx = 147
+const _NU_OP_CBxx = 148
 
 const _NU_OP_DEC = 53
 
@@ -1905,43 +1905,43 @@ const _NU_OP_DIVS = 42
 
 const _NU_OP_DIVU = 41
 
-const _NU_OP_DJNZ = 142
+const _NU_OP_DJNZ = 143
 
-const _NU_OP_DJNZ_FAST = 141
+const _NU_OP_DJNZ_FAST = 142
 
 const _NU_OP_DOUBLE = 54
 
-const _NU_OP_DROP = 70
+const _NU_OP_DROP = 71
 
-const _NU_OP_DROP2 = 71
+const _NU_OP_DROP2 = 72
 
-const _NU_OP_DUMMY = 143
+const _NU_OP_DUMMY = 144
 
-const _NU_OP_DUP = 72
+const _NU_OP_DUP = 73
 
-const _NU_OP_DUP2 = 73
+const _NU_OP_DUP2 = 74
 
-const _NU_OP_ENCODE = 64
+const _NU_OP_ENCODE = 65
 
-const _NU_OP_ENCODE2 = 65
+const _NU_OP_ENCODE2 = 66
 
-const _NU_OP_ENTER = 78
+const _NU_OP_ENTER = 79
 
-const _NU_OP_GOSUB = 124
+const _NU_OP_GOSUB = 125
 
 const _NU_OP_ILLEGAL = 0
 
 const _NU_OP_INC = 52
 
-const _NU_OP_INLINEASM = 116
+const _NU_OP_INLINEASM = 117
 
 const _NU_OP_IOR = 22
 
-const _NU_OP_JMP = 119
+const _NU_OP_JMP = 120
 
-const _NU_OP_JMPREL = 127
+const _NU_OP_JMPREL = 128
 
-const _NU_OP_LABEL = 146
+const _NU_OP_LABEL = 147
 
 const _NU_OP_LDB = 1
 
@@ -1957,7 +1957,7 @@ const _NU_OP_LDW = 3
 
 const _NU_OP_LDWS = 4
 
-const _NU_OP_LONGJMP = 125
+const _NU_OP_LONGJMP = 126
 
 const _NU_OP_MAXS = 28
 
@@ -1983,13 +1983,13 @@ const _NU_OP_NEG = 48
 
 const _NU_OP_NOT = 49
 
-const _NU_OP_OVER = 74
+const _NU_OP_OVER = 75
 
-const _NU_OP_PUSHA = 114
+const _NU_OP_PUSHA = 115
 
-const _NU_OP_PUSHI = 113
+const _NU_OP_PUSHI = 114
 
-const _NU_OP_RET = 120
+const _NU_OP_RET = 121
 
 const _NU_OP_REV = 51
 
@@ -1999,7 +1999,7 @@ const _NU_OP_ROR = 34
 
 const _NU_OP_SAR = 26
 
-const _NU_OP_SETJMP = 117
+const _NU_OP_SETJMP = 118
 
 const _NU_OP_SET_SP = 18
 
@@ -2021,9 +2021,11 @@ const _NU_OP_STW = 8
 
 const _NU_OP_SUB = 20
 
-const _NU_OP_SWAP = 75
+const _NU_OP_SWAP = 76
 
-const _NU_OP_SWAP2 = 76
+const _NU_OP_SWAP2 = 77
+
+const _NU_OP_X4 = 55
 
 const _NU_OP_XOR = 23
 
@@ -7330,6 +7332,22 @@ func s__GetExprState(tls *libc.TLS, cc *CC, L uintptr) (r _SpinExprState1) {
 	return **(**_SpinExprState1)(__ccgo_up(L + 516 + uintptr(libc.Int32FromInt32(m_MAX_EXPR_STACK)-libc.Int32FromInt32(1))*4))
 }
 
+func s__GetExtension(tls *libc.TLS, cc *CC, name uintptr) (r uintptr) {
+	var ext, v1 uintptr
+	_, _ = ext, v1
+	if !(name != 0) {
+		return name
+	}
+	ext = libc.Xstrrchr(tls, name, int32('/'))
+	if ext != 0 {
+		v1 = ext
+	} else {
+		v1 = name
+	}
+	name = v1
+	return libc.Xstrrchr(tls, name, int32('.'))
+}
+
 func s__GetFieldAddressOf(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uintptr) {
 	return s__doGetAddress(tls, cc, irl, expr, libc.BoolUint8(m_true != 0))
 }
@@ -8398,10 +8416,10 @@ func s__IsSymbol(tls *libc.TLS, cc *CC, expr uintptr) (r uint8) {
 }
 
 func s__IsSysFile(tls *libc.TLS, cc *CC, name uintptr) (r uint8) {
-	if libc.Xstrstr(tls, name, __ccgo_ts+4202) != 0 {
+	if libc.Xstrstr(tls, name, __ccgo_ts+4200) != 0 {
 		return libc.BoolUint8(m_true != 0)
 	}
-	if libc.Xstrstr(tls, name, __ccgo_ts+4219) != 0 {
+	if libc.Xstrstr(tls, name, __ccgo_ts+4217) != 0 {
 		return libc.BoolUint8(m_true != 0)
 	}
 	return libc.BoolUint8(m_false != 0)
@@ -9137,6 +9155,34 @@ func s__NeedIncDecTransform(tls *libc.TLS, cc *CC, expr uintptr, typ uintptr) (r
 	}
 	return libc.BoolUint8(m_true != 0)
 }
+
+func s__NeedTempArrayPtr(tls *libc.TLS, cc *CC, expr uintptr) (r uint8) {
+	if !(expr != 0) || !(x__ExprHasSideEffects(tls, cc, expr) != 0) {
+		return libc.BoolUint8(m_false != 0)
+	}
+	if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_MEMREF) {
+		return libc.BoolUint8(m_false != 0)
+	}
+	if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_METHODREF) {
+		return libc.BoolUint8(m_false != 0)
+	}
+	return libc.BoolUint8(m_true != 0)
+}
+
+/*
+ * if we see something like M ^= N
+ * we want to transform to M := M ^ N
+ * but we cannot do that if M has side effects
+ * so we have to pull side effects out of M
+ * cases to watch for:
+ *  M == X[(A, B, C)]  --> temp := (A, B, C), X[temp]
+ *  M == X[A:=B] --> A:=B, X[A]
+ *  M == X[func(A)] --> temp := func(A), X[temp]
+ *
+ * beware though of post effects:
+ *   X[I++] := I  --> X[I]:=I, I++
+ *   *X++ ^= N  --> *X ^= N, X++
+ */
 
 func s__NeedToSaveLocals(tls *libc.TLS, cc *CC, func1 uintptr) (r uint8) {
 	if cc.x__gl_compress == 0 && (int32(*(*uint32)(unsafe.Pointer(func1 + 1248))&0x4000>>14) != 0 || (*_Function)(unsafe.Pointer(func1)).Fbedata != 0 && (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).FeffectivelyLeaf != 0) {
@@ -11244,8 +11290,10 @@ func s__UsedInRange(tls *libc.TLS, cc *CC, start uintptr, end uintptr, reg uintp
 			}
 		}
 		if x__InstrModifies(tls, cc, ir, reg) != 0 && (*_IR)(unsafe.Pointer(ir)).Fcond == int32(_COND_TRUE) {
-			return libc.BoolUint8(m_false != 0)
-		} // Has become dead
+			if !(x__IsSubReg(tls, cc, reg) != 0) && !(x__IsSubReg(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fdst) != 0) {
+				return libc.BoolUint8(m_false != 0)
+			} // Has become dead
+		}
 		goto _1
 	_1:
 		;
@@ -12078,7 +12126,7 @@ func s__handle_ifdef(tls *libc.TLS, cc *CC, pp uintptr, P uintptr, invert int32)
 	live = libc.BoolInt32(!((*_preprocess)(unsafe.Pointer(pp)).Fifs != 0 && (*_ifstate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Fifs)).Fskip != 0))
 	I = calloc(tls, cc, uint64(1), uint64(32))
 	if !(I != 0) {
-		s__doerror(tls, cc, pp, __ccgo_ts+4238, 0)
+		s__doerror(tls, cc, pp, __ccgo_ts+4236, 0)
 		return
 	}
 	(*_ifstate)(unsafe.Pointer(I)).Fnext = (*_preprocess)(unsafe.Pointer(pp)).Fifs
@@ -12179,6 +12227,17 @@ func s__initDataOutput(tls *libc.TLS, cc *CC, funcs uintptr) {
 	} else {
 		cc.s__outFuncs = uintptr(unsafe.Pointer(&cc.s__defaultOutFuncs))
 	}
+}
+
+func s__initSymbols(tls *libc.TLS, cc *CC, P uintptr, language int32) {
+	/* NOTE: we do not want the Spin aliases polluting the
+	 * C namespace, so do not add the aliases to the
+	 * system (global) module
+	 */
+	if !(cc.x__systemModule != 0) || P == cc.x__systemModule {
+		return
+	}
+	x__InitLangAliases(tls, cc, P+144, language)
 }
 
 func s__interp_prefers_decode(tls *libc.TLS, cc *CC) (r uint8) {
@@ -14460,7 +14519,7 @@ func x__DeclareConstants(tls *libc.TLS, cc *CC, P uintptr, conlist_ptr uintptr) 
 				case int32(_AST_ASSIGN):
 					if x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright) != 0 {
 						if !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-							x__ERROR(tls, cc, ast, __ccgo_ts+6660, 0)
+							x__ERROR(tls, cc, ast, __ccgo_ts+6658, 0)
 							return
 						}
 						x__EnterConstant(tls, cc, P, x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft), (*_AST)(unsafe.Pointer(ast)).Fright)
@@ -14488,7 +14547,7 @@ func x__DeclareConstants(tls *libc.TLS, cc *CC, P uintptr, conlist_ptr uintptr) 
 						typ = x__ExprType(tls, cc, setExpr)
 						if typ != 0 && (x__IsStringType(tls, cc, typ) != 0 || x__IsPointerType(tls, cc, typ) != 0) {
 							if !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-								x__ERROR(tls, cc, ast, __ccgo_ts+6660, 0)
+								x__ERROR(tls, cc, ast, __ccgo_ts+6658, 0)
 								return
 							}
 							typ = x__NewAST(tls, cc, int32(_AST_MODIFIER_CONST), typ, libc.UintptrFromInt32(0))
@@ -14520,7 +14579,7 @@ func x__DeclareConstants(tls *libc.TLS, cc *CC, P uintptr, conlist_ptr uintptr) 
 					if default_val_ok != 0 {
 						id = (*_AST)(unsafe.Pointer(ast)).Fleft
 						if (*_AST)(unsafe.Pointer(id)).Fkind != int32(_AST_IDENTIFIER) {
-							x__ERROR(tls, cc, ast, __ccgo_ts+6701, 0)
+							x__ERROR(tls, cc, ast, __ccgo_ts+6699, 0)
 						} else {
 							x__EnterConstant(tls, cc, P, *(*uintptr)(unsafe.Pointer(id + 8)), x__AstInteger(tls, cc, int64(default_val)))
 							default_val = int32(int64(default_val) + x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright))
@@ -14582,7 +14641,7 @@ func x__DeclareConstants(tls *libc.TLS, cc *CC, P uintptr, conlist_ptr uintptr) 
 			case int32(_AST_ENUMSKIP):
 				id = (*_AST)(unsafe.Pointer(ast)).Fleft
 				if (*_AST)(unsafe.Pointer(id)).Fkind != int32(_AST_IDENTIFIER) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+6701, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+6699, 0)
 				} else {
 					x__EnterConstant(tls, cc, P, *(*uintptr)(unsafe.Pointer(id + 8)), x__AstInteger(tls, cc, int64(default_val)))
 					default_val = int32(int64(default_val) + x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright))
@@ -14593,11 +14652,11 @@ func x__DeclareConstants(tls *libc.TLS, cc *CC, P uintptr, conlist_ptr uintptr) 
 			case int32(_AST_COMMENT):
 				/* just skip it for now */
 			default:
-				x__ERROR(tls, cc, ast, __ccgo_ts+6754, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+				x__ERROR(tls, cc, ast, __ccgo_ts+6752, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 				break
 			}
 		} else {
-			x__ERROR(tls, cc, upper, __ccgo_ts+6787, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(upper)).Fkind))
+			x__ERROR(tls, cc, upper, __ccgo_ts+6785, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(upper)).Fkind))
 		}
 		goto _3
 	_3:
@@ -14986,15 +15045,15 @@ func x__EnterConstant(tls *libc.TLS, cc *CC, P uintptr, name uintptr, expr uintp
 			origval = int32(x__EvalConstExpr(tls, cc, *(*uintptr)(unsafe.Pointer(sym + 32))))
 			newval = int32(x__EvalConstExpr(tls, cc, expr))
 			if origval != newval {
-				x__ERROR(tls, cc, expr, __ccgo_ts+6562, libc.VaList(bp+8, name))
+				x__ERROR(tls, cc, expr, __ccgo_ts+6560, libc.VaList(bp+8, name))
 				return libc.UintptrFromInt32(0)
 			}
 			return libc.UintptrFromInt32(0) /* did not create new symbol */
 		} else {
 			if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_WEAK_ALIAS) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+6599, libc.VaList(bp+8, name))
+				x__ERROR(tls, cc, expr, __ccgo_ts+6597, libc.VaList(bp+8, name))
 				if (*_Symbol)(unsafe.Pointer(sym)).Fdef != 0 {
-					x__NOTE(tls, cc, (*_Symbol)(unsafe.Pointer(sym)).Fdef, __ccgo_ts+6627, 0)
+					x__NOTE(tls, cc, (*_Symbol)(unsafe.Pointer(sym)).Fdef, __ccgo_ts+6625, 0)
 				}
 				return libc.UintptrFromInt32(0)
 			}
@@ -15676,7 +15735,7 @@ func x__InitAsmCode(tls *libc.TLS, cc *CC) {
 	if cc.s__initDone != 0 {
 		return
 	}
-	cc.s__newlineOp = x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+4265, 0)
+	cc.s__newlineOp = x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+4263, 0)
 	cc.s__initDone = int32(1)
 }
 
@@ -17525,19 +17584,19 @@ func x__ParseWFlags(tls *libc.TLS, cc *CC, flags uintptr) (r int32) {
 	defer tls.Free(16)
 	var n int32
 	_ = n
-	if !(libc.Xstrcmp(tls, flags, __ccgo_ts+4025) != 0) {
+	if !(libc.Xstrcmp(tls, flags, __ccgo_ts+4023) != 0) {
 		cc.x__gl_warnings_are_errors = int32(1)
 	} else {
-		if !(libc.Xstrcmp(tls, flags, __ccgo_ts+4031) != 0) {
+		if !(libc.Xstrcmp(tls, flags, __ccgo_ts+4029) != 0) {
 			/* ignore for now */
 		} else {
-			if !(libc.Xstrcmp(tls, flags, __ccgo_ts+4037) != 0) {
+			if !(libc.Xstrcmp(tls, flags, __ccgo_ts+4035) != 0) {
 				cc.x__gl_useFullPaths = int32(1)
 			} else {
-				if !(libc.Xstrncmp(tls, flags, __ccgo_ts+4047, uint64(11)) != 0) {
+				if !(libc.Xstrncmp(tls, flags, __ccgo_ts+4045, uint64(11)) != 0) {
 					n = int32(libc.Xstrtol(tls, flags+uintptr(11), libc.UintptrFromInt32(0), int32(10)))
 					if n < int32(1) {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+4059, libc.VaList(bp+8, flags+uintptr(11)))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+4057, libc.VaList(bp+8, flags+uintptr(11)))
 						return 0
 					}
 					cc.x__gl_max_errors = n
@@ -17614,7 +17673,7 @@ func x__PrintDebugDirective(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 					if !(v1 > 0) {
 						break
 					}
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+4265, 0)
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+4263, 0)
 					cc.s__lastline = cc.s__lastline + 1
 				}
 				return
@@ -17625,7 +17684,7 @@ func x__PrintDebugDirective(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 }
 
 func x__PrintNewline(tls *libc.TLS, cc *CC, f uintptr) {
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+4265, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+4263, 0)
 	cc.s__lastline = cc.s__lastline + 1
 }
 
@@ -17660,23 +17719,23 @@ func x__ProcessConstantOverrides(tls *libc.TLS, cc *CC, P uintptr) {
 					name = *(*uintptr)(unsafe.Pointer(ident + 8))
 					sym = x__LookupSymbolInTable(tls, cc, P+144, name)
 					if !(sym != 0) {
-						x__ERROR(tls, cc, ident, __ccgo_ts+6831, libc.VaList(bp+8, name))
+						x__ERROR(tls, cc, ident, __ccgo_ts+6829, libc.VaList(bp+8, name))
 					} else {
 						if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
-							x__ERROR(tls, cc, ident, __ccgo_ts+6861, libc.VaList(bp+8, name))
+							x__ERROR(tls, cc, ident, __ccgo_ts+6859, libc.VaList(bp+8, name))
 						} else {
 							if !(x__IsConstExpr(tls, cc, valast) != 0) {
-								x__ERROR(tls, cc, ident, __ccgo_ts+6899, libc.VaList(bp+8, name))
+								x__ERROR(tls, cc, ident, __ccgo_ts+6897, libc.VaList(bp+8, name))
 							} else {
 								*(*uintptr)(unsafe.Pointer(sym + 32)) = x__AstInteger(tls, cc, x__EvalConstExpr(tls, cc, valast))
 							}
 						}
 					}
 				} else {
-					x__ERROR(tls, cc, item, __ccgo_ts+6932, 0)
+					x__ERROR(tls, cc, item, __ccgo_ts+6930, 0)
 				}
 			} else {
-				x__ERROR(tls, cc, item, __ccgo_ts+6973, 0)
+				x__ERROR(tls, cc, item, __ccgo_ts+6971, 0)
 			}
 		}
 	}

@@ -348,89 +348,93 @@ func isDir(path string) bool {
 // on-board suite passes with FCACHE on, so the flag is gone and loop caching
 // is back for every program, not just the ones with channels.
 //
-// Two of the backend's optimizer passes are turned off, which is not a
-// preference but the only known way to avoid two defects in them. Both are
-// reduced to a dozen lines of C in doc/, both were reported upstream, and both
-// were FIXED upstream on 2026-08-03 (flexprop issues 103 and 104): the first
-// was an optimization moving an instruction between a qmul and its getqx that
-// the qmul indirectly depended on, the second was dead-code elimination
-// removing labels that were still branched to.
+// No optimizer pass is turned off. Two were, from v0.14.0 to the backend
+// regeneration of 2026-08-29 -- `-Ono-inline-small -Ono-peephole` -- and the
+// record of why, what each cost and how they were let go is kept below, because
+// it is the shape a future workaround would take and the measurements are what
+// decided it.
 //
-// The flags stay on until the backend here is regenerated. It is a transpiled
-// copy of flexcc pinned to v7.7.0, so the fixes are not in it: they are in
-// spin2cpp's sources and will be in the next binary release. Regenerating
-// against master would move this off a tagged pin, which is a decision rather
-// than a chore -- see CLAUDE.md's code-generation section.
+// The two passes carried two defects, both reduced to a dozen lines of C in doc/
+// and both reported upstream (flexprop issues 103 and 104, fixed there on
+// 2026-08-03): the first was an optimization moving an instruction between a
+// qmul and its getqx that the qmul indirectly depended on, the second was
+// dead-code elimination removing labels that were still branched to.
 //
-//	inline-small  the optimizer stores a value the program never computed into
-//	              a file-scope int (doc/optimizer-miscompile.c). SILENT: gcc is
-//	              right, the build says nothing, and a plain integer comes out
+//	inline-small  the optimizer stored a value the program never computed into
+//	              a file-scope int (doc/optimizer-miscompile.c). SILENT: gcc was
+//	              right, the build said nothing, and a plain integer came out
 //	              wrong.
-//	peephole      the optimizer emits a branch to a label it then does not
-//	              define, and the assembler refuses the program
+//	peephole      the optimizer emitted a branch to a label it then did not
+//	              define, and the assembler refused the program
 //	              (doc/optimizer-dangling-label.c). Loud, at least.
 //
-// EACH FLAG FIXES EXACTLY ONE OF THE TWO, and neither one covers both, so both
-// are required. Measured on a P2-EDGE, every cell of the matrix:
+// EACH FLAG FIXED EXACTLY ONE OF THE TWO, and neither one covered both, so both
+// were required. Measured on a P2-EDGE, every cell of the matrix:
 //
 //	                     -2 plain      -Ono-peephole   -Ono-inline-small
 //	dangling label       refused       BUILT           refused
 //	silent miscompile    -202817768    -202817768      0
 //
-// This corrects what stood here before, which read "each defect needs both
-// passes' cooperation, so turning either one off is enough for it". That is
-// false, and it is false in the expensive direction: -Ono-inline-small is where
-// nearly all the cost is (below), so the note invited dropping precisely the
-// flag that is the only thing standing between a build and a silently wrong
-// integer. It was never measured, only inferred from the two upstream reports.
+// This corrected what stood here before, which read "each defect needs both
+// passes' cooperation, so turning either one off is enough". That was false, and
+// false in the expensive direction: -Ono-inline-small was where nearly all the
+// cost was (below), so the note invited dropping precisely the flag that was the
+// only thing standing between a build and a silently wrong integer. It was never
+// measured, only inferred from the two upstream reports.
 //
 // The cost, also measured rather than assumed. Size, over the whole pair: 0 to
 // 15%, depending on the program -- 13360 -> 13232 bytes on the framing-receiver
 // test case, 10292 -> 11792 on a fuzzer-generated one.
 //
-// SPEED is the number that was missing, and it is much larger. On a tight
+// SPEED was the number that was missing, and it was much larger. On a tight
 // real-time loop -- a DDS phase accumulator plus two smart-pin DAC writes, the
 // shape a motor controller runs -- cycles per iteration on hardware:
 //
 //	-2 plain                              205
 //	-2 -Ono-peephole                      221   +8%
 //	-2 -Ono-inline-small                  393   +92%
-//	-2 with both, i.e. what ships         384   +87%
+//	-2 with both, i.e. what shipped       384   +87%
 //
-// So the pair can cost 87% of a hot loop's time, and -Ono-inline-small is
-// essentially all of it. That is the real price of the workaround, and it is
+// So the pair could cost 87% of a hot loop's time, and -Ono-inline-small was
+// essentially all of it. That was the real price of the workaround, and it was
 // the argument for regenerating the backend rather than a preference.
 //
-// The tax is SHAPE-DEPENDENT, not a uniform 87%, which is worth knowing before
-// reading too much into one number. Two loops of opposite shape, cycles per
-// iteration, same board:
+// The tax was SHAPE-DEPENDENT, not a uniform 87%. Two loops of opposite shape,
+// cycles per iteration, same board:
 //
 //	                          call-heavy   register-heavy
 //	-2 plain                      41            64
-//	-2 with both, i.e. ships     100            64
+//	-2 with both, i.e. shipped   100            64
 //	-2 -Ono-regs                 133           120
 //
-// Losing the inliner costs 2.4x where a small function is called every
-// iteration and NOTHING at all where none is. Code that does its work in
-// straight-line arithmetic pays nothing for this workaround.
+// Losing the inliner cost 2.4x where a small function was called every
+// iteration and NOTHING at all where none was. Code that does its work in
+// straight-line arithmetic paid nothing for this workaround.
 //
-// -Ono-regs covers both defects BY ITSELF -- verified against both reproducers,
-// unlike the claim it replaces -- and was still rejected. It costs 68% more code
-// (and 32% on the DDS program), and on speed it is worse than the pair on both
-// shapes above, badly so on the register-heavy one, which is what turning the
-// register allocator off would predict. It wins only on the DDS loop (286 vs
-// 384), and one loop is not a default. Do not swap to it without re-measuring
-// both shapes.
+// -Ono-regs covered both defects BY ITSELF -- verified against both reproducers
+// -- and was still rejected. It costs 68% more code (and 32% on the DDS program),
+// and on speed it was worse than the pair on both shapes above, badly so on the
+// register-heavy one, which is what turning the register allocator off would
+// predict. It won only on the DDS loop (286 vs 384), and one loop is not a
+// default.
 //
-// The whole test corpus, the on-board suite and all 40 seeds of the widened
-// fuzzer sample pass with these, including the two seeds that reproduce the
-// defects. Take them off when a regenerated backend no longer needs them.
-// The check is one reproducer per flag, since each flag answers for its own
-// defect and for no other: doc/optimizer-miscompile.c must print 0 before
-// -Ono-inline-small goes, and doc/optimizer-dangling-label.c must assemble
-// before -Ono-peephole goes. Each may go on its own.
+// HOW THEY WERE LET GO. The check was one reproducer per flag, since each flag
+// answered for its own defect and for no other: doc/optimizer-miscompile.c had to
+// print 0 without -Ono-inline-small, and doc/optimizer-dangling-label.c had to
+// assemble without -Ono-peephole. Both were measured on a P2-EDGE against the
+// regenerated backend (spin2cpp 2bd01c4c, see internal/generator.go) at a plain
+// `-2`, and both held: 0, and an assembled program that runs identically to the
+// flagged build. The same regeneration cleared what no flag had covered -- the
+// unwritten-element multiply of flexprop#105, the constant divide of
+// doc/const-divide-miscompile.c, and the compound assignment of flexprop#106 --
+// so the whole battery in doc/ was re-run on hardware, pinned against
+// regenerated, before the flags went: those five changed and nothing else did.
+//
+// If a pass has to go again, this is the shape: a reproducer in doc/ that names
+// the flag, the matrix measured on hardware rather than inferred, and the cost in
+// cycles on a loop of each shape, not just in bytes.
 func compileC(cFile, out string, stdout, stderr io.Writer) (int, error) {
-	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-Ono-inline-small", "-Ono-peephole", "-o", out, cFile}); err != nil {
+	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-o", out, cFile}); err != nil {
 		return 1, fmt.Errorf("flexcc: %v", err)
 	}
 	return 0, nil

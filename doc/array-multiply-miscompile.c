@@ -1,3 +1,11 @@
+// FIXED in the backend as of the regeneration of 2026-08-29 (spin2cpp 2bd01c4c,
+// see internal/generator.go). flexprop issue 105 was closed upstream on 2026-08-20
+// -- "another CORDIC optimization bug" -- and this file prints 0 on a P2-EDGE when
+// built by the flexcc in internal/flexcc, at a plain -2 and with the old workaround
+// flags alike, where the v7.7.0 transpile printed 647359469. What follows is the
+// record as it stood while the fault was live; the file stays as the regression
+// check.
+//
 // An unwritten local array element, multiplied, comes out as garbage on the P2.
 // This is valid C with no undefined behaviour in it, and it is wrong at every
 // optimization level except -O0.
@@ -56,12 +64,12 @@
 // was useless as a report. The predicate has to assert the whole property being
 // reduced: gcc == flexcc -O0 != flexcc at the default level.
 //
-// NOT worked around. -Ono-regs corrects it but costs 68% more code; eleven other
-// passes turned off individually do not. Until it is fixed upstream and the backend
-// regenerated, a program that multiplies a local array element it has not written
-// can be wrong on the board.
+// It was never worked around: -Ono-regs corrected it but cost 68% more code, and
+// eleven other passes turned off individually did not. Until the regeneration a
+// program that multiplied a local array element it had not written could be wrong
+// on the board.
 //
-// To check whether this is still so, run this on a board and read the number.
+// To check that this is still fixed, run this on a board and read the number.
 
 #include <stdio.h>
 

@@ -33,13 +33,18 @@ const (
 	flexpropURL = "https://github.com/totalspectrum/flexprop.git"
 	// flexpropRef pins the flexprop source so backend regeneration is
 	// reproducible. v7.7.0 (released 2026-07-17) is the latest flexprop release as
-	// of 2026-07-20; upstream cuts releases roughly every 1-2 months.
+	// of 2026-08-29; upstream cuts releases roughly every 1-2 months, and a fix can
+	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
+	// below, is for.
 	//
-	// The committed ccgo_<goos>_<goarch>.go was regenerated against this pin on
-	// 2026-07-20 with ccgo v4.34.6 (flexprop repo and spin2cpp submodule both at
-	// v7.7.0); mcpp_main.c.diff applied cleanly. To adopt a new flexpropRef: bump it,
-	// `rm -rf flexprop flexprop_install`, rerun `go generate`, then update the flexcc
-	// --help golden in internal/flexcc/all_test.go.
+	// The committed ccgo_<goos>_<goarch>.go were regenerated against this pair on
+	// 2026-08-29 with ccgo v4.34.6 (flexprop at v7.7.0, spin2cpp at spin2cppRef);
+	// mcpp_main.c.diff applied cleanly. The first generation, 2026-07-20, had both
+	// at v7.7.0. To adopt a new pin: bump it, `rm -rf flexprop flexprop_install`,
+	// rerun `go generate` (or the per-target command below), and re-run the doc/
+	// reproducers on a board, pinned against regenerated, before touching any
+	// workaround they guard. The flexcc --help golden in internal/flexcc/all_test.go
+	// normalizes its version line, so it needs no edit unless the help text changed.
 	//
 	// Five backends are generated from this pin, BY HAND, each on a machine of its
 	// own; the transpiled Go is then committed. Nothing regenerates them
@@ -84,6 +89,17 @@ const (
 	// asked once and could not be answered from the repository; correct them here if
 	// the machines change.
 	flexpropRef = "v7.7.0"
+	// spin2cppRef pins the COMPILER inside that wrapper: flexprop is the GUI and the
+	// packaging around spin2cpp, which it carries as a submodule, and a fix lands in
+	// spin2cpp weeks before a flexprop release carries it. This commit is upstream's
+	// master of 2026-08-29 (7.7.2-beta), the first pin past v7.7.0 -- adopted for the
+	// two miscompiles a release had not shipped after nine days, flexprop#105 and the
+	// constant divide, plus the peephole fault that forced -Ono-peephole
+	// (doc/array-multiply-miscompile.c, doc/const-divide-miscompile.c,
+	// doc/optimizer-dangling-label.c). flexprop master at that date differs from
+	// v7.7.0 only by its Changelog and this pointer, so the wrapper stays at its tag.
+	// Empty means the submodule commit flexpropRef itself pins.
+	spin2cppRef = "2bd01c4c4a3f219ff3a1d531fd71922e0f62b92e"
 	installDir  = "flexprop_install"
 )
 
@@ -177,6 +193,17 @@ func main() {
 
 		if err := shell(cloneDir, "git", "submodule", "update", "--init", "--recursive"); err != nil {
 			fail(1, "git submodule update: err=%v", err)
+		}
+
+		if spin2cppRef != "" {
+			spin2cppDir := filepath.Join(cloneDir, "spin2cpp")
+			if err := shell(spin2cppDir, "git", "fetch", "origin", spin2cppRef); err != nil {
+				fail(1, "git fetch %s: err=%v", spin2cppRef, err)
+			}
+
+			if err := shell(spin2cppDir, "git", "checkout", spin2cppRef); err != nil {
+				fail(1, "git checkout %s: err=%v", spin2cppRef, err)
+			}
 		}
 
 		if err := shell(filepath.Join(cloneDir, "spin2cpp"), "git", "apply", filepath.Join(wd, "mcpp_main.c.diff")); err != nil {

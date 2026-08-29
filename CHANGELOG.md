@@ -192,6 +192,74 @@ shipped section tells a reader on that version that they have behaviour they do 
   scalar element, a struct element, `break` and `continue` inside the body, an
   element of a bank of channels, the assigning form, and `for range ch` with no
   variable at all.
+### Fixed
+
+- **The C backend is regenerated at upstream's tip, and five backend defects go
+  with it.** `ogo` embeds flexprop's C compiler transpiled to Go, and that copy had
+  been pinned to the v7.7.0 release since 2026-07-20; it is now spin2cpp
+  `2bd01c4c`, upstream's master of 2026-08-29, inside that same release (the
+  wrapper and the compiler are pinned separately, since a fix lands in spin2cpp
+  weeks before a flexprop release carries it). Adopted because
+  [flexprop#105](https://github.com/totalspectrum/flexprop/issues/105) was fixed
+  there on 2026-08-20 and no release had carried it nine days later.
+
+  Each of these was measured on a P2-EDGE with the old backend and the new, using
+  the reproducers in `doc/`:
+
+  - An unwritten local array element multiplied by a constant came out as garbage
+    (flexprop#105, `doc/array-multiply-miscompile.c`): 647359469 before, 0 now.
+  - A division by a constant near a never-taken call was wrong
+    (`doc/const-divide-miscompile.c`): 2035542505 before, 0 now.
+  - A compound assignment reading an array field through a call-returned pointer
+    -- what a nil-checked `m.sum -= m.ring[i]` emits -- was wrong
+    ([flexprop#106](https://github.com/totalspectrum/flexprop/issues/106),
+    `doc/compound-call-index.c`). The emitter had worked around it; the backend
+    now computes it correctly on its own, and the workaround stays.
+  - The two optimizer defects `ogo build` has been turning passes off for since
+    v0.14.0 (flexprop#103 and #104) are fixed, so **`-Ono-inline-small` and
+    `-Ono-peephole` are no longer passed.** That is the change a program can feel:
+    the pair cost up to 87% of a hot loop's time where a small function was called
+    every iteration, and nothing where none was.
+
+  Nothing else moved. Eighteen of the twenty-four reproducers compile to
+  byte-identical binaries under both backends, so every other fault the compiler
+  routes around is still there and still routed around; the whole test corpus,
+  the on-board suite and a 400-seed fuzzer sweep on a P2-EDGE -- the sweep that
+  found #105 -- pass with the flags gone. One change is carried in
+  knowingly: a unary plus on a float, which v7.7.0 refused, is a warning upstream
+  now and miscompiles
+  ([flexprop#107](https://github.com/totalspectrum/flexprop/issues/107)); the
+  emitter never writes one.
+
+  The backends of all five platforms `ogo` builds on -- linux/amd64, linux/arm64,
+  windows/amd64, darwin/arm64, darwin/amd64 -- were regenerated from the same
+  commit with the same ccgo, and the same program built on each of them is the
+  same binary, byte for byte.
+
+- **The most negative 64-bit value was wrong with the inliner on.** A `uint64`
+  holding its top bit, `1 << 63`, printed 9223372041149743104 -- one too many in
+  the high word -- the first time the suite ran without `-Ono-inline-small`. The
+  emitter spelled the value as `(-9223372036854775807LL - 1)`, which C has to,
+  there being no literal for it, and the target's compiler mis-folds that one
+  spelling with its inliner on while getting `(-1 - 9223372036854775807LL)` right
+  in every position (`doc/int64-min-spelling.c` has the measurements, under the
+  old backend and the new). That is the spelling now, and a 64-bit variable
+  initialized from a constant takes the one literal of its own width and sign
+  besides, `9223372036854775808ULL`, rather than any expression. The flag had hidden
+  this since v0.14.0; the run case that found it now also pins `-1 << 63` in a
+  local, beside a variable, through a call and compared.
+### Behaviour changes
+
+- **A function at the edge of cog RAM may no longer fit, and the fix is the one it
+  always was.** One function's locals live in the 480 longs of cog RAM, and with
+  the backend's small-function inliner on again (above), an inlined call's
+  arguments and locals join the caller's frame. The multi-package test program's
+  `main` -- some three hundred lines calling everything -- needed 100 registers
+  before and 127 after, which took the whole cog area from 454 longs to 481, one
+  past the limit: `fit 480 failed: pc is 481`. Splitting it was the whole fix,
+  and is what the README says to do. A program with a very large function that
+  built before may meet the same message; one that meets it has a function to
+  split. Nothing else in the corpus moved.
 
 ## v0.33.0
 

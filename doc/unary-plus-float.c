@@ -32,6 +32,10 @@
 // identity -- but it is the kind of change a backend regeneration would carry in
 // unnoticed, and a warning that silently replaces an error is worth knowing about
 // before the pin moves.
+//
+// CARRIED IN, knowingly, by the regeneration of 2026-08-29 (spin2cpp 2bd01c4c):
+// the backend in internal/flexcc now warns over this file and miscompiles it, as
+// the table says master did. Nothing in OctoGo reaches it.
 
 #include <stdio.h>
 

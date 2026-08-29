@@ -1,11 +1,17 @@
-// WORKED AROUND since this was written: `ogo build` passes -Ono-inline-small, and
-// with that pass off the program is right. Both passes behind the bug -- the
-// small-function inliner and the register allocator -- have to cooperate for it,
-// so turning either off is enough; the inliner is the cheaper one to lose, which
-// has since been measured in time as well as in code size and holds. See
-// internal/build for the flags and what they cost. This file stays as the check
-// that the workaround is still needed: compile it WITHOUT the flag, and if it
-// prints 0 the backend has been fixed and the flag can go.
+// FIXED in the backend as of the regeneration of 2026-08-29 (spin2cpp 2bd01c4c,
+// see internal/generator.go), which carries the upstream fix for flexprop issue
+// 103: built at a plain -2 by the flexcc in internal/flexcc this prints 0 on a
+// P2-EDGE, where the v7.7.0 transpile printed -202817768, and `ogo build` no longer
+// passes -Ono-inline-small. That flag was the workaround from v0.14.0 to the
+// regeneration -- the note below on which flag answered for which defect, and
+// internal/build on what the pair cost, are the record of it. This file stays as
+// the regression check: build it without any -Ono flag and it must print 0.
+//
+// WORKED AROUND from when this was written until the regeneration: `ogo build`
+// passed -Ono-inline-small, and with that pass off the program was right. Both
+// passes behind the bug -- the small-function inliner and the register allocator
+// -- had to cooperate for it, so turning either off was enough; the inliner was
+// the cheaper one to lose, which was measured in time as well as in code size.
 //
 // -Ono-inline-small IS THE ONLY ONE OF THE TWO FLAGS `ogo build` PASSES THAT
 // SAVES THIS PROGRAM. -Ono-peephole, the other one, leaves it printing the same
@@ -17,9 +23,9 @@
 //
 // FIXED UPSTREAM 2026-08-03 (flexprop issue 103): the root cause was an
 // optimization moving an instruction between a `qmul` and its `getqx` that the
-// `qmul` indirectly depended on. The fix is in spin2cpp's sources and will be in
-// the next binary release; the backend here is a transpiled copy pinned to v7.7.0,
-// so it is NOT in it yet and the flag stays until that is regenerated.
+// `qmul` indirectly depended on. The backend here is a transpiled copy, and until
+// 2026-08-29 it was pinned to v7.7.0, which predates the fix; the flag stayed until
+// the pin moved.
 //
 // This is valid C that the target's compiler gets wrong. It is kept here as the
 // reproducer for a backend bug the compiler has no workaround for, found by the

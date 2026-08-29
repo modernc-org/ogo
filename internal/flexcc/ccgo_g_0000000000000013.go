@@ -1237,6 +1237,9 @@ func s__ReinitFunction(tls *libc.TLS, cc *CC, f uintptr, language int32) {
 	}
 	(*_Function)(unsafe.Pointer(f)).Foptimize_flags = cc.x__gl_optimize_flags
 	(*_Function)(unsafe.Pointer(f)).Fwarn_flags = cc.x__gl_warn_flags
+	if language != (*_Module)(unsafe.Pointer(cc.x__current)).FmainLanguage {
+		x__InitLangAliases(tls, cc, f+160, language)
+	}
 }
 
 func s__StackRef(tls *libc.TLS, cc *CC, offset int32) (r uintptr) {
@@ -1502,35 +1505,6 @@ func s__fixupVarOffset(tls *libc.TLS, cc *CC, sym uintptr, arg uintptr) (r int32
 	return int32(1)
 }
 
-func s__initSymbols(tls *libc.TLS, cc *CC, P uintptr, language int32) {
-	var A uintptr
-	_ = A
-	/* NOTE: we do not want the Spin aliases polluting the
-	 * C namespace, so do not add the aliases to the
-	 * system (global) module
-	 */
-	if !(cc.x__systemModule != 0) || P == cc.x__systemModule {
-		return
-	}
-	if language == int32(m_LANG_BASIC_FBASIC) {
-		A = uintptr(unsafe.Pointer(&cc.x__basicalias))
-	} else {
-		if language >= int32(m_LANG_CFAMILY_C) && language <= int32(m_LANG_CFAMILY_CPP) {
-			A = uintptr(unsafe.Pointer(&cc.x__calias))
-		} else {
-			A = uintptr(unsafe.Pointer(&cc.x__spinalias))
-		}
-	}
-	s__addAliases(tls, cc, P+144, A)
-	if cc.x__gl_p2 != 0 && (language == int32(m_LANG_BASIC_FBASIC) || language >= m_LANG_SPIN_SPIN1 && language <= int32(m_LANG_SPIN_SPIN2)) {
-		s__addAliases(tls, cc, P+144, uintptr(unsafe.Pointer(&cc.x__spin2alias)))
-	} else {
-		if language == int32(m_LANG_SPIN_SPIN2) {
-			s__addAliases(tls, cc, P+144, uintptr(unsafe.Pointer(&cc.x__spin2alias)))
-		}
-	}
-}
-
 func s__is_macro_call(tls *libc.TLS, cc *CC, defp uintptr, cp uintptr, endf uintptr, mgc_seq uintptr) (r uintptr) {
 	/*
 	 * Return DEFBUF if the defp->name is a macro call, else return NULL.
@@ -1540,7 +1514,7 @@ func s__is_macro_call(tls *libc.TLS, cc *CC, defp uintptr, cp uintptr, endf uint
 	if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) >= 0 || int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) == -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) { /* _Pragma() pseudo-macro       */
 		c = s__squeeze_ws(tls, cc, cp, endf, mgc_seq) /* See the next char.   */
 		if c == m_CHAR_EOF {                          /* End of file          */
-			x__unget_string(tls, cc, __ccgo_ts+4265, libc.UintptrFromInt32(0))
+			x__unget_string(tls, cc, __ccgo_ts+4263, libc.UintptrFromInt32(0))
 		} else {
 			if c != int32(m_RT_END) {
 				/* Still in the file and rescan boundary ?  */
@@ -2106,6 +2080,28 @@ func x__GetExprString(tls *libc.TLS, cc *CC, expr uintptr) (r uintptr) {
 		return x__flexbuf_get(tls, cc, bp)
 	}
 	return r
+}
+
+func x__InitLangAliases(tls *libc.TLS, cc *CC, tab uintptr, language int32) {
+	var A uintptr
+	_ = A
+	if language == int32(m_LANG_BASIC_FBASIC) {
+		A = uintptr(unsafe.Pointer(&cc.x__basicalias))
+	} else {
+		if language >= int32(m_LANG_CFAMILY_C) && language <= int32(m_LANG_CFAMILY_CPP) {
+			A = uintptr(unsafe.Pointer(&cc.x__calias))
+		} else {
+			A = uintptr(unsafe.Pointer(&cc.x__spinalias))
+		}
+	}
+	s__addAliases(tls, cc, tab, A)
+	if cc.x__gl_p2 != 0 && (language == int32(m_LANG_BASIC_FBASIC) || language >= m_LANG_SPIN_SPIN1 && language <= int32(m_LANG_SPIN_SPIN2)) {
+		s__addAliases(tls, cc, tab, uintptr(unsafe.Pointer(&cc.x__spin2alias)))
+	} else {
+		if language == int32(m_LANG_SPIN_SPIN2) {
+			s__addAliases(tls, cc, tab, uintptr(unsafe.Pointer(&cc.x__spin2alias)))
+		}
+	}
 }
 
 func x__IsRelativeHubAddress(tls *libc.TLS, cc *CC, ast uintptr) (r uint8) {

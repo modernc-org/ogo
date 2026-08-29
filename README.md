@@ -326,8 +326,9 @@ broken.
   of them together. A function big enough to exhaust that fails to build with the
   backend's `fit 480 failed: pc is N` — the P2's own limit rather than the
   compiler's, and it names assembly rather than your source, which is the unfriendly
-  part. Splitting the function into several is the fix, and is what the code wanted
-  anyway.
+  part. Small functions are inlined into their callers, so a call's arguments and
+  locals count toward the frame of the function that makes it. Splitting the
+  function into several is the fix, and is what the code wanted anyway.
 * A **goroutine's stack is 256 longs by default** and cannot be sized per `go`
   statement, though `ogo build --gostack N` sets it for the whole program (64 to
   8192 longs; seven slots of it sit in hub RAM for the run). Recursion works — `main` runs on the cog's own stack and a goroutine on

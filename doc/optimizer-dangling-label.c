@@ -1,8 +1,14 @@
-// WORKED AROUND since this was written: `ogo build` passes -Ono-peephole, and with
-// that pass off the program assembles. See internal/build for the flags and what
-// they cost. This file stays as the check that the workaround is still needed:
-// compile it WITHOUT the flag, and if it assembles the backend has been fixed and
-// the flag can go.
+// FIXED in the backend as of the regeneration of 2026-08-29 (spin2cpp 2bd01c4c,
+// see internal/generator.go), which carries the upstream fix for flexprop issue
+// 104: built at a plain -2 by the flexcc in internal/flexcc this assembles, and on
+// a P2-EDGE it runs identically to the build the flag used to produce, where the
+// v7.7.0 transpile refused it over an undefined label. `ogo build` no longer passes
+// -Ono-peephole. This file stays as the regression check: build it without any
+// -Ono flag and it must assemble.
+//
+// WORKED AROUND from when this was written until the regeneration: `ogo build`
+// passed -Ono-peephole, and with that pass off the program assembled. See
+// internal/build for the flags and what they cost.
 //
 // -Ono-peephole IS THE ONLY ONE OF THE TWO FLAGS `ogo build` PASSES THAT SAVES
 // THIS PROGRAM: with -Ono-inline-small instead, the assembler still refuses it
@@ -10,10 +16,9 @@
 // for nothing else. internal/build has the full matrix.
 //
 // FIXED UPSTREAM 2026-08-03 (flexprop issue 104): dead-code elimination was
-// removing labels that were still branched to. The fix is in spin2cpp's sources
-// and will be in the next binary release; the backend here is a transpiled copy
-// pinned to v7.7.0, so it is NOT in it yet and the flag stays until that is
-// regenerated.
+// removing labels that were still branched to. The backend here is a transpiled
+// copy, and until 2026-08-29 it was pinned to v7.7.0, which predates the fix; the
+// flag stayed until the pin moved.
 //
 // Valid C that the target's assembler refuses: flexcc emits a branch to a label it
 // then does not define.

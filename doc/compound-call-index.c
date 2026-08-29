@@ -52,7 +52,11 @@
 // the element type and evaluates the index exactly once.
 //
 // REPORTED as flexprop issue 106 and FIXED UPSTREAM by spin2cpp 2bd01c4, "fix for
-// function array dereference bugs" (2026-08-28). The fault was in the transform
+// function array dereference bugs" (2026-08-28) -- and IN THE BACKEND as of the
+// regeneration of 2026-08-29, which pins that very commit: the flexcc in
+// internal/flexcc prints 970 for every row of the table below. The emitter's
+// workaround stays; it costs a temporary, and it is what keeps the program right
+// if the fault ever returns. The fault was in the transform
 // that rewrites `M op= N` into `M := M op N`: an ARRAYREF whose base had side
 // effects was given a temporary even when the base was a member reference, and
 // taking a temporary of an array-typed member is what went wrong. Eric Smith's own

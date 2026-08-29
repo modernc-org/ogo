@@ -142,8 +142,11 @@ inputs, and never hand-edit the outputs.
    while the LLP64 windows and the darwin transpiles share little cross-ABI. Do not
    hand-edit any of them. `internal/generator.go`
    (build-tagged `//go:build
-   ignore`) drives both: it clones `totalspectrum/flexprop` (pinned to tag
-   **`v7.7.0`** via the `flexpropRef` constant), applies `internal/mcpp_main.c.diff`,
+   ignore`) drives both: it clones `totalspectrum/flexprop` (the wrapper pinned to
+   tag **`v7.7.0`** via `flexpropRef`, and inside it the `spin2cpp` submodule — the
+   compiler itself — checked out at **`spin2cppRef`**, a commit past the tag since
+   2026-08-29, because a fix lands in spin2cpp weeks before a flexprop release
+   carries it), applies `internal/mcpp_main.c.diff`,
    transpiles, and rewrites the emitted `main` package into a reusable `flexcc`
    library (threading a `*CC` state struct through the C globals, via `main2lib`).
    The linux backend is transpiled natively (`ccgo -exec make`, `transpileLinux`);
@@ -190,18 +193,37 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
-   > **Backend regenerated 2026-07-20** against the `v7.7.0` pin (flexprop repo and
-   > `spin2cpp` submodule both at `v7.7.0`) using **ccgo v4.34.6**; `mcpp_main.c.diff`
-   > applied cleanly. Post-regen chore: `rm -rf internal/flexprop
-   > internal/flexprop_install` (git-ignored build clones that otherwise break
-   > `go build ./...` / `go test ./...`). The flexcc `--help` golden in
+   > **Backend regenerated 2026-08-29 at upstream's tip** — spin2cpp `2bd01c4c`
+   > (7.7.2-beta, its master of that day) inside flexprop `v7.7.0`, the wrapper and
+   > the compiler pinned separately (`flexpropRef` / `spin2cppRef`), ccgo v4.34.6.
+   > Adopted because flexprop#105 was fixed upstream on 2026-08-20 and no release
+   > carried it nine days later, which was the standing decision. What it cleared,
+   > each measured on a P2-EDGE pinned against regenerated with the whole `doc/`
+   > battery re-run: the unwritten-element multiply of flexprop#105, the constant
+   > divide (`doc/const-divide-miscompile.c`), the compound assignment of
+   > flexprop#106, and the two optimizer faults (#103, #104) that `ogo build` had
+   > passed `-Ono-inline-small -Ono-peephole` to avoid — **both flags are gone**, and
+   > with them the up-to-87% hot-loop tax (`internal/build/build.go` keeps the
+   > numbers as history). Nothing else moved: eighteen of the twenty-four reproducers
+   > compile to byte-identical binaries under both backends, so every other
+   > workaround stays. The transpile is faithful — every reproducer compiles
+   > byte-identically under the in-process flexcc and a natively built spin2cpp at
+   > the same commit. One regression carried in knowingly: unary plus on a float
+   > (flexprop#107) is a *warning* upstream where v7.7.0 refused it, and it
+   > miscompiles; the emitter never writes one (`doc/unary-plus-float.c`).
+   >
+   > **Backend first generated 2026-07-20** against the `v7.7.0` pin (flexprop repo
+   > and `spin2cpp` submodule both at `v7.7.0`) using **ccgo v4.34.6**;
+   > `mcpp_main.c.diff` applied cleanly then and again in 2026-08. Post-regen chore:
+   > `rm -rf internal/flexprop internal/flexprop_install` (git-ignored build clones
+   > that otherwise break `go build ./...` / `go test ./...`). The flexcc `--help` golden in
    > `internal/flexcc/all_test.go` needs no manual refresh — its volatile
    > `Version … Compiled on: …` line is normalized (`versionLineRE`), so even a
    > version bump doesn't force a golden edit.
    >
-   > **v7.7.0 changed nothing we depend on.** Every flexcc bug the compiler works
-   > around was re-measured against it, on a P2-EDGE, and every one still
-   > reproduces identically: the dropped argument slot for an unnamed parameter,
+   > **v7.7.0 changed nothing we depend on** (measured 2026-07-20). Every flexcc bug
+   > the compiler worked around was re-measured against it, on a P2-EDGE, and every
+   > one still reproduced identically: the dropped argument slot for an unnamed parameter,
    > the miscompiled `static inline` rendezvous, and the four compile-time refusals
    > around structs holding arrays and designated initializers. The upgrade is
    > hygiene, not a fix — keep the workarounds.
@@ -227,9 +249,11 @@ inputs, and never hand-edit the outputs.
    > `freopen`-of-`flexcc.go` split. The nine `--prefix-undefined=_` danglers
    > (`_remove`, `_powl`, `_strncat`, …) are also defined there. `ungetc` is done via
    > `fseek(-1)`, valid because flexcc only ungets just-read bytes of seekable source
-   > files. The generated file is **not** gofmt-clean out of ccgo, so the windows
-   > regen must be followed by `gofmt -s -w flexcc/` (the `go generate` step does this
-   > for linux; the manual `go run generator.go` invocation does not).
+   > files. The generated file is **not** gofmt-clean out of ccgo; the generator
+   > gofmt's the per-target files itself before the fold, whichever path produced
+   > them. The ccgo CLI version the cross passes use is the one `go.mod` pins for
+   > the library (`go install modernc.org/ccgo/v4@v4.34.6` into a scratch GOBIN
+   > first on PATH), so all five transpiles come from one ccgo.
 
 ## Architecture
 

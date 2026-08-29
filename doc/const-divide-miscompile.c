@@ -1,15 +1,23 @@
-// A division by a CONSTANT is miscompiled on the P2 by the pinned backend, and is
-// ALREADY FIXED UPSTREAM. This file is the check for whether regenerating the
-// backend is worth doing: build it with the flexcc in internal/flexcc and it prints
-// the wrong number; build it with one from spin2cpp master and it prints 0.
+// A division by a CONSTANT was miscompiled on the P2 by the backend pinned to
+// v7.7.0, and is FIXED in the backend as of the regeneration of 2026-08-29
+// (spin2cpp 2bd01c4c, see internal/generator.go): built by the flexcc in
+// internal/flexcc it prints 0 on a P2-EDGE. It was the check for whether
+// regenerating the backend was worth doing, and it stays as the regression check.
 //
-//	gcc (the reference)                    0
-//	flexcc v7.7.0, what internal/flexcc is 2035542505   <- wrong
-//	flexcc master (v7.7.0-7-g54a19b1)      0
+//	gcc (the reference)                         0
+//	flexcc v7.7.0, what internal/flexcc was     2035542505   <- wrong
+//	flexcc master (v7.7.0-7-g54a19b1)           0
+//	flexcc 2bd01c4c, what internal/flexcc is    0
 //
-// Measured on a P2-EDGE with the flags ogo build passes, -2 -Ono-inline-small
-// -Ono-peephole. It is an optimizer fault: -O0 and -O1 are both correct, the
-// default level is not.
+// Measured on a P2-EDGE with the flags ogo build passed at the time, -2
+// -Ono-inline-small -Ono-peephole. It is an optimizer fault: -O0 and -O1 are both
+// correct, the default level is not.
+//
+// One thing the re-measurement of 2026-08-29 added: at a PLAIN -2 the v7.7.0
+// transpile printed 0 as well. The fault needed -Ono-inline-small -- the flag
+// passed to route around flexprop issue 103 -- to show, so one workaround exposed
+// the next defect. Worth remembering before turning a pass off: the code the
+// other passes then see is code nobody has measured.
 //
 // Found by the smith oracle on the board (seed 74 of a 400-seed sample) and reduced
 // from a 152-line generated program by delta debugging against gcc's output. It is
@@ -44,13 +52,12 @@
 // rather than "x > y", the checksum being file-scope or local, the arrays' size,
 // which element of the first array is read, and writing a[2] = 0 before reading it.
 //
-// NOT worked around. There is no affordable flag: -Ono-regs corrects it but costs
-// 68% more code, and the two flags already passed do not. The fix is to regenerate
-// internal/flexcc once upstream tags a release containing it -- see
-// internal/generator.go. Until then a program that divides by a constant near a
-// never-taken call can be wrong on the board.
+// It was never worked around. There was no affordable flag: -Ono-regs corrected it
+// but cost 68% more code, and the two flags then passed did not. Until the
+// regeneration a program that divided by a constant near a never-taken call could
+// be wrong on the board.
 //
-// To check whether this is still so, run this on a board and read the number.
+// To check that this is still fixed, run this on a board and read the number.
 
 #include <stdio.h>
 

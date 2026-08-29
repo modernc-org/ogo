@@ -16259,9 +16259,18 @@ func main() {
 	// The ones C computes the same way are left as written.
 	var e int = 1 << 30
 	println(e, e/2)
+	// The most negative value, which has no literal of its own in C and whose two
+	// spellings as an expression the target's compiler does not treat alike: with
+	// its inliner on, "(-9223372036854775807LL - 1)" came out with one too many
+	// in its high word, and "(-1 - 9223372036854775807LL)" did not
+	// (doc/int64-min-spelling.c). In a local, beside a variable, through a call,
+	// compared, and as the top bit of an unsigned.
+	var mn int64 = -1 << 63
+	var top uint64 = 1 << 63
+	println(mn, mn+1, take(mn), mn < 0, mn == -1<<63, top, top>>63, top+1)
 }
 `,
-		want: "1099511627776 6000000000 9223372036854775808 1099511627776 9223372036854775808\n-4611686018427387904\n1099511627776 6000000000\n1099511627776\n2199023255552 1099511627776\n-1099511627776 -6000000000 -68719476736 1099511627776\n1073741824 536870912\n",
+		want: "1099511627776 6000000000 9223372036854775808 1099511627776 9223372036854775808\n-4611686018427387904\n1099511627776 6000000000\n1099511627776\n2199023255552 1099511627776\n-1099511627776 -6000000000 -68719476736 1099511627776\n1073741824 536870912\n-9223372036854775808 -9223372036854775807 -9223372036854775808 true true 9223372036854775808 1 9223372036854775809\n",
 	},
 	{
 		// A defined type is checked as the type it is defined over -- following a
@@ -19605,6 +19614,22 @@ default:
 	println("other")
 }
 
+chained()
+errors()
+qualifiedCases()
+}
+
+// The second half of main, as a function of its own for the reason errors is. The
+// pool of cog RAM registers is sized by the largest frame in the program, and with
+// the backend's small-function inliner on -- it is, since the regeneration of
+// 2026-08-29 let -Ono-inline-small go -- an inlined call's arguments and locals join
+// the caller's: main's frame grew from 100 registers to 127, and the whole cog area
+// from 454 longs to 481, one past the 480 the P2 has. A split is the whole fix, as
+// the README says it is, and what it exercises is unchanged: a package importing
+// ANOTHER package (every import path is read against the directory being BUILT, so
+// chain finds greet beside itself rather than under itself), and the rest of what a
+// program can reach in chain from main.
+func chained() {
 // A package importing ANOTHER package. Every import path is read against the
 // directory being BUILT, so chain finds greet beside itself rather than under
 // itself -- which is the layout a program of several packages actually has.
@@ -19684,13 +19709,11 @@ println(chain.Deck.Twice(), chain.Deck.N)
 println(framed.N, framed.Twice(), framed.F)
 framed.Inc()
 println(framed.N, framed.Reg.N, framed.Twice())
-errors()
-qualifiedCases()
 }
 
 // A function of its own, not more of main: one function's locals live in COG RAM,
 // of which there are 480 longs for all of them together, and main was already close
-// to it.
+// to it. See chained for the day it crossed the line.
 //
 // The predeclared error, across a package boundary. It is the universe's type and
 // not any package's, so the two sides have to agree on one C type and one table

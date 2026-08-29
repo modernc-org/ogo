@@ -13167,10 +13167,21 @@ func (e *emitter) constSpelling(v int64, ctype string) string {
 }
 
 // signed64Lit spells v as a signed long long literal.
+//
+// The most negative value has no literal of its own in C, and of its two
+// spellings as an expression the target's compiler gets exactly one right with
+// its small-function inliner on: `(-1 - 9223372036854775807LL)` is
+// -9223372036854775808 in every position measured on a P2-EDGE -- an initializer,
+// an operand, an argument, a return, a comparison, a divisor, a shift -- while
+// `(-9223372036854775807LL - 1)` comes out as -9223372032559808512, its high word
+// one too many, and only `-Ono-inline-small` corrects it. The pinned and the
+// regenerated backend agree on both. That flag hid this from v0.14.0 to the
+// regeneration of 2026-08-29, and the run case "a constant too wide for a C int"
+// found it the day the flag went; doc/int64-min-spelling.c is the reproducer.
 func signed64Lit(v int64) string {
 	switch {
 	case v == math.MinInt64:
-		return "(-9223372036854775807LL - 1)"
+		return "(-1 - 9223372036854775807LL)"
 	case v < 0:
 		return "(-" + strconv.FormatInt(-v, 10) + "LL)"
 	}
@@ -22123,6 +22134,21 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 		e.emit(ctype + " " + cn + ";\n")
 		e.emitStructCopy(cn, ctype, initExpr)
 		return
+	}
+	// A 64-bit variable initialized from a constant takes the ONE literal that
+	// carries its own width and signedness -- 9223372036854775808ULL for the top bit
+	// of a uint64 -- rather than the spelling the initializer's own type would
+	// choose, which is unknown for a bare `1 << 63` and so falls to the signed
+	// form, and for the most negative value that form is a constant EXPRESSION.
+	// The target's compiler mis-folds 64-bit constant expressions inside a function
+	// body (see constSpelling), and its inliner made one more of them wrong
+	// (doc/int64-min-spelling.c); a lone literal is what it gets right.
+	if ut := e.underlyingCType(ctype); cIntWidths[ut] == 64 {
+		if v, ok := e.wideConstValue(initExpr, isUnsignedCType(ut)); ok {
+			e.ind()
+			e.emit(ctype + " " + cn + " = " + e.constSpelling(v, ut) + ";\n")
+			return
+		}
 	}
 	// An element of a struct literal that C cannot put in an initializer -- an
 	// ARRAY field filled from a value -- is zeroed there and copied in here, the

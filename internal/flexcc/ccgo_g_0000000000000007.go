@@ -349,7 +349,7 @@ func s__doerror(tls *libc.TLS, cc *CC, pp uintptr, msg uintptr, va uintptr) {
 	if fil != 0 {
 		(*(*func(*libc.TLS, *CC, uintptr, uintptr, int32, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*_preprocess)(unsafe.Pointer(pp)).Ferrfunc})))(tls, cc, (*_preprocess)(unsafe.Pointer(pp)).Ferrarg, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Fname, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Flineno, bp)
 	} else {
-		(*(*func(*libc.TLS, *CC, uintptr, uintptr, int32, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*_preprocess)(unsafe.Pointer(pp)).Ferrfunc})))(tls, cc, (*_preprocess)(unsafe.Pointer(pp)).Ferrarg, __ccgo_ts+7120, 0, bp)
+		(*(*func(*libc.TLS, *CC, uintptr, uintptr, int32, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*_preprocess)(unsafe.Pointer(pp)).Ferrfunc})))(tls, cc, (*_preprocess)(unsafe.Pointer(pp)).Ferrarg, __ccgo_ts+7118, 0, bp)
 	}
 }
 
@@ -368,7 +368,7 @@ func s__dowarning(tls *libc.TLS, cc *CC, pp uintptr, msg uintptr, va uintptr) {
 	if fil != 0 {
 		(*(*func(*libc.TLS, *CC, uintptr, uintptr, int32, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*_preprocess)(unsafe.Pointer(pp)).Fwarnfunc})))(tls, cc, (*_preprocess)(unsafe.Pointer(pp)).Fwarnarg, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Fname, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Flineno, bp)
 	} else {
-		(*(*func(*libc.TLS, *CC, uintptr, uintptr, int32, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*_preprocess)(unsafe.Pointer(pp)).Fwarnfunc})))(tls, cc, (*_preprocess)(unsafe.Pointer(pp)).Fwarnarg, __ccgo_ts+7120, 0, bp)
+		(*(*func(*libc.TLS, *CC, uintptr, uintptr, int32, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*_preprocess)(unsafe.Pointer(pp)).Fwarnfunc})))(tls, cc, (*_preprocess)(unsafe.Pointer(pp)).Fwarnarg, __ccgo_ts+7118, 0, bp)
 	}
 }
 
@@ -429,14 +429,14 @@ func s__getObjFileExtension(tls *libc.TLS, cc *CC, fname uintptr) (r uintptr) {
 	var ext, f, ptr uintptr
 	_, _, _ = ext, f, ptr
 	ext = uintptr(0)
-	f = fopen(tls, cc, fname, __ccgo_ts+10608)
+	f = fopen(tls, cc, fname, __ccgo_ts+10606)
 	if !(f != 0) {
 		return libc.UintptrFromInt32(0)
 	}
 	cc.s__buf[0] = 0
 	ptr = libc.Xfgets(tls, uintptr(unsafe.Pointer(&cc.s__buf)), int32(1024), f)
 	if ptr != 0 {
-		if !(libc.Xstrncmp(tls, ptr, __ccgo_ts+10610, uint64(5)) != 0) {
+		if !(libc.Xstrncmp(tls, ptr, __ccgo_ts+10608, uint64(5)) != 0) {
 			ptr = libc.Xstrrchr(tls, ptr, int32('.'))
 			if ptr != 0 {
 				ext = ptr
@@ -537,8 +537,8 @@ func s__handlePragma(tls *libc.TLS, cc *CC, L uintptr, line uintptr) {
 	for int32(**(**int8)(__ccgo_up(line))) == int32(' ') || int32(**(**int8)(__ccgo_up(line))) == int32('\t') {
 		line = line + 1
 	}
-	if !(libc.Xstrncmp(tls, line, __ccgo_ts+21502, uint64(5)) != 0) {
-		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21508, libc.VaList(bp+8, line))
+	if !(libc.Xstrncmp(tls, line, __ccgo_ts+21500, uint64(5)) != 0) {
+		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21506, libc.VaList(bp+8, line))
 	}
 }
 
@@ -601,7 +601,7 @@ func s__parseBacktickInBacktick(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintpt
 			break
 		}
 		if libc.Uint64FromInt32(identLen) >= libc.Uint64FromInt64(256)-libc.Uint64FromInt32(1) {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21424, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21422, 0)
 			return
 		}
 		v1 = identLen
@@ -611,16 +611,16 @@ func s__parseBacktickInBacktick(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintpt
 	}
 	(**(**[256]int8)(__ccgo_up(bp)))[identLen] = 0
 	if identLen == 0 {
-		libc.Xstrcpy(tls, bp, __ccgo_ts+21451)
+		libc.Xstrcpy(tls, bp, __ccgo_ts+21449)
 	} else {
 		if identLen == int32(1) && int32((**(**[256]int8)(__ccgo_up(bp)))[0]) == int32('$') {
-			libc.Xstrcpy(tls, bp, __ccgo_ts+21457)
+			libc.Xstrcpy(tls, bp, __ccgo_ts+21455)
 		} else {
 			if identLen == int32(1) && int32((**(**[256]int8)(__ccgo_up(bp)))[0]) == int32('%') {
-				libc.Xstrcpy(tls, bp, __ccgo_ts+21463)
+				libc.Xstrcpy(tls, bp, __ccgo_ts+21461)
 			} else {
 				if identLen == int32(1) && int32((**(**[256]int8)(__ccgo_up(bp)))[0]) == int32('#') {
-					libc.Xstrcpy(tls, bp, __ccgo_ts+21469)
+					libc.Xstrcpy(tls, bp, __ccgo_ts+21467)
 				}
 			}
 		}
@@ -776,11 +776,11 @@ func s__startNewLine(tls *libc.TLS, cc *CC, L uintptr) {
 	if (*_LexStream)(unsafe.Pointer(L)).Fmixed_tab_warning != 0 {
 		switch int32((*_LexStream)(unsafe.Pointer(L)).Fmixed_tab_warning) {
 		case int32(m_MIXED_TAB_SAME_LINE):
-			x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+20922, 0)
+			x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+20920, 0)
 		case int32(m_MIXED_TAB_CHANGED_TO_SPACES):
-			x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+20974, 0)
+			x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+20972, 0)
 		case int32(m_MIXED_TAB_CHANGED_TO_TABS):
-			x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21029, 0)
+			x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21027, 0)
 			break
 		}
 		(*_LexStream)(unsafe.Pointer(L)).Fmixed_tab_warning = 0
@@ -1004,7 +1004,7 @@ func x__zip_entry_close(tls *libc.TLS, cc *CC, zip uintptr) (r int32) {
 	}
 	level = (*_zip_t)(unsafe.Pointer(zip)).Flevel & uint32(0xF)
 	if level != 0 {
-		done = x__tdefl_compress_buffer(tls, cc, zip+120+120, __ccgo_ts+7120, uint64(0), int32(_TDEFL_FINISH))
+		done = x__tdefl_compress_buffer(tls, cc, zip+120+120, __ccgo_ts+7118, uint64(0), int32(_TDEFL_FINISH))
 		if done != int32(_TDEFL_STATUS_DONE) && done != int32(_TDEFL_STATUS_OKAY) {
 			// Cannot flush compressed buffer
 			err = -int32(12)
@@ -1083,7 +1083,7 @@ func x__zip_entry_close(tls *libc.TLS, cc *CC, zip uintptr) (r int32) {
 		/* Set DOS Subdirectory attribute bit. */
 		(*_zip_t)(unsafe.Pointer(zip)).Fentry.Fexternal_attr |= uint32(_MZ_ZIP_DOS_DIR_ATTRIBUTE_BITFLAG)
 	}
-	if !(s__mz_zip_writer_add_to_central_dir(tls, cc, pzip, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fname, entrylen, pExtra_data, uint16(extra_size), __ccgo_ts+7120, uint16(0), (*_zip_t)(unsafe.Pointer(zip)).Fentry.Funcomp_size, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fcomp_size, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Funcomp_crc32, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fmethod, libc.Uint16FromInt32(int32(_MZ_ZIP_GENERAL_PURPOSE_BIT_FLAG_UTF8)|int32(_MZ_ZIP_LDH_BIT_FLAG_HAS_LOCATOR)), **(**_mz_uint16)(__ccgo_up(bp)), **(**_mz_uint16)(__ccgo_up(bp + 2)), (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fheader_offset, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fexternal_attr, libc.UintptrFromInt32(0), uint32(0)) != 0) {
+	if !(s__mz_zip_writer_add_to_central_dir(tls, cc, pzip, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fname, entrylen, pExtra_data, uint16(extra_size), __ccgo_ts+7118, uint16(0), (*_zip_t)(unsafe.Pointer(zip)).Fentry.Funcomp_size, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fcomp_size, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Funcomp_crc32, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fmethod, libc.Uint16FromInt32(int32(_MZ_ZIP_GENERAL_PURPOSE_BIT_FLAG_UTF8)|int32(_MZ_ZIP_LDH_BIT_FLAG_HAS_LOCATOR)), **(**_mz_uint16)(__ccgo_up(bp)), **(**_mz_uint16)(__ccgo_up(bp + 2)), (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fheader_offset, (*_zip_t)(unsafe.Pointer(zip)).Fentry.Fexternal_attr, libc.UintptrFromInt32(0), uint32(0)) != 0) {
 		// Cannot write to zip central dir
 		err = -int32(15)
 		goto cleanup
