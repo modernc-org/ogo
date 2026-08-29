@@ -236,6 +236,96 @@ type p2Intrinsic struct {
 	ret string
 }
 
+// mathIntrinsics maps the math package's bodyless functions to the C library call
+// each one is. The package is ORDINARY embedded source -- its constants are emitted
+// and folded like any package's, and Round and Trunc have real OctoGo bodies -- so
+// only these calls are substituted, and only where one is made.
+//
+// The DOUBLE spellings, not the "f" ones: float64 is C double here, and the
+// target's double is 32 bits, so the two are the same code under two names. Using
+// the name the type asks for keeps the C honest.
+//
+// round() is deliberately ABSENT. On this target it is a compiler builtin that
+// yields an INTEGER, so it is right only where something converts the result --
+// `(double)round(1e30)` came back 2147483647 on a P2-EDGE, and passing it to printf
+// printed the integer's bits as a float. math.Round is built from Floor instead.
+// trunc() is absent because the target's math library does not have it at all.
+var mathIntrinsics = map[string]string{
+	"Abs":   "fabs",
+	"Ceil":  "ceil",
+	"Floor": "floor",
+	"Sqrt":  "sqrt",
+	"Pow":   "pow",
+	"Exp":   "exp",
+	"Log":   "log",
+	"Log2":  "log2",
+	"Log10": "log10",
+	"Sin":   "sin",
+	"Cos":   "cos",
+	"Tan":   "tan",
+	"Asin":  "asin",
+	"Acos":  "acos",
+	"Atan":  "atan",
+	"Atan2": "atan2",
+	// fmodf, not fmod: the target's math.h defines the double-named forms as macros
+	// over compiler builtins and has no fmod at all -- `ogo build` reported "unknown
+	// identifier fmod" where the host, whose libm has both, was content. Passing a
+	// double to it costs nothing here, the target's double being 32 bits already.
+	"Mod":      "fmodf",
+	"Copysign": "copysign",
+}
+
+// needMathWrapper records that a math function was named as a VALUE rather than
+// called, so a definition for it is emitted. A bodyless one is substituted at every
+// call site and defined nowhere, which is all a call needs and is nothing for a
+// function pointer to point at.
+//
+// The wrapper is emitted once per function and only when one is taken this way, so a
+// program that only calls them carries none. Round and Trunc need no wrapper: they
+// have OctoGo bodies and are emitted like any other function.
+func (e *emitter) needMathWrapper(pkg, name string) {
+	c, isIntr := e.mathIntrinsic(pkg, name)
+	if !isIntr || e.mathWrappers[name] {
+		return
+	}
+	e.mathWrappers[name] = true
+	cname := mangle("math", name)
+	// The parameters come from the DECLARATION the package source carries, which is
+	// where the arity of each of these is already written down -- so a two-argument
+	// one needs no list here to be kept in step with.
+	var params, args []string
+	for i, pt := range e.funcParams[cname] {
+		nm := fmt.Sprintf("p%d", i)
+		params = append(params, pt+" "+nm)
+		args = append(args, nm)
+	}
+	e.liftedDefs = append(e.liftedDefs,
+		"double "+cname+"("+strings.Join(params, ", ")+") { return "+c+"("+strings.Join(args, ", ")+"); }\n")
+}
+
+// mathIntrinsic answers with the C library call a math function is, and whether the
+// name is one at all. pkg is the package a call was written on -- "math" for a
+// qualified call from outside, and the empty string for an unqualified one, which is
+// a math intrinsic only while the math package's own source is being emitted (Round
+// and Trunc call Floor and Abs).
+func (e *emitter) mathIntrinsic(pkg, name string) (string, bool) {
+	switch pkg {
+	case "math":
+	case "":
+		if e.curPkgPrefix != "math" {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	c, ok := mathIntrinsics[name]
+	if !ok {
+		return "", false
+	}
+	e.includes["math.h"] = true
+	return c, true
+}
+
 // p2Constants are the p2 package's exported constants: the pin-configuration bits
 // a smart pin is brought up with, named rather than written as hex.
 //
@@ -3676,7 +3766,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4316,47 +4406,51 @@ type emitter struct {
 	methodValueTypes map[string]funcValueType
 	// methodValueOf: "<global>.<method>" -> the function already lifted for it, so
 	// the same method value written twice mints one function.
-	methodValueOf      map[string]string
-	funcParams         map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
-	methodPtr          map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
-	globals            map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
-	structs            map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
-	namedTypes         map[string]bool           // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
-	typeNames          map[string]bool           // every C type name this program declares, struct or not, for fieldIdent's collision check
-	interfaceTypes     map[string]bool           // source names declared as an interface type
-	ifaceMethods       map[string][]ifaceMethod  // mangled interface name -> its methods, in declaration order: the vtable's slot order
-	ifaceVTables       map[string]bool           // "<interface>|<concrete>" pairs a static vtable has been emitted for
-	vtables            bytes.Buffer              // the thunks and static vtables those pairs produced
-	namedUnderlying    map[string]string         // that typedef -> the C type it stands for, so a value of it is represented as what it is
-	namedArrays        map[string]arrDim         // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
-	constInt           map[string]string         // integer-constant name -> its C literal value, for array bounds
-	constVal           map[string]constant.Value // exact value of a numeric constant, for foldConstVal; a typed one rounded to its type
-	constStr           map[string]string         // string-constant name -> its decoded value, for folding string concatenation
-	constUntyped       map[string]bool           // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
-	arrays             map[string]arrDim         // local array name -> element type and bound (reset per function)
-	globalArrays       map[string]arrDim         // package-level array name -> element type and bound (persists across functions)
-	sliceVars          map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
-	globalSliceVars    map[string]string         // package-level slice name -> element C type (persists across functions)
-	pkgInit            []pkgInitStep             // the synthesized package initializer, emitted in dependency order
-	initFuncs          []string                  // user init() functions, called after the variable initializers
-	initNames          map[string]string         // init declaration position -> its numbered C name, so both passes agree
-	goSites            []goSite                  // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
-	chanElems          map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
-	chanInitElems      map[string]bool           // element types whose channel init helper is reached
-	chanSendElems      map[string]bool           // element types whose channel send helper is reached
-	chanRecvElems      map[string]bool           // element types whose blocking receive helper is reached
-	chanTryRecvElems   map[string]bool           // element types whose select tryrecv helper is reached
-	chanCloseElems     map[string]bool           // element types whose close helper the program reaches
-	chanRecv2Elems     map[string]bool           // element types whose comma-ok receive helper the program reaches
-	chanTrySendElems   map[string]bool           // element types whose select send helpers (offer/offered/withdraw) are reached
-	chanElemByName     map[string]string         // ogo_chan_<T> C type name -> its element C type
-	funcValueTypes     map[string]funcValueType  // top-level function C name -> its type as C text, for the name used as a value
-	funcTypeNames      map[string]string         // C function-pointer signature -> the typedef minted for it
-	funcTypeRet        map[string][]string       // that typedef -> the result C types a call through it yields
-	funcTypeParams     map[string][]string       // that typedef -> its parameter C types, for marshalling a `go` through a value
-	retStructs         map[string]string         // result-struct typedef name -> the result types it stands for
-	retStructByKey     map[string]string         // those result types -> the typedef name, so one list answers alike every time
-	typedefUnits       []typedefUnit             // the typedef section, in the order collected; emitted in dependency order
+	methodValueOf    map[string]string
+	funcParams       map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
+	methodPtr        map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
+	globals          map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
+	structs          map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
+	namedTypes       map[string]bool           // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	typeNames        map[string]bool           // every C type name this program declares, struct or not, for fieldIdent's collision check
+	interfaceTypes   map[string]bool           // source names declared as an interface type
+	ifaceMethods     map[string][]ifaceMethod  // mangled interface name -> its methods, in declaration order: the vtable's slot order
+	ifaceVTables     map[string]bool           // "<interface>|<concrete>" pairs a static vtable has been emitted for
+	vtables          bytes.Buffer              // the thunks and static vtables those pairs produced
+	namedUnderlying  map[string]string         // that typedef -> the C type it stands for, so a value of it is represented as what it is
+	namedArrays      map[string]arrDim         // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
+	constInt         map[string]string         // integer-constant name -> its C literal value, for array bounds
+	constVal         map[string]constant.Value // exact value of a numeric constant, for foldConstVal; a typed one rounded to its type
+	constStr         map[string]string         // string-constant name -> its decoded value, for folding string concatenation
+	constUntyped     map[string]bool           // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
+	arrays           map[string]arrDim         // local array name -> element type and bound (reset per function)
+	globalArrays     map[string]arrDim         // package-level array name -> element type and bound (persists across functions)
+	sliceVars        map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
+	globalSliceVars  map[string]string         // package-level slice name -> element C type (persists across functions)
+	pkgInit          []pkgInitStep             // the synthesized package initializer, emitted in dependency order
+	initFuncs        []string                  // user init() functions, called after the variable initializers
+	initNames        map[string]string         // init declaration position -> its numbered C name, so both passes agree
+	goSites          []goSite                  // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
+	chanElems        map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
+	chanInitElems    map[string]bool           // element types whose channel init helper is reached
+	chanSendElems    map[string]bool           // element types whose channel send helper is reached
+	chanRecvElems    map[string]bool           // element types whose blocking receive helper is reached
+	chanTryRecvElems map[string]bool           // element types whose select tryrecv helper is reached
+	chanCloseElems   map[string]bool           // element types whose close helper the program reaches
+	chanRecv2Elems   map[string]bool           // element types whose comma-ok receive helper the program reaches
+	// mathWrappers are the math functions named as a VALUE rather than called. A
+	// call is substituted with the C library's, so a bodyless one is defined
+	// nowhere; a function pointer needs something to point at. See mathWrapperDefs.
+	mathWrappers       map[string]bool
+	chanTrySendElems   map[string]bool          // element types whose select send helpers (offer/offered/withdraw) are reached
+	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
+	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
+	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
+	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
+	funcTypeParams     map[string][]string      // that typedef -> its parameter C types, for marshalling a `go` through a value
+	retStructs         map[string]string        // result-struct typedef name -> the result types it stands for
+	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
+	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
 	anonStructNames    map[string]string
 	anonIfaceNames     map[string]string   // method-set shape -> the minted name of an anonymous interface
 	anonIfaceMinted    map[string]bool     // the minted names, so a message says the SHAPE rather than the name
@@ -18506,6 +18600,19 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 // by the statement call path (emitCall) and the expression Factor path. The
 // checker has already verified the callee resolves and the arguments match.
 func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
+	// An UNQUALIFIED call to a math intrinsic, which happens only inside the math
+	// package's own source: Round and Trunc are written in OctoGo over Floor, Ceil
+	// and Abs. Without this they would emit calls to math_Floor, which is declared
+	// and never defined -- the substitution is the whole of what a bodyless function
+	// there means.
+	if len(suffix) == 1 && suffix[0].sym == CallSuffix {
+		if c, isIntr := e.mathIntrinsic("", recv); isIntr {
+			e.emit(c + "(")
+			e.emitCallArgs("", suffix[0].ast)
+			e.emit(")")
+			return true
+		}
+	}
 	// `pick()(3)` where the second call yields SEVERAL results: they are written
 	// through an out parameter (see funcSigCParts), so the call needs a temporary
 	// of this frame to write into. Reached where the results are discarded -- a
@@ -18764,6 +18871,17 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				e.emitConversion(ct, args[0])
 				return true
 			}
+		}
+		// `math.Sqrt(x)` -> `sqrt(x)`. Unlike p2, math is an ordinary embedded
+		// package -- its constants are emitted and two of its functions have real
+		// bodies -- so only the bodyless ones are substituted here, and a name that
+		// is not one falls through to the mangled call below, which is what Round
+		// and Trunc are.
+		if c, isIntr := e.mathIntrinsic(recv, method); isIntr {
+			e.emit(c + "(")
+			e.emitCallArgs("", suffix[1].ast)
+			e.emit(")")
+			return true
 		}
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: the exported function is emitted
@@ -23854,6 +23972,12 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 		// The C name is the same one a call of it resolves to; only its type is new.
 		if len(fields) == 1 {
 			if ft, isFn := e.funcValueCType(gn); isFn {
+				// A math function has no body of its own -- a CALL of it is
+				// substituted with the C library's -- so naming it as a value needs
+				// something to point AT. One wrapper is emitted per function taken
+				// this way; without it the C named a math_Sqrt nothing defines, and
+				// the program got the linker's word for it.
+				e.needMathWrapper(base, fields[0])
 				return gn, ft, true
 			}
 		}

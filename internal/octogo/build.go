@@ -30,7 +30,128 @@ var intrinsicImports = map[string]bool{"p2": true}
 // from a directory. They are ORDINARY OctoGo, compiled and mangled like any other
 // package -- nothing about them is intrinsic -- so the day one of them ships as
 // source on disk, the only change is where it is read from.
-var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc}
+var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc, "math": mathSrc}
+
+// mathSrc is the math package. Every function whose body is missing is one call of
+// the C backend's math library, substituted at the call site (mathIntrinsics in
+// emit.go) rather than emitted -- so a call costs the library call and nothing more.
+// The two that HAVE bodies are written in OctoGo over the others, because the
+// library's own are unusable: see Round and Trunc below.
+//
+// Go's signatures, spelled with float64 as Go spells them. The target has no
+// double-precision hardware, so a float64 is 32 bits here and every result carries
+// about seven significant digits rather than sixteen -- which is true of float64
+// arithmetic in this language generally and is not particular to this package. A
+// program written against Go's math compiles and means the same thing; what it
+// loses is precision it could not have had on this hardware anyway.
+const mathSrc = `// Package math is the allocation-free part of Go's math: the elementary functions,
+// each meaning exactly what Go's of the same name means.
+//
+// The target has no double-precision hardware, so a float64 is 32 bits here and a
+// result carries about seven significant digits. That is a property of float64 in
+// this language rather than of this package -- see the Numeric types section of the
+// language spec -- and it is why a program that compares a result against a literal
+// should compare to the precision it has.
+//
+// What is missing is what needs more than a call: Inf, NaN, IsNaN, IsInf and
+// Signbit, which answer questions about a bit pattern rather than computing a value,
+// and the Max/Min float constants, which name values a 32-bit float cannot hold.
+
+// Mathematical constants, as Go declares them. Each is exact until it is used: the
+// compiler evaluates constant expressions exactly, so Pi/2 is right to the last bit
+// the target can hold.
+const (
+	E   = 2.71828182845904523536028747135266249775724709369995957496696763
+	Pi  = 3.14159265358979323846264338327950288419716939937510582097494459
+	Phi = 1.61803398874989484820458683436563811772030917980576286213544862
+
+	Sqrt2   = 1.41421356237309504880168872420969807856967187537694806841700392
+	SqrtE   = 1.64872127070012814684865078781416357165377610071014801157507931
+	SqrtPi  = 1.77245385090551602729816748334114518279754945612238712821380779
+	SqrtPhi = 1.27201964951406896425242246173749149171560804184009624861664038
+
+	Ln2    = 0.693147180559945309417232121458176568075500134360255254120680009
+	Log2E  = 1 / Ln2
+	Ln10   = 2.30258509299404568401799145468436420760110148862877297603332790
+	Log10E = 1 / Ln10
+)
+
+// Abs returns the absolute value of x.
+func Abs(x float64) float64
+
+// Ceil returns the least integer value greater than or equal to x, and Floor the
+// greatest integer value less than or equal to it.
+func Ceil(x float64) float64
+
+func Floor(x float64) float64
+
+// Sqrt returns the square root of x.
+func Sqrt(x float64) float64
+
+// Pow returns x raised to the power y.
+func Pow(x float64, y float64) float64
+
+// Exp returns e raised to the power x.
+func Exp(x float64) float64
+
+// Log returns the natural logarithm of x, Log2 the binary logarithm and Log10 the
+// decimal one.
+func Log(x float64) float64
+
+func Log2(x float64) float64
+
+func Log10(x float64) float64
+
+// Sin, Cos and Tan return the sine, cosine and tangent of the radian argument x.
+func Sin(x float64) float64
+
+func Cos(x float64) float64
+
+func Tan(x float64) float64
+
+// Asin, Acos and Atan return the inverse sine, cosine and tangent of x, in radians.
+func Asin(x float64) float64
+
+func Acos(x float64) float64
+
+func Atan(x float64) float64
+
+// Atan2 returns the arc tangent of y/x, using the signs of the two to determine the
+// quadrant of the return value.
+func Atan2(y float64, x float64) float64
+
+// Mod returns the floating-point remainder of x/y. The magnitude of the result is
+// less than y and its sign agrees with that of x.
+func Mod(x float64, y float64) float64
+
+// Copysign returns a value with the magnitude of f and the sign of sign.
+func Copysign(f float64, sign float64) float64
+
+// Trunc returns the integer value of x, rounding toward zero.
+//
+// Written here rather than mapped to the library's, which this target does not
+// provide at all.
+func Trunc(x float64) float64 {
+	if x < 0 {
+		return Ceil(x)
+	}
+	return Floor(x)
+}
+
+// Round returns the nearest integer, rounding half away from zero.
+//
+// Written here rather than mapped to the library's round(), which on this target is
+// a compiler builtin that yields an INTEGER: correct where something converts it,
+// and clamped at 2147483647 for anything larger -- Round(1e30) came back as 2.1e9.
+// Building it from Floor has no such limit.
+func Round(x float64) float64 {
+	t := Floor(Abs(x) + 0.5)
+	if x < 0 {
+		return -t
+	}
+	return t
+}
+`
 
 // p2Src is the p2 package: the Propeller 2's hardware, as declarations. Every
 // function here is BODYLESS -- the form the grammar provides for a function

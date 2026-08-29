@@ -20,6 +20,31 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A `math` package.** The elementary functions on the terms `strings` is on: each
+  means exactly what Go's of the same name means, checked by running the same
+  program under Go and on a P2-EDGE. `Abs`, `Ceil`, `Floor`, `Trunc`, `Round`,
+  `Sqrt`, `Pow`, `Exp`, `Log`, `Log2`, `Log10`, `Sin`, `Cos`, `Tan`, `Asin`, `Acos`,
+  `Atan`, `Atan2`, `Mod`, `Copysign`, and Go's mathematical constants -- `Pi`, `E`,
+  `Phi`, `Sqrt2`, `SqrtE`, `SqrtPi`, `SqrtPhi`, `Ln2`, `Log2E`, `Ln10`, `Log10E`.
+  Import it as Go does, `import "math"`.
+
+  A call costs the C library's call and nothing more: the function is substituted
+  where it is written rather than wrapped. Taking one as a VALUE, `f := math.Sqrt`,
+  works too -- a definition is emitted for it, since a substituted call leaves
+  nothing for a function pointer to point at.
+
+  Two are written in OctoGo over the others rather than mapped, because the target's
+  own are unusable. `Round` because its `round()` is a compiler builtin yielding an
+  INTEGER, so `Round(1e30)` would have come back 2147483647; `Trunc` because the
+  target has no `trunc()` at all.
+
+  A `float64` is 32 bits on this target, so a result carries about seven significant
+  digits rather than sixteen. That is a property of `float64` here and not of this
+  package, but it is what a program comparing a result against a literal has to
+  allow for. What is missing is what needs more than a call: `Inf`, `NaN`, `IsNaN`,
+  `IsInf`, `Signbit`, which read a bit pattern rather than computing a value, and the
+  `MaxFloat` constants, which name values a 32-bit float cannot hold.
+
 - **An unimplemented built-in is named wherever it is written.** `complex`,
   `delete`, `imag`, `real` and `recover` were refused only where a call reached the
   emitter -- as a statement. As a VALUE the call was typed first, so

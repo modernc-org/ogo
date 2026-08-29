@@ -19169,6 +19169,44 @@ func main() {
 }
 `,
 		want: "recv 1\ncalls 1\ncommaok 2 true calls 2\ncalls 3\nselect 3\ncalls 4\ncalls 5\n",
+	},
+	{
+		// The math package in the SHAPES a program reaches it through, rather than
+		// for its values -- TestMathMatchesGo runs every function against Go's own.
+		// A call is substituted with the C library's, so what needs checking here is
+		// everything that is not a plain call: a constant in a constant expression,
+		// a function taken as a VALUE (which needs a definition to point at, there
+		// being none for a substituted call), and the two functions with real OctoGo
+		// bodies, which are emitted like any other and may be taken as values as
+		// they stand.
+		name: "the math package",
+		src: `import "math"
+
+const quarter = math.Pi / 4
+
+var back [3]float64
+
+func rms(xs []float64) float64 {
+	sum := 0.0
+	for _, v := range xs {
+		sum += v * v
+	}
+	return math.Sqrt(sum / float64(len(xs)))
+}
+
+func main() {
+	printf("%.4f %.4f\n", math.Sqrt(2.0), math.Sin(quarter))
+	f := math.Sqrt
+	g := math.Round
+	printf("%.4f %.4f\n", f(9.0), g(-2.5))
+	back[0] = 3.0
+	back[1] = 4.0
+	back[2] = 0.0
+	printf("%.4f\n", rms(back[:]))
+	printf("%.4f %.4f\n", math.Trunc(-3.7), math.Mod(7.5, 3.0))
+}
+`,
+		want: "1.4142 0.7071\n3.0000 -3.0000\n2.8868\n-3.0000 1.5000\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
@@ -19248,7 +19286,9 @@ func runCorpus(t *testing.T, opts []EmitOption) {
 			// (TestOnBoard).
 			out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
 				"-Wno-unused-function", "-Wno-format", "-I", shim,
-				"-o", bin, csrc, "-lpthread").CombinedOutput()
+				// -lm: the host's math functions live in libm, where the target's
+				// are compiler builtins and need no library at all.
+				"-o", bin, csrc, "-lpthread", "-lm").CombinedOutput()
 			if err != nil {
 				t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())
 			}

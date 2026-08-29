@@ -309,12 +309,17 @@ broken.
   of your own error type whose address you return. A caller recognises one by
   comparing against it, `err == &dev.ErrTimeout`, which is what `errors.Is` does for
   a sentinel anyway.
-* **The standard library is three packages.** `strings` is the allocation-free part
+* **The standard library is four packages.** `strings` is the allocation-free part
   of Go's — the functions that answer a question about a string or return a
   substring of one, each meaning exactly what Go's of the same name means, checked
-  by running the same program under Go. `p2` wraps twenty-eight intrinsics (pin
-  control, smart pins including the ADC, timing, the serial line in both directions,
-  the hardware locks), and `testing` carries the state
+  by running the same program under Go. `math` is the elementary functions on the
+  same terms — `Abs`, `Ceil`, `Floor`, `Trunc`, `Round`, `Sqrt`, `Pow`, `Exp`, the
+  three logarithms, the six trigonometric functions, `Atan2`, `Mod`, `Copysign` and
+  Go's mathematical constants — and what it leaves out is what needs more than a
+  call: `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, and the `MaxFloat` constants,
+  which name values a 32-bit float cannot hold. `p2` wraps twenty-eight intrinsics
+  (pin control, smart pins including the ADC, timing, the serial line in both
+  directions, the hardware locks), and `testing` carries the state
   a test reports through. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all

@@ -245,3 +245,183 @@ func TestOnBoardStrings(t *testing.T) {
 			boardAttempts, firstDiff(out, string(want)))
 	}
 }
+
+// mathExercise calls every function and names every constant the math package
+// exports, on the arguments where a plausible implementation and a correct one part
+// company: a negative half-way value for each of the four roundings, a negative zero
+// out of Trunc, a negative operand and a negative modulus for Mod, and the quadrants
+// Atan2 exists to tell apart.
+//
+// It prints to FOUR decimals, and that is the whole of what this target's precision
+// costs the test. A float64 is 32 bits here, so a result carries about seven
+// significant digits where Go's carries sixteen; four decimals on values of this
+// magnitude is inside that, and everything below then matches Go's output byte for
+// byte -- on the host and on real hardware.
+const mathExercise = `import "math"
+
+// One group per few functions rather than one long main: a function's locals live
+// in 480 longs of cog RAM, and every call at once overran it for the strings
+// exercise too.
+
+func rounding() {
+	printf("%.4f %.4f %.4f %.4f\n", math.Abs(-3.5), math.Abs(3.5), math.Abs(0.0), math.Abs(-0.25))
+	printf("%.4f %.4f %.4f %.4f\n", math.Floor(-3.5), math.Floor(3.5), math.Ceil(-3.5), math.Ceil(3.5))
+	printf("%.4f %.4f %.4f %.4f\n", math.Trunc(-3.5), math.Trunc(3.5), math.Trunc(-0.5), math.Trunc(0.5))
+	printf("%.4f %.4f %.4f %.4f\n", math.Round(-3.5), math.Round(3.5), math.Round(-2.4), math.Round(2.6))
+	printf("%.4f %.4f %.4f\n", math.Round(0.5), math.Round(-0.5), math.Round(0.0))
+}
+
+func powers() {
+	printf("%.4f %.4f %.4f\n", math.Sqrt(2.0), math.Sqrt(9.0), math.Sqrt(0.0))
+	printf("%.4f %.4f %.4f\n", math.Pow(2.0, 10.0), math.Pow(2.0, 0.5), math.Pow(9.0, -1.0))
+	printf("%.4f %.4f %.4f\n", math.Exp(0.0), math.Exp(1.0), math.Exp(-1.0))
+	printf("%.4f %.4f %.4f\n", math.Log(1.0), math.Log(2.0), math.Log10(100.0))
+	printf("%.4f %.4f\n", math.Log2(8.0), math.Log2(0.5))
+}
+
+func trig() {
+	printf("%.4f %.4f %.4f\n", math.Sin(0.0), math.Sin(0.5), math.Sin(1.0))
+	printf("%.4f %.4f %.4f\n", math.Cos(0.0), math.Cos(0.5), math.Cos(1.0))
+	printf("%.4f %.4f\n", math.Tan(0.0), math.Tan(0.5))
+	printf("%.4f %.4f %.4f\n", math.Asin(0.5), math.Acos(0.5), math.Atan(0.5))
+	printf("%.4f %.4f %.4f\n", math.Atan2(1.0, 1.0), math.Atan2(1.0, -1.0), math.Atan2(-1.0, 1.0))
+}
+
+func misc() {
+	printf("%.4f %.4f %.4f\n", math.Mod(7.5, 3.0), math.Mod(-7.5, 3.0), math.Mod(7.5, -3.0))
+	printf("%.4f %.4f\n", math.Copysign(2.0, -3.0), math.Copysign(-2.0, 3.0))
+	printf("%.4f %.4f %.4f\n", math.Pi, math.E, math.Phi)
+	printf("%.4f %.4f %.4f\n", math.Sqrt2, math.SqrtE, math.SqrtPi)
+	printf("%.4f %.4f %.4f %.4f\n", math.Ln2, math.Log2E, math.Ln10, math.Log10E)
+}
+
+func main() {
+	rounding()
+	powers()
+	trig()
+	misc()
+}
+`
+
+// mathGoTwin turns the exercise into the Go program it is modelled on, exactly as
+// stringsGoTwin does: a package clause, fmt beside the math import, and printf
+// spelled fmt.Printf.
+func mathGoTwin(src string) string {
+	src = strings.Replace(src, `import "math"`, "package main\n\nimport (\n\t\"fmt\"\n\t\"math\"\n)", 1)
+	return printfCall.ReplaceAllString(src, "fmt.Printf(")
+}
+
+// TestMathMatchesGo runs the exercise twice, once compiled by this compiler against
+// the embedded math package and once by Go against its own, and requires the two to
+// print the same bytes. Same design as TestStringsMatchesGo, and for the same
+// reason: whoever writes a table of expected values is the person who wrote the
+// function, and will make the same mistake twice.
+//
+// It is worth running against Go rather than against the C library the calls are
+// substituted with, because the substitution is the part that can be wrong: `Mod`
+// maps to fmodf and not fmod, which the target does not have, and `Round` is built
+// from Floor because the target's round() is a builtin that yields an integer.
+func TestMathMatchesGo(t *testing.T) {
+	cc := ""
+	for _, c := range []string{"cc", "gcc", "clang"} {
+		if p, err := exec.LookPath(c); err == nil {
+			cc = p
+			break
+		}
+	}
+	if cc == "" {
+		t.Skip("no C compiler found; skipping the compare-with-Go test")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool found; skipping the compare-with-Go test")
+	}
+	shim, err := filepath.Abs(filepath.Join("testdata", "hostp2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+
+	goSrc := filepath.Join(dir, "twin.go")
+	if err := os.WriteFile(goSrc, []byte(mathGoTwin(mathExercise)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := exec.Command("go", "run", goSrc).CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, want)
+	}
+
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(mathExercise)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	csrc := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(csrc, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "prog")
+	// -lm: the host's math functions live in libm, where the target's are compiler
+	// builtins and need no library at all.
+	ccOut, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread", "-lm").CombinedOutput()
+	if err != nil {
+		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, ccOut, buf.String())
+	}
+	if len(bytes.TrimSpace(ccOut)) != 0 {
+		t.Errorf("cc warned:\n%s", ccOut)
+	}
+	got, err := exec.Command(bin).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, got)
+	}
+	if g, w := strings.ReplaceAll(string(got), "\r\n", "\n"), string(want); g != w {
+		t.Errorf("math differs from Go's:\n%s", firstDiff(g, w))
+	}
+}
+
+// TestOnBoardMath runs the same exercise on real hardware. The host and the target
+// do not share one math library -- the host calls libm, the target lowers each name
+// to a compiler builtin -- so a host-green math package says even less about the
+// target than a host-green string one does. It is what caught Mod: the host's libm
+// has fmod, the target has only fmodf, and the program did not build.
+func TestOnBoardMath(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool found; skipping the compare-with-Go test")
+	}
+	ogo := buildOgoCLI(t)
+	dir := t.TempDir()
+
+	goSrc := filepath.Join(dir, "twin.go")
+	if err := os.WriteFile(goSrc, []byte(mathGoTwin(mathExercise)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := exec.Command("go", "run", goSrc).CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, want)
+	}
+
+	bin := filepath.Join(dir, "prog.binary")
+	if err := boardBuild(ogo, dir, "prog", mathExercise, bin, ""); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	var out string
+	var matched bool
+	for attempt := 0; attempt < boardAttempts && !matched; attempt++ {
+		if attempt > 0 {
+			t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+		}
+		out, matched = boardLoad(ogo, port, bin, string(want))
+	}
+	if !matched {
+		t.Errorf("board output does not match Go's after %d attempts:\n%s",
+			boardAttempts, firstDiff(out, string(want)))
+	}
+}
