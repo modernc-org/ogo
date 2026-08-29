@@ -20,6 +20,33 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A signature naming another package's type was compared by its spelling.**
+  `type Mapper func(Vec) Vec` in `geom` is written `func(geom.Vec) geom.Vec`
+  from `main`, and the two were compared as text: `geom.Apply(double, v)` was
+  refused as `cannot use double (value of type func(v geom.Vec) geom.Vec) as
+  func(Vec) Vec value`, and a type embedding `geom.Vec` did not satisfy an
+  interface of `main` asking for the promoted `Add(geom.Vec) geom.Vec` -- `have
+  Add(Vec) Vec`. Every type name in a signature is now resolved in the file that
+  wrote it and compared by what it names; the diagnostic still spells both sides
+  as their declarations do. The multi-package test program carries both shapes.
+
+- **A method on what a call returns is checked against the result's type.**
+  `named(3).Big()`, for a `named` of a defined function type `Maker` returning a
+  `Frame`, was refused as `type Maker has no method Big`: the checker read the
+  call as `named.Big(...)`. A call before the selector now means the method is
+  the result's, and it is looked up there -- declared, promoted, a field of
+  function type or an interface's -- for a function, a variable of function type
+  and a defined function type alike. The other two spellings had gone entirely
+  unchecked, a misspelt method reaching the emitter as `unsupported call in
+  expression`; all three now say `type Frame has no method Nope` where it is
+  written.
+
+- **A method on what a function value returns was typed as an `int`.**
+  `m(v).Dot(w)` for a `Dot` returning `int64` printed `22, 0`: the emitter
+  computed the value correctly and handed a 64-bit result to a 32-bit print,
+  the chain typer not walking a call through a variable of function type. It
+  does now, as the emitting walk always has.
+
 - **A method returning a struct, called through an interface from a goroutine,
   took the program down.** `Process(f Frame) Frame` reached through a `Stage`
   interface on a spawned cog -- a filter stage in a pipeline of cogs -- printed
@@ -32,8 +59,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   returning unknown type` is the backend failing to match the two. Every struct
   result now travels the same way as several do: through an interface's slot,
   through a function value held in a variable or a struct field, through
-  `pick()(3)`, and through a method value. A direct call is unchanged. Found by
-  a three-cog pipeline probe diffed against Go on the board.
+  `pick()(3)`, and through a method value -- a variable of a DEFINED function
+  type, `var shape Shaper`, included. A direct call is unchanged. Found by a
+  three-cog pipeline probe diffed against Go on the board.
 
 - **An intermediate of a sized-integer expression kept C's extra bits.** With
   `var k uint16 = 40000`, `k*3/2` printed 60000 where Go says 27232: Go wraps

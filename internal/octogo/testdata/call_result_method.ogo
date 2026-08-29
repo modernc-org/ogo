@@ -1,0 +1,33 @@
+// A method called on what a CALL returns, "x(...).m(...)", is m of the result's
+// type, not of x. A function, a variable of an unnamed function type and one of a
+// DEFINED function type all yield the same Frame here, and the method set asked is
+// Frame's -- the defined type used to be asked for it instead, so named(3).Big()
+// was "type Maker has no method Big" while the other two spellings passed
+// unchecked, and a misspelt method on any of them reached the emitter.
+
+type Frame struct{ val int }
+
+func (f Frame) Big() int64 { return int64(f.val) * 1000000000 }
+
+func build(n int) Frame { return Frame{n} }
+
+type Maker func(int) Frame
+
+type Boxed struct{ Frame }
+
+func box(n int) Boxed { return Boxed{Frame{n}} }
+
+func main() {
+	mk := build
+	var named Maker = build
+	println(build(1).Big(), mk(2).Big(), named(3).Big(), box(4).Big())
+
+	// ERROR type Frame has no method Nope
+	println(build(5).Nope())
+	// ERROR type Frame has no method Nope
+	println(mk(6).Nope())
+	// ERROR type Frame has no method Nope
+	println(named(7).Nope())
+	// ERROR type Boxed has no method Nope
+	println(box(8).Nope())
+}

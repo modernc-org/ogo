@@ -1882,6 +1882,8 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 		f.checkCallBase(s, id, hasSelectorChild(stmt))
 		if m, has := f.methodCallMember(stmt); has {
 			f.checkMethodCall(s, id, m, argList, stmt)
+		} else if m, has := f.callResultMethodMember(stmt); has {
+			f.checkCallResultMethod(s, id, m)
 		}
 	}
 }
@@ -4169,6 +4171,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			f.checkCallBase(s, id, hasSelectorChild(postfix))
 			if m, has := f.methodCallMember(postfix); has {
 				f.checkMethodCall(s, id, m, argList, postfix)
+			} else if m, has := f.callResultMethodMember(postfix); has {
+				f.checkCallResultMethod(s, id, m)
 			}
 		}
 	}
@@ -4648,7 +4652,87 @@ func (f *File) typeNodeString(tn TypeNode, withNames bool) string {
 // withNames keeps the parameter names, which is what a diagnostic wants (Go names
 // a value's type as its declaration writes it, "func(n int) int") and what an
 // identity comparison must not have, names being no part of a function type.
+//
+// It renders the types AS WRITTEN, which is what a diagnostic wants and what a
+// comparison must not use: `Vec` written in geom and `geom.Vec` written in main are
+// one type. sigIdentity is the comparison's form.
 func (f *File) sigString(sig *SignatureNode, withNames bool) string {
+	return f.sigRender(sig, withNames, func(tn TypeNode) string { return f.typeNodeString(tn, withNames) })
+}
+
+// sigIdentity renders a signature over type IDENTITIES rather than spellings (see
+// typeIdentityOf), names left out: the form two signatures written in different
+// packages are compared in. A function type of another package, `type Mapper
+// func(Vec) Vec`, was compared as text against this package's `func(geom.Vec)
+// geom.Vec` and refused, and so was a method promoted from an embedded type of
+// another package when this package's interface asked for it.
+func (f *File) sigIdentity(sig *SignatureNode) string {
+	return f.sigRender(sig, false, f.typeNodeIdentity)
+}
+
+// fileOfToken is the file tok was written in, or f for a token written in no file
+// this build read -- the universe's own declarations. What a name written in that
+// file means, an unqualified type of its package or a qualifier among its imports,
+// resolves there and nowhere else.
+func (f *File) fileOfToken(tok Token) *File {
+	if tok.source != nil && f.Package != nil && f.Package.ctx != nil {
+		if wf := f.Package.ctx.fileOf(tok.source); wf != nil {
+			return wf
+		}
+	}
+	return f
+}
+
+// typeIdentityOf renders a written type name as the identity it has across
+// packages: "<package>.<Name>" for a defined type, wherever and however it was
+// written, the bare name of a predeclared type, and "" for what resolves to no type
+// at all. The name is resolved in the file that WROTE it, so `Vec` in geom and
+// `geom.Vec` in main are one identity, and a `Vec` of another package is another.
+func (f *File) typeIdentityOf(tn *TypeNodeIdent) string {
+	wf := f.fileOfToken(tn.Name)
+	written := tn.Name.Src()
+	if tn.Qualifier.IsValid() {
+		written = tn.Qualifier.Src() + "." + written
+	}
+	if td, _, ok := wf.typeDeclNamed(wf.Scope, written); ok {
+		home := f.fileOfToken(td.Token())
+		return home.Package.ImportPath + "." + td.Name()
+	}
+	if _, isPre := wf.Scope.find(written).(*PredeclaredType); isPre {
+		return written
+	}
+	return ""
+}
+
+// typeNodeIdentity is typeNodeString over identities (see typeIdentityOf), for the
+// comparisons; the shapes it does not render are the ones typeNodeString does not.
+func (f *File) typeNodeIdentity(tn TypeNode) string {
+	switch x := tn.(type) {
+	case nil:
+		return ""
+	case *TypeNodeIdent:
+		return f.typeIdentityOf(x)
+	case *TypeNodePointer:
+		if inner := f.typeNodeIdentity(x.TypeNode); inner != "" {
+			return "*" + inner
+		}
+	case *TypeNodeChan:
+		if inner := f.typeNodeIdentity(x.TypeNode); inner != "" {
+			return "chan " + inner
+		}
+	case *TypeNodeSlice:
+		if inner := f.typeNodeIdentity(x.TypeNode); inner != "" {
+			return "[]" + inner
+		}
+	case *FunctionType:
+		return f.sigIdentity(x.Signature)
+	}
+	return ""
+}
+
+// sigRender is the shape sigString and sigIdentity share: the parameters, then the
+// results, each type rendered by render, and "" as soon as one of them is.
+func (f *File) sigRender(sig *SignatureNode, withNames bool, render func(TypeNode) string) string {
 	if sig == nil {
 		return ""
 	}
@@ -4657,7 +4741,7 @@ func (f *File) sigString(sig *SignatureNode, withNames bool) string {
 	if sig.Params != nil {
 		first := true
 		for _, p := range sig.Params.List {
-			ts := f.typeNodeString(p.TypeNode, withNames)
+			ts := render(p.TypeNode)
 			if ts == "" {
 				return ""
 			}
@@ -4677,7 +4761,7 @@ func (f *File) sigString(sig *SignatureNode, withNames bool) string {
 	var res []string
 	if sig.Results != nil {
 		for _, r := range sig.Results.List {
-			ts := f.typeNodeString(r.TypeNode, withNames)
+			ts := render(r.TypeNode)
 			if ts == "" {
 				return ""
 			}
@@ -4711,11 +4795,12 @@ func (f *File) checkFuncAssign(s *Scope, want *SignatureNode, value Node, what s
 	if have == nil {
 		return
 	}
-	ws, hs := f.sigString(want, false), f.sigString(have, false)
-	if ws == "" || hs == "" || ws == hs {
+	// Compared by identity, reported as written: see sigIdentity.
+	wi, hi := f.sigIdentity(want), f.sigIdentity(have)
+	if wi == "" || hi == "" || wi == hi {
 		return
 	}
-	f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s", f.exprSource(value), f.sigString(have, true), ws, what)
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s", f.exprSource(value), f.sigString(have, true), f.sigString(want, false), what)
 }
 
 // methodValueParts resolves "x.M" used as a VALUE: the method's declaration,
@@ -6804,12 +6889,11 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 			if !has {
 				return name, "", "", "", "", false
 			}
-			w := f.sigString(methodSpecSig(set[name]), false)
-			h := f.sigString(methodSpecSig(m), false)
+			w, h := f.sigIdentity(methodSpecSig(set[name])), f.sigIdentity(methodSpecSig(m))
 			if w == "" || h == "" || w == h {
 				continue
 			}
-			return "", "", name, h, w, false
+			return "", "", name, f.sigString(methodSpecSig(m), false), f.sigString(methodSpecSig(set[name]), false), false
 		}
 		return "", "", "", "", "", true
 	}
@@ -6852,12 +6936,14 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 		if fd.Type == nil {
 			continue
 		}
-		w := f.sigString(methodSpecSig(set[name]), false)
-		h := f.sigString(fd.Type.Signature, false)
+		// Compared by identity, reported as written (see sigIdentity): the method
+		// is declared in its type's package and the interface in this one, and
+		// each writes the other's types with a qualifier the other does not.
+		w, h := f.sigIdentity(methodSpecSig(set[name])), f.sigIdentity(fd.Type.Signature)
 		if w == "" || h == "" || w == h {
 			continue
 		}
-		return "", "", name, h, w, false
+		return "", "", name, f.sigString(fd.Type.Signature, false), f.sigString(methodSpecSig(set[name]), false), false
 	}
 	return "", "", "", "", "", true
 }
@@ -7702,9 +7788,93 @@ func (f *File) registerMethod(s *Scope, n Node) {
 	td.methods[method.Src()] = fd
 }
 
+// callResultMethodMember reports whether a FactorSuffix or Postfix is a method call
+// on what a call yields, "x(...).member(...)" -- a call, then exactly one selector,
+// then a call, and nothing else -- and returns the member. It is the shape
+// methodCallMember leaves alone, checked by checkCallResultMethod.
+func (f *File) callResultMethodMember(n Node) (member Token, ok bool) {
+	var syms []Symbol
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Selector:
+			m, has := f.selectorMember(c)
+			if !has {
+				return Token{}, false
+			}
+			member = m
+		case CallSuffix:
+		default:
+			return Token{}, false
+		}
+		syms = append(syms, c.sym)
+	}
+	return member, len(syms) == 3 && syms[0] == CallSuffix && syms[1] == Selector && syms[2] == CallSuffix
+}
+
+// checkCallResultMethod checks "x(...).member(...)": the method is member of what x
+// RETURNS. x is a function or a variable of function type; its one result names a
+// type, resolved in the file that declared x, and the member must be in that type's
+// method set -- declared, promoted, a field of function type, or an interface's.
+// Anything this cannot resolve -- several results, a result of no named type -- is
+// left to the emitter, as it was. Before this every such call went unchecked, and a
+// misspelt method reached the emitter as "unsupported call in expression", naming
+// nothing.
+func (f *File) checkCallResultMethod(s *Scope, head, member Token) {
+	var sig *SignatureNode
+	switch d := s.find(head.Src()).(type) {
+	case *FuncDeclaration:
+		if d.FuncDecl != nil && d.FuncDecl.Type != nil && d.FuncDecl.Type.Receiver == nil {
+			sig = d.FuncDecl.Type.Signature
+		}
+	case *VarDeclaration:
+		sig = d.funcSig
+	}
+	if sig == nil || sig.Results == nil || len(sig.Results.List) != 1 || len(sig.Results.List[0].Names) > 1 {
+		return
+	}
+	tn := sig.Results.List[0].TypeNode
+	if p, isPtr := tn.(*TypeNodePointer); isPtr {
+		tn = p.TypeNode
+	}
+	ident, isIdent := tn.(*TypeNodeIdent)
+	if !isIdent {
+		return
+	}
+	wf := f.fileOfToken(ident.Name)
+	written := ident.Name.Src()
+	if ident.Qualifier.IsValid() {
+		written = ident.Qualifier.Src() + "." + written
+	}
+	td, home, ok := wf.typeDeclNamed(wf.Scope, written)
+	if !ok {
+		if _, isPre := wf.Scope.find(written).(*PredeclaredType); isPre {
+			f.err(member.Position(), "type %s has no method %s", written, member.Src())
+		}
+		return
+	}
+	if td.methods[member.Src()] != nil {
+		return
+	}
+	if _, promoted := wf.methodOwnerNamed(home, td.Name(), member.Src()); promoted {
+		return
+	}
+	if fields, isStruct := wf.structFields(home, ident.Name); isStruct && fields[member.Src()] {
+		return
+	}
+	if set, isIface := wf.interfaceMethodsNamed(home, td.Name()); isIface && set[member.Src()] != nil {
+		return
+	}
+	f.err(member.Position(), "type %s has no method %s", written, member.Src())
+}
+
 // methodCallMember reports whether a FactorSuffix or Postfix is a method call
-// "x.member(...)" -- exactly one selector, a call, and no index -- and returns
-// the member.
+// "x.member(...)" -- exactly one selector, a call AFTER it, and no index -- and
+// returns the member.
+//
+// A call BEFORE the selector, `x(3).m()`, is not that: the method is m of what x
+// RETURNS, not of x, and reading it as x's reported "type Maker has no method Big"
+// for a Maker declared `func(int) Frame` and a Big of Frame's. What the call
+// yields is typed where the chain is emitted; here it is simply not x.m().
 func (f *File) methodCallMember(n Node) (member Token, ok bool) {
 	selectors, hasCall, disqualify := 0, false, false
 	for c := range it(n.ast) {
@@ -7712,6 +7882,9 @@ func (f *File) methodCallMember(n Node) (member Token, ok bool) {
 		case Selector:
 			if m, has := f.selectorMember(c); has {
 				member, selectors = m, selectors+1
+				if hasCall {
+					disqualify = true
+				}
 			}
 		case Index:
 			disqualify = true
@@ -9579,6 +9752,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			if !direct && hasID {
 				if m, ok := f.methodCallMember(suffix); ok {
 					f.checkMethodCall(s, id, m, argList, suffix)
+				} else if m, has := f.callResultMethodMember(suffix); has {
+					f.checkCallResultMethod(s, id, m)
 				}
 			}
 		} else if hasID && f.checkTypeAssertion(s, id, suffix) {

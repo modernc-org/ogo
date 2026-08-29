@@ -14649,6 +14649,20 @@ func (e *emitter) accessChainTypeAt(cur accessCur, steps []Node, claimed bool) (
 				return accessCur{}, false
 			}
 			named = false
+		case CallSuffix:
+			// A call on a function VALUE the chain has reached -- a variable of a
+			// function type, an element or a field holding one -- yields its one
+			// result, and the chain goes on from that: `m(v).Dot(w)` is a method
+			// of what m returns. Untyped before, so a println of it took the int
+			// path and printed an int64 in halves. The emitting walk has done this
+			// all along (see emitAccessChainAt's CallSuffix); what types a chain
+			// has to keep up with it.
+			rts := e.funcTypeRet[e.underlyingCType(cur.ctype)]
+			if !e.isFuncCType(cur.ctype) || len(rts) != 1 {
+				return accessCur{}, false
+			}
+			cur = e.plainOrSlice(rts[0])
+			named = false
 		default:
 			return accessCur{}, false
 		}
@@ -18300,7 +18314,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		ct, isVar := e.varType(callee)
-		if !isVar || !e.isFuncCType(ct) || e.outResultOf(e.funcTypeRet[ct]) == "" {
+		if !isVar || !e.isFuncCType(ct) || e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) == "" {
 			return "", false
 		}
 		text := e.varRef(callee) + "(&" + out
@@ -18328,7 +18342,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		field := e.soleIdent(suffix[0].ast)
 		ft, isField := e.fieldType(callee, []string{field})
-		if !isField || !e.isFuncCType(ft) || e.outResultOf(e.funcTypeRet[ft]) == "" {
+		if !isField || !e.isFuncCType(ft) || e.outResultOf(e.funcTypeRet[e.underlyingCType(ft)]) == "" {
 			return "", false
 		}
 		text := e.fieldAccessC(callee, []string{field}) + "(&" + out
@@ -18841,7 +18855,11 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// of this frame, declared ahead of the statement. Reached only where the
 			// results are discarded -- a multiple assignment takes the same call
 			// apart itself, and binds the temporary it stores from.
-			if rets := e.funcTypeRet[ct]; e.outResultOf(rets) != "" {
+			// Keyed by the function typedef, which a DEFINED function type is only a
+			// name for: `var shape Shaper` reaches its results through what Shaper
+			// is defined over. Asked by the name, a defined type answered nothing and
+			// the call went out without the out parameter its type takes.
+			if rets := e.funcTypeRet[e.underlyingCType(ct)]; e.outResultOf(rets) != "" {
 				// One struct result takes the same parameter and is USED: it is
 				// hoisted ahead of the statement unless the statement throws it away
 				// (emitOutValueCall).
@@ -18900,7 +18918,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		if ft, ok := e.fieldType(recv, []string{method}); ok && e.isFuncCType(ft) {
 			// Several results are written through a leading out parameter, as for a
 			// value held in a variable (see funcSigCParts).
-			if rets := e.funcTypeRet[ft]; e.outResultOf(rets) != "" {
+			if rets := e.funcTypeRet[e.underlyingCType(ft)]; e.outResultOf(rets) != "" {
 				args := e.argsCText(e.funcValueOf[funcFieldKey(recv, method)], suffix[1].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
 					call := e.fieldAccessC(recv, []string{method}) + "(&" + tmp
@@ -19651,6 +19669,19 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 		n := steps[i]
 		switch n.sym {
 		case CallSuffix:
+			if !pendingFn && e.isFuncCType(cur.ctype) {
+				// A call on a function VALUE the chain has reached -- a variable of a
+				// function type, `m(v).Dot(w)` -- yields its one result, and the chain
+				// goes on from that, as the emitting walk has always done
+				// (chainCText). Untyped here, a println of that int64 took the int
+				// path and printed it in halves.
+				rts := e.funcTypeRet[e.underlyingCType(cur.ctype)]
+				if len(rts) != 1 {
+					return "", false
+				}
+				cur = e.plainOrSlice(rts[0])
+				continue
+			}
 			rts, okr := e.userFunc(base)
 			if !pendingFn || !okr || len(rts) != 1 {
 				return "", false
@@ -23644,7 +23675,7 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 		// typedef says what a call through it yields. Asked before the method path,
 		// which would read the same `o.dm` as a method of o's type and find none.
 		if ct, okf := e.fieldType(recv, []string{member}); okf {
-			if res, isFunc := e.funcTypeRet[ct]; isFunc {
+			if res, isFunc := e.funcTypeRet[e.underlyingCType(ct)]; isFunc {
 				return "", res, true
 			}
 		}
@@ -23667,7 +23698,7 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 	// was last assigned. There is no cname -- nothing to name a result struct after
 	// -- which is why the callers key that off the result types instead.
 	if ct, isVar := e.varType(recv); isVar {
-		if res, isFunc := e.funcTypeRet[ct]; isFunc {
+		if res, isFunc := e.funcTypeRet[e.underlyingCType(ct)]; isFunc {
 			return "", res, true
 		}
 	}

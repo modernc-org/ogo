@@ -662,6 +662,14 @@ type BuildContext struct {
 	importGraph map[string]map[string]bool
 	limit       int
 
+	// srcFiles maps a source to the file parsed from it, for every file of every
+	// package this build reads, so that a token -- which carries its source --
+	// leads back to the file that wrote it, and a name written there resolves in
+	// that file's scope (see File.fileOfToken). Packages are parsed concurrently,
+	// hence the lock.
+	filesMu  sync.Mutex
+	srcFiles map[*source]*File
+
 	noDeclarationChecks bool
 }
 
@@ -670,6 +678,7 @@ type BuildContext struct {
 func NewBuildContext(fsys fs.FS, limit int) (c *BuildContext) {
 	return &BuildContext{
 		fsys:        fsys,
+		srcFiles:    map[*source]*File{},
 		importTasks: map[string]*importTask{},
 		importGraph: map[string]map[string]bool{},
 		limit:       limit,
@@ -1128,6 +1137,14 @@ type Package struct {
 	ctx        *BuildContext
 }
 
+// fileOf is the file parsed from src, or nil for a source no package of this
+// build was read from (the universe's own declarations).
+func (c *BuildContext) fileOf(src *source) *File {
+	c.filesMu.Lock()
+	defer c.filesMu.Unlock()
+	return c.srcFiles[src]
+}
+
 // NewPackage returns a newly created Package consisting of files in 'files'
 // within 'fsys'.
 func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS) (p *Package) {
@@ -1153,6 +1170,13 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		}(i, v)
 	}
 	wg.Wait()
+	c.filesMu.Lock()
+	for _, f := range p.Files {
+		if f != nil && f.parser.tok.source != nil {
+			c.srcFiles[f.parser.tok.source] = f
+		}
+	}
+	c.filesMu.Unlock()
 	if c.noDeclarationChecks { // Testing support
 		return p
 	}

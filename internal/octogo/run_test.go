@@ -16274,7 +16274,14 @@ var st Stage = &sc
 
 func build(n int) Frame { return Frame{n, n * n, 'x'} }
 
+// Big is a 64-bit result off what a function VALUE returns: mk(7).Big() is a
+// chain whose head is a call through a variable, which the chain typer did not
+// walk, so a println of it printed the int64 in halves.
+func (f Frame) Big() int64 { return int64(f.val) * 1000000000 }
+
 type Holder struct{ fn func(int) Frame }
+
+type Maker func(int) Frame
 
 func pick() func(int) Frame { return build }
 
@@ -16294,8 +16301,10 @@ func main() {
 	println(st.Process(build(4)).val, st.Process(build(5)).seq)
 	st.Process(build(6))
 	mk := build
-	println(mk(7).val)
+	println(mk(7).val, mk(7).Big(), mk(2).Big() > 1<<32)
 	mk(8)
+	var named Maker = build
+	println(named(3).Big(), named(4).val)
 	h := Holder{build}
 	println(h.fn(9).val)
 	println(pick()(10).val)
@@ -16310,7 +16319,7 @@ func main() {
 	}
 }
 `,
-		want: "1 3 x\n2 12 x\n3 27 x\n48 5\n49\n81\n100\n363\n12 432\npositive 1\n",
+		want: "1 3 x\n2 12 x\n3 27 x\n48 5\n49 49000000000 false\n9000000000 16\n81\n100\n363\n12 432\npositive 1\n",
 	},
 	{
 		// Go computes a constant expression in arbitrary precision and then converts;
@@ -19574,7 +19583,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n12 true\n0 chain: off true\nchain: off 7\ncur\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -19796,6 +19805,10 @@ println(chain.Deck.Twice(), chain.Deck.N)
 println(framed.N, framed.Twice(), framed.F)
 framed.Inc()
 println(framed.N, framed.Reg.N, framed.Twice())
+var pl Plusser = &wr
+r := pl.Plus(greet.Vec{10, 20})
+m := greet.Apply(dbl, greet.Vec{3, 4})
+println(r.A, r.B, m.A, m.B, greet.Apply(dbl, m).Sum(), wr.Plus(m).Sum())
 }
 
 // A function of its own, not more of main: one function's locals live in COG RAM,
@@ -19869,6 +19882,21 @@ func (c *Crate) Tag() int  { return c.w + 1 }
 var crate = Crate{3}
 
 func area(s greet.Shape) int { return s.Area() }
+
+// dbl has Mapper's signature written with the qualifier main needs; Plusser asks
+// for greet.Vec's Plus, which Wrapped has by promotion from the field it embeds --
+// so the thunk hands over the embedded sub-object and the struct result comes back
+// through the out parameter, across the package boundary both ways.
+func dbl(v greet.Vec) greet.Vec { return greet.Vec{v.A * 2, v.B * 2} }
+
+type Plusser interface{ Plus(w greet.Vec) greet.Vec }
+
+type Wrapped struct {
+	greet.Vec
+	n int
+}
+
+var wr = Wrapped{greet.Vec{1, 2}, 0}
 
 func mkShape() greet.Shape { return &quad }
 
@@ -20094,6 +20122,16 @@ B int
 }
 
 func (v Vec) Sum() int { return v.A + v.B }
+
+// Plus names this package's own Vec, unqualified, in its signature; Mapper is a
+// function type over it and Apply takes one. From main both are written with the
+// qualifier, "func(greet.Vec) greet.Vec", and the checker used to compare the two
+// spellings as text and refuse every use -- see sigIdentity.
+func (v Vec) Plus(w Vec) Vec { return Vec{v.A + w.A, v.B + w.B} }
+
+type Mapper func(Vec) Vec
+
+func Apply(m Mapper, v Vec) Vec { return m(v) }
 
 // Pair holds two Vecs, so a literal of it nests literals of another package's type.
 type Pair struct {
