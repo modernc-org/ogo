@@ -143,7 +143,8 @@ func Trunc(x float64) float64 {
 // Written here rather than mapped to the library's round(), which on this target is
 // a compiler builtin that yields an INTEGER: correct where something converts it,
 // and clamped at 2147483647 for anything larger -- Round(1e30) came back as 2.1e9.
-// Building it from Floor has no such limit.
+// Building it from Floor has no such limit. See doc/round-is-an-integer.c, reported
+// as flexprop issue 108.
 func Round(x float64) float64 {
 	t := Floor(Abs(x) + 0.5)
 	if x < 0 {

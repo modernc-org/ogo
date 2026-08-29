@@ -249,6 +249,7 @@ type p2Intrinsic struct {
 // yields an INTEGER, so it is right only where something converts the result --
 // `(double)round(1e30)` came back 2147483647 on a P2-EDGE, and passing it to printf
 // printed the integer's bits as a float. math.Round is built from Floor instead.
+// doc/round-is-an-integer.c is the measurement; reported as flexprop issue 108.
 // trunc() is absent because the target's math library does not have it at all.
 var mathIntrinsics = map[string]string{
 	"Abs":   "fabs",
