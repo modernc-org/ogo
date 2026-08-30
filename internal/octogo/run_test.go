@@ -16468,6 +16468,45 @@ func main() {
 		want: "-1099511627779 -1099511627773 -8 8 -1099511627779 -8\n-2199023255552 -11 -1099511627779 18446742974197923837 0 1099511627773\n-1492194351986\n",
 	},
 	{
+		// The target's C compiler stops converting a constant argument to its
+		// parameter's type after an argument that is an arithmetic expression of
+		// 64-bit type, so the 3 of `mix(-m, 3)` went out as one word of the two an
+		// int64_t parameter is and the callee read garbage: -192 for
+		// -5260211717565488541 on a P2-EDGE (doc/call-arg-after-expr.c). A
+		// constant to a 64-bit parameter is now spelled at the parameter's width
+		// in every position -- a function, a method, a function value, a deferred
+		// call. Found by a hashing probe diffed against Go.
+		name: "a constant argument after a 64-bit expression",
+		src: `type Mixer struct {
+	k int64
+}
+
+func (x Mixer) mix(a, b int64) int64 { return a*31 + b + x.k }
+
+func mix(a, b int64) int64 { return a*31 + b }
+
+func mix3(a, b, c int64) int64 { return a*31 + b*7 + c }
+
+func umix(a, b uint64) uint64 { return a*31 + b }
+
+func id(v int64) int64 { return v }
+
+func show(a, b int64) { println("deferred", a, b) }
+
+func main() {
+	m := id(7)
+	var u uint64 = 7
+	x := Mixer{k: 1}
+	f := mix
+	defer show(-m, 3)
+	println(mix(-m, 3), mix(m+1, 3), mix(m*2, 3+4), mix(-m, -3), mix3(-m, 3, 4))
+	println(umix(u*2, 3), x.mix(-m, 3), f(-m, 3), f(m, 3), mix(m, 3), mix(3, -m))
+	println(mix(-m, 1<<40), mix(-m, -1<<40))
+}
+`,
+		want: "-214 251 441 -220 -192\n437 -213 -214 220 220 86\n1099511627559 -1099511627993\ndeferred -7 3\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

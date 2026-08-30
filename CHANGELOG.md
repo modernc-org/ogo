@@ -43,6 +43,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A constant argument after a 64-bit expression was passed wrong.** The
+  target's C compiler stops converting a constant argument to its parameter's
+  type after an argument that is an arithmetic expression of 64-bit type: the 3
+  of `mix(-m, 3)` went out as one word of the two an `int64` parameter is, the
+  build warned about it, and the callee read garbage -- -192 for
+  -5260211717565488541 on a P2-EDGE -- while `mix(m, 3)`, `mix(3, -m)` and
+  `mix(-m, k)` were right. A constant handed to a 64-bit parameter is now
+  spelled at the parameter's width in every position: a function, a method, a
+  function value, a deferred call. Through a function value the same call was
+  refused outright by the backend, and now builds. Found by a hashing probe
+  diffed against Go (`doc/call-arg-after-expr.c`).
+
 - **`-x - 3` on an `int64` was wrong.** With its small-function inliner on, the
   target's C compiler miscompiles a 64-bit negation whose result meets an
   addition or subtraction in the same expression -- `-x - 3` for an x of 5 was

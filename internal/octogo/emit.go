@@ -4504,6 +4504,7 @@ type emitter struct {
 	// the same method value written twice mints one function.
 	methodValueOf    map[string]string
 	funcParams       map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
+	callParams       []string                  // the parameter C types of the call through a function VALUE being emitted, which has no callee to look up (see wideConstArg); nil outside one
 	methodPtr        map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals          map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
 	structs          map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
@@ -18972,7 +18973,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				return true
 			}
 			e.emit(e.varRef(recv) + "(")
+			e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
 			e.emitCallArgs(e.funcValueOf[recv], suffix[0].ast)
+			e.callParams = nil
 			e.emit(")")
 			return true
 		}
@@ -24133,6 +24136,10 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			if i != 0 {
 				e.emit(", ")
 			}
+			if lit, ok := e.wideConstArg(cname, i, arg); ok {
+				e.emit(lit)
+				continue
+			}
 			e.emitExpr(arg.ast)
 		}
 		if at != 0 {
@@ -24216,6 +24223,16 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 				continue
 			}
 		}
+		// A constant handed to a 64-bit parameter is spelled at that width, `3LL`
+		// (wideConstArg). Ahead of the defer replay, whose INLINE literal is the
+		// same constant in the same position; a constant the defer captured into a
+		// temporary is replayed from it, a variable being passed right.
+		if e.deferReplay < 0 || e.deferReplayArgs[i].inline {
+			if lit, ok := e.wideConstArg(cname, i, arg); ok {
+				e.emit(lit)
+				continue
+			}
+		}
 		// Replaying a deferred call reads the temporaries captured at the defer
 		// statement rather than re-evaluating the expressions, which may name a
 		// variable that has since changed or gone out of scope.
@@ -24229,6 +24246,47 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		}
 		e.emitExpr(arg.ast)
 	}
+}
+
+// wideConstArg spells a CONSTANT argument to a 64-bit parameter at the parameter's
+// width, `3LL`, and reports false for any other argument, which its caller emits as
+// it always did.
+//
+// C converts a constant argument to its parameter's type, and the target's C
+// compiler does too -- until an argument that is an EXPRESSION of 64-bit type comes
+// before it. After the first argument of `mix((0 - m), 3)`, or of `mix(m + 1, 3)`,
+// the 3 goes out as one word where the int64_t parameter is two, the call is warned
+// about ("Bad number of parameters in call to mix: expected 4 found 3") and the
+// callee reads garbage: a hashing probe diffed against Go printed -192 for
+// -5260211717565488541 on a P2-EDGE. A variable is converted in every position, a
+// constant written first is, and so is the constant carrying its width, which is
+// what this writes; the reproducer is doc/call-arg-after-expr.c. Through a
+// function POINTER the same call is refused outright, in every position, so the
+// width is also what lets `fp(m, 3)` build at all.
+//
+// The parameter types are the callee's (funcParams), or the function type's for a
+// call through a value (callParams, set by the caller around the call), which is
+// keyed by the typedef and so does not know its callee.
+func (e *emitter) wideConstArg(cname string, i int, arg Node) (string, bool) {
+	params := e.funcParams[cname]
+	if e.callParams != nil {
+		params = e.callParams
+	}
+	if i >= len(params) {
+		return "", false
+	}
+	ut := e.underlyingCType(params[i])
+	if ut != "int64_t" && ut != "uint64_t" {
+		return "", false
+	}
+	v, ok := e.foldConstInt(arg.ast)
+	if !ok {
+		return "", false
+	}
+	if ut == "uint64_t" {
+		return strconv.FormatUint(uint64(v), 10) + "ULL", true
+	}
+	return signed64Lit(v), true
 }
 
 // callArgExprs returns the argument Expression nodes of a CallSuffix.
