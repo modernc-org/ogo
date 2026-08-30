@@ -16776,6 +16776,54 @@ func main() {
 		want: "0.1 0.2 -0.1 0.2\nNaN NaN NaN NaN NaN NaN\n-0 -0 0 0 -0 0\n0.1 0.1 -Inf NaN -0 -0\n2.5 5 1 7.5\ntrue true true true\n",
 	},
 	{
+		// Functions and variables named like the C library's: the math names are
+		// MACROS in the target's headers (`#define sqrt(x) __builtin_sqrt(x)`, and
+		// ceil is an object-like one too), so a declaration of one was a syntax
+		// error there -- "unexpected __builtin_sqrt" -- in a program the host
+		// compiled; they are renamed everywhere now, as the keywords are. The
+		// stdlib names are declared by the headers and renamed at file scope.
+		name: "names the C library has spoken for, declared by the program",
+		src: `func sqrt(x int) int { return x * x }
+
+func floor(x float32) float32 { return x - 1 }
+
+func ceil(x float32) float32 { return x + 1 }
+
+func round(x int) int { return x + 10 }
+
+func trunc(s string) string { return s[:2] }
+
+func pow(a, b int) int { return a * b }
+
+func exp(x int) int { return x + 1 }
+
+func log(s string) { println("log:", s) }
+
+func sin(x int) int { return -x }
+
+func cos(x int) int { return x }
+
+func mod(a, b int) int { return a % b }
+
+func copysign(a, b int) int { return a + b }
+
+func memcpy(n int) int { return n * 2 }
+
+func strlen(s string) int { return len(s) * 2 }
+
+func exit(code int) int { return code + 1 }
+
+func main() {
+	log("start")
+	println(sqrt(7), floor(2.5), ceil(2.5), round(1), trunc("hello"), pow(3, 4), exp(1), sin(2), cos(3))
+	println(mod(7, 3), copysign(1, 2), memcpy(21), strlen("abc"), exit(0))
+	var fabs, printf, putchar, atoi, abs = 1, 2, 3, 4, 5
+	println(fabs+printf+putchar+atoi+abs, min(abs, atoi), max(fabs, printf))
+}
+`,
+		want: "log: start\n49 1.5 3.5 11 he 12 2 -2 3\n1 3 42 6 1\n15 4 2\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

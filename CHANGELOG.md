@@ -78,6 +78,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **`math.Round(-0)` is `-0`.** It was `+0`, the sign coming from a comparison
   that a negative zero fails; the sign is now copied from the argument, as
   Go's is. `Round(-0.2)` is `-0` the same way.
+- **A function or variable named like a C library function builds.** The
+  target's `<math.h>` defines the math functions as macros -- `sqrt`, `floor`,
+  `ceil`, `round`, `trunc`, `pow`, `exp`, `log`, `sin`, `cos`, `fabs`, `fmod`,
+  `copysign` and the rest, `strlen` and `strcpy`, the ctype tests, and the
+  Propeller names `high`, `low`, `toggle` and `pause` among others -- so a
+  program declaring one built on the host and was a syntax error on the
+  target, "unexpected __builtin_sqrt". Every such name is now renamed in the
+  emitted C wherever it stands, as a C keyword is.
 
 - **A float printed the wrong digits.** `print`, `println` and `%v` of a float
   went through C's `%g` -- six significant digits, so a third printed
