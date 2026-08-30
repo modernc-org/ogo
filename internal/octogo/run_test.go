@@ -16702,6 +16702,49 @@ func main() {
 		want: "1.5 0.33333334 1.2345679e+08 1.2345e-05 1e+06 0.1 -2.75 0 100000\n1.5 0.33333334 1.2345679e+08 1.2345e-05 1e+06\n0.1 -2.75 0 100000 65536 3.4028235e+38\n0.333 2 1235 1.2e+02 100 -3\n       1.5|0.33333334|+1.5|-2.75|1.2345E-05|1.234500E-05|1.234568e+08\n2.5 5\n2.5 1.25 2.5\n0.33333334 1e+06\n3.3333334e-01 123456.789062 0.1000000015 -0002.75|1.5     |+1.23e+08\n2 0.2 0.000000 0.000000e+00 -0002.75|  0.33|1e+05 |\n",
 	},
 	{
+		// An array argument to a deferred call -- a function, a method, a literal
+		// -- is captured where the defer stands, as Go captures it: the deferred
+		// call sees 1 2 3 whatever the body wrote into the array afterwards. The
+		// capture is an array temporary filled by memcpy, passed at the replay as
+		// the pointer an array parameter is. It was refused before ("cannot infer
+		// the type of a deferred call argument").
+		name: "an array argument to a deferred call",
+		src: `type Log struct {
+	n int
+}
+
+func (l *Log) show(a [3]int, tag string) {
+	l.n++
+	println("log", tag, a[0], a[1], a[2], l.n)
+}
+
+func show(a [3]int, n int) { println("deferred", a[0], a[1], a[2], n) }
+
+func grid(g [2][2]byte) { println("grid", g[0][0], g[0][1], g[1][0], g[1][1]) }
+
+func fill(a *[3]int, v int) {
+	for i := range a {
+		a[i] = v
+	}
+}
+
+func main() {
+	a := [3]int{1, 2, 3}
+	var l Log
+	defer show(a, len(a))
+	defer l.show(a, "method")
+	defer func(b [3]int, k int) { println("literal", b[0], b[1], b[2], k) }(a, 7)
+	g := [2][2]byte{{1, 2}, {3, 4}}
+	defer grid(g)
+	a[0] = 100
+	g[1][1] = 40
+	fill(&a, 9)
+	println("body", a[0], a[2], g[1][1])
+}
+`,
+		want: "body 9 9 40\ngrid 1 2 3 4\nliteral 1 2 3 7\nlog method 1 2 3 1\ndeferred 1 2 3 3\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

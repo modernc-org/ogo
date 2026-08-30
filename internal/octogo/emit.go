@@ -5045,6 +5045,11 @@ type deferArg struct {
 	ctype  string
 	expr   []int32
 	inline bool
+	// arr is set for an ARRAY argument: the temporary is an array of these extents,
+	// filled by memcpy at the defer statement, since C assigns no array, and passed
+	// as the pointer it decays to at the replay -- an array parameter is a pointer
+	// the callee copies from.
+	arr arrDim
 }
 
 // deferFlagName and deferArgName name the temporaries backing a defer slot.
@@ -18409,19 +18414,26 @@ func (e *emitter) emitDefer(nodes []Node) {
 		}
 		for i, a := range args {
 			if dims := e.funcArrayParams[cname]; i < len(dims) && dims[i].bound != "" {
-				// An array parameter is a pointer the callee memcpys from, and the
-				// capture would have to be an array copied here; not yet.
-				e.fail("an array argument to a deferred function literal is not supported yet")
-				return
+				// An ARRAY parameter: the argument is captured into an array
+				// temporary of the parameter's shape (see deferArg.arr), which the
+				// argument's must match -- the replay cannot check it, running
+				// after the argument's scope has been left.
+				dim, ok := e.arrayShapeOf(a.ast)
+				if !ok {
+					e.fail("an array argument to a deferred function literal must be a variable or a pointer's target")
+					return
+				}
+				if dim.elem != dims[i].elem || dim.declSuffix() != dims[i].declSuffix() {
+					e.fail("cannot use %s as %s in argument to a deferred call",
+						e.goArrayTypeName(dim), e.goArrayTypeName(dims[i]))
+					return
+				}
+				d.args = append(d.args, deferArg{arr: dims[i], expr: a.ast})
+				continue
 			}
 			d.args = append(d.args, deferArg{ctype: params[i], expr: a.ast})
 		}
-		for i, a := range d.args {
-			e.ind()
-			e.emit(deferArgName(d.slot, i) + " = ")
-			e.emitExpr(a.expr)
-			e.emit(";\n")
-		}
+		e.emitDeferCaptures(&d)
 		if d.cond {
 			e.ind()
 			e.emit(deferFlagName(d.slot) + " = 1;\n")
@@ -18463,9 +18475,35 @@ func (e *emitter) emitDefer(nodes []Node) {
 			e.emit(deferRecvName(d.slot) + " = " + recvText + ";\n")
 		}
 	}
-	for _, a := range e.callArgExprs(call.ast) {
+	// The callee's array parameters, when the callee is known here: a method's
+	// name is recorded by deferReceiver, a plain function's is its head. Against
+	// them an array argument's shape is checked at the capture, since the replay
+	// runs after the argument's scope has been left and cannot read it then.
+	var paramDims []arrDim
+	switch {
+	case d.cname != "":
+		paramDims = e.funcArrayParams[d.cname]
+	case len(suffix) == 1:
+		if base := e.soleIdent(head.ast); base != "" {
+			paramDims = e.funcArrayParams[e.funcCallC(base)]
+		}
+	}
+	for i, a := range e.callArgExprs(call.ast) {
 		if e.isIntLiteral(a) {
 			d.args = append(d.args, deferArg{expr: a.ast, inline: true})
+			continue
+		}
+		// An ARRAY argument is captured into an array temporary of its own shape
+		// (see deferArg.arr): `defer show(a)` shows what a held at the defer, as
+		// Go says, whatever is written into a afterwards.
+		if dim, ok := e.arrayShapeOf(a.ast); ok {
+			if i < len(paramDims) && paramDims[i].bound != "" &&
+				(dim.elem != paramDims[i].elem || dim.declSuffix() != paramDims[i].declSuffix()) {
+				e.fail("cannot use %s as %s in argument to a deferred call",
+					e.goArrayTypeName(dim), e.goArrayTypeName(paramDims[i]))
+				return
+			}
+			d.args = append(d.args, deferArg{arr: dim, expr: a.ast})
 			continue
 		}
 		ct, ok := e.inferCType(a.ast)
@@ -18475,20 +18513,33 @@ func (e *emitter) emitDefer(nodes []Node) {
 		}
 		d.args = append(d.args, deferArg{ctype: ct, expr: a.ast})
 	}
-	for i, a := range d.args {
-		if a.inline {
-			continue
-		}
-		e.ind()
-		e.emit(deferArgName(d.slot, i) + " = ")
-		e.emitExpr(a.expr)
-		e.emit(";\n")
-	}
+	e.emitDeferCaptures(&d)
 	if d.cond {
 		e.ind()
 		e.emit(deferFlagName(d.slot) + " = 1;\n")
 	}
 	e.defers = append(e.defers, d)
+}
+
+// emitDeferCaptures writes the capture of a deferred call's arguments into their
+// temporaries, at the defer statement: an assignment for a value, a memcpy for an
+// array (see deferArg.arr). An inline literal is written at the replay instead.
+func (e *emitter) emitDeferCaptures(d *deferredCall) {
+	for i, a := range d.args {
+		if a.inline {
+			continue
+		}
+		name := deferArgName(d.slot, i)
+		e.ind()
+		if a.arr.bound != "" {
+			e.includes["string.h"] = true
+			e.emit("memcpy(" + name + ", " + e.captureC(func() { e.emitExpr(a.expr) }) + ", sizeof(" + name + "));\n")
+			continue
+		}
+		e.emit(name + " = ")
+		e.emitExpr(a.expr)
+		e.emit(";\n")
+	}
 }
 
 // deferReceiver classifies a deferred call whose callee is a method, filling in the
@@ -18633,6 +18684,16 @@ func (e *emitter) emitDeferDecls() {
 				continue
 			}
 			e.ind()
+			if a.arr.bound != "" {
+				// An ARRAY temporary is declared with its own extents, zeroed with
+				// braces; a zero-length one names no element to brace.
+				zero := " = {0}"
+				if a.arr.bound == "0" {
+					zero = ""
+				}
+				e.emit(a.arr.elem + " " + deferArgName(d.slot, i) + a.arr.declSuffix() + zero + ";\n")
+				continue
+			}
 			// A struct, a string or a slice zeroes with braces, not with 0: C has
 			// no scalar zero for an aggregate, and "= 0" is an invalid initializer
 			// there rather than a warning.

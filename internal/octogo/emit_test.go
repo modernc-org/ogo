@@ -3565,6 +3565,20 @@ func TestEmitCMultiDimArrayPartial(t *testing.T) {
 func TestEmitCArrayTargetRefusals(t *testing.T) {
 	for _, test := range []struct{ name, src, want string }{
 		{
+			// A deferred call's array argument is checked against the parameter
+			// where the defer stands: the replay runs after the argument's scope
+			// has been left and cannot read its shape then.
+			name: "a deferred call's array argument of another shape",
+			src: `func show(a [3]int) { println(a[0]) }
+
+func main() {
+	b := [2]int{1, 2}
+	defer show(b)
+}
+`,
+			want: "cannot use [2]int as [3]int in argument to a deferred call",
+		},
+		{
 			name: "increment a row",
 			src: `var m [2][3]int
 

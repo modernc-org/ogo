@@ -46,8 +46,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   the later writes -- each captured into a temporary of its parameter's type
   and handed to the lifted literal at the return. A literal captures nothing of
   the scope around it, so its arguments are the one way a value reaches it,
-  which is what made the parameterless form too little to be useful. An array
-  argument is not accepted yet.
+  which is what made the parameterless form too little to be useful.
+- **A deferred call may take an array argument.** `defer show(a)`, on a
+  function, a method or a literal, captures the array where the `defer` stands
+  -- the deferred call sees what `a` held then, whatever the body writes into
+  it afterwards, as Go says -- into an array temporary copied with `memcpy`;
+  a shape that is not the parameter's is refused at the `defer`. It was
+  refused before, "cannot infer the type of a deferred call argument".
 
 - **`%v` and `%s` print what a `String()` or `Error()` method returns**, which is
   fmt's rule: a value whose type declares `String() string` -- on itself or
