@@ -20,6 +20,7 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+
 - **A call's results may be another call's arguments.** `sum(divmod(17, 5))`,
   Go's special case: a single call returning several values stands as the whole
   argument list, its results counted against the parameters and checked as
@@ -79,6 +80,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   `%f`. `%b` takes no width yet, and says so.
 
 ### Fixed
+
+- **A parameter or variable named like a package constant is the local.** The
+  emitter's constant folders resolved a NAME to a constant without asking
+  whether a local had spoken for it, and the main package's constants carry no
+  package prefix, so a library function's parameter named like one of them
+  folded to main's value: with `const prefix = "AT+"` in main,
+  `strings.TrimPrefix(s, "AT+CFG=")` cut three bytes where seven were asked
+  for, and a library's `prefix + "="` folded to a constant where Go
+  concatenates at run time. A main function's own parameter did the same, as
+  did a 64-bit argument named like an int constant. A name a parameter or a
+  variable in scope has spoken for no longer folds; a block-scope constant of
+  the name still does. Found by a text probe diffed against Go.
 
 - **`min` and `max` of floats follow Go's rules.** NaN if any argument is one,
   and negative zero below positive zero: the helpers were `a < b ? a : b`,

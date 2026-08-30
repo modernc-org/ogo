@@ -4721,6 +4721,7 @@ type emitter struct {
 	methodValueOf    map[string]string
 	funcParams       map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	callParams       []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
+	localConsts      map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
 	methodPtr        map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals          map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
 	structs          map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
@@ -7297,6 +7298,7 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			e.globals[cname] = ctype
 		} else {
 			e.locals[cname] = ctype
+			e.localConsts[cname] = true // a local a fold may resolve; see shadowedByLocal
 		}
 		// The exact value of a numeric constant, for the fold of every expression
 		// that reads it (foldConstVal). A typed one is rounded to its type first, as
@@ -7501,11 +7503,38 @@ func (e *emitter) wideConstName(cname string) bool {
 // emitConstDecl) to keep same-named constants in different packages distinct, so a
 // same-package read resolves through globalC just as a package variable does.
 func (e *emitter) foldedInt(name string) (string, bool) {
+	if e.shadowedByLocal(name) {
+		return "", false
+	}
 	if v, ok := e.constInt[name]; ok {
 		return v, true
 	}
 	v, ok := e.constInt[e.globalC(name)]
 	return v, ok
+}
+
+// isUntypedConstName reports whether name is an untyped constant here: a block
+// constant in scope or a package constant, and not a local that shadows one.
+func (e *emitter) isUntypedConstName(name string) bool {
+	if e.shadowedByLocal(name) {
+		return false
+	}
+	return e.constUntyped[name] || e.constUntyped[e.globalC(name)]
+}
+
+// shadowedByLocal reports that a LOCAL declaration in scope -- a parameter or a
+// variable, not a block-scope constant -- has spoken for name, so that no package
+// constant of that name is what the name means here, whatever the fold maps hold
+// under it. The main package's constants carry no package prefix, so a library
+// function's parameter named like one of them -- `prefix` in strings.TrimPrefix,
+// beside a `const prefix` in main -- resolved to main's value and cut three bytes
+// where seven were asked for; and a main function's own parameter did the same.
+func (e *emitter) shadowedByLocal(name string) bool {
+	if e.localConsts[name] {
+		return false
+	}
+	_, isLocal := e.locals[name]
+	return isLocal || e.curParams[name]
 }
 
 // foldedQualifiedInt folds a reference to an imported package's integer constant,
@@ -7550,6 +7579,9 @@ func (e *emitter) foldedQualifiedIntKids(kids []Node) (string, bool) {
 
 // foldedStr is foldedInt's string-constant counterpart.
 func (e *emitter) foldedStr(name string) (string, bool) {
+	if e.shadowedByLocal(name) {
+		return "", false
+	}
 	if v, ok := e.constStr[name]; ok {
 		return v, true
 	}
@@ -8944,6 +8976,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.localConsts = map[string]bool{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
@@ -9092,6 +9125,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		prologue: e.prologue, w: e.w,
 	}
 	e.locals = map[string]string{}
+	e.localConsts = map[string]bool{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
@@ -9497,6 +9531,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.localConsts = map[string]bool{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
@@ -10141,6 +10176,7 @@ func (e *emitter) enterScope() func() {
 	// every outer one (see blockDepthOf).
 	e.scopeNames = append(e.scopeNames, e.visibleLocals())
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
+	localConsts := maps.Clone(e.localConsts)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
 	constUntyped := maps.Clone(e.constUntyped)
@@ -10176,6 +10212,7 @@ func (e *emitter) enterScope() func() {
 		}
 		e.scopeNames = e.scopeNames[:len(e.scopeNames)-1]
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
+		e.localConsts = localConsts
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
 		e.constUntyped = constUntyped
@@ -13796,6 +13833,9 @@ func (e *emitter) foldValToken(tok int32) (constant.Value, bool) {
 			return constant.MakeInt64(int64(e.iota)), true
 		}
 		var ok bool
+		if e.shadowedByLocal(s) {
+			return nil, false
+		}
 		if v, ok = e.constVal[s]; !ok {
 			if v, ok = e.constVal[e.globalC(s)]; !ok {
 				return nil, false
@@ -13995,7 +14035,10 @@ func (e *emitter) foldIntegral(ast []int32) (int64, bool) {
 // static contexts where the name would denote a `static const` object the target's
 // C compiler does not take for a constant expression.
 func (e *emitter) foldedFloat(name string) (string, bool) {
-	if _, isLocal := e.locals[name]; isLocal {
+	if e.shadowedByLocal(name) {
+		return "", false
+	}
+	if e.localConsts[name] {
 		return e.floatConstRef(name)
 	}
 	return e.floatConstRef(e.globalC(name))
@@ -14285,7 +14328,7 @@ func (e *emitter) typedConstOperand(nodes []Node) string {
 			return ""
 		}
 		s := e.src(n.tok)
-		if s == "iota" || e.constUntyped[s] || e.constUntyped[e.globalC(s)] {
+		if s == "iota" || e.isUntypedConstName(s) {
 			return ""
 		}
 		if ct, ok := e.varType(s); ok {
@@ -25386,7 +25429,7 @@ func (e *emitter) tokenUntyped(tok int32) bool {
 		return true // an untyped literal
 	case IDENT:
 		nm := e.src(tok)
-		return nm == "iota" || e.constUntyped[nm] || e.constUntyped[e.globalC(nm)]
+		return nm == "iota" || e.isUntypedConstName(nm)
 	}
 	return true // an operator or punctuation carries no type
 }

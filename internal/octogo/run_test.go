@@ -16890,6 +16890,50 @@ func main() {
 		want: "true true true true true false\ntrue false false\n1\n",
 	},
 	{
+		// A parameter or a variable named like a package constant is what its name
+		// means: the constant folders resolved the NAME to the constant, so tag's
+		// parameter prefix was main's "AT+" and a library's strings.TrimPrefix cut
+		// three bytes where seven were asked for -- a silent wrong answer found by
+		// a text probe diffed against Go. A block-scope constant of the name still
+		// folds, and a variable after that block is a variable again.
+		name: "a local named like a constant is the local",
+		src: `const n = 3
+
+const prefix = "AT+"
+
+const ratio = 2.5
+
+const big = 1 << 20
+
+func twice(n int) int { return n * 2 }
+
+func mix(a, b int64) int64 { return a*31 + b }
+
+func wide(n int) int64 { return mix(int64(n), 3) }
+
+func tag(prefix string) string { return prefix }
+
+func scale(ratio float32) float32 { return ratio * 2 }
+
+func widen(big int) int64 { return int64(big) * 2 }
+
+func main() {
+	println(n, prefix, len(prefix), ratio, big, twice(21), wide(10), tag("zz"), len(tag("zzz")), scale(1.5), widen(5))
+	n := 8
+	prefix := "var"
+	ratio := float32(0.5)
+	println(n*2, twice(n), prefix, len(prefix), tag(prefix), len(tag(prefix)), ratio*4, scale(ratio), mix(int64(n), int64(n)))
+	{
+		const prefix = "in"
+		const n = 100
+		println(prefix, len(prefix), tag(prefix), n, twice(n), mix(n, 1))
+	}
+	println(prefix, n, len(prefix))
+}
+`,
+		want: "3 AT+ 3 2.5 1048576 42 313 zz 3 3 10\n16 16 var 3 var 3 2 1 256\nin 2 in 100 200 3101\nvar 8 3\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a
@@ -20183,7 +20227,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
+	"30\n30\n30\n5\n1 10\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
 	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n"
 
@@ -20206,6 +20250,8 @@ var base int = 5
 
 // A package constant with the same name as greet's: per-package mangling keeps the
 // two from colliding in the single translation unit (both emit a distinct C name).
+const prefix = "AT+"
+
 const K = 3
 
 func main() {
@@ -20300,6 +20346,7 @@ println(area(sh))
 println(mkShape().Area())
 if q, ok := sh2.(*greet.Quad); ok {
 	println(q.W)
+	println(greet.Tail("AT+CFG=1", "AT+CFG="), greet.Wide(5))
 }
 switch x := sh2.(type) {
 case *greet.Quad:
@@ -20779,6 +20826,12 @@ func (q *Quad) Area() int { return q.W * q.H }
 type Sizer interface {
 Area() int
 }
+
+// Parameters named like main's constants (K, prefix): what a name means is the
+// local, not the constant a fold would find under it.
+func Tail(s, prefix string) string { return s[len(prefix):] }
+
+func Wide(K int) int64 { return int64(K) * 2 }
 `,
 	"greet/loud.ogo": `// Quiet is read from greet.ogo and Doubled reads Total from it, so whichever of
 // the two files is emitted first, one of them names a variable it has not seen.
