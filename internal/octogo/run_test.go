@@ -16824,6 +16824,72 @@ func main() {
 		want: "log: start\n49 1.5 3.5 11 he 12 2 -2 3\n1 3 42 6 1\n15 4 2\n",
 	},
 	{
+		// `f(g())`, Go's special case: a call of several results as the whole
+		// argument list. The inner call is bound to its result struct ahead of the
+		// statement and its fields are the arguments -- a function, a method, a
+		// nested pair, 64-bit results, a condition. It was "not enough arguments".
+		name: "a call's results passed as another call's arguments",
+		src: `func divmod(a, b int) (int, int) { return a / b, a % b }
+
+func swap(a, b int) (int, int) { return b, a }
+
+func add3(a, b, c int) int { return a + b + c }
+
+func three() (int, int, int) { return 1, 2, 3 }
+
+func pair() (string, bool) { return "x", true }
+
+func show(s string, ok bool) { println(s, ok) }
+
+func sum(a, b int) int { return a + b }
+
+func wide() (int64, int64) { return 1 << 40, 3 }
+
+func mix(a, b int64) int64 { return a*31 + b }
+
+type Pt struct {
+	x, y int
+}
+
+func (p Pt) parts() (int, int) { return p.x, p.y }
+
+func main() {
+	println(sum(divmod(17, 5)), add3(three()), sum(swap(swap(1, 2))))
+	show(pair())
+	q, r := swap(divmod(9, 4))
+	p := Pt{4, 9}
+	println(q, r, mix(wide()), sum(swap(divmod(7, 2))), sum(p.parts()))
+	if sum(divmod(20, 6)) == 5 {
+		println("five")
+	}
+}
+`,
+		want: "5 6 3\nx true\n1 2 34084860461059 4 13\nfive\n",
+	},
+	{
+		// Arrays are comparable wherever they come from: a call returning one is
+		// bound to a temporary and compared by the per-type helper, against a
+		// literal, a variable or another call. It was refused as "a value of
+		// another type".
+		name: "an array-returning call compared",
+		src: `func mk3(n int) [3]int { return [3]int{n, n + 1, n + 2} }
+
+func grid(n byte) [2][2]byte { return [2][2]byte{{n, n}, {n, n + 1}} }
+
+func main() {
+	t := mk3(9)
+	println(mk3(1) == [3]int{1, 2, 3}, mk3(1) == mk3(1), mk3(1) != mk3(2), t == mk3(9), mk3(9) == t, [3]int{1, 2, 3} != mk3(1))
+	println(grid(1) == [2][2]byte{{1, 1}, {1, 2}}, grid(1) == grid(2), grid(3) != grid(3))
+	n := 0
+	if mk3(n) == [3]int{0, 1, 2} {
+		n++
+	}
+	println(n)
+}
+`,
+		want: "true true true true true false\ntrue false false\n1\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

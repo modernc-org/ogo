@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A call's results may be another call's arguments.** `sum(divmod(17, 5))`,
+  Go's special case: a single call returning several values stands as the whole
+  argument list, its results counted against the parameters and checked as
+  written arguments are -- for a function or a method, nested, into 64-bit
+  parameters, in a condition. It was "not enough arguments in call". A
+  variadic callee is refused, Go's packing of the surplus not being built yet.
+- **An array-returning call may be compared.** `mk(1) == [3]int{1, 2, 3}`,
+  `mk(1) != mk(2)`: the result is bound to a temporary and compared by the
+  per-type helper, as a variable's array is. It was refused as "a value of
+  another type".
+
 - **`%g`, `%G` and `%E` format a float, and the `0` flag pads one.** `%g` is Go's,
   not C's: with no precision the shortest form that reads back to the same
   float32 -- `0.33333334`, `1.5`, `100`, `1e+06` -- and with one that many

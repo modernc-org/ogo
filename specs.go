@@ -1743,6 +1743,11 @@
 // instead of packing the arguments written. It is legal only in a call to a
 // variadic function, and the slice's element type is the parameter's.
 //
+// As a special case, if the argument list is a single call returning several
+// values, those values are the arguments -- "sum(divmod(17, 5))" -- counted
+// against the parameters and checked as written arguments are. Not for a
+// variadic callee yet, where Go would pack the surplus into the slice.
+//
 // # Built-in functions
 //
 // A few functions are predeclared: they are called like ordinary functions but

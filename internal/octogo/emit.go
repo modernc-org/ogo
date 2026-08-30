@@ -24568,6 +24568,15 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		params, e.callParams = e.callParams, nil
 	}
 	args := e.callArgExprs(callSuffix)
+	// `f(g())`: a call of SEVERAL results as the whole argument list, Go's special
+	// case. The inner call is bound to its result struct ahead of the statement,
+	// and its fields are the arguments.
+	if len(args) == 1 && e.deferReplay < 0 {
+		if names, ok := e.forwardedResults(cname, args[0]); ok {
+			e.emit(strings.Join(names, ", "))
+			return
+		}
+	}
 	e.checkCrossArgs(cname, args, e.spreadCall(callSuffix))
 	e.checkIntoArgs(cname, args)
 	e.checkArrayArgs(cname, args)
@@ -24732,6 +24741,41 @@ func (e *emitter) wideConstArg(params []string, i int, arg Node) (string, bool) 
 		return strconv.FormatUint(uint64(v), 10) + "ULL", true
 	}
 	return signed64Lit(v), true
+}
+
+// forwardedResults recognises `f(g())`, a call of several results standing as the
+// whole argument list of another call, and returns the C names its results are
+// passed by: the fields of the result struct the inner call is bound to ahead of
+// the statement (hoist). ok is false for any other argument, which its caller
+// emits as it always did -- a single-result call included, which is an ordinary
+// argument. A variadic callee is refused: Go packs the results beyond the fixed
+// parameters into the slice, which nothing here builds yet.
+func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
+	if e.declInit {
+		return nil, false
+	}
+	callee, suffix, ok := e.directCall(arg.ast)
+	if !ok {
+		return nil, false
+	}
+	_, resTypes, ok := e.callResultInfo(callee, suffix)
+	if !ok || len(resTypes) < 2 {
+		return nil, false
+	}
+	if _, at := e.variadicPack(cname); at >= 0 {
+		e.fail("cannot pass the results of %s to variadic %s yet; assign them first", callee, cname)
+		return nil, true
+	}
+	tmp := e.hoist(e.retStructNameOf(resTypes), func() {
+		if !e.emitCallExpr(callee, suffix) {
+			e.fail("unsupported call whose results are passed to %s", cname)
+		}
+	})
+	names := make([]string, len(resTypes))
+	for i := range names {
+		names[i] = fmt.Sprintf("%s._%d", tmp, i)
+	}
+	return names, true
 }
 
 // callArgExprs returns the argument Expression nodes of a CallSuffix.
@@ -27767,8 +27811,8 @@ func (e *emitter) arrayCompareAt(kids []Node, i int) (op string, a arrDim, ok bo
 	// The operands are classified before the operator, so that an ordering operator
 	// on arrays is refused here rather than falling through to C's -- where it would
 	// compare the decayed pointers and mean nothing, exactly as == did.
-	l, lok := e.arrayOperand(kids[i])
-	r, rok := e.arrayOperand(kids[i+2])
+	l, lok := e.arrayCompareOperand(kids[i])
+	r, rok := e.arrayCompareOperand(kids[i+2])
 	if !lok && !rok {
 		return "", arrDim{}, false
 	}
@@ -27817,11 +27861,31 @@ func (e *emitter) arrayOperand(n Node) (arrDim, bool) {
 	return e.arrayShapeOf(n.ast)
 }
 
+// arrayCompareOperand is arrayOperand for the operands a comparison admits: also
+// a CALL returning an array, `mk(1) == [3]int{1, 2, 3}`, whose result
+// emitArrayOperand binds to a temporary. Arrays are comparable wherever they come
+// from; the call was refused as "a value of another type".
+func (e *emitter) arrayCompareOperand(n Node) (arrDim, bool) {
+	if a, ok := e.arrayShapeOf(n.ast); ok {
+		return a, true
+	}
+	if _, a, ok := e.arrayResultCall(n.ast); ok {
+		return a, true
+	}
+	return arrDim{}, false
+}
+
 // emitArrayOperand emits one side of an array comparison. The helper takes the
 // arrays by pointer, so what each side needs is something whose address the call can
 // pass -- which is what arraySourceC names, binding a literal to a temporary since a
 // literal has no C value to take the address of.
 func (e *emitter) emitArrayOperand(n Node) {
+	// An array-returning CALL is bound to a temporary of its extents ahead of the
+	// statement, as it is for an argument (hoistArrayCallArg).
+	if name, ok := e.hoistArrayCallArg(n); ok {
+		e.emit(name)
+		return
+	}
 	if text, ok := e.arraySourceC(n.ast); ok {
 		e.emit(text)
 		return

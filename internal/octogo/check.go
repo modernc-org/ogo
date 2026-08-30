@@ -10683,6 +10683,24 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 	f.checkArgsIn(s, s, name, sig, args)
 }
 
+// forwardedResults reports the results of the call n yields when it is a call of
+// SEVERAL results -- the shape `f(g())` passes on -- and ok == false for anything
+// else: not a call, a call of one result, which is an ordinary argument, or a call
+// nothing here can resolve, which is left to its own check.
+func (f *File) forwardedResults(s *Scope, n Node) ([]retResult, bool) {
+	var results []retResult
+	resolved := false
+	if callee, isCall := f.exprCallee(n); isCall {
+		results, resolved = f.callResults(s, callee, Token{})
+	} else if recv, member, isMethod := f.exprMethodCall(n); isMethod {
+		results, resolved = f.callResults(s, recv, member)
+	}
+	if !resolved || len(results) < 2 {
+		return nil, false
+	}
+	return results, true
+}
+
 // checkArgsIn is checkArgs with the parameter types resolved in a scope of their
 // own. For a call into another package they are names of THAT package -- "geo.Vec"
 // is Vec there -- so resolving them in the caller's scope would find nothing and
@@ -10690,6 +10708,28 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 // in s.
 func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode, args []Node) {
 	params := f.flattenParams(paramScope, sig)
+	// `f(g())`: a call of several results as the whole argument list, Go's special
+	// case. The results stand in for the arguments -- counted against the
+	// parameters and checked pairwise, as written arguments are. Not for a variadic
+	// callee, which the emitter does not build the pack for yet.
+	if len(args) == 1 && !f.isVariadicSig(sig) {
+		if results, ok := f.forwardedResults(s, args[0]); ok {
+			switch {
+			case len(results) < len(params):
+				f.err(name.Position(), "not enough arguments in call to %s", name.Src())
+			case len(results) > len(params):
+				f.err(name.Position(), "too many arguments in call to %s", name.Src())
+			default:
+				for i, r := range results {
+					if p := params[i]; p.known && r.known && !assignableKind(p.kind, r.kind) {
+						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
+							i+1, f.exprSource(args[0]), r.name, p.name, name.Src())
+					}
+				}
+			}
+			return
+		}
+	}
 	// A variadic parameter takes the rest of the arguments, however many -- none
 	// included -- so only the fixed ones before it are counted, and only they are
 	// checked pairwise. What the rest have to be is the element type, which needs
