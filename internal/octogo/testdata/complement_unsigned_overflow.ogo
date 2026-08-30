@@ -1,0 +1,8 @@
+// The complement's result is the type's maximum, and the type still bounds
+// what is done with it.
+
+// ERROR constant 4294967296 overflows uint32
+var x uint32 = ^uint32(0) + 1
+
+// ERROR constant -1 overflows uint32
+var y uint32 = ^0

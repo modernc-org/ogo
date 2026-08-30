@@ -13700,10 +13700,35 @@ func (f *File) foldUnary(op Symbol, opTok Token, e ExpressionNode) ExpressionNod
 			t = token.NOT
 		}
 		if t != token.ILLEGAL {
-			return constVal{cv: f.constUnaryOp(opTok, t, c.cv)}.sameTypeAs(c, c)
+			// The complement of a typed unsigned constant is taken within its
+			// width, as Go's is: ^uint32(0) is 4294967295, not the -1 an untyped
+			// ^0 folds to, which no unsigned type could then hold. A signed or
+			// untyped operand keeps the unbounded fold.
+			var prec uint
+			if op == XOR && c.typed {
+				prec = unsignedKindBits(c.typ)
+			}
+			return constVal{cv: f.constUnaryOp(opTok, t, c.cv, prec)}.sameTypeAs(c, c)
 		}
 	}
 	return &UnaryExprNode{List: []Symbol{op}, Factor: e}
+}
+
+// unsignedKindBits returns the width of a predeclared unsigned integer type in
+// bits, and 0 for any other Kind. uint and uintptr are the target's 32-bit word,
+// as intKindRange has them.
+func unsignedKindBits(k Kind) uint {
+	switch k {
+	case PredeclaredUint8:
+		return 8
+	case PredeclaredUint16:
+		return 16
+	case PredeclaredUint32, PredeclaredUint, PredeclaredUintptr:
+		return 32
+	case PredeclaredUint64:
+		return 64
+	}
+	return 0
 }
 
 // constConversion folds `T(x)` where T names a numeric type and x is a constant.
@@ -13828,14 +13853,17 @@ func soleCallArg(suffix Node) (Node, bool) {
 // complementing a float, "!" on a number); recover from that and report it as a
 // diagnostic, yielding an unknown constant. An unknown operand never panics, so a
 // prior error does not produce a spurious report here.
-func (f *File) constUnaryOp(opTok Token, t token.Token, cv constant.Value) (v constant.Value) {
+//
+// prec is the width in bits a complement is taken within, for a typed unsigned
+// operand, and 0 for the unbounded fold of every other operand and operator.
+func (f *File) constUnaryOp(opTok Token, t token.Token, cv constant.Value, prec uint) (v constant.Value) {
 	defer func() {
 		if recover() != nil {
 			f.reportBadConstOp(opTok, cv, nil)
 			v = constant.MakeUnknown()
 		}
 	}()
-	return constant.UnaryOp(t, cv, 0)
+	return constant.UnaryOp(t, cv, prec)
 }
 
 //TODO- // FactorNodeIdent describes the Factor production case

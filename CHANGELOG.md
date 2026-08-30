@@ -54,6 +54,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   function value, a deferred call. Through a function value the same call was
   refused outright by the backend, and now builds. Found by a hashing probe
   diffed against Go (`doc/call-arg-after-expr.c`).
+- **`^uint32(0)` was refused, and the narrower complements were wrong.** Go
+  takes the complement of a typed unsigned constant within the type's width, so
+  `^uint32(0)` is 4294967295 -- the CRC idiom -- and `^uint8(1)` is 254. The
+  checker folded them as the untyped `^0`, -1, and refused the first as
+  overflowing the very type it was written in. The emitter's own fold did the
+  same, so `const top uint16 = ^uint16(0) >> 4` was 65535 for 4095, and where
+  it did not fold it left C's `~`, which promotes its operand to `int`:
+  `println(^uint8(1))` printed 4294967294, and `int(^uint8(1))` would have been
+  -2. All of it now folds within the width, a defined type over an unsigned one
+  included.
 
 - **`-x - 3` on an `int64` was wrong.** With its small-function inliner on, the
   target's C compiler miscompiles a 64-bit negation whose result meets an

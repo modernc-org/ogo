@@ -16468,6 +16468,54 @@ func main() {
 		want: "-1099511627779 -1099511627773 -8 8 -1099511627779 -8\n-2199023255552 -11 -1099511627779 18446742974197923837 0 1099511627773\n-1492194351986\n",
 	},
 	{
+		// Go takes the complement of a typed unsigned constant within the type's
+		// width, so ^uint32(0) is the type's maximum -- the CRC idiom. The
+		// checker folded it as the untyped ^0, which is -1, and then refused it
+		// as overflowing the very type it was written in.
+		name: "a complement of a typed unsigned constant",
+		src: `type U uint32
+
+const top16 uint16 = ^uint16(0) >> 4
+
+var crcTable [8]uint32
+
+func init() {
+	for i := range crcTable {
+		c := uint32(i)
+		for k := 0; k < 8; k++ {
+			low := c & 1
+			c >>= 1
+			if low != 0 {
+				c ^= 0xedb88320
+			}
+		}
+		crcTable[i] = c
+	}
+}
+
+func crc(data []byte) uint32 {
+	c := ^uint32(0)
+	for _, b := range data {
+		t := byte(c) ^ b
+		idx := t & 7
+		sh := c >> 8
+		c = crcTable[idx] ^ sh
+	}
+	return ^c
+}
+
+func main() {
+	println(^uint32(0), ^uint8(1), ^uint64(0)>>1, ^int32(0), ^0, top16, ^U(0))
+	var b byte = ^byte(0)
+	var d int8 = ^int8(127)
+	println(b, d, ^uint16(0xff00), ^uint64(1)>>60)
+	msg := [3]byte{1, 2, 3}
+	printf("%08x %08x\n", crc(msg[:]), crc(msg[:0]))
+}
+`,
+		want: "4294967295 254 9223372036854775807 -1 -1 4095 4294967295\n255 -128 255 15\n88f826f5 00000000\n",
+	},
+	{
 		// The target's C compiler stops converting a constant argument to its
 		// parameter's type after an argument that is an arithmetic expression of
 		// 64-bit type, so the 3 of `mix(-m, 3)` went out as one word of the two an

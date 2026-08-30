@@ -13253,9 +13253,22 @@ func (e *emitter) emitComplement(ast []int32, ct string, emitOperand func()) {
 		// `x &^= K` was the shape that reached here: every other complement already
 		// took the long form below. On a P2 it left x unchanged where Go clears the
 		// bits, and the oracle fuzzer found it the day int64 entered the generator.
-		if ut := e.underlyingCType(ct); cIntWidths[ut] == 64 {
+		ut := e.underlyingCType(ct)
+		w := cIntWidths[ut]
+		if w == 64 {
 			if v, ok := e.constIntValue(ast); ok {
 				e.emit(e.constSpelling(^v, ut))
+				return
+			}
+		}
+		// A narrower UNSIGNED type folds too. C's ~ promotes its operand to int and
+		// computes there, so `~((uint8_t)(1))` is -2 where Go's ^uint8(1) is 254:
+		// right once stored into a uint8_t, wrong wherever the value is used as it
+		// is -- printed, widened, passed. `println(^uint8(1))` printed 4294967294.
+		// The folded value is the type's, spelled to stay in C's int.
+		if isUnsignedCType(ut) && w > 0 {
+			if v, ok := e.constIntValue(ast); ok {
+				e.emit(unsignedNarrowLit(^v&(1<<w-1), w))
 				return
 			}
 		}
@@ -13506,6 +13519,13 @@ func (e *emitter) foldValNode(n Node) (constant.Value, bool) {
 			case XOR:
 				if v.Kind() != constant.Int {
 					return nil, false
+				}
+				// Within the operand's width for a typed unsigned operand, as Go
+				// folds it and as complementOf does for the int64 fold.
+				if ut := e.underlyingCType(e.typedConstOperand(kids[1:])); isUnsignedCType(ut) {
+					if w := cIntWidths[ut]; w > 0 {
+						return constant.UnaryOp(token.XOR, v, uint(w)), true
+					}
 				}
 				return unaryValOp(token.XOR, v)
 			}
@@ -13893,6 +13913,21 @@ func (e *emitter) wideConstValue(ast []int32, unsigned bool) (int64, bool) {
 
 // foldIntSeq folds a flat "operand (op operand)*" list left-associatively.
 func (e *emitter) foldIntSeq(kids []Node) (int64, bool) {
+	// The children of a Factor, `T(x)` or `pkg.C`, handed as a list rather than as
+	// the node holding them (emitComplement folds its operand so). The list is no
+	// operand sequence -- the name alone is not a constant -- and the node's case
+	// is what folds a conversion and a qualified constant.
+	if len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+		if e.foldConv {
+			if v, ok := e.convFold(kids); ok {
+				return v, true
+			}
+		}
+		if v, ok := e.foldedQualifiedIntKids(kids); ok {
+			return parseCIntLit(v)
+		}
+		return 0, false
+	}
 	if len(kids) == 0 {
 		return 0, false
 	}
@@ -13962,7 +13997,10 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 				return e.foldIntSeq(kids[1:])
 			case XOR:
 				v, ok := e.foldIntSeq(kids[1:])
-				return ^v, ok
+				if !ok {
+					return 0, false
+				}
+				return e.complementOf(v, kids[1:]), true
 			default:
 				return 0, false
 			}
@@ -13976,6 +14014,73 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// complementOf folds ^v as Go folds the complement of a constant: within the width
+// of the operand's type when that is an unsigned one -- ^uint16(0) is 65535 and
+// ^uint8(1) is 254 -- and unbounded otherwise, where ^0 is -1. It folded as -1 for
+// every operand, so `const top uint16 = ^uint16(0) >> 4` was 65535 for 4095: the
+// -1 shifted stayed -1, and only the store into the uint16_t made a number of it.
+// operand is the operand's nodes; its type is read off them when they are one
+// expression, which a conversion, a typed constant's name and a parenthesised
+// expression each are.
+func (e *emitter) complementOf(v int64, operand []Node) int64 {
+	if ut := e.underlyingCType(e.typedConstOperand(operand)); isUnsignedCType(ut) {
+		if w := cIntWidths[ut]; w > 0 && w < 64 {
+			return ^v & (1<<w - 1)
+		}
+	}
+	return ^v
+}
+
+// typedConstOperand returns the C type Go gives a constant operand: a conversion's
+// target, `uint16(0)`; a typed constant's declared type, by its name; either in
+// parentheses. It answers "" for an untyped operand -- a literal, iota, the name
+// of an untyped constant -- and for any richer shape, which keeps the unbounded
+// fold. Not inferCType, which does not type a conversion standing alone.
+func (e *emitter) typedConstOperand(nodes []Node) string {
+	if len(nodes) != 1 {
+		return ""
+	}
+	n := nodes[0]
+	if n.sym == 0 {
+		if e.f.ch(n.tok) != IDENT {
+			return ""
+		}
+		s := e.src(n.tok)
+		if s == "iota" || e.constUntyped[s] || e.constUntyped[e.globalC(s)] {
+			return ""
+		}
+		if ct, ok := e.varType(s); ok {
+			return ct
+		}
+		return ""
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+		return e.typedConstOperand(kids[1:2])
+	}
+	if recv, suffix, ok := e.factorCall(kids); ok && len(suffix) == 1 {
+		if ct, isConv := e.convType(recv); isConv {
+			return ct
+		}
+		return ""
+	}
+	if len(kids) == 1 {
+		return e.typedConstOperand(kids)
+	}
+	return ""
+}
+
+// unsignedNarrowLit spells a folded value of an unsigned type of w bits, w at most
+// 32, as a C literal that stays in C's int: a plain decimal, with the `u` that a
+// 32-bit value above the signed range needs. No width suffix, which would widen
+// the expression around it to 64 bits -- see emitComplement.
+func unsignedNarrowLit(v int64, w int) string {
+	if w == 32 {
+		return strconv.FormatInt(v, 10) + "u"
+	}
+	return strconv.FormatInt(v, 10)
 }
 
 func (e *emitter) foldIntToken(tok int32) (int64, bool) {

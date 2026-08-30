@@ -1,0 +1,33 @@
+// COMPILE
+
+// The complement of a typed unsigned constant is taken within the type's width,
+// as Go takes it: ^uint32(0) is the type's maximum, the CRC idiom, not the -1 an
+// untyped ^0 folds to.
+
+type U uint32
+
+const (
+	all32        = ^uint32(0)
+	all8         = ^uint8(1)
+	half         = ^uint64(0) >> 1
+	neg          = ^int32(0)
+	un           = ^0
+	top16 uint16 = ^uint16(0) >> 4
+	allU         = ^U(0)
+)
+
+var (
+	a uint32 = ^uint32(0)
+	b byte   = ^byte(0)
+	c uint16 = ^uint16(0xff00)
+	d int8   = ^int8(127)
+	e uint   = ^uint(0)
+	f U      = ^U(0)
+	g int    = un
+)
+
+func crc() uint32 {
+	c := ^uint32(0)
+	c ^= 0x12345678
+	return ^c
+}
