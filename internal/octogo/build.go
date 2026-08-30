@@ -145,12 +145,11 @@ func Trunc(x float64) float64 {
 // and clamped at 2147483647 for anything larger -- Round(1e30) came back as 2.1e9.
 // Building it from Floor has no such limit. See doc/round-is-an-integer.c, reported
 // as flexprop issue 108.
+//
+// The sign comes from x, so that Round(-0) is -0 and Round(-0.2) is -0, as Go has
+// them: a sign test on x answered +0 for both.
 func Round(x float64) float64 {
-	t := Floor(Abs(x) + 0.5)
-	if x < 0 {
-		return -t
-	}
-	return t
+	return Copysign(Floor(Abs(x)+0.5), x)
 }
 `
 

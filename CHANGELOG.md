@@ -75,6 +75,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   and whichever zero came first for the zeros. Found by a float32 arithmetic
   probe diffed against Go, which the rest of float32 arithmetic passed bit for
   bit: sums, products, accumulation, denormals, conversions, the infinities.
+- **`math.Round(-0)` is `-0`.** It was `+0`, the sign coming from a comparison
+  that a negative zero fails; the sign is now copied from the argument, as
+  Go's is. `Round(-0.2)` is `-0` the same way.
 
 - **A float printed the wrong digits.** `print`, `println` and `%v` of a float
   went through C's `%g` -- six significant digits, so a third printed
