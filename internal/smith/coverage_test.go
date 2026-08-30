@@ -96,6 +96,16 @@ var generatedConstructs = []struct {
 	{"function of int64 parameters", `\nfunc fn_\d+\(p_\d+ int64[^)]*\) int64 \{\n\treturn `},
 	{"constant after an expression argument", `fn_\d+\(\(z_\d+ ?[-+*] ?-?\d+\), -?\d+`},
 	{"constant after a negated argument", `fn_\d+\(-\(z_\d+\), -?\d+`},
+	// A float32 variable, its arithmetic in Go's float32 semantics, and the three
+	// ways it reaches the checksum -- the assertion against the exact literal, a
+	// comparison, the truncation to int -- plus an int converted into it.
+	{"float32 variable", `\n\s*var fl_\d+ float32 = `},
+	{"float32 arithmetic step", `\n\s*fl_\d+ = \(fl_\d+ ?[-+*/] ?`},
+	{"float32 negation", `\n\s*fl_\d+ = -\(fl_\d+\)`},
+	{"float32 assertion", `if \(fl_\d+ != `},
+	{"float32 comparison", `if \(fl_\d+ < `},
+	{"int from a float32", `int\(fl_\d+\)`},
+	{"float32 from an int", `float32\([a-z]+_\d+\)`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
 	{"element swap", `\w+\[\d+\], \w+\[\d+\] = `},

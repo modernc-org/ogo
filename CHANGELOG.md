@@ -230,6 +230,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Testing
 
+- **The fuzzer generates float32 arithmetic.** A block over a `float32`
+  variable -- a literal, a run of sums, differences, products, quotients,
+  negations and int conversions -- ending in an assertion that the variable
+  equals the value the generator computed in Go's own float32 arithmetic,
+  written in the shortest form that spells that float32 exactly, a comparison
+  the generator knows the outcome of, and the truncation to int folded into
+  the checksum. Fifteen of the twenty-four programs the on-board sample takes
+  carry one; the target's software float agrees with Go on every one.
+
 - **The fuzzer calls a function of `int64` parameters with a constant after an
   expression argument.** `fn((z * 3), 7)`, both words of its result folded into
   the checksum, for nearly every 64-bit variable a program draws -- the shape

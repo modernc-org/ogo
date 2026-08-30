@@ -7,6 +7,7 @@ package octosmith
 import (
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -512,6 +513,128 @@ func (f *Fuzzer) flushUnused(vm Machine, mem Memory) []Node {
 	return flushNodes
 }
 
+// floatCorpus is what a float32 statement draws its literals from: short decimals
+// and the integers, whose spelling reads to the same float32 by every route --
+// Go's constant conversion, the checker's, and the C compiler's, which rounds a
+// literal through a double on the host. A value needing all of a float32's digits
+// can differ on the last of them between those routes, so none is drawn.
+var floatCorpus = []string{"0.1", "0.25", "0.5", "1.5", "2", "3", "7", "10", "0.001", "12.5",
+	"100", "1000", "0.3", "0.7", "4.75", "0.125", "6", "2.5e3", "1e-3", "0.2"}
+
+// floatLit spells a float32 as the program must write it to mean exactly that
+// value: the shortest form that reads back to it, which is also what the compiled
+// program prints for it.
+func floatLit(v float32) string { return strconv.FormatFloat(float64(v), 'g', -1, 32) }
+
+// genFloatStmt generates a block over a float32 variable: a literal, a run of
+// arithmetic steps -- a sum, a difference, a product or a quotient with a literal,
+// a negation, a sum with an int variable converted -- and then the three ways a
+// float reaches the checksum: an assertion that it equals the value the generator
+// computed, in the shortest form that spells that float32 exactly, folding a
+// constant in when it does not; a comparison against a literal, whose outcome the
+// generator knows; and the truncation to int, folded in directly where it is
+// defined.
+//
+// The generator computes each step in Go's own float32 arithmetic, which is the
+// semantics the program is owed and which the target's software float was measured
+// to reproduce bit for bit; the value is kept away from zero, the infinities, the
+// denormals and NaN, where a step would stop being a plain IEEE operation on
+// ordinary numbers. The variable lives in its own block and is not declared to the
+// environment: no integer expression may read it, and the flush of unused variables
+// has nothing to do for it.
+func (f *Fuzzer) genFloatStmt(vm Machine, mem Memory) Node {
+	name := f.newVarName("fl")
+	id := &IdentNode{Name: name}
+	pick := func() (float32, Node) {
+		text := floatCorpus[f.Rand.Intn(len(floatCorpus))]
+		v, err := strconv.ParseFloat(text, 32)
+		if err != nil {
+			panic(todo("float corpus: %q: %v", text, err))
+		}
+		return float32(v), &IntLitNode{Value: text}
+	}
+	cur, init := pick()
+	stmts := []Node{&VarDeclNode{Name: name, Type: "float32", Expr: init}}
+	ok := func(v float32) bool {
+		a := math.Abs(float64(v))
+		return v == v && a >= 1e-20 && a <= 1e20
+	}
+	for i, n := 0, 1+f.Rand.Intn(4); i < n; i++ {
+		var rhs Node
+		var next float32
+		switch f.Rand.Intn(6) {
+		case 0:
+			t, lit := pick()
+			next, rhs = cur+t, &BinaryExprNode{Left: id, Op: "+", Right: lit}
+		case 1:
+			t, lit := pick()
+			next, rhs = cur-t, &BinaryExprNode{Left: id, Op: "-", Right: lit}
+		case 2:
+			t, lit := pick()
+			next, rhs = cur*t, &BinaryExprNode{Left: id, Op: "*", Right: lit}
+		case 3:
+			t, lit := pick()
+			next, rhs = cur/t, &BinaryExprNode{Left: id, Op: "/", Right: lit}
+		case 4:
+			next, rhs = -cur, &UnaryExprNode{Op: "-", X: id}
+		default:
+			// An int variable converted: Go rounds it to the nearest float32, ties
+			// to even, and so must the program.
+			ints := f.CurrentEnv.GetSymbolsOfType(BasicType{Kind: KindInt})
+			if len(ints) == 0 {
+				t, lit := pick()
+				next, rhs = cur*t, &BinaryExprNode{Left: id, Op: "*", Right: lit}
+				break
+			}
+			sym := ints[f.Rand.Intn(len(ints))]
+			sym.Used = true
+			iv := int32(mem.Load(sym.Name).(Int32))
+			next, rhs = cur+float32(iv), &BinaryExprNode{Left: id, Op: "+", Right: &ConvNode{Type: "float32", X: &IdentNode{Name: sym.Name}}}
+		}
+		if !ok(next) {
+			continue // a step that would leave the ordinary numbers is skipped
+		}
+		stmts = append(stmts, &AssignStmtNode{Lhs: name, Op: "=", Rhs: rhs})
+		cur = next
+	}
+	xor := func(k Int32) Node {
+		return &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: &IntLitNode{Value: k.Literal()}},
+		}
+	}
+	// The assertion. The generator expects the value, so the fold is not taken
+	// into the checksum it predicts: a program that folds it has computed a
+	// different float32 somewhere in the steps above.
+	stmts = append(stmts, &IfStmtNode{
+		Cond: &BinaryExprNode{Left: id, Op: "!=", Right: &IntLitNode{Value: floatLit(cur)}},
+		Body: &BlockNode{Statements: []Node{xor(Int32(f.Rand.Int31()))}},
+	})
+	// A comparison whose outcome the generator knows.
+	t, lit := pick()
+	k := Int32(f.Rand.Int31())
+	if cur < t {
+		c, _ := vm.Eval("^", mem.Load(f.ChecksumName), k)
+		mem.Store(f.ChecksumName, c)
+	}
+	stmts = append(stmts, &IfStmtNode{
+		Cond: &BinaryExprNode{Left: id, Op: "<", Right: lit},
+		Body: &BlockNode{Statements: []Node{xor(k)}},
+	})
+	// The truncation to int, where the value has one.
+	if a := math.Abs(float64(cur)); a < 1e9 {
+		c, _ := vm.Eval("^", mem.Load(f.ChecksumName), Int32(int32(cur)))
+		mem.Store(f.ChecksumName, c)
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: &ConvNode{Type: "int", X: id}},
+		})
+	}
+	return &BlockNode{Statements: stmts}
+}
+
 // genStatement generates a new variable declaration, an if statement, or mutates the checksum.
 func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 	switch r := f.Rand.Float32(); {
@@ -529,8 +652,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genStringStmt(vm, mem) // 2% chance for string reads
 	case r < 0.37:
 		return f.genMethodCall(vm, mem) // 3% chance for a method call
+	case r < 0.40:
+		return f.genFloatStmt(vm, mem) // 3% chance for float32 arithmetic
 	case r < 0.46:
-		return f.genVarDecl(vm, mem) // 9% chance for var
+		return f.genVarDecl(vm, mem) // 6% chance for var
 	case r < 0.52:
 		return f.genArrayDecl(vm, mem) // 6% chance for a fixed array declaration
 	case r < 0.58:
