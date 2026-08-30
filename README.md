@@ -280,8 +280,10 @@ broken.
   `NewBuilder(back[:])` puts a write cursor over a byte array you own, and
   `WriteString`, `WriteByte`, `WriteRune`, `Write`, `String`, `Len` and `Reset`
   behave as `strings.Builder`'s do, except that a write past the backing is
-  truncated rather than growing it — you chose the size. It is meant to become
-  `strings.Builder` once there is a standard library to put it in.
+  truncated rather than growing it — you chose the size — and that `String` is a
+  view of the backing, overwritten by a `Reset` and the writes after it, since
+  there is no heap to copy it into. It is meant to become `strings.Builder` once
+  there is a standard library to put it in.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
   launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
   stands — including one reached through fields and indexes, `go ws[i].run(ch)`,

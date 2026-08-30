@@ -595,9 +595,11 @@
 //	Len() int                the number of bytes written
 //	String() string          a view of the written prefix
 //
-// String() returns an ordinary string aliasing the backing, so it makes no copy and
-// is only valid until the next write into the same Builder, exactly as a
-// strings.Builder's result is invalidated by further building. A *Builder may be
+// String() returns an ordinary string aliasing the backing, so it makes no copy. It
+// stays valid across further writes, which land after it, but not across a Reset
+// followed by a write, which overwrites the bytes it shows: take the String when the
+// building is done. Go's strings.Builder starts a fresh buffer on Reset so its
+// earlier results survive; there is no heap to do that with here. A *Builder may be
 // passed to a function, so building can be factored into helpers.
 //
 // Intent: Builder is predeclared for now, but it is meant to become strings.Builder
