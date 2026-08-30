@@ -173,6 +173,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Testing
 
+- **The fuzzer calls a function of `int64` parameters with a constant after an
+  expression argument.** `fn((z * 3), 7)`, both words of its result folded into
+  the checksum, for nearly every 64-bit variable a program draws -- the shape
+  whose constant the target passed as one word. With the workaround for that
+  taken out, the on-board sample fails on it; the generator's coverage test
+  holds the construct, and its patterns now read the formatter's spacing, which
+  is what `ogo smith` writes.
+
 - **The fuzzer generates the two shapes that were miscompiled today.** A 64-bit
   negation beside an addition, `(-z - 5)`, and a function whose whole return
   operand is a widening conversion, `func f(p int) int64 { return int64(p) }`,

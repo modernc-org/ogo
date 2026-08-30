@@ -90,6 +90,12 @@ var generatedConstructs = []struct {
 	{"widening function", `\nfunc fn_\d+\([^)]*\) int64 \{\n\treturn int64\(`},
 	{"sized variable from a widening call", `\n\s*var z_\d+ int64 = fn_\d+\(`},
 	{"defined int64 variable from a widening call", `\n\s*var z_\d+ D_\d+ = D_\d+\(fn_\d+\(`},
+	// A function of 64-bit parameters, and a call of one with a constant after an
+	// argument that is an arithmetic expression of 64-bit type -- a product or a
+	// negation -- which the target passed as one word; see FuncDef.Params64.
+	{"function of int64 parameters", `\nfunc fn_\d+\(p_\d+ int64[^)]*\) int64 \{\n\treturn `},
+	{"constant after an expression argument", `fn_\d+\(\(z_\d+ ?[-+*] ?-?\d+\), -?\d+`},
+	{"constant after a negated argument", `fn_\d+\(-\(z_\d+\), -?\d+`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
 	{"element index", `[as]_\d+\[\d+\]`},
 	{"element swap", `\w+\[\d+\], \w+\[\d+\] = `},

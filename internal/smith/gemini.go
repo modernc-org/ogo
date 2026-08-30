@@ -94,6 +94,11 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	if len(f.wideFuncs()) == 0 {
 		f.genWideFuncDecl()
 	}
+	// And one of 64-bit parameters, for the call a fold writes with a constant
+	// after an expression argument (see FuncDef.Params64), for the same reason.
+	if len(f.funcs64()) == 0 {
+		f.genFunc64Decl()
+	}
 
 	// 4.5. A procedure carrying a deferred call, for main to call. It has to be a
 	// procedure rather than one of the functions above: a defer runs at its
@@ -194,6 +199,14 @@ type FuncDef struct {
 	// its call initializes a sized int64 variable, from where the sized machinery
 	// takes the value on.
 	Wide bool
+	// Params64 makes this `func f(p0 int64, p1 int64) int64 { return <body> }`, a
+	// function of 64-bit parameters. It exists for the call site genSizedFold
+	// writes, `f((z * 3), 7)`: a constant argument after an argument that is an
+	// arithmetic expression of 64-bit type, which the target passed as one word
+	// (see "a constant argument after a 64-bit expression" among the run cases).
+	// Its type is neither `func(int) int` nor the widening one, so both
+	// funcsWithResults and wideFuncs leave it out and funcs64 is how it is found.
+	Params64 bool
 }
 
 // results reports how many values a generated function returns.
@@ -232,6 +245,12 @@ func (f *Fuzzer) genFuncDecl() *FuncDef {
 		fn.Body2 = f.genPureExpr(fn.Params, 0)
 	case r < 0.5:
 		fn.Wide = true // see FuncDef.Wide
+	case r < 0.65:
+		fn.Params64 = true // see FuncDef.Params64
+		if len(fn.Params) < 2 {
+			fn.Params = append(fn.Params, f.newVarName("p")) // two at least: a constant after the expression
+			fn.Body = f.genPureExpr(fn.Params, 0)
+		}
 	}
 	return f.declareFunc(fn)
 }
@@ -247,10 +266,21 @@ func (f *Fuzzer) genWideFuncDecl() *FuncDef {
 	return f.declareFunc(fn)
 }
 
+// genFunc64Decl declares a function of 64-bit parameters (see FuncDef.Params64),
+// for the program that drew none by chance.
+func (f *Fuzzer) genFunc64Decl() *FuncDef {
+	fn := &FuncDef{Name: f.newVarName("fn"), Params64: true}
+	for i, n := 0, 2+f.Rand.Intn(2); i < n; i++ { // two at least: a constant after the expression
+		fn.Params = append(fn.Params, f.newVarName("p"))
+	}
+	fn.Body = f.genPureExpr(fn.Params, 0)
+	return f.declareFunc(fn)
+}
+
 // declareFunc records a generated function and writes its declaration.
 func (f *Fuzzer) declareFunc(fn *FuncDef) *FuncDef {
 	f.Funcs = append(f.Funcs, fn)
-	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2, Wide: fn.Wide}).Write(f.Out, 0)
+	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2, Wide: fn.Wide, Params64: fn.Params64}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
 	return fn
 }
@@ -307,13 +337,49 @@ func (f *Fuzzer) evalBody(fn *FuncDef, body Node, args map[string]Int32, vm Mach
 	return eval(body)
 }
 
+// evalCall64 is evalCall for a function of 64-bit parameters (see
+// FuncDef.Params64): the same total body, computed over int64. The operators
+// pureOps admits are bitwise, so the width changes nothing about their being
+// defined, only how many bits they act on.
+func (f *Fuzzer) evalCall64(fn *FuncDef, args map[string]int64) int64 {
+	var eval func(Node) int64
+	eval = func(n Node) int64 {
+		switch x := n.(type) {
+		case *IntLitNode:
+			v, err := strconv.ParseInt(x.Value, 10, 64)
+			if err != nil {
+				panic(todo("%s: body literal %q: %v", fn.Name, x.Value, err))
+			}
+			return v
+		case *IdentNode:
+			return args[x.Name]
+		case *BinaryExprNode:
+			l, r := eval(x.Left), eval(x.Right)
+			switch x.Op {
+			case "&":
+				return l & r
+			case "|":
+				return l | r
+			case "^":
+				return l ^ r
+			case "&^":
+				return l &^ r
+			}
+			panic(todo("%s: body is not total: operator %q", fn.Name, x.Op))
+		default:
+			panic(todo("%s: unexpected body node %T", fn.Name, n))
+		}
+	}
+	return eval(fn.Body)
+}
+
 // funcsWithResults returns the generated functions returning exactly n values. A
 // two-result function is not a value, so it may only be called where two names
 // receive it -- which is what keeps the two call sites apart.
 func (f *Fuzzer) funcsWithResults(n int) []*FuncDef {
 	var out []*FuncDef
 	for _, fn := range f.Funcs {
-		if fn.results() == n && !fn.Wide {
+		if fn.results() == n && !fn.Wide && !fn.Params64 {
 			out = append(out, fn)
 		}
 	}
@@ -325,6 +391,18 @@ func (f *Fuzzer) wideFuncs() []*FuncDef {
 	var out []*FuncDef
 	for _, fn := range f.Funcs {
 		if fn.Wide {
+			out = append(out, fn)
+		}
+	}
+	return out
+}
+
+// funcs64 returns the generated functions of 64-bit parameters (see
+// FuncDef.Params64).
+func (f *Fuzzer) funcs64() []*FuncDef {
+	var out []*FuncDef
+	for _, fn := range f.Funcs {
+		if fn.Params64 {
 			out = append(out, fn)
 		}
 	}
@@ -964,8 +1042,86 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 				})
 			}
 		}
+		// A call taking the variable in an arithmetic expression and then a
+		// CONSTANT, `fn((z * 3), 7)`, both words of its result folded in: after
+		// such an argument the target passed the constant as one word (see
+		// FuncDef.Params64). A fold of its own rather than one of genSizedFold's
+		// draws, so that nearly every 64-bit variable writes one -- a draw among
+		// eight reached none of the two dozen programs the target tests take. The
+		// variable's type has to be the parameter's, int64, so a type defined over
+		// one is left out.
+		if typeName == "int64" && f.Rand.Float32() < 0.8 {
+			if node, v, ok := f.genSizedCall(name, cur); ok {
+				c4, _ := vm.Eval("^", mem.Load(f.ChecksumName), v.Int32())
+				mem.Store(f.ChecksumName, c4)
+				stmts = append(stmts, &AssignStmtNode{
+					Lhs: f.ChecksumName,
+					Op:  "=",
+					Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: &ConvNode{Type: "int", X: node}},
+				})
+				if vhi, err := v.binOp(">>", NewSized(32, k)); err == nil {
+					c5, _ := vm.Eval("^", mem.Load(f.ChecksumName), vhi.(Sized).Int32())
+					mem.Store(f.ChecksumName, c5)
+					stmts = append(stmts, &AssignStmtNode{
+						Lhs: f.ChecksumName,
+						Op:  "=",
+						Rhs: &BinaryExprNode{
+							Left:  &IdentNode{Name: f.ChecksumName},
+							Op:    "^",
+							Right: &ConvNode{Type: "int", X: &BinaryExprNode{Left: node, Op: ">>", Right: &IntLitNode{Value: "32"}}},
+						},
+					})
+				}
+			}
+		}
 	}
 	return &BlockNode{Statements: stmts}
+}
+
+// genSizedCall builds a call of a function of 64-bit parameters (see
+// FuncDef.Params64) taking the sized variable in an arithmetic expression -- a
+// product, a sum, a negation -- and then constants, `fn((z * 3), 7)`: the shape
+// whose constant the target passed as one word. It returns the call and the value
+// it yields. ok is false when the expression's operands would reach something the
+// emitted C leaves undefined, or when no function takes two parameters, a call of
+// one taking one having no constant to place after the expression.
+func (f *Fuzzer) genSizedCall(name string, cur Sized) (Node, Sized, bool) {
+	var fns []*FuncDef
+	for _, fn := range f.funcs64() {
+		if len(fn.Params) >= 2 {
+			fns = append(fns, fn)
+		}
+	}
+	if len(fns) == 0 {
+		return nil, cur, false
+	}
+	fn := fns[f.Rand.Intn(len(fns))]
+	id := &IdentNode{Name: name}
+	var first Node
+	var v0 Sized
+	if f.Rand.Float32() < 0.3 {
+		first, v0 = &UnaryExprNode{Op: "-", X: id}, cur.neg()
+	} else {
+		ops := []string{"+", "-", "*"}
+		op := ops[f.Rand.Intn(len(ops))]
+		c := int64(1 + f.Rand.Intn(100))
+		r, err := cur.binOp(op, NewSized(c, cur.k))
+		if err != nil {
+			return nil, cur, false
+		}
+		first, v0 = &BinaryExprNode{Left: id, Op: op, Right: &IntLitNode{Value: sizedLitText(c, cur.k)}}, r.(Sized)
+	}
+	args := map[string]int64{fn.Params[0]: v0.v}
+	argNodes := []Node{first}
+	// SMALL constants, which is how the fault was measured and how user code
+	// writes them; a value too wide for a C int is spelled with its width whatever
+	// it is passed to.
+	for _, p := range fn.Params[1:] {
+		c := int64(f.Rand.Intn(200) - 100)
+		args[p] = c
+		argNodes = append(argNodes, &IntLitNode{Value: fmt.Sprintf("%d", c)})
+	}
+	return &CallNode{Fn: fn.Name, Args: argNodes}, NewSized(f.evalCall64(fn, args), cur.k), true
 }
 
 // pickSized draws a value of kind k as the BIT PATTERN the VM holds it by. At 64
@@ -2059,11 +2215,12 @@ func (n *ForStmtNode) Write(w io.Writer, indent int) {
 // FuncDeclNode writes a generated function: int parameters, one int result, and a
 // body that is a single return of an expression.
 type FuncDeclNode struct {
-	Name   string
-	Params []string
-	Body   Node
-	Body2  Node // non-nil for a two-result function
-	Wide   bool // the result is int64(Body); see FuncDef.Wide
+	Name     string
+	Params   []string
+	Body     Node
+	Body2    Node // non-nil for a two-result function
+	Wide     bool // the result is int64(Body); see FuncDef.Wide
+	Params64 bool // see FuncDef.Params64
 }
 
 func (n *FuncDeclNode) Write(w io.Writer, indent int) {
@@ -2073,12 +2230,16 @@ func (n *FuncDeclNode) Write(w io.Writer, indent int) {
 		if i != 0 {
 			fmt.Fprint(w, ", ")
 		}
-		fmt.Fprintf(w, "%s int", p)
+		if n.Params64 {
+			fmt.Fprintf(w, "%s int64", p)
+		} else {
+			fmt.Fprintf(w, "%s int", p)
+		}
 	}
 	switch {
 	case n.Body2 != nil:
 		fmt.Fprint(w, ") (int, int) {\n")
-	case n.Wide:
+	case n.Wide, n.Params64:
 		fmt.Fprint(w, ") int64 {\n")
 	default:
 		fmt.Fprint(w, ") int {\n")
