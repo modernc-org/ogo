@@ -16664,6 +16664,44 @@ func main() {
 		want: "got 1 true\ngot 4 true\ngot 9 true\nclosed 0 false 14\nassigned 1 true\nassigned 4 true\nassigned 0 false\ndrained 0 false\n",
 	},
 	{
+		// A float prints as Go prints one: print, println, %v and %g write the
+		// fewest significant digits that read back to the same float32 --
+		// 0.33333334, not the 0.333333 of C's %g, which is a different number --
+		// and every float verb is laid out from the exact digits with Go's
+		// rounding and padding, since the target's printf is wrong past the
+		// seventh digit (%.7e of a third printed 3.3333335e-01 on a P2-EDGE). %g
+		// was refused before, %v printed C's, and the '0' flag was refused.
+		name: "a float prints in the shortest form",
+		src: `func id(f float32) float32 { return f }
+
+func main() {
+	x := id(1.5)
+	third := id(1) / id(3)
+	big := id(123456789)
+	tiny := id(0.000012345)
+	mil := id(1000000)
+	tenth := id(0.1)
+	neg := id(-2.75)
+	zero := id(0)
+	hun := id(100000)
+	println(x, third, big, tiny, mil, tenth, neg, zero, hun)
+	printf("%v %v %v %v %v\n", x, third, big, tiny, mil)
+	printf("%g %g %g %g %g %g\n", tenth, neg, zero, hun, id(65536), id(3.4028235e38))
+	printf("%.3g %.1g %.4g %.2g %.5g %.0g\n", third, x, id(1234.56), id(123), id(100), neg)
+	printf("%10g|%-10g|%+g|% g|%G|%E|%e\n", x, third, x, neg, tiny, tiny, big)
+	var d float64 = 2.5
+	d2 := d * 2
+	half := d / 2
+	println(d, d2)
+	printf("%v %g %.2g\n", d, half, d)
+	print(third, " ", mil, "\n")
+	printf("%.7e %f %.10f %08.2f|%-8.1f|%+.2e\n", third, id(123456.789), tenth, neg, x, big)
+	printf("%.0f %.1f %f %e %08.3g|%6.2f|%-6.0e|\n", id(2.5), id(0.25), zero, zero, neg, third, hun)
+}
+`,
+		want: "1.5 0.33333334 1.2345679e+08 1.2345e-05 1e+06 0.1 -2.75 0 100000\n1.5 0.33333334 1.2345679e+08 1.2345e-05 1e+06\n0.1 -2.75 0 100000 65536 3.4028235e+38\n0.333 2 1235 1.2e+02 100 -3\n       1.5|0.33333334|+1.5|-2.75|1.2345E-05|1.234500E-05|1.234568e+08\n2.5 5\n2.5 1.25 2.5\n0.33333334 1e+06\n3.3333334e-01 123456.789062 0.1000000015 -0002.75|1.5     |+1.23e+08\n2 0.2 0.000000 0.000000e+00 -0002.75|  0.33|1e+05 |\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

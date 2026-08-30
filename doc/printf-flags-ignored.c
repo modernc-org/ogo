@@ -19,12 +19,15 @@
 // "42"), which does not reproduce when the conversion stands alone. Whatever that
 // is, ogo programs cannot reach it.
 //
-// REFUSED, not worked around. `printf("%#x", v)` and `printf("%08.3f", v)` are
-// compile-time errors naming the backend, because both are accepted by the HOST C
-// compiler the emit tests run against: a silently narrower number on the board, in a
-// program whose host run was green, is the failure this project is least willing to
-// ship. Working around them would mean formatting into a buffer to re-pad by hand,
-// which costs Cog RAM for a flag that can be written into the format string instead.
+// '#' is REFUSED, not worked around. `printf("%#x", v)` is a compile-time error
+// naming the backend, because it is accepted by the HOST C compiler the emit tests
+// run against: a silently narrower number on the board, in a program whose host run
+// was green, is the failure this project is least willing to ship, and the prefix
+// can be written into the format string instead. '0' on a float was refused the
+// same way until 2026-08-30, when the emitter stopped using the target's printf for
+// floats at all -- its DIGITS are wrong past the seventh (doc/printf-float-digits.c)
+// -- and lays a float out from the exact decimal expansion itself (floatFmtHelper
+// in internal/octogo/emit.go), padding included; so `%08.3f` works, as a side effect.
 //
 // To check whether this is still so, compile it and read the columns.
 

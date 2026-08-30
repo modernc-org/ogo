@@ -680,17 +680,161 @@ const basePrintHelper = "static void ogo_print_base(long long v, int base, int s
 	"\tdo { b[--i] = (char)('0' + (int)(u & 1)); u >>= 1; } while (u);\n" +
 	"\tprintf(\"%s\", b + i);\n}\n"
 
-// floatPrintHelper prints a float through the C format given and lowercases the
-// exponent's letter: the target's printf writes 1E+10 where Go and the host C
-// library write 1e+10. The digits stay the target's -- six significant ones under
-// %g where Go prints the shortest form that reads back exactly, which is the
-// documented difference -- so the letter was a second difference in what should
-// be one.
-const floatPrintHelper = "static void ogo_print_flt(const char* fmt, double v) {\n" +
-	"\tchar b[48];\n" +
-	"\tsnprintf(b, sizeof b, fmt, v);\n" +
-	"\tfor (char* p = b; *p; p++) { if (*p == 'E') { *p = 'e'; } }\n" +
-	"\tprintf(\"%s\", b);\n}\n"
+// floatFmtHelper prints a float as Go prints one -- print, println, %v, %g, %e
+// and %f alike -- from the EXACT decimal expansion of the float32, not from the C
+// library's printf, whose digits on the target are wrong past the seventh: %.7e of
+// a third printed 3.3333335e-01 on a P2-EDGE for the 3.3333334e-01 the value is.
+//
+// It is Go's strconv, ported for one width: the value m * 2^e is turned into a
+// decimal digit string by exact doublings and halvings of a digit array (a
+// float32 needs at most 160 digits), and the shortest form that reads back to the
+// same float32 -- what print, %v and %g write, 0.33333334 and not C's six-digit
+// 0.333333 -- is found as Go finds it, by rounding the exact digits inside the
+// interval between the neighbouring float32s' midpoints (roundShortest). An
+// explicit precision rounds the exact digits, half to even on an exact tie, as Go
+// does; the layouts of %e, %f and %g are Go's, including %g's choice of the
+// exponent form (exponent below -4 or at least the precision, 6 for the shortest
+// form), and the width and the '-', '+', ' ' and '0' flags are applied around the
+// text here, which is what lets '0' work where the target's printf ignored it.
+//
+// A float64 is a float32 on the target, so its digits are the float32's; the same
+// helper serves the host so that a program prints one text under both. Not a
+// number and the infinities print as NaN, +Inf and -Inf, padded with spaces.
+const floatFmtHelper = `typedef struct { char d[232]; int nd; int dp; } ogo_dec;
+static void ogo_dec_trim(ogo_dec* a) { while (a->nd > 0 && a->d[a->nd - 1] == '0') { a->nd--; } if (a->nd == 0) { a->dp = 0; } }
+static void ogo_dec_assign(ogo_dec* a, unsigned v) {
+	char buf[16]; int n = 0;
+	a->nd = 0;
+	while (v > 0) { buf[n++] = (char)('0' + v % 10); v /= 10; }
+	while (n > 0) { a->d[a->nd++] = buf[--n]; }
+	a->dp = a->nd;
+	ogo_dec_trim(a);
+}
+static void ogo_dec_half(ogo_dec* a) {
+	char out[232]; int i, r = 0, n, s = 0, on = 0;
+	for (i = 0; i < a->nd; i++) { n = r * 10 + (a->d[i] - '0'); out[on++] = (char)('0' + n / 2); r = n % 2; }
+	if (r) { out[on++] = '5'; }
+	while (s < on && out[s] == '0') { s++; a->dp--; }
+	a->nd = on - s;
+	memcpy(a->d, out + s, (size_t)a->nd);
+	ogo_dec_trim(a);
+}
+static void ogo_dec_double(ogo_dec* a) {
+	int i, c = 0, n;
+	for (i = a->nd - 1; i >= 0; i--) { n = (a->d[i] - '0') * 2 + c; a->d[i] = (char)('0' + n % 10); c = n / 10; }
+	if (c) { memmove(a->d + 1, a->d, (size_t)a->nd); a->d[0] = (char)('0' + c); a->nd++; a->dp++; }
+	ogo_dec_trim(a);
+}
+static void ogo_dec_shift(ogo_dec* a, int k) { for (; k > 0; k--) { ogo_dec_double(a); } for (; k < 0; k++) { ogo_dec_half(a); } }
+static int ogo_dec_up(const ogo_dec* a, int nd) {
+	if (nd < 0 || nd >= a->nd) { return 0; }
+	if (a->d[nd] == '5' && nd + 1 == a->nd) { return nd > 0 && (a->d[nd - 1] - '0') % 2 == 1; }
+	return a->d[nd] >= '5';
+}
+static void ogo_dec_rounddown(ogo_dec* a, int nd) { if (nd < 0 || nd >= a->nd) { return; } a->nd = nd; ogo_dec_trim(a); }
+static void ogo_dec_roundup(ogo_dec* a, int nd) {
+	int i;
+	if (nd < 0 || nd >= a->nd) { return; }
+	for (i = nd - 1; i >= 0; i--) { if (a->d[i] < '9') { a->d[i]++; a->nd = i + 1; return; } }
+	a->d[0] = '1'; a->nd = 1; a->dp++;
+}
+static void ogo_dec_round(ogo_dec* a, int nd) { if (nd < 0 || nd >= a->nd) { return; } if (ogo_dec_up(a, nd)) { ogo_dec_roundup(a, nd); } else { ogo_dec_rounddown(a, nd); } }
+static void ogo_dec_shortest(ogo_dec* d, unsigned mant, int exp) {
+	ogo_dec upper, lower; unsigned mantlo; int explo, inclusive, ui, mi, li, okdown, okup; char l, m, u;
+	if (mant == 0) { d->nd = 0; d->dp = 0; return; }
+	if (exp > -126 && 332 * (d->dp - d->nd) >= 100 * (exp - 23)) { return; }
+	ogo_dec_assign(&upper, mant * 2 + 1); ogo_dec_shift(&upper, exp - 23 - 1);
+	if (mant > (1u << 23) || exp == -126) { mantlo = mant - 1; explo = exp; } else { mantlo = mant * 2 - 1; explo = exp - 1; }
+	ogo_dec_assign(&lower, mantlo * 2 + 1); ogo_dec_shift(&lower, explo - 23 - 1);
+	inclusive = mant % 2 == 0;
+	for (ui = 0; ; ui++) {
+		mi = ui - upper.dp + d->dp;
+		if (mi >= d->nd) { break; }
+		li = ui - upper.dp + lower.dp;
+		l = '0'; if (li >= 0 && li < lower.nd) { l = lower.d[li]; }
+		m = '0'; if (mi >= 0) { m = d->d[mi]; }
+		u = '0'; if (ui < upper.nd) { u = upper.d[ui]; }
+		okdown = l != m || (inclusive && li + 1 == lower.nd);
+		okup = m != u && (inclusive || m + 1 < u || ui + 1 < upper.nd);
+		if (okdown && okup) { ogo_dec_round(d, mi + 1); return; }
+		if (okdown) { ogo_dec_rounddown(d, mi + 1); return; }
+		if (okup) { ogo_dec_roundup(d, mi + 1); return; }
+	}
+}
+static char* ogo_fmt_e(char* o, const ogo_dec* d, int prec, char letter) {
+	int i, m, exp;
+	*o++ = d->nd != 0 ? d->d[0] : '0';
+	if (prec > 0) {
+		*o++ = '.';
+		i = 1; m = d->nd < prec + 1 ? d->nd : prec + 1;
+		for (; i < m; i++) { *o++ = d->d[i]; }
+		for (; i <= prec; i++) { *o++ = '0'; }
+	}
+	*o++ = letter;
+	exp = d->nd != 0 ? d->dp - 1 : 0;
+	if (exp < 0) { *o++ = '-'; exp = -exp; } else { *o++ = '+'; }
+	if (exp < 10) { *o++ = '0'; }
+	o += sprintf(o, "%d", exp);
+	return o;
+}
+static char* ogo_fmt_f(char* o, const ogo_dec* d, int prec) {
+	int i, m, j;
+	if (d->dp > 0) { m = d->nd < d->dp ? d->nd : d->dp; for (i = 0; i < m; i++) { *o++ = d->d[i]; } for (; m < d->dp; m++) { *o++ = '0'; } } else { *o++ = '0'; }
+	if (prec > 0) { *o++ = '.'; for (i = 0; i < prec; i++) { j = d->dp + i; *o++ = (0 <= j && j < d->nd) ? d->d[j] : '0'; } }
+	return o;
+}
+static void ogo_fmt_float(char* out, float f, char verb, int prec) {
+	ogo_dec d; union { float f; unsigned u; } b; unsigned mant; int exp, neg, shortest = prec < 0, eprec, n; char* o = out;
+	b.f = f;
+	if (((b.u >> 23) & 0xff) == 0xff) { if (b.u & 0x7fffff) { strcpy(out, "NaN"); } else { strcpy(out, (b.u >> 31) ? "-Inf" : "+Inf"); } return; }
+	neg = (b.u >> 31) != 0;
+	exp = (int)((b.u >> 23) & 0xff); mant = b.u & 0x7fffff;
+	if (exp == 0) { exp = 1; } else { mant |= 1u << 23; }
+	exp -= 127;
+	ogo_dec_assign(&d, mant); ogo_dec_shift(&d, exp - 23);
+	if (shortest) {
+		ogo_dec_shortest(&d, mant, exp);
+		switch (verb) {
+		case 'e': case 'E': prec = d.nd - 1; break;
+		case 'f': prec = d.nd - d.dp; if (prec < 0) { prec = 0; } break;
+		default: prec = d.nd; break;
+		}
+	} else {
+		switch (verb) {
+		case 'e': case 'E': ogo_dec_round(&d, prec + 1); break;
+		case 'f': n = d.dp + prec; if (n < 0) { n = 0; } ogo_dec_round(&d, n); break;
+		default: if (prec == 0) { prec = 1; } ogo_dec_round(&d, prec); break;
+		}
+	}
+	if (neg) { *o++ = '-'; }
+	switch (verb) {
+	case 'e': case 'E': o = ogo_fmt_e(o, &d, prec, verb); break;
+	case 'f': o = ogo_fmt_f(o, &d, prec); break;
+	default:
+		eprec = prec;
+		if (eprec > d.nd && d.nd >= d.dp) { eprec = d.nd; }
+		if (shortest) { eprec = 6; }
+		exp = d.dp - 1;
+		if (exp < -4 || exp >= eprec) { if (prec > d.nd) { prec = d.nd; } o = ogo_fmt_e(o, &d, prec - 1, verb == 'G' ? 'E' : 'e'); break; }
+		if (prec > d.dp) { prec = d.nd; }
+		o = ogo_fmt_f(o, &d, prec - d.dp > 0 ? prec - d.dp : 0);
+		break;
+	}
+	*o = 0;
+}
+static void ogo_print_float(int width, int left, int plus, int space, int zero, char verb, int prec, double v) {
+	char b[256], t[258]; const char* s = b; int n, pad, i, special;
+	ogo_fmt_float(b, (float)v, verb, prec);
+	special = b[0] == 'N' || b[1] == 'I';
+	if (b[0] != '-' && b[0] != '+' && (plus || space)) { t[0] = plus ? '+' : ' '; strcpy(t + 1, b); s = t; }
+	n = (int)strlen(s); pad = width - n;
+	if (pad <= 0) { printf("%s", s); return; }
+	if (left) { printf("%s", s); for (i = 0; i < pad; i++) { putchar(' '); } return; }
+	if (zero && !special) { if (s[0] == '-' || s[0] == '+' || s[0] == ' ') { putchar(s[0]); s++; } for (i = 0; i < pad; i++) { putchar('0'); } printf("%s", s); return; }
+	for (i = 0; i < pad; i++) { putchar(' '); }
+	printf("%s", s);
+}
+`
 
 // decPadHelper prints a signed integer zero-padded to a width, as fmt does: the
 // sign first, then the zeros, then the digits, the whole field `width` wide.
@@ -4122,8 +4266,8 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(runePadHelper)
 		out.WriteByte('\n')
 	}
-	if e.usesFloatPrint {
-		out.WriteString(floatPrintHelper)
+	if e.usesFloatFmt {
+		out.WriteString(floatFmtHelper)
 		out.WriteByte('\n')
 	}
 	if e.usesBasePrint {
@@ -4628,7 +4772,7 @@ type emitter struct {
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
-	usesFloatPrint     bool                    // ogo_print_flt is called: a float printed through %g or %e (see floatPrintHelper)
+	usesFloatFmt       bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
 	usesBasePrint      bool                    // ogo_print_base is called: %o of a negative value, or any %b (see basePrintHelper)
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
@@ -20858,7 +21002,7 @@ func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb st
 		// form that reads back exactly, so 1234567.0 prints 1.23457e+06 there and
 		// 1.234567e+06 here. Accepting it would buy a rarely-used verb with a silent
 		// output difference.
-		case 'd', 'x', 'X', 'o', 'b', 's', 't', 'v', 'f', 'e', 'T', 'c':
+		case 'd', 'x', 'X', 'o', 'b', 's', 't', 'v', 'f', 'e', 'E', 'g', 'G', 'T', 'c':
 			if lit != "" {
 				items = append(items, printfItem{lit: lit})
 				lit = ""
@@ -21046,6 +21190,34 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 // emitPrintfVerb emits one verb's argument, checking the verb against the type it
 // was given. A verb that does not suit its argument is refused here: the format is
 // constant and the type is known, so there is nothing left to find out at run time.
+// emitFloatVerb prints a float through one of %e, %E, %f, %g or %G: the helper
+// lays the text out itself (see floatFmtHelper), so it takes the width, the '-',
+// '+', ' ' and '0' flags and the precision apart. No precision is 6 for %e and %f
+// and -1, the shortest form, for %g, as fmt has them.
+func (e *emitter) emitFloatVerb(item printfItem, verb byte, value func()) {
+	width, _ := item.width()
+	prec, hasPrec := item.precision()
+	if !hasPrec {
+		prec = -1
+		if verb != 'g' && verb != 'G' {
+			prec = 6
+		}
+	}
+	flag := func(f byte) string {
+		if item.hasFlag(f) {
+			return "1"
+		}
+		return "0"
+	}
+	e.usesFloatFmt = true
+	e.includes["string.h"] = true
+	e.ind()
+	e.emit("ogo_print_float(" + strconv.Itoa(width) + ", " + flag('-') + ", " + flag('+') + ", " + flag(' ') + ", " +
+		flag('0') + ", '" + string(verb) + "', " + strconv.Itoa(prec) + ", ")
+	value()
+	e.emit(");\n")
+}
+
 func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	verb, spec := item.verb, item.spec
 	ct, known := e.printArgCType(idx, arg)
@@ -21072,12 +21244,6 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported by the C backend, "+
 			"which prints %%%s%c without the base prefix; write the prefix in the format",
 			spec, verb)
-		return false
-	}
-	if item.hasFlag('0') && (verb == 'f' || verb == 'g' || verb == 'e') {
-		e.failAt(arg.ast, "printf: the '0' flag on %%%s%c is not supported by the C "+
-			"backend, which pads a float with spaces instead of zeros; it does honour "+
-			"'0' on the integer verbs", spec, verb)
 		return false
 	}
 	if verb == 'T' {
@@ -21212,26 +21378,15 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		e.emit("printf(\"%" + spec + "s\", (")
 		value()
 		e.emit(") ? \"true\" : \"false\");\n")
-	case 'f', 'g', 'e':
+	case 'f', 'e', 'E', 'g', 'G':
 		if !isFloatCType(ct) {
 			return wrong("a float")
 		}
-		// %f is fixed-point with six decimals, as C's is and as Go's is; %g is the
-		// shortest form, which is what %v of a float asks for; %e is the exponent
-		// form. Flags, width and precision mean the same in both, so they pass
-		// straight through -- %g and %e by way of the helper that lowercases the
-		// exponent's letter (see floatPrintHelper).
-		e.ind()
-		if verb == 'f' {
-			e.emit("printf(\"%" + spec + "f\", ")
-			value()
-			e.emit(");\n")
-			return true
-		}
-		e.usesFloatPrint = true
-		e.emit("ogo_print_flt(\"%" + spec + string(verb) + "\", ")
-		value()
-		e.emit(");\n")
+		// Every float verb is laid out by the helper from the exact digits (see
+		// floatFmtHelper): Go's shortest form under %g, Go's rounding under a
+		// precision, and Go's padding under a width -- not the target's printf,
+		// whose digits are wrong past the seventh.
+		e.emitFloatVerb(item, verb, value)
 	case 'c':
 		if !isIntCType(ct) {
 			return wrong("an integer")
@@ -21454,10 +21609,11 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	verb := e.scalarPrintVerbOf(idx, arg)
 	e.ind()
 	if verb == "%g" {
-		// A float goes through the helper, which lowercases the exponent's letter
-		// the target's printf writes in capitals (see floatPrintHelper).
-		e.usesFloatPrint = true
-		e.emit("ogo_print_flt(\"%g\", ")
+		// A float prints in Go's shortest form, as Go's println prints one (see
+		// floatFmtHelper): C's %g would print six significant digits.
+		e.usesFloatFmt = true
+		e.includes["string.h"] = true
+		e.emit("ogo_print_float(0, 0, 0, 0, 0, 'g', -1, ")
 		e.emitReplayArg(idx, arg)
 		e.emit(");\n")
 		if newline {
@@ -21538,7 +21694,7 @@ func (e *emitter) emitPrintMulti(newline bool, args []Node) {
 	allScalar := true
 	for i, arg := range args {
 		// A float is printed by a helper rather than by a conversion (see
-		// floatPrintHelper), so it takes the one-per-statement path too.
+		// floatFmtHelper), so it takes the one-per-statement path too.
 		if !e.isScalarPrint(i, arg) || e.scalarPrintVerbOf(i, arg) == "%g" {
 			allScalar = false
 			break

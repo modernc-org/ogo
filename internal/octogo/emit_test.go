@@ -5684,11 +5684,6 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			want: "printf: the '+' flag on %+d of a uint64 is not supported",
 		},
 		{
-			name: "the 0 flag on a float",
-			src:  "func main() {\n\tprintf(\"%08.3f\\n\", 1.5)\n}\n",
-			want: "printf: the '0' flag on %08.3f is not supported by the C backend",
-		},
-		{
 			// The '*' forms take the width from an argument of their own, which would
 			// break the verb-to-argument count the type checking rests on.
 			name: "a star width",

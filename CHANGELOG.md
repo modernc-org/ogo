@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`%g`, `%G` and `%E` format a float, and the `0` flag pads one.** `%g` is Go's,
+  not C's: with no precision the shortest form that reads back to the same
+  float32 -- `0.33333334`, `1.5`, `100`, `1e+06` -- and with one that many
+  significant digits; `%G` and `%E` are the capital forms. `%08.3f` zero-pads as
+  fmt does; it was refused because the target's printf ignores the flag, and the
+  emitter no longer uses that printf for a float at all (see Fixed).
+
 - **A select clause may receive in the comma-ok form.** `case v, ok := <-ch:`
   and `case v, ok = <-ch:`, whose `ok` is false for the zero a closed channel
   yields and true for a value sent, as the statement form's is -- the way a
@@ -56,6 +63,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   `%f`. `%b` takes no width yet, and says so.
 
 ### Fixed
+
+- **A float printed the wrong digits.** `print`, `println` and `%v` of a float
+  went through C's `%g` -- six significant digits, so a third printed
+  `0.333333`, a different number from the `0.33333334` Go's shortest form
+  prints and reads back exactly -- and on the target every float verb was wrong
+  past the seventh digit besides, `%.7e` of a third printing `3.3333335e-01`:
+  the target's printf carries the conversion in float arithmetic
+  (`doc/printf-float-digits.c`). A float is now laid out from its exact decimal
+  expansion by the emitted program itself -- Go's `strconv` decimal ported to C
+  for float32, with Go's shortest-form search and its half-to-even rounding
+  under a precision -- so `%e`, `%f`, `%g` and the println forms print what Go
+  prints, on the board as on the host, for the float32 the value is. Found by
+  probing float output against Go.
 
 - **A constant argument after a 64-bit expression was passed wrong.** The
   target's C compiler stops converting a constant argument to its parameter's

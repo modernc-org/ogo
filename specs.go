@@ -1805,7 +1805,11 @@
 //	%s          a string
 //	%t          a bool, as the word true or false
 //	%f          a float, fixed-point
-//	%e          a float, in exponent form
+//	%e %E       a float, in exponent form
+//	%g %G       a float, in the shortest form that reads back to the same
+//	            float32 -- 0.33333334, 1.5, 100, 1e+06 -- or, with a
+//	            precision, in that many significant digits; the form println
+//	            and %v print a float in
 //	%c          the character an integer names, encoded as UTF-8
 //	%v          the value in its default form — what println would print, down to
 //	            "[1 2 3]" for a slice. Not a pointer, a func value, an interface
@@ -1824,12 +1828,12 @@
 // forms, which take the width from an argument of their own, are not accepted: the
 // verb count is what pairs each verb with an argument to check it against.
 //
-// Two flags are refused because the C backend ignores them, and a program that
+// One flag is refused because the C backend ignores it, and a program that
 // compiles here is meant to mean what it means in Go rather than approximately
-// that: "#", which would write a base prefix, and "0" on a float, which would pad
-// with zeros — "%08.3f". "0" on the integer verbs is honoured, so "%05d" is fine:
-// the field is written by the compiler rather than by the backend's printf, which
-// pads the DIGITS of a negative number and adds the sign on top of the width.
+// that: "#", which would write a base prefix. "0" is honoured on every verb that
+// takes it, "%05d" and "%08.3f" alike: the field is written by the compiler rather
+// than by the backend's printf, which pads the DIGITS of a negative number and adds
+// the sign on top of the width, and ignores the flag on a float altogether.
 //
 // A third is refused in one place only: "+" on a %d of a uint64. The flag is
 // carried by printing the value through a signed conversion, which holds every
@@ -1849,7 +1853,10 @@
 // Each verb renders as fmt does rather than as C does, where the two differ: %x of
 // a negative integer is a sign and a magnitude, "-ff", not the two's complement C
 // would print; %c writes the UTF-8 encoding of the character an integer names, not
-// one byte of it.
+// one byte of it; a float, under every verb and under println, is laid out from
+// its exact decimal expansion with fmt's rounding -- half to even on an exact tie
+// -- rather than by the backend's printf, whose digits are wrong past the seventh.
+// A float64 is a float32 on the target, so the digits are the float32's.
 //
 // %T is answered at compile time for everything but an interface, whose dynamic
 // type is read from the value at run time and costs one pointer. A type prints
