@@ -1552,13 +1552,15 @@
 //	println(func() int { return 7 }())
 //
 // A literal may stand as the callee of "go" or "defer" -- both take a declared
-// function, and a lifted literal is one:
+// function, and a lifted literal is one -- and may take arguments there, evaluated
+// where the statement stands as any call's are:
 //
-//	defer func() { ... }()
-//	go func() { ... }()
+//	defer func(k int, name string) { ... }(n, "work")
+//	go func(c chan int, n int) { ... }(ch, 3)
 //
-// Neither takes arguments yet. A cog usually wants none: what it shares, it shares
-// through a channel.
+// The arguments are the one way a value reaches the literal, which captures
+// nothing of the scope around it. A cog usually wants few: what it shares, it
+// shares through a channel.
 //
 // # Operators
 //

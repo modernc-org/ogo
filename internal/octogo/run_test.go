@@ -16563,6 +16563,55 @@ func main() {
 		want: "-214 251 441 -220 -192\n437 -213 -214 220 220 86\n1099511627559 -1099511627993\n-213 221 87\ndeferred -7 3\n",
 	},
 	{
+		// A deferred function literal taking arguments. A literal captures nothing
+		// of the scope around it, so its arguments are the one way a value reaches
+		// it; they are evaluated where the defer stands, as Go says -- q holds
+		// the Pt of before p.x = 100, pv the address so *pv reads 50 -- each into
+		// a temporary of its PARAMETER's type, so the 3 handed to an int64 is
+		// stored as one. Only the parameterless form was accepted before.
+		name: "a deferred function literal with arguments",
+		src: `type Pt struct {
+	x, y int
+}
+
+func work(n int) int {
+	total := 0
+	twice := n * 2
+	defer func(k int, name string) {
+		println("done", name, k)
+	}(twice, "work")
+	for i := 0; i < n; i++ {
+		total += i
+	}
+	return total
+}
+
+func wide(m int64) {
+	defer func(a int64, b int64) {
+		println("wide", a*31+b)
+	}(-m, 3)
+	println("in", m)
+}
+
+func main() {
+	p := Pt{1, 2}
+	v := 5
+	defer func(q Pt, pv *int, b bool) {
+		println("last", q.x, q.y, *pv, b)
+	}(p, &v, v > 3)
+	p.x = 100
+	v = 50
+	println(work(4), work(0))
+	if v > 10 {
+		defer func(s string) { println("branch", s) }("taken")
+	}
+	wide(7)
+	defer func() { println("plain") }()
+}
+`,
+		want: "done work 8\ndone work 0\n6 0\nin 7\nwide -214\nplain\nbranch taken\nlast 1 2 50 true\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

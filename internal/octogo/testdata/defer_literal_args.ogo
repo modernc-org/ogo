@@ -1,0 +1,32 @@
+// COMPILE
+
+// A deferred function literal may take arguments, evaluated where the defer
+// stands: the one way a value reaches a literal, which captures nothing.
+
+type Pt struct {
+	x, y int
+}
+
+func f(n int, p Pt, s string, ok bool) (int, string) {
+	m := int64(n)
+	defer func(k int, name string) {
+		println(name, k)
+	}(n, s)
+	defer func(q Pt, pq *Pt, b bool) {
+		println(q.x, pq.y, b)
+	}(p, &p, ok && n > 0)
+	defer func(a, b int64) {
+		println(a*31 + b)
+	}(-m, 3)
+	defer func() {
+		println("none")
+	}()
+	if n > 1 {
+		defer func(t string) { println(t) }("branch")
+	}
+	return n, s
+}
+
+func main() {
+	f(1, Pt{1, 2}, "x", true)
+}

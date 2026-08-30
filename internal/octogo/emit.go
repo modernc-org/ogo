@@ -18211,24 +18211,50 @@ func (e *emitter) emitDefer(nodes []Node) {
 			suffix = append(suffix, n)
 		}
 	}
-	// `defer func() { ... }()`: the literal is lifted here, where the defer
-	// statement is written, and the replay calls the lifted function by name. It
-	// takes no arguments for now -- there is nothing to capture, which is what
-	// makes this the whole of it.
+	// `defer func(p T) { ... }(v)`: the literal is lifted here, where the defer
+	// statement is written, and the replay calls the lifted function by name. Its
+	// arguments are captured now, as a named function's are -- Go evaluates them
+	// where the defer stands -- each into a temporary of its PARAMETER's type, so
+	// that Go's conversion at the call happens at the capture and a `3` handed to
+	// an int64 parameter is stored as one. A literal captures nothing of the scope
+	// around it (there is no heap to keep it alive in), so its arguments are the
+	// one way a value reaches it, which is what made `defer func() {}()` alone too
+	// little to be useful.
 	if lit.sym == FuncLiteral {
-		if len(suffix) != 1 || suffix[0].sym != CallSuffix || len(e.callArgExprs(suffix[0].ast)) != 0 {
-			e.fail("a deferred function literal takes no arguments yet")
+		if len(suffix) != 1 || suffix[0].sym != CallSuffix {
+			e.fail("a defer statement must be a function call")
 			return
 		}
 		cname, ok := e.liftFuncLit(lit)
 		if !ok {
 			return
 		}
-		e.defers = append(e.defers, deferredCall{litName: cname, cond: e.deferBlockDepth > 0, slot: len(e.defers)})
-		if e.deferBlockDepth > 0 {
-			e.ind()
-			e.emit(deferFlagName(len(e.defers)-1) + " = 1;\n")
+		d := deferredCall{litName: cname, cond: e.deferBlockDepth > 0, slot: len(e.defers)}
+		args, params := e.callArgExprs(suffix[0].ast), e.funcParams[cname]
+		if len(args) != len(params) {
+			e.fail("wrong number of arguments in call to the deferred function literal: have %d, want %d", len(args), len(params))
+			return
 		}
+		for i, a := range args {
+			if dims := e.funcArrayParams[cname]; i < len(dims) && dims[i].bound != "" {
+				// An array parameter is a pointer the callee memcpys from, and the
+				// capture would have to be an array copied here; not yet.
+				e.fail("an array argument to a deferred function literal is not supported yet")
+				return
+			}
+			d.args = append(d.args, deferArg{ctype: params[i], expr: a.ast})
+		}
+		for i, a := range d.args {
+			e.ind()
+			e.emit(deferArgName(d.slot, i) + " = ")
+			e.emitExpr(a.expr)
+			e.emit(";\n")
+		}
+		if d.cond {
+			e.ind()
+			e.emit(deferFlagName(d.slot) + " = 1;\n")
+		}
+		e.defers = append(e.defers, d)
 		return
 	}
 	if head.sym != AssignHead || len(suffix) == 0 {
@@ -18452,13 +18478,18 @@ func (e *emitter) emitDeferred() {
 	for i := len(e.defers) - 1; i >= 0; i-- {
 		d := e.defers[i]
 		if d.litName != "" {
-			// A lifted function literal: no name in the source to resolve again, and
-			// no arguments to replay.
+			// A lifted function literal: no name in the source to resolve again,
+			// and its arguments are the temporaries captured at the defer, passed
+			// as they are -- each is already of its parameter's type.
 			e.ind()
 			if d.cond {
 				e.emit("if (" + deferFlagName(d.slot) + ") ")
 			}
-			e.emit(d.litName + "();\n")
+			var args []string
+			for i := range d.args {
+				args = append(args, deferArgName(d.slot, i))
+			}
+			e.emit(d.litName + "(" + strings.Join(args, ", ") + ");\n")
 			continue
 		}
 		e.deferReplay, e.deferReplayArgs = d.slot, d.args

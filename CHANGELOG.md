@@ -26,7 +26,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   travel to the cog in the trampoline's block exactly as `go f(ch, 3)` sends
   them, and the lifetime rule guards them the same way (`go func(p *int)
   {...}(&local)` is refused as `go f(&local)` is). Only the parameterless form was
-  accepted before. A deferred literal still takes none.
+  accepted before.
+- **A deferred function literal may take arguments.** `defer func(k int, name
+  string) { ... }(n, "work")`, evaluated where the `defer` stands as Go
+  evaluates them -- a struct argument holds what it held then, a pointer sees
+  the later writes -- each captured into a temporary of its parameter's type
+  and handed to the lifted literal at the return. A literal captures nothing of
+  the scope around it, so its arguments are the one way a value reaches it,
+  which is what made the parameterless form too little to be useful. An array
+  argument is not accepted yet.
 
 - **`%v` and `%s` print what a `String()` or `Error()` method returns**, which is
   fmt's rule: a value whose type declares `String() string` -- on itself or
