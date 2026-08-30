@@ -16745,6 +16745,37 @@ func main() {
 		want: "body 9 9 40\ngrid 1 2 3 4\nliteral 1 2 3 7\nlog method 1 2 3 1\ndeferred 1 2 3 3\n",
 	},
 	{
+		// min and max of floats follow Go's rules: NaN if any argument is one, and
+		// negative zero below positive zero. The helpers were `a < b ? a : b`,
+		// which answered the other argument for a NaN -- min(nan, a) printed 0.1
+		// on a P2-EDGE where Go prints NaN, a silent wrong answer found by a
+		// float32 arithmetic probe diffed against Go -- and whichever zero came
+		// first for the zeros.
+		name: "min and max of floats follow Go's rules",
+		src: `func id(f float32) float32 { return f }
+
+func main() {
+	a := id(0.1)
+	b := id(0.2)
+	z := id(0)
+	nz := z * -1
+	inf := id(1e38) * id(10)
+	nan := inf - inf
+	println(min(a, b), max(a, b), min(b, a, -a), max(-b, a, b))
+	println(min(nan, a), min(a, nan), max(nan, a), max(a, nan), min(a, b, nan), max(nan, nan))
+	println(min(z, nz), min(nz, z), max(z, nz), max(nz, z), min(nz, nz), max(z, z))
+	println(min(inf, a), max(-inf, a), min(-inf, inf), max(inf, nan), min(nz, a), max(nz, -a))
+	var d float64 = 2.5
+	e := d * 2
+	println(min(d, e), max(d, e), min(e, d, 1), max(d, e, 7.5))
+	x := id(3)
+	y := id(-3)
+	println(min(x, y) == y, max(x, y) == x, min(x, x) == x, min(z, nz) == nz)
+}
+`,
+		want: "0.1 0.2 -0.1 0.2\nNaN NaN NaN NaN NaN NaN\n-0 -0 0 0 -0 0\n0.1 0.1 -Inf NaN -0 -0\n2.5 5 1 7.5\ntrue true true true\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

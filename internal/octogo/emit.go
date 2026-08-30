@@ -4484,9 +4484,23 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		return "a " + op + " b"
 	}
 	for _, ct := range sortedKeys(e.minElems) {
+		if isFloatCType(ct) {
+			// Go's min of floats: NaN if either argument is one, and negative zero
+			// below positive zero -- which `a < b ? a : b` gets wrong both ways,
+			// answering the other argument for a NaN and whichever zero came first
+			// for the zeros. A zero's sign shows in the sign of 1 / a.
+			fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { if (a != a || b != b) { return a != a ? a : b; } if (a == 0 && b == 0) { return 1 / a < 0 ? a : b; } return a < b ? a : b; }\n", ct, minCName(ct), ct, ct)
+			continue
+		}
 		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return %s ? a : b; }\n", ct, minCName(ct), ct, ct, minMaxCmp(ct, "<"))
 	}
 	for _, ct := range sortedKeys(e.maxElems) {
+		if isFloatCType(ct) {
+			// Go's max of floats, the mirror of min above: NaN wins, and positive
+			// zero is above negative zero.
+			fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { if (a != a || b != b) { return a != a ? a : b; } if (a == 0 && b == 0) { return 1 / a < 0 ? b : a; } return a > b ? a : b; }\n", ct, maxCName(ct), ct, ct)
+			continue
+		}
 		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return %s ? a : b; }\n", ct, maxCName(ct), ct, ct, minMaxCmp(ct, ">"))
 	}
 	for _, el := range sortedKeys(e.tryappendElems) {

@@ -69,6 +69,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`min` and `max` of floats follow Go's rules.** NaN if any argument is one,
+  and negative zero below positive zero: the helpers were `a < b ? a : b`,
+  which answered the other argument for a NaN -- `min(nan, x)` printed `x` --
+  and whichever zero came first for the zeros. Found by a float32 arithmetic
+  probe diffed against Go, which the rest of float32 arithmetic passed bit for
+  bit: sums, products, accumulation, denormals, conversions, the infinities.
+
 - **A float printed the wrong digits.** `print`, `println` and `%v` of a float
   went through C's `%g` -- six significant digits, so a third printed
   `0.333333`, a different number from the `0.33333334` Go's shortest form
