@@ -1519,8 +1519,10 @@ type selectCase struct {
 	ch      string       // channel variable
 	elem    string       // its element C type
 	target  assignTarget // what receives the value; its name is empty for a bare `case <-ch:`
-	declare bool         // ":=", so the target is introduced in the clause
-	val     Node         // the value being sent, for a send clause
+	okTgt   assignTarget // what receives the comma-ok flag of `case v, ok := <-ch:`; hasOk says there is one
+	hasOk   bool
+	declare bool // ":=", so the target is introduced in the clause
+	val     Node // the value being sent, for a send clause
 	body    []Node
 }
 
@@ -1661,11 +1663,20 @@ func (e *emitter) emitSelect(ast []int32) {
 	// clause's "else" is not C -- the else has no if before it -- so a select with
 	// more than one clause did not compile at all until these moved up here.
 	tmps := make([]string, len(cases))
+	gots := make([]string, len(cases))
 	for i, c := range cases {
 		if c.def || c.send {
 			continue
 		}
 		tmps[i] = e.newTmp()
+		if c.hasOk {
+			// The comma-ok clause keeps what the try-receive answered: 1 for a
+			// value, 2 for the zero a closed channel yields, which is what its
+			// second target is false for.
+			gots[i] = e.newTmp()
+			e.ind()
+			e.emit("int " + gots[i] + " = 0;\n")
+		}
 		e.ind()
 		if a, isArr := e.namedArrays[c.elem]; isArr {
 			// An ARRAY element cannot be declared through its typedef here and is
@@ -1733,7 +1744,11 @@ func (e *emitter) emitSelect(ast []int32) {
 		if tryRecv != "" {
 			guard = tryRecv + " && "
 		}
-		e.emit("if (" + guard + chanTryRecvCName(c.elem) + "(" + c.ch + ", " + addr + tmp + ")) {\n")
+		try := chanTryRecvCName(c.elem) + "(" + c.ch + ", " + addr + tmp + ")"
+		if c.hasOk {
+			try = "(" + gots[i] + " = " + try + ")"
+		}
+		e.emit("if (" + guard + try + ") {\n")
 		e.indent++
 		if !hasDefault {
 			e.ind()
@@ -1759,6 +1774,11 @@ func (e *emitter) emitSelect(ast []int32) {
 				// assignment `b.v = <-ch` always could.
 				e.emitStore(c.target, c.declare, c.elem, tmp)
 			}
+		}
+		if c.hasOk {
+			// The comma-ok flag: true for a value, false for the zero of a closed
+			// channel, as the statement form's is (ogo_chan_recv2).
+			e.emitStore(c.okTgt, c.declare, cBool, "("+gots[i]+" == 1)")
 		}
 		for _, st := range c.body {
 			e.emitStatement(st.ast)
@@ -1880,6 +1900,10 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 	assigns, hasValue := false, false
 	for q := range it(post.ast) {
 		switch {
+		case q.sym == AssignHead:
+			// `case v, ok := <-ch:` -- the comma-ok receive's second target, which
+			// the grammar keeps inside PostfixComm, after the comma.
+			c.okTgt, c.hasOk = assignTarget{name: e.soleIdent(q.ast), stars: e.derefStars(q.ast)}, true
 		case q.sym == Selector, q.sym == Index:
 			chain = append(chain, q)
 		case q.sym == 0 && e.f.ch(q.tok) == DEFINE:
@@ -2988,6 +3012,10 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 		// for a sender that has said it will not come. Reporting "nothing yet"
 		// instead made a select with no default poll for ever, and a select WITH one
 		// take the default -- a silent wrong answer, where Go takes the receive.
+		//
+		// The answer is 1 for a value and 2 for that zero: both are "ready" to a
+		// clause testing it, and the comma-ok clause `case v, ok := <-ch:` is
+		// false for the second, as the statement form's ok is.
 		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[8]s) {
 	if (ch->full && _locktry(ch->lock)) {
 		if (ch->full) {
@@ -3001,7 +3029,7 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 	}
 	if (ch->closed && !ch->full) {
 		%[10]s
-		return 1;
+		return 2;
 	}
 	return 0;
 }

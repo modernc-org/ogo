@@ -3700,10 +3700,17 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 		// exactly as "v := <-ch" would outside a select.
 		cs := s.child()
 		if id, ok := f.commRecvVar(c); ok {
-			if id.Src() == "_" {
+			okId, hasOkId := f.commRecvOkVar(c)
+			switch {
+			case id.Src() == "_" && (!hasOkId || okId.Src() == "_"):
 				f.errNoNewVars(id) // "case _ := <-ch" introduces nothing
-			} else {
+			case id.Src() != "_":
 				f.declareLocal(cs, &VarDeclaration{declaration: declaration{token: id}})
+			}
+			// The comma-ok flag, `case v, ok := <-ch:`, is a bool as the statement
+			// form's is.
+			if hasOkId && okId.Src() != "_" {
+				f.declareLocal(cs, &VarDeclaration{declaration: declaration{token: okId}, kind: PredeclaredBool, hasKind: true})
 			}
 		}
 		// A break inside a comm clause leaves the select, so the body is checked
@@ -3750,6 +3757,38 @@ func (f *File) commRecvVar(commClause Node) (Token, bool) {
 			if hasHead && hasDefine && !hasSuffix {
 				if id, ok := f.assignHeadIdent(assignHead); ok {
 					return id, true
+				}
+			}
+		}
+	}
+	return Token{}, false
+}
+
+// commRecvOkVar returns the second name a "case v, ok := <-ch" comm clause
+// introduces -- the comma-ok flag, which the grammar keeps inside PostfixComm after
+// the comma -- and ok == false for a clause without one or one that assigns rather
+// than declares. commRecvVar has already said the clause is a declaring receive of
+// a plain name; this asks only for the second.
+func (f *File) commRecvOkVar(commClause Node) (Token, bool) {
+	if _, isDecl := f.commRecvVar(commClause); !isDecl {
+		return Token{}, false
+	}
+	for head := range it(commClause.ast) {
+		if head.sym != CommHead {
+			continue
+		}
+		for op := range it(head.ast) {
+			if op.sym != CommOp {
+				continue
+			}
+			for c := range it(op.ast) {
+				if c.sym != PostfixComm {
+					continue
+				}
+				for pc := range it(c.ast) {
+					if pc.sym == AssignHead {
+						return f.assignHeadIdent(pc)
+					}
 				}
 			}
 		}
@@ -3819,13 +3858,15 @@ func (f *File) commOp(s *Scope, op Node) {
 	// <- v", "v[i] = <-ch"), then locate the "<-" operand and the "="/":=" that, when
 	// present, marks a receive rather than a send.
 	f.checkIndexExprs(s, postfixComm)
-	var operand Node
-	hasOperand := false
+	var operand, okHead Node
+	hasOperand, hasOkHead := false, false
 	var assignOp Symbol
 	for c := range it(postfixComm.ast) {
 		switch c.sym {
 		case Expression:
 			operand, hasOperand = c, true
+		case AssignHead:
+			okHead, hasOkHead = c, true // the comma-ok flag's target, `case v, ok := <-ch`
 		case 0:
 			switch f.ch(c.tok) {
 			case ASSIGN, DEFINE:
@@ -3842,13 +3883,16 @@ func (f *File) commOp(s *Scope, op Node) {
 		f.checkReceiveOperand(s, operand)
 		if assignOp == ASSIGN {
 			f.commRecvAssignTarget(s, assignHead, postfixComm, operand)
+			if hasOkHead {
+				f.commRecvOkTarget(s, okHead)
+			}
 			break
 		}
 		// ":=" declares a name, here as much as in an ordinary short declaration, so
 		// a target that is not one has nothing for it to declare. The grammar admits
 		// them -- PostfixComm carries selectors and indexes, which the "=" form needs
 		// -- so the rule is a check.
-		if hasSelectorOrIndex(postfixComm) || f.headIsDeref(assignHead) {
+		if hasSelectorOrIndex(postfixComm) || f.headIsDeref(assignHead) || (hasOkHead && f.headIsDeref(okHead)) {
 			f.err(f.tok(assignHead.Pos()).Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
 		}
 	default:
@@ -3900,6 +3944,32 @@ func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr 
 	}
 	if tk, tok := f.identKind(s, id); tok && !assignableKind(tk, elem) {
 		f.err(f.tok(chanExpr.Pos()).Position(), "cannot assign value received from chan %s to type %s", kindName(elem), kindName(tk))
+	}
+}
+
+// commRecvOkTarget resolves the second target of a "case v, ok = <-ch" receive
+// assignment, the comma-ok flag: it must exist, be assignable, and take a bool.
+func (f *File) commRecvOkTarget(s *Scope, okHead Node) {
+	id, ok := f.assignHeadIdent(okHead)
+	if !ok {
+		return
+	}
+	nm := id.Src()
+	if nm == "_" {
+		return
+	}
+	switch s.find(nm).(type) {
+	case nil:
+		if !f.isImportQualifier(s, nm) {
+			f.err(id.Position(), "undefined: %s", nm)
+		}
+		return
+	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+		f.err(id.Position(), "cannot assign to %s", nm)
+		return
+	}
+	if tk, tok := f.identKind(s, id); tok && !assignableKind(tk, PredeclaredBool) {
+		f.err(id.Position(), "cannot assign the bool of a comma-ok receive to %s (type %s)", nm, kindName(tk))
 	}
 }
 

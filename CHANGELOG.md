@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A select clause may receive in the comma-ok form.** `case v, ok := <-ch:`
+  and `case v, ok = <-ch:`, whose `ok` is false for the zero a closed channel
+  yields and true for a value sent, as the statement form's is -- the way a
+  select tells a closed producer from a sent zero. The clause did not parse
+  before: the grammar's receive clause took one target.
+
 - **A function literal started with `go` may take arguments.** `go func(c chan
   int, n int) { ... }(ch, 3)` is how a value reaches a goroutine written in
   place, a literal being unable to capture one; the lifted literal's parameters

@@ -289,7 +289,9 @@ broken.
   stands — including one reached through fields and indexes, `go ws[i].run(ch)`,
   which is a worker per cog — as may an imported package's function,
   `go driver.Poll(ch)`. A `select`
-  multiplexes receives and one send, `case ch <- v:`. Channels may be declared at
+  multiplexes receives and one send, `case ch <- v:`, and a receive clause may take
+  the comma-ok form, `case v, ok := <-ch:`, whose `ok` is false once the channel is
+  closed. Channels may be declared at
   package level as well as locally, and the P2's locks are reachable directly through
   the `p2` package.
 * Runtime traps for out-of-range indexing and slicing, division and remainder by

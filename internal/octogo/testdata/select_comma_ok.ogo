@@ -1,0 +1,31 @@
+// COMPILE
+
+// A select's receive clause may take the comma-ok form, declaring or assigning
+// the flag that is false for the zero a closed channel yields.
+
+func produce(ch chan int) {
+	ch <- 1
+	close(ch)
+}
+
+func main() {
+	var ch chan int
+	var last int
+	var more bool
+	go produce(ch)
+	select {
+	case v, ok := <-ch:
+		println(v, ok)
+	}
+	select {
+	case last, more = <-ch:
+		println(last, more)
+	case _, ok := <-ch:
+		println(ok)
+	default:
+	}
+	select {
+	case v, _ := <-ch:
+		println(v)
+	}
+}

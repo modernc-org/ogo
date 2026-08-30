@@ -16612,6 +16612,58 @@ func main() {
 		want: "done work 8\ndone work 0\n6 0\nin 7\nwide -214\nplain\nbranch taken\nlast 1 2 50 true\n",
 	},
 	{
+		// The comma-ok receive in a select clause, `case v, ok := <-ch:`, whose ok
+		// is false for the zero a closed channel yields -- the way a select tells a
+		// closed producer from a sent zero. The clause did not parse before. Both
+		// the declaring and the assigning form, and a closed channel winning over a
+		// default with ok false, as in Go.
+		name: "a comma-ok receive in a select clause",
+		src: `func produce(ch chan int, n int) {
+	for i := 1; i <= n; i++ {
+		sq := i * i
+		ch <- sq
+	}
+	close(ch)
+}
+
+func main() {
+	var ch chan int
+	go produce(ch, 3)
+	sum := 0
+	open := true
+	for open {
+		select {
+		case v, ok := <-ch:
+			if !ok {
+				open = false
+				println("closed", v, ok, sum)
+			} else {
+				sum += v
+				println("got", v, ok)
+			}
+		}
+	}
+	var last int
+	var more bool
+	var ch2 chan int
+	go produce(ch2, 2)
+	for i := 0; i < 3; i++ {
+		select {
+		case last, more = <-ch2:
+			println("assigned", last, more)
+		}
+	}
+	select {
+	case w, ok := <-ch2:
+		println("drained", w, ok)
+	default:
+		println("default")
+	}
+}
+`,
+		want: "got 1 true\ngot 4 true\ngot 9 true\nclosed 0 false 14\nassigned 1 true\nassigned 4 true\nassigned 0 false\ndrained 0 false\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

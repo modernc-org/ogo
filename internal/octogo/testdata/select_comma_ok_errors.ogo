@@ -1,0 +1,15 @@
+// The comma-ok clause's targets are checked as the statement form's are.
+
+func main() {
+	var ch chan int
+	var n int
+	select {
+	// ERROR no new variables on left side of :=
+	case _, _ := <-ch:
+	// ERROR cannot assign the bool of a comma-ok receive to n
+	case _, n = <-ch:
+	// ERROR undefined: nope
+	case _, nope = <-ch:
+	}
+	println(n)
+}
