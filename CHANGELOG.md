@@ -20,6 +20,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`len` of an array-returning call.** `len(mk(0))` is the callee's declared
+  extent, the call still running as Go runs it. It was refused, "len is only
+  supported for strings, arrays and slices yet".
 
 - **A call's results may be another call's arguments.** `sum(divmod(17, 5))`,
   Go's special case: a single call returning several values stands as the whole
@@ -92,6 +95,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   did a 64-bit argument named like an int constant. A name a parameter or a
   variable in scope has spoken for no longer folds; a block-scope constant of
   the name still does. Found by a text probe diffed against Go.
+- **`len` of a constant string is folded.** It read the length off the compound
+  literal the constant is spelled as, valid C the target's compiler refuses
+  ("request for member len in something not an object", after which it
+  crashes): `msg[len(msg)-2]` with a `const msg` did not build.
 
 - **`min` and `max` of floats follow Go's rules.** NaN if any argument is one,
   and negative zero below positive zero: the helpers were `a < b ? a : b`,

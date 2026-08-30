@@ -20397,10 +20397,27 @@ func (e *emitter) emitLen(callSuffix []int32) {
 		e.emit(b)
 		return
 	}
+	// A CONSTANT string's length is a constant: `len(msg)` for a `const msg`
+	// folded to its byte count. The header field below would read `.len` off the
+	// compound literal the constant is spelled as, valid C that the target's C
+	// compiler refuses ("request for member len in something not an object").
+	if v, ok := e.foldConstString(arg); ok {
+		e.emit(strconv.Itoa(len(v)))
+		return
+	}
 	// A string and a slice both carry their length in a `.len` header field.
 	if ct, ok := e.exprReprCType(arg); ok && (ct == cString || e.isSliceCType(ct)) {
 		e.emitHeaderField(arg, ct, "len")
 		return
+	}
+	// An array-returning CALL, `len(mk(0))`: the length is the callee's declared
+	// extent, and the call still runs -- Go evaluates it -- bound to a temporary
+	// ahead of the statement as an array argument is.
+	if _, a, ok := e.arrayResultCall(arg); ok {
+		if _, hoisted := e.hoistArrayCallArg(Node{sym: Expression, ast: arg}); hoisted {
+			e.emit(a.bound)
+			return
+		}
 	}
 	e.fail("len is only supported for strings, arrays and slices yet")
 }

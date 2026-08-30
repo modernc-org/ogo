@@ -16890,6 +16890,38 @@ func main() {
 		want: "true true true true true false\ntrue false false\n1\n",
 	},
 	{
+		// len of an array-returning call is the callee's declared extent, the call
+		// still running as Go runs it -- it was refused, "len is only supported for
+		// strings, arrays and slices yet". And len of a CONSTANT string is folded:
+		// the header field read off the compound literal the constant is spelled
+		// as was valid C the target's compiler refused, "request for member len in
+		// something not an object" -- found by a text probe, as msg[len(msg)-2].
+		name: "len of a call's array and of a constant string",
+		src: `const msg = "AT+CFG\r\n"
+
+var calls int
+
+func mk(n int) [4]int {
+	calls++
+	return [4]int{n, n, n, n}
+}
+
+func grid(n byte) [2][3]byte {
+	calls++
+	return [2][3]byte{{n, n, n}, {n, n, n}}
+}
+
+func main() {
+	println(len(mk(1)), len(grid(0)), calls)
+	if len(mk(2)) == 4 {
+		calls += 10
+	}
+	println(calls, len(msg), msg[len(msg)-2] == '\r', msg[len(msg)-1], msg[:len(msg)-2], len(msg+"x"), len("héllo"))
+}
+`,
+		want: "4 2 2\n13 8 true 10 AT+CFG 9 6\n",
+	},
+	{
 		// A parameter or a variable named like a package constant is what its name
 		// means: the constant folders resolved the NAME to the constant, so tag's
 		// parameter prefix was main's "AT+" and a library's strings.TrimPrefix cut
