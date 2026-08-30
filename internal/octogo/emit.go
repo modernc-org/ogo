@@ -4504,7 +4504,7 @@ type emitter struct {
 	// the same method value written twice mints one function.
 	methodValueOf    map[string]string
 	funcParams       map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
-	callParams       []string                  // the parameter C types of the call through a function VALUE being emitted, which has no callee to look up (see wideConstArg); nil outside one
+	callParams       []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	methodPtr        map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals          map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
 	structs          map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
@@ -5991,6 +5991,11 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 // every other method, and ignored by them.
 func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []int32, out string) string {
 	call := recvText + ".vt->" + userIdent(method) + "(" + recvText + ".data"
+	// The slot is a function pointer, and through one the target's C compiler
+	// converts no constant to a 64-bit parameter: `x.Mix(m, 3)` was refused, "Bad
+	// number of parameters in call to Mix". The method's parameter types are what
+	// spells the constant at width (wideConstArg); the call names no function.
+	e.callParams = e.ifaceMethodParams(ifaceCType, method)
 	if args := e.argsCText("", callSuffix); args != "" {
 		call += ", " + args
 	}
@@ -5998,6 +6003,17 @@ func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []i
 		call += ", &" + out
 	}
 	return call + ")"
+}
+
+// ifaceMethodParams returns the parameter C types of an interface's method, the
+// receiver not among them, or nil for a method the interface does not have.
+func (e *emitter) ifaceMethodParams(ifaceCType, method string) []string {
+	for _, m := range e.ifaceMethods[ifaceCType] {
+		if m.name == method {
+			return m.params
+		}
+	}
+	return nil
 }
 
 // ifaceOutMethod names the result struct a method of several results reached
@@ -24223,6 +24239,14 @@ func (e *emitter) checkArrayArgs(cname string, args []Node) {
 
 func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	sliceParams := e.funcSliceParams[cname]
+	// The parameter types a constant argument is spelled by (wideConstArg): the
+	// callee's, or the ones a call through a function value or an interface slot
+	// set for this call. Taken here so they do not reach a call nested inside an
+	// argument, which has parameters of its own.
+	params := e.funcParams[cname]
+	if e.callParams != nil {
+		params, e.callParams = e.callParams, nil
+	}
 	args := e.callArgExprs(callSuffix)
 	e.checkCrossArgs(cname, args, e.spreadCall(callSuffix))
 	e.checkIntoArgs(cname, args)
@@ -24241,7 +24265,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			if i != 0 {
 				e.emit(", ")
 			}
-			if lit, ok := e.wideConstArg(cname, i, arg); ok {
+			if lit, ok := e.wideConstArg(params, i, arg); ok {
 				e.emit(lit)
 				continue
 			}
@@ -24333,7 +24357,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		// same constant in the same position; a constant the defer captured into a
 		// temporary is replayed from it, a variable being passed right.
 		if e.deferReplay < 0 || e.deferReplayArgs[i].inline {
-			if lit, ok := e.wideConstArg(cname, i, arg); ok {
+			if lit, ok := e.wideConstArg(params, i, arg); ok {
 				e.emit(lit)
 				continue
 			}
@@ -24369,14 +24393,10 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 // function POINTER the same call is refused outright, in every position, so the
 // width is also what lets `fp(m, 3)` build at all.
 //
-// The parameter types are the callee's (funcParams), or the function type's for a
-// call through a value (callParams, set by the caller around the call), which is
-// keyed by the typedef and so does not know its callee.
-func (e *emitter) wideConstArg(cname string, i int, arg Node) (string, bool) {
-	params := e.funcParams[cname]
-	if e.callParams != nil {
-		params = e.callParams
-	}
+// params are the callee's parameter C types: its own (funcParams), or the
+// function type's for a call through a value or an interface slot, which names no
+// callee (callParams, set by the caller ahead of the call).
+func (e *emitter) wideConstArg(params []string, i int, arg Node) (string, bool) {
 	if i >= len(params) {
 		return "", false
 	}

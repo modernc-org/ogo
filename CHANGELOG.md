@@ -51,9 +51,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   -5260211717565488541 on a P2-EDGE -- while `mix(m, 3)`, `mix(3, -m)` and
   `mix(-m, k)` were right. A constant handed to a 64-bit parameter is now
   spelled at the parameter's width in every position: a function, a method, a
-  function value, a deferred call. Through a function value the same call was
-  refused outright by the backend, and now builds. Found by a hashing probe
-  diffed against Go (`doc/call-arg-after-expr.c`).
+  function value, a deferred call, an interface's method. Through a function
+  value or an interface -- a function pointer either way -- the same call was
+  refused outright by the backend, `i.Mix(m, 3)` included, and now builds. Found
+  by a hashing probe diffed against Go (`doc/call-arg-after-expr.c`).
 - **`^uint32(0)` was refused, and the narrower complements were wrong.** Go
   takes the complement of a typed unsigned constant within the type's width, so
   `^uint32(0)` is 4294967295 -- the CRC idiom -- and `^uint8(1)` is 254. The
