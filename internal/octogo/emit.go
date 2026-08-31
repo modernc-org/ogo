@@ -20664,6 +20664,16 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	e.emitExpr(args[0].ast)
 	for _, v := range values {
 		e.emit(", ")
+		// A concrete value appended to a slice of INTERFACE elements is wrapped
+		// where it stands, into the two words the element is -- the same wrap a
+		// parameter, an assignment and a literal element take. The raw pointer went
+		// out unwrapped, which both compilers refuse: `devs = append(devs, &th)`,
+		// the ordinary way a device table is filled, did not build.
+		if text, wrapped := e.ifaceValueC(elem, v.ast); wrapped && e.isIfaceCType(elem) {
+			e.emit(text)
+			e.emit(")")
+			continue
+		}
 		e.emitExpr(v.ast)
 		e.emit(")")
 	}

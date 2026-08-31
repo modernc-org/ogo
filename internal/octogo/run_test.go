@@ -16966,6 +16966,42 @@ func main() {
 		want: "3 AT+ 3 2.5 1048576 42 313 zz 3 3 10\n16 16 var 3 var 3 2 1 256\nin 2 in 100 200 3101\nvar 8 3\n",
 	},
 	{
+		// append wraps a concrete value into the two words an interface element is,
+		// as an assignment, a parameter and a literal element do. The raw pointer
+		// went out unwrapped and neither compiler accepted it, so filling a device
+		// table the ordinary way did not build.
+		name: "a concrete value appended to a slice of interfaces",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+var a = Sq{s: 3}
+
+var b = Sq{s: 4}
+
+func main() {
+	var backing [4]Shape
+	shapes := backing[:0]
+	shapes = append(shapes, &a)
+	shapes = append(shapes, &b, &a)
+	var s Shape = &b
+	shapes = append(shapes, s)
+	total := 0
+	for i := range shapes {
+		total += shapes[i].Area()
+	}
+	println(len(shapes), cap(shapes), total, shapes[1].Area(), shapes[3].Area())
+}
+`,
+		want: "4 4 50 16 16\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

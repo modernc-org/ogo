@@ -16,6 +16,16 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **A concrete value appended to a slice of interfaces is wrapped.** `devs =
+  append(devs, &th)` sent the raw pointer where the two words of an interface
+  value go, which neither compiler accepted -- so filling a device table the
+  ordinary way did not build, while an assignment, a parameter and a literal
+  element all wrapped it correctly.
+
 ## v0.35.0
 
 ### Language
