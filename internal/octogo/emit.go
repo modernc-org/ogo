@@ -16463,6 +16463,18 @@ func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
 			idx = func() { e.emit(intCLit(v)) }
 		}
 	}
+	// A CONSTANT index past a constant extent is a compile error in Go, wherever
+	// the checks stand: `arr[9]` on a [4]int panicked at run time in a checked
+	// build and READ OUT OF BOUNDS in an --unchecked one, for a program Go refuses
+	// where it is written. Only an extent the compiler knows is bounded here -- a
+	// slice's length is its header's and says nothing at compile time, which is why
+	// Go admits `xs[9]` on one and this does too.
+	if n, err := strconv.Atoi(lenExpr); err == nil {
+		if v, isConst := e.foldConstInt(idxAST); isConst && v >= int64(n) {
+			e.failAt(idxAST, "invalid argument: index %d out of bounds [0:%d]", v, n)
+			return
+		}
+	}
 	if !e.checks || lenExpr == "" || e.constIndexInRange(idxAST, lenExpr) {
 		idx()
 		return

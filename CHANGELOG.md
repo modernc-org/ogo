@@ -38,6 +38,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   constant whose value is integral is an integer constant, as in Go: `a[2.0]`
   is `a[2]` and still compiles. Found by an acceptance-parity sweep -- programs
   Go rejects, run through the compiler -- over the paths this release added.
+- **A constant index past a constant extent is refused.** `arr[9]` on a
+  `[4]int` and `tag[9]` on a string constant compiled: in a checked build they
+  panicked at run time, and under `--unchecked` they read out of bounds. Go
+  refuses both where they are written, with the message this now prints. A
+  slice's length is not a compile-time extent, so `xs[9]` on one still compiles
+  and panics, as it does in Go.
 
 ### Language
 

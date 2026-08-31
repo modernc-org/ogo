@@ -2222,6 +2222,25 @@ func TestEmitCConstSliceBounds(t *testing.T) {
 		// index and bound alike (checkIndexValue), so it never reaches the emitter's
 		// own bounds check and is tested where it is made: testdata/index_type.ogo.
 		{
+			// A constant INDEX past a constant extent, the plain-index counterpart of
+			// the slice bounds above: Go refuses it where it is written, and it used
+			// to compile -- panicking at run time, or reading out of bounds under
+			// --unchecked.
+			name: "index past an array's end",
+			src:  "\tvar a [4]int\n\tprintln(a[9])",
+			want: "invalid argument: index 9 out of bounds [0:4]",
+		},
+		{
+			name: "a folded index past the end",
+			src:  "\tvar a [4]int\n\tprintln(a[2+8])",
+			want: "invalid argument: index 10 out of bounds [0:4]",
+		},
+		{
+			name: "an index past a string constant's end",
+			src:  "\tconst tag = \"abcd\"\n\tprintln(tag[9])",
+			want: "invalid argument: index 9 out of bounds [0:4]",
+		},
+		{
 			name: "a folded constant expression",
 			src:  "\tvar a [4]int\n\ts := a[1 : 2+8]\n\tprintln(len(s))",
 			want: "3:13: invalid argument: index 10 out of bounds [0:5]",
