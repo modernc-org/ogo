@@ -17006,10 +17006,16 @@ func (e *emitter) emitPostCompound(lhs, op string, rhs []int32, complement bool)
 // the whole statement -- would be the wrong place for a temporary.
 func (e *emitter) capturePrologue(emit func()) (text string, pro []string) {
 	saved := e.prologue
+	// The memo of bound array calls is captured with the emissions it records: a
+	// caller that DISCARDS what this wrote would otherwise leave the memo naming a
+	// temporary no declaration reached the output, and the next real emission of
+	// the same call would read it.
+	savedHoists := maps.Clone(e.hoistedArrayCalls)
 	e.prologue = nil
 	text = e.captureC(emit)
 	pro = e.prologue
 	e.prologue = saved
+	e.hoistedArrayCalls = savedHoists
 	return text, pro
 }
 
@@ -20325,19 +20331,40 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				inner := text
 				text, addr = e.hoist(ct, func() { e.emit(inner) }), true
 			}
-			low, _, _, isSlice := e.sliceParts(n.ast)
-			if isSlice || low == nil {
+			low, high, max, isSlice := e.sliceParts(n.ast)
+			if isSlice {
+				// A SLICE step of a chain, `str()[1:3]`, `mk().name[2:]`. A slice
+				// expression is a header value and C has nowhere to put one
+				// mid-expression, so it is bound to a temporary and the chain goes
+				// on from that name -- which is what the streaming path does for a
+				// step that is not the last. Without this the whole expression was
+				// "unsupported call in expression".
+				next, name, oks := e.emitChainSlice(cur, text, low, high, max, false)
+				if !oks || name == "" {
+					return "", "", false, false
+				}
+				text, cur, addr = name, next, true
+				continue
+			}
+			if low == nil {
 				return "", "", false, false
 			}
 			next, lenExpr, oki := e.accessIndex(cur, text)
 			if !oki {
 				return "", "", false, false
 			}
-			open := "["
-			if cur.slice {
+			open, pre, closing := "[", "", "]"
+			switch {
+			case cur.slice:
 				open = ".ptr["
+			case cur.ctype == cString:
+				// A string's bytes live behind `.str`, and a byte read is wrapped as
+				// the streaming path wraps it. Without this, indexing a string a
+				// chain reached -- `str()[0]` -- emitted `t[i]` on the header
+				// struct, which the C compiler refused outright.
+				open, pre, closing = ".str[", e.byteReadOpen(), "])"
 			}
-			text = e.accessDeref(cur, text) + open + e.indexCText(low, lenExpr) + "]"
+			text = pre + e.accessDeref(cur, text) + open + e.indexCText(low, lenExpr) + closing
 			cur, addr = next, true
 		default:
 			return "", "", false, false
@@ -20346,7 +20373,15 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	if pendingFn {
 		return "", "", false, false // a bare function name, never called
 	}
-	return text, cur.ctype, addr, true
+	// A SLICE value carries its element rather than a C type, so report the header's
+	// own C name: a caller that types an expression by rendering it (callChainType)
+	// reads this, and an empty answer refused the whole expression -- `y := sl()[1:3]`
+	// was "cannot infer a type" while the same slice of a STRING was fine.
+	ct := cur.ctype
+	if ct == "" && cur.slice {
+		ct = sliceCName(cur.elem)
+	}
+	return text, ct, addr, true
 }
 
 // chainResultType is chainCText's type half: it walks the same chain without
@@ -25833,7 +25868,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				return name, true
 			}
 			if recv, suffix, ok := e.factorCall(kids); ok {
-				return e.callResultCType(recv, suffix)
+				if ct, okr := e.callResultCType(recv, suffix); okr {
+					return ct, true
+				}
+				// The steps after the call READ what it returned -- `str()[1:3]`,
+				// `mk().name[2:]`, `arr()[0]`. callResultCType answers for the call
+				// alone, so it declined the whole expression and a declaration from
+				// one was "cannot infer a type"; the renderer knows the shape.
+				return e.callChainType(kids)
 			}
 			if base, fields, ok := e.factorFieldAccess(kids); ok {
 				// An exported variable read from an imported package, `pkg.V`, types
@@ -25996,7 +26038,30 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			return e.funcValueCType(mangle(e.curPkgPrefix, nm))
 		}
 	}
+	// A call whose result the steps after it READ -- `str()[1:3]`, `mk().name[2:]`,
+	// `arr()[0]`. The typing walks model a chain from a NAME; for a call head the
+	// RENDERER is what knows the shape, so it is run with everything it writes
+	// discarded and only its type kept, exactly as constChainType types a chain
+	// whose head is a constant. Without it a declaration from such an expression
+	// was "cannot infer a type", and a println of one printed the header's words.
 	return "", false
+}
+
+// callChainType types an expression whose head is a CALL and whose steps read what
+// it returned. It renders the expression under capturePrologue, which throws away
+// what the rendering emits -- the same expression is rendered for real where it
+// stands -- and keeps the type the renderer arrived at.
+func (e *emitter) callChainType(kids []Node) (string, bool) {
+	recv, suffix, isCall := e.factorCall(kids)
+	if !isCall || len(suffix) < 2 {
+		return "", false
+	}
+	ctype, ok := "", false
+	e.capturePrologue(func() { _, ctype, _, ok = e.chainCText(recv, suffix) })
+	if !ok || ctype == "" {
+		return "", false
+	}
+	return ctype, true
 }
 
 // callResultCType returns the C result type of a call in expression position: a

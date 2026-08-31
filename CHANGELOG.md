@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A call's result may be indexed and sliced where it stands.** `name()[0]`,
+  `name()[1:3]`, `rows()[1:]`, and either bound to a variable. Indexing a
+  string result emitted the index on the header struct, which the C compiler
+  refused; slicing any result was "unsupported call in expression"; and binding
+  one was "cannot infer a type for the declaration", the typing walks modelling
+  a chain that starts from a NAME. Each is evaluated once, as Go evaluates it.
+
 - **An array-returning method may be called on any receiver.** `pool[i].triple()`,
   `rack.slot.triple()`, `devs[i].triple()` -- declared, assigned, passed,
   indexed, measured with `len`, or returned. Only a plain variable's

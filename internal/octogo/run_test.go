@@ -17146,6 +17146,41 @@ func main() {
 		want: "1 2 2\n2 2 2\n3 3 4\n2 6 6\n3 2 2\n4 2 2 2 7\n",
 	},
 	{
+		// The result of a call indexed and sliced where it stands: a string's byte
+		// and its substring, a slice's element and its reslice, and a slice of a
+		// slice indexed again. Indexing a string result emitted the index on the
+		// header struct, which the C compiler refused; slicing any result was
+		// "unsupported call in expression"; and binding one was "cannot infer a
+		// type", the typing walks modelling a chain from a NAME only. The counter
+		// holds each to one call, as Go has it.
+		name: "the result of a call indexed and sliced",
+		src: `var calls int
+
+var backing = [5]int{10, 20, 30, 40, 50}
+
+func name() string {
+	calls++
+	return "abcdef"
+}
+
+func rows() []int {
+	calls++
+	return backing[:4]
+}
+
+func main() {
+	println(name()[0], name()[1:3], calls)
+	s := name()[2:]
+	println(s, len(s), calls)
+	r := rows()[1:3]
+	println(len(r), r[0], calls)
+	println(rows()[2], len(rows()[1:]), calls)
+	println(name()[1:4][1], rows()[1:][0], calls)
+}
+`,
+		want: "97 bc 2\ncdef 4 3\n2 20 4\n30 3 6\n99 20 8\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a
