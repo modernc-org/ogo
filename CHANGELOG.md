@@ -27,6 +27,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   ten seconds. A pattern that matches nothing says so and leaves the package
   passing, as Go does; one that does not compile is a usage error.
 
+### Behaviour changes
+
+- **An index and a slice bound must be an integer, and a constant one must not
+  be negative.** `a[1.5]`, `a[f]` for a float `f`, `a[true]`, `a["x"]`, `a[-1]`
+  and `xs[-2:]` all compiled and meant something the Go source does not -- the
+  float truncated, the bool indexed with 1, the negative reaching the run-time
+  bounds check, or reading out of bounds in an `--unchecked` build. Go refuses
+  every one where it is written, and so does this now. An untyped float
+  constant whose value is integral is an integer constant, as in Go: `a[2.0]`
+  is `a[2]` and still compiles. Found by an acceptance-parity sweep -- programs
+  Go rejects, run through the compiler -- over the paths this release added.
+
 ### Language
 
 - **The verbs a protocol logger prints with: `%q`, `%U`, and the byte forms of

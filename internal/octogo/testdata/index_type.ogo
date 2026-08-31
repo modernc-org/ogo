@@ -1,0 +1,45 @@
+// An index and a slice bound must be an integer, and a constant one must not be
+// negative -- Go refuses both where they are written, and each of these used to
+// compile and mean something the Go source does not.
+
+var arr = [4]int{10, 20, 30, 40}
+
+var s = "abcd"
+
+func f(xs []int, fl float64) int {
+	// An untyped float constant whose value is integral IS an integer constant:
+	// a[2.0] is a[2], as in Go.
+	n := arr[2.0] + arr[1]
+
+	// ERROR 1.5 \(untyped float constant\) truncated to int
+	n += arr[1.5]
+
+	// ERROR invalid argument: index fl \(float64\) must be integer
+	n += xs[fl]
+
+	// ERROR invalid argument: index true \(bool\) must be integer
+	n += arr[true]
+
+	// ERROR invalid argument: index "x" \(string\) must be integer
+	n += arr["x"]
+
+	// ERROR invalid argument: index -1 must not be negative
+	n += arr[-1]
+
+	// ERROR 0.5 \(untyped float constant\) truncated to int
+	n += int(s[0.5])
+
+	// A slice bound is checked the same way.
+	// ERROR 2.5 \(untyped float constant\) truncated to int
+	n += len(xs[1:2.5])
+
+	// ERROR invalid argument: index -2 must not be negative
+	n += len(xs[-2:])
+
+	return n
+}
+
+func main() {
+	var xs [2]int
+	println(f(xs[:], 1.5))
+}

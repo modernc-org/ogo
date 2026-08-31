@@ -9661,7 +9661,50 @@ func (f *File) checkIndexExprs(s *Scope, n Node) {
 		for e := range it(c.ast) {
 			if e.sym == Expression {
 				f.checkNames(s, e)
+				f.checkIndexValue(s, e)
 			}
+		}
+	}
+}
+
+// checkIndexValue checks the expression an index or a slice bound is written with.
+// Go requires an integer there, and refuses a negative constant one where it is
+// written rather than at run time; both were accepted here and meant something the
+// Go source does not: `a[1.5]` indexed with the truncated 1, `a[true]` with 1, and
+// `a[-1]` reached the bounds check at run time, or read out of bounds in an
+// unchecked build.
+//
+// An untyped float constant whose value is integral is an integer constant in Go --
+// `a[2.0]` is `a[2]` -- and passes. An expression this package cannot type is left
+// alone: what it is belongs to its own check, and refusing it here would refuse
+// valid programs.
+func (f *File) checkIndexValue(s *Scope, e Node) {
+	k, known := f.exprType(s, e)
+	if !known {
+		return
+	}
+	pos := f.tok(e.Pos()).Position()
+	cv, isConst := f.constNumeric(s, e)
+	switch {
+	case isNumericKind(k), k == UntypedInt, k == UntypedRune:
+		// An integer index.
+	case k == UntypedFloat, isFloatKind(k):
+		if isConst && k == UntypedFloat {
+			if i := constant.ToInt(cv); i.Kind() == constant.Int {
+				return // 2.0, which is 2
+			}
+			f.err(pos, "%s (untyped float constant) truncated to int", cv)
+			return
+		}
+		f.err(pos, "invalid argument: index %s (%s) must be integer", f.exprSource(e), kindName(k))
+		return
+	default:
+		f.err(pos, "invalid argument: index %s (%s) must be integer", f.exprSource(e), kindName(k))
+		return
+	}
+	if isConst {
+		if v, exact := constant.Int64Val(cv); exact && v < 0 {
+			f.err(pos, "invalid argument: index %d must not be negative", v)
 		}
 	}
 }

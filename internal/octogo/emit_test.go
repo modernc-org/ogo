@@ -2218,11 +2218,9 @@ func TestEmitCConstSliceBounds(t *testing.T) {
 			src:  "\tvar a [8]int\n\ts := a[0:5:3]\n\tprintln(len(s))",
 			want: "3:13: invalid slice indices: 3 < 5",
 		},
-		{
-			name: "negative bound",
-			src:  "\tvar a [8]int\n\ts := a[0-1 : 2]\n\tprintln(len(s))",
-			want: "3:9: invalid argument: index -1 must not be negative",
-		},
+		// A NEGATIVE constant bound is reported by the CHECKER now, which sees every
+		// index and bound alike (checkIndexValue), so it never reaches the emitter's
+		// own bounds check and is tested where it is made: testdata/index_type.ogo.
 		{
 			name: "a folded constant expression",
 			src:  "\tvar a [4]int\n\ts := a[1 : 2+8]\n\tprintln(len(s))",
