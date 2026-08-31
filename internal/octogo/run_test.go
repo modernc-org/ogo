@@ -17181,6 +17181,220 @@ func main() {
 		want: "97 bc 2\ncdef 4 3\n2 20 4\n30 3 6\n99 20 8\n",
 	},
 	{
+		// The other half of "a struct field named after a type": the backend
+		// resolves an identifier as a typedef name before reading the declarator,
+		// so `reading reading` as a local, a parameter, a receiver, a range or a
+		// loop variable is a syntax error there, as is a vtable member for a method
+		// named `Sample() Sample`. gcc takes all of them
+		// (doc/member-named-like-type.c).
+		name: "a local, a parameter and a method named after a type",
+		src: `// typename: a local, a parameter and a receiver named after a type -- ordinary Go,
+// which the target's C compiler cannot parse unless the name is moved out of the
+// way. Every kind of binding is here.
+
+type reading struct {
+	v int
+}
+
+type level int
+
+type pair struct {
+	a, b int
+}
+
+func (reading *reading) get() int { return reading.v }
+
+func take(reading reading, level level) int { return reading.v + int(level) }
+
+func two() (int, int) { return 3, 4 }
+
+var samples [3]reading
+
+func main() {
+	var reading reading
+	reading.v = 5
+	println(reading.v, reading.get(), take(reading, 2))
+
+	level := level(7)
+	println(int(level) + 1)
+
+	for i, reading := range samples {
+		reading.v = i
+		println(i, reading.v)
+	}
+
+	pair := pair{a: 1, b: 2}
+	println(pair.a, pair.b)
+
+	if reading := 9; reading > 5 {
+		println("if", reading)
+	}
+
+	switch level := 3; level {
+	case 3:
+		println("switch", level)
+	}
+
+	a, level2 := two()
+	println(a, level2)
+
+	for reading := 0; reading < 2; reading++ {
+		println("for", reading)
+	}
+}
+`,
+		want: "5 5 7\n8\n0 0\n1 1\n2 2\n1 2\nif 9\nswitch 3\n3 4\nfor 0\nfor 1\n",
+	},
+	{
+		// The sampling loop of a real instrument: a worker cog reads every device
+		// through an interface -- a method of several results, a struct result, a
+		// string -- and sends what it read back over channels. A struct returned
+		// through a function pointer on a cog is where a silent wrong answer once
+		// lived (doc/struct-return-through-pointer-on-cog.c), which is why the
+		// interface's out-parameter form is exercised on a cog and not only in main.
+		name: "a cog polling a device table through an interface",
+		src: `// cogiface: a worker cog polling a device table through an interface -- the shape
+// the sampling loop of a real instrument takes -- with multi-result methods, a
+// struct result, and results returned over channels.
+
+type devErr struct {
+	msg string
+}
+
+func (e *devErr) Error() string { return e.msg }
+
+var ErrOffline = devErr{msg: "offline"}
+
+type Sample struct {
+	ch    uint8
+	ok    bool
+	raw   int16
+	value int32
+}
+
+type Sensor interface {
+	Read() (int32, error)
+	Sample() Sample
+	Name() string
+}
+
+type Thermo struct {
+	id     uint8
+	cal    int32
+	online bool
+}
+
+func (t *Thermo) Read() (int32, error) {
+	if !t.online {
+		return 0, &ErrOffline
+	}
+	return t.cal * 2, nil
+}
+
+func (t *Thermo) Sample() Sample {
+	return Sample{ch: t.id, ok: t.online, raw: int16(t.cal), value: t.cal * 10}
+}
+
+func (t *Thermo) Name() string { return "thermo" }
+
+type Press struct {
+	id  uint8
+	raw int16
+}
+
+func (p *Press) Read() (int32, error) { return int32(p.raw) * 3, nil }
+
+func (p *Press) Sample() Sample {
+	return Sample{ch: p.id, ok: true, raw: p.raw, value: int32(p.raw) * 30}
+}
+
+func (p *Press) Name() string { return "press" }
+
+var t1 = Thermo{id: 1, cal: 21, online: true}
+
+var t2 = Thermo{id: 2, cal: 9}
+
+var p1 = Press{id: 3, raw: 7}
+
+var devs [3]Sensor
+
+// poller runs on a cog: it reads every device through the interface and sends
+// each result back, then the count.
+func poller(vals chan int32, fails chan int32, done chan int32) {
+	var bad int32
+	for i := range devs {
+		v, err := devs[i].Read()
+		if err != nil {
+			bad++
+			continue
+		}
+		vals <- v
+	}
+	fails <- bad
+	done <- 1
+}
+
+// sampler runs on a cog and sends STRUCTS back, the shape a function pointer on a
+// cog once returned wrong.
+func sampler(out chan Sample, done chan int32) {
+	for i := range devs {
+		out <- devs[i].Sample()
+	}
+	done <- 1
+}
+
+// namer sends the interface's own strings back.
+func namer(out chan string, done chan int32) {
+	for i := range devs {
+		out <- devs[i].Name()
+	}
+	done <- 1
+}
+
+func main() {
+	devs[0] = &t1
+	devs[1] = &t2
+	devs[2] = &p1
+
+	var vals chan int32
+	var fails chan int32
+	var done chan int32
+	go poller(vals, fails, done)
+	a := <-vals
+	b := <-vals
+	bad := <-fails
+	<-done
+	println("read", a, b, bad)
+
+	var samples chan Sample
+	var sdone chan int32
+	go sampler(samples, sdone)
+	var total int32
+	var chans int
+	for i := 0; i < 3; i++ {
+		s := <-samples
+		total += s.value
+		chans += int(s.ch)
+		if i == 1 {
+			println("sample1", s.ch, s.ok, s.raw, s.value)
+		}
+	}
+	<-sdone
+	println("samples", total, chans)
+
+	var names chan string
+	var ndone chan int32
+	go namer(names, ndone)
+	n0 := <-names
+	n1 := <-names
+	n2 := <-names
+	<-ndone
+	println(n0, n1, n2, len(n2))
+}
+`,
+		want: "read 42 21 1\nsample1 2 false 9 90\nsamples 510 6\nthermo thermo press 5\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

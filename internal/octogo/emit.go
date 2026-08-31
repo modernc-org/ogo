@@ -5343,6 +5343,15 @@ type ifaceMethod struct {
 // reads. It leads the table so its offset does not depend on the method set.
 const vtTypeField = "_ogo_type"
 
+// vtMember names the table's member for a method. It is PREFIXED rather than being
+// the method's own name: a method named after a type -- `Sample() Sample`, which is
+// ordinary Go -- declared a struct member whose name is a typedef's, and the
+// target's C compiler cannot parse that ("syntax error, unexpected type name
+// `Sample'"), though the member namespace is its own in C and gcc takes it
+// (doc/member-named-like-type.c). The table's members are the compiler's own names,
+// so prefixing them costs the user nothing.
+func vtMember(method string) string { return "ogo_m_" + userIdent(method) }
+
 // ifaceVTName names the vtable STRUCT of an interface -- the table's shape, one
 // function pointer per method.
 func ifaceVTName(iface string) string { return iface + "_vt" }
@@ -5585,7 +5594,7 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 	// member, which C requires and which used to be a filler byte.
 	fmt.Fprintf(&b, "struct %s { const char* %s;", vt, vtTypeField)
 	for _, m := range methods {
-		fmt.Fprintf(&b, " %s (*%s)(void*", slotRet(m), userIdent(m.name))
+		fmt.Fprintf(&b, " %s (*%s)(void*", slotRet(m), vtMember(m.name))
 		for _, p := range m.params {
 			b.WriteString(", " + p)
 		}
@@ -6213,7 +6222,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 // trailing parameter rather than returning (see ifaceMethod.out); it is empty for
 // every other method, and ignored by them.
 func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []int32, out string) string {
-	call := recvText + ".vt->" + userIdent(method) + "(" + recvText + ".data"
+	call := recvText + ".vt->" + vtMember(method) + "(" + recvText + ".data"
 	// The slot is a function pointer, and through one the target's C compiler
 	// converts no constant to a 64-bit parameter: `x.Mix(m, 3)` was refused, "Bad
 	// number of parameters in call to Mix". The method's parameter types are what
@@ -9702,7 +9711,7 @@ func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int3
 	if !strings.HasSuffix(recvCType, "*") {
 		e.refuseArrayStructABI(recvCType, "receiver "+recvName)
 	}
-	recvParam := recvCType + " " + userIdent(recvName)
+	recvParam := recvCType + " " + e.localIdent(recvName)
 	// An ARRAY value receiver is received as a POINTER and copied in the body,
 	// exactly as an array PARAMETER is: a parameter of array type corrupts unrelated
 	// code on this target (doc/array-param-corrupts.c), and `Row r` is one. It is
@@ -9830,7 +9839,7 @@ func (e *emitter) cParamList(ast []int32) []string {
 			// "...T" is received as the []T it means; the caller builds the header.
 			elem := e.cType(ta)
 			e.needSlice(elem)
-			out = append(out, sliceCName(elem)+" "+userIdent(name))
+			out = append(out, sliceCName(elem)+" "+e.localIdent(name))
 			return
 		}
 		if a, ok := e.arrayDim(ta); ok {
@@ -9839,7 +9848,7 @@ func (e *emitter) cParamList(ast []int32) []string {
 		}
 		ct := e.cType(ta)
 		e.refuseArrayStructABI(ct, "parameter "+name)
-		out = append(out, ct+" "+userIdent(name)) // a parameter name may be Unicode
+		out = append(out, ct+" "+e.localIdent(name)) // a parameter name may be Unicode
 	})
 	return out
 }
@@ -10850,7 +10859,7 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.emitVarDeclInit(ctype, nm, initExpr)
 			} else {
 				e.ind()
-				e.emit(ctype + " " + nm + " = " + e.zeroInitC(ctype) + ";\n")
+				e.emit(ctype + " " + e.localIdent(nm) + " = " + e.zeroInitC(ctype) + ";\n")
 			}
 			// A channel is storage, not a handle: the checker rejects make() for one
 			// ("dynamic allocation not supported"), so the declaration is what
@@ -15666,10 +15675,10 @@ func (e *emitter) displayName(name string) string {
 
 func (e *emitter) varRef(name string) string {
 	if _, ok := e.locals[name]; ok {
-		return userIdent(name) // a local or parameter: renamed if C reserved it
+		return e.localIdent(name) // a local or parameter: renamed if C or a type has the name
 	}
 	if _, ok := e.arrays[name]; ok {
-		return userIdent(name) // a local ARRAY, which has no C value type to be in locals by
+		return e.localIdent(name) // a local ARRAY, which has no C value type to be in locals by
 	}
 	if _, ok := e.globals[e.globalC(name)]; ok {
 		return e.globalC(name)
@@ -16839,7 +16848,14 @@ func (e *emitter) emitFor(nodes []Node) {
 	blockInit := false
 	initName, initCType := "", ""
 	if h.hasClause && h.initLHS != nil && h.initOp == DEFINE {
-		initName = e.exprC(h.initLHS)
+		// The SOURCE name, which is what locals is keyed by everywhere else --
+		// exprC renders a name for EMISSION, and a name renamed there (a variable
+		// named after a type, see localIdent) would key the map by a name nothing
+		// looks up, leaving the loop variable typed as whatever it shadows.
+		var isName bool
+		if initName, isName = e.exprIdent(h.initLHS); !isName {
+			initName = e.exprC(h.initLHS)
+		}
 		var ok bool
 		if initCType, ok = e.inferCType(h.initRHS); !ok {
 			e.fail("cannot infer the type of a for-loop init variable")
@@ -16897,9 +16913,14 @@ func (e *emitter) emitFor(nodes []Node) {
 				}
 				name := e.exprC(lhs)
 				if h.initOp == DEFINE {
+					if src, isName := e.exprIdent(lhs); isName {
+						name = src // the source name; see the single-init path
+					}
 					e.locals[name] = ct
 					e.ind()
-					e.emit(ct + " " + name + " = " + e.exprC(h.initRHSs[i]) + ";\n")
+					// localIdent: a loop variable named after a type is ordinary Go
+					// and the backend cannot parse the declarator (see localIdent).
+					e.emit(ct + " " + e.localIdent(name) + " = " + e.exprC(h.initRHSs[i]) + ";\n")
 					continue
 				}
 				e.ind()
@@ -16915,7 +16936,7 @@ func (e *emitter) emitFor(nodes []Node) {
 			lhs := e.exprC(h.initLHS)
 			switch h.initOp {
 			case DEFINE:
-				e.emit(initCType + " " + initName + " = " + e.exprC(h.initRHS))
+				e.emit(initCType + " " + e.localIdent(initName) + " = " + e.exprC(h.initRHS))
 			case ASSIGN:
 				e.emit(lhs + " = " + e.exprC(h.initRHS))
 			default:
@@ -17347,7 +17368,11 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 					e.locals[val] = elem
 					decl = elem + " "
 				}
-				lines = append(lines, func() { e.ind(); e.emit(decl + val + " = " + access + ";\n") })
+				name := val
+				if decl != "" {
+					name = e.localIdent(val) // the declaration; see localIdent
+				}
+				lines = append(lines, func() { e.ind(); e.emit(decl + name + " = " + access + ";\n") })
 			}
 		}
 	}
@@ -19870,9 +19895,9 @@ func (e *emitter) emitRecvCopy(recvName, recvCType string) {
 	}
 	e.includes["string.h"] = true
 	e.ind()
-	e.emit(a.elem + " " + userIdent(recvName) + a.declSuffix() + ";\n")
+	e.emit(a.elem + " " + e.localIdent(recvName) + a.declSuffix() + ";\n")
 	e.ind()
-	e.emit("memcpy(" + userIdent(recvName) + ", " + paramArgName(recvName) + ", sizeof(" + userIdent(recvName) + "));\n")
+	e.emit("memcpy(" + e.localIdent(recvName) + ", " + paramArgName(recvName) + ", sizeof(" + e.localIdent(recvName) + "));\n")
 }
 
 // methodRecvCType is the receiver C type a method call on recv dispatches through,
@@ -20179,7 +20204,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if slot < 0 {
 					return "", "", false, false
 				}
-				call := text + ".vt->" + userIdent(field) + "(" + text + ".data"
+				call := text + ".vt->" + vtMember(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
 				}
@@ -21490,7 +21515,7 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 		for _, want := range []string{"Error", "String"} {
 			for _, m := range e.ifaceMethods[ct] {
 				if m.name == want && m.res == cString && len(m.params) == 0 && m.out == "" {
-					return tmp + ".vt->" + userIdent(m.name) + "(" + tmp + ".data)", true, true
+					return tmp + ".vt->" + vtMember(m.name) + "(" + tmp + ".data)", true, true
 				}
 			}
 		}
@@ -23210,7 +23235,7 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	// the initializer, so the recursion bottoms out on the ordinary path below.
 	// cn is the emitted C name (Unicode-escaped); `name` stays the source name, used
 	// for initRefsName's comparison against the initializer's own identifiers.
-	cn := userIdent(name)
+	cn := e.localIdent(name)
 	if e.initRefsName(initExpr, name) {
 		tmp := e.newTmp()
 		e.emitVarDeclInit(ctype, tmp, initExpr)
@@ -25513,6 +25538,19 @@ func (e *emitter) fieldIdent(name string) string {
 	}
 	return id
 }
+
+// localIdent names a LOCAL or a PARAMETER in C. It is fieldIdent's rule applied to
+// the other place a user's name meets a type's: the backend cannot parse a
+// DECLARATOR whose identifier is a typedef name either -- `Sample Sample = {0}` and
+// `f(Sample Sample)` are both syntax errors there, where gcc takes both
+// (doc/member-named-like-type.c). `type reading struct{ ... }` beside `var reading
+// reading` is ordinary Go, so the variable is renamed rather than the program
+// refused, and the rename reaches every place the name is written -- the
+// declaration and every use go through this or varRef, which calls it.
+//
+// A package-level name needs none of this: a type and a variable of one name are a
+// redeclaration in Go's package block, so the two cannot both exist.
+func (e *emitter) localIdent(name string) string { return e.fieldIdent(name) }
 
 // fieldAccessC renders a field access chain `base.f.g...` in C, choosing "->" for
 // each pointer step (an auto-dereferenced Go field access) and "." otherwise.

@@ -29,6 +29,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A local, a parameter, a receiver or an interface method may be named after a
+  type.** `var reading reading`, `func take(reading reading)`, `func (reading
+  *reading) get()`, `for reading := range ...`, and a method named `Sample()
+  Sample` reached through an interface: all ordinary Go, and all refused by the
+  backend, which resolves an identifier as a typedef name before reading the
+  declarator ("syntax error, unexpected type name"). The names are renamed in
+  the emitted C wherever they are written, as a struct field of such a name
+  already was; gcc accepts every one of them, so nothing but this backend
+  needed it (`doc/member-named-like-type.c`).
+
 - **A call's result may be indexed and sliced where it stands.** `name()[0]`,
   `name()[1:3]`, `rows()[1:]`, and either bound to a variable. Indexing a
   string result emitted the index on the header struct, which the C compiler
