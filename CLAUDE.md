@@ -318,7 +318,8 @@ still design-only.
   `// ERROR <regexp>`; all currently pass, but the checker is still partial, so a
   green spec is not proof a whole feature is finished — the testdata covers only
   what has been wired up.
-- `ogo test` runs a package's `*_test.ogo` tests **on the board** and nowhere else:
+- `ogo test` runs a package's `*_test.ogo` tests **on the board** and nowhere else
+  (`-run <regexp>` selects which, compiling only those):
   it builds them with a generated runner, loads the result, and reads the verdict
   back over the serial line (the P2 returns no exit status). `-c` builds without
   running, which is what CI with no board can honestly do. A host mode was

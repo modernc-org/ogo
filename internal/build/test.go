@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing/fstest"
@@ -46,7 +47,7 @@ const testDoneLine = "ogo-test-done"
 // can honestly do.
 func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	var compileOnly bool
-	var port string
+	var port, runPat string
 	var rest []string
 	// A test binary takes the same clock as the program it tests. Running the tests
 	// at a different speed than the thing ships at is how a timing bug hides.
@@ -62,6 +63,16 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 				return 2, fmt.Errorf("test: -p requires an argument")
 			}
 			port = args[i]
+		case a == "-run" || strings.HasPrefix(a, "-run="):
+			pat := strings.TrimPrefix(a, "-run=")
+			if pat == "-run" {
+				i++
+				if i >= len(args) {
+					return 2, fmt.Errorf("test: -run requires an argument")
+				}
+				pat = args[i]
+			}
+			runPat = pat
 		case a == "--clock" || a == "-clock":
 			if clock, err = parseHz("test", a, args, &i); err != nil {
 				return 2, err
@@ -81,7 +92,12 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 		return 2, err
 	}
 
-	opts := testOptions{compileOnly: compileOnly, port: port, clockOpts: clockOpts}
+	opts := testOptions{compileOnly: compileOnly, port: port, runPat: runPat, clockOpts: clockOpts}
+	if runPat != "" {
+		if opts.run, err = regexp.Compile(runPat); err != nil {
+			return 2, fmt.Errorf("test: bad -run pattern %q: %v", runPat, err)
+		}
+	}
 	dir := "."
 	switch {
 	case len(rest) == 0:
@@ -124,7 +140,14 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 type testOptions struct {
 	compileOnly bool
 	port        string
-	clockOpts   []octogo.EmitOption
+	// run selects which tests the runner calls, as `go test -run` does: an
+	// unanchored regular expression over the test's name, compiled HERE rather
+	// than on the board -- the selection is made where the runner is generated, so
+	// what is not selected is not compiled either, which is what makes iterating
+	// on one test worth the board's ten seconds.
+	run       *regexp.Regexp
+	runPat    string
+	clockOpts []octogo.EmitOption
 }
 
 // packageDirs expands a `.../...` pattern to the package directories under its
@@ -215,6 +238,20 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	names, err := octogo.TestFuncs(pkg)
 	if err != nil {
 		return 1, err
+	}
+	if opts.run != nil {
+		kept := names[:0:0]
+		for _, nm := range names {
+			if opts.run.MatchString(nm) {
+				kept = append(kept, nm)
+			}
+		}
+		if len(kept) == 0 && len(names) != 0 {
+			// Said out loud, as `go test` says it: a pattern that matches nothing
+			// otherwise reports a green package that ran no test at all.
+			fmt.Fprintf(stderr, "testing: warning: no tests to run\n")
+		}
+		names = kept
 	}
 	if len(names) == 0 {
 		fmt.Fprintf(stdout, "ok  \t%s\t[no tests to run]\n", dir)

@@ -18,6 +18,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Toolchain
+
+- **`ogo test -run <pattern>`** runs only the tests whose name matches the
+  regular expression, unanchored, as `go test -run` matches. The selection is
+  made where the runner is generated, so what is not selected is not compiled
+  either -- which is what makes iterating on one failing test worth the board's
+  ten seconds. A pattern that matches nothing says so and leaves the package
+  passing, as Go does; one that does not compile is a usage error.
+
 ### Language
 
 - **A call's result may be indexed and sliced where it stands.** `name()[0]`,

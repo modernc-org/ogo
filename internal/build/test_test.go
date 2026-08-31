@@ -158,6 +158,72 @@ func TestOgoTestPatternMatchesNothing(t *testing.T) {
 	}
 }
 
+// TestOgoTestRunSelects: -run compiles and runs only the tests whose name matches,
+// as `go test -run` does. The selection is made where the runner is generated, so
+// what is not selected is not built either -- which is what the count reports.
+func TestOgoTestRunSelects(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(dir, "ring_test.ogo"), testPkgTestSrc)
+
+	for _, tc := range []struct{ pattern, want string }{
+		{"PushPop", "built 1 test,"},
+		{"Push|Skip", "built 2 tests,"},
+		{"^TestSkipped$", "built 1 test,"},
+	} {
+		var out, errb bytes.Buffer
+		code, err := Test([]string{"-c", "-run", tc.pattern, dir}, nil, &out, &errb)
+		if err != nil || code != 0 {
+			t.Fatalf("-run %q: code=%d err=%v\nstdout:\n%s\nstderr:\n%s", tc.pattern, code, err, out.String(), errb.String())
+		}
+		if got := out.String(); !strings.Contains(got, tc.want) {
+			t.Errorf("-run %q: output:\n%s\nwant a line containing %q", tc.pattern, got, tc.want)
+		}
+	}
+	// The equals form, which is how the flag is usually written.
+	var out, errb bytes.Buffer
+	if code, err := Test([]string{"-c", "-run=PushPop", dir}, nil, &out, &errb); err != nil || code != 0 {
+		t.Fatalf("-run=PushPop: code=%d err=%v out=%s", code, err, out.String())
+	}
+	if got := out.String(); !strings.Contains(got, "built 1 test,") {
+		t.Errorf("-run=PushPop: output:\n%s", got)
+	}
+}
+
+// TestOgoTestRunMatchesNothing: a pattern selecting no test says so, as `go test`
+// says it. The package still passes -- Go's exit status for it is 0 -- so the
+// warning is what keeps a mistyped pattern from reading as a green run.
+func TestOgoTestRunMatchesNothing(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(dir, "ring_test.ogo"), testPkgTestSrc)
+
+	var out, errb bytes.Buffer
+	code, err := Test([]string{"-c", "-run", "Nope", dir}, nil, &out, &errb)
+	if err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v out=%s", code, err, out.String())
+	}
+	if want := "no tests to run"; !strings.Contains(errb.String(), want) && !strings.Contains(out.String(), want) {
+		t.Fatalf("stdout:\n%s\nstderr:\n%s\nwant %q", out.String(), errb.String(), want)
+	}
+}
+
+// TestOgoTestRunBadPattern: the pattern is a regular expression, and one that does
+// not compile is reported as the usage error it is rather than matching nothing.
+func TestOgoTestRunBadPattern(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+
+	var out bytes.Buffer
+	code, err := Test([]string{"-c", "-run", "[", dir}, nil, &out, &out)
+	if code != 2 || err == nil {
+		t.Fatalf("a bad pattern was accepted: code=%d err=%v out=%s", code, err, out.String())
+	}
+	if want := "bad -run pattern"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q, want one containing %q", err, want)
+	}
+}
+
 // TestOgoTestNoFiles: a package with no _test.ogo is not an error, as in Go.
 func TestOgoTestNoFiles(t *testing.T) {
 	dir := t.TempDir()

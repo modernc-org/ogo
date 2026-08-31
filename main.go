@@ -291,7 +291,7 @@ the clock instead.
 
 	-seed n       seed the generator (0 uses the current time)
 `,
-	"test": `usage: ogo test [-c] [-p port] [--clock hz] [--gostack longs] [package]
+	"test": `usage: ogo test [-c] [-p port] [-run pattern] [--clock hz] [--gostack longs] [package]
 
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.
@@ -324,6 +324,11 @@ run is worse than a test that did not run.
 	-c          build the tests and do not run them, leaving <pkg>.test.binary
 	            beside the package. It is what CI without a board can honestly do.
 	-p port     serial port to load through; omitted lets the loader find one.
+	-run pat    run only the tests whose name matches the regular expression pat,
+	            unanchored, as "go test -run" matches. The selection is made where
+	            the runner is generated, so what is not selected is not compiled
+	            either -- which is what makes iterating on one failing test worth
+	            the board's ten seconds. A pattern matching nothing says so.
 	--clock hz  the system clock to run the tests at, as for ogo build. A test
 	            binary should take the clock the program it tests ships with:
 	            running them at a different speed is how a timing bug hides.

@@ -121,7 +121,9 @@ func TestPop(t *testing.T) {
 
 There is no `Errorf` — formatting needs allocation this target does not have — so a
 test prints with the builtin `println` and calls `t.Fail()`. `ogo test ./...` tests
-every package under a root, one board run each. `ogo test -c` builds
+every package under a root, one board run each; `ogo test -run Push` runs only the
+tests whose name matches, and compiles only those, which is what makes iterating on
+one of them worth the board's ten seconds. `ogo test -c` builds
 the tests without running them, for a machine with no board attached.
 
 > **Seeing garbled serial output?** `ogo run` reads at 230400 baud, which is what a
