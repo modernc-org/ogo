@@ -1,0 +1,53 @@
+// COMPILE
+
+// A method of several results reached through an interface, in the positions a
+// call's results are taken in: a declaration, an assignment, a return supplying
+// every result, and another call's argument list.
+
+type devErr struct {
+	msg string
+}
+
+func (e *devErr) Error() string { return e.msg }
+
+var errOff = devErr{msg: "off"}
+
+type Sensor interface {
+	Read() (int32, error)
+}
+
+type Bus struct {
+	active Sensor
+}
+
+func sum(v int32, err error) int32 {
+	if err != nil {
+		return -1
+	}
+	return v
+}
+
+var pool [2]Sensor
+
+var bus Bus
+
+func viaVar(s Sensor) (int32, error) { return s.Read() }
+
+func viaSlice(devs []Sensor) (int32, error) { return devs[0].Read() }
+
+func viaField(u *Bus) (int32, error) { return u.active.Read() }
+
+func viaArray() (int32, error) { return pool[0].Read() }
+
+func main() {
+	var s Sensor
+	v, err := s.Read()
+	w, err2 := pool[0].Read()
+	x, err3 := bus.active.Read()
+	v, err = viaVar(s)
+	println(v, w, x, err == nil, err2 == &errOff, err3 == nil)
+	println(sum(s.Read()), sum(viaVar(s)))
+	_, _ = viaSlice(pool[:])
+	_, _ = viaField(&bus)
+	_, _ = viaArray()
+}

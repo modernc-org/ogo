@@ -17002,6 +17002,94 @@ func main() {
 		want: "4 4 50 16 16\n",
 	},
 	{
+		// A method of several results reached through an interface: on a variable,
+		// on a slice element -- the device-table shape -- on a package array's, on
+		// a struct field's, forwarded through a return, and forwarded as another
+		// call's arguments. Only the plain variable worked: the rest reported a
+		// count mismatch, and `return s.Read()` made C out of a void call, the slot
+		// writing its results through a parameter rather than returning them.
+		name: "an interface method of several results, in every position",
+		src: `type devErr struct {
+	msg string
+}
+
+func (e *devErr) Error() string { return e.msg }
+
+var ErrOffline = devErr{msg: "offline"}
+
+type Sensor interface {
+	Read() (int32, error)
+	Name() string
+}
+
+type Thermo struct {
+	cal    int32
+	online bool
+}
+
+func (t *Thermo) Read() (int32, error) {
+	if !t.online {
+		return 0, &ErrOffline
+	}
+	return t.cal * 2, nil
+}
+
+func (t *Thermo) Name() string { return "thermo" }
+
+type Bus struct {
+	active Sensor
+}
+
+func sum(v int32, err error) int32 {
+	if err != nil {
+		return -1
+	}
+	return v
+}
+
+var th = Thermo{cal: 21, online: true}
+
+var off = Thermo{cal: 9}
+
+var bus Bus
+
+var pool [2]Sensor
+
+func viaSlice(devs []Sensor) (int32, error) { return devs[0].Read() }
+
+func viaField(u *Bus) (int32, error) { return u.active.Read() }
+
+func main() {
+	var backing [3]Sensor
+	devs := backing[:0]
+	devs = append(devs, &th)
+	devs = append(devs, &off)
+	total := int32(0)
+	fails := 0
+	for i := range devs {
+		v, err := devs[i].Read()
+		if err != nil {
+			fails++
+			continue
+		}
+		total += v
+	}
+	println(len(devs), total, fails, devs[0].Name(), devs[1].Name())
+	bus.active = &th
+	pool[0] = &off
+	v, err := bus.active.Read()
+	w, err2 := pool[0].Read()
+	println(v, err == nil, w, err2 == &ErrOffline, err2.Error())
+	a, e1 := viaSlice(devs)
+	b, e2 := viaField(&bus)
+	println(a, e1 == nil, b, e2 == nil)
+	var s Sensor = &off
+	println(sum(s.Read()), sum(th.Read()), sum(devs[0].Read()))
+}
+`,
+		want: "2 42 1 thermo thermo\n42 true 0 true offline\n42 true 42 true\n-1 42 42\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

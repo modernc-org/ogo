@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A method of several results may be called through an interface wherever the
+  receiver is.** `v, err := devs[i].Read()` -- the shape a device table is read
+  in -- reported a "count mismatch", as did the same call on a package array's
+  element and on a struct field holding an interface; `return s.Read()` made C
+  out of a void call, the slot writing its results through a parameter rather
+  than returning them, so it did not build at all; and `sum(s.Read())`, passing
+  those results on as another call's arguments, reported "not enough
+  arguments". Only a plain variable's `v, err := s.Read()` worked. Every
+  position now resolves the slot through whatever reached the receiver -- a
+  variable, a field, an index, or a chain of them.
 - **A concrete value appended to a slice of interfaces is wrapped.** `devs =
   append(devs, &th)` sent the raw pointer where the two words of an interface
   value go, which neither compiler accepted -- so filling a device table the

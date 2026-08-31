@@ -10172,6 +10172,19 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 	if !ok || !d.typeName.IsValid() {
 		return nil, false
 	}
+	// An INTERFACE receiver: the results are the ones the method SPEC declares --
+	// the concrete type behind the value is not known here, and the interface's
+	// declaration is what a call is checked against anyway. Without this a call
+	// through an interface answered "unresolved", so `f(s.Read())` -- a call's
+	// results passed on as another call's arguments -- reported "not enough
+	// arguments" for a shape Go allows.
+	if set, isIface := f.interfaceMethodsNamed(s, d.typeName.Src()); isIface {
+		m, has := set[member.Src()]
+		if !has {
+			return nil, false
+		}
+		return f.flattenResults(s, methodSpecSig(m)), true
+	}
 	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
 	if !ok {
 		return nil, false
@@ -10688,17 +10701,58 @@ func (f *File) checkArgs(s *Scope, name Token, sig *SignatureNode, args []Node) 
 // else: not a call, a call of one result, which is an ordinary argument, or a call
 // nothing here can resolve, which is left to its own check.
 func (f *File) forwardedResults(s *Scope, n Node) ([]retResult, bool) {
-	var results []retResult
-	resolved := false
-	if callee, isCall := f.exprCallee(n); isCall {
-		results, resolved = f.callResults(s, callee, Token{})
-	} else if recv, member, isMethod := f.exprMethodCall(n); isMethod {
-		results, resolved = f.callResults(s, recv, member)
-	}
+	results, resolved := f.exprCallResults(s, n)
 	if !resolved || len(results) < 2 {
 		return nil, false
 	}
 	return results, true
+}
+
+// exprCallResults is the result list of the call an expression is, and whether the
+// callee was RESOLVED at all -- which forwardedResults cannot say, answering false
+// alike for a call of one result and for a call nothing here can see.
+func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
+	if callee, isCall := f.exprCallee(n); isCall {
+		return f.callResults(s, callee, Token{})
+	}
+	if recv, member, isMethod := f.exprMethodCall(n); isMethod {
+		return f.callResults(s, recv, member)
+	}
+	return nil, false
+}
+
+// exprWholeCall reports whether an expression is exactly a CALL -- `f(a)`,
+// `p.m(a)`, `xs[i].m(a)` -- rather than a call inside a larger expression. It is
+// the shape whose results may stand for the arguments of the call around it.
+//
+// An index's own contents and a call's own arguments are not part of the shape, so
+// neither is walked: `devs[i+1].Read()` is a whole call, and `g() + 1` is not.
+func (f *File) exprWholeCall(n Node) bool {
+	sawCall, extra := false, false
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			switch c.sym {
+			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix, Selector:
+				walk(c.ast)
+			case Index:
+				// an index expression of its own
+			case CallSuffix:
+				sawCall = true
+			case 0:
+				switch f.ch(c.tok) {
+				case IDENT, PERIOD:
+					// the head, a member, and the separator
+				default:
+					extra = true
+				}
+			default:
+				extra = true
+			}
+		}
+	}
+	walk(n.ast)
+	return sawCall && !extra
 }
 
 // checkArgsIn is checkArgs with the parameter types resolved in a scope of their
@@ -10713,6 +10767,15 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 	// parameters and checked pairwise, as written arguments are. Not for a variadic
 	// callee, which the emitter does not build the pack for yet.
 	if len(args) == 1 && !f.isVariadicSig(sig) {
+		// A single argument that is exactly a call whose callee this package cannot
+		// SEE -- an interface's method reached through an index or a field, whose
+		// concrete callee is not named here -- may be forwarding several results,
+		// and nothing here can say how many. Left to the emitter, which resolves
+		// them, rather than counted: "not enough arguments in call to sum" was
+		// wrong for `sum(devs[i].Read())`, a shape Go allows.
+		if _, resolved := f.exprCallResults(s, args[0]); !resolved && len(args) != len(params) && f.exprWholeCall(args[0]) {
+			return
+		}
 		if results, ok := f.forwardedResults(s, args[0]); ok {
 			switch {
 			case len(results) < len(params):

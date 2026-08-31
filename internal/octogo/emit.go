@@ -6238,25 +6238,73 @@ func (e *emitter) ifaceMethodParams(ifaceCType, method string) []string {
 	return nil
 }
 
-// ifaceOutMethod names the result struct a method of several results reached
-// through an interface writes through, for the receiver and member a call names.
-// It answers only for the two-step shape `v.M(...)`, which is where a multiple
-// assignment finds one.
-func (e *emitter) ifaceOutMethod(recv string, suffix []Node) (ifaceCType, method, out string, ok bool) {
-	if len(suffix) != 2 || suffix[0].sym != Selector || suffix[1].sym != CallSuffix {
-		return "", "", "", false
+// ifaceChainMethod resolves a call of an INTERFACE method whose receiver is reached
+// however the source reached it: a plain variable, `s.Read()`, or a chain of fields
+// and indexes, `bus.active.Read()`, `devs[i].Read()`, `pool[0].Read()`. It answers
+// the interface's C type and the method's record.
+//
+// Type-only, so it may be asked before anything is emitted: the receiver's type is
+// walked (accessChainType) rather than lowered, and ifaceRecvText renders the text
+// when a caller goes on to emit the call.
+func (e *emitter) ifaceChainMethod(recv string, suffix []Node) (ifaceCType string, m ifaceMethod, ok bool) {
+	if len(suffix) < 2 || suffix[len(suffix)-1].sym != CallSuffix || suffix[len(suffix)-2].sym != Selector {
+		return "", ifaceMethod{}, false
 	}
-	ct, isVar := e.varType(recv)
-	if !isVar || !e.isIfaceCType(ct) {
-		return "", "", "", false
+	member := e.soleIdent(suffix[len(suffix)-2].ast)
+	if member == "" {
+		return "", ifaceMethod{}, false
 	}
-	member := e.soleIdent(suffix[0].ast)
-	for _, m := range e.ifaceMethods[ct] {
-		if m.name == member && m.out != "" && len(m.resList) > 1 {
-			return ct, member, m.out, true
+	steps := suffix[:len(suffix)-2]
+	ct := ""
+	if len(steps) == 0 {
+		var isVar bool
+		if ct, isVar = e.varType(recv); !isVar {
+			return "", ifaceMethod{}, false
+		}
+	} else {
+		cur, walked := e.accessChainType(recv, steps)
+		if !walked {
+			return "", ifaceMethod{}, false
+		}
+		ct = cur.ctype
+	}
+	if !e.isIfaceCType(ct) {
+		return "", ifaceMethod{}, false
+	}
+	for _, im := range e.ifaceMethods[ct] {
+		if im.name == member {
+			return ct, im, true
 		}
 	}
-	return "", "", "", false
+	return "", ifaceMethod{}, false
+}
+
+// ifaceRecvText renders the receiver of a call ifaceChainMethod resolved: the
+// variable itself, or the chain that reaches it. Emitted only when the call is,
+// since lowering a chain may bind a temporary.
+func (e *emitter) ifaceRecvText(recv string, suffix []Node) (string, bool) {
+	steps := suffix[:len(suffix)-2]
+	if len(steps) == 0 {
+		return e.varRef(recv), true
+	}
+	text, _, _, ok := e.chainCText(recv, steps)
+	return text, ok
+}
+
+// ifaceOutMethod names the result struct a method of several results reached
+// through an interface writes through, and the receiver text a call on it needs.
+// The receiver is whatever reached it (see ifaceChainMethod): a device table's
+// `devs[i].Read()` is the shape this is written in as often as a variable's.
+func (e *emitter) ifaceOutMethod(recv string, suffix []Node) (ifaceCType, recvText, method, out string, ok bool) {
+	ct, m, isIface := e.ifaceChainMethod(recv, suffix)
+	if !isIface || m.out == "" || len(m.resList) < 2 {
+		return "", "", "", "", false
+	}
+	text, okText := e.ifaceRecvText(recv, suffix)
+	if !okText {
+		return "", "", "", "", false
+	}
+	return ct, text, m.name, m.out, true
 }
 
 // isInterfaceTypeAST reports whether a Type subtree is an interface type.
@@ -18915,6 +18963,12 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, ok bool) {
 	callee, suffix, isCall := e.directCall(ex.ast)
 	if !isCall {
+		// A receiver reached through an INDEX, `return devs[0].Read()`: directCall
+		// knows the one- and two-step shapes, and a multiple assignment already
+		// took the same fallback for the same reason.
+		callee, suffix, isCall = e.chainCallOf(ex.ast)
+	}
+	if !isCall {
 		return "", false, false
 	}
 	if _, resTypes, okRes := e.callResultInfo(callee, suffix); !okRes || !slices.Equal(resTypes, e.curResultTypes) {
@@ -18923,6 +18977,15 @@ func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, o
 	if t, isOut := e.valueOutCallC(callee, suffix, out); isOut {
 		return t, true, true
 	}
+	// `return s.Read()` through an INTERFACE: the slot writes the results through a
+	// parameter and returns void (see ifaceMethod.out), so the call fills the
+	// temporary rather than yielding it. Emitting it as a value made C out of a
+	// void call, which both compilers refuse -- the shape did not build at all.
+	if ct, recvText, method, _, isOut := e.ifaceOutMethod(callee, suffix); isOut {
+		call := suffix[len(suffix)-1].ast
+		e.checkIfaceArgs(ct, method, e.callArgExprs(call))
+		return e.ifaceCallC(ct, recvText, method, call, out), true, true
+	}
 	t, okPlain := e.forwardedCallC(ex)
 	return t, false, okPlain
 }
@@ -18930,11 +18993,19 @@ func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, o
 func (e *emitter) forwardedCallC(ex Node) (string, bool) {
 	callee, suffix, ok := e.directCall(ex.ast)
 	if !ok {
+		callee, suffix, ok = e.chainCallOf(ex.ast)
+	}
+	if !ok {
 		return "", false
 	}
 	_, resTypes, ok := e.callResultInfo(callee, suffix)
 	if !ok || !slices.Equal(resTypes, e.curResultTypes) {
 		return "", false
+	}
+	if len(suffix) > 2 {
+		// A chain renders as a whole -- emitCallExpr knows the fixed shapes only.
+		text, _, _, okc := e.chainCText(callee, suffix)
+		return text, okc
 	}
 	text := e.captureC(func() { ok = e.emitCallExpr(callee, suffix) })
 	if !ok {
@@ -24173,12 +24244,13 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	// A method of SEVERAL results reached through an interface WRITES THROUGH a
 	// trailing parameter rather than returning (see ifaceMethod.out), so the
 	// temporary is declared first and its address handed over.
-	if ct, method, out, isOut := e.ifaceOutMethod(callee, suffix); isOut {
-		e.checkIfaceArgs(ct, method, e.callArgExprs(suffix[1].ast))
+	if ct, recvText, method, out, isOut := e.ifaceOutMethod(callee, suffix); isOut {
+		call := suffix[len(suffix)-1].ast
+		e.checkIfaceArgs(ct, method, e.callArgExprs(call))
 		e.ind()
 		e.emit(out + " " + tmp + ";\n")
 		e.ind()
-		e.emit(e.ifaceCallC(ct, e.varRef(callee), method, suffix[1].ast, tmp) + ";\n")
+		e.emit(e.ifaceCallC(ct, recvText, method, call, tmp) + ";\n")
 		for i, tgt := range targets {
 			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
 		}
@@ -24402,7 +24474,32 @@ func (e *emitter) chainMethodResult(base string, steps []Node) (string, []string
 	return cname, rts, isMethod
 }
 
+// ifaceResultTypes is what a call through an interface slot yields, in the source's
+// terms. The LIST, not the slot: a method of several results writes them through a
+// parameter and its slot returns void (see ifaceMethod.out), so the slot says
+// nothing about how many values the source gets.
+func ifaceResultTypes(m ifaceMethod) []string {
+	switch {
+	case len(m.resList) > 1:
+		return m.resList
+	case m.res == "void":
+		return nil
+	}
+	return []string{m.res}
+}
+
 func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resTypes []string, ok bool) {
+	// An INTERFACE method reached through a chain, `devs[i].Read()`,
+	// `bus.active.Read()`: the results are the slot's, as they are for a plain
+	// interface variable below, and there is no C name to key them by -- the
+	// concrete function behind the slot is not known here. It is asked FIRST
+	// because the field and chain lookups below answer for the same shapes by
+	// looking for a user method of the field's type, find none on an interface, and
+	// stop: the call went untyped and a multiple assignment reported a count
+	// mismatch, which is what refused `v, err := bus.active.Read()`.
+	if _, m, isIface := e.ifaceChainMethod(recv, suffix); isIface && len(suffix) > 2 {
+		return "", ifaceResultTypes(m), true
+	}
 	if _, cn, _, isField := e.methodOnField(recv, suffix); isField {
 		resTypes, ok = e.funcRet[cn]
 		return cn, resTypes, ok
@@ -24432,17 +24529,7 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 		if rct, isVar := e.varType(recv); isVar && e.isIfaceCType(rct) {
 			for _, m := range e.ifaceMethods[rct] {
 				if m.name == member {
-					// The LIST, not the slot: a method of several results writes them
-					// through a parameter and its slot returns void (see
-					// ifaceMethod.out), so the slot says nothing about how many
-					// values the source gets. Asked first for that reason.
-					if len(m.resList) > 1 {
-						return "", m.resList, true
-					}
-					if m.res == "void" {
-						return "", nil, true
-					}
-					return "", []string{m.res}, true
+					return "", ifaceResultTypes(m), true
 				}
 			}
 			return "", nil, false
@@ -24826,6 +24913,9 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 	}
 	callee, suffix, ok := e.directCall(arg.ast)
 	if !ok {
+		callee, suffix, ok = e.chainCallOf(arg.ast) // `sum(devs[i].Read())`
+	}
+	if !ok {
 		return nil, false
 	}
 	_, resTypes, ok := e.callResultInfo(callee, suffix)
@@ -24835,6 +24925,20 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 	if _, at := e.variadicPack(cname); at >= 0 {
 		e.fail("cannot pass the results of %s to variadic %s yet; assign them first", callee, cname)
 		return nil, true
+	}
+	// Through an INTERFACE the slot writes into the struct rather than returning
+	// it, so the temporary is declared first and its address handed over.
+	if ct, recvText, method, out, isOut := e.ifaceOutMethod(callee, suffix); isOut {
+		call := suffix[len(suffix)-1].ast
+		e.checkIfaceArgs(ct, method, e.callArgExprs(call))
+		tmp := e.newTmp()
+		e.prologue = append(e.prologue, out+" "+tmp+";\n",
+			e.ifaceCallC(ct, recvText, method, call, tmp)+";\n")
+		names := make([]string, len(resTypes))
+		for i := range names {
+			names[i] = fmt.Sprintf("%s._%d", tmp, i)
+		}
+		return names, true
 	}
 	tmp := e.hoist(e.retStructNameOf(resTypes), func() {
 		if !e.emitCallExpr(callee, suffix) {
