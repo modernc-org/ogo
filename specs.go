@@ -1807,7 +1807,18 @@
 //
 //	%d %x %X    an integer, in decimal or hexadecimal
 //	%o %b       an integer, in octal or binary
-//	%s          a string
+//	%s          a string, or the bytes of a []byte
+//	%x %X       the bytes of a string or a []byte, as hex digits -- the dump a
+//	            protocol log wants, two digits a byte and nothing between them
+//	%q          a string or a []byte double-quoted with Go's escapes, or an
+//	            integer as the character in single quotes. A byte that is not
+//	            part of a valid UTF-8 sequence is written \xNN, as Go writes it;
+//	            a valid sequence is written as it stands, which is what Go writes
+//	            for the printable runes text is made of, and differs from Go only
+//	            for a rune that is valid and NOT printable, which Go escapes
+//	            \uXXXX from a table of Unicode printability this target has no
+//	            room for
+//	%U          a rune as U+04X
 //	%t          a bool, as the word true or false
 //	%f          a float, fixed-point
 //	%e %E       a float, in exponent form
@@ -1826,6 +1837,10 @@
 //	%T          the value's type, spelled as Go spells it: "main.Celsius" for a
 //	            type this package declares, "lib.Temp" for an imported one
 //	%%          a literal percent
+//
+// The byte forms of %s, %x, %X and %q, and %U, take no width or precision yet, and
+// say so where they are written: the helper that writes them measures the text as
+// it goes, so a field around it would have to be counted twice.
 //
 // A verb may carry fmt's flags, width and precision — "%6.2f", "%-8s", "%+05d",
 // "%.3s" — which mean what they mean in fmt. For a string that is a count of RUNES,

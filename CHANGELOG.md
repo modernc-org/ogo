@@ -29,6 +29,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **The verbs a protocol logger prints with: `%q`, `%U`, and the byte forms of
+  `%x`, `%X` and `%s`.** `%q` double-quotes a string or a `[]byte` with Go's
+  escapes -- including `\xNN` for a byte that is not part of a valid UTF-8
+  sequence, which is what makes a device's raw bytes readable -- or writes an
+  integer as the character in single quotes; `%x` and `%X` dump the bytes of a
+  string or a `[]byte` as hex digits; `%s` prints a `[]byte` as the text it
+  holds; `%U` writes a rune as `U+04X`. All were refused before. They differ
+  from Go only for a rune that is valid UTF-8 and not printable, which Go
+  escapes `\uXXXX` from a Unicode table this target has no room for, and they
+  take no width yet.
+
 - **A local, a parameter, a receiver or an interface method may be named after a
   type.** `var reading reading`, `func take(reading reading)`, `func (reading
   *reading) get()`, `for reading := range ...`, and a method named `Sample()

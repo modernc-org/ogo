@@ -17395,6 +17395,36 @@ func main() {
 		want: "read 42 21 1\nsample1 2 false 9 90\nsamples 510 6\nthermo thermo press 5\n",
 	},
 	{
+		// The quoted and hex verbs a protocol logger prints with: %q of a string, a
+		// byte slice and a rune, %x and %X of either, %s of a byte slice, %U of a
+		// rune. Every escape Go writes is here, including a byte that is not valid
+		// UTF-8 -- which Go escapes and a pass-through would not -- and a rune above
+		// ASCII, which it does not.
+		name: "the quoted and hex verbs over bytes",
+		src: `var raw = [6]byte{'A', 'B', 13, 10, 200, 0}
+
+var line = [4]byte{'h', 'i', '!', 9}
+
+func main() {
+	msg := "AT+CFG=1\r\n"
+	printf("%q\n", msg)
+	printf("%q %q\n", "plain", "")
+	printf("%q\n", "tab\there \"quoted\" back\\slash")
+	printf("%q\n", "héllo")
+	printf("%x %X\n", "abc", "abc")
+	printf("%x|%X|\n", raw[:4], raw[:])
+	printf("%q\n", raw[:4])
+	printf("%q\n", raw[:])
+	printf("%s|%s|\n", line[:3], raw[:2])
+	printf("%q %q %q %q\n", 'A', '\n', rune(233), rune(0))
+	printf("%q %q\n", '\'', '\\')
+	printf("%U %U %U\n", 'A', rune(233), rune(0x1F600))
+	printf("%x %q %s\n", msg, msg[3:6], msg[0:3])
+}
+`,
+		want: "\"AT+CFG=1\\r\\n\"\n\"plain\" \"\"\n\"tab\\there \\\"quoted\\\" back\\\\slash\"\n\"héllo\"\n616263 616263\n41420d0a|41420D0AC800|\n\"AB\\r\\n\"\n\"AB\\r\\n\\xc8\\x00\"\nhi!|AB|\n'A' '\\n' 'é' '\\x00'\n'\\'' '\\\\'\nU+0041 U+00E9 U+1F600\n41542b4346473d310d0a \"CFG\" AT+\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

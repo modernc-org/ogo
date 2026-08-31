@@ -274,7 +274,7 @@ broken.
 * `len`, `cap`, `append`, `copy`, `clear`, `min`, `max`, `make` for a
   fixed-capacity slice, `panic`, `print`/`println`.
 * **`printf`**, the built-in `fmt.Printf` would be if there were a `fmt` package:
-  `%d %x %X %o %b %s %t %f %e %E %g %G %c %v %T %%`, over a format that must be a constant — which is
+  `%d %x %X %o %b %q %U %s %t %f %e %E %g %G %c %v %T %%`, over a format that must be a constant — which is
   what lets a wrong verb be refused where you wrote it instead of printing nonsense
   on the board. `%T` costs nothing for a static type and one pointer read for an
   interface, whose vtable carries its type's name.

@@ -5654,8 +5654,8 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 		},
 		{
 			name: "an unknown verb",
-			src:  "func main() {\n\tprintf(\"%q\\n\", \"x\")\n}\n",
-			want: "printf: unknown formatting verb %q",
+			src:  "func main() {\n\tprintf(\"%z\\n\", \"x\")\n}\n",
+			want: "printf: unknown formatting verb %z",
 		},
 		{
 			// A trailing % formats nothing. Go prints %!(NOVERB) for it; here it is
@@ -5696,6 +5696,21 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			name: "the + flag on a uint64",
 			src:  "func main() {\n\tprintf(\"%+d\\n\", uint64(1))\n}\n",
 			want: "printf: the '+' flag on %+d of a uint64 is not supported",
+		},
+		{
+			name: "a width on %q",
+			src:  "func main() {\n\tprintf(\"%8q\\n\", \"ab\")\n}\n",
+			want: "printf: %8q does not take a width or precision yet",
+		},
+		{
+			name: "%q of a float",
+			src:  "func main() {\n\tprintf(\"%q\\n\", 1.5)\n}\n",
+			want: "printf: %q wants a string, a byte slice or an integer, not float64",
+		},
+		{
+			name: "%U of a string",
+			src:  "func main() {\n\tprintf(\"%U\\n\", \"ab\")\n}\n",
+			want: "printf: %U wants an integer, not string",
 		},
 		{
 			// The '*' forms take the width from an argument of their own, which would

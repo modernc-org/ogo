@@ -698,6 +698,80 @@ const hexPrintHelper = "static void ogo_print_hex(long long v, int upper) {\n" +
 	"\tif (v < 0) { putchar('-'); u = -u; }\n" +
 	"\tif (upper) printf(\"%llX\", u); else printf(\"%llx\", u);\n}\n"
 
+// bytesPrintHelpers are the verbs a protocol logger reaches for over raw bytes: the
+// hex dump %x and %X write of a string or a byte slice, and the quoted form %q
+// writes of either.
+//
+// The quoting is Go's: the escapes strconv writes for ASCII, \xNN for any other
+// byte below 0x20 or at 0x7f, and \xNN for a byte that is not part of a valid
+// UTF-8 sequence, which ogo_decode_rune is what decides -- so the bytes a device
+// sends are shown exactly as Go shows them. A valid sequence is written as it
+// stands, which is what Go writes for the printable runes text is made of; a
+// NON-printable rune above ASCII differs, Go escaping it \uXXXX from a table of
+// Unicode printability this target has no room for. The limit is documented in
+// specs.go beside the verb.
+const bytesPrintHelpers = `static void ogo_print_hex_bytes(ogo_string s, int upper) {
+	const char* d = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+	for (int i = 0; i < s.len; i++) {
+		unsigned char c = (unsigned char)s.str[i];
+		putchar(d[c >> 4]); putchar(d[c & 15]);
+	}
+}
+static void ogo_print_bytes_as_str(ogo_string s) {
+	for (int i = 0; i < s.len; i++) { putchar(s.str[i]); }
+}
+static void ogo_print_qbytes(ogo_string s) {
+	putchar('"');
+	for (int i = 0; i < s.len; ) {
+		unsigned char c = (unsigned char)s.str[i];
+		if (c >= 0x80) {
+			int w = 1, r = ogo_decode_rune(s, i, &w);
+			if (r == 0xFFFD && w == 1) { printf("\\x%02x", c); i++; continue; }
+			for (int k = 0; k < w; k++) { putchar(s.str[i+k]); }
+			i += w;
+			continue;
+		}
+		i++;
+		switch (c) {
+		case '"': printf("\\\""); continue;
+		case '\\': printf("\\\\"); continue;
+		case '\a': printf("\\a"); continue;
+		case '\b': printf("\\b"); continue;
+		case '\f': printf("\\f"); continue;
+		case '\n': printf("\\n"); continue;
+		case '\r': printf("\\r"); continue;
+		case '\t': printf("\\t"); continue;
+		case '\v': printf("\\v"); continue;
+		}
+		if (c < 0x20 || c == 0x7f) { printf("\\x%02x", c); continue; }
+		putchar((char)c);
+	}
+	putchar('"');
+}
+`
+
+// runeQuoteHelper is %q of an integer: the character in single quotes, with the
+// escapes ogo_print_qbytes writes and \' in place of \", as Go writes one. A rune
+// at or above 0x80 is written as its UTF-8, which ogo_print_rune encodes.
+const runeQuoteHelper = `static void ogo_print_qrune(long long v) {
+	putchar('\'');
+	switch (v) {
+	case '\'': printf("\\'"); putchar('\''); return;
+	case '\\': printf("\\\\"); putchar('\''); return;
+	case '\a': printf("\\a"); putchar('\''); return;
+	case '\b': printf("\\b"); putchar('\''); return;
+	case '\f': printf("\\f"); putchar('\''); return;
+	case '\n': printf("\\n"); putchar('\''); return;
+	case '\r': printf("\\r"); putchar('\''); return;
+	case '\t': printf("\\t"); putchar('\''); return;
+	case '\v': printf("\\v"); putchar('\''); return;
+	}
+	if (v < 0x20 || v == 0x7f) { printf("\\x%02x", (unsigned)v); putchar('\''); return; }
+	ogo_print_rune((int32_t)v);
+	putchar('\'');
+}
+`
+
 // basePrintHelper prints an integer in octal or binary as Go prints it: a sign and
 // the magnitude for a negative signed value ("-101" for %b of -5), where C's %o
 // would print the two's complement and C has no %b at all. The magnitude is
@@ -4308,6 +4382,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 		out.WriteString(decPadHelper)
 		out.WriteByte('\n')
 	}
+	if e.usesRuneQuote {
+		out.WriteString(runeQuoteHelper)
+	}
 	if e.usesHexPrint {
 		out.WriteString(hexPrintHelper)
 		out.WriteByte('\n')
@@ -4319,6 +4396,11 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	if e.usesRuneDecode {
 		out.WriteString(runeDecodeHelper)
 		out.WriteByte('\n')
+	}
+	// After the decoder: ogo_print_qbytes calls it to tell a valid UTF-8 sequence
+	// from a byte that has to be escaped.
+	if e.usesBytesPrint {
+		out.WriteString(bytesPrintHelpers)
 	}
 	if e.usesStringEq {
 		out.WriteString(stringEqHelper)
@@ -4819,6 +4901,8 @@ type emitter struct {
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesFloatFmt       bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
+	usesBytesPrint     bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
+	usesRuneQuote      bool                    // ogo_print_qrune is called: %q of an integer
 	usesBasePrint      bool                    // ogo_print_base is called: %o of a negative value, or any %b (see basePrintHelper)
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
@@ -21362,7 +21446,7 @@ func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb st
 		// form that reads back exactly, so 1234567.0 prints 1.23457e+06 there and
 		// 1.234567e+06 here. Accepting it would buy a rarely-used verb with a silent
 		// output difference.
-		case 'd', 'x', 'X', 'o', 'b', 's', 't', 'v', 'f', 'e', 'E', 'g', 'G', 'T', 'c':
+		case 'd', 'x', 'X', 'o', 'b', 'q', 'U', 's', 't', 'v', 'f', 'e', 'E', 'g', 'G', 'T', 'c':
 			if lit != "" {
 				items = append(items, printfItem{lit: lit})
 				lit = ""
@@ -21550,6 +21634,29 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 // emitPrintfVerb emits one verb's argument, checking the verb against the type it
 // was given. A verb that does not suit its argument is refused here: the format is
 // constant and the type is known, so there is nothing left to find out at run time.
+// isByteSliceCType reports whether a C type is the header of a []byte, which the
+// byte verbs (%x, %q, %s) take beside a string.
+func (e *emitter) isByteSliceCType(ct string) bool {
+	return e.isSliceCType(ct) && sliceElemFromCName(ct) == "uint8_t"
+}
+
+// emitBytesVerb calls one of the byte helpers on a string or a byte slice: the
+// value is bound to a temporary first, since the helper takes the pointer and the
+// length separately and the argument may be a call.
+func (e *emitter) emitBytesVerb(ct, helper, extra string, value func()) {
+	e.usesBytesPrint = true
+	e.usesString = true
+	e.usesRuneDecode = true // ogo_print_qbytes decodes, and one helper text carries all three
+	arg := e.hoist(ct, value)
+	if ct != cString {
+		// A byte slice is handed over as the string its bytes are: same pointer,
+		// same length, and the helpers then read one shape.
+		arg = "(ogo_string){(const char*)" + arg + ".ptr, " + arg + ".len}"
+	}
+	e.ind()
+	e.emit(helper + "(" + arg + extra + ");\n")
+}
+
 // emitFloatVerb prints a float through one of %e, %E, %f, %g or %G: the helper
 // lays the text out itself (see floatFmtHelper), so it takes the width, the '-',
 // '+', ' ' and '0' flags and the precision apart. No precision is 6 for %e and %f
@@ -21704,7 +21811,49 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		return false
 	}
 	switch verb {
+	case 'q':
+		// The quoted forms a protocol logger prints: a string or a byte slice in
+		// double quotes with Go's escapes, an integer as the character in single
+		// quotes (see bytesPrintHelpers). A width would have to be filled around
+		// text the helper measures as it writes, so there is none yet.
+		if spec != "" {
+			return noSpec("%q is printed by a helper here")
+		}
+		switch {
+		case ct == cString || e.isByteSliceCType(ct):
+			e.emitBytesVerb(ct, "ogo_print_qbytes", "", value)
+		case isIntCType(ct):
+			e.usesRuneQuote = true
+			e.usesRunePrint = true
+			e.ind()
+			e.emit("ogo_print_qrune((long long)(")
+			value()
+			e.emit("));\n")
+		default:
+			return wrong("a string, a byte slice or an integer")
+		}
+		return true
+	case 'U':
+		if !isIntCType(ct) {
+			return wrong("an integer")
+		}
+		if spec != "" {
+			return noSpec("%U writes its own form here")
+		}
+		e.ind()
+		e.emit("printf(\"U+%04llX\", (unsigned long long)(")
+		value()
+		e.emit("));\n")
+		return true
 	case 's':
+		// A byte slice printed as the text it holds, `%s` of a []byte in Go.
+		if e.isByteSliceCType(ct) {
+			if spec != "" {
+				return noSpec("%s of a byte slice is printed by a helper here")
+			}
+			e.emitBytesVerb(ct, "ogo_print_bytes_as_str", "", value)
+			return true
+		}
 		if ct != cString {
 			return wrong("a string")
 		}
@@ -21770,6 +21919,19 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		value()
 		e.emit("));\n")
 	case 'd', 'x', 'X', 'o', 'b':
+		// The HEX DUMP of a string or a byte slice, `%x` of either in Go: the bytes
+		// as hex digits, two per byte and nothing between them.
+		if (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct)) {
+			if spec != "" {
+				return noSpec("a hex dump is printed by a helper here")
+			}
+			upper := "0"
+			if verb == 'X' {
+				upper = "1"
+			}
+			e.emitBytesVerb(ct, "ogo_print_hex_bytes", ", "+upper, value)
+			return true
+		}
 		if !isIntCType(ct) {
 			return wrong("an integer")
 		}
