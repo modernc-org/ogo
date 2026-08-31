@@ -25235,6 +25235,15 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 		e.fail("cannot pass the results of %s to variadic %s yet; assign them first", callee, cname)
 		return nil, true
 	}
+	// The counts, which the CHECKER cannot compare when it cannot see the callee --
+	// a call through an interface reached by an index or a field is resolved here
+	// and nowhere else (see checkArgsIn), so saying nothing would leave the C
+	// compiler to report it about generated code.
+	if params := e.funcParams[cname]; len(params) != len(resTypes) {
+		e.failAt(arg.ast, "wrong number of arguments in call to %s: %s returns %d, want %d",
+			cname, callee, len(resTypes), len(params))
+		return nil, true
+	}
 	// Through an INTERFACE the slot writes into the struct rather than returning
 	// it, so the temporary is declared first and its address handed over.
 	if ct, recvText, method, out, isOut := e.ifaceOutMethod(callee, suffix); isOut {

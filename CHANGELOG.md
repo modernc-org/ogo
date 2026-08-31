@@ -99,6 +99,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method call's results are counted and typed like a function call's.**
+  `var v int; v = t.Two()` for a method of two results reached the C compiler,
+  which reported it about generated code, and `v := t.Two()` said it could not
+  infer a type -- where Go says "assignment mismatch". A method call's results
+  were never counted at all, concrete or through an interface. And a call
+  through an INTERFACE was untyped in expression position, so
+  `f(s.Name())` with a wrong parameter type was not reported here at all: the
+  method's Kind now comes from the same resolution the rest uses, which answers
+  for a concrete type's method and an interface's alike. A method yielding no
+  values keeps Go's own words, "(no value) used as value".
+- **A call whose results are passed on is counted where it is resolved.**
+  `three(devs[i].Read())` -- two results into three parameters, through an
+  interface reached by an index, which the checker cannot see -- is reported by
+  the emitter that resolves it rather than by the C compiler.
+
 - **An array-returning call ran once per use, not once per path that asked
   about it.** Several paths bind such a call to a temporary -- the argument
   emission, an index of the result, `len` of it, the typing walk -- and each

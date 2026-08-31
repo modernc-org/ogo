@@ -1,0 +1,60 @@
+// A method call's results are counted and typed like a function call's, through
+// the interface a value is reached by as readily as through its concrete type.
+// Each of these used to reach the C compiler, which reported them about generated
+// code -- or, for the argument type, did not report them at all.
+
+type T struct {
+	n int
+}
+
+func (t *T) Name() string { return "x" }
+
+func (t *T) Two() (int, int) { return 1, 2 }
+
+func (t *T) nothing() {}
+
+type I interface {
+	Name() string
+	Two() (int, int)
+}
+
+func want2(a, b int) int { return a + b }
+
+var th T
+
+var iv I
+
+func f() int {
+	var v int
+	a, b := th.Two()
+	c, d := iv.Two()
+
+	// ERROR assignment mismatch: 1 variable but 2 values
+	v = th.Two()
+
+	// ERROR assignment mismatch: 1 variable but 2 values
+	v = iv.Two()
+
+	// ERROR assignment mismatch: 1 variable but 2 values
+	e := th.Two()
+
+	// ERROR assignment mismatch: 1 variable but 2 values
+	g := iv.Two()
+
+	// ERROR cannot use th.Name\(\) of type string as type int in argument to want2
+	v += want2(th.Name(), 1)
+
+	// ERROR cannot use iv.Name\(\) of type string as type int in argument to want2
+	v += want2(iv.Name(), 1)
+
+	// A method yielding NO values keeps Go's own words for it.
+	// ERROR th.nothing\(\) \(no value\) used as value
+	v += want2(th.nothing(), 1)
+
+	return v + a + b + c + d + e + g
+}
+
+func main() {
+	iv = &th
+	println(f())
+}

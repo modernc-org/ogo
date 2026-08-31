@@ -5215,6 +5215,19 @@ func (f *File) rhsValueCount(s *Scope, rhs []Node) (int, bool) {
 	if r, ok := f.directCallResultCount(s, e); ok {
 		return r, true
 	}
+	// A METHOD call, `x.M(...)`, counted the same way -- callResults answers for a
+	// concrete type's method and for an interface's alike. Without this a method's
+	// results were never counted, so `var v int; v = t.Two()` reached the C
+	// compiler as a type error about a struct where Go says "assignment mismatch",
+	// and the := form said it could not infer a type.
+	if recv, member, isMethod := f.exprMethodCall(e); isMethod {
+		// A method yielding NO values is not counted: `x := v.nothing()` is
+		// "v.nothing() (no value) used as value" in Go, which the check that owns
+		// that message reports, and an arity mismatch would say it worse.
+		if res, ok := f.callResults(s, recv, member); ok && len(res) != 0 {
+			return len(res), true
+		}
+	}
 	if !f.exprHasCallOrReceive(e) {
 		return 1, true
 	}
@@ -8139,22 +8152,15 @@ func (f *File) methodResultKind(s *Scope, head Token, hasHead bool, suffix Node)
 // method member of variable head's named type, when it has exactly one and it is
 // predeclared -- the method analogue of funcSingleResultKind.
 func (f *File) methodSingleResultKind(s *Scope, head, member Token) (Kind, bool) {
-	d, ok := s.find(head.Src()).(*VarDeclaration)
-	if !ok || !d.typeName.IsValid() {
+	// Through callResults, which resolves a concrete type's method and an
+	// INTERFACE's alike: the lookup written out here read the receiver's declared
+	// methods, and an interface has none, so a call through one was untyped and
+	// `f(s.Name())` with a wrong parameter type reached the C compiler.
+	results, ok := f.callResults(s, head, member)
+	if !ok || len(results) != 1 || !results[0].known {
 		return 0, false
 	}
-	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
-	if !ok {
-		return 0, false
-	}
-	fd := td.methods[member.Src()]
-	if fd == nil || fd.Type == nil {
-		return 0, false
-	}
-	if results := f.flattenResults(s, fd.Type.Signature); len(results) == 1 && results[0].known {
-		return results[0].kind, true
-	}
-	return 0, false
+	return results[0].kind, true
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
