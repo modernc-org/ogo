@@ -17090,6 +17090,62 @@ func main() {
 		want: "2 42 1 thermo thermo\n42 true 0 true offline\n42 true 42 true\n-1 42 42\n",
 	},
 	{
+		// An array-returning method on every receiver -- a variable, a package
+		// array's element, a struct field, a slice element -- declared, assigned,
+		// passed, indexed, measured and returned. Only a plain variable worked; the
+		// rest could not even be typed. And the call ran ONCE per occurrence: each
+		// path that asked about it minted a temporary and emitted the call, so
+		// `d.triple()[0]` ran the method three times, which a counting method makes
+		// visible and any method with side effects would answer differently for.
+		name: "an array-returning method on every receiver",
+		src: `type Dev struct {
+	id    int
+	calls int
+}
+
+func (d *Dev) triple() [3]int {
+	d.calls++
+	return [3]int{d.id, d.calls, 7}
+}
+
+type Rack struct {
+	slot Dev
+}
+
+func take(t [3]int) int { return t[1] }
+
+var pool [2]Dev
+
+var rack Rack
+
+var backing [2]Dev
+
+func fromPool() [3]int { return pool[1].triple() }
+
+func main() {
+	var d Dev
+	d.id = 1
+	println(d.triple()[0], d.triple()[1], d.calls)
+	pool[1].id = 2
+	t := pool[1].triple()
+	var u [3]int
+	u = pool[1].triple()
+	n := pool[1].calls
+	println(t[0], u[1], n)
+	println(take(pool[1].triple()), len(pool[1].triple()), pool[1].calls)
+	println(pool[1].triple()[0], pool[1].triple()[1], pool[1].calls)
+	rack.slot.id = 3
+	r := rack.slot.triple()
+	println(r[0], rack.slot.triple()[1], rack.slot.calls)
+	ds := backing[:]
+	ds[0].id = 4
+	s := ds[0].triple()
+	println(s[0], ds[0].triple()[1], ds[0].calls, fromPool()[0], pool[1].calls)
+}
+`,
+		want: "1 2 2\n2 2 2\n3 3 4\n2 6 6\n3 2 2\n4 2 2 2 7\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

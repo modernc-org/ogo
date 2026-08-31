@@ -42,6 +42,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   ordinary way did not build, while an assignment, a parameter and a literal
   element all wrapped it correctly.
 
+### Fixed
+
+- **An array-returning call ran once per use, not once per path that asked
+  about it.** Several paths bind such a call to a temporary -- the argument
+  emission, an index of the result, `len` of it, the typing walk -- and each
+  minted its own temporary and emitted the call, so `println(d.triple()[0])`
+  ran the method THREE times where Go runs it once. The value printed was the
+  last call's, so nothing looked wrong until the method had side effects: a
+  counting method reached 9 on a P2-EDGE where Go reached 5. Each occurrence is
+  now bound once.
+
 ## v0.35.0
 
 ### Language

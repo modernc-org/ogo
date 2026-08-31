@@ -4718,40 +4718,41 @@ type emitter struct {
 	methodValueTypes map[string]funcValueType
 	// methodValueOf: "<global>.<method>" -> the function already lifted for it, so
 	// the same method value written twice mints one function.
-	methodValueOf    map[string]string
-	funcParams       map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
-	callParams       []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
-	localConsts      map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
-	methodPtr        map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
-	globals          map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
-	structs          map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
-	namedTypes       map[string]bool           // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
-	typeNames        map[string]bool           // every C type name this program declares, struct or not, for fieldIdent's collision check
-	interfaceTypes   map[string]bool           // source names declared as an interface type
-	ifaceMethods     map[string][]ifaceMethod  // mangled interface name -> its methods, in declaration order: the vtable's slot order
-	ifaceVTables     map[string]bool           // "<interface>|<concrete>" pairs a static vtable has been emitted for
-	vtables          bytes.Buffer              // the thunks and static vtables those pairs produced
-	namedUnderlying  map[string]string         // that typedef -> the C type it stands for, so a value of it is represented as what it is
-	namedArrays      map[string]arrDim         // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
-	constInt         map[string]string         // integer-constant name -> its C literal value, for array bounds
-	constVal         map[string]constant.Value // exact value of a numeric constant, for foldConstVal; a typed one rounded to its type
-	constStr         map[string]string         // string-constant name -> its decoded value, for folding string concatenation
-	constUntyped     map[string]bool           // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
-	arrays           map[string]arrDim         // local array name -> element type and bound (reset per function)
-	globalArrays     map[string]arrDim         // package-level array name -> element type and bound (persists across functions)
-	sliceVars        map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
-	globalSliceVars  map[string]string         // package-level slice name -> element C type (persists across functions)
-	pkgInit          []pkgInitStep             // the synthesized package initializer, emitted in dependency order
-	initFuncs        []string                  // user init() functions, called after the variable initializers
-	initNames        map[string]string         // init declaration position -> its numbered C name, so both passes agree
-	goSites          []goSite                  // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
-	chanElems        map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
-	chanInitElems    map[string]bool           // element types whose channel init helper is reached
-	chanSendElems    map[string]bool           // element types whose channel send helper is reached
-	chanRecvElems    map[string]bool           // element types whose blocking receive helper is reached
-	chanTryRecvElems map[string]bool           // element types whose select tryrecv helper is reached
-	chanCloseElems   map[string]bool           // element types whose close helper the program reaches
-	chanRecv2Elems   map[string]bool           // element types whose comma-ok receive helper the program reaches
+	methodValueOf     map[string]string
+	funcParams        map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
+	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
+	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
+	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call -> the temporary it was bound to, so one occurrence is called once (see hoistArrayCallArg)
+	methodPtr         map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
+	globals           map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
+	structs           map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
+	namedTypes        map[string]bool           // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
+	typeNames         map[string]bool           // every C type name this program declares, struct or not, for fieldIdent's collision check
+	interfaceTypes    map[string]bool           // source names declared as an interface type
+	ifaceMethods      map[string][]ifaceMethod  // mangled interface name -> its methods, in declaration order: the vtable's slot order
+	ifaceVTables      map[string]bool           // "<interface>|<concrete>" pairs a static vtable has been emitted for
+	vtables           bytes.Buffer              // the thunks and static vtables those pairs produced
+	namedUnderlying   map[string]string         // that typedef -> the C type it stands for, so a value of it is represented as what it is
+	namedArrays       map[string]arrDim         // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
+	constInt          map[string]string         // integer-constant name -> its C literal value, for array bounds
+	constVal          map[string]constant.Value // exact value of a numeric constant, for foldConstVal; a typed one rounded to its type
+	constStr          map[string]string         // string-constant name -> its decoded value, for folding string concatenation
+	constUntyped      map[string]bool           // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
+	arrays            map[string]arrDim         // local array name -> element type and bound (reset per function)
+	globalArrays      map[string]arrDim         // package-level array name -> element type and bound (persists across functions)
+	sliceVars         map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
+	globalSliceVars   map[string]string         // package-level slice name -> element C type (persists across functions)
+	pkgInit           []pkgInitStep             // the synthesized package initializer, emitted in dependency order
+	initFuncs         []string                  // user init() functions, called after the variable initializers
+	initNames         map[string]string         // init declaration position -> its numbered C name, so both passes agree
+	goSites           []goSite                  // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
+	chanElems         map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
+	chanInitElems     map[string]bool           // element types whose channel init helper is reached
+	chanSendElems     map[string]bool           // element types whose channel send helper is reached
+	chanRecvElems     map[string]bool           // element types whose blocking receive helper is reached
+	chanTryRecvElems  map[string]bool           // element types whose select tryrecv helper is reached
+	chanCloseElems    map[string]bool           // element types whose close helper the program reaches
+	chanRecv2Elems    map[string]bool           // element types whose comma-ok receive helper the program reaches
 	// mathWrappers are the math functions named as a VALUE rather than called. A
 	// call is substituted with the C library's, so a bodyless one is defined
 	// nowhere; a function pointer needs something to point at. See mathWrapperDefs.
@@ -9025,6 +9026,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localConsts = map[string]bool{}
+	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
@@ -9174,6 +9176,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	}
 	e.locals = map[string]string{}
 	e.localConsts = map[string]bool{}
+	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
@@ -9580,6 +9583,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localConsts = map[string]bool{}
+	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
@@ -12286,6 +12290,13 @@ func (e *emitter) hoistArrayResultCallKids(kids []Node) (string, []Node, bool) {
 	if !isArr {
 		return "", nil, false
 	}
+	// One occurrence, one call -- the same memo hoistArrayCallArg keeps, and the
+	// other half of why `println(d.triple()[0])` ran the method three times: the
+	// typing walk and the expression walk both reach this, and each minted a
+	// temporary and emitted the call into the prologue.
+	if name, done := e.hoistedArrayCalls[kids[0].tok]; done {
+		return name, steps[call:], true
+	}
 	name := e.newTmp()
 	saved := e.indent
 	e.indent = 0
@@ -12301,6 +12312,7 @@ func (e *emitter) hoistArrayResultCallKids(kids []Node) (string, []Node, bool) {
 		e.prologue = append(e.prologue, line+"\n")
 	}
 	e.arrays[name] = a
+	e.hoistedArrayCalls[kids[0].tok] = name
 	return name, steps[call:], true
 }
 
@@ -24694,6 +24706,16 @@ func (e *emitter) hoistArrayCallArg(arg Node) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	// One occurrence, one call. Several paths ask about the same expression -- the
+	// argument emission, an index of the result, len of it -- and each ask minted a
+	// temporary AND emitted the call into the prologue, so `println(d.triple()[0])`
+	// ran the method THREE times where Go runs it once. The value printed was the
+	// last call's, so only a method with side effects showed it: a counter reached
+	// 9 where Go reached 5, measured on a P2-EDGE. Keyed by the source position,
+	// which is the occurrence's identity; the map is cleared per function.
+	if name, done := e.hoistedArrayCalls[arg.Pos()]; done {
+		return name, true
+	}
 	name := e.newTmp()
 	saved := e.indent
 	e.indent = 0
@@ -24709,6 +24731,7 @@ func (e *emitter) hoistArrayCallArg(arg Node) (string, bool) {
 		e.prologue = append(e.prologue, line+"\n")
 	}
 	e.arrays[name] = a
+	e.hoistedArrayCalls[arg.Pos()] = name
 	return name, true
 }
 
