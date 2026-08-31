@@ -9930,6 +9930,9 @@ func arrayCountC(a arrDim) string {
 // caller supplies.
 func (e *emitter) arrayResultCall(ast []int32) (string, arrDim, bool) {
 	recv, suffix, ok := e.directCall(ast)
+	if !ok {
+		recv, suffix, ok = e.chainCallOf(ast) // `pool[1].triple()`, an INDEX in the receiver
+	}
 	if !ok || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
 		return "", arrDim{}, false
 	}
@@ -9940,6 +9943,19 @@ func (e *emitter) arrayResultCall(ast []int32) (string, arrDim, bool) {
 // which is what a caller that has stripped trailing steps off the factor has.
 func (e *emitter) arrayResultCallOf(recv string, suffix []Node) (string, arrDim, bool) {
 	cname := e.funcCallC(recv)
+	// A method on a receiver reached through a CHAIN -- `pool[1].triple()`,
+	// `rack.slot.triple()`. Its C name is the type the chain reaches, which the
+	// two-step lookup below reads off a variable and cannot read off an element or
+	// a field: an array-returning method was a plain-variable-only feature, and
+	// every position that consumes one refused it.
+	if len(suffix) > 2 && suffix[len(suffix)-2].sym == Selector {
+		cn, okc := e.chainMethodCName(recv, suffix)
+		if !okc {
+			return "", arrDim{}, false
+		}
+		a, isArr := e.funcArrayRet[cn]
+		return cn, a, isArr
+	}
 	if len(suffix) == 2 && suffix[0].sym == Selector {
 		// A method, `b.triple()`: its C name is the receiver type's, and the
 		// receiver leads the argument list ahead of the out parameter.
@@ -9963,7 +9979,10 @@ func (e *emitter) arrayResultCallOf(recv string, suffix []Node) (string, arrDim,
 // emitArrayResultCall emits the call itself, with dst as the out parameter it
 // writes through.
 func (e *emitter) emitArrayResultCall(dst, cname string, ast []int32) {
-	recv, suffix, _ := e.directCall(ast)
+	recv, suffix, ok := e.directCall(ast)
+	if !ok {
+		recv, suffix, _ = e.chainCallOf(ast)
+	}
 	e.emitArrayResultCallOf(dst, cname, recv, suffix)
 }
 
@@ -9973,7 +9992,23 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 	e.ind()
 	e.emit(cname + "(")
 	// A method's receiver leads, ahead of the out parameter.
-	if len(suffix) == 2 && suffix[0].sym == Selector {
+	switch {
+	case len(suffix) > 2 && suffix[len(suffix)-2].sym == Selector:
+		// Reached through a chain: the chain renders the receiver, and an element
+		// or a field is an lvalue, so a pointer-receiver method takes its address
+		// exactly as it does on a variable.
+		text, ctype, addr, okc := e.chainCText(recv, suffix[:len(suffix)-2])
+		if !okc {
+			e.fail("cannot reach the receiver of %s", cname)
+			return
+		}
+		r, ok := e.chainReceiver(text, ctype, addr, e.methodPtr[cname])
+		if !ok {
+			e.fail("cannot take the address of %s for a pointer-receiver method", text)
+			return
+		}
+		e.emit(r + ", ")
+	case len(suffix) == 2 && suffix[0].sym == Selector:
 		rct, _ := e.varType(recv)
 		recvText, addr := e.varRef(recv), true
 		if lit, isConst := e.inlinedConstRef(recv); isConst {
@@ -12230,13 +12265,20 @@ func (e *emitter) hoistArrayResultCallKids(kids []Node) (string, []Node, bool) {
 		return "", nil, false
 	}
 	steps := slices.Collect(it(kids[1].ast))
-	// The call, then the steps that read what it returned. A method is `recv.m()`,
-	// two steps before the rest.
-	call := 1
-	if len(steps) >= 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
-		call = 2
+	// The call, then the steps that read what it returned. A function is `f()`, one
+	// step; a method on a variable is `recv.m()`, two; a receiver reached through a
+	// chain is longer -- `pool[1].triple()[2]`, `rack.slot.triple()[0]` -- so the
+	// call ends at the first CallSuffix whose remaining steps are a plain access
+	// chain. Counting one or two steps knew the fixed shapes only, and indexing a
+	// chain receiver's array result was "unsupported call in expression".
+	call := 0
+	for i, st := range steps {
+		if st.sym == CallSuffix && isAccessChain(steps[i+1:]) {
+			call = i + 1
+			break
+		}
 	}
-	if len(steps) <= call || steps[call-1].sym != CallSuffix || !isAccessChain(steps[call:]) {
+	if call == 0 || len(steps) <= call {
 		return "", nil, false
 	}
 	recv := e.src(kids[0].tok)
@@ -24455,23 +24497,33 @@ func (e *emitter) chainCallOf(ast []int32) (string, []Node, bool) {
 // name and its result types. It is methodOnField's counterpart for a receiver the
 // all-selectors walk cannot describe.
 func (e *emitter) chainMethodResult(base string, steps []Node) (string, []string, bool) {
-	if len(steps) < 3 || steps[len(steps)-1].sym != CallSuffix || steps[len(steps)-2].sym != Selector {
+	cname, ok := e.chainMethodCName(base, steps)
+	if !ok {
 		return "", nil, false
+	}
+	rts, isMethod := e.funcRet[cname]
+	return cname, rts, isMethod
+}
+
+// chainMethodCName is the C name of the method a chain-receiver call names --
+// `pool[1].triple()`, `rack.slot.triple()`, `b.rows[i].two()`. The receiver's TYPE
+// is walked rather than lowered, so it may be asked before anything is emitted.
+func (e *emitter) chainMethodCName(base string, steps []Node) (string, bool) {
+	if len(steps) < 3 || steps[len(steps)-1].sym != CallSuffix || steps[len(steps)-2].sym != Selector {
+		return "", false
 	}
 	cur, ok := e.accessChainType(base, steps[:len(steps)-2])
 	if !ok {
-		return "", nil, false
+		return "", false
 	}
 	bt := methodBaseType(cur.ctype)
 	if bt == "" {
 		bt = cur.name // an ARRAY the chain reached carries its type in the name
 	}
 	if bt == "" || !e.isMethodBase(bt) {
-		return "", nil, false
+		return "", false
 	}
-	cname := methodCName(bt, e.soleIdent(steps[len(steps)-2].ast))
-	rts, isMethod := e.funcRet[cname]
-	return cname, rts, isMethod
+	return methodCName(bt, e.soleIdent(steps[len(steps)-2].ast)), true
 }
 
 // ifaceResultTypes is what a call through an interface slot yields, in the source's

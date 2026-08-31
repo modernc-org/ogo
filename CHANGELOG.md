@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array-returning method may be called on any receiver.** `pool[i].triple()`,
+  `rack.slot.triple()`, `devs[i].triple()` -- declared, assigned, passed,
+  indexed, measured with `len`, or returned. Only a plain variable's
+  `d.triple()` worked; every other receiver could not be typed at all
+  ("cannot infer a type for the declaration of ..."), and indexing the result
+  of one was "unsupported call in expression".
 - **A method of several results may be called through an interface wherever the
   receiver is.** `v, err := devs[i].Read()` -- the shape a device table is read
   in -- reported a "count mismatch", as did the same call on a package array's
