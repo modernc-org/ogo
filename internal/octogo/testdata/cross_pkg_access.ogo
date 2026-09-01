@@ -91,3 +91,55 @@ func reachedFieldWrite() {
 
 	p.Bank[0].F = 4
 }
+
+// A METHOD is reached the same ways a field is, and the rule holds there too.
+func reachedMethod() {
+	// ERROR "cannot refer to unexported method hidden of type p.T"
+	_ = p.Bank[0].hidden()
+
+	// ERROR "cannot refer to unexported method hidden of type p.T"
+	_ = p.Make().hidden()
+
+	var s p.Src
+	// ERROR "cannot refer to unexported method hidden of type p.T"
+	_ = s.Fetch().hidden()
+
+	println(p.Bank[0].Get(), p.Make().Get(), s.Fetch().Get())
+}
+
+// A slice element and a package-level POINTER reach the same fields.
+func reachedIndirect() {
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = p.Sl[0].g
+
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = p.Ptr.g
+
+	println(p.Sl[0].F, p.Ptr.F)
+}
+
+// The type travels with a LOCAL the value flows into -- the address of an element,
+// and a range variable -- and each carried no type at all before, so nothing about
+// it was checked.
+func reachedLocal() {
+	q := &p.Bank[0]
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = q.g
+
+	for _, e := range p.Bank {
+		// ERROR "cannot refer to unexported field g of type p.T"
+		_ = e.g
+	}
+
+	println(q.F)
+}
+
+// An EMBEDDED field named explicitly is a chain of selectors, which the walk that
+// answers for one selector does not see.
+func reachedEmbedded() {
+	var b p.Boxed
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = b.T.g
+
+	println(b.T.F, b.N)
+}

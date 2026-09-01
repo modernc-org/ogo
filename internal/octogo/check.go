@@ -2450,15 +2450,17 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	f.checkNames(s, fi.rangeExpr)
 	elem, hasElem, isInt, isChan := f.rangeElem(s, fi.rangeExpr)
+	elemName, elemQual, _ := f.rangeElemNamed(s, fi.rangeExpr)
 	declared := false
 	switch {
 	case fi.hasKey && fi.rangeDefine && isChan:
 		// A channel yields its ELEMENT, and only that: what a slice puts in the first
 		// variable is an index, and a channel has none. So the one variable a range
 		// over a channel may declare takes the element's type, not int.
-		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem)
+		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem, elemName, elemQual)
 	case fi.hasKey && fi.rangeDefine:
-		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true)
+		// The key is an INDEX, so no element type travels with it.
+		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{})
 	case fi.hasKey:
 		f.checkRangeTarget(s, fi.keyVar)
 	}
@@ -2472,7 +2474,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		// Declare the value variable even in the rejected integer case, so a use of
 		// it in the body does not pile a second "undefined" error on the first.
 		if fi.rangeDefine {
-			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt && !isChan) || declared
+			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt && !isChan, elemName, elemQual) || declared
 		} else {
 			f.checkRangeTarget(s, fi.valVar)
 		}
@@ -2540,7 +2542,13 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 
 // declareRangeVar introduces a range key or value variable. A `:=` range declares
 // them; a plain `=` assigns existing ones (handled by the caller).
-func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool) bool {
+//
+// typeName is the element's NAMED type where it has one, with typeQual naming the
+// package that owns it. Without them the variable carried only a kind, so every
+// check that keys on a type name -- an unknown field or method, and the export rule
+// -- was skipped for it: `for _, e := range pkg.Bank { e.unexported }` read another
+// package's field.
+func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool, typeName, typeQual Token) bool {
 	id, ok := f.exprSoleIdent(v)
 	if !ok {
 		f.checkNames(s, v)
@@ -2549,8 +2557,44 @@ func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool) bool {
 	if id.Src() == "_" {
 		return false
 	}
-	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
+	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind, typeName: typeName, typeQual: typeQual})
 	return true
+}
+
+// rangeElemNamed names the element type of a range operand, and the package that
+// owns it: `range xs` for a variable of this package whose element type is named --
+// which may itself be another package's -- and `range pkg.Bank` for another
+// package's array or slice, whose element type is resolved there.
+func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool) {
+	if id, ok := f.exprSoleIdent(expr); ok {
+		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.elemTypeName.IsValid() {
+			return d.elemTypeName, namedTypeQual(d.elemTypeNode), true
+		}
+		return Token{}, Token{}, false
+	}
+	ue, ok := f.soleUnaryExpr(expr)
+	if !ok {
+		return Token{}, Token{}, false
+	}
+	for c := range it(ue.ast) {
+		if c.sym != Factor {
+			continue
+		}
+		qual, member, isQual := f.factorQualifiedIdent(s, c)
+		if !isQual {
+			return Token{}, Token{}, false
+		}
+		home, has := f.importedPkgScope(qual)
+		if !has {
+			return Token{}, Token{}, false
+		}
+		d, isVar := home.Declarations[member.Src()].(*VarDeclaration)
+		if !isVar || !d.elemTypeName.IsValid() {
+			return Token{}, Token{}, false
+		}
+		return d.elemTypeName, qual, true
+	}
+	return Token{}, Token{}, false
 }
 
 // exprSoleIdent returns the single identifier an expression consists of, if that
@@ -5730,6 +5774,12 @@ func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 	// (e.g. a field assignment "p.x = 1").
 	if field, ok := f.fieldSelector(postfix); ok {
 		f.checkFieldAccess(s, id, field, postfix)
+		return
+	}
+	// A CHAIN of selectors on another package's value, `b.Sample.raw`, which
+	// fieldSelector does not answer for.
+	if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
+		f.checkCrossPkgFieldChain(d.typeQual, d.typeName, postfix)
 	}
 }
 
@@ -5810,8 +5860,8 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		// name, and neither of those has one, so the export rule was not applied to
 		// the field at all -- another package's unexported one could be read, and
 		// written.
-		if tn, field, ok := f.crossPkgReachedField(pkg, suffix); ok {
-			f.checkCrossPkgField(qual, tn, field)
+		if tn, member, isCall, ok := f.crossPkgReachedField(pkg, suffix); ok {
+			f.checkCrossPkgReached(qual, tn, member, isCall)
 			return
 		}
 
@@ -5919,14 +5969,15 @@ func (f *File) selectorMember(n Node) (Token, bool) {
 	return Token{}, false
 }
 
-// crossPkgMethodResultField answers for `v.M().f`, where v has an imported type: the
-// field is selected on what M RETURNED, and only the method's own package names
-// that type. It gives the result type's name and the field, for the export check.
+// crossPkgMethodResultField answers for `v.M().x`, where v has an imported type: the
+// member is taken on what M RETURNED, and only the method's own package names that
+// type. It gives the result type's name, the member, and whether the member is
+// CALLED -- a method rather than a field -- for the export check.
 //
 // The method is resolved in the owning package -- as an interface's spec or as a
 // concrete type's method -- because the name is that package's. A shape or a result
 // list this cannot resolve answers false and is left to the checks that own it.
-func (f *File) crossPkgMethodResultField(qual, typeName Token, suffix Node) (Token, Token, bool) {
+func (f *File) crossPkgMethodResultField(qual, typeName Token, suffix Node) (Token, Token, bool, bool) {
 	var steps []Node
 	for c := range it(suffix.ast) {
 		steps = append(steps, c)
@@ -5934,60 +5985,66 @@ func (f *File) crossPkgMethodResultField(qual, typeName Token, suffix Node) (Tok
 	for len(steps) != 0 && steps[len(steps)-1].sym == PostfixOp {
 		steps = steps[:len(steps)-1]
 	}
+	// `v.M().m()` is the same walk with the member CALLED.
+	isCall := false
+	if len(steps) == 4 && steps[3].sym == CallSuffix {
+		isCall, steps = true, steps[:3]
+	}
 	if len(steps) != 3 || steps[0].sym != Selector || steps[1].sym != CallSuffix || steps[2].sym != Selector {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	method, ok := f.selectorMember(steps[0])
 	if !ok {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
-	field, ok := f.selectorMember(steps[2])
+	member, ok := f.selectorMember(steps[2])
 	if !ok {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	home, ok := f.importedPkgScope(qual)
 	if !ok {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	var sig *SignatureNode
 	switch ms, isIface := f.interfaceMethodsNamed(home, typeName.Src()); {
 	case isIface:
 		spec := ms[method.Src()]
 		if spec == nil {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		sig = methodSpecSig(spec)
 	default:
 		td, _, isStruct := f.importedStruct(qual, typeName)
 		if !isStruct {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		m := td.methods[method.Src()]
 		if m == nil || m.Type == nil {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		sig = m.Type.Signature
 	}
 	res := f.flattenResults(home, sig)
 	if len(res) != 1 {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	tn, named := namedTypeToken(res[0].typeNode)
 	if !named {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
-	return tn, field, true
+	return tn, member, isCall, true
 }
 
-// crossPkgReachedField answers for a qualified expression whose last step selects a
-// field of a value the steps before it REACHED: an element of that package's array
-// or slice, `pkg.Bank[i].f`, or the result of its function, `pkg.Make().f`. It
-// gives the reached value's type name and the field, for the export check that a
-// field taken on a NAME already gets.
+// crossPkgReachedField answers for a qualified expression whose last step takes a
+// member of a value the steps before it REACHED: an element of that package's array
+// or slice, `pkg.Bank[i].x`, or the result of its function, `pkg.Make().x`. It gives
+// the reached value's type name, the member, and whether the member is CALLED -- a
+// method rather than a field -- for the export check that a member taken on a NAME
+// already gets.
 //
 // Only the value's own package can name the type, so it is resolved in that
 // package's scope; a shape this cannot resolve answers false and is left alone.
-func (f *File) crossPkgReachedField(pkg *Package, suffix Node) (Token, Token, bool) {
+func (f *File) crossPkgReachedField(pkg *Package, suffix Node) (Token, Token, bool, bool) {
 	var steps []Node
 	for c := range it(suffix.ast) {
 		steps = append(steps, c)
@@ -5997,40 +6054,56 @@ func (f *File) crossPkgReachedField(pkg *Package, suffix Node) (Token, Token, bo
 	for len(steps) != 0 && steps[len(steps)-1].sym == PostfixOp {
 		steps = steps[:len(steps)-1]
 	}
+	// `pkg.Bank[i].m()` and `pkg.Make().m()` are the same walk with the member
+	// CALLED, which is what tells a method from a field.
+	isCall := false
+	if len(steps) == 4 && steps[3].sym == CallSuffix {
+		isCall, steps = true, steps[:3]
+	}
 	if len(steps) != 3 || steps[0].sym != Selector || steps[2].sym != Selector {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	head, ok := f.selectorMember(steps[0])
 	if !ok {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
-	field, ok := f.selectorMember(steps[2])
+	member, ok := f.selectorMember(steps[2])
 	if !ok {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	switch d := pkg.Scope.Declarations[head.Src()].(type) {
 	case *VarDeclaration:
-		// `pkg.Bank[i].f`: the ELEMENT's type is what the field belongs to.
+		// `pkg.Bank[i].x`: the ELEMENT's type is what the member belongs to.
 		if steps[1].sym != Index || !d.elemTypeName.IsValid() {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
-		return d.elemTypeName, field, true
+		return d.elemTypeName, member, isCall, true
 	case *FuncDeclaration:
-		// `pkg.Make().f`: its single result's type.
+		// `pkg.Make().x`: its single result's type.
 		if steps[1].sym != CallSuffix || d.FuncDecl == nil || d.FuncDecl.Type == nil {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		res := f.flattenResults(pkg.Scope, d.FuncDecl.Type.Signature)
 		if len(res) != 1 {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		tn, named := namedTypeToken(res[0].typeNode)
 		if !named {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
-		return tn, field, true
+		return tn, member, isCall, true
 	}
-	return Token{}, Token{}, false
+	return Token{}, Token{}, false, false
+}
+
+// checkCrossPkgReached applies the export rule to a member REACHED on another
+// package's value: a field is checked as a field, a called one as a method.
+func (f *File) checkCrossPkgReached(qual, typeName, member Token, isCall bool) {
+	if isCall {
+		f.checkCrossPkgMethod(qual, typeName, member)
+		return
+	}
+	f.checkCrossPkgField(qual, typeName, member)
 }
 
 // qualifiedMember reads the SECOND selector of a qualified chain -- the member of
@@ -6074,8 +6147,8 @@ func (f *File) checkQualifiedAssign(s *Scope, qual Token, postfix Node) {
 	}
 	// The export rule holds for a target as it does for a value: `pkg.Bank[i].f = x`
 	// writes the field that `pkg.Bank[i].f` reads.
-	if tn, field, ok := f.crossPkgReachedField(imp.Import.Pkg, postfix); ok {
-		f.checkCrossPkgField(qual, tn, field)
+	if tn, member, isCall, ok := f.crossPkgReachedField(imp.Import.Pkg, postfix); ok {
+		f.checkCrossPkgReached(qual, tn, member, isCall)
 		return
 	}
 	switch imp.Import.Pkg.Scope.Declarations[member.Src()].(type) {
@@ -6228,6 +6301,77 @@ func (f *File) importedStruct(qual, name Token) (*TypeDeclaration, *TypeNodeStru
 	}
 	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
 	return td, st, ok
+}
+
+// importedFieldTypeName names the TYPE of a field of the imported struct
+// qual.typeName, when that type is itself named. It is what lets a chain of field
+// selectors be walked across the boundary.
+func (f *File) importedFieldTypeName(qual, typeName, field Token) (Token, bool) {
+	_, st, ok := f.importedStruct(qual, typeName)
+	if !ok {
+		return Token{}, false
+	}
+	for _, fld := range st.Fields {
+		for _, nm := range fld.Names {
+			if nm.Src() != field.Src() {
+				continue
+			}
+			switch {
+			case fld.EmbeddedPkg.IsValid():
+				// Embedded as a THIRD package's type: the walk resolves names in
+				// one package, and this one is not it. Left alone rather than
+				// resolved in the wrong scope.
+				return Token{}, false
+			case fld.TypeNode == nil:
+				// An EMBEDDED field writes no type: Go names the field after the
+				// type it embeds, so the field's own name IS the type name.
+				return nm, true
+			}
+			return namedTypeToken(fld.TypeNode)
+		}
+	}
+	return Token{}, false
+}
+
+// checkCrossPkgFieldChain applies the export rule along a CHAIN of field selectors
+// taken on another package's value -- `b.Sample.raw`, which reaches a field of the
+// embedded type. Every type on the way is that package's, so each step is resolved
+// there, and the walk stops at the first member that is unexported or unknown (both
+// of which checkCrossPkgField reports) as it stops at a type it cannot name.
+//
+// It exists because fieldSelector answers only for a SINGLE selector, so a chain
+// went unchecked and reached another package's unexported field.
+func (f *File) checkCrossPkgFieldChain(qual, typeName Token, suffix Node) bool {
+	steps := slices.Collect(it(suffix.ast))
+	if len(steps) < 2 {
+		return false
+	}
+	for _, st := range steps {
+		if st.sym != Selector {
+			return false
+		}
+	}
+	cur := typeName
+	for i, st := range steps {
+		member, ok := f.selectorMember(st)
+		if !ok {
+			return false
+		}
+		if i == len(steps)-1 {
+			f.checkCrossPkgField(qual, cur, member)
+			return true
+		}
+		next, named := f.importedFieldTypeName(qual, cur, member)
+		if !named {
+			return false
+		}
+		if !token.IsExported(member.Src()) {
+			f.checkCrossPkgField(qual, cur, member)
+			return true
+		}
+		cur = next
+	}
+	return false
 }
 
 // checkCrossPkgField reports a field access "v.field" where v has a cross-package
@@ -9185,6 +9329,41 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 	return 0, false, Token{}, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
 }
 
+// qualifiedElemNamedType names the type of `pkg.Arr[i]` -- an element of another
+// package's array or slice variable -- and the qualifier it belongs to. The element
+// type is that package's, so it is resolved in that package's scope.
+func (f *File) qualifiedElemNamedType(s *Scope, id Token, fac Node) (Token, Token, bool) {
+	if !f.isImportQualifier(s, id.Src()) {
+		return Token{}, Token{}, false
+	}
+	home, ok := f.importedPkgScope(id)
+	if !ok {
+		return Token{}, Token{}, false
+	}
+	for c := range it(fac.ast) {
+		if c.sym != FactorSuffix {
+			continue
+		}
+		var steps []Node
+		for st := range it(c.ast) {
+			steps = append(steps, st)
+		}
+		if len(steps) != 2 || steps[0].sym != Selector || steps[1].sym != Index {
+			return Token{}, Token{}, false
+		}
+		name, has := f.selectorMember(steps[0])
+		if !has {
+			return Token{}, Token{}, false
+		}
+		d, isVar := home.Declarations[name.Src()].(*VarDeclaration)
+		if !isVar || !d.elemTypeName.IsValid() {
+			return Token{}, Token{}, false
+		}
+		return d.elemTypeName, id, true
+	}
+	return Token{}, Token{}, false
+}
+
 // exprNamedType returns the named type an initializer's value has, when the
 // initializer plainly names one: a composite literal "T{...}" or "pkg.T{...}", the
 // address of one, a variable already carrying a named type, or a call whose single
@@ -9268,6 +9447,13 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 			return d.typeName, d.typeQual, isPtr || d.isPtr, true
 		}
 		return Token{}, Token{}, false, false
+	}
+	// `p := &pkg.Bank[i]`: an element of another package's array or slice has that
+	// package's type, and the qualifier travels with it. Without this p had no type
+	// at all, so every check that keys on one -- the export rule among them -- was
+	// skipped, and `p.unexported` read another package's field.
+	if nm, ql, has := f.qualifiedElemNamedType(s, id, fac); has {
+		return nm, ql, isPtr, true
 	}
 	// A call "p := mk()": the callee's single result, when it names a type.
 	callee, ok := f.exprCallee(n)
@@ -10050,8 +10236,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 				// went unchecked, where the export rule holds for it as it does for
 				// the `v.f` that fieldSelector does answer for.
 				if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
-					if tn, fld, has := f.crossPkgMethodResultField(d.typeQual, d.typeName, suffix); has {
-						f.checkCrossPkgField(d.typeQual, tn, fld)
+					if tn, member, isCall, has := f.crossPkgMethodResultField(d.typeQual, d.typeName, suffix); has {
+						f.checkCrossPkgReached(d.typeQual, tn, member, isCall)
 					}
 				}
 			}
@@ -10059,6 +10245,11 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			// "x.(T)": a Selector carrying a type, not a field name.
 		} else if field, ok := f.fieldSelector(suffix); ok && hasID {
 			f.checkFieldAccess(s, id, field, suffix)
+		} else if hasID {
+			// A CHAIN of selectors on another package's value, `b.Sample.raw`.
+			if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
+				f.checkCrossPkgFieldChain(d.typeQual, d.typeName, suffix)
+			}
 		}
 	}
 	if hasID && s.find(id.Src()) == nil {

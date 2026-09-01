@@ -50,3 +50,15 @@ func Make() T { return T{} }
 type Src interface {
 	Fetch() T
 }
+
+// Sl, Ptr and Boxed carry T into the remaining positions a member can be reached
+// through: a slice element, a package-level pointer, and an embedded field named
+// explicitly. Each is a route to T's unexported g and hidden.
+var Sl []T
+
+var Ptr *T
+
+type Boxed struct {
+	T
+	N int
+}

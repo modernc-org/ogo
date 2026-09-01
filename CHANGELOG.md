@@ -20,14 +20,29 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
-- **An unexported field of another package is unreachable however the value is
-  reached.** The export rule was applied where a NAME carried the type -- `v.f`
-  for a variable of an imported type, and both composite-literal forms -- and
-  nowhere a field is reached without one. So `pkg.Bank[i].f`, `pkg.Make().f`,
-  `v.M().f` and the assignment `pkg.Bank[i].f = x` all read, and wrote, a field
-  Go refuses to let another package see. Each is refused now, naming the reached
-  value's type as its own package names it. Only unexported fields are affected;
-  the exported spellings compile as before.
+- **An unexported field or method of another package is unreachable however the
+  value is reached.** The export rule was applied where a NAME carried the type
+  -- `v.f` for a variable of an imported type, and both composite-literal forms
+  -- and nowhere a member is reached without one. Every one of these read, and
+  the assignment wrote, what Go refuses to let another package see:
+
+      pkg.Bank[i].f      pkg.Bank[i].m()      an element
+      pkg.Make().f       pkg.Make().m()       a function's result
+      v.M().f            v.M().m()            a method's result
+      pkg.Sl[i].f                             a slice element
+      pkg.Bank[i].f = x                       the same, as a target
+      q := &pkg.Bank[i]; q.f                  through a local pointer
+      for _, e := range pkg.Bank { e.f }      a range variable
+      b.Embedded.f                            a chain of selectors
+
+  Each is refused now, naming the reached value's type as its own package names
+  it. Only unexported members are affected; the exported spellings compile as
+  before.
+
+  Two of them were the type being dropped rather than the rule being missing: a
+  local taking the address of another package's element, and a range variable,
+  carried no named type at all, so *nothing* keyed on one was checked for them
+  -- an unknown field or method included, in this package as much as another.
 
 ### Fixed
 
