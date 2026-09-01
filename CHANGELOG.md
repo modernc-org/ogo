@@ -18,6 +18,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Behaviour changes
+
+- **An unexported field of another package is unreachable however the value is
+  reached.** The export rule was applied where a NAME carried the type -- `v.f`
+  for a variable of an imported type, and both composite-literal forms -- and
+  nowhere a field is reached without one. So `pkg.Bank[i].f`, `pkg.Make().f`,
+  `v.M().f` and the assignment `pkg.Bank[i].f = x` all read, and wrote, a field
+  Go refuses to let another package see. Each is refused now, naming the reached
+  value's type as its own package names it. Only unexported fields are affected;
+  the exported spellings compile as before.
+
 ### Fixed
 
 - **A method of several results called on another package's array element.**

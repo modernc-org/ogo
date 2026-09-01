@@ -38,3 +38,15 @@ func Add(a int, b int) int { return a + b }
 var Ch chan int32
 
 var Notch int32
+
+// Bank, Make and Src exist for the export rule in the positions where a field is
+// REACHED rather than named -- an element of another package's array, the result of
+// its function, the result of one of its interface's methods. Each carries T, whose
+// g is unexported, so cross_pkg_access.ogo can check that no route reaches it.
+var Bank [2]T
+
+func Make() T { return T{} }
+
+type Src interface {
+	Fetch() T
+}

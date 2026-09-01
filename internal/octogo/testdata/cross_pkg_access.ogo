@@ -64,3 +64,30 @@ func callArity() {
 	// ERROR cannot use "s" of type string as type int in argument to Add
 	println(p.Add("s", 2))
 }
+
+// A field can be REACHED without being named: an element of the package's array,
+// the result of its function, the result of one of its interface's methods. The
+// export rule holds in each -- it used to hold only where a NAME carried the type,
+// so every one of these read another package's unexported field.
+
+func reachedFieldRead() {
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = p.Bank[0].g
+
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = p.Make().g
+
+	var s p.Src
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = s.Fetch().g
+
+	println(p.Bank[0].F, p.Make().F, s.Fetch().F)
+}
+
+// A target is reached the same way, and writing is no more permitted than reading.
+func reachedFieldWrite() {
+	// ERROR "cannot refer to unexported field g of type p.T"
+	p.Bank[0].g = 3
+
+	p.Bank[0].F = 4
+}
