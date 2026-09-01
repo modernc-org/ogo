@@ -20718,7 +20718,7 @@ type Shape interface {
 const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"6 13\n0 8\n0 0\n2 7\n2 8\n40\n105 200\n20 48\n7 4\n3 9\n30\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
-	"30\n30\n30\n5\n1 10\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
+	"30\n30\n30\n5\n1 10\n14 true 14 true\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
 	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n"
 
@@ -20838,6 +20838,11 @@ println(mkShape().Area())
 if q, ok := sh2.(*greet.Quad); ok {
 	println(q.W)
 	println(greet.Tail("AT+CFG=1", "AT+CFG="), greet.Wide(5))
+greet.Meters[0] = &greet.G1
+mv, mok := greet.Meters[0].Read()
+var rd greet.Reader = &greet.G1
+lv, lok := rd.Read()
+println(mv, mok, lv, lok)
 }
 switch x := sh2.(type) {
 case *greet.Quad:
@@ -21323,6 +21328,30 @@ Area() int
 func Tail(s, prefix string) string { return s[len(prefix):] }
 
 func Wide(K int) int64 { return int64(K) * 2 }
+
+// A method of SEVERAL results behind an interface, with a package-level array of
+// that interface for another package to read it through: greet.Meters[0].Read()
+// is a chain whose head is an import QUALIFIER, which no type walk here answers
+// for -- only the renderer does.
+type Reader interface {
+	Read() (int, bool)
+}
+
+type Gauge struct {
+	V  int
+	Up bool
+}
+
+func (g *Gauge) Read() (int, bool) {
+	if !g.Up {
+		return 0, false
+	}
+	return g.V * 2, true
+}
+
+var Meters [2]Reader
+
+var G1 = Gauge{V: 7, Up: true}
 `,
 	"greet/loud.ogo": `// Quiet is read from greet.ogo and Doubled reads Total from it, so whichever of
 // the two files is emitted first, one of them names a variable it has not seen.

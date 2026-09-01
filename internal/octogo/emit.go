@@ -6358,7 +6358,15 @@ func (e *emitter) ifaceChainMethod(recv string, suffix []Node) (ifaceCType strin
 	} else {
 		cur, walked := e.accessChainType(recv, steps)
 		if !walked {
-			return "", ifaceMethod{}, false
+			// A head accessBase has no answer for -- an import QUALIFIER, as in
+			// `pkg.Pool[0].Read()` -- is typed by the RENDERER, which knows every
+			// head, exactly as constChainType types one. Without this a multiple
+			// assignment from another package's array of interfaces reported a
+			// count mismatch, where the same call on a local, a field or a method
+			// result was fine.
+			if cur, walked = e.constChainType(recv, steps); !walked {
+				return "", ifaceMethod{}, false
+			}
 		}
 		ct = cur.ctype
 	}

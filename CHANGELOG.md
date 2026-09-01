@@ -16,6 +16,18 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A method of several results called on another package's array element.**
+  `pkg.Meters[i].Read()` reported "multiple-assignment target/result count
+  mismatch": the walk that types a call's receiver has no answer for a head
+  that is an import qualifier, and the same call on a local, on a field, or on
+  a method's result was fine. It is typed by the renderer now, as a chain
+  headed by a constant already was. Found by re-running this release's features
+  with the code in a second package.
+
 ## v0.36.0
 
 ### Toolchain
