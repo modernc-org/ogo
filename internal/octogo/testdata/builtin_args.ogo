@@ -1,0 +1,51 @@
+// The builtins carry no signatures here, so what goes into them was checked by the
+// C compiler, which reported it about the helper the values were passed to. append
+// and min/max are the two whose arguments this package can resolve: a slice records
+// what it holds, and min/max want one type.
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int { return q.s }
+
+var sq = Sq{s: 2}
+
+var ints [4]int
+
+var shapes [2]Shape
+
+func f() int {
+	xs := ints[:0]
+	ss := shapes[:0]
+
+	// The element a slice holds is what it takes, whichever way the slice was made.
+	xs = append(xs, 1, 2)
+	ss = append(ss, &sq)
+
+	// ERROR cannot use "x" of type string as type int in append
+	xs = append(xs, "x")
+
+	// ERROR cannot use 3 \(int\) as Shape value in append
+	ss = append(ss, 3)
+
+	// ERROR an interface holds a pointer here; write &sq
+	ss = append(ss, sq)
+
+	// min and max want arguments of one type, as in Go, and take an untyped
+	// constant beside a typed one.
+	n := min(len(xs), 3) + max(1, 2, 3)
+
+	// ERROR invalid argument: mismatched types int and string
+	n += min(1, "a")
+
+	return n + len(ss)
+}
+
+func main() {
+	println(f())
+}

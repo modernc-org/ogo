@@ -99,6 +99,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **append and min/max check what goes into them.** The builtins carry no
+  signatures here, so `append(xs, "x")` for a `[]int`, a value that cannot be a
+  `[]Shape`'s element, and `min(1, "a")` were all reported by the C compiler
+  about the helper they were passed to. A slice records what it holds -- now
+  including one made the way this language makes every slice, `xs := arr[:0]`,
+  where only a written `var xs []int` recorded it before -- so append's values
+  are checked against the element, an interface element by the same question an
+  assignment asks; and min/max want one type, by the test a comparison makes,
+  so an untyped constant beside a typed argument still passes.
+
 - **A method call's results are counted and typed like a function call's.**
   `var v int; v = t.Two()` for a method of two results reached the C compiler,
   which reported it about generated code, and `v := t.Two()` said it could not

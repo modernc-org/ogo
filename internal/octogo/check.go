@@ -2934,6 +2934,15 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		// on it went unchecked to the C compiler.
 		vd.builderVar = true
 	default:
+		if d, ok := f.sliceOfVarElem(s, init); ok {
+			// `xs := arr[:0]`: xs holds what arr holds. It is the idiom this
+			// language builds every slice with -- make allocates and is refused --
+			// and recording the element is what lets a write into one, and the
+			// values an append writes, be checked against it.
+			vd.elemKind, vd.hasElemKind = d.elemKind, d.hasElemKind
+			vd.elemTypeName, vd.elemTypeNode = d.elemTypeName, d.elemTypeNode
+			return
+		}
 		if ek, ok := f.exprLitElemKind(s, init); ok {
 			// `xs := []int{1, 2}` / `a := [2]int{1, 2}`: xs carries int, so
 			// writing into an element is checked as an explicitly typed
@@ -7518,6 +7527,37 @@ func (f *File) thirdSliceBound(index Node) (Node, bool) {
 	return Node{}, false
 }
 
+// sliceOfVarElem answers for an initializer that SLICES a variable -- `arr[:0]`,
+// `xs[1:]`, `a[i:j]` -- with that variable's declaration, whose element the new
+// variable holds too.
+func (f *File) sliceOfVarElem(s *Scope, init Node) (*VarDeclaration, bool) {
+	// exprIndexedIdent, not exprSoleIdent: the head of an INDEXED expression is
+	// what this asks for, and the bounds beside it are not part of the answer.
+	id, ok := f.exprIndexedIdent(init)
+	if !ok {
+		return nil, false
+	}
+	sliced := false
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			if c.sym == Index {
+				if f.isSliceExpr(c) {
+					sliced = true
+				}
+				continue // an index's own contents are not this expression's shape
+			}
+			walk(c.ast)
+		}
+	}
+	walk(init.ast)
+	if !sliced {
+		return nil, false
+	}
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	return d, isVar
+}
+
 // isSliceExpr reports whether an Index node is a SLICE expression, "a[l:h]", rather
 // than an index, "a[i]". Its colon is what tells them apart, and the verb in a
 // diagnostic follows it: Go says "cannot slice" for one and "cannot index" for the
@@ -10602,16 +10642,23 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// not-yet-emitted builtins are unregistered and reach the nil case below,
 		// exempted there by isBuiltinFuncName.
 		//
-		// print and println are the exception: they constrain an argument to
+		// print and println are one exception: they constrain an argument to
 		// nothing, so a constant one takes its default type and is bounded by it,
-		// exactly as an inferred variable's initializer is. The builtins whose
-		// arguments a container's element type does constrain (append, copy, ...)
-		// need that type, not the default one, so they are left to the emitter.
+		// exactly as an inferred variable's initializer is. append is the other --
+		// its element type is recorded on the destination's declaration, so what
+		// goes in can be checked here (checkAppendValues). The rest are left to the
+		// emitter, which special-cases each.
 		switch callee.Src() {
 		case "print", "println":
 			for _, a := range args {
 				f.checkInferredOverflow(s, a)
 			}
+		case "append":
+			// The one whose element type IS reachable here: the destination names a
+			// variable, and what a slice holds is recorded on its declaration.
+			f.checkAppendValues(s, argList, args)
+		case "min", "max":
+			f.checkMinMaxArgs(s, args)
 		}
 	case *PredeclaredType:
 		// A type callee "T(x)" is an explicit conversion. Numeric ones are lowered
@@ -10703,6 +10750,93 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 			// `r := recover()` inside a deferred literal is how Go's whole
 			// recovery idiom is written, so that was the message it got.
 			f.err(callee.Position(), "the %s builtin is not supported yet", callee.Src())
+		}
+	}
+}
+
+// checkMinMaxArgs checks that min and max are given arguments of ONE type, which
+// Go requires of them: `min(1, "a")` is "mismatched types" there and reached the C
+// compiler here, which reported it about the helper the two were passed to.
+//
+// The test is the one a comparison makes, in both directions, so an untyped
+// constant beside a typed operand -- `min(x, 3)` -- and two untyped numerics --
+// `min(1, 2.5)` -- pass, as they do in Go. An argument this package cannot type
+// says nothing about the rest.
+func (f *File) checkMinMaxArgs(s *Scope, args []Node) {
+	if len(args) < 2 {
+		return
+	}
+	first, firstOK := f.exprType(s, args[0])
+	if !firstOK {
+		return
+	}
+	for _, a := range args[1:] {
+		k, ok := f.exprType(s, a)
+		if !ok {
+			continue
+		}
+		if !assignableKind(first, k) && !assignableKind(k, first) {
+			f.err(f.tok(a.Pos()).Position(), "invalid argument: mismatched types %s and %s",
+				kindName(first), kindName(k))
+			return
+		}
+	}
+}
+
+// checkAppendValues checks the values an append writes against the element type of
+// the slice it writes into. The builtins carry no signatures here (see
+// isBuiltinFuncName), so nothing checked what went in: `append(xs, "x")` for a
+// []int, and a value that cannot be a []Shape's element, both reached the C
+// compiler, which reported them about the generated helper.
+//
+// It asks only what it can answer. The destination must name a variable whose
+// ELEMENT type is recorded -- a slice or the array a slice expression is taken
+// from -- and a value whose own type is not known here is left alone, exactly as
+// an argument to a function is. The SPREAD form appends a slice rather than
+// elements and is checked by the emitter, which knows what it is spreading.
+func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
+	if len(args) < 2 {
+		return
+	}
+	for c := range it(argList.ast) {
+		if c.sym == 0 && f.ch(c.tok) == ELLIPSIS {
+			return // the spread form; see above
+		}
+	}
+	id, ok := f.exprSoleIdent(args[0])
+	if !ok {
+		return
+	}
+	d, ok := s.find(id.Src()).(*VarDeclaration)
+	if !ok || d.elemTypeNode == nil {
+		return
+	}
+	p := f.resultType(s, d.elemTypeNode)
+	_, elemIsIface := f.interfaceMethodsNamed(s, p.name)
+	for _, v := range args[1:] {
+		// An INTERFACE element: the same question an assignment asks, which
+		// answers for a value needing its address as readily as for one that does
+		// not implement it at all.
+		if elemIsIface {
+			f.checkImplements(s, p.name, v, "append")
+			// A value of a BASIC type is no element of an interface slice: only a
+			// pointer goes in here, and a constant has no address to take, so
+			// checkImplements -- which asks about a named value -- says nothing.
+			if k, known := f.exprType(s, v); known {
+				if _, isName := f.exprIdent(v); !isName {
+					f.err(f.tok(v.Pos()).Position(), "cannot use %s (%s) as %s value in append",
+						f.exprSource(v), kindName(k), p.name)
+				}
+			}
+			continue
+		}
+		if !p.known {
+			continue
+		}
+		f.checkNilAssignable(s, p, v, "append")
+		if k, known := f.exprType(s, v); known && !assignableKind(p.kind, k) {
+			f.err(f.tok(v.Pos()).Position(), "cannot use %s of type %s as type %s in append",
+				f.exprSource(v), kindName(k), p.name)
 		}
 	}
 }
