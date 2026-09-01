@@ -1,0 +1,94 @@
+// A variable takes its type from its initializer, and the type is what every check
+// keyed on one needs: an unknown field, an unknown method, and -- across a package
+// boundary -- the export rule. Several sources used to record NOTHING, so a local
+// fed by them was checked for none of that; the unknown field below is what says
+// each source now names a type. See cross_pkg_access.ogo for the same sources
+// reaching another package's unexported members.
+
+type Point struct {
+	X int
+	Y int
+}
+
+func (p Point) Sum() int { return p.X + p.Y }
+
+type Box struct {
+	P Point
+	N int
+}
+
+func (b Box) Get() Point { return b.P }
+
+type Op func(int, int) int
+
+var Arr [2]Point
+
+var Sl []Point
+
+var Bx Box
+
+var Pp *Point
+
+var Table [2]Op
+
+func mk() Point { return Point{X: 1, Y: 2} }
+
+func two() (Point, int) { return Point{}, 1 }
+
+func add(a int, b int) int { return a + b }
+
+// An ELEMENT of an array or a slice.
+func fromElement() {
+	v := Arr[0]
+	// ERROR "type Point has no field Missing"
+	_ = v.Missing
+
+	w := Sl[0]
+	// ERROR "type Point has no field Missing"
+	_ = w.Missing
+
+	println(v.X, w.Y)
+}
+
+// A FIELD, and the address of an element.
+func fromFieldAndAddress() {
+	v := Bx.P
+	// ERROR "type Point has no field Missing"
+	_ = v.Missing
+
+	p := &Arr[1]
+	// ERROR "type Point has no field Missing"
+	_ = p.Missing
+
+	println(v.X, p.Y)
+}
+
+// A METHOD's result, and a DEREF.
+func fromMethodAndDeref() {
+	v := Bx.Get()
+	// ERROR "type Point has no field Missing"
+	_ = v.Missing
+
+	w := *Pp
+	// ERROR "type Point has no field Missing"
+	_ = w.Missing
+
+	println(v.Sum(), w.X)
+}
+
+// One result of a MULTI-VALUE call, which carried no type for either name.
+func fromMultiValue() {
+	v, n := two()
+	// ERROR "type Point has no field Missing"
+	_ = v.Missing
+
+	println(v.X, n)
+}
+
+// A named FUNCTION type reached through an element stays callable: naming the type
+// without its signature made the call "cannot call non-function".
+func namedFuncElement() {
+	Table[0] = add
+	g := Table[0]
+	println(g(6, 3))
+}

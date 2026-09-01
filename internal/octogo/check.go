@@ -2942,6 +2942,27 @@ func (f *File) inferredKind(s *Scope, n Node) (Kind, bool) {
 	return defaultKind(k), true
 }
 
+// namedFuncSig returns the signature of a named FUNCTION type, resolved in the
+// package that owns the name. Anything else answers nil.
+func (f *File) namedFuncSig(s *Scope, name, qual Token) *SignatureNode {
+	if !name.IsValid() {
+		return nil
+	}
+	home := s
+	if qual.IsValid() {
+		h, ok := f.importedPkgScope(qual)
+		if !ok {
+			return nil
+		}
+		home = h
+	}
+	td, _, ok := f.typeDeclNamed(home, name.Src())
+	if !ok || td.TypeSpec == nil {
+		return nil
+	}
+	return f.funcSig(home, td.TypeSpec.TypeNode)
+}
+
 // inferVarFrom records on vd the type its initializer gives it, for a variable
 // declared without a written one: "x := e", "var x = e" and the package-level
 // "var x = e" alike. All three mean the same thing in Go and now say so through one
@@ -3013,6 +3034,11 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			// the same signature. Taking the name alone left g with a type and no
 			// signature, so the call through it was "cannot call non-function".
 			if sig := f.exprFuncSig(s, init); sig != nil {
+				vd.funcSig, vd.isFunc = sig, true
+			} else if sig := f.namedFuncSig(s, nm, ql); sig != nil {
+				// The named type reached through an ELEMENT or a field --
+				// `f := table[i]` for a table of a named func type -- which
+				// exprFuncSig does not answer for: resolve the name itself.
 				vd.funcSig, vd.isFunc = sig, true
 			}
 			return
@@ -4623,6 +4649,22 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			assertOK = assertOK && f.isPointerType(s, tn)
 		}
 	}
+	// A multi-result initializer, `v, n := f()`: each name takes the type of the
+	// result in ITS position. Not modelled before -- so none of those names carried
+	// a type at all, and every check that keys on one was skipped for the lot,
+	// including the export rule on another package's result.
+	var multi []retResult
+	multiQual := Token{}
+	if len(rhs) == 1 && len(lhs) > 1 && !assertOK {
+		if res, qual, ok := f.qualifiedCallResults(s, rhs[0]); ok {
+			multi, multiQual = res, qual
+		} else if res, ok := f.exprCallResults(s, rhs[0]); ok {
+			multi = res
+		}
+		if len(multi) != len(lhs) {
+			multi = nil
+		}
+	}
 	newCount := 0
 	for i, id := range lhs {
 		nm := id.Src()
@@ -4648,6 +4690,22 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				vd.typeName, vd.typeQual, vd.isPtr = assertBase, assertQual, true
 			case 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
+			}
+		}
+		if i < len(multi) {
+			if tn := multi[i].typeNode; tn != nil {
+				if rnm, named := namedTypeToken(tn); named {
+					vd.typeName, vd.isPtr = rnm, f.isPointerType(s, tn)
+					// The result's type is written in the CALLEE's file, so a name
+					// of another package arrives unqualified: the call says which
+					// package it belongs to.
+					if vd.typeQual = namedTypeQual(tn); !vd.typeQual.IsValid() {
+						vd.typeQual = multiQual
+					}
+				}
+			}
+			if multi[i].known {
+				vd.kind, vd.hasKind = multi[i].kind, true
 			}
 		}
 		if inferKinds {
@@ -9329,39 +9387,234 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 	return 0, false, Token{}, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
 }
 
-// qualifiedElemNamedType names the type of `pkg.Arr[i]` -- an element of another
-// package's array or slice variable -- and the qualifier it belongs to. The element
-// type is that package's, so it is resolved in that package's scope.
-func (f *File) qualifiedElemNamedType(s *Scope, id Token, fac Node) (Token, Token, bool) {
-	if !f.isImportQualifier(s, id.Src()) {
-		return Token{}, Token{}, false
-	}
-	home, ok := f.importedPkgScope(id)
-	if !ok {
-		return Token{}, Token{}, false
+// localValueNamedType names the type of a value taken out of a variable in scope --
+// an element `Arr[i]`, a field `b.P`, a method's result `b.Get()` -- and reports
+// whether it is a POINTER. A variable of another package's type is resolved THERE,
+// and the qualifier travels with the answer.
+func (f *File) localValueNamedType(s *Scope, id Token, fac Node) (Token, Token, bool, bool) {
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar {
+		return Token{}, Token{}, false, false
 	}
 	for c := range it(fac.ast) {
 		if c.sym != FactorSuffix {
 			continue
 		}
-		var steps []Node
-		for st := range it(c.ast) {
-			steps = append(steps, st)
+		steps := slices.Collect(it(c.ast))
+		if len(steps) == 1 && steps[0].sym == Index {
+			// `Arr[i]` / `&Arr[i]`: the element's type.
+			if !d.elemTypeName.IsValid() {
+				return Token{}, Token{}, false, false
+			}
+			return d.elemTypeName, namedTypeQual(d.elemTypeNode), false, true
 		}
-		if len(steps) != 2 || steps[0].sym != Selector || steps[1].sym != Index {
-			return Token{}, Token{}, false
+		if len(steps) == 0 || steps[0].sym != Selector {
+			return Token{}, Token{}, false, false
+		}
+		member, has := f.selectorMember(steps[0])
+		if !has {
+			return Token{}, Token{}, false, false
+		}
+		switch {
+		case len(steps) == 1:
+			// `b.P`: the field's type.
+			if d.typeQual.IsValid() {
+				if !d.typeName.IsValid() {
+					return Token{}, Token{}, false, false
+				}
+				tn, named := f.importedFieldTypeName(d.typeQual, d.typeName, member)
+				return tn, d.typeQual, false, named
+			}
+			tn := f.fieldTypeNode(s, id, member)
+			if tn == nil {
+				return Token{}, Token{}, false, false
+			}
+			nm, named := namedTypeToken(tn)
+			return nm, Token{}, named && f.isPointerType(s, tn), named
+		case len(steps) == 2 && steps[1].sym == CallSuffix:
+			// `b.Get()`: the method's single result.
+			if !d.typeName.IsValid() {
+				return Token{}, Token{}, false, false
+			}
+			if d.typeQual.IsValid() {
+				return f.importedMethodResultType(d.typeQual, d.typeName, member)
+			}
+			td, owns := f.methodOwner(s, d.typeName, member.Src())
+			if !owns {
+				return Token{}, Token{}, false, false
+			}
+			m := td.methods[member.Src()]
+			if m == nil || m.Type == nil {
+				return Token{}, Token{}, false, false
+			}
+			res := f.flattenResults(s, m.Type.Signature)
+			if len(res) != 1 {
+				return Token{}, Token{}, false, false
+			}
+			nm, named := namedTypeToken(res[0].typeNode)
+			return nm, Token{}, named && f.isPointerType(s, res[0].typeNode), named
+		}
+		return Token{}, Token{}, false, false
+	}
+	return Token{}, Token{}, false, false
+}
+
+// qualifiedCallResults returns the results of `pkg.Fn()` and the package that owns
+// their type names. The names are written in the CALLEE's file, so they arrive
+// unqualified and only the call says whose they are.
+func (f *File) qualifiedCallResults(s *Scope, n Node) ([]retResult, Token, bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return nil, Token{}, false
+	}
+	for c := range it(ue.ast) {
+		if c.sym != Factor {
+			continue
+		}
+		kids := slices.Collect(it(c.ast))
+		if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+			return nil, Token{}, false
+		}
+		qual := f.tok(kids[0].tok)
+		if !f.isImportQualifier(s, qual.Src()) {
+			return nil, Token{}, false
+		}
+		home, has := f.importedPkgScope(qual)
+		if !has {
+			return nil, Token{}, false
+		}
+		steps := slices.Collect(it(kids[1].ast))
+		if len(steps) != 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+			return nil, Token{}, false
+		}
+		member, hasMember := f.selectorMember(steps[0])
+		if !hasMember {
+			return nil, Token{}, false
+		}
+		d, isFunc := home.Declarations[member.Src()].(*FuncDeclaration)
+		if !isFunc || d.FuncDecl == nil || d.FuncDecl.Type == nil {
+			return nil, Token{}, false
+		}
+		return f.flattenResults(home, d.FuncDecl.Type.Signature), qual, true
+	}
+	return nil, Token{}, false
+}
+
+// qualifiedValueNamedType names the type of a value taken out of another package --
+// an element `pkg.Arr[i]`, a field `pkg.V.F`, a function's result `pkg.Fn()`, a
+// method's result `pkg.V.M()` -- and the qualifier it belongs to, reporting whether
+// the value is a POINTER. Every type on the way is that package's, so all of it is
+// resolved in that package's scope.
+func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Token, bool, bool) {
+	if !f.isImportQualifier(s, id.Src()) {
+		return Token{}, Token{}, false, false
+	}
+	home, ok := f.importedPkgScope(id)
+	if !ok {
+		return Token{}, Token{}, false, false
+	}
+	for c := range it(fac.ast) {
+		if c.sym != FactorSuffix {
+			continue
+		}
+		steps := slices.Collect(it(c.ast))
+		if len(steps) == 0 || steps[0].sym != Selector {
+			return Token{}, Token{}, false, false
 		}
 		name, has := f.selectorMember(steps[0])
 		if !has {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
-		d, isVar := home.Declarations[name.Src()].(*VarDeclaration)
-		if !isVar || !d.elemTypeName.IsValid() {
-			return Token{}, Token{}, false
+		switch d := home.Declarations[name.Src()].(type) {
+		case *VarDeclaration:
+			switch {
+			case len(steps) == 1:
+				// `pkg.V` itself, which is what `*pkg.Ptr` derefs.
+				if !d.typeName.IsValid() {
+					return Token{}, Token{}, false, false
+				}
+				return d.typeName, id, d.isPtr, true
+			case len(steps) == 2 && steps[1].sym == Index:
+				// `pkg.Arr[i]`: the element's type.
+				if !d.elemTypeName.IsValid() {
+					return Token{}, Token{}, false, false
+				}
+				return d.elemTypeName, id, false, true
+			case len(steps) == 2 && steps[1].sym == Selector && d.typeName.IsValid():
+				// `pkg.V.F`: the field's type, read off the variable's struct.
+				member, hasMember := f.selectorMember(steps[1])
+				if !hasMember {
+					return Token{}, Token{}, false, false
+				}
+				tn, named := f.importedFieldTypeName(id, d.typeName, member)
+				if !named {
+					return Token{}, Token{}, false, false
+				}
+				return tn, id, false, true
+			case len(steps) == 3 && steps[1].sym == Selector && steps[2].sym == CallSuffix && d.typeName.IsValid():
+				// `pkg.V.M()`: the method's single result.
+				member, hasMember := f.selectorMember(steps[1])
+				if !hasMember {
+					return Token{}, Token{}, false, false
+				}
+				return f.importedMethodResultType(id, d.typeName, member)
+			}
+			return Token{}, Token{}, false, false
+		case *FuncDeclaration:
+			// `pkg.Fn()`: its single result.
+			if len(steps) != 2 || steps[1].sym != CallSuffix || d.FuncDecl == nil || d.FuncDecl.Type == nil {
+				return Token{}, Token{}, false, false
+			}
+			res := f.flattenResults(home, d.FuncDecl.Type.Signature)
+			if len(res) != 1 {
+				return Token{}, Token{}, false, false
+			}
+			tn, named := namedTypeToken(res[0].typeNode)
+			if !named {
+				return Token{}, Token{}, false, false
+			}
+			return tn, id, f.isPointerType(home, res[0].typeNode), true
 		}
-		return d.elemTypeName, id, true
+		return Token{}, Token{}, false, false
 	}
-	return Token{}, Token{}, false
+	return Token{}, Token{}, false, false
+}
+
+// importedMethodResultType names the single result of a method of the imported type
+// qual.typeName, resolved in that package because the name is its own.
+func (f *File) importedMethodResultType(qual, typeName, member Token) (Token, Token, bool, bool) {
+	home, ok := f.importedPkgScope(qual)
+	if !ok {
+		return Token{}, Token{}, false, false
+	}
+	var sig *SignatureNode
+	switch ms, isIface := f.interfaceMethodsNamed(home, typeName.Src()); {
+	case isIface:
+		spec := ms[member.Src()]
+		if spec == nil {
+			return Token{}, Token{}, false, false
+		}
+		sig = methodSpecSig(spec)
+	default:
+		td, _, isStruct := f.importedStruct(qual, typeName)
+		if !isStruct {
+			return Token{}, Token{}, false, false
+		}
+		m := td.methods[member.Src()]
+		if m == nil || m.Type == nil {
+			return Token{}, Token{}, false, false
+		}
+		sig = m.Type.Signature
+	}
+	res := f.flattenResults(home, sig)
+	if len(res) != 1 {
+		return Token{}, Token{}, false, false
+	}
+	tn, named := namedTypeToken(res[0].typeNode)
+	if !named {
+		return Token{}, Token{}, false, false
+	}
+	return tn, qual, f.isPointerType(home, res[0].typeNode), true
 }
 
 // exprNamedType returns the named type an initializer's value has, when the
@@ -9402,11 +9655,16 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	if !facSet {
 		return Token{}, Token{}, false, false
 	}
+	isDeref := false
 	switch {
 	case len(ops) == 0:
 		// the value itself
 	case len(ops) == 1 && f.unaryOp(s, ops[0]) == AND:
 		isPtr = true // "&T{...}" / "&p"
+	case len(ops) == 1 && f.unaryOp(s, ops[0]) == MUL:
+		// "v := *p": the POINTEE's type, and the value is not a pointer. Without
+		// this the variable carried no type at all.
+		isDeref = true
 	default:
 		return Token{}, Token{}, false, false
 	}
@@ -9442,18 +9700,26 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 		return Token{}, Token{}, false, false
 	}
 	if !hasSuffix {
-		// A plain name: "q := p" carries p's type over.
+		// A plain name: "q := p" carries p's type over, and "v := *p" the type p
+		// points AT.
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.typeName.IsValid() {
-			return d.typeName, d.typeQual, isPtr || d.isPtr, true
+			return d.typeName, d.typeQual, (isPtr || d.isPtr) && !isDeref, true
 		}
 		return Token{}, Token{}, false, false
 	}
-	// `p := &pkg.Bank[i]`: an element of another package's array or slice has that
-	// package's type, and the qualifier travels with it. Without this p had no type
-	// at all, so every check that keys on one -- the export rule among them -- was
-	// skipped, and `p.unexported` read another package's field.
-	if nm, ql, has := f.qualifiedElemNamedType(s, id, fac); has {
-		return nm, ql, isPtr, true
+	// A value taken out of another package -- an element, a field, a function's or a
+	// method's result -- has that package's type, and the qualifier travels with it.
+	// Without this the variable had no type at all, so every check that keys on one
+	// -- the export rule among them -- was skipped, and `v.unexported` read another
+	// package's field.
+	if nm, ql, qPtr, has := f.qualifiedValueNamedType(s, id, fac); has {
+		return nm, ql, (isPtr || qPtr) && !isDeref, true
+	}
+	// A value taken out of an aggregate of THIS package -- an element `Arr[i]`, a
+	// field `b.P`, a method's result `b.Get()` -- for the reason the qualified form
+	// above has: a variable with no type is a variable nothing is checked about.
+	if nm, ql, vPtr, has := f.localValueNamedType(s, id, fac); has {
+		return nm, ql, (isPtr || vPtr) && !isDeref, true
 	}
 	// A call "p := mk()": the callee's single result, when it names a type.
 	callee, ok := f.exprCallee(n)

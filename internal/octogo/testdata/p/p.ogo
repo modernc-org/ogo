@@ -62,3 +62,18 @@ type Boxed struct {
 	T
 	N int
 }
+
+// Fld and Two carry T out of this package by the routes a value can leave one: a
+// field of a package variable, and one result of a multi-value call.
+type Holder struct {
+	S T
+	N int
+}
+
+func (h Holder) Get() T { return h.S }
+
+var Hold Holder
+
+var PtrT *T
+
+func Two() (T, int) { return T{}, 1 }

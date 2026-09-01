@@ -44,6 +44,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   carried no named type at all, so *nothing* keyed on one was checked for them
   -- an unknown field or method included, in this package as much as another.
 
+- **A variable takes its type from its initializer in five more shapes.** An
+  element (`v := Arr[i]`), a field (`v := b.P`), a method's result
+  (`v := b.Get()`), a dereference (`v := *p`) and one result of a multi-value
+  call (`v, n := two()`) recorded no type at all, so every check that keys on
+  one was skipped for the variable: an unknown field, an unknown method, and
+  across a package boundary the export rule. The unknown ones were caught by the
+  C emitter and surfaced as its message rather than Go's; the export rule was
+  not caught at all. Each now names its type -- resolved in the owning package
+  when the value came from one -- and a named FUNCTION type reached that way
+  keeps its signature, so `f := table[i]; f(1, 2)` still compiles.
+
 ### Fixed
 
 - **A method of several results called on another package's array element.**

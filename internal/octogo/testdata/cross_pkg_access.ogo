@@ -143,3 +143,45 @@ func reachedEmbedded() {
 
 	println(b.T.F, b.N)
 }
+
+// The type has to travel with the VALUE, not just with a name written in this
+// file: each of these locals took its type from another package and carried none
+// at all, so the export rule -- and every other check keyed on a type -- was
+// skipped for it.
+func typeTravelsWithTheValue() {
+	a := p.Hold.S
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = a.g
+
+	b := p.Hold.Get()
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = b.g
+
+	c := p.Make()
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = c.g
+
+	d := *p.PtrT
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = d.g
+
+	e, n := p.Two()
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = e.g
+
+	println(a.F, b.F, c.F, d.F, e.F, n)
+}
+
+// A LOCAL of another package's type reaches its members the same ways.
+func localOfImportedType() {
+	var h p.Holder
+	x := h.S
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = x.g
+
+	y := h.Get()
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = y.g
+
+	println(x.F, y.F, h.N)
+}
