@@ -459,6 +459,9 @@ declared with a name, `func measure(s interface{ area() int })`, and the empty o
 is spelled `any` as well; identity is by method set, so `any` and `interface{}` are
 one type. A conversion names the interface where the position does not, `Shape(&q)`
 or `any(&q)`, and builds the same two words the assignment does. A method may
-return several values, `Next() (int32, bool)`. The
+return several values, `Next() (int32, bool)`. A struct may hold one in a field, or
+embed one -- `struct{ error }` wraps a cause and passes as an `error` itself, the
+promoted call dispatching through whatever the field holds -- and a call through a
+nil interface panics, as Go's does. The
 whole-program-optimization pass that would devirtualize the calls is still an open
 question, and opinions are welcome.

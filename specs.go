@@ -699,12 +699,26 @@
 // named after the type UNQUALIFIED, as in Go: what "struct{ lib.Leaf }" embeds is
 // reached as "v.Leaf".
 //
-// (OctoGo Specific): the embedded type must be a STRUCT. An embedded POINTER,
-// "*base", is not supported yet -- Go promotes through it and panics at the selector
-// when it is nil -- nor is a defined type of some other underlying type,
-// "struct{ Count }" for a "type Count int", nor an interface, "struct{ Reader }",
-// which Go promotes to a dispatch through whatever the field holds, nor a
-// predeclared type, "struct{ int }".
+// A DEFINED type of any underlying kind embeds the same way -- "struct{ Count }"
+// for a "type Count int", or a defined array type -- and its method set promotes.
+// An INTERFACE embeds too: the field holds an interface value, a promoted call
+// dispatches through whatever the field holds, and the outer type SATISFIES an
+// interface through such a method -- which is what makes
+//
+//	type failer struct {
+//		error
+//		code int
+//	}
+//
+// passable as an error once its field is set. A method unexported in the embedded
+// type's own package does not promote across the package boundary, exactly as it
+// cannot be named.
+//
+// (OctoGo Specific): an embedded POINTER type is refused, as Go refuses the
+// pointer spelling ("embedded field type cannot be a pointer"); "*base" written in
+// the field position is not supported yet -- Go promotes through it and panics at
+// the selector when it is nil. A predeclared type, "struct{ int }", is not
+// supported either.
 //
 // # Pointer types
 //
@@ -789,6 +803,10 @@
 // carries, beside a pointer to a statically emitted vtable, one table per (concrete
 // type, interface) pair. Assigning one interface value to another copies both
 // words, as in Go.
+//
+// A method call through a NIL interface panics ("nil pointer dereference"), as in
+// Go. The check rides every interface call and is removed by "ogo build
+// --unchecked" with the other checks.
 //
 // What goes INTO one is a pointer, and only a pointer:
 //
