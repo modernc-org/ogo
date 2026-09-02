@@ -14512,6 +14512,77 @@ func main() {
 		panics: true,
 	},
 	{
+		// A NIL channel parks whoever touches it, as in Go: the receive blocks for
+		// ever, so the goroutine never delivers and main's default fires. Before the
+		// guard, address 0 was dereferenced as a cell and the receive "succeeded"
+		// with garbage -- got 0 -- on the board.
+		name: "a receive from a nil channel blocks for ever",
+		src: `var real chan int32
+
+func bad() {
+	var c chan int32 = nil
+	v := <-c
+	real <- v
+}
+
+func main() {
+	go bad()
+	n := int32(0)
+	for i := 0; i < 100000; i++ {
+		n++
+	}
+	select {
+	case v := <-real:
+		println("got", v)
+	default:
+		println("nil recv blocked", n)
+	}
+}
+`,
+		want: "nil recv blocked 100000\n",
+	},
+	{
+		// A nil channel in a select DISABLES that clause -- the standard Go idiom
+		// for switching an arm off. Before the guard the nil arm read address 0,
+		// an always-ready case of zeroes that starved the live channel: 0, not 85.
+		name: "a nil channel disables its select clause",
+		src: `var live chan int32
+
+func producer() {
+	live <- 42
+	live <- 43
+}
+
+func main() {
+	go producer()
+	var off chan int32 = nil
+	sum := int32(0)
+	for i := 0; i < 2; i++ {
+		select {
+		case v := <-off:
+			sum += v * 1000
+		case v := <-live:
+			sum += v
+		}
+	}
+	println(sum)
+}
+`,
+		want: "85\n",
+	},
+	{
+		// Go panics; this used to fall silent on the board -- no message, no exit.
+		name: "close of a nil channel panics",
+		src: `func main() {
+	var c chan int32 = nil
+	close(c)
+	println("survived")
+}
+`,
+		want:   "panic: close of nil channel",
+		panics: true,
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

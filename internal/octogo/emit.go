@@ -3158,6 +3158,13 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	}
 	if e.chanSendElems[elem] {
 		fmt.Fprintf(&b, `static void %[3]s(%[1]s ch, %[8]s) {
+	if (!ch) {
+		// A send on a NIL channel blocks for ever, as in Go: this cog parks, the
+		// chip continues. Undereferenced, address 0 was a cell that "worked".
+		for (;;) {
+			_waitx(1);
+		}
+	}
 	int mine = 0; // always set below before the rendezvous loop reads it; the
 	// initializer only quiets flexcc, whose flow analysis cannot prove the first
 	// loop exits solely through the break that follows the assignment.
@@ -3212,6 +3219,11 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 		// select with `case ch <- arr:` did not compile at all, though the blocking
 		// `ch <- arr` always did.
 		fmt.Fprintf(&b, `static int ogo_chan_offer_%[7]s(%[1]s ch, %[8]s, int* mine) {
+	if (!ch) {
+		// A send clause on a NIL channel is never ready -- Go's way of disabling a
+		// select arm -- and, never having offered, is never asked about again.
+		return 0;
+	}
 	if (ch->closed) {
 		// As the blocking send does, and as Go does from inside a select: a send
 		// clause on a closed channel panics rather than offering a value nothing can
@@ -3265,6 +3277,12 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 		// clause testing it, and the comma-ok clause `case v, ok := <-ch:` is
 		// false for the second, as the statement form's ok is.
 		fmt.Fprintf(&b, `static int ogo_chan_tryrecv_%[7]s(%[1]s ch, %[8]s) {
+	if (!ch) {
+		// A receive clause on a NIL channel is never ready -- Go's way of
+		// disabling a select arm. Address 0's memory used to answer instead, an
+		// always-ready case of garbage that also starved every real one.
+		return 0;
+	}
 	if (ch->full && _locktry(ch->lock)) {
 		if (ch->full) {
 			%[9]s
@@ -3288,6 +3306,9 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 		// and is one here: the second close would tell every receiver the channel had
 		// ended twice over, which is not a state anything can act on.
 		fmt.Fprintf(&b, `static void ogo_chan_close_%[7]s(%[1]s ch) {
+	if (!ch) {
+		ogo_panic("close of nil channel");
+	}
 	while (1) {
 		if (_locktry(ch->lock)) {
 			if (ch->closed) {
@@ -3308,6 +3329,11 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 		// already in the cell is taken even after the close, so nothing sent before it
 		// is lost -- which is Go's rule and the only one a producer can rely on.
 		fmt.Fprintf(&b, `static int ogo_chan_recv2_%[7]s(%[1]s ch, %[8]s) {
+	if (!ch) {
+		for (;;) { // a receive from a NIL channel blocks for ever, as in Go
+			_waitx(1);
+		}
+	}
 	while (1) {
 		if (ch->full && _locktry(ch->lock)) {
 			if (ch->full) {
@@ -3330,6 +3356,11 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 	}
 	if e.chanRecvElems[elem] {
 		fmt.Fprintf(&b, `static %[8]s %[4]s(%[1]s ch%[9]s) {
+	if (!ch) {
+		for (;;) { // a receive from a NIL channel blocks for ever, as in Go
+			_waitx(1);
+		}
+	}
 	while (1) {
 		if (ch->full && _locktry(ch->lock)) {
 			if (ch->full) {

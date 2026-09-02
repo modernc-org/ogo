@@ -31,6 +31,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A nil channel behaves as Go's does.** Three divergences, two of them silent
+  wrong answers measured on the board: a receive from a nil channel delivered
+  garbage (`got 0` where Go blocks for ever), a nil channel's select clause was
+  always ready with zeroes and starved every live clause (breaking Go's standard
+  disable-an-arm idiom -- `0` where Go prints `85`), and `close(nil)` fell
+  silent where Go panics. The runtime now checks: a send or receive on a nil
+  channel parks that cog for ever, exactly Go's meaning on a chip with no global
+  deadlock detector; a nil clause in a select is never ready; `close(nil)`
+  panics "close of nil channel". Sends on closed channels and double close
+  already panicked with Go's words, re-verified on hardware.
+
 - **A received value's members are checked by the compiler, not the C backend.**
   Same-package uses of the forms above were backstopped by the emitter, so a bad
   member read surfaced as its message ("v has no field x") rather than Go's

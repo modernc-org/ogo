@@ -1001,6 +1001,11 @@
 // A receive-only channel type cannot be spelled here, so "close" is not restricted
 // by direction the way Go restricts it.
 //
+// A nil channel behaves as Go's does: a send or receive on one blocks forever --
+// parking the cog it runs on while the rest of the chip continues -- a nil
+// channel's clause in a "select" is never ready, which is how an arm is disabled,
+// and "close" of one panics.
+//
 // A "for range" over a channel receives until it is closed, which is the loop that
 // pairs with it:
 //
