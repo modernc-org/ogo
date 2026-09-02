@@ -208,3 +208,19 @@ func receivedValue() {
 
 	println(r.F, w.F, ok)
 }
+
+// A method PROMOTED through an embedded type of another package obeys the export
+// rule: what is unexported there does not cross, however it is reached.
+type gauge struct {
+	p.Deg
+	n int32
+}
+
+func promotedExport() {
+	var g gauge
+	g.Deg = 3
+	println(g.Scaled(), int32(g.Deg), g.n)
+
+	// ERROR "cannot refer to unexported method scaled"
+	println(g.scaled())
+}

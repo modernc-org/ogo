@@ -1,8 +1,9 @@
-// A struct embeds a NAME, and the name must be a struct type's -- this package's or,
-// written qualified, another's. Go promotes through more than that: a defined type of
-// any underlying type, and an interface, whose methods become a dispatch through
-// whatever the field holds. Neither is built here, and saying so at the declaration
-// beats a diagnostic about some later use.
+// A struct embeds a NAME: a struct type's -- this package's or, written qualified,
+// another's -- or a defined type of any other underlying kind, whose methods
+// promote exactly as a struct's do. What stays refused is an interface-typed
+// field, a feature of its own not built yet, and a pointer type, which Go refuses
+// too; and either is said at the declaration, which beats a diagnostic about some
+// later use.
 
 type Leaf struct{ L int }
 
@@ -16,20 +17,28 @@ type Reader interface {
 	Read() int
 }
 
+type PtrType *int32
+
 type Good struct {
 	Leaf
 	G int
 }
 
-type BadKind struct {
-	// ERROR cannot embed Count: only a struct type may be embedded here
+// A defined non-struct type embeds; its method set promotes.
+type GoodKind struct {
 	Count
 	B int
 }
 
 type BadIface struct {
-	// ERROR cannot embed Reader: only a struct type may be embedded here
+	// ERROR cannot embed Reader: an interface-typed field is not supported yet
 	Reader
+	B int
+}
+
+type BadPtr struct {
+	// ERROR embedded field type cannot be a pointer
+	PtrType
 	B int
 }
 
@@ -42,4 +51,8 @@ type BadName struct {
 func main() {
 	var g Good
 	println(g.Read(), g.L, g.G)
+
+	var k GoodKind
+	k.Count = 4
+	println(k.Val(), int(k.Count), k.B)
 }

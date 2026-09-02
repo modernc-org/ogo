@@ -5192,8 +5192,11 @@ func (f *File) methodValueParts(s *Scope, head, field Token) (fd *FuncDeclNode, 
 	// The type that DECLARES the method, which is the variable's own or one it
 	// embeds: a promoted method is in the method set exactly as a declared one is,
 	// and asking the variable's type alone made `V.Base2` a missing FIELD.
-	td, isMethod := f.methodOwner(s, d.typeName, field.Src())
+	td, home, isMethod := f.methodOwnerScoped(s, d.typeName.Src(), field.Src())
 	if !isMethod {
+		return nil, false, false, false
+	}
+	if f.checkPromotedExport(s, home, field) {
 		return nil, false, false, false
 	}
 	m := td.methods[field.Src()]
@@ -7403,18 +7406,40 @@ func (f *File) methodOwner(s *Scope, typeName Token, method string) (*TypeDeclar
 // methodOwnerNamed is methodOwner keyed by the name as written, which may be another
 // package's `lib.Leaf`.
 func (f *File) methodOwnerNamed(s *Scope, typeName, method string) (*TypeDeclaration, bool) {
+	td, _, ok := f.methodOwnerScoped(s, typeName, method)
+	return td, ok
+}
+
+// methodOwnerScoped is methodOwnerNamed with the SCOPE the owner was found in: the
+// caller's own for a same-package walk, another package's when the promotion
+// crossed an embedded `lib.T` -- which is what the export rule needs to know.
+func (f *File) methodOwnerScoped(s *Scope, typeName, method string) (*TypeDeclaration, *Scope, bool) {
 	level := []embRef{{name: typeName, scope: s}}
 	for depth := 0; depth < 16 && len(level) != 0; depth++ {
 		var next []embRef
 		for _, t := range level {
-			if td, _, ok := f.typeDeclNamed(t.scope, t.name); ok && td.methods[method] != nil {
-				return td, true
+			// The scope the DECLARATION lives in, not the one its name resolved
+			// from: an embedded `lib.Celsius` travels as the written name in the
+			// embedder's scope, and typeDeclNamed is what crosses the boundary.
+			if td, home, ok := f.typeDeclNamed(t.scope, t.name); ok && td.methods[method] != nil {
+				return td, home, true
 			}
 			next = append(next, f.embeddedFields(t.scope, t.name)...)
 		}
 		level = next
 	}
-	return nil, false
+	return nil, nil, false
+}
+
+// checkPromotedExport reports the selection of a method promoted through another
+// package's embedded type while unexported THERE: `hidden` promotes freely inside
+// its own package and stops at the boundary, as any unexported member does.
+func (f *File) checkPromotedExport(s, home *Scope, member Token) bool {
+	if home != s && !token.IsExported(member.Src()) {
+		f.err(member.Position(), "cannot refer to unexported method %s", member.Src())
+		return true
+	}
+	return false
 }
 
 // interfaceMethods returns the method set of a named interface type, keyed by name,
@@ -8655,7 +8680,10 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 	if fd == nil {
 		// A method PROMOTED from an embedded field is in this type's method set, and
 		// is checked against the signature the embedded type declared it with.
-		if otd, promoted := f.methodOwner(s, d.typeName, member.Src()); promoted {
+		if otd, home, promoted := f.methodOwnerScoped(s, d.typeName.Src(), member.Src()); promoted {
+			if f.checkPromotedExport(s, home, member) {
+				return
+			}
 			fd = otd.methods[member.Src()]
 		}
 	}
@@ -13199,10 +13227,10 @@ func (f *File) checkTypeCycle(s *Scope, cd *TypeDeclaration) {
 // quietly embedded, the emitter keying structs by their C symbol and a C symbol
 // carrying no case rule.
 //
-// A non-struct is what Go DOES allow and this does not yet: a defined type's methods
-// promote through an embedding of it whatever its underlying type is. Said plainly
-// here rather than as "must be a struct type of this package", which was written
-// when another package's could not be embedded either.
+// A defined NON-STRUCT type embeds as Go embeds it: the field is named after the
+// type, and the type's methods promote whatever its underlying type is. What stays
+// refused is an interface-typed field (its own feature, not built yet) and a
+// pointer type, which Go refuses too.
 func (f *File) checkStructEmbedNames(s *Scope, ts *TypeSpecNode) {
 	st, ok := ts.TypeNode.(*TypeNodeStruct)
 	if !ok {
@@ -13223,8 +13251,18 @@ func (f *File) checkStructEmbedNames(s *Scope, ts *TypeSpecNode) {
 			f.err(tok.Position(), "undefined: %s", name)
 			continue
 		}
-		if _, isStruct := td.TypeSpec.TypeNode.(*TypeNodeStruct); !isStruct {
-			f.err(tok.Position(), "cannot embed %s: only a struct type may be embedded here", name)
+		switch td.TypeSpec.TypeNode.(type) {
+		case *TypeNodeStruct:
+			// its fields and methods promote
+		case *TypeNodeInterface:
+			// Go permits this -- the field holds an interface value -- but an
+			// interface-typed FIELD is its own feature and is not built yet.
+			f.err(tok.Position(), "cannot embed %s: an interface-typed field is not supported yet", name)
+		case *TypeNodePointer:
+			f.err(tok.Position(), "embedded field type cannot be a pointer")
+		default:
+			// A defined non-struct type: legal Go, and its methods promote exactly
+			// as an embedded struct's do. It has no fields to promote through.
 		}
 	}
 }

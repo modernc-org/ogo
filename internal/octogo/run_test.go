@@ -14801,6 +14801,91 @@ func main() {
 		want: "wire bytes 50\nframes 4 bad 1\ntempSum 4746\npressLast 65535\ncrc smoke 45629\n",
 	},
 	{
+		// Embedding DEFINED NON-STRUCT types -- Go promotes a defined type's methods
+		// whatever its underlying type is, and this used to be refused at the
+		// declaration. Value and pointer receivers promote, promotion reaches
+		// through two levels, an interface is satisfied by a promoted method, a
+		// method value binds the embedded receiver, and a defined ARRAY type's
+		// elements and method are reachable through its member.
+		name: "embedding defined non-struct types",
+		src: `// Embedding defined non-struct types, in every position promotion reaches.
+
+type celsius int32
+
+func (c celsius) doubled() int32 { return int32(c) * 2 }
+
+func (c *celsius) bump(by int32) { *c += celsius(by) }
+
+type triple [3]int32
+
+func (t triple) sum() int32 { return t[0] + t[1] + t[2] }
+
+type reading struct {
+	celsius
+	n int32
+}
+
+type station struct {
+	reading
+	id int32
+}
+
+type bank struct {
+	triple
+	tag int32
+}
+
+type doubler interface {
+	doubled() int32
+}
+
+func take(c celsius) int32 { return int32(c) + 1 }
+
+var gr reading
+
+func main() {
+	var r reading
+	r.celsius = 21
+	r.n = 1
+
+	// The field is a value of its type: read, written, passed, operated on.
+	println(int32(r.celsius), take(r.celsius), int32(r.celsius+1))
+
+	// Value- and pointer-receiver methods promote.
+	println(r.doubled())
+	r.bump(4)
+	println(int32(r.celsius))
+
+	// Promotion reaches through TWO levels.
+	var s station
+	s.celsius = 10
+	s.id = 7
+	s.bump(5)
+	println(s.doubled(), int32(s.reading.celsius), s.id)
+
+	// A method value binds the embedded receiver -- under this language's
+	// method-value rules: a pointer-receiver method of a package-level variable.
+	gr.celsius = 8
+	f := gr.bump
+	f(3)
+	println(int32(gr.celsius))
+
+	// An interface satisfied by a PROMOTED method of a non-struct embed.
+	var d doubler = &r
+	println(d.doubled())
+
+	// A defined ARRAY type embeds; its method and its elements are reachable.
+	var b bank
+	b.triple[0] = 1
+	b.triple[1] = 2
+	b.triple[2] = 3
+	b.tag = 9
+	println(b.sum(), b.triple[1], b.tag)
+}
+`,
+		want: "21 22 22\n42\n25\n30 15 7\n11\n50\n6 2 9\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

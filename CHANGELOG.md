@@ -40,6 +40,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A defined non-struct type embeds, as Go embeds it.** `type celsius int32`
+  written bare inside a struct declares a field named after the type, and the
+  type's method set promotes whatever its underlying type is -- value and
+  pointer receivers, through any depth, satisfying interfaces, taken as method
+  values, and for a defined ARRAY type with its elements and method reachable
+  through the member. Another package's type embeds the same way, and a method
+  unexported there does not cross the boundary however it is promoted, which Go
+  also refuses. What stays refused, said at the declaration: an interface-typed
+  field (its own feature, not built yet) and a pointer type, which Go refuses
+  too.
+
 - **A table element is callable in every position a call can stand.**
   `handlers[i](x)` as a statement -- the dispatch-table idiom -- was refused by
   the C emitter's catch-all ("only <pkg>.<Func>(args) or builtin(args) call

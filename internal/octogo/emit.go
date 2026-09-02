@@ -6522,6 +6522,22 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 				out = append(out, structField{name: names[0], ctype: mn, embedded: true})
 				continue
 			}
+			// A defined NON-STRUCT type embedded -- `type celsius int32` written
+			// bare inside a struct. The member is named after the type and IS that
+			// type; its methods promote exactly as an embedded struct's do
+			// (promotedMethod walks the member the same way and finds no fields to
+			// promote through).
+			if e.namedTypes[mn] {
+				out = append(out, structField{name: names[0], ctype: mn, embedded: true})
+				continue
+			}
+			// A defined ARRAY type embedded (`type triple [3]int32` written bare):
+			// the member is of the typedef, whose declarator carries the extent, so
+			// dim stays empty here and the array machinery resolves the name.
+			if _, isArr := e.namedArrays[mn]; isArr {
+				out = append(out, structField{name: names[0], ctype: mn, embedded: true})
+				continue
+			}
 		}
 		// ANOTHER PACKAGE's struct embedded, `lib.Leaf`. The field is named after the
 		// type UNQUALIFIED -- Go names it `V.Leaf` whichever package declared it --
@@ -6531,6 +6547,16 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 			if prefix, isImport := e.importQualifiers[names[0]]; isImport {
 				mn := mangle(prefix, names[1])
 				if _, isStruct := e.structs[mn]; isStruct {
+					out = append(out, structField{name: names[1], ctype: mn, embedded: true})
+					continue
+				}
+				// Another package's defined non-struct type, `lib.Celsius`: the
+				// same member, named unqualified as Go names it.
+				if e.namedTypes[mn] {
+					out = append(out, structField{name: names[1], ctype: mn, embedded: true})
+					continue
+				}
+				if _, isArr := e.namedArrays[mn]; isArr {
 					out = append(out, structField{name: names[1], ctype: mn, embedded: true})
 					continue
 				}
@@ -25785,8 +25811,17 @@ func (e *emitter) structFieldDirect(ctype, field string) (string, bool) {
 // structFieldType, which deliberately refuses such a field.
 func (e *emitter) structFieldArray(ctype, field string) (arrDim, bool) {
 	for _, fld := range e.structs[e.elemType(ctype)] {
-		if fld.name == field && fld.dim.bound != "" {
+		if fld.name != field {
+			continue
+		}
+		if fld.dim.bound != "" {
 			return fld.dim, true
+		}
+		// An EMBEDDED defined array type: the member carries the typedef name and
+		// no dim of its own -- the extent lives on the typedef -- so the shape is
+		// read off the type it names.
+		if a, isArr := e.namedArrays[fld.ctype]; isArr {
+			return a, true
 		}
 	}
 	return arrDim{}, false

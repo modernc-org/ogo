@@ -85,3 +85,11 @@ var TCh chan T
 func FeedTCh() {
 	TCh <- T{F: 1}
 }
+
+// Deg carries a method set on a non-struct type across the boundary: Scaled is
+// reachable through an embedding of it, scaled is not.
+type Deg int32
+
+func (d Deg) Scaled() int32 { return int32(d) * 10 }
+
+func (d Deg) scaled() int32 { return int32(d) }
