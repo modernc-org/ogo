@@ -2203,7 +2203,26 @@
 // ready. Without a default the poll repeats, yielding via _waitx between rounds
 // to prevent Hub RAM bus starvation. Because OctoGo reaches Propeller 2 Smart
 // Pins through the standard library, the same loop can multiplex channels and
-// zero-overhead Smart Pin state checks (e.g. _pinr(pin)).
+// Smart Pin state checks: the select's DEFAULT arm polls the pin, so a command
+// is taken whenever one is ready and the pin is serviced the rest of the time,
+// neither starving the other.
+//
+//	for running {
+//		select {
+//		case v := <-cmds:
+//			handle(v)
+//		default:
+//			if p2.PinIn(pin) != 0 {
+//				p2.AckPin(pin)
+//				sample()
+//			}
+//		}
+//	}
+//
+// This is the supported idiom today (verified on hardware against a self-clocking
+// ADC pin; see the pinselect example). A pin CLAUSE of the select's own -- a case
+// that waits on the pin as a case waits on a channel -- is an open design
+// question, not yet syntax.
 //
 // A send clause offers its value to the channel and waits for a receiver to take
 // it, so its body runs because the value was delivered and not merely deposited.

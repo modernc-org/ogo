@@ -18,6 +18,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **Multiplexing a channel and a Smart Pin is a documented, hardware-verified
+  idiom.** The spec's select section now shows it: the select's `default` arm
+  polls the pin's IN flag and acknowledges each event, so a command is taken
+  whenever one is ready and the pin is serviced the rest of the time. The new
+  `pinselect` example runs it live -- a self-clocking ADC pin raising IN every
+  2^13 clocks, ten channel commands landing between hundreds of pin events,
+  every claim checked on a P2-EDGE. A pin CLAUSE of the select's own remains an
+  open design question, said so in the spec rather than left implicit.
+
 ### Toolchain
 
 - **Domain-probe round seventeen (a deadline scheduler) is pinned as a run

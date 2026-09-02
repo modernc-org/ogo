@@ -1,0 +1,60 @@
+import "p2"
+
+// Multiplex a CHANNEL and a SMART PIN in one loop.
+//
+// A select with a default arm is how the spec's promise -- "the same loop can
+// multiplex channels and Smart Pin state checks" -- is written today: the select
+// takes a command whenever one is ready, and the default polls the pin's IN flag,
+// acknowledging each event. Nothing blocks on the pin, and nothing starves the
+// channel.
+//
+// The pin is the P2-EDGE's on-board LED pin reconfigured as a self-clocking ADC:
+// in ADCSample mode with X=13 it finishes a conversion every 2^13 clocks --
+// roughly every 51 microseconds at the default 160 MHz -- and raises IN each
+// time, with nothing connected at all. A producer cog sends ten commands twenty
+// milliseconds apart, so hundreds of pin events land between one command and the
+// next; the loop counts both and the final lines say every claim held.
+
+const pin = 56
+
+var cmds chan int32
+
+func producer() {
+	for i := int32(1); i <= 10; i++ {
+		p2.WaitMs(20)
+		cmds <- i
+	}
+}
+
+func main() {
+	p2.PinStart(pin, p2.ADC1X|p2.ADCSample, 13, 0)
+	go producer()
+
+	events := int32(0)
+	gapEvents := int32(0)
+	minGap := int32(1) << 30
+	got := int32(0)
+	running := true
+	for running {
+		select {
+		case v := <-cmds:
+			got += v
+			if gapEvents < minGap {
+				minGap = gapEvents
+			}
+			gapEvents = 0
+			if v == 10 {
+				running = false
+			}
+		default:
+			if p2.PinIn(pin) != 0 {
+				p2.AckPin(pin)
+				events++
+				gapEvents++
+			}
+		}
+	}
+	println("all ten commands arrived:", got == 55)
+	println("pin events kept arriving between commands:", minGap >= 20)
+	println("pin event total is plausible:", events > 500 && events < 100000)
+}
