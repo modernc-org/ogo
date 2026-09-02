@@ -92,3 +92,41 @@ func namedFuncElement() {
 	g := Table[0]
 	println(g(6, 3))
 }
+
+// A RECEIVE is a type source too, in each of its forms: the value has the
+// channel's element type, read off the channel's declaration.
+
+var pch chan Point
+
+func fromReceive() {
+	go feedPch()
+	v := <-pch
+	// ERROR "type Point has no field Missing"
+	_ = v.Missing
+
+	w, ok := <-pch
+	// ERROR "type Point has no field Missing"
+	_ = w.Missing
+
+	println(v.X, w.Y, ok)
+}
+
+func fromRangeAndSelect() {
+	go feedPch()
+	for v := range pch {
+		// ERROR "type Point has no field Missing"
+		_ = v.Missing
+		println(v.X)
+	}
+	select {
+	case v := <-pch:
+		// ERROR "type Point has no field Missing"
+		_ = v.Missing
+		println(v.Sum())
+	}
+}
+
+func feedPch() {
+	pch <- Point{X: 1, Y: 2}
+	close(pch)
+}

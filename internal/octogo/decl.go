@@ -430,6 +430,8 @@ type VarDeclaration struct {
 	chanElemKind    Kind  // the predeclared element type of a channel variable, for send/receive type checks
 	hasChanElemKind bool  // chanElemKind is meaningful
 	chanElemName    Token // the element type's NAME, for a check a Kind cannot answer
+	chanElemQual    Token // the package that name belongs to, when it is another's
+	chanElemPtr     bool  // the element is a POINTER; chanElemName names the pointee
 	elemTypeName    Token // an array's or slice's element type NAME, for a field reached through an index
 
 	// elemTypeNode is an array's or slice's ELEMENT type as resolved, kept for the

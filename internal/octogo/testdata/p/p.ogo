@@ -77,3 +77,11 @@ var Hold Holder
 var PtrT *T
 
 func Two() (T, int) { return T{}, 1 }
+
+// TCh carries T over a channel, so cross_pkg_access.ogo can check that a RECEIVED
+// value obeys the export rule as any other does.
+var TCh chan T
+
+func FeedTCh() {
+	TCh <- T{F: 1}
+}

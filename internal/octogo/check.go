@@ -748,6 +748,7 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 		vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
 		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
 		vd.chanElemName = f.chanElemTypeName(s, tn)
+		vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
 		vd.elemTypeName = f.elemTypeName(s, tn)
 		vd.elemTypeNode = f.arrayElemTypeNode(tn)
 	}
@@ -966,6 +967,67 @@ func (f *File) elemTypeName(s *Scope, tn TypeNode) (nm Token) {
 // for the checks that need the type itself rather than its predeclared Kind, of
 // which a named interface has none. It follows a defined channel type the way
 // chanElem does, and yields an invalid token for an element that is not a name.
+// chanFactorElemInfo answers for a Factor that IS a channel -- a plain name or an
+// imported package's `pkg.Ch` -- with its element's name, the package owning that
+// name, whether the element is a pointer, and the element's kind. A channel it
+// cannot resolve, or one whose element is named in a package this file cannot name
+// (a channel of a THIRD package's type, seen through an import), answers not-ok.
+func (f *File) chanFactorElemInfo(s *Scope, fac Node) (name, qual Token, isPtr bool, kind Kind, hasKind, ok bool) {
+	if id, isIdent := f.exprIdent(fac); isIdent {
+		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.isChan {
+			return d.chanElemName, d.chanElemQual, d.chanElemPtr, d.chanElemKind, d.hasChanElemKind, true
+		}
+		return Token{}, Token{}, false, 0, false, false
+	}
+	if q, member, isQual := f.factorQualifiedIdent(s, fac); isQual {
+		home, has := f.importedPkgScope(q)
+		if !has {
+			return Token{}, Token{}, false, 0, false, false
+		}
+		if d, isVar := home.Declarations[member.Src()].(*VarDeclaration); isVar && d.isChan {
+			if d.chanElemQual.IsValid() {
+				// Named in a third package: the kind still answers, the name
+				// cannot be resolved from here.
+				return Token{}, Token{}, false, d.chanElemKind, d.hasChanElemKind, true
+			}
+			return d.chanElemName, q, d.chanElemPtr, d.chanElemKind, d.hasChanElemKind, true
+		}
+	}
+	return Token{}, Token{}, false, 0, false, false
+}
+
+// recvElemInfo is chanFactorElemInfo for a receive written as a value, `<-ch`: the
+// received value has the channel's element type.
+func (f *File) recvElemInfo(s *Scope, rhs Node) (name, qual Token, isPtr bool, kind Kind, hasKind, ok bool) {
+	fac, isRecv := f.receiveFactor(s, rhs)
+	if !isRecv {
+		return Token{}, Token{}, false, 0, false, false
+	}
+	return f.chanFactorElemInfo(s, fac)
+}
+
+// chanElemTypeInfo resolves the channel type chanElemTypeName resolves and answers
+// the two questions the name alone cannot: which package the element's name belongs
+// to, and whether the element is a POINTER -- the name is then the pointee's.
+func (f *File) chanElemTypeInfo(s *Scope, tn TypeNode) (qual Token, isPtr bool) {
+	for range 16 {
+		switch x := tn.(type) {
+		case *TypeNodeChan:
+			_, isPtr = x.TypeNode.(*TypeNodePointer)
+			return namedTypeQual(x.TypeNode), isPtr
+		case *TypeNodeIdent:
+			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
+			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+				return Token{}, false
+			}
+			tn = d.TypeSpec.TypeNode
+		default:
+			return Token{}, false
+		}
+	}
+	return Token{}, false
+}
+
 func (f *File) chanElemTypeName(s *Scope, tn TypeNode) (nm Token) {
 	for range 16 {
 		switch x := tn.(type) {
@@ -1005,11 +1067,12 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode, role varRole)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
 		chanElemName := f.chanElemTypeName(s, p.TypeNode)
+		chanElemQual, chanElemPtr := f.chanElemTypeInfo(s, p.TypeNode)
 		elemName := f.elemTypeName(s, p.TypeNode)
 		elemTypeNode := f.arrayElemTypeNode(p.TypeNode)
 		funcSig := f.funcSig(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -2567,8 +2630,18 @@ func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool, typeNa
 // package's array or slice, whose element type is resolved there.
 func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool) {
 	if id, ok := f.exprSoleIdent(expr); ok {
-		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.elemTypeName.IsValid() {
-			return d.elemTypeName, namedTypeQual(d.elemTypeNode), true
+		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar {
+			if d.isChan {
+				// Ranging a channel yields its element; a pointer element would
+				// need pointer-ness the answer cannot carry, so it is left alone.
+				if d.chanElemName.IsValid() && !d.chanElemPtr {
+					return d.chanElemName, d.chanElemQual, true
+				}
+				return Token{}, Token{}, false
+			}
+			if d.elemTypeName.IsValid() {
+				return d.elemTypeName, namedTypeQual(d.elemTypeNode), true
+			}
 		}
 		return Token{}, Token{}, false
 	}
@@ -2589,7 +2662,17 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool) {
 			return Token{}, Token{}, false
 		}
 		d, isVar := home.Declarations[member.Src()].(*VarDeclaration)
-		if !isVar || !d.elemTypeName.IsValid() {
+		if !isVar {
+			return Token{}, Token{}, false
+		}
+		if d.isChan {
+			// `range pkg.Ch`: the element is named in the channel's own package.
+			if d.chanElemName.IsValid() && !d.chanElemQual.IsValid() && !d.chanElemPtr {
+				return d.chanElemName, qual, true
+			}
+			return Token{}, Token{}, false
+		}
+		if !d.elemTypeName.IsValid() {
 			return Token{}, Token{}, false
 		}
 		return d.elemTypeName, qual, true
@@ -2991,6 +3074,11 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		// `ch := q` / `var ch = q` / `ch := b.q`: ch IS that channel -- a channel
 		// value is a pointer to its statically allocated cell, so binding one to a
 		// name is a second name for the same cell and nothing is copied.
+	case f.inferRecvFrom(s, vd, init):
+		// `v := <-ch` / `var v = <-ch`: the received value has the channel's
+		// ELEMENT type -- its name, its package, its pointer-ness and its kind, all
+		// read off the channel's declaration. Unrecorded, v carried nothing, so no
+		// member read off it and no use of it was checked.
 	case f.isNewBuilderCall(s, init):
 		// `sb := NewBuilder(back[:])`: sb holds a Builder, whose method set
 		// the compiler knows. The callee is predeclared, so exprNamedType --
@@ -3081,13 +3169,14 @@ func (f *File) inferChanFrom(s *Scope, vd *VarDeclaration, init Node) bool {
 	// for identity, and a named interface element has no Kind at all to be checked by.
 	if id, ok := f.exprIdent(init); ok {
 		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar {
-			vd.chanElemName = d.chanElemName
+			vd.chanElemName, vd.chanElemQual, vd.chanElemPtr = d.chanElemName, d.chanElemQual, d.chanElemPtr
 		}
 	}
 	// `c := qof(i)`: the name comes off the result's written type, there being no
 	// declaration of the channel to read it from.
 	if tn, _ := f.callChanTypeNode(s, init); tn != nil {
 		vd.chanElemName = f.chanElemTypeName(s, tn)
+		vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
 	}
 	return true
 }
@@ -3784,7 +3873,19 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 			case id.Src() == "_" && (!hasOkId || okId.Src() == "_"):
 				f.errNoNewVars(id) // "case _ := <-ch" introduces nothing
 			case id.Src() != "_":
-				f.declareLocal(cs, &VarDeclaration{declaration: declaration{token: id}})
+				// The bound name has the channel's ELEMENT type, exactly as
+				// `v := <-ch` outside a select gives it; without it v carried
+				// nothing and none of its members were checked.
+				vd := &VarDeclaration{declaration: declaration{token: id}}
+				if ce, hasCe := f.commRecvChanExpr(c); hasCe {
+					if nm, ql, ptr, k, hasK, isCh := f.recvChanExprElemInfo(s, ce); isCh {
+						vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
+						if hasK {
+							vd.kind, vd.hasKind = k, true
+						}
+					}
+				}
+				f.declareLocal(cs, vd)
 			}
 			// The comma-ok flag, `case v, ok := <-ch:`, is a bool as the statement
 			// form's is.
@@ -3805,6 +3906,66 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 // "case ch <- v", or an "=" receive to an existing variable "case v = <-ch" declares
 // nothing and returns ok == false. A blank "case _ := <-ch" does come back, so the
 // caller can report a ":=" that introduces nothing rather than silently taking it.
+// commRecvChanExpr returns the channel expression of a clause's short receive,
+// `case v := <-ch:` -- the PostfixComm's Expression -- when the clause is one.
+func (f *File) commRecvChanExpr(commClause Node) (Node, bool) {
+	for head := range it(commClause.ast) {
+		if head.sym != CommHead {
+			continue
+		}
+		for op := range it(head.ast) {
+			if op.sym != CommOp {
+				continue
+			}
+			for c := range it(op.ast) {
+				if c.sym != PostfixComm {
+					continue
+				}
+				var operand Node
+				hasOperand, hasDefine := false, false
+				for pc := range it(c.ast) {
+					switch pc.sym {
+					case Expression:
+						operand, hasOperand = pc, true
+					case 0:
+						if f.ch(pc.tok) == DEFINE {
+							hasDefine = true
+						}
+					}
+				}
+				if hasOperand && hasDefine {
+					return operand, true
+				}
+			}
+		}
+	}
+	return Node{}, false
+}
+
+// recvChanExprElemInfo is chanFactorElemInfo for an EXPRESSION that is the channel
+// operand of a receive -- a select clause's, where the `<-` is the clause's own
+// token rather than a unary operator inside the expression.
+func (f *File) recvChanExprElemInfo(s *Scope, e Node) (name, qual Token, isPtr bool, kind Kind, hasKind, ok bool) {
+	ue, isSole := f.soleUnaryExpr(e)
+	if !isSole {
+		return Token{}, Token{}, false, 0, false, false
+	}
+	var fac Node
+	facSet := false
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case Factor:
+			fac, facSet = c, true
+		case UnaryOp:
+			return Token{}, Token{}, false, 0, false, false
+		}
+	}
+	if !facSet {
+		return Token{}, Token{}, false, 0, false, false
+	}
+	return f.chanFactorElemInfo(s, fac)
+}
+
 func (f *File) commRecvVar(commClause Node) (Token, bool) {
 	for head := range it(commClause.ast) {
 		if head.sym != CommHead {
@@ -4108,7 +4269,8 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		var names []Token
 		var kind, elemKind, chanElemKind Kind
 		var hasKind, isPtr, hasElemKind, isChan, hasChanElemKind bool
-		var typeName, typeQual, chanElemName, elemName Token
+		var typeName, typeQual, chanElemName, chanElemQual, elemName Token
+		chanElemPtr := false
 		var elemTypeNode TypeNode
 		var funcSig *SignatureNode
 		var declType TypeNode
@@ -4134,6 +4296,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
 						chanElemName = f.chanElemTypeName(s, tn)
+						chanElemQual, chanElemPtr = f.chanElemTypeInfo(s, tn)
 						elemName = f.elemTypeName(s, tn)
 						elemTypeNode = f.arrayElemTypeNode(tn)
 						funcSig = f.funcSig(s, tn)
@@ -4167,7 +4330,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkInferredOverflow(s, e)
 		}
 		for i, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}
 			if declType == nil && len(names) == len(initExprs) {
 				// No type written: the variable takes the one its own initializer
 				// gives it, exactly as ":=" does. A multi-result call feeding
@@ -4665,6 +4828,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			multi = nil
 		}
 	}
+	// `v, ok := <-ch` is likewise two names from one expression: v carries the
+	// channel's element type and ok is a bool.
+	recvName, recvQual := Token{}, Token{}
+	recvPtr, recvKind, recvHasKind, recvOK := false, Kind(0), false, false
+	if len(rhs) == 1 && len(lhs) == 2 && !assertOK {
+		recvName, recvQual, recvPtr, recvKind, recvHasKind, recvOK = f.recvElemInfo(s, rhs[0])
+	}
 	newCount := 0
 	for i, id := range lhs {
 		nm := id.Src()
@@ -4688,6 +4858,17 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			switch i {
 			case 0:
 				vd.typeName, vd.typeQual, vd.isPtr = assertBase, assertQual, true
+			case 1:
+				vd.kind, vd.hasKind = PredeclaredBool, true
+			}
+		}
+		if recvOK {
+			switch i {
+			case 0:
+				vd.typeName, vd.typeQual, vd.isPtr = recvName, recvQual, recvPtr
+				if recvHasKind {
+					vd.kind, vd.hasKind = recvKind, true
+				}
 			case 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
 			}
@@ -4721,6 +4902,21 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if newCount == 0 {
 		f.errNoNewVars(f.tok(head.Pos()))
 	}
+}
+
+// inferRecvFrom types a variable initialised by a receive; see its case in
+// inferVarFrom. A receive over a channel the walk cannot resolve answers false and
+// leaves the variable as it was.
+func (f *File) inferRecvFrom(s *Scope, vd *VarDeclaration, init Node) bool {
+	name, qual, isPtr, kind, hasKind, ok := f.recvElemInfo(s, init)
+	if !ok {
+		return false
+	}
+	vd.typeName, vd.typeQual, vd.isPtr = name, qual, isPtr
+	if hasKind {
+		vd.kind, vd.hasKind = kind, true
+	}
+	return true
 }
 
 // isNewBuilderCall reports whether an initializer is a call of the predeclared
@@ -13240,6 +13436,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
 		chanElemName := f.chanElemTypeName(s, typ)
+		chanElemQual, chanElemPtr := f.chanElemTypeInfo(s, typ)
 		elemName := f.elemTypeName(s, typ)
 		elemTypeNode := f.arrayElemTypeNode(typ)
 		funcSig := f.funcSig(s, typ)
@@ -13252,6 +13449,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			vd.elemKind, vd.hasElemKind = elemKind, hasElemKind
 			vd.isChan, vd.chanElemKind, vd.hasChanElemKind = isChan, chanElemKind, hasChanElemKind
 			vd.chanElemName = chanElemName
+			vd.chanElemQual, vd.chanElemPtr = chanElemQual, chanElemPtr
 			vd.elemTypeNode = elemTypeNode
 			vd.elemTypeName = elemName
 			vd.funcSig, vd.isFunc = funcSig, funcSig != nil

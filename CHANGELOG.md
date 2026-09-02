@@ -16,6 +16,28 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Behaviour changes
+
+- **A value received from another package's channel obeys the export rule.** A
+  receive was not a type source: `r := <-lib.Ch` recorded nothing about `r`, so
+  `r.unexported` read another package's field in every receive form -- the plain
+  receive, the comma-ok, `range ch`, and a select's `case v := <-ch`. Each now
+  carries the channel's element type, resolved where the channel was declared,
+  and is refused as Go refuses it. Found by domain-probe round fifteen
+  (concurrency), whose fifteen pipeline/select/close/pointer-handoff programs
+  otherwise matched Go bit for bit on the board, eight cogs up.
+
+### Fixed
+
+- **A received value's members are checked by the compiler, not the C backend.**
+  Same-package uses of the forms above were backstopped by the emitter, so a bad
+  member read surfaced as its message ("v has no field x") rather than Go's
+  ("type T has no field x"), and checker-only rules were silently skipped. The
+  channel's element type now travels with the received value -- name, package,
+  pointer-ness and kind.
+
 ## v0.37.0
 
 ### Behaviour changes

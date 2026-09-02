@@ -185,3 +185,26 @@ func localOfImportedType() {
 
 	println(x.F, y.F, h.N)
 }
+
+// A value RECEIVED from another package's channel has that package's type, in
+// every receive form -- and none of them carried it before, so a received value
+// was the one route left to an unexported field.
+func receivedValue() {
+	go p.FeedTCh()
+	r := <-p.TCh
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = r.g
+
+	w, ok := <-p.TCh
+	// ERROR "cannot refer to unexported field g of type p.T"
+	_ = w.g
+
+	select {
+	case v := <-p.TCh:
+		// ERROR "cannot refer to unexported field g of type p.T"
+		_ = v.g
+		println(v.F)
+	}
+
+	println(r.F, w.F, ok)
+}
