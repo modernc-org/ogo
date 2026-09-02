@@ -16,6 +16,18 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Toolchain
+
+- **Domain-probe round seventeen (a deadline scheduler) is pinned as a run
+  case.** Wrap-safe `uint32` clock arithmetic across the wrap point, comparator
+  function values -- one chosen at run time, one a method value whose
+  receiver's state flips between sorts -- struct swaps, wrap-safe binary
+  search, nil-guarded function fields, and cross-package callbacks all match
+  Go bit for bit on the board. The round found nothing to fix; the case is the
+  program that says those pieces compose.
+
 ## v0.38.0
 
 ### Toolchain

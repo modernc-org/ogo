@@ -15076,6 +15076,124 @@ func main() {
 		want: "boom boom 9\n6 300\n1 true 2 true 3 false 0\n",
 	},
 	{
+		// A deadline scheduler's machinery, composed: comparator FUNCTION VALUES
+		// (one picked at run time, and a METHOD VALUE whose receiver's state is
+		// flipped between sorts), struct swaps through indices, a wrap-safe
+		// uint32 deadline compare and binary search across the wrap point, and
+		// nil-guarded function fields. Round-17 probe; it found nothing, which is
+		// the point of writing it down -- this is the program that says those
+		// pieces compose.
+		name: "a deadline scheduler: comparators, wrap math, function fields",
+		src: `// Round 17b: comparators chosen at run time, a method value as one, nil function
+// fields guarded, and a wrap-safe binary search over the sorted table.
+
+type task struct {
+	deadline uint32
+	id       int32
+	run      func(t *task) int32
+}
+
+const n = 6
+
+var tasks [n]task
+
+func hit(t *task) int32 { return t.id }
+
+func byDeadline(a *task, b *task) bool {
+	return int32(a.deadline-b.deadline) < 0
+}
+
+func byID(a *task, b *task) bool { return a.id < b.id }
+
+type order struct {
+	reverse bool
+}
+
+func (o *order) cmp(a *task, b *task) bool {
+	if o.reverse {
+		return b.id < a.id
+	}
+	return a.id < b.id
+}
+
+var ord order
+
+func sortTasks(less func(a *task, b *task) bool) {
+	for i := 1; i < n; i++ {
+		for j := i; j > 0; j-- {
+			if less(&tasks[j], &tasks[j-1]) {
+				tasks[j], tasks[j-1] = tasks[j-1], tasks[j]
+			} else {
+				break
+			}
+		}
+	}
+}
+
+// find returns the index of the first task whose deadline is not before d,
+// wrap-safe, over the byDeadline-sorted table.
+func find(d uint32) int {
+	lo, hi := 0, n
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if int32(tasks[mid].deadline-d) < 0 {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+func ids() {
+	for i := 0; i < n; i++ {
+		print(tasks[i].id, " ")
+	}
+	println()
+}
+
+func main() {
+	base := uint32(0xffffffa0)
+	for i := int32(0); i < n; i++ {
+		tasks[i].deadline = base + uint32(i)*0x30
+		tasks[i].id = i + 1
+		if i != 4 {
+			tasks[i].run = hit
+		}
+	}
+	// Scramble, then sort with a comparator picked at run time.
+	tasks[0], tasks[5] = tasks[5], tasks[0]
+	tasks[1], tasks[3] = tasks[3], tasks[1]
+
+	pick := byDeadline
+	if tasks[0].id == 0 {
+		pick = byID
+	}
+	sortTasks(pick)
+	ids()
+
+	println(find(base), find(base+0x31), find(0x20), find(0xffffff00))
+
+	// A method value as the comparator, both directions.
+	sortTasks(ord.cmp)
+	ids()
+	ord.reverse = true
+	sortTasks(ord.cmp)
+	ids()
+
+	// A nil function field is skippable, and calling the set ones works.
+	total := int32(0)
+	for i := 0; i < n; i++ {
+		if tasks[i].run != nil {
+			total += tasks[i].run(&tasks[i])
+		}
+	}
+	println(total)
+}
+`,
+		want: "1 2 3 4 5 6 \n0 2 3 0\n1 2 3 4 5 6 \n6 5 4 3 2 1 \n16\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 
