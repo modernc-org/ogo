@@ -46,11 +46,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   promoted call dispatches through whatever the field holds, at any depth of
   struct embedding, multi-result methods and another package's interface
   included. The field stays readable and writable by its name, and a method
-  unexported in the interface's own package does not cross the boundary. One
-  edge is refused honestly rather than mis-diagnosed: a type whose
-  satisfaction of an interface rests on a method promoted from an embedded
-  interface says so ("not supported yet") instead of claiming the method is
-  missing.
+  unexported in the interface's own package does not cross the boundary. And a
+  type SATISFIES an interface through such a method: the vtable slot loads the
+  field and dispatches through its vtable, so whatever the field holds at call
+  time answers -- which is what makes `struct{ error }` passable AS an error,
+  a vtable may mix declared and dispatched slots, a multi-result method
+  forwards its out parameter through the dispatching thunk, and a nil field
+  panics there as any nil interface call does.
 
 - **A call through a nil interface panics, as Go's does.** Address zero on
   this target is ordinary Hub RAM, so an unguarded call went through garbage

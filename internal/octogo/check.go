@@ -7628,13 +7628,16 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 			}
 		}
 		if fd == nil {
-			// The method IS in the type's Go method set, promoted from an embedded
-			// INTERFACE -- but satisfying an interface through one needs a thunk
-			// that dispatches through the field's held value, which is not built.
-			// Said as what it is, rather than as a missing method the type has.
-			if _, _, isProm := f.promotedIfaceMethod(home, td.Token().Src(), name); isProm {
-				f.err(td.Token().Position(), "%s satisfies the interface only through a method promoted from an embedded interface (%s), which is not supported yet", concrete, name)
-				return "", "", "", "", "", true
+			// The method is in the type's set by way of an embedded INTERFACE: it
+			// satisfies exactly as a declared one does -- the thunk dispatches
+			// through the field -- provided the signatures agree. No receiver is
+			// addressed, so the pointer-receiver gate below does not apply.
+			if m, _, isProm := f.promotedIfaceMethod(home, td.Token().Src(), name); isProm {
+				w, h := f.sigIdentity(methodSpecSig(set[name])), f.sigIdentity(methodSpecSig(m))
+				if w != "" && h != "" && w != h {
+					return "", "", name, f.sigString(methodSpecSig(m), false), f.sigString(methodSpecSig(set[name]), false), false
+				}
+				continue
 			}
 			return name, "", "", "", "", false
 		}

@@ -6277,9 +6277,18 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		// answers both. The path it returns is empty for a method the type declares
 		// itself, so that case is untouched.
 		cname, path, _, has := e.promotedMethod(concrete, m.name)
+		dispatched := false // the slot forwards through an embedded INTERFACE field
+		var ipath []string
+		var ict string
 		if !has {
-			e.fail("%s does not implement %s: missing method %s", concrete, iface, m.name)
-			return false
+			// The method is in the type's set only by way of an embedded
+			// interface: the thunk then DISPATCHES -- it loads the field and calls
+			// through its vtable, so whatever the field holds at call time
+			// answers. The nil guard is the same one every interface call takes.
+			if ict, ipath, dispatched = e.promotedIfaceMethodPath(concrete, m.name); !dispatched {
+				e.fail("%s does not implement %s: missing method %s", concrete, iface, m.name)
+				return false
+			}
 		}
 		thunk := ifaceThunkName(iface, concrete, m.name)
 		fmt.Fprintf(&b, "static %s %s(void* _ogo_r", slotRet(m), thunk)
@@ -6290,6 +6299,29 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		}
 		if m.out != "" {
 			fmt.Fprintf(&b, ", %s* _ogo_out", m.out)
+		}
+		if dispatched {
+			sub := "(*(" + concrete + "*)_ogo_r)" + e.embeddedPathC(concrete, ipath)
+			vtRead := sub + ".vt"
+			if e.checks {
+				e.usesIfaceNil = true
+				e.needPanic()
+				vtRead = "((const " + ifaceVTName(ict) + "*)ogo_iface_vt(" + sub + ".vt))"
+			}
+			call := vtRead + "->" + vtMember(m.name) + "(" + strings.Join(append([]string{sub + ".data"}, args...), ", ")
+			if m.out != "" {
+				// The inner slot writes through the same out parameter; the
+				// signatures were matched by the checker, so the shapes agree.
+				call += ", _ogo_out"
+			}
+			call += ")"
+			switch {
+			case m.out != "", m.res == "void":
+				b.WriteString(") { " + call + "; }" + "\n")
+			default:
+				b.WriteString(") { return " + call + "; }" + "\n")
+			}
+			continue
 		}
 		recv := "*(" + concrete + "*)_ogo_r"
 		if e.methodPtr[cname] {

@@ -14978,6 +14978,104 @@ func main() {
 		panics: true,
 	},
 	{
+		// A type SATISFIES an interface through a method promoted from an embedded
+		// interface: the thunk loads the field and dispatches through its vtable,
+		// so whatever the field holds at call time answers -- the error-wrapping
+		// idiom (struct{ error } passed AS error), a vtable mixing declared and
+		// dispatched slots, and a multi-result method forwarding its out
+		// parameter.
+		name: "a wrapper satisfies through its embedded interface",
+		src: `type speaker interface {
+	say() int32
+	loud() int32
+}
+
+type voice interface {
+	say() int32
+}
+
+type reader interface {
+	read() (int32, bool)
+}
+
+type oops struct{}
+
+func (o *oops) Error() string { return "boom" }
+
+type failer struct {
+	error
+	code int32
+}
+
+type quiet struct {
+	n int32
+}
+
+func (q *quiet) say() int32 { return q.n }
+
+type mixed struct {
+	voice
+	k int32
+}
+
+func (m *mixed) loud() int32 { return m.k * 100 }
+
+type src struct {
+	n int32
+}
+
+func (s *src) read() (int32, bool) {
+	s.n++
+	return s.n, s.n < 3
+}
+
+type wrap struct {
+	reader
+	tag int32
+}
+
+var bad oops
+
+var f failer
+
+var qq = quiet{n: 6}
+
+var mx mixed
+
+var ss src
+
+var w wrap
+
+func report(e error) string { return e.Error() }
+
+func main() {
+	// A wrapper passed AS the interface its embedded field supplies: the
+	// error-wrapping idiom.
+	f.error = &bad
+	f.code = 9
+	var e error = &f
+	println(report(e), e.Error(), f.code)
+
+	// A vtable of both kinds: one slot declared on the type, one dispatched
+	// through the embedded interface.
+	mx.voice = &qq
+	mx.k = 3
+	var s speaker = &mx
+	println(s.say(), s.loud())
+
+	// A multi-result method satisfied through the field: the out parameter
+	// forwards through the dispatching thunk.
+	w.reader = &ss
+	var r reader = &w
+	a, ok1 := r.read()
+	b, ok2 := r.read()
+	c, ok3 := r.read()
+	println(a, ok1, b, ok2, c, ok3, w.tag)
+}
+`,
+		want: "boom boom 9\n6 300\n1 true 2 true 3 false 0\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 
