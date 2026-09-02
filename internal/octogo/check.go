@@ -7442,6 +7442,38 @@ func (f *File) checkPromotedExport(s, home *Scope, member Token) bool {
 	return false
 }
 
+// promotedIfaceMethod finds a method in the method set of an INTERFACE the type
+// embeds, at any depth through embedded structs, with the scope the interface is
+// declared in -- what the export rule compares against. A call it answers for
+// dispatches through the interface-typed field.
+func (f *File) promotedIfaceMethod(s *Scope, typeName, method string) (*MethodSpecNode, *Scope, bool) {
+	level := []embRef{{name: typeName, scope: s}}
+	for depth := 0; depth < 16 && len(level) != 0; depth++ {
+		var next []embRef
+		for _, t := range level {
+			td, home, ok := f.typeDeclNamed(t.scope, t.name)
+			if !ok || td.TypeSpec == nil {
+				continue
+			}
+			if _, isIface := td.TypeSpec.TypeNode.(*TypeNodeInterface); isIface {
+				base := t.name
+				if _, member, isQual := strings.Cut(t.name, "."); isQual {
+					base = member
+				}
+				if set, is := f.interfaceMethodsNamed(home, base); is {
+					if m, has := set[method]; has {
+						return m, home, true
+					}
+				}
+				continue // an interface embeds no fields to walk further
+			}
+			next = append(next, f.embeddedFields(t.scope, t.name)...)
+		}
+		level = next
+	}
+	return nil, nil, false
+}
+
 // interfaceMethods returns the method set of a named interface type, keyed by name,
 // and whether the name is one. It is the interface counterpart of structFields:
 // where that answers "what may be selected", this answers "what may be called".
@@ -7596,6 +7628,14 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 			}
 		}
 		if fd == nil {
+			// The method IS in the type's Go method set, promoted from an embedded
+			// INTERFACE -- but satisfying an interface through one needs a thunk
+			// that dispatches through the field's held value, which is not built.
+			// Said as what it is, rather than as a missing method the type has.
+			if _, _, isProm := f.promotedIfaceMethod(home, td.Token().Src(), name); isProm {
+				f.err(td.Token().Position(), "%s satisfies the interface only through a method promoted from an embedded interface (%s), which is not supported yet", concrete, name)
+				return "", "", "", "", "", true
+			}
 			return name, "", "", "", "", false
 		}
 		// Go's method set: a value of T carries only the value-receiver methods,
@@ -8688,6 +8728,21 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 		}
 	}
 	if fd == nil {
+		// A method promoted from an embedded INTERFACE: checked against the
+		// interface's own spec, as a call on the field written out would be.
+		if m, home, isProm := f.promotedIfaceMethod(s, d.typeName.Src(), member.Src()); isProm {
+			if f.checkPromotedExport(s, home, member) {
+				return
+			}
+			var args []Node
+			for a := range it(argList.ast) {
+				if a.sym == Expression {
+					args = append(args, a)
+				}
+			}
+			f.checkArgs(s, member, methodSpecSig(m), args)
+			return
+		}
 		if fields, isStruct := f.structFields(s, d.typeName); isStruct && fields[member.Src()] {
 			return
 		}
@@ -13255,9 +13310,8 @@ func (f *File) checkStructEmbedNames(s *Scope, ts *TypeSpecNode) {
 		case *TypeNodeStruct:
 			// its fields and methods promote
 		case *TypeNodeInterface:
-			// Go permits this -- the field holds an interface value -- but an
-			// interface-typed FIELD is its own feature and is not built yet.
-			f.err(tok.Position(), "cannot embed %s: an interface-typed field is not supported yet", name)
+			// The field holds an interface value, and the interface's method set
+			// promotes: a promoted call dispatches through whatever the field holds.
 		case *TypeNodePointer:
 			f.err(tok.Position(), "embedded field type cannot be a pointer")
 		default:

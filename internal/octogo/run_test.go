@@ -14886,6 +14886,98 @@ func main() {
 		want: "21 22 22\n42\n25\n30 15 7\n11\n50\n6 2 9\n",
 	},
 	{
+		// An embedded INTERFACE promotes its method set, dispatching through
+		// whatever the field holds: the plain form, the predeclared error --
+		// struct{ error } wrapping a cause -- and a multi-result method promoted
+		// through two levels of struct embedding. The field itself stays
+		// readable and writable by its name.
+		name: "an embedded interface promotes its method set",
+		src: `type writer interface {
+	write(v int32) int32
+}
+
+type reader interface {
+	read() (int32, bool)
+}
+
+type sink struct {
+	total int32
+}
+
+func (s *sink) write(v int32) int32 {
+	s.total += v
+	return s.total
+}
+
+func (s *sink) read() (int32, bool) {
+	return s.total, s.total < 10
+}
+
+type oops struct{}
+
+func (o *oops) Error() string { return "boom" }
+
+type logger struct {
+	writer
+	id int32
+}
+
+type inner struct {
+	reader
+}
+
+type outer struct {
+	inner
+	tag int32
+}
+
+type failer struct {
+	error
+	code int32
+}
+
+var sk sink
+
+var bad oops
+
+func main() {
+	var lg logger
+	lg.writer = &sk
+	lg.id = 3
+	println(lg.write(5), lg.writer.write(2), lg.id)
+
+	var o outer
+	o.reader = &sk
+	v, ok := o.read()
+	println(v, ok, o.tag)
+
+	var f failer
+	f.error = &bad
+	f.code = 7
+	println(f.Error(), f.code)
+}
+`,
+		want: "5 7 3\n7 true 0\nboom 7\n",
+	},
+	{
+		// A call through a NIL interface panics, as Go's does: address zero here
+		// is ordinary Hub RAM, and unguarded the call went through garbage and
+		// returned it, silently -- measured on the board before the guard.
+		name: "a call through a nil interface panics",
+		src: `type writer interface {
+	write(v int32) int32
+}
+
+func main() {
+	var w writer
+	println("start")
+	println(w.write(1))
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

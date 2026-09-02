@@ -3591,6 +3591,13 @@ func nilHelperDef(ptrType, name string) string {
 // int*, the star spelled the way sanitizeElem spells one.
 func nilHelperName(ptrType string) string { return "ogo_nil_" + sanitizeElem(ptrType) }
 
+// ogoIfaceNil guards an interface call's vtable read: a nil interface has no
+// table, and Go panics where address zero here would quietly supply garbage.
+const ogoIfaceNil = "static const void* ogo_iface_vt(const void* vt) {\n" +
+	"\tif (vt == 0) ogo_panic(\"nil pointer dereference\");\n" +
+	"\treturn vt;\n" +
+	"}\n"
+
 // ogoNonzero guards a divisor: it returns b when non-zero, else panics.
 const ogoNonzero = "static int ogo_nonzero(int b) {\n" +
 	"\tif (b == 0) ogo_panic(\"integer divide by zero\");\n" +
@@ -4476,6 +4483,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	for _, pt := range slices.Sorted(maps.Keys(e.nilHelpers)) {
 		helperDefs.WriteString(nilHelperDef(pt, nilHelperName(pt)))
 	}
+	if e.usesIfaceNil {
+		helperDefs.WriteString(ogoIfaceNil)
+	}
 	if e.usesNonzero64 {
 		helperDefs.WriteString(ogoNonzero64)
 	}
@@ -4936,6 +4946,7 @@ type emitter struct {
 	usesRuneQuote      bool                    // ogo_print_qrune is called: %q of an integer
 	usesBasePrint      bool                    // ogo_print_base is called: %o of a negative value, or any %b (see basePrintHelper)
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
+	usesIfaceNil       bool                    // ogo_iface_vt (nil-interface call guard) is called
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
 	litDepth           int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
 	constWide          map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
@@ -6337,7 +6348,17 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 // trailing parameter rather than returning (see ifaceMethod.out); it is empty for
 // every other method, and ignored by them.
 func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []int32, out string) string {
-	call := recvText + ".vt->" + vtMember(method) + "(" + recvText + ".data"
+	vtRead := recvText + ".vt"
+	if e.checks {
+		// A NIL interface has no table: address zero on this target is ordinary
+		// Hub RAM, so an unguarded call went through garbage and returned it,
+		// silently, where Go panics. The guard is one generic helper; the cast
+		// restores the table's own type.
+		e.usesIfaceNil = true
+		e.needPanic()
+		vtRead = "((const " + ifaceVTName(ifaceCType) + "*)ogo_iface_vt(" + recvText + ".vt))"
+	}
+	call := vtRead + "->" + vtMember(method) + "(" + recvText + ".data"
 	// The slot is a function pointer, and through one the target's C compiler
 	// converts no constant to a 64-bit parameter: `x.Mix(m, 3)` was refused, "Bad
 	// number of parameters in call to Mix". The method's parameter types are what
@@ -6402,7 +6423,14 @@ func (e *emitter) ifaceChainMethod(recv string, suffix []Node) (ifaceCType strin
 		ct = cur.ctype
 	}
 	if !e.isIfaceCType(ct) {
-		return "", ifaceMethod{}, false
+		// A method PROMOTED from an embedded interface: the receiver the source
+		// wrote is a struct, and the interface is the member the promotion path
+		// reaches. ifaceRecvText appends the same path.
+		ict, _, okp := e.promotedIfaceMethodPath(ct, member)
+		if !okp {
+			return "", ifaceMethod{}, false
+		}
+		ct = ict
 	}
 	for _, im := range e.ifaceMethods[ct] {
 		if im.name == member {
@@ -6416,12 +6444,33 @@ func (e *emitter) ifaceChainMethod(recv string, suffix []Node) (ifaceCType strin
 // variable itself, or the chain that reaches it. Emitted only when the call is,
 // since lowering a chain may bind a temporary.
 func (e *emitter) ifaceRecvText(recv string, suffix []Node) (string, bool) {
+	member := e.soleIdent(suffix[len(suffix)-2].ast)
 	steps := suffix[:len(suffix)-2]
+	text, ct := "", ""
 	if len(steps) == 0 {
-		return e.varRef(recv), true
+		var isVar bool
+		if ct, isVar = e.varType(recv); !isVar {
+			return "", false
+		}
+		text = e.varRef(recv)
+	} else {
+		var okc bool
+		if text, ct, _, okc = e.chainCText(recv, steps); !okc {
+			return "", false
+		}
 	}
-	text, _, _, ok := e.chainCText(recv, steps)
-	return text, ok
+	if !e.isIfaceCType(ct) {
+		// The promoted form: the interface-typed member the path reaches is the
+		// receiver (see ifaceChainMethod).
+		ict, path, okp := e.promotedIfaceMethodPath(ct, member)
+		if !okp {
+			return "", false
+		}
+		text += e.embeddedPathC(ct, path)
+		ct = ict
+	}
+	_ = ct
+	return text, true
 }
 
 // ifaceOutMethod names the result struct a method of several results reached
@@ -6538,6 +6587,20 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 				out = append(out, structField{name: names[0], ctype: mn, embedded: true})
 				continue
 			}
+			// An embedded INTERFACE: the member holds an interface value, and the
+			// interface's method set promotes -- a promoted call dispatches through
+			// whatever the field holds (promotedIfaceMethodPath).
+			if e.isIfaceCType(mn) {
+				out = append(out, structField{name: names[0], ctype: mn, embedded: true})
+				continue
+			}
+			// `error` embedded -- the universe's own interface, which mangles into
+			// no package. The member is named error, of the error interface's type;
+			// a failure struct wrapping its cause is the shape this is written for.
+			if names[0] == "error" && !e.typeNames[mn] {
+				out = append(out, structField{name: "error", ctype: e.errorIfaceCType(), embedded: true})
+				continue
+			}
 		}
 		// ANOTHER PACKAGE's struct embedded, `lib.Leaf`. The field is named after the
 		// type UNQUALIFIED -- Go names it `V.Leaf` whichever package declared it --
@@ -6557,6 +6620,10 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 					continue
 				}
 				if _, isArr := e.namedArrays[mn]; isArr {
+					out = append(out, structField{name: names[1], ctype: mn, embedded: true})
+					continue
+				}
+				if e.isIfaceCType(mn) {
 					out = append(out, structField{name: names[1], ctype: mn, embedded: true})
 					continue
 				}
@@ -19845,6 +19912,21 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				e.emit(")")
 				return true
 			}
+			// A method promoted from an embedded INTERFACE dispatches through the
+			// field: whatever the field holds decides, exactly as writing the field
+			// out would.
+			if ict, path, okp := e.promotedIfaceMethodPath(rct, method); okp {
+				recvText := e.varRef(recv) + e.embeddedPathC(rct, path)
+				e.checkIfaceArgs(ict, method, e.callArgExprs(suffix[1].ast))
+				if out, single := e.ifaceSingleOut(ict, method); single {
+					e.emitOutValueCall(out, discard, func(tmp string) string {
+						return e.ifaceCallC(ict, recvText, method, suffix[1].ast, tmp)
+					})
+					return true
+				}
+				e.emit(e.ifaceCallC(ict, recvText, method, suffix[1].ast, ""))
+				return true
+			}
 			// The receiver is in hand here and nowhere further in, so the
 			// receiver-lifetime rule is asked here rather than threaded through
 			// emitCallArgs, which nine call sites share and only this one is a method.
@@ -24980,6 +25062,17 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 			}
 			return "", nil, false
 		}
+		// A method PROMOTED from an embedded interface: the results are the
+		// interface's, as for a direct call on the member.
+		if rct, isVar := e.varType(recv); isVar {
+			if ict, _, okp := e.promotedIfaceMethodPath(rct, member); okp {
+				for _, m := range e.ifaceMethods[ict] {
+					if m.name == member {
+						return "", ifaceResultTypes(m), true
+					}
+				}
+			}
+		}
 		// A struct FIELD holding a function value, `o.dm(17, 5)`: the field's own
 		// typedef says what a call through it yields. Asked before the method path,
 		// which would read the same `o.dm` as a method of o's type and find none.
@@ -25743,6 +25836,44 @@ func (e *emitter) promotedMethod(ctype, method string) (cname string, path []str
 		level = next
 	}
 	return "", nil, "", false
+}
+
+// promotedIfaceMethodPath finds a method promoted from an embedded INTERFACE: the
+// member path to the interface-typed field whose method set has it, at any depth
+// through embedded structs. The call it types dispatches through the field's held
+// value, which is what makes it different from promotedMethod's direct binding.
+func (e *emitter) promotedIfaceMethodPath(ctype, method string) (ifaceCt string, path []string, ok bool) {
+	type step struct {
+		ctype string
+		path  []string
+	}
+	level := []step{{ctype: methodBaseType(ctype)}}
+	for depth := 0; depth < 16 && len(level) != 0; depth++ {
+		var next []step
+		for _, st := range level {
+			for _, fld := range e.structs[st.ctype] {
+				if !fld.embedded {
+					continue
+				}
+				p := append(append([]string{}, st.path...), fld.name)
+				if e.isIfaceCType(fld.ctype) {
+					if e.hasIfaceMethod(fld.ctype, method) {
+						if ok {
+							return "", nil, false // two at this depth: ambiguous
+						}
+						ifaceCt, path, ok = fld.ctype, p, true
+					}
+					continue
+				}
+				next = append(next, step{ctype: methodBaseType(fld.ctype), path: p})
+			}
+		}
+		if ok {
+			return ifaceCt, path, true
+		}
+		level = next
+	}
+	return "", nil, false
 }
 
 // funcHasName reports whether a function or method of that C name was declared, for
@@ -26525,6 +26656,19 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 				}
 			}
 			return "", false
+		}
+		// A method PROMOTED from an embedded interface carries the slot's declared
+		// result, exactly as the direct call above does.
+		if rct, ok := e.varType(recv); ok {
+			if ict, _, okp := e.promotedIfaceMethodPath(rct, e.soleIdent(suffix[0].ast)); okp {
+				method := e.soleIdent(suffix[0].ast)
+				for _, m := range e.ifaceMethods[ict] {
+					if m.name == method {
+						return m.res, m.res != "void"
+					}
+				}
+				return "", false
+			}
 		}
 		// A single-result method call `x.M()` carries its recorded result type,
 		// keyed by the receiver type's mangled method name.

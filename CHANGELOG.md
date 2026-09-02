@@ -40,6 +40,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An interface embeds in a struct, and its method set promotes.**
+  `struct{ writer }` -- and `struct{ error }`, the failure-wrapping idiom --
+  declare a field named after the interface, holding an interface value; a
+  promoted call dispatches through whatever the field holds, at any depth of
+  struct embedding, multi-result methods and another package's interface
+  included. The field stays readable and writable by its name, and a method
+  unexported in the interface's own package does not cross the boundary. One
+  edge is refused honestly rather than mis-diagnosed: a type whose
+  satisfaction of an interface rests on a method promoted from an embedded
+  interface says so ("not supported yet") instead of claiming the method is
+  missing.
+
+- **A call through a nil interface panics, as Go's does.** Address zero on
+  this target is ordinary Hub RAM, so an unguarded call went through garbage
+  and RETURNED it -- measured on the board: `256` and a normal continuation
+  where Go panics. Every interface call now guards the vtable read; `ogo
+  build --unchecked` removes the guard with the other checks.
+
 - **A defined non-struct type embeds, as Go embeds it.** `type celsius int32`
   written bare inside a struct declares a field named after the type, and the
   type's method set promotes whatever its underlying type is -- value and

@@ -1,9 +1,9 @@
 // A struct embeds a NAME: a struct type's -- this package's or, written qualified,
-// another's -- or a defined type of any other underlying kind, whose methods
-// promote exactly as a struct's do. What stays refused is an interface-typed
-// field, a feature of its own not built yet, and a pointer type, which Go refuses
-// too; and either is said at the declaration, which beats a diagnostic about some
-// later use.
+// another's -- a defined type of any other underlying kind, or an INTERFACE,
+// whose method set promotes as a struct's does (an interface's promoted call
+// dispatches through whatever the field holds). What stays refused is a pointer
+// type, which Go refuses too, said at the declaration rather than as a diagnostic
+// about some later use.
 
 type Leaf struct{ L int }
 
@@ -30,8 +30,8 @@ type GoodKind struct {
 	B int
 }
 
-type BadIface struct {
-	// ERROR cannot embed Reader: an interface-typed field is not supported yet
+// An interface embeds; its method set promotes and dispatches through the field.
+type WithIface struct {
 	Reader
 	B int
 }
@@ -55,4 +55,8 @@ func main() {
 	var k GoodKind
 	k.Count = 4
 	println(k.Val(), int(k.Count), k.B)
+
+	var w WithIface
+	w.Reader = &g.Leaf
+	println(w.Read(), w.B)
 }
