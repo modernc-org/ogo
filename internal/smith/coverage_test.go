@@ -36,7 +36,7 @@ var generatedConstructs = []struct {
 	{"sized int16/uint16", `\n\s*var z_\d+ u?int16 = `},
 	{"sized uint32", `\n\s*var z_\d+ uint32 = `},
 	{"sized int64/uint64", `\n\s*var z_\d+ u?int64 = `},
-	{"64-bit high-half fold", `int\(\(z_\d+>>32\)\)`},
+	{"64-bit high-half fold", `int\(\(z_\d+ ?>> ?32\)\)`},
 	{"sized unary minus", `= -\(z_\d+\)`},
 	{"sized complement", `= \^\(z_\d+\)`},
 	{"sized shift", `z_\d+ (<<|>>) `},
@@ -83,7 +83,7 @@ var generatedConstructs = []struct {
 	{"sized negation beside an addition", `int\(\(-z_\d+ [-+] -?\d+\)\)`},
 	// The high half of a 64-bit fold EXPRESSION, not only of the variable: the
 	// negation fault above corrupted only the high word, which int(...) drops.
-	{"64-bit fold expression high half", `int\(\(\(-z_\d+ [-+] -?\d+\)>>32\)\)`},
+	{"64-bit fold expression high half", `int\(\(\(-z_\d+ [-+] -?\d+\) ?>> ?32\)\)`},
 	// A function whose whole return operand is a widening conversion, and a sized
 	// variable drawn from a call of one: `return int64(p)` is what the target
 	// returned with a garbage high word.
@@ -153,7 +153,9 @@ var generatedConstructs = []struct {
 	{"call through an interface", `if_\d+\.Val\(\)`},
 	{"type assertion, then a call on its result", `if_\d+\.\(\*S_\d+\)\.Val\(\)`},
 	{"type switch on an interface", `switch x := if_\d+\.\(type\)`},
-	{"type switch case not taken", `case \*S_\d+:\n\s*\w+ = \w+ \^ \(x\.Val\(\)\*\d+\)\n\s*case \*S_\d+:`},
+	// The multiplication's spacing follows the formatter: inside the parentheses
+	// the depth rule spaces it ("(x.Val() * 3)"), as gofmt does.
+	{"type switch case not taken", `case \*S_\d+:\n\s*\w+ = \w+ \^ \(x\.Val\(\) ?\* ?\d+\)\n\s*case \*S_\d+:`},
 }
 
 // TestGeneratorCoverage asserts that the generator still emits every construct it

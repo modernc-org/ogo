@@ -29,6 +29,12 @@ type formatter struct {
 	p           *Parser
 	prevTok     Symbol // Last emitted token.
 	prevPrevTok Symbol // The token before the last emitted token.
+	prevTokIdx  int32  // Index of the last emitted token, for tightOps.
+
+	// tightOps holds every binary add- or mul-level operator TOKEN that gofmt
+	// prints without blanks, per its precedence/depth rule; computeTightOps fills
+	// it before the walk. An operator token not in the map prints spaced.
+	tightOps map[int32]bool
 
 	// Elastic Tabstops maps
 	targetCol2          map[int32]int // token index -> absolute target column for Col2 (Types)
@@ -359,20 +365,27 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// tightening rule below would otherwise take.
 	case (curr == SUB || curr == ADD) && isOperandEnd(prev) && c.nextTok == curr:
 		return true
-	// add- and mul-level operators the rules below would otherwise space.
-	case (c.inIndex || c.inArgs) && tightBinaryGap(prevPrev, prev, curr):
-		return false
-	// A unary "+" or "-" binds to its operand, and where gofmt has already bound the
-	// operator to what precedes it -- a call argument, an index -- it binds the sign
-	// too: "v%-1", "v*-2", "f(a&^-5)". This gap fell through to the add-level rule
-	// below and took a space, so every such expression came out as "v% -1", which
-	// gofmt does not write.
+	// gofmt's PRECEDENCE spacing: a binary add- or mul-level operator prints
+	// tight exactly when the depth/cutoff rule says so, decided per operator
+	// token by computeTightOps before the walk.
+	case tightBinaryGap(prevPrev, prev, curr) && !((curr == MUL || prev == MUL) && (c.inType || c.inParams)):
+		// The guard leaves a POINTER star to the unary rules below: in a type or a
+		// parameter list "*" is always a pointer, however operand-like its left
+		// neighbour ("func (c *Counter)", "var p *int").
+		if isAddOp(curr) || isMulOp(curr) {
+			return !c.tight[c.currTokIdx]
+		}
+		return !c.tight[c.prevTokIdx]
+	// A unary "+" or "-" binds to its operand, and where gofmt has bound the
+	// operator before it tight, it binds the sign too: "v%-1", "v*-2", "f(a&^-5)".
+	// This gap fell through to the add-level rule below and took a space, so every
+	// such expression came out as "v% -1", which gofmt does not write.
 	//
 	// The exception is a sign that would RUN INTO the operator: "v - -4", where
 	// "--" is a different token. gofmt spaces both sides there, and the rule just
 	// after this one does the other side.
-	case (c.inIndex || c.inArgs) && (curr == SUB || curr == ADD) && !isOperandEnd(prev) &&
-		(isAddOp(prev) || isMulOp(prev)):
+	case (curr == SUB || curr == ADD) && !isOperandEnd(prev) &&
+		(isAddOp(prev) || isMulOp(prev)) && c.tight[c.prevTokIdx]:
 		return false
 	// Unambiguous unary operators never need a space after them
 	case prev == NOT || prev == TILDE:
@@ -392,11 +405,13 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		if !isOperandEnd(prevPrev) {
 			return false
 		}
-		// Respect the hasAddOp precedence for MulOps to group multiplication:
-		if isMulOp(prev) {
-			return !c.hasAddOp
+		// A BINARY operator against a non-operand right neighbour -- a unary sign,
+		// "v * -2" -- was not the tightBinaryGap case's (that asks about the gap's
+		// operand side); its spacing is still the operator's own.
+		if isAddOp(prev) || isMulOp(prev) {
+			return !c.tight[c.prevTokIdx]
 		}
-		return true
+		return false
 
 	case isAssignOp(curr) || isRelOp(curr):
 		return true
@@ -408,7 +423,7 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	case isAddOp(curr) || isAddOp(prev):
 		return true
 	case isMulOp(curr) || isMulOp(prev):
-		return !c.hasAddOp
+		return true
 	}
 	return true
 }
@@ -653,6 +668,12 @@ func (f *formatter) beginsLine(idx int32) bool {
 }
 
 type formatterCtx struct {
+	// prevTokIdx and currTokIdx are the token INDEXES either side of the gap being
+	// spaced, so a rule can ask about the specific operator token (tightOps) rather
+	// than only its kind.
+	prevTokIdx int32
+	currTokIdx int32
+	tight      map[int32]bool
 	// nextTok is the token AFTER the one this gap precedes, which two rules need:
 	// a binary "+"/"-" directly before a unary one of the same sign takes a space,
 	// so the pair cannot be read as "++" or "--" (see needsSpace).
@@ -668,7 +689,6 @@ type formatterCtx struct {
 	undentDeclOpen    int32
 	undentDeclClose   int32
 	indentSepForIndex int32
-	hasAddOp          bool // True if the current SimpleExpr contains an AddOp (+, -)
 	inParams          bool // True if we are inside a ParameterList or CallSuffix
 	// inParamDecl is true inside one entry of a parameter or result list, which is
 	// what tells a variadic parameter's "..." from a call's spread: gofmt spaces
@@ -682,10 +702,6 @@ type formatterCtx struct {
 	inSignature bool
 	inType      bool
 	inIndex     bool // True inside an Index, where ':' binds tight ("s[0:1]")
-	inArgs      bool // True inside an argument list of MORE THAN ONE argument, where
-	// gofmt renders an add- or mul-level operator tight ("f(a+b, c)") and leaves a
-	// relational or logical one spaced ("f(a == b, c)"). One argument does not: it is
-	// gofmt's expression DEPTH, which a call raises only when it has several.
 	// sliceColonBlanks is true inside a multi-bound slice whose ":" gofmt spaces
 	// because one of the bounds is a binary expression ("xs[i+1 : j-1]").
 	sliceColonBlanks bool
@@ -1055,11 +1071,10 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					// These braces are a block's, however deep inside a composite
 					// literal they sit -- a function literal given as an element.
 					c.inLiteralBraces = false
-					// A block resets subscript depth, so the tight-operator rule for an
-					// index or an argument list does not reach into a statement body
-					// nested inside one -- a function literal written as an argument.
+					// A block resets subscript state, so an index's ':' rules do not
+					// reach into a statement body nested inside one -- a function
+					// literal written as an argument.
 					c.inIndex = false
-					c.inArgs = false
 				case ConstDecl, VarDecl, TypeDecl, ImportDecl:
 					// A grouped declaration indents its specs, as gofmt does, with the
 					// parentheses staying at the level of the keyword -- the same shape
@@ -1082,13 +1097,6 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 						c.indentLevel++
 					}
 				case ResultList, ArgumentList:
-					// Several arguments raise gofmt's expression depth and one does
-					// not, which is the whole of the difference between "f(a+b, c)"
-					// and "f(a + b)". Scoped to the subtree by the by-value ctx, so a
-					// nested call inherits it -- "f(g(a+b), c)" is tight in gofmt too.
-					if Symbol(-n) == ArgumentList && argumentCount(ast[2:next]) > 1 {
-						c.inArgs = true
-					}
 					// A list whose first element starts a line of its own indents what
 					// follows it. The parentheses are not part of these productions, so
 					// the closing one is emitted at the level outside them with nothing
@@ -1112,9 +1120,6 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					c.inImport = true
 				case SimpleExpr:
 					c.inType, c.inParams, c.inSignature = false, false, false
-					if containsNode(ast[2:next], AddOp) {
-						c.hasAddOp = true
-					}
 				case Expression:
 					c.inType, c.inParams, c.inSignature = false, false, false
 				case ParamDecl:
@@ -1317,6 +1322,8 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 
 				sepCtx := c
 				sepCtx.nextTok = f.tokAfter(tokIdx)
+				sepCtx.prevTokIdx, sepCtx.currTokIdx = f.prevTokIdx, tokIdx
+				sepCtx.tight = f.tightOps
 				f.formatSep(seps, sepIndent, Symbol(tok.Ch), sepCtx)
 				f.tabs(f.nl, c.indentLevel+indentDelta)
 
@@ -1338,11 +1345,14 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 
 				f.prevPrevTok = f.prevTok
 				f.prevTok = Symbol(tok.Ch)
+				f.prevTokIdx = tokIdx
 			}
 			ast = ast[next:]
 		}
 	}
 
+	f.tightOps = map[int32]bool{}
+	f.computeTightOps(f.ast, 1)
 	walk(f.ast, formatterCtx{undentRBraceIndex: -1, indentSepForIndex: -1})
 	// Flush leftover synthetic separators AND the EOF separator ---
 	if f.err == nil {
@@ -1361,6 +1371,298 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		}
 	}
 	return err
+}
+
+// computeTightOps walks the tree and records, for every binary add- or mul-level
+// operator token, whether gofmt prints it WITHOUT blanks. It is go/printer's
+// expression-depth rule, carried over whole: each binary node computes a CUTOFF
+// from the operator classes present beneath it (walkBinary) and its DEPTH, and an
+// operator prints tight when its precedence reaches the cutoff. Depth starts at 1
+// for a statement's expression, rises inside a subscript, inside an argument or
+// expression list of more than one element, and for the operands of a binary node;
+// parentheses give one level back.
+func (f *formatter) computeTightOps(ast []int32, depth int) {
+	for n := range it(ast) {
+		switch n.sym {
+		case Block:
+			f.computeTightOps(n.ast, 1)
+		case Index:
+			f.computeTightOps(n.ast, depth+1)
+		case ArgumentList:
+			// A call raises the depth when it has more than one argument;
+			// go/printer does this at the CallExpr, not in the list.
+			d := depth
+			if exprCount(n.ast) > 1 {
+				d++
+			}
+			f.computeTightOps(n.ast, d)
+		case ForPost:
+			d := depth
+			if f.forPostMultiAssign(n.ast) {
+				d++
+			}
+			f.computeTightOps(n.ast, d)
+		case Statement, IfInit, SwitchGuard, CommOp:
+			// An assignment of several names FROM several values raises the depth
+			// for both sides -- go/printer's assignStmt rule. A return list, a var
+			// spec's values and a single-value assignment do not.
+			d := depth
+			if multiAssign(n.ast) {
+				d++
+			}
+			f.computeTightOps(n.ast, d)
+		case Expression, HeaderExpression, SimpleExpr, HeaderSimpleExpr, Term, HeaderTerm:
+			f.tightExpr(n, depth)
+		case Factor, HeaderFactor:
+			f.tightFactor(n, depth)
+		case 0:
+			// a terminal
+		default:
+			f.computeTightOps(n.ast, depth)
+		}
+	}
+}
+
+// tightExpr decides one binary level -- an Expression's relational run, a
+// SimpleExpr's add-level run, a Term's mul-level run -- and descends into its
+// operands. A node of a single operand is transparent: no operators to decide, and
+// the depth passes through unchanged.
+func (f *formatter) tightExpr(n Node, depth int) {
+	var operands []Node
+	var ops []Node
+	for c := range it(n.ast) {
+		switch c.sym {
+		case RelOp, AddOp, MulOp:
+			ops = append(ops, c)
+		case Expression, HeaderExpression, SimpleExpr, HeaderSimpleExpr, Term, HeaderTerm, UnaryExpr, HeaderUnaryExpr:
+			operands = append(operands, c)
+		}
+	}
+	childDepth := depth
+	if len(ops) != 0 {
+		childDepth++
+		prec := 3 // a relational or logical operator never prints tight
+		switch n.sym {
+		case SimpleExpr, HeaderSimpleExpr:
+			prec = 4
+		case Term, HeaderTerm:
+			prec = 5
+		}
+		if has4, has5, maxProblem := f.binFlags(n); prec >= cutoff(has4, has5, maxProblem, depth) {
+			for _, op := range ops {
+				if op.sym == AddOp || op.sym == MulOp {
+					f.tightOps[opTokenIndex(op)] = true
+				}
+			}
+		}
+	}
+	for _, c := range operands {
+		switch c.sym {
+		case UnaryExpr, HeaderUnaryExpr:
+			// A unary operator's operand keeps the unary's own depth.
+			f.computeTightOps(c.ast, childDepth)
+		default:
+			f.tightExpr(c, childDepth)
+		}
+	}
+}
+
+// tightFactor descends into a Factor: a parenthesized expression gives one depth
+// level back, and everything else -- a suffix's subscript or argument list, a
+// composite literal, a function literal's block -- takes its rule from
+// computeTightOps.
+func (f *formatter) tightFactor(n Node, depth int) {
+	kids := slices.Collect(it(n.ast))
+	for i, c := range kids {
+		if c.sym == Expression && i > 0 && kids[i-1].sym == 0 && Symbol(f.p.Token(kids[i-1].tok).Ch) == LPAREN {
+			f.tightExpr(c, reduceDepth(depth))
+			continue
+		}
+		switch c.sym {
+		case 0:
+		case Expression:
+			// an array type's length between "[" and "]" -- a subscript position
+			f.tightExpr(c, depth+1)
+		default:
+			f.computeTightOps(c.ast, depth)
+		}
+	}
+}
+
+// binFlags is go/printer's walkBinary over this grammar's production tree: whether
+// the binary tree under n (parentheses and calls excluded -- a Factor bounds it)
+// holds add-level (has4) and mul-level (has5) operators, and the "maxProblem"
+// forced by an operator directly followed by a unary that would read badly tight:
+// a division against a leading "*", a sign against the same sign.
+func (f *formatter) binFlags(n Node) (has4, has5 bool, maxProblem int) {
+	kids := slices.Collect(it(n.ast))
+	var opSyms []Node
+	for _, c := range kids {
+		if c.sym == AddOp || c.sym == MulOp {
+			opSyms = append(opSyms, c)
+		}
+	}
+	switch n.sym {
+	case SimpleExpr, HeaderSimpleExpr:
+		if len(opSyms) != 0 {
+			has4 = true
+		}
+	case Term, HeaderTerm:
+		if len(opSyms) != 0 {
+			has5 = true
+		}
+	}
+	for i, c := range kids {
+		switch c.sym {
+		case Expression, HeaderExpression, SimpleExpr, HeaderSimpleExpr, Term, HeaderTerm:
+			h4, h5, mp := f.binFlags(c)
+			has4, has5 = has4 || h4, has5 || h5
+			if mp > maxProblem {
+				maxProblem = mp
+			}
+		case UnaryExpr, HeaderUnaryExpr:
+			// The problem pairs: the operator BEFORE this operand against the
+			// operand's leading unary. "x / *p" must keep its blanks (tight it is a
+			// comment opener); "x + +y" and "x - -y" theirs (tight they are "++"
+			// and "--").
+			if i == 0 {
+				continue
+			}
+			lead, hasLead := f.leadingUnary(c)
+			if !hasLead {
+				continue
+			}
+			op := opText(f.p, kids[i-1])
+			switch {
+			case op == "/" && lead == MUL:
+				maxProblem = 5
+			case (op == "+" && lead == ADD) || (op == "-" && lead == SUB):
+				if maxProblem < 4 {
+					maxProblem = 4
+				}
+			}
+		}
+	}
+	return has4, has5, maxProblem
+}
+
+// leadingUnary is the unary operator a UnaryExpr begins with, if it begins with one.
+func (f *formatter) leadingUnary(n Node) (Symbol, bool) {
+	for c := range it(n.ast) {
+		if c.sym != UnaryOp {
+			return 0, false // the Factor comes first: no leading unary
+		}
+		for u := range it(c.ast) {
+			if u.sym == 0 {
+				return Symbol(f.p.Token(u.tok).Ch), true
+			}
+		}
+		return 0, false
+	}
+	return 0, false
+}
+
+// opTokenIndex is the token index of a RelOp/AddOp/MulOp production's operator.
+func opTokenIndex(op Node) int32 {
+	for c := range it(op.ast) {
+		if c.sym == 0 {
+			return c.tok
+		}
+	}
+	return -1
+}
+
+// opText is the operator's source text.
+func opText(p *Parser, op Node) string {
+	for c := range it(op.ast) {
+		if c.sym == 0 {
+			return string(p.Token(c.tok).SrcBytes())
+		}
+	}
+	return ""
+}
+
+// cutoff is go/printer's: the precedence at and above which a binary operator
+// prints tight, for a node with the given flags at the given depth.
+func cutoff(has4, has5 bool, maxProblem, depth int) int {
+	if maxProblem > 0 {
+		return maxProblem + 1
+	}
+	if has4 && has5 {
+		if depth == 1 {
+			return 5
+		}
+		return 4
+	}
+	if depth == 1 {
+		return 6
+	}
+	return 4
+}
+
+// reduceDepth is what a pair of parentheses gives back: one level, never below one.
+func reduceDepth(depth int) int {
+	if depth > 1 {
+		return depth - 1
+	}
+	return depth
+}
+
+// multiAssign reports whether a statement-shaped production assigns SEVERAL
+// values to SEVERAL targets: an AssignHead plus at least one further LhsItem on
+// the left, and an ExpressionList of more than one Expression on the right.
+func multiAssign(ast []int32) bool {
+	lhs, rhs := 0, 0
+	var count func(ast []int32)
+	count = func(ast []int32) {
+		for c := range it(ast) {
+			switch c.sym {
+			case AssignHead, LhsItem:
+				lhs++
+				count(c.ast) // "v, w = ..." nests further items under the head
+			case ExpressionList:
+				rhs = exprCount(c.ast)
+			case Postfix, PostfixOp:
+				// the "=" and its right-hand list live under the target's postfix
+				count(c.ast)
+			}
+		}
+	}
+	count(ast)
+	return lhs > 1 && rhs > 1
+}
+
+// forPostMultiAssign is multiAssign for the ForPost production, where both sides
+// are bare HeaderExpression runs around the assignment token.
+func (f *formatter) forPostMultiAssign(ast []int32) bool {
+	lhs, rhs, seenOp := 0, 0, false
+	for c := range it(ast) {
+		switch {
+		case c.sym == HeaderExpression || c.sym == Expression:
+			if seenOp {
+				rhs++
+			} else {
+				lhs++
+			}
+		case c.sym == 0:
+			switch Symbol(f.p.Token(c.tok).Ch) {
+			case ASSIGN, DEFINE:
+				seenOp = true
+			}
+		}
+	}
+	return lhs > 1 && rhs > 1
+}
+
+// exprCount counts an ExpressionList's or ArgumentList's direct Expression
+// children -- what decides whether the list raises gofmt's expression depth.
+func exprCount(ast []int32) (n int) {
+	for c := range it(ast) {
+		if c.sym == Expression || c.sym == HeaderExpression {
+			n++
+		}
+	}
+	return n
 }
 
 // argumentCount counts the arguments of an ArgumentList, which is what decides

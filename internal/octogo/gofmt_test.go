@@ -37,11 +37,15 @@ import (
 // 39 -> 34 closed a category that was plainly wrong rather than merely unaligned: a
 // call spaced off what it is called ON ("pick(0) (3, 4)", "(dbl) (21)", "} ()").
 // 34 -> 31 closed the other one, a numeric literal's base prefix and exponent left in
-// upper case ("0B1010", "2.5E2"). What is left is the alignment of consecutive
-// one-line declarations, which ogo fmt does not do at all, and gofmt's PRECEDENCE
-// spacing, which tightens the higher-binding half of a mixed expression ("i*10 + j",
-// "n%2 == 0", "fib(n-1)").
-const gofmtDisagreements = 31
+// upper case ("0B1010", "2.5E2").
+// 31 -> 18 closed the PRECEDENCE spacing gap whole: computeTightOps carries
+// go/printer's depth/cutoff rule ("i*10+j == 12", "fib(n-1)", "f(a + b)" and
+// "f(a+b, c)", "(c >> 1) ^ poly" all as gofmt writes them). What is left is
+// alignment: consecutive one-line function declarations into a brace column, which
+// ogo fmt does not do at all; the grouping of struct-field alignment around
+// comments and blank lines; and one program writing doubled parentheses gofmt
+// collapses.
+const gofmtDisagreements = 18
 
 // TestFormatMatchesGofmt formats every run-corpus program with `ogo fmt` and with
 // real gofmt, and counts how many come out identical.

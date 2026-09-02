@@ -18,6 +18,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Toolchain
+
+- **`ogo fmt` spaces mixed expressions as gofmt does.** gofmt's precedence rule
+  -- the higher-binding half of a mixed expression prints tight, by expression
+  depth -- was approximated by per-context heuristics that missed most
+  positions and over-tightened others. The real algorithm (go/printer's
+  depth/cutoff walk) now decides every add- and mul-level operator:
+  `i*10+j == 12`, `fib(n-1)`, `crc&0x8000 != 0` and `i, j = i+1, j-1` tighten;
+  `f(a + b)`, `(c >> 1) ^ poly` and `return v * 2, true` keep their blanks; and
+  `v * -2`, `x / *p`, `x + +y` stay spaced so no operator pair can collide.
+  Measured against real gofmt over the whole run corpus: 400 of 418 programs
+  now format identically (was 387); what remains is brace-column alignment of
+  consecutive one-line declarations, which `ogo fmt` does not attempt yet.
+
 ### Language
 
 - **A table element is callable in every position a call can stand.**
