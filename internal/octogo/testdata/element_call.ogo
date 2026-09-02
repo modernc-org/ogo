@@ -1,0 +1,30 @@
+// Calling what an ELEMENT holds. An element of an array or slice of functions is
+// callable exactly as a variable holding one is -- including as a statement, the
+// dispatch-table idiom -- and an element that is not a function is refused where
+// Go refuses it, not by the C backend's catch-all.
+
+var count int
+
+func bump(n int) { count += n }
+
+var tab [2]func(int)
+
+type handler func(int)
+
+var named [2]handler
+
+var nums [3]int
+
+func dispatch() {
+	tab[0] = bump
+	tab[0](5)
+	named[1] = bump
+	named[1](6)
+	hs := tab[:]
+	hs[0](7)
+}
+
+func notAFunction() {
+	// ERROR "invalid operation: cannot call nums"
+	nums[0](5)
+}

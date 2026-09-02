@@ -14583,6 +14583,224 @@ func main() {
 		panics: true,
 	},
 	{
+		// The dispatch-table idiom in every position a table lives: an array, a
+		// struct field, a slice view -- each element called as a STATEMENT, which
+		// used to be the emitter catch-all's refusal while the same call in value
+		// position worked. The element is bound to a temporary before the call
+		// (doc/call-through-array-element.c).
+		name: "a handler table dispatches as a statement",
+		src: `var count int
+
+func bump(n int) { count += n }
+
+type dev struct {
+	tab [2]func(int)
+}
+
+var tab [2]func(int)
+
+var d dev
+
+func main() {
+	tab[0] = bump
+	tab[0](5)
+	d.tab[1] = bump
+	d.tab[1](6)
+	hs := tab[:]
+	hs[0](7)
+	println(count)
+}
+`,
+		want: "18\n",
+	},
+	{
+		// A MULTI-RESULT call through a table element: the results travel through
+		// the function value's leading out parameter, and the element is bound
+		// first. Refused before as "multiple assignment requires a single function
+		// call" -- of a call.
+		name: "a multi-result call through a table element",
+		src: `func two() (int, int) { return 3, 4 }
+
+var tab [1]func() (int, int)
+
+func main() {
+	tab[0] = two
+	tab[0]()
+	a, b := tab[0]()
+	println(a, b)
+}
+`,
+		want: "3 4\n",
+	},
+	{
+		// A framed serial protocol end to end -- CRC16-CCITT, COBS encode/decode,
+		// and a handler table dispatching verified frames, one of them corrupted in
+		// flight. The uplink a real device speaks: byte slices, bit twiddling,
+		// function values and the element-call statement, composed.
+		name: "a framed protocol end to end",
+		src: `// Round 16: a framed serial protocol, end to end -- build telemetry frames,
+// CRC16-CCITT them, COBS-encode for the wire, then decode, verify and dispatch
+// through a table of handlers. The shape of a device's uplink.
+
+const maxFrame = 32
+
+var wire [128]byte
+
+var wireLen int
+
+func crc16(data []byte) uint16 {
+	crc := uint16(0xffff)
+	for i := 0; i < len(data); i++ {
+		crc ^= uint16(data[i]) << 8
+		for b := 0; b < 8; b++ {
+			top := crc >= 0x8000
+			crc <<= 1
+			if top {
+				crc ^= 0x1021
+			}
+		}
+	}
+	return crc
+}
+
+// cobsEncode writes src as a COBS frame into dst, returning the encoded length.
+// Zero bytes never appear in the output; a trailing 0 delimits the frame.
+func cobsEncode(dst []byte, src []byte) int {
+	code := byte(1)
+	codeAt := 0
+	w := 1
+	for i := 0; i < len(src); i++ {
+		if src[i] == 0 {
+			dst[codeAt] = code
+			code = 1
+			codeAt = w
+			w++
+		} else {
+			dst[w] = src[i]
+			w++
+			code++
+		}
+	}
+	dst[codeAt] = code
+	dst[w] = 0
+	return w + 1
+}
+
+// cobsDecode reverses cobsEncode, stopping at the delimiter; -1 on a malformed
+// frame.
+func cobsDecode(dst []byte, src []byte) int {
+	w := 0
+	i := 0
+	for i < len(src) && src[i] != 0 {
+		code := int(src[i])
+		i++
+		for k := 1; k < code; k++ {
+			if i >= len(src) || src[i] == 0 {
+				return -1
+			}
+			dst[w] = src[i]
+			w++
+			i++
+		}
+		if code < 255 && i < len(src) && src[i] != 0 {
+			dst[w] = 0
+			w++
+		}
+	}
+	return w
+}
+
+// A frame: type, sequence, two 16-bit payload words, then crc16 over all of it.
+func buildFrame(dst []byte, typ byte, seq byte, a uint16, b uint16) int {
+	dst[0] = typ
+	dst[1] = seq
+	dst[2] = byte(a >> 8)
+	dst[3] = byte(a)
+	dst[4] = byte(b >> 8)
+	dst[5] = byte(b)
+	c := crc16(dst[:6])
+	dst[6] = byte(c >> 8)
+	dst[7] = byte(c)
+	return 8
+}
+
+var tempSum uint32
+
+var pressLast uint16
+
+var badFrames int
+
+func onTemp(seq byte, a uint16, b uint16) {
+	tempSum += uint32(a) + uint32(b)
+}
+
+func onPress(seq byte, a uint16, b uint16) {
+	pressLast = a ^ b
+}
+
+type handler func(seq byte, a uint16, b uint16)
+
+var handlers [3]handler
+
+func send(typ byte, seq byte, a uint16, b uint16, corrupt bool) {
+	var raw [maxFrame]byte
+	n := buildFrame(raw[:], typ, seq, a, b)
+	if corrupt {
+		raw[3] ^= 0x40
+	}
+	var enc [maxFrame + 2]byte
+	en := cobsEncode(enc[:], raw[:n])
+	for i := 0; i < en; i++ {
+		wire[wireLen] = enc[i]
+		wireLen++
+	}
+}
+
+func main() {
+	handlers[1] = onTemp
+	handlers[2] = onPress
+
+	send(1, 1, 0x1234, 0x0056, false)
+	send(2, 2, 0xff00, 0x00ff, false)
+	send(1, 3, 0x0100, 0x0001, true)
+	send(2, 4, 0xaaaa, 0x5555, false)
+	send(1, 5, 0, 0, false)
+
+	println("wire bytes", wireLen)
+
+	// Decode frame by frame: scan to each delimiter.
+	start := 0
+	frames := 0
+	for start < wireLen {
+		end := start
+		for wire[end] != 0 {
+			end++
+		}
+		stop := end + 1
+		var dec [maxFrame]byte
+		n := cobsDecode(dec[:], wire[start:stop])
+		if n == 8 {
+			c := uint16(dec[6])<<8 | uint16(dec[7])
+			if c == crc16(dec[:6]) && int(dec[0]) < len(handlers) && handlers[dec[0]] != nil {
+				handlers[dec[0]](dec[1], uint16(dec[2])<<8|uint16(dec[3]), uint16(dec[4])<<8|uint16(dec[5]))
+				frames++
+			} else {
+				badFrames++
+			}
+		} else {
+			badFrames++
+		}
+		start = stop
+	}
+	println("frames", frames, "bad", badFrames)
+	println("tempSum", tempSum)
+	println("pressLast", pressLast)
+	println("crc smoke", crc16(wire[:10]))
+}
+`,
+		want: "wire bytes 50\nframes 4 bad 1\ntempSum 4746\npressLast 65535\ncrc smoke 45629\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

@@ -18,6 +18,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A table element is callable in every position a call can stand.**
+  `handlers[i](x)` as a statement -- the dispatch-table idiom -- was refused by
+  the C emitter's catch-all ("only <pkg>.<Func>(args) or builtin(args) call
+  statements are supported yet", with no position), though the same call in
+  value position worked; and `a, b := tab[i]()` was "multiple assignment
+  requires a single function call" -- of a call. Both compile now, for a table
+  that is an array, a slice, a struct field or another package's variable, the
+  element bound to a temporary first as every element call is on this target.
+  Calling an element that is not a function is refused where it is written,
+  naming the element type, instead of falling to that catch-all. Found by
+  domain-probe round sixteen (protocol framing), whose COBS + CRC16 + dispatch
+  pipeline now runs bit-identically to Go on the board.
+
 ### Behaviour changes
 
 - **A value received from another package's channel obeys the export rule.** A

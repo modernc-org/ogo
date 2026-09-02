@@ -6010,6 +6010,31 @@ func (f *File) checkReceiveOperand(s *Scope, chanExpr Node) {
 	}
 }
 
+// checkElementCall reports `nums[i](x)` -- calling an element of an array or
+// slice whose elements are not functions. Unrefused, this fell to the emitter's
+// catch-all, which names neither a reason nor a position; Go names the operation.
+func (f *File) checkElementCall(s *Scope, id Token, suffix Node) {
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar {
+		return
+	}
+	steps := slices.Collect(it(suffix.ast))
+	if len(steps) < 2 || steps[0].sym != Index || steps[1].sym != CallSuffix {
+		return
+	}
+	notFunc, elemName := d.hasElemKind, ""
+	switch {
+	case notFunc:
+		elemName = kindName(d.elemKind)
+	case d.elemTypeName.IsValid():
+		notFunc = f.namedFuncSig(s, d.elemTypeName, namedTypeQual(d.elemTypeNode)) == nil
+		elemName = d.elemTypeName.Src()
+	}
+	if notFunc {
+		f.err(id.Position(), "invalid operation: cannot call %s[...] (element type %s is not a function)", id.Src(), elemName)
+	}
+}
+
 // checkSelectors reports a reference to an unexported member of an imported
 // package. For "pkg.member" where pkg is an import qualifier, member must be
 // exported (begin with an upper-case letter): "p2.pinLow" is rejected while
@@ -6035,6 +6060,9 @@ func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 	if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
 		f.checkCrossPkgFieldChain(d.typeQual, d.typeName, postfix)
 	}
+	// A call statement through an element, `nums[i](x)`, which none of the walks
+	// above see.
+	f.checkElementCall(s, id, postfix)
 }
 
 // callSuffixArgs returns the argument expressions of the call a suffix makes, and
@@ -10692,6 +10720,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 				} else if m, has := f.callResultMethodMember(suffix); has {
 					f.checkCallResultMethod(s, id, m)
 				}
+				f.checkElementCall(s, id, suffix)
 				// `v.M().f` where v has an imported type. Neither arm above sees it
 				// -- the suffix both calls and selects, so methodCallMember does not
 				// answer for it and fieldSelector disqualifies it -- and the field

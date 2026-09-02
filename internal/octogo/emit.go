@@ -19909,6 +19909,51 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		e.emit(")")
 		return true
 	}
+	// A trailing call of NO results, or of several that a statement discards,
+	// through whatever the chain reaches: `handlers[i](x)`, `s.tab[i](x, y)`. The
+	// single-result form is the chain fallback below; chainCText refuses these two
+	// because in value position there is no value for them to be -- yet as a
+	// STATEMENT they are the dispatch-table idiom. The callee is bound to a
+	// temporary first, as every element call is: called directly, every element of
+	// an array of functions reaches whatever the first one holds on the P2
+	// (doc/call-through-array-element.c).
+	if len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix {
+		// Asked TYPE-first (accessChainType lowers nothing): chainCText hoists as
+		// it walks, and a speculative walk that then declines leaves its
+		// temporaries behind, unused.
+		cur, okt := e.accessChainType(recv, suffix[:len(suffix)-1])
+		if !okt || !e.isFuncCType(cur.ctype) || len(e.funcTypeRet[e.underlyingCType(cur.ctype)]) == 1 {
+			// The single-result form belongs to the fallback below -- declining
+			// AFTER the lowering walk would leave its hoists behind, unused.
+			goto chainFallback
+		}
+		if text, ct, _, ok := e.chainCText(recv, suffix[:len(suffix)-1]); ok && e.isFuncCType(ct) {
+			if rts := e.funcTypeRet[e.underlyingCType(ct)]; len(rts) != 1 {
+				callAst := suffix[len(suffix)-1].ast
+				bound := e.hoist(ct, func() { e.emit(text) })
+				if out := e.outResultOf(rts); out != "" {
+					// Several results travel through the out parameter; only a
+					// statement reaches here, so they are discarded.
+					args := e.argsCText("", callAst)
+					e.emitOutValueCall(out, true, func(tmp string) string {
+						call := bound + "(&" + tmp
+						if args != "" {
+							call += ", " + args
+						}
+						return call + ")"
+					})
+					return true
+				}
+				e.emit(bound + "(")
+				e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
+				e.emitCallArgs("", callAst)
+				e.callParams = nil
+				e.emit(")")
+				return true
+			}
+		}
+	}
+chainFallback:
 	// A longer chain the two fixed shapes cannot match -- a call result selected or
 	// called further (`mk().n`, `t.self().n`, `a[i].get()`). chainCText types and
 	// lowers it, or reports it cannot (an unsupported step, or a pointer method on a
@@ -24601,6 +24646,34 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		}
 		return
 	}
+	// A multi-result call through a function-typed ELEMENT, `a, b := tab[i]()`:
+	// results travel through the leading out parameter, as through any function
+	// value, and the element is bound to a temporary first as every element call
+	// is (doc/call-through-array-element.c).
+	if len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix {
+		cur, okt := e.accessChainType(callee, suffix[:len(suffix)-1])
+		if okt && e.isFuncCType(cur.ctype) && e.outResultOf(e.funcTypeRet[e.underlyingCType(cur.ctype)]) != "" {
+			// Type-first for the reason emitCallExpr gives: a chainCText walk that
+			// declines leaves its hoisted temporaries behind.
+			text, ct, _, okc := e.chainCText(callee, suffix[:len(suffix)-1])
+			if okc && e.isFuncCType(ct) && e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) != "" {
+				bound := e.hoist(ct, func() { e.emit(text) })
+				args := e.argsCText("", suffix[len(suffix)-1].ast)
+				e.ind()
+				e.emit(e.retStructNameOf(resTypes) + " " + tmp + ";\n")
+				call := bound + "(&" + tmp
+				if args != "" {
+					call += ", " + args
+				}
+				e.ind()
+				e.emit(call + ");\n")
+				for i, tgt := range targets {
+					e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+				}
+				return
+			}
+		}
+	}
 	e.ind()
 	// Keyed by the result TYPES, not by the callee: a call through a function value
 	// has no callee name to key on, and a named one gives the same struct either way.
@@ -24848,6 +24921,16 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 	if cn, rts, isChain := e.chainMethodResult(recv, suffix); isChain {
 		return cn, rts, true
 	}
+	// A call through a function-typed ELEMENT reached by a chain -- `tab[i]()`,
+	// `d.tab[i]()`: the element's own typedef says what it yields. The walk is
+	// type-only (accessChainType), so asking leaves nothing behind.
+	if len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix {
+		if cur, okc := e.accessChainType(recv, suffix[:len(suffix)-1]); okc {
+			if rts, isFunc := e.funcTypeRet[e.underlyingCType(cur.ctype)]; isFunc {
+				return "", rts, true
+			}
+		}
+	}
 	// `pick()(3)`: the values are the second call's, which the function type the
 	// first one yields declares.
 	if len(suffix) == 2 && suffix[0].sym == CallSuffix && suffix[1].sym == CallSuffix {
@@ -24932,11 +25015,12 @@ func (e *emitter) directCall(ast []int32) (recv string, suffix []Node, ok bool) 
 					// the SECOND call's. Refusing it here reported "requires a single
 					// function call" of two.
 					return r, sfx, true
-				case len(sfx) >= 2 && sfx[len(sfx)-1].sym == CallSuffix && allSelectors(sfx[:len(sfx)-1]):
+				case len(sfx) >= 2 && sfx[len(sfx)-1].sym == CallSuffix && isAccessChain(sfx[:len(sfx)-1]):
 					// `x.m(...)`, and a method on a FIELD: `m.st.pop()`. Only the
 					// two-step form was taken, so a multi-result method reached
 					// through a field was "multiple assignment requires a single
-					// function call on the right-hand side" -- of a call.
+					// function call on the right-hand side" -- of a call. An INDEX
+					// in the chain is a callee too: `tab[i]()` calls the element.
 					return r, sfx, true
 				}
 			}
