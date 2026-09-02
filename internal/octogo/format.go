@@ -31,6 +31,12 @@ type formatter struct {
 	prevPrevTok Symbol // The token before the last emitted token.
 	prevTokIdx  int32  // Index of the last emitted token, for tightOps.
 
+	// skipTok holds the tokens of REDUNDANT parenthesis pairs -- an outer pair
+	// directly around an inner one -- which gofmt collapses: "((a))[1]" prints as
+	// "(a)[1]". A skipped token's separator travels to the next token, the way an
+	// elided trailing comma's does.
+	skipTok map[int32]bool
+
 	// tightOps holds every binary add- or mul-level operator TOKEN that gofmt
 	// prints without blanks, per its precedence/depth rule; computeTightOps fills
 	// it before the walk. An operator token not in the map prints spaced.
@@ -1170,6 +1176,24 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 
 							if csym == childSym {
 								m := f.measureField(childAst[2:cnext], csym, c)
+								// An EMBEDDED field has no type cell and a field whose
+								// type spans lines has no one-line cell either: gofmt's
+								// tabwriter breaks the column at such a row, so the
+								// blocks on either side align separately and the row
+								// itself stays unpadded.
+								if csym == FieldDecl && m.startTokIdx != -1 {
+									embedded := m.col2StartIdx == -1
+									multiline := f.p.Token(m.startTokIdx).Position().Line != f.p.Token(m.lastTokIdx).Position().Line
+									if embedded || multiline {
+										if len(current.fields) > 0 {
+											blocks = append(blocks, current)
+										}
+										current = alignmentBlock{}
+										isFirst = true
+										childAst = childAst[cnext:]
+										continue
+									}
+								}
 								if m.startTokIdx != -1 {
 									startTok := f.p.Token(m.startTokIdx)
 
@@ -1252,6 +1276,10 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					indentDelta = -1 // a grouped declaration's keyword and closing ")"
 				}
 
+				if f.skipTok[tokIdx] {
+					syntheticSep = append(syntheticSep, sep...)
+					break outer
+				}
 				switch Symbol(tok.Ch) {
 				case SEMICOLON:
 					if len(src) == 0 {
@@ -1353,6 +1381,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 
 	f.tightOps = map[int32]bool{}
 	f.computeTightOps(f.ast, 1)
+	f.alignFuncBraces(f.ast)
+	f.skipTok = map[int32]bool{}
+	f.markRedundantParens(f.ast)
 	walk(f.ast, formatterCtx{undentRBraceIndex: -1, indentSepForIndex: -1})
 	// Flush leftover synthetic separators AND the EOF separator ---
 	if f.err == nil {
@@ -1371,6 +1402,259 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		}
 	}
 	return err
+}
+
+// alignFuncBraces pads the opening brace of consecutive ONE-LINE function
+// declarations into a column, as gofmt's tabwriter does. A run is adjacent
+// FuncDecls whose whole declaration sits on one source line, with nothing between
+// them: a blank line, a comment line, a multi-line function or any other kind of
+// declaration ends the run. Lone one-liners keep their single space.
+//
+// The header widths are measured the way measureField measures a field: a token
+// walk that re-derives the renderer's own spacing, so the target column is exact.
+// The pad itself rides the targetCol2 mechanism the field aligner already uses.
+func (f *formatter) alignFuncBraces(ast []int32) {
+	var braces []int32
+	var widths []int
+	var prevLast int32 = -1
+	flush := func() {
+		if len(braces) > 1 {
+			max := 0
+			for _, w := range widths {
+				if w > max {
+					max = w
+				}
+			}
+			for _, b := range braces {
+				f.targetCol2[b] = max + 1
+			}
+		}
+		braces, widths = nil, nil
+	}
+	if len(ast) != 0 && ast[0] < 0 && Symbol(-ast[0]) == SourceFile {
+		ast = ast[2 : 2+ast[1]]
+	}
+	for c := range it(ast) {
+		if c.sym != TopLevelDecl {
+			continue
+		}
+		fd, lbrace, first, last, ok := f.oneLineFuncDecl(c)
+		if !ok {
+			flush()
+			if l := lastIndex(astOf(c)); l >= 0 {
+				prevLast = l
+			}
+			continue
+		}
+		if prevLast >= 0 && f.sepBreaksRun(prevLast, first) {
+			flush()
+		}
+		braces = append(braces, lbrace)
+		widths = append(widths, f.measureFuncHeader(fd))
+		prevLast = last
+	}
+	flush()
+}
+
+// astOf is the subtree slice of a non-terminal Node, header included, for the
+// index helpers that want the raw encoding.
+func astOf(n Node) []int32 {
+	return n.ast
+}
+
+// oneLineFuncDecl reports whether a TopLevelDecl is a FuncDecl written whole on
+// one source line, and hands back the pieces the aligner needs: the FuncDecl
+// node, its body's opening brace token, and the declaration's first and last
+// token indexes.
+func (f *formatter) oneLineFuncDecl(tld Node) (fd Node, lbrace, first, last int32, ok bool) {
+	for c := range it(tld.ast) {
+		if c.sym != FuncDecl {
+			return Node{}, -1, -1, -1, false
+		}
+		fd = c
+		break
+	}
+	if fd.sym != FuncDecl {
+		return Node{}, -1, -1, -1, false
+	}
+	first, last = firstIndex(fd.ast), lastIndex(fd.ast)
+	if first < 0 || last < 0 {
+		return Node{}, -1, -1, -1, false
+	}
+	var block Node
+	hasBlock := false
+	for c := range it(fd.ast) {
+		if c.sym == Block {
+			block, hasBlock = c, true
+		}
+	}
+	if !hasBlock {
+		return Node{}, -1, -1, -1, false // a bodyless declaration has no brace to align
+	}
+	lbrace = firstIndex(block.ast)
+	if lbrace < 0 {
+		return Node{}, -1, -1, -1, false
+	}
+	if f.p.Token(first).Position().Line != f.p.Token(last).Position().Line {
+		return Node{}, -1, -1, -1, false
+	}
+	return fd, lbrace, first, last, true
+}
+
+// sepBreaksRun reports whether the source between two declarations ends an
+// alignment run: a blank line, or any comment standing between them.
+func (f *formatter) sepBreaksRun(prevLast, first int32) bool {
+	var sep []byte
+	for i := prevLast + 1; i <= first; i++ {
+		sep = append(sep, f.p.Token(i).SepBytes()...)
+	}
+	sawLine := false
+	for _, v := range f.parseSep(sep, nil) {
+		switch x := v.(type) {
+		case whiteSpace:
+			if x >= 2 {
+				return true
+			}
+			if x >= 1 {
+				sawLine = true
+			}
+		case lineComment:
+			// A comment TRAILING the previous declaration's line stays inside the
+			// run -- gofmt aligns straight through it. One on a line of its own
+			// ends the run.
+			if sawLine {
+				return true
+			}
+			sawLine = true // the comment carries its line's newline
+		default:
+			return true // a generalComment between the two
+		}
+	}
+	return false
+}
+
+// measureFuncHeader is the rendered width of a one-line FuncDecl up to its body:
+// the same token walk measureField makes, with the context transitions the main
+// walk would apply, so the width is the renderer's own.
+func (f *formatter) measureFuncHeader(fd Node) int {
+	width := 0
+	first := true
+	var prevPrev, prev Symbol
+	var prevIdx int32
+	var walk func(a []int32, c formatterCtx)
+	walk = func(a []int32, c formatterCtx) {
+		for len(a) > 0 {
+			n := a[0]
+			if n < 0 {
+				cc := c
+				switch Symbol(-n) {
+				case Block:
+					a = a[2+a[1]:]
+					continue
+				case ParameterList, CallSuffix:
+					cc.inParams = true
+				case Signature, MethodSpec:
+					cc.inSignature = true
+				case Receiver:
+					cc.inReceiver = true
+				case ParamDecl:
+					cc.inParamDecl = true
+				case Type, FieldDecl:
+					cc.inType = true
+				case Index:
+					cc.inIndex = true
+					cc.sliceColonBlanks = sliceColonNeedsBlanks(a[2 : 2+a[1]])
+				case SimpleExpr, Expression:
+					cc.inType, cc.inParams, cc.inSignature = false, false, false
+				}
+				walk(a[2:2+a[1]], cc)
+				a = a[2+a[1]:]
+				continue
+			}
+			tokIdx := n
+			tok := f.p.Token(tokIdx)
+			curr := Symbol(tok.Ch)
+			src := tok.SrcBytes()
+			if len(src) > 0 {
+				if !first {
+					cc := c
+					cc.prevTokIdx, cc.currTokIdx = prevIdx, tokIdx
+					cc.tight = f.tightOps
+					if needsSpace(prevPrev, prev, curr, cc) {
+						width++
+					}
+				}
+				first = false
+				width += len(normalizedNumber(curr, src))
+				prevPrev, prev, prevIdx = prev, curr, tokIdx
+			}
+			a = a[1:]
+		}
+	}
+	walk(fd.ast, formatterCtx{})
+	return width
+}
+
+// markRedundantParens records the tokens of parenthesis pairs that directly wrap
+// another parenthesized expression, which gofmt drops: "((a))" prints as "(a)",
+// "(((s))).y" as "(s).y". Only the doubled pairs go; a single pair stays however
+// redundant it is, exactly as gofmt keeps it.
+func (f *formatter) markRedundantParens(ast []int32) {
+	for c := range it(ast) {
+		if c.sym == Factor || c.sym == HeaderFactor {
+			f.markFactorParens(c)
+		}
+		if c.sym != 0 {
+			f.markRedundantParens(c.ast)
+		}
+	}
+}
+
+func (f *formatter) markFactorParens(fac Node) {
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 3 || kids[0].sym != 0 || Symbol(f.p.Token(kids[0].tok).Ch) != LPAREN {
+		return
+	}
+	if kids[1].sym != Expression && kids[1].sym != HeaderExpression {
+		return
+	}
+	if kids[2].sym != 0 || Symbol(f.p.Token(kids[2].tok).Ch) != RPAREN {
+		return
+	}
+	if inner, ok := soleParenFactor(kids[1]); ok {
+		f.skipTok[kids[0].tok] = true
+		f.skipTok[kids[2].tok] = true
+		// The inner pair may be doubled again; deciding it here keeps the walk
+		// from asking twice.
+		f.markFactorParens(inner)
+	}
+}
+
+// soleParenFactor unwraps an expression that is nothing but a parenthesized
+// Factor -- no operators, no unary prefixes, no suffix on the factor.
+func soleParenFactor(n Node) (Node, bool) {
+	for {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return Node{}, false
+		}
+		switch kids[0].sym {
+		case Expression, HeaderExpression, SimpleExpr, HeaderSimpleExpr, Term, HeaderTerm, UnaryExpr, HeaderUnaryExpr:
+			n = kids[0]
+			continue
+		case Factor, HeaderFactor:
+			fk := slices.Collect(it(kids[0].ast))
+			// exactly "(" Expression ")" -- a suffix or a literal makes the parens
+			// load-bearing for what follows them
+			if len(fk) == 3 && fk[0].sym == 0 && fk[2].sym == 0 &&
+				(fk[1].sym == Expression || fk[1].sym == HeaderExpression) {
+				return kids[0], true
+			}
+			return Node{}, false
+		default:
+			return Node{}, false
+		}
+	}
 }
 
 // computeTightOps walks the tree and records, for every binary add- or mul-level

@@ -40,12 +40,18 @@ import (
 // upper case ("0B1010", "2.5E2").
 // 31 -> 18 closed the PRECEDENCE spacing gap whole: computeTightOps carries
 // go/printer's depth/cutoff rule ("i*10+j == 12", "fib(n-1)", "f(a + b)" and
-// "f(a+b, c)", "(c >> 1) ^ poly" all as gofmt writes them). What is left is
-// alignment: consecutive one-line function declarations into a brace column, which
-// ogo fmt does not do at all; the grouping of struct-field alignment around
-// comments and blank lines; and one program writing doubled parentheses gofmt
-// collapses.
-const gofmtDisagreements = 18
+// "f(a+b, c)", "(c >> 1) ^ poly" all as gofmt writes them).
+// 18 -> 0 closed the rest: consecutive one-line function declarations align their
+// braces into a column (alignFuncBraces -- a run breaks at a blank line, a comment
+// LINE, a multi-line function or any other declaration, and aligns straight
+// through a trailing comment); struct-field alignment breaks at an EMBEDDED field
+// and at a field whose type spans lines, as gofmt's tabwriter column does; and a
+// doubled parenthesis pair collapses to one ("((a))[1]" prints "(a)[1]").
+//
+// ZERO is a ratchet all the same: the corpus grows, and a new program may use
+// what gofmt does and ogo fmt does not yet. When that happens, prefer closing the
+// gap; document it here if it must stand.
+const gofmtDisagreements = 0
 
 // TestFormatMatchesGofmt formats every run-corpus program with `ogo fmt` and with
 // real gofmt, and counts how many come out identical.

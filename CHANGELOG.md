@@ -20,17 +20,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
-- **`ogo fmt` spaces mixed expressions as gofmt does.** gofmt's precedence rule
-  -- the higher-binding half of a mixed expression prints tight, by expression
-  depth -- was approximated by per-context heuristics that missed most
-  positions and over-tightened others. The real algorithm (go/printer's
-  depth/cutoff walk) now decides every add- and mul-level operator:
-  `i*10+j == 12`, `fib(n-1)`, `crc&0x8000 != 0` and `i, j = i+1, j-1` tighten;
-  `f(a + b)`, `(c >> 1) ^ poly` and `return v * 2, true` keep their blanks; and
-  `v * -2`, `x / *p`, `x + +y` stay spaced so no operator pair can collide.
-  Measured against real gofmt over the whole run corpus: 400 of 418 programs
-  now format identically (was 387); what remains is brace-column alignment of
-  consecutive one-line declarations, which `ogo fmt` does not attempt yet.
+- **`ogo fmt` formats the entire run corpus byte-identically to gofmt -- 418 of
+  418 programs, from 387.** Three gaps closed, each measured against real gofmt
+  rather than reasoned about. gofmt's precedence rule -- the higher-binding
+  half of a mixed expression prints tight, by expression depth -- was
+  approximated by per-context heuristics that missed most positions and
+  over-tightened others; the real algorithm (go/printer's depth/cutoff walk)
+  now decides every add- and mul-level operator: `i*10+j == 12`, `fib(n-1)`,
+  `crc&0x8000 != 0` and `i, j = i+1, j-1` tighten; `f(a + b)`,
+  `(c >> 1) ^ poly` and `return v * 2, true` keep their blanks; `v * -2`,
+  `x / *p`, `x + +y` stay spaced so no operator pair can collide. Consecutive
+  one-line function declarations now align their braces into a column, as
+  gofmt's tabwriter does -- a run breaks at a blank line, a comment line, a
+  multi-line function or any other declaration, and aligns straight through a
+  trailing comment. Struct-field alignment breaks at an embedded field and at
+  a field whose type spans lines, and a doubled parenthesis pair collapses to
+  one (`((a))[1]` prints `(a)[1]`). The gofmt-comparison ratchet now stands at
+  zero and holds it.
 
 ### Language
 
