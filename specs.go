@@ -9,9 +9,10 @@
 // TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
 // and Continue Statements); "goto" itself stays out (Keywords), pending the
 // jump-over-declaration safety analysis its unrestricted form needs.
-// TODO 20260719 Select: smart-pin clauses; a send clause with a default, and more
-// than one send clause, both of which need a "receiver ready" signal the rendezvous
-// cell does not carry (see Select Statements)
+// TODO 20260719 Select: a send clause with a default, and more than one send
+// clause, both of which need a "receiver ready" signal the rendezvous cell does
+// not carry (see Select Statements). Smart-pin clauses were DECIDED OUT
+// 2026-09-04: the default-arm polling idiom is the supported form.
 // TODO 20260719 Go statements: per-goroutine stack size. Every goroutine gets the
 // same fixed stack in its pool slot (256 longs by default, `ogo build --gostack N`
 // for another), which a deep call
@@ -2219,10 +2220,11 @@
 //		}
 //	}
 //
-// This is the supported idiom today (verified on hardware against a self-clocking
-// ADC pin; see the pinselect example). A pin CLAUSE of the select's own -- a case
-// that waits on the pin as a case waits on a channel -- is an open design
-// question, not yet syntax.
+// This is THE supported form (verified on hardware against a self-clocking ADC
+// pin; see the pinselect example). A pin CLAUSE of the select's own -- a case that
+// waits on the pin as a case waits on a channel -- was considered and DECLINED
+// (2026-09-04): the idiom above is the same semantics with no new syntax, and the
+// decision is revisited only if real programs show it wearing badly.
 //
 // A send clause offers its value to the channel and waits for a receiver to take
 // it, so its body runs because the value was delivered and not merely deposited.

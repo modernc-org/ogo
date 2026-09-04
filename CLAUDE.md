@@ -538,9 +538,11 @@ structure; a single-producer/single-consumer ring buffer needs no lock and alrea
 works (verified on the board), though it leans on the backend not hoisting the
 shared index out of the poll -- there is no `volatile` in the language.
 
-A `select` waiting on a Smart Pin transpiles to a `while(1)` poll of `_pinr(pin)`,
-calling `_akpin(pin)` to clear the IN flag and `_waitx(1)` to yield and avoid Hub-bus
-starvation (the same loop can multiplex channels and pins).
+~~A `select` waiting on a Smart Pin~~ SETTLED 2026-09-04: no pin clause. The
+default-arm polling idiom (select over channels, `default:` polls `p2.PinIn` +
+`p2.AckPin`) is the supported form -- hardware-verified in `_examples/pinselect`
+and specified in specs.go's select section. Revisit only if real programs show the
+idiom wearing badly.
 
 ### 3. Dropped CLI split: `compile` vs `build`
 

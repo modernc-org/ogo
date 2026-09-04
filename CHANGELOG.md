@@ -26,8 +26,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   whenever one is ready and the pin is serviced the rest of the time. The new
   `pinselect` example runs it live -- a self-clocking ADC pin raising IN every
   2^13 clocks, ten channel commands landing between hundreds of pin events,
-  every claim checked on a P2-EDGE. A pin CLAUSE of the select's own remains an
-  open design question, said so in the spec rather than left implicit.
+  every claim checked on a P2-EDGE. A pin CLAUSE of the select's own was
+  considered and DECLINED: the idiom is the same semantics with no new syntax,
+  and the spec says so -- the decision is revisited only if real programs show
+  the idiom wearing badly.
 
 ### Toolchain
 
