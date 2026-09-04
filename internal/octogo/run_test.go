@@ -15631,6 +15631,53 @@ func main() {
 		want: "1211 0\n14 -1 -1\n",
 	},
 	{
+		// The dependency behind the initialization order runs through CODE, as
+		// Go's does: through a function's body (a via f), a method's (m1 via
+		// T.m, on a receiver that is itself a step), a write inside a callee
+		// (setW ordering a2 after w), and past a block-scoped shadow that must
+		// not hide the later read (blockShadow). The case above pins the
+		// variable-to-variable half; this one pins the half that reads bodies.
+		// Board-verified against Go before it was pinned.
+		name: "initialization order runs through functions and methods",
+		src: `type T struct{ n int }
+
+func (t T) m() int { return b * t.n }
+
+func f() int { return b * 2 }
+
+func setW() int {
+	w = 40
+	return 4
+}
+
+func blockShadow() int {
+	{
+		b := 100
+		_ = b
+	}
+	return b + 1
+}
+
+func mkT() T { return T{n: c} }
+
+func gg() int { return 3 }
+
+var a = f()
+var b = gg()
+var m1 = q.m()
+var q = mkT()
+var c = 5 + b
+var s = blockShadow()
+var a2 = setW()
+var w = 10
+
+func main() {
+	println(a, b, m1, q.n, c, s, a2, w)
+}
+`,
+		want: "6 3 24 8 8 4 4 40\n",
+	},
+	{
 		// Round-18 probe, clean on the board: append-with-CRC into a byte arena, a
 		// byte-by-byte scan recovery that steps over corruption and keeps the
 		// highest sequence, the arena-full path through a goto, and the
@@ -22038,7 +22085,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n1 10\n14 true 14 true\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -22176,6 +22223,7 @@ default:
 chained()
 errors()
 qualifiedCases()
+initOrder()
 }
 
 // The second half of main, as a function of its own for the reason errors is. The
@@ -22384,6 +22432,17 @@ var stored = greet.Tag
 var pool = [3]int{9, 0, 0}
 var quad = greet.Quad{5, 6}
 var sh greet.Shape
+
+// Initialization order across the packages: tally reads greet AFTER the whole
+// of greet has initialized, its init() included -- Go's barrier -- and main's
+// own init() runs after main's variables and before main().
+var tally = greet.Ordered + greet.Adjust
+
+func init() { tally++ }
+
+func initOrder() {
+	println(greet.Ordered, greet.Adjust, tally)
+}
 `,
 	"chain/chain.ogo": `import "greet"
 
@@ -22537,7 +22596,20 @@ func InSum() int {
 	return n + Ints[0] + len(xs) + Sl[3] + int(Tag[1]) + len(Tag[1:]) + dst[0] + Table[1].Int()
 }
 `,
-	"greet/greet.ogo": `// Relay and Ack are this package's channels, used by whoever imports it. With no
+	"greet/greet.ogo": `// Ordered reads Adjust through scaleUp, so it is initialized after both,
+// wherever the three are written -- dependency order runs through a function's
+// body. init() runs after this package's variables and before anything of an
+// importing package.
+var Ordered = baseVal * scaleUp()
+var baseVal = 2
+
+var Adjust = 7
+
+func scaleUp() int { return Adjust + 3 }
+
+func init() { Adjust = Adjust + 100 }
+
+// Relay and Ack are this package's channels, used by whoever imports it. With no
 // heap there is nothing for a constructor to return, so a package-level channel is
 // how two packages come to share one -- the ordinary spelling here rather than the
 // exotic one it would be in Go.

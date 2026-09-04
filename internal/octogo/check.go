@@ -5507,25 +5507,6 @@ func (f *File) findLocal(s *Scope, nm string) Declaration {
 	return nil
 }
 
-// exprFuncLit returns the "func" keyword of an expression containing a function
-// literal. It keys on the FuncLiteral node rather than on the "func" token, which
-// also stands at the head of a written function type -- the one in
-// "[2]func(int) int{f, g}" opens a composite literal's type, not a literal.
-func (f *File) exprFuncLit(n Node) (Token, bool) {
-	for c := range it(n.ast) {
-		if c.sym == 0 {
-			continue
-		}
-		if c.sym == FuncLiteral {
-			return f.tok(c.Pos()), true
-		}
-		if tok, ok := f.exprFuncLit(c); ok {
-			return tok, true
-		}
-	}
-	return Token{}, false
-}
-
 // exprFieldRead returns the base and field of an expression that is exactly one
 // field read, "o.fn" and nothing more.
 func (f *File) exprFieldRead(n Node) (head, field Token, ok bool) {
@@ -9407,37 +9388,6 @@ func binaryAllowed(op Symbol, c int) bool {
 		return c == catNumeric || c == catString
 	}
 	return c == catNumeric
-}
-
-// targetIsSuffixed reports whether an assignment's target carries anything past its
-// base name: a selector, an index, or a leading "*". Only a bare name is of its own
-// declared type.
-func (f *File) targetIsSuffixed(head, postfix Node) bool {
-	for c := range it(head.ast) {
-		if c.sym == 0 && f.ch(c.tok) == MUL {
-			return true
-		}
-	}
-	return f.hasSelectorOrIndex(postfix.ast)
-}
-
-// hasSelectorOrIndex reports whether a subtree contains a selector or an index. The
-// scan is recursive: an assignment's postfix wraps them a level or two down, and a
-// direct-children test quietly answered "no" for "bf.b[bf.n] = c".
-func (f *File) hasSelectorOrIndex(ast []int32) bool {
-	for c := range it(ast) {
-		switch c.sym {
-		case Selector, Index:
-			return true
-		case 0:
-			// a terminal
-		default:
-			if f.hasSelectorOrIndex(c.ast) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // headIsDeref reports whether an assignment's head is a dereference, "*p = v". The

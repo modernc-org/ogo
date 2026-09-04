@@ -2441,6 +2441,13 @@
 // initializer reads another is initialized after it, wherever the two are written.
 // Variables that depend on nothing keep their source order.
 //
+// A dependency is any reference the initializer makes -- directly, or through the
+// body of any function or method it reaches, transitively. "var a = f()" is
+// initialized after everything f's body reads or writes, and a method call counts
+// the same way, resolved against the receiver's type. A call through an interface
+// carries no dependency (there is no body to read until run time), and recursion
+// among functions is not a cycle -- only a ring that passes through a variable is.
+//
 // An initializer that is a constant expression is folded into the variable's own
 // definition; anything else -- a reference to another variable, arithmetic over
 // one, a call -- is assigned by the synthesized initializer that runs before main,
@@ -2477,6 +2484,12 @@
 // executed sequentially, in the order they are written, by the transpiled
 // runtime before the package is considered fully initialized. Each therefore
 // runs on the state the ones before it left.
+//
+// Packages initialize whole, in dependency order, as Go's do: everything of an
+// imported package -- its variables and then its init functions -- runs before
+// anything of the package importing it, and main's own variables and init
+// functions run last, before main itself. An importer's variable reading an
+// imported one therefore sees the value that package's init functions left.
 //
 // # Program initialization
 //

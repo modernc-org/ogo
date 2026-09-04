@@ -12239,6 +12239,85 @@ func main() { println(a, b) }
 			want: "initialization cycle for a",
 		},
 		{
+			// The dependency walk reads the BODY of a referenced function, as
+			// Go's does, so a cycle closed inside one is found and the trace
+			// goes through it.
+			name: "through a function's body",
+			src: `func f() int { return a + 1 }
+
+var a = f()
+
+func main() { println(a) }
+`,
+			want: "initialization cycle for a\n\tmain.ogo:3:9: a refers to f\n\tmain.ogo:1:6: f refers to a",
+		},
+		{
+			// The same through a METHOD, resolved against the receiver's type.
+			name: "through a method's body",
+			src: `type T struct{ n int }
+
+func (t T) m() int { return a }
+
+var q = T{n: 1}
+var a = q.m()
+
+func main() { println(a) }
+`,
+			want: "initialization cycle for a\n\tmain.ogo:6:9: a refers to m\n\tmain.ogo:3:12: m refers to a",
+		},
+		{
+			// Function RECURSION is not an initialization cycle -- no variable is
+			// in the ring -- while the dependency still flows through it: b is
+			// initialized first, however deep the mutual calls go.
+			name: "mutually recursive functions are not a cycle",
+			src: `func f(n int) int {
+	if n > 0 {
+		return g(n - 1)
+	}
+	return b
+}
+
+func g(n int) int { return f(n - 1) }
+
+var a = f(3)
+var b = 7
+
+func main() { println(a, b) }
+`,
+		},
+		{
+			// A LOCAL named like the variable being initialized is no reference
+			// to it: reading it as one made this report "b refers to itself".
+			name: "a local named like the variable its function initializes",
+			src: `func mk() int {
+	b := 2
+	return b * 3
+}
+
+var b = mk()
+
+func main() { println(b) }
+`,
+		},
+		{
+			// A same-named method of ANOTHER type must not blur in: q's static
+			// type resolves the call to T's m, and U's m reading a closes no
+			// ring. Go accepts this program.
+			name: "a same-named method of another type",
+			src: `type T struct{ n int }
+type U struct{ n int }
+
+func (t T) m() int { return 5 }
+func (u U) m() int { return a + 1 }
+
+var q = T{n: 1}
+var a = q.m()
+var z = U{n: 2}
+
+func main() { println(a, z.n) }
+`,
+		},
+		{
 			name: "a field named like the variable reading it",
 			src: `type S struct{ a int }
 

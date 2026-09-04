@@ -2430,6 +2430,15 @@ type pkgInitStep struct {
 	deps   []string
 	stmts  []string
 
+	// pkg orders the step against package boundaries: variable steps of the
+	// package emitted at ordinal k carry 2k and its init() calls 2k+1, and the
+	// topological sort treats a smaller pkg as a barrier -- Go initializes an
+	// imported package completely, init functions included, before anything of
+	// the importer runs. Without this a dependency-free step of the main package
+	// floated above the imported package's steps: `var total = lib.A + lib.B`
+	// read two zeros.
+	pkg int
+
 	// srcName and pos are what a diagnostic about this step says: the variable as
 	// the program spells it, and where. The rendered position is kept rather than a
 	// token, since a cycle is reported after every file has been walked and there is
@@ -2441,7 +2450,7 @@ type pkgInitStep struct {
 // deferPkgInit records a statement to run at package initialization, as a step of
 // its own that depends on nothing and so keeps its place.
 func (e *emitter) deferPkgInit(stmt string) {
-	e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: []string{stmt}})
+	e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: []string{stmt}, pkg: 2 * e.pkgOrd})
 }
 
 // pkgInitAssign records a package variable's initialization at run time, the
@@ -2459,9 +2468,10 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 	e.prologue = saved
 	step := pkgInitStep{
 		target:  target,
-		deps:    e.globalRefs(initExpr),
+		deps:    e.initRefs(initExpr),
 		srcName: srcName,
 		pos:     e.astPos(initExpr),
+		pkg:     2 * e.pkgOrd,
 	}
 	for _, line := range pro {
 		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
@@ -2478,54 +2488,6 @@ func (e *emitter) astPos(ast []int32) string {
 		return fmt.Sprintf("%v", e.f.tok(n.Pos()).Position())
 	}
 	return ""
-}
-
-// globalRefs names every package-level variable an initializer could read, as the
-// C names they are emitted under. It is deliberately generous -- every identifier
-// in the expression, mangled into this package -- because a name that turns out not
-// to be a package variable of this package matches no step and is ignored by the
-// ordering. Mangling has to happen here, while the file being emitted says which
-// package that is.
-func (e *emitter) globalRefs(ast []int32) []string {
-	var out []string
-	var walk func([]int32)
-	walk = func(a []int32) {
-		for n := range it(a) {
-			switch {
-			case n.sym == Selector:
-				// The member of `x.f` is a FIELD or a METHOD name, not a variable,
-				// and neither is the type in `x.(T)`. Reading one as a reference
-				// invented dependencies -- harmless while the list only ORDERED the
-				// initializers, and not once it also decides whether they cycle:
-				// `var a = s.a` was reported as "a refers to itself". The base `x`
-				// is not in here; it is the identifier this suffix hangs off.
-				continue
-			case n.sym == Element:
-				// A keyed element's KEY names a field or a constant index, so only
-				// the VALUE reads anything: `S{q: 1}` refers to no variable q.
-				val := Node{}
-				for c := range it(n.ast) {
-					if c.sym == ElementValue {
-						val = c
-					}
-				}
-				if val.sym != 0 {
-					walk(val.ast)
-					continue
-				}
-				walk(n.ast)
-			case n.sym != 0:
-				walk(n.ast)
-			case e.f.ch(n.tok) != IDENT:
-			default:
-				if gn := e.globalC(e.src(n.tok)); !slices.Contains(out, gn) {
-					out = append(out, gn)
-				}
-			}
-		}
-	}
-	walk(ast)
-	return out
 }
 
 // staticInitOK reports whether a package variable's initializer is a constant
@@ -2655,96 +2617,26 @@ func (e *emitter) pkgInitDefs() string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "static void %s(void) {\n", pkgInitCName)
+	e.resolveFuncRefs()
 	names := make([]string, len(e.pkgInit))
 	deps := make([][]string, len(e.pkgInit))
+	pkgOf := make([]int, len(e.pkgInit))
 	for i, st := range e.pkgInit {
-		names[i], deps[i] = st.target, st.deps
+		names[i], deps[i], pkgOf[i] = st.target, e.flattenDeps(st.deps), st.pkg
 	}
-	order, cyclic := stableTopoOrderCycle(names, deps)
-	e.reportInitCycle(names, deps, cyclic)
+	order, cyclic := stableTopoOrderCycle(names, deps, pkgOf)
+	e.reportInitCycle(cyclic)
 	for _, i := range order {
 		for _, stmt := range e.pkgInit[i].stmts {
 			fmt.Fprintf(&b, "\t%s\n", stmt)
 		}
 	}
-	// The variable initializers run first, then init(), which is Go's order.
-	for _, fn := range e.initFuncs {
-		fmt.Fprintf(&b, "\t%s();\n", fn)
-	}
 	b.WriteString("}\n")
 	return b.String()
 }
 
-// reportInitCycle reports a cycle among the package variables' initializers, which
-// is what the ordering pass cannot place. Go refuses such a program -- there is no
-// order that makes every initializer see the value it reads -- and this accepted it,
-// leaving the variables in source order with whatever zeros that produced. specs.go
-// said so, as a known gap; it no longer is.
-//
-// The trace is Go's, and it is worth the walk: which pair closes the ring is what a
-// reader has to know, and a program with three variables in a cycle has three
-// candidate edges.
-func (e *emitter) reportInitCycle(names []string, deps [][]string, cyclic []int) {
-	if len(cyclic) == 0 {
-		return
-	}
-	// A step that assigns nothing (a channel cell, a deferred statement) provides no
-	// name, so it cannot be part of a cycle; it only ends up here by depending on
-	// something that is. The report is about the variables.
-	at := map[string]int{}
-	for _, i := range cyclic {
-		if names[i] != "" && e.pkgInit[i].srcName != "" {
-			at[names[i]] = i
-		}
-	}
-	start := -1
-	for _, i := range cyclic {
-		if _, named := at[names[i]]; named {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
-		return // nothing to name: leave it to whatever else the build reports
-	}
-	// Follow one edge at a time through the cycle until a variable repeats, which is
-	// where the ring closes.
-	path := []int{start}
-	seen := map[int]bool{start: true}
-	for cur := start; ; {
-		next := -1
-		for _, d := range deps[cur] {
-			if j, isCyclic := at[d]; isCyclic {
-				next = j
-				break
-			}
-		}
-		if next < 0 {
-			break
-		}
-		path = append(path, next)
-		if seen[next] {
-			break
-		}
-		seen[next] = true
-		cur = next
-	}
-	first := e.pkgInit[path[0]]
-	if len(path) == 2 && path[0] == path[1] {
-		e.fail("%s: initialization cycle: %s refers to itself", first.pos, first.srcName)
-		return
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s: initialization cycle for %s", first.pos, first.srcName)
-	for i := 0; i+1 < len(path); i++ {
-		from, to := e.pkgInit[path[i]], e.pkgInit[path[i+1]]
-		fmt.Fprintf(&b, "\n\t%s: %s refers to %s", from.pos, from.srcName, to.srcName)
-	}
-	e.fail("%s", b.String())
-}
-
 // needsPkgInit reports whether the package has anything to initialize.
-func (e *emitter) needsPkgInit() bool { return len(e.pkgInit) != 0 || len(e.initFuncs) != 0 }
+func (e *emitter) needsPkgInit() bool { return len(e.pkgInit) != 0 }
 
 // chanType recognises a channel type `chan T`, returning its element C type.
 func (e *emitter) chanType(typeAST []int32) (elem string, ok bool) {
@@ -2997,7 +2889,7 @@ func orderTypedefs(units []typedefUnit) []typedefUnit {
 // rather than dropping them, so whatever reads the result reports the problem
 // instead of quietly losing them.
 func stableTopoOrder(names []string, deps [][]string) []int {
-	order, _ := stableTopoOrderCycle(names, deps)
+	order, _ := stableTopoOrderCycle(names, deps, make([]int, len(names)))
 	return order
 }
 
@@ -3005,12 +2897,26 @@ func stableTopoOrder(names []string, deps [][]string) []int {
 // too. They are exactly the ones in a dependency CYCLE, and whether that is an error
 // is the caller's to decide -- the typedef ordering leaves it to the C compiler,
 // while package initialization reports it as Go does.
-func stableTopoOrderCycle(names []string, deps [][]string) (order, cyclic []int) {
+func stableTopoOrderCycle(names []string, deps [][]string, pkgs []int) (order, cyclic []int) {
 	provides := make(map[string]bool, len(names))
 	for _, n := range names {
 		if n != "" {
 			provides[n] = true
 		}
+	}
+	// A smaller pkg is a barrier: nothing of a later package runs until every
+	// step of the earlier ones has (see pkgInitStep.pkg).
+	remaining := map[int]int{}
+	for _, p := range pkgs {
+		remaining[p]++
+	}
+	earlierDone := func(p int) bool {
+		for q, n := range remaining {
+			if q < p && n > 0 {
+				return false
+			}
+		}
+		return true
 	}
 	done := make(map[string]bool, len(names))
 	out := make([]int, 0, len(names))
@@ -3021,11 +2927,13 @@ func stableTopoOrderCycle(names []string, deps [][]string) (order, cyclic []int)
 	for len(rest) != 0 {
 		var deferred []int
 		for _, i := range rest {
-			ready := true
-			for _, d := range deps[i] {
-				if provides[d] && !done[d] {
-					ready = false
-					break
+			ready := earlierDone(pkgs[i])
+			if ready {
+				for _, d := range deps[i] {
+					if provides[d] && !done[d] {
+						ready = false
+						break
+					}
 				}
 			}
 			if !ready {
@@ -3033,6 +2941,7 @@ func stableTopoOrderCycle(names []string, deps [][]string) (order, cyclic []int)
 				continue
 			}
 			out = append(out, i)
+			remaining[pkgs[i]]--
 			if names[i] != "" {
 				done[names[i]] = true
 			}
@@ -3091,50 +3000,6 @@ func (e *emitter) chanElemOfCType(ctype string) string {
 func (e *emitter) isChanCType(ctype string) bool {
 	u := e.underlyingCType(ctype)
 	return strings.HasPrefix(u, chanTypePrefix) && !strings.HasSuffix(u, "*")
-}
-
-// chanRuntimeDefs returns the typedef for `chan elem` plus the helpers the
-// program actually reaches for: a send-only program never sees the receive, and
-// only a select polls with tryrecv. Emitting the unused ones would be harmless
-// except that they are `static` (see below), which makes an unused one a
-// -Wunused-function warning the host test suite treats as a failure.
-//
-// Blocking is a poll with a _waitx(1) yield between attempts: a blocked cog
-// cannot sleep, since there is no scheduler, and spinning on the Hub bus without
-// yielding would starve the cogs doing real work.
-//
-// Each poll reads the volatile flag it is waiting on *before* asking for the
-// lock, and only asks when the read says there is plausibly something to do. The
-// authoritative check is still the one inside the lock, so the outer read is a
-// hint and may be wrong either way: a false positive costs one acquire and
-// release, a false negative costs one more turn round the loop.
-//
-// Testing first is what makes the rendezvous work, not an optimization. A loop
-// that calls _locktry every turn re-takes the lock so quickly that the cog on the
-// other side never wins it -- both sides live, neither progressing. It is a
-// livelock in the polling loop, and it is timing-dependent, so it appears only
-// once the loop is fast enough: with FCACHE lifting the loop into Cog RAM, a
-// program with a few channels and a few goroutines would hang at a rendezvous.
-// That was misread as an FCACHE miscompilation for a while, and builds carried
-// --fcache=0 to avoid it; the flag is gone now (see internal/build) and the
-// backoff is still one cycle. Raising the backoff instead also works -- 256
-// cycles was enough for every case here -- but it paces the symptom, costs
-// latency on every rendezvous, and leaves the threshold to be rediscovered by the
-// next program that beats it.
-//
-// The helpers are deliberately `static` and NOT `static inline`. Inlined into a
-// call argument -- `println(<-ch)` rather than `v := <-ch` -- flexcc miscompiles
-// the rendezvous loop: sender and receiver both spin forever, each holding the
-// other off, on hardware only. gcc compiles both shapes correctly, so the host
-// tests cannot see it, and the board case above is what guards it. Do not re-add
-// `inline` here; the call costs nothing next to the lock-and-yield loop it
-// guards.
-// chanTypedefDef is the cell struct and the channel type over it. It is a unit of
-// the TYPEDEF section rather than of the helpers below, because a struct field may
-// hold a channel and C wants the type declared before the struct that holds one.
-// The helpers cannot move with it: they call ogo_panic and the P2 intrinsics.
-func chanTypedefDef(elem string) string {
-	return chanTypedefDefDim(elem, arrDim{}, false)
 }
 
 // chanTypedefDefDim is chanTypedefDef for an element that is an ARRAY: the cell's
@@ -4289,8 +4154,9 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// namespace (see mangle) and cannot collide across packages.
 	pkgs := reachablePackages(pkg)
 	forEachFile := func(fn func()) {
-		for _, p := range pkgs {
+		for pi, p := range pkgs {
 			e.curPkgPrefix = pkgPrefix(p.ImportPath)
+			e.pkgOrd = pi
 			for _, f := range p.Files {
 				e.f = f
 				fn()
@@ -4975,7 +4841,11 @@ type emitter struct {
 	sliceVars         map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars   map[string]string         // package-level slice name -> element C type (persists across functions)
 	pkgInit           []pkgInitStep             // the synthesized package initializer, emitted in dependency order
-	initFuncs         []string                  // user init() functions, called after the variable initializers
+	pkgOrd            int                       // index of the package being emitted, in dependency order
+	funcRefTasks      []funcRefTask             // per emitted function/method: what the init-order walk reads later
+	funcRefs          map[string][]string       // fn C name -> raw references, built by resolveFuncRefs
+	funcRefMeta       map[string]funcRefMeta    // fn C name -> how a cycle diagnostic names it
+	methodsByName     map[string][]string       // method source name -> C names of every method so named
 	initNames         map[string]string         // init declaration position -> its numbered C name, so both passes agree
 	goSites           []goSite                  // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
 	chanElems         map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
@@ -9479,7 +9349,13 @@ func (e *emitter) emitPrototypes(ast []int32) {
 		// Go runs each package's init() before main, imports first. Recorded here, in
 		// the prototype pass, in the order they will be called.
 		if recv == nil && name == "init" {
-			e.initFuncs = append(e.initFuncs, e.funcDefCName(name, d))
+			// An init() call is a step of its own, ordered after every variable
+			// step of its package (2k+1 beats their 2k at the barrier) and before
+			// anything of a later package -- Go's order exactly.
+			e.pkgInit = append(e.pkgInit, pkgInitStep{
+				stmts: []string{e.funcDefCName(name, d) + "();"},
+				pkg:   2*e.pkgOrd + 1,
+			})
 		}
 	})
 }
@@ -9575,6 +9451,29 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	if proto == "" {
 		return
 	}
+	// The init-order pass reads this function's body later, when every package
+	// variable and method is registered; what it needs now is the body and the
+	// context to read it under (see initorder.go).
+	task := funcRefTask{
+		cname:   e.curFunc,
+		srcName: name,
+		f:       e.f,
+		prefix:  e.curPkgPrefix,
+		sig:     sig,
+		body:    body,
+	}
+	if recv != nil {
+		task.member = name
+		task.recvName = recvName
+		task.recvBase = methodBaseType(recvCType)
+	}
+	for n := range it(ast) {
+		if n.sym == 0 && e.f.ch(n.tok) == IDENT {
+			task.pos = fmt.Sprintf("%v", e.f.tok(n.tok).Position())
+			break
+		}
+	}
+	e.funcRefTasks = append(e.funcRefTasks, task)
 	e.bindParams(sig)
 	e.emit(proto + " {\n")
 	e.indent++
@@ -11743,16 +11642,15 @@ func (e *emitter) emitPkgArrayVar(gn, srcName string, a arrDim, initExpr []int32
 	}
 	step := pkgInitStep{
 		target:  gn,
-		deps:    e.globalRefs(initExpr),
+		deps:    e.initRefs(initExpr),
 		srcName: srcName,
 		pos:     e.astPos(initExpr),
+		pkg:     2 * e.pkgOrd,
 	}
 	for _, line := range pro {
 		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
 	}
-	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
-		step.stmts = append(step.stmts, line)
-	}
+	step.stmts = append(step.stmts, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
 	e.pkgInit = append(e.pkgInit, step)
 }
 
@@ -11772,13 +11670,13 @@ func (e *emitter) pkgInitLitFixups(target string, fixups []litFixup) {
 	if !ok {
 		return
 	}
-	step := pkgInitStep{target: target}
+	step := pkgInitStep{target: target, pkg: 2 * e.pkgOrd}
 	for _, line := range pro {
 		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
 	}
 	step.stmts = append(step.stmts, stmts...)
 	for _, f := range fixups {
-		step.deps = append(step.deps, e.globalRefs(f.src)...)
+		step.deps = append(step.deps, e.initRefs(f.src)...)
 	}
 	e.pkgInit = append(e.pkgInit, step)
 }
@@ -12782,25 +12680,6 @@ func (e *emitter) bracketConvOperand(typeAST []int32, arg []int32) (string, bool
 		}
 	}
 	return "", false
-}
-
-// hoistArrayResultCall recognises a call whose result is an ARRAY with steps after
-// it, `mk()[1]` or `mk()[i].x`, binds the result to a temporary of this frame and
-// answers with that temporary and the steps.
-//
-// An array result travels through an out parameter -- C cannot return one -- so the
-// call is a statement and has no expression to index. Binding it gives the steps
-// something to read, which is what a declaration of the result already did; this is
-// the same move without the user having to write the variable.
-func (e *emitter) hoistArrayResultCall(ast []int32) (string, []Node, bool) {
-	if e.declInit || e.deferReplay >= 0 {
-		return "", nil, false
-	}
-	fac, ok := e.soleFactorNode(ast)
-	if !ok {
-		return "", nil, false
-	}
-	return e.hoistArrayResultCallKids(slices.Collect(it(fac.ast)))
 }
 
 // hoistArrayResultCallKids is hoistArrayResultCall for a factor's children already
@@ -16477,10 +16356,6 @@ func (e *emitter) emitSliceBound(ast []int32) {
 		}
 	}
 	e.emitExpr(ast)
-}
-
-func (e *emitter) sliceBoundC(ast []int32) string {
-	return e.captureC(func() { e.emitSliceBound(ast) })
 }
 
 func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
@@ -29112,21 +28987,6 @@ func (e *emitter) arrayCompareAt(kids []Node, i int) (op string, a arrDim, ok bo
 		return "", arrDim{}, false
 	}
 	return op, l, true
-}
-
-// arrayOperand reports the array type of a comparison operand: an array variable,
-// a dereferenced pointer to one, an array reached through a chain of fields and
-// indexes, or a literal, which has no C value and is bound to a temporary by
-// emitArrayOperand -- what is needed here is only its extents, to tell it from a
-// value of another type.
-//
-// It reads exactly the shapes arrayShapeOf does, and recognising anything less is
-// not a refusal but a WRONG ANSWER: an operand this declines sends the comparison
-// down C's own "==", which asks whether the two decayed pointers are equal. So
-// `pool[0] == pool[1]` was false for two identical rows, in C the host compiler
-// warns about no more than it warns about comparing any two pointers.
-func (e *emitter) arrayOperand(n Node) (arrDim, bool) {
-	return e.arrayShapeOf(n.ast)
 }
 
 // arrayCompareOperand is arrayOperand for the operands a comparison admits: also

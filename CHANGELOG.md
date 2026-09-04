@@ -20,6 +20,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Initialization order now runs through code, as Go's does.** A package
+  variable initialized by a call -- `var a = f()` -- is ordered after everything
+  f's body reads or writes, transitively through further functions and methods
+  (a method resolved against its receiver's type, a call through an interface
+  carrying no dependency). It used to count only the names written in the
+  initializer itself, so `var a = f()` before `var b = 3` ran f against a zero
+  b: a silent wrong answer with Go-identical spelling. Verified against Go on
+  the board across functions, methods, writes inside callees, block-scoped
+  shadows and receivers that are themselves initialized variables.
+
+- **A package initializes whole before its importer, init functions included.**
+  A dependency-free variable of the main package -- `var total = lib.A + lib.B`
+  -- used to float above the imported package's own initialization and read two
+  zeros; and every init() ran after ALL variables program-wide, so an
+  importer's variable never saw what an imported init() had written. Package
+  boundaries are barriers now and init() calls are ordered steps: imported
+  variables, imported init(), then the importer's, which is Go's order.
+  Board-verified, and pinned into the multi-package fixture that every layer of
+  the pipeline runs.
+
 - **`ogo fmt` spaces a slice's colons exactly as gofmt does, at every depth.**
   gofmt's rule is depth-gated like its operator spacing: a binary bound spaces
   the colons at statement level (`xs[i : i+1]`) and not nested deeper
@@ -27,6 +47,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   a further subscript is back at the shallow rule wherever it stands
   (`g(xs[i+1 : j][0], ...)` keeps its blanks). The formatter now carries that
   gate; found by the zero-disagreement gofmt ratchet on a new corpus program.
+
+### Behaviour changes
+
+- **An initialization cycle through a function or method is refused.** `var a =
+  f()` where f's body reads a used to compile and hand f whatever zero a still
+  held; it is now refused where written, with Go's trace through the code:
+  "initialization cycle for a: a refers to f: f refers to a". Function
+  recursion is not a cycle, a local named like a package variable creates no
+  false one, and a same-named method of another type does not blur in -- each
+  pinned as an accepted case beside the refusals.
 
 ### Verified
 

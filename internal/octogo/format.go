@@ -616,21 +616,6 @@ func (f *formatter) declGroupParens(ast []int32) (lp, rp int32, ok bool) {
 	return lp, rp, f.p.Token(lp).Position().Line != f.p.Token(rp).Position().Line
 }
 
-func containsNode(ast []int32, target Symbol) bool {
-	for len(ast) > 0 {
-		n := ast[0]
-		if n < 0 {
-			if Symbol(-n) == target {
-				return true
-			}
-			ast = ast[2+ast[1]:]
-		} else {
-			ast = ast[1:]
-		}
-	}
-	return false
-}
-
 // isBinaryBound reports whether a slice bound is a top-level binary expression
 // (gofmt's isBinary): "a+1", "a*b", "a<<2", "a==b". It walks the
 // Expression -> SimpleExpr -> Term spine and reports true at the first level that
@@ -1968,19 +1953,6 @@ func (f *formatter) forPostMultiAssign(ast []int32) bool {
 func exprCount(ast []int32) (n int) {
 	for c := range it(ast) {
 		if c.sym == Expression || c.sym == HeaderExpression {
-			n++
-		}
-	}
-	return n
-}
-
-// argumentCount counts the arguments of an ArgumentList, which is what decides
-// whether it raises gofmt's expression depth: `ArgumentList = Expression { ","
-// Expression } [ "..." ] [ "," ]`, so the direct Expression children are the
-// arguments and a trailing comma or ellipsis is not one of them.
-func argumentCount(ast []int32) (n int) {
-	for c := range it(ast) {
-		if c.sym == Expression {
 			n++
 		}
 	}

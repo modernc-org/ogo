@@ -1271,11 +1271,3 @@ func (p *Package) consolidateErrors(use ErrList) (e ErrList) {
 	}
 	return e
 }
-
-func (p *Package) importPkg(importPathToken Token, importPath string) (r *Package) {
-	if p != nil && p.ctx != nil {
-		return p.ctx.importPkg(p.ImportPath, importPath, importPathToken)
-	}
-
-	return noPkg
-}
