@@ -4774,7 +4774,7 @@ func TestEmitCChannel(t *testing.T) {
 		// element points at rather than to the field, so `chan *P` got a field the
 		// compiler was free to cache -- the one word two cogs poll. See
 		// chanTypedefDefDim.
-		"typedef struct { int lock; volatile int full; volatile int taken; volatile int closed; int volatile val; } ogo_chan_int_cell;\n",
+		"typedef struct { int lock; volatile int full; volatile int taken; volatile int closed; volatile int waiting; int volatile val; } ogo_chan_int_cell;\n",
 		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
 		// A locally declared channel's cell is a file-scope static, one per
 		// declaration site, and its lock is taken once at package init -- not a
@@ -7154,8 +7154,12 @@ func main() {
 // while the other is up. And a default asks whether a receiver is ready *now*, which
 // a receiver here reveals only by taking a value -- the cell has no waiting state
 // and both sides poll, so there is nothing to read.
-func TestEmitCSelectSendRefused(t *testing.T) {
-	for _, test := range []struct{ name, src, want string }{
+func TestEmitCSelectSendGated(t *testing.T) {
+	// The shapes the old refusals guarded now compile through the GATED
+	// non-blocking send: a parked receiver announces itself on the cell, and
+	// ogo_chan_trysend offers only when a taker exists. This pins that both
+	// lower through the gate rather than through the standing offer.
+	for _, test := range []struct{ name, src string }{
 		{
 			name: "two send clauses",
 			src: `func main() {
@@ -7167,7 +7171,6 @@ func TestEmitCSelectSendRefused(t *testing.T) {
 	}
 }
 `,
-			want: "a select may have at most one send clause yet",
 		},
 		{
 			name: "send with a default",
@@ -7181,7 +7184,6 @@ func TestEmitCSelectSendRefused(t *testing.T) {
 	}
 }
 `,
-			want: "a select with a send clause may not have a default yet",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -7191,10 +7193,13 @@ func TestEmitCSelectSendRefused(t *testing.T) {
 				t.Fatalf("Build: %v", err)
 			}
 			var buf bytes.Buffer
-			if err := EmitC(pkg, &buf, Checked()); err == nil {
-				t.Fatalf("EmitC accepted it:\n%s", buf.String())
-			} else if !strings.Contains(err.Error(), test.want) {
-				t.Errorf("EmitC error %q does not contain %q", err, test.want)
+			if err := EmitC(pkg, &buf, Checked()); err != nil {
+				t.Fatalf("EmitC: %v", err)
+			}
+			for _, want := range []string{"ogo_chan_trysend_int(", "static int ogo_chan_trysend_int"} {
+				if !strings.Contains(buf.String(), want) {
+					t.Errorf("emitted C does not contain %q", want)
+				}
 			}
 		})
 	}

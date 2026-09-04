@@ -9,10 +9,10 @@
 // TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
 // and Continue Statements); "goto" itself stays out (Keywords), pending the
 // jump-over-declaration safety analysis its unrestricted form needs.
-// TODO 20260719 Select: a send clause with a default, and more than one send
-// clause, both of which need a "receiver ready" signal the rendezvous cell does
-// not carry (see Select Statements). Smart-pin clauses were DECIDED OUT
-// 2026-09-04: the default-arm polling idiom is the supported form.
+// (Select's historical TODO is DONE 2026-09-04: a send clause beside a default
+// and several send clauses both work, gated on the cell's parked-receiver count;
+// smart-pin clauses were decided out the same day -- the default-arm polling
+// idiom is the supported form.)
 // TODO 20260719 Go statements: per-goroutine stack size. Every goroutine gets the
 // same fixed stack in its pool slot (256 longs by default, `ogo build --gostack N`
 // for another), which a deep call
@@ -2228,8 +2228,14 @@
 //
 // A send clause offers its value to the channel and waits for a receiver to take
 // it, so its body runs because the value was delivered and not merely deposited.
-// The offer stands between rounds and is taken back whenever another clause is
-// ready to proceed, since proceeding there would otherwise communicate twice.
+// With one send clause and no default the offer stands between rounds and is taken
+// back whenever another clause is ready to proceed, since proceeding there would
+// otherwise communicate twice. A send clause beside a DEFAULT, and every send
+// clause of a select that has several, is GATED instead: a parked receiver
+// announces itself on the channel's cell, the send offers only when a taker
+// exists, and so the default is answerable and no two offers ever stand at once.
+// Two selects pair the same way -- a select's receive clauses announce themselves
+// for the life of the statement.
 //
 // A CLOSED channel is always ready: a receive clause on one proceeds at once with
 // the element's zero value, so it wins over a default rather than leaving it to run.

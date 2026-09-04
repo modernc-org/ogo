@@ -20,6 +20,32 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A locally declared channel's lock is actually allocated.** The synthesized
+  package-init function that news every channel cell's hardware lock was
+  emitted but, for a program whose only channels are locals, never CALLED: the
+  decision was made before main's body was emitted, and emitting the body is
+  what registers those cells. Every such lock was an un-newed zero that
+  ALIASED whatever `_locknew` handed out first -- the cog pool's own lock, in
+  any program that starts a goroutine -- and merely shared it; a program that
+  started no goroutine hung at the first lock attempt on hardware, where the
+  host shim forgave the un-newed id. The decision now follows the body. Found
+  because the new select machinery was the first thing to take a channel's
+  lock in a goroutine-free program.
+
+- **A select's send clause works beside a `default`, and a select may have
+  several send clauses.** Both were refused ("whether a receiver is ready
+  cannot be known without offering the value") because the rendezvous cell
+  carried no such signal. It does now: a parked receiver -- a blocking receive,
+  a range over the channel, or a select's armed receive clause -- announces
+  itself on the cell, and a gated non-blocking send offers only when a taker
+  exists, taking the offer back if an armed select chose another clause in the
+  window. So `select { case ch <- v: default: }` answers its default honestly,
+  two send clauses never stand two offers at once, and two selects -- one
+  sending with a default, one receiving -- pair with each other. The single
+  send clause without a default keeps its standing offer, unchanged. Verified
+  on hardware in five shapes, each against its Go twin.
+
+
 - **Multiplexing a channel and a Smart Pin is a documented, hardware-verified
   idiom.** The spec's select section now shows it: the select's `default` arm
   polls the pin's IN flag and acknowledges each event, so a command is taken

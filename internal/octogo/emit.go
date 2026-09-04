@@ -1814,23 +1814,14 @@ func (e *emitter) emitSelect(ast []int32) {
 			sends++
 		}
 	}
-	// A send clause offers its value and waits for it to be taken, which is what
-	// leaves the other clauses reachable: the offer can be taken back. Two offers
-	// cannot both stand -- a receiver taking each would send twice where Go sends
-	// once -- and offering them by turns would let a receiver polling one miss it
-	// while the other is up, so that shape is refused rather than made unfair.
-	//
-	// A default cannot be answered at all. It asks whether a receiver is ready
-	// *now*, and a receiver here reveals itself only by taking a value: the cell
-	// carries no "waiting" state, and both sides poll, so there is nowhere to look.
-	switch {
-	case sends > 1:
-		e.fail("a select may have at most one send clause yet")
-		return
-	case sends != 0 && hasDefault:
-		e.fail("a select with a send clause may not have a default yet: whether a receiver is ready cannot be known without offering the value")
-		return
-	}
+	// One send clause with no default keeps the STANDING OFFER: the value is
+	// deposited and waits to be taken, withdrawn only when a receive clause looks
+	// ready, which gives a polling receiver the widest window. Every other send
+	// shape -- a send beside a default, or several sends -- is GATED instead: a
+	// parked receiver announces itself on the cell (ch->waiting), and
+	// ogo_chan_trysend offers only when a taker exists, so a default can be
+	// answered and two sends can never both stand.
+	gated := sends > 1 || (sends != 0 && hasDefault)
 	// A break in a comm clause leaves the select. Both lowerings below are C loop
 	// constructs -- a polling "while", or a "do { } while (0)" for the
 	// non-blocking form -- so a plain C break is exactly that jump, and the switch
@@ -1856,6 +1847,7 @@ func (e *emitter) emitSelect(ast []int32) {
 	// CALL: a rendezvous cannot be waited on by asking for it again.
 	var send *selectCase
 	var valTmp, offered, mine string
+	sendVals := map[int]string{}
 	for i := range cases {
 		c := &cases[i]
 		if c.def {
@@ -1868,31 +1860,48 @@ func (e *emitter) emitSelect(ast []int32) {
 		if !c.send {
 			continue
 		}
-		send = c
-		e.chanTrySendElems[send.elem] = true
-		valTmp, offered, mine = e.newTmp(), e.newTmp(), e.newTmp()
-		switch a, isArr := e.namedArrays[send.elem]; {
+		e.chanTrySendElems[c.elem] = true
+		valTmp = e.newTmp()
+		sendVals[i] = valTmp
+		switch a, isArr := e.namedArrays[c.elem]; {
 		case isArr:
 			// An ARRAY is copied, not assigned: C has no array assignment, so
 			// `elem tmp = arr` was not C at all.
-			e.emitArrayCopy(valTmp, e.captureC(func() { e.emitExpr(send.val.ast) }), a)
+			e.emitArrayCopy(valTmp, e.captureC(func() { e.emitExpr(c.val.ast) }), a)
 		default:
 			e.ind()
-			e.emit(send.elem + " " + valTmp + " = ")
+			e.emit(c.elem + " " + valTmp + " = ")
 			// A concrete value sent on a channel of INTERFACE type is wrapped into
 			// the two words the element is, as the blocking send wraps it. Without
 			// this the raw pointer went where the pair goes.
-			if text, ok := e.ifaceValueC(send.elem, send.val.ast); ok && e.isIfaceCType(send.elem) {
+			if text, ok := e.ifaceValueC(c.elem, c.val.ast); ok && e.isIfaceCType(c.elem) {
 				e.emit(text)
 			} else {
-				e.emitExpr(send.val.ast)
+				e.emitExpr(c.val.ast)
 			}
 			e.emit(";\n")
 		}
+		if gated {
+			e.chanGatedSendElems[c.elem] = true
+			e.needPanic()
+			continue
+		}
+		send = c
 	}
 	if send != nil {
+		offered, mine = e.newTmp(), e.newTmp()
 		e.ind()
 		e.emit("int " + offered + " = 0, " + mine + " = 0;\n")
+	}
+	// Every RECEIVE clause announces itself on its channel for the life of the
+	// select, which is what lets a gated send elsewhere see a ready taker -- the
+	// pairing of two selects. Balanced below whichever way the loop ends; a return
+	// from a clause body leaks a count, which costs some later sender one bounded
+	// spin and nothing else.
+	for i := range cases {
+		if c := &cases[i]; !c.def && !c.send {
+			e.emitWaitingMark(c.ch, "++")
+		}
 	}
 	if hasDefault {
 		// One pass, so no loop and no flag to test: a default clause makes the
@@ -1967,6 +1976,23 @@ func (e *emitter) emitSelect(ast []int32) {
 		}
 		first = false
 		if c.send {
+			if gated {
+				// The GATED form: offer only when a receiver has announced itself, so
+				// a default can be answered and two sends can never both stand.
+				e.emit("if (ogo_chan_trysend_" + sanitizeElem(c.elem) + "(" + c.ch + ", " + sendVals[i] + ")) {\n")
+				e.indent++
+				if !hasDefault {
+					e.ind()
+					e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
+				}
+				for _, st := range c.body {
+					e.emitStatement(st.ast)
+				}
+				e.indent--
+				e.ind()
+				e.emit("}\n")
+				continue
+			}
 			e.emit("if (" + offered + " && " + chanOfferedCName(c.elem) + "(" + c.ch + ", " + mine + ")) {\n")
 			e.indent++
 			e.ind()
@@ -2063,9 +2089,25 @@ func (e *emitter) emitSelect(ast []int32) {
 	} else {
 		e.emit("}\n")
 	}
+	// The receive clauses' announcements are balanced whichever way the loop ended.
+	for i := range cases {
+		if c := &cases[i]; !c.def && !c.send {
+			e.emitWaitingMark(c.ch, "--")
+		}
+	}
 	e.indent--
 	e.ind()
 	e.emit("}\n")
+}
+
+// emitWaitingMark adjusts a channel's parked-receiver count under its lock: "++"
+// on the way into a select's receive clauses, "--" on the way out. The count is
+// what a gated non-blocking send elsewhere reads (ogo_chan_trysend).
+func (e *emitter) emitWaitingMark(ch, op string) {
+	// A NIL channel is a disabled clause: it has no cell to mark.
+	e.ind()
+	e.emit("while (" + ch + ") { if (_locktry(" + ch + "->lock)) { " + ch + "->waiting" + op +
+		"; _lockrel(" + ch + "->lock); break; } _waitx(1); }\n")
 }
 
 // chanOfferCName, chanOfferedCName and chanWithdrawCName name the three helpers a
@@ -3118,7 +3160,7 @@ func chanTypedefDefDim(elem string, a arrDim, isArr bool) string {
 	// not: a receive has to ask, and making the CELL depend on what some other part
 	// of the program does would put two shapes of the same type in one translation
 	// unit. It is one long per channel, and the hardware bounds channels to 16.
-	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; volatile int closed; %[1]s; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
+	return fmt.Sprintf("typedef struct { int lock; volatile int full; volatile int taken; volatile int closed; volatile int waiting; %[1]s; } %[2]s;\ntypedef %[2]s* %[3]s;\n",
 		member, chanCellCName(elem), chanCName(elem))
 }
 
@@ -3134,6 +3176,7 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	ch->full = 0;
 	ch->taken = 0;
 	ch->closed = 0;
+	ch->waiting = 0;
 }
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem))
 	}
@@ -3266,6 +3309,38 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 }
 `, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), sendParam, sendStore)
 	}
+	if e.chanGatedSendElems[elem] {
+		// The waiting-GATED non-blocking send, for a send clause that must know
+		// whether a receiver is ready: a parked receiver announces itself on the
+		// cell (ch->waiting), so the offer is made only when a taker exists, spun
+		// for briefly -- a parked receiver polls every few cycles -- and taken
+		// back if an armed select chose another clause instead. A withdrawal that
+		// fails means the value was taken between the spin and the lock, and that
+		// IS the send happening.
+		fmt.Fprintf(&b, `static int ogo_chan_trysend_%[7]s(%[1]s ch, %[8]s) {
+	if (!ch) {
+		return 0; // a nil send clause is never ready: Go's disabled arm
+	}
+	if (ch->waiting <= 0 || ch->full) {
+		if (ch->closed) {
+			ogo_panic("send on closed channel");
+		}
+		return 0;
+	}
+	int mine;
+	if (!ogo_chan_offer_%[7]s(ch, v, &mine)) {
+		return 0;
+	}
+	for (int k = 0; k < 64; k++) {
+		if (ogo_chan_offered_%[7]s(ch, mine)) {
+			return 1;
+		}
+		_waitx(4);
+	}
+	return !ogo_chan_withdraw_%[7]s(ch, mine);
+}
+`, c, elem, snd, rcv, ini, chanCellCName(elem), sanitizeElem(elem), sendParam, sendStore)
+	}
 	if e.chanTryRecvElems[elem] {
 		// A CLOSED channel is always ready, which is what a select needs to know
 		// about one: the clause takes the element's zero at once rather than waiting
@@ -3334,12 +3409,21 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 			_waitx(1);
 		}
 	}
+	while (1) { // announce a parked receiver, so a non-blocking send can see one
+		if (_locktry(ch->lock)) {
+			ch->waiting++;
+			_lockrel(ch->lock);
+			break;
+		}
+		_waitx(1);
+	}
 	while (1) {
 		if (ch->full && _locktry(ch->lock)) {
 			if (ch->full) {
 				%[9]s
 				ch->full = 0;
 				ch->taken++;
+				ch->waiting--;
 				_lockrel(ch->lock);
 				return 1;
 			}
@@ -3347,6 +3431,14 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 		}
 		if (ch->closed && !ch->full) {
 			%[10]s
+			while (1) {
+				if (_locktry(ch->lock)) {
+					ch->waiting--;
+					_lockrel(ch->lock);
+					break;
+				}
+				_waitx(1);
+			}
 			return 0;
 		}
 		_waitx(1);
@@ -3361,12 +3453,21 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 			_waitx(1);
 		}
 	}
+	while (1) { // announce a parked receiver, so a non-blocking send can see one
+		if (_locktry(ch->lock)) {
+			ch->waiting++;
+			_lockrel(ch->lock);
+			break;
+		}
+		_waitx(1);
+	}
 	while (1) {
 		if (ch->full && _locktry(ch->lock)) {
 			if (ch->full) {
 				%[10]s
 				ch->full = 0;
 				ch->taken++;
+				ch->waiting--;
 				_lockrel(ch->lock);
 				%[11]s
 			}
@@ -3377,6 +3478,14 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 			// ever, as in Go. Without this a receive after the last value simply
 			// waited, and a program whose producer had finished hung with no way
 			// to say what it was waiting for.
+			while (1) {
+				if (_locktry(ch->lock)) {
+					ch->waiting--;
+					_lockrel(ch->lock);
+					break;
+				}
+				_waitx(1);
+			}
 			%[12]s
 		}
 		_waitx(1);
@@ -4167,7 +4276,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4881,6 +4990,7 @@ type emitter struct {
 	// nowhere; a function pointer needs something to point at. See mathWrapperDefs.
 	mathWrappers       map[string]bool
 	chanTrySendElems   map[string]bool          // element types whose select send helpers (offer/offered/withdraw) are reached
+	chanGatedSendElems map[string]bool          // ogo_chan_trysend_<elem> (waiting-gated non-blocking send) is called
 	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
@@ -9852,11 +9962,6 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.curFunc = "main"
 	e.emit("int main(void) {\n")
 	e.indent++
-	if e.needsPkgInit() {
-		// Package initialization runs before anything in main, as in Go.
-		e.ind()
-		e.emit(pkgInitCName + "();\n")
-	}
 	// The body goes to a buffer so the defer temporaries can be declared ahead of
 	// it, exactly as emitFunc does. Without this main was the one function whose
 	// deferred call could not capture an argument: the capture was emitted and the
@@ -9873,6 +9978,18 @@ func (e *emitter) emitMain(sig, body []int32) {
 	}
 	e.w = saved
 	e.mainRet = false
+	// Package initialization runs before anything in main, as in Go -- and the
+	// DECISION is made after the body is emitted, because emitting it is what
+	// registers a locally declared channel's cell. Asked up front, a program
+	// whose only channels were locals called nothing: the cells' locks stayed
+	// un-newed zeroes, which ALIASED whatever _locknew handed out first (the cog
+	// pool's lock, in any program that starts a goroutine) and merely shared it
+	// -- and a program that started no goroutine hung at the first _locktry on
+	// hardware, where the host shim forgave the un-newed id.
+	if e.needsPkgInit() {
+		e.ind()
+		e.emit(pkgInitCName + "();\n")
+	}
 	e.emitDeferDecls()
 	e.w.Write(bodyBuf.Bytes())
 	e.ind()

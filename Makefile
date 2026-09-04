@@ -38,7 +38,7 @@ test:
 # on OGO_BOARD_PORT (default /dev/ttyUSB0) and the user in the dialout group. It
 # is separate from `test` because it needs hardware; `go test ./...` skips it.
 board:
-	OGO_BOARD_PORT=$${OGO_BOARD_PORT:-/dev/ttyUSB0} go test -v -count=1 -timeout 10m -run TestOnBoard ./internal/octogo/
+	OGO_BOARD_PORT=$${OGO_BOARD_PORT:-/dev/ttyUSB0} go test -v -count=1 -timeout 30m -run TestOnBoard ./internal/octogo/
 
 # release builds the self-contained preview binaries for every supported target
 # (CGO-free, so all cross-compile from one host) and stages them under

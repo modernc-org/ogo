@@ -15194,6 +15194,170 @@ func main() {
 		want: "1 2 3 4 5 6 \n0 2 3 0\n1 2 3 4 5 6 \n6 5 4 3 2 1 \n16\n",
 	},
 	{
+		// A send clause beside a DEFAULT: the gated non-blocking send offers only
+		// when a receiver has announced itself on the cell, so the default is
+		// answerable -- refused before, since the standing offer could not know.
+		name: "a non-blocking send reaches a parked receiver",
+		src: `var ch chan int32
+
+func consumer() {
+	p := int32(0)
+	for i := 0; i < 3; i++ {
+		p += <-ch
+	}
+	done <- p
+}
+
+var done chan int32
+
+func main() {
+	go consumer()
+	sent := 0
+	idle := 0
+	for sent < 3 {
+		select {
+		case ch <- int32(sent + 1):
+			sent++
+		default:
+			idle++
+		}
+	}
+	println(<-done, sent, idle > 0)
+}
+`,
+		want: "6 3 true\n",
+	},
+	{
+		// TWO send clauses in one select, each gated on its own channel's parked
+		// receiver, so no two offers ever stand at once -- the shape the old
+		// refusal called unfair.
+		name: "two send clauses feed two sinks",
+		src: `var a chan int32
+
+var b chan int32
+
+func sink(c chan int32, out chan int32) {
+	t := int32(0)
+	for i := 0; i < 4; i++ {
+		t += <-c
+	}
+	out <- t
+}
+
+var ra chan int32
+
+var rb chan int32
+
+func main() {
+	go sink(a, ra)
+	go sink(b, rb)
+	na, nb := int32(0), int32(0)
+	for na+nb < 8 {
+		select {
+		case a <- na + 1:
+			na++
+		case b <- nb + 10:
+			nb++
+		}
+	}
+	println(<-ra, <-rb, na, nb)
+}
+`,
+		want: "10 46 4 4\n",
+	},
+	{
+		// Nobody ever receives: every pass takes the default, and nothing is sent.
+		name: "a non-blocking send with no receiver takes the default",
+		src: `var ch chan int32
+
+func main() {
+	tried := 0
+	sent := 0
+	for i := 0; i < 5; i++ {
+		select {
+		case ch <- int32(i):
+			sent++
+		default:
+			tried++
+		}
+	}
+	println(sent, tried)
+}
+`,
+		want: "0 5\n",
+	},
+	{
+		// A select RECEIVE arm announces itself like a blocking receiver does,
+		// which is what lets a gated send in another cog's select see it: two
+		// selects pairing, neither blocking.
+		name: "two selects pair through the waiting count",
+		src: `var ch chan int32
+
+var done chan int32
+
+func consumer() {
+	got := int32(0)
+	for n := 0; n < 3; {
+		select {
+		case v := <-ch:
+			got += v
+			n++
+		}
+	}
+	done <- got
+}
+
+func main() {
+	go consumer()
+	sent := int32(0)
+	idle := 0
+	for sent < 3 {
+		select {
+		case ch <- sent + 5:
+			sent++
+		default:
+			idle++
+		}
+	}
+	println(<-done, sent, idle >= 0)
+}
+`,
+		want: "18 3 true\n",
+	},
+	{
+		// The mixed form, ping-ponging with a partner cog: the send arm fires
+		// when the partner parks on its receive, the receive arm drains the
+		// replies, and the default keeps the loop turning.
+		name: "send, receive and default in one select",
+		src: `var in chan int32
+
+var out chan int32
+
+func partner() {
+	for i := 0; i < 3; i++ {
+		out <- <-in * 2
+	}
+}
+
+func main() {
+	go partner()
+	sent, got, idle := int32(0), int32(0), 0
+	for got != 12 {
+		select {
+		case in <- sent + 1:
+			sent++
+		case v := <-out:
+			got += v
+		default:
+			idle++
+		}
+	}
+	println(sent, got, idle > 0)
+}
+`,
+		want: "3 12 true\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 
