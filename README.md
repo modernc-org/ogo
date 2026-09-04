@@ -346,8 +346,6 @@ broken.
   quietly overwriting the next slot — and one recursing a few hundred deep loses
   control before the fence can be read, which no check without memory protection can
   catch.
-* A `select` may carry at most one send clause, and none alongside a `default` —
-  both need a "receiver is ready" signal the rendezvous does not carry.
 * A **method value** in two shapes, neither an omission. One with a **value
   receiver**: Go copies the receiver where the value is made and there is nowhere to
   copy to, while binding the address instead would alias the variable, so the program
@@ -361,6 +359,11 @@ broken.
   need a struct holding an array, which the backend cannot assign. An array result on
   its own is used like any other value.
 * `goto`.
+* A **type alias of a type literal or of another package's type** — `type S =
+  struct{ ... }` and `type T = lib.X` are refused; alias a NAMED type of the
+  same package (or a predeclared one), which works whole: identity, methods,
+  literals via either spelling.
+* A **local `type` declaration** — types are declared at package scope.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.
 * A **select's SEND clause takes a channel named by a variable, a field or an

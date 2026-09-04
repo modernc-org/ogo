@@ -745,6 +745,7 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 		vd.isPtr = f.isPointerType(s, tn)
 		vd.typeName, _ = namedTypeToken(tn)
 		vd.typeQual = namedTypeQual(tn)
+		vd.typeName, vd.typeQual = f.canonicalType(s, vd.typeName, vd.typeQual)
 		vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
 		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
 		vd.chanElemName = f.chanElemTypeName(s, tn)
@@ -942,6 +943,7 @@ func (f *File) chanElem(s *Scope, tn TypeNode) (elem Kind, hasElem, isChan bool)
 // "[8]worker" -- for a field reached through an index. A Kind cannot answer it: a
 // struct element has none.
 func (f *File) elemTypeName(s *Scope, tn TypeNode) (nm Token) {
+	defer func() { nm, _ = f.canonicalType(s, nm, Token{}) }()
 	for range 16 {
 		switch x := tn.(type) {
 		case *TypeNodeArray:
@@ -1029,6 +1031,7 @@ func (f *File) chanElemTypeInfo(s *Scope, tn TypeNode) (qual Token, isPtr bool) 
 }
 
 func (f *File) chanElemTypeName(s *Scope, tn TypeNode) (nm Token) {
+	defer func() { nm, _ = f.canonicalType(s, nm, Token{}) }()
 	for range 16 {
 		switch x := tn.(type) {
 		case *TypeNodeChan:
@@ -1064,6 +1067,7 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode, role varRole)
 		isPtr := f.isPointerType(s, p.TypeNode)
 		typeName, _ := namedTypeToken(p.TypeNode)
 		typeQual := namedTypeQual(p.TypeNode)
+		typeName, typeQual = f.canonicalType(s, typeName, typeQual)
 		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
 		chanElemName := f.chanElemTypeName(s, p.TypeNode)
@@ -3061,6 +3065,7 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 	case isPtr:
 		// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
 		// `*p` reads and writes are admitted and checked.
+		tn, tq = f.canonicalType(s, tn, tq)
 		vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName, vd.typeQual = true, ek, hasEk, tn, tq
 		if !tn.IsValid() {
 			// `p := &P{1, 2}`: the operand is a literal, not a variable, so
@@ -3112,7 +3117,8 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		if nm, ql, ptr, ok := f.exprNamedType(s, init); ok {
 			// `p := P{1, 2}` / `p := &P{1, 2}` / `q := p` / `p := mk()`: p
 			// carries P, so its fields and methods are checked as an explicitly
-			// typed variable's are.
+			// typed variable's are. The name canonicalizes through `type A = B`.
+			nm, ql = f.canonicalType(s, nm, ql)
 			vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
 			if k, ok := f.inferredKind(s, init); ok {
 				vd.kind, vd.hasKind = k, true
@@ -3518,7 +3524,8 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	case single && base.IsValid():
 		// The qualifier travels with the name, or the bound variable carries a type
 		// this package cannot resolve and every field read off it goes unchecked.
-		vd.typeName, vd.typeQual, vd.isPtr = base, baseQual, true
+		vd.typeName, vd.typeQual = f.canonicalType(cs, base, baseQual)
+		vd.isPtr = true
 	default:
 		vd.typeName = f.tok(0)
 		if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar {
@@ -4293,6 +4300,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 						isPtr = f.isPointerType(s, tn)
 						typeName, _ = namedTypeToken(tn)
 						typeQual = namedTypeQual(tn)
+						typeName, typeQual = f.canonicalType(s, typeName, typeQual)
 						elemKind, hasElemKind = f.elemTypeKind(s, tn)
 						chanElemKind, hasChanElemKind, isChan = f.chanElem(s, tn)
 						chanElemName = f.chanElemTypeName(s, tn)
@@ -4857,7 +4865,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if assertOK {
 			switch i {
 			case 0:
-				vd.typeName, vd.typeQual, vd.isPtr = assertBase, assertQual, true
+				vd.typeName, vd.typeQual = f.canonicalType(s, assertBase, assertQual)
+				vd.isPtr = true
 			case 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
 			}
@@ -7509,10 +7518,59 @@ func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodS
 // geo.Shape value", the implements check silently passed anything, and the only way
 // into another package's interface was to write the conversion `geo.Shape(&pq)`,
 // which is emitted rather than checked.
+// canonicalType resolves a recorded type NAME through `type A = B` chains: the
+// name identity comparisons should see is the TARGET's, since the alias is
+// another name for it and not a type. A predeclared, qualified or unresolved
+// name stays as written.
+// canonicalName is canonicalType for a bare name string, for the comparison
+// sites that carry names rather than tokens.
+func (f *File) canonicalName(s *Scope, name string) string {
+	td, ok := s.find(name).(*TypeDeclaration)
+	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
+		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !isIdent || tn.Qualifier.IsValid() {
+			break
+		}
+		name = tn.Name.Src()
+		td, ok = s.find(name).(*TypeDeclaration)
+	}
+	return name
+}
+
+func (f *File) canonicalType(s *Scope, name, qual Token) (Token, Token) {
+	if !name.IsValid() || qual.IsValid() {
+		return name, qual
+	}
+	td, ok := s.find(name.Src()).(*TypeDeclaration)
+	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
+		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !isIdent || tn.Qualifier.IsValid() {
+			break
+		}
+		name = tn.Name
+		td, ok = s.find(name.Src()).(*TypeDeclaration)
+	}
+	return name, qual
+}
+
 func (f *File) typeDeclNamed(s *Scope, name string) (*TypeDeclaration, *Scope, bool) {
 	qual, member, isQual := strings.Cut(name, ".")
 	if !isQual {
 		td, ok := s.find(name).(*TypeDeclaration)
+		// `type A = B`: A is another name for B, so every question about A -- its
+		// methods, its fields, what it embeds -- is answered by B's declaration.
+		// Bounded: an alias cycle is reported at the declaration.
+		for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
+			tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+			if !isIdent || tn.Qualifier.IsValid() {
+				break
+			}
+			next, okNext := s.find(tn.Name.Src()).(*TypeDeclaration)
+			if !okNext {
+				return td, s, ok // a predeclared target: the alias itself is the last declaration
+			}
+			td = next
+		}
 		return td, s, ok
 	}
 	if !f.isImportQualifier(s, qual) || !token.IsExported(member) {
@@ -7686,6 +7744,9 @@ func sortedNames(set map[string]*MethodSpecNode) []string {
 // two must lead to opposite conclusions.
 func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 	if nm, ql, isPtr, ok := f.exprNamedType(s, n); ok && nm.IsValid() && !isPtr {
+		// The identity of `type A = B` IS B, so a literal written via the alias
+		// compares equal to one written via the name.
+		nm, ql = f.canonicalType(s, nm, ql)
 		// A type of another package is named by the qualified spelling, `geo.Temp`,
 		// which is how this file writes it and what tells it from an `int` -- and
 		// from a `Temp` of its own. Excluded before, so `var x int = geo.V` for a V
@@ -7804,7 +7865,9 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 	}
 	want := ""
 	if _, defined := s.find(wantName).(*TypeDeclaration); defined {
-		want = wantName
+		// The identity of `type A = B` is B: a value of the target passes where
+		// the alias is wanted, and the message still names what was written.
+		want = f.canonicalName(s, wantName)
 	} else if strings.Contains(wantName, ".") {
 		// The wanted type may be another package's too, `var x geo.Temp = ...`, and
 		// is then named the same way the value's is (see typeIdentity).
@@ -8514,6 +8577,13 @@ func (f *File) registerMethod(s *Scope, n Node) {
 	}
 	td, ok := s.find(recvType.Src()).(*TypeDeclaration)
 	if !ok {
+		return
+	}
+	if td.TypeSpec != nil && td.TypeSpec.Alias {
+		// Go's rule: a method's receiver must be a DEFINED type, and an alias is
+		// another name for one, not one of its own. Attaching here would put the
+		// method on the target through the back door.
+		f.err(method.Position(), "invalid receiver type %s (%s is an alias)", recvType.Src(), recvType.Src())
 		return
 	}
 	if td.methods == nil {
@@ -13195,7 +13265,10 @@ func (f *File) parameterList(s *Scope, n Node) (r *ParameterListNode) {
 type TypeSpecNode struct {
 	Name     Token
 	TypeNode TypeNode
-	gate     gate // cycle-detection state (phase 5)
+	// Alias marks `type A = B`: A is another name for B, not a new type. The
+	// target must be a named type of this package (checkAliasSpec).
+	Alias bool
+	gate  gate // cycle-detection state (phase 5)
 }
 
 // typeSpecName returns the declared name of a TypeSpec ("identifier [ "=" ]
@@ -13221,10 +13294,54 @@ func (f *File) typeSpecBody(s *Scope, n Node, r *TypeSpecNode) {
 		case Type:
 			r.TypeNode = f.typ(s, c)
 		case 0:
-			// the identifier and an optional "=" (alias); already handled
+			if f.ch(c.tok) == ASSIGN {
+				r.Alias = true
+			}
 		default:
 			panic(todo("", f.tok(c.Pos()).Position(), c.sym))
 		}
+	}
+	if r.Alias {
+		f.checkAliasSpec(s, r)
+	}
+}
+
+// checkAliasSpec bounds what `type A = B` may alias: a NAMED type of this
+// package, or a predeclared one. An alias is another name for the same type --
+// not a new type -- and the identity machinery resolves it by name, so a type
+// literal or another package's name stays out until it is built.
+func (f *File) checkAliasSpec(s *Scope, r *TypeSpecNode) {
+	tn, isIdent := r.TypeNode.(*TypeNodeIdent)
+	if !isIdent {
+		f.err(r.Name.Position(), "cannot alias a type literal yet: name the type and alias that")
+		return
+	}
+	if tn.Qualifier.IsValid() {
+		f.err(r.Name.Position(), "cannot alias another package's type yet")
+		return
+	}
+	// A predeclared target resolves to no declaration and is fine; a named one
+	// must exist, and a CYCLE of aliases names nothing at all.
+	seen := map[string]bool{r.Name.Src(): true}
+	name := tn.Name.Src()
+	for range 16 {
+		if seen[name] {
+			f.err(r.Name.Position(), "alias cycle: %s names itself", r.Name.Src())
+			return
+		}
+		seen[name] = true
+		td, ok := s.find(name).(*TypeDeclaration)
+		if !ok {
+			return // predeclared, or undefined (reported by the type resolver)
+		}
+		if td.TypeSpec == nil || !td.TypeSpec.Alias {
+			return
+		}
+		next, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !isIdent {
+			return
+		}
+		name = next.Name.Src()
 	}
 }
 
@@ -13583,6 +13700,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 		// asked about a type this package does not have. A LOCAL of the same type
 		// worked, which is what made the gap look like something else.
 		typeQual := namedTypeQual(typ)
+		typeName, typeQual = f.canonicalType(s, typeName, typeQual)
 		elemKind, hasElemKind := f.elemTypeKind(s, typ)
 		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, typ)
 		chanElemName := f.chanElemTypeName(s, typ)
@@ -13679,6 +13797,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			// constant initializer is bounded by the type it infers instead.
 			kind, hasKind := f.typeKind(s, typ)
 			typeName, _ := namedTypeToken(typ)
+			typeName, _ = f.canonicalType(s, typeName, Token{})
 			typIsPtr := f.isPointerType(s, typ)
 			for _, e := range exprs {
 				f.checkNames(s, e)

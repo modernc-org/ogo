@@ -16,6 +16,21 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **`type A = B` is an alias — another name for B, not a new type.** The form
+  used to parse with the `=` silently discarded, so A was a distinct type: a
+  method could be declared on it (Go refuses that) and a value of one spelling
+  was refused where the other was wanted (Go accepts it). Now identity, method
+  sets, literals, equality, signatures and chains of aliases all treat the two
+  names as the one type they are, for struct, predeclared, defined-array and
+  interface targets alike — and a method ON an alias is refused with Go's
+  reason. The target must be a named type of this package or a predeclared
+  one: a type literal, another package's name, and an alias cycle are each
+  refused where they are written.
+
 ## v0.39.0
 
 ### Language

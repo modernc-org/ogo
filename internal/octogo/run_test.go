@@ -15415,6 +15415,83 @@ func main() {
 		want: "['h' 'i' '!']\n['h' '\\t' '😀']\n[\"hi\" \"a\\\"b\"]\n[]\n['h'] \"tail\"\n",
 	},
 	{
+		// `type A = B` is another NAME for B, not a type: literals written via the
+		// alias, identity in both directions, methods and fields through it, a
+		// predeclared target, a defined ARRAY target with its elements and method,
+		// an interface target satisfied and called, an alias of an alias, and
+		// equality across the two spellings.
+		name: "a type alias is another name, not a type",
+		src: `type point struct {
+	x, y int32
+}
+
+func (p point) sum() int32 { return p.x + p.y }
+
+type spot = point
+
+type MyInt = int32
+
+type row [3]int32
+
+func (r row) total() int32 { return r[0] + r[1] + r[2] }
+
+type line = row
+
+type writer interface {
+	write(v int32) int32
+}
+
+type sink struct {
+	n int32
+}
+
+func (s *sink) write(v int32) int32 {
+	s.n += v
+	return s.n
+}
+
+type out = writer
+
+type spot2 = spot
+
+func take(p point) int32 { return p.sum() }
+
+func give() spot { return spot{x: 5, y: 6} }
+
+var sk sink
+
+func main() {
+	// A literal via the alias, fields, methods, identity both ways.
+	s := spot{x: 1, y: 2}
+	var p point = s
+	println(s.sum(), take(s), p.x)
+
+	// Through a signature, and back.
+	g := give()
+	println(g.sum())
+
+	// Alias of a predeclared type.
+	var m MyInt = 21
+	var i int32 = m
+	println(m*2, i)
+
+	// Alias of a defined array type: elements and the method.
+	var l line
+	l[0], l[1], l[2] = 7, 8, 9
+	println(l.total(), l[1])
+
+	// Alias of an interface: satisfaction and the call.
+	var w out = &sk
+	println(w.write(4), w.write(3))
+
+	// An alias of an alias.
+	t := spot2{x: 10, y: 20}
+	println(t.sum(), s == spot{x: 1, y: 2})
+}
+`,
+		want: "3 3 1\n11\n42 21\n24 8\n4 7\n30 true\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

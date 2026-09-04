@@ -1,0 +1,46 @@
+// `type A = B` declares another NAME for B, not a new type: values pass between
+// the two spellings, B's methods are reachable through A, and a method may not be
+// declared ON A -- it would be a method on B through the back door. The target
+// must be a named type of this package or a predeclared one.
+
+type point struct {
+	x, y int32
+}
+
+func (p point) sum() int32 { return p.x + p.y }
+
+type spot = point
+
+type alias2 = spot
+
+type MyInt = int32
+
+type reader interface {
+	read() int32
+}
+
+type view = reader
+
+func ok() {
+	s := spot{x: 1, y: 2}
+	var p point = s
+	println(s.sum(), p.sum())
+
+	var m MyInt = 3
+	var i int32 = m
+	println(m, i)
+
+	t := alias2{x: 4, y: 5}
+	println(t.sum())
+}
+
+// ERROR "invalid receiver type spot"
+func (s spot) bad() int32 { return s.x }
+
+// ERROR "cannot alias a type literal yet"
+type lit = struct {
+	n int32
+}
+
+// ERROR "alias cycle: selfish names itself"
+type selfish = selfish

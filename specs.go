@@ -1185,11 +1185,14 @@
 // It must stand at PACKAGE SCOPE. A type declared inside a function is refused,
 // "statement TypeDecl is not supported yet", though Go admits one.
 //
-// The ALIAS form, "type A = B", parses and is then treated as a definition: the "="
-// is read and discarded, so A is a distinct type rather than another name for B, and
-// "var i int = a" over "type A = int" is refused where Go accepts it. The two
-// spellings should differ and do not; write the definition form and mean it until
-// they do.
+// The ALIAS form, "type A = B", declares another NAME for B, not a new type:
+// values pass between the two spellings, B's methods are reachable through A,
+// literals may be written with either name, and the two compare as one type. A
+// method may not be declared ON an alias -- it would be a method on the target
+// through the back door, which is Go's rule too. The target must be a NAMED type
+// of this package or a predeclared one: a type literal ("type S = struct{...}")
+// and another package's name ("type T = lib.X") are refused until built, and an
+// alias cycle is refused where it is written.
 //
 //	TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 //	TypeSpec = identifier [ "=" ] Type .
