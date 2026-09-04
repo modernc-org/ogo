@@ -13089,11 +13089,11 @@ func main() {
 	δ := 3
 	switch δ {
 	case 3:
-		println("delta", δ)
+		println("aliased", δ)
 	}
 	switch ε := δ * 2 {
 	case 6:
-		println("epsilon", ε)
+		println("linked", ε)
 	}
 
 	switch greet() {
@@ -13104,7 +13104,7 @@ func main() {
 	}
 }
 `,
-		want: "inner 10\nouter 9\ndelta 3\nepsilon 6\ngreeting\n",
+		want: "inner 10\nouter 9\naliased 3\nlinked 6\ngreeting\n",
 	},
 	{
 		// A switch with an init statement. The name is scoped to the whole statement
@@ -15490,6 +15490,90 @@ func main() {
 }
 `,
 		want: "3 3 1\n11\n42 21\n24 8\n4 7\n30 true\n",
+	},
+	{
+		// TYPE declarations inside functions: literals and equality on a local
+		// struct, a local scalar's conversion and arithmetic, a local array's
+		// elements and len, a local ALIAS of a package type with its methods, a
+		// local type SHADOWING a package one, the same name as two types in two
+		// functions, and a self-referential local struct linked on the stack.
+		name: "types declared inside functions",
+		src: `type outer struct {
+	n int32
+}
+
+func (o outer) twice() int32 { return o.n * 2 }
+
+func pairEq() int32 {
+	type pair struct {
+		a, b int32
+	}
+	p := pair{a: 3, b: 4}
+	q := pair{a: 3, b: 4}
+	if p == q {
+		p.b++
+	}
+	return p.a + p.b
+}
+
+func sameName() int32 {
+	// The same NAME as pairEq's local type, a different type in a different
+	// function.
+	type pair struct {
+		x int32
+	}
+	type mint int32
+	type row [3]int32
+
+	var r row
+	r[0], r[1], r[2] = 5, 6, 7
+
+	v := mint(10)
+	w := v * 2
+
+	p := pair{x: int32(w)}
+	return p.x + r[2] + int32(len(r))
+}
+
+func shadowed() int32 {
+	// A local type SHADOWS a package one; the package type comes back after.
+	type outer struct {
+		m int32
+	}
+	o := outer{m: 9}
+	return o.m
+}
+
+func aliased() int32 {
+	// A local ALIAS of a package type: the methods come through.
+	type big = outer
+	b := big{n: 21}
+	return b.twice()
+}
+
+func linked() int32 {
+	// Self-referential local struct through a pointer, linked on the stack.
+	type node struct {
+		v    int32
+		next *node
+	}
+	c := node{v: 3}
+	b := node{v: 2, next: &c}
+	a := node{v: 1, next: &b}
+	t := int32(0)
+	for p := &a; p != nil; p = p.next {
+		t = t*10 + p.v
+	}
+	return t
+}
+
+func main() {
+	println(pairEq(), sameName(), shadowed(), aliased(), linked())
+	o := outer{n: 4}
+	println(o.twice())
+}
+`,
+		want: "8 30 9 42 123\n8\n",
 	},
 	{
 		name: "a struct packaging a bank of channels",

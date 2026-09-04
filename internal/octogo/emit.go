@@ -4276,7 +4276,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4992,6 +4992,8 @@ type emitter struct {
 	chanTrySendElems   map[string]bool          // element types whose select send helpers (offer/offered/withdraw) are reached
 	chanGatedSendElems map[string]bool          // ogo_chan_trysend_<elem> (waiting-gated non-blocking send) is called
 	aliasOf            map[string]string        // `type A = B`: mangled alias name -> mangled target name
+	localTypes         map[string]string        // a LOCAL type declaration's source name -> its minted C name, per function
+	localTypeSeq       int                      // uniquifies minted local-type names across the program
 	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
@@ -5435,6 +5437,117 @@ func (e *emitter) collectStructForwards(ast []int32) {
 	}
 }
 
+// structTypedefText renders a struct's tagged C body, `struct N { ... };`, with
+// the field type names its unit depends on.
+func (e *emitter) structTypedefText(mn string, fields []structField) (string, []string) {
+	deps := make([]string, 0, len(fields))
+	text := e.captureC(func() {
+		e.emit("struct " + mn + " {")
+		for _, fld := range fields {
+			// A field name may be Unicode; cIdent it in the typedef and, to match,
+			// wherever a field is selected (see fieldAccessC and the chain/selector
+			// paths). The structs map still stores the source name, so the type
+			// lookups (structFieldType etc.) compare source names.
+			deps = append(deps, fld.ctype)
+			if fld.dim.bound != "" {
+				e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fld.dim.declSuffix() + ";")
+				continue
+			}
+			e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + ";")
+		}
+		if len(fields) == 0 {
+			// C rejects a struct with no members; Go's empty struct is a
+			// legal, zero-information type (markers, chan struct{} signals).
+			// Give it one hidden byte so the C type is well-formed. OctoGo
+			// code cannot name the field, so it stays invisible.
+			e.emit(" char _ogo_empty;")
+		}
+		e.emit(" };" + "\n")
+	})
+	return text, deps
+}
+
+// emitLocalTypeDecl lowers a TYPE declaration written as a statement. The
+// declared name is visible for the rest of the function through localTypes,
+// mapped to a minted C name no other declaration can collide with -- the emitter
+// has no scopes, so the SOURCE name is per-function and a duplicate is refused.
+// The typedef itself is hoisted to the file header with every other type.
+func (e *emitter) emitLocalTypeDecl(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != TypeSpec {
+			continue
+		}
+		var name string
+		var typeAST []int32
+		alias := false
+		for c := range it(n.ast) {
+			switch c.sym {
+			case 0:
+				if e.f.ch(c.tok) == IDENT && name == "" {
+					name = e.src(c.tok)
+				}
+				if e.f.ch(c.tok) == ASSIGN {
+					alias = true
+				}
+			case Type:
+				typeAST = c.ast
+			}
+		}
+		if name == "" || typeAST == nil {
+			e.fail("malformed type declaration")
+			return
+		}
+		if _, dup := e.localTypes[name]; dup {
+			e.fail("a second local type named %s in one function is not supported yet", name)
+			return
+		}
+		e.localTypeSeq++
+		mn := mangle(e.curPkgPrefix, name) + "_l" + strconv.Itoa(e.localTypeSeq)
+		e.localTypes[name] = mn // before the body, so `type node struct{ next *node }` resolves
+		e.typeNames[mn] = true
+		e.userTypeNames[mn] = name
+		if alias {
+			target := e.cType(typeAST)
+			if target == "" {
+				return
+			}
+			e.aliasOf[mn] = target
+			e.addTypedef(mn, "typedef "+target+" "+mn+";"+"\n", target)
+			continue
+		}
+		if e.interfaceTypeAST(typeAST) != nil {
+			e.fail("a local interface type is not supported yet; declare it at package scope")
+			return
+		}
+		if structAST := e.structTypeAST(typeAST); structAST != nil {
+			// Registered before the fields are lowered, as collectStructForwards
+			// registers a top-level struct: `type node struct{ next *node }`
+			// resolves its own name through the forward.
+			e.structs[mn] = nil
+			fields := e.structFieldsOf(structAST)
+			e.structs[mn] = fields
+			text, deps := e.structTypedefText(mn, fields)
+			// The tag's forward rides in the same unit: a local type cannot add to
+			// the forwards section, which was written when the header was.
+			e.addTypedef(mn, "typedef struct "+mn+" "+mn+";"+"\n"+text, deps...)
+			continue
+		}
+		if a, ok := e.arrayDim(typeAST); ok {
+			a.name = mn
+			e.namedArrays[mn] = a
+			e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";"+"\n", a.elem)
+			continue
+		}
+		underlying := e.cType(typeAST)
+		if underlying == "" {
+			return
+		}
+		e.namedTypes[mn] = true
+		e.namedUnderlying[mn] = underlying
+		e.addTypedef(mn, "typedef "+underlying+" "+mn+";"+"\n", underlying)
+	}
+}
+
 // collectTypeDecl records a type declaration (single or grouped) and emits its
 // typedef: a `type Name struct { ... }` as `typedef struct { ... } Name;`, and a
 // non-struct named type `type Name <underlying>` (e.g. `type Celsius int`) as
@@ -5522,30 +5635,7 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 			// name a type inside its own anonymous typedef.
 			fields := e.structFieldsOf(structAST)
 			e.structs[mn] = fields
-			deps := make([]string, 0, len(fields))
-			text := e.captureC(func() {
-				e.emit("struct " + mn + " {")
-				for _, fld := range fields {
-					// A field name may be Unicode; cIdent it in the typedef and, to match,
-					// wherever a field is selected (see fieldAccessC and the chain/selector
-					// paths). The structs map still stores the source name, so the type
-					// lookups (structFieldType etc.) compare source names.
-					deps = append(deps, fld.ctype)
-					if fld.dim.bound != "" {
-						e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fld.dim.declSuffix() + ";")
-						continue
-					}
-					e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + ";")
-				}
-				if len(fields) == 0 {
-					// C rejects a struct with no members; Go's empty struct is a
-					// legal, zero-information type (markers, chan struct{} signals).
-					// Give it one hidden byte so the C type is well-formed. OctoGo
-					// code cannot name the field, so it stays invisible.
-					e.emit(" char _ogo_empty;")
-				}
-				e.emit(" };\n")
-			})
+			text, deps := e.structTypedefText(mn, fields)
 			e.addTypedef(mn, text, deps...)
 			continue
 		}
@@ -6744,7 +6834,7 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 		// that its own fields and methods are reachable without naming it (fieldPath,
 		// promotedMethod).
 		if ctype == "" && len(names) == 1 && !star {
-			mn := mangle(e.curPkgPrefix, names[0])
+			mn := e.typeCName(names[0])
 			if _, isStruct := e.structs[mn]; isStruct {
 				out = append(out, structField{name: names[0], ctype: mn, embedded: true})
 				continue
@@ -9428,6 +9518,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.localTypes = map[string]string{}
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -9578,6 +9669,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		prologue: e.prologue, w: e.w,
 	}
 	e.locals = map[string]string{}
+	e.localTypes = map[string]string{}
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -9985,6 +10077,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 		return
 	}
 	e.locals = map[string]string{}
+	e.localTypes = map[string]string{}
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -10981,6 +11074,8 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 		e.emitRecvStmt(nodes)
 	case first.sym == AssignHead:
 		e.emitAssignHeadStmt(nodes)
+	case first.sym == TypeDecl:
+		e.emitLocalTypeDecl(first.ast)
 	case first.sym == 0:
 		e.fail("%v statement is not supported yet", e.f.ch(first.tok))
 	default:
@@ -11300,7 +11395,9 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 	// its emission -- the (T){...} cast and the structs lookup -- use the same
 	// package-namespaced typedef.
 	if len(kids) == 2 {
-		return mangle(e.curPkgPrefix, e.src(kids[0].tok)), kids[1], true // a type of this package
+		// Through `type A = B` too: a literal written via the alias is the
+		// target's literal.
+		return e.unaliased(e.typeCName(e.src(kids[0].tok))), kids[1], true // a type of this package
 	}
 	// A qualified type, "pkg.T{...}": the leading identifier is the import qualifier,
 	// so the typedef carries the prefix of the package it names rather than this
@@ -12744,7 +12841,7 @@ func (e *emitter) litSliceType(typeAST []int32) (elem string, ok bool) {
 	}
 	// Through a chain of definitions: `type Alias List` over `type List []int` is
 	// still a slice literal's type.
-	u, ok := e.namedUnderlying[mangle(e.curPkgPrefix, e.src(nodes[0].tok))]
+	u, ok := e.namedUnderlying[e.typeCName(e.src(nodes[0].tok))]
 	if !ok {
 		return "", false
 	}
@@ -12794,7 +12891,7 @@ func (e *emitter) namedSliceLitType(typeAST []int32) (string, bool) {
 	if len(nodes) != 1 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != IDENT {
 		return "", false
 	}
-	nm := mangle(e.curPkgPrefix, e.src(nodes[0].tok))
+	nm := e.typeCName(e.src(nodes[0].tok))
 	if !e.isSliceCType(e.underlyingCType(nm)) {
 		return "", false
 	}
@@ -13164,7 +13261,7 @@ func (e *emitter) cType(ast []int32) string {
 	// every downstream structs/namedTypes lookup. An ALIAS resolves to its
 	// TARGET's name: the alias is another name, not a type, so nothing downstream
 	// -- method dispatch above all -- should ever key on it.
-	mn := mangle(e.curPkgPrefix, name)
+	mn := e.typeCName(name)
 	for i := 0; i < 16; i++ {
 		t, isAlias := e.aliasOf[mn]
 		if !isAlias {
@@ -13273,7 +13370,7 @@ func (e *emitter) convType(recv string) (string, bool) {
 	if recv == "error" && !e.typeNames[mangle(e.curPkgPrefix, "error")] {
 		return e.errorIfaceCType(), true
 	}
-	mn := mangle(e.curPkgPrefix, recv)
+	mn := e.unaliased(e.typeCName(recv))
 	if e.namedTypes[mn] {
 		return mn, true // `type Celsius int` used as Celsius(x)
 	}
@@ -13699,7 +13796,7 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 	if len(nodes) == 1 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT {
 		// Through `type A = B` first: the alias is another name, and the method
 		// set the shape carries is the TARGET's.
-		nm := e.unaliased(mangle(e.curPkgPrefix, e.src(nodes[0].tok)))
+		nm := e.unaliased(e.typeCName(e.src(nodes[0].tok)))
 		a, ok := e.namedArrays[nm]
 		if ok {
 			a.name = nm // resolved away everywhere else; kept here for the method set
@@ -16069,6 +16166,17 @@ func (e *emitter) varType(name string) (string, bool) {
 	return e.unaliased(ct), ok
 }
 
+// typeCName maps a written TYPE name to its C key: a LOCAL type declaration's
+// minted name when one is in scope in this function, the package-mangled name
+// otherwise. Every reader of a type name goes through here so a local type is a
+// type everywhere its name reaches.
+func (e *emitter) typeCName(name string) string {
+	if mn, ok := e.localTypes[name]; ok {
+		return mn
+	}
+	return mangle(e.curPkgPrefix, name)
+}
+
 // unaliased resolves a C type name through `type A = B`: every consumer of a
 // variable's type -- method dispatch above all -- must see the TARGET, whatever
 // name the recording site happened to write down.
@@ -18198,7 +18306,7 @@ func (e *emitter) typeSwitchOperand(ast []int32) (base string, prefix []Node, ok
 // answers with its C name.
 func (e *emitter) caseIfaceC(ex Node) (string, bool) {
 	if name, ok := e.exprIdent(ex.ast); ok {
-		mn := mangle(e.curPkgPrefix, name)
+		mn := e.unaliased(e.typeCName(name))
 		return mn, e.isIfaceCType(mn)
 	}
 	// `case geo.Sizer:` -- another package's interface, which arrives as a selector
@@ -18335,7 +18443,7 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	if name == "" {
 		return "", false, false
 	}
-	concrete = mangle(e.curPkgPrefix, name)
+	concrete = e.unaliased(e.typeCName(name))
 	if !e.isStruct(concrete) && !e.isUserType(concrete) {
 		return "", false, false
 	}

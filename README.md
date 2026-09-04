@@ -363,7 +363,9 @@ broken.
   struct{ ... }` and `type T = lib.X` are refused; alias a NAMED type of the
   same package (or a predeclared one), which works whole: identity, methods,
   literals via either spelling.
-* A **local `type` declaration** — types are declared at package scope.
+* A **local interface type**, and a **second local type of one name in one
+  function** — every other `type` declaration inside a function works, aliases
+  and shadowing included.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.
 * A **select's SEND clause takes a channel named by a variable, a field or an

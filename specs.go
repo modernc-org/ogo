@@ -1182,8 +1182,11 @@
 //
 // A type declaration binds an identifier, the type name, to a type.
 //
-// It must stand at PACKAGE SCOPE. A type declared inside a function is refused,
-// "statement TypeDecl is not supported yet", though Go admits one.
+// A type may also be declared INSIDE a function, visible from its declaration to
+// the end of the enclosing block, and may shadow a package type. Two local types
+// of one NAME in one function are refused ("not supported yet" -- the emitter
+// keeps one name per function), and a local INTERFACE type is refused; declare
+// that one at package scope.
 //
 // The ALIAS form, "type A = B", declares another NAME for B, not a new type:
 // values pass between the two spellings, B's methods are reachable through A,

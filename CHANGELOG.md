@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A `type` declaration works inside a function.** Local structs with
+  literals and equality, local defined scalars and arrays, a local alias of a
+  package type with its methods reachable, shadowing a package type, the same
+  name declaring different types in different functions, and a
+  self-referential local struct linked through pointers -- each verified
+  against Go on the board. Bounded honestly: a second local type of one name
+  in one function and a local interface type are refused where written.
+
 - **`type A = B` is an alias — another name for B, not a new type.** The form
   used to parse with the `=` silently discarded, so A was a distinct type: a
   method could be declared on it (Go refuses that) and a value of one spelling
