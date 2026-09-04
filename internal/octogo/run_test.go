@@ -15631,6 +15631,205 @@ func main() {
 		want: "1211 0\n14 -1 -1\n",
 	},
 	{
+		// Round-18 probe, clean on the board: append-with-CRC into a byte arena, a
+		// byte-by-byte scan recovery that steps over corruption and keeps the
+		// highest sequence, the arena-full path through a goto, and the
+		// array-field struct passed the way this target takes it -- by pointer,
+		// with recovery through an out parameter.
+		name: "an EEPROM-style record journal",
+		src: `// Round 18: an EEPROM-style record journal over a byte array. Records are
+// appended with a magic byte, a sequence number, a length and a CRC; recovery
+// scans the whole arena and keeps the highest-sequence valid record, stepping
+// over corruption byte by byte, the way real log recovery does.
+
+const arenaSize = 128
+
+var arena [arenaSize]byte
+
+var writePos int
+
+func crc8(bs []byte) byte {
+	c := byte(0)
+	for i := 0; i < len(bs); i++ {
+		c ^= bs[i]
+		for b := 0; b < 8; b++ {
+			if c&0x80 != 0 {
+				c = c<<1 ^ 0x31
+			} else {
+				c <<= 1
+			}
+		}
+	}
+	return c
+}
+
+type record struct {
+	seq  byte
+	vals [3]byte
+}
+
+// appendRecord writes [0xA5 seq len v0 v1 v2 crc]; false when the arena is full.
+func appendRecord(r *record) bool {
+	need := 4 + len(r.vals)
+	if writePos+need > arenaSize {
+		goto full
+	}
+	arena[writePos] = 0xa5
+	arena[writePos+1] = r.seq
+	arena[writePos+2] = byte(len(r.vals))
+	for i := 0; i < len(r.vals); i++ {
+		arena[writePos+3+i] = r.vals[i]
+	}
+	arena[writePos+need-1] = crc8(arena[writePos : writePos+need-1])
+	writePos += need
+	return true
+full:
+	return false
+}
+
+// recoverBest walks the arena and leaves the highest-sequence valid record in
+// out, reporting whether any was found.
+func recoverBest(out *record) bool {
+	found := false
+	i := 0
+	for i < arenaSize {
+		if arena[i] != 0xa5 {
+			i++
+			continue
+		}
+		if i+3 > arenaSize {
+			break
+		}
+		n := int(arena[i+2])
+		total := 4 + n
+		if n != 3 || i+total > arenaSize {
+			i++
+			continue
+		}
+		if crc8(arena[i:i+total-1]) != arena[i+total-1] {
+			i++
+			continue
+		}
+		if !found || arena[i+1] >= out.seq {
+			out.seq = arena[i+1]
+			for k := 0; k < 3; k++ {
+				out.vals[k] = arena[i+3+k]
+			}
+			found = true
+		}
+		i += total
+	}
+	return found
+}
+
+func main() {
+	r1 := record{seq: 1, vals: [3]byte{10, 20, 30}}
+	r2 := record{seq: 2, vals: [3]byte{40, 50, 60}}
+	r3 := record{seq: 3, vals: [3]byte{70, 80, 90}}
+	ok1 := appendRecord(&r1)
+	ok2 := appendRecord(&r2)
+	ok3 := appendRecord(&r3)
+	println(ok1, ok2, ok3, writePos)
+
+	// Corrupt the LATEST record's payload; recovery must fall back to seq 2.
+	arena[writePos-3] ^= 0xff
+	var r record
+	found := recoverBest(&r)
+	println(found, r.seq, r.vals[0], r.vals[1], r.vals[2])
+
+	// Fill the arena to the brim; the append that no longer fits says so.
+	n := 0
+	for {
+		rn := record{seq: byte(4 + n), vals: [3]byte{byte(n), 0, 0}}
+		if !appendRecord(&rn) {
+			break
+		}
+		n++
+	}
+	println(n, writePos)
+
+	// A fresh valid record wins recovery again.
+	arena[0] = 0
+	var rr record
+	found2 := recoverBest(&rr)
+	println(found2, rr.seq)
+}
+`,
+		want: "true true true 21\ntrue 2 40 50 60\n15 126\ntrue 18\n",
+	},
+	{
+		// The digital input path: an insertion-sorted median window (an ARRAY
+		// copied into a scratch array and sorted), a two-threshold trigger with
+		// edge counting, deterministic spike noise that never survives the median.
+		name: "median-of-5 and a hysteresis trigger",
+		src: `// Round 18b: sensor conditioning -- a median-of-5 window over a noisy ramp, a
+// hysteresis threshold on the filtered value, and edge counting. The shape of
+// every digital input path.
+
+var window [5]int32
+
+var wn int
+
+func push(v int32) int32 {
+	window[wn%5] = v
+	wn++
+	if wn < 5 {
+		return v
+	}
+	var s [5]int32
+	s = window
+	for i := 1; i < 5; i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
+	return s[2]
+}
+
+type trigger struct {
+	high, low int32
+	on        bool
+	edges     int32
+}
+
+func (t *trigger) feed(v int32) {
+	if !t.on && v >= t.high {
+		t.on = true
+		t.edges++
+	} else if t.on && v <= t.low {
+		t.on = false
+	}
+}
+
+func noise(i int32) int32 {
+	// A deterministic "noise": big spikes every 7th sample.
+	if i%7 == 3 {
+		return 500
+	}
+	if i%7 == 5 {
+		return -400
+	}
+	return (i % 3) - 1
+}
+
+func main() {
+	t := trigger{high: 60, low: 40}
+	sum := int32(0)
+	for i := int32(0); i < 60; i++ {
+		raw := i*2 + noise(i)
+		f := push(raw)
+		t.feed(f)
+		sum += f
+	}
+	println(sum, t.edges, t.on)
+
+	// The spikes never made it through the median.
+	println(push(1000), push(1001))
+}
+`,
+		want: "3816 2 true\n116 618\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

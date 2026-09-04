@@ -18,6 +18,25 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **`ogo fmt` spaces a slice's colons exactly as gofmt does, at every depth.**
+  gofmt's rule is depth-gated like its operator spacing: a binary bound spaces
+  the colons at statement level (`xs[i : i+1]`) and not nested deeper
+  (`crc8(arena[i:i+total-1])` inside a comparison stays tight), and the base of
+  a further subscript is back at the shallow rule wherever it stands
+  (`g(xs[i+1 : j][0], ...)` keeps its blanks). The formatter now carries that
+  gate; found by the zero-disagreement gofmt ratchet on a new corpus program.
+
+### Verified
+
+- **Probe round eighteen: two more firmware-shaped programs, bit-for-bit.** An
+  EEPROM-style record journal (CRC-8 over a byte arena, append with a `goto`
+  error exit, scan recovery through pointer-passed records) and a
+  median-of-five filter feeding a hysteresis trigger, each built for the P2
+  and its output diffed against the same program under Go. Both matched
+  exactly and both are pinned as run cases.
+
 ### Language
 
 - **`goto` is in the language.** A jump to a label of the same function, under

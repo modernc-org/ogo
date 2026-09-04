@@ -31,6 +31,11 @@ type formatter struct {
 	prevPrevTok Symbol // The token before the last emitted token.
 	prevTokIdx  int32  // Index of the last emitted token, for tightOps.
 
+	// indexDepth records, per Index node (keyed by its first token), the
+	// expression depth the subscript stands at -- what gates the slice-colon
+	// blanks the way operator blanks are gated.
+	indexDepth map[int32]int
+
 	// skipTok holds the tokens of REDUNDANT parenthesis pairs -- an outer pair
 	// directly around an inner one -- which gofmt collapses: "((a))[1]" prints as
 	// "(a)[1]". A skipped token's separator travels to the next token, the way an
@@ -1135,7 +1140,8 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				case Index:
 					// walk takes c by value, so this scopes to the index subtree.
 					c.inIndex = true
-					c.sliceColonBlanks = sliceColonNeedsBlanks(ast[2:next])
+					c.sliceColonBlanks = sliceColonNeedsBlanks(ast[2:next]) &&
+						f.indexDepth[firstIndex(ast[:next])] <= 1
 				case CompositeLit:
 					c.inLiteralBraces = true
 					// A literal written across lines indents what stands between its
@@ -1380,6 +1386,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	}
 
 	f.tightOps = map[int32]bool{}
+	f.indexDepth = map[int32]int{}
 	f.computeTightOps(f.ast, 1)
 	f.alignFuncBraces(f.ast)
 	f.skipTok = map[int32]bool{}
@@ -1666,12 +1673,30 @@ func soleParenFactor(n Node) (Node, bool) {
 // expression list of more than one element, and for the operands of a binary node;
 // parentheses give one level back.
 func (f *formatter) computeTightOps(ast []int32, depth int) {
-	for n := range it(ast) {
+	kids := slices.Collect(it(ast))
+	for k, n := range kids {
 		switch n.sym {
 		case Block:
 			f.computeTightOps(n.ast, 1)
 		case Index:
-			f.computeTightOps(n.ast, depth+1)
+			// The slice-colon rule is depth-gated exactly as operators are: a
+			// binary bound spaces the ':' at depth 1 and not deeper, so the pass
+			// records where each subscript stands. go/printer prints the BASE of a
+			// subscript at depth 1 whatever surrounds it, and in this flat AST the
+			// base relation is a LATER Index sibling in the same suffix run --
+			// Index appears as a direct child only of suffix runs, so siblings are
+			// always one chain.
+			d := depth
+			for _, later := range kids[k+1:] {
+				if later.sym == Index {
+					d = 1
+					break
+				}
+			}
+			if i := firstIndex(n.ast); i >= 0 {
+				f.indexDepth[i] = d
+			}
+			f.computeTightOps(n.ast, d+1)
 		case ArgumentList:
 			// A call raises the depth when it has more than one argument;
 			// go/printer does this at the CallExpr, not in the list.
