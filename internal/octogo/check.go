@@ -11855,9 +11855,10 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 	params := f.flattenParams(paramScope, sig)
 	// `f(g())`: a call of several results as the whole argument list, Go's special
 	// case. The results stand in for the arguments -- counted against the
-	// parameters and checked pairwise, as written arguments are. Not for a variadic
-	// callee, which the emitter does not build the pack for yet.
-	if len(args) == 1 && !f.isVariadicSig(sig) {
+	// parameters and checked pairwise, as written arguments are; for a VARIADIC
+	// callee the results past the fixed parameters go to the pack, so only the
+	// fixed ones bound the count.
+	if len(args) == 1 {
 		// A single argument that is exactly a call whose callee this package cannot
 		// SEE -- an interface's method reached through an index or a field, whose
 		// concrete callee is not named here -- may be forwarding several results,
@@ -11868,6 +11869,31 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			return
 		}
 		if results, ok := f.forwardedResults(s, args[0]); ok {
+			if f.isVariadicSig(sig) {
+				fixed := len(params) - 1
+				if len(results) < fixed {
+					f.err(name.Position(), "not enough arguments in call to %s", name.Src())
+					return
+				}
+				for i := 0; i < fixed; i++ {
+					if p := params[i]; p.known && results[i].known && !assignableKind(p.kind, results[i].kind) {
+						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
+							i+1, f.exprSource(args[0]), results[i].name, p.name, name.Src())
+					}
+				}
+				last := sig.Params.List[len(sig.Params.List)-1]
+				if sl, isSlice := last.TypeNode.(*TypeNodeSlice); isSlice {
+					if elem := f.resultType(paramScope, sl.TypeNode); elem.known {
+						for i := fixed; i < len(results); i++ {
+							if results[i].known && !assignableKind(elem.kind, results[i].kind) {
+								f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
+									i+1, f.exprSource(args[0]), results[i].name, elem.name, name.Src())
+							}
+						}
+					}
+				}
+				return
+			}
 			switch {
 			case len(results) < len(params):
 				f.err(name.Position(), "not enough arguments in call to %s", name.Src())

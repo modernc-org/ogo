@@ -15358,6 +15358,44 @@ func main() {
 		want: "3 12 true\n",
 	},
 	{
+		// Forwarding a call's results into a VARIADIC callee, Go's special case:
+		// the results past the fixed parameters become the pack. All of the pack,
+		// a fixed parameter taking the first result, and an EMPTY pack when the
+		// results exactly cover the fixed parameters.
+		name: "forwarded results feed a variadic pack",
+		src: `func two() (int, int) { return 3, 4 }
+
+func three() (int, int, int) { return 5, 6, 7 }
+
+func sum(xs ...int) int {
+	t := 0
+	for _, v := range xs {
+		t += v
+	}
+	return t
+}
+
+func lead(a int, xs ...int) int {
+	t := a * 100
+	for _, v := range xs {
+		t += v
+	}
+	return t
+}
+
+func exact(a int, b int, xs ...int) int { return a*10 + b + len(xs) }
+
+func main() {
+	println(sum(two()))
+	println(sum(three()))
+	println(lead(two()))
+	println(lead(three()))
+	println(exact(two()))
+}
+`,
+		want: "7\n18\n304\n513\n34\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

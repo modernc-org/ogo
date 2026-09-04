@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A call's results forward into a variadic callee.** `sum(two())` packs the
+  results past the fixed parameters into the variadic slice, exactly as Go
+  does -- all of them, some after fixed parameters take their share, or none
+  when the results just cover the fixed ones. The count and each result's type
+  are checked where the call is written, against the fixed parameters pairwise
+  and the element type for the rest. This was the last "assign them first"
+  refusal in the ordinary-Go set.
+
 - **A locally declared channel's lock is actually allocated.** The synthesized
   package-init function that news every channel cell's hardware lock was
   emitted but, for a program whose only channels are locals, never CALLED: the

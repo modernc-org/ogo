@@ -25622,10 +25622,15 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 	if !ok || len(resTypes) < 2 {
 		return nil, false
 	}
-	if _, at := e.variadicPack(cname); at >= 0 {
-		e.fail("cannot pass the results of %s to variadic %s yet; assign them first", callee, cname)
-		return nil, true
-	}
+	elem, at := e.variadicPack(cname)
+	if at >= 0 {
+		// Go packs the results past the fixed parameters into the variadic slice.
+		if len(resTypes) < at {
+			e.failAt(arg.ast, "not enough arguments in call to %s: %s returns %d, the fixed parameters want %d",
+				cname, callee, len(resTypes), at)
+			return nil, true
+		}
+	} else
 	// The counts, which the CHECKER cannot compare when it cannot see the callee --
 	// a call through an interface reached by an index or a field is resolved here
 	// and nowhere else (see checkArgsIn), so saying nothing would leave the C
@@ -25647,7 +25652,7 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 		for i := range names {
 			names[i] = fmt.Sprintf("%s._%d", tmp, i)
 		}
-		return names, true
+		return e.packForwarded(names, elem, at), true
 	}
 	tmp := e.hoist(e.retStructNameOf(resTypes), func() {
 		if !e.emitCallExpr(callee, suffix) {
@@ -25658,7 +25663,35 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 	for i := range names {
 		names[i] = fmt.Sprintf("%s._%d", tmp, i)
 	}
-	return names, true
+	return e.packForwarded(names, elem, at), true
+}
+
+// packForwarded folds a forwarded call's result names for a VARIADIC callee: the
+// fixed parameters keep their names and everything past them becomes the one
+// slice a variadic parameter is. A non-variadic callee (at < 0) keeps the names
+// as they are.
+func (e *emitter) packForwarded(names []string, elem string, at int) []string {
+	if at < 0 {
+		return names
+	}
+	fixed := append([]string{}, names[:at]...)
+	return append(fixed, e.packVariadicNames(elem, names[at:]))
+}
+
+// packVariadicNames is packVariadic for values already in hand as C names -- the
+// fields of a forwarded call's hoisted result struct.
+func (e *emitter) packVariadicNames(elem string, names []string) string {
+	e.needSlice(elem)
+	if len(names) == 0 {
+		return "(" + sliceCName(elem) + "){0}"
+	}
+	tmp := e.newTmp()
+	n := strconv.Itoa(len(names))
+	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"];\n")
+	for i, nm := range names {
+		e.prologue = append(e.prologue, tmp+"["+strconv.Itoa(i)+"] = "+nm+";\n")
+	}
+	return "(" + sliceCName(elem) + "){" + tmp + ", " + n + ", " + n + "}"
 }
 
 // callArgExprs returns the argument Expression nodes of a CallSuffix.
