@@ -4276,7 +4276,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4993,6 +4993,7 @@ type emitter struct {
 	chanGatedSendElems map[string]bool          // ogo_chan_trysend_<elem> (waiting-gated non-blocking send) is called
 	aliasOf            map[string]string        // `type A = B`: mangled alias name -> mangled target name
 	localTypes         map[string]string        // a LOCAL type declaration's source name -> its minted C name, per function
+	gotoTargets        map[string]bool          // labels a goto of the CURRENT function names, scanned before its body is emitted
 	localTypeSeq       int                      // uniquifies minted local-type names across the program
 	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
@@ -9519,6 +9520,8 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
+	e.gotoTargets = map[string]bool{}
+	e.scanGotoTargets(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -9670,6 +9673,8 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	}
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
+	e.gotoTargets = map[string]bool{}
+	e.scanGotoTargets(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -10078,6 +10083,8 @@ func (e *emitter) emitMain(sig, body []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
+	e.gotoTargets = map[string]bool{}
+	e.scanGotoTargets(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -10861,6 +10868,23 @@ func (e *emitter) stmtLabelOperand(nodes []Node) (string, bool) {
 	return "", false
 }
 
+// scanGotoTargets records which labels the gotos of a function body name, so a
+// forward goto's label -- emitted before the goto is reached -- knows to emit its
+// C target line.
+func (e *emitter) scanGotoTargets(ast []int32) {
+	for n := range it(ast) {
+		if n.sym != 0 {
+			e.scanGotoTargets(n.ast)
+			continue
+		}
+		if e.f.ch(n.tok) == GOTO {
+			if next := n.tok + 1; e.f.ch(next) == IDENT {
+				e.gotoTargets[e.src(next)] = true
+			}
+		}
+	}
+}
+
 // emitLabeledStatement emits "L: Stmt". A labeled "for" gets a break-target label
 // after the loop and a continue-target label at the end of its body (a fall-through
 // there is exactly C's continue); "break L"/"continue L" become gotos to those. A
@@ -10868,6 +10892,12 @@ func (e *emitter) stmtLabelOperand(nodes []Node) (string, bool) {
 // anything else has no break/continue target (there is no goto), so its statement is
 // emitted plainly.
 func (e *emitter) emitLabeledStatement(label string, inner []int32) {
+	if e.gotoTargets[label] {
+		// A goto somewhere in this function names this label; the C label leads
+		// whatever statement it stands on -- a loop head included.
+		e.ind()
+		e.emit("ogo_goto_" + cIdent(label) + ":;\n")
+	}
 	switch e.stmtKind(inner) {
 	case FOR:
 		e.labelSeq++
@@ -11076,6 +11106,13 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 		e.emitAssignHeadStmt(nodes)
 	case first.sym == TypeDecl:
 		e.emitLocalTypeDecl(first.ast)
+	case first.sym == 0 && e.f.ch(first.tok) == GOTO:
+		// The label's C spelling is minted per source label; the checker has
+		// already verified the target and Go's jump rules.
+		if len(nodes) >= 2 && nodes[1].sym == 0 {
+			e.ind()
+			e.emit("goto ogo_goto_" + cIdent(e.src(nodes[1].tok)) + ";\n")
+		}
 	case first.sym == 0:
 		e.fail("%v statement is not supported yet", e.f.ch(first.tok))
 	default:

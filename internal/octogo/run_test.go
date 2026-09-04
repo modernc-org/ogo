@@ -15576,6 +15576,61 @@ func main() {
 		want: "8 30 9 42 123\n8\n",
 	},
 	{
+		// goto, in the two shapes it is written for: a state machine hopping
+		// between labels -- backward and forward, out of a loop mid-iteration --
+		// and the error-exit jump to a trailing label past the happy path.
+		name: "goto: a state machine and an error exit",
+		src: `func machine(start int32) int32 {
+	state := start
+	acc := int32(0)
+idle:
+	if state == 0 {
+		acc += 1
+		state = 1
+		goto run
+	}
+	goto done
+run:
+	acc += 10
+	state = 2
+	for i := 0; i < 3; i++ {
+		if i == 2 {
+			goto flush
+		}
+		acc += 100
+	}
+flush:
+	acc += 1000
+	if state == 2 {
+		state = 3
+		goto idle
+	}
+done:
+	return acc
+}
+
+func errexit(v int32) int32 {
+	r := int32(0)
+	if v < 0 {
+		goto fail
+	}
+	r = v * 2
+	if r > 100 {
+		goto fail
+	}
+	return r
+fail:
+	return -1
+}
+
+func main() {
+	println(machine(0), machine(5))
+	println(errexit(7), errexit(-3), errexit(60))
+}
+`,
+		want: "1211 0\n14 -1 -1\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 

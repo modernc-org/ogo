@@ -7,8 +7,9 @@
 // CHANGELOG.md; this list is only what is still owed.
 //
 // TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
-// and Continue Statements); "goto" itself stays out (Keywords), pending the
-// jump-over-declaration safety analysis its unrestricted form needs.
+// and Continue Statements); "goto" jumps to a label of the same function under
+// Go's rules -- never into a block, and never forward over a declaration that
+// is in scope at the label.
 // (Select's historical TODO is DONE 2026-09-04: a send clause beside a default
 // and several send clauses both work, gated on the cell's parked-receiver count;
 // smart-pin clauses were decided out the same day -- the default-arm polling
@@ -264,15 +265,13 @@
 // # Keywords
 //
 // The following keywords are reserved and may not be used as identifiers.
-// Three of Go's are absent, for three different reasons: "package" because a
-// source file carries no package clause (see Packages), "map" because a map
-// allocates and the target has no heap (see Relationship to Go), and "goto"
-// because the analysis its unrestricted form needs is not written yet -- labels
-// and labeled break/continue, which need no such analysis, are supported:
+// Two of Go's are absent: "package" because a source file carries no package
+// clause (see Packages), and "map" because a map allocates and the target has
+// no heap (see Relationship to Go).
 //
-//	break       chan        default     fallthrough go          import      range       select      switch
+//	break       chan        default     fallthrough goto        import      range       select      switch
 //	case        const       defer       for         if          interface   return      struct      type
-//	continue    else        func                                                                     var
+//	continue    else        func        go                                                           var
 //
 // # Operators and punctuation
 //
@@ -1936,6 +1935,7 @@
 //		| "break" [ identifier ]
 //		| "continue" [ identifier ]
 //		| "fallthrough"
+//		| "goto" identifier
 //		| "return" [ ExpressionList ]
 //		| "go" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
 //		| SwitchStmt

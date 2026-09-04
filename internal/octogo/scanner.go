@@ -67,6 +67,7 @@ const (
 	GEQ         = TOK_003e003d     // ">="
 	SHR         = TOK_003e003e     // ">>"
 	BREAK       = TOK_break        // "break"
+	GOTO        = TOK_goto         // "goto"
 	CASE        = TOK_case         // "case"
 	CONTINUE    = TOK_continue     // "continue"
 	CHAN        = TOK_chan         // "chan"

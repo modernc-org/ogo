@@ -114,6 +114,7 @@ Statement = VarDecl
 	| "break" [ identifier ]
 	| "continue" [ identifier ]
 	| "fallthrough"
+	| "goto" identifier
 	| "return" [ ExpressionList ]
 	| "go" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
 	| SwitchStmt

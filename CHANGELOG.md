@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`goto` is in the language.** A jump to a label of the same function, under
+  Go's two rules, each refused where written with Go's words: never into a
+  block ("goto L jumps into a block") and never forward over a declaration
+  that is in scope at the label ("jumps over declaration of x"). A goto
+  terminates its statement list, a label some goto names is reachable however
+  the flow above it ended, and the state-machine and error-exit shapes it
+  exists for run on the board bit-identically to Go. This was the last of
+  Go's statements missing for a reason of work rather than of hardware, and
+  its keyword joins the reserved list.
+
 - **A `type` declaration works inside a function.** Local structs with
   literals and equality, local defined scalars and arrays, a local alias of a
   package type with its methods reachable, shadowing a package type, the same

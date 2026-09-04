@@ -358,7 +358,6 @@ broken.
 * An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
   need a struct holding an array, which the backend cannot assign. An array result on
   its own is used like any other value.
-* `goto`.
 * A **type alias of a type literal or of another package's type** — `type S =
   struct{ ... }` and `type T = lib.X` are refused; alias a NAMED type of the
   same package (or a predeclared one), which works whole: identity, methods,

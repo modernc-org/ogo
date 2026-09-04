@@ -222,20 +222,23 @@ type File struct {
 	Scope             *Scope // Kind: FileScope, Parent: Universe
 	errList           ErrList
 	hasInvalidImports bool
-	inArrayBound      bool              // evaluating an array length: suppress "is not a constant"
-	inCaseExpr        bool              // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
-	iota              int               // the current iota value while evaluating a const spec, or -1 outside a const declaration
-	loopDepth         int               // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
-	switchDepth       int               // number of enclosing "switch" statements, so a "break" in one is recognised as placed
-	selectDepth       int               // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
-	labels            []labelFrame      // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
-	labelDecls        map[string]Token  // every label DECLARED in the function being checked: Go scopes a label to the whole function, not to a block, so two sibling ones collide and an unreferenced one is an error
-	labelUsed         map[string]bool   // the labels a break or continue named, for the unused report
-	localVars         []*VarDeclaration // local variables of the function body being checked, for the unused-variable report
-	writeTargets      map[string]bool   // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
-	clauseFallthrough map[string]bool   // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
-	makeTypeArgs      map[string]bool   // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
-	defineRedeclares  map[string]bool   // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
+	inArrayBound      bool                 // evaluating an array length: suppress "is not a constant"
+	inCaseExpr        bool                 // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
+	iota              int                  // the current iota value while evaluating a const spec, or -1 outside a const declaration
+	loopDepth         int                  // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
+	switchDepth       int                  // number of enclosing "switch" statements, so a "break" in one is recognised as placed
+	selectDepth       int                  // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
+	labels            []labelFrame         // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
+	labelDecls        map[string]Token     // every label DECLARED in the function being checked: Go scopes a label to the whole function, not to a block, so two sibling ones collide and an unreferenced one is an error
+	labelSites        map[string]labelSite // where each label stands (scope + offset), for goto's two safety rules
+	gotos             []gotoRef            // every goto of the function being checked, resolved after the walk (a goto may name a label declared later)
+	gotoLabels        map[string]bool      // labels any goto of the function names, scanned ahead: a targeted label is reachable however the flow above it ended
+	labelUsed         map[string]bool      // the labels a break or continue named, for the unused report
+	localVars         []*VarDeclaration    // local variables of the function body being checked, for the unused-variable report
+	writeTargets      map[string]bool      // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
+	clauseFallthrough map[string]bool      // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
+	makeTypeArgs      map[string]bool      // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
+	defineRedeclares  map[string]bool      // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -590,6 +593,9 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	f.makeTypeArgs = map[string]bool{}
 	f.labelDecls = map[string]Token{}
 	f.labelUsed = map[string]bool{}
+	f.labelSites = map[string]labelSite{}
+	f.gotos = nil
+	f.gotoLabels = map[string]bool{}
 	var results []retResult
 	var body Node
 	hasBody := false
@@ -604,10 +610,12 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 			f.declareParamList(fs, sig.Results, roleResult)
 			results = f.flattenResults(fs, sig)
 		case Block:
+			f.scanGotoLabels(n.ast)
 			f.checkBlock(fs, results, n)
 			body, hasBody = n, true
 		}
 	}
+	f.checkGotos(fs)
 	f.reportUnusedLabels()
 	if !hasBody {
 		return
@@ -1153,7 +1161,17 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 				isReturn = true
 			case FOR:
 				isFor = true
+			case GOTO:
+				// A goto transfers control unconditionally: nothing after it in
+				// this list runs.
+				return true
 			}
+		}
+	}
+	// A labeled statement terminates exactly as the statement it labels does.
+	if hasHead && hasPostfix {
+		if inner, _, isLbl := f.postfixLabel(postfix); isLbl {
+			return f.stmtIsTerminating(inner)
 		}
 	}
 	switch {
@@ -1528,6 +1546,51 @@ func (f *File) containsBreak(n Node) bool {
 	return false
 }
 
+// stmtGotoTargetLabel reports a statement that CARRIES a label some goto of this
+// function jumps to -- on the statement itself or anywhere inside it (a block
+// holding the label is entered by the jump, so it is reachable too).
+func (f *File) stmtGotoTargetLabel(stmt Node) bool {
+	var head, postfix Node
+	hasHead, hasPostfix := false, false
+	for c := range it(stmt.ast) {
+		switch c.sym {
+		case AssignHead:
+			head, hasHead = c, true
+		case Postfix:
+			postfix, hasPostfix = c, true
+		case Block, IfStmt, SwitchStmt, SelectStmt, Statement:
+			if f.containsGotoTargetLabel(c) {
+				return true
+			}
+		}
+	}
+	if !hasHead || !hasPostfix {
+		return false
+	}
+	if _, _, isLbl := f.postfixLabel(postfix); !isLbl {
+		return false
+	}
+	name, ok := f.assignHeadIdent(head)
+	if ok && f.gotoLabels[name.Src()] {
+		return true
+	}
+	return f.containsGotoTargetLabel(postfix)
+}
+
+// containsGotoTargetLabel walks a subtree for any labeled statement whose label
+// some goto names.
+func (f *File) containsGotoTargetLabel(n Node) bool {
+	for c := range it(n.ast) {
+		if c.sym == Statement && f.stmtGotoTargetLabel(c) {
+			return true
+		}
+		if c.sym != 0 && f.containsGotoTargetLabel(c) {
+			return true
+		}
+	}
+	return false
+}
+
 // checkBlock walks the statements of a block, or of a case or comm clause body,
 // type-checking each and reporting the first statement made unreachable by a
 // preceding terminating statement in the same list. The caller provides the
@@ -1539,6 +1602,11 @@ func (f *File) checkBlock(s *Scope, results []retResult, n Node) {
 	for c := range it(n.ast) {
 		if c.sym != Statement || isEmptyStatement(c) {
 			continue
+		}
+		// A statement whose label some goto names is reachable however the flow
+		// above it ended -- the jump lands here.
+		if terminated && f.stmtGotoTargetLabel(c) {
+			terminated, reported = false, false
 		}
 		// A statement following a terminating one cannot be reached. Report only
 		// the first -- the rest of the list is unreachable too -- but keep checking
@@ -1621,6 +1689,80 @@ func (f *File) labelKindOf(inner Node) labelKind {
 	return labelOther
 }
 
+// scanGotoLabels records which labels the gotos of a body name, ahead of the
+// walk: reachability (checkBlock) needs the answer at the LABEL, which a forward
+// goto follows and a backward goto precedes.
+func (f *File) scanGotoLabels(ast []int32) {
+	for c := range it(ast) {
+		if c.sym != 0 {
+			f.scanGotoLabels(c.ast)
+			continue
+		}
+		if f.ch(c.tok) == GOTO && f.ch(c.tok+1) == IDENT {
+			f.gotoLabels[f.tok(c.tok+1).Src()] = true
+		}
+	}
+}
+
+// labelSite is where a label stands: the scope of the statement it labels and
+// its source offset -- what goto's two safety rules compare against.
+type labelSite struct {
+	scope  *Scope
+	offset int
+}
+
+// gotoRef is one goto statement, kept until the function walk ends: the label may
+// be declared later in the function, so resolution is a post-pass.
+type gotoRef struct {
+	tok    Token
+	label  Token
+	scope  *Scope
+	offset int
+}
+
+// checkGotos resolves every goto of the function just walked, applying Go's two
+// rules: the label must exist in this function; the jump may not enter a block
+// (the label's scope must be the goto's own or one enclosing it); and a FORWARD
+// jump may not skip a declaration that is in scope at the label -- the variable
+// would exist without its initialization ever running.
+func (f *File) checkGotos(fnScope *Scope) {
+	for _, g := range f.gotos {
+		site, ok := f.labelSites[g.label.Src()]
+		if !ok {
+			f.err(g.label.Position(), "label %s not defined", g.label.Src())
+			continue
+		}
+		enclosing := false
+		for sc := g.scope; sc != nil; sc = sc.Parent {
+			if sc == site.scope {
+				enclosing = true
+				break
+			}
+		}
+		if !enclosing {
+			f.err(g.label.Position(), "goto %s jumps into a block", g.label.Src())
+			continue
+		}
+		if site.offset < g.offset {
+			continue // a backward jump introduces nothing
+		}
+		for sc := site.scope; sc != nil; sc = sc.Parent {
+			for _, d := range sc.Declarations {
+				vd, isVar := d.(*VarDeclaration)
+				if !isVar {
+					continue
+				}
+				if off := vd.Token().Position().Offset; off > g.offset && off < site.offset {
+					f.err(g.label.Position(), "goto %s jumps over declaration of %s at %v", g.label.Src(), vd.Token().Src(), vd.Token().Position())
+				}
+			}
+			if sc == fnScope {
+				break
+			}
+		}
+	}
+}
+
 // checkLabeledStatement checks "Label: Statement". The label must be a bare
 // identifier with no other suffix, and unique among the enclosing labels; it is
 // then pushed while the labeled statement is checked, so a break or continue
@@ -1641,6 +1783,7 @@ func (f *File) checkLabeledStatement(s *Scope, results []retResult, head, postfi
 		f.err(name.Position(), "label %s already declared, previous declaration at %v", name.Src(), prev.Position())
 	} else {
 		f.labelDecls[name.Src()] = name
+		f.labelSites[name.Src()] = labelSite{scope: s, offset: name.Position().Offset}
 	}
 	f.labels = append(f.labels, labelFrame{name: name.Src(), kind: f.labelKindOf(inner)})
 	f.checkStatement(s, results, inner)
@@ -1727,7 +1870,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	// parse can be reported somewhere real. See checkCallStmt.
 	var kwTok Token
 	kwIdx := int32(-1)
-	isBreak, isContinue, hasLabel := false, false, false
+	isBreak, isContinue, isGoto, hasLabel := false, false, false, false
 	condKw := ""
 	var forScope *Scope // a three-clause for's own scope, holding its init variable // "if"/"for" while the next Expression child is that condition
 	for c := range it(stmt.ast) {
@@ -1829,6 +1972,10 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				// A continue names a loop, either the innermost or the one an optional
 				// label names.
 				isContinue, breakContinueTok = true, f.tok(c.tok)
+			case GOTO:
+				// The jump is recorded and resolved after the function walk: the
+				// label it names may be declared later (checkGotos).
+				isGoto, breakContinueTok = true, f.tok(c.tok)
 			case FALLTHROUGH:
 				// Legal only as the last statement of a case clause that is not the
 				// switch's last, which markClauseFallthroughs has already accounted
@@ -1841,7 +1988,7 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 				// The optional label operand of a "break"/"continue" is the only bare
 				// identifier token a statement carries directly (everything else
 				// identifier-led is an AssignHead).
-				if isBreak || isContinue {
+				if isBreak || isContinue || isGoto {
 					labelTok, hasLabel = f.tok(c.tok), true
 				}
 			case DEFER:
@@ -1869,6 +2016,14 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	}
 	if isContinue {
 		f.checkContinue(breakContinueTok, labelTok, hasLabel)
+	}
+	if isGoto {
+		if !hasLabel {
+			f.err(breakContinueTok.Position(), "goto needs a label")
+		} else {
+			f.labelUsed[labelTok.Src()] = true
+			f.gotos = append(f.gotos, gotoRef{tok: breakContinueTok, label: labelTok, scope: s, offset: breakContinueTok.Position().Offset})
+		}
 	}
 	// A statement that is a bare name ("x", "*p") carries an AssignHead but no
 	// Postfix -- a value with no effect, rejected like the suffixed bare values
@@ -5289,10 +5444,16 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		// A literal is a function of its own, and a label's scope is a function: its
 		// labels neither collide with the enclosing function's nor satisfy them.
 		savedLabels, savedDecls, savedUsed := f.labels, f.labelDecls, f.labelUsed
+		savedSites, savedGotos := f.labelSites, f.gotos
 		f.labels, f.labelDecls, f.labelUsed = nil, map[string]Token{}, map[string]bool{}
+		savedGotoLabels := f.gotoLabels
+		f.labelSites, f.gotos, f.gotoLabels = map[string]labelSite{}, nil, map[string]bool{}
+		f.scanGotoLabels(body.ast)
 		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
+		f.checkGotos(ls)
 		f.reportUnusedLabels()
 		f.labels, f.labelDecls, f.labelUsed = savedLabels, savedDecls, savedUsed
+		f.labelSites, f.gotos, f.gotoLabels = savedSites, savedGotos, savedGotoLabels
 	}
 }
 

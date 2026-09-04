@@ -1,0 +1,46 @@
+// "goto" jumps to a label of the same function, under Go's two rules: the jump
+// may not enter a block, and a forward jump may not skip a declaration that is
+// in scope at the label. A goto terminates its statement list, and a label some
+// goto names is reachable however the flow above it ended.
+
+func machine(start int32) int32 {
+	state := start
+	acc := int32(0)
+idle:
+	if state == 0 {
+		state = 1
+		goto run
+	}
+	goto done
+run:
+	acc += 10
+	if state == 1 {
+		state = 2
+		goto idle
+	}
+done:
+	return acc
+}
+
+func intoBlock() {
+	// ERROR "goto in jumps into a block"
+	goto in
+	{
+	in:
+		println(1)
+	}
+}
+
+func overDecl() {
+	// ERROR "goto skip jumps over declaration of x"
+	goto skip
+	// ERROR "unreachable code"
+	x := 5
+skip:
+	println(x)
+}
+
+func missing() {
+	// ERROR "label nowhere not defined"
+	goto nowhere
+}
