@@ -22182,8 +22182,39 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			e.emit("ogo_print_qrune((long long)(")
 			value()
 			e.emit("));\n")
+		case e.isSliceCType(ct) && (isIntCType(e.underlyingCType(sliceElemFromCName(ct))) || sliceElemFromCName(ct) == cString):
+			// fmt applies the verb ELEMENT-WISE to a slice: ['h' 'i' '!'] for
+			// integer elements, ["hi" "yo"] for strings, [] when empty. The value
+			// is bound first -- the argument may be a call -- and each element goes
+			// through the same helper the scalar form uses.
+			elem := sliceElemFromCName(ct)
+			e.usesRuneQuote = true
+			e.usesRunePrint = true
+			e.usesBytesPrint = true
+			e.usesString = true
+			e.usesRuneDecode = true
+			tmp := e.hoist(ct, value)
+			i := e.newTmp()
+			e.ind()
+			e.emit("putchar('[');\n")
+			e.ind()
+			e.emit("for (int " + i + " = 0; " + i + " < " + tmp + ".len; " + i + "++) {\n")
+			e.indent++
+			e.ind()
+			e.emit("if (" + i + ") { putchar(' '); }\n")
+			e.ind()
+			if elem == cString {
+				e.emit("ogo_print_qbytes(" + tmp + ".ptr[" + i + "]);\n")
+			} else {
+				e.emit("ogo_print_qrune((long long)" + tmp + ".ptr[" + i + "]);\n")
+			}
+			e.indent--
+			e.ind()
+			e.emit("}\n")
+			e.ind()
+			e.emit("putchar(']');\n")
 		default:
-			return wrong("a string, a byte slice or an integer")
+			return wrong("a string, a byte slice or an integer, or a slice of either")
 		}
 		return true
 	case 'U':

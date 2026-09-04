@@ -5722,7 +5722,7 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 		{
 			name: "%q of a float",
 			src:  "func main() {\n\tprintf(\"%q\\n\", 1.5)\n}\n",
-			want: "printf: %q wants a string, a byte slice or an integer, not float64",
+			want: "printf: %q wants a string, a byte slice or an integer, or a slice of either, not float64",
 		},
 		{
 			name: "%U of a string",

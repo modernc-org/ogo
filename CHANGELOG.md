@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`%q` of a slice prints element-wise, as fmt prints it.** `['h' '\t' ...]`
+  style rune quoting for integer elements, quoted strings for string elements,
+  `[]` for an empty slice -- Go's escapes throughout, multi-byte runes
+  included. This was the last entry on the recorded ordinary-Go gap list.
+
 - **A call's results forward into a variadic callee.** `sum(two())` packs the
   results past the fixed parameters into the variadic slice, exactly as Go
   does -- all of them, some after fixed parameters take their share, or none

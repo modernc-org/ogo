@@ -15396,6 +15396,25 @@ func main() {
 		want: "7\n18\n304\n513\n34\n",
 	},
 	{
+		// fmt applies %q ELEMENT-WISE to a slice: rune-quoted integers with Go's
+		// escapes (a tab, an emoji), quoted strings, and [] for an empty one --
+		// beside a scalar %q on the same line.
+		name: "%q of a slice prints element-wise",
+		src: `func main() {
+	xs := [3]int32{104, 105, 33}
+	printf("%q\n", xs[:])
+	ys := [3]int32{104, 9, 128512}
+	printf("%q\n", ys[:])
+	ss := [2]string{"hi", "a\"b"}
+	printf("%q\n", ss[:])
+	var empty []int32
+	printf("%q\n", empty)
+	printf("%q %q\n", xs[:1], "tail")
+}
+`,
+		want: "['h' 'i' '!']\n['h' '\\t' '😀']\n[\"hi\" \"a\\\"b\"]\n[]\n['h'] \"tail\"\n",
+	},
+	{
 		name: "a struct packaging a bank of channels",
 		src: `const nw = 3
 
