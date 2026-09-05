@@ -1223,9 +1223,12 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 
 	// Phase 4: Body Checking & Hardware Constraints (Parallel)
 	//
-	// Partial: bodies are walked to declare parameters and local variables
-	// (reporting redeclarations) and to descend into nested blocks. Statement
-	// type checking and the hardware-constraint checks are not implemented yet.
+	// Bodies are fully walked and statement type checking runs here (checkBlock
+	// and everything under it: expression and assignment typing, reachability,
+	// goto's jump rules, the block-lifetime rule). The hardware-side refusals --
+	// escape analysis across cogs, the ABI walls, lifetime of what a frame owns
+	// -- live in the emitter's own passes rather than in this phase, because they
+	// need the C-level shapes emission decides.
 	for _, v := range p.Files {
 		for n := range it(v.AST) {
 			switch n.sym {
@@ -1237,8 +1240,10 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 
 	// Phase 5: Deep Initialization Cycle Detection (Serial)
 	//
-	// Partial: value-recursive types (infinite size) are reported. Global
-	// initialization-order cycles are not implemented yet.
+	// Value-recursive types (infinite size) are reported here. Global
+	// initialization-order cycles are refused by the emitter's ordering pass
+	// (initorder.go), which reads function and method bodies for the dependency
+	// walk and so runs where those are already resolved and mangled.
 	for _, v := range p.Files {
 		for n := range it(v.AST) {
 			switch n.sym {

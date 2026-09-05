@@ -294,8 +294,9 @@ subcommands to `internal/*` packages.
 
 - **`internal/flexcc`** — the C backend as a library. `flexcc.go`'s `Main()` runs
   the transpiled compiler in-process over a `libc.TLS`, capturing stdout/stderr
-  into Go writers. Not yet wired into `ogo build`; currently only exercised
-  standalone (see `all_test.go`'s `--help` golden test).
+  into Go writers. Wired into `ogo build` through `internal/build`, which is how
+  every board binary is produced; `all_test.go`'s `--help` golden exercises it
+  standalone too.
 
 Data flow: `.ogo` sources → scanner/parser (`internal/octogo`) → flat AST →
 semantic checks → emitted C → `internal/flexcc` → P2 binary → `internal/loadp2` →
@@ -304,14 +305,16 @@ still design-only.
 
 ## Implementation status (where the TODOs are)
 
-- `Build()` runs phases 1–3 fully; phases 4 (body/hardware checks) and 5 (deep
-  init cycles) are **partial**, not stubs (`internal/octogo/build.go`): phase 4
-  walks bodies to declare parameters and locals (reporting redeclarations) and to
-  descend into nested blocks, but has no statement type-checking or
-  hardware-constraint checks yet; phase 5 reports value-recursive (infinite-size)
-  types but not global initialization-order cycles. WPO is design-only. C emission
-  is **not** a stub -- `internal/octogo/emit.go` is the largest single piece of the
-  compiler and is wired through `internal/build` to flexcc and loadp2.
+- `Build()` runs phases 1–3 fully, and phase 4 carries the full statement
+  type-checker (`checkBlock` and everything under it). Phase 5 reports
+  value-recursive (infinite-size) types; global initialization-order cycles are
+  refused by the EMITTER's ordering pass (`internal/octogo/initorder.go`, since
+  2026-09-04), which also gives Go's dependency ORDER through function and method
+  bodies -- so neither is an open gap, they just live where names are resolved.
+  The hardware-side refusals (escape across cogs, the ABI walls, frame lifetime)
+  likewise live in emitter passes. WPO is design-only. C emission is **not** a
+  stub -- `internal/octogo/emit.go` is the largest single piece of the compiler
+  and is wired through `internal/build` to flexcc and loadp2.
 - `TestOctoGoSpecs` (`internal/octogo/tests_test.go`) runs every `*.ogo` file in
   `internal/octogo/testdata` — there is no skip list (the historical one was
   retired as the checker caught up). Each file is annotated `// COMPILE` or
