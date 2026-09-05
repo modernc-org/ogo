@@ -119,6 +119,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Verified
 
+- **The C undefined-behaviour boundaries hold on the board.** After the
+  overflow-wrapping work, the other C UB classes the emitter must define away
+  were swept on hardware against Go: a shift count at or past the operand width
+  (driven by a runtime variable, so it reaches the guarded helper rather than a
+  constant fold) and `INT_MIN / -1`. Both already lowered correctly through
+  `ogo_shl`/`ogo_shr`/`ogo_div`, and both are now pinned as a run case that host
+  and board check -- exercising the helper branches an ordinary program rarely
+  hits.
+
 - **Probe round nineteen: a driver shape, init-order meets the cog runtime.**
   An `init()` that starts a worker cog, the package configuration it and main
   share written out of dependency order (`count` reads `scale` reads a function

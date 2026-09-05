@@ -17793,6 +17793,43 @@ func main() {
 		want: "1 3 x\n2 12 x\n3 27 x\n48 5\n49 49000000000 false\n9000000000 16\n81\n100\n363\n12 432\npositive 1\n",
 	},
 	{
+		// The C undefined-behaviour boundaries that the emitter lowers through
+		// GUARDED helpers rather than the bare operator: a shift count at or past
+		// the operand width (Go shifts all bits out -- 0 for <<, 0 or -1 for a
+		// signed >>; C leaves it undefined and x86 would mask the count), driven
+		// by a RUNTIME variable so it reaches the helper's width branch, and
+		// INT_MIN / -1 and INT_MIN % -1 (an overflowing divide, UB in C, defined
+		// wrapping in Go). Board-verified identical to Go, which is what exercises
+		// the ogo_shl/ogo_shr/ogo_div branches a constant fold would never reach.
+		name: "shift counts past the width, and the minimum over minus one",
+		src: `func main() {
+	// Shift counts at and beyond the operand width, via RUNTIME variables so the
+	// compiler cannot fold them. Go defines these fully (count >= width -> all bits
+	// out); C leaves shift-by->=width UNDEFINED.
+	var s32 uint = 32
+	var s40 uint = 40
+	var x int32 = 1
+	var y int32 = -1
+	println(int32(x<<s32), int32(x<<s40), int32(y>>s32), int32(y>>s40))
+	var ux uint32 = 0xFFFFFFFF
+	println(uint32(ux<<s32), uint32(ux>>s32), uint32(ux<<s40))
+	var s64 uint = 64
+	var s70 uint = 70
+	var b int64 = 1
+	var nb int64 = -1
+	println(int64(b<<s64), int64(nb>>s64), int64(b<<s70))
+	// INT_MIN / -1 and INT_MIN % -1: overflow, UB in C, defined-wrapping in Go.
+	var mn int32 = -2147483648
+	var neg int32 = -1
+	println(int32(mn/neg), int32(mn%neg))
+	var mn64 int64 = -9223372036854775808
+	var neg64 int64 = -1
+	println(int64(mn64/neg64), int64(mn64%neg64))
+}
+`,
+		want: "0 0 -1 -1\n0 0 0\n0 -1 0\n-2147483648 0\n-9223372036854775808 0\n",
+	},
+	{
 		// Signed overflow wraps (two's complement) at EVERY width, as Go defines
 		// and the P2 does -- add, subtract, multiply, shift and negate, driven
 		// past the boundary of int8/int16/int32/int64 and their unsigned twins.
