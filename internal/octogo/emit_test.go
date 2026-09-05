@@ -12300,6 +12300,19 @@ func main() { println(b) }
 `,
 		},
 		{
+			// A multi-value initializer cycles as a single-value one does: the
+			// group's call step carries the references, so the ring through f is
+			// found and traced with Go's words.
+			name: "through a multi-value initializer's call",
+			src: `func f() (int, int) { return a + 1, 2 }
+
+var a, b = f()
+
+func main() { println(a, b) }
+`,
+			want: "initialization cycle for a\n\tmain.ogo:3:12: a refers to f\n\tmain.ogo:1:6: f refers to a",
+		},
+		{
 			// A same-named method of ANOTHER type must not blur in: q's static
 			// type resolves the call to T's m, and U's m reading a closes no
 			// ring. Go accepts this program.

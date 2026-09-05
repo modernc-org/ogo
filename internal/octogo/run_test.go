@@ -15631,6 +15631,36 @@ func main() {
 		want: "1211 0\n14 -1 -1\n",
 	},
 	{
+		// A multi-value initializer -- `var a, b = f()` -- is ordered exactly as a
+		// single-variable one: the group runs after what f's body reads (w), a
+		// variable reading the group's names runs after it (c), and an all-blank
+		// `var _, _ = mark()` still orders after the variable its callee writes
+		// (trail). The group's steps used to carry no dependencies and no targets
+		// at all, so f ran against a zero w and c floated above the group.
+		// Board-verified against Go before it was pinned.
+		name: "a multi-value initializer orders with the rest",
+		src: `func f() (int, int) { return w + 1, w * 2 }
+
+func g() int { return 10 }
+
+func mark() (int, int) {
+	trail = trail + 5
+	return 0, 0
+}
+
+var a, b = f()
+var w = g()
+var c = a + b
+var _, _ = mark()
+var trail = zero()
+
+func zero() int { return 0 }
+
+func main() { println(a, b, w, c, trail) }
+`,
+		want: "11 20 10 31 5\n",
+	},
+	{
 		// The dependency behind the initialization order runs through CODE, as
 		// Go's does: through a function's body (a via f), a method's (m1 via
 		// T.m, on a receiver that is itself a step), a write inside a callee
@@ -22085,7 +22115,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n1 10\n14 true 14 true\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -22442,6 +22472,7 @@ func init() { tally++ }
 
 func initOrder() {
 	println(greet.Ordered, greet.Adjust, tally)
+	println(greet.Lo, greet.Hi)
 }
 `,
 	"chain/chain.ogo": `import "greet"
@@ -22600,6 +22631,10 @@ func InSum() int {
 // wherever the three are written -- dependency order runs through a function's
 // body. init() runs after this package's variables and before anything of an
 // importing package.
+var Lo, Hi = pairs()
+
+func pairs() (int, int) { return baseVal * 3, baseVal + 40 }
+
 var Ordered = baseVal * scaleUp()
 var baseVal = 2
 

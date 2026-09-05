@@ -6926,6 +6926,24 @@ func (e *emitter) collectVarDeclTypes(ast []int32) {
 			e.pkgVarPending = append(e.pkgVarPending, pkgVarPending{
 				name: names[0], init: initExprs[0], file: e.f, prefix: e.curPkgPrefix,
 			})
+		case len(names) > 1 && len(initExprs) == 1:
+			// `var a, b = f()`: each name takes the corresponding result type of
+			// the call, registered here so an initializer written ABOVE the
+			// declaration can be typed from these names -- they never reached the
+			// registry at all, and `var c = a * b` above the group was refused
+			// "cannot infer a type".
+			if callee, _, isCall := e.directCall(initExprs[0]); isCall {
+				if resTypes, isUser := e.userFunc(callee); isUser && len(resTypes) == len(names) {
+					for i, nm := range names {
+						if nm != "_" {
+							e.globals[e.globalC(nm)] = resTypes[i]
+							if e.isSliceCType(resTypes[i]) {
+								e.globalSliceVars[e.globalC(nm)] = sliceElemFromCName(resTypes[i])
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -13025,10 +13043,18 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		return
 	}
 	call := e.captureC(func() { e.emitCallExpr(callee, suffix) })
+	// The call depends on whatever its expression references -- the callee's body
+	// included, through the function reference -- and each variable's step depends
+	// on the call's temporary, so the whole group orders and cycles exactly as a
+	// single-variable initializer does. These steps used to carry no dependencies
+	// and no targets at all: `var a, b = f()` ran f before a variable f reads was
+	// initialized, and a variable reading a or b floated above the group.
+	refs := e.initRefs(rhs)
+	pos := e.astPos(rhs)
 	// An all-blank `var _, _ = f()` keeps the call for its side effects but binds
 	// nothing, so no result temporary is emitted -- an unused one would warn.
 	if !slices.ContainsFunc(names, func(nm string) bool { return nm != "_" }) {
-		e.deferPkgInit(call + ";")
+		e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: []string{call + ";"}, deps: refs, pkg: 2 * e.pkgOrd})
 		return
 	}
 	for i, nm := range names {
@@ -13043,12 +13069,28 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		e.emit("static " + resTypes[i] + " " + gn + " = " + e.zeroInitC(resTypes[i]) + ";\n")
 	}
 	tmp := e.newTmp()
-	e.deferPkgInit(e.retStructName(e.funcCallC(callee)) + " " + tmp + " = " + call + ";")
+	e.pkgInit = append(e.pkgInit, pkgInitStep{
+		target: tmp,
+		deps:   refs,
+		stmts:  []string{e.retStructName(e.funcCallC(callee)) + " " + tmp + " = " + call + ";"},
+		pkg:    2 * e.pkgOrd,
+	})
 	for i, nm := range names {
 		if nm == "_" {
 			continue // its value is produced but bound to nothing
 		}
-		e.deferPkgInit(fmt.Sprintf("%s = %s._%d;", nm, tmp, i))
+		// The mangled name: the source spelling only matched it in main, whose
+		// prefix is empty, so a destructure in any other package assigned to a C
+		// identifier that did not exist.
+		gn := e.globalC(nm)
+		e.pkgInit = append(e.pkgInit, pkgInitStep{
+			target:  gn,
+			deps:    append([]string{tmp}, refs...),
+			stmts:   []string{fmt.Sprintf("%s = %s._%d;", gn, tmp, i)},
+			srcName: nm,
+			pos:     pos,
+			pkg:     2 * e.pkgOrd,
+		})
 	}
 }
 

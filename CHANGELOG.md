@@ -20,6 +20,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A multi-value initializer orders with the rest.** `var a, b = f()` carried
+  no dependencies and provided no names to the ordering at all: f ran before a
+  variable its body reads was initialized, a variable reading a or b floated
+  above the group, and an all-blank `var _, _ = mark()` ran before the variable
+  its callee writes. The group's call is a step of its own now, each name a step
+  depending on it, so ordering and cycle refusal work exactly as for a
+  single-variable initializer -- and a cycle through the call is traced with
+  Go's words. Also fixed beside it: the names' result types are registered up
+  front, so `var c = a * b` written above the group is typed instead of refused,
+  and the assignments use the mangled names, so a destructure outside the main
+  package compiles at all. Board-verified against Go.
+
 - **Initialization order now runs through code, as Go's does.** A package
   variable initialized by a call -- `var a = f()` -- is ordered after everything
   f's body reads or writes, transitively through further functions and methods
