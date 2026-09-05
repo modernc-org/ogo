@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **The fuzzer now generates `goto`.** `ogo smith` emits a forward goto that
+  conditionally skips a checksum fold -- the shape that is always valid under
+  Go's jump rules -- so the emitter's label codegen and the checker's jump
+  rules, both shipped, are exercised by the oracle for the first time. The
+  2000-seed oracle stays clean with it in the mix, and a goto-carrying program
+  runs correctly on the board.
+
 - **The host test shim now models the target's integer-overflow wrapping.**
   Signed integer overflow is two's-complement wrapping in Go and on the P2 (its
   soft 64-bit routines wrap, checked on the board), but undefined in C -- and the

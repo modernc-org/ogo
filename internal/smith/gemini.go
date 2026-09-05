@@ -844,6 +844,12 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		// statements, and paying for it out of a neighbour would trade coverage
 		// for coverage.
 		return f.genInterfaceStmt(vm, mem)
+	case r < 0.9975:
+		// 0.25% for a forward goto skipping a checksum fold, from the filler for
+		// the same reason: it emits several statements (a guard, two folds and a
+		// label), and its codegen -- the emitter's label pass and the checker's
+		// jump rules -- had no fuzz coverage at all.
+		return f.genGotoStmt(vm, mem)
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -2928,4 +2934,70 @@ func (f *Fuzzer) genInterfaceStmt(vm Machine, mem Memory) Node {
 	cs, _ := vm.Eval("^", mem.Load(f.ChecksumName), taken)
 	mem.Store(f.ChecksumName, cs)
 	return &BlockNode{Statements: stmts}
+}
+
+// genGotoStmt generates a forward goto that conditionally skips a checksum fold,
+// which the emitter's label machinery and the checker's jump rules never saw from
+// the fuzzer before -- both shipped, neither exercised by the oracle.
+//
+// The shape is the one that is ALWAYS valid under Go's two rules: the label and
+// the goto sit in the same block (no jump into a block), and the only statement
+// between them is a checksum assignment, never a declaration (no jump over a
+// variable in scope at the label). The guard is a boolean the VM has evaluated, so
+// the oracle knows whether the jump is taken: taken skips the first fold, not the
+// second; not taken folds both. The label always labels the second fold, so it is
+// always used -- no "label defined and not used".
+func (f *Fuzzer) genGotoStmt(vm Machine, mem Memory) Node {
+	cond, isTrue := f.genBoolExpr(vm, mem, 0)
+	k1 := Int32(f.Rand.Int31())
+	k2 := Int32(f.Rand.Int31())
+	label := fmt.Sprintf("L_%d", func() int { f.VarSeq++; return f.VarSeq }())
+
+	// Taken (cond true) jumps past the first fold; either way the second runs.
+	if !isTrue {
+		cs, _ := vm.Eval("^", mem.Load(f.ChecksumName), k1)
+		mem.Store(f.ChecksumName, cs)
+	}
+	cs, _ := vm.Eval("^", mem.Load(f.ChecksumName), k2)
+	mem.Store(f.ChecksumName, cs)
+
+	return &GotoStmtNode{
+		Cond:     cond,
+		Label:    label,
+		K1:       k1.Literal(),
+		K2:       k2.Literal(),
+		Checksum: f.ChecksumName,
+	}
+}
+
+// GotoStmtNode writes the forward-goto pattern genGotoStmt builds:
+//
+//	if <cond> {
+//		goto L_N
+//	}
+//	<checksum> = <checksum> ^ K1
+//	L_N:
+//	<checksum> = <checksum> ^ K2
+type GotoStmtNode struct {
+	Cond     Node
+	Label    string
+	K1, K2   string
+	Checksum string
+}
+
+func (n *GotoStmtNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprint(w, "if ")
+	n.Cond.Write(w, 0)
+	fmt.Fprint(w, " {\n")
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "goto %s\n", n.Label)
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}\n")
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s = %s ^ %s\n", n.Checksum, n.Checksum, n.K1)
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s:\n", n.Label)
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s = %s ^ %s", n.Checksum, n.Checksum, n.K2)
 }

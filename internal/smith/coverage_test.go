@@ -167,6 +167,13 @@ var generatedConstructs = []struct {
 	// The multiplication's spacing follows the formatter: inside the parentheses
 	// the depth rule spaces it ("(x.Val() * 3)"), as gofmt does.
 	{"type switch case not taken", `case \*S_\d+:\n\s*\w+ = \w+ \^ \(x\.Val\(\) ?\* ?\d+\)\n\s*case \*S_\d+:`},
+	// A forward goto skipping a checksum fold, and the label it jumps to. The
+	// label sits at a reduced indent, as gofmt places one. Both the goto codegen
+	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage
+	// until this construct; the two entries keep the guard and the target each a
+	// tested property.
+	{"forward goto", `\n\s*goto L_\d+\n`},
+	{"goto target label", `\n\s*L_\d+:\n`},
 }
 
 // TestGeneratorCoverage asserts that the generator still emits every construct it
