@@ -398,13 +398,6 @@ broken.
   as a package directory *and* as a source file name (`aux.ogo` is `aux`): nothing
   on Windows may carry one, so a repository holding `con/` cannot even be checked
   out there.
-* A `type` declaration must stand at **package scope**; one inside a function is
-  refused.
-* A type **alias**, `type A = B`, parses and is then treated as a definition — the
-  `=` is read and discarded, so `A` is a distinct type rather than another name for
-  `B` whatever `B` is, and `var i int = a` over `type A = int` is refused where Go
-  accepts it — as is passing an `A` for a `B` when the two are structs. Use the
-  definition form until the two differ.
 
 Floating point (float32/float64) is supported, exponent literals included
 (`1e3`, `1.5e-3`): the P2's C toolchain provides it,
