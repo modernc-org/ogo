@@ -17793,6 +17793,46 @@ func main() {
 		want: "1 3 x\n2 12 x\n3 27 x\n48 5\n49 49000000000 false\n9000000000 16\n81\n100\n363\n12 432\npositive 1\n",
 	},
 	{
+		// Signed overflow wraps (two's complement) at EVERY width, as Go defines
+		// and the P2 does -- add, subtract, multiply, shift and negate, driven
+		// past the boundary of int8/int16/int32/int64 and their unsigned twins.
+		// The sub-32-bit types are where the target has to truncate after each
+		// operation (its word is 32-bit), which is where a narrowing fault would
+		// show. Board-verified identical to Go; the host shim models it -fwrapv.
+		name: "signed overflow wraps at every width",
+		src: `func main() {
+	// int8 overflow: add, sub, mul, shift, negate at the boundary
+	var a8 int8 = 127
+	var b8 int8 = 100
+	println(int8(a8+1), int8(b8*2), int8(a8<<1), int8(-a8), int8(a8-(-a8)))
+	var c8 int8 = -128
+	println(int8(c8-1), int8(c8*(-1)), int8(c8<<1))
+	// uint8 wrap (defined mod 256)
+	var u8 uint8 = 255
+	println(uint8(u8+1), uint8(u8*2), uint8(u8<<1), uint8(u8+u8))
+	// int16
+	var a16 int16 = 32767
+	var b16 int16 = 30000
+	println(int16(a16+1), int16(b16*2), int16(a16<<1), int16(-a16))
+	var u16 uint16 = 65535
+	println(uint16(u16+1), uint16(u16*3), uint16(u16<<2))
+	// int32
+	var a32 int32 = 2147483647
+	var b32 int32 = 100000
+	println(int32(a32+1), int32(b32*b32), int32(a32<<1), int32(-a32))
+	var u32 uint32 = 4294967295
+	println(uint32(u32+1), uint32(u32*7), uint32(u32<<3))
+	// int64
+	var a64 int64 = 9223372036854775807
+	var b64 int64 = 3037000500
+	println(int64(a64+1), int64(b64*b64), int64(a64<<1), int64(-a64))
+	var u64 uint64 = 18446744073709551615
+	println(uint64(u64+1), uint64(u64*5), uint64(u64<<4))
+}
+`,
+		want: "-128 -56 -2 -127 -2\n127 -128 0\n0 254 254 254\n-32768 -5536 -2 -32767\n0 65533 65532\n-2147483648 1410065408 -2 -2147483647\n0 4294967289 4294967288\n-9223372036854775808 -9223372036709301616 -2 -9223372036854775807\n0 18446744073709551611 18446744073709551600\n",
+	},
+	{
 		// Signed integer overflow is two's-complement WRAPPING in Go, and on the
 		// P2 (its soft 64-bit routines wrap, verified on the board). An
 		// overflowing int64 product feeding a modulo -- `z * K % 3` -- is where

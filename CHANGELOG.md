@@ -28,7 +28,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   target off-board, is now compiled `-fwrapv`, so it wraps as the target does.
   This affects the off-board test suites only; a program built for the P2 was
   always correct. Found by the smith fuzzer's oracle at a wide seed sweep and
-  pinned as a run case that host and board both check against Go.
+  pinned as a run case that host and board both check against Go. A companion
+  sweep confirmed the P2 wraps signed overflow exactly as Go does at every
+  width -- int8 through int64 and their unsigned twins, across add, subtract,
+  multiply, shift and negate -- with no target divergence, and pinned that too.
 
 ### Language
 
