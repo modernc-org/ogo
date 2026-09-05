@@ -411,14 +411,13 @@ Floating point (float32/float64) is supported, exponent literals included
 so float arithmetic, comparison, int conversions and printing all work. Note the
 target has no double-precision hardware, so `float64` is 32-bit here, same as
 `float32` (~7 significant digits, not ~15) -- the name is kept for Go source
-compatibility but carries no extra precision. The toolchain's `%f` formats to about
-that many digits as well: at its default six decimals a value that is exact in a
-32-bit float can still print with its last decimal off by one -- `21.0` prints as
-`20.999999` on the board, measured -- while `%.2f` prints `21.00`. The value is
-right; the eighth digit of its rendering is not. (The toolchain's own
-integer-to-float conversion rounds an exact tie away from zero where IEEE 754 and
-Go round to even; the compiler does that conversion itself, so `float32(16777217)`
-is 16777216 here as it is in Go.) Constant expressions are evaluated exactly, as
+compatibility but carries no extra precision. Printing, though, is EXACT: the
+compiler renders a float from its own exact decimal value rather than through the
+target's `printf`, so `%f`, `%e`, `%g` and `%v` all produce the digits Go produces
+-- `21.0` prints `21.000000`, and `%v` gives the shortest form that round-trips to
+the same float. What the ~7 significant digits bound is the value, not its
+rendering. (The compiler's integer-to-float conversion rounds an exact tie to even,
+as IEEE 754 and Go do, so `float32(16777217)` is 16777216 here as it is in Go.) Constant expressions are evaluated exactly, as
 Go evaluates them -- `0.1+0.2 == 0.3` is true, `7 / 2.0` is 3.5 -- and a constant
 beside a `float32` operand is a `float32`, so `f == 0.3` compares two of them.
 
