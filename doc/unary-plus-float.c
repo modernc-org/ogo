@@ -36,6 +36,15 @@
 // CARRIED IN, knowingly, by the regeneration of 2026-08-29 (spin2cpp 2bd01c4c):
 // the backend in internal/flexcc now warns over this file and miscompiles it, as
 // the table says master did. Nothing in OctoGo reaches it.
+//
+// FIXED UPSTREAM 2026-09-05: Eric Smith (totalspectrum) closed issue 107 with
+// "This should be fixed in github now (in the spin2cpp repository, it'll be merged
+// into flexprop before the next release)" -- a commit past the 2bd01c4c pin. It is
+// NOT in internal/flexcc yet, so this file still reproduces under the pinned
+// backend; the next regeneration past the fix clears it. Re-run this battery then.
+// Nothing in OctoGo changes either way: dropping `+x` on a float is the correct
+// lowering regardless (Go defines it as the identity), so the emitter keeps doing
+// it and this file stays only as the record.
 
 #include <stdio.h>
 

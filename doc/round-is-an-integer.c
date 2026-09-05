@@ -40,6 +40,14 @@
 // has no such limit -- see mathSrc in internal/octogo/build.go and mathIntrinsics in
 // internal/octogo/emit.go, where round's absence from the table is deliberate.
 //
+// FIXED UPSTREAM 2026-09-05: Eric Smith (totalspectrum) closed issue 108 with
+// "This should be fixed in 7.7.2", a release past the 2bd01c4c pin. It is NOT in
+// internal/flexcc yet, so this file still reproduces under the pinned backend; the
+// next regeneration past the fix clears it. Re-run this battery then, and once
+// roundf returns a real float, reconsider whether math.Round can map to it -- the
+// Floor-built form stays correct regardless, so this is a simplification to weigh,
+// not a change to make.
+//
 // The failure shape is what makes it worth a file of its own: correct wherever a
 // test is likely to look, wrong where it is not.
 
