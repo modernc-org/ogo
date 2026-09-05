@@ -7905,22 +7905,34 @@ func f() int { return 7 }
 		src  string
 		want string // "" means the program must be accepted
 	}{
-		// A package SLICE literal has a file-scope backing array, and no fill for it
-		// yet. Refused with the shape that works, rather than emitted for the
-		// backend to reject in words about generated C.
+		// A package SLICE literal whose elements are not constant is filled at
+		// package initialization now, the way a package array is: a scalar
+		// element and a struct element (no array field) both go through a
+		// temporary array and a memcpy into the static backing. An element that
+		// is itself an array still cannot -- see below.
 		{
-			name: "a package slice literal with a computed element",
+			name: "a package slice literal with a computed struct element",
 			src: `var a = []P{{f(), f()}}
 
 func main() { println(a[0].a) }
 `,
-			want: "a package slice literal's elements must be constant",
 		},
 		{
 			name: "a package slice of scalars with a computed element",
 			src: `var a = []int{f(), 2}
 
 func main() { println(a[0]) }
+`,
+		},
+		{
+			// The one shape that still cannot: an element that is itself an array,
+			// which C copies into no initializer, local or static.
+			name: "a package slice of arrays with a computed element",
+			src: `type Row [2]int
+
+var a = []Row{{f(), 1}, {2, 3}}
+
+func main() { println(a[0][0]) }
 `,
 			want: "a package slice literal's elements must be constant",
 		},

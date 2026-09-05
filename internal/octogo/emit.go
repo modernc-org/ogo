@@ -12268,14 +12268,44 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		decl, suffix = a.elem, a.declSuffix()
 	}
 	// A file-scope backing array whose elements are not all constant cannot be
-	// written as a static initializer -- C evaluates one at compile time. The ARRAY
-	// forms are zeroed and filled at package initialization instead; a slice's
-	// backing has no such fill yet, so it is refused HERE with the shape that does
-	// work, rather than emitted and left to the backend to reject in words about
-	// generated C the program never wrote.
+	// written as a static initializer -- C evaluates one at compile time. It is
+	// zeroed and filled at package initialization instead, exactly as a package
+	// ARRAY variable is (see emitPkgArrayVar): a temporary array holds the values
+	// (a local initializer is NOT a compile-time constant) and a memcpy moves them
+	// into the static backing. The fill is one initialization step, ordered
+	// against the package variables the values read.
+	//
+	// One element shape cannot take this route: an element that is itself an array
+	// (a named array type, or a struct holding one) cannot go in even a local
+	// initializer, C copying no array there. That one is still refused with the
+	// shape that works.
 	if static && !e.staticLitElementsOK(lit) {
-		e.fail("a package slice literal's elements must be constant: declare the values as an "+
-			"array and slice it, `var back = [%s]%s{...}` and `var %s = back[:]`", n, e.goTypeName(elem), name)
+		if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) || e.isSliceCType(elem) {
+			e.fail("a package slice literal's elements must be constant: declare the values as an "+
+				"array and slice it, `var back = [%s]%s{...}` and `var %s = back[:]`", n, e.goTypeName(elem), name)
+			return
+		}
+		lead()
+		e.emit(decl + " " + backing + "[" + n + "]" + suffix + ";\n")
+		valsText := e.captureC(func() { e.emitPositionalValues(values, elem) })
+		tmp := e.newTmp()
+		e.includes["string.h"] = true
+		fill := pkgInitStep{
+			target: backing,
+			stmts: []string{
+				decl + " " + tmp + "[" + n + "]" + suffix + " = " + valsText + ";",
+				"memcpy(" + backing + ", " + tmp + ", sizeof(" + backing + "));",
+			},
+			pkg: 2 * e.pkgOrd,
+		}
+		for _, v := range values {
+			if v != nil {
+				fill.deps = append(fill.deps, e.initRefs(v.ast)...)
+			}
+		}
+		e.pkgInit = append(e.pkgInit, fill)
+		lead()
+		e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")
 		return
 	}
 	fixups := e.captureLitFixups(func() {

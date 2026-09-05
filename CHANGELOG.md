@@ -18,6 +18,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A package slice literal may have non-constant elements.** `var xs = []int{a,
+  b}` at package scope, where a and b are other package variables or any
+  computed value, was refused ("declare the values as an array and slice it");
+  Go accepts it. The backing array is now filled at package initialization the
+  way a package array's is -- a temporary array holds the values and a memcpy
+  moves them in -- and the fill is ordered against the variables it reads, so a
+  slice whose elements depend on later-declared variables still initializes
+  correctly. A scalar-element slice and a struct-element one (no array field)
+  both work; a slice whose element is itself an array is still refused, C
+  copying no array into an initializer. Verified against Go, on the board.
+
 ### Toolchain
 
 - **The fuzzer now generates initialization order.** `ogo smith` emits a

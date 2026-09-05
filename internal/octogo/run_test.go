@@ -15631,6 +15631,39 @@ func main() {
 		want: "1211 0\n14 -1 -1\n",
 	},
 	{
+		// Package variables of COMPOSITE type -- a struct, a slice, an array --
+		// whose initializers read other package variables, written out of
+		// dependency order. The dependency walk reaches inside every literal, and
+		// a slice with non-constant elements is filled at package init (a scalar
+		// slice and a struct-element one both go through a temp array and a
+		// memcpy) rather than refused. Board-verified against Go.
+		name: "composite package variables initialize in dependency order",
+		src: `// package vars of COMPOSITE type whose initializers read other package vars,
+// written out of dependency order.
+type Config struct {
+	scale int
+	off   int
+}
+
+var cfg = Config{scale: base * 2, off: base + 1}
+var xs = []int{base, base * 3, tail}
+var arr = [3]int{tail, base, tail + base}
+var derived = cfg.scale + xs[1] + arr[2]
+var base = seed()
+var tail = base + 100
+
+func seed() int { return 5 }
+
+func main() {
+	println(cfg.scale, cfg.off)
+	println(xs[0], xs[1], xs[2])
+	println(arr[0], arr[1], arr[2])
+	println(derived, base, tail)
+}
+`,
+		want: "10 6\n5 15 105\n105 5 110\n135 5 105\n",
+	},
+	{
 		// A driver shape: init() starts a worker cog, the package configuration it
 		// and main share is dependency-ordered (count reads scale reads mkScale
 		// reads offset, written out of order), and main consumes what the worker
