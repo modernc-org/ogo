@@ -80,7 +80,7 @@ func TestBuildModuleLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := filepath.Join(dir, "prog")
-	out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+	out, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
 		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
 	if err != nil {
 		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())

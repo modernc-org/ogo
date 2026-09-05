@@ -63,7 +63,7 @@ func TestOracle(t *testing.T) {
 				t.Fatal(err)
 			}
 			bin := filepath.Join(dir, "prog")
-			if out, err := exec.Command(cc, "-std=gnu11", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput(); err != nil {
+			if out, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput(); err != nil {
 				t.Fatalf("cc: %v\n%s\n--- program ---\n%s", err, out, prog.String())
 			}
 			if got, err := exec.Command(bin).CombinedOutput(); err != nil {

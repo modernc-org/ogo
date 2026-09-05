@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
@@ -74,6 +75,7 @@ func Main(args []string, stdout, stderr io.Writer) error {
 
 	// Initialize the fuzzer state
 	f := NewFuzzer(seed, b)
+	f.Trace = os.Getenv("OGO_SMITH_TRACE") != ""
 
 	// Output the package and import declarations (OctoGo omits 'package' clause)
 	// SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
@@ -101,6 +103,12 @@ type Fuzzer struct {
 	// checker rejects and the emitter miscompiles respectively; a monotonic counter
 	// guarantees every generated variable has a distinct name.
 	VarSeq int
+
+	// Trace, set from the OGO_SMITH_TRACE env var, emits a running-checksum print
+	// after each of main's top-level statements, tagged with the VM's expected
+	// value there -- so a miscompile the oracle catches can be bisected to the
+	// statement it diverges at. A debugging aid, off in every ordinary run.
+	Trace bool
 
 	// Funcs are the top-level functions generated ahead of main, in generation
 	// order, so a call site can pick one reproducibly.

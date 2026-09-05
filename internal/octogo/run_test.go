@@ -17793,6 +17793,34 @@ func main() {
 		want: "1 3 x\n2 12 x\n3 27 x\n48 5\n49 49000000000 false\n9000000000 16\n81\n100\n363\n12 432\npositive 1\n",
 	},
 	{
+		// Signed integer overflow is two's-complement WRAPPING in Go, and on the
+		// P2 (its soft 64-bit routines wrap, verified on the board). An
+		// overflowing int64 product feeding a modulo -- `z * K % 3` -- is where
+		// that matters: the wrapped product's remainder, not a saturated or
+		// undefined one. The host shim is compiled -fwrapv to model the target
+		// (C leaves the overflow undefined, and the host gcc otherwise folds a
+		// different answer); this pins that host and board agree with Go. Found
+		// by the smith oracle at a 2000-seed sweep (seeds 964, 1398).
+		name: "an overflowing int64 product feeds a modulo",
+		src: `type D int64
+
+func main() {
+	var z D = 9223372036854775807
+	z &= -411001605719289423
+	// The int64 product overflows, which Go defines as two's-complement
+	// wrapping; the modulo of the wrapped product is what must survive.
+	println(int64(z*6929118014461741803%3), int64((z*6929118014461741803)%3))
+	var w int64 = 8812370431135486385
+	println(int64(w * 6929118014461741803 % 3))
+	// A pure overflowing sum and product, each folded into a small modulus.
+	var a int64 = 9000000000000000000
+	println(int64((a + a) % 7))
+	println(int64((a * a) % 5))
+}
+`,
+		want: "2 2\n2\n-5\n-3\n",
+	},
+	{
 		// A 64-bit result that is not a plain variable is returned through a
 		// temporary. The target's C compiler returns a garbage high word for
 		// `return (int64_t)n;` -- a widening conversion as the whole operand,
@@ -21992,7 +22020,17 @@ func runCorpus(t *testing.T, opts []EmitOption) {
 			// 64-bit expression and its PRId64 is non-standard, so %lld is the only
 			// target-correct choice. Real int64 output is checked on hardware
 			// (TestOnBoard).
-			out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+			//
+			// -fwrapv defines signed integer overflow as two's-complement wrapping,
+			// which is what Go's spec guarantees and what the P2 target does: its
+			// soft 64-bit routines wrap, verified on the board. Without it the host
+			// gcc exploits the overflow as undefined and computes a different
+			// result -- `x * K % 3` for an overflowing int64 product folded to a
+			// value that disagrees with both Go and the hardware. The shim exists
+			// to model the target off-board, so it must model the target's wrapping;
+			// this is fidelity, not a workaround (the emitted C run on the P2 is
+			// already correct). Found by the smith oracle at a wide seed sweep.
+			out, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
 				"-Wno-unused-function", "-Wno-format", "-I", shim,
 				// -lm: the host's math functions live in libm, where the target's
 				// are compiler builtins and need no library at all.
@@ -23210,7 +23248,7 @@ func TestEmitCMultiPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := filepath.Join(dir, "prog")
-	out, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+	out, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
 		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
 	if err != nil {
 		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())

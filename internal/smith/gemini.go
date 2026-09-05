@@ -162,6 +162,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		}
 		stmtNode.Write(f.Out, 1)
 		fmt.Fprint(f.Out, "\n")
+		if f.Trace {
+			writeIndent(f.Out, 1)
+			fmt.Fprintf(f.Out, "printf(\"CK %d want %s got %%d\\n\", %s)\n", i, mem.Load(f.ChecksumName).Literal(), f.ChecksumName)
+		}
 	}
 
 	// Flush unused variables for the main block

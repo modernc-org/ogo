@@ -187,7 +187,7 @@ func TestStringsMatchesGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := filepath.Join(dir, "prog")
-	ccOut, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+	ccOut, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
 		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
 	if err != nil {
 		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, ccOut, buf.String())
@@ -366,7 +366,7 @@ func TestMathMatchesGo(t *testing.T) {
 	bin := filepath.Join(dir, "prog")
 	// -lm: the host's math functions live in libm, where the target's are compiler
 	// builtins and need no library at all.
-	ccOut, err := exec.Command(cc, "-std=gnu11", "-Wall", "-Wextra",
+	ccOut, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
 		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread", "-lm").CombinedOutput()
 	if err != nil {
 		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, ccOut, buf.String())

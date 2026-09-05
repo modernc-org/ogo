@@ -18,6 +18,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Toolchain
+
+- **The host test shim now models the target's integer-overflow wrapping.**
+  Signed integer overflow is two's-complement wrapping in Go and on the P2 (its
+  soft 64-bit routines wrap, checked on the board), but undefined in C -- and the
+  host gcc exploited it, folding an overflowing `x * K % 3` to a value that
+  matched neither Go nor the hardware. The shim, which exists to model the
+  target off-board, is now compiled `-fwrapv`, so it wraps as the target does.
+  This affects the off-board test suites only; a program built for the P2 was
+  always correct. Found by the smith fuzzer's oracle at a wide seed sweep and
+  pinned as a run case that host and board both check against Go.
+
 ### Language
 
 - **A package slice literal may have non-constant elements.** `var xs = []int{a,
