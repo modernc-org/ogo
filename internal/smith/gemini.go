@@ -123,6 +123,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		spawnAt[f.Rand.Intn(18)+i] = w
 	}
 
+	// 4.7. Package variables whose initializers depend on one another, written
+	// in an order that is NOT initialization order (see genPkgVarCluster).
+	cluster := f.genPkgVarCluster(vm, mem)
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -130,6 +134,19 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// Keep f.CurrentEnv perfectly in sync with the VM memory scopes
 	mem.PushScope()
 	f.CurrentEnv = NewScope(f.CurrentEnv)
+
+	// Fold the cluster into the checksum first thing: a compiler that ran the
+	// initializers in written order rather than dependency order computes
+	// different values, and the assertion at the end convicts it.
+	for _, g := range cluster {
+		nv, err := vm.Eval("^", mem.Load(f.ChecksumName), g.val)
+		if err != nil {
+			panic(err)
+		}
+		mem.Store(f.ChecksumName, nv)
+		writeIndent(f.Out, 1)
+		fmt.Fprintf(f.Out, "%s = %s ^ %s\n", f.ChecksumName, f.ChecksumName, g.name)
+	}
 
 	// Generate 20 sequential statements to mutate the checksum
 	for i := 0; i < 20; i++ {
@@ -302,6 +319,133 @@ func (f *Fuzzer) genPureExpr(params []string, depth int) Node {
 		Op:    pureOps[f.Rand.Intn(len(pureOps))],
 		Right: f.genPureExpr(params, depth+1),
 	}
+}
+
+// pkgClusterVar is one package variable of the initialization-order cluster:
+// its name and the value the VM computed for it, for the fold into the checksum.
+type pkgClusterVar struct {
+	name string
+	val  Int32
+}
+
+// genPkgVarCluster generates package variables whose initializers depend on one
+// another -- directly, through a function's body, and through a two-result
+// call -- and writes their declarations SHUFFLED. The VM evaluates each
+// initializer in creation order, where every name it uses already has a value,
+// so the values are correct by construction; the emitted program only computes
+// the same ones if the compiler runs the initializers in dependency order,
+// whatever order the declarations were written in. That is the property under
+// test: the fuzzer only tests what it generates, and until this the only
+// package variable it generated was the constant-initialized checksum.
+//
+// Everything stays inside the total operators (pureOps) and small literals, so
+// no initializer can trap or overflow whatever the draw.
+func (f *Fuzzer) genPkgVarCluster(vm Machine, mem Memory) []pkgClusterVar {
+	var cluster []pkgClusterVar
+	var decls []string
+	// pick yields an operand for an initializer: an already-created cluster
+	// variable or a small literal, with its generation-time value.
+	pick := func() (string, Int32) {
+		if len(cluster) != 0 && f.Rand.Intn(2) == 0 {
+			g := cluster[f.Rand.Intn(len(cluster))]
+			return g.name, g.val
+		}
+		lit := f.Rand.Intn(97) + 1
+		v, err := vm.Eval("int_lit", strconv.Itoa(lit))
+		if err != nil {
+			panic(err)
+		}
+		return strconv.Itoa(lit), v.(Int32)
+	}
+	// clusterArgs binds a call's parameters to argument values and adds every
+	// cluster variable, so a reader function's body -- an expression over its
+	// parameter AND the cluster names declared before it -- evaluates with
+	// evalBody unchanged.
+	clusterArgs := func(params []string, vals []Int32) map[string]Int32 {
+		args := map[string]Int32{}
+		for i, p := range params {
+			args[p] = vals[i]
+		}
+		for _, g := range cluster {
+			args[g.name] = g.val
+		}
+		return args
+	}
+	declare := func(name string, val Int32) {
+		cluster = append(cluster, pkgClusterVar{name: name, val: val})
+		mem.Store(name, val)
+		f.CurrentEnv.Declare(name, BasicType{Kind: KindInt}, false)
+		f.CurrentEnv.Lookup(name).Used = true
+	}
+	var reader *FuncDef
+	for i, n := 0, 2+f.Rand.Intn(4); i < n; i++ {
+		// A reader: a function over one parameter and the cluster variables
+		// created so far, minted once and used only by later initializers --
+		// main never calls it, so it stays out of f.Funcs and the call-site
+		// pools. It is what makes a dependency run through a function's BODY.
+		if reader == nil && len(cluster) != 0 && f.Rand.Float32() < 0.6 {
+			pn := f.newVarName("p")
+			names := []string{pn}
+			for _, g := range cluster {
+				names = append(names, g.name)
+			}
+			reader = &FuncDef{Name: f.newVarName("gr"), Params: []string{pn}}
+			reader.Body = f.genPureExpr(names, 0)
+			(&FuncDeclNode{Name: reader.Name, Params: reader.Params, Body: reader.Body}).Write(f.Out, 0)
+			fmt.Fprint(f.Out, "\n")
+		}
+		name := f.newVarName("gv")
+		r := f.Rand.Float32()
+		switch fn2 := f.funcsWithResults(2); {
+		case r < 0.25 && reader != nil:
+			// through the reader's body
+			an, av := pick()
+			val := f.evalBody(reader, reader.Body, clusterArgs(reader.Params, []Int32{av}), vm)
+			decls = append(decls, fmt.Sprintf("var %s = %s(%s)", name, reader.Name, an))
+			declare(name, val)
+		case r < 0.4 && len(fn2) != 0:
+			// a two-result call, both names of the group in the cluster
+			fn := fn2[f.Rand.Intn(len(fn2))]
+			var argNames []string
+			var argVals []Int32
+			for range fn.Params {
+				an, av := pick()
+				argNames = append(argNames, an)
+				argVals = append(argVals, av)
+			}
+			name2 := f.newVarName("gv")
+			args := clusterArgs(fn.Params, argVals)
+			v1 := f.evalBody(fn, fn.Body, args, vm)
+			v2 := f.evalBody(fn, fn.Body2, args, vm)
+			decls = append(decls, fmt.Sprintf("var %s, %s = %s(%s)", name, name2, fn.Name, strings.Join(argNames, ", ")))
+			declare(name, v1)
+			declare(name2, v2)
+		case r < 0.75:
+			// arithmetic over what exists
+			op := pureOps[f.Rand.Intn(len(pureOps))]
+			an, av := pick()
+			bn, bv := pick()
+			val, err := vm.Eval(op, av, bv)
+			if err != nil {
+				panic(err)
+			}
+			decls = append(decls, fmt.Sprintf("var %s = %s %s %s", name, an, op, bn))
+			declare(name, val.(Int32))
+		default:
+			an, av := pick()
+			decls = append(decls, fmt.Sprintf("var %s = %s", name, an))
+			declare(name, av)
+		}
+	}
+	// The shuffle is the point: written in creation order the declarations would
+	// be initializable top to bottom, and source order would pass for dependency
+	// order.
+	f.Rand.Shuffle(len(decls), func(i, j int) { decls[i], decls[j] = decls[j], decls[i] })
+	for _, d := range decls {
+		fmt.Fprintln(f.Out, d)
+	}
+	fmt.Fprint(f.Out, "\n")
+	return cluster
 }
 
 // evalCall evaluates a generated function's body with its parameters bound to a

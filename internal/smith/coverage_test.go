@@ -56,6 +56,17 @@ var generatedConstructs = []struct {
 	// the spelling that was refused outright until this week.
 	{"defined type over a slice", `\ntype L_\d+ \[\]int\n`},
 	{"slice variable of a defined type", `\n\s*var s_\d+ L_\d+ = make\(L_\d+, `},
+	// The initialization-order cluster: package variables whose initializers
+	// depend on one another, emitted SHUFFLED (genPkgVarCluster). The reader
+	// function is what routes a dependency through a function's BODY, and the
+	// two-name group through a multi-value call; the fold is what makes any
+	// mis-ordering fail the oracle rather than pass unobserved.
+	{"package var cluster", `\nvar gv_\d+ = `},
+	{"cluster arithmetic initializer", `\nvar gv_\d+ = \S+ (&\^?|\||\^) `},
+	{"cluster reader function", `\nfunc gr_\d+\(p_\d+ int\) int `},
+	{"cluster reader call initializer", `\nvar gv_\d+ = gr_\d+\(`},
+	{"cluster destructuring initializer", `\nvar gv_\d+, gv_\d+ = fn_\d+\(`},
+	{"cluster checksum fold", `\n\s*octosmith_checksum = octosmith_checksum \^ gv_\d+`},
 	{"method declaration, value receiver", `\nfunc \(r S_\d+\) `},
 	{"method declaration, pointer receiver", `\nfunc \(r \*S_\d+\) `},
 	{"method call, value-receiver getter", `\.get_\d+\(\)`},

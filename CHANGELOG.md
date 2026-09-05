@@ -18,6 +18,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Toolchain
+
+- **The fuzzer now generates initialization order.** `ogo smith` emits a
+  cluster of package variables whose initializers depend on one another --
+  directly, through a dedicated function's body, and through a two-result call
+  -- written in a SHUFFLED order, with the generation-time VM computing each
+  value in dependency order. A compiler that initializes in written order
+  computes different values and fails the program's own checksum, which was
+  verified by mutation: with the dependency walk disabled, the oracle corpus
+  fails. The ordering machinery is fuzzed on every test run now, on the host
+  and in the on-board seed sample.
+
 ### Fixed
 
 - **A multi-value initializer orders with the rest.** `var a, b = f()` carried
