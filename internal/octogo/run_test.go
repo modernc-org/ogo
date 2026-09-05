@@ -22186,7 +22186,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n1 10\n14 true 14 true\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -22544,6 +22544,7 @@ func init() { tally++ }
 func initOrder() {
 	println(greet.Ordered, greet.Adjust, tally)
 	println(greet.Lo, greet.Hi)
+	println(greet.Weights[0], greet.Weights[1], greet.Weights[2])
 }
 `,
 	"chain/chain.ogo": `import "greet"
@@ -22708,6 +22709,11 @@ func pairs() (int, int) { return baseVal * 3, baseVal + 40 }
 
 var Ordered = baseVal * scaleUp()
 var baseVal = 2
+
+// A package slice whose elements are not constant, read across the package
+// boundary: its backing is filled at initialization and ordered against
+// baseVal and Adjust, the same as a scalar package variable.
+var Weights = []int{baseVal, Adjust, baseVal * 3}
 
 var Adjust = 7
 
