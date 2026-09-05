@@ -15631,6 +15631,44 @@ func main() {
 		want: "1211 0\n14 -1 -1\n",
 	},
 	{
+		// A driver shape: init() starts a worker cog, the package configuration it
+		// and main share is dependency-ordered (count reads scale reads mkScale
+		// reads offset, written out of order), and main consumes what the worker
+		// produces over a package channel. It brings the initialization order and
+		// the concurrency runtime together on the one program -- the config has to
+		// be settled before the cog init() spawns reads it. Board-verified against
+		// Go (round 19).
+		name: "a driver: init spawns a worker over dependency-ordered config",
+		src: `var ch chan int
+
+var scale = mkScale()
+var offset = 3
+var count = scale - 4
+
+func mkScale() int { return offset*2 + 2 }
+
+func producer() {
+	for i := 0; i < count; i++ {
+		ch <- i*scale + offset
+	}
+}
+
+func init() {
+	go producer()
+}
+
+func main() {
+	sum := 0
+	for i := 0; i < count; i++ {
+		v := <-ch
+		sum += v
+	}
+	println(sum, scale, offset, count)
+}
+`,
+		want: "60 8 3 4\n",
+	},
+	{
 		// A multi-value initializer -- `var a, b = f()` -- is ordered exactly as a
 		// single-variable one: the group runs after what f's body reads (w), a
 		// variable reading the group's names runs after it (c), and an all-blank

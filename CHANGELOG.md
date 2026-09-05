@@ -84,6 +84,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Verified
 
+- **Probe round nineteen: a driver shape, init-order meets the cog runtime.**
+  An `init()` that starts a worker cog, the package configuration it and main
+  share written out of dependency order (`count` reads `scale` reads a function
+  reads `offset`), and main consuming what the worker produces over a package
+  channel -- the config has to be fully settled before the spawned cog reads it.
+  Built for the P2 and matched against Go bit-for-bit; pinned as a run case.
+
 - **Probe round eighteen: two more firmware-shaped programs, bit-for-bit.** An
   EEPROM-style record journal (CRC-8 over a byte arena, append with a `goto`
   error exit, scan recovery through pointer-passed records) and a
