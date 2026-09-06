@@ -119,6 +119,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Verified
 
+- **Multi-cog channel pipelines, on the board.** Two shapes a real
+  sample-then-process firmware has, neither previously exercised: two producer
+  cogs contending for one channel (the multi-producer rendezvous-lock path,
+  where every other two-cog test used separate channels), and a three-cog
+  pipeline whose middle stage is both a consumer and a producer. Both match Go
+  and are stable across repeated board runs; pinned as run cases.
+
 - **The C undefined-behaviour boundaries hold on the board.** After the
   overflow-wrapping work, the other C UB classes the emitter must define away
   were swept on hardware against Go: a shift count at or past the operand width

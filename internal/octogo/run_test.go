@@ -5103,6 +5103,103 @@ func main() {
 		want: "total 100\nseen 30\nbases 4\n",
 	},
 	{
+		// Two producer cogs sending to ONE channel, both live at once, drained by
+		// main -- the multi-producer path, where the rendezvous lock actually has
+		// to serialise two senders rather than shepherd one. The interleaving is
+		// nondeterministic but the SUM is not, so the want is stable whatever order
+		// the two cogs win the lock in. Every other two-cog case here sends on
+		// SEPARATE channels; this is the one that contends for a single one.
+		name: "two producers fan in to one channel",
+		src: `// Fan-in: two producer cogs both send to one channel; main drains both. The
+// order is nondeterministic but the SUM is not, so the checksum is stable
+// whatever the interleaving -- which is the point of testing two producers on
+// one hardware-lock rendezvous.
+var ch chan int
+
+const perProducer = 20
+
+func producerA() {
+	for i := 0; i < perProducer; i++ {
+		ch <- 100 + i
+	}
+}
+
+func producerB() {
+	for i := 0; i < perProducer; i++ {
+		ch <- 1000 + i*2
+	}
+}
+
+func main() {
+	go producerA()
+	go producerB()
+	sum := 0
+	count := 0
+	for i := 0; i < 2*perProducer; i++ {
+		sum += <-ch
+		count++
+	}
+	println(sum, count)
+}
+`,
+		want: "22570 40\n",
+	},
+	{
+		// A three-stage pipeline across three cogs: a source, a filter that is BOTH
+		// a consumer and a producer (it receives on one channel and sends on
+		// another), and main. The chained stage is the new shape -- every other
+		// worker here only produces or only consumes -- and it is the shape a real
+		// sample-then-process firmware has. Board-verified against Go.
+		name: "a three-cog pipeline, source filter and sink",
+		src: `// A 3-stage DSP pipeline across three cogs: a source generates samples, a
+// filter stage smooths them (a 2-tap moving sum) and rescales, and main
+// aggregates. Each stage is its own cog, chained through channels -- the shape a
+// real sampling-and-processing firmware has.
+var raw chan int
+var filtered chan int
+
+const nSamples = 12
+
+func source() {
+	// A deterministic "signal": a ramp with a periodic spike.
+	for i := 0; i < nSamples; i++ {
+		v := i * 3
+		if i%4 == 0 {
+			v += 50
+		}
+		raw <- v
+	}
+}
+
+func filter() {
+	prev := 0
+	for i := 0; i < nSamples; i++ {
+		x := <-raw
+		// 2-tap moving sum, then a rescale that can overflow int if unlucky.
+		y := (x + prev) * 2
+		prev = x
+		filtered <- y
+	}
+}
+
+func main() {
+	go source()
+	go filter()
+	sum := 0
+	mx := 0
+	for i := 0; i < nSamples; i++ {
+		y := <-filtered
+		sum += y
+		if y > mx {
+			mx = y
+		}
+	}
+	println(sum, mx)
+}
+`,
+		want: "1326 202\n",
+	},
+	{
 		// Indexing and slicing a string CONSTANT, which emitted C naming something
 		// no declaration had ever produced. A string constant is folded to its
 		// literal at every use -- a Go constant has no address, so there is nothing
