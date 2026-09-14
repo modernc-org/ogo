@@ -1,0 +1,21 @@
+// The contexts an untyped constant shifted by a variable count takes its type from,
+// all accepted: an integer type of any width, given by a declaration, an operand
+// beside the shift or a conversion; a whole float constant, which is an integer
+// constant there; a rune; and no context at all, which gives int. The count's type
+// is never the value's, so a shift by a uint beside an int64 is no mismatch --
+// `1 << s * x` multiplies `1 << s` by x.
+// COMPILE
+
+type Mask uint64
+
+func main() {
+	var s uint = 40
+	var x int64 = 5
+	var m Mask = 1 << s
+	var n int = 1.0 << (s - 30)
+	var r rune = 'a' << (s - 38)
+	v := 1 << (s - 9)
+	println(1<<s*x, x*1<<s, m|1<<(s+1), n, r, v, int64(1<<s), uint8(1<<(s-33)))
+	var u8 uint8 = 7
+	println(u8<<s*2, 2*u8<<s)
+}

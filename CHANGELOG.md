@@ -67,6 +67,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An untyped constant shifted by a variable takes the type of where the shift
+  stands, as Go's does.** `var mask uint64 = 1 << bit`, `x & (1 << bit)` for a
+  uint64 x, `take64(1 << n)`, `return 1 << n` from an int64 function, a store
+  through a field, an element or a chain, a variadic or appended value, a
+  conversion, a channel send -- every one shifted a 32-bit 1, so for a count of
+  32 or more the bit fell off and 1099511627776 came out 0. And where nothing
+  gave the constant a type, the COUNT's type was used: `v := 1 << c` for a uint
+  c made v a uint (2147483648 where Go says -2147483648), and an int8 count
+  shifted an int8 and yielded 0. The constant now takes Go's type in every
+  position -- the context's, or that of a typed operand beside it, and int where
+  there is neither -- a type declared in another package included. A silent
+  wrong answer with a Go-identical spelling; verified against Go on the board.
+
+- **`1 << s * x` compiles.** An operator's left operand is everything before it
+  -- `(1 << s) * x` -- but each operator was checked against the single operand
+  beside it, so the count and x were compared and the program was refused as
+  "mismatched types uint and int64".
+
 - **A multi-value initializer orders with the rest.** `var a, b = f()` carried
   no dependencies and provided no names to the ordering at all: f ran before a
   variable its body reads was initialized, a variable reading a or b floated
@@ -108,6 +126,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   gate; found by the zero-disagreement gofmt ratchet on a new corpus program.
 
 ### Behaviour changes
+
+- **A shift of an untyped constant into a float type is refused, as Go refuses
+  it.** `var f float64 = 1 << s`, `float32(1 << s)`, `x := 1.0 << s`, `f + 1<<s`
+  and `return 1 << s` from a float function compiled and shifted an integer; each
+  is "invalid operation: shifted operand 1 (type float64) must be integer" now,
+  in Go's words and at Go's column. So is `1.5 << s`, which no integer type
+  holds. An untyped constant between two operands of different types no longer
+  hides their mismatch either: `a + 1 - b` for an int32 a and an int64 b compiled,
+  and is "mismatched types int32 and int64" now. And a constant packed into a
+  variadic parameter, appended, or beside a typed argument of min or max is
+  range-checked against its type as a fixed argument is: `append(xs, 300)` for a
+  []uint8 truncated silently.
 
 - **An initialization cycle through a function or method is refused.** `var a =
   f()` where f's body reads a used to compile and hand f whatever zero a still

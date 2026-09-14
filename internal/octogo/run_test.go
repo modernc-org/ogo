@@ -17927,6 +17927,126 @@ func main() {
 		want: "0 0 -1 -1\n0 0 0\n0 -1 0\n-2147483648 0\n-9223372036854775808 0\n",
 	},
 	{
+		// An untyped constant shifted by a count that is not constant takes the type
+		// of where the shift stands -- a declaration, a store through a field, an
+		// element or a chain, an argument, a variadic pack, an append, a result, a
+		// conversion, an interface method's parameter, min/max, a switch case, and
+		// the typed operand beside it -- and defaults to int where nothing gives it
+		// one. The count's type is never it. Every one of these computed a 32-bit 1,
+		// or one of the COUNT's type: all but the explicitly converted spelling
+		// printed 0 for 1 << 40, and `v := 1 << c` for a uint c made v a uint.
+		// Go's answers, board-verified.
+		name: "an untyped constant shifted takes its type from where it stands",
+		src: `type Mask uint64
+
+type P struct {
+	a int64
+	m Mask
+}
+
+type Inner struct{ m uint64 }
+
+type Outer struct {
+	in  Inner
+	arr [2]int64
+}
+
+type Box struct{ v int64 }
+
+func (b *Box) Set(v int64) { b.v = v }
+
+type Setter interface{ Set(v int64) }
+
+var s uint = 40
+
+var g int64 = 1 << s
+
+func take(v int64) int64 { return v }
+
+func sum(xs ...int64) int64 {
+	t := int64(0)
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func ret(n uint) int64 { return 1 << n }
+
+func decls() {
+	var a, b int64 = 1 << s, 2 << s
+	var m Mask = 1 << s
+	m |= 1 << (s + 1)
+	var d int64 = 1.0 << s
+	var u uint64 = ^(1 << s)
+	var n int64 = -(1 << s)
+	var t uint = 31
+	var w uint32 = (1 << t) >> 30
+	println(g, a, b, m, d, u, n, w)
+}
+
+func stores() {
+	var p P
+	p.a = 1 << s
+	p.m |= 1 << s
+	pp := &p
+	pp.a += 1 << s
+	var arr [2]uint64
+	arr[1] |= 1 << s
+	var o [2]Outer
+	o[1].in.m = 1 << s
+	o[1].arr[0] |= 1 << (s + 2)
+	var x, y int64
+	x, y = 1<<s, 2<<s
+	println(p.a, p.m, arr[1], o[1].in.m, o[1].arr[0], x, y)
+}
+
+func calls() {
+	var b Box
+	var st Setter = &b
+	st.Set(1 << s)
+	var back [2]int64
+	xs := back[:0]
+	xs = append(xs, 1<<s)
+	var i64 int64 = 7
+	println(take(1<<s), sum(1<<s, 2<<s), ret(s), int64(1<<s), b.v, xs[0], max(i64, 1<<s))
+}
+
+func partners() {
+	var x int64 = 5
+	var b uint8
+	var t uint = 8
+	println(x+1<<s, 1<<s+x, x&(1<<s) != 0, x == 1<<s, b == 1<<t)
+	switch x + 1<<s {
+	case 1<<s + 5:
+		println("case")
+	}
+	if x < 1<<s {
+		println("less")
+	}
+	lit := []int64{1 << s, 2 << s}
+	println(lit[1], 1<<s*x)
+}
+
+func defaults() {
+	var c uint = 31
+	var c8 int8 = 31
+	v := 1 << c
+	w := 1 << c8
+	println(v, w, v < 0, (1<<c)/3)
+}
+
+func main() {
+	decls()
+	stores()
+	calls()
+	partners()
+	defaults()
+}
+`,
+		want: "1099511627776 1099511627776 2199023255552 3298534883328 1099511627776 18446742974197923839 -1099511627776 2\n2199023255552 1099511627776 1099511627776 1099511627776 4398046511104 1099511627776 2199023255552\n1099511627776 3298534883328 1099511627776 1099511627776 1099511627776 1099511627776 1099511627776\n1099511627781 1099511627781 false false true\ncase\nless\n2199023255552 5497558138880\n-2147483648 -2147483648 true -715827882\n",
+	},
+	{
 		// Signed overflow wraps (two's complement) at EVERY width, as Go defines
 		// and the P2 does -- add, subtract, multiply, shift and negate, driven
 		// past the boundary of int8/int16/int32/int64 and their unsigned twins.
@@ -22398,7 +22518,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"400 4\ngreet\n5\n103\nre\ntrue\ngreet!hi\ngreet: hi\ngreet\n" +
 	"30\n30\n30\n5\n1 10\n14 true 14 true\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
-	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n"
+	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n" +
+	"1649267441664 2199023255552 1099511627776 35184372088832 true\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -22537,6 +22658,18 @@ chained()
 errors()
 qualifiedCases()
 initOrder()
+untypedShifts()
+}
+
+// An untyped constant shifted by a variable takes the type of where it stands, which
+// here is a type of another package: a variable of it, a store into one of that
+// package's variables, an argument, a result, and an operand beside one.
+func untypedShifts() {
+	var s uint = 40
+	chain.Set(s)
+	var m chain.Mask = 1 << (s + 1)
+	chain.Flags |= 1 << (s - 1)
+	println(chain.Flags, m, chain.Bit(s), chain.Top, m&(1<<(s+1)) != 0)
 }
 
 // The second half of main, as a function of its own for the reason errors is. The
@@ -22910,6 +23043,22 @@ func InSum() int {
 	copy(dst[:], Sl[1:3])
 	return n + Ints[0] + len(xs) + Sl[3] + int(Tag[1]) + len(Tag[1:]) + dst[0] + Table[1].Int()
 }
+
+// Mask is a 64-bit type of this package that main shifts untyped constants into.
+// Such a constant takes its type from where it stands, and a type of ANOTHER
+// package is one the checker's Kind model does not follow, so every one of these
+// positions shifted a 32-bit 1 and lost the bit. Top reads Width, declared below it.
+type Mask uint64
+
+var Flags Mask
+
+var Top int64 = 1 << Width
+
+var Width uint = 45
+
+func Set(bit uint) { Flags |= 1 << bit }
+
+func Bit(n uint) Mask { return 1 << n }
 `,
 	"greet/greet.ogo": `// Ordered reads Adjust through scaleUp, so it is initialized after both,
 // wherever the three are written -- dependency order runs through a function's

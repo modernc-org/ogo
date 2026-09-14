@@ -239,6 +239,7 @@ type File struct {
 	clauseFallthrough map[string]bool      // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
 	makeTypeArgs      map[string]bool      // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
 	defineRedeclares  map[string]bool      // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
+	shiftTypes        map[*int32]Kind      // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -2966,39 +2967,44 @@ func (f *File) checkCondition(s *Scope, kw string, n Node) {
 // the first operand outright was right only while every integer shared one kind,
 // and became wrong the moment int and int32 could be told apart.
 //
-// A SHIFT is the exception, and keeps the first operand: `1 << n` is an int
-// whatever type the count n has, the count being independent of the value being
-// shifted. Since the grammar is flat, one shift anywhere in the run is enough to
-// fall back -- the alternative would be to re-derive precedence here, which the
-// checker deliberately does not do.
+// A SHIFT's count is the exception: it is not an operand of the value's type, so
+// `1 << n` is untyped whatever type n has -- the constant takes its type from the
+// context (see typeShiftOperands) -- and `x << n` is x's. The level is flat, all of
+// its operators binding alike and to the left, so the count is exactly the operand
+// after a shift operator: `1 << n * x` is `(1 << n) * x`, x's type. Every operand
+// after the first shift used to be passed over instead, which left that one untyped
+// and paired n with x as if n were multiplied.
 //
 // An operand of an unresolved type is skipped rather than made the answer, so a
 // run mixing one with a typed operand still resolves; a run of nothing but
 // untyped operands answers with its first, as it always has.
 func (f *File) operandsType(s *Scope, n Node) (Kind, bool) {
 	var first Kind
-	firstSet, firstOK, shift := false, false, false
+	firstSet, firstOK, count := false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case MulOp:
 			if op := f.mulOp(s, c); op == SHL || op == SHR {
-				shift = true
+				count = true
 			}
 		case Term, UnaryExpr:
+			if count {
+				count = false
+				continue
+			}
 			k, ok := f.exprType(s, c)
 			if !firstSet {
 				first, firstOK, firstSet = k, ok, true
 			}
-			if ok && !isUntypedKind(k) && !shift {
+			if ok && !isUntypedKind(k) {
 				return k, true
 			}
 			// Untyped operands only: the kind is the WIDEST of them, in Go's order
 			// int, rune, float -- `7 / 2.0` is an untyped float constant, 3.5, not
 			// the int the left operand alone would make it. The first operand used
 			// to decide, which typed `x := 7 / 2.0` an int and refused it as "3.5
-			// truncated to int", and gave `2 * 3.5` to the emitter as an int. A
-			// shift's count contributes nothing, as above.
-			if ok && firstOK && !shift && untypedRank(k) > untypedRank(first) {
+			// truncated to int", and gave `2 * 3.5` to the emitter as an int.
+			if ok && firstOK && untypedRank(k) > untypedRank(first) {
 				first = k
 			}
 		}
@@ -3493,6 +3499,9 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 			case guardOK:
 				f.checkCaseExprs(ss, guardKind, c)
 			}
+			if !isTypeSwitch {
+				f.typeCaseShifts(ss, guardKind, guardOK, c)
+			}
 			// A break inside a case names the switch, so the body is checked one
 			// switch level deeper.
 			f.switchDepth++
@@ -3976,6 +3985,65 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 		return g, false
 	}
 	return g, true
+}
+
+// suffixedTargetKind is the kind of an assignment target that is not a bare name:
+// a field `v.f`, an element `a[i]`, a pointee `*p` or a field through one `*p.f`
+// -- the one-step shapes the "=" checks already resolve. A longer chain answers
+// false.
+func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
+	if base, ok := f.derefAssignTarget(head, postfix); ok {
+		if d, isVar := s.find(base.Src()).(*VarDeclaration); isVar && d.isPtr && d.hasElemKind {
+			return d.elemKind, true
+		}
+		return 0, false
+	}
+	if base, field, ok := f.derefFieldAssignTarget(head, postfix); ok {
+		if tn := f.fieldTypeNode(s, base, field); tn != nil && f.isPointerType(s, tn) {
+			return f.elemTypeKind(s, tn)
+		}
+		return 0, false
+	}
+	id, ok := f.assignHeadIdent(head)
+	if !ok {
+		return 0, false
+	}
+	if field, ok := f.fieldSelector(postfix); ok {
+		return f.fieldKind(s, id, field)
+	}
+	if base, ok := f.indexAssignTarget(head, postfix); ok {
+		if d, isVar := s.find(base.Src()).(*VarDeclaration); isVar && d.hasElemKind && !d.isPtr {
+			return d.elemKind, true
+		}
+	}
+	return 0, false
+}
+
+// typeCaseShifts types the untyped shift operands of a case clause's expressions
+// (see typeShiftOperands). A case value is compared with the tag, so it takes the
+// tag's type; a case of a switch with no tag is a condition, whose comparisons type
+// their own operands. The case expressions are folded rather than walked by
+// checkNames (caseConstValue), so the comparisons in them are not met anywhere else.
+func (f *File) typeCaseShifts(s *Scope, guardKind Kind, guardOK bool, n Node) {
+	t := shiftTarget{}
+	if guardOK {
+		t = shiftTargetOf(retResult{kind: guardKind})
+	}
+	for head := range it(n.ast) {
+		if head.sym != CaseHead {
+			continue
+		}
+		for list := range it(head.ast) {
+			if list.sym != ExpressionList {
+				continue
+			}
+			for e := range it(list.ast) {
+				if e.sym == Expression {
+					f.typeShiftOperands(s, e, t)
+				}
+			}
+		}
+	}
 }
 
 // checkCaseExprs checks every expression of a case clause's CaseHead against the
@@ -4799,6 +4867,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		if !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 {
 			f.checkAssignType(s, lhs[0], rhs[0], !lhsSuffixed[0])
+			// checkAssignType reads the BASE's declaration, which is the target only
+			// when there is no suffix. A field, an element or a pointee is the target's
+			// own type -- `p.mask |= 1 << bit` shifts a 1 of the field's type.
+			if lhsSuffixed[0] {
+				if k, ok := f.suffixedTargetKind(s, head, postfix); ok {
+					f.checkValueOverflow(s, sizedTarget(k, Token{}), rhs[0])
+				}
+			}
 		}
 		return
 	}
@@ -9249,6 +9325,13 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 
 // checkBinary recurses into a SimpleExpr's or Term's operands and checks each
 // binary operator (operandSym is Term/UnaryExpr, opSym is AddOp/MulOp).
+//
+// An operator's left operand is everything before it, the level's operators all
+// binding alike and to the left: in `1 << s * x` the `*` multiplies `1 << s` by x.
+// Pairing each operator with the single operand beside it instead checked `s * x`,
+// and refused a valid program as "mismatched types uint and int64"; it also let
+// `a + 1 - b` for an int32 a and an int64 b through, the constant between them
+// matching both.
 func (f *File) checkBinary(s *Scope, n Node, operandSym, opSym Symbol) {
 	var operands, ops []Node
 	for c := range it(n.ast) {
@@ -9262,7 +9345,11 @@ func (f *File) checkBinary(s *Scope, n Node, operandSym, opSym Symbol) {
 	}
 	for i, op := range ops {
 		if i+1 < len(operands) {
-			f.checkBinOp(s, op, operands[i], operands[i+1])
+			left := operands[0]
+			if i > 0 {
+				left = narrowLevelPrefix(n, 2*i+1)
+			}
+			f.checkBinOp(s, op, left, operands[i+1])
 		}
 	}
 }
@@ -9309,6 +9396,7 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 		// the count, so neither operand is checked against the other. The COUNT
 		// itself is checked, though: see checkShiftCount.
 		f.checkShiftCount(s, rNode)
+		f.checkShiftedConstant(s, lNode, lk, rNode)
 	default:
 		f.checkConstOperands(s, lNode, lk, rNode, rk)
 		if (op == QUO || op == REM) && f.constZeroDivisor(s, lk, rNode) {
@@ -9352,6 +9440,233 @@ func (f *File) checkShiftCount(s *Scope, n Node) {
 		return
 	}
 	f.err(pos, "invalid operation: negative shift count %s (untyped int constant %s)", src, cv)
+}
+
+// checkShiftedConstant refuses an untyped float constant that is not a whole number
+// as the left operand of a shift by a count that is not constant: `1.5 << s`. It
+// takes whatever integer type the context gives it, and no integer type holds 1.5,
+// so Go refuses it where it stands rather than in any context. A whole one, `1.0 <<
+// s`, is an integer constant there and takes the context's type; see
+// typeShiftOperands for the contexts that are not integers.
+func (f *File) checkShiftedConstant(s *Scope, lNode Node, lk Kind, rNode Node) {
+	if lk != UntypedFloat {
+		return
+	}
+	if _, constCount := f.constNumeric(s, rNode); constCount {
+		return // a constant shift, folded and reported as one
+	}
+	cv, ok := f.constNumeric(s, lNode)
+	if !ok || cv.Kind() != constant.Float || constant.ToInt(cv).Kind() == constant.Int {
+		return
+	}
+	f.err(f.tok(lNode.Pos()).Position(), "invalid operation: shifted operand %s (untyped float constant) must be integer", f.exprSource(lNode))
+}
+
+// shiftTarget is the type a context gives an untyped operand, for
+// typeShiftOperands: its kind and the name a diagnostic calls it by. The zero value
+// is a context that names no type, or one whose type this package cannot resolve.
+type shiftTarget struct {
+	kind  Kind
+	name  string
+	known bool
+}
+
+// shiftTargetOf is the shiftTarget of a checkValueOverflow destination. An untyped
+// kind stands for the type it defaults to, which is what a destination with no type
+// of its own -- an inferred variable, a print argument -- makes of the value.
+func shiftTargetOf(dst retResult) shiftTarget {
+	k, name := dst.kind, dst.name
+	if isUntypedKind(k) {
+		k, name = defaultKind(k), ""
+	}
+	// "float" is what an untyped float constant's kind reads as (defaultTarget names
+	// a destination by it); the type it defaults to is float64.
+	if name == "" || name == "?" || name == "float" {
+		name = kindName(k)
+	}
+	return shiftTarget{kind: k, name: name, known: true}
+}
+
+// typeShiftOperands gives the untyped constant that is the left operand of a shift
+// by a count that is not constant the type Go gives it: "the type it would assume if
+// the shift expression were replaced by its left operand alone". That is the type of
+// the CONTEXT, t, or of a typed operand beside it -- never the count's, which is
+// independent of the value shifted. So `var a int64 = 1 << s` shifts an int64 1,
+// `x + 1<<s` shifts one of x's type, and `v := 1 << s` an int.
+//
+// C types the constant by nothing at all and shifts an int, so each of those computed
+// 32 bits and the emitter chose its helper from the count: `var a int64 = 1 << s`
+// stored 0 for every s past 31, and `v := 1 << s` for a uint s made v a uint. The
+// type is recorded here, by the operator's position, for the emitter to compute the
+// shift in (untypedShiftCType), since this is where every context a value meets a
+// type in is already visited (checkValueOverflow and its callers). A float type is
+// refused where the context gives it, in Go's words: nothing is shifted in one.
+//
+// Only the untyped operands are walked. A comparison's operands are typed by each
+// other, or by their default types when both are untyped; a shift's count becomes a
+// uint if it is untyped too; anything else -- a call, an index, a literal -- is a
+// context of its own and is typed where that is checked.
+func (f *File) typeShiftOperands(s *Scope, n Node, t shiftTarget) {
+	if !subtreeHasShift(f, n.ast) {
+		return // the ordinary case, answered without typing anything
+	}
+	switch n.sym {
+	case Expression:
+		kids := slices.Collect(it(n.ast))
+		for i, c := range kids {
+			if c.sym != SimpleExpr {
+				continue
+			}
+			partner := -1
+			switch {
+			case i+2 < len(kids) && f.isComparisonOp(kids[i+1]):
+				partner = i + 2
+			case i >= 2 && f.isComparisonOp(kids[i-1]):
+				partner = i - 2
+			}
+			switch {
+			case len(kids) == 1:
+				f.typeShiftOperands(s, c, t)
+			case partner < 0:
+				// An operand of && or ||: a boolean, whose own comparisons type it.
+				f.typeShiftOperands(s, c, shiftTarget{})
+			default:
+				f.typeShiftOperands(s, c, f.comparisonShiftTarget(s, c, kids[partner]))
+			}
+		}
+	case SimpleExpr, Term:
+		kids := slices.Collect(it(n.ast))
+		// A typed operand decides the level's type whatever the context says: the
+		// operands of an operator are of one type. The count is not one of them.
+		level, untyped, shifts, count := t, true, false, false
+	scan:
+		for _, c := range kids {
+			switch c.sym {
+			case AddOp:
+			case MulOp:
+				if op := f.mulOp(s, c); op == SHL || op == SHR {
+					count, shifts = true, true
+				}
+			default:
+				if count {
+					count = false
+					continue
+				}
+				switch k, ok := f.exprType(s, c); {
+				case !ok:
+					// A call, a receive: typed, but not by a type this can name.
+					level, untyped = shiftTarget{}, false
+				case !isUntypedKind(k):
+					level, untyped = shiftTarget{kind: k, name: f.operandTypeName(s, c, k), known: true}, false
+					break scan
+				}
+			}
+		}
+		count = false
+		for _, c := range kids {
+			switch c.sym {
+			case AddOp:
+			case MulOp:
+				if op := f.mulOp(s, c); op == SHL || op == SHR {
+					count = true
+				}
+			default:
+				switch k, ok := f.exprType(s, c); {
+				case count:
+					count = false
+					f.typeShiftOperands(s, c, shiftTarget{kind: PredeclaredUint, name: "uint", known: true})
+				case ok && isUntypedKind(k):
+					f.typeShiftOperands(s, c, level)
+				default:
+					f.typeShiftOperands(s, c, shiftTarget{})
+				}
+			}
+		}
+		if n.sym != Term || !shifts || !untyped || !level.known {
+			return
+		}
+		if _, isConst := f.constNumeric(s, n); isConst {
+			return // a constant shift: folded, and typed as every constant is
+		}
+		for i, c := range kids {
+			if c.sym != MulOp {
+				continue
+			}
+			if op := f.mulOp(s, c); op != SHL && op != SHR {
+				continue
+			}
+			switch {
+			case isNumericKind(level.kind):
+				if f.shiftTypes == nil {
+					f.shiftTypes = map[*int32]Kind{}
+				}
+				f.shiftTypes[&c.ast[0]] = level.kind
+			case isFloatKind(level.kind):
+				// Once, at the first shift: what it shifts is the run of the level
+				// before it, and that is what Go names. A constant that is no whole
+				// number was refused where it stands (checkShiftedConstant), which is
+				// the one error Go gives it.
+				left := narrowLevelPrefix(n, i)
+				if cv, ok := f.constNumeric(s, left); ok && cv.Kind() == constant.Float && constant.ToInt(cv).Kind() != constant.Int {
+					return
+				}
+				f.err(f.tok(kids[0].Pos()).Position(), "invalid operation: shifted operand %s (type %s) must be integer",
+					f.sourceSpan(kids[0].Pos(), kids[i-1].End()), level.name)
+				return
+			}
+		}
+	case UnaryExpr:
+		// `-(1 << s)` and `^(1 << s)` are of their operand's type. The other prefix
+		// operators yield a bool, or take no untyped operand.
+		for c := range it(n.ast) {
+			switch c.sym {
+			case UnaryOp:
+				if op := f.unaryOp(s, c); op != ADD && op != SUB && op != XOR {
+					return
+				}
+			case Factor:
+				f.typeShiftOperands(s, c, t)
+			}
+		}
+	case Factor:
+		// A parenthesized operand is its expression; every other factor is a context
+		// of its own.
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 3 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+			f.typeShiftOperands(s, kids[1], t)
+		}
+	}
+}
+
+// comparisonShiftTarget is the type an operand of a comparison takes: its partner's
+// when that is typed, and its own default type when both are untyped -- `1<<s ==
+// 2<<s` compares two ints. A partner of a type this cannot name gives none.
+func (f *File) comparisonShiftTarget(s *Scope, c, partner Node) shiftTarget {
+	pk, ok := f.exprType(s, partner)
+	switch {
+	case !ok:
+		return shiftTarget{}
+	case !isUntypedKind(pk):
+		return shiftTarget{kind: pk, name: f.operandTypeName(s, partner, pk), known: true}
+	}
+	k, ok := f.exprType(s, c)
+	if !ok {
+		return shiftTarget{}
+	}
+	return shiftTargetOf(retResult{kind: k})
+}
+
+// isComparisonOp reports whether n is a comparison operator -- a RelOp other than
+// && and ||, which the grammar keeps at the same level.
+func (f *File) isComparisonOp(n Node) bool {
+	if n.sym != RelOp {
+		return false
+	}
+	switch Symbol(f.tok(n.Pos()).Ch) {
+	case LAND, LOR:
+		return false
+	}
+	return true
 }
 
 // checkConstOperands reports an untyped constant operand of a binary operator that
@@ -11797,6 +12112,11 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 			if _, _, isInt := intKindRange(d.Kind()); isInt {
 				f.checkValueOverflow(s, sizedTarget(d.Kind(), callee), args[0])
 			}
+			// A conversion to a FLOAT type is a context an untyped shift operand takes
+			// its type from as well, and one it cannot be shifted in: `float32(1 << s)`.
+			if isFloatKind(d.Kind()) {
+				f.typeShiftOperands(s, args[0], shiftTarget{kind: d.Kind(), name: callee.Src(), known: true})
+			}
 		}
 	case *VarDeclaration:
 		// A variable of a function type holds a function, so calling it is a call --
@@ -11855,6 +12175,7 @@ func (f *File) checkMinMaxArgs(s *Scope, args []Node) {
 	if len(args) < 2 {
 		return
 	}
+	defer f.typeMinMaxArgs(s, args)
 	first, firstOK := f.exprType(s, args[0])
 	if !firstOK {
 		return
@@ -11868,6 +12189,32 @@ func (f *File) checkMinMaxArgs(s *Scope, args []Node) {
 			f.err(f.tok(a.Pos()).Position(), "invalid argument: mismatched types %s and %s",
 				kindName(first), kindName(k))
 			return
+		}
+	}
+}
+
+// typeMinMaxArgs types the untyped arguments of min or max by a typed one, as the
+// operands of an operator are typed (see typeShiftOperands): `max(x, 1<<s)` shifts
+// a 1 of x's type. An argument of a type this cannot name leaves them untyped.
+func (f *File) typeMinMaxArgs(s *Scope, args []Node) {
+	var typed retResult
+	found := false
+	for _, a := range args {
+		k, ok := f.exprType(s, a)
+		if !ok {
+			return
+		}
+		if !isUntypedKind(k) {
+			typed, found = retResult{kind: k, name: f.operandTypeName(s, a, k)}, true
+			break
+		}
+	}
+	if !found {
+		return
+	}
+	for _, a := range args {
+		if k, _ := f.exprType(s, a); isUntypedKind(k) {
+			f.checkValueOverflow(s, typed, a)
 		}
 	}
 }
@@ -11926,7 +12273,10 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 		if k, known := f.exprType(s, v); known && !assignableKind(p.kind, k) {
 			f.err(f.tok(v.Pos()).Position(), "cannot use %s of type %s as type %s in append",
 				f.exprSource(v), kindName(k), p.name)
+			continue
 		}
+		// A constant appended must fit the element; an untyped shift takes its type.
+		f.checkValueOverflow(s, p, v)
 	}
 }
 
@@ -12122,7 +12472,11 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 				if aok && !assignableKind(elem.kind, ak) {
 					f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s",
 						f.exprSource(arg), kindName(ak), elem.name, name.Src())
+					continue
 				}
+				// A constant packed must fit the element as one passed to a fixed
+				// parameter must fit that; and an untyped shift takes its type.
+				f.checkValueOverflow(s, elem, arg)
 			}
 		}
 		args, params = args[:fixed], params[:fixed]
@@ -14639,6 +14993,9 @@ func (f *File) checkConstOverflow(s *Scope, cs *ConstSpecNode, pos token.Positio
 // the fold serves only to read the value. A non-integer target, or a non-constant n,
 // is left alone; a float constant is checked for being whole first.
 func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
+	// The same positions are where an untyped shift operand takes its type, a float
+	// destination included, so they are visited for that first.
+	f.typeShiftOperands(s, n, shiftTargetOf(dst))
 	if _, _, ok := intKindRange(dst.kind); !ok {
 		return
 	}

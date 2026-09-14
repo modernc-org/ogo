@@ -1861,6 +1861,7 @@ func (e *emitter) emitSelect(ast []int32) {
 			continue
 		}
 		e.chanTrySendElems[c.elem] = true
+		e.typeUntypedShifts(c.val.ast, c.elem) // the element's type is the value's context
 		valTmp = e.newTmp()
 		sendVals[i] = valTmp
 		switch a, isArr := e.namedArrays[c.elem]; {
@@ -2461,6 +2462,9 @@ func (e *emitter) deferPkgInit(stmt string) {
 // for emitStatement to put it before, and without this the temporary is referenced
 // and never declared -- which is what `var g = mk().y` did.
 func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
+	if ct, ok := e.globals[target]; ok {
+		e.typeUntypedShifts(initExpr, ct) // the variable's type is the value's context
+	}
 	saved := e.prologue
 	e.prologue = nil
 	text := e.exprC(initExpr)
@@ -4141,7 +4145,7 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4943,6 +4947,9 @@ type emitter struct {
 	usesU2f            bool                    // ogo_u2f is called: an integer converts to a float (needs ogo_fprec)
 	usesI2f            bool                    // ogo_i2f is called: a signed integer converts to a float (needs ogo_u2f)
 	shiftHelpers       map[string][2]string    // guarded shift helper name -> {operator, value C type}
+	shiftCTypes        map[*int32]string       // a shift operator, by its place in the AST -> the C type its untyped constant operand takes, where the emitter typed the context (see typeUntypedShifts)
+	shiftWalked        map[shiftWalkKey]bool   // the nodes typeUntypedShiftsNode has walked, each for a context
+	shiftIn            map[*int32]bool         // whether a shift operator occurs under a node, by its place in the AST (see hasShift)
 	divHelpers         map[string][2]string    // guarded signed division helper name -> {operator, value C type}
 	clock              *clockSetting           // a clock the program asks for, instead of the backend's 160 MHz default
 	release            bool                    // release build: a panic reboots (_reboot) instead of halting the cog
@@ -7560,6 +7567,7 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 			e.f.tok(x.Pos()).Position(), r.what, r.advice())
 		return
 	}
+	e.typeUntypedShifts(op[1].ast, elem) // the element's type is the value's context
 	// `ch <- mk(3)`: the send helper takes the element by value, so a struct-
 	// returning call handed to it is the same shape hoistStructCallArg binds for an
 	// ordinary call -- and the send does not go through emitCallArgs, so it is bound
@@ -11710,6 +11718,7 @@ func (e *emitter) pkgInitLitFixups(target string, fixups []litFixup) {
 // which must name something a brace can fill.
 func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	expectType := expect.ctype
+	e.typeUntypedShiftsNode(v, expectType) // the element's type is the value's context
 	// An INTERFACE-typed position takes the two words, not whatever was written: a
 	// pointer standing here has to become {data, table} the way it does at an
 	// assignment or an argument. Put in raw, the C compiler refused the literal --
@@ -13530,6 +13539,7 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 // string(rune), string([]byte) -- which needs the allocation this target does not
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
+	e.typeUntypedShifts(arg.ast, ct) // the conversion's type is its untyped operand's
 	if isScalarCType(e.underlyingCType(ct)) {
 		// A CONSTANT converted to a 64-bit type is that constant, spelled at that
 		// width: `int64(-4294967295)` as a cast of a literal reached the target's C
@@ -18879,6 +18889,10 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 			continue
 		}
 		if cname != "" {
+			// A case value is compared with the tag, so it takes the tag's type.
+			if ct, ok := e.varType(guardVar); ok {
+				e.typeUntypedShifts(ex.ast, ct)
+			}
 			e.emit(cname + " == ")
 		}
 		e.emitExpr(ex.ast)
@@ -19116,6 +19130,7 @@ func (e *emitter) emitIfBodyWithCond(ast []int32, condOverride []int32) {
 // Expression node, which would add its own binary-operator parens) so a simple
 // `i < 20` becomes `(i < 20)`, not `((i < 20))`.
 func (e *emitter) emitCondition(exprChildren []int32) {
+	e.typeUntypedShifts(exprChildren, "") // operands beside an untyped shift type it
 	// A condition is the Expression's children directly (not a wrapped Expression
 	// node), so route them through emitLogicalKids for the same && / || grouping an
 	// Expression operand gets, keeping gcc's -Wparentheses quiet in `if a && b || c`.
@@ -19865,6 +19880,9 @@ func (e *emitter) exprIsLiteral(ast []int32) bool {
 // `return nil` in a slice-returning function yields the zero slice header, not the
 // integer 0, which is only nil's pointer form.
 func (e *emitter) emitReturnValue(i int, ex Node) {
+	if i < len(e.curResultTypes) {
+		e.typeUntypedShifts(ex.ast, e.curResultTypes[i]) // the result's type is the context's
+	}
 	// A 64-bit result that is not a plain variable is returned through a temporary
 	// of the result type. The target's compiler returns a garbage high word for
 	// `return (int64_t)n;` -- a widening cast as the whole operand, however nested,
@@ -20418,6 +20436,16 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		return "", false
 	}
 	text := e.captureC(func() { e.emitExprNode(kids[0]) })
+	// An untyped constant SHIFTED is spelled as the integer it is, at the width it is
+	// shifted in: `1.0 << s` must not reach the helper as a double, and the constant
+	// of `var a int64 = 1 << s` goes out as `1LL`, the one spelling of a 64-bit
+	// constant argument the target's compiler passes right in every position (see
+	// wideConstArg).
+	if e.isShiftOp(kids[1]) && e.operandUntyped(kids[0]) {
+		if v, ok := e.foldIntegral(kids[0].ast); ok {
+			text = e.constSpelling(v, e.underlyingCType(ctype))
+		}
+	}
 	// The LEVEL's type, not the first operand's. The operands of an arithmetic
 	// operator are of one type and an untyped constant takes the other's, so reading
 	// the left operand outright typed `3 / b` for a uint64 b as an int -- and the
@@ -21445,6 +21473,9 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	}
 	e.appendElems[elem] = true
 	values := args[1:]
+	for _, v := range values {
+		e.typeUntypedShifts(v.ast, elem) // the element's type is the value's context
+	}
 	for range values {
 		e.emit(appendCName(elem) + "(")
 	}
@@ -23521,14 +23552,24 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		fields = append(fields, fld)
 	}
 	lhs := e.varRef(base) // a package global target is mangled; a local keeps its name
+	// The target's C type where one of these shapes knows it, which is the type an
+	// untyped shift in the value is computed in (typeUntypedShifts). A pointee's is
+	// the checker's to give, from the pointer's declaration.
+	lhsCType := ""
+	if ct, ok := e.varType(base); ok && len(fields) == 0 && stars == "" {
+		lhsCType = ct
+	}
 	if len(fields) != 0 {
 		// A write to an exported variable of an imported package, `pkg.V = x` (or a
 		// field of it): base is the import qualifier, so the target is that package's
 		// mangled global, symmetric with the read. Otherwise a struct field target.
-		if text, _, ok := e.qualifiedGlobalRead(base, fields); ok {
-			lhs = text
+		if text, qct, ok := e.qualifiedGlobalRead(base, fields); ok {
+			lhs, lhsCType = text, qct
 		} else {
 			lhs = e.fieldAccessC(base, fields) // a field target, "->" through pointers
+			if ct, ok := e.fieldType(base, fields); ok && stars == "" {
+				lhsCType = ct
+			}
 		}
 	}
 	if stars != "" {
@@ -23638,6 +23679,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 		// Routed through emitAssignTailOrCopy so a string "+=" is refused there,
 		// centrally, the same as the field and access-chain compound targets.
+		if t.op != "<<=" && t.op != ">>=" {
+			e.typeUntypedShifts(t.rhs, lhsCType)
+		}
 		e.emitAssignTailOrCopy(func() { e.emit(lhs) }, t)
 		return
 	}
@@ -23736,6 +23780,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 		// Shared with the indexed and access-chain targets, so a struct holding an
 		// array becomes a memcpy here too (see emitAssignTailOrCopy).
+		e.typeUntypedShifts(rhsAst, lhsCType)
 		e.emitAssignTailOrCopy(func() { e.emit(lhs) }, assignTail{op: "=", rhs: rhsAst})
 	case DEFINE:
 		if len(fields) != 0 {
@@ -23914,6 +23959,7 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 // it stays on the ordinary path.
 func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	e.bindFuncValue(name, initExpr)
+	e.typeUntypedShifts(initExpr, ctype) // the variable's type is the context's
 	// `var v [3]int = <-ch` / `v := <-ch` for a channel of arrays: the receive writes
 	// through an out parameter, and this declaration IS the storage it writes into.
 	if elem, base, a, ok := e.arrayRecvInit(initExpr); ok {
@@ -24269,6 +24315,11 @@ func (e *emitter) emitArrayTargetAssign(dst string, a arrDim, rhs []int32) {
 // way, and not at all if the copy is refused, so a refusal leaves no half-written
 // statement.
 func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
+	// The value is stored as the target's type, so an untyped shift in it is
+	// computed in that type. A shift assignment's operand is a count, which is not.
+	if t.rhs != nil && t.targetCType != "" && t.op != "<<=" && t.op != ">>=" {
+		e.typeUntypedShifts(t.rhs, t.targetCType)
+	}
 	// A whole ARRAY written over. Asked FIRST, ahead of every branch that reads
 	// targetCType: for an array of interfaces the callers set that to the ELEMENT's
 	// type, which would send `grid[1] = row` down the interface path to be written as
@@ -24733,6 +24784,20 @@ type assignTarget struct {
 	tok   int32
 }
 
+// assignTargetCType is the C type a multiple assignment's target stores, where it
+// is known: a variable's, or what a chain from one reaches. A declared name has
+// none yet -- its value gives it one -- and neither has a pointee here.
+func (e *emitter) assignTargetCType(t assignTarget, declare bool) (string, bool) {
+	switch {
+	case declare || t.name == "_" || t.stars != "":
+		return "", false
+	case len(t.chain) == 0:
+		return e.varType(t.name)
+	}
+	cur, ok := e.accessChainType(t.name, t.chain)
+	return cur.ctype, ok && len(cur.dims) == 0
+}
+
 // plain reports a target that is a bare variable name -- the only shape a `:=` can
 // declare, and the only one a declaration path ever passes.
 func (t assignTarget) plain() bool { return t.stars == "" && len(t.chain) == 0 }
@@ -24909,6 +24974,9 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 			tmps[i], dims[i] = e.newTmp(), a
 			e.emitArrayCopy(tmps[i], src, a)
 			continue
+		}
+		if tt, ok := e.assignTargetCType(targets[i], declare[i]); ok {
+			e.typeUntypedShifts(r.ast, tt) // the target's type is the value's context
 		}
 		ct, ok := e.inferCType(r.ast)
 		if !ok {
@@ -25621,6 +25689,19 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		params, e.callParams = e.callParams, nil
 	}
 	args := e.callArgExprs(callSuffix)
+	// An argument is converted to its parameter's type, or a packed one to the
+	// variadic element's: the context an untyped shift in it takes its type from.
+	if elem, at := e.variadicPack(cname); at >= 0 || len(params) != 0 {
+		spread := e.spreadCall(callSuffix)
+		for i, arg := range args {
+			switch {
+			case at >= 0 && i >= at && !spread:
+				e.typeUntypedShifts(arg.ast, elem)
+			case i < len(params):
+				e.typeUntypedShifts(arg.ast, params[i])
+			}
+		}
+	}
 	// `f(g())`: a call of SEVERAL results as the whole argument list, Go's special
 	// case. The inner call is bound to its result struct ahead of the statement,
 	// and its fields are the arguments.
@@ -26449,28 +26530,35 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 	// and did the same to a float ("2 * f") and to a uint32 ("1 + u"); the leading
 	// literal named a type it does not have.
 	//
-	// A shift needs no exception here: its count is not an operand of the value's
-	// type, but an untyped count contributes nothing and a typed one only ever
-	// appears where the checker already required the types to agree.
+	// A shift's COUNT is no such operand: it is independent of the value shifted,
+	// which is the operand before the operator. Reading a typed count as the
+	// answer typed `1 << s` as s's type -- a uint s made `v := 1 << s` a uint, and
+	// an int8 count shifted an int8 1 and yielded 0 -- and it is left out entirely
+	// now, as the checker leaves it out (operandsType). The operands after it are
+	// ordinary ones again: `1 << s * x` is `(1 << s) * x`, x's type.
 	//
 	// When every operand is untyped the first still answers, which is what it
-	// always did -- an all-untyped expression takes its default type.
+	// always did -- an all-untyped expression takes its default type. Unless the
+	// level is a shift of an untyped constant whose CONTEXT the checker typed
+	// (untypedShiftCType): `var a int64 = 1 << s` shifts an int64, which is what the
+	// context says and what no operand here can.
 	//
 	// Not quite: among untyped operands the WIDEST decides, in Go's order int,
 	// rune, float. `7 / 2.0` is 3.5, an untyped float constant, and `2 * 3.5` is
 	// 7.0; the first operand's answer typed both an int, so the one was divided as
 	// integers to 3 and the other was computed as a double and printed as an int,
-	// 1306764736. A shift's count is left out of it, as the checker leaves it out
-	// (operandsType): `1 << 2.0` is an int.
+	// 1306764736.
 	var first Node
-	firstSet, afterShift := false, false
+	firstSet, count := false, false
 	widest, widestRank := "", 0
+	context := ""
 	for _, n := range nodes {
 		switch n.sym {
 		case AddOp, MulOp, UnaryOp:
-			if n.sym == MulOp {
-				if op := e.opText(n.ast); op == "<<" || op == ">>" {
-					afterShift = true
+			if n.sym == MulOp && e.isShiftOp(n) {
+				count = true
+				if ct, ok := e.untypedShiftCType(n); ok {
+					context = ct
 				}
 			}
 			continue // an operator; the type comes from the operand(s)
@@ -26480,26 +26568,265 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 				continue // a prefix operator token; skip to its operand
 			}
 		}
+		if count {
+			count = false
+			continue
+		}
 		if !firstSet {
 			first, firstSet = n, true
 		}
 		if e.operandUntyped(n) {
-			if !afterShift {
-				if ct, ok := e.inferNode(n); ok {
-					if r := untypedCTypeRank(ct); r > widestRank {
-						widest, widestRank = ct, r
-					}
+			if ct, ok := e.untypedShiftCTypeIn(n); ok {
+				context = ct
+			}
+			if ct, ok := e.inferNode(n); ok {
+				if r := untypedCTypeRank(ct); r > widestRank {
+					widest, widestRank = ct, r
 				}
 			}
 			continue
 		}
 		return e.inferNode(n)
 	}
+	if context != "" {
+		return context, true
+	}
 	if widestRank > 1 {
 		return widest, true
 	}
 	if firstSet {
 		return e.inferNode(first)
+	}
+	return "", false
+}
+
+// untypedShiftCType is the C type the untyped constant a shift operator shifts takes
+// from the context the shift stands in: the checker's answer (typeShiftOperands),
+// or the emitter's own for a context only it can type (typeUntypedShifts). ok is
+// false for a shift given none: one whose left operand is typed, a constant one,
+// and one in a context of no type, which takes the default.
+func (e *emitter) untypedShiftCType(op Node) (string, bool) {
+	if len(e.shiftCTypes) == 0 && len(e.f.shiftTypes) == 0 || len(op.ast) == 0 {
+		return "", false // no program shifts an untyped constant anywhere, the usual case
+	}
+	// The operator's place in the AST names it, in whichever file it is: a node of
+	// another file than e.f is at an address none of this one's are, so a lookup
+	// made from the wrong file misses rather than finding some other operator.
+	at := &op.ast[0]
+	if ct, ok := e.shiftCTypes[at]; ok {
+		return ct, true
+	}
+	k, ok := e.f.shiftTypes[at]
+	if !ok {
+		return "", false
+	}
+	ct, ok := cTypes[sizedKindName(k)]
+	return ct, ok
+}
+
+// typeUntypedShifts types the untyped constants shifted in a value by Go's rule --
+// the context's type, ctype, or that of a typed operand beside the constant, and
+// never the count's -- recording each for untypedShiftCType. It is the emitter's
+// half of typeShiftOperands, and the two agree on every program both type; this one
+// exists for what the checker's Kind model cannot follow and the emitter holds a C
+// type for: a store through a chain, `o.in.mask |= 1 << bit`; a variable of
+// another package's type, `var m lib.Mask = 1 << s`; an operand beside a call, a
+// receive or a field of such a variable, `m & (1 << s)`. ctype is "" where the
+// context names no type, and the operands beside the constant still decide.
+//
+// Only integer types are recorded: a float context is refused by the checker, and a
+// shift has no other type to be computed in.
+func (e *emitter) typeUntypedShifts(ast []int32, ctype string) {
+	e.typeUntypedShiftsNode(Node{sym: Expression, ast: ast}, ctype)
+}
+
+// typeUntypedShiftsNode is typeUntypedShifts for a node.
+func (e *emitter) typeUntypedShiftsNode(n Node, ctype string) {
+	intOnly := func(ct string) string {
+		if _, isInt := cIntWidths[e.underlyingCType(ct)]; isInt {
+			return ct
+		}
+		return ""
+	}
+	var walk func(n Node, ct string)
+	walk = func(n Node, ct string) {
+		// Each node is typed once for each context it is asked about: every level
+		// of an expression asks on its way out (emitExprNode), and what an outer one
+		// has walked an inner one need not walk again.
+		if len(n.ast) == 0 {
+			return
+		}
+		key := shiftWalkKey{&n.ast[0], len(n.ast), ct}
+		if e.shiftWalked[key] {
+			return
+		}
+		e.shiftWalked[key] = true
+		if !e.hasShift(n) {
+			return // the ordinary case, answered without typing anything
+		}
+		switch n.sym {
+		case Expression, SimpleExpr, Term:
+			kids := slices.Collect(it(n.ast))
+			if slices.ContainsFunc(kids, func(c Node) bool { return c.sym == RelOp }) {
+				// A comparison's operands are typed by each other, never by the
+				// context, which is a bool; && and || join booleans.
+				for i, c := range kids {
+					if c.sym != RelOp {
+						pt, _ := e.compareOperandCType(kids, i)
+						walk(c, intOnly(pt))
+					}
+				}
+				return
+			}
+			// The level's type is asked of a typed operand only when an untyped one
+			// beside it shifts: typing an operand can mean rendering it, and nothing
+			// else here needs the answer.
+			level, untyped, shifts, count := ct, true, false, false
+			var typed []Node
+			shiftingUntyped := false
+			for _, c := range kids {
+				switch {
+				case c.sym == AddOp || c.sym == MulOp:
+					count = c.sym == MulOp && e.isShiftOp(c)
+					shifts = shifts || count
+				case count:
+					count = false
+				case !e.operandUntyped(c):
+					level, untyped = "", false
+					typed = append(typed, c)
+				case e.hasShift(c):
+					shiftingUntyped = true
+				}
+			}
+			if !untyped && shiftingUntyped {
+				if t, ok := e.inferNode(typed[0]); ok {
+					level = intOnly(t)
+				}
+			}
+			count = false
+			for _, c := range kids {
+				switch {
+				case c.sym == AddOp || c.sym == MulOp:
+					count = c.sym == MulOp && e.isShiftOp(c)
+				case count:
+					count = false
+					walk(c, "unsigned") // an untyped count becomes a uint
+				default:
+					walk(c, level)
+				}
+			}
+			if !shifts || !untyped || level == "" {
+				return
+			}
+			if _, isConst := e.foldConstVal(n.ast); isConst {
+				return // folded, and typed as any constant is
+			}
+			for _, c := range kids {
+				if c.sym == MulOp && e.isShiftOp(c) {
+					e.shiftCTypes[&c.ast[0]] = level
+				}
+			}
+		case UnaryExpr:
+			// `-(1 << s)` and `^(1 << s)` are their operand's type; the other prefix
+			// operators give a bool or take no untyped operand.
+			arith := true
+			for c := range it(n.ast) {
+				switch c.sym {
+				case UnaryOp:
+					if tok, ok := e.soleToken(c.ast); !ok || e.f.ch(tok) != ADD && e.f.ch(tok) != SUB && e.f.ch(tok) != XOR {
+						arith = false
+					}
+				case Factor:
+					if arith {
+						walk(c, ct)
+					} else {
+						walk(c, "")
+					}
+				}
+			}
+		case Factor:
+			// A parenthesised operand is its expression. Any other factor -- a call,
+			// an index, a literal -- is a context of its own, typed where it is
+			// emitted.
+			if kids := slices.Collect(it(n.ast)); len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+				walk(kids[1], ct)
+			}
+		}
+	}
+	walk(n, intOnly(ctype))
+}
+
+// shiftWalkKey names a node typeUntypedShiftsNode has walked, and the context it was
+// walked for: the node by its place in the file's AST, which no other node shares.
+type shiftWalkKey struct {
+	at  *int32
+	n   int
+	ctx string
+}
+
+// hasShift is subtreeHasShift for a node, remembered: inferNodes asks it of the
+// same operands over and over, and the answer is the AST's, which never changes.
+func (e *emitter) hasShift(n Node) bool {
+	if len(n.ast) == 0 {
+		return false
+	}
+	at := &n.ast[0]
+	r, ok := e.shiftIn[at]
+	if !ok {
+		r = subtreeHasShift(e.f, n.ast)
+		e.shiftIn[at] = r
+	}
+	return r
+}
+
+// subtreeHasShift reports whether a shift operator occurs anywhere in a subtree.
+func subtreeHasShift(f *File, ast []int32) bool {
+	for n := range it(ast) {
+		switch {
+		case n.sym == MulOp:
+			for t := range it(n.ast) {
+				if ch := f.ch(t.tok); t.sym == 0 && (ch == SHL || ch == SHR) {
+					return true
+				}
+			}
+		case n.sym != 0 && subtreeHasShift(f, n.ast):
+			return true
+		}
+	}
+	return false
+}
+
+// untypedShiftCTypeIn is untypedShiftCType for an untyped OPERAND of a level --
+// `(1 << s)` in `(1 << s) + 2` -- which carries its shift inside it: the one type
+// the context gave the operand is the one it gave every shift within, bar a count.
+func (e *emitter) untypedShiftCTypeIn(n Node) (string, bool) {
+	if len(e.shiftCTypes) == 0 && len(e.f.shiftTypes) == 0 || !e.hasShift(n) {
+		return "", false
+	}
+	switch n.sym {
+	case Expression, SimpleExpr, Term, UnaryExpr:
+		count := false
+		for c := range it(n.ast) {
+			switch {
+			case count:
+				count = false
+			case c.sym == MulOp && e.isShiftOp(c):
+				count = true
+				if ct, ok := e.untypedShiftCType(c); ok {
+					return ct, true
+				}
+			case c.sym == RelOp:
+				return "", false // a comparison: a bool, whatever its operands are
+			case c.sym != 0:
+				if ct, ok := e.untypedShiftCTypeIn(c); ok {
+					return ct, true
+				}
+			}
+		}
+	case Factor:
+		if kids := slices.Collect(it(n.ast)); len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+			return e.untypedShiftCTypeIn(kids[1])
+		}
 	}
 	return "", false
 }
@@ -26536,8 +26863,22 @@ func (e *emitter) operandUntyped(n Node) bool {
 // inference did for every expression before this existed: the answer only ever
 // makes inferNodes look FURTHER for a type, so an unrecognised leaf leaves the
 // old behaviour rather than inventing a new one.
+//
+// A shift's COUNT is passed over. It is not an operand of the value's type, so `1
+// << s` is untyped whatever s is: the constant takes its type from where the shift
+// stands (see typeShiftOperands). A MulOp is only ever a Term's child, and the
+// operand after a shift operator is its count.
 func (e *emitter) exprUntyped(ast []int32) bool {
+	count := false
 	for n := range it(ast) {
+		if count {
+			count = false
+			continue
+		}
+		if n.sym == MulOp && e.isShiftOp(n) {
+			count = true
+			continue
+		}
 		if n.sym != 0 {
 			if !e.exprUntyped(n.ast) {
 				return false
@@ -27100,6 +27441,7 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 // operator precedence differs (notably Go binds << tighter than C does).
 // Integer-literal text is normalized for C by normalizeIntLit.
 func (e *emitter) emitExpr(ast []int32) {
+	e.typeUntypedShifts(ast, "") // operands beside an untyped shift type it
 	// A condition or assignment RHS reaches here as the Expression's unwrapped
 	// children, so a string comparison must be recognized on this flat list too --
 	// emitExprNode's Expression case only fires for a wrapped Expression node.
@@ -27834,6 +28176,7 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[0])
 			return
 		}
+		e.typeUntypedShiftsNode(n, "") // operands beside an untyped shift type it
 		// A constant expression whose value does not fit a C int is emitted as that
 		// value: C would compute it in int and get a different answer (see intCLit).
 		if lit, ok := e.levelConstLit(n.ast); ok {
@@ -27888,6 +28231,7 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[0])
 			return
 		}
+		e.typeUntypedShiftsNode(n, "") // operands beside an untyped shift type it
 		if lit, ok := e.levelConstLit(n.ast); ok {
 			e.emit(lit)
 			return

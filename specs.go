@@ -457,6 +457,13 @@
 //     does not fit and 1.5 is not one. A negative count that is not constant is a
 //     run-time panic. A count that is a constant already inside the width costs
 //     nothing extra; any other goes through a guard.
+//   - An untyped constant shifted by a count that is not constant takes the type of
+//     where the shift stands, as in Go -- the type it would take were the shift
+//     replaced by the constant alone -- and never the count's: for an s of 40, "var
+//     a int64 = 1 << s" is 1099511627776, "x & (1 << s)" is computed in x's type,
+//     and "v := 1 << s" is an int. A context of a float type is refused ("var f
+//     float64 = 1 << s" is "shifted operand 1 (type float64) must be integer"), and
+//     so is a constant that is not whole, "1.5 << s", which no integer type holds.
 //   - The most negative value of a signed type divided by -1 is itself, with a
 //     remainder of 0, as in Go: the quotient is not representable, so the two's-
 //     complement overflow stands rather than being undefined as it is in C.

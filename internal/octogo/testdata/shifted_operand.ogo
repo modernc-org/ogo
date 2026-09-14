@@ -1,0 +1,61 @@
+// An untyped constant shifted by a count that is not constant takes the type of
+// where the shift stands, as Go types it -- and a float type is no type a shift can
+// be computed in, so the program is refused there, naming the operand and the type
+// the context gave it. A constant that is not a whole number takes no integer type
+// at all, and is refused where it stands.
+//
+// The last two are not about shifts: an operator's left operand is everything before
+// it, so an untyped constant between two operands of different types does not hide
+// the mismatch.
+
+type Temp float32
+
+const one = 1
+
+func take(f float64) float64 { return f }
+
+func mk(s uint) float64 {
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	return 1 << s
+}
+
+func main() {
+	var s uint = 3
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	var f float64 = 1 << s
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	f = 1 << s
+	// ERROR invalid operation: shifted operand one \(type float64\) must be integer
+	f = one << s
+	// ERROR invalid operation: shifted operand \(1 \+ 2\) \(type float64\) must be integer
+	f = (1 + 2) << s
+	// ERROR invalid operation: shifted operand 1 \* 2 \(type float64\) must be integer
+	f = 1 * 2 << s
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	f = -(1 << s)
+	// ERROR invalid operation: shifted operand 1 \(type Temp\) must be integer
+	var t Temp = 1 << s
+	// ERROR invalid operation: shifted operand 1.0 \(type float64\) must be integer
+	x := 1.0 << s
+	// ERROR invalid operation: shifted operand 1 \(type float32\) must be integer
+	c := float32(1 << s)
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	println(f + 1<<s)
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	println(f == 1<<s)
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	println(take(1 << s))
+	// ERROR invalid operation: shifted operand 1.0 \(type float64\) must be integer
+	println(1.0 << s)
+	// ERROR invalid operation: shifted operand 1 \(type float64\) must be integer
+	println(1<<s + 1.5)
+	// ERROR invalid operation: shifted operand 1.5 \(untyped float constant\) must be integer
+	var i int64 = 1.5 << s
+	var a int32 = 1
+	var b int64 = 2
+	// ERROR mismatched types int32 and int64
+	println(a + 1 - b)
+	// ERROR mismatched types int32 and int64
+	println(a * 2 / b)
+	println(f, t, x, c, i)
+}
