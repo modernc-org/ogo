@@ -23,6 +23,16 @@
 // expression is where it goes wrong -- which is also why binding the negation to
 // a variable first does not help: the optimizer folds the copy away.
 //
+// THE CAUSE, found 2026-09-14, is the add/sub merge of doc/add-immediate-carry.c,
+// reading Z where that file's lines read C. The inlined negation is
+//
+//	not lo; add lo, #1 wz; not hi; mov t, #0; if_e neg t, #1; sub hi, t
+//
+// -- the carry into the high word decided by the Z out of `add lo, #1` -- and
+// OptimizeAddSub folds that `add #1` into the `- 3` after it, one `sub lo, #2 wc`,
+// deleting the instruction whose Z the `if_e` reads. -Ono-regs cures every line
+// too, and so does the two-condition fix given in that file.
+//
 // It reaches ordinary OctoGo as `-x - 1` on an int64, found by a 64-bit
 // arithmetic probe diffed against Go: the dividend `-big - 3` of a division was
 // wrong for every divisor, and the first divisor tried, 1, made it look like a
@@ -35,23 +45,34 @@
 // A measuring note that cost two hours: never build an operand of a reproducer as
 // `(uint64_t)f()` -- the cast of a 64-bit call result is the battery's oldest
 // fault, and it made unsigned subtraction look broken in three tables running.
+// And a second: until 2026-09-14 this file computed the shapes in main, where at
+// 2bd01c4c the merge does not fire, so it printed every line right while the fault
+// was live. Whether it fires depends on where the register pair lives; each shape
+// now has a function of its own.
 //
-// To check, build for the P2 with no -O flag and read the second number.
+// To check, build for the P2 with -2 and compare each line with gcc's.
 
 #include <stdio.h>
 #include <stdint.h>
 
 __attribute__((noinline)) int64_t id64(int64_t v) { return v; }
 
+__attribute__((noinline)) int64_t neg(int64_t x) { return -x; }
+__attribute__((noinline)) int64_t negsub(int64_t x) { return -x - 3; }
+__attribute__((noinline)) int64_t negadd(int64_t x) { return -x + 3; }
+__attribute__((noinline)) int64_t negsum(int64_t x) { return -(x + 3); }
+__attribute__((noinline)) int64_t zerosub(int64_t x) { return 0 - x - 3; }
+__attribute__((noinline)) int64_t negcopy(int64_t x) { int64_t t = -x; return t - 3; }
+
 int main(void) {
 	int64_t x = id64(5);
-	int64_t a = -x;
-	int64_t b = -x - 3;
-	int64_t c = -(x + 3);
-	int64_t d = 0 - x - 3;
-	printf("%lld\n", a);
-	printf("%lld\n", b);
-	printf("%lld\n", c);
-	printf("%lld\n", d);
+	int64_t big = id64(1099511627776LL);
+	printf("-x              %lld\n", neg(x));
+	printf("-x - 3          %lld\n", negsub(x));
+	printf("-x + 3          %lld\n", negadd(x));
+	printf("-(x + 3)        %lld\n", negsum(x));
+	printf("0 - x - 3       %lld\n", zerosub(x));
+	printf("t = -x; t - 3   %lld\n", negcopy(x));
+	printf("-big - 3        %lld\n", negsub(big));
 	return 0;
 }
