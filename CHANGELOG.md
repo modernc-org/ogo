@@ -49,6 +49,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   width -- int8 through int64 and their unsigned twins, across add, subtract,
   multiply, shift and negate -- with no target divergence, and pinned that too.
 
+- **The fuzzer now generates initialization order.** `ogo smith` emits a
+  cluster of package variables whose initializers depend on one another --
+  directly, through a dedicated function's body, and through a two-result call
+  -- written in a SHUFFLED order, with the generation-time VM computing each
+  value in dependency order. A compiler that initializes in written order
+  computes different values and fails the program's own checksum, which was
+  verified by mutation: with the dependency walk disabled, the oracle corpus
+  fails. The ordering machinery is fuzzed on every test run now, on the host
+  and in the on-board seed sample.
+
 ### Language
 
 - **A package slice literal may have non-constant elements.** `var xs = []int{a,
@@ -62,17 +72,34 @@ shipped section tells a reader on that version that they have behaviour they do 
   both work; a slice whose element is itself an array is still refused, C
   copying no array into an initializer. Verified against Go, on the board.
 
-### Toolchain
+- **`goto` is in the language.** A jump to a label of the same function, under
+  Go's two rules, each refused where written with Go's words: never into a
+  block ("goto L jumps into a block") and never forward over a declaration
+  that is in scope at the label ("jumps over declaration of x"). A goto
+  terminates its statement list, a label some goto names is reachable however
+  the flow above it ended, and the state-machine and error-exit shapes it
+  exists for run on the board bit-identically to Go. This was the last of
+  Go's statements missing for a reason of work rather than of hardware, and
+  its keyword joins the reserved list.
 
-- **The fuzzer now generates initialization order.** `ogo smith` emits a
-  cluster of package variables whose initializers depend on one another --
-  directly, through a dedicated function's body, and through a two-result call
-  -- written in a SHUFFLED order, with the generation-time VM computing each
-  value in dependency order. A compiler that initializes in written order
-  computes different values and fails the program's own checksum, which was
-  verified by mutation: with the dependency walk disabled, the oracle corpus
-  fails. The ordering machinery is fuzzed on every test run now, on the host
-  and in the on-board seed sample.
+- **A `type` declaration works inside a function.** Local structs with
+  literals and equality, local defined scalars and arrays, a local alias of a
+  package type with its methods reachable, shadowing a package type, the same
+  name declaring different types in different functions, and a
+  self-referential local struct linked through pointers -- each verified
+  against Go on the board. Bounded honestly: a second local type of one name
+  in one function and a local interface type are refused where written.
+
+- **`type A = B` is an alias — another name for B, not a new type.** The form
+  used to parse with the `=` silently discarded, so A was a distinct type: a
+  method could be declared on it (Go refuses that) and a value of one spelling
+  was refused where the other was wanted (Go accepts it). Now identity, method
+  sets, literals, equality, signatures and chains of aliases all treat the two
+  names as the one type they are, for struct, predeclared, defined-array and
+  interface targets alike — and a method ON an alias is refused with Go's
+  reason. The target must be a named type of this package or a predeclared
+  one: a type literal, another package's name, and an alias cycle are each
+  refused where they are written.
 
 ### Fixed
 
@@ -219,37 +246,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   median-of-five filter feeding a hysteresis trigger, each built for the P2
   and its output diffed against the same program under Go. Both matched
   exactly and both are pinned as run cases.
-
-### Language
-
-- **`goto` is in the language.** A jump to a label of the same function, under
-  Go's two rules, each refused where written with Go's words: never into a
-  block ("goto L jumps into a block") and never forward over a declaration
-  that is in scope at the label ("jumps over declaration of x"). A goto
-  terminates its statement list, a label some goto names is reachable however
-  the flow above it ended, and the state-machine and error-exit shapes it
-  exists for run on the board bit-identically to Go. This was the last of
-  Go's statements missing for a reason of work rather than of hardware, and
-  its keyword joins the reserved list.
-
-- **A `type` declaration works inside a function.** Local structs with
-  literals and equality, local defined scalars and arrays, a local alias of a
-  package type with its methods reachable, shadowing a package type, the same
-  name declaring different types in different functions, and a
-  self-referential local struct linked through pointers -- each verified
-  against Go on the board. Bounded honestly: a second local type of one name
-  in one function and a local interface type are refused where written.
-
-- **`type A = B` is an alias — another name for B, not a new type.** The form
-  used to parse with the `=` silently discarded, so A was a distinct type: a
-  method could be declared on it (Go refuses that) and a value of one spelling
-  was refused where the other was wanted (Go accepts it). Now identity, method
-  sets, literals, equality, signatures and chains of aliases all treat the two
-  names as the one type they are, for struct, predeclared, defined-array and
-  interface targets alike — and a method ON an alias is refused with Go's
-  reason. The target must be a named type of this package or a predeclared
-  one: a type literal, another package's name, and an alias cycle are each
-  refused where they are written.
 
 ## v0.39.0
 
