@@ -6744,6 +6744,99 @@ var p *int
 	}
 }
 
+// TestEmitCArrayConvShape pins that a conversion to an array type takes an array
+// of that type's shape and no other: the same extents and the same element, as Go
+// requires ("cannot convert a (variable of type [4]int) to type Row"). The
+// conversion is its operand wherever it stands -- the two types share a
+// representation -- so one of another shape used to be let through with the
+// OPERAND's shape: `Row(a)` for a [4]int a was a Row whose len was 4. Each position
+// the conversion is seen through in is refused, and the same shape still converts.
+func TestEmitCArrayConvShape(t *testing.T) {
+	const header = `type Row [3]int
+
+type Row32 [3]int32
+
+var four [4]int
+
+var three [3]int
+
+func take(r Row) int { return r[2] }
+
+`
+	for _, test := range []struct{ name, src, want string }{
+		{
+			name: "declared",
+			src: `func main() {
+	r := Row(four)
+	println(len(r))
+}
+`,
+			want: "cannot convert four (variable of type [4]int) to type Row",
+		},
+		{
+			name: "element type",
+			src: `func main() {
+	r := Row32(three)
+	println(len(r))
+}
+`,
+			want: "cannot convert three (variable of type [3]int) to type Row32",
+		},
+		{
+			name: "chained",
+			src: `func main() {
+	println(Row(four)[1])
+}
+`,
+			want: "cannot convert four (variable of type [4]int) to type Row",
+		},
+		{
+			name: "argument",
+			src: `func main() {
+	println(take(Row(four)))
+}
+`,
+			want: "cannot convert four (variable of type [4]int) to type Row",
+		},
+		{
+			name: "unnamed",
+			src: `func main() {
+	var r [3]int = ([3]int)(four)
+	println(len(r))
+}
+`,
+			want: "cannot convert four (variable of type [4]int) to type [3]int",
+		},
+		{
+			name: "same shape",
+			src: `func main() {
+	r := Row(three)
+	println(len(r), take(Row(three)), Row(three)[1])
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var out bytes.Buffer
+			err = EmitC(pkg, &out)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("expected the conversion to compile, got %v", err)
+			case test.want == "":
+			case err == nil:
+				t.Fatalf("expected a refusal, got:\n%s", out.String())
+			case !strings.Contains(err.Error(), test.want):
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 // TestEmitCNestedArrayLit pins an array literal standing as a struct literal's
 // element. It becomes a nested brace group exactly where it is written, which is C's
 // own spelling and the only one flexcc lowers for a struct holding an array -- and

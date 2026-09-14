@@ -136,6 +136,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A conversion Go does not define is refused, as Go refuses it.** C casts any
+  scalar to any other, so `bool(1)`, `int(t)` for a bool t, `float32(true)`,
+  `int(a < b)`, `int(nil)` and `uintptr(&x)` all compiled -- true, 1, 1, 1, 0
+  and an address -- and `string(1.5)` and `float32(s)` for a string s reached
+  the C compiler. Each is "cannot convert ... to type T" now, in Go's words and
+  at Go's column, for a defined type over a basic one as well. A conversion to
+  an ARRAY type from an array of another shape is refused too: `Row(a)` for a
+  `type Row [3]int` and a [4]int a compiled into a Row that len said held four.
+  And a constant that rounds to an infinity where a float32 is wanted --
+  `float32(1e40)`, `var f float32 = 1e40`, a float32 argument or result, a
+  constant declaration -- is "constant 1e+40 overflows float32" rather than a
+  silent +Inf.
+
 - **A shift of an untyped constant into a float type is refused, as Go refuses
   it.** `var f float64 = 1 << s`, `float32(1 << s)`, `x := 1.0 << s`, `f + 1<<s`
   and `return 1 << s` from a float function compiled and shifted an integer; each

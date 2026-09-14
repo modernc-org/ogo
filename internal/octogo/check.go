@@ -12076,6 +12076,9 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// the same bytes and costs nothing, and so is a conversion from a named type
 		// over string, whose type this checker does not carry at all. Those reach the
 		// emitter, which knows the representation and refuses what it must.
+		if len(args) == 1 && !f.checkConversion(s, callee, args[0]) {
+			break // no conversion at all, which is what to say rather than what one would cost
+		}
 		if callee.Src() == "string" && len(args) == 1 {
 			if k, ok := f.exprType(s, args[0]); ok && kindCategory(k) != catString {
 				// A CONSTANT operand is not the case this refuses. Go makes
@@ -12109,13 +12112,20 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// same conversion written in an expression, in a `:=` or in a var
 		// initializer truncated silently. specs.go had said it was refused.
 		if len(args) == 1 {
-			if _, _, isInt := intKindRange(d.Kind()); isInt {
+			// A float target too: its range is a float32's, and it is a context an
+			// untyped shift operand takes its type from, `float32(1 << s)`.
+			if _, _, isInt := intKindRange(d.Kind()); isInt || isFloatKind(d.Kind()) {
 				f.checkValueOverflow(s, sizedTarget(d.Kind(), callee), args[0])
 			}
-			// A conversion to a FLOAT type is a context an untyped shift operand takes
-			// its type from as well, and one it cannot be shifted in: `float32(1 << s)`.
-			if isFloatKind(d.Kind()) {
-				f.typeShiftOperands(s, args[0], shiftTarget{kind: d.Kind(), name: callee.Src(), known: true})
+		}
+	case *TypeDeclaration:
+		// A conversion to a DEFINED type follows it to the basic type it is defined
+		// over, where there is one; the checks are the predeclared type's.
+		if len(args) == 1 && f.checkConversion(s, callee, args[0]) {
+			if k, ok := f.nameKind(s, callee.Src()); ok {
+				if _, _, isInt := intKindRange(k); isInt || isFloatKind(k) {
+					f.checkValueOverflow(s, sizedTarget(k, callee), args[0])
+				}
 			}
 		}
 	case *VarDeclaration:
@@ -12161,6 +12171,76 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 			f.err(callee.Position(), "the %s builtin is not supported yet", callee.Src())
 		}
 	}
+}
+
+// checkConversion refuses a conversion `T(x)` to a basic type, or to a type defined
+// over one, from an operand Go converts to it no way at all: a bool from anything but
+// a bool, a number from a bool or a string, a string from a bool or a float (an
+// integer is a rune, and converts), a scalar from nil, and any of them from a
+// pointer. C casts most of them without a word -- `bool(1)` is true, `int(t)` is 1,
+// `int(nil)` is 0 and `uintptr(&x)` is the address -- so each compiled into a program
+// Go refuses, in these words, at the operand; the rest reached the C compiler. ok is
+// false when it reported.
+func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
+	tk, ok := f.nameKind(s, callee.Src())
+	if !ok || kindCategory(tk) == catUnknown {
+		return true // no basic type underneath: a struct, an array, an interface
+	}
+	pos, src := f.tok(arg.Pos()).Position(), f.exprSource(arg)
+	if root, suffixed, isAddr := f.addressOperandRoot(s, arg); isAddr {
+		pointee := ""
+		if !suffixed {
+			if k, ok := f.identKind(s, root); ok {
+				pointee = f.operandTypeName(s, arg, k)
+			}
+		}
+		f.err(pos, "cannot convert %s (value of type *%s) to type %s", src, pointee, callee.Src())
+		return false
+	}
+	if id, ok := f.exprIdent(arg); ok && f.exprIsPointer(s, arg) {
+		f.err(pos, "cannot convert %s%s to type %s", src, f.pointerOfType(s, id), callee.Src())
+		return false
+	}
+	if _, isNil := f.nilOperand(s, arg); isNil {
+		f.err(pos, "cannot convert nil to type %s", callee.Src())
+		return false
+	}
+	k, ok := f.exprType(s, arg)
+	if !ok || kindCategory(k) == catUnknown {
+		return true
+	}
+	tc, kc := kindCategory(tk), kindCategory(k)
+	legal := tc == kc
+	if tc == catString && kc == catNumeric {
+		legal = !isFloatKind(k) && k != UntypedFloat // string(r): an integer is a rune
+	}
+	if !legal {
+		f.err(pos, "cannot convert %s (%s) to type %s", src, f.convOperandDesc(s, arg, k), callee.Src())
+		return false
+	}
+	return true
+}
+
+// convOperandDesc is Go's parenthetical for an operand a conversion refuses: "untyped
+// int constant", "untyped bool value" for a comparison, "variable of type bool" for a
+// name and "value of type bool" for any other expression.
+func (f *File) convOperandDesc(s *Scope, arg Node, k Kind) string {
+	if isUntypedKind(k) {
+		n0 := len(f.errList)
+		e := f.levelExpr(s, arg)
+		f.errList = f.errList[:n0]
+		if e != nil {
+			if uc, ok := e.Value().(constVal); ok && uc.cv != nil && uc.cv.Kind() != constant.Unknown {
+				return "untyped " + kindName(k) + " constant"
+			}
+		}
+		return "untyped " + kindName(k) + " value"
+	}
+	what := "value"
+	if _, isName := f.exprIdent(arg); isName {
+		what = "variable"
+	}
+	return what + " of type " + f.operandTypeName(s, arg, k)
 }
 
 // checkMinMaxArgs checks that min and max are given arguments of ONE type, which
@@ -14996,6 +15076,10 @@ func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
 	// The same positions are where an untyped shift operand takes its type, a float
 	// destination included, so they are visited for that first.
 	f.typeShiftOperands(s, n, shiftTargetOf(dst))
+	if dst.kind == PredeclaredFloat32 {
+		f.checkFloat32Overflow(s, dst, n)
+		return
+	}
 	if _, _, ok := intKindRange(dst.kind); !ok {
 		return
 	}
@@ -15008,6 +15092,29 @@ func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
 		return
 	}
 	f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
+}
+
+// checkFloat32Overflow reports a constant used where a float32 is required that
+// rounds to an infinity there: "var f float32 = 1e40" is "constant 1e+40 overflows
+// float32", as Go refuses it. Every other position a constant meets a float32 in
+// took the infinity silently, a conversion included.
+//
+// float64 is not range-checked. It is 32 bits wide on this target (see specs.go),
+// and a constant past a float32's range that Go's float64 holds is a question about
+// the target, not one Go asks.
+func (f *File) checkFloat32Overflow(s *Scope, dst retResult, n Node) {
+	cv, ok := f.constNumeric(s, n)
+	if !ok {
+		return
+	}
+	if v, _ := constant.Float32Val(constant.ToFloat(cv)); !math.IsInf(float64(v), 0) {
+		return
+	}
+	name := dst.name
+	if name == "" || name == "?" {
+		name = kindName(dst.kind)
+	}
+	f.err(f.tok(n.Pos()).Position(), "constant %s overflows %s", cv, name)
 }
 
 // wholeConst reduces a numeric constant to the integer value an INTEGER target
@@ -15655,6 +15762,10 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 		cv = constant.ToFloat(cv)
 		if cv.Kind() == constant.Unknown {
 			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to %s", uc.cv, nameTok.Src())
+			return constVal{cv: constant.MakeUnknown()}, true
+		}
+		if v, _ := constant.Float32Val(cv); k == PredeclaredFloat32 && math.IsInf(float64(v), 0) {
+			f.err(f.tok(arg.Pos()).Position(), "constant %s overflows %s", cv, nameTok.Src())
 			return constVal{cv: constant.MakeUnknown()}, true
 		}
 	default:

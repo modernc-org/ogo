@@ -1,0 +1,70 @@
+// A conversion is refused where Go converts the operand to the type no way at all,
+// in Go's words and at the operand: a bool to or from any other basic type, a string
+// from a bool or a float (an integer converts, as a rune), a number from a string, a
+// scalar from nil, and a number from a pointer. C casts most of these without a word,
+// so each compiled into a program Go refuses. A defined type over a basic one is
+// that basic type here.
+//
+// A constant that rounds to an infinity where a float32 is wanted is refused too, in
+// every position a constant meets a float32 -- a conversion, a declaration, an
+// argument, a return and a constant declaration -- as it is in Go.
+
+type Flag bool
+
+type Code int16
+
+type Temp float32
+
+// ERROR constant 1e\+40 overflows float32
+const Hot = float32(1e40)
+
+func take(f float32) float32 { return f }
+
+func cold() float32 {
+	// ERROR constant -1e\+39 overflows float32
+	return -1e39
+}
+
+func main() {
+	n, t, x := 1, true, 3
+	var f float64 = 1.5
+	s := "12"
+	p := &x
+	// ERROR cannot convert 1 \(untyped int constant\) to type bool
+	a := bool(1)
+	// ERROR cannot convert n \(variable of type int\) to type bool
+	b := bool(n)
+	// ERROR cannot convert t \(variable of type bool\) to type int
+	c := int(t)
+	// ERROR cannot convert true \(untyped bool constant\) to type float32
+	d := float32(true)
+	// ERROR cannot convert n < x \(untyped bool value\) to type int
+	e := int(n < x)
+	// ERROR cannot convert true \(untyped bool constant\) to type string
+	g := string(true)
+	// ERROR cannot convert 1.5 \(untyped float constant\) to type string
+	h := string(1.5)
+	// ERROR cannot convert f \(variable of type float64\) to type string
+	i := string(f)
+	// ERROR cannot convert s \(variable of type string\) to type int
+	j := int(s)
+	// ERROR cannot convert nil to type int
+	k := int(nil)
+	// ERROR cannot convert &x \(value of type \*int\) to type uintptr
+	l := uintptr(&x)
+	// ERROR cannot convert p \(variable of type \*int\) to type uintptr
+	m := uintptr(p)
+	// ERROR cannot convert 1 \(untyped int constant\) to type Flag
+	o := Flag(1)
+	// ERROR cannot convert t \(variable of type bool\) to type Code
+	q := Code(t)
+	// ERROR constant 1e\+40 overflows float32
+	r := float32(1e40)
+	// ERROR constant 1e\+40 overflows float32
+	var u float32 = 1e40
+	// ERROR constant -1e\+39 overflows float32
+	println(take(-1e39))
+	// ERROR constant 5e\+38 overflows Temp
+	w := Temp(5e38)
+	println(a, b, c, d, e, g, h, i, j, k, l, m, o, q, r, u, w, cold(), Hot)
+}

@@ -1,0 +1,26 @@
+// The conversions between basic types Go defines, each accepted: a bool from a
+// bool, however it is spelled or named; a number from any number; a string from a
+// string or from an integer, which is a rune; and a float32 constant at the edge of
+// its range.
+// COMPILE
+
+type Flag bool
+
+type Name string
+
+type Celsius float32
+
+type Code int16
+
+func main() {
+	a, b := 1, 2
+	f := Flag(a < b)
+	g := bool(f)
+	var r rune = 'x'
+	var u8 uint8 = 200
+	n := Name("pin")
+	c := Code(u8)
+	println(f, g, Flag(true), string(r), string(rune(65)), string(n), Name(string(n)))
+	println(int(u8), float32(a), Celsius(a), int(Celsius(b)), uintptr(u8), int8(c), Code(-20000))
+	println(float32(3.4028234e38), float32(-3.4028234e38), float32(1e-50))
+}

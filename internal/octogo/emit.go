@@ -12426,7 +12426,7 @@ func (e *emitter) unwrapArrayConv(ast []int32) []int32 {
 	// makes it a chain, which the chain walk reads for itself.
 	if fac, isFac := e.soleFactorNode(ast); isFac {
 		if typeAST, arg, steps, isConv := e.factorBracketConv(fac); isConv && len(steps) == 0 {
-			if _, isArray := e.arrayDim(typeAST); isArray {
+			if dim, isArray := e.arrayDim(typeAST); isArray && e.arrayConvShapeOK(dim, e.goArrayTypeName(dim), arg) {
 				return arg
 			}
 		}
@@ -13445,14 +13445,46 @@ func (e *emitter) arrayConvOperand(ast []int32) ([]int32, bool) {
 	if !isConv || used != len(suffix) {
 		return nil, false
 	}
-	if _, isArray := e.namedArrays[ct]; !isArray {
+	dim, isArray := e.namedArrays[ct]
+	if !isArray {
 		return nil, false
 	}
 	args := e.callArgExprs(suffix[used-1].ast)
-	if len(args) != 1 {
+	if len(args) != 1 || !e.arrayConvShapeOK(dim, e.definedTypeName(ct), args[0].ast) {
 		return nil, false
 	}
 	return args[0].ast, true
+}
+
+// definedTypeName is the name a program writes a defined type's C name by: its own
+// for this package's, qualified for another's. goTypeName spells an array type out
+// as its shape instead, which is right for an unnamed one and loses the name here.
+func (e *emitter) definedTypeName(ct string) string {
+	if name, ok := e.typeDisplay[ct]; ok {
+		return name
+	}
+	return ct
+}
+
+// arrayConvShapeOK refuses a conversion to an array type from an array of another
+// shape, which Go refuses: the two must be one type but for the name -- the same
+// extents and the same element. A defined array type and its underlying one share a
+// representation, so the conversion is its operand wherever it stands, and one let
+// through gave the new name the OPERAND's shape: `R3(a)` for a [4]int a was a value
+// of type R3 that len said held four. An operand whose shape arrayShapeOf cannot
+// read is passed, as checkArrayShape passes one.
+func (e *emitter) arrayConvShapeOK(dst arrDim, dstName string, operand []int32) bool {
+	src, ok := e.arrayShapeOf(operand)
+	if !ok || src.elem == dst.elem && src.declSuffix() == dst.declSuffix() {
+		return true
+	}
+	what := "value"
+	if _, isName := e.exprIdent(operand); isName {
+		what = "variable"
+	}
+	e.failAt(operand, "cannot convert %s (%s of type %s) to type %s",
+		e.f.exprSource(Node{sym: Expression, ast: operand}), what, e.goArrayTypeName(src), dstName)
+	return false
 }
 
 // intToFloatC renders an integer of C type src converting to the float C type ct
@@ -13613,12 +13645,14 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 		e.emit("(" + ct + ")" + text)
 		return
 	}
-	if _, isArray := e.namedArrays[ct]; isArray {
+	if dim, isArray := e.namedArrays[ct]; isArray {
 		// A defined array type and its underlying are one representation, so the
 		// conversion is the operand. Without this the type NAME reached the output
 		// as though it were a function, and the C compiler reported a syntax error
 		// about generated code.
-		e.emitExpr(arg.ast)
+		if e.arrayConvShapeOK(dim, e.definedTypeName(ct), arg.ast) {
+			e.emitExpr(arg.ast)
+		}
 		return
 	}
 	// A conversion to an INTERFACE type -- `Shape(&q)`, or the `any(x)` that spells
@@ -16029,11 +16063,12 @@ func (e *emitter) arrayConvChain(name string, steps []Node) (string, []Node, boo
 	if !isConv || used == len(steps) {
 		return "", nil, false // nothing follows the conversion: not a chain
 	}
-	if _, isArray := e.namedArrays[ct]; !isArray {
+	dim, isArray := e.namedArrays[ct]
+	if !isArray {
 		return "", nil, false
 	}
 	args := e.callArgExprs(steps[used-1].ast)
-	if len(args) != 1 {
+	if len(args) != 1 || !e.arrayConvShapeOK(dim, e.definedTypeName(ct), args[0].ast) {
 		return "", nil, false
 	}
 	base, ok := e.exprIdent(args[0].ast)
