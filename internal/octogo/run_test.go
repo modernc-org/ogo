@@ -18047,6 +18047,278 @@ func main() {
 		want: "1099511627776 1099511627776 2199023255552 3298534883328 1099511627776 18446742974197923839 -1099511627776 2\n2199023255552 1099511627776 1099511627776 1099511627776 4398046511104 1099511627776 2199023255552\n1099511627776 3298534883328 1099511627776 1099511627776 1099511627776 1099511627776 1099511627776\n1099511627781 1099511627781 false false true\ncase\nless\n2199023255552 5497558138880\n-2147483648 -2147483648 true -715827882\n",
 	},
 	{
+		// Probe round 20, the bit-packing half: telemetry fields of odd widths packed
+		// LSB-first into uint64 words by two writers that must agree, read back with
+		// sign extension, and checksummed. Every bit position past 31 is an untyped
+		// constant shifted in a uint64 context -- `v&(1<<i)`, `words[w] |= 1 << off`
+		// -- which is how a register or a frame is written, and before the shift
+		// typing fix both writers dropped those bits. Go's answers, board-verified.
+		name: "probe round 20: bit-packed telemetry",
+		src: `// Bit-packed telemetry: samples of odd widths packed LSB-first into uint64 words,
+// two writers (a bit-at-a-time one and a masked one) that must agree, a reader
+// that sign-extends signed fields, and a rotate-xor checksum over the words.
+
+type field struct {
+	width  uint
+	signed bool
+}
+
+var layout = [6]field{{12, false}, {9, true}, {1, false}, {17, true}, {25, false}, {63, true}}
+
+type packer struct {
+	words [8]uint64
+	bit   uint
+}
+
+func (p *packer) putSlow(v uint64, width uint) {
+	for i := uint(0); i < width; i++ {
+		if v&(1<<i) != 0 {
+			p.words[p.bit/64] |= 1 << (p.bit % 64)
+		}
+		p.bit++
+	}
+}
+
+func (p *packer) putFast(v uint64, width uint) {
+	if width < 64 {
+		v &= 1<<width - 1
+	}
+	off := p.bit % 64
+	w := p.bit / 64
+	p.words[w] |= v << off
+	if off+width > 64 {
+		p.words[w+1] |= v >> (64 - off)
+	}
+	p.bit += width
+}
+
+type reader struct {
+	words *[8]uint64
+	bit   uint
+}
+
+func (r *reader) get(width uint) uint64 {
+	var v uint64
+	for i := uint(0); i < width; i++ {
+		if r.words[r.bit/64]&(1<<(r.bit%64)) != 0 {
+			v |= 1 << i
+		}
+		r.bit++
+	}
+	return v
+}
+
+func signExtend(v uint64, width uint) int64 {
+	shift := 64 - width
+	return int64(v<<shift) >> shift
+}
+
+func rotl(x uint64, k uint) uint64 { return x<<k | x>>(64-k) }
+
+func checksum(words *[8]uint64, n int) uint64 {
+	var h uint64 = 0xcbf29ce484222325
+	for i := 0; i < n; i++ {
+		h = rotl(h^words[i], 13) * 0x100000001b3
+	}
+	return h
+}
+
+var samples = [4][6]int64{
+	{4095, -256, 1, -65536, 33554431, -4611686018427387904},
+	{0, 255, 0, 65535, 1, 4611686018427387903},
+	{1234, -1, 1, -1, 16777216, -1},
+	{2048, 100, 0, 12345, 999999, 123456789012345},
+}
+
+func main() {
+	var slow, fast packer
+	for _, s := range samples {
+		for i, f := range layout {
+			slow.putSlow(uint64(s[i]), f.width)
+			fast.putFast(uint64(s[i]), f.width)
+		}
+	}
+	println(slow.bit, fast.bit, slow.words == fast.words)
+	used := int((slow.bit + 63) / 64)
+	for i := 0; i < used; i++ {
+		printf("%016x\n", fast.words[i])
+	}
+	printf("sum %016x\n", checksum(&fast.words, used))
+	r := reader{words: &fast.words}
+	bad := 0
+	for _, s := range samples {
+		for i, f := range layout {
+			v := r.get(f.width)
+			var got int64
+			if f.signed {
+				got = signExtend(v, f.width)
+			} else {
+				got = int64(v)
+			}
+			if got != s[i] {
+				bad++
+				println("mismatch", i, got, s[i])
+			}
+		}
+	}
+	println("bad", bad)
+	var flags uint64
+	for _, n := range []uint{0, 31, 32, 33, 62, 63} {
+		flags |= 1 << n
+	}
+	printf("%016x %v %v\n", flags, flags&(1<<32) != 0, flags&(1<<34) != 0)
+	flags &^= 1 << 63
+	printf("%016x %d\n", flags, int64(flags)>>60)
+}
+`,
+		want: "508 508 true\nffffffc000300fff\n4000000000000000\n8000005fffe7f800\n9fffffffffffffff\ne000001ffffffd34\n1fffffffffffffff\n20f423f181c8c900\n00000e0910c1bbef\nsum 817feaac2f699df1\nbad 0\nc000000380000001 true false\n4000000380000001 4\n",
+	},
+	{
+		// Probe round 20, the fixed-point half: Q32.32 over int64 with a 128-bit
+		// product from 32-bit halves, a bit-at-a-time division, a digit-recurrence
+		// square root and integer-only decimal rendering -- a calibration whose 16
+		// fraction bits are too few. The division sets quotient bits with `q |= 1 <<
+		// uint(i)` for a uint64 q, and before the shift typing fix lost every one past
+		// bit 31: 355/113 divided by -6.75 came out -0.020976728. Go's answers,
+		// board-verified.
+		name: "probe round 20: Q32.32 fixed point",
+		src: `// Q32.32 fixed point over int64: a full 128-bit product built from 32-bit halves,
+// a bit-at-a-time division, a square root by digit recurrence, and decimal
+// rendering through integer arithmetic only -- the arithmetic a torque calibration
+// or a PI loop with a wide integrator does when 16 fraction bits are too few.
+
+type Q32 int64
+
+const qOne Q32 = 1 << 32
+
+func fromInt(i int32) Q32 { return Q32(i) << 32 }
+
+func fromRatio(n, d int32) Q32 { return Q32(int64(n)<<32) / Q32(d) }
+
+func mulU(a, b uint64) (hi, lo uint64) {
+	aHi, aLo := a>>32, a&0xffffffff
+	bHi, bLo := b>>32, b&0xffffffff
+	ll := aLo * bLo
+	lh := aLo * bHi
+	hl := aHi * bLo
+	hh := aHi * bHi
+	mid := ll>>32 + lh&0xffffffff + hl&0xffffffff
+	lo = ll&0xffffffff | mid<<32
+	hi = hh + lh>>32 + hl>>32 + mid>>32
+	return hi, lo
+}
+
+func (a Q32) Mul(b Q32) Q32 {
+	neg := (a < 0) != (b < 0)
+	ua, ub := uint64(a), uint64(b)
+	if a < 0 {
+		ua = uint64(-a)
+	}
+	if b < 0 {
+		ub = uint64(-b)
+	}
+	hi, lo := mulU(ua, ub)
+	r := hi<<32 | lo>>32
+	if neg {
+		return -Q32(r)
+	}
+	return Q32(r)
+}
+
+func (a Q32) Div(b Q32) Q32 {
+	neg := (a < 0) != (b < 0)
+	n, d := uint64(a), uint64(b)
+	if a < 0 {
+		n = uint64(-a)
+	}
+	if b < 0 {
+		d = uint64(-b)
+	}
+	// (n << 32) / d, one quotient bit at a time over the 96-bit dividend.
+	var q, rem uint64
+	for i := 95; i >= 0; i-- {
+		rem <<= 1
+		if i >= 32 && n&(1<<uint(i-32)) != 0 {
+			rem |= 1
+		}
+		if rem >= d {
+			rem -= d
+			if i < 64 {
+				q |= 1 << uint(i)
+			}
+		}
+	}
+	if neg {
+		return -Q32(q)
+	}
+	return Q32(q)
+}
+
+func (a Q32) Sqrt() Q32 {
+	// Digit recurrence over the 64-bit radicand scaled by 2^32, so the root is Q32.
+	hi, lo := uint64(a)>>32, uint64(a)<<32
+	var root, rem uint64
+	for i := 0; i < 64; i++ {
+		rem = rem<<2 | hi>>62
+		hi = hi<<2 | lo>>62
+		lo <<= 2
+		root <<= 1
+		test := root<<1 | 1
+		if rem >= test {
+			rem -= test
+			root |= 1
+		}
+	}
+	return Q32(root)
+}
+
+func show(label string, a Q32) {
+	neg := a < 0
+	if neg {
+		a = -a
+	}
+	whole := int64(a >> 32)
+	frac := uint64(a) & 0xffffffff
+	// Nine decimal digits of the fraction, truncated.
+	digits := uint64(0)
+	for i := 0; i < 9; i++ {
+		frac *= 10
+		digits = digits*10 + frac>>32
+		frac &= 0xffffffff
+	}
+	sign := ""
+	if neg {
+		sign = "-"
+	}
+	printf("%s %s%d.%09d\n", label, sign, whole, digits)
+}
+
+func main() {
+	a := fromRatio(355, 113)
+	b := fromInt(-7) + qOne/4
+	show("a", a)
+	show("b", b)
+	show("a*b", a.Mul(b))
+	show("a/b", a.Div(b))
+	show("b/a", b.Div(a))
+	show("sqrt2", fromInt(2).Sqrt())
+	show("sqrtA", a.Sqrt())
+	big := fromInt(40000)
+	show("big*big/big", big.Mul(big).Div(big))
+	var acc Q32
+	gain := fromRatio(1, 3)
+	for i := int32(1); i <= 50; i++ {
+		acc += fromInt(i).Mul(gain)
+	}
+	show("acc", acc)
+	hi, lo := mulU(0xffffffffffffffff, 0xfffffffffffffffe)
+	printf("%016x %016x\n", hi, lo)
+	printf("%016x\n", uint64(a.Mul(a).Sqrt()))
+}
+`,
+		want: "a 3.141592920\nb -6.750000000\na*b -21.205752211\na/b -0.465421173\nb/a -2.148591549\nsqrt2 1.414213562\nsqrtA 1.772453926\nbig*big/big 40000.000000000\nacc 424.999999901\nfffffffffffffffd 0000000000000002\n00000003243f6f01\n",
+	},
+	{
 		// Signed overflow wraps (two's complement) at EVERY width, as Go defines
 		// and the P2 does -- add, subtract, multiply, shift and negate, driven
 		// past the boundary of int8/int16/int32/int64 and their unsigned twins.

@@ -171,6 +171,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Verified
 
+- **Probe round twenty: bit-packed telemetry and Q32.32 fixed point.** The two
+  domain axes no round had tried: telemetry fields of odd widths packed LSB-first
+  into uint64 words by two writers that must agree, read back with sign
+  extension and checksummed; and Q32.32 arithmetic over int64 -- a 128-bit
+  product from 32-bit halves, a bit-at-a-time division, a digit-recurrence
+  square root -- for a calibration whose 16 fraction bits are too few. Both
+  match Go bit for bit on the board, and both computed wrong answers before the
+  untyped-shift fix above (every bit past 31 set with `1 << i` was lost), which
+  is what pinning them as run cases guards.
+
 - **Multi-cog channel pipelines, on the board.** Two shapes a real
   sample-then-process firmware has, neither previously exercised: two producer
   cogs contending for one channel (the multi-producer rendezvous-lock path,
