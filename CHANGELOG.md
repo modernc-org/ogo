@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **The fuzzer now generates untyped constants shifted by a variable count.**
+  A quarter of the sized-integer blocks (half of the 64-bit ones, with counts
+  past 31 more often than not) declare a count of their own type -- uint, int,
+  uint8 or int64 -- and shift a small constant by it as the variable's
+  initializer, in a store, and beside the variable in an unstored fold, so the
+  context-typing machinery the untyped-shift fix added is under the oracle on
+  every run. Verified by mutation: with the context typing disabled, seven of
+  the 100 host seeds fail and two of the 24 board seeds do.
+
 - **The fuzzer now generates `goto`.** `ogo smith` emits a forward goto that
   conditionally skips a checksum fold -- the shape that is always valid under
   Go's jump rules -- so the emitter's label codegen and the checker's jump

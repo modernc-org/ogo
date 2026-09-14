@@ -167,6 +167,16 @@ var generatedConstructs = []struct {
 	// The multiplication's spacing follows the formatter: inside the parentheses
 	// the depth rule spaces it ("(x.Val() * 3)"), as gofmt does.
 	{"type switch case not taken", `case \*S_\d+:\n\s*\w+ = \w+ \^ \(x\.Val\(\) ?\* ?\d+\)\n\s*case \*S_\d+:`},
+	// An untyped constant shifted by a count that is not constant, `(3 << c)`, in a
+	// sized block: the count declared with a type of its own, which must not decide
+	// the shift's, and the shift used as the variable's initializer, stored by a
+	// step, and beside the variable in an unstored fold. Go types the constant by
+	// that context; the emitter computed it in int or in the count's type until
+	// 2026-09-14, and disabling the context typing fails the oracle -- checked.
+	{"untyped shift count", `\n\s*var c_\d+ (uint|int|uint8|int64) = \d+\n`},
+	{"sized variable from an untyped shift", `\n\s*var z_\d+ \S+ = \(\d ?<< ?c_\d+\)\n`},
+	{"untyped shift stored", `\n\s*z_\d+ (=|\^=) .*\(\d ?<< ?c_\d+\)`},
+	{"untyped shift beside a sized variable, unstored", `int\(\((z_\d+ ?[&|^+] ?\(\d ?<< ?c_\d+\)|\(\d ?<< ?c_\d+\) ?[&|^+] ?z_\d+)\)\)`},
 	// A forward goto skipping a checksum fold, and the label it jumps to. The
 	// label sits at a reduced indent, as gofmt places one. Both the goto codegen
 	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage

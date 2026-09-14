@@ -1234,18 +1234,39 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 			init = &ConvNode{Type: typeName, X: init}
 		}
 	}
-	stmts := []Node{&VarDeclNode{
+	bits, _, _ := sizedInfo(k)
+	var stmts []Node
+	// An untyped constant shifted by a count that is NOT constant, `3 << c`. Go
+	// gives the constant the type of where the shift stands -- the variable's, here
+	// -- and never the count's; until 2026-09-14 the emitter computed it in int, or
+	// in the COUNT's type, so a 64-bit bit mask lost every bit past 31 and a uint8
+	// count shifted a uint8. The count is declared with a type of its own for that
+	// second half. One block in four carries one, and uses it three ways: as the
+	// initializer, stored by a step, and beside the variable in the unstored fold.
+	shift := f.genUntypedShift(k, bits)
+	if shift != nil {
+		stmts = append(stmts, &VarDeclNode{Name: shift.count, Type: shift.countType, Expr: &IntLitNode{Value: fmt.Sprintf("%d", shift.n)}})
+		if _, isLit := init.(*IntLitNode); isLit && f.Rand.Float32() < 0.4 {
+			init, cur = shift.node(), shift.val
+		}
+	}
+	stmts = append(stmts, &VarDeclNode{
 		Name: name,
 		Type: typeName,
 		Expr: init,
-	}}
+	})
 
-	bits, _, _ := sizedInfo(k)
 	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
 		node, next, ok := f.genSizedStep(name, cur, bits)
 		if !ok {
 			continue // an operator the emitted C leaves undefined; skip this step
 		}
+		stmts = append(stmts, node)
+		cur = next
+	}
+	if shift != nil {
+		// Always one store of it, so the count is used however the draws above went.
+		node, next := shift.step(f, name, cur)
 		stmts = append(stmts, node)
 		cur = next
 	}
@@ -1259,6 +1280,10 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	// stored can tell the two apart.
 	folded, foldNode, foldVal, haveFold := cur.Int32(), Node(&IdentNode{Name: name}), cur, false
 	if node, v, ok := f.genSizedFold(name, cur, bits); ok {
+		folded, foldNode, foldVal, haveFold = v.Int32(), node, v, true
+	}
+	if shift != nil && f.Rand.Float32() < 0.5 {
+		node, v := shift.fold(f, name, cur)
 		folded, foldNode, foldVal, haveFold = v.Int32(), node, v, true
 	}
 	newChecksum, _ := vm.Eval("^", mem.Load(f.ChecksumName), folded)
@@ -1355,6 +1380,86 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 		}
 	}
 	return &BlockNode{Statements: stmts}
+}
+
+// untypedShift is an untyped constant shifted by a declared count, `lit << count`,
+// and the value it has in the sized kind of the block it stands in.
+type untypedShift struct {
+	count     string // the count variable's name
+	countType string // its type, which must not decide the shift's
+	lit       int64  // the constant shifted, small enough for every sized kind
+	n         int64  // the count's value, inside the kind's width
+	val       Sized  // lit << n in the block's kind, wrapped as Go wraps it
+}
+
+// genUntypedShift draws an untypedShift for a sized kind, or nil: one block in four,
+// and one 64-bit block in two with a count past 31 more often than not. That is
+// where computing the shift in a 32-bit int loses bits outright -- a narrower kind
+// truncates the store either way -- so that is where the oracle can see it.
+func (f *Fuzzer) genUntypedShift(k BasicKind, bits int) *untypedShift {
+	share := float32(0.25)
+	if bits == 64 {
+		share = 0.5
+	}
+	if f.Rand.Float32() >= share {
+		return nil
+	}
+	countTypes := []string{"uint", "int", "uint8", "int64"}
+	u := &untypedShift{
+		count:     f.newVarName("c"),
+		countType: countTypes[f.Rand.Intn(len(countTypes))],
+		lit:       int64(1 + f.Rand.Intn(7)),
+		n:         int64(f.Rand.Intn(bits)),
+	}
+	if bits == 64 && f.Rand.Float32() < 0.7 {
+		u.n = int64(32 + f.Rand.Intn(32))
+	}
+	// The count stays inside the width, where Go and the emitted C agree without a
+	// guard; the constant is below 8, so it converts to int8 as to every kind.
+	r, err := NewSized(u.lit, k).binOp("<<", NewSized(u.n, k))
+	if err != nil {
+		return nil
+	}
+	u.val = r.(Sized)
+	return u
+}
+
+// node is the shift expression, `(lit << count)`.
+func (u *untypedShift) node() Node {
+	return &BinaryExprNode{Left: &IntLitNode{Value: fmt.Sprintf("%d", u.lit)}, Op: "<<", Right: &IdentNode{Name: u.count}}
+}
+
+// step stores the shift into the variable -- outright, beside the variable, or by a
+// compound assignment -- and returns the statement and the value left behind.
+func (u *untypedShift) step(f *Fuzzer, name string, cur Sized) (Node, Sized) {
+	id := &IdentNode{Name: name}
+	switch f.Rand.Intn(4) {
+	case 0:
+		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: u.node()}, u.val
+	case 1:
+		r, _ := cur.binOp("|", u.val)
+		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &BinaryExprNode{Left: id, Op: "|", Right: u.node()}}, r.(Sized)
+	case 2:
+		// The constant's side first: the typed operand after it still decides.
+		r, _ := u.val.binOp("&^", cur)
+		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &BinaryExprNode{Left: u.node(), Op: "&^", Right: id}}, r.(Sized)
+	default:
+		r, _ := cur.binOp("^", u.val)
+		return &AssignStmtNode{Lhs: name, Op: "^=", Rhs: u.node()}, r.(Sized)
+	}
+}
+
+// fold is the shift beside the variable in an expression never stored, the one kind
+// of use a width error cannot hide in: `(z & (lit << count))` or the other way round.
+func (u *untypedShift) fold(f *Fuzzer, name string, cur Sized) (Node, Sized) {
+	id := &IdentNode{Name: name}
+	ops := []string{"&", "|", "^", "+"}
+	op := ops[f.Rand.Intn(len(ops))]
+	r, _ := cur.binOp(op, u.val)
+	if f.Rand.Float32() < 0.5 {
+		return &BinaryExprNode{Left: u.node(), Op: op, Right: id}, r.(Sized)
+	}
+	return &BinaryExprNode{Left: id, Op: op, Right: u.node()}, r.(Sized)
 }
 
 // genSizedCall builds a call of a function of 64-bit parameters (see
