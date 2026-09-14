@@ -18564,6 +18564,43 @@ func main() {
 		want: "0.1 0.2 -0.1 0.2\nNaN NaN NaN NaN NaN NaN\n-0 -0 0 0 -0 0\n0.1 0.1 -Inf NaN -0 -0\n2.5 5 1 7.5\ntrue true true true\n",
 	},
 	{
+		// min and max compute in the type of ALL their arguments, as an operator's
+		// operands are typed: a typed argument decides wherever it is written. The
+		// first argument used to decide outright, so a constant written first typed
+		// the helper and converted the rest -- min(7, big) truncated an int64 to 3,
+		// max(5, u) read a uint32 as a negative int, min(3, f) cut a float32 to 2 --
+		// while the same call with the constant second was right. Go's answers,
+		// board-verified.
+		name: "min and max take their type from every argument",
+		src: `type celsius float32
+
+func main() {
+	// A constant written FIRST, beside typed arguments of every kind.
+	var big int64 = 1<<40 + 3
+	println(min(7, big), max(7, big), max(9, 8, big))
+	lo := min(7, big)
+	var wide int64 = lo
+	println(wide)
+	var u uint32 = 4000000000
+	println(max(5, u), min(5, u))
+	var f float32 = 2.5
+	println(min(3, f), max(1, f))
+	var c celsius = 21.5
+	println(max(20, c), min(30, c))
+	var i8 int8 = -100
+	println(min(3, i8, -5), max(-128, i8))
+
+	// No typed argument: the widest constant decides.
+	println(min(1, 2.5), max(2, 1.5))
+
+	// An untyped shift among them takes their type as well.
+	var s uint = 40
+	println(min(1<<s, big), max(1<<(s+1), big))
+}
+`,
+		want: "7 1099511627779 1099511627779\n7\n4000000000 5\n2.5 2.5\n21.5 21.5\n-100 -100\n1 2\n1099511627776 2199023255552\n",
+	},
+	{
 		// Functions and variables named like the C library's: the math names are
 		// MACROS in the target's headers (`#define sqrt(x) __builtin_sqrt(x)`, and
 		// ceil is an object-like one too), so a declaration of one was a syntax

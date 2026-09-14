@@ -21642,6 +21642,27 @@ func (e *emitter) replayOrInferCType(idx int, arg Node) (string, bool) {
 	return e.inferCType(arg.ast)
 }
 
+// minMaxCType is the type min and max compute in: that of their arguments, which
+// Go types as it types the operands of an operator. A typed argument decides, and an
+// untyped constant takes its type wherever it is written; with no typed argument the
+// widest untyped one does, a float over an integer.
+//
+// The FIRST argument used to decide outright, so a constant written first typed the
+// helper by its own default type and the others were converted to that: `min(7,
+// big)` for an int64 big truncated big to an int and answered 3, `max(5, u)` for a
+// uint32 u read u as a negative int and answered 5, and `min(3, f)` for a float32 f
+// answered 2. The same argument written second was always right.
+func (e *emitter) minMaxCType(args []Node) (string, bool) {
+	ct, ok := e.inferNodes(args)
+	if !ok {
+		return "", false
+	}
+	for _, a := range args {
+		e.typeUntypedShifts(a.ast, ct) // an untyped shift among them takes the type too
+	}
+	return ct, true
+}
+
 // isOrderedCType reports whether a C type is one min and max can order: the
 // arithmetic types, which C's "<" compares directly, and a string, which needs the
 // comparison helper. Go orders exactly these -- its min and max take any ordered
@@ -21660,7 +21681,7 @@ func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
 		e.fail("%s requires at least one argument", recv)
 		return
 	}
-	ct, ok := e.inferCType(args[0].ast)
+	ct, ok := e.minMaxCType(args)
 	if !ok || !isOrderedCType(e.underlyingCType(ct)) {
 		e.fail("%s is only supported on ordered arguments -- an integer, a float or a string", recv)
 		return
@@ -27328,9 +27349,9 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 			return "int", true // the builtins len, cap and copy return int
 		}
 		if recv == "min" || recv == "max" {
-			// min/max return the type of their arguments; take the first.
+			// min/max return the type of their arguments, which is minMaxCType's.
 			if args := e.callArgExprs(suffix[0].ast); len(args) >= 1 {
-				return e.inferCType(args[0].ast)
+				return e.minMaxCType(args)
 			}
 			return "", false
 		}

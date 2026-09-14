@@ -67,6 +67,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`min` and `max` compute in the type of all their arguments, not the
+  first.** A constant written first typed the helper by its own default type
+  and converted the rest to it: `min(7, big)` for an int64 big answered 3,
+  `max(5, u)` for a uint32 u answered 5, `min(3, f)` for a float32 f answered 2,
+  and a variable declared from one took the constant's type too -- while the
+  same calls with the constant written second were right. A typed argument now
+  decides wherever it stands, as it does for an operator's operands. A silent
+  wrong answer; verified against Go on the board.
+
 - **An untyped constant shifted by a variable takes the type of where the shift
   stands, as Go's does.** `var mask uint64 = 1 << bit`, `x & (1 << bit)` for a
   uint64 x, `take64(1 << n)`, `return 1 << n` from an int64 function, a store
