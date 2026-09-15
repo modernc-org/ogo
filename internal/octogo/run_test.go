@@ -19061,6 +19061,66 @@ func main() {
 		want: "a\nb\nd\ne\nf\n",
 	},
 	{
+		// A package variable initialized from an element of an array a call returns
+		// stopped the compiler: the call is bound to a temporary and remembered by
+		// its token, in a map only a function body had made -- "assignment to entry
+		// in nil map". With the map made, typing the variable bound the call too and
+		// the step reused that temporary, never declaring it.
+		name: "a package variable from an element of a call's array",
+		src: `type P struct {
+	x, y int
+	ok   bool
+}
+
+var calls int
+
+func mk(v int) [4]int {
+	calls++
+	return [4]int{v, v + 1, v + 2, v + 3}
+}
+
+func pair() P {
+	calls += 10
+	return P{1, 2, true}
+}
+
+func two(v int) (int, int) { return v, v * 2 }
+
+var no = false
+
+var elem = mk(1)[1]
+
+var typed int = mk(2)[3]
+
+var test = mk(3)[0] == 3
+
+var lazy = no && mk(4)[0] == 4
+
+var a, b = two(mk(5)[2])
+
+var s = []int{mk(6)[0], 2}
+
+var arr = [2]int{mk(7)[1], 3}
+
+var st = P{x: mk(8)[2]}
+
+var n = len(mk(9))
+
+var x1, x2 = mk(10)[0], pair().y
+
+var (
+	u = mk(11)[0]
+	t = u + mk(12)[1]
+)
+
+func main() {
+	println(elem, typed, test, lazy, a, b, s[0], arr[0], st.x, n)
+	println(x1, x2, u, t, calls)
+}
+`,
+		want: "2 5 true false 7 14 6 8 10 4\n10 2 11 24 21\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

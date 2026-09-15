@@ -2476,11 +2476,7 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 	if ct, ok := e.globals[target]; ok {
 		e.typeUntypedShifts(initExpr, ct) // the variable's type is the value's context
 	}
-	saved := e.prologue
-	e.prologue = nil
-	text := e.exprC(initExpr)
-	pro := e.prologue
-	e.prologue = saved
+	text, pro := e.pkgInitRender(func() { e.emitExpr(initExpr) })
 	step := pkgInitStep{
 		target:  target,
 		deps:    e.initRefs(initExpr),
@@ -2488,11 +2484,28 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 		pos:     e.astPos(initExpr),
 		pkg:     2 * e.pkgOrd,
 	}
-	for _, line := range pro {
-		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
-	}
-	step.stmts = append(step.stmts, target+" = "+text+";")
+	step.stmts = append(pro, target+" = "+text+";")
 	e.pkgInit = append(e.pkgInit, step)
+}
+
+// pkgInitRender renders what emit writes for a package-initialization step, and
+// answers with the statements the rendering hoisted out of itself, ready to run
+// ahead of it in the step: at package scope there is no statement for them to go
+// before.
+//
+// The memo of array calls already bound (hoistedArrayCalls) starts afresh with
+// them. Typing a package variable renders its initializer too, and what that bound
+// went nowhere, so an entry it left named a temporary no step declared: `var v =
+// mk()[1]` was `v = _ogo_t1[1];` with no _ogo_t1.
+func (e *emitter) pkgInitRender(emit func()) (text string, stmts []string) {
+	savedPro, savedHoists := e.prologue, e.hoistedArrayCalls
+	e.prologue, e.hoistedArrayCalls = nil, map[int32]string{}
+	text = e.captureC(emit)
+	for _, line := range e.prologue {
+		stmts = append(stmts, strings.TrimSuffix(line, "\n"))
+	}
+	e.prologue, e.hoistedArrayCalls = savedPro, savedHoists
+	return text, stmts
 }
 
 // astPos renders the source position an AST begins at, for a diagnostic reported
@@ -7069,14 +7082,18 @@ func (e *emitter) isArrayLitInit(initExpr []int32) bool {
 func (e *emitter) resolvePkgVarTypes() {
 	// Emits nothing and reports nothing, so whatever inference provoked on the way is
 	// discarded -- the emitting pass runs after this and says what is really wrong.
-	savedF, savedPrefix, savedErr, savedPro := e.f, e.curPkgPrefix, e.err, e.prologue
-	defer func() { e.f, e.curPkgPrefix, e.err, e.prologue = savedF, savedPrefix, savedErr, savedPro }()
+	savedF, savedPrefix, savedErr, savedPro, savedHoists := e.f, e.curPkgPrefix, e.err, e.prologue, e.hoistedArrayCalls
+	defer func() {
+		e.f, e.curPkgPrefix, e.err, e.prologue, e.hoistedArrayCalls = savedF, savedPrefix, savedErr, savedPro, savedHoists
+	}()
 	pending := e.pkgVarPending
 	e.pkgVarPending = nil
 	for len(pending) != 0 {
 		var next []pkgVarPending
 		for _, p := range pending {
-			e.f, e.curPkgPrefix, e.prologue = p.file, p.prefix, nil
+			// The memo of bound calls goes with the prologue it describes, and is keyed
+			// by a token of the file being asked about.
+			e.f, e.curPkgPrefix, e.prologue, e.hoistedArrayCalls = p.file, p.prefix, nil, map[int32]string{}
 			ct, ok := e.inferCType(p.init)
 			if !ok {
 				next = append(next, p)
@@ -7099,6 +7116,12 @@ func (e *emitter) emitPackageVars(ast []int32) {
 	// be left pointing at. What needs one is refused here instead (ifaceOperand).
 	e.pkgScope = true
 	defer func() { e.pkgScope = false }()
+	// An initializer binds a call's array result to a temporary as a statement in a
+	// function body does, and hoistArrayCallArg remembers the call it bound by its
+	// token -- in a map a function body starts afresh and nothing here had made, so
+	// `var v = mk()[1]` stopped the compiler. A token indexes one file only, so each
+	// file's variables get a map of their own.
+	e.hoistedArrayCalls = map[int32]string{}
 	for n := range it(ast) {
 		if n.sym != SourceFile {
 			continue
@@ -11892,11 +11915,7 @@ func (e *emitter) emitPkgArrayVar(gn, srcName string, a arrDim, initExpr []int32
 	// A temporary the fill hoists out of itself has no enclosing statement here to
 	// go before, so it becomes a step statement of its own -- the care pkgInitAssign
 	// takes, for the same reason.
-	saved, savedIndent := e.prologue, e.indent
-	e.prologue, e.indent = nil, 0
-	text := e.captureC(func() { e.emitArrayTargetAssign(gn, a, initExpr) })
-	pro := e.prologue
-	e.prologue, e.indent = saved, savedIndent
+	text, pro := e.pkgInitRender(func() { e.emitArrayTargetAssign(gn, a, initExpr) })
 	if text == "" {
 		return // emitArrayTargetAssign has said why
 	}
@@ -11907,10 +11926,7 @@ func (e *emitter) emitPkgArrayVar(gn, srcName string, a arrDim, initExpr []int32
 		pos:     e.astPos(initExpr),
 		pkg:     2 * e.pkgOrd,
 	}
-	for _, line := range pro {
-		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
-	}
-	step.stmts = append(step.stmts, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
+	step.stmts = append(pro, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
 	e.pkgInit = append(e.pkgInit, step)
 }
 
@@ -11922,19 +11938,14 @@ func (e *emitter) pkgInitLitFixups(target string, fixups []litFixup) {
 	// A source that hoists a temporary out of itself has no enclosing statement here
 	// to put it before, so the temporary becomes a step statement of its own ahead of
 	// the copies -- the same care pkgInitAssign takes.
-	saved := e.prologue
-	e.prologue = nil
-	stmts, ok := e.litFixupCopies(target, fixups)
-	pro := e.prologue
-	e.prologue = saved
+	var stmts []string
+	ok := false
+	_, pro := e.pkgInitRender(func() { stmts, ok = e.litFixupCopies(target, fixups) })
 	if !ok {
 		return
 	}
 	step := pkgInitStep{target: target, pkg: 2 * e.pkgOrd}
-	for _, line := range pro {
-		step.stmts = append(step.stmts, strings.TrimSuffix(line, "\n"))
-	}
-	step.stmts = append(step.stmts, stmts...)
+	step.stmts = append(pro, stmts...)
 	for _, f := range fixups {
 		step.deps = append(step.deps, e.initRefs(f.src)...)
 	}
@@ -12569,15 +12580,15 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		}
 		lead()
 		e.emit(decl + " " + backing + "[" + n + "]" + suffix + ";\n")
-		valsText := e.captureC(func() { e.emitPositionalValues(values, elem) })
+		valsText, pro := e.pkgInitRender(func() { e.emitPositionalValues(values, elem) })
 		tmp := e.newTmp()
 		e.includes["string.h"] = true
 		fill := pkgInitStep{
 			target: backing,
-			stmts: []string{
-				decl + " " + tmp + "[" + n + "]" + suffix + " = " + valsText + ";",
-				"memcpy(" + backing + ", " + tmp + ", sizeof(" + backing + "));",
-			},
+			stmts: append(pro,
+				decl+" "+tmp+"["+n+"]"+suffix+" = "+valsText+";",
+				"memcpy("+backing+", "+tmp+", sizeof("+backing+"));",
+			),
 			pkg: 2 * e.pkgOrd,
 		}
 		for _, v := range values {
@@ -13407,7 +13418,7 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		e.fail("assignment mismatch: %d variables but %s returns %d values", len(names), callee, len(resTypes))
 		return
 	}
-	call := e.captureC(func() { e.emitCallExpr(callee, suffix) })
+	call, pro := e.pkgInitRender(func() { e.emitCallExpr(callee, suffix) })
 	// The call depends on whatever its expression references -- the callee's body
 	// included, through the function reference -- and each variable's step depends
 	// on the call's temporary, so the whole group orders and cycles exactly as a
@@ -13419,7 +13430,7 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 	// An all-blank `var _, _ = f()` keeps the call for its side effects but binds
 	// nothing, so no result temporary is emitted -- an unused one would warn.
 	if !slices.ContainsFunc(names, func(nm string) bool { return nm != "_" }) {
-		e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: []string{call + ";"}, deps: refs, pkg: 2 * e.pkgOrd})
+		e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: append(pro, call+";"), deps: refs, pkg: 2 * e.pkgOrd})
 		return
 	}
 	for i, nm := range names {
@@ -13437,7 +13448,7 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 	e.pkgInit = append(e.pkgInit, pkgInitStep{
 		target: tmp,
 		deps:   refs,
-		stmts:  []string{e.retStructName(e.funcCallC(callee)) + " " + tmp + " = " + call + ";"},
+		stmts:  append(pro, e.retStructName(e.funcCallC(callee))+" "+tmp+" = "+call+";"),
 		pkg:    2 * e.pkgOrd,
 	})
 	for i, nm := range names {
