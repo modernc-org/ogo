@@ -19459,6 +19459,79 @@ func main() {
 		want: "72 94 12 81 52 12 2\n12 31123 123 12 123 1237 123 1234 123 false 18 5\n",
 	},
 	{
+		// `&T{...}` in a package variable's initializer is a value Go allocates,
+		// and the compound literal it was written as lives in ogo_pkg_init's frame,
+		// which is gone when the function returns: `var defaults = &Config{...}`
+		// pointed into a dead frame, and read what the next call left there -- 32764
+		// for a 1 on the host, a crash for a linked list. So did a literal's field,
+		// an array or slice element and a struct field holding one. A package
+		// variable of interface type made from one was refused outright. Each is a
+		// static object of the program now, filled where the initializer runs.
+		name: "a package variable holding the address of a literal",
+		src: `type Config struct {
+	name  string
+	rate  int
+	table [3]int
+}
+
+type node struct {
+	v    int
+	next *node
+}
+
+type holder struct {
+	cfg *Config
+	n   int
+}
+
+type Shape interface{ Area() int }
+
+type Rect struct{ w, h int }
+
+func (r *Rect) Area() int { return r.w * r.h }
+
+var calls int
+
+func seed() int {
+	calls++
+	return 40
+}
+
+var defaults = &Config{name: "p2", rate: 9600, table: [3]int{1, 2, 3}}
+
+var list = &node{v: 1, next: &node{v: 2, next: &node{v: 3}}}
+
+var h = holder{cfg: &Config{name: "h", rate: seed()}, n: 2}
+
+var refs = [2]*Config{&Config{rate: 7}, nil}
+
+var shapes = []*Rect{&Rect{2, 3}, &Rect{4, 5}}
+
+var s Shape = &Rect{6, 7}
+
+func clobber(a, b, c, d int) int {
+	var buf [32]int
+	for i := range buf {
+		buf[i] = a*i + b - c + d
+	}
+	return buf[3] + buf[31]
+}
+
+func main() {
+	_ = clobber(7, 8, 9, 10)
+	sum := 0
+	for n := list; n != nil; n = n.next {
+		sum += n.v
+	}
+	defaults.rate *= 2
+	println(defaults.name, defaults.rate, defaults.table[2], sum)
+	println(h.cfg.name, h.cfg.rate, h.n, refs[0].rate, refs[1] == nil)
+	println(shapes[0].Area(), shapes[1].Area(), s.Area(), calls)
+}
+`,
+		want: "p2 19200 3 6\nh 40 2 7 true\n6 20 42 1\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

@@ -2488,6 +2488,26 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 	e.pkgInit = append(e.pkgInit, step)
 }
 
+// pkgInitIfaceStore is the package-initialization step writing a package variable
+// of interface type, its two words and what they need ahead of them: `var s Shape
+// = &Rect{...}` fills the object it points at first (pkgLitObject), which a store
+// rendered on its own dropped, pointing s at an object never filled.
+func (e *emitter) pkgInitIfaceStore(target, srcName, iface string, initExpr []int32) (pkgInitStep, bool) {
+	stmt := ""
+	_, pro := e.pkgInitRender(func() { stmt = e.ifaceStoreC(target, iface, initExpr) })
+	if stmt == "" {
+		return pkgInitStep{}, false
+	}
+	return pkgInitStep{
+		target:  target,
+		deps:    e.initRefs(initExpr),
+		stmts:   append(pro, strings.TrimSuffix(stmt, "\n")),
+		srcName: srcName,
+		pos:     e.astPos(initExpr),
+		pkg:     2 * e.pkgOrd,
+	}, true
+}
+
 // pkgInitRender renders what emit writes for a package-initialization step, and
 // answers with the statements the rendering hoisted out of itself, ready to run
 // ahead of it in the step: at package scope there is no statement for them to go
@@ -4873,6 +4893,13 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		}
 		out.WriteByte('\n')
 	}
+	// The objects a package initializer's `&T{...}` points at, which it fills.
+	if len(e.pkgLitObjects) != 0 {
+		for _, decl := range e.pkgLitObjects {
+			out.WriteString(decl + "\n")
+		}
+		out.WriteByte('\n')
+	}
 	// The package initializer likewise calls user functions, so it follows the
 	// prototypes too.
 	if pd != "" {
@@ -5110,6 +5137,7 @@ type emitter struct {
 	crossNames         map[string]string       // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder        map[string]string       // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
 	chanCells          []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
+	pkgLitObjects      []string                // file-scope static objects that give a package initializer's &T{...} its storage (see pkgLitObject)
 	chanCellN          int                     // counter minting unique cell names, program-wide like makeN
 	usesStringCmp      bool                    // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode     bool                    // `for i, c := range s` appears: emit ogo_decode_rune
@@ -6164,11 +6192,24 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok boo
 // it: an interface made from it may not outlive the frame.
 //
 // A package variable's initializer has no frame to put one in (its temporaries are
-// locals of ogo_pkg_init), so there it is refused rather than pointed at.
+// locals of ogo_pkg_init), so there the value is the package's own static object
+// (pkgLitObject), which `var s Shape = &Quad{...}` was refused for want of.
 func (e *emitter) ifaceAddrLitOperand(rhs []int32) (concrete, data string, temp, ok bool) {
 	ct, lit, isLit := e.addrOfCompositeLit(rhs)
-	if !isLit || e.pkgScope || !e.isStruct(ct) {
+	if !isLit || !e.isStruct(ct) {
 		return "", "", false, false
+	}
+	if e.pkgScope {
+		// Unless it is the package's own object, which outlives everything.
+		kids, isUnary := e.unaryExprKids(rhs)
+		if !isUnary {
+			return "", "", false, false
+		}
+		obj, ct, isObj := e.pkgLitObject(kids)
+		if !isObj {
+			return "", "", false, false
+		}
+		return ct, "&" + obj, false, true
 	}
 	// The literal's own copies go into the prologue behind the declaration hoist put
 	// there, which is where the temporary comes into existence.
@@ -6184,6 +6225,49 @@ func (e *emitter) ifaceAddrLitOperand(rhs []int32) (concrete, data string, temp,
 		e.prologue = append(e.prologue, stmt+"\n")
 	}
 	return ct, "&" + name, true, true
+}
+
+// pkgLitObject gives `&T{...}` in a package variable's initializer the storage Go
+// allocates for it: a static object of the translation unit, filled where the
+// initializer runs, whose name it answers with along with T.
+//
+// A package variable is initialized in ogo_pkg_init, and the compound literal
+// `&(T){...}` written there has that function's frame for storage, which is gone
+// when it returns: `var cfg = &Config{...}` pointed into a dead frame, and read
+// whatever the next call left there -- 32764 for a 1 on the host, a crash for a
+// linked pair.
+func (e *emitter) pkgLitObject(kids []Node) (obj, ctype string, ok bool) {
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return "", "", false
+	}
+	if tok, isOp := e.unaryOpTok(kids[0].ast); !isOp || e.f.ch(tok) != AND {
+		return "", "", false
+	}
+	name, lit, isLit := e.factorCompositeLit(slices.Collect(it(kids[1].ast)))
+	if !isLit || !e.isStruct(name) {
+		return "", "", false
+	}
+	obj = fmt.Sprintf("ogo_plit_%d", e.makeN)
+	e.makeN++
+	e.pkgLitObjects = append(e.pkgLitObjects, "static "+name+" "+obj+";")
+	// Filled from a temporary of the step, the one form of a literal every element
+	// shape has -- an array field is copied in after the declaration -- and copied
+	// into the object whole, as any struct holding an array is copied.
+	tmp := e.newTmp()
+	text := e.captureC(func() {
+		fixups := e.captureLitFixups(func() {
+			e.emit(name + " " + tmp + " = ")
+			e.emitCompositeLit(name, lit, true)
+			e.emit(";\n")
+		})
+		e.flushLitFixups(tmp, fixups)
+	})
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		e.prologue = append(e.prologue, line+"\n")
+	}
+	e.includes["string.h"] = true
+	e.prologue = append(e.prologue, "memcpy(&"+obj+", &"+tmp+", sizeof("+obj+"));\n")
+	return obj, name, true
 }
 
 // addrOfCompositeLit reports whether an expression is the address of a composite
@@ -7378,8 +7462,8 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// package variable too: a frame temporary would be a local of
 				// ogo_pkg_init, which is not storage a package variable may keep.
 				e.emit(" = " + e.zeroInitC(ctype))
-				if stmt := e.ifaceStoreC(gn, ctype, initExpr); stmt != "" {
-					defer e.deferPkgInit(strings.TrimSuffix(stmt, "\n"))
+				if step, ok := e.pkgInitIfaceStore(gn, nm, ctype, initExpr); ok {
+					defer func() { e.pkgInit = append(e.pkgInit, step) }()
 				}
 			case e.staticInitOK(initExpr):
 				e.emit(" = ")
@@ -9833,6 +9917,8 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		curResultNames, curResultTypes []string
 		prologue                       []string
 		w                              io.Writer
+		hoistedArrayCalls              map[int32]string
+		pkgScope                       bool
 	}
 	saved := state{
 		locals: e.locals, arrays: e.arrays, sliceVars: e.sliceVars,
@@ -9840,7 +9926,12 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		tmp: e.tmp, indent: e.indent, deferReplay: e.deferReplay, defers: e.defers,
 		curFunc: e.curFunc, curResultNames: e.curResultNames, curResultTypes: e.curResultTypes,
 		prologue: e.prologue, w: e.w,
+		hoistedArrayCalls: e.hoistedArrayCalls, pkgScope: e.pkgScope,
 	}
+	// A literal lifted out of a package variable's initializer is a function with a
+	// frame of its own: what it allocates is per call, not the package's
+	// (pkgLitObject).
+	e.pkgScope = false
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
 	e.gotoTargets = map[string]bool{}
@@ -9892,6 +9983,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
 	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
 	e.prologue, e.w = saved.prologue, saved.w
+	e.hoistedArrayCalls, e.pkgScope = saved.hoistedArrayCalls, saved.pkgScope
 	if proto == "" {
 		return "", false
 	}
@@ -13589,8 +13681,8 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 		// variable too, this function's temporaries being locals of ogo_pkg_init.
 		if e.isIfaceCType(ctype) && inits[i] != nil {
 			e.emit("static " + ctype + " " + gn + " = " + e.zeroInitC(ctype) + ";\n")
-			if stmt := e.ifaceStoreC(gn, ctype, inits[i]); stmt != "" {
-				e.deferPkgInit(strings.TrimSuffix(stmt, "\n"))
+			if step, ok := e.pkgInitIfaceStore(gn, nm, ctype, inits[i]); ok {
+				e.pkgInit = append(e.pkgInit, step)
 			}
 			continue
 		}
@@ -30226,6 +30318,12 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(text)
 					return
 				}
+			}
+		}
+		if n.sym == UnaryExpr && e.pkgScope {
+			if obj, _, ok := e.pkgLitObject(kids); ok {
+				e.emit("&" + obj)
+				return
 			}
 		}
 		e.emitUnaryKids(kids)

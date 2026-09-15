@@ -125,6 +125,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package variable holding the address of a literal points at live
+  storage.** `var defaults = &Config{...}` -- and a literal's pointer field, an
+  array or slice element or a struct field holding one -- pointed into the frame
+  of the function package variables are initialized in, gone when it returned: the
+  program read whatever the next call left there, 32764 for a 1 on the host, or
+  crashed walking a linked list. `var s Shape = &Rect{...}` was refused. Each
+  such literal is a static object of the program now, filled where the variable
+  is initialized.
+
 - **The calls of an expression run left to right.** Go evaluates them in source
   order and C leaves an operator's operands and a helper's arguments to the C
   compiler. On the board, `f(1) << uint(f(2))` called `f(2)` first, and an
