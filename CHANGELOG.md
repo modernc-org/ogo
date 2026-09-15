@@ -125,6 +125,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A comparison with a constant past an int is right.** A constant between
+  2^31 and 2^32 in value -- `hz*16` for `const hz = 160000000`, or 3000000000 --
+  was written into the C as an unsigned int, and C then compared unsigned: `hz*16
+  > -1` was false under the host compiler, and `v < hz*16` for an int64 v holding
+  -5 was false on the board, where the target's C compiler only warned
+  "signed/unsigned comparison may not work properly". A comparison of two integer
+  constants is folded to its answer now, and such a constant beside a 64-bit
+  operand is spelled at that operand's width.
+
 - **A signed comparison of two values far apart is right on the board.** `i <
   2147483647` for an int32 i holding -7 was false, and so were `m < 1` for the
   most negative int32 and a saturation check, `v < 2147483647`, called with a

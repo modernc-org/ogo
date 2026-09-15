@@ -20105,6 +20105,32 @@ func main() {
 		want: "\"AT+CFG=1\\r\\n\"\n\"plain\" \"\"\n\"tab\\there \\\"quoted\\\" back\\\\slash\"\n\"héllo\"\n616263 616263\n41420d0a|41420D0AC800|\n\"AB\\r\\n\"\n\"AB\\r\\n\\xc8\\x00\"\nhi!|AB|\n'A' '\\n' 'é' '\\x00'\n'\\'' '\\\\'\nU+0041 U+00E9 U+1F600\n41542b4346473d310d0a \"CFG\" AT+\n",
 	},
 	{
+		// A comparison with a constant between an int and a uint32 in value, which C
+		// spells as an unsigned int, `2560000000U`. Against a negative constant C
+		// then compares unsigned -- `hz*16 > -1` was false under the host's compiler
+		// (the target's folds constants wider than C allows and happened to agree
+		// with Go) -- and against an int64 variable the target's compiler compared
+		// unsigned too, warning, so `v < hz*16` for v = -5 was false on the board.
+		name: "a comparison with a constant past an int",
+		src: `const hz = 160000000
+
+const big = 3000000000
+
+func main() {
+	var v int64 = -5
+	var u64 uint64 = 5
+	var w int64 = 3000000000
+	println(hz*16 > -1, -1 < hz*16, 3000000000 > -2, hz*16 != -1294967296, 2560000000-hz*16 == 0)
+	println(v < hz*16, v < 3000000000, v < big, u64 < 3000000000, w == 3000000000, w > big-1)
+	switch w {
+	case 3000000000:
+		println("case wide")
+	}
+}
+`,
+		want: "true true true true true\ntrue true true true true true\ncase wide\n",
+	},
+	{
 		// The same, for a constant whose VALUE fits a C int and whose way there does
 		// not: `hz * 16 / 1000000` is 2560 by way of 2560000000, which C computes in
 		// int and wraps -- the board printed -1734 -- and `one * one / 3` printed 0.

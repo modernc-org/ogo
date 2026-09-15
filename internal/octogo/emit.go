@@ -28657,6 +28657,23 @@ func (e *emitter) constCompareC(kids []Node, i int) (string, bool) {
 	if op == "&&" || op == "||" {
 		return "", false
 	}
+	// Any comparison of two INTEGER constants is itself a constant, and Go compares
+	// constants as the numbers they are. Left to C, one operand spelled as an
+	// unsigned int -- `2560000000U`, a value past an int -- turned the other into one
+	// too: `hz*16 > -1` compared 2560000000 with 4294967295 and was false under gcc,
+	// where Go says true and the target's compiler, folding wider than C allows,
+	// happened to agree with Go.
+	if x, ok := e.foldConstVal(kids[i].ast); ok && x.Kind() == constant.Int {
+		if y, ok := e.foldConstVal(kids[i+2].ast); ok && y.Kind() == constant.Int {
+			tok, known := map[string]token.Token{"==": token.EQL, "!=": token.NEQ, "<": token.LSS, "<=": token.LEQ, ">": token.GTR, ">=": token.GEQ}[op]
+			if known {
+				if constant.Compare(x, tok, y) {
+					return "1", true
+				}
+				return "0", true
+			}
+		}
+	}
 	ct, ok := e.compareOperandCType(kids, i)
 	if !ok || cIntWidths[ct] != 64 {
 		return "", false
@@ -28717,12 +28734,23 @@ func (e *emitter) constCompareC(kids []Node, i int) (string, bool) {
 // compile with "Bad number of parameters in call to _int64_cmps", where `q < 0`
 // over a variable had always been fine.
 func (e *emitter) wideCompareLitC(kids []Node, i int) (string, bool) {
-	tok, ok := e.soleToken(kids[i].ast)
-	if !ok || e.f.ch(tok) != INT {
-		return "", false
-	}
 	ct, ok := e.compareOperandCType(kids, i)
 	if !ok || cIntWidths[ct] != 64 {
+		return "", false
+	}
+	// A constant between an int and a uint32 in value -- `hz * 16`, a named one, a
+	// bare literal -- is spelled as an unsigned int, `2560000000U`, and C compares a
+	// long long with an unsigned int as long longs; the target's C compiler compares
+	// them unsigned instead, warning "signed/unsigned comparison may not work
+	// properly", and `v < hz*16` for an int64 v holding -5 was false on the board.
+	// Spelled at the operand's own width, it is a comparison of two long longs.
+	if x, ok := e.foldConstVal(kids[i].ast); ok && x.Kind() == constant.Int {
+		if v, exact := constant.Int64Val(x); exact && v > math.MaxInt32 && v <= math.MaxUint32 {
+			return e.constSpelling(v, ct), true
+		}
+	}
+	tok, ok := e.soleToken(kids[i].ast)
+	if !ok || e.f.ch(tok) != INT {
 		return "", false
 	}
 	lit := cIntLit(e.src(tok))
