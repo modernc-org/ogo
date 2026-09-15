@@ -19677,6 +19677,70 @@ func main() {
 		want: "index2 12\nslice 12\nstrslice 13\nstrindex 12\ncopy 12\nstore2 123\nmultistore 1234\nrecv1 128\nrecv2 1237\niface2 127\nfuncval 12\nmethod2 127\n0 1 bc 197 6 0 3 3 3 6 4 3 4\n",
 	},
 	{
+		// A store through a call's pointer or slice result -- `dev().ctrl = v`, a
+		// register behind an accessor -- was "only simple and field assignment
+		// targets are supported yet", and `out := append(buf[:0], src...)`, the
+		// reuse-a-buffer idiom, was "cannot infer a type for the declaration of out".
+		name: "a store through a call's result, and append to a slice expression",
+		src: `type Reg struct {
+	ctrl  uint32
+	data  [4]byte
+	next  *Reg
+	count int
+}
+
+type Bus struct{ regs [2]Reg }
+
+func (b *Bus) reg(i int) *Reg { return &b.regs[i] }
+
+var bus Bus
+
+var calls int
+
+func dev() *Reg {
+	calls++
+	return &bus.regs[0]
+}
+
+var table = []int{1, 2, 3}
+
+func rows() []int {
+	calls += 10
+	return table
+}
+
+var raw [6]byte
+
+func frame() *[6]byte {
+	calls += 100
+	return &raw
+}
+
+var backing [16]byte
+
+var src = []byte{7, 8, 9}
+
+func main() {
+	bus.regs[0].next = &bus.regs[1]
+	dev().ctrl = 0x80
+	dev().ctrl |= 1
+	dev().count++
+	dev().data[2] = 5
+	dev().next.count += 3
+	bus.reg(1).data = [4]byte{1, 2, 3, 4}
+	rows()[1] = 20
+	frame()[5] = 6
+	println(bus.regs[0].ctrl, bus.regs[0].count, bus.regs[0].data[2], bus.regs[1].count, bus.regs[1].data[3])
+	println(table[1], raw[5], calls)
+	buf := backing[:]
+	out := append(buf[:0], src...)
+	more := append(backing[4:4], 1, 2)
+	println(len(out), out[2], len(more), more[1], backing[5], cap(more))
+}
+`,
+		want: "129 1 5 3 4\n20 6 115\n3 9 2 2 2 12\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

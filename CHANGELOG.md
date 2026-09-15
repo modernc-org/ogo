@@ -72,6 +72,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A store through a call's pointer or slice result.** `dev().ctrl = v`,
+  `bus.reg(1).count++`, `rows()[i] = v` and `frame()[5] = b` -- a register or a
+  buffer behind an accessor -- were refused as "only simple and field assignment
+  targets are supported yet".
+
+- **`out := append(buf[:0], src...)`.** A short declaration from an append whose
+  first argument is a slice expression rather than a variable was refused as
+  "cannot infer a type".
+
 - **An array literal's length may be written `...`.** `var table =
   [...]uint8{3, 1, 4, 1, 5}` is a `[5]uint8`, the length being what the literal
   supplies -- its highest index plus one, so `[...]int{1, 4: 9}` is a `[5]int` --

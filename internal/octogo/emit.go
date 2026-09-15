@@ -16692,6 +16692,37 @@ func (e *emitter) accessChainTypeAt(cur accessCur, steps []Node, claimed bool) (
 	return cur, true
 }
 
+// callTargetBase binds the part of an assignment target up to its last call to a
+// temporary, when that call's result is a pointer or a slice and fields and indexes
+// follow it, answering with the temporary and those steps. Nothing is bound for any
+// other target.
+func (e *emitter) callTargetBase(base string, steps []Node) (name string, rest []Node, ok bool) {
+	k := -1
+	for i, st := range steps {
+		if st.sym == CallSuffix {
+			k = i
+		}
+	}
+	if k < 0 || k == len(steps)-1 || !isAccessChain(steps[k+1:]) || e.declInit || e.deferReplay >= 0 {
+		return "", nil, false
+	}
+	text, ct, _, ok := e.chainCText(base, steps[:k+1])
+	if !ok {
+		return "", nil, false
+	}
+	u := e.underlyingCType(ct)
+	isSlice := e.isSliceCType(u)
+	if !isSlice && (!e.isPointer(ct) || e.isIfaceCType(ct)) {
+		return "", nil, false
+	}
+	name = e.hoist(ct, func() { e.emit(text) })
+	e.locals[name] = ct
+	if isSlice {
+		e.sliceVars[name] = sliceElemFromCName(u)
+	}
+	return name, steps[k+1:], true
+}
+
 // factorAccessChain recognises an identifier followed by a run of selectors and
 // indexes that mixes both kinds more than once -- the shapes the fixed helpers
 // cannot match. Narrower chains are left to them, so their pinned output is
@@ -24808,6 +24839,33 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			return
 		}
 	}
+	// `dev().ctrl = v`, `bus.port(1).n++`, `rows()[i] = v`: a call's POINTER or
+	// SLICE result as the target's base, which Go makes addressable through it. The
+	// result binds to a temporary -- the call runs once, ahead of the value, as Go
+	// evaluates a target's operands first -- and the rest of the target applies to
+	// that, a pointer taking its nil check as any base does. It was "only simple and
+	// field assignment targets are supported yet", the shape a device register
+	// behind an accessor is written in.
+	if tail := postfix[len(postfix)-1]; tail.sym == PostfixOp {
+		if name, rest, ok := e.callTargetBase(base, postfix[:len(postfix)-1]); ok {
+			cur, ok := e.accessChainType(name, rest)
+			if !ok {
+				e.fail("cannot assign to this target through a call's result")
+				return
+			}
+			t, ok := e.assignTailOf(tail)
+			if !ok {
+				e.fail("unsupported assignment form through a call's result")
+				return
+			}
+			t.targetCType = cur.ctype
+			if len(cur.dims) != 0 {
+				t.targetArray = curArrDim(cur)
+			}
+			e.emitAssignTailOrCopy(func() { e.emitAccessChain(name, rest) }, t)
+			return
+		}
+	}
 	// A target the shapes above did not claim. Diagnosed against the chain before
 	// the field list is built, so a step the operand's type cannot take is named as
 	// itself -- an index on an int field used to be "only simple and field
@@ -28691,6 +28749,12 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 					if elem, ok := e.sliceElem(base); ok {
 						return sliceCName(elem), true
 					}
+				}
+				// Any other slice-valued first argument, as appendParts takes it:
+				// `out := append(buf[:0], b...)`, the reuse-a-buffer idiom, had no
+				// type to give out.
+				if ct, ok := e.inferCType(args[0].ast); ok && e.isSliceCType(e.underlyingCType(ct)) {
+					return ct, true
 				}
 			}
 			return "", false
