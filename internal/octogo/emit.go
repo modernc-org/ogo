@@ -7129,7 +7129,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			if e.staticInitOK(initExpr) {
 				e.emit("static " + ct + " " + gn + " = ")
-				e.emitGlobalInit(initExpr)
+				e.emitGlobalInit(ct, initExpr)
 				e.emit(";\n")
 				continue
 			}
@@ -7264,7 +7264,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				}
 			case e.staticInitOK(initExpr):
 				e.emit(" = ")
-				e.emitGlobalInit(initExpr)
+				e.emitGlobalInit(ctype, initExpr)
 			default:
 				// C evaluates a file-scope initializer at compile time, so anything
 				// that is not a constant expression is done at package
@@ -7583,6 +7583,8 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 		e.emit(sent)
 	} else if text, ok := e.ifaceValueC(elem, op[1].ast); ok && e.isIfaceCType(elem) {
 		e.emit(text)
+	} else if lit, ok := e.floatConstC(op[1].ast, elem); ok {
+		e.emit(lit) // the send helper's element parameter; see floatConstC
 	} else {
 		e.emitExpr(op[1].ast)
 	}
@@ -7593,7 +7595,15 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 // constant expression. A bare integer-constant reference is folded to its value
 // (flexcc rejects a `static const` in a global initializer); a string or struct
 // literal uses the brace form (declInit).
-func (e *emitter) emitGlobalInit(initExpr []int32) {
+func (e *emitter) emitGlobalInit(ctype string, initExpr []int32) {
+	saved := e.declInit
+	e.declInit = true
+	lit, isFloat := e.floatConstC(initExpr, ctype) // see floatConstC
+	e.declInit = saved
+	if isFloat {
+		e.emit(lit)
+		return
+	}
 	if tok, ok := e.soleToken(initExpr); ok && e.f.ch(tok) == IDENT {
 		if v, ok := e.foldedInt(e.src(tok)); ok {
 			e.emit(v)
@@ -11834,6 +11844,10 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		e.emit(e.structBraceC(base, expectType))
 		return
 	}
+	if lit, ok := e.floatConstC(v.ast, expectType); ok {
+		e.emit(lit) // a wide integer standing for a float; see floatConstC
+		return
+	}
 	e.emitExpr(v.ast)
 }
 
@@ -13053,7 +13067,7 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 		}
 		if e.staticInitOK(inits[i]) {
 			e.emit("static " + ctype + " " + gn + " = ")
-			e.emitGlobalInit(inits[i])
+			e.emitGlobalInit(ctype, inits[i])
 			e.emit(";\n")
 			continue
 		}
@@ -14673,6 +14687,41 @@ func floatSpelling(v constant.Value, ut string) (string, bool) {
 		s += ".0"
 	}
 	return s, true
+}
+
+// floatConstC spells an integral constant standing where a float is wanted -- an
+// element of a float literal, a float variable's static initializer, an argument to
+// a float parameter, a value sent or appended -- as the float literal Go converts
+// it to, when the value is past what a float32 holds exactly: beyond 2^24 either
+// way. Left to its own spelling it is an integer, and the target's C compiler gets a
+// wide integer wrong in exactly these positions. In an initializer it reads
+// `-2147483648` and `-3000000000` as POSITIVE, typing the magnitude unsigned, and a
+// wider negative value is written there as its bit pattern, which is positive on
+// every compiler; as an argument a long long constant goes to a float parameter as
+// two words -- "Bad number of parameters in call to id: expected 1 found 2" -- and
+// the callee reads garbage. A declaration, an assignment, a return and an operand
+// convert the integer themselves and were right already, so they are left alone.
+func (e *emitter) floatConstC(ast []int32, ctype string) (string, bool) {
+	ut := e.underlyingCType(ctype)
+	if ut != "float" && ut != "double" {
+		return "", false
+	}
+	v, ok := e.foldConstVal(ast)
+	if !ok {
+		return "", false
+	}
+	iv := constant.ToInt(v)
+	if iv.Kind() != constant.Int {
+		return "", false
+	}
+	if x, exact := constant.Int64Val(iv); exact && x >= -1<<24 && x <= 1<<24 {
+		return "", false
+	}
+	lit, ok := floatSpelling(iv, ut)
+	if !ok {
+		return "", false
+	}
+	return e.parenNegative(lit), true
 }
 
 // foldIntegral is foldConstInt for the positions that want an integer and take any
@@ -19293,12 +19342,13 @@ func (e *emitter) emitDefer(nodes []Node) {
 	// them an array argument's shape is checked at the capture, since the replay
 	// runs after the argument's scope has been left and cannot read it then.
 	var paramDims []arrDim
+	var paramTypes []string
 	switch {
 	case d.cname != "":
-		paramDims = e.funcArrayParams[d.cname]
+		paramDims, paramTypes = e.funcArrayParams[d.cname], e.funcParams[d.cname]
 	case len(suffix) == 1:
 		if base := e.soleIdent(head.ast); base != "" {
-			paramDims = e.funcArrayParams[e.funcCallC(base)]
+			paramDims, paramTypes = e.funcArrayParams[e.funcCallC(base)], e.funcParams[e.funcCallC(base)]
 		}
 	}
 	for i, a := range e.callArgExprs(call.ast) {
@@ -19323,6 +19373,14 @@ func (e *emitter) emitDefer(nodes []Node) {
 		if !ok {
 			e.fail("cannot infer the type of a deferred call argument")
 			return
+		}
+		// A constant is captured as its PARAMETER's type, which is what Go converts
+		// it to, rather than as the type its spelling defaults to: `defer
+		// show(-3000000000)` for a float32 parameter captured the value into an int
+		// and truncated it to 1294967296, as a goroutine argument once did (see
+		// emitGo).
+		if _, isConst := e.foldConstVal(a.ast); isConst && i < len(paramTypes) && paramTypes[i] != "" {
+			ct = paramTypes[i]
 		}
 		d.args = append(d.args, deferArg{ctype: ct, expr: a.ast})
 	}
@@ -21526,6 +21584,10 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 		if text, wrapped := e.ifaceValueC(elem, v.ast); wrapped && e.isIfaceCType(elem) {
 			e.emit(text)
 			e.emit(")")
+			continue
+		}
+		if lit, ok := e.floatConstC(v.ast, elem); ok {
+			e.emit(lit + ")") // the append helper's element parameter; see floatConstC
 			continue
 		}
 		e.emitExpr(v.ast)
@@ -25358,6 +25420,9 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 		if e.isIfaceCType(elem) && e.deferReplay < 0 {
 			val, wrapped = e.ifaceValueC(elem, a.ast)
 		}
+		if lit, ok := e.floatConstC(a.ast, elem); ok && !wrapped {
+			val, wrapped = lit, true // see floatConstC
+		}
 		if !wrapped {
 			val = e.captureC(func() { e.emitExpr(a.ast) })
 		}
@@ -25919,6 +25984,11 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 func (e *emitter) wideConstArg(params []string, i int, arg Node) (string, bool) {
 	if i >= len(params) {
 		return "", false
+	}
+	// A float parameter has the same trouble with a wide integer constant, which
+	// goes out as the two words of a long long; see floatConstC.
+	if lit, ok := e.floatConstC(arg.ast, params[i]); ok {
+		return lit, true
 	}
 	ut := e.underlyingCType(params[i])
 	if ut != "int64_t" && ut != "uint64_t" {

@@ -114,6 +114,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An integer constant too wide for a float32, standing where a float is wanted,
+  keeps its value.** `[]float32{-3000000000}`, `var g float32 = -2147483648` at
+  package level, `S{f: -3000000000}`, `id(4294967296)` for a float32 parameter, a
+  value sent on a channel of floats or appended to a slice of them, and `defer
+  show(-3000000000)` all came out wrong: the constant was spelled as the integer
+  it was written as, and the target's C compiler read the negative ones in an
+  initializer as POSITIVE, passed a long long constant to a float parameter as
+  two words (warning "Bad number of parameters" and reading garbage, or refusing
+  the call through a function value), and the deferred call captured the
+  constant into an int. Such a constant is spelled as the float it converts to
+  now, and a deferred call captures a constant as its parameter's type, as a
+  goroutine argument already did. A declaration, an assignment, a return and an
+  operand were right and are unchanged. Found by probing float conversions at
+  float32 boundaries on the board.
+
 - **`math.Round` is right on the board for odd integers past 2^23 and just below
   one half.** It was built as `Floor(Abs(x) + 0.5)`, and on the P2, where a float64
   is 32 bits, the `+ 0.5` is itself rounded: every odd integer between 2^23 and

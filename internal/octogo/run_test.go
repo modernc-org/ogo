@@ -18804,6 +18804,83 @@ func main() {
 		want: "-217 248 434 -217 -213 -189\n434 -216 -217 217 217 -7\n-216 218 -6\ndeferred -7 0\n",
 	},
 	{
+		// An integer constant too wide for a float32 to hold exactly, standing
+		// where a float is wanted. Spelled as the integer it was written as, the
+		// target's C compiler got it wrong in every position that does not convert
+		// it itself: in an initializer it read -2147483648 and -3000000000 as
+		// POSITIVE, and a wider negative value was written there as its bit pattern,
+		// positive everywhere; as an argument, a value sent or appended, a long long
+		// constant went to the float parameter as two words -- "Bad number of
+		// parameters" and garbage, or through a function value a refused build; and a
+		// deferred call captured the constant into an int. Every line of this was
+		// wrong on the board or did not build. A declaration, an assignment, a return
+		// and an operand were right, and are not what this pins.
+		name: "a wide integer constant where a float is wanted",
+		src: `type S struct {
+	f float32
+	d float64
+}
+
+type T struct{ k float32 }
+
+func (t T) add(x float32) float32 { return t.k + x }
+
+type Adder interface {
+	add(x float32) float32
+}
+
+const C = -3000000000
+
+var pkgF float32 = -2147483648
+
+var pkgH float64 = 4294967296
+
+var pkgS = []float32{-2147483648, -3000000000, -9223371487098961920, 3000000000, 4294967296}
+
+var pkgT = S{f: -3000000000, d: -2147483648}
+
+var ch chan float32
+
+func id(x float32) float32 { return x }
+
+func two(a, b float32) float32 { return a + b }
+
+func sum(xs ...float32) float32 {
+	var t float32
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func show(a, b float32) { println("defer", int64(a), int64(b)) }
+
+func sendNeg(c chan float32) { c <- -3000000000 }
+
+func main() {
+	defer show(-3000000000, 4294967296)
+	println("pkg", int64(pkgF), int64(pkgH), int64(pkgS[0]), int64(pkgS[1]), int64(pkgS[2]))
+	println("pkg", int64(pkgS[3]), int64(pkgS[4]), int64(pkgT.f), int64(pkgT.d))
+	s := []float32{-2147483648, -3000000000, 4294967296}
+	t := S{f: -2147483648, d: -3000000000}
+	a := [2]float64{-4294967296, -3000000000}
+	println("lit", int64(s[0]), int64(s[1]), int64(s[2]), int64(t.f), int64(t.d), int64(a[0]), int64(a[1]))
+	println("call", int64(id(-2147483648)), int64(id(-3000000000)), int64(id(4294967296)), int64(two(1, -3000000000)), int64(two(-3000000000, 9000000000)))
+	s = make([]float32, 0, 4)
+	s = append(s, -3000000000, 4294967296)
+	u1, u2 := sum(-3000000000), sum(1, 4294967296)
+	println("append", int64(s[0]), int64(s[1]), int64(u1), int64(u2))
+	go sendNeg(ch)
+	println("send", int64(<-ch))
+	f := id
+	var v T
+	var i Adder = &v
+	println("value", int64(f(-3000000000)), int64(f(4294967296)), int64(v.add(-3000000000)), int64(i.add(4294967296)), int64(id(C)))
+}
+`,
+		want: "pkg -2147483648 4294967296 -2147483648 -3000000000 -9223371487098961920\npkg 3000000000 4294967296 -3000000000 -2147483648\nlit -2147483648 -3000000000 4294967296 -2147483648 -3000000000 -4294967296 -3000000000\ncall -2147483648 -3000000000 4294967296 -3000000000 5999999488\nappend -3000000000 4294967296 -3000000000 4294967296\nsend -3000000000\nvalue -3000000000 4294967296 -3000000000 4294967296 -3000000000\ndefer -3000000000 4294967296\n",
+	},
+	{
 		// A deferred function literal taking arguments. A literal captures nothing
 		// of the scope around it, so its arguments are the one way a value reaches
 		// it; they are evaluated where the defer stands, as Go says -- q holds
