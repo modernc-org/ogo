@@ -12343,7 +12343,7 @@ func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
 	}
 	if base, steps, isChain := e.factorAccessChain(kids); isChain {
 		if cur, walked := e.accessChainType(base, steps); walked && len(cur.dims) != 0 {
-			return arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:], name: cur.name}, true
+			return arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:], name: cur.name, elemName: cur.elemName, elemDims: cur.elemDims}, true
 		}
 	}
 	return arrDim{}, false
@@ -22712,6 +22712,7 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 		// cannot: padding is the printf's to do, so that case takes the call.
 		if item.verb == 'T' && item.spec == "" {
 			if name, static := e.staticTypeName(next-1, arg); static {
+				e.evalTypeOnlyArg(next-1, arg)
 				lit += name
 				continue
 			}
@@ -22722,6 +22723,23 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 		}
 	}
 	flush()
+}
+
+// evalTypeOnlyArg evaluates, for its effects, an argument whose type %T prints and
+// whose value nothing reads. The name is known where the argument is written, so it
+// is folded into the format -- and the argument went with it: `printf("%T\n",
+// tick())` never called tick, where Go evaluates every argument. An argument the
+// print already bound to a temporary, or one a deferred print captured, has run.
+func (e *emitter) evalTypeOnlyArg(idx int, arg Node) {
+	if idx < len(e.printArgs) || e.deferReplay >= 0 || !e.exprHasEffect(arg.ast) {
+		return
+	}
+	// An array-returning call is a statement, bound to a temporary of its own.
+	if _, hoisted := e.hoistArrayCallArg(Node{sym: Expression, ast: arg.ast}); hoisted {
+		return
+	}
+	text := e.captureC(func() { e.emitExpr(arg.ast) })
+	e.prologue = append(e.prologue, "(void)("+text+");\n")
 }
 
 // printfArgType resolves the type "%T" reports on. It asks for the DECLARED type
@@ -22740,10 +22758,45 @@ func (e *emitter) printfArgType(idx int, arg Node) (string, bool) {
 // interface holds is decided at run time, and its table is what says so.
 func (e *emitter) staticTypeName(idx int, arg Node) (string, bool) {
 	ct, ok := e.printfArgType(idx, arg)
-	if !ok || e.isIfaceCType(ct) {
+	if !ok {
+		// An ARRAY has no C value type to answer with, so %T of one was "cannot tell
+		// the type of this argument", named or not. Its shape and its name answer.
+		return e.arrayTypeNameForT(arg.ast)
+	}
+	if e.isIfaceCType(ct) {
 		return "", false
 	}
 	return e.typeNameForT(ct), true
+}
+
+// arrayTypeNameForT spells the type of an array operand as %T does: a conversion's
+// type, `main.Buf`; the name of a defined array type, `geo.Buf` for another
+// package's; and an unnamed array by its extents and element, `[4]uint8`.
+func (e *emitter) arrayTypeNameForT(ast []int32) (string, bool) {
+	if _, ct, ok := e.arrayConvTarget(ast); ok {
+		return e.typeNameForT(ct), true
+	}
+	a, ok := e.arrayShapeOf(ast)
+	if !ok {
+		if _, a, ok = e.arrayResultCall(ast); !ok { // `mk()` returning an array
+			return "", false
+		}
+	}
+	if a.name != "" {
+		return e.typeNameForT(a.name), true
+	}
+	// An array of a defined array type is resolved to all its extents, and the
+	// element's name says how many of them it accounts for: a `[2]Row` is `[2]main.Row`
+	// to %T, not the [2][3]int16 it is laid out as.
+	bounds, elem := a.bounds(), e.typeNameForT(a.elem)
+	if a.elemName != "" && a.elemDims > 0 && a.elemDims < len(bounds) {
+		bounds, elem = bounds[:len(bounds)-a.elemDims], e.typeNameForT(a.elemName)
+	}
+	s := ""
+	for _, b := range bounds {
+		s += "[" + b + "]"
+	}
+	return s + elem, true
 }
 
 // typeNameForT spells a type as Go's %T does: a type the program declares carries
@@ -22899,6 +22952,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		// into the surrounding literal: the name is known, but the padding is not
 		// something a literal can carry.
 		if name, static := e.staticTypeName(idx, arg); static {
+			e.evalTypeOnlyArg(idx, arg)
 			e.ind()
 			e.emit("printf(\"%" + spec + "s\", " + cQuote(name) + ");\n")
 			return true

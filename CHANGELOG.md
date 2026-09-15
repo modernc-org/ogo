@@ -125,6 +125,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`printf`'s `%T` evaluates its argument.** The type is known where the
+  argument is written, so its name was folded into the format and the argument
+  went with it: `printf("%T\n", tick())` never called `tick`, and `%T` of a
+  receive would not have received. Go evaluates every argument, and so does
+  this now. A print of two or more arguments already did.
+
+- **`%T` of an array prints its type.** Every array argument -- `[4]uint8`,
+  `main.Buf`, `[2]main.Row`, a field, a conversion, a literal, through a pointer,
+  a call's result, another package's -- was refused as "cannot tell the type of
+  this argument".
+
 - **A method can be called on an array declared from a conversion.** `b :=
   Buf(a)` for a defined array type `Buf` -- or the var form, a package variable,
   a conversion of a literal, of another array type, of a call, or of another

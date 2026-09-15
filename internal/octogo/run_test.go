@@ -18793,6 +18793,72 @@ func main() {
 		want: "588851508\n1009\n54\n5\n18\n",
 	},
 	{
+		// %T of an ARRAY, which had no C type to be named by and was "cannot tell the
+		// type of this argument" in every shape -- unnamed, defined, of a defined
+		// element, a field, a conversion, a literal, through a pointer, a call's
+		// result, with a width. And %T of an argument that DOES something: the type
+		// is known where the argument is written, so it was folded into the format
+		// and the argument dropped with it -- `printf("%T\n", tick())` never called
+		// tick, and a receive would not have received. Go evaluates every argument.
+		name: "%T of an array, and of an argument with effects",
+		src: `type Buf [4]byte
+
+type Row [3]int16
+
+type rec struct {
+	b   Buf
+	raw [2]uint32
+}
+
+type pt struct{ x, y int }
+
+var calls int
+
+func tick() int {
+	calls++
+	return calls
+}
+
+func mk() [2]float32 {
+	calls += 10
+	return [2]float32{1, 2}
+}
+
+func mkPt() pt {
+	calls += 100
+	return pt{1, 2}
+}
+
+var ch chan int
+
+func send() { ch <- 7 }
+
+func main() {
+	var a [4]byte
+	var x Buf
+	y := Buf{}
+	z := Buf(a)
+	var grid [2][3]int
+	var rows [2]Row
+	var r rec
+	p := &x
+	p[0] = 1
+	printf("%T %T %T %T %T\n", a, x, y, z, grid)
+	printf("%T %T %T %T\n", rows, rows[1], r.b, r.raw)
+	printf("%T %T %T %T\n", Buf(a), [3]bool{}, *p, mk())
+	printf("%8T|%-10T|\n", x, a)
+	printf("%T\n", tick())
+	printf("[%T]\n", mkPt())
+	printf("%-6T|\n", tick())
+	printf("%T %d\n", mk(), tick())
+	go send()
+	printf("%T\n", <-ch)
+	println(calls, a[0], y[0], z[0], grid[0][0], rows[0][0], r.raw[0], x[0])
+}
+`,
+		want: "[4]uint8 main.Buf main.Buf main.Buf [2][3]int\n[2]main.Row main.Row main.Buf [2]uint32\nmain.Buf [3]bool main.Buf [2]float32\nmain.Buf|[4]uint8  |\nint\n[main.pt]\nint   |\n[2]float32 123\nint\n123 0 0 0 0 0 0 1\n",
+	},
+	{
 		// An array declared from a conversion to a defined array type -- `b :=
 		// Buf(a)`, the var form, at package scope, from a literal, from another
 		// defined array type, from a call -- and then a method called on it. The
@@ -23562,7 +23628,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n" +
 	"1649267441664 2199023255552 1099511627776 35184372088832 true\n" +
 	"17 gx-7 true 10 19\n" +
-	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n"
+	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
+	"[2]greet.Row [2]greet.Reader greet.Row\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -23741,6 +23808,7 @@ func qualifiedArrays() {
 	raw[0], raw[1] = 3, 4
 	conv := greet.Row(raw)
 	println(len(r), r.Sum(), rowTotal(f), s.row[1], rows[1][0], t, c == r, r[0], s.id, len(byMeter), len(byRow), byMeter[1], byRow[5], conv.Sum())
+	printf("%T %T %T\n", rows, greet.Meters, conv)
 }
 
 // Another package's constants and array bounds built from constants in a LATER file
