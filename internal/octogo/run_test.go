@@ -19348,6 +19348,117 @@ func main() {
 		panics: true,
 	},
 	{
+		// Go evaluates the calls of an expression left to right, and C leaves the
+		// order of an operator's operands and of a helper's arguments open. Each
+		// line below is the order the calls of one statement ran in. The old
+		// compiler ran six of the fourteen out of order on a P2-EDGE -- a shift by a
+		// count that is a call evaluated the count first, and an operand bound to a
+		// temporary ahead of the statement (a call's array, struct, slice or
+		// interface result) ran before every operand left of it -- and ten on the
+		// host, whose compiler takes a helper's arguments right to left.
+		name: "the calls of an expression run left to right",
+		src: `type P struct{ a, b int }
+
+type Mer interface{ M(v int) int }
+
+type Q struct{ n int }
+
+func (q *Q) M(v int) int {
+	trace = trace*10 + 7
+	return q.n + v
+}
+
+var trace int
+
+func f(n int) int {
+	trace = trace*10 + n
+	return n
+}
+
+func f64(n int) int64 {
+	trace = trace*10 + n
+	return int64(n)
+}
+
+func fs(n int) string {
+	trace = trace*10 + n
+	return names[n%2]
+}
+
+var names = [2]string{"ab", "cd"}
+
+func fa(n int) [2]int {
+	trace = trace*10 + n
+	return [2]int{n, n}
+}
+
+func fp(n int) P {
+	trace = trace*10 + n
+	return P{n, n}
+}
+
+var backing = [4]int{1, 2, 3, 4}
+
+func fsl(n int) []int {
+	trace = trace*10 + n
+	return backing[:]
+}
+
+var qv = Q{1}
+
+var gq = &qv
+
+func getM(n int) Mer {
+	trace = trace*10 + n
+	return gq
+}
+
+var tbl [8]int
+
+func show() int {
+	t := trace
+	trace = 0
+	return t
+}
+
+func main() {
+	x := f(7) / f(2)
+	a := show()
+	x += f(9) % f(4)
+	b := show()
+	x += f(1) << uint(f(2))
+	c := show()
+	x += f(8) >> uint(f(1))
+	d := show()
+	y := f64(5) / f64(2)
+	e := show()
+	println(a, b, c, d, e, x, y)
+	s := fs(1) < fs(2)
+	g := show()
+	x = min(f(3), f(1)) + max(f(1), f(2), f(3))
+	h := show()
+	x += f(1) + fa(2)[f(3)%2]
+	i := show()
+	x += f(1) + fp(2).b
+	j := show()
+	x += f(1) + fsl(2)[f(3)]
+	k := show()
+	x += f(1) + getM(2).M(f(3))
+	l := show()
+	tbl[f(1)] = f(2) + f(3)
+	m := show()
+	x += -f(1) + f(2)*(f(3)-f(4))
+	n := show()
+	if f(1) < f(2) && f(3) == 3 || f(4) > f(5) {
+		x++
+	}
+	o := show()
+	println(g, h, i, j, k, l, m, n, o, s, x, tbl[1])
+}
+`,
+		want: "72 94 12 81 52 12 2\n12 31123 123 12 123 1237 123 1234 123 false 18 5\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

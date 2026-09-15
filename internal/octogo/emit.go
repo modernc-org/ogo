@@ -4939,6 +4939,7 @@ type emitter struct {
 	funcParams        map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
+	boundOperands     map[*int32]*boundOperand  // the operands of the level being emitted bound to temporaries for their evaluation order, by their place in the AST (see bindEffectOperands)
 	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call, or of the star of a dereferenced pointer-to-array expression -> the temporary it was bound to, so one occurrence is evaluated once (see hoistArrayCallArg, arrayPtrExprDeref); the statement's
 	methodPtr         map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals           map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
@@ -11170,31 +11171,134 @@ func (e *emitter) hoist(ctype string, emitValue func()) string {
 // one printf.
 func (e *emitter) exprHasEffect(ast []int32) bool {
 	for n := range it(ast) {
-		switch {
-		case n.sym == 0:
-			if e.f.ch(n.tok) == ARROW {
-				return true // a channel receive
+		if e.nodeHasEffect(n) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeHasEffect is exprHasEffect for one node: an operand of a level, say.
+func (e *emitter) nodeHasEffect(n Node) bool {
+	switch {
+	case n.sym == 0:
+		return e.f.ch(n.tok) == ARROW // a channel receive
+	case n.sym == Factor:
+		if recv, _, isCall := e.factorCall(slices.Collect(it(n.ast))); isCall && !e.pureCall(recv) {
+			return true
+		}
+		// A method called on a PARENTHESISED expression is a call like any
+		// other, and factorCall does not see it -- that one wants a bare
+		// identifier for a base. Without this the arguments of
+		// `println((&v).Sum(), (&v).Bump())` were left to C's unspecified
+		// order, and came out right to left.
+		if _, _, isParenCall := e.parenMethodSteps(slices.Collect(it(n.ast))); isParenCall {
+			return true
+		}
+	}
+	return e.exprHasEffect(n.ast) // an argument or an operand may still have one
+}
+
+// boundOperand is an operand of a level bound to a temporary ahead of the statement
+// (bindEffectOperands), and whether the level has read it through the temporary.
+type boundOperand struct {
+	name string
+	used bool
+}
+
+// bindEffectOperands binds the operands of one expression level that do something
+// when evaluated -- call, receive -- to temporaries in source order, when two or
+// more of them do, and answers a function to run once the level is emitted.
+//
+// Go evaluates the calls and receives of an expression left to right. C leaves the
+// order of an operator's operands and of a helper's arguments unspecified, and the
+// C this emits leaned on it: `f(1) / f(2)` and `f(1) % f(2)` went through helpers
+// the host's compiler evaluates right to left, `f(1) << uint(f(2))` evaluated the
+// count first on a P2-EDGE as well, and an operand needing a statement ahead of
+// itself moved ahead of every operand before it -- `f(1) + mk()[f(2)]` called mk
+// first everywhere. Bound first, in order, each such operand is read by emitExprNode
+// through its temporary wherever the level puts it -- each but the last, which runs
+// in the statement, after all of them, wherever the level puts it.
+//
+// Only an operand of a type a temporary holds as it is -- a number, a bool, a
+// pointer, a string or slice header -- is bound, and a level with any other has none
+// bound: a struct, an interface or an array operand is rendered by paths of its own,
+// which would evaluate the operand a second time. What runs after the level checks
+// every bound operand was read through its temporary, which is the invariant that
+// keeps a call from running twice.
+func (e *emitter) bindEffectOperands(kids []Node) (release func()) {
+	release = func() {}
+	if e.declInit || e.deferReplay >= 0 {
+		return release
+	}
+	var cands []Node
+	for _, k := range kids {
+		switch k.sym {
+		case 0, RelOp, AddOp, MulOp, UnaryOp:
+			continue
+		}
+		if len(k.ast) == 0 || !e.nodeHasEffect(k) {
+			continue
+		}
+		if _, bound := e.boundOperands[&k.ast[0]]; bound {
+			continue
+		}
+		cands = append(cands, k)
+	}
+	if len(cands) < 2 {
+		return release
+	}
+	// The last needs no temporary: everything before it has run by the time the
+	// statement does, and a temporary is a local, of which a function has 480 longs
+	// on the target (cog-RAM: "fit 480 failed").
+	cands = cands[:len(cands)-1]
+	// Typed with what the typing leaves behind thrown away: typing an operand renders
+	// parts of it, and an array call it binds would otherwise stand in the prologue
+	// ahead of every operand bound below -- `f(1) + mk()[f(2)]` called mk first still.
+	cts := make([]string, len(cands))
+	bindable := true
+	e.capturePrologue(func() {
+		for i, k := range cands {
+			ct, ok := e.inferNode(k)
+			if !ok || !e.bindableCType(ct) {
+				bindable = false
+				return
 			}
-		case n.sym == Factor:
-			if recv, _, isCall := e.factorCall(slices.Collect(it(n.ast))); isCall && !e.pureCall(recv) {
-				return true
-			}
-			// A method called on a PARENTHESISED expression is a call like any
-			// other, and factorCall does not see it -- that one wants a bare
-			// identifier for a base. Without this the arguments of
-			// `println((&v).Sum(), (&v).Bump())` were left to C's unspecified
-			// order, and came out right to left.
-			if _, _, isParenCall := e.parenMethodSteps(slices.Collect(it(n.ast))); isParenCall {
-				return true
-			}
-			if e.exprHasEffect(n.ast) {
-				return true // its arguments may still have effects
-			}
-		default:
-			if e.exprHasEffect(n.ast) {
-				return true
+			cts[i] = ct
+		}
+	})
+	if !bindable {
+		return release
+	}
+	if e.boundOperands == nil {
+		e.boundOperands = map[*int32]*boundOperand{}
+	}
+	keys := make([]*int32, len(cands))
+	for i, k := range cands {
+		name := e.hoist(cts[i], func() { e.emitExprNode(k) })
+		keys[i] = &k.ast[0]
+		e.boundOperands[keys[i]] = &boundOperand{name: name}
+	}
+	return func() {
+		for _, key := range keys {
+			b := e.boundOperands[key]
+			delete(e.boundOperands, key)
+			if !b.used {
+				e.fail("internal error: an operand bound to keep evaluation order was not read through its temporary")
 			}
 		}
+	}
+}
+
+// bindableCType reports whether a temporary of C type ct holds a value as the value
+// is: a number, a bool, a pointer, or a string or slice header.
+func (e *emitter) bindableCType(ct string) bool {
+	u := e.underlyingCType(ct)
+	switch {
+	case cIntWidths[u] != 0, u == "float", u == "double", u == cBool, u == cString:
+		return true
+	case e.isSliceCType(u), e.isPointer(u) && !e.isIfaceCType(u):
+		return true
 	}
 	return false
 }
@@ -19945,6 +20049,9 @@ func (e *emitter) emitCondition(exprChildren []int32) {
 	// The C `if`/`while` parentheses stay in place around a lowered string compare.
 	e.emit("(")
 	kids := slices.Collect(it(exprChildren))
+	if !slices.ContainsFunc(kids, func(c Node) bool { return c.sym == RelOp && e.isLogicalOp(c) }) {
+		defer e.bindEffectOperands(kids)()
+	}
 	if !e.emitStringCompare(kids) {
 		e.emitLogicalKids(kids)
 	}
@@ -22596,6 +22703,8 @@ func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
 	if ct == cString {
 		e.usesStringCmp = true // the helper orders through ogo_string_cmp
 	}
+	// The arguments are a nest of helper calls, whose order C leaves open.
+	defer e.bindEffectOperands(args)()
 	fn := minCName(ct)
 	if recv == "max" {
 		fn = maxCName(ct)
@@ -25774,6 +25883,12 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 	// which is only sound when evaluating it has no effect. It usually has none: an
 	// index is a name or a literal far more often than it is a call.
 	t.targetRepeatable = !e.exprHasEffect(idx)
+	// Go evaluates the index before the value and checks it after: `arr[bad()] =
+	// side()` calls both and then panics. Written as one C assignment the order of
+	// the two was the C compiler's, which the host's took right to left.
+	if t.rhs != nil {
+		defer e.bindEffectOperands([]Node{{sym: Expression, ast: idx}, {sym: Expression, ast: t.rhs}})()
+	}
 	e.emitAssignTailOrCopy(func() {
 		e.emit(lhs + "[")
 		e.emitIndex(idx, lenExpr)
@@ -28465,6 +28580,15 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 // operator precedence differs (notably Go binds << tighter than C does).
 // Integer-literal text is normalized for C by normalizeIntLit.
 func (e *emitter) emitExpr(ast []int32) {
+	// An expression a caller bound to a temporary for its evaluation order (see
+	// bindEffectOperands), asked for by its children as it is here.
+	if len(ast) != 0 {
+		if b, ok := e.boundOperands[&ast[0]]; ok {
+			b.used = true
+			e.emit(b.name)
+			return
+		}
+	}
 	e.typeUntypedShifts(ast, "") // operands beside an untyped shift type it
 	// A condition or assignment RHS reaches here as the Expression's unwrapped
 	// children, so a string comparison must be recognized on this flat list too --
@@ -28975,6 +29099,7 @@ func (e *emitter) emitStringCompare(kids []Node) bool {
 // Non-string operands and every other operator emit unchanged, so a chain with no
 // string comparison is identical to emitting the kids in order.
 func (e *emitter) emitKidsStringCompare(kids []Node) {
+	defer e.bindEffectOperands(kids)()
 	// Whether THIS level computes unsigned, which decides how a constant operand of
 	// it is spelled (see unsignedLitC). Read from the kid list rather than passed
 	// in: a logical or relational chain infers bool and so answers no, and every
@@ -29372,6 +29497,14 @@ func indentLines(lines []string) []string {
 }
 
 func (e *emitter) emitExprNode(n Node) {
+	// An operand its level bound to a temporary for the order it is evaluated in.
+	if len(n.ast) != 0 {
+		if b, ok := e.boundOperands[&n.ast[0]]; ok {
+			b.used = true
+			e.emit(b.name)
+			return
+		}
+	}
 	switch n.sym {
 	case Expression, SimpleExpr:
 		kids := slices.Collect(it(n.ast))
@@ -29380,6 +29513,11 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		e.typeUntypedShiftsNode(n, "") // operands beside an untyped shift type it
+		// A chain of && or || is a sequence of evaluations, not one, and binds per
+		// operand (emitShortCircuit).
+		if !slices.ContainsFunc(kids, func(c Node) bool { return c.sym == RelOp && e.isLogicalOp(c) }) {
+			defer e.bindEffectOperands(kids)()
+		}
 		// A constant expression whose value does not fit a C int is emitted as that
 		// value: C would compute it in int and get a different answer (see intCLit).
 		if lit, ok := e.levelConstLit(n.ast); ok {
@@ -29435,6 +29573,7 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		e.typeUntypedShiftsNode(n, "") // operands beside an untyped shift type it
+		defer e.bindEffectOperands(kids)()
 		if lit, ok := e.levelConstLit(n.ast); ok {
 			e.emit(lit)
 			return

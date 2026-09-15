@@ -125,6 +125,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **The calls of an expression run left to right.** Go evaluates them in source
+  order and C leaves an operator's operands and a helper's arguments to the C
+  compiler. On the board, `f(1) << uint(f(2))` called `f(2)` first, and an
+  operand needing a statement ahead of itself -- a call's array, struct, slice or
+  interface result, as in `f(1) + mk()[f(2)]` -- ran before every operand left of
+  it; on the host, `/`, `%`, 64-bit arithmetic, string comparisons, `min`/`max`
+  and a store `a[f(1)] = f(2)` ran right to left as well. Every call but the last
+  of such an expression is bound to a temporary first, in order.
+
 - **`len` and `cap` of an operand holding a call evaluate it.** Only a call-free
   operand makes `len` of an array a constant; `len(grid[idx()])` is not one, and
   Go runs `idx` and checks the index. The extent was emitted and `idx` never ran.
