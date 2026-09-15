@@ -22097,13 +22097,11 @@ func (e *emitter) arrayOperandExtent(callSuffix, arg []int32) (string, bool) {
 		}
 	}
 	// `len(*pick())`: the pointer is bound and checked when the operand is evaluated,
-	// as any read through it is (arrayPtrExprDeref).
+	// as any read through it is (arrayPtrExprDeref). Evaluated as a statement that
+	// reads the binding: with the checks off nothing else would, and the host's
+	// compiler reports the temporary unused.
 	if _, _, _, a, ok := e.arrayPtrExprShape(arg); ok {
-		if e.exprHasEffect(arg) {
-			if _, _, ok := e.arrayPtrExprDeref(arg); !ok {
-				return "", false
-			}
-		}
+		evaluate()
 		return a.bound, true
 	}
 	return "", false
