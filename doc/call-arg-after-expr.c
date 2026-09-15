@@ -16,6 +16,8 @@
 //	take3(1, (0 - m), 3)            -213     -359516817401577685    <- warned; a 32-bit parameter first changes nothing
 //	mix((0 - m), 3LL)               -214     -214                   the constant carrying its width
 //	mix((0 - m), (int64_t)3)        -214     -214                   or cast
+//	mix((0 - m), 0LL)               -217     -1078972716209405735   <- warned: a ZERO loses its width, LL or not
+//	mix((0 - m), (int64_t)0)        -217     -217                   a cast keeps it
 //	mix((0 - m), k)                 -214     -214                   an int32_t VARIABLE is converted
 //	mix(3, (0 - m))                 86       86                     the constant first
 //	mix((0 - m), m)                 -210     -210
@@ -45,6 +47,16 @@
 // parameter is spelled with the parameter's width, `3LL`/`3ULL`, in every
 // position; that is also what lets a call through a function value pass a constant
 // at all. Unreported upstream as of this writing.
+//
+// ZERO IS DIFFERENT, found 2026-09-15 when the fuzzer's board sweep built seed 140
+// with this warning under the workaround: every spelling of zero but a cast --
+// `0LL`, `0ULL`, `(0)`, `'\0'`, `(1LL - 1)` -- is narrowed back to one word in that
+// position, so the workaround's own `0LL` was the fault again: `mix((0 - m), 0LL)`
+// is -1078972716209405735 and `umix(u * 2, 0ULL)` 18446744073709551399, for -217
+// and 434. `(int64_t)0` is passed whole; so is a zero with another wide constant
+// after it, `mix3((0 - m), 0LL, 4LL)`, and no other value measured -- 1, -1, 511,
+// 512, 65535, INT_MAX, 2^31, 2^32 - 1, INT64_MIN -- does this. wideConstArg spells a
+// zero to a 64-bit parameter as the cast.
 //
 // To check, build for the P2 and read the second number: -214 is right.
 

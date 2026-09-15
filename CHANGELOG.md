@@ -114,6 +114,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A zero passed to a 64-bit parameter after a 64-bit expression arrives
+  whole.** `mix(-m, 0)` for int64 parameters computed garbage on the board
+  (-1078972716209405735 for -217) with only a backend warning to say so, and the
+  same call through a function value or an interface method did not build at
+  all. The target's C compiler narrows every spelling of zero but a cast to one
+  word in that position, so the `0LL` the compiler already wrote there for the
+  earlier constant-argument fault was not enough; a zero is spelled as a cast
+  now. Found by the fuzzer's board sweep, whose seed 140 built with the warning.
+
 - **Two `if` statements in a row updating the same package variable compute
   right on the board.** `if a { g ^= K }` followed by `if b { g ^= M }` -- or
   `+=`, `|=`, `-=`, `++` and `*=`, on an int, a uint32, an array element or a

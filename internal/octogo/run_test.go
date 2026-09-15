@@ -18760,6 +18760,50 @@ func main() {
 		want: "-214 251 441 -220 -192\n437 -213 -214 220 220 86\n1099511627559 -1099511627993\n-213 221 87\ndeferred -7 3\n",
 	},
 	{
+		// The case above, for ZERO. The target's C compiler narrows every spelling
+		// of zero but a cast -- `0LL`, `0ULL`, `(0)` -- to one word after a 64-bit
+		// expression argument, so `mix(-m, 0)` was warned about and miscompiled
+		// exactly as `mix(-m, 3)` had been, while no other value measured does
+		// that. A zero to a 64-bit parameter is spelled `(int64_t)0` now. Found by
+		// the fuzzer's board sweep, seed 140, whose build carried the warning.
+		name: "a zero argument after a 64-bit expression",
+		src: `type Mixer struct {
+	k int64
+}
+
+type Mixing interface {
+	mix(a, b int64) int64
+}
+
+func (x Mixer) mix(a, b int64) int64 { return a*31 + b + x.k }
+
+func mix(a, b int64) int64 { return a*31 + b }
+
+func mix3(a, b, c int64) int64 { return a*31 + b*7 + c }
+
+func umix(a, b uint64) uint64 { return a*31 + b }
+
+func id(v int64) int64 { return v }
+
+func show(a, b int64) { println("deferred", a, b) }
+
+const Zero = 0
+
+func main() {
+	m := id(7)
+	var u uint64 = 7
+	x := Mixer{k: 1}
+	f := mix
+	defer show(-m, 0)
+	println(mix(-m, 0), mix(m+1, 0), mix(m*2, 3-3), mix(-m, Zero), mix3(-m, 0, 4), mix3(-m, 4, 0))
+	println(umix(u*2, 0), x.mix(-m, 0), f(-m, 0), f(m, 0), mix(m, 0), mix(0, -m))
+	var i Mixing = &x
+	println(i.mix(-m, 0), i.mix(m, 0), i.mix(0, -m))
+}
+`,
+		want: "-217 248 434 -217 -213 -189\n434 -216 -217 217 217 -7\n-216 218 -6\ndeferred -7 0\n",
+	},
+	{
 		// A deferred function literal taking arguments. A literal captures nothing
 		// of the scope around it, so its arguments are the one way a value reaches
 		// it; they are evaluated where the defer stands, as Go says -- q holds

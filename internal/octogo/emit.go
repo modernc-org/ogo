@@ -25928,6 +25928,14 @@ func (e *emitter) wideConstArg(params []string, i int, arg Node) (string, bool) 
 	if !ok {
 		return "", false
 	}
+	// A ZERO keeps its width only through a cast. The target's compiler narrows
+	// `0LL`, `0ULL`, `(0)` -- every spelling of zero but a cast -- back to one
+	// word in the same position, and warns and miscompiles `mix(-m, 0LL)` exactly
+	// as it did `mix(-m, 3)`; `(int64_t)0` it passes whole. No other value
+	// measured does this. Found by the fuzzer's board sweep, seed 140.
+	if v == 0 {
+		return "(" + ut + ")0", true
+	}
 	if ut == "uint64_t" {
 		return strconv.FormatUint(uint64(v), 10) + "ULL", true
 	}
