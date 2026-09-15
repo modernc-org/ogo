@@ -19121,6 +19121,54 @@ func main() {
 		want: "2 5 true false 7 14 6 8 10 4\n10 2 11 24 21\n",
 	},
 	{
+		// A fallthrough repeats the next case's body, and the temporaries a body
+		// binds a call's array result to were remembered for the whole function by
+		// the call's position -- so the repeated copy of `println(mk(2)[2])` named the
+		// first copy's temporary, declared in another block, and the program did not
+		// compile ("an array result cannot be read through this suffix" here). The
+		// memo belongs to the statement that declares them.
+		name: "a fallthrough into a body indexing a call's array",
+		src: `type P struct {
+	x, y int
+}
+
+var calls int
+
+func mk(v int) [4]int {
+	calls++
+	return [4]int{v, v + 1, v + 2, v + 3}
+}
+
+func pair(v int) P {
+	calls += 10
+	return P{v, v * 2}
+}
+
+func step(n int) {
+	switch n {
+	case 1:
+		println("one", mk(1)[1])
+		fallthrough
+	case 2:
+		println("two", mk(2)[2], pair(2).y)
+		fallthrough
+	default:
+		if mk(3)[0] == 3 {
+			println("three", pair(3).x)
+		}
+	}
+}
+
+func main() {
+	step(1)
+	step(2)
+	step(5)
+	println(calls)
+}
+`,
+		want: "one 2\ntwo 4 4\nthree 3\ntwo 4 4\nthree 3\nthree 3\n56\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

@@ -125,6 +125,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A `fallthrough` into a body that indexes a call's array compiles.** The body
+  a `fallthrough` reaches is emitted a second time, and the second copy named the
+  temporary the first copy had bound `mk()` to, in another block: the C did not
+  compile.
+
 - **A package variable can be initialized from an element of a call's array.**
   `var v = mk()[1]` -- and `len(mk())`, a comparison, a composite literal's
   element or a multi-result call's argument using one -- stopped the compiler

@@ -11127,12 +11127,18 @@ func (e *emitter) emitStatement(ast []int32) {
 	// of itself, which C has nowhere to put mid-expression. With no such request
 	// this is a copy and nothing else, so every statement that needs no prologue
 	// emits exactly what it did before.
-	savedW, savedPro := e.w, e.prologue
+	//
+	// The memo of calls bound to a temporary (hoistedArrayCalls) is the statement's
+	// too, since the temporary it names is declared in the statement's prologue. Kept
+	// for the function, it outlived the block that declared it: a case body a
+	// fallthrough repeats is emitted twice, and the second copy of `println(mk()[2])`
+	// read the first copy's temporary, undeclared in its block.
+	savedW, savedPro, savedHoists := e.w, e.prologue, e.hoistedArrayCalls
 	var buf bytes.Buffer
-	e.w, e.prologue = &buf, nil
+	e.w, e.prologue, e.hoistedArrayCalls = &buf, nil, map[int32]string{}
 	e.emitStatementInner(nodes, ast)
 	pro := e.prologue
-	e.w, e.prologue = savedW, savedPro
+	e.w, e.prologue, e.hoistedArrayCalls = savedW, savedPro, savedHoists
 	for _, line := range pro {
 		e.ind()
 		e.emit(line)
