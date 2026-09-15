@@ -125,6 +125,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An operand Go evaluates only sometimes is evaluated only then.** The
+  statements an expression needs ahead of itself -- a call's array or struct
+  result bound to a temporary, a pointer's nil check -- ran before the whole
+  statement, so they ran for the right side of `&&` and `||`, an `else if`'s
+  test and a `case` expression whatever the tests before them said: `ok &&
+  mk()[0] == 1` called `mk` with `ok` false, and the nil guard `p != nil && p[0]
+  == v` over a pointer to an array panicked on the nil it guards against. Behind
+  an init statement, `if p := row(); p[0] == 1`, they ran ahead of the init, and
+  the program did not compile. They run where Go evaluates the operand now.
+
 - **`printf`'s `%T` evaluates its argument.** The type is known where the
   argument is written, so its name was folded into the format and the argument
   went with it: `printf("%T\n", tick())` never called `tick`, and `%T` of a

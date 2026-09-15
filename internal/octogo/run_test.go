@@ -18926,6 +18926,104 @@ func main() {
 		want: "true false true true true true\ntrue true true false\n",
 	},
 	{
+		// What an operand needs ahead of itself -- a call's result bound to a
+		// temporary, a pointer's nil check -- ran before the whole statement, including
+		// for an operand Go evaluates only sometimes: the right of && and ||, an
+		// else-if's test, a case's. Every call below ran whatever the tests before it
+		// said (the first line counted 1111 where Go counts 0), and `n.vals != nil &&
+		// n.vals[0] != v` panicked on the nil it guards against. A test behind an init
+		// statement had it run ahead of the init: p was checked before it was declared.
+		name: "an operand evaluated only when Go evaluates it",
+		src: `type Pair struct {
+	x, y int
+	ok   bool
+}
+
+type node struct {
+	vals *[4]int
+	next *node
+}
+
+var calls int
+
+func arr(v int) [4]int {
+	calls++
+	return [4]int{v, v + 1, v + 2, v + 3}
+}
+
+func pair(v int) Pair {
+	calls += 10
+	return Pair{v, v * 2, v > 0}
+}
+
+var backing = [3]int{7, 8, 9}
+
+func tail() []int {
+	calls += 100
+	return backing[1:]
+}
+
+var rows [2][4]int
+
+func row(i int) *[4]int {
+	calls += 1000
+	return &rows[i]
+}
+
+func find(n *node, v int) bool {
+	for n != nil && (n.vals == nil || n.vals[0] != v) {
+		n = n.next
+	}
+	return n != nil && n.vals != nil && n.vals[1] == v+1
+}
+
+func main() {
+	no, yes := false, true
+	println(no && arr(1)[0] == 1, yes || pair(1).ok, no && tail()[0] == 8, yes || row(0)[1] == 0, calls)
+	println(yes && arr(1)[2] == 3 || pair(2).y == 4, no || arr(5)[0] == 5 && pair(3).ok, calls)
+	if no {
+		println("a")
+	} else if arr(2)[0] == 3 {
+		println("b")
+	} else if pair(4).x == 4 {
+		println("c", calls)
+	}
+	switch {
+	case yes:
+		println("d", calls)
+	case arr(3)[0] == 3:
+		println("e")
+	}
+	switch 9 {
+	case arr(9)[0], pair(9).x:
+		println("f", calls)
+	case tail()[1]:
+		println("g")
+	default:
+		println("h")
+	}
+	if p := row(1); p != nil && p[2] == 0 {
+		println("i", calls)
+	}
+	switch q := row(0); {
+	case q == nil || q[3] == 0 && pair(0).ok:
+		println("j")
+	default:
+		println("k", calls)
+	}
+	var vs = [4]int{3, 4, 0, 0}
+	n := &node{next: &node{vals: &vs}}
+	println(find(n, 3), find(n, 5), find(&node{}, 1), find(nil, 1))
+	k := 0
+	for k < 3 && arr(k)[0] < 2 {
+		k++
+	}
+	println(k, calls)
+}
+`,
+		want: "false true false true 0\ntrue true 12\nc 23\nd 23\nf 24\ni 1024\nk 2034\ntrue false false false\n2 2037\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

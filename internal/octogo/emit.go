@@ -18708,20 +18708,41 @@ func (e *emitter) emitSwitch(ast []int32) {
 
 	defaultIdx := -1
 	wrote := false
+	// A case is tested only when every case before it failed, so what its test needs
+	// ahead of itself runs inside the else that reaches it -- a block each, closed
+	// after the chain. The first case's runs before the statement, as any
+	// statement's does, or behind the guard in the block the guard opened, since a
+	// test may read the name the guard declares.
+	opened := 0
 	for i, cc := range cases {
 		exprs, isDefault := e.caseHead(cc.ast)
 		if isDefault {
 			defaultIdx = i
 			continue
 		}
-		if !wrote {
+		var test heldOperand
+		if !wrote && !block {
+			test.text = e.captureC(func() { e.emitCaseCond(guardVar, exprs) })
+		} else {
+			test = e.holdOwnPrologue(func() { e.emitCaseCond(guardVar, exprs) })
+		}
+		switch {
+		case !wrote:
+			e.emitLines(test.pro)
 			e.ind()
 			e.emit("if ")
 			wrote = true
-		} else {
+		case len(test.pro) == 0:
 			e.emit(" else if ")
+		default:
+			e.emit(" else {\n")
+			e.indent++
+			opened++
+			e.emitLines(test.pro)
+			e.ind()
+			e.emit("if ")
 		}
-		e.emitCaseCond(guardVar, exprs)
+		e.emit(test.text)
 		e.emit(" {\n")
 		e.indent++
 		e.emitCaseFrom(cases, i)
@@ -18747,6 +18768,11 @@ func (e *emitter) emitSwitch(ast []int32) {
 		e.emit("}\n")
 	case wrote:
 		e.emit("\n")
+	}
+	for ; opened > 0; opened-- {
+		e.indent--
+		e.ind()
+		e.emit("}\n")
 	}
 
 	e.switchBreak = savedBreak
@@ -19395,9 +19421,31 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		return "", false, false
 	}
 	tmp := e.newTmp()
+	if block {
+		// Behind an init statement the value may read what the init declared, so
+		// what it needs ahead of itself runs in the init's block rather than before
+		// the statement, where it ran ahead of the init.
+		e.emitStatementsHere(func() { e.emitInferredLocal(tmp, g.tag.ast) })
+		return tmp, block, true
+	}
 	openBlock()
 	e.emitInferredLocal(tmp, g.tag.ast)
 	return tmp, block, true
+}
+
+// emitStatementsHere runs emit, which writes whole statements, with the prologue
+// lines it adds written just ahead of them rather than ahead of the statement being
+// emitted: the statements stand in a block that statement opened, behind
+// declarations their temporaries may read.
+func (e *emitter) emitStatementsHere(emit func()) {
+	saved, savedW := e.prologue, e.w
+	var b bytes.Buffer
+	e.prologue, e.w = nil, &b
+	emit()
+	pro := e.prologue
+	e.prologue, e.w = saved, savedW
+	e.emitLines(pro)
+	e.w.Write(b.Bytes())
 }
 
 // caseHead returns a case clause's case expressions and whether it is the default.
@@ -19438,18 +19486,14 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 		ct, _ := e.varReprType(guardVar)
 		stringGuard = ct == cString
 	}
-	e.emit("(")
-	for i, ex := range exprs {
-		if i != 0 {
-			e.emit(" || ")
-		}
+	test := func(ex Node) {
 		if stringGuard {
 			e.usesString = true
 			e.usesStringEq = true
 			e.emit("ogo_string_eq(" + cname + ", ")
 			e.emitExpr(ex.ast)
 			e.emit(")")
-			continue
+			return
 		}
 		if cname != "" {
 			// A case value is compared with the tag, so it takes the tag's type.
@@ -19459,6 +19503,31 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 			e.emit(cname + " == ")
 		}
 		e.emitExpr(ex.ast)
+	}
+	// The expressions of one case are tried left to right until one matches, which
+	// is a short circuit like ||'s, and lowered like it when one past the first needs
+	// statements ahead of itself (see emitShortCircuit).
+	held := make([][]heldOperand, len(exprs))
+	lazy := false
+	for i, ex := range exprs {
+		if i == 0 {
+			held[i] = []heldOperand{{text: e.captureC(func() { test(ex) })}}
+			continue
+		}
+		h := e.holdPrologue(func() { test(ex) })
+		lazy = lazy || len(h.pro) != 0
+		held[i] = []heldOperand{h}
+	}
+	e.emit("(")
+	if lazy {
+		e.emit(e.shortCircuitC(held))
+	} else {
+		for i, h := range held {
+			if i != 0 {
+				e.emit(" || ")
+			}
+			e.emit(h[0].text)
+		}
 	}
 	e.emit(")")
 }
@@ -19564,12 +19633,30 @@ func (e *emitter) emitIf(ast []int32) {
 	} else {
 		e.emitInferredLocal(names[0], initExpr)
 	}
-	e.ind()
-	e.emitIfBodyWithCond(ast, cond) // ends its own line
+	e.emitIfBodyAt(ast, cond, ifAfterInit) // ends its own line
 	e.indent--
 	e.ind()
 	e.emit("}\n")
 }
+
+// ifPlace is where an if's test stands, which decides where the statements its
+// condition needs ahead of itself run.
+type ifPlace int
+
+const (
+	// ifStmt is a statement's own test: its statements run before the statement,
+	// as any statement's do.
+	ifStmt ifPlace = iota
+	// ifAfterInit is a test behind an init statement. Its statements may read what
+	// the init declares, and ran ahead of the init -- and of its declaration --
+	// before the block: `if p := pick(); p[0] == 1` checked p for nil before p was
+	// declared. They run in the init's block, right before the test.
+	ifAfterInit
+	// ifElse is an else-if's test, which Go evaluates only when every test before
+	// it failed. Its statements ran ahead of the first: `if hit { } else if
+	// mk()[0] == 1 { }` called mk with hit true. They run inside the else.
+	ifElse
+)
 
 // ifInitParts decomposes an `if` that carries an init statement, returning the
 // declared name, its initializer and the condition. ok is false for a plain `if`,
@@ -19621,15 +19708,16 @@ func (e *emitter) ifInitParts(ast []int32) (names []string, initExpr, cond []int
 }
 
 // emitIfBody emits `if (cond) { ... }` and its optional else branch, assuming the
-// cursor is already positioned — an initial indent for a top-level if, or the
-// `} else ` written by an enclosing call for an `else if`. It recurses on an
-// `else if` continuation so the C reads `} else if (c) {` on one line.
-func (e *emitter) emitIfBody(ast []int32) { e.emitIfBodyWithCond(ast, nil) }
+// cursor is already positioned for a statement's own if. It recurses on an `else
+// if` continuation so the C reads `} else if (c) {` on one line.
+func (e *emitter) emitIfBody(ast []int32) { e.emitIfBodyAt(ast, nil, ifStmt) }
 
-// emitIfBodyWithCond is emitIfBody with the condition supplied, which the init
-// form needs: there the statement's own expression is the declared name and the
-// condition lives inside the IfInit.
-func (e *emitter) emitIfBodyWithCond(ast []int32, condOverride []int32) {
+// emitIfBodyAt is emitIfBody for a test standing at place, with the condition
+// supplied where the init form needs it: there the statement's own expression is
+// the declared name and the condition lives inside the IfInit. Behind an init the
+// cursor is at the start of a line; an else-if continues the `}` of the test before
+// it.
+func (e *emitter) emitIfBodyAt(ast []int32, condOverride []int32, place ifPlace) {
 	var cond, thenBody, elseBody, elseIf []int32
 	for n := range it(ast) {
 		switch n.sym {
@@ -19660,8 +19748,33 @@ func (e *emitter) emitIfBodyWithCond(ast []int32, condOverride []int32) {
 		e.fail("malformed if statement")
 		return
 	}
-	e.emit("if ")
-	e.emitCondition(cond)
+	var test heldOperand
+	if place == ifStmt {
+		test.text = e.captureC(func() { e.emitCondition(cond) })
+	} else {
+		test = e.holdOwnPrologue(func() { e.emitCondition(cond) })
+	}
+	opened := false
+	switch place {
+	case ifStmt:
+		e.emit("if ")
+	case ifAfterInit:
+		e.emitLines(test.pro)
+		e.ind()
+		e.emit("if ")
+	case ifElse:
+		if len(test.pro) == 0 {
+			e.emit(" else if ")
+			break
+		}
+		e.emit(" else {\n")
+		e.indent++
+		opened = true
+		e.emitLines(test.pro)
+		e.ind()
+		e.emit("if ")
+	}
+	e.emit(test.text)
 	e.emit(" {\n")
 	e.indent++
 	e.deferBlockDepth++
@@ -19672,8 +19785,7 @@ func (e *emitter) emitIfBodyWithCond(ast []int32, condOverride []int32) {
 	e.emit("}")
 	switch {
 	case elseIf != nil:
-		e.emit(" else ")
-		e.emitIfBody(elseIf)
+		e.emitIfBodyAt(elseIf, nil, ifElse)
 	case elseBody != nil:
 		e.emit(" else {\n")
 		e.indent++
@@ -19685,6 +19797,11 @@ func (e *emitter) emitIfBodyWithCond(ast []int32, condOverride []int32) {
 		e.emit("}\n")
 	default:
 		e.emit("\n")
+	}
+	if opened {
+		e.indent--
+		e.ind()
+		e.emit("}\n")
 	}
 }
 
@@ -28159,7 +28276,10 @@ func (e *emitter) emitExpr(ast []int32) {
 	// emitExprNode's Expression case only fires for a wrapped Expression node.
 	// emitKidsStringCompare rewrites both a standalone and an embedded string compare and
 	// is otherwise identical to emitting the kids in order.
-	e.emitKidsStringCompare(slices.Collect(it(ast)))
+	kids := slices.Collect(it(ast))
+	if !e.emitShortCircuit(kids, false) {
+		e.emitKidsStringCompare(kids)
+	}
 }
 
 // stringCompareAt reports whether kids[i:i+3] is a string comparison --
@@ -28866,49 +28986,194 @@ func (e *emitter) isLogicalOp(n Node) bool {
 }
 
 // emitLogicalKids emits the operand/operator children of an Expression or
-// SimpleExpr in source order. When a chain mixes || with && it wraps each
-// ||-operand that holds a && in parentheses: C already groups it that way (&& binds
-// tighter than ||), so the parentheses change nothing, but they keep gcc's
-// -Wparentheses -- which the run tests treat as an error -- quiet. `a && b || c`
-// becomes `(a && b) || c`. Every other chain, including one with only comparisons
-// or only && or only ||, is emitted verbatim.
+// SimpleExpr in source order, a chain of && and || grouped as emitShortCircuit
+// groups it.
 func (e *emitter) emitLogicalKids(kids []Node) {
-	hasOr, hasAnd := false, false
-	for _, c := range kids {
-		if c.sym == RelOp {
-			switch e.opText(c.ast) {
-			case "||":
-				hasOr = true
-			case "&&":
-				hasAnd = true
-			}
+	if !e.emitShortCircuit(kids, true) {
+		e.emitKidsStringCompare(kids)
+	}
+}
+
+// heldOperand is an operand rendered with the statements it needs ahead of itself
+// held back, for a caller that decides where they run.
+type heldOperand struct {
+	text string
+	pro  []string
+}
+
+// holdPrologue renders emit with the prologue lines it adds held back rather than
+// left to run before the statement. The lines already there stay visible to it, so
+// a nil check the statement asked for before is not asked again (nilCheckLine):
+// that one has run by then either way.
+func (e *emitter) holdPrologue(emit func()) heldOperand {
+	mark := len(e.prologue)
+	text := e.captureC(emit)
+	pro := slices.Clone(e.prologue[mark:])
+	e.prologue = e.prologue[:mark]
+	return heldOperand{text, pro}
+}
+
+// holdOwnPrologue is holdPrologue for a test that stands in a block of its own --
+// an else-if's, a case's, one behind an init statement -- which sees none of the
+// statement's lines: a name the block declared may spell like one they check.
+func (e *emitter) holdOwnPrologue(emit func()) heldOperand {
+	saved := e.prologue
+	e.prologue = nil
+	h := e.holdPrologue(emit)
+	e.prologue = saved
+	return h
+}
+
+// emitLines writes held prologue lines as statements at the current position.
+func (e *emitter) emitLines(lines []string) {
+	for _, line := range lines {
+		e.ind()
+		e.emit(line)
+	}
+}
+
+// splitLogical splits a flat chain at its "||" operators and each part at its "&&"
+// operators, which is the grouping both languages give them.
+func (e *emitter) splitLogical(kids []Node) (ors [][][]Node) {
+	var and [][]Node
+	start := 0
+	for i, c := range kids {
+		if c.sym != RelOp || !e.isLogicalOp(c) {
+			continue
+		}
+		and = append(and, kids[start:i])
+		start = i + 1
+		if e.opText(c.ast) == "||" {
+			ors = append(ors, and)
+			and = nil
 		}
 	}
-	if !hasOr || !hasAnd {
-		e.emitKidsStringCompare(kids)
-		return
+	return append(ors, append(and, kids[start:]))
+}
+
+// emitShortCircuit emits a chain holding && or ||, and reports false for one with
+// neither.
+//
+// Go evaluates an operand of either only when the operands before it leave the
+// answer open. The statements an expression needs ahead of itself -- a temporary
+// for a call's result, a pointer's nil check -- went before the whole STATEMENT
+// (emitStatement), so they ran whatever the operands before them said: `ok &&
+// mk()[0] == 1` called mk with ok false, and `p != nil && p[0] == v`, the guard
+// over a pointer to an array, panicked on the very nil it guards against. So each
+// operand past the first is rendered with its statements held back, and one that
+// has any turns the chain into a sequence of tests that reach it only when Go
+// would (shortCircuitC).
+//
+// Every other chain is written as it always was. When group is set, one that mixes
+// the two wraps each ||-operand holding a && in parentheses: C groups it that way
+// already, so they change nothing, but they keep gcc's -Wparentheses -- which the
+// run tests treat as an error -- quiet. `a && b || c` becomes `(a && b) || c`.
+func (e *emitter) emitShortCircuit(kids []Node, group bool) bool {
+	if !slices.ContainsFunc(kids, func(c Node) bool { return c.sym == RelOp && e.isLogicalOp(c) }) {
+		return false
 	}
-	emitGroup := func(group []Node) {
-		wrap := slices.ContainsFunc(group, func(c Node) bool {
-			return c.sym == RelOp && e.opText(c.ast) == "&&"
-		})
+	ors := e.splitLogical(kids)
+	held := make([][]heldOperand, len(ors))
+	lazy := false
+	for i, and := range ors {
+		for j, operand := range and {
+			emit := func() { e.emitKidsStringCompare(operand) }
+			if i == 0 && j == 0 {
+				// Evaluated whatever the rest say, so what it needs runs where it always did.
+				held[i] = append(held[i], heldOperand{text: e.captureC(emit)})
+				continue
+			}
+			h := e.holdPrologue(emit)
+			lazy = lazy || len(h.pro) != 0
+			held[i] = append(held[i], h)
+		}
+	}
+	if lazy {
+		e.emit(e.shortCircuitC(held))
+		return true
+	}
+	mixed := len(ors) > 1 && slices.ContainsFunc(ors, func(and [][]Node) bool { return len(and) > 1 })
+	for i, and := range held {
+		if i != 0 {
+			e.emit(" || ")
+		}
+		wrap := group && mixed && len(and) > 1
 		if wrap {
 			e.emit("(")
 		}
-		e.emitKidsStringCompare(group)
+		for j, h := range and {
+			if j != 0 {
+				e.emit(" && ")
+			}
+			e.emit(h.text)
+		}
 		if wrap {
 			e.emit(")")
 		}
 	}
-	start := 0
-	for i, c := range kids {
-		if c.sym == RelOp && e.opText(c.ast) == "||" {
-			emitGroup(kids[start:i])
-			e.emitExprNode(c) // the " || " operator itself
-			start = i + 1
+	return true
+}
+
+// shortCircuitC lowers a chain of || over && operands to tests that evaluate each
+// operand only where Go does, running the statements it needs just ahead of it,
+// and answers with the temporary the result is left in. The first operand's
+// statements are the caller's to place; they run whatever the chain says.
+//
+//	_Bool t;
+//	t = a;
+//	if (t) {          // a && b
+//		<b's statements>
+//		t = b;
+//	}
+//	if (!t) {         // ... || c
+//		<c's statements>
+//		t = c;
+//	}
+//
+// An operand needing no statements shares the test of the one before it.
+func (e *emitter) shortCircuitC(ors [][]heldOperand) string {
+	t := e.newTmp()
+	lines := []string{cBool + " " + t + ";\n"}
+	for i, and := range ors {
+		var group []string
+		for j := 0; j < len(and); {
+			k := j + 1
+			for k < len(and) && len(and[k].pro) == 0 {
+				k++
+			}
+			texts := make([]string, 0, k-j)
+			for _, h := range and[j:k] {
+				texts = append(texts, h.text)
+			}
+			run := append(slices.Clone(and[j].pro), t+" = "+strings.Join(texts, " && ")+";\n")
+			if j == 0 {
+				group = append(group, run...)
+			} else {
+				group = append(group, "if ("+t+") {\n")
+				group = append(group, indentLines(run)...)
+				group = append(group, "}\n")
+			}
+			j = k
 		}
+		if i == 0 {
+			lines = append(lines, group...)
+			continue
+		}
+		lines = append(lines, "if (!"+t+") {\n")
+		lines = append(lines, indentLines(group)...)
+		lines = append(lines, "}\n")
 	}
-	emitGroup(kids[start:])
+	e.prologue = append(e.prologue, lines...)
+	return t
+}
+
+// indentLines indents prologue lines one level, for the block they are placed in.
+func indentLines(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = "\t" + line
+	}
+	return out
 }
 
 func (e *emitter) emitExprNode(n Node) {
