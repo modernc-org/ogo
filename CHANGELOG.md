@@ -125,6 +125,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`len` and `cap` of an operand holding a call evaluate it.** Only a call-free
+  operand makes `len` of an array a constant; `len(grid[idx()])` is not one, and
+  Go runs `idx` and checks the index. The extent was emitted and `idx` never ran.
+  And `len` and `cap` of a pointer to an array that is not a variable -- `len(h.p)`,
+  `cap(pick())`, `len(*ptrs[i])` -- were refused, as was `cap(mk())` of a call's
+  array.
+
 - **An array read through a pointer that is not a variable is right.** `a :=
   *pick()`, `a = *h.p` and `a := *ptrs[i]` -- a pointer to an array that is a
   call's result, a field or an element -- were written into the C as a plain

@@ -19277,6 +19277,77 @@ func main() {
 		panics: true,
 	},
 	{
+		// len and cap of an array are constants only while the operand holds no
+		// call: `len(grid[idx()])` is not one, and Go evaluates the operand -- idx
+		// runs, and the index is checked. The extent was emitted and idx never ran.
+		// And every operand of pointer-to-array type that is not a variable was
+		// refused -- a call's result, a field, an element, a dereference of any --
+		// as was `cap` of a call's array, which `len` took.
+		name: "len and cap of an operand holding a call evaluate it",
+		src: `type holder struct {
+	p *[6]byte
+}
+
+var calls int
+
+var grid [3][5]int
+
+var rows [2][6]byte
+
+var ptrs [2]*[6]byte
+
+func idx() int {
+	calls++
+	return 1
+}
+
+func pick() *[6]byte {
+	calls += 10
+	return &rows[0]
+}
+
+func mk() [4]int {
+	calls += 100
+	return [4]int{}
+}
+
+func main() {
+	h := holder{p: &rows[1]}
+	var none holder
+	println(h.p[0], none.p == nil, len(grid[idx()]), cap(grid[idx()]), calls)
+	println(len(pick()), cap(pick()), len(*pick()), cap(*pick()), calls)
+	println(len(h.p), cap(h.p), len(*h.p), len(none.p), cap(*none.p), calls)
+	println(len(ptrs[1]), cap(ptrs[idx()]), len(*ptrs[0]), calls)
+	println(len(mk()), cap(mk()), calls)
+	n := cap(h.p) + len(grid[idx()])
+	if len(pick()) == 6 || cap(mk()) == 4 {
+		println(n, calls)
+	}
+}
+`,
+		want: "0 true 5 5 2\n6 6 6 6 42\n6 6 6 6 6 42\n6 6 6 43\n4 4 243\n11 254\n",
+	},
+	{
+		name: "len of an evaluated dereference of a nil pointer panics",
+		src: `var ptrs [2]*[4]int
+
+var calls int
+
+func idx() int {
+	calls++
+	return 0
+}
+
+func main() {
+	println(len(ptrs[idx()]), calls)
+	println(len(*ptrs[idx()]))
+	println("after")
+}
+`,
+		want:   "4 1\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

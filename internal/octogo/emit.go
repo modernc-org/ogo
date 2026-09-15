@@ -21971,8 +21971,6 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 	return cur.ctype, true
 }
 
-// emitLen emits the builtin `len(x)`: an array's length is its compile-time bound;
-// a string's and a slice's is its header's `len` field.
 // arrayChainBound returns the extent of an ARRAY reached through a chain of fields
 // and indexes: a struct's array field, `len(r.buf)` and `len(r.inner.buf)`; a ROW of
 // a multi-dimensional one, `len(m[0])`; and a field reached past an index,
@@ -21996,7 +21994,17 @@ func (e *emitter) arrayChainBound(arg []int32) (string, bool) {
 	return cur.dims[0], true
 }
 
-func (e *emitter) emitLen(callSuffix []int32) {
+// emitLen emits the builtin `len(x)`, and emitCap `cap(x)`: an array's length and
+// capacity are its extent, and a string's and a slice's are its header's fields. A
+// string has no capacity.
+func (e *emitter) emitLen(callSuffix []int32) { e.emitLenCap("len", callSuffix) }
+
+func (e *emitter) emitCap(callSuffix []int32) { e.emitLenCap("cap", callSuffix) }
+
+// emitLenCap is emitLen and emitCap, fn saying which. They were two functions that
+// had drifted apart: `cap(mk())` of a call's array was refused where `len(mk())`
+// worked.
+func (e *emitter) emitLenCap(fn string, callSuffix []int32) {
 	// A call Go makes a constant is the constant, and its operand is not evaluated.
 	if v, ok := e.lenConstOf(callSuffix); ok {
 		e.emit(strconv.FormatInt(v, 10))
@@ -22004,7 +22012,7 @@ func (e *emitter) emitLen(callSuffix []int32) {
 	}
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {
-		e.fail("len takes exactly one argument")
+		e.fail("%s takes exactly one argument", fn)
 		return
 	}
 	arg := args[0].ast
@@ -22013,54 +22021,137 @@ func (e *emitter) emitLen(callSuffix []int32) {
 	if operand, ok := e.arrayConvOperand(arg); ok {
 		arg = operand
 	}
-	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
-		// A pointer to an array measures the array, `len(p)` being `len(*p)`.
-		if _, a, ok := e.arrayBase(e.src(tok)); ok {
-			e.emit(a.bound)
-			return
-		}
-	}
-	// `len(*p)` written out. The dereference of a pointer to a SLICE or a STRING
-	// falls through to the header field below, which reads it off `(*p)`; an array
-	// has no header, so its extent is answered here -- without rendering `*p`, which
-	// requests p's nil check: Go does not evaluate an operand whose length is a
-	// constant, and `len(*p)` of a nil p panicked here where Go says 6.
-	if name, ok := e.derefOperand(arg); ok {
-		if a, ok := e.arrayPtrVar(name); ok {
-			e.emit(a.bound)
-			return
-		}
-	}
-	// An array-typed struct field, `len(r.buf)`: its length is the declared extent,
-	// exactly as for an array variable. A slice-typed field carries a header and
-	// falls through to it below.
-	if b, ok := e.arrayChainBound(arg); ok {
-		e.emit(b)
+	if bound, ok := e.arrayOperandExtent(callSuffix, arg); ok {
+		e.emit(bound)
 		return
 	}
 	// A CONSTANT string's length is a constant: `len(msg)` for a `const msg`
 	// folded to its byte count. The header field below would read `.len` off the
 	// compound literal the constant is spelled as, valid C that the target's C
 	// compiler refuses ("request for member len in something not an object").
-	if v, ok := e.foldConstString(arg); ok {
-		e.emit(strconv.Itoa(len(v)))
-		return
-	}
-	// A string and a slice both carry their length in a `.len` header field.
-	if ct, ok := e.exprReprCType(arg); ok && (ct == cString || e.isSliceCType(ct)) {
-		e.emitHeaderField(arg, ct, "len")
-		return
-	}
-	// An array-returning CALL, `len(mk(0))`: the length is the callee's declared
-	// extent, and the call still runs -- Go evaluates it -- bound to a temporary
-	// ahead of the statement as an array argument is.
-	if _, a, ok := e.arrayResultCall(arg); ok {
-		if _, hoisted := e.hoistArrayCallArg(Node{sym: Expression, ast: arg}); hoisted {
-			e.emit(a.bound)
+	if fn == "len" {
+		if v, ok := e.foldConstString(arg); ok {
+			e.emit(strconv.Itoa(len(v)))
 			return
 		}
 	}
-	e.fail("len is only supported for strings, arrays and slices yet")
+	// A string and a slice both carry their length in a `.len` header field, and a
+	// slice its capacity in `.cap`.
+	if ct, ok := e.exprReprCType(arg); ok && (fn == "len" && ct == cString || e.isSliceCType(ct)) {
+		e.emitHeaderField(arg, ct, fn)
+		return
+	}
+	if bound, ok := e.arrayTypedExtent(callSuffix, arg); ok {
+		e.emit(bound)
+		return
+	}
+	if fn == "len" {
+		e.fail("len is only supported for strings, arrays and slices yet")
+		return
+	}
+	e.fail("cap is only supported for arrays and slices yet")
+}
+
+// arrayOperandExtent is what len and cap answer for an operand that is an array or a
+// pointer to one: the extent. It is a constant when Go makes the call one (see
+// lenConstOf), and Go then evaluates nothing; but a call whose operand holds a call
+// or a receive is no constant, and its operand IS evaluated -- for the calls, and
+// for the checks on the way, an index's and a dereference's. `len(grid[idx()])`
+// ran no idx, silently. A pointer that is itself the operand is not checked for
+// nil: `len(p)` of a nil p is its extent in Go, evaluated or not.
+func (e *emitter) arrayOperandExtent(callSuffix, arg []int32) (string, bool) {
+	evaluate := func() {}
+	if e.exprHasEffect(arg) {
+		evaluate = func() { e.evalOnceForEffect(callSuffix, arg) }
+	}
+	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
+		// A pointer to an array measures the array, `len(p)` being `len(*p)`.
+		if _, a, ok := e.arrayBase(e.src(tok)); ok {
+			return a.bound, true
+		}
+		return "", false
+	}
+	// `len(*p)` written out. The dereference of a pointer to a SLICE or a STRING
+	// falls through to the header field, which reads it off `(*p)`; an array has no
+	// header, so its extent is answered here -- without rendering `*p`, which
+	// requests p's nil check: Go does not evaluate an operand whose length is a
+	// constant, and `len(*p)` of a nil p panicked here where Go says 6.
+	if name, ok := e.derefOperand(arg); ok {
+		if a, ok := e.arrayPtrVar(name); ok {
+			return a.bound, true
+		}
+		return "", false
+	}
+	// An array reached through fields and indexes, `len(r.buf)`, `len(m[0])`,
+	// `len(rs[i].buf)`: its length is the declared extent. A slice reached the same
+	// way carries a header and falls through to it.
+	if b, ok := e.arrayChainBound(arg); ok {
+		evaluate()
+		return b, true
+	}
+	// An array-returning CALL, `len(mk(0))`: the extent is the callee's declared
+	// one, and the call runs, bound to a temporary as an array argument is.
+	if _, a, ok := e.arrayResultCall(arg); ok {
+		if _, hoisted := e.hoistArrayCallArg(Node{sym: Expression, ast: arg}); hoisted {
+			return a.bound, true
+		}
+	}
+	// `len(*pick())`: the pointer is bound and checked when the operand is evaluated,
+	// as any read through it is (arrayPtrExprDeref).
+	if _, _, _, a, ok := e.arrayPtrExprShape(arg); ok {
+		if e.exprHasEffect(arg) {
+			if _, _, ok := e.arrayPtrExprDeref(arg); !ok {
+				return "", false
+			}
+		}
+		return a.bound, true
+	}
+	return "", false
+}
+
+// arrayTypedExtent is arrayOperandExtent for any other operand whose type is an array
+// or a pointer to one: `len(pick())`, `len(h.p)`, `len(ptrs[i])`. Asked after the
+// string and slice headers, since typing an operand can mint temporaries, which
+// would renumber the ones every such call already emits.
+func (e *emitter) arrayTypedExtent(callSuffix, arg []int32) (string, bool) {
+	ct, ok := e.inferCType(arg)
+	if !ok {
+		return "", false
+	}
+	a, isArr := e.namedArrays[e.underlyingCType(ct)]
+	if !isArr {
+		a, isArr = e.arrayPtrCType(ct)
+	}
+	if !isArr {
+		return "", false
+	}
+	if e.exprHasEffect(arg) {
+		e.evalOnceForEffect(callSuffix, arg)
+	}
+	return a.bound, true
+}
+
+// evalOnceForEffect evaluates an operand for what evaluating it does, its value
+// dropped, as a statement ahead of the one being emitted -- once for the call
+// holding it, however often the call is rendered.
+func (e *emitter) evalOnceForEffect(callSuffix, ast []int32) {
+	// Keyed by the call's opening parenthesis, which no other entry of the memo is.
+	var open int32 = -1
+	for n := range it(callSuffix) {
+		if n.sym == 0 {
+			open = n.tok
+			break
+		}
+	}
+	if open < 0 {
+		return
+	}
+	if _, done := e.hoistedArrayCalls[open]; done {
+		return
+	}
+	e.hoistedArrayCalls[open] = ""
+	text := e.captureC(func() { e.emitExpr(ast) })
+	e.prologue = append(e.prologue, "(void)("+text+");\n")
 }
 
 // lenConstOf is the value of a len or cap call the checker found to be a constant,
@@ -22085,8 +22176,6 @@ func (e *emitter) lenConstKids(kids []Node) (int64, bool) {
 	return e.lenConstOf(steps[0].ast)
 }
 
-// emitCap emits the builtin `cap(x)`: an array's capacity is its compile-time
-// bound; a slice's is its header's `cap` field. Strings have no capacity.
 // emitPanic emits the builtin panic. Only a string argument is supported so far
 // -- what smith's oracle assertion and the hardware error paths use -- mapping to
 // the runtime ogo_panic(const char* msg) with the ogo_string's char* field. A
@@ -22105,47 +22194,6 @@ func (e *emitter) emitPanic(callSuffix []int32) {
 	e.emit("ogo_panic((")
 	e.emitExpr(args[0].ast)
 	e.emit(").str)")
-}
-
-func (e *emitter) emitCap(callSuffix []int32) {
-	if v, ok := e.lenConstOf(callSuffix); ok {
-		e.emit(strconv.FormatInt(v, 10))
-		return
-	}
-	args := e.callArgExprs(callSuffix)
-	if len(args) != 1 {
-		e.fail("cap takes exactly one argument")
-		return
-	}
-	arg := args[0].ast
-	// `len(Row(a))` / `cap(Row(a))`: a conversion to a defined array type is a no-op
-	// on the representation, so the operand is what is measured.
-	if operand, ok := e.arrayConvOperand(arg); ok {
-		arg = operand
-	}
-	if tok, ok := e.soleToken(arg); ok && e.f.ch(tok) == IDENT {
-		// A pointer to an array measures the array, `len(p)` being `len(*p)`.
-		if _, a, ok := e.arrayBase(e.src(tok)); ok {
-			e.emit(a.bound)
-			return
-		}
-	}
-	// `cap(*p)`: the extent, and no dereference, as for len.
-	if name, ok := e.derefOperand(arg); ok {
-		if a, ok := e.arrayPtrVar(name); ok {
-			e.emit(a.bound)
-			return
-		}
-	}
-	if b, ok := e.arrayChainBound(arg); ok {
-		e.emit(b) // an array's capacity is its length: see the len case
-		return
-	}
-	if ct, ok := e.exprReprCType(arg); ok && e.isSliceCType(ct) {
-		e.emitHeaderField(arg, ct, "cap")
-		return
-	}
-	e.fail("cap is only supported for arrays and slices yet")
 }
 
 // emitHeaderField emits a read of a string's or a slice's header field off arg.
