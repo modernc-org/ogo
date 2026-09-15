@@ -10517,6 +10517,14 @@ func (e *emitter) arrayResultCallOf(recv string, suffix []Node) (string, arrDim,
 		// [2]int` -- was not recognised as a call at all.
 		rct, isVar := e.methodRecvCType(recv)
 		if !isVar {
+			// A function of ANOTHER PACKAGE, `geo.Fill(b, 2)`, which reads like a method
+			// on the qualifier. Only the method was looked for, so a declaration from an
+			// imported function returning an array could not infer a type.
+			if prefix, isPkg := e.importQualifiers[recv]; isPkg {
+				cn := mangle(prefix, e.soleIdent(suffix[0].ast))
+				a, isArr := e.funcArrayRet[cn]
+				return cn, a, isArr
+			}
 			return "", arrDim{}, false
 		}
 		cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
@@ -10560,6 +10568,11 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 		}
 		e.emit(r + ", ")
 	case len(suffix) == 2 && suffix[0].sym == Selector:
+		if _, isVar := e.methodRecvCType(recv); !isVar {
+			if _, isPkg := e.importQualifiers[recv]; isPkg {
+				break // a function of another package takes no receiver
+			}
+		}
 		rct, _ := e.varType(recv)
 		recvText, addr := e.varRef(recv), true
 		if lit, isConst := e.inlinedConstRef(recv); isConst {
@@ -12959,13 +12972,23 @@ func (e *emitter) litSliceType(typeAST []int32) (elem string, ok bool) {
 	if elem, ok := e.sliceType(typeAST); ok {
 		return elem, true
 	}
-	nodes := slices.Collect(it(typeAST))
-	if len(nodes) != 1 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != IDENT {
+	var mn string
+	switch nodes := slices.Collect(it(typeAST)); {
+	case len(nodes) == 1 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT:
+		mn = e.typeCName(e.src(nodes[0].tok))
+	case len(nodes) == 3 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT && nodes[1].sym == 0 && e.f.ch(nodes[1].tok) == PERIOD && nodes[2].sym == 0 && e.f.ch(nodes[2].tok) == IDENT:
+		// Another package's, `geo.List`, spelled as a Type spells it.
+		prefix, isImport := e.importQualifiers[e.src(nodes[0].tok)]
+		if !isImport {
+			return "", false
+		}
+		mn = mangle(prefix, e.src(nodes[2].tok))
+	default:
 		return "", false
 	}
 	// Through a chain of definitions: `type Alias List` over `type List []int` is
 	// still a slice literal's type.
-	u, ok := e.namedUnderlying[e.typeCName(e.src(nodes[0].tok))]
+	u, ok := e.namedUnderlying[mn]
 	if !ok {
 		return "", false
 	}
@@ -13050,6 +13073,22 @@ func (e *emitter) factorArrayLit(fac Node) (typeAST []int32, lit Node, ok bool) 
 		}
 		return nil, Node{}, false
 	}
+	// The same, with its package: `geo.Buf{1, 2}` for another package's defined array
+	// or slice type. It went down the struct literal's path, and a declaration from one
+	// became a memcpy from a compound literal -- whose commas split the target's memcpy,
+	// a macro, into a preprocessor error. The name is handed on as the three tokens a
+	// Type spells it with, which arrayDim and litSliceType read.
+	if len(kids) == 3 && kids[1].sym == FactorSuffix && kids[2].sym == CompositeLit {
+		if name, ok := e.qualifiedTypeTokens(kids[0], kids[1]); ok {
+			if _, ok := e.arrayDim(name); ok {
+				return name, kids[2], true
+			}
+			if _, ok := e.litSliceType(name); ok {
+				return name, kids[2], true
+			}
+		}
+		return nil, Node{}, false
+	}
 	if len(kids) == 0 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LBRACK {
 		return nil, Node{}, false
 	}
@@ -13061,6 +13100,33 @@ func (e *emitter) factorArrayLit(fac Node) (typeAST []int32, lit Node, ok bool) 
 	// sliceType read; the trailing CompositeLit is not part of the type and both
 	// ignore it, looking only for the length Expression and the element Type.
 	return fac.ast, last, true
+}
+
+// qualifiedTypeTokens spells a Factor's `pkg.Name` head -- an import qualifier and a
+// suffix of exactly one selector -- as the three tokens a Type writes it with, which
+// is what arrayDim, litSliceType and cType read a qualified type name from.
+func (e *emitter) qualifiedTypeTokens(head, suffix Node) ([]int32, bool) {
+	if head.sym != 0 || e.f.ch(head.tok) != IDENT {
+		return nil, false
+	}
+	if _, isImport := e.importQualifiers[e.src(head.tok)]; !isImport {
+		return nil, false
+	}
+	sels := slices.Collect(it(suffix.ast))
+	if len(sels) != 1 || sels[0].sym != Selector {
+		return nil, false
+	}
+	var toks []int32
+	for t := range it(sels[0].ast) {
+		if t.sym != 0 {
+			return nil, false
+		}
+		toks = append(toks, t.tok)
+	}
+	if len(toks) != 2 || e.f.ch(toks[0]) != PERIOD || e.f.ch(toks[1]) != IDENT {
+		return nil, false
+	}
+	return []int32{head.tok, toks[0], toks[1]}, true
 }
 
 // litFieldValues returns a composite literal's values in field order, and the
@@ -13368,6 +13434,9 @@ func (e *emitter) cType(ast []int32) string {
 				return mn
 			}
 			if e.namedTypes[mn] {
+				return mn
+			}
+			if _, isArr := e.namedArrays[mn]; isArr {
 				return mn
 			}
 		}
@@ -13989,6 +14058,19 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 			a.name = nm // resolved away everywhere else; kept here for the method set
 		}
 		return a, ok
+	}
+	// The same name written with its package, `var b geo.Buf` for another package's
+	// `type Buf [4]byte`. Only the bare form was looked for, so a variable, a parameter,
+	// a result or a field of another package's array type was "unsupported type".
+	if len(nodes) == 3 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT && nodes[1].sym == 0 && e.f.ch(nodes[1].tok) == PERIOD && nodes[2].sym == 0 && e.f.ch(nodes[2].tok) == IDENT {
+		if prefix, isImport := e.importQualifiers[e.src(nodes[0].tok)]; isImport {
+			nm := e.unaliased(mangle(prefix, e.src(nodes[2].tok)))
+			a, ok := e.namedArrays[nm]
+			if ok {
+				a.name = nm
+			}
+			return a, ok
+		}
 	}
 	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK {
 		return arrDim{}, false

@@ -23181,6 +23181,18 @@ func TestCrossPkgCompositeLit(t *testing.T) {
 			src:  "p := geo.Point{1, Y: 2}\nprintln(p.X)",
 			want: "mixture of field:value and value elements in struct literal",
 		},
+		{
+			// An ARRAY type of another package is a literal type too, and its values
+			// are checked against its element type.
+			name: "an array element of the wrong type",
+			src:  "r := geo.Row{1, \"x\"}\nprintln(r[0])",
+			want: "cannot use \"x\" of type string as type int8 in array or slice literal",
+		},
+		{
+			name: "an array element out of range",
+			src:  "r := geo.Row{1, 300}\nprintln(r[0])",
+			want: "constant 300 overflows int8",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{
@@ -23199,6 +23211,8 @@ type Vec struct {
 }
 
 type hidden struct{ n int }
+
+type Row [2]int8
 `)},
 			}
 			_, err := Build(-1, []string{"main.ogo"}, fsys)
@@ -23296,7 +23310,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
 	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n" +
 	"1649267441664 2199023255552 1099511627776 35184372088832 true\n" +
-	"17 gx-7 true 10 19\n"
+	"17 gx-7 true 10 19\n" +
+	"2 7 56 9 3 8 false 2 1\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -23437,6 +23452,37 @@ qualifiedCases()
 initOrder()
 untypedShifts()
 crossFileConsts()
+qualifiedArrays()
+}
+
+// Another package's defined ARRAY type where a type is written: a variable, a
+// parameter, an imported function's result, a struct field and its literal, a
+// pointer indexed, a package array of them with elided literals, a range, a copy
+// and a comparison. Each was "unsupported type" or refused by the checker; only a
+// conversion to one worked.
+type rowSlot struct {
+	id  int
+	row greet.Row
+}
+
+var rows = [2]greet.Row{{1, 2}, {3, 4}}
+
+func rowTotal(r greet.Row) int { return r[0] * r[1] }
+
+func qualifiedArrays() {
+	var r greet.Row
+	r[1] = 5
+	f := greet.Fill(7)
+	s := rowSlot{id: 1, row: greet.Row{8, 9}}
+	p := &r
+	p[0] = 2
+	t := 0
+	for i, v := range rows[1] {
+		t += i + v
+	}
+	c := r
+	c[0] = 6
+	println(len(r), r.Sum(), rowTotal(f), s.row[1], rows[1][0], t, c == r, r[0], s.id)
 }
 
 // Another package's constants and array bounds built from constants in a LATER file
@@ -23952,6 +23998,12 @@ type Celsius int
 func (c Celsius) Double() int { return int(c) * 2 }
 
 type Row [2]int
+
+// Sum and Fill are for main to use Row as a TYPE, not only as a conversion: a
+// variable, a parameter, a result, a field, a literal and a pointer of it.
+func (r *Row) Sum() int { return r[0] + r[1] }
+
+func Fill(v int) Row { return Row{v, v + 1} }
 
 type L []int
 

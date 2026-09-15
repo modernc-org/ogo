@@ -7104,8 +7104,20 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 	// as good a literal type as the written `[3]int{1, 2, 3}` -- a defined type
 	// behaves as what it is defined over. How many values it may take is the
 	// emitter's, which knows the bound; what TYPE each may be is written down here.
-	if f.litElemType(s, t) {
-		elem, _ := f.litElemTypeNode(s, t)
+	if elem, es, ok := f.litElemTypeNodeIn(s, t); ok {
+		// Another package's element type is spelled in that package, and the values
+		// are checked against a SPELLING, which here would name whatever this scope
+		// has under it. A predeclared element means the same in both.
+		if es != s {
+			if id, isIdent := elem.(*TypeNodeIdent); !isIdent || id.Qualifier.IsValid() {
+				return
+			} else if _, pre := es.find(id.Name.Src()).(*PredeclaredType); !pre {
+				return
+			}
+			// checkLitValue leaves every literal of another package's type alone for
+			// the same reason, which a predeclared element does not share.
+			t.qual = Token{}
+		}
 		f.checkElemLit(s, t, elem, lit)
 		return
 	}
@@ -7319,27 +7331,46 @@ func (f *File) bracketLitElem(s *Scope, fac Node) (TypeNode, bool) {
 // litElemTypeNode is litElemType answering with the ELEMENT type it walked to, for
 // the caller that checks the values rather than only recognising the literal.
 func (f *File) litElemTypeNode(s *Scope, t litType) (TypeNode, bool) {
-	if t.qual.IsValid() {
-		return nil, false // a cross-package type: only its struct form is modelled
-	}
+	elem, _, ok := f.litElemTypeNodeIn(s, t)
+	return elem, ok
+}
+
+// litElemTypeNodeIn is litElemTypeNode reporting also the scope the element type is
+// written in: another package's, for a literal of that package's type.
+//
+// `geo.Buf{1, 2}` for another package's `type Buf [4]byte` was "invalid composite
+// literal type: geo.Buf is not a struct type": only the struct form of a qualified
+// type was looked for. Its definition chain is followed in the package that declares
+// it, where its names mean what they were written to mean.
+func (f *File) litElemTypeNodeIn(s *Scope, t litType) (TypeNode, *Scope, bool) {
 	name := t.name.Src()
+	if t.qual.IsValid() {
+		imp, ok := f.Scope.Declarations[t.qual.Src()].(*ImportDeclaration)
+		if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg || !token.IsExported(name) {
+			return nil, nil, false
+		}
+		s = imp.Import.Pkg.Scope
+	}
 	for range 16 { // bounded; a type cycle is reported by its own pass
 		td, ok := s.find(name).(*TypeDeclaration)
 		if !ok || td.TypeSpec == nil {
-			return nil, false
+			return nil, nil, false
 		}
 		switch tn := td.TypeSpec.TypeNode.(type) {
 		case *TypeNodeArray:
-			return tn.TypeNode, true
+			return tn.TypeNode, s, true
 		case *TypeNodeSlice:
-			return tn.TypeNode, true
+			return tn.TypeNode, s, true
 		case *TypeNodeIdent:
+			if tn.Qualifier.IsValid() {
+				return nil, nil, false // defined over a third package's type
+			}
 			name = tn.Name.Src()
 		default:
-			return nil, false
+			return nil, nil, false
 		}
 	}
-	return nil, false
+	return nil, nil, false
 }
 
 // checkElemLit checks the VALUES of an array or slice literal against the element
@@ -7364,25 +7395,8 @@ func (f *File) checkElemLit(s *Scope, t litType, elem TypeNode, lit Node) {
 }
 
 func (f *File) litElemType(s *Scope, t litType) bool {
-	if t.qual.IsValid() {
-		return false // a cross-package type: only its struct form is modelled
-	}
-	name := t.name.Src()
-	for range 16 { // bounded; a type cycle is reported by its own pass
-		td, ok := s.find(name).(*TypeDeclaration)
-		if !ok || td.TypeSpec == nil {
-			return false
-		}
-		switch tn := td.TypeSpec.TypeNode.(type) {
-		case *TypeNodeArray, *TypeNodeSlice:
-			return true
-		case *TypeNodeIdent:
-			name = tn.Name.Src()
-		default:
-			return false
-		}
-	}
-	return false
+	_, _, ok := f.litElemTypeNodeIn(s, t)
+	return ok
 }
 
 // structTypeOf resolves a name to the struct type it declares. It reports false
@@ -10011,11 +10025,15 @@ func (f *File) mayPointToArray(s *Scope, d *VarDeclaration) bool {
 	if !d.typeName.IsValid() {
 		return true // no name to resolve: left to the emitter
 	}
-	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	// With its package, in the file that declared the variable: `*geo.Buf` looked up
+	// the bare Buf here, found nothing, and refused `p[1]` of a pointer to another
+	// package's array type as "cannot index p".
+	wf := f.fileOfToken(d.Token())
+	td, ts, ok := wf.typeDeclNamed(s, d.declaredTypeName())
 	if !ok || td.TypeSpec == nil {
 		return false // a predeclared type, or a name that resolves to no type
 	}
-	return f.isArrayType(s, td.TypeSpec.TypeNode)
+	return f.isArrayType(ts, td.TypeSpec.TypeNode)
 }
 
 // isArrayType reports whether a type is a fixed ARRAY, following defined types to

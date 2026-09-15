@@ -125,6 +125,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Another package's defined array type can be used as a type.** With `type Buf
+  [4]byte` in `geo`, only a conversion `geo.Buf(a)` and geo's own variables
+  worked from another package: `var b geo.Buf`, a parameter or result of that
+  type, a struct field, `[2]geo.Buf`, and a call of an imported function
+  returning one stopped at `unsupported type "Buf"` or "cannot infer a type";
+  the literal `geo.Buf{1, 2}` was refused as "not a struct type", and `p[1]` on a
+  `*geo.Buf` as "cannot index p". A literal's values are checked against a
+  predeclared element type now, as they are for a local array type.
+
 - **A constant may name one declared in another file of its package.** A package
   of two files, `a.ogo` with `const A = B + 1` and `b.ogo` with `const B = 2 * 3`,
   crashed the compiler: the checker evaluated B through the tokens of the file
