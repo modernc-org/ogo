@@ -4939,7 +4939,7 @@ type emitter struct {
 	funcParams        map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
-	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call -> the temporary it was bound to, so one occurrence is called once (see hoistArrayCallArg)
+	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call, or of the star of a dereferenced pointer-to-array expression -> the temporary it was bound to, so one occurrence is evaluated once (see hoistArrayCallArg, arrayPtrExprDeref); the statement's
 	methodPtr         map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	globals           map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
 	structs           map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
@@ -12724,6 +12724,13 @@ func (e *emitter) unwrapArrayConv(ast []int32) []int32 {
 	return ast
 }
 
+// arrayOperandAST is the array operand an expression is past what does not change
+// the value: a conversion to an identical array type and redundant parentheses.
+// `a = (b)` fell past every copy path to `a = (b);`, which is not C.
+func (e *emitter) arrayOperandAST(ast []int32) []int32 {
+	return e.unparenExpr(e.unwrapArrayConv(e.unparenExpr(ast)))
+}
+
 // arrayShapeOf resolves the SHAPE of an array-valued expression, where the program
 // wrote enough to read one off: a variable, a dereferenced pointer to one, an array
 // reached through a chain of fields and indexes, or a literal, which carries its own
@@ -12733,12 +12740,15 @@ func (e *emitter) unwrapArrayConv(ast []int32) []int32 {
 // It answers false for anything else, and a caller must read that as "not known",
 // never as "not an array": a shape this cannot see is not a mismatch.
 func (e *emitter) arrayShapeOf(ast []int32) (arrDim, bool) {
-	ast = e.unwrapArrayConv(ast)
+	ast = e.arrayOperandAST(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		return e.arrayVar(name)
 	}
 	if name, ok := e.derefOperand(ast); ok {
 		return e.arrayPtrVar(name)
+	}
+	if _, _, _, a, ok := e.arrayPtrExprShape(ast); ok {
+		return a, true
 	}
 	fac, ok := e.soleFactorNode(ast)
 	if !ok {
@@ -12777,7 +12787,7 @@ func (e *emitter) checkArrayShape(dst arrDim, ast []int32, what string) bool {
 // temporary bound ahead of the statement. Anything else is not something this can
 // copy from and is left to the paths that report it.
 func (e *emitter) arraySourceC(ast []int32) (string, bool) {
-	ast = e.unwrapArrayConv(ast)
+	ast = e.arrayOperandAST(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		if _, isArray := e.arrayVar(name); isArray {
 			return e.varRef(name), true
@@ -12915,12 +12925,99 @@ func (e *emitter) unparenExpr(ast []int32) []int32 {
 func (e *emitter) arrayDerefOperand(ast []int32) (string, arrDim, bool) {
 	name, ok := e.derefOperand(ast)
 	if !ok {
-		return "", arrDim{}, false
+		return e.arrayPtrExprDeref(ast)
 	}
 	a, ok := e.arrayPtrVar(name)
 	if !ok {
 		return "", arrDim{}, false
 	}
+	return e.arrayPtrDeref(name), a, true
+}
+
+// unaryExprKids answers with the children of the unary expression an expression is,
+// past the levels that hold only it.
+func (e *emitter) unaryExprKids(ast []int32) ([]Node, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return nil, false
+	}
+	return slices.Collect(it(nodes[0].ast)), true
+}
+
+// derefKids recognises the children of a unary expression `*x` for an operand x of
+// any shape, answering with x and the star's token. derefOperand is the form for a
+// variable x.
+func (e *emitter) derefKids(kids []Node) (Node, int32, bool) {
+	if len(kids) != 2 || kids[0].sym != UnaryOp {
+		return Node{}, 0, false
+	}
+	tok, ok := e.unaryOpTok(kids[0].ast)
+	if !ok || e.f.ch(tok) != MUL {
+		return Node{}, 0, false
+	}
+	return kids[1], tok, true
+}
+
+// arrayPtrExprShape is the shape of the array `*x` reads for an x that is an
+// expression of pointer-to-array type rather than a variable -- a call's result, a
+// field, an element -- with x and its C type. It renders nothing.
+func (e *emitter) arrayPtrExprShape(ast []int32) (x Node, star int32, ct string, a arrDim, ok bool) {
+	kids, ok := e.unaryExprKids(ast)
+	if !ok {
+		return Node{}, 0, "", arrDim{}, false
+	}
+	return e.arrayPtrKidsShape(kids)
+}
+
+// arrayPtrKidsShape is arrayPtrExprShape for the unary expression's children.
+func (e *emitter) arrayPtrKidsShape(kids []Node) (x Node, star int32, ct string, a arrDim, ok bool) {
+	if x, star, ok = e.derefKids(kids); !ok {
+		return Node{}, 0, "", arrDim{}, false
+	}
+	if name, isName := e.exprIdent(e.unparenExpr(x.ast)); isName {
+		if _, isVar := e.varType(name); isVar {
+			return Node{}, 0, "", arrDim{}, false // a variable's: derefOperand
+		}
+	}
+	if ct, ok = e.inferNode(x); !ok {
+		return Node{}, 0, "", arrDim{}, false
+	}
+	if a, ok = e.arrayPtrCType(ct); !ok {
+		return Node{}, 0, "", arrDim{}, false
+	}
+	return x, star, ct, a, true
+}
+
+// arrayPtrExprDeref is arrayDerefOperand for a pointer that is an expression: `b :=
+// *pick()`, `b = *h.p`, `b = *ptrs[i]`. The pointer is bound to a temporary once per
+// occurrence -- a call in it runs once, however often the text is asked for -- and
+// the array is reached through the temporary, nil check and all, as through a
+// variable. Left to the value paths the copy was `T b = *pick();`, which is not C:
+// the host's compiler refused it, and the target's took it and read garbage, 251 for
+// a 9 on a P2-EDGE.
+func (e *emitter) arrayPtrExprDeref(ast []int32) (string, arrDim, bool) {
+	kids, ok := e.unaryExprKids(ast)
+	if !ok {
+		return "", arrDim{}, false
+	}
+	return e.arrayPtrKidsDeref(kids)
+}
+
+// arrayPtrKidsDeref is arrayPtrExprDeref for the unary expression's children.
+func (e *emitter) arrayPtrKidsDeref(kids []Node) (string, arrDim, bool) {
+	x, star, ct, a, ok := e.arrayPtrKidsShape(kids)
+	if !ok || e.declInit || e.deferReplay >= 0 {
+		return "", arrDim{}, false
+	}
+	name, bound := e.hoistedArrayCalls[star]
+	if !bound {
+		name = e.hoist(ct, func() { e.emitExprNode(x) })
+		e.hoistedArrayCalls[star] = name
+	}
+	e.locals[name] = ct
 	return e.arrayPtrDeref(name), a, true
 }
 
@@ -24246,6 +24343,11 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 					e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n")
 					return
 				}
+				// Nothing left writes an array: the ordinary path below would emit
+				// `a = x;`, which the host's compiler refuses and the target's takes --
+				// and for `a = *pick()` read garbage with.
+				e.fail("cannot copy this into %s: it is not an array this can read from", e.goArrayTypeName(dstDim))
+				return
 			}
 		}
 	}
@@ -24475,6 +24577,8 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 					e.emit("memcpy(" + lhs + ", " + src + ", sizeof(" + lhs + "));\n")
 					return
 				}
+				e.fail("cannot copy this into %s: it is not an array this can read from", e.goArrayTypeName(fa))
+				return
 			}
 		}
 	}
@@ -24725,9 +24829,23 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		e.emitMakeSliceVar(name, cname, elem, lenAST, capAST, false)
 		return
 	}
+	// Whatever else a copy can read from -- `b := (a)` -- is copied the same way.
+	if a, ok := e.arrayShapeOf(initExpr); ok {
+		if src, ok := e.arraySourceC(initExpr); ok {
+			e.emitArrayCopy(name, src, a)
+			return
+		}
+	}
 	ct, ok := e.inferCType(initExpr)
 	if !ok {
 		e.fail("cannot infer a type for the declaration of %q", name)
+		return
+	}
+	// An array has no C value to initialize a declaration from, and every array the
+	// paths above can read has been copied: `T b = x;` is not C, however willingly
+	// the target's compiler takes it -- `b := *pick()` read garbage there.
+	if a, isArr := e.namedArrays[e.underlyingCType(ct)]; isArr {
+		e.fail("cannot copy this into %s: it is not an array this can read from", e.goArrayTypeName(a))
 		return
 	}
 	// A literal of a DEFINED type gives the variable THAT type rather than the
@@ -29915,6 +30033,13 @@ func (e *emitter) emitExprNode(n Node) {
 						e.emit("(*" + e.nilCheckedC(e.varRef(name), ct) + ")")
 						return
 					}
+				}
+				// `take(*pick())`: an array through a pointer that is an expression,
+				// read where it stands. Written out as the star and the operand it
+				// was evaluated there, but never checked for nil.
+				if text, _, ok := e.arrayPtrKidsDeref(kids); ok {
+					e.emit(text)
+					return
 				}
 			}
 		}

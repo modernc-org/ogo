@@ -125,6 +125,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An array read through a pointer that is not a variable is right.** `a :=
+  *pick()`, `a = *h.p` and `a := *ptrs[i]` -- a pointer to an array that is a
+  call's result, a field or an element -- were written into the C as a plain
+  initialization or assignment, which is not C: the host compiler refused it, and
+  the target's took it and read garbage, 251 for a 9 on the board. Returning one,
+  comparing one, ranging over one and placing one in a composite literal were
+  refused, and passing one or declaring `var a [4]int = *pick()` checked nothing
+  for nil. Each is a copy through the pointer, evaluated once and checked for nil,
+  now; a copy the compiler cannot read is refused rather than written as C.
+
 - **A `fallthrough` into a body that indexes a call's array compiles.** The body
   a `fallthrough` reaches is emitted a second time, and the second copy named the
   temporary the first copy had bound `mk()` to, in another block: the C did not

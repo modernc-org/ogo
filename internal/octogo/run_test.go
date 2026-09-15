@@ -19169,6 +19169,114 @@ func main() {
 		want: "one 2\ntwo 4 4\nthree 3\ntwo 4 4\nthree 3\nthree 3\n56\n",
 	},
 	{
+		// `*x` of a pointer to an array where x is not a variable -- a call's result,
+		// a field, an element. A copy of it was `T a = *pick();` or `a = *h.p;`,
+		// which is not C: the host's compiler refused it, and the target's took it and
+		// read garbage, 251 for a 9 on a P2-EDGE. The return, the literal elements, the
+		// comparisons and the range were refused; an argument and a declared variable
+		// worked but checked nothing for nil. Each call below runs once.
+		name: "an array through a pointer that is not a variable",
+		src: `type Buf [4]byte
+
+func (b Buf) Sum() int {
+	s := 0
+	for _, v := range b {
+		s += int(v)
+	}
+	return s
+}
+
+type holder struct {
+	p *[4]byte
+	q *Buf
+}
+
+type withArr struct {
+	a [4]byte
+	n int
+}
+
+var calls int
+
+var rows [2][4]byte
+
+var bufs [2]Buf
+
+var ptrs [2]*[4]byte
+
+func pick(i int) *[4]byte {
+	calls++
+	return &rows[i]
+}
+
+func pickBuf() *Buf {
+	calls++
+	return &bufs[1]
+}
+
+func take(a [4]byte) int { return int(a[0]) + int(a[3]) }
+
+func give() [4]byte { return *pick(1) }
+
+func main() {
+	rows[0] = [4]byte{1, 2, 3, 4}
+	rows[1] = [4]byte{5, 6, 7, 8}
+	bufs[1] = Buf{9, 9, 9, 9}
+	ptrs[1] = &rows[0]
+	h := holder{p: &rows[1], q: &bufs[1]}
+	a := *pick(0)
+	var b [4]byte = *h.p
+	c := *ptrs[1]
+	var d [4]byte
+	d = *pick(1)
+	println(a[3], b[0], c[1], d[2], take(*pick(0)), give()[1], calls)
+	w := withArr{a: *h.p, n: 2}
+	m := [2][4]byte{*ptrs[1], *pick(1)}
+	e := *pickBuf()
+	println(w.a[3], w.n, m[0][0], m[1][3], e.Sum(), (*h.q).Sum(), calls)
+	println(a == *ptrs[1], *h.p == *pick(1), d != *pick(0), calls)
+	s := 0
+	for _, v := range *pick(1) {
+		s += int(v)
+	}
+	a, d = *h.p, *ptrs[1]
+	rows[0][0] = 100
+	println(s, a[0], d[0], c[0], calls)
+}
+`,
+		want: "4 5 2 7 5 6 4\n8 2 1 8 36 36 6\ntrue true true 8\n26 5 1 1 9\n",
+	},
+	{
+		name: "an array through a nil pointer a call returns panics",
+		src: `func none() *[4]int { return nil }
+
+func take(a [4]int) int { return a[0] }
+
+func main() {
+	println("before")
+	println(take(*none()))
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a copy of an array through a nil pointer field panics",
+		src: `type holder struct {
+	p *[4]int
+}
+
+func main() {
+	var h holder
+	a := *h.p
+	println("after", a[0])
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same
