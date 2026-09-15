@@ -13766,23 +13766,31 @@ func (e *emitter) convChainHead(base string, steps []Node) (ct string, used int,
 // convert. Reading only the unqualified shape is what made `geo.Row(a)` copy one
 // element and leave the rest garbage, the generic path treating it as a scalar.
 func (e *emitter) arrayConvOperand(ast []int32) ([]int32, bool) {
+	operand, _, ok := e.arrayConvTarget(ast)
+	return operand, ok
+}
+
+// arrayConvTarget is arrayConvOperand answering with the C name of the defined type
+// converted to as well: the value is the operand's, and the name is where the method
+// set lives.
+func (e *emitter) arrayConvTarget(ast []int32) ([]int32, string, bool) {
 	recv, suffix, ok := e.directCall(ast)
 	if !ok {
-		return nil, false
+		return nil, "", false
 	}
 	ct, used, isConv := e.convChainHead(recv, suffix)
 	if !isConv || used != len(suffix) {
-		return nil, false
+		return nil, "", false
 	}
 	dim, isArray := e.namedArrays[ct]
 	if !isArray {
-		return nil, false
+		return nil, "", false
 	}
 	args := e.callArgExprs(suffix[used-1].ast)
 	if len(args) != 1 || !e.arrayConvShapeOK(dim, e.definedTypeName(ct), args[0].ast) {
-		return nil, false
+		return nil, "", false
 	}
-	return args[0].ast, true
+	return args[0].ast, ct, true
 }
 
 // definedTypeName is the name a program writes a defined type's C name by: its own
@@ -24429,8 +24437,18 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	// declared is a copy of the operand, which is the branch below. Unwrapped here
 	// because an array is the one representation C has no value type for, so the
 	// paths that read an array operand all read a NAME and would not see through it.
-	if operand, ok := e.arrayConvOperand(initExpr); ok {
+	//
+	// The TYPE is the conversion's, though, and the copy records the operand's shape,
+	// which has no name: `b := Buf(a); b.Sum()` found no method set on b and read it
+	// as a package qualifier. The name is put back once the declaration is recorded.
+	if operand, ct, ok := e.arrayConvTarget(initExpr); ok {
 		initExpr = operand
+		defer func() {
+			if a, ok := e.arrays[name]; ok {
+				a.name = ct
+				e.arrays[name] = a
+			}
+		}()
 	}
 	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
 		e.emitArrayLitVar(name, typeAST, lit, false)

@@ -18793,6 +18793,47 @@ func main() {
 		want: "588851508\n1009\n54\n5\n18\n",
 	},
 	{
+		// An array declared from a conversion to a defined array type -- `b :=
+		// Buf(a)`, the var form, at package scope, from a literal, from another
+		// defined array type, from a call -- and then a method called on it. The
+		// declaration copies the operand and recorded the operand's shape, which has
+		// no name, and a method set is found by the name: `b.Sum()` read b as a
+		// package qualifier, "unknown package b".
+		name: "a method on an array declared from a conversion",
+		src: `type Buf [4]byte
+
+type Row [4]byte
+
+func (b *Buf) Sum() int { return int(b[0]) + int(b[3]) }
+
+func (b Buf) First() byte { return b[0] }
+
+func mk() [4]byte { return [4]byte{9, 8, 7, 6} }
+
+func take(b Buf) int { return int(b[1]) }
+
+var pa = [4]byte{5, 0, 0, 5}
+
+var pb = Buf(pa)
+
+func main() {
+	var a [4]byte
+	a[0], a[3] = 1, 2
+	var b1 = Buf(a)
+	b2 := Buf([4]byte{1, 2, 3, 4})
+	r := Row{3, 0, 0, 3}
+	b3 := Buf(r)
+	b4 := Buf(mk())
+	b5 := Buf(a)
+	p := &b5
+	b5[3] = 7
+	println(b1.Sum(), b2.Sum(), b2.First(), b3.Sum(), b4.Sum(), b4.First(), p.Sum(), pb.Sum(), pb.First())
+	println(take(b2), b1 == Buf(a), b5 == b1)
+}
+`,
+		want: "3 5 1 6 15 9 8 10 5\n2 true false\n",
+	},
+	{
 		// A signed comparison of two values the target's C compiler knows, more than
 		// 2^31 apart: its optimizer decided the comparison from the sign of their
 		// 32-bit difference, which overflows, and so `i < 2147483647` for i = -7 was
@@ -23521,7 +23562,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n" +
 	"1649267441664 2199023255552 1099511627776 35184372088832 true\n" +
 	"17 gx-7 true 10 19\n" +
-	"2 7 56 9 3 8 false 2 1 2 6 3 true\n"
+	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -23696,7 +23737,10 @@ func qualifiedArrays() {
 	var byRow [len(rows[0]) * 3]bool
 	byMeter[1] = 3
 	byRow[5] = true
-	println(len(r), r.Sum(), rowTotal(f), s.row[1], rows[1][0], t, c == r, r[0], s.id, len(byMeter), len(byRow), byMeter[1], byRow[5])
+	var raw [2]int
+	raw[0], raw[1] = 3, 4
+	conv := greet.Row(raw)
+	println(len(r), r.Sum(), rowTotal(f), s.row[1], rows[1][0], t, c == r, r[0], s.id, len(byMeter), len(byRow), byMeter[1], byRow[5], conv.Sum())
 }
 
 // Another package's constants and array bounds built from constants in a LATER file

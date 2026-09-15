@@ -125,6 +125,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method can be called on an array declared from a conversion.** `b :=
+  Buf(a)` for a defined array type `Buf` -- or the var form, a package variable,
+  a conversion of a literal, of another array type, of a call, or of another
+  package's `geo.Buf(a)` -- declared b without its type's name, so `b.Sum()` was
+  refused as "unknown package b". Indexing b and `len(b)` always worked.
+
 - **A comparison with a constant past an int is right.** A constant between
   2^31 and 2^32 in value -- `hz*16` for `const hz = 160000000`, or 3000000000 --
   was written into the C as an unsigned int, and C then compared unsigned: `hz*16
