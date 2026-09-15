@@ -131,10 +131,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   two words (warning "Bad number of parameters" and reading garbage, or refusing
   the call through a function value), and the deferred call captured the
   constant into an int. Such a constant is spelled as the float it converts to
-  now, and a deferred call captures a constant as its parameter's type, as a
-  goroutine argument already did. A declaration, an assignment, a return and an
-  operand were right and are unchanged. Found by probing float conversions at
-  float32 boundaries on the board.
+  now. A declaration, an assignment, a return and an operand were right and are
+  unchanged. Found by probing float conversions at float32 boundaries on the
+  board.
+
+- **A deferred call's constant argument keeps its value, whatever the parameter's
+  type.** The argument was captured into a temporary of the type the constant
+  defaults to, an int: `defer wide(-3000000000, 1<<63+5)` for int64 and uint64
+  parameters showed 1294967296 and 5 at the return, `defer f(-(1 << 33))` showed
+  0, and a float parameter lost its value the same way, with nothing from ogo
+  build to say so. A bare integer literal is replayed as written and was right.
+  The temporary takes the parameter's type now, as a goroutine's argument block
+  already did.
 
 - **`math.Round` is right on the board for odd integers past 2^23 and just below
   one half.** It was built as `Floor(Abs(x) + 0.5)`, and on the P2, where a float64

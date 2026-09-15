@@ -18920,6 +18920,40 @@ func main() {
 		want: "3 7 5 6 7\n3 5 13 8\n7 5 9\n7 2\n",
 	},
 	{
+		// A deferred call evaluates its arguments where the defer stands, into
+		// temporaries replayed at the return. A constant argument's temporary took
+		// the type the constant defaults to, an int, rather than its parameter's --
+		// so `defer wide(-3000000000, 1<<63+5, ...)` showed 1294967296 and 5 on the
+		// board, `-(1 << 33)` showed 0, and a method's int64 and float32 arguments
+		// both came out wrong, with no diagnostic anywhere. A bare integer literal
+		// is replayed as written and was right. The temporary takes the
+		// parameter's type now, as a goroutine's argument block already did.
+		name: "a deferred call's constant argument takes its parameter's type",
+		src: `const Big = 1 << 40
+
+type Meter struct{ base int64 }
+
+func (m Meter) at(d int64, f float32) { println("method", m.base+d, int64(f)) }
+
+func wide(a int64, b uint64, c uint32, d int8) { println("wide", a, b, c, d) }
+
+func shifted(a int64, b uint32, c uint64) { println("shifted", a, b, c) }
+
+func run() {
+	m := Meter{base: 1}
+	defer m.at(-3000000000, -4294967296)
+	defer shifted(-(1 << 33), 1<<31, Big+1)
+	defer wide(-3000000000, 1<<63+5, 3000000000+1, -100)
+	println("run")
+}
+
+func main() {
+	run()
+}
+`,
+		want: "run\nwide -3000000000 9223372036854775813 3000000001 -100\nshifted -8589934592 2147483648 1099511627777\nmethod -2999999999 -4294967296\n",
+	},
+	{
 		// A deferred function literal taking arguments. A literal captures nothing
 		// of the scope around it, so its arguments are the one way a value reaches
 		// it; they are evaluated where the defer stands, as Go says -- q holds
