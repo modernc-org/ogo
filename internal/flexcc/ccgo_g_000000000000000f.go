@@ -5288,8 +5288,18 @@ func s__TransformConstDst(tls *libc.TLS, cc *CC, irl uintptr, ir uintptr, imm ui
 		val2 = int32(31) - val2&int32(31)
 		val1 = val1 << val2 >> val2
 	case int32(_OPC_CMPS):
-		val1 = val1 - val2
-		cval = val1
+		// C is the signed less-than, which the sign of the difference
+		// is not when the difference overflows: -7 - 0x7fffffff wraps
+		if val1 < val2 {
+			cval = -int32(1)
+		} else {
+			if val1 == val2 {
+				cval = 0
+			} else {
+				cval = int32(1)
+			}
+		}
+		val1 = libc.Int32FromUint32(libc.Uint32FromInt32(val1) - libc.Uint32FromInt32(val2))
 		setsResult = 0
 	case int32(_OPC_CMP):
 		setsResult = 0

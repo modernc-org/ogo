@@ -148,7 +148,7 @@ inputs, and never hand-edit the outputs.
    2026-08-29, because a fix lands in spin2cpp weeks before a flexprop release
    carries it), applies `internal/mcpp_main.c.diff` (an adaptation to the
    transpile) and `internal/optimize_ir.c.diff` (fixes carried ahead of upstream,
-   flexprop#109 and #110 -- drop each with the pin that carries upstream's own),
+   flexprop#109, #110 and #111 -- drop each with the pin that carries upstream's own),
    transpiles, and rewrites the emitted `main` package into a reusable `flexcc`
    library (threading a `*CC` state struct through the C globals, via `main2lib`).
    The linux backend is transpiled natively (`ccgo -exec make`, `transpileLinux`);
@@ -215,6 +215,16 @@ inputs, and never hand-edit the outputs.
    > refuse as before. Faithful: every compiling reproducer is byte-identical under
    > the in-process flexcc and a native build of the same commit with the same diff,
    > and upstream's `make test_offline` passes 588/588 with the diff, as without.
+   >
+   > **Regenerated again the same evening for a third** -- an OLD silent fault, a
+   > signed compare of two values the optimizer knows decided by their overflowing
+   > 32-bit difference: `-7 < 2147483647` false (`doc/signed-compare-overflow.c`,
+   > flexprop#111; found comparing wide constants against Go on the board, and in
+   > OctoGo a saturation check inlined with a constant argument). Its hunk joined
+   > the diff; the same checks, the same way: only that reproducer changed in the
+   > battery (31 byte-identical, the three refusals as before), 32/32 faithful to a
+   > native build, test_offline 588/588, five platforms byte-identical, and of 1438
+   > programs -- the run corpus and fuzzer seeds 1-1000 -- no binary changed.
    >
    > **Backend regenerated 2026-08-29 at upstream's tip** — spin2cpp `2bd01c4c`
    > (7.7.2-beta, its master of that day) inside flexprop `v7.7.0`, the wrapper and

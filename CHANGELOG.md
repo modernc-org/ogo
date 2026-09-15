@@ -20,10 +20,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
-- **The backend is regenerated at spin2cpp 3840014f, carrying two fixes of its
+- **The backend is regenerated at spin2cpp 3840014f, carrying three fixes of its
   own.** That is upstream's master of 2026-09-05, inside the same flexprop
   v7.7.0 wrapper, plus `internal/optimize_ir.c.diff` -- the changes suggested in
-  flexprop#109 and #110 for the two optimizer faults under **Fixed**, each
+  flexprop#109, #110 and #111 for the three optimizer faults under **Fixed**, each
   carried until upstream ships a fix of its own. It also brings upstream's fixes
   for #107 (unary plus on a float) and #108 (round), neither of which reaches an
   OctoGo program: the emitter already dropped the plus, and `math.Round` stays
@@ -124,6 +124,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   refused where they are written.
 
 ### Fixed
+
+- **A signed comparison of two values far apart is right on the board.** `i <
+  2147483647` for an int32 i holding -7 was false, and so were `m < 1` for the
+  most negative int32 and a saturation check, `v < 2147483647`, called with a
+  constant -- silently, wherever the target's C compiler could see both values:
+  its optimizer decided the comparison from the sign of their 32-bit
+  difference, which overflows. It is old; v0.33.0 got `m < 1` wrong too. The
+  backend now carries the fix (see **Toolchain**; flexprop#111).
 
 - **A constant expression computes right when a value on the way to its result
   is too wide for an int.** `hz * 16 / 1000000` for `const hz = 160000000`

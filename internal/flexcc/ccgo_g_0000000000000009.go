@@ -19,7 +19,7 @@ func x__GetClkFreq(tls *libc.TLS, cc *CC, P uintptr, clkfreqptr uintptr, clkmode
 	var freqsym, modesym, v1 uintptr
 	_, _, _ = freqsym, modesym, v1
 	if P != 0 {
-		v1 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+4312, 0)
+		v1 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+5732, 0)
 	} else {
 		v1 = libc.UintptrFromInt32(0)
 	}

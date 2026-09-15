@@ -18793,6 +18793,32 @@ func main() {
 		want: "588851508\n1009\n54\n5\n18\n",
 	},
 	{
+		// A signed comparison of two values the target's C compiler knows, more than
+		// 2^31 apart: its optimizer decided the comparison from the sign of their
+		// 32-bit difference, which overflows, and so `i < 2147483647` for i = -7 was
+		// false, and so was a saturation check inlined with a constant argument and
+		// `m < 1` for the most negative int32 -- five of these ten, with nothing to
+		// say so. doc/signed-compare-overflow.c; fixed in the backend (flexprop#111).
+		name: "a signed comparison of two values far apart",
+		src: `const lo = -2000000000
+
+const hi = 2000000000
+
+func notSaturated(v int32) bool { return v < 2147483647 }
+
+func atFloor(v int32) bool { return v <= -2147483647 }
+
+func main() {
+	var i int32 = -7
+	var m int32 = -2147483647 - 1
+	v := 500000000
+	println(notSaturated(-7), atFloor(1), i < 2147483647, i <= 2147483646, m < 1, 5 > m)
+	println(v > lo, v < hi, -v > lo, notSaturated(2147483647))
+}
+`,
+		want: "true false true true true true\ntrue true true false\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

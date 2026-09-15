@@ -94,9 +94,10 @@ const (
 	// packaging around spin2cpp, which it carries as a submodule, and a fix lands in
 	// spin2cpp weeks before a flexprop release carries it. This commit is upstream's
 	// master of 2026-09-05 (7.7.3-beta), adopted 2026-09-15 to carry
-	// optimize_ir.c.diff -- the fixes for flexprop#109 and #110, two silent optimizer
-	// faults (doc/add-immediate-carry.c, doc/conditional-load-dropped.c) -- over the
-	// fixes for flexprop#107 and #108 rather than behind them. The first pin past
+	// optimize_ir.c.diff -- the fixes for flexprop#109, #110 and #111, three silent
+	// optimizer faults (doc/add-immediate-carry.c, doc/conditional-load-dropped.c,
+	// doc/signed-compare-overflow.c) -- over the fixes for flexprop#107 and #108
+	// rather than behind them. The first pin past
 	// v7.7.0 was 2bd01c4c (2026-08-29), adopted for the two miscompiles a release had
 	// not shipped after nine days, flexprop#105 and the constant divide, plus the
 	// peephole fault that forced -Ono-peephole (doc/array-multiply-miscompile.c,
@@ -210,12 +211,13 @@ func main() {
 			}
 		}
 
-		// optimize_ir.c.diff is two fixes carried ahead of upstream, where
+		// optimize_ir.c.diff is three fixes carried ahead of upstream, where
 		// mcpp_main.c.diff adapts the sources to the transpile (it removes a
 		// setjmp): drop each with the spin2cppRef that carries upstream's own fix
-		// for it -- flexprop#109, flexprop#110 -- once its reproducer
-		// (doc/add-immediate-carry.c, doc/conditional-load-dropped.c) prints gcc's
-		// values under a native build of that commit without the diff.
+		// for it -- flexprop#109, #110, #111 -- once its reproducer
+		// (doc/add-immediate-carry.c, doc/conditional-load-dropped.c,
+		// doc/signed-compare-overflow.c) prints gcc's values under a native build of
+		// that commit without the diff.
 		for _, diff := range []string{"mcpp_main.c.diff", "optimize_ir.c.diff"} {
 			if err := shell(filepath.Join(cloneDir, "spin2cpp"), "git", "apply", filepath.Join(wd, diff)); err != nil {
 				fail(1, "git apply %s: err=%v", diff, err)
