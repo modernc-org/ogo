@@ -20079,6 +20079,59 @@ func main() {
 		want: "\"AT+CFG=1\\r\\n\"\n\"plain\" \"\"\n\"tab\\there \\\"quoted\\\" back\\\\slash\"\n\"héllo\"\n616263 616263\n41420d0a|41420D0AC800|\n\"AB\\r\\n\"\n\"AB\\r\\n\\xc8\\x00\"\nhi!|AB|\n'A' '\\n' 'é' '\\x00'\n'\\'' '\\\\'\nU+0041 U+00E9 U+1F600\n41542b4346473d310d0a \"CFG\" AT+\n",
 	},
 	{
+		// The same, for a constant whose VALUE fits a C int and whose way there does
+		// not: `hz * 16 / 1000000` is 2560 by way of 2560000000, which C computes in
+		// int and wraps -- the board printed -1734 -- and `one * one / 3` printed 0.
+		// Every position the expression can stand in, a package initializer and an
+		// array bound among them, and an int64 one past 64 bits: `3 << 62 >> 61` is 6,
+		// which the 64-bit fold, wrapping, spelled -2.
+		name: "a constant whose intermediate value is too wide for a C int",
+		src: `const hz = 160000000
+
+const one = 1 << 16
+
+const baud = 230400
+
+var pkgDiv = hz * 16 / 1000000
+
+var pkgQ int64 = 3 << 62 >> 61
+
+const divisor = hz * 16 / baud
+
+var table [3 << 62 >> 61]int
+
+func id(v int) int { return v }
+
+func ret() int32 { return one * one / 3 }
+
+func main() {
+	a := hz * 16 / 1000000
+	var b int32 = one * one / 3
+	c := id(hz * 8 / 1000)
+	d := hz*16/1000000 == 2560
+	var e uint32 = 1 << 32 / 1000
+	f := -(one * one) / 3
+	var g int64 = hz * hz / hz
+	h := 1<<40>>38 + 1
+	arr := [8]int{7, 6, 5, 4, 3, 2, 1, 0}
+	i := arr[one*one/1073741824]
+	switch hz * 16 / 1000000 {
+	case 2560:
+		println("case ok")
+	}
+	var q int64 = 3 << 62 >> 61
+	table[5] = 9
+	println(a, b, c, d, e, f, g, h, i, q, pkgDiv, pkgQ, divisor, len(table), table[5], ret())
+	// A literal past an int is an unsigned int in C, not a long long, so it wraps
+	// at 32 bits: 4294967295U * 2 / 4 is 1073741823 there.
+	var ux uint32 = 0xFFFFFFFF * 2 / 4
+	sx := 0x80000000 * 2 / 4
+	println(ux, sx, 3000000000-2000000000)
+}
+`,
+		want: "case ok\n2560 1431655765 1280000 true 4294967 -1431655765 160000000 5 3 6 2560 6 11111 6 9 1431655765\n2147483647 1073741824 1000000000\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

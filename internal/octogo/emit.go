@@ -14692,7 +14692,24 @@ func (e *emitter) constIntValue(ast []int32) (int64, bool) {
 	prev := e.foldConv
 	e.foldConv = true
 	defer func() { e.foldConv = prev }()
-	return e.foldConstInt(ast)
+	v, ok := e.foldConstInt(ast)
+	if !ok {
+		return 0, false
+	}
+	// That fold wraps at 64 bits, and a constant expression does not: `var q int64 =
+	// 3 << 62 >> 61` is 6 by way of a value past 64 bits, and the wrapped fold spelled
+	// -2. Only an UNTYPED expression can pass through one -- a typed intermediate out
+	// of its range is an error Go reports -- so where the exact value is representable,
+	// it is the one.
+	if xv, ok := e.foldConstVal(ast); ok && xv.Kind() == constant.Int {
+		if x, exact := constant.Int64Val(xv); exact {
+			return x, true
+		}
+		if x, exact := constant.Uint64Val(xv); exact && e.foldUnsigned {
+			return int64(x), true
+		}
+	}
+	return v, true
 }
 
 // convFold folds `T(x)` to x's value when T is an integer type, for the value-only
@@ -14740,11 +14757,99 @@ func (e *emitter) levelConstLit(ast []int32) (string, bool) {
 			return e.constSpelling(v, ut), true
 		}
 	}
+	// A value that fits may still pass through one that does not on the way. Go
+	// computes a constant expression exactly; C computes this one in int, and wraps:
+	// `hz * 16 / 1000000` for hz = 160000000 is 2560 by way of 2560000000, and the
+	// board printed -1734. `one * one / 3` with one = 1 << 16 printed 0.
+	if v, ok := e.constLevelWrapsInC(ast, ut); ok {
+		return e.constSpelling(v, ut), true
+	}
 	v, ok := e.foldConstInt(ast)
 	if !ok || fitsCInt(v) {
 		return "", false
 	}
 	return e.constSpelling(v, ut), true
+}
+
+// constLevelWrapsInC folds a constant level exactly and answers with its value when
+// C, computing it as written, could get it wrong: an operand or a result lies outside
+// the C type the operation is computed in, or a shift is one C leaves undefined.
+//
+// That type is modelled from the VALUES, which is how a literal is spelled (intCLit:
+// int, then unsigned int -- `4294967295U` -- then long long) and how a named constant
+// is declared: an operation is computed in the higher of its operands' ranks, a shift
+// in its left operand's. A value's rank is the lowest its real C type can have, so the
+// model can call a level wrapping that C computes right -- which costs a literal -- and
+// never the other way round.
+func (e *emitter) constLevelWrapsInC(ast []int32, ut string) (int64, bool) {
+	kids := slices.Collect(it(ast))
+	if len(kids) < 3 {
+		return 0, false
+	}
+	const (
+		rInt = iota
+		rUint
+		rLL
+	)
+	lo := []constant.Value{constant.MakeInt64(math.MinInt32), constant.MakeInt64(0), constant.MakeInt64(math.MinInt64)}
+	hi := []constant.Value{constant.MakeInt64(math.MaxInt32), constant.MakeUint64(math.MaxUint32), constant.MakeInt64(math.MaxInt64)}
+	fits := func(v constant.Value, r int) bool {
+		return !constant.Compare(v, token.LSS, lo[r]) && !constant.Compare(v, token.GTR, hi[r])
+	}
+	rankOf := func(v constant.Value) (int, bool) {
+		for r := rInt; r <= rLL; r++ {
+			if fits(v, r) {
+				return r, true
+			}
+		}
+		return 0, false
+	}
+	acc, ok := e.foldValNode(kids[0])
+	if !ok || acc.Kind() != constant.Int {
+		return 0, false
+	}
+	rank, ok := rankOf(acc)
+	if !ok {
+		return 0, false
+	}
+	wraps := false
+	for i := 1; i+1 < len(kids); i += 2 {
+		op := kids[i]
+		if op.sym != AddOp && op.sym != MulOp {
+			return 0, false
+		}
+		rhs, ok := e.foldValNode(kids[i+1])
+		if !ok || rhs.Kind() != constant.Int {
+			return 0, false
+		}
+		r2, ok := rankOf(rhs)
+		if !ok {
+			return 0, false
+		}
+		switch text := e.opText(op.ast); text {
+		case "<<", ">>":
+			width := int64(32)
+			if rank == rLL {
+				width = 64
+			}
+			if n, exact := constant.Int64Val(rhs); !exact || n < 0 || n >= width || text == "<<" && constant.Sign(acc) < 0 {
+				wraps = true // undefined in C
+			}
+		default:
+			rank = max(rank, r2)
+			if !fits(rhs, rank) || !fits(acc, rank) {
+				wraps = true // a negative operand converted to unsigned
+			}
+		}
+		if acc, ok = foldValOp(acc, e.opText(op.ast), rhs); !ok || acc.Kind() != constant.Int {
+			return 0, false
+		}
+		if !fits(acc, rank) {
+			wraps = true
+		}
+	}
+	v, exact := constant.Int64Val(acc)
+	return v, wraps && exact
 }
 
 // wideConstValue is constIntValue for a 64-bit level that is about to be rendered

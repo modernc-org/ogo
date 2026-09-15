@@ -125,6 +125,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A constant expression computes right when a value on the way to its result
+  is too wide for an int.** `hz * 16 / 1000000` for `const hz = 160000000`
+  printed -1734 on the board where Go prints 2560: the result fits a C int, so
+  the expression reached the target's C compiler as written, which computed
+  2560000000 in int and wrapped. `one * one / 3` with `one = 1 << 16` printed 0
+  for 1431655765, `1 << 32 / 1000` printed 0, and the same held as an argument,
+  a return, a comparison, a switch tag and an index; a package variable
+  initialized by a constant shift of that kind did not build at all, and `var q
+  int64 = 3 << 62 >> 61` came out -2 for Go's 6. Such an expression is emitted
+  as its exact value now. Silent since the constant folds were written; the
+  whole run-case table re-ran on a P2-EDGE with the fix.
+
 - **`len` and `cap` are constants where Go makes them ones.** Of a constant
   string, and of an array or a pointer to one reached with no call and no
   receive -- `len(table)`, `len(fr.body)`, `len(grid[0])`, `len(lut)` for a
