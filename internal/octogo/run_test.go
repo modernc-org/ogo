@@ -19532,6 +19532,58 @@ func main() {
 		want: "p2 19200 3 6\nh 40 2 7 true\n6 20 42 1\n",
 	},
 	{
+		// A keyed struct literal is emitted in FIELD order, which is the order C
+		// evaluates its values in, so `Hdr{kind: rd(), size: rd()}` over a struct
+		// declaring size first read the stream the wrong way round -- 7 3 for 3 7 on
+		// a P2-EDGE. And the values an append adds are arguments of nested helper
+		// calls, which the host's compiler evaluates last first.
+		name: "a keyed literal and an append evaluate their values in order",
+		src: `type Hdr struct {
+	size int
+	kind byte
+	id   string
+}
+
+type Frame struct {
+	hdr  Hdr
+	crc  uint16
+	data []byte
+}
+
+var stream = [8]byte{3, 7, 1, 2, 9, 4, 5, 6}
+
+var pos int
+
+func rd() byte {
+	b := stream[pos]
+	pos++
+	return b
+}
+
+var names = [2]string{"a", "b"}
+
+func name() string {
+	return names[pos%2]
+}
+
+var buf [8]byte
+
+func main() {
+	h := Hdr{kind: rd(), size: int(rd()), id: name()}
+	println(h.kind, h.size, h.id, pos)
+	p := &Hdr{id: name(), kind: rd(), size: int(rd())}
+	println(p.kind, p.size, p.id, pos)
+	f := Frame{crc: uint16(rd())<<8 | uint16(rd()), hdr: Hdr{size: 1}}
+	println(f.crc, f.hdr.size, pos)
+	pos = 0
+	s := buf[:0]
+	s = append(s, rd(), rd(), rd())
+	println(s[0], s[1], s[2], len(s), pos)
+}
+`,
+		want: "3 7 a 2\n1 2 a 4\n2308 1 6\n3 7 1 3 3\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

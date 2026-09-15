@@ -11916,6 +11916,7 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 	if !ok {
 		return
 	}
+	defer e.bindKeyedLitValues(lit, values)()
 	if !brace {
 		e.emit("(" + name + ")")
 	}
@@ -13588,6 +13589,40 @@ func (e *emitter) litFieldValues(name string, lit Node) (values []*Node, fields 
 		values[at] = &el.value
 	}
 	return values, fields, true
+}
+
+// bindKeyedLitValues binds the values of a KEYED struct literal to temporaries in
+// the order they are written, when that is not the order of the fields they fill
+// (values, as litFieldValues answers them). The literal is emitted in field order,
+// which is the order C evaluates it in, so `Hdr{kind: rd(), size: rd()}` over a
+// struct declaring size first read the stream the wrong way round -- on a P2-EDGE
+// too. A positional literal, or a keyed one written in field order, is in source
+// order already and binds nothing.
+func (e *emitter) bindKeyedLitValues(lit Node, values []*Node) func() {
+	elements := compositeLitElements(lit)
+	if len(elements) < 2 || !elements[0].keyed {
+		return func() {}
+	}
+	last, inOrder := -1, true
+	var written []Node
+	for _, el := range elements {
+		if len(el.value.ast) == 0 {
+			continue
+		}
+		at := slices.IndexFunc(values, func(v *Node) bool { return v != nil && len(v.ast) != 0 && &v.ast[0] == &el.value.ast[0] })
+		if at < 0 {
+			continue
+		}
+		if at < last {
+			inOrder = false
+		}
+		last = at
+		written = append(written, *values[at])
+	}
+	if inOrder {
+		return func() {}
+	}
+	return e.bindEffectOperands(written)
 }
 
 // emitVarInit emits a variable declaration's initializer. A composite literal that
@@ -22573,6 +22608,9 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	for _, v := range values {
 		e.typeUntypedShifts(v.ast, elem) // the element's type is the value's context
 	}
+	// The values are arguments of nested helper calls, whose order C leaves open:
+	// `append(s, f(1), f(2))` ran f(2) first on the host.
+	defer e.bindEffectOperands(args)()
 	for range values {
 		e.emit(appendCName(elem) + "(")
 	}

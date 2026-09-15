@@ -125,6 +125,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A keyed struct literal evaluates its values in the order written.** It was
+  emitted in field order, so `Hdr{kind: rd(), size: rd()}` over a struct that
+  declares `size` first read the two bytes the wrong way round, on the board as
+  well. And `append(s, rd(), rd())` appended them last first on the host.
+
 - **A package variable holding the address of a literal points at live
   storage.** `var defaults = &Config{...}` -- and a literal's pointer field, an
   array or slice element or a struct field holding one -- pointed into the frame
