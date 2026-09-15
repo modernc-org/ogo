@@ -114,6 +114,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`math.Round` is right on the board for odd integers past 2^23 and just below
+  one half.** It was built as `Floor(Abs(x) + 0.5)`, and on the P2, where a float64
+  is 32 bits, the `+ 0.5` is itself rounded: every odd integer between 2^23 and
+  2^24 hit a tie that went to its even neighbour -- `math.Round(8388609)` was
+  8388610, `math.Round(16777215)` was 16777216 -- and `math.Round(0.49999997)` was
+  1. The host's 64-bit double kept both traps out of reach of every value tested,
+  so only the board showed it. The fraction is compared on its own now, which is
+  exact; the math exercise that runs against Go on the host and on the board
+  carries both cases.
+
 - **A zero passed to a 64-bit parameter after a 64-bit expression arrives
   whole.** `mix(-m, 0)` for int64 parameters computed garbage on the board
   (-1078972716209405735 for -217) with only a backend warning to say so, and the

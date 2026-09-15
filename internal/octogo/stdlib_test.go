@@ -250,7 +250,10 @@ func TestOnBoardStrings(t *testing.T) {
 // exports, on the arguments where a plausible implementation and a correct one part
 // company: a negative half-way value for each of the four roundings, a negative zero
 // out of Trunc, a negative operand and a negative modulus for Mod, and the quadrants
-// Atan2 exists to tell apart.
+// Atan2 exists to tell apart. And for Round, the two places `Floor(x + 0.5)` goes
+// wrong in 32 bits, which is what a float64 is here: an odd integer between 2^23 and
+// 2^24, where the + 0.5 is a tie that rounds up to the even neighbour, and the float
+// just below one half, where it rounds up to 1.
 //
 // It prints to FOUR decimals, and that is the whole of what this target's precision
 // costs the test. A float64 is 32 bits here, so a result carries about seven
@@ -269,6 +272,8 @@ func rounding() {
 	printf("%.4f %.4f %.4f %.4f\n", math.Trunc(-3.5), math.Trunc(3.5), math.Trunc(-0.5), math.Trunc(0.5))
 	printf("%.4f %.4f %.4f %.4f\n", math.Round(-3.5), math.Round(3.5), math.Round(-2.4), math.Round(2.6))
 	printf("%.4f %.4f %.4f\n", math.Round(0.5), math.Round(-0.5), math.Round(0.0))
+	printf("%.4f %.4f %.4f %.4f\n", math.Round(8388609.0), math.Round(-8388609.0), math.Round(16777215.0), math.Round(4194305.5))
+	printf("%.4f %.4f %.4f\n", math.Round(0.4999999701976776123046875), math.Round(-0.4999999701976776123046875), math.Round(-0.2))
 }
 
 func powers() {

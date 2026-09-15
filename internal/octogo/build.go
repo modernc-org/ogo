@@ -148,8 +148,22 @@ func Trunc(x float64) float64 {
 //
 // The sign comes from x, so that Round(-0) is -0 and Round(-0.2) is -0, as Go has
 // them: a sign test on x answered +0 for both.
+//
+// The fraction is compared on its own rather than rounded by adding one half, which
+// was the first spelling, Floor(Abs(x) + 0.5), and was wrong on the board, where a
+// float64 is 32 bits: the + 0.5 is itself rounded, so every odd integer between 2^23
+// and 2^24 lands on a tie that goes to its even neighbour -- Round(8388609) was
+// 8388610 -- and the float just below one half sums to exactly 1. The host's 64-bit
+// double moved the same traps out of reach of every value tested, so only the board
+// saw it. a - t is exact: the two are within a factor of two of each other, or t is
+// zero.
 func Round(x float64) float64 {
-	return Copysign(Floor(Abs(x)+0.5), x)
+	a := Abs(x)
+	t := Floor(a)
+	if a-t >= 0.5 {
+		t++
+	}
+	return Copysign(t, x)
 }
 `
 
