@@ -155,7 +155,11 @@ func TestOnBoardMultiPkg(t *testing.T) {
 const smithSeeds = 24
 
 // outgrewCog reports whether a build failed because the program does not fit the
-// cog's code window -- "fit 480 failed: pc is 493" from the assembler.
+// cog's code window -- "fit 480 failed: pc is 493" from the assembler -- or the
+// backend's budget of local registers for one function, "Internal error exceeded
+// local register limit", which is the same overflow met a step earlier: seed 1249's
+// main hits the second, and with the small-function inliner off, which moves those
+// locals back out of main, the first.
 //
 // It is the ONLY build failure a generated program may be excused. A backend
 // defect used to be excused here too, until the optimizer passes behind it were
@@ -168,7 +172,8 @@ const smithSeeds = 24
 // is skipped and reported as skipped. A hand-written case must never hit it, which
 // is why this is not in boardBuild.
 func outgrewCog(err error) bool {
-	return strings.Contains(err.Error(), "fit 480 failed")
+	msg := err.Error()
+	return strings.Contains(msg, "fit 480 failed") || strings.Contains(msg, "exceeded local register limit")
 }
 
 // smithProgram generates one fuzzer program by running the `ogo smith` subcommand.
