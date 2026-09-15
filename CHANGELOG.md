@@ -125,6 +125,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A constant may name one declared in another file of its package.** A package
+  of two files, `a.ogo` with `const A = B + 1` and `b.ogo` with `const B = 2 * 3`,
+  crashed the compiler: the checker evaluated B through the tokens of the file
+  that asked for it, which index a different expression. An array bound naming
+  such a constant did the same -- in a variable, a type, a struct field or a
+  signature -- a string constant was refused as a definition cycle, and where the
+  misread tokens happened to parse the constant was checked with their value, so
+  a uint8 initialized from `B * 100` was refused as overflowing. Only a file whose
+  name sorts after the asker's did it; the other order compiled. A package
+  constant is also evaluated in the package scope now, wherever it is asked for
+  from: inside a function literal whose parameter was named like an operand of
+  its initializer, `var buf [B]byte` was refused as a non-constant array bound.
+
 - **A package constant may be used above its declaration.** Go's package block
   has no order, but a constant naming one declared below it had no value yet
   where it was needed: `var table [Deep]int` over `const Deep = Mid + 1` and

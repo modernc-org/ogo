@@ -14999,10 +14999,25 @@ func (f *File) constSpecNames(n Node) (names []Token) {
 // reference to a constant declared later triggers that constant's evaluation.
 // The gate turns a definition cycle into a reported error and an unknown value
 // rather than unbounded recursion.
+//
+// The evaluation happens where the constant was WRITTEN, whoever asks first (see
+// constHome). Its AST indexes the token table of the file that wrote it, and read
+// through another file's table it is a different expression: `const A = B + 1` in
+// a.ogo, asking for `const B = 2 * 3` of b.ogo, panicked on whatever token stood at
+// the operator's index in a.ogo, and where the misread happened to parse it folded
+// a.ogo's tokens instead -- a `const B = 2` read as a 7, and a uint8 initialized
+// from B*100 refused as overflowing. Only a reference to a file checked LATER could
+// do it, the other order finding the constant already resolved.
 func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 	cs := cd.ConstSpec
 	if cs == nil {
 		return
+	}
+	if cs.gate.state() == unvisited {
+		if wf, ws := f.constHome(s, cd); wf != f || ws != s {
+			wf.resolveConst(ws, cd)
+			return
+		}
 	}
 	switch cs.gate.state() {
 	case resolved:
@@ -15018,6 +15033,14 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 	// it, since resolving one constant can trigger another's resolution.
 	savedIota := f.iota
 	f.iota = cs.iota
+	// The initializer is a context of its own. An array bound or a case expression
+	// that happened to ask for the constant first does not make a non-constant
+	// operand of the initializer legal, and silenced the report of one: `var a [B]int`
+	// above `const B = v` said "non-constant array bound" at the bound and nothing at
+	// all where the mistake was.
+	savedBound, savedCase := f.inArrayBound, f.inCaseExpr
+	f.inArrayBound, f.inCaseExpr = false, false
+	defer func() { f.inArrayBound, f.inCaseExpr = savedBound, savedCase }()
 	var exprPos token.Position
 	if cs.rawType.sym != 0 {
 		cs.TypeNode = f.typ(s, cs.rawType)
@@ -15047,6 +15070,21 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 	}
 	f.checkConstOverflow(s, cs, exprPos)
 	cs.gate.close()
+}
+
+// constHome is where a constant is evaluated: in the file that wrote it, and a
+// package-level one in the package scope, whatever scope the asker stands in. A
+// function signature asking for a constant declared below it -- `func f(C int, a
+// [B]int)` over `const B = C + 1` -- resolved B's C to the parameter, B came out
+// with no value, and the program stopped in the emitter on an "unsupported type".
+// A local constant is resolved where its declaration is reached, Go allowing no
+// forward reference inside a function, so the asker's scope is its own.
+func (f *File) constHome(s *Scope, cd *ConstDeclaration) (*File, *Scope) {
+	wf := f.fileOfToken(cd.ConstSpec.Name)
+	if p := wf.Package; p != nil && p.Scope != nil && p.Scope.Declarations[cd.Name()] == cd {
+		return wf, p.Scope
+	}
+	return wf, s
 }
 
 // checkConstOverflow reports a typed integer constant whose value does not fit in

@@ -4419,6 +4419,30 @@ func main() {
 		want: "7 3 9 12 12 6 true gx-7\n",
 	},
 	{
+		// A package constant asked for from inside a function literal whose
+		// parameter is named like an operand of the constant's own initializer. The
+		// checker evaluated the constant in the scope that asked, so B's C was the
+		// parameter and `var buf [B]byte` was refused as a non-constant array bound.
+		// A package constant names what the package scope names, wherever the
+		// question comes from.
+		name: "a package constant asked for where its operand is shadowed",
+		src: `var scaled = func(C int) int {
+	var buf [B]byte
+	buf[0] = byte(C)
+	return len(buf)*C + int(buf[0])
+}
+
+const B = C + 1
+
+const C = 3
+
+func main() {
+	println(scaled(10), C)
+}
+`,
+		want: "50 3\n",
+	},
+	{
 		// A self-referential struct -- a field that is a pointer to the same type --
 		// backs linked lists and trees. The emitter emits a tagged, forward-declared
 		// typedef (`typedef struct N N; struct N { ... N* next; };`) so the field can
@@ -23271,7 +23295,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"30\n30\n30\n5\n1 10\n14 true 14 true\n6\nsizer\n9\n42\n5 10 10 true\n2 2 2 2 MM 2\n100 50 50 9.75 19.5 4 true\n100 -1\n" +
 	"20 4 10 4 2\n105 2 20 383\n16 6\n[8 9]\n10 5 6 14 7\n16 9\nchain.Reg chain.Lamp\n" +
 	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n" +
-	"1649267441664 2199023255552 1099511627776 35184372088832 true\n"
+	"1649267441664 2199023255552 1099511627776 35184372088832 true\n" +
+	"17 gx-7 true 10 19\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -23411,6 +23436,15 @@ errors()
 qualifiedCases()
 initOrder()
 untypedShifts()
+crossFileConsts()
+}
+
+// Another package's constants and array bounds built from constants in a LATER file
+// of that package.
+func crossFileConsts() {
+	var a [16]uint8
+	a[0] = 3
+	println(greet.Slots, greet.Model, greet.Gain == 0.375, greet.BufLen(), greet.FrameCap(a))
 }
 
 // An untyped constant shifted by a variable takes the type of where it stands, which
@@ -23967,12 +24001,37 @@ func (g *Gauge) Read() (int, bool) {
 var Meters [2]Reader
 
 var G1 = Gauge{V: 7, Up: true}
+
+// Constants and bounds naming constants of loud.ogo, which the checker reaches after
+// this file: each was evaluated through THIS file's tokens, and panicked.
+const Slots = Frame*2 + 1
+
+const Model = Family + "-7"
+
+const Gain float32 = Step * 3
+
+type Buf [Frame]byte
+
+func BufLen() int {
+	var b Buf
+	b[7] = 2
+	return len(b) + int(b[7])
+}
+
+func FrameCap(a [Frame * 2]uint8) int { return len(a) + int(a[0]) }
 `,
 	"greet/loud.ogo": `// Quiet is read from greet.ogo and Doubled reads Total from it, so whichever of
 // the two files is emitted first, one of them names a variable it has not seen.
 var Quiet = 3
 
 var Doubled = Total * 2
+
+// Named by greet.ogo's constants, from the file checked first.
+const Frame = 1 << 3
+
+const Family = "gx"
+
+const Step = 0.25 / 2
 
 func Loud(s string) string {
 if len(s) > 0 {
@@ -24337,5 +24396,146 @@ func TestEmitCMultiPackage(t *testing.T) {
 	}
 	if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != multiPkgWant {
 		t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, multiPkgWant, buf.String())
+	}
+}
+
+// TestCrossFileConsts runs main packages of two files, a.ogo checked first, whose
+// constants and array bounds name constants declared in b.ogo. The checker evaluated
+// such a constant through the token table of the file that asked for it, which
+// indexes a different expression: every one of these panicked in the checker or was
+// refused -- "constant definition cycle" for a string, and "constant 700 overflows
+// uint8" where a.ogo's 7 stood at the index of b.ogo's 2 -- and the other file order
+// compiled, the constant being resolved by then. Each output is Go's.
+func TestCrossFileConsts(t *testing.T) {
+	cc := ""
+	for _, c := range []string{"cc", "gcc", "clang"} {
+		if p, err := exec.LookPath(c); err == nil {
+			cc = p
+			break
+		}
+	}
+	if cc == "" {
+		t.Skip("no C compiler found")
+	}
+	shim, err := filepath.Abs(filepath.Join("testdata", "hostp2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, a, b, want string }{
+		{
+			name: "an integer constant",
+			a:    "const A = B + 1\n\nfunc main() {\n\tprintln(A)\n}\n",
+			b:    "const B = 2 * 3\n",
+			want: "7\n",
+		},
+		{
+			name: "a variable's array bound",
+			a:    "var arr [N]int\n\nfunc main() {\n\tarr[N-1] = 9\n\tprintln(len(arr), arr[4])\n}\n",
+			b:    "const N = 2 + 3\n",
+			want: "5 9\n",
+		},
+		{
+			name: "a defined array type's bound",
+			a:    "type T [N]int\n\nfunc main() {\n\tvar t T\n\tt[1] = 4\n\tprintln(len(t), t[1])\n}\n",
+			b:    "const N = 2 + 3\n",
+			want: "5 4\n",
+		},
+		{
+			name: "a struct field's bound",
+			a:    "type S struct {\n\ta [N]int\n}\n\nfunc main() {\n\tvar s S\n\ts.a[2] = 6\n\tprintln(len(s.a), s.a[2])\n}\n",
+			b:    "const N = 2 + 3\n",
+			want: "5 6\n",
+		},
+		{
+			name: "a signature's bound",
+			a:    "func f(a [N]int) int { return len(a) + a[0] }\n\nfunc main() {\n\tvar a [5]int\n\ta[0] = 2\n\tprintln(f(a))\n}\n",
+			b:    "const N = 2 + 3\n",
+			want: "7\n",
+		},
+		{
+			name: "a signature's bound beside a parameter named like its operand",
+			a:    "func f(C int, a [B]int) int { return len(a) + C + a[1] }\n\nfunc main() {\n\tvar a [2]int\n\ta[1] = 5\n\tprintln(f(10, a), C)\n}\n",
+			b:    "const B = C + 1\n\nconst C = 1\n",
+			want: "17 1\n",
+		},
+		{
+			name: "a method's receiver type",
+			a:    "type T struct {\n\tv [N]int\n}\n\nfunc (t *T) Len() int { return len(t.v) + t.v[0] }\n\nfunc main() {\n\tvar t T\n\tt.v[0] = 1\n\tprintln(t.Len())\n}\n",
+			b:    "const N = 1 << 3\n",
+			want: "9\n",
+		},
+		{
+			name: "an iota group",
+			a:    "const Z = Y + 1\n\nfunc main() {\n\tprintln(Z)\n}\n",
+			b:    "const (\n\tX = iota * 2\n\tY\n)\n",
+			want: "3\n",
+		},
+		{
+			name: "a group spec repeating an expression",
+			a:    "const (\n\tA = B + iota\n\tA2\n)\n\nfunc main() {\n\tprintln(A, A2)\n}\n",
+			b:    "const B = 10 - 3\n",
+			want: "7 8\n",
+		},
+		{
+			name: "a typed constant",
+			a:    "const Q = T8 * 2\n\nfunc main() {\n\tprintln(Q)\n}\n",
+			b:    "const T8 uint8 = 1 << 3\n",
+			want: "16\n",
+		},
+		{
+			name: "a string constant",
+			a:    "const S = P + \"x\"\n\nfunc main() {\n\tprintln(S)\n}\n",
+			b:    "const P = \"a\" + \"b\"\n",
+			want: "abx\n",
+		},
+		{
+			name: "a float32 constant",
+			a:    "const F float32 = E * 2\n\nfunc main() {\n\tprintln(F == 1)\n}\n",
+			b:    "const E = 1.5 / 3\n",
+			want: "true\n",
+		},
+		{
+			// b.ogo's 2 sits at the index of a.ogo's 7, which is what was folded.
+			name: "a range check of the value the constant has",
+			a:    "const A = B * 100\n\nconst X = 7 + 8 + 9 + 10\n\nvar u8 uint8 = A\n\nfunc main() {\n\tprintln(A, X, u8, arr[0])\n}\n",
+			b:    "var arr [2]int\n\nconst B = 2\n",
+			want: "200 34 200 0\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{
+				"a.ogo": &fstest.MapFile{Data: []byte(test.a)},
+				"b.ogo": &fstest.MapFile{Data: []byte(test.b)},
+			}
+			pkg, err := Build(-1, []string{"a.ogo", "b.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err != nil {
+				t.Fatalf("EmitC: %v", err)
+			}
+			dir := t.TempDir()
+			csrc := filepath.Join(dir, "main.c")
+			if err := os.WriteFile(csrc, buf.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			bin := filepath.Join(dir, "prog")
+			out, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
+				"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread", "-lm").CombinedOutput()
+			if err != nil {
+				t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())
+			}
+			if len(bytes.TrimSpace(out)) != 0 {
+				t.Errorf("cc warned:\n%s\n--- emitted ---\n%s", out, buf.String())
+			}
+			got, runErr := exec.Command(bin).CombinedOutput()
+			if runErr != nil {
+				t.Fatalf("run: %v\n%s", runErr, got)
+			}
+			if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != test.want {
+				t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, test.want, buf.String())
+			}
+		})
 	}
 }
