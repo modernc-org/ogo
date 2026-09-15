@@ -4217,7 +4217,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	e.w = &forwards
 	// Constant VALUES first: a struct field's array bound may name one, and the
 	// typedefs below are emitted before the constants themselves.
-	forEachFile(func() { e.collectConstValues(e.f.AST) })
+	e.collectConstValues(pkgs)
 	forEachFile(func() { e.collectStructForwards(e.f.AST) })
 	e.w = &scratch
 	forEachFile(func() { e.collectStructs(e.f.AST) })
@@ -4247,7 +4247,7 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// environment so a `x := CONST` short declaration can be typed.
 	var globals bytes.Buffer
 	e.w = &globals
-	forEachFile(func() { e.emitPackageConsts(e.f.AST) })
+	e.emitPackageConsts(pkgs)
 	// Package-level variables follow the constants (so a variable's initializer may
 	// fold a constant), each a file-scope `static` recorded in the global type
 	// environment. Their TYPES are collected first, over every file, so an
@@ -6794,25 +6794,11 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 	return out
 }
 
-// emitPackageConsts emits the file's package-level constant declarations as C
+// emitPackageConsts emits the program's package-level constant declarations as C
 // file-scope `static const` definitions and records each in the global type
-// environment.
-func (e *emitter) emitPackageConsts(ast []int32) {
-	for n := range it(ast) {
-		if n.sym != SourceFile {
-			continue
-		}
-		for c := range it(n.ast) {
-			if c.sym != TopLevelDecl {
-				continue
-			}
-			for d := range it(c.ast) {
-				if d.sym == ConstDecl {
-					e.emitConstDecl(d.ast, true)
-				}
-			}
-		}
-	}
+// environment, in the order forEachPkgConst gives them.
+func (e *emitter) emitPackageConsts(pkgs []*Package) {
+	e.forEachPkgConst(pkgs, func(cs constSpecName) { e.emitConstSpec(cs, true) })
 }
 
 // collectConstValues records every package-level constant that folds to an integer,
@@ -6828,10 +6814,10 @@ func (e *emitter) emitPackageConsts(ast []int32) {
 // Only values are collected here. Resolving a constant's TYPE cannot move this early
 // -- `const c Celsius = 5` names a type this pass runs ahead of -- and an array bound
 // has no use for one.
-func (e *emitter) collectConstValues(ast []int32) {
+func (e *emitter) collectConstValues(pkgs []*Package) {
 	e.constPreScan = true
 	defer func() { e.constPreScan = false }()
-	e.emitPackageConsts(ast)
+	e.emitPackageConsts(pkgs)
 }
 
 // pkgVarPending is one package variable whose C type must be inferred from its
@@ -7629,12 +7615,32 @@ func (e *emitter) emitGlobalInit(ctype string, initExpr []int32) {
 // is inferred from its initializer, defaulting to int. The name is recorded in the
 // global or local type environment so its later uses can be typed.
 func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
+	specs, _ := e.constDeclSpecs(ast)
+	for _, cs := range specs {
+		e.emitConstSpec(cs, pkg)
+	}
+}
+
+// constSpecName is one name a const declaration binds, with what the declaration
+// gives it: the type and expression standing in its position, inherited from an
+// earlier spec of the group where its own omits them, and its spec's iota.
+type constSpecName struct {
+	name     string
+	typeAST  []int32 // the written type; meaningful when hasType
+	hasType  bool
+	initExpr []int32
+	iota     int
+}
+
+// constDeclSpecs reads a const declaration into the names it binds, without emitting
+// anything. ok is false, with an error latched, for a malformed one.
+func (e *emitter) constDeclSpecs(ast []int32) (r []constSpecName, ok bool) {
 	// iota counts specs across the group; lastExpr and lastType carry the previous
 	// spec's expression and type forward for a spec that omits its own, mirroring
 	// the checker's declareConst.
 	iotaVal := 0
 	var lastExprs [][]int32
-	var lastType string
+	var lastType []int32
 	haveLastType := false
 	for n := range it(ast) {
 		if n.sym != ConstSpec {
@@ -7642,19 +7648,12 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		}
 		var names []string
 		var initExprs [][]int32
-		var ownType string
+		var typeAST []int32
 		hasType := false
 		for s := range it(n.ast) {
 			switch s.sym {
 			case Type:
-				// The pre-scan runs before any type is collected, so a named type
-				// would fail to resolve. It records values, not types: hasType still
-				// carries forward to the next spec, ownType is simply unused.
-				if e.constPreScan {
-					ownType, hasType = "", true
-					continue
-				}
-				ownType, hasType = e.cType(s.ast), true
+				typeAST, hasType = s.ast, true
 			case IdentifierList:
 				for d := range it(s.ast) {
 					if d.sym == 0 && e.f.ch(d.tok) == IDENT {
@@ -7671,33 +7670,135 @@ func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 		}
 		if len(names) == 0 {
 			e.fail("malformed const declaration")
-			return
+			return nil, false
 		}
 		// A spec omitting its expression list repeats the previous spec's,
 		// positionally, together with its type; one with a list of its own carries
 		// that list forward.
 		if len(initExprs) != 0 {
 			lastExprs = initExprs
-			lastType, haveLastType = ownType, hasType
+			lastType, haveLastType = typeAST, hasType
 		} else {
 			initExprs = lastExprs
-			ownType, hasType = lastType, haveLastType
+			typeAST, hasType = lastType, haveLastType
 		}
 		if len(initExprs) != len(names) {
 			e.fail("malformed const declaration")
-			return
+			return nil, false
 		}
 		// iota counts specs, not names: every name on one line sees the same value.
 		curIota := iotaVal
 		iotaVal++
 		for i, name := range names {
-			initExpr := initExprs[i]
 			if name == "_" {
 				continue // a blank const declares nothing
 			}
-			e.emitConstSpecName(name, ownType, hasType, initExpr, curIota, pkg)
+			r = append(r, constSpecName{name: name, typeAST: typeAST, hasType: hasType, initExpr: initExprs[i], iota: curIota})
 		}
 	}
+	return r, true
+}
+
+// emitConstSpec emits one name of a const declaration.
+func (e *emitter) emitConstSpec(cs constSpecName, pkg bool) {
+	// The pre-scan runs before any type is collected, so a named type would fail to
+	// resolve. It records values, not types: hasType still says the constant is
+	// typed, the type itself is simply unused.
+	ownType := ""
+	if cs.hasType && !e.constPreScan {
+		ownType = e.cType(cs.typeAST)
+	}
+	e.emitConstSpecName(cs.name, ownType, cs.hasType, cs.initExpr, cs.iota, pkg)
+}
+
+// forEachPkgConst runs fn over every package-level constant of the program, with e.f,
+// e.curPkgPrefix and e.pkgOrd set to where it was written: package by package in the
+// order given, and within a package each constant after the constants its
+// initializer names.
+//
+// Go's package block has no order, and both passes over the constants took them file
+// by file in source order, each folding only what the constants before it had
+// recorded. A constant naming one declared below it, or in a file read later, found
+// nothing there: `const A = B + 1` over `const B = C + 1` over `const C = 1` left A
+// without a value and `var a [A]int` "unsupported type", a signature's `[B]int` over
+// a `const B = C + 1` declared below it the same, a float32 constant used above its
+// declaration reached C as an unknown symbol, and a string concatenation of one as a
+// syntax error. Where nothing is named ahead of its declaration the order is the
+// source order still, so a program that compiled before emits what it did.
+func (e *emitter) forEachPkgConst(pkgs []*Package, fn func(constSpecName)) {
+	type pkgConst struct {
+		constSpecName
+		file *File
+	}
+	for pi, p := range pkgs {
+		prefix := pkgPrefix(p.ImportPath)
+		var consts []pkgConst
+		index := map[string]int{}
+		for _, f := range p.Files {
+			e.f = f
+			for n := range it(f.AST) {
+				if n.sym != SourceFile {
+					continue
+				}
+				for c := range it(n.ast) {
+					if c.sym != TopLevelDecl {
+						continue
+					}
+					for d := range it(c.ast) {
+						if d.sym != ConstDecl {
+							continue
+						}
+						specs, _ := e.constDeclSpecs(d.ast)
+						for _, cs := range specs {
+							if _, dup := index[cs.name]; !dup {
+								index[cs.name] = len(consts)
+							}
+							consts = append(consts, pkgConst{cs, f})
+						}
+					}
+				}
+			}
+		}
+		// Marked on entry, so a definition cycle -- refused by the checker, and never
+		// emitted -- cannot recurse forever here.
+		seen := make([]bool, len(consts))
+		var visit func(int)
+		visit = func(i int) {
+			if seen[i] {
+				return
+			}
+			seen[i] = true
+			c := consts[i]
+			e.f = c.file // the names are read off the tokens of the file that wrote them
+			for _, nm := range e.identNames(c.initExpr) {
+				if j, ok := index[nm]; ok {
+					visit(j)
+				}
+			}
+			e.f, e.curPkgPrefix, e.pkgOrd = c.file, prefix, pi
+			fn(c.constSpecName)
+		}
+		for i := range consts {
+			visit(i)
+		}
+	}
+	e.curPkgPrefix = ""
+}
+
+// identNames returns every identifier written in ast, in order: the names a constant's
+// initializer may refer to. A name that is not a constant of the package -- a type in
+// a conversion, a qualifier, a selected member -- is simply not found by the caller.
+func (e *emitter) identNames(ast []int32) (r []string) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT {
+				r = append(r, e.src(n.tok))
+			}
+			continue
+		}
+		r = append(r, e.identNames(n.ast)...)
+	}
+	return r
 }
 
 // emitConstSpecName emits one name of a const spec. A spec binds a list, and every

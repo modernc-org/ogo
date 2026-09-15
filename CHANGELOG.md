@@ -125,6 +125,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package constant may be used above its declaration.** Go's package block
+  has no order, but a constant naming one declared below it had no value yet
+  where it was needed: `var table [Deep]int` over `const Deep = Mid + 1` and
+  `const Mid = Low * 2`, an array bound in a signature or a struct field, stopped
+  at `unsupported type ""`, a float32 constant used above its declaration reached
+  the target's C compiler as an unknown symbol, and a string concatenation of one
+  as a syntax error. One level deep, in a variable's array bound, happened to
+  work. The constants are taken in dependency order now.
+
 - **A float result of a variadic call converts to a 64-bit or unsigned integer.**
   `int64(sum(1, 2))` for a variadic `sum` did not build -- the target's C compiler
   said "Expected multiple values" about generated code -- and neither did the

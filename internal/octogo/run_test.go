@@ -4364,6 +4364,61 @@ type Leaf struct {
 		want: "1 2 1\n1 9\n",
 	},
 	{
+		// Package constants used ABOVE their declarations, which Go's package block
+		// allows in any order: a chain three deep sizing an array, a signature's
+		// array bounds, a struct field's bound, a float32 constant and a string
+		// concatenation.
+		// The emitter took the constants in source order, each folding only what
+		// the ones before it had recorded, so every one of these stopped at
+		// `unsupported type ""` or reached the target's C compiler as an unknown
+		// symbol or a syntax error.
+		name: "package constants used above their declarations",
+		src: `func cells(a [Rows]int) int { return len(a) }
+
+func offset(n int, a [Top]int) int { return len(a) + n }
+
+type grid struct {
+	cells [Wide]uint8
+}
+
+var table [Deep]int
+
+const Deep = Mid + 1
+
+const Mid = Low * 2
+
+const Low = 3
+
+const Rows = Low + Mid
+
+const Top = Base + 1
+
+const Base = 1
+
+const Wide = Low << 2
+
+const gain = step * 3
+
+const step float32 = 0.1
+
+const model = family + "-" + series
+
+const family = "gx"
+
+const series = "7"
+
+func main() {
+	var g grid
+	var a [9]int
+	var b [2]int
+	table[Deep-1] = Low
+	g.cells[Wide-1] = Mid
+	println(len(table), table[6], cells(a), offset(10, b), len(g.cells), g.cells[11], gain == 0.3, model)
+}
+`,
+		want: "7 3 9 12 12 6 true gx-7\n",
+	},
+	{
 		// A self-referential struct -- a field that is a pointer to the same type --
 		// backs linked lists and trees. The emitter emits a tagged, forward-declared
 		// typedef (`typedef struct N N; struct N { ... N* next; };`) so the field can
