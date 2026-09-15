@@ -18881,6 +18881,45 @@ func main() {
 		want: "pkg -2147483648 4294967296 -2147483648 -3000000000 -9223371487098961920\npkg 3000000000 4294967296 -3000000000 -2147483648\nlit -2147483648 -3000000000 4294967296 -2147483648 -3000000000 -4294967296 -3000000000\ncall -2147483648 -3000000000 4294967296 -3000000000 5999999488\nappend -3000000000 4294967296 -3000000000 4294967296\nsend -3000000000\nvalue -3000000000 4294967296 -3000000000 4294967296 -3000000000\ndefer -3000000000 4294967296\n",
 	},
 	{
+		// A conversion whose operand renders a compound literal binds the operand
+		// to a temporary first (see doc/complit-arg-in-cast.c), and a float going
+		// to a 64-bit or unsigned integer is converted by a helper written as its
+		// name beside the operand. Together they made `ogo_f2i64_ogo_t2` of
+		// `int64(sum(1, 2))` -- a variadic call packs its values in a compound
+		// literal -- and the C compiler refused the build, "Expected multiple
+		// values". A struct literal argument is the other way to get there.
+		name: "a conversion of a variadic call's result",
+		src: `type S struct{ a, b int32 }
+
+func sum(xs ...float32) float32 {
+	var t float32
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func isum(xs ...int32) int32 {
+	var t int32
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func total(s S) float64 { return float64(s.a + s.b) }
+
+func main() {
+	println(int64(sum(1, 2)), uint64(sum(3, 4)), uint32(sum(5)), int32(sum(6)), int8(sum(7)))
+	println(float32(isum(1, 2)), float64(isum(5)), int64(isum(6, 7)), uint16(isum(8)))
+	println(int64(total(S{3, 4})), uint32(total(S{a: 5})), int16(total(S{b: 9})))
+	var f float32 = 2.5
+	println(int64(sum(f, f, f)), uint64(sum(f)))
+}
+`,
+		want: "3 7 5 6 7\n3 5 13 8\n7 5 9\n7 2\n",
+	},
+	{
 		// A deferred function literal taking arguments. A literal captures nothing
 		// of the scope around it, so its arguments are the one way a value reaches
 		// it; they are evaluated where the defer stands, as Go says -- q holds

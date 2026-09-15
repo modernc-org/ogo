@@ -13631,8 +13631,12 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 		// ordinary spelling that hits it.
 		text := e.captureC(func() { e.emitExpr(arg.ast) })
 		src, srcOK := e.exprReprCType(arg.ast)
+		// Parenthesized either way: the helpers below are written as a name beside
+		// the operand's text, and a bare temporary made `ogo_f2i64_ogo_t2` of
+		// `int64(sum(1, 2))` -- a variadic call packs its values in a compound
+		// literal -- which the C compiler read as one undeclared name.
 		if strings.Contains(text, "){") && srcOK && src != "" {
-			text = e.hoist(src, func() { e.emit(text) })
+			text = "(" + e.hoist(src, func() { e.emit(text) }) + ")"
 		} else {
 			text = "(" + text + ")"
 		}

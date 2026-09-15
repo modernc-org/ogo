@@ -114,6 +114,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A float result of a variadic call converts to a 64-bit or unsigned integer.**
+  `int64(sum(1, 2))` for a variadic `sum` did not build -- the target's C compiler
+  said "Expected multiple values" about generated code -- and neither did the
+  same conversion of a call taking a struct literal. The operand is bound to a
+  temporary there, and the conversion helper was written right beside the
+  temporary's name, without the parentheses a call needs.
+
 - **An integer constant too wide for a float32, standing where a float is wanted,
   keeps its value.** `[]float32{-3000000000}`, `var g float32 = -2147483648` at
   package level, `S{f: -3000000000}`, `id(4294967296)` for a float32 parameter, a
