@@ -48,6 +48,17 @@
 // Floor-built form stays correct regardless, so this is a simplification to weigh,
 // not a change to make.
 //
+// ONLY PARTLY CLEARED by the regeneration of 2026-09-15 (spin2cpp 3840014f), which
+// carries that fix. Upstream now routes both through a 32-bit lround:
+//
+//	#define round(x)   ((double)__builtin_lroundf(x))
+//	#define roundf(x)  ((float)__builtin_lroundf(x))
+//
+// so on a P2-EDGE lines 1 and 2 print 3 and -4, line 3 prints garbage as gcc does,
+// and line 4 is STILL 2.147484E+09: anything outside int range is clamped. That
+// settles the question above -- roundf is no candidate for math.Round, and the
+// Floor-built form stays.
+//
 // The failure shape is what makes it worth a file of its own: correct wherever a
 // test is likely to look, wrong where it is not.
 

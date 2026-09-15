@@ -64,6 +64,15 @@
 // change and pass after it; and of the four loops above it changes one instruction,
 // the LCG's `acc -= 4294967295`, which -2 had made an `add #1`.
 //
+// REPORTED 2026-09-15 as flexprop issue 109, with the fix as the suggested change,
+// and FIXED HERE the same day, ahead of upstream: the change is carried as
+// internal/optimize_ir.c.diff, which internal/generator.go applies over spin2cpp
+// 3840014f, and under the regenerated backend every line prints gcc's value. The
+// same regeneration clears doc/negate64-then-add.c and doc/int64-min-spelling.c,
+// which turned out to be this merge. Upstream's own fix is what lets the diff go:
+// build this with a native flexcc of the later spin2cpp, without the diff, and it
+// has to print gcc's values first.
+//
 // To check, build for the P2 with -2 and compare each line with gcc's.
 
 #include <stdio.h>

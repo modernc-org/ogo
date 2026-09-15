@@ -430,9 +430,19 @@ func isDir(path string) bool {
 // so the whole battery in doc/ was re-run on hardware, pinned against
 // regenerated, before the flags went: those five changed and nothing else did.
 //
+// WHAT THAT MISSED. -Ono-inline-small had been hiding a third fault, one no
+// reproducer named, so no battery re-run could see it go live: two optimizer
+// rewrites that disturb the carry of a 64-bit add or subtract of a constant
+// (doc/add-immediate-carry.c, flexprop#109), wrong on the board from v0.34.0 until
+// the backend was regenerated on 2026-09-15 carrying a fix,
+// internal/optimize_ir.c.diff. The widened on-board fuzzer sample is what found it.
+// The flag was not brought back for it: it cost 1.4x to 3.3x on the loops measured
+// then, and the fault was the backend's to fix.
+//
 // If a pass has to go again, this is the shape: a reproducer in doc/ that names
 // the flag, the matrix measured on hardware rather than inferred, and the cost in
-// cycles on a loop of each shape, not just in bytes.
+// cycles on a loop of each shape, not just in bytes -- and a wide fuzzer sweep on
+// the board before and after, for the faults no reproducer names yet.
 func compileC(cFile, out string, stdout, stderr io.Writer) (int, error) {
 	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-o", out, cFile}); err != nil {
 		return 1, fmt.Errorf("flexcc: %v", err)

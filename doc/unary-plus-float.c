@@ -45,6 +45,9 @@
 // Nothing in OctoGo changes either way: dropping `+x` on a float is the correct
 // lowering regardless (Go defines it as the identity), so the emitter keeps doing
 // it and this file stays only as the record.
+//
+// CLEARED 2026-09-15 by the regeneration at spin2cpp 3840014f, which carries that
+// fix: no warning, and -2.5 on a P2-EDGE.
 
 #include <stdio.h>
 

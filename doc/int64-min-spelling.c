@@ -27,6 +27,15 @@
 // id(5)`, adds and multiplies with wide literals exactly as one returned by a
 // call it cannot inline, which was the first thing to rule out.
 //
+// THE CAUSE, found 2026-09-15: the add/sub merge of doc/add-immediate-carry.c.
+// The unary minus of 9223372036854775807LL is the inlined negation of
+// doc/negate64-then-add.c, `not lo; add lo, #1 wz; ...; if_e neg t, #1`, and the
+// optimizer folds its `add lo, #1 wz` and the `- 1` into one `add lo, #0 wc`,
+// deleting the instruction whose Z decides the high word. FIXED by the diff that
+// file describes, carried in the regeneration of that day (spin2cpp 3840014f):
+// both lines print MIN. The compiler keeps the second spelling, right under
+// either backend.
+//
 // A measuring note, since it cost an hour: print a 64-bit value through a
 // VARIABLE, never as `(long long)(expr)` -- the cast of a 64-bit expression to a
 // 64-bit type is the battery's oldest fault, and it turns every line of a

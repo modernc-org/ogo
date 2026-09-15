@@ -18487,6 +18487,143 @@ func main() {
 		want: "10\n110\n709\n",
 	},
 	{
+		// Two rewrites in the target compiler's optimizer disturbed the carry a
+		// 64-bit add or subtract reads: an ADD of a small negative immediate was
+		// exchanged for a SUB (the carry inverted), and two immediate adds of one
+		// value were merged with the first one's carry still read. On the board
+		// every line came out wrong, each wrong value off by 2^32 or twice that --
+		// `z + -1` was -4293967297, `z + y + 1000 + 2000` for -1 and 1 was
+		// 4294970296 -- from v0.34.0, when ogo build stopped passing the
+		// -Ono-inline-small that had hidden both. The backend carries the fix
+		// (internal/optimize_ir.c.diff, flexprop#109, doc/add-immediate-carry.c);
+		// this is what fails if a regeneration loses it. Found by the fuzzer's
+		// seed 111 on the board. Every line matches Go.
+		name: "a 64-bit addition or subtraction of a constant keeps its carry",
+		src: `func id(v int64) int64 { return v }
+
+func idu(v uint64) uint64 { return v }
+
+const K = -1
+
+const Mask32 = 0xFFFFFFFF
+
+func chain(z, y int64) int64 { return z + y + 1000 + 2000 }
+
+func ones(z, y int64) int64 { return z + y + 1 + 1 }
+
+func down(z, y uint64) uint64 { return z + y - 5 - 7 }
+
+func accumulate(a, b int64) int64 {
+	d := a + b
+	d += 10
+	d += 20
+	return d
+}
+
+func main() {
+	z := id(1000000)
+	println(z+-1, z - -1, z+(-5), z+0xFFFFFFFF, z-0xFFFFFFFF, z+4294967040)
+	println(z+K, z-K, z+Mask32, z-Mask32)
+	w := z
+	w += -1
+	println(w)
+	w = z
+	w -= -300
+	println(w)
+	u := idu(12345)
+	println(u+0xFFFFFFFF, u-0xFFFFFF00, u+18446744073709551615, u-18446744073709551615)
+	println(z+3000000000+3000000000, z-1-4294967296, z+2000000000+2000000000)
+	var arr [2]int64
+	arr[1] = z
+	arr[1] += 0xFFFFFFFF
+	println(arr[1])
+	n := id(-31)
+	println(n+4492952664366759589-6812432519738288466, n+4294967295)
+	println(chain(-1, 1), chain(5, 6), ones(-1, 1), ones(-2, 3), down(18446744073709551615, 1))
+	a, b := id(-1), id(1)
+	c := a + b + 10 + 20
+	println(c, accumulate(a, b))
+}
+`,
+		want: "999999 1000001 999995 4295967295 -4293967295 4295967040\n999999 1000001 4295967295 -4293967295\n999999\n1000300\n4294979640 18446744069414596921 12344 12346\n6001000000 -4293967297 4001000000\n4295967295\n-2319479855371528908 4294967264\n3000 3011 2 3 18446744073709551604\n30 30\n",
+	},
+	{
+		// The target compiler turns each of these if bodies into conditional
+		// instructions, and its optimizer then took the second body's read of
+		// the variable for a copy of the first body's write -- both under "not
+		// equal", though a compare between them had re-set the flags. With the
+		// first condition false nothing had been written, and the update started
+		// from a stale register: on the board every line here was wrong, the
+		// first 811733765. Old -- v0.33.0 got it wrong too. The backend carries
+		// the fix (internal/optimize_ir.c.diff, flexprop#110,
+		// doc/conditional-load-dropped.c). Found by the fuzzer's board sweep,
+		// seeds 391, 525 and 793. Every line matches Go.
+		name: "two conditional updates of a package variable in a row",
+		src: `type Acc struct {
+	sum, n int
+}
+
+var g int
+
+var h uint32
+
+var arr [4]int
+
+var acc Acc
+
+func id(v int) int { return v }
+
+func main() {
+	b1 := id(0) != 0
+	b2 := id(1) != 0
+	g = id(326842928)
+	if b1 {
+		g = g ^ 1364946277
+	}
+	if b2 {
+		g = g ^ 811733764
+	}
+	println(g)
+	h = uint32(id(1000))
+	if b1 {
+		h += 7
+	}
+	if b2 {
+		h += 9
+	}
+	println(h)
+	arr[2] = id(50)
+	if b1 {
+		arr[2] |= 1
+	}
+	if b2 {
+		arr[2] |= 4
+	}
+	println(arr[2])
+	acc.sum = id(10)
+	if b1 {
+		acc.sum -= 3
+	}
+	if b2 {
+		acc.sum -= 5
+	}
+	println(acc.sum)
+	g = id(5)
+	if b1 {
+		g++
+	}
+	if b2 {
+		g++
+	}
+	if b2 {
+		g *= 3
+	}
+	println(g)
+}
+`,
+		want: "588851508\n1009\n54\n5\n18\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

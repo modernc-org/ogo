@@ -146,7 +146,9 @@ inputs, and never hand-edit the outputs.
    tag **`v7.7.0`** via `flexpropRef`, and inside it the `spin2cpp` submodule — the
    compiler itself — checked out at **`spin2cppRef`**, a commit past the tag since
    2026-08-29, because a fix lands in spin2cpp weeks before a flexprop release
-   carries it), applies `internal/mcpp_main.c.diff`,
+   carries it), applies `internal/mcpp_main.c.diff` (an adaptation to the
+   transpile) and `internal/optimize_ir.c.diff` (fixes carried ahead of upstream,
+   flexprop#109 and #110 -- drop each with the pin that carries upstream's own),
    transpiles, and rewrites the emitted `main` package into a reusable `flexcc`
    library (threading a `*CC` state struct through the C globals, via `main2lib`).
    The linux backend is transpiled natively (`ccgo -exec make`, `transpileLinux`);
@@ -193,6 +195,27 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
+   > **Backend regenerated 2026-09-15 with two fixes of its own** — spin2cpp
+   > `3840014f` (7.7.3-beta, its master of 2026-09-05) inside flexprop `v7.7.0`, plus
+   > `internal/optimize_ir.c.diff`, ccgo v4.34.6. Adopted for two SILENT optimizer
+   > faults, each reported upstream with its part of the diff as the fix: a
+   > regression the 08-29 regeneration let out, two rewrites that disturb the carry
+   > of a 64-bit add or subtract of a constant (`doc/add-immediate-carry.c`,
+   > flexprop#109), hidden until then by the `-Ono-inline-small` that went with that
+   > regeneration; and an old one, the second of two `if` bodies updating one global
+   > starting from a stale register (`doc/conditional-load-dropped.c`,
+   > flexprop#110). Both found by widening the on-board fuzzer sweep, to 120 seeds
+   > and then 1000. The flag was not restored: it costs 1.4x-3.3x on hot loops. The
+   > `doc/` battery, pinned against regenerated on a P2-EDGE: five reproducers
+   > changed -- the carry fault and the two older entries that turned out to be it
+   > (`doc/negate64-then-add.c`, `doc/int64-min-spelling.c`, whose emitter
+   > workarounds stay, costing nothing), #107 cleared, and #108 only partly (`round`
+   > still clamps outside int range, so `math.Round` stays built on Floor). The other
+   > 25 compile byte-identically under both, and the three compile-time refusals
+   > refuse as before. Faithful: every compiling reproducer is byte-identical under
+   > the in-process flexcc and a native build of the same commit with the same diff,
+   > and upstream's `make test_offline` passes 588/588 with the diff, as without.
+   >
    > **Backend regenerated 2026-08-29 at upstream's tip** — spin2cpp `2bd01c4c`
    > (7.7.2-beta, its master of that day) inside flexprop `v7.7.0`, the wrapper and
    > the compiler pinned separately (`flexpropRef` / `spin2cppRef`), ccgo v4.34.6.

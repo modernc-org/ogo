@@ -33,14 +33,15 @@ const (
 	flexpropURL = "https://github.com/totalspectrum/flexprop.git"
 	// flexpropRef pins the flexprop source so backend regeneration is
 	// reproducible. v7.7.0 (released 2026-07-17) is the latest flexprop release as
-	// of 2026-08-29; upstream cuts releases roughly every 1-2 months, and a fix can
+	// of 2026-09-15; upstream cuts releases roughly every 1-2 months, and a fix can
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
 	// The committed ccgo_<goos>_<goarch>.go were regenerated against this pair on
-	// 2026-08-29 with ccgo v4.34.6 (flexprop at v7.7.0, spin2cpp at spin2cppRef);
-	// mcpp_main.c.diff applied cleanly. The first generation, 2026-07-20, had both
-	// at v7.7.0. To adopt a new pin: bump it, `rm -rf flexprop flexprop_install`,
+	// 2026-09-15 with ccgo v4.34.6 (flexprop at v7.7.0, spin2cpp at spin2cppRef);
+	// mcpp_main.c.diff and optimize_ir.c.diff applied cleanly. The first generation,
+	// 2026-07-20, had both at v7.7.0, and the second, 2026-08-29, had spin2cpp at
+	// 2bd01c4c. To adopt a new pin: bump it, `rm -rf flexprop flexprop_install`,
 	// rerun `go generate` (or the per-target command below), and re-run the doc/
 	// reproducers on a board, pinned against regenerated, before touching any
 	// workaround they guard. The flexcc --help golden in internal/flexcc/all_test.go
@@ -92,14 +93,17 @@ const (
 	// spin2cppRef pins the COMPILER inside that wrapper: flexprop is the GUI and the
 	// packaging around spin2cpp, which it carries as a submodule, and a fix lands in
 	// spin2cpp weeks before a flexprop release carries it. This commit is upstream's
-	// master of 2026-08-29 (7.7.2-beta), the first pin past v7.7.0 -- adopted for the
-	// two miscompiles a release had not shipped after nine days, flexprop#105 and the
-	// constant divide, plus the peephole fault that forced -Ono-peephole
-	// (doc/array-multiply-miscompile.c, doc/const-divide-miscompile.c,
-	// doc/optimizer-dangling-label.c). flexprop master at that date differs from
-	// v7.7.0 only by its Changelog and this pointer, so the wrapper stays at its tag.
-	// Empty means the submodule commit flexpropRef itself pins.
-	spin2cppRef = "2bd01c4c4a3f219ff3a1d531fd71922e0f62b92e"
+	// master of 2026-09-05 (7.7.3-beta), adopted 2026-09-15 to carry
+	// optimize_ir.c.diff -- the fixes for flexprop#109 and #110, two silent optimizer
+	// faults (doc/add-immediate-carry.c, doc/conditional-load-dropped.c) -- over the
+	// fixes for flexprop#107 and #108 rather than behind them. The first pin past
+	// v7.7.0 was 2bd01c4c (2026-08-29), adopted for the two miscompiles a release had
+	// not shipped after nine days, flexprop#105 and the constant divide, plus the
+	// peephole fault that forced -Ono-peephole (doc/array-multiply-miscompile.c,
+	// doc/const-divide-miscompile.c, doc/optimizer-dangling-label.c). flexprop master
+	// differs from v7.7.0 only by its Changelog and this pointer, so the wrapper stays
+	// at its tag. Empty means the submodule commit flexpropRef itself pins.
+	spin2cppRef = "3840014f2db8bd2e1653ea47db1b288af0697864"
 	installDir  = "flexprop_install"
 )
 
@@ -206,8 +210,16 @@ func main() {
 			}
 		}
 
-		if err := shell(filepath.Join(cloneDir, "spin2cpp"), "git", "apply", filepath.Join(wd, "mcpp_main.c.diff")); err != nil {
-			fail(1, "git apply: err=%v", err)
+		// optimize_ir.c.diff is two fixes carried ahead of upstream, where
+		// mcpp_main.c.diff adapts the sources to the transpile (it removes a
+		// setjmp): drop each with the spin2cppRef that carries upstream's own fix
+		// for it -- flexprop#109, flexprop#110 -- once its reproducer
+		// (doc/add-immediate-carry.c, doc/conditional-load-dropped.c) prints gcc's
+		// values under a native build of that commit without the diff.
+		for _, diff := range []string{"mcpp_main.c.diff", "optimize_ir.c.diff"} {
+			if err := shell(filepath.Join(cloneDir, "spin2cpp"), "git", "apply", filepath.Join(wd, diff)); err != nil {
+				fail(1, "git apply %s: err=%v", diff, err)
+			}
 		}
 	}
 

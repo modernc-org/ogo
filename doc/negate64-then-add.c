@@ -33,14 +33,19 @@
 // deleting the instruction whose Z the `if_e` reads. -Ono-regs cures every line
 // too, and so does the two-condition fix given in that file.
 //
+// FIXED 2026-09-15 by that fix, carried as internal/optimize_ir.c.diff in the
+// regeneration of that day (spin2cpp 3840014f): every line prints gcc's value.
+// The `(0 - x)` spelling below stays -- it is what a negation is, costs the same,
+// and is right under either backend.
+//
 // It reaches ordinary OctoGo as `-x - 1` on an int64, found by a 64-bit
 // arithmetic probe diffed against Go: the dividend `-big - 3` of a division was
 // wrong for every divisor, and the first divisor tried, 1, made it look like a
 // division fault. WORKED AROUND in emitExprNode: a 64-bit unary minus is emitted
 // as `(0 - x)`, which is right in every context measured (r2/r4 of the session's
 // scratch tables: an initializer, an operand, an argument, a return, a compare, a
-// divisor, a shift, nested, on the most negative value). Unreported upstream as of
-// this writing.
+// divisor, a shift, nested, on the most negative value). Reported upstream on
+// 2026-09-15 as line G of flexprop issue 109.
 //
 // A measuring note that cost two hours: never build an operand of a reproducer as
 // `(uint64_t)f()` -- the cast of a 64-bit call result is the battery's oldest

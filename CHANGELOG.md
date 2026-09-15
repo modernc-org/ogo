@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **The backend is regenerated at spin2cpp 3840014f, carrying two fixes of its
+  own.** That is upstream's master of 2026-09-05, inside the same flexprop
+  v7.7.0 wrapper, plus `internal/optimize_ir.c.diff` -- the changes suggested in
+  flexprop#109 and #110 for the two optimizer faults under **Fixed**, each
+  carried until upstream ships a fix of its own. It also brings upstream's fixes
+  for #107 (unary plus on a float) and #108 (round), neither of which reaches an
+  OctoGo program: the emitter already dropped the plus, and `math.Round` stays
+  built on Floor, since the target's `round` still clamps outside int range. The
+  whole `doc/` battery was re-run on a P2-EDGE: five reproducers changed, four of
+  them to the right answer and #108's in part, and nothing else did.
+
 - **The fuzzer now generates untyped constants shifted by a variable count.**
   A quarter of the sized-integer blocks (half of the 64-bit ones, with counts
   past 31 more often than not) declare a count of their own type -- uint, int,
@@ -102,6 +113,30 @@ shipped section tells a reader on that version that they have behaviour they do 
   refused where they are written.
 
 ### Fixed
+
+- **Two `if` statements in a row updating the same package variable compute
+  right on the board.** `if a { g ^= K }` followed by `if b { g ^= M }` -- or
+  `+=`, `|=`, `-=`, `++` and `*=`, on an int, a uint32, an array element or a
+  struct field of a package variable -- started the second update from a stale
+  register whenever the first condition was false, silently, while the host was
+  right. The target compiler turns each body into conditional instructions, and
+  its optimizer took the second body's read of the variable for a copy of the
+  first body's write although a compare between them had re-set the flags. It is
+  old: v0.33.0 got it wrong too. The backend now carries the fix (see
+  **Toolchain**). Found by the fuzzer's board sweep widened to 1000 seeds, where
+  three programs failed; pinned by a run case in which every line was wrong on
+  the board before the fix.
+
+- **A 64-bit addition or subtraction of a constant has its high word right on
+  the board again.** In v0.34.0 through v0.39.0, an int64 or uint64
+  `x + -1`, `x - 0xFFFFFFFF`, `acc -= 4294967295`, `a + b + 1000 + 2000` or
+  `d += 10; d += 20` could come out off by 2^32 on the P2 while the host was
+  right: two rewrites in the target compiler's optimizer disturbed the carry the
+  high word is computed from, and the `-Ono-inline-small` that `ogo build`
+  stopped passing in v0.34.0 had been hiding both. The backend now carries the
+  fix (see **Toolchain**). Found by the fuzzer's board sample widened to 120
+  seeds; pinned by a run case in which, before the fix, every line printed at
+  least one wrong value on the board.
 
 - **`min` and `max` compute in the type of all their arguments, not the
   first.** A constant written first typed the helper by its own default type
@@ -206,6 +241,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   pinned as an accepted case beside the refusals.
 
 ### Verified
+
+- **A 1000-seed fuzzer sweep on the board, under the regenerated backend.** Every
+  program of seeds 1 through 1000 that fits a cog -- 977 of them -- prints
+  OctoSmith OK on a P2-EDGE, where the board sample the test suite runs is 24
+  seeds. The wider sweep is what found both backend faults fixed above: seeds 111
+  and 278 failed on the carry fault, and 391, 525 and 793 on the conditional
+  load, each passing now.
 
 - **Probe round twenty: bit-packed telemetry and Q32.32 fixed point.** The two
   domain axes no round had tried: telemetry fields of odd widths packed LSB-first

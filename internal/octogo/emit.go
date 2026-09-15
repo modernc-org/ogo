@@ -110,8 +110,9 @@ func init() {
 		// strlen, and the Propeller names, high, low, toggle, pause among them.
 		// A program declaring a function named sqrt built on the host and was a
 		// syntax error on the target, "unexpected __builtin_sqrt". Listed from
-		// the embedded include tree of spin2cpp 2bd01c4c; a name that is not a
-		// macro is renamed needlessly, which costs nothing.
+		// the embedded include tree of spin2cpp 2bd01c4c, and lroundf from that of
+		// 3840014f, whose <math.h> added it; a name that is not a macro is renamed
+		// needlessly, which costs nothing.
 		"abs", "acos", "acosf", "acosh", "alloca", "asin", "asinf", "asinh", "assert",
 		"atan", "atan2", "atan2f", "atanf", "atanh", "cabs", "cacos", "cacosh", "carg",
 		"casin", "casinh", "catan", "catanhl", "cbrt", "ccos", "ccosh", "ceil", "ceilf",
@@ -127,13 +128,13 @@ func init() {
 		"isnan", "isprint", "ispunct", "isspace", "isupper", "isxdigit", "ldexp",
 		"ldexpf", "lgamma", "llrint", "llround", "lockclr", "locknew", "lockret",
 		"lockset", "log", "log10", "log10f", "log1p", "log2", "log2f", "logf", "longjmp",
-		"low", "lrint", "lround", "mode_t", "modf", "nan", "nextafter", "off_t", "pause",
-		"pow", "powf", "print", "printi", "put", "quick_tolower", "remainder", "remquo",
-		"rint", "round", "roundf", "scalbn", "scalbnf", "set_direction", "set_output",
-		"setjmp", "signbit", "sin", "sinf", "sinh", "size_t", "sqrt", "sqrtf",
-		"staticfn", "strcpy", "strlen", "tan", "tanf", "tanh", "tgamma", "time_t",
-		"toggle", "toint", "trunc", "va_ptr", "va_ptrarg", "waitcnt", "wchar_t",
-		"wint_t", "zdo",
+		"low", "lrint", "lround", "lroundf", "mode_t", "modf", "nan", "nextafter",
+		"off_t", "pause", "pow", "powf", "print", "printi", "put", "quick_tolower",
+		"remainder", "remquo", "rint", "round", "roundf", "scalbn", "scalbnf",
+		"set_direction", "set_output", "setjmp", "signbit", "sin", "sinf", "sinh",
+		"size_t", "sqrt", "sqrtf", "staticfn", "strcpy", "strlen", "tan", "tanf", "tanh",
+		"tgamma", "time_t", "toggle", "toint", "trunc", "va_ptr", "va_ptrarg", "waitcnt",
+		"wchar_t", "wint_t", "zdo",
 	} {
 		cUnusable[name] = true
 	}
