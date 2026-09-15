@@ -18954,6 +18954,63 @@ func main() {
 		want: "run\nwide -3000000000 9223372036854775813 3000000001 -100\nshifted -8589934592 2147483648 1099511627777\nmethod -2999999999 -4294967296\n",
 	},
 	{
+		// An array literal whose length is "...", the length being what the literal
+		// supplies: positional, indexed, mixed, empty, of arrays, of a defined element
+		// type and of structs, at package scope and in a function, and standing
+		// where an array is wanted -- a declaration of that length, an argument, a
+		// comparison, a range, a slice expression and an if header. Every line
+		// matches Go.
+		name: "an array literal of length ...",
+		src: `type Celsius float32
+
+type Pair struct {
+	a, b int
+}
+
+var table = [...]uint8{3, 1, 4, 1, 5, 9, 2, 6}
+
+var names = [...]string{2: "two", 0: "zero"}
+
+var mixed = [...]int{1, 4: 9, 7}
+
+var grid = [...][2]int{{1, 2}, {3, 4}, {5, 6}}
+
+var temps = [...]Celsius{21.5, -3}
+
+var pairs = [...]Pair{{1, 2}, {a: 3}}
+
+func count(xs [0]string) int { return len(xs) }
+
+func sum(xs [5]int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func main() {
+	println(len(table), len(names), len(mixed), len(grid), len(temps), len(pairs))
+	println(table[7], names[2], names[1] == "", mixed[4], mixed[5], grid[2][1], pairs[1].a)
+	a := [...]int{10, 20, 30}
+	var b [3]int = [...]int{10, 20, 30}
+	println(a == b, cap(a), sum([...]int{1, 2, 3, 4, 5}))
+	empty := [...]string{}
+	println(count(empty), temps[1] < 0)
+	for i, v := range [...]byte{'o', 'g', 'o'} {
+		print(i, v, " ")
+	}
+	println()
+	s := table[2:5]
+	println(len(s), cap(s), s[0])
+	if x := [...]int{7, 8}; x[1] == 8 {
+		println("header", len(x))
+	}
+}
+`,
+		want: "8 3 6 3 2 2\n6 two true 9 7 6 3\ntrue 3 15\n0 true\n0111 1103 2111 \n3 6 4\nheader 2\n",
+	},
+	{
 		// A deferred function literal taking arguments. A literal captures nothing
 		// of the scope around it, so its arguments are the one way a value reaches
 		// it; they are evaluated where the defer stands, as Go says -- q holds

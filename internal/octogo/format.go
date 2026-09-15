@@ -270,7 +270,8 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		return c.structBraceMultiline
 	// "..." binds tight to the type it introduces in a parameter, "xs ...int", and
 	// tight to the slice it follows in a call, "sum(xs...)". gofmt writes both that
-	// way, and the token appears nowhere else, so the two rules are the whole of it.
+	// way. Its one other place is an array literal's length, "[...]int{1, 2}", where
+	// it sits between brackets and is tight on both sides by the same two rules.
 	case prev == ELLIPSIS:
 		return false
 	case curr == ELLIPSIS:

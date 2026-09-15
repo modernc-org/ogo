@@ -11227,9 +11227,9 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			return
 		}
 	}
-	var id Token
+	var id, lbrack Token
 	var suffix, lit Node
-	hasID, hasSuffix, hasLit := false, false, false
+	hasID, hasSuffix, hasLit, ellipsis := false, false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Expression:
@@ -11239,10 +11239,22 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		case CompositeLit:
 			lit, hasLit = c, true
 		case 0:
-			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT {
+			switch tok := f.tok(c.tok); Symbol(tok.Ch) {
+			case IDENT:
 				id, hasID = tok, true
+			case LBRACK:
+				lbrack = tok
+			case ELLIPSIS:
+				ellipsis = true
 			}
 		}
+	}
+	// `[...]T` is a length only a literal can supply, so it stands for a type in a
+	// literal and nowhere else -- the grammar takes it wherever a bracketed type may
+	// stand, and this narrows it, in Go's words.
+	if ellipsis && !hasLit {
+		f.err(lbrack.Position(), "invalid use of [...] array (outside a composite literal)")
+		return
 	}
 	// `(s).y` is `s.y`: the parenthesised form means the same thing, so it is checked
 	// the same way. Without this the checks below -- a field that exists, a method

@@ -1,0 +1,25 @@
+// COMPILE
+// An array literal whose length is "...": positional, indexed, mixed, empty, of
+// several dimensions, of a named element type, at package scope and inside a
+// function, and standing where an array of that length is wanted.
+
+type Pair struct {
+	a, b int
+}
+
+var table = [...]uint8{3, 1, 4, 1, 5}
+
+var names = [...]string{2: "two", 0: "zero"}
+
+var grid = [...][2]int{{1, 2}, {3, 4}}
+
+var pairs = [...]Pair{{1, 2}, {a: 3}}
+
+func sum(xs [3]int) int { return xs[0] + xs[1] + xs[2] }
+
+func main() {
+	a := [...]int{1, 4: 9}
+	var b [3]int = [...]int{1, 2, 3}
+	empty := [...]string{}
+	println(len(table), names[2], grid[1][0], pairs[1].a, a[4], sum(b), len(empty), sum([...]int{4, 5, 6}))
+}

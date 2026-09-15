@@ -72,6 +72,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array literal's length may be written `...`.** `var table =
+  [...]uint8{3, 1, 4, 1, 5}` is a `[5]uint8`, the length being what the literal
+  supplies -- its highest index plus one, so `[...]int{1, 4: 9}` is a `[5]int` --
+  which is how a lookup table is written without counting it. It works wherever an
+  array literal does: at package scope and in a function, of several dimensions,
+  of structs and defined types, as an argument, in a comparison, a range and a
+  slice expression. As in Go, `[...]T` is refused anywhere but a literal's own
+  type, "invalid use of [...] array (outside a composite literal)". A zero-length
+  array literal, `[0]T{}` as much as `[...]T{}`, no longer draws a warning from
+  the target's C compiler about an initializer with nothing to initialize.
+
 - **A package slice literal may have non-constant elements.** `var xs = []int{a,
   b}` at package scope, where a and b are other package variables or any
   computed value, was refused ("declare the values as an array and slice it");

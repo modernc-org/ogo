@@ -11928,6 +11928,31 @@ func (e *emitter) litKeyIndex(keyAST []int32) (int, bool) {
 	return int(n), true
 }
 
+// litLength is the length an array or slice literal supplies -- its highest index
+// plus one, a keyed element placing its value at its constant index and a positional
+// one following the element before it -- without litPositions' diagnostics, for the
+// questions asked of a literal before it is emitted: `[...]T{...}` takes its length
+// from here. ok is false where an index does not fold to a non-negative constant,
+// which litPositions reports when the literal is emitted.
+func (e *emitter) litLength(lit Node) (int, bool) {
+	cur, n := 0, 0
+	for _, el := range compositeLitElements(lit) {
+		idx := cur
+		if el.keyed {
+			k, ok := e.litKeyIndex(el.key.ast)
+			if !ok {
+				return 0, false
+			}
+			idx = k
+		}
+		if idx+1 > n {
+			n = idx + 1
+		}
+		cur = idx + 1
+	}
+	return n, true
+}
+
 // litPositions expands an array or slice literal's elements into a positional list,
 // a nil entry marking an index the literal skips (and so zeroes). It resolves Go's
 // indexed form: a keyed element places its value at a constant index, and a later
@@ -12227,6 +12252,16 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 			e.globalArrays[name] = a
 		} else {
 			e.arrays[name] = a
+		}
+		// A zero-length array has nothing to initialize, and "{0}" names an element
+		// it does not have: the target's C compiler warns "Extra initializers for
+		// array" about `[0]int{}` and the host's "excess elements", so -- as for a
+		// zero-length declaration with no literal -- there is no initializer. An
+		// empty `[...]int{}` is one, its length being what the literal supplies.
+		if a.bound == "0" {
+			lead()
+			e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+			return
 		}
 		// An element that is an array VALUE cannot go in the initializer -- C copies
 		// no array there -- so it is zeroed and copied in afterwards. At file scope
@@ -13858,20 +13893,38 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 		return arrDim{}, false
 	}
 	var sizeAST, elemAST []int32
+	var lit Node
+	ellipsis, hasLit := false, false
 	for _, n := range nodes {
 		switch n.sym {
 		case Expression:
 			sizeAST = n.ast
 		case Type:
 			elemAST = n.ast
+		case CompositeLit:
+			lit, hasLit = n, true
+		case 0:
+			ellipsis = ellipsis || e.f.ch(n.tok) == ELLIPSIS
 		}
 	}
-	if sizeAST == nil || elemAST == nil {
+	var bound string
+	switch {
+	case ellipsis:
+		// `[...]T{a, b}`: the length is what the literal supplies, which only a
+		// literal can say -- every literal path hands this the whole Factor, the
+		// braces included. Anywhere else the checker has refused it already.
+		n, ok := e.litLength(lit)
+		if !hasLit || elemAST == nil || !ok {
+			return arrDim{}, false
+		}
+		bound = strconv.Itoa(n)
+	case sizeAST == nil || elemAST == nil:
 		return arrDim{}, false // a slice, or a malformed array
-	}
-	bound, ok := e.arrayBoundC(sizeAST)
-	if !ok {
-		return arrDim{}, false
+	default:
+		var ok bool
+		if bound, ok = e.arrayBoundC(sizeAST); !ok {
+			return arrDim{}, false
+		}
 	}
 	if inner, ok := e.arrayDim(elemAST); ok {
 		// The element's own name, when it has one -- `[2]Row` -- and otherwise
@@ -13906,6 +13959,10 @@ func (e *emitter) sliceType(typeAST []int32) (elem string, ok bool) {
 			return "", false // a sized array, not a slice
 		case Type:
 			elemAST = n.ast
+		case 0:
+			if e.f.ch(n.tok) == ELLIPSIS {
+				return "", false // `[...]T{}`: an array whose length the literal gives
+			}
 		}
 	}
 	if elemAST == nil {

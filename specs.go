@@ -1312,7 +1312,7 @@
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
-//		| "[" [ Expression ] "]" Type [ CompositeLit [ FactorSuffix ] ]
+//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 //		| "chan" Type
 //		| FuncLiteral [ FactorSuffix ] .
 //	CompositeLit = "{" [ ElementList ] "}" .
@@ -1359,6 +1359,13 @@
 // constant, and the elements it skips are zeroed. An array literal may supply
 // fewer values than its length, zeroing the rest, and no more; a slice literal's
 // length and capacity are its highest index plus one.
+//
+// The length of an array literal may be written "...", "[...]T{a, b}", and is then
+// the number the literal supplies: its highest index plus one, as for a slice
+// literal, so "[...]int{1, 4: 9}" is a [5]int. That is how a table is written
+// without counting it. As in Go, "..." stands for a length only in a literal's own
+// type: "[...]int" anywhere else is refused, "invalid use of [...] array (outside a
+// composite literal)".
 //
 // An array literal may stand as an element of a composite literal too, filling an
 // array-typed field or an element of an array of arrays, since a nested aggregate
@@ -1444,7 +1451,7 @@
 //		| string_lit
 //		| rune_lit
 //		| "(" Expression ")"
-//		| "[" [ Expression ] "]" Type [ CompositeLit ]
+//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit ]
 //		| "chan" Type
 //		| FuncLiteral .
 //
