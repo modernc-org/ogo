@@ -4419,6 +4419,55 @@ func main() {
 		want: "7 3 9 12 12 6 true gx-7\n",
 	},
 	{
+		// len and cap are constants where Go makes them ones -- of a constant string,
+		// and of an array or a pointer to one reached with no call and no receive --
+		// in a constant declaration, an array bound and a shift. Neither was ever a
+		// constant here: the declarations and bounds were refused, and `1 <<
+		// len(msg) >> 10` into a uint8 took the untyped 1 as a uint8, as a shift by a
+		// variable does, printing 0 for Go's 4. And a length that is a constant is
+		// all len is: `len(*pa)` of a nil pa is Go's 6, not a nil panic.
+		name: "len and cap of an array or a constant string are constants",
+		src: `type frame struct {
+	head [3]byte
+	body [12]byte
+}
+
+var fr frame
+
+var pa *[6]int
+
+var grid [5][7]int
+
+var lut = [...]uint16{0, 3212, 6393, 9512}
+
+const msg = "hello, world"
+
+const (
+	frameLen = len(fr.head) + len(fr.body)
+	lutLen   = len(lut)
+)
+
+var shadow [lutLen * 2]int32
+
+func cells(g [5][7]int) int {
+	const n = len(g) * len(g[0])
+	return n
+}
+
+func main() {
+	var b [len(msg)]byte
+	copy(b[:], msg)
+	var u8 uint8 = 1 << len(msg) >> 10
+	var z uint16 = 1 << len(fr.body) >> 11
+	var f32 float32 = 1 << len(lut)
+	shadow[lutLen*2-1] = 7
+	println(frameLen, lutLen, len(shadow), shadow[7], len(b), b[len(msg)-1], cells(grid), len(pa), len(*pa), u8, z, f32)
+	println(lut[1], fr.head[0], pa == nil)
+}
+`,
+		want: "15 4 8 7 12 100 35 6 6 4 2 16\n3212 0 true\n",
+	},
+	{
 		// A package constant asked for from inside a function literal whose
 		// parameter is named like an operand of the constant's own initializer. The
 		// checker evaluated the constant in the scope that asked, so B's C was the
@@ -23367,7 +23416,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"9 4 9\n9 7\n6 3\n8 16 9\n9 9 18\n11 22 6 8 28 17\n12 true\n0 chain: off true\nchain: off 7\ncur\n20 107 128\n6 42\n2 7 6\n" +
 	"1649267441664 2199023255552 1099511627776 35184372088832 true\n" +
 	"17 gx-7 true 10 19\n" +
-	"2 7 56 9 3 8 false 2 1\n"
+	"2 7 56 9 3 8 false 2 1 2 6 3 true\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -23538,7 +23587,11 @@ func qualifiedArrays() {
 	}
 	c := r
 	c[0] = 6
-	println(len(r), r.Sum(), rowTotal(f), s.row[1], rows[1][0], t, c == r, r[0], s.id)
+	var byMeter [len(greet.Meters)]int
+	var byRow [len(rows[0]) * 3]bool
+	byMeter[1] = 3
+	byRow[5] = true
+	println(len(r), r.Sum(), rowTotal(f), s.row[1], rows[1][0], t, c == r, r[0], s.id, len(byMeter), len(byRow), byMeter[1], byRow[5])
 }
 
 // Another package's constants and array bounds built from constants in a LATER file

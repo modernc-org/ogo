@@ -14803,6 +14803,9 @@ func (e *emitter) foldValNode(n Node) (constant.Value, bool) {
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.foldValNode(kids[1]) // "(" Expression ")"
 		}
+		if v, ok := e.lenConstKids(kids); ok {
+			return constant.MakeInt64(v), true
+		}
 		if v, ok := e.convFoldVal(kids); ok {
 			return v, true
 		}
@@ -15268,6 +15271,9 @@ func (e *emitter) foldIntSeq(kids []Node) (int64, bool) {
 	// operand sequence -- the name alone is not a constant -- and the node's case
 	// is what folds a conversion and a qualified constant.
 	if len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+		if v, ok := e.lenConstKids(kids); ok {
+			return v, true
+		}
 		if e.foldConv {
 			if v, ok := e.convFold(kids); ok {
 				return v, true
@@ -15309,6 +15315,9 @@ func (e *emitter) foldIntNode(n Node) (int64, bool) {
 		kids := slices.Collect(it(n.ast))
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.foldIntNode(kids[1]) // "(" Expression ")"
+		}
+		if v, ok := e.lenConstKids(kids); ok {
+			return v, true
 		}
 		if e.foldConv {
 			if v, ok := e.convFold(kids); ok {
@@ -21630,6 +21639,11 @@ func (e *emitter) arrayChainBound(arg []int32) (string, bool) {
 }
 
 func (e *emitter) emitLen(callSuffix []int32) {
+	// A call Go makes a constant is the constant, and its operand is not evaluated.
+	if v, ok := e.lenConstOf(callSuffix); ok {
+		e.emit(strconv.FormatInt(v, 10))
+		return
+	}
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {
 		e.fail("len takes exactly one argument")
@@ -21650,10 +21664,14 @@ func (e *emitter) emitLen(callSuffix []int32) {
 	}
 	// `len(*p)` written out. The dereference of a pointer to a SLICE or a STRING
 	// falls through to the header field below, which reads it off `(*p)`; an array
-	// has no header, so its extent is answered here.
-	if _, a, ok := e.arrayDerefOperand(arg); ok {
-		e.emit(a.bound)
-		return
+	// has no header, so its extent is answered here -- without rendering `*p`, which
+	// requests p's nil check: Go does not evaluate an operand whose length is a
+	// constant, and `len(*p)` of a nil p panicked here where Go says 6.
+	if name, ok := e.derefOperand(arg); ok {
+		if a, ok := e.arrayPtrVar(name); ok {
+			e.emit(a.bound)
+			return
+		}
 	}
 	// An array-typed struct field, `len(r.buf)`: its length is the declared extent,
 	// exactly as for an array variable. A slice-typed field carries a header and
@@ -21687,6 +21705,28 @@ func (e *emitter) emitLen(callSuffix []int32) {
 	e.fail("len is only supported for strings, arrays and slices yet")
 }
 
+// lenConstOf is the value of a len or cap call the checker found to be a constant,
+// by the call's parentheses (see constLenCap).
+func (e *emitter) lenConstOf(callSuffix []int32) (int64, bool) {
+	if len(callSuffix) == 0 || e.f == nil {
+		return 0, false
+	}
+	v, ok := e.f.lenConsts[&callSuffix[0]]
+	return v, ok
+}
+
+// lenConstKids is lenConstOf for a Factor's children, `len` and its call.
+func (e *emitter) lenConstKids(kids []Node) (int64, bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || kids[1].sym != FactorSuffix {
+		return 0, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != CallSuffix {
+		return 0, false
+	}
+	return e.lenConstOf(steps[0].ast)
+}
+
 // emitCap emits the builtin `cap(x)`: an array's capacity is its compile-time
 // bound; a slice's is its header's `cap` field. Strings have no capacity.
 // emitPanic emits the builtin panic. Only a string argument is supported so far
@@ -21710,6 +21750,10 @@ func (e *emitter) emitPanic(callSuffix []int32) {
 }
 
 func (e *emitter) emitCap(callSuffix []int32) {
+	if v, ok := e.lenConstOf(callSuffix); ok {
+		e.emit(strconv.FormatInt(v, 10))
+		return
+	}
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {
 		e.fail("cap takes exactly one argument")
@@ -21728,12 +21772,12 @@ func (e *emitter) emitCap(callSuffix []int32) {
 			return
 		}
 	}
-	// `len(*p)` written out. The dereference of a pointer to a SLICE or a STRING
-	// falls through to the header field below, which reads it off `(*p)`; an array
-	// has no header, so its extent is answered here.
-	if _, a, ok := e.arrayDerefOperand(arg); ok {
-		e.emit(a.bound)
-		return
+	// `cap(*p)`: the extent, and no dereference, as for len.
+	if name, ok := e.derefOperand(arg); ok {
+		if a, ok := e.arrayPtrVar(name); ok {
+			e.emit(a.bound)
+			return
+		}
 	}
 	if b, ok := e.arrayChainBound(arg); ok {
 		e.emit(b) // an array's capacity is its length: see the len case

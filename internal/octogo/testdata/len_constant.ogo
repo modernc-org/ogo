@@ -1,0 +1,65 @@
+// COMPILE
+// len and cap are constants where Go makes them ones: len of a constant string, and
+// either of an array or a pointer to one that the operand reaches with no function
+// call and no receive -- a variable's written type or the literal it was initialized
+// from, a field, an element even of a slice, a dereference, a conversion and a
+// literal written in place. Each stands in a constant declaration and in an array
+// bound, at package scope and in a function.
+
+type frame struct {
+	head [3]byte
+	body [12]byte
+}
+
+type Row [3]int
+
+var (
+	table [4]int16
+	lut   = [...]float32{1, 2, 3}
+	fr    frame
+	pa    *[6]int
+	grid  [5][7]int
+	sa    [][4]int
+	r     Row
+	i     int
+)
+
+const greeting = "hello"
+
+const (
+	p1  = len("hello")
+	p2  = len(greeting) * 2
+	p3  = len(table)
+	p4  = cap(table)
+	p5  = len(lut)
+	p6  = len(fr.body) + len(fr.head)
+	p7  = len(pa)
+	p8  = len(grid[0])
+	p13 = len(r)
+	p15 = len(Row(r))
+	p16 = len([3]int{}) + len([...]int{1, 2})
+	p17 = len(*pa)
+	p20 = len(sa[0])
+	p21 = len(grid[i])
+)
+
+var buf [len(greeting)]byte
+
+var byRow [len(grid[0])]bool
+
+func f(a [4]int) int {
+	const n = len(a)
+	var twice [n * 2]int
+	return len(twice)
+}
+
+func main() {
+	var local [3]byte
+	const m = len(local)
+	var arr2 [len(local)]int
+	x := [...]int{1, 2, 3, 4}
+	var y [len(x)]bool
+	println(p1, p2, p3, p4, p5, p6, p7, p8, p13, p15, p16, p17, p20, p21, len(buf), len(byRow), f(table2()), m, len(arr2), len(y))
+}
+
+func table2() [4]int { return [4]int{} }

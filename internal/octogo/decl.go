@@ -439,6 +439,14 @@ type VarDeclaration struct {
 	// qs [7]chan req` records nothing about its elements without this, and `qs[i]`
 	// could not be told from an ordinary element.
 	elemTypeNode TypeNode
+
+	// declType is the variable's WRITTEN type, and init the initializer it infers one
+	// from when none is written; declScope is the scope both are read in. They answer
+	// what no flat field above can -- how long an array is, for len and cap of one
+	// being constants (see constLenOf).
+	declType  TypeNode
+	init      Node
+	declScope *Scope
 }
 
 // FuncDeclaration represents a named function.

@@ -240,6 +240,7 @@ type File struct {
 	makeTypeArgs      map[string]bool      // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
 	defineRedeclares  map[string]bool      // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
 	shiftTypes        map[*int32]Kind      // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
+	lenConsts         map[*int32]int64     // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -1085,7 +1086,7 @@ func (f *File) declareParamList(s *Scope, list *ParameterListNode, role varRole)
 		elemTypeNode := f.arrayElemTypeNode(p.TypeNode)
 		funcSig := f.funcSig(s, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: p.TypeNode, declScope: s}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -3222,6 +3223,7 @@ func (f *File) namedFuncSig(s *Scope, name, qual Token) *SignatureNode {
 // The order of the cases is the order they must be asked in, each being a shape the
 // one below it would answer wrongly or not at all.
 func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
+	vd.init, vd.declScope = init, s
 	switch ek, hasEk, tn, tq, isPtr := f.addressOfInfo(s, init); {
 	case isPtr:
 		// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
@@ -4561,7 +4563,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkInferredOverflow(s, e)
 		}
 		for i, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: declType, declScope: s}
 			if declType == nil && len(names) == len(initExprs) {
 				// No type written: the variable takes the one its own initializer
 				// gives it, exactly as ":=" does. A multi-result call feeding
@@ -14284,6 +14286,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			vd.elemTypeNode = elemTypeNode
 			vd.elemTypeName = elemName
 			vd.funcSig, vd.isFunc = funcSig, funcSig != nil
+			vd.declType, vd.declScope = typ, s
 			if typ == nil && len(varDecls) == len(initExprs) {
 				// No type written: the variable takes the one its own initializer
 				// gives it, as ":=" and a local "var" do. This runs after the fields
@@ -15844,6 +15847,472 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 	return constVal{cv: cv}.typedAs(k), true
 }
 
+// constLenCap folds `len(x)` and `cap(x)` where Go makes the call a constant: len of
+// a constant string, and either of an array, or of a pointer to one, that the operand
+// reaches with no function call and no receive in it. The value is a TYPED int
+// constant, as the builtin's result is, and it is recorded for the emitter by the
+// call's place in the AST (lenConsts), so the C spelled for the constant is this
+// value. Any other call answers false and is left to the walk.
+//
+// Neither was ever a constant here. `var buf [len(hdr)]byte` and `const n =
+// len(table)` were refused, and a shift by one was not a constant shift: `var u8
+// uint8 = 1 << len(msg) >> 10` took the untyped 1 as a uint8, as a shift by a
+// variable does, and printed 0 where Go prints 4.
+func (f *File) constLenCap(s *Scope, n Node) (ExpressionNode, bool) {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix || len(kids[1].ast) == 0 {
+		return nil, false
+	}
+	name := f.tok(kids[0].tok).Src()
+	if name != "len" && name != "cap" {
+		return nil, false
+	}
+	if _, builtin := s.find(name).(*PredeclaredFunc); !builtin {
+		return nil, false
+	}
+	arg, ok := soleCallArg(kids[1])
+	if !ok {
+		return nil, false
+	}
+	v, ok := f.constLenOf(s, arg, name == "cap")
+	if !ok {
+		return nil, false
+	}
+	for call := range it(kids[1].ast) {
+		if call.sym == CallSuffix && len(call.ast) != 0 {
+			if f.lenConsts == nil {
+				f.lenConsts = map[*int32]int64{}
+			}
+			// Keyed by the call's parentheses, which is what both the fold of an
+			// expression and the lowering of a len call hold in hand.
+			f.lenConsts[&call.ast[0]] = v
+		}
+	}
+	return constVal{cv: constant.MakeInt64(v)}.typedAs(PredeclaredInt), true
+}
+
+// constLenOf is the value constLenCap folds a call to, for its operand n.
+func (f *File) constLenOf(s *Scope, n Node, isCap bool) (int64, bool) {
+	if !isCap {
+		if str, ok := f.constStringOperand(s, n); ok {
+			return int64(len(str)), true
+		}
+	}
+	if f.hasCallOrRecv(s, n) {
+		return 0, false
+	}
+	t, ok := f.lenOperandType(s, n)
+	if !ok {
+		return 0, false
+	}
+	return f.arrayTypeLen(t, true)
+}
+
+// constStringOperand folds n to a constant string, if it is one. The fold reports
+// every operand it cannot fold -- a variable is "not a constant" -- and that is not
+// this question's to say, so what it reports is trimmed. The constants n names are
+// resolved FIRST, outside the trim, since a mistake in one of their own definitions
+// is theirs to report and would otherwise be lost with the rest.
+func (f *File) constStringOperand(s *Scope, n Node) (string, bool) {
+	if !f.constStringShaped(n) {
+		return "", false
+	}
+	f.resolveNamedConsts(s, n)
+	n0 := len(f.errList)
+	e := f.expression(s, n)
+	f.errList = f.errList[:n0]
+	if e == nil {
+		return "", false
+	}
+	cv, ok := e.Value().(constVal)
+	if !ok || cv.cv == nil || cv.cv.Kind() != constant.String {
+		return "", false
+	}
+	return constant.StringVal(cv.cv), true
+}
+
+// constStringShaped reports whether n is built only of what a constant string can be
+// written with -- literals, names, qualified names, "+", parentheses and a
+// conversion's call -- which is all the constant fold walks: it does not expect a
+// composite literal or a function literal, having never been handed a call's
+// argument before, and `len([3]int{})` stopped the compiler on one.
+func (f *File) constStringShaped(n Node) bool {
+	switch n.sym {
+	case 0:
+		switch f.ch(n.tok) {
+		case STRING, CHAR, INT, IDENT, LPAREN, RPAREN, PERIOD, ADD, COMMA:
+			return true
+		}
+		return false
+	case Expression, SimpleExpr, Term, UnaryExpr, Factor, AddOp, FactorSuffix, Selector, CallSuffix, ArgumentList:
+		for c := range it(n.ast) {
+			if !f.constStringShaped(c) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// resolveNamedConsts resolves every constant an identifier of n names.
+func (f *File) resolveNamedConsts(s *Scope, n Node) {
+	for c := range it(n.ast) {
+		if c.sym != 0 {
+			f.resolveNamedConsts(s, c)
+			continue
+		}
+		if f.ch(c.tok) != IDENT {
+			continue
+		}
+		if cd, ok := s.find(f.tok(c.tok).Src()).(*ConstDeclaration); ok {
+			f.resolveConst(s, cd)
+		}
+	}
+}
+
+// hasCallOrRecv reports whether n holds a function call or a receive, which is what
+// keeps len and cap of an array from being constants: the operand is then evaluated.
+// A conversion is not a call, and the operand it converts is looked into instead.
+func (f *File) hasCallOrRecv(s *Scope, n Node) bool {
+	switch n.sym {
+	case 0:
+		return f.ch(n.tok) == ARROW
+	case CallSuffix:
+		return true // a conversion's parentheses are never reached: see Factor
+	case Factor:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+			if steps := slices.Collect(it(kids[1].ast)); len(steps) == 1 && steps[0].sym == CallSuffix {
+				switch s.find(f.tok(kids[0].tok).Src()).(type) {
+				case *TypeDeclaration, *PredeclaredType:
+					for c := range it(steps[0].ast) {
+						if f.hasCallOrRecv(s, c) {
+							return true
+						}
+					}
+					return false
+				}
+			}
+		}
+	}
+	for c := range it(n.ast) {
+		if f.hasCallOrRecv(s, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// typeAt is a written type with where to read it: the scope its names resolve in and
+// the file whose imports a qualified one of them goes through.
+type typeAt struct {
+	tn TypeNode
+	s  *Scope
+	f  *File
+}
+
+// lenOperandType resolves the type of len's or cap's operand, as far as an array's
+// length needs: a variable's written type, or the literal or conversion it was
+// initialized from; another package's variable; a field, an element or a
+// dereference of any of those; and a composite literal or a conversion written
+// where the operand stands. Anything else answers false, and the call stays a value.
+func (f *File) lenOperandType(s *Scope, n Node) (typeAt, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if n.sym == UnaryExpr && len(kids) == 2 && kids[0].sym == UnaryOp && kids[1].sym == Factor {
+			if f.unaryOp(s, kids[0]) != MUL {
+				return typeAt{}, false
+			}
+			t, ok := f.lenOperandType(s, kids[1])
+			if !ok {
+				return typeAt{}, false
+			}
+			p, ok := f.underlyingTypeAt(t).tn.(*TypeNodePointer)
+			if !ok {
+				return typeAt{}, false
+			}
+			return typeAt{p.TypeNode, t.s, t.f}, true
+		}
+		if len(kids) != 1 {
+			return typeAt{}, false
+		}
+		n = kids[0]
+	}
+	if n.sym != Factor {
+		return typeAt{}, false
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) == 0 {
+		return typeAt{}, false
+	}
+	if len(kids) == 3 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+		return f.lenOperandType(s, kids[1])
+	}
+	if t, ok := f.litOrConvType(s, n); ok {
+		return t, true
+	}
+	if kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT {
+		return typeAt{}, false
+	}
+	var steps []Node
+	if len(kids) == 2 && kids[1].sym == FactorSuffix {
+		steps = slices.Collect(it(kids[1].ast))
+	} else if len(kids) != 1 {
+		return typeAt{}, false
+	}
+	head := f.tok(kids[0].tok).Src()
+	var t typeAt
+	switch d := s.find(head).(type) {
+	case *VarDeclaration:
+		var ok bool
+		if t, ok = f.varTypeAt(d); !ok {
+			return typeAt{}, false
+		}
+	default:
+		// Another package's variable, `geo.Table`.
+		if len(steps) == 0 || steps[0].sym != Selector || !f.isImportQualifier(s, head) {
+			return typeAt{}, false
+		}
+		imp, ok := f.Scope.Declarations[head].(*ImportDeclaration)
+		if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg || imp.Import.Pkg.Scope == nil {
+			return typeAt{}, false
+		}
+		member := selectorIdent(f, steps[0])
+		vd, ok := imp.Import.Pkg.Scope.Declarations[member].(*VarDeclaration)
+		if !ok || !token.IsExported(member) {
+			return typeAt{}, false
+		}
+		if t, ok = f.varTypeAt(vd); !ok {
+			return typeAt{}, false
+		}
+		steps = steps[1:]
+	}
+	for _, step := range steps {
+		u := f.underlyingTypeAt(t)
+		switch step.sym {
+		case Index:
+			switch x := u.tn.(type) {
+			case *TypeNodeArray:
+				t = typeAt{x.TypeNode, u.s, u.f}
+			case *TypeNodeSlice:
+				t = typeAt{x.TypeNode, u.s, u.f}
+			case *TypeNodePointer: // p[i] of a pointer to an array
+				pu := f.underlyingTypeAt(typeAt{x.TypeNode, u.s, u.f})
+				a, ok := pu.tn.(*TypeNodeArray)
+				if !ok {
+					return typeAt{}, false
+				}
+				t = typeAt{a.TypeNode, pu.s, pu.f}
+			default:
+				return typeAt{}, false
+			}
+		case Selector:
+			if p, ok := u.tn.(*TypeNodePointer); ok { // a field through a pointer
+				u = f.underlyingTypeAt(typeAt{p.TypeNode, u.s, u.f})
+			}
+			st, ok := u.tn.(*TypeNodeStruct)
+			if !ok {
+				return typeAt{}, false
+			}
+			name, found := selectorIdent(f, step), false
+			for _, fld := range st.Fields {
+				if fld.TypeNode == nil || fld.EmbeddedPkg.IsValid() {
+					continue
+				}
+				if slices.ContainsFunc(fld.Names, func(nm Token) bool { return nm.Src() == name }) {
+					t, found = typeAt{fld.TypeNode, u.s, u.f}, true
+					break
+				}
+			}
+			if !found {
+				return typeAt{}, false // a promoted field, or none: not modelled here
+			}
+		default:
+			return typeAt{}, false
+		}
+	}
+	return t, true
+}
+
+// varTypeAt is a variable's type as lenOperandType reads it: the one written, or the
+// one its initializer writes -- a literal's or a conversion's. An initializer that
+// writes no type (another variable, a call) answers false rather than being chased.
+func (f *File) varTypeAt(d *VarDeclaration) (typeAt, bool) {
+	wf := f.fileOfToken(d.Token())
+	if d.declType != nil && d.declScope != nil {
+		return typeAt{d.declType, d.declScope, wf}, true
+	}
+	if d.init.sym != 0 && d.declScope != nil {
+		return wf.litOrConvType(d.declScope, d.init)
+	}
+	return typeAt{}, false
+}
+
+// litOrConvType is the type a composite literal or a conversion writes where n
+// stands -- `[3]int{...}`, `[...]int{1, 2}`, `Row{...}`, `geo.Buf{...}`, `Row(a)` --
+// through any parentheses and single-operand levels around it.
+func (f *File) litOrConvType(s *Scope, n Node) (typeAt, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return typeAt{}, false
+		}
+		n = kids[0]
+	}
+	if n.sym != Factor {
+		return typeAt{}, false
+	}
+	kids := slices.Collect(it(n.ast))
+	switch {
+	case len(kids) >= 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LBRACK && kids[len(kids)-1].sym == CompositeLit:
+		// `[N]T{...}` or `[...]T{...}`: the length is the bound, or the literal's.
+		var bound, elem Node
+		ellipsis := false
+		for _, c := range kids {
+			switch {
+			case c.sym == Expression:
+				bound = c
+			case c.sym == Type:
+				elem = c
+			case c.sym == 0 && f.ch(c.tok) == ELLIPSIS:
+				ellipsis = true
+			}
+		}
+		if elem.sym == 0 {
+			return typeAt{}, false
+		}
+		var length int64
+		switch {
+		case ellipsis:
+			l, ok := f.constLitLength(s, kids[len(kids)-1])
+			if !ok {
+				return typeAt{}, false
+			}
+			length = l
+		case bound.sym != 0:
+			f.resolveNamedConsts(s, bound)
+			v, ok := f.constArgValue(s, bound)
+			if !ok {
+				return typeAt{}, false
+			}
+			l, exact := constant.Int64Val(v)
+			if !exact {
+				return typeAt{}, false
+			}
+			length = l
+		default:
+			return typeAt{}, false // a slice literal
+		}
+		// The element too, for an index into the literal's variable. The literal's own
+		// check resolves the same Type and reports what is wrong with it, so what
+		// resolving it here reports is that report again, and is trimmed.
+		n0 := len(f.errList)
+		elemTN := f.typ(s, elem)
+		f.errList = f.errList[:n0]
+		return typeAt{&TypeNodeArray{Expression: constVal{cv: constant.MakeInt64(length)}, TypeNode: elemTN}, s, f}, true
+	case len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == CompositeLit:
+		return typeAt{&TypeNodeIdent{Name: f.tok(kids[0].tok)}, s, f}, true // `Row{...}`
+	case len(kids) == 3 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix && kids[2].sym == CompositeLit:
+		steps := slices.Collect(it(kids[1].ast))
+		if len(steps) != 1 || steps[0].sym != Selector || !f.isImportQualifier(s, f.tok(kids[0].tok).Src()) {
+			return typeAt{}, false
+		}
+		return typeAt{&TypeNodeIdent{Qualifier: f.tok(kids[0].tok), Name: selectorTok(f, steps[0])}, s, f}, true // `geo.Buf{...}`
+	case len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix:
+		steps := slices.Collect(it(kids[1].ast))
+		head := f.tok(kids[0].tok)
+		switch {
+		case len(steps) == 1 && steps[0].sym == CallSuffix:
+			if _, isType := s.find(head.Src()).(*TypeDeclaration); isType {
+				return typeAt{&TypeNodeIdent{Name: head}, s, f}, true // `Row(a)`
+			}
+		case len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix && f.isImportQualifier(s, head.Src()):
+			nm := selectorTok(f, steps[0])
+			if td, _, ok := f.typeDeclNamed(s, head.Src()+"."+nm.Src()); ok && td.TypeSpec != nil {
+				return typeAt{&TypeNodeIdent{Qualifier: head, Name: nm}, s, f}, true // `geo.Buf(a)`
+			}
+		}
+	}
+	return typeAt{}, false
+}
+
+// constLitLength is the length of a `[...]T{...}` literal: one past its highest index,
+// every key a constant.
+func (f *File) constLitLength(s *Scope, lit Node) (int64, bool) {
+	var next, length int64
+	for _, el := range compositeLitElements(lit) {
+		if el.keyed {
+			f.resolveNamedConsts(s, el.key)
+			v, ok := f.constArgValue(s, el.key)
+			if !ok {
+				return 0, false
+			}
+			i, exact := constant.Int64Val(v)
+			if !exact || i < 0 {
+				return 0, false
+			}
+			next = i
+		}
+		next++
+		length = max(length, next)
+	}
+	return length, true
+}
+
+// underlyingTypeAt follows a written type through its chain of definitions -- `type
+// Row [3]int`, another package's `geo.Buf` -- to the type that is not a name.
+func (f *File) underlyingTypeAt(t typeAt) typeAt {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		id, ok := t.tn.(*TypeNodeIdent)
+		if !ok || t.f == nil {
+			return t
+		}
+		written := id.Name.Src()
+		if id.Qualifier.IsValid() {
+			written = id.Qualifier.Src() + "." + written
+		}
+		td, ts, ok := t.f.typeDeclNamed(t.s, written)
+		if !ok || td.TypeSpec == nil || td.TypeSpec.TypeNode == nil {
+			return t
+		}
+		t = typeAt{td.TypeSpec.TypeNode, ts, t.f.fileOfToken(td.Token())}
+	}
+	return t
+}
+
+// arrayTypeLen is the length of the array a type is -- or, when ptr allows it, the
+// array a pointer type points to.
+func (f *File) arrayTypeLen(t typeAt, ptr bool) (int64, bool) {
+	u := f.underlyingTypeAt(t)
+	if p, ok := u.tn.(*TypeNodePointer); ok && ptr {
+		u = f.underlyingTypeAt(typeAt{p.TypeNode, u.s, u.f})
+	}
+	a, ok := u.tn.(*TypeNodeArray)
+	if !ok || a.Expression == nil {
+		return 0, false
+	}
+	cv, ok := a.Expression.Value().(constVal)
+	if !ok || cv.cv == nil || cv.cv.Kind() != constant.Int {
+		return 0, false
+	}
+	v, exact := constant.Int64Val(cv.cv)
+	return v, exact && v >= 0
+}
+
+// selectorTok is a Selector's identifier.
+func selectorTok(f *File, sel Node) Token {
+	for c := range it(sel.ast) {
+		if c.sym == 0 && f.ch(c.tok) == IDENT {
+			return f.tok(c.tok)
+		}
+	}
+	return Token{}
+}
+
+// selectorIdent is selectorTok's text.
+func selectorIdent(f *File, sel Node) string { return selectorTok(f, sel).Src() }
+
 // nameKind is typeKind for a type written as a bare name, following a chain of
 // definitions to the predeclared type underneath.
 func (f *File) nameKind(s *Scope, name string) (Kind, bool) {
@@ -16054,6 +16523,10 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	// name would resolve to a type rather than a constant and be reported as "not a
 	// constant".
 	if v, ok := f.constConversion(s, n); ok {
+		return v
+	}
+	// `len(table)` and `len("abc")`, which Go makes constants.
+	if v, ok := f.constLenCap(s, n); ok {
 		return v
 	}
 	// A constant of an imported package, `geo.MaxPoints`. Checked before the walk

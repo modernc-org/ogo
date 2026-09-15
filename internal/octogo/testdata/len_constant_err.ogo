@@ -1,0 +1,34 @@
+// len and cap are NOT constants of a slice, of a string variable, of an operand that
+// calls a function to reach its array, and cap of a string is no call at all.
+
+var sl []int
+
+var sv = "x"
+
+func mk() [3]int { return [3]int{} }
+
+var grid [5][7]int
+
+func g() int { return 1 }
+
+// ERROR is not a constant
+const n1 = len(sl)
+
+// ERROR is not a constant
+const n2 = len(mk())
+
+// ERROR is not a constant
+const n3 = len(grid[g()])
+
+// ERROR is not a constant
+const n5 = cap("abc")
+
+// ERROR is not a constant
+const n6 = len(sv)
+
+// ERROR non-constant array bound
+var b1 [len(sl)]int
+
+func main() {
+	println(n1, n2, n3, n5, n6, len(b1))
+}

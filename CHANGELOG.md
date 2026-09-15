@@ -125,6 +125,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`len` and `cap` are constants where Go makes them ones.** Of a constant
+  string, and of an array or a pointer to one reached with no call and no
+  receive -- `len(table)`, `len(fr.body)`, `len(grid[0])`, `len(lut)` for a
+  `[...]` table -- they were never constants here: `const n = len(table)`, `var
+  shadow [len(table)]int32` and `var buf [len(header)]byte` were refused, and a
+  shift by one was no constant shift, so `var u8 uint8 = 1 << len(msg) >> 10`
+  took the untyped 1 as a uint8, as a shift by a variable count does, and
+  printed 0 on the board where Go prints 4. And `len(*p)` of a nil pointer to an
+  array panicked, where Go does not evaluate the operand of a constant length.
+
 - **A type may be named like one of the runtime's own identifiers.** `type slot
   struct{...}` in the main package broke the build of any program that starts a
   goroutine, with a syntax error about generated C: the backend cannot parse a
