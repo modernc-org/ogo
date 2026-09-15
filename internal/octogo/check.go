@@ -7301,8 +7301,6 @@ func (f *File) litStructType(s *Scope, t litType) (*TypeNodeStruct, bool) {
 	return st, ok
 }
 
-// litElemType reports whether a composite literal's type names a defined array or
-// slice type, following a chain of definitions to reach one.
 // bracketLitElem reads the element type a BRACKETED composite literal writes down.
 // Factor = "[" [ Expression ] "]" Type [ CompositeLit ]: the element type is the
 // Type, and the CompositeLit is what makes the whole a value rather than a written
@@ -7328,15 +7326,10 @@ func (f *File) bracketLitElem(s *Scope, fac Node) (TypeNode, bool) {
 	return f.typ(s, elem), true
 }
 
-// litElemTypeNode is litElemType answering with the ELEMENT type it walked to, for
-// the caller that checks the values rather than only recognising the literal.
-func (f *File) litElemTypeNode(s *Scope, t litType) (TypeNode, bool) {
-	elem, _, ok := f.litElemTypeNodeIn(s, t)
-	return elem, ok
-}
-
-// litElemTypeNodeIn is litElemTypeNode reporting also the scope the element type is
-// written in: another package's, for a literal of that package's type.
+// litElemTypeNodeIn reports whether a composite literal's type names a defined array
+// or slice type, following a chain of definitions to reach one, and answers with the
+// ELEMENT type it walked to and the scope that element is written in: another
+// package's, for a literal of that package's type.
 //
 // `geo.Buf{1, 2}` for another package's `type Buf [4]byte` was "invalid composite
 // literal type: geo.Buf is not a struct type": only the struct form of a qualified
@@ -7392,11 +7385,6 @@ func (f *File) checkElemLit(s *Scope, t litType, elem TypeNode, lit Node) {
 		f.checkDefinedType(s, name, el.value, "array or slice literal")
 		f.checkLitValue(s, t, elem, el.value, "array or slice literal")
 	}
-}
-
-func (f *File) litElemType(s *Scope, t litType) bool {
-	_, _, ok := f.litElemTypeNodeIn(s, t)
-	return ok
 }
 
 // structTypeOf resolves a name to the struct type it declares. It reports false
