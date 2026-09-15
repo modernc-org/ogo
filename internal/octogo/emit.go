@@ -206,6 +206,16 @@ func pkgPrefix(importPath string) string {
 	return cIdent(strings.ReplaceAll(importPath, "/", "_"))
 }
 
+// typeMangle is mangle for a TYPE name. A main-package type EmitC found colliding
+// with an identifier of the emitted runtime is spelled ogo_T_<name>, whatever the
+// program wrote; every other name is mangle's.
+func (e *emitter) typeMangle(prefix, name string) string {
+	if prefix == "" && (e.renameAllTypes || e.renameTypes[userIdent(name)]) {
+		return "ogo_T_" + cIdent(name)
+	}
+	return mangle(prefix, name)
+}
+
 // mangle is a package's C symbol name for a top-level identifier: the (Unicode-safe)
 // name in the main package, or prefix_name in an imported one.
 func mangle(prefix, name string) string {
@@ -4146,7 +4156,92 @@ func reachablePackages(main *Package) []*Package {
 }
 
 func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
-	e := &emitter{includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	// A type of the main package keeps its own name in C, as every main symbol does,
+	// and that is a name the runtime helpers the program pulls in may use for an
+	// identifier of their own. The backend cannot parse a declarator named like a
+	// typedef, so `type slot struct{...}` beside the goroutine runtime's `int slot`
+	// was a syntax error in generated code -- and so were `width` and `prec` beside
+	// the float formatter, `len` beside every string header, and 17 of the 26
+	// one-letter names, in a program no bigger than a goroutine and a printf.
+	//
+	// Which names the helpers use depends on which helpers the program needs, so it
+	// is measured rather than listed: a probe pass spells every main type
+	// ogo_T_<name>, and a type whose plain name still turns up in that output is
+	// one something else uses. Those alone are spelled so in the real pass. A
+	// program with no such collision emits exactly what it did before. A probe that
+	// fails -- a spelling the funnel missed -- falls back to the plain pass.
+	var probe bytes.Buffer
+	if err := emitProgram(pkg, &probe, append(slices.Clip(opts), renameAllTypes()), nil); err != nil {
+		return emitProgram(pkg, w, opts, nil)
+	}
+	return emitProgram(pkg, w, opts, typeNameCollisions(probe.Bytes(), mainTypeNames(pkg)))
+}
+
+// renameAllTypes spells every main-package type ogo_T_<name> in C; see EmitC.
+func renameAllTypes() EmitOption { return func(e *emitter) { e.renameAllTypes = true } }
+
+// mainTypeNames returns the C spellings the main package's top-level types would
+// have under their own names.
+func mainTypeNames(pkg *Package) map[string]bool {
+	r := map[string]bool{}
+	if pkg == nil || pkg.Scope == nil {
+		return r
+	}
+	for name, d := range pkg.Scope.Declarations {
+		if _, ok := d.(*TypeDeclaration); ok {
+			r[userIdent(name)] = true
+		}
+	}
+	return r
+}
+
+// typeNameCollisions returns the names among names that occur in C source src as an
+// identifier token, comments and string and character literals aside.
+func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
+	r := map[string]bool{}
+	for i := 0; i < len(src); {
+		switch c := src[i]; {
+		case c == '/' && i+1 < len(src) && src[i+1] == '/':
+			for i < len(src) && src[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < len(src) && src[i+1] == '*':
+			i += 2
+			for i+1 < len(src) && !(src[i] == '*' && src[i+1] == '/') {
+				i++
+			}
+			i += 2
+		case c == '"' || c == '\'':
+			for i++; i < len(src) && src[i] != c; i++ {
+				if src[i] == '\\' {
+					i++
+				}
+			}
+			i++
+		case isCIdentByte(c) && (c < '0' || c > '9'):
+			j := i
+			for j < len(src) && isCIdentByte(src[j]) {
+				j++
+			}
+			if id := string(src[i:j]); names[id] {
+				r[id] = true
+			}
+			i = j
+		case c >= '0' && c <= '9':
+			for i < len(src) && isCIdentByte(src[i]) {
+				i++ // a number, suffix and all: 10ULL is not an identifier ULL
+			}
+		default:
+			i++
+		}
+	}
+	return r
+}
+
+// emitProgram is EmitC's one pass. rename lists the main-package types spelled
+// ogo_T_<name> in C (see typeMangle).
+func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4796,6 +4891,12 @@ type emitter struct {
 	// constPreScan runs emitConstDecl for its folded VALUES only -- no C emitted,
 	// no types resolved. See collectConstValues.
 	constPreScan bool
+	// renameTypes names the main-package types spelled ogo_T_<name> in C, and
+	// renameAllTypes spells every one so, for EmitC's probe pass; renamedTypes maps
+	// such a C name back to the type's own, for the diagnostics. See typeMangle.
+	renameTypes    map[string]bool
+	renameAllTypes bool
+	renamedTypes   map[string]string
 	// foldConv lets the integer fold see through a conversion, `int32(4)`. Off for
 	// the fold that RENDERS an expression, where a conversion's cast is part of the
 	// emitted type. See constIntValue.
@@ -5285,8 +5386,13 @@ func (e *emitter) collectStructForwards(ast []int32) {
 					// Every type name is registered, struct or not: fieldIdent needs
 					// the whole set, and this pass is the one that has seen every file
 					// before a struct body is emitted.
-					mn := mangle(e.curPkgPrefix, name)
+					mn := e.typeMangle(e.curPkgPrefix, name)
 					e.typeNames[mn] = true
+					if plain := mangle(e.curPkgPrefix, name); e.renameAllTypes && plain != mn {
+						// The probe renames a local or field named like the type as the
+						// real pass will, or it would read as the type's name in use.
+						e.typeNames[plain] = true
+					}
 					if ifaceASTKids := e.interfaceTypeAST(typeAST); ifaceASTKids != nil {
 						// Recorded so an EMBEDDED name can be resolved wherever it is
 						// written: type declarations are collected in source order,
@@ -5461,7 +5567,10 @@ func (e *emitter) collectTypeDecl(ast []int32) {
 		// so it is a valid C identifier and cannot collide with another package's
 		// type. cType returns the same mangled name for a reference to it, so every
 		// use resolves to the same typedef and the same structs/namedTypes map key.
-		mn := mangle(e.curPkgPrefix, name)
+		mn := e.typeMangle(e.curPkgPrefix, name)
+		if e.curPkgPrefix == "" && mn != mangle("", name) {
+			e.renamedTypes[mn] = name
+		}
 		// What this type is CALLED, for %T and for the diagnostics: a type of
 		// another package is written `lib.Temp` where its C name is `lib_Temp`, and
 		// printing the C name told the program about the compiler's own symbol.
@@ -5664,7 +5773,7 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 				}
 				written, prefix = qual+"."+name, p
 			}
-			mn := mangle(prefix, name)
+			mn := e.typeMangle(prefix, name)
 			if seen[mn] {
 				continue
 			}
@@ -5673,7 +5782,7 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 			// written in -- `interface { error; Retryable() bool }`. It has no AST to
 			// read: the universe holds it, not any file, so its one method is
 			// contributed here as the universe spells it.
-			if qual == "" && name == "error" && !e.typeNames[mangle(e.curPkgPrefix, "error")] {
+			if qual == "" && name == "error" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "error")] {
 				for _, m := range e.errorIfaceMethods() {
 					add(m)
 				}
@@ -8646,7 +8755,7 @@ func (e *emitter) ptrParamBase(ta []int32) string {
 	if !ok || e.f.ch(tok) != IDENT {
 		return ""
 	}
-	name := mangle(e.curPkgPrefix, e.src(tok))
+	name := e.typeMangle(e.curPkgPrefix, e.src(tok))
 	if !e.typeNames[name] {
 		return "" // not a type declared here: nothing to be named after
 	}
@@ -8675,7 +8784,7 @@ func (e *emitter) localTypeNames(body []int32) map[string]string {
 		if name == "" || tname == "" {
 			return
 		}
-		mn := mangle(e.curPkgPrefix, tname)
+		mn := e.typeMangle(e.curPkgPrefix, tname)
 		if !e.typeNames[mn] {
 			return
 		}
@@ -13407,12 +13516,12 @@ func (e *emitter) cType(ast []int32) string {
 	// bare identifier and resolves to no declared type, the universe holding it
 	// rather than any file -- so it is answered here, where the spelling it stands
 	// for is answered.
-	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT && e.src(tok) == "any" && !e.typeNames[mangle(e.curPkgPrefix, "any")] {
+	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT && e.src(tok) == "any" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "any")] {
 		return e.anonInterfaceOf(nil)
 	}
 	// `error`, the one-method interface the universe holds, answered here for the
 	// same reason: it resolves to no declared type of any file.
-	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT && e.src(tok) == "error" && !e.typeNames[mangle(e.curPkgPrefix, "error")] {
+	if tok, ok := e.soleToken(ast); ok && e.f.ch(tok) == IDENT && e.src(tok) == "error" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "error")] {
 		return e.errorIfaceCType()
 	}
 
@@ -13580,11 +13689,11 @@ func (e *emitter) convType(recv string) (string, bool) {
 	// universe holds it -- so it is answered here rather than found in a registry,
 	// exactly as cType answers it. Guarded on nothing having declared that name,
 	// which is what makes it the universe's and not the program's.
-	if recv == "any" && !e.typeNames[mangle(e.curPkgPrefix, "any")] {
+	if recv == "any" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "any")] {
 		return e.anonInterfaceOf(nil), true
 	}
 	// `error(x)`, the universe's other interface, for the same reason.
-	if recv == "error" && !e.typeNames[mangle(e.curPkgPrefix, "error")] {
+	if recv == "error" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "error")] {
 		return e.errorIfaceCType(), true
 	}
 	mn := e.unaliased(e.typeCName(recv))
@@ -13681,6 +13790,9 @@ func (e *emitter) arrayConvOperand(ast []int32) ([]int32, bool) {
 // as its shape instead, which is right for an unnamed one and loses the name here.
 func (e *emitter) definedTypeName(ct string) string {
 	if name, ok := e.typeDisplay[ct]; ok {
+		return name
+	}
+	if name, ok := e.renamedTypes[ct]; ok {
 		return name
 	}
 	return ct
@@ -16501,7 +16613,7 @@ func (e *emitter) typeCName(name string) string {
 	if mn, ok := e.localTypes[name]; ok {
 		return mn
 	}
-	return mangle(e.curPkgPrefix, name)
+	return e.typeMangle(e.curPkgPrefix, name)
 }
 
 // unaliased resolves a C type name through `type A = B`: every consumer of a
@@ -27879,6 +27991,9 @@ func (e *emitter) goTypeName(ct string) string {
 	}
 	if name, ok := e.typeDisplay[ct]; ok {
 		return name // a type of another package, as a program writes it
+	}
+	if name, ok := e.renamedTypes[ct]; ok {
+		return name // a type of this one spelled otherwise in C (see typeMangle)
 	}
 	// A MINTED interface name has no source spelling to return -- the program wrote
 	// the shape, not a name -- so the shape is what a message about it says. Left to

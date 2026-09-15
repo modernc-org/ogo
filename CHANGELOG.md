@@ -125,6 +125,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A type may be named like one of the runtime's own identifiers.** `type slot
+  struct{...}` in the main package broke the build of any program that starts a
+  goroutine, with a syntax error about generated C: the backend cannot parse a
+  declarator named like a type, and the goroutine runtime declares an `int
+  slot`. So did `width` and `prec` beside the float formatter, `len`, `cap` and
+  `ptr` beside the string and slice helpers, `lock`, `val`, `out`, `left` and 17
+  of the 26 one-letter names -- 32 of 80 names probed, in a program of a
+  goroutine, a channel, a slice and a printf. Such a type is spelled otherwise in
+  the C now, and `%T` and the diagnostics still use the name the program wrote.
+
 - **Another package's defined array type can be used as a type.** With `type Buf
   [4]byte` in `geo`, only a conversion `geo.Buf(a)` and geo's own variables
   worked from another package: `var b geo.Buf`, a parameter or result of that

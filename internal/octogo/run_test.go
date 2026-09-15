@@ -6721,6 +6721,47 @@ func main() {
 		want: "12 304\n1 9 1 2\n109\ntrue false\n",
 	},
 	{
+		// Types named like identifiers the emitted RUNTIME declares: the goroutine
+		// pool's `int slot`, the float formatter's width and precision, a string
+		// header's and a slice helper's parameters. The backend cannot parse a
+		// declarator named like a typedef, so each was a syntax error in generated C,
+		// or "Unable to combine types". EmitC spells a type the runtime collides with
+		// ogo_T_<name> -- and %T still says what the program wrote.
+		name: "types named like the runtime's own identifiers",
+		src: `type slot struct {
+	id  int
+	val int
+}
+
+type width uint8
+
+type prec int32
+
+type s []int
+
+type val float32
+
+var done chan slot
+
+func worker(n int) {
+	done <- slot{id: n, val: n * n}
+}
+
+func main() {
+	go worker(7)
+	r := <-done
+	var w width = 12
+	var p prec = -3
+	xs := s{1, 2, 3}
+	xs = append(xs[:2], r.val)
+	v := val(2.5)
+	msg := "collide"
+	printf("%d %d %d %d %v %6.2f|%s %T %T %T\n", r.id, r.val, w, p, xs, v, msg[1:4], r, w, xs)
+}
+`,
+		want: "7 49 12 -3 [1 2 49]   2.50|oll main.slot main.width main.s\n",
+	},
+	{
 		name: "a name C has spoken for, in every position",
 		src: `// Every identifier here is a C keyword or an unshadowable macro. They are
 // ordinary OctoGo identifiers, so a program is entitled to them; the emitter
@@ -23034,14 +23075,26 @@ func main() {
 //
 // A panicking case is skipped: without the checks there is nothing to panic.
 func TestEmitCRunUnchecked(t *testing.T) {
-	runCorpus(t, nil)
+	runCorpus(t, nil, nil)
 }
 
 func TestEmitCRun(t *testing.T) {
-	runCorpus(t, []EmitOption{Checked()})
+	runCorpus(t, []EmitOption{Checked()}, nil)
 }
 
-func runCorpus(t *testing.T, opts []EmitOption) {
+// TestEmitCRunRenamedTypes runs every corpus program that declares a type with EVERY
+// main-package type spelled ogo_T_<name> in C -- the spelling EmitC gives a type whose
+// name the emitted runtime uses for an identifier of its own. That spelling is rare in
+// practice, so without this a place that writes a type's C name without asking
+// typeMangle would be found by the one program that collides, as a C compile error or
+// a wrong answer; here it is found by the whole corpus.
+func TestEmitCRunRenamedTypes(t *testing.T) {
+	runCorpus(t, []EmitOption{Checked(), renameAllTypes()}, func(test emitRunCase) bool {
+		return strings.HasPrefix(test.src, "type ") || strings.Contains(test.src, "\ntype ") || strings.Contains(test.src, "\ttype ")
+	})
+}
+
+func runCorpus(t *testing.T, opts []EmitOption, keep func(emitRunCase) bool) {
 	cc := ""
 	for _, c := range []string{"cc", "gcc", "clang"} {
 		if p, err := exec.LookPath(c); err == nil {
@@ -23061,6 +23114,9 @@ func runCorpus(t *testing.T, opts []EmitOption) {
 	for _, test := range emitRunCases {
 		if test.panics && !checked {
 			continue // the panic is the check; with none, there is nothing to expect
+		}
+		if keep != nil && !keep(test) {
+			continue
 		}
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
