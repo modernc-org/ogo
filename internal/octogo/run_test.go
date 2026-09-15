@@ -19024,6 +19024,43 @@ func main() {
 		want: "false true false true 0\ntrue true 12\nc 23\nd 23\nf 24\ni 1024\nk 2034\ntrue false false false\n2 2037\n",
 	},
 	{
+		// A case of a bool switch is compared with the tag as a whole, and C binds
+		// == tighter than && and as tight as another ==: `switch done { case ok &&
+		// ready: }` tested (done == ok) && ready. And `switch true` compared the
+		// cases with a bare `true`, which is not 1 to the target's C compiler: no
+		// case of it matched on the board, and the host compiler did not know the
+		// name. The old compiler printed "b d" of these five on a P2-EDGE.
+		name: "a bool switch compares its tag with the whole case",
+		src: `func main() {
+	done, ok, ready := false, true, false
+	n := 3
+	switch done {
+	case ok && ready:
+		println("a")
+	}
+	switch done {
+	case ok || ready, n > 5:
+		println("b")
+	default:
+		println("c")
+	}
+	switch n > 2 {
+	case (n == 3) == ok:
+		println("d")
+	}
+	switch false {
+	case n < 5 && n > 4:
+		println("e")
+	}
+	switch true {
+	case n == 4, ok != ready:
+		println("f")
+	}
+}
+`,
+		want: "a\nb\nd\ne\nf\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

@@ -125,6 +125,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A bool switch compares its tag with the whole case.** `switch done { case
+  ok && ready: }` tested `(done == ok) && ready`, C binding `==` tighter than
+  `&&` and as tight as another `==`, and so skipped a case Go takes. And `switch
+  true { case n > 5: }` never matched on the board: the tag was written into the
+  C as a bare `true`, which the target's C compiler does not take to be 1.
+
 - **An operand Go evaluates only sometimes is evaluated only then.** The
   statements an expression needs ahead of itself -- a call's array or struct
   result bound to a temporary, a pointer's nil check -- ran before the whole

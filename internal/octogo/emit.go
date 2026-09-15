@@ -19411,9 +19411,12 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		// A variable switched on is compared by name. A 64-bit CONSTANT is not:
 		// it has no C symbol (see emitConstSpecName), and the name here is used as
 		// one, so it takes the temporary below like any other expression, whose
-		// initializer spells the constant as its literal.
-		if _, isConst := e.inlinedConstRef(e.src(tok)); !isConst {
-			return e.src(tok), block, true
+		// initializer spells the constant as its literal. Nor are true and false,
+		// which have none either: `switch true {` compared the cases with an
+		// undeclared `true`, which the target's C compiler happens to know.
+		_, isConst := e.inlinedConstRef(e.src(tok))
+		if s := e.src(tok); !isConst && s != "true" && s != "false" {
+			return s, block, true
 		}
 	}
 	if _, tok := e.inferCType(g.tag.ast); !tok {
@@ -19501,6 +19504,17 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 				e.typeUntypedShifts(ex.ast, ct)
 			}
 			e.emit(cname + " == ")
+			// A case of a bool switch may be a comparison or a logical expression,
+			// and C binds the tag's == tighter than && and as tight as another ==:
+			// `switch done { case ok && ready: }` tested (done == ok) && ready, and
+			// skipped the case for all three false-true-false, where Go compares done
+			// with ok && ready and takes it.
+			if slices.ContainsFunc(slices.Collect(it(ex.ast)), func(c Node) bool { return c.sym == RelOp }) {
+				e.emit("(")
+				e.emitExpr(ex.ast)
+				e.emit(")")
+				return
+			}
 		}
 		e.emitExpr(ex.ast)
 	}
