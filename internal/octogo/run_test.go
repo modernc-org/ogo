@@ -19584,6 +19584,99 @@ func main() {
 		want: "3 7 a 2\n1 2 a 4\n2308 1 6\n3 7 1 3 3\n",
 	},
 	{
+		// More of Go's left-to-right order, measured per statement as the calls ran.
+		// A multiple assignment binds its values to temporaries before the stores,
+		// which read their indexes after them -- `sl[f(1)], sl[f(2)] = f(3), f(4)`
+		// ran 3412 on a P2-EDGE; a method call's arguments were bound ahead of the
+		// statement and its receiver was not -- `getQ(1).M(f(2), f(3))` ran 2317;
+		// and slice bounds and copy's arguments go through helpers the host's
+		// compiler evaluates right to left.
+		name: "the calls of a store, a slice and a method call run left to right",
+		src: `type P struct{ x int }
+
+type Q struct{ n int }
+
+func (q *Q) M(a, b int) int {
+	trace = trace*10 + 7
+	return q.n + a + b
+}
+
+func (q *Q) One(a int) int {
+	trace = trace*10 + 8
+	return q.n + a
+}
+
+type Mer interface{ M(a, b int) int }
+
+var trace int
+
+func f(n int) int {
+	trace = trace*10 + n
+	return n
+}
+
+var gp = P{}
+
+func getP(n int) *P {
+	trace = trace*10 + n
+	return &gp
+}
+
+var gq = Q{1}
+
+func getQ(n int) *Q {
+	trace = trace*10 + n
+	return &gq
+}
+
+var grid [4][4]int
+
+var sl = []int{0, 1, 2, 3, 4, 5, 6, 7}
+
+var str = "abcdefgh"
+
+var dst [8]int
+
+func show(tag string) {
+	println(tag, trace)
+	trace = 0
+}
+
+func add(a, b int) int { return a + b }
+
+func main() {
+	var m Mer = &gq
+	fv := add
+	x := grid[f(1)][f(2)]
+	show("index2")
+	s := sl[f(1):f(2)]
+	show("slice")
+	c := str[f(1):f(3)]
+	show("strslice")
+	b := str[f(1)] + str[f(2)]
+	show("strindex")
+	n := copy(dst[f(1):], sl[f(2):])
+	show("copy")
+	grid[f(1)][f(2)] = f(3)
+	show("store2")
+	sl[f(1)], sl[f(2)] = f(3), f(4)
+	show("multistore")
+	y := getQ(1).One(f(2))
+	show("recv1")
+	z := getQ(1).M(f(2), f(3))
+	show("recv2")
+	w := m.M(f(1), f(2))
+	show("iface2")
+	v := fv(f(1), f(2))
+	show("funcval")
+	u := gq.M(f(1), f(2))
+	show("method2")
+	println(x, len(s), c, b, n, gp.x, grid[1][2], sl[1], y, z, w, v, u)
+}
+`,
+		want: "index2 12\nslice 12\nstrslice 13\nstrindex 12\ncopy 12\nstore2 123\nmultistore 1234\nrecv1 128\nrecv2 1237\niface2 127\nfuncval 12\nmethod2 127\n0 1 bc 197 6 0 3 3 3 6 4 3 4\n",
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

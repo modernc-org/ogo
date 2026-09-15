@@ -4707,10 +4707,15 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 			"\treturn (%s){p + lo, hi - lo, mx - lo};\n}\n",
 			sliceCName(el), reslice3CName(el), el, sliceCName(el))
 	}
-	// The same for a string, whose header has no capacity field: c is its length.
+	// The same for a string, whose header has no capacity field: c is its length,
+	// which nothing but the check reads.
 	if e.usesResliceStr {
+		strCheck := check
+		if strCheck == "" {
+			strCheck = "\t(void)c;\n"
+		}
 		helperDefs.WriteString("static ogo_string ogo_reslice_str(const char* p, int c, int lo, int hi) {\n" +
-			check +
+			strCheck +
 			"\treturn (ogo_string){p + lo, hi - lo};\n}\n")
 	}
 	// copy(dst []byte, src string): copy the string's bytes into the byte slice,
@@ -11319,6 +11324,14 @@ type boundOperand struct {
 // every bound operand was read through its temporary, which is the invariant that
 // keeps a call from running twice.
 func (e *emitter) bindEffectOperands(kids []Node) (release func()) {
+	return e.bindOperandsInOrder(kids, false)
+}
+
+// bindOperandsInOrder is bindEffectOperands, binding the last operand with an effect
+// too when all is set -- for operands evaluated in the statement AFTER something
+// else it runs before them, which a store's index is: the values of a multiple
+// assignment are bound first and the stores read their indexes after.
+func (e *emitter) bindOperandsInOrder(kids []Node, all bool) (release func()) {
 	release = func() {}
 	if e.declInit || e.deferReplay >= 0 {
 		return release
@@ -11337,13 +11350,18 @@ func (e *emitter) bindEffectOperands(kids []Node) (release func()) {
 		}
 		cands = append(cands, k)
 	}
-	if len(cands) < 2 {
+	if !all {
+		if len(cands) < 2 {
+			return release
+		}
+		// The last needs no temporary: everything before it has run by the time the
+		// statement does, and a temporary is a local, of which a function has 480
+		// longs on the target (cog-RAM: "fit 480 failed").
+		cands = cands[:len(cands)-1]
+	}
+	if len(cands) == 0 {
 		return release
 	}
-	// The last needs no temporary: everything before it has run by the time the
-	// statement does, and a temporary is a local, of which a function has 480 longs
-	// on the target (cog-RAM: "fit 480 failed").
-	cands = cands[:len(cands)-1]
 	// Typed with what the typing leaves behind thrown away: typing an operand renders
 	// parts of it, and an array call it binds would otherwise stand in the prologue
 	// ahead of every operand bound below -- `f(1) + mk()[f(2)]` called mk first still.
@@ -17350,6 +17368,14 @@ func (e *emitter) emitSliceBound(ast []int32) {
 
 func (e *emitter) emitSliceExpr(src sliceSource, low, high, max []int32) {
 	cname, ptr, baseLen, baseCap := src.cname, src.ptr, src.baseLen, src.baseCap
+	// The bounds are arguments of the reslice helper, whose order C leaves open.
+	var bounds []Node
+	for _, b := range [][]int32{low, high, max} {
+		if len(b) != 0 {
+			bounds = append(bounds, Node{sym: Expression, ast: b})
+		}
+	}
+	defer e.bindEffectOperands(bounds)()
 	if max != nil && baseCap == "" {
 		e.fail("a string has no capacity to set with a third slice bound")
 		return
@@ -21693,6 +21719,20 @@ func (e *emitter) chainReceiver(text, ctype string, addr, wantPtr bool) (string,
 	}
 }
 
+// stepsHaveEffect reports whether evaluating a chain's steps does something: a call,
+// or an index that does.
+func stepsHaveEffect(e *emitter, steps []Node) bool {
+	for _, st := range steps {
+		switch {
+		case st.sym == CallSuffix:
+			return true
+		case st.sym == Index && e.exprHasEffect(st.ast):
+			return true
+		}
+	}
+	return false
+}
+
 // chainCText lowers a Factor's leading identifier and its FactorSuffix run into one
 // C expression string, admitting the calls the fixed shapes cannot: a leading
 // function call `mk()`, a method call `x.M()` at any point, alternating with field
@@ -21974,6 +22014,26 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
 				if !okr {
 					return "", "", false, false
+				}
+				// Go evaluates the receiver before the arguments, and arguments that
+				// do something are bound to temporaries ahead of the statement
+				// (hoistArgs): a receiver that does something too ran after them --
+				// `getQ(1).M(f(2), f(3))` called getQ last on a P2-EDGE. So it is
+				// bound first. A value receiver holding an array is not bound, the
+				// target's compiler copying no such struct; its method is refused
+				// for the same reason anyway.
+				if e.exprHasEffect(steps[i+1].ast) && stepsHaveEffect(e, steps[:i]) {
+					rct := cur.ctype
+					switch wantPtr, havePtr := e.methodPtr[cname], e.isPointer(cur.ctype); {
+					case wantPtr && !havePtr:
+						rct = cur.ctype + "*"
+					case !wantPtr && havePtr:
+						rct = e.elemType(cur.ctype)
+					}
+					if rct != "" && !e.hasArrayField(rct) {
+						bound := recv
+						recv = e.hoist(rct, func() { e.emit(bound) })
+					}
 				}
 				if args := e.argsCText(cname, steps[i+1].ast); args != "" {
 					recv += ", " + args
@@ -22679,6 +22739,8 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	}
 	dstCT, dok := e.replayOrInferCType(0, args[0])
 	srcCT, sok := e.replayOrInferCType(1, args[1])
+	// Arguments of a helper, whose order C leaves open.
+	defer e.bindEffectOperands(args)()
 	// copy(dst []byte, src string): Go's byte-slice-from-string copy. The string's
 	// bytes are copied into the byte slice, min(len(dst), len(src)) of them, with no
 	// allocation -- the destination is the caller's storage. This is what lets a
@@ -26207,6 +26269,24 @@ func (e *emitter) declareTargets(define bool, targets []assignTarget) []bool {
 // temporary first, then each target takes its temporary, so all right-hand sides
 // see the pre-assignment values -- which is what makes `a, b = b, a` a swap.
 func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []Node) {
+	// Go evaluates the index operands of the targets before the values, left to
+	// right: `sl[f(1)], sl[f(2)] = f(3), f(4)` runs 1 2 3 4. The values are bound
+	// below, ahead of the stores, and the stores read their indexes after them -- so
+	// an index that does something is bound first, when a value does something too.
+	if slices.ContainsFunc(rhs, func(r Node) bool { return e.exprHasEffect(r.ast) }) {
+		var idx []Node
+		for _, t := range targets {
+			for _, st := range t.chain {
+				if st.sym != Index {
+					continue
+				}
+				if low, _, _, isSlice := e.sliceParts(st.ast); !isSlice && len(low) != 0 && e.exprHasEffect(low) {
+					idx = append(idx, Node{sym: Expression, ast: low})
+				}
+			}
+		}
+		defer e.bindOperandsInOrder(idx, true)()
+	}
 	tmps := make([]string, len(rhs))
 	types := make([]string, len(rhs))
 	dims := make([]arrDim, len(rhs))

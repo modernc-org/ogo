@@ -139,6 +139,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   such literal is a static object of the program now, filled where the variable
   is initialized.
 
+- **A multiple assignment's indexes and a method call's receiver run first.**
+  `sl[f(1)], sl[f(2)] = f(3), f(4)` evaluated the values before the indexes, and
+  `getQ(1).M(f(2), f(3))` the arguments before the receiver, on the board as well;
+  slice bounds and `copy`'s arguments ran right to left on the host.
+
 - **The calls of an expression run left to right.** Go evaluates them in source
   order and C leaves an operator's operands and a helper's arguments to the C
   compiler. On the board, `f(1) << uint(f(2))` called `f(2)` first, and an
