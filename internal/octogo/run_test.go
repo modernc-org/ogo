@@ -25294,6 +25294,256 @@ func main() {
 		want: "42 true 1\n43 true 2\nempty 0 3\n2 2 8 4\n7 true 14\n42 true 1 24\n2 1 8 34\n",
 	},
 	{
+		// Go evaluates a deferred call's receiver where the defer stands. A receiver
+		// that is a CALL's result -- `defer getRegs().Show()`, `defer getPort().Reset()`
+		// promoted through an embedded pointer -- was left to the replay, which ran
+		// the call at the return: a call count 100 short, `defer pick(i).Show()`
+		// showing the register picked at the return, and with an argument in the
+		// inner call the compiler stopped ("index out of range"). A pointer receiver,
+		// a value receiver (a copy taken at the defer), a promoted method, and a
+		// receiver whose choice depends on a variable changed after the defer.
+		name: "a deferred call's receiver that is a call's result is evaluated at the defer",
+		src: `type Regs struct {
+	count int
+	rx    [4]byte
+}
+
+func (r *Regs) Reset() { r.count = 0 }
+
+func (r *Regs) Show() { println("show", r.count) }
+
+type Pos struct{ x, y int }
+
+func (p Pos) At() { println("at", p.x, p.y) }
+
+func (p *Pos) Bump() { p.x++ }
+
+type Port struct {
+	*Regs
+	id int
+}
+
+var regs = Regs{count: 5}
+
+var other = Regs{count: 7}
+
+var port = Port{&regs, 9}
+
+var pos = Pos{1, 2}
+
+var calls int
+
+func getPort() *Port {
+	calls += 100
+	return &port
+}
+
+func getRegs() *Regs {
+	calls++
+	return &regs
+}
+
+func pick(i int) *Regs {
+	calls += 10
+	if i == 0 {
+		return &regs
+	}
+	return &other
+}
+
+func getPos() *Pos {
+	calls += 1000
+	return &pos
+}
+
+func f() {
+	defer getRegs().Show()
+	println("f", calls)
+	regs.count = 6
+	defer getPort().Reset()
+	println("f", calls)
+	regs.count = 8
+}
+
+func g() {
+	i := 0
+	defer pick(i).Show()
+	i = 1
+	defer pick(i).Show()
+	regs.count = 1
+	other.count = 2
+	println("g", calls)
+}
+
+func h() {
+	defer getPos().At()
+	defer getPos().Bump()
+	pos.x = 10
+	println("h", calls, pos.x)
+}
+
+func main() {
+	f()
+	println(regs.count, calls)
+	g()
+	h()
+	println(pos.x, calls)
+}
+`,
+		want: "f 1\nf 101\nshow 0\n0 101\ng 121\nshow 2\nshow 1\nh 2121 10\nat 1 2\n11 2121\n",
+	},
+	{
+		// A frame parser over an embedded reader, the domain probe that found the
+		// deferred receiver fault: an interface satisfied through an embedded
+		// pointer, a table of handler function values, a labeled continue out of a
+		// range, a comparison chain in a switch, a deferred method on an accessor
+		// result beside a deferred println, a method value from a package variable,
+		// a copy and a slice of a promoted array through the accessor, and interface
+		// identity. Measured against Go with the calls counted in order.
+		name: "a frame parser over an embedded reader",
+		src: `type Frame struct {
+	kind byte
+	len  int
+	body [6]byte
+}
+
+type Regs struct {
+	rx    [8]byte
+	count int
+}
+
+func (r *Regs) Read() (byte, bool) {
+	if r.count >= len(r.rx) {
+		return 0, false
+	}
+	v := r.rx[r.count]
+	r.count++
+	return v, true
+}
+
+func (r *Regs) Reset() { r.count = 0 }
+
+type Port struct {
+	*Regs
+	id   int
+	seen [3]int
+}
+
+type Reader interface {
+	Read() (byte, bool)
+	Reset()
+}
+
+type Handler func(f *Frame) int
+
+var regs = Regs{rx: [8]byte{1, 0x80, 2, 3, 4, 5, 6, 7}}
+
+var port = Port{&regs, 9, [3]int{}}
+
+var handlers = [2]Handler{sum, first}
+
+var calls int
+
+func sum(f *Frame) int {
+	calls++
+	n := 0
+	for i := 0; i < f.len && i < len(f.body); i++ {
+		n += int(f.body[i])
+	}
+	return n
+}
+
+func first(f *Frame) int {
+	calls += 10
+	if f.len == 0 {
+		return -1
+	}
+	return int(f.body[0])
+}
+
+func getPort() *Port {
+	calls += 100
+	return &port
+}
+
+func parse(r Reader, f *Frame) bool {
+	k, ok := r.Read()
+	if !ok {
+		return false
+	}
+	f.kind = k & 0x7f
+	f.len = 0
+	for f.len < len(f.body) {
+		b, ok := r.Read()
+		if !ok || b == 0x80 {
+			break
+		}
+		f.body[f.len] = b
+		f.len++
+	}
+	return true
+}
+
+func classify(f *Frame) string {
+	switch {
+	case f.len == 0:
+		return "empty"
+	case f.kind > 1 && f.len > 2 == (f.body[0] > 1):
+		return "long"
+	}
+	return "short"
+}
+
+func main() {
+	var f Frame
+	var r Reader = getPort()
+	n := 0
+outer:
+	for parse(r, &f) {
+		n++
+		for i, h := range handlers {
+			if h(&f) < 0 {
+				println("skip", i)
+				continue outer
+			}
+			getPort().seen[i] += h(&f)
+		}
+		println(f.kind, f.len, classify(&f), calls)
+		if n > 3 {
+			break
+		}
+	}
+	println(n, port.seen[0], port.seen[1], regs.count, calls)
+	r.Reset()
+	defer getPort().Reset()
+	defer println("deferred", port.count)
+	b, ok := getPort().Read()
+	println(b, ok, getPort().count, calls)
+	read := port.Read
+	c, ok2 := read()
+	println(c, ok2, calls)
+	x := getPort().rx
+	x[0] = 42
+	println(x[0], regs.rx[0], len(getPort().rx[3:]), getPort().rx[3:][1], calls)
+	var q Reader = port.Regs
+	if q == r {
+		println("same")
+	}
+	m := map0(getPort().seen[:])
+	println(m, calls)
+}
+
+func map0(xs []int) int {
+	t := 0
+	for _, v := range xs {
+		t += v
+	}
+	return t
+}
+`,
+		want: "skip 1\n2 5 long 434\n2 25 3 8 434\n1 true 1 734\n128 true 734\n42 1 5 4 1034\n28 1134\ndeferred 0\n",
+	},
+	{
 		// A device driver over accessors, the domain probe that found the three fixes
 		// before it: registers behind a channel through an embedded pointer, a ring
 		// buffer in a promoted array, accessors returning pointers to both, a

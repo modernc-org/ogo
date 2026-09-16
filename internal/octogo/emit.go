@@ -20861,6 +20861,7 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 	// The receiver's type, and the text reaching it. A chain is rendered through
 	// emitAccessChain, which is what admits `ws[i].M()` and `p.ws[i].M()`.
 	var ctype, text string
+	addr := true
 	if len(chain) == 0 {
 		ct, ok := e.varType(base)
 		if !ok {
@@ -20876,6 +20877,26 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 			ct = a.name
 		}
 		ctype, text = ct, e.varRef(base)
+	} else if containsSym(chain, CallSuffix) {
+		// A receiver reached through a CALL, `defer getRegs().Show()`, `defer
+		// bus.reg(i).Reset()`: Go evaluates it where the defer stands, and the
+		// capture is what makes that so. Skipped, the replay re-rendered the whole
+		// call at the return -- so the call ran THEN, a wrong answer for one with
+		// an effect, and one taking an argument stopped the compiler, the replay
+		// having no temporary for an argument of an inner call. Rendered by the
+		// call-chain walk, which binds what needs binding ahead of the statement;
+		// those lines are written here, where the capture is.
+		var ct string
+		okc := false
+		_, pro := e.capturePrologue(func() { text, ct, addr, okc = e.chainCText(base, chain) })
+		if !okc || ct == "" {
+			return "", true
+		}
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+		ctype = ct
 	} else {
 		cur, ok := e.accessChainType(base, chain)
 		if !ok {
@@ -20934,7 +20955,7 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		return recv, true
 	}
 	wantPtr := e.methodPtr[cname]
-	recv, ok := e.chainReceiver(text, ctype, true, wantPtr)
+	recv, ok := e.chainReceiver(text, ctype, addr, wantPtr)
 	if !ok {
 		e.fail("cannot take the address of %s for a pointer-receiver method", text)
 		return "", false

@@ -49,6 +49,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A deferred method call evaluates a receiver that is a call's result at the
+  `defer`.** `defer getPort().Reset()` ran `getPort()` at the return, where Go runs
+  it at the defer statement -- a silent difference for an accessor with an effect,
+  and `defer pick(i).Show()` showed the register `i` picked at the return rather
+  than at the defer; with an argument in that call the compiler stopped ("index
+  out of range"). Every other receiver shape was already captured at the defer.
 - **A multi-result method called on a call's result.** `v, ok := bus.reg(2).pop()`
   was "multiple assignment requires a single function call on the right-hand side",
   while the same method on an element or a field, `regs[2].pop()`, `bus.cur.pop()`,
