@@ -27992,15 +27992,10 @@ func (e *emitter) embeddedPathC(ctype string, path []string) string {
 	return text
 }
 
-// selectC renders the C member access for a selected field: one member for a field
-// the type declares, and the embedded members in front of it for a promoted one.
-func (e *emitter) selectC(ctype, field string) (string, bool) {
-	text, ok := e.selectThroughC("", ctype, field, false)
-	return text, ok
-}
-
-// selectThroughC is selectC applied to the C text reaching the value: the text with
-// the member path appended, and, when guard is set, a read through a POINTER --
+// selectThroughC renders a field selected from the value the C text prefix reaches:
+// the text with the member path appended -- one member for a field the type
+// declares, the embedded members in front of it for a promoted one -- and, when
+// guard is set, a read through a POINTER --
 // `->`, at the start or at an embedded pointer along the path -- wrapped in the nil
 // check (nilCheckedC) every dereference takes. It is the one place a `->` is
 // written, so a value reached any way -- a variable, an element, a field, a call's
