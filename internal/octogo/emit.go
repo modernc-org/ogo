@@ -28358,6 +28358,22 @@ func (e *emitter) structFieldDirect(ctype, field string) (string, bool) {
 // with a fixed extent (`data [3]int`). It is the array counterpart of
 // structFieldType, which deliberately refuses such a field.
 func (e *emitter) structFieldArray(ctype, field string) (arrDim, bool) {
+	// A PROMOTED array field is reached through the embedded members in front of
+	// it (fieldPath), by value or by pointer, and its shape is the one declared at
+	// the end of that path. This read the type's own fields only, so every array
+	// shape through a promoted field -- `len(c.fifo)`, `c.fifo[i]`, `c.fifo[1:]`,
+	// `range c.fifo`, `x := c.fifo`, `c.fifo = lit` -- was refused ("has no field
+	// fifo", "cannot infer a type") while a promoted scalar, slice or string field
+	// read as Go reads it: structFieldType followed the path and this did not.
+	if path, ok := e.fieldPath(ctype, field); ok && len(path) > 1 {
+		ct := ctype
+		for _, step := range path[:len(path)-1] {
+			if ct, ok = e.structFieldDirect(ct, step); !ok {
+				return arrDim{}, false
+			}
+		}
+		ctype = ct
+	}
 	for _, fld := range e.structs[e.elemType(ctype)] {
 		if fld.name != field {
 			continue

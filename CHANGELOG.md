@@ -49,6 +49,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An array field promoted through an embedded struct or pointer.** `len(c.fifo)`,
+  `c.fifo[i]` read and written, `c.fifo[1:3]`, `range c.fifo`, `x := c.fifo`,
+  `c.fifo = row`, `take(c.fifo)` and `c.fifo == other`, for a `fifo [8]byte` of a
+  `Regs` embedded by value or as `*Regs`, were refused ("has no field fifo",
+  "cannot infer a type", "len is only supported for ...") -- a promoted scalar,
+  slice or string field read as Go reads it, and the array resolver alone did not
+  follow the promotion.
 - **A chain of comparisons binds to the left, as in Go.** `f(1) < f(2) == (f(3) <
   f(4))` -- `(f(1) < f(2)) == (...)`, a bool beside a bool -- was refused
   ("mismatched types int and bool"): the checker paired each comparison with the

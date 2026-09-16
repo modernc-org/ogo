@@ -25124,6 +25124,95 @@ func main() {
 }
 `,
 		want: "true 4\ntrue 8\ntrue true 10\nfalse true 40\ntrue true 42\ntrue true 42\ntrue true 42\n342\ntrue true\n",
+	},
+	{
+		// An ARRAY field promoted through an embedded struct, by value and by
+		// pointer -- the driver shape, registers behind a channel -- in every array
+		// shape: len and cap, an element read and written, a slice, both ranges, a
+		// copy, an argument, a whole-array store and a comparison; two levels of
+		// embedding, an array of rows, a pointer to the outer and a call returning
+		// one. All were refused ("has no field fifo", "cannot infer a type", "len is
+		// only supported for ...") while a promoted scalar read as Go reads it.
+		name: "an array field promoted through an embedded struct or pointer",
+		src: `type Regs struct {
+	fifo [8]byte
+	head int
+	grid [2][3]int
+}
+
+type ByPtr struct {
+	*Regs
+	id int
+}
+
+type ByVal struct {
+	Regs
+	id int
+}
+
+type Outer struct {
+	ByVal
+	tag int
+}
+
+var r Regs
+
+var p = ByPtr{&r, 1}
+
+var v ByVal
+
+var o Outer
+
+var calls int
+
+func take(a [8]byte) int { return int(a[0]) + int(a[7]) }
+
+func pp() *ByPtr {
+	calls++
+	return &p
+}
+
+func main() {
+	r.fifo[0] = 5
+	r.fifo[7] = 9
+	v.Regs.fifo[0] = 6
+	v.Regs.fifo[7] = 8
+	println(len(p.fifo), cap(p.fifo), len(v.fifo), len(p.grid), len(p.grid[1]), len(o.fifo))
+	p.fifo[1] = 7
+	v.fifo[1] = 3
+	o.fifo[2] = 4
+	println(p.fifo[0], p.fifo[1], r.fifo[1], v.fifo[1], v.Regs.fifo[1], o.fifo[2], o.ByVal.Regs.fifo[2])
+	s := p.fifo[1:3]
+	t := v.fifo[:2]
+	println(len(s), cap(s), s[1], len(t), t[0])
+	n := 0
+	for i, b := range p.fifo {
+		n += i * int(b)
+	}
+	for i := range v.fifo {
+		n += i
+	}
+	println(n)
+	x := p.fifo
+	y := v.fifo
+	x[0] = 1
+	y[0] = 2
+	println(x[0], r.fifo[0], y[0], v.Regs.fifo[0], take(p.fifo), take(v.fifo), take(o.fifo))
+	p.fifo = [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	v.fifo = p.fifo
+	o.fifo = v.fifo
+	println(r.fifo[7], v.Regs.fifo[3], o.fifo[5], p.fifo == v.fifo, p.fifo != r.fifo, o.fifo == r.fifo)
+	p.grid[1][2] = 11
+	println(p.grid[1][2], r.grid[1][2], len(pp().fifo), pp().fifo[3], pp().grid[1][2], calls)
+	for i, row := range p.grid {
+		println(i, row[2])
+	}
+	q := &p
+	q.fifo[6] = 60
+	println(len(q.fifo), q.fifo[6], r.fifo[6], q.head)
+}
+`,
+		want: "8 8 8 2 3 8\n5 7 7 3 3 4 4\n2 7 0 2 6\n98\n1 5 2 6 14 14 0\n8 4 6 true false true\n11 11 8 4 11 3\n0 0\n1 11\n8 60 60 0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
