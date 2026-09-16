@@ -24737,6 +24737,126 @@ func main() {
 }
 `,
 		want: "1.4142 0.7071\n3.0000 -3.0000\n2.8868\n-3.0000 1.5000\n",
+	},
+	{
+		// An array reached through a call's POINTER result, the way a device behind
+		// an accessor is read. Every other field of the result read as Go reads it,
+		// while the array ones were refused: `x := dev().rx` "cannot infer a type",
+		// `len(dev().rx)` "len is only supported for ...", `buf = dev().rx` and the
+		// value range likewise, and the index-only range bound a temporary it never
+		// read (a C error under -Werror). The call runs once per occurrence, which
+		// `calls` counts through every shape: len and cap, index, an index that is
+		// itself such a read, the three copies, a slice of it, copy and range, an
+		// argument, a comparison, a field of a field, a defined array type with a
+		// method (`hold().b.Sum()`), a pointer to one, an array of arrays, a
+		// method's pointer result, and the two stores.
+		name: "an array reached through a call's pointer result",
+		src: `type Pos struct{ x, y int }
+
+type Dev struct {
+	rx    [4]byte
+	name  string
+	pos   Pos
+	list  []int
+	grid  [2][3]int
+	other [4]byte
+}
+
+type Buf [4]byte
+
+func (b Buf) Sum() int {
+	s := 0
+	for _, v := range b {
+		s += int(v)
+	}
+	return s
+}
+
+type Holder struct {
+	b  Buf
+	pb *Buf
+}
+
+type Bus struct{ devs [2]Dev }
+
+func (b *Bus) port(i int) *Dev {
+	calls += 1000
+	return &b.devs[i]
+}
+
+var backing = [5]int{1, 2, 3, 4, 5}
+
+var gd = Dev{rx: [4]byte{1, 2, 3, 4}, name: "dev0", pos: Pos{5, 6}, other: [4]byte{1, 2, 3, 4}}
+
+var gb = Buf{9, 8, 7, 6}
+
+var gh = Holder{b: Buf{9, 8, 7, 6}, pb: &gb}
+
+var bus Bus
+
+var calls int
+
+func dev() *Dev {
+	calls++
+	return &gd
+}
+
+func hold() *Holder {
+	calls += 100
+	return &gh
+}
+
+func take(a [4]byte) int { return int(a[0]) + int(a[3]) }
+
+func main() {
+	gd.list = backing[:]
+	gd.grid[1][2] = 42
+	bus.devs[1].rx = [4]byte{4, 3, 2, 1}
+	var buf [4]byte
+	println(len(dev().rx), cap(dev().rx), dev().rx[1], dev().rx[dev().rx[0]], calls)
+	x := dev().rx
+	var y [4]byte = dev().rx
+	buf = dev().rx
+	s := dev().rx[1:3]
+	println(x[2], y[3], buf[1], len(s), s[0], len(dev().rx[1:]), cap(dev().rx[:2]), calls)
+	n := copy(buf[:], dev().rx[:])
+	sum := 0
+	for i, b := range dev().rx {
+		sum += i * int(b)
+	}
+	for i := range dev().rx {
+		sum += i
+	}
+	println(n, buf[3], sum, take(dev().rx), dev().rx == gd.other, dev().rx != buf, calls)
+	println(dev().name, len(dev().name), dev().name[1], dev().name[1:3], dev().pos.x, dev().list[2], len(dev().list), calls)
+	println(dev().grid[1][2], len(dev().grid), len(dev().grid[1]), hold().b.Sum(), hold().pb.Sum(), hold().b[1], len(hold().pb), hold().pb[2], calls)
+	b := hold().b
+	r := dev().grid[1]
+	w := bus.port(1).rx
+	println(b.Sum(), r[2], len(dev().grid[dev().rx[0]]), w[0], bus.port(1).rx[3], len(bus.port(0).rx), calls)
+	dev().rx = [4]byte{5, 6, 7, 8}
+	dev().rx[2] = 9
+	println(gd.rx[0], gd.rx[2], calls)
+}
+`,
+		want: "4 4 2 2 5\n3 4 2 2 2 3 4 11\n4 4 26 5 true false 17\ndev0 4 101 ev 5 3 5 24\n42 2 3 30 30 8 4 7 527\n30 42 3 4 1 4 3630\n5 9 3632\n",
+	},
+	{
+		// Go evaluates `none().rx` -- len of it is not constant, the operand holding
+		// a call -- and the read through the nil result panics.
+		name: "len of an array through a nil pointer a call returns panics",
+		src: `type Dev struct{ rx [4]byte }
+
+func none() *Dev { return nil }
+
+func main() {
+	println("before")
+	println(len(none().rx))
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

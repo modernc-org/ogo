@@ -12544,9 +12544,12 @@ func (e *emitter) arrayFieldOperand(ast []int32) (string, arrDim, bool) {
 	if !ok {
 		return "", arrDim{}, false
 	}
-	base, fields, isField := e.factorFieldAccess(slices.Collect(it(fac.ast)))
+	kids := slices.Collect(it(fac.ast))
+	base, fields, isField := e.factorFieldAccess(kids)
 	if !isField {
-		return "", arrDim{}, false
+		if base, fields, isField = e.callReadFields(kids); !isField {
+			return "", arrDim{}, false
+		}
 	}
 	a, isArr := e.fieldArray(base, fields)
 	if !isArr {
@@ -12564,9 +12567,12 @@ func (e *emitter) arrayChainOperand(ast []int32) (string, arrDim, bool) {
 	if !ok {
 		return "", arrDim{}, false
 	}
-	base, steps, isChain := e.factorAccessChain(slices.Collect(it(fac.ast)))
+	kids := slices.Collect(it(fac.ast))
+	base, steps, isChain := e.factorAccessChain(kids)
 	if !isChain {
-		return "", arrDim{}, false
+		if base, steps, isChain = e.callReadBase(kids); !isChain {
+			return "", arrDim{}, false
+		}
 	}
 	cur, walked := e.accessChainType(base, steps)
 	if !walked || len(cur.dims) == 0 {
@@ -12591,12 +12597,20 @@ func (e *emitter) arrayChainOperand(ast []int32) (string, arrDim, bool) {
 // name to keep.
 func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
 	kids := slices.Collect(it(n.ast))
-	if base, fields, isField := e.factorFieldAccess(kids); isField {
+	base, fields, isField := e.factorFieldAccess(kids)
+	if !isField {
+		base, fields, isField = e.callReadFields(kids)
+	}
+	if isField {
 		if a, isArr := e.fieldArray(base, fields); isArr {
 			return a, true
 		}
 	}
-	if base, steps, isChain := e.factorAccessChain(kids); isChain {
+	base, steps, isChain := e.factorAccessChain(kids)
+	if !isChain {
+		base, steps, isChain = e.callReadBase(kids)
+	}
+	if isChain {
 		if cur, walked := e.accessChainType(base, steps); walked && len(cur.dims) != 0 {
 			return arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:], name: cur.name, elemName: cur.elemName, elemDims: cur.elemDims}, true
 		}
@@ -16888,6 +16902,81 @@ func (e *emitter) accessChainTypeAt(cur accessCur, steps []Node, claimed bool) (
 	return cur, true
 }
 
+// hoistResult binds a call's result to a temporary of this frame, once per
+// occurrence: keyed by the call's parenthesis (tok) in the statement's memo, so the
+// typing walk, the expression walk and the readers that take a base by name all
+// reach the one temporary and the call runs once. A result not from a call (tok
+// negative) is bound afresh.
+func (e *emitter) hoistResult(text, ctype string, tok int32) string {
+	if tok >= 0 {
+		if name, done := e.hoistedArrayCalls[tok]; done && name != "" {
+			return name
+		}
+	}
+	name := e.hoist(ctype, func() { e.emit(text) })
+	if tok >= 0 {
+		e.hoistedArrayCalls[tok] = name
+	}
+	return name
+}
+
+// callReadBase gives a chain that begins with a CALL returning a pointer to a struct
+// -- `dev().rx`, `bus.port(1).regs[i]` -- the base every array reader takes by
+// name: the result bound to a temporary, once per occurrence (hoistResult), and the
+// steps after the call. The readers of an ARRAY reached through fields and indexes
+// (arrayFieldOperand, arrayChainOperand, arrayChainBound, the range) resolve their
+// base by name, which a call has none of, so `len(dev().rx)`, `x := dev().rx`,
+// `buf = dev().rx` and `for _, b := range dev().rx` were refused where every other
+// field of the result read as Go reads it. The store side binds the same way
+// (callTargetBase).
+func (e *emitter) callReadBase(kids []Node) (name string, rest []Node, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	k := -1
+	for i, st := range steps {
+		if st.sym == CallSuffix {
+			k = i
+		}
+	}
+	if k < 0 || k == len(steps)-1 || !isAccessChain(steps[k+1:]) || e.declInit || e.deferReplay >= 0 {
+		return "", nil, false
+	}
+	if bound, done := e.hoistedArrayCalls[steps[k].Pos()]; done && bound != "" {
+		return bound, steps[k+1:], true
+	}
+	// Typed with the rendering thrown away: rendering the call emits what it needs
+	// ahead of the statement, and a result that is not a pointer -- a struct
+	// written through an out parameter -- would have been called for nothing.
+	var ct string
+	var okc bool
+	e.capturePrologue(func() { _, ct, _, okc = e.chainCText(e.src(kids[0].tok), steps[:k+1]) })
+	if !okc || !e.isPointer(ct) || !e.isStruct(e.elemType(ct)) {
+		return "", nil, false
+	}
+	text, _, _, _ := e.chainCText(e.src(kids[0].tok), steps[:k+1])
+	name = e.hoistResult(text, ct, steps[k].Pos())
+	e.locals[name] = ct
+	return name, steps[k+1:], true
+}
+
+// callReadFields is callReadBase for a chain of selectors only, the shape
+// arrayFieldOperand reads: the field names after the call.
+func (e *emitter) callReadFields(kids []Node) (name string, fields []string, ok bool) {
+	name, rest, ok := e.callReadBase(kids)
+	if !ok {
+		return "", nil, false
+	}
+	for _, st := range rest {
+		if st.sym != Selector {
+			return "", nil, false
+		}
+		fields = append(fields, e.soleIdent(st.ast))
+	}
+	return name, fields, true
+}
+
 // callTargetBase binds the part of an assignment target up to its last call to a
 // temporary, when that call's result is a pointer or a slice and fields and indexes
 // follow it, answering with the temporary and those steps. Nothing is bound for any
@@ -16911,7 +17000,9 @@ func (e *emitter) callTargetBase(base string, steps []Node) (name string, rest [
 	if !isSlice && (!e.isPointer(ct) || e.isIfaceCType(ct)) {
 		return "", nil, false
 	}
-	name = e.hoist(ct, func() { e.emit(text) })
+	// Once per occurrence, shared with the readers (callReadBase): the target's
+	// shape is asked about before it is written, and each ask found the same call.
+	name = e.hoistResult(text, ct, steps[k].Pos())
 	e.locals[name] = ct
 	if isSlice {
 		e.sliceVars[name] = sliceElemFromCName(u)
@@ -19213,7 +19304,14 @@ func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrD
 		// The index-only form, `for i := range h.xs`, reaches no element, so there
 		// is nothing for the base to name and binding one anyway leaves a temporary
 		// the C compiler reports as unused. The extents are what the loop needs, and
-		// they come off the shape.
+		// they come off the shape. An operand holding a CALL, `range dev().rx`, is
+		// still evaluated: Go skips the range expression only when len(x) is
+		// constant, and a call in x is what makes it not. So what was bound for it
+		// is read once, for the call's effect and for the nil check the read takes.
+		if e.exprHasEffect(expr) {
+			e.ind()
+			e.emit("(void)(" + text + ");\n")
+		}
 		return text, a, true
 	}
 	tmp := e.newTmp()
@@ -22009,6 +22107,10 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	var cur accessCur
 	pendingFn := false
 	effect := false // an index consumed so far does something when evaluated
+	// The call whose result the text is, by its parenthesis, while it is one: a
+	// step binding that result to a temporary binds it once per occurrence
+	// (hoistResult), however many paths render the chain.
+	resultTok := int32(-1)
 	// The C name a pending leading function is called by: this package's mangling
 	// of base, or an imported package's of the member a qualifier selects.
 	callee := e.funcCallC(base)
@@ -22146,6 +22248,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				text = e.hoist(cur.ctype, func() { e.emit(text) }) +
 					"(" + e.argsCText("", n.ast) + ")"
 				cur, addr = e.plainOrSlice(rts[0]), false
+				resultTok = n.Pos()
 				continue
 			}
 			// Otherwise a call reaches here only on the pending leading function; a
@@ -22158,6 +22261,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			cname := callee
 			text = cname + "(" + e.argsCText(cname, n.ast) + ")"
 			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
+			resultTok = n.Pos()
 			// A STRUCT result about to become a METHOD's receiver is bound to a
 			// temporary: the target drops a member narrower than a machine word when
 			// such a value is handed on by value, which `mk(-5).flag()` showed by
@@ -22281,8 +22385,8 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// nil check, whose statement form for a pointer to an array reads the
 				// pointer again.
 				if !addr && !e.methodPtr[cname] && e.isPointer(cur.ctype) {
-					inner := text
-					text, addr = e.hoist(cur.ctype, func() { e.emit(inner) }), true
+					text, addr = e.hoistResult(text, cur.ctype, resultTok), true
+					resultTok = -1
 				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
 				if !okr {
@@ -22313,6 +22417,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				}
 				text = cname + "(" + recv + ")"
 				addr = false
+				resultTok = steps[i+1].Pos()
 				switch {
 				case len(rts) == 1:
 					cur = e.plainOrSlice(rts[0])
@@ -22342,8 +22447,8 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if cur.ctype == "" {
 					return "", "", false, false
 				}
-				inner := text
-				text, addr = e.hoist(cur.ctype, func() { e.emit(inner) }), true
+				text, addr = e.hoistResult(text, cur.ctype, resultTok), true
+				resultTok = -1
 			}
 			text, ok = e.selectThroughC(text, cur.ctype, field, true)
 			if !ok {
@@ -22366,8 +22471,8 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if ct == "" {
 					return "", "", false, false
 				}
-				inner := text
-				text, addr = e.hoist(ct, func() { e.emit(inner) }), true
+				text, addr = e.hoistResult(text, ct, resultTok), true
+				resultTok = -1
 			}
 			low, high, max, isSlice := e.sliceParts(n.ast)
 			if isSlice {
@@ -22559,9 +22664,12 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 // variable. A slice reached the same way carries no extents and falls through to the
 // header field, which is where its length lives.
 func (e *emitter) arrayChainBound(arg []int32) (string, bool) {
-	base, steps, ok := e.factorAccessChain(e.factorKids(arg))
+	kids := e.factorKids(arg)
+	base, steps, ok := e.factorAccessChain(kids)
 	if !ok {
-		return "", false
+		if base, steps, ok = e.callReadBase(kids); !ok {
+			return "", false
+		}
 	}
 	cur, ok := e.accessChainType(base, steps)
 	if !ok || len(cur.dims) == 0 {

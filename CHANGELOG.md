@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An array reached through a call's pointer result.** `len(dev().rx)`, `x :=
+  dev().rx`, `buf = dev().rx`, `for _, b := range dev().rx`, `take(dev().rx)`,
+  `dev().rx == other`, `len(dev().grid[1])` and `b := hold().b` for a defined
+  array type -- the way a device behind an accessor is read -- were refused
+  ("cannot infer a type", "len is only supported for...", or a C error for the
+  index-only range), while every other field of the result read as Go reads it.
+  The call runs once per occurrence.
+
 - **A struct may embed a pointer.** `struct{ *Inner }` -- and `*lib.Leaf` --
   promotes the pointee's fields and methods through the pointer, as Go does: a
   promoted field read or written, a value receiver reading what the pointer
