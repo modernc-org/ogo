@@ -134,6 +134,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A composite literal evaluates its values in the order written.** A value
+  that needs a statement ahead of the literal -- a slice literal, a struct or an
+  array a call returns, a field read through a pointer a call returns -- ran
+  before every value written before it: `W{n: f(1), xs: []int{f(2)}}` called
+  `f(2)` first, on the board too; and C leaves the order of the rest of an
+  initializer open. Every value that does something but the last is evaluated
+  into a temporary first, in order, nested literals included.
+
 - **A package variable's literal may hold a slice literal.** `var cfg =
   Config{pins: []int{1, 2, 3}, dev: &d}` stopped the compiler ("assignment to
   entry in nil map"), and with only constants beside the slice the literal was

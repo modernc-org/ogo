@@ -19894,6 +19894,91 @@ func main() {
 		want: "p2 3 3 b 7\n2 4 6 0 7\n10 3 20 2 0 6\n100 8 2\n",
 	},
 	{
+		// Go evaluates a composite literal's values in the order written. A value
+		// needing a statement ahead of the literal -- a slice literal, a struct or an
+		// array a call returns, a field of a pointer a call returns -- ran before
+		// every value written before it (`W{n: f(1), xs: []int{f(2)}}` ran 21, on a
+		// P2-EDGE too), and C leaves the order of the rest of an initializer open.
+		// Each line is the order the calls of one literal ran in, nested rows and a
+		// package literal included.
+		name: "a composite literal evaluates its values in order",
+		src: `type P struct{ a, b int }
+
+type W struct {
+	n  int
+	xs []int
+	p  P
+	r  [2]int
+}
+
+var trace int
+
+func f(n int) int {
+	trace = trace*10 + n
+	return n
+}
+
+func mkA(n int) [2]int {
+	trace = trace*10 + n
+	return [2]int{n, n + 1}
+}
+
+func mkP(n int) P {
+	trace = trace*10 + n
+	return P{n, n * 2}
+}
+
+var backing = [4]int{1, 2, 3, 4}
+
+func mkS(n int) []int {
+	trace = trace*10 + n
+	return backing[:n]
+}
+
+type Q struct{ x int }
+
+var gq = Q{9}
+
+func getQ(n int) *Q {
+	trace = trace*10 + n
+	return &gq
+}
+
+func show() int {
+	t := trace
+	trace = 0
+	return t
+}
+
+var pw = W{n: f(1), xs: []int{f(2), f(3)}, p: mkP(4)}
+
+var porder = show()
+
+func main() {
+	w := W{n: f(1), xs: []int{f(2), f(3)}}
+	a := show()
+	w2 := W{n: f(1), p: mkP(2), r: mkA(3), xs: mkS(4)}
+	b := show()
+	x := W{xs: []int{f(1)}, p: P{a: getQ(2).x}, n: f(3)}
+	c := show()
+	arr := [2]int{f(1), mkA(2)[f(3)%2]}
+	d := show()
+	s := []int{f(1), getQ(2).x, f(3)}
+	e := show()
+	ws := [2]W{{n: f(1), xs: []int{f(2)}}, {r: mkA(3), n: f(4)}}
+	g := show()
+	rs := [][2]int{mkA(1), mkA(2)}
+	h := show()
+	m := [2][2]int{{f(1), f(2)}, {f(3), f(4)}}
+	i := show()
+	println(porder, a, b, c, d, e, g, h, i)
+	println(pw.n, pw.xs[1], pw.p.b, w.xs[1], w2.p.b, w2.r[1], len(w2.xs))
+	println(x.p.a, x.n, arr[1], s[1], ws[1].r[0], ws[1].n, rs[1][1], m[1][0])
+}
+`,
+		want: "1234 123 1234 123 123 123 1234 12 1234\n1 3 8 3 4 4 4\n9 3 3 9 3 4 3 3\n",
+	},
+	{
 		// `ps[i].x` read `ps[i]->x` unchecked; each of these read address zero.
 		name: "a field read through a nil pointer element panics",
 		src: `type T struct{ x int }

@@ -11909,6 +11909,7 @@ func (e *emitter) soleFactorNode(ast []int32) (Node, bool) {
 // element that is itself a literal, which is C's own spelling for a nested
 // aggregate initializer anyway.
 func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
+	defer e.bindLitValues(lit)() // the values that do something, in the order written
 	// A literal of an ARRAY type -- a defined one, `Row{1, 2}`, or the typedef minted
 	// for an unnamed one -- is not a struct's braces however alike the two read: its
 	// elements are indexed rather than named, and its rows nest. Sent through the
@@ -11943,7 +11944,6 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 	if !ok {
 		return
 	}
-	defer e.bindKeyedLitValues(lit, values)()
 	if !brace {
 		e.emit("(" + name + ")")
 	}
@@ -12064,6 +12064,13 @@ func (e *emitter) litFixupCopies(dst string, fixups []litFixup) ([]string, bool)
 		// that storage, so the call writes through it directly -- no copy, which is
 		// what the out-parameter ABI is for.
 		if cname, _, isCall := e.arrayResultCall(f.src); isCall {
+			// Bound ahead of the statement for its place in the evaluation order
+			// (bindLitValues): the element is filled from the temporary.
+			if name, bound := e.hoistedArrayCalls[Node{sym: Expression, ast: f.src}.Pos()]; bound {
+				e.includes["string.h"] = true
+				out = append(out, "memcpy("+at+", "+name+", sizeof("+at+"));")
+				continue
+			}
 			stmt := strings.TrimSuffix(e.captureC(func() { e.emitArrayResultCall(at, cname, f.src) }), "\n")
 			if stmt == "" {
 				return nil, false // emitArrayResultCall has said why
@@ -12693,6 +12700,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	if !ok {
 		return
 	}
+	defer e.bindLitValues(lit)() // the values that do something, in the order written
 	// lead opens a declaration: "static " at file scope, the current indent inside
 	// a function.
 	lead := func() {
@@ -13698,38 +13706,112 @@ func (e *emitter) litFieldValues(name string, lit Node) (values []*Node, fields 
 	return values, fields, true
 }
 
-// bindKeyedLitValues binds the values of a KEYED struct literal to temporaries in
-// the order they are written, when that is not the order of the fields they fill
-// (values, as litFieldValues answers them). The literal is emitted in field order,
-// which is the order C evaluates it in, so `Hdr{kind: rd(), size: rd()}` over a
-// struct declaring size first read the stream the wrong way round -- on a P2-EDGE
-// too. A positional literal, or a keyed one written in field order, is in source
-// order already and binds nothing.
-func (e *emitter) bindKeyedLitValues(lit Node, values []*Node) func() {
-	elements := compositeLitElements(lit)
-	if len(elements) < 2 || !elements[0].keyed {
-		return func() {}
-	}
-	last, inOrder := -1, true
-	var written []Node
-	for _, el := range elements {
-		if len(el.value.ast) == 0 {
+// litValueOrder lists a composite literal's values in the order written, descending
+// into the literals nested in it -- type-elided rows, a struct literal, an array
+// literal -- which C evaluates as part of the one initializer as Go evaluates them
+// in source order with the rest. A SLICE literal is a value of its own, a header
+// bound ahead of the statement, and stands as one element.
+func (e *emitter) litValueOrder(lit Node, out []Node) []Node {
+	for _, el := range compositeLitElements(lit) {
+		v := el.value
+		if v.sym == CompositeLit {
+			out = e.litValueOrder(v, out)
 			continue
 		}
-		at := slices.IndexFunc(values, func(v *Node) bool { return v != nil && len(v.ast) != 0 && &v.ast[0] == &el.value.ast[0] })
-		if at < 0 {
+		if typeAST, sub, ok := e.soleArrayLit(v.ast); ok {
+			if _, isSlice := e.litSliceType(typeAST); !isSlice {
+				out = e.litValueOrder(sub, out)
+				continue
+			}
+		}
+		if nm, sub, ok := e.soleCompositeLit(v.ast); ok && e.isStruct(nm) {
+			out = e.litValueOrder(sub, out)
 			continue
 		}
-		if at < last {
-			inOrder = false
+		out = append(out, v)
+	}
+	return out
+}
+
+// bindLitValues binds the values of a composite literal that do something when
+// evaluated to temporaries in the order written, when two or more do -- every one
+// but the last, as bindEffectOperands binds a level's operands -- and answers a
+// function to run once the literal is emitted.
+//
+// C leaves the order of an initializer's expressions open, and a value that needs a
+// statement ahead of the statement -- a slice literal, a struct a call returns, a
+// field of a pointer a call returns, an array a call returns -- ran before every
+// value written before it: `W{n: f(1), xs: []int{f(2)}}` ran f(2) first, and a KEYED
+// literal, emitted in field order, ran its calls in that order. A value of STRUCT
+// type is bound too, unlike a level's operand: a literal reads its element through
+// emitExpr, which answers a bound one with its temporary, where a level's comparison
+// renders the call for itself. A call returning an ARRAY is bound through
+// hoistArrayCallArg, whose temporary the copy that fills the element reads back
+// (litFixupCopies); a value of any other type -- an interface, a struct holding an
+// array -- is read by paths of its own, and a literal holding one binds nothing.
+func (e *emitter) bindLitValues(lit Node) (release func()) {
+	release = func() {}
+	if e.declInit || e.deferReplay >= 0 {
+		return release
+	}
+	var cands []Node
+	for _, v := range e.litValueOrder(lit, nil) {
+		if len(v.ast) == 0 || !e.exprHasEffect(v.ast) {
+			continue
 		}
-		last = at
-		written = append(written, *values[at])
+		if _, bound := e.boundOperands[&v.ast[0]]; bound {
+			continue
+		}
+		cands = append(cands, v)
 	}
-	if inOrder {
-		return func() {}
+	if len(cands) < 2 {
+		return release
 	}
-	return e.bindEffectOperands(written)
+	cands = cands[:len(cands)-1]
+	cts := make([]string, len(cands))
+	arrayCall := make([]bool, len(cands))
+	bindable := true
+	e.capturePrologue(func() {
+		for i, v := range cands {
+			if _, _, isCall := e.arrayResultCall(v.ast); isCall {
+				arrayCall[i] = true
+				continue
+			}
+			ct, ok := e.inferNode(v)
+			if !ok || !(e.bindableCType(ct) || e.isStruct(ct) && !e.hasArrayField(ct)) {
+				bindable = false
+				return
+			}
+			cts[i] = ct
+		}
+	})
+	if !bindable {
+		return release
+	}
+	if e.boundOperands == nil {
+		e.boundOperands = map[*int32]*boundOperand{}
+	}
+	var keys []*int32
+	for i, v := range cands {
+		if arrayCall[i] {
+			if _, ok := e.hoistArrayCallArg(Node{sym: Expression, ast: v.ast}); !ok {
+				break // a position that cannot bind one: the rest keep their order
+			}
+			continue
+		}
+		name := e.hoist(cts[i], func() { e.emitExprNode(v) })
+		keys = append(keys, &v.ast[0])
+		e.boundOperands[keys[len(keys)-1]] = &boundOperand{name: name}
+	}
+	return func() {
+		for _, key := range keys {
+			b := e.boundOperands[key]
+			delete(e.boundOperands, key)
+			if !b.used {
+				e.fail("internal error: a literal's value bound to keep evaluation order was not read through its temporary")
+			}
+		}
+	}
 }
 
 // emitVarInit emits a variable declaration's initializer. A composite literal that
