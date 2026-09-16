@@ -16480,6 +16480,12 @@ func (e *emitter) accessSlice(cur accessCur) (accessCur, bool) {
 	case cur.ctype == cString:
 		return accessCur{ctype: cString}, true
 	}
+	// A POINTER to an array is sliced as the array it points at, `p[1:]` being
+	// `(*p)[1:]` in Go too -- a call's result, `pick()[1:]`, or a field, `h.pa[:2]`.
+	// accessSliceSource writes the dereference.
+	if a, ok := e.arrayPtrCType(cur.ctype); ok {
+		return accessCur{elem: e.accessSliceElem(curArray(a)), slice: true}, true
+	}
 	return accessCur{}, false
 }
 
@@ -16517,6 +16523,12 @@ func (e *emitter) accessSliceSource(cur accessCur, prefix string) (sliceSource, 
 		return sliceSource{sliceCName(e.accessSliceElem(cur)), prefix, cur.dims[0], cur.dims[0]}, true
 	case cur.ctype == cString:
 		return sliceSource{cString, prefix + ".str", prefix + ".len", ""}, true
+	}
+	// A pointer to an array: the array it points at, which decays as a named one
+	// does. The dereference is a read through the pointer, and emitChainSlice asks
+	// for its nil check.
+	if a, ok := e.arrayPtrCType(cur.ctype); ok {
+		return sliceSource{sliceCName(e.accessSliceElem(curArray(a))), "(*" + prefix + ")", a.bound, a.bound}, true
 	}
 	return sliceSource{}, false
 }
@@ -16643,6 +16655,12 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 					// this is the only way to emit it.
 					return accessCur{}, false
 				}
+				if _, isArrPtr := e.arrayPtrCType(cur.ctype); isArrPtr && effect {
+					// The pointer's nil check is a statement reading it again: bound
+					// first, so an index with a call in it runs once (as below).
+					inner := prefix
+					prefix, effect = e.hoist(cur.ctype, func() { e.emit(inner) }), false
+				}
 				next, prefixNext, ok := e.emitChainSlice(cur, prefix, low, high, max, last)
 				if !ok {
 					return accessCur{}, false
@@ -16707,6 +16725,11 @@ func (e *emitter) emitChainSlice(cur accessCur, prefix string, low, high, max []
 	}
 	if next, ok = e.accessSlice(cur); !ok {
 		return accessCur{}, "", false
+	}
+	// Slicing a pointer to an array reads through it, and takes the check a read
+	// takes -- the statement form, as an index through the pointer does.
+	if _, isPtr := e.arrayPtrCType(cur.ctype); isPtr {
+		e.nilCheckLine(prefix, cur.ctype)
 	}
 	if src.cname == cString {
 		e.usesString = true
@@ -17581,6 +17604,13 @@ func (e *emitter) sliceableField(base string, fields []string) (sliceSource, boo
 	ct, ok := e.fieldType(base, fields)
 	if !ok {
 		return sliceSource{}, false
+	}
+	// A field holding a POINTER to an array slices the array it points at, `h.pa[1:]`
+	// being `(*h.pa)[1:]` in Go too, through the nil check a read through it takes.
+	if a, isPtr := e.arrayPtrCType(ct); isPtr {
+		elem := e.sliceElemOfArray(a)
+		e.needSlice(elem)
+		return sliceSource{sliceCName(elem), e.arrayPtrDerefC(lv, ct), a.bound, a.bound}, true
 	}
 	// A string field slices like a string variable: the result is a string over the
 	// same bytes, with no capacity of its own. sliceableVar has always done this for
@@ -19256,7 +19286,28 @@ func (e *emitter) rangeArray(expr []int32) *arrDim {
 	if a, ok := e.arrayShapeOf(expr); ok {
 		return &a
 	}
+	// A pointer to an array that is not a variable: a call's result, a field, an
+	// element. Ranged as the array, like the variable above.
+	if _, a, ok := e.ptrArrayOperand(expr); ok {
+		return &a
+	}
 	return nil
+}
+
+// ptrArrayOperand types an operand that is a POINTER to an array and not a variable
+// -- a call's result, `pick()`, `bank.pick(1)`, a field, `h.pa`, an element,
+// `ptrs[i]` -- answering with its C type and the array's shape. It renders nothing:
+// typing may hoist, so it runs with the prologue captured and thrown away.
+func (e *emitter) ptrArrayOperand(ast []int32) (ct string, a arrDim, ok bool) {
+	if _, isName := e.exprIdent(ast); isName {
+		return "", arrDim{}, false
+	}
+	e.capturePrologue(func() { ct, ok = e.inferCType(ast) })
+	if !ok {
+		return "", arrDim{}, false
+	}
+	a, ok = e.arrayPtrCType(ct)
+	return ct, a, ok
 }
 
 // rangeArrayBase resolves a range operand that is an ARRAY to the C text naming its
@@ -19297,7 +19348,7 @@ func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrD
 	text, a, ok := e.arrayFieldOperand(expr)
 	if !ok {
 		if text, a, ok = e.arrayChainOperand(expr); !ok {
-			return "", arrDim{}, false
+			return e.rangePtrArrayBase(expr, readsElements)
 		}
 	}
 	if !readsElements {
@@ -19318,6 +19369,31 @@ func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrD
 	e.ind()
 	e.emit(e.arrayTypedef(a) + "* " + tmp + " = &" + text + ";\n")
 	return "(*" + tmp + ")", a, true
+}
+
+// rangePtrArrayBase is rangeArrayBase for a POINTER to an array that is not a
+// variable -- `range pick()`, `range bank.pick(1)`, `range h.pa`, `range ptrs[i]`
+// -- ranged as `range p` is. The value form reads through the pointer, bound to a
+// temporary, and takes its nil check once before the loop, where Go evaluates the
+// range expression. The index-only form dereferences nothing, in Go too -- and
+// still evaluates an operand holding a call, since Go skips the range expression
+// only when len(x) is constant, which a call in x makes it not.
+func (e *emitter) rangePtrArrayBase(expr []int32, readsElements bool) (string, arrDim, bool) {
+	ct, a, ok := e.ptrArrayOperand(expr)
+	if !ok {
+		return "", arrDim{}, false
+	}
+	ptr := e.captureC(func() { e.emitExpr(expr) })
+	if !readsElements {
+		if e.exprHasEffect(expr) {
+			e.ind()
+			e.emit("(void)(" + ptr + ");\n")
+		}
+		return "(*" + ptr + ")", a, true
+	}
+	name := e.hoist(ct, func() { e.emit(ptr) })
+	e.locals[name] = ct
+	return e.arrayPtrDeref(name), a, true
 }
 
 // emitSwitch emits a switch statement as an if / else-if chain. Case bodies are
@@ -22482,6 +22558,12 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// on from that name -- which is what the streaming path does for a
 				// step that is not the last. Without this the whole expression was
 				// "unsupported call in expression".
+				if _, isArrPtr := e.arrayPtrCType(cur.ctype); isArrPtr && effect {
+					// The pointer's nil check is a statement reading it again: bound
+					// first, so an index with a call in it runs once.
+					inner := text
+					text, effect = e.hoist(cur.ctype, func() { e.emit(inner) }), false
+				}
 				next, name, oks := e.emitChainSlice(cur, text, low, high, max, false)
 				if !oks || name == "" {
 					return "", "", false, false
@@ -24867,10 +24949,35 @@ func (e *emitter) emitChainDerefAssign(head Node, base, stars string, postfix []
 		e.failAtPos(head.Pos(), "cannot assign through this dereference: %s", why)
 	}
 	if !isAccessChain(steps) {
-		fail("only a run of fields and indexes may stand between them")
-		return
+		// A CALL in the chain, `*pick() = v`, `*bus.port(1).pa = v`: the pointer
+		// the chain reaches through the call is bound once (hoistResult, shared with
+		// whatever asked about the target's shape), and the rest of the chain, if
+		// any, goes on from the binding.
+		k := -1
+		for i, st := range steps {
+			if st.sym == CallSuffix {
+				k = i
+			}
+		}
+		if k < 0 || (k+1 < len(steps) && !isAccessChain(steps[k+1:])) {
+			fail("only a run of fields and indexes may stand between them")
+			return
+		}
+		text, ct, _, ok := e.chainCText(base, steps[:k+1])
+		if !ok || !e.isPointer(ct) {
+			fail("the target this reaches cannot be named")
+			return
+		}
+		name := e.hoistResult(text, ct, steps[k].Pos())
+		e.locals[name] = ct
+		base, steps = name, steps[k+1:]
 	}
-	text, ct, _, ok := e.chainCText(base, steps)
+	text, ct, ok := base, "", true
+	if len(steps) != 0 {
+		text, ct, _, ok = e.chainCText(base, steps)
+	} else {
+		ct, ok = e.varType(base)
+	}
 	if !ok {
 		fail("the target this reaches cannot be named")
 		return
@@ -24885,12 +24992,38 @@ func (e *emitter) emitChainDerefAssign(head Node, base, stars string, postfix []
 		}
 		pointee = e.elemType(pointee)
 	}
-	if _, isArr := e.namedArrays[pointee]; isArr {
-		// C has no array assignment, so this would be a memcpy of the pointee's own
-		// size -- which the plain-variable target does and the READ side of the same
-		// shape does not do at all (`(*h.pa)[1]` is refused). Said here rather than
-		// emitted as a store the target's C compiler takes and drops.
-		fail("the pointee is an array, which is not supported through a chain yet")
+	if a, isArr := e.namedArrays[pointee]; isArr {
+		// `*h.pa = b`, `*pick() = [4]int{...}`: C has no array assignment, and the
+		// backend takes `(*p) = ...` and writes nothing, so the array is copied as
+		// `*pa = b` copies one for a plain variable (emitAssignment), through the
+		// nil-checked pointer. The pointer is bound first: Go evaluates the
+		// indirection's operand before the right side, and the copy names it twice.
+		if stars != "*" {
+			fail("what it reaches is a pointer to an array, which takes one star")
+			return
+		}
+		op := slices.Collect(it(postfix[len(postfix)-1].ast))
+		rhs := e.rhsExprs(op[len(op)-1])
+		if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN || len(rhs) != 1 {
+			fail("an array is written over as a whole, with `=`")
+			return
+		}
+		if !e.checkArrayShape(a, rhs[0].ast, "assignment") {
+			return
+		}
+		ptr := text
+		if len(steps) != 0 {
+			ptr = e.hoist(ct, func() { e.emit(text) })
+			e.locals[ptr] = ct
+		}
+		src, okSrc := e.arraySourceC(rhs[0].ast)
+		if !okSrc {
+			fail("the right side is not an array this can read from")
+			return
+		}
+		e.includes["string.h"] = true
+		e.ind()
+		e.emit("memcpy(" + e.nilCheckedC(ptr, ct) + ", " + src + ", sizeof(*" + ptr + "));\n")
 		return
 	}
 	t, okTail := e.assignTailOf(postfix[len(postfix)-1])

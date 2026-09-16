@@ -27,6 +27,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   ("cannot infer a type", "len is only supported for...", or a C error for the
   index-only range), while every other field of the result read as Go reads it.
   The call runs once per occurrence.
+- **A pointer to an array that is not a variable.** `pick()[1:]`, `s :=
+  bank.pick(1)[1:3]`, `h.pa[:2]`, `ptrs[i][1:]` (a slice of what the pointer
+  points at, as Go reads it), `for i, v := range pick()` and `range h.pa`, and the
+  store through the dereference, `*pick() = [4]int{...}`, `*h.pa = row` -- for a
+  call's result, a field and an element -- were refused ("len is only supported
+  for ...", "cannot infer a type", "ranging an integer yields only the index",
+  "the pointee is an array, which is not supported through a chain yet"), and the
+  index-only range over a call's result emitted C that did not compile. Each
+  reads through the pointer with its nil check; the call runs once.
 
 - **A struct may embed a pointer.** `struct{ *Inner }` -- and `*lib.Leaf` --
   promotes the pointee's fields and methods through the pointer, as Go does: a

@@ -24857,6 +24857,187 @@ func main() {
 `,
 		want:   "before\npanic: nil pointer dereference",
 		panics: true,
+	},
+	{
+		// A POINTER to an array a call returns, `pick() *[4]int`. Indexing it, len of
+		// it and the written-out dereference read as Go reads them; the rest was
+		// refused: a slice of it -- `len(pick()[1:])` "len is only supported for
+		// ...", `pick()[1:][0]` "unsupported call in expression", `s := pick()[1:3]`
+		// "cannot infer a type" -- the store through the dereference ("only a run
+		// of fields and indexes may stand between them"), and the ranges: the
+		// value form "ranging an integer yields only the index", the index-only
+		// form `int t = pick();` (a C error). Each call runs once.
+		name: "a pointer to an array a call returns",
+		src: `var a = [4]int{1, 2, 3, 4}
+
+var calls int
+
+func pick() *[4]int {
+	calls++
+	return &a
+}
+
+func main() {
+	println(len(pick()[1:]), pick()[1:][0], cap(pick()[2:]), calls)
+	s := pick()[1:3]
+	println(len(s), s[1], calls)
+	*pick() = [4]int{5, 6, 7, 8}
+	println(a[0], a[3], calls)
+	pick()[2] = 9
+	println(a[2], len(pick()), calls)
+	for i, v := range pick() {
+		println(i, v)
+	}
+	println(calls)
+}
+`,
+		want: "3 2 2 3\n2 3 4\n5 8 5\n9 4 7\n0 5\n1 6\n2 9\n3 8\n8\n",
+	},
+	{
+		// The same pointer reached every other way but a variable: an element of an
+		// array of pointers (with a call in the index, which runs once), a method's
+		// result, a struct field; a pointer to an array of ROWS, whose slice is a
+		// slice of rows; a pointer to a DEFINED array type; and the slice as a copy
+		// source and destination, an append spread and an argument.
+		name: "a pointer to an array that is not a variable",
+		src: `type Row [3]int
+
+type Dev struct {
+	pa *[4]int
+	pm *[2][3]int
+	pr *Row
+}
+
+var a = [4]int{1, 2, 3, 4}
+
+var m = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+
+var r = Row{7, 8, 9}
+
+var d = Dev{&a, &m, &r}
+
+var ptrs = [2]*[4]int{&a, &a}
+
+var calls int
+
+func pick() *[4]int {
+	calls++
+	return &a
+}
+
+func pm() *[2][3]int {
+	calls += 10
+	return &m
+}
+
+func pr() *Row {
+	calls += 100
+	return &r
+}
+
+func idx() int {
+	calls += 1000
+	return 1
+}
+
+func take(s []int) int { return len(s) + s[0] }
+
+func main() {
+	println(len(ptrs[1][1:]), ptrs[idx()][2:][0], take(ptrs[0][:3]), calls)
+	for i, v := range ptrs[1] {
+		println(i, v)
+	}
+	*ptrs[idx()] = [4]int{4, 3, 2, 1}
+	println(a[0], a[3], calls)
+	rows := pm()[1:]
+	println(len(rows), rows[0][2], len(pm()[:1]), calls)
+	for i, row := range pm() {
+		println(i, row[0])
+	}
+	pr()[1] = 80
+	println(len(pr()[1:]), pr()[1:][0], r[1], calls)
+	s := pr()[:2]
+	println(len(s), s[1], calls)
+	println(len(d.pm[1:]), d.pm[1:][0][1], len(d.pr[:1]), d.pr[1:][1], calls)
+	for i, row := range d.pm {
+		println(i, row[2])
+	}
+	*d.pr = Row{1, 1, 1}
+	println(r[0], r[2])
+	var b [4]int
+	n := copy(pick()[:2], []int{9, 9})
+	println(n, a[0], a[1], copy(b[:], pick()[1:]), b[0], calls)
+	var back [4]int
+	xs := append(back[:0], pick()[2:]...)
+	println(len(xs), xs[1], take(pick()[1:]), calls)
+	t := ptrs[idx()][1:3]
+	println(len(t), t[0], calls)
+}
+`,
+		want: "3 3 4 1000\n0 1\n1 2\n2 3\n3 4\n4 1 2000\n1 6 1 2020\n0 1\n1 4\n2 80 80 2330\n2 80 2430\n1 5 1 9 2430\n0 3\n1 6\n1 1\n2 9 9 3 9 2432\n2 1 12 2434\n2 9 3434\n",
+	},
+	{
+		// Go's own verdicts on a nil pointer to an array a call returns: len of it
+		// is its extent, the index-only range counts without reading through it,
+		// and slicing it reads through it and panics.
+		name: "a slice of a nil pointer to an array a call returns panics",
+		src: `func none() *[4]int { return nil }
+
+func main() {
+	println("before", len(none()))
+	for i := range none() {
+		println("idx", i)
+	}
+	println("still")
+	s := none()[1:]
+	println("after", len(s))
+}
+`,
+		want:   "before 4\nidx 0\nidx 1\nidx 2\nidx 3\nstill\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a value range over a nil pointer to an array a call returns panics",
+		src: `func none() *[4]int { return nil }
+
+func main() {
+	println("before")
+	for i, v := range none() {
+		println(i, v)
+	}
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a store through a nil pointer to an array a call returns panics",
+		src: `func none() *[4]int { return nil }
+
+func main() {
+	println("before")
+	*none() = [4]int{1, 2, 3, 4}
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a slice of a nil pointer-to-array field panics",
+		src: `type Dev struct{ pa *[4]int }
+
+var d Dev
+
+func main() {
+	println("before", len(d.pa))
+	s := d.pa[:2]
+	println("after", len(s))
+}
+`,
+		want:   "before 4\npanic: nil pointer dereference",
+		panics: true,
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
