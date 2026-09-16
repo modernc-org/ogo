@@ -25213,6 +25213,237 @@ func main() {
 }
 `,
 		want: "8 8 8 2 3 8\n5 7 7 3 3 4 4\n2 7 0 2 6\n98\n1 5 2 6 14 14 0\n8 4 6 true false true\n11 11 8 4 11 3\n0 0\n1 11\n8 60 60 0\n",
+	},
+	{
+		// A method of SEVERAL results called on a CALL's result -- the registers
+		// behind an accessor, popped -- was "multiple assignment requires a single
+		// function call on the right-hand side", while the same method on an
+		// element or a field was fine. The `:=`, `=` and if-init forms, a method of
+		// three results, a value receiver on the result, and a method promoted
+		// through an embedded pointer of the result; the calls count in Go's order.
+		name: "a multi-result method called on a call's result",
+		src: `type Regs struct {
+	fifo [8]byte
+	head int
+	tail int
+}
+
+type Chan struct {
+	*Regs
+	id int
+}
+
+type Bus struct {
+	regs  [3]Regs
+	chans [3]Chan
+}
+
+var bus Bus
+
+var calls int
+
+func (b *Bus) reg(i int) *Regs {
+	calls++
+	return &b.regs[i]
+}
+
+func (b *Bus) ch(i int) *Chan {
+	calls += 10
+	return &b.chans[i]
+}
+
+func (r *Regs) pop() (byte, bool) {
+	if r.head == r.tail {
+		return 0, false
+	}
+	v := r.fifo[r.tail]
+	r.tail++
+	return v, true
+}
+
+func (r *Regs) bounds() (int, int, int) {
+	return r.head, r.tail, len(r.fifo)
+}
+
+func (c Chan) which() (int, bool) { return c.id, c.Regs != nil }
+
+func main() {
+	bus.regs[2].fifo[0] = 42
+	bus.regs[2].fifo[1] = 43
+	bus.regs[2].head = 2
+	bus.chans[1] = Chan{&bus.regs[2], 7}
+	v, ok := bus.reg(2).pop()
+	println(v, ok, calls)
+	var w byte
+	w, ok = bus.reg(2).pop()
+	println(w, ok, calls)
+	if x, ok := bus.reg(2).pop(); !ok {
+		println("empty", x, calls)
+	}
+	h, t, n := bus.reg(2).bounds()
+	println(h, t, n, calls)
+	id, has := bus.ch(1).which()
+	println(id, has, calls)
+	bus.regs[2].tail = 0
+	y, ok2 := bus.ch(1).pop()
+	println(y, ok2, bus.regs[2].tail, calls)
+	h, t, n = bus.ch(1).bounds()
+	println(h, t, n, calls)
+}
+`,
+		want: "42 true 1\n43 true 2\nempty 0 3\n2 2 8 4\n7 true 14\n42 true 1 24\n2 1 8 34\n",
+	},
+	{
+		// A device driver over accessors, the domain probe that found the three fixes
+		// before it: registers behind a channel through an embedded pointer, a ring
+		// buffer in a promoted array, accessors returning pointers to both, a
+		// multi-result method on one, an interface over the channel, a comparison
+		// chain, a package-level order table, copies and slices of the buffer, and
+		// pointer identity through the embed. Measured against Go with the calls
+		// counted in order.
+		name: "a device driver over accessors",
+		src: `type Regs struct {
+	ctrl   uint32
+	status uint32
+	fifo   [8]byte
+	head   int
+	tail   int
+}
+
+type Chan struct {
+	*Regs
+	id    int
+	gain  int16
+	taps  [4]int32
+	name  string
+}
+
+type Bus struct {
+	regs  [3]Regs
+	chans [3]Chan
+	order []int
+}
+
+type Sampler interface {
+	Sample() int32
+	Name() string
+}
+
+var bus Bus
+
+var order = []int{2, 0, 1}
+
+var weights = [4]int32{1, -2, 3, -4}
+
+var calls int
+
+func (b *Bus) reg(i int) *Regs {
+	calls++
+	return &b.regs[i]
+}
+
+func (b *Bus) ch(i int) *Chan {
+	calls += 10
+	return &b.chans[i]
+}
+
+func (r *Regs) push(v byte) bool {
+	next := (r.head + 1) % len(r.fifo)
+	if next == r.tail {
+		return false
+	}
+	r.fifo[r.head] = v
+	r.head = next
+	return true
+}
+
+func (r *Regs) pop() (byte, bool) {
+	if r.head == r.tail {
+		return 0, false
+	}
+	v := r.fifo[r.tail]
+	r.tail = (r.tail + 1) % len(r.fifo)
+	return v, true
+}
+
+func (c *Chan) Sample() int32 {
+	var acc int32
+	for i, t := range c.taps {
+		acc += t * weights[i]
+	}
+	return acc * int32(c.gain)
+}
+
+func (c *Chan) Name() string { return c.name }
+
+func (c *Chan) pending() int {
+	n := c.head - c.tail
+	if n < 0 {
+		n += len(c.fifo)
+	}
+	return n
+}
+
+func setup() {
+	for i := range bus.chans {
+		bus.chans[i].Regs = &bus.regs[i]
+		bus.chans[i].id = i
+		bus.chans[i].gain = int16(i + 1)
+		bus.chans[i].name = "ch"
+		for j := range bus.chans[i].taps {
+			bus.chans[i].taps[j] = int32(i*4 + j)
+		}
+	}
+	bus.order = order[:]
+}
+
+func drain(r *Regs) int {
+	sum := 0
+	for {
+		v, ok := r.pop()
+		if !ok {
+			return sum
+		}
+		sum += int(v)
+	}
+}
+
+func main() {
+	setup()
+	for i := 0; i < 10; i++ {
+		if !bus.reg(1).push(byte(i * 3)) {
+			println("full at", i)
+		}
+	}
+	println(bus.reg(1).head, bus.reg(1).tail, bus.ch(1).pending(), len(bus.ch(1).fifo), calls)
+	println(drain(bus.reg(1)), bus.ch(1).pending(), bus.reg(1).fifo[2], calls)
+	var total int32
+	for _, i := range bus.order {
+		var s Sampler = bus.ch(i)
+		total += s.Sample()
+		println(s.Name(), bus.ch(i).id, s.Sample() > 0 == (i != 0), calls)
+	}
+	println(total, calls)
+	bus.ch(2).fifo[0] = 200
+	bus.ch(2).head = 1
+	v, ok := bus.reg(2).pop()
+	println(v, ok, bus.ch(2).pending(), calls)
+	x := bus.ch(0).taps
+	x[0] = 99
+	println(x[0], bus.ch(0).taps[0], len(bus.ch(0).taps[1:]), bus.ch(0).taps[1:][2], calls)
+	for i, t := range bus.ch(2).taps {
+		if t > 9 && i < 3 {
+			println("tap", i, t)
+		}
+	}
+	bus.regs[0].fifo = [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	bus.ch(0).fifo[7] = 0
+	s := bus.reg(0).fifo[2:5]
+	println(len(s), s[0], cap(s), bus.reg(0).fifo == bus.ch(0).fifo, bus.reg(0).fifo != bus.reg(1).fifo, calls)
+	println(bus.ch(0).Regs == bus.reg(0), bus.ch(1).Regs == bus.reg(0), bus.chans[2].ctrl == bus.reg(2).ctrl, calls)
+}
+`,
+		want: "full at 7\nfull at 8\nfull at 9\n7 0 7 8 32\n63 0 6 44\nch 2 false 64\nch 0 true 84\nch 1 false 104\n-112 104\n200 true 0 135\n99 0 3 3 175\ntap 2 10\n3 3 6 true true 209\ntrue false true 232\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

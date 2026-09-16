@@ -27272,8 +27272,14 @@ func (e *emitter) chainCallOf(ast []int32) (string, []Node, bool) {
 	if !okc || len(sfx) < 3 || sfx[len(sfx)-1].sym != CallSuffix || sfx[len(sfx)-2].sym != Selector {
 		return "", nil, false
 	}
-	if !isAccessChain(sfx[:len(sfx)-1]) {
-		return "", nil, false
+	// A CALL ahead of the method, `bus.reg(2).pop()`, is a step of the receiver's
+	// chain as an index is: what it yields is what the method is called on. Only
+	// selectors and indexes were admitted, so a method of several results on a
+	// call's result was "requires a single function call" -- of a call.
+	for _, st := range sfx[:len(sfx)-2] {
+		if st.sym != Index && st.sym != Selector && st.sym != CallSuffix {
+			return "", nil, false
+		}
 	}
 	return recv, sfx, true
 }
@@ -27298,9 +27304,32 @@ func (e *emitter) chainMethodCName(base string, steps []Node) (string, bool) {
 	if len(steps) < 3 || steps[len(steps)-1].sym != CallSuffix || steps[len(steps)-2].sym != Selector {
 		return "", false
 	}
-	cur, ok := e.accessChainType(base, steps[:len(steps)-2])
-	if !ok {
-		return "", false
+	prefix := steps[:len(steps)-2]
+	var cur accessCur
+	if containsSym(prefix, CallSuffix) {
+		// A receiver reached through a CALL, `bus.reg(2).pop()`: typed by the walk
+		// that knows a method's result as it knows a field's (chainResultType). It
+		// types and emits nothing; the rendering walk binds the call's result where
+		// the call is emitted.
+		ct, ok := e.chainResultType(base, prefix)
+		if !ok || ct == "" {
+			return "", false
+		}
+		cur = e.plainOrSlice(ct)
+	} else {
+		var ok bool
+		if cur, ok = e.accessChainType(base, prefix); !ok {
+			return "", false
+		}
+	}
+	method := e.soleIdent(steps[len(steps)-2].ast)
+	// A method PROMOTED from an embedded member of what the chain reached,
+	// `bus.ch(1).pop()` for a `*Regs` embedded in Chan, is the owning type's; the
+	// type's own method comes back the same way, with an empty path.
+	if cur.ctype != "" {
+		if cn, _, _, okp := e.promotedMethod(cur.ctype, method); okp {
+			return cn, true
+		}
 	}
 	bt := methodBaseType(cur.ctype)
 	if bt == "" {
@@ -27309,7 +27338,7 @@ func (e *emitter) chainMethodCName(base string, steps []Node) (string, bool) {
 	if bt == "" || !e.isMethodBase(bt) {
 		return "", false
 	}
-	return methodCName(bt, e.soleIdent(steps[len(steps)-2].ast)), true
+	return methodCName(bt, method), true
 }
 
 // ifaceResultTypes is what a call through an interface slot yields, in the source's

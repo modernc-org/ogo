@@ -49,6 +49,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A multi-result method called on a call's result.** `v, ok := bus.reg(2).pop()`
+  was "multiple assignment requires a single function call on the right-hand side",
+  while the same method on an element or a field, `regs[2].pop()`, `bus.cur.pop()`,
+  was fine; a method promoted through an embedded pointer of the result,
+  `bus.ch(1).pop()`, likewise.
 - **An array field promoted through an embedded struct or pointer.** `len(c.fifo)`,
   `c.fifo[i]` read and written, `c.fifo[1:3]`, `range c.fifo`, `x := c.fifo`,
   `c.fifo = row`, `take(c.fifo)` and `c.fifo == other`, for a `fifo [8]byte` of a
