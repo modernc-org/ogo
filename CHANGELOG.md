@@ -18,6 +18,25 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A struct may embed a pointer.** `struct{ *Inner }` -- and `*lib.Leaf` --
+  promotes the pointee's fields and methods through the pointer, as Go does: a
+  promoted field read or written, a value receiver reading what the pointer
+  points at (panicking on nil, as any read through one), a pointer receiver
+  taking the pointer as it is, an interface satisfied by a promoted method, a
+  method value, two levels of pointer embeds, a struct embedding one type by
+  value and another by pointer. It was refused outright ("embed Inner by
+  value"), the spec claiming Go refuses it too; Go refuses only a pointer to a
+  pointer or to an interface.
+
+### Fixed
+
+- **A promoted method called through a pointer to the outer checks it for
+  nil.** `p.Get()` for a `p *Outer` embedding `Inner` took `&p->Inner` without
+  reading through `p`, so a nil p reached the method with a wild receiver where
+  Go panics at the selector.
+
 ### Verified
 
 - The fixes of 2026-09-15/16 -- the nil checks through pointers that are not

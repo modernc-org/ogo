@@ -730,11 +730,14 @@
 // type's own package does not promote across the package boundary, exactly as it
 // cannot be named.
 //
-// (OctoGo Specific): an embedded POINTER type is refused, as Go refuses the
-// pointer spelling ("embedded field type cannot be a pointer"); "*base" written in
-// the field position is not supported yet -- Go promotes through it and panics at
-// the selector when it is nil. A predeclared type, "struct{ int }", is not
-// supported either.
+// An embedded POINTER, "struct{ *base }" or "struct{ *lib.Leaf }", promotes
+// through the pointer, as in Go: a promoted field is read or written through it,
+// a value receiver reads what it points at, and a pointer receiver takes the
+// pointer as it is, nil included. A promoted read through a nil one panics at the
+// selector, as any read through a nil pointer does. What Go refuses, this
+// refuses: a pointer to a pointer, and a pointer to an interface.
+//
+// (OctoGo Specific): a predeclared type, "struct{ int }", is not supported yet.
 //
 // # Pointer types
 //

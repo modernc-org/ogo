@@ -20040,6 +20040,133 @@ func main() {
 		want: "12 123 123 12 12 12\n2 2 1 2 1 2 3 1 3 1 2\n",
 	},
 	{
+		// An embedded POINTER, `struct{ *Inner }`: Go promotes the pointee's fields
+		// and methods through the pointer, a value receiver reading what it points
+		// at and a pointer receiver taking the pointer as it is. It was refused
+		// outright ("embed Inner by value"), the spec claiming Go refuses it too --
+		// Go refuses only a pointer to a pointer or to an interface. Every promoted
+		// position: field read and write, both receivers, through a pointer to the
+		// outer, two levels of pointer embeds, a method of the outer reading a
+		// promoted field, an interface satisfied by a promoted method, a method
+		// value, an element, an argument, a call's result, a mixed struct embedding
+		// one type by value and another by pointer, the pointer compared, replaced
+		// and copied, and a deferred call.
+		name: "an embedded pointer promotes through the pointer",
+		src: `type Inner struct {
+	v int
+	u int
+}
+
+func (i Inner) Val() int { return i.v }
+
+func (i *Inner) Set(n int) { i.v = n }
+
+func (i *Inner) Ptr() int { return i.v + 100 }
+
+type Outer struct {
+	*Inner
+	n int
+}
+
+type Deep struct {
+	*Outer
+	m int
+}
+
+type Mixed struct {
+	Inner
+	*Deep
+	tag int
+}
+
+func (o Outer) Sum() int { return o.v + o.n }
+
+type Valuer interface{ Val() int }
+
+type Setter interface{ Set(n int) }
+
+var in = Inner{v: 1, u: 7}
+
+var in2 = Inner{v: 2}
+
+var outs = [2]Outer{{&in, 1}, {&in2, 2}}
+
+var po = Outer{&in2, 8}
+
+func take(o Outer) int { return o.v + o.n }
+
+func give() Outer { return Outer{&in2, 9} }
+
+func main() {
+	o := Outer{&in, 5}
+	k := Outer{Inner: &in2, n: 6}
+	d := Deep{&o, 3}
+	p := &o
+	println(o.v, k.v, o.u, o.n, o.Val(), o.Ptr(), k.Val(), o.Sum(), d.Sum())
+	o.v = 10
+	o.Set(11)
+	println(in.v, o.v, p.v, p.Val(), p.Ptr(), d.v, d.Val(), d.n, d.m)
+	p.Set(12)
+	d.Set(13)
+	q := &d
+	q.Set(14)
+	println(in.v, q.v, q.Val(), o.Inner == &in, o.Inner.v, po.Inner == &in2)
+	o.Inner = &in2
+	var s Valuer = &o
+	var t Setter = &d
+	t.Set(15)
+	println(o.v, s.Val(), in.v, in2.v, outs[1].v, outs[0].Val(), take(o), give().v, give().Val())
+	outs[1].Set(16)
+	f := po.Set
+	f(17)
+	g := po.Ptr
+	println(in2.v, outs[1].Ptr(), g())
+	m := Mixed{Inner{v: 20}, &d, 4}
+	println(m.Inner.v, m.Deep.v, m.n, m.m, m.tag, m.Deep.Val(), m.Deep.Sum())
+	m.Deep.Set(21)
+	m.Inner.Set(22)
+	println(in.v, m.Inner.v, m.Deep.Outer.n)
+	o2 := o
+	o2.v = 23
+	println(in2.v, o2 == o, o2.n)
+	sum := 0
+	for _, x := range outs {
+		sum += x.v + x.Val()
+	}
+	println(sum)
+	defer po.Set(24)
+	println(po.v)
+}
+`,
+		want: "1 2 7 5 1 101 2 6 6\n11 11 11 11 111 11 11 5 3\n14 14 14 true 14 true\n15 15 14 15 15 14 20 15 15\n17 117 117\n20 17 5 3 4 17 22\n14 22 5\n23 true 5\n74\n23\n",
+	},
+	{
+		// A promoted read through a nil embedded pointer panics, as any read through
+		// a nil pointer does; a pointer receiver is called with the nil, as in Go,
+		// and panics in the method.
+		name: "a promoted method through a nil embedded pointer panics",
+		src: `type Inner struct{ v int }
+
+func (i Inner) Val() int { return i.v }
+
+func (i *Inner) Ptr() int { return 7 }
+
+type Outer struct {
+	*Inner
+	n int
+}
+
+func main() {
+	var z Outer
+	println(z.Inner == nil, z.Ptr())
+	println(z.Val())
+	println("after")
+}
+`,
+		want:   "true 7\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// `ps[i].x` read `ps[i]->x` unchecked; each of these read address zero.
 		name: "a field read through a nil pointer element panics",
 		src: `type T struct{ x int }

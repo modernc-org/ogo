@@ -6637,7 +6637,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			fmt.Fprintf(&b, ", %s* _ogo_out", m.out)
 		}
 		if dispatched {
-			sub := "(*(" + concrete + "*)_ogo_r)" + e.embeddedPathC(concrete, ipath)
+			sub, _ := e.embeddedPathC("(*("+concrete+"*)_ogo_r)", concrete, ipath)
 			vtRead := sub + ".vt"
 			if e.checks {
 				e.usesIfaceNil = true
@@ -6664,15 +6664,13 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			recv = "(" + concrete + "*)_ogo_r"
 		}
 		if len(path) != 0 {
-			// A promoted method takes the EMBEDDED sub-object as its receiver rather
-			// than the whole struct. embeddedPathC renders the way in, which is the
-			// same helper the direct call path uses -- the C field is not spelt the
-			// way the source spells it, and writing the path out by hand here got
-			// "->A" where the field is named "A_".
-			sub := "(*(" + concrete + "*)_ogo_r)" + e.embeddedPathC(concrete, path)
-			if recv = sub; e.methodPtr[cname] {
-				recv = "&" + sub
-			}
+			// A promoted method takes the EMBEDDED member as its receiver rather
+			// than the whole struct -- addressed, read, or, for a member embedded as
+			// a POINTER, the pointer itself (promotedRecvC). The same helper the
+			// direct call path uses: the C field is not spelt the way the source
+			// spells it, and writing the path out by hand here got "->A" where the
+			// field is named "A_".
+			recv, _ = e.promotedRecvC("(*("+concrete+"*)_ogo_r)", concrete, path, e.methodPtr[cname], true)
 		}
 		call := cname + "(" + strings.Join(append([]string{recv}, args...), ", ") + ")"
 		switch {
@@ -6834,7 +6832,7 @@ func (e *emitter) ifaceRecvText(recv string, suffix []Node) (string, bool) {
 		if !okp {
 			return "", false
 		}
-		text += e.embeddedPathC(ct, path)
+		text, _ = e.embeddedPathC(text, ct, path)
 		ct = ict
 	}
 	_ = ct
@@ -6997,11 +6995,16 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 				}
 			}
 		}
-		if star {
-			// "*T" embedded: Go promotes through the pointer, and a nil one panics at
-			// the selector. Refused rather than silently embedded by value, which is
-			// what treating the name as the type would have done.
-			e.fail("an embedded pointer field is not supported yet; embed %s by value", strings.Join(names, "."))
+		if star && ctype == "" {
+			// "*T" embedded: the member is a POINTER named after the type, and Go
+			// promotes through it -- a read of a promoted field dereferences the
+			// member, so a nil one panics at the selector, as any dereference does
+			// (selectThroughC). T is this package's or another's struct.
+			if mn, field, ok := e.embeddedPointee(names); ok {
+				out = append(out, structField{name: field, ctype: mn + "*", embedded: true})
+				continue
+			}
+			e.fail("an embedded pointer must point at a struct type; %s does not", strings.Join(names, "."))
 			return out
 		}
 		if ctype == "" || len(names) == 0 {
@@ -10050,14 +10053,14 @@ func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) 
 // sub-object the lifted function binds. Every site that reads a method value asks
 // here, so recognising it, typing its declaration and lifting it cannot disagree
 // about which of the two it is.
-func (e *emitter) methodValueBinding(base, method string) (cname, recvPath string, fv funcValueType, ok bool) {
+func (e *emitter) methodValueBinding(base, method string) (cname, recvArg string, fv funcValueType, ok bool) {
 	rct, isVar := e.varType(base)
 	if !isVar {
 		return "", "", funcValueType{}, false
 	}
 	cname = methodCName(methodBaseType(rct), method)
 	if fv, ok = e.methodValueTypes[cname]; ok {
-		return cname, "", fv, true
+		return cname, "&" + e.varRef(base), fv, true
 	}
 	cn, path, _, okp := e.promotedMethod(rct, method)
 	if !okp || len(path) == 0 {
@@ -10066,7 +10069,10 @@ func (e *emitter) methodValueBinding(base, method string) (cname, recvPath strin
 	if fv, ok = e.methodValueTypes[cn]; !ok {
 		return "", "", funcValueType{}, false
 	}
-	return cn, e.embeddedPathC(rct, path), fv, true
+	// The embedded member the receiver is, as the pointer the method takes: a
+	// member embedded as a pointer is passed as it is (promotedRecvC).
+	recvArg, ok = e.promotedRecvC(e.varRef(base), rct, path, true, true)
+	return cn, recvArg, fv, ok
 }
 
 // funcValueWrapper names a void wrapper around a function of SEVERAL results, for
@@ -10122,15 +10128,16 @@ func (e *emitter) mustVarType(name string) string {
 func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	// A PROMOTED method is bound to the embedded sub-object the source did not name
 	// and C requires: `V.Base2` binds `&V.Base`, exactly as the call form does.
-	mcname, recvPath, fv, _ := e.methodValueBinding(base, method)
+	mcname, recvArg, fv, _ := e.methodValueBinding(base, method)
 	if mcname == "" {
 		mcname = methodCName(methodBaseType(e.mustVarType(base)), method)
+		recvArg = "&" + e.varRef(base)
 	}
 	if !e.methodPtr[mcname] {
 		e.fail("cannot take %s.%s as a value: only a pointer-receiver method may be taken here", e.displayName(base), method)
 		return "", false
 	}
-	key := e.varRef(base) + recvPath + "." + method
+	key := recvArg + "." + method
 	if cn, done := e.methodValueOf[key]; done {
 		return cn, true
 	}
@@ -10157,7 +10164,7 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	if len(params) != 0 {
 		sigText = strings.Join(params, ", ")
 	}
-	call := mcname + "(&" + e.varRef(base) + recvPath
+	call := mcname + "(" + recvArg
 	if len(args) != 0 {
 		call += ", " + strings.Join(args, ", ")
 	}
@@ -21529,11 +21536,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// A method PROMOTED from an embedded field is called on that field, which
 			// the source did not name and C requires: `d.Get()` is `base_Get(&d.base)`.
 			if cn, path, _, okp := e.promotedMethod(rct, method); okp && len(path) != 0 {
-				sub := e.varRef(recv) + e.embeddedPathC(rct, path)
-				recvArg := sub
-				if e.methodPtr[cn] {
-					recvArg = "&" + sub
-				}
+				recvArg, _ := e.promotedRecvC(e.varRef(recv), rct, path, e.methodPtr[cn], true)
 				e.emit(cn + "(" + recvArg)
 				if args := e.argsCText(cn, suffix[1].ast); args != "" {
 					e.emit(", " + args)
@@ -21545,7 +21548,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// field: whatever the field holds decides, exactly as writing the field
 			// out would.
 			if ict, path, okp := e.promotedIfaceMethodPath(rct, method); okp {
-				recvText := e.varRef(recv) + e.embeddedPathC(rct, path)
+				recvText, _ := e.embeddedPathC(e.varRef(recv), rct, path)
 				e.checkIfaceArgs(ict, method, e.callArgExprs(suffix[1].ast))
 				if out, single := e.ifaceSingleOut(ict, method); single {
 					e.emitOutValueCall(out, discard, func(tmp string) string {
@@ -22215,12 +22218,16 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if cn, path, rt, okp := e.promotedMethod(pct, field); okp && len(path) != 0 {
 					if prts, isM := e.funcRet[cn]; isM {
 						cname, rts, okm = cn, prts, true
-						text += e.embeddedPathC(pct, path)
+						var mct string
+						text, mct = e.embeddedPathC(text, pct, path)
 						// Reaching THROUGH a pointer yields an lvalue whatever the
 						// pointer itself was, which is what a pointer receiver on the
-						// promoted method needs to take the address of.
-						addr = addr || e.isPointer(pct)
-						cur = e.plainOrSlice(rt)
+						// promoted method needs to take the address of. The member's
+						// own type is what the receiver adjusts by: a member embedded
+						// as a pointer IS the pointer (chainReceiver).
+						addr = addr || e.isPointer(pct) || e.isPointer(mct)
+						_ = rt
+						cur = e.plainOrSlice(mct)
 					}
 				}
 			}
@@ -23701,12 +23708,9 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 	if ptrRecv && !isPtr {
 		return "", false, false
 	}
-	recv := tmp + e.embeddedPathC(ct, path)
-	switch {
-	case isPtr && ptrRecv && len(path) != 0:
-		recv = "&(" + recv + ")"
-	case isPtr && !ptrRecv && len(path) == 0:
-		recv = "(*" + tmp + ")"
+	recv, okr := e.promotedRecvC(tmp, ct, path, ptrRecv, true)
+	if !okr {
+		return "", false, false
 	}
 	return cname + "(" + recv + ")", false, true
 }
@@ -27979,17 +27983,44 @@ func (e *emitter) funcHasName(cname string) bool {
 }
 
 // embeddedPathC renders a member path as C text, for reaching an embedded receiver.
-func (e *emitter) embeddedPathC(ctype string, path []string) string {
-	text := ""
+func (e *emitter) embeddedPathC(prefix, ctype string, path []string) (text, memberCType string) {
+	text = prefix
 	for _, step := range path {
-		sep := "."
 		if e.isPointer(ctype) {
-			sep = "->"
+			// Through a pointer -- the outer value's, or an embedded POINTER member
+			// on the way -- with the check every dereference takes.
+			text = e.nilCheckedC(text, ctype) + "->"
+		} else {
+			text += "."
 		}
-		text += sep + e.fieldIdent(step)
+		text += e.fieldIdent(step)
 		ctype, _ = e.structFieldDirect(ctype, step)
 	}
-	return text
+	return text, ctype
+}
+
+// promotedRecvC renders the receiver a PROMOTED method takes: the embedded member
+// the path reaches from the outer value's text, as the pointer or the value the
+// method wants. A member embedded by VALUE is addressed for a pointer receiver --
+// which needs the outer text to be addressable (addr) -- and read as it is for a
+// value one. A member embedded as a POINTER is the pointer itself for a pointer
+// receiver, nil included, exactly as Go passes it, and what it points at, checked,
+// for a value receiver. An empty path is the outer value's own method: a pointer
+// outer is read through for a value receiver, as chainReceiver reads it.
+func (e *emitter) promotedRecvC(outer, ctype string, path []string, wantPtr, addr bool) (string, bool) {
+	text, mct := e.embeddedPathC(outer, ctype, path)
+	switch havePtr := e.isPointer(mct); {
+	case wantPtr && havePtr:
+		return text, true
+	case wantPtr:
+		if !addr {
+			return "", false // &rvalue is not C; a temporary would be needed
+		}
+		return "&" + text, true
+	case havePtr:
+		return "*" + e.derefGuardC(text, mct), true
+	}
+	return text, true
 }
 
 // selectThroughC renders a field selected from the value the C text prefix reaches:
@@ -32384,4 +32415,26 @@ func (e *emitter) localChanCell(elem string) string {
 	e.chanInitElems[elem] = true
 	e.deferPkgInit(chanInitCName(elem) + "(&" + cell + ");")
 	return cell
+}
+
+// embeddedPointee resolves the struct type an embedded "*T" or "*lib.T" points at,
+// answering with its C name and the name the field takes: T unqualified, as Go names
+// an embedded field whichever package declared the type.
+func (e *emitter) embeddedPointee(names []string) (mn, field string, ok bool) {
+	switch len(names) {
+	case 1:
+		mn, field = e.typeCName(names[0]), names[0]
+	case 2:
+		prefix, isImport := e.importQualifiers[names[0]]
+		if !isImport {
+			return "", "", false
+		}
+		mn, field = mangle(prefix, names[1]), names[1]
+	default:
+		return "", "", false
+	}
+	if _, isStruct := e.structs[mn]; !isStruct {
+		return "", "", false
+	}
+	return mn, field, true
 }
