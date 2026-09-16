@@ -16105,6 +16105,13 @@ func (f *File) lenOperandType(s *Scope, n Node) (typeAt, bool) {
 		u := f.underlyingTypeAt(t)
 		switch step.sym {
 		case Index:
+			// A SLICE step, `rows[:]`, `pool[1:3]`, yields a slice, whose length is
+			// never a constant. Read as an index it reached the ELEMENT: `len(rows[:])`
+			// over a [3][2]int folded to 2, the row's length -- silently, once the
+			// result of len had a type for the fold to be asked through.
+			if f.indexIsSlice(step) {
+				return typeAt{}, false
+			}
 			switch x := u.tn.(type) {
 			case *TypeNodeArray:
 				t = typeAt{x.TypeNode, u.s, u.f}
