@@ -459,6 +459,42 @@ Semantic-check tests are table-driven over `.ogo` files in
 `etc.go` in each package provides the `todo()`/`trc()` position-tagged debug
 helpers (guarded with `//lint:ignore U1000`); prefer them for temporary tracing.
 
+## Probe harness (`scripts/`)
+
+The method that finds most bugs is not the test suite but a PROBE: a program a
+user would write, compared against real Go, with every accessor bumping a package
+counter that is printed beside the values so a double or a late evaluation shows as
+a number. The scripts are portable (paths from the repo root, tools built from the
+tree being probed) and read from the top of each file:
+
+- `scripts/probe.sh DIR [SED]` -- one program vs its Go twin (GOARCH=386, so int is
+  32 bits) on the host, with TestEmitCRun's exact gcc flags. Verdicts MATCH, DIFFER,
+  REFUSED, GCC FAIL. SED rewrites the twin only, for `var out chan T` (Go needs make).
+- `scripts/stmtprobe.sh DIR HEAD TAIL < statements` -- a position sweep, one program
+  per statement line; a shape gcc refuses is also built for the target, since flexcc
+  accepting what gcc refuses is the silent kind.
+- `scripts/dumpcorpus.sh OUT [SEEDS]` + `scripts/corpusdiff.sh BEFORE AFTER` -- the C
+  of every run case and fuzzer seed before and after an emitter change, compared by
+  content with temporaries renumbered. A change for one shape must touch only that
+  shape's programs.
+- `scripts/board.sh DIR OUT` -- build with the tree's compiler, load, capture the
+  serial output. A board match is the verdict; a host match is a candidate.
+
+Process rules learned the hard way (2026-09-16): gate a commit on the suite log's
+`exit=0` line and the absence of `FAIL`, never on `cat log &&`; make no edits to
+`internal/octogo/*.go` while a full suite runs, since `TestTargetGoStack` and
+`TestTargetBuildExamples` build `ogo` from the working tree as they go; a new
+goroutine run case is run with `-count=5` before it is committed; and the receiver
+that is a CALL's result (`bus.reg(i).M()`) has been the hole in six sweeps in a row
+-- every receiver-shape sweep includes it, in a `defer` and a `go` too.
+
+Known open items, all loud refusals or design walls (2026-09-16): slicing a slice
+literal, `[]int{1, 2, 3}[1:]`; an array-returning call as a package literal element;
+a method value on a local or a call's result (design: a method value binds its
+receiver at compile time); an index holding a call in a guarded compound target,
+`reg().arr[idx()] <<= s`; and two grammar gaps needing an egg regeneration --
+`case port(0).ch <- 5:` in a select, and `range []int{...}[1:]` in a for header.
+
 ## Notes
 
 - `specs.go`'s doc comment is the authoritative **language spec + grammar**;
