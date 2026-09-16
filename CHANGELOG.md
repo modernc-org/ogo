@@ -134,6 +134,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package variable's literal may hold a slice literal.** `var cfg =
+  Config{pins: []int{1, 2, 3}, dev: &d}` stopped the compiler ("assignment to
+  entry in nil map"), and with only constants beside the slice the literal was
+  refused ("a []int literal cannot stand here"); so was `var first =
+  []int{f(), 9}[0]`. The slice's storage is a static object of the program now,
+  filled where the variable is initialized.
+
 - **A read through a nil pointer that is not a variable panics.** Only a
   pointer *variable*'s dereference was checked. A field read through a pointer
   element, a pointer field or a call's result (`ps[i].x`, `gt.q.x`, `get().x`),

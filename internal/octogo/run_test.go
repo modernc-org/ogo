@@ -19842,6 +19842,58 @@ func main() {
 		want: "1 2 1 2 2 1 1\n1 2 2 1 101 2 2\ntrue 2 2 5 3\n6 3 9 8 10 33\n6 50 11 70 60 44\n",
 	},
 	{
+		// A slice literal standing in a package variable's initializer -- an element
+		// of a struct literal, indexed -- beside anything not constant stopped the
+		// compiler ("assignment to entry in nil map"): a body's literal binds to a
+		// temporary of the frame through tables a package variable has none of, and
+		// had it been made the header would have pointed into ogo_pkg_init's dead
+		// frame. Beside constants only, the literal was refused instead. Each is a
+		// static object of the program now, filled where the variable is, so a
+		// configuration table of slices reads as Go's does.
+		name: "a package literal holding a slice literal",
+		src: `type Config struct {
+	name  string
+	rate  int
+	pins  []int
+	names []string
+	dev   *Dev
+}
+
+type Dev struct{ id int }
+
+var d = Dev{7}
+
+var calls int
+
+func pin(n int) int {
+	calls++
+	return n * 2
+}
+
+var cfg = Config{name: "p2", pins: []int{1, 2, 3}, names: []string{"a", "b"}, dev: &d}
+
+var dyn = Config{rate: pin(1), pins: []int{pin(2), pin(3)}, dev: &d}
+
+var first = []int{pin(5), 9}[0]
+
+var table = []int{pin(10), 1, 2}
+
+var third = [3]int{pin(20), 1, 2}[2]
+
+var empty = Config{pins: []int{}}
+
+func main() {
+	println(cfg.name, len(cfg.pins), cfg.pins[2], cfg.names[1], cfg.dev.id)
+	println(dyn.rate, dyn.pins[0], dyn.pins[1], len(dyn.names), dyn.dev.id)
+	println(first, len(table), table[0], third, len(empty.pins), calls)
+	cfg.pins[0] = 100
+	dyn.pins = append(dyn.pins[:1], 8)
+	println(cfg.pins[0], dyn.pins[1], cap(dyn.pins))
+}
+`,
+		want: "p2 3 3 b 7\n2 4 6 0 7\n10 3 20 2 0 6\n100 8 2\n",
+	},
+	{
 		// `ps[i].x` read `ps[i]->x` unchecked; each of these read address zero.
 		name: "a field read through a nil pointer element panics",
 		src: `type T struct{ x int }

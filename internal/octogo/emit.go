@@ -2650,6 +2650,15 @@ func (e *emitter) staticLitElementsOK(lit Node) bool {
 			}
 			continue
 		}
+		// A SLICE literal element is a header over storage of its own -- a static
+		// object filled where the initializer runs (pkgLitVar) -- so the literal
+		// holding it is written at package initialization, not as a static
+		// initializer, which has nothing to hoist the storage off.
+		if typeAST, _, isLit := e.soleArrayLit(el.value.ast); isLit {
+			if _, isSlice := e.litSliceType(typeAST); isSlice {
+				return false
+			}
+		}
 		if !e.staticInitOK(el.value.ast) {
 			return false
 		}
@@ -13240,6 +13249,15 @@ func (e *emitter) arrayPtrKidsDeref(kids []Node) (string, arrDim, bool) {
 // before the statement, and answers with its name. It is the shared body of the
 // slice and array hoists, which differ only in which literals they will take.
 func (e *emitter) hoistLitVar(typeAST []int32, lit Node) (string, bool) {
+	// A SLICE literal in a package variable's initializer points at storage that has
+	// to outlive ogo_pkg_init's frame (pkgLitVar). An array literal's temporary is
+	// copied out of by the step that binds it -- an argument, an index, a compare --
+	// and nothing keeps a reference into the frame: Go admits no slice of one.
+	if e.pkgScope {
+		if _, isSlice := e.litSliceType(typeAST); isSlice {
+			return e.pkgLitVar(typeAST, lit)
+		}
+	}
 	name := e.newTmp()
 	saved := e.indent
 	e.indent = 0
@@ -13251,6 +13269,77 @@ func (e *emitter) hoistLitVar(typeAST []int32, lit Node) (string, bool) {
 	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
 		e.prologue = append(e.prologue, line+"\n")
 	}
+	return name, true
+}
+
+// pkgLitVar is hoistLitVar for a SLICE literal in a package variable's initializer,
+// which runs in ogo_pkg_init and whose frame is gone when it returns: the literal
+// becomes a static object of the program (see pkgLitObject), declared ahead of the
+// package initializer and, when its elements are not constants, filled by the step
+// that uses it. A slice literal standing in a package struct literal, `var cfg =
+// Config{names: []string{"a", "b"}, dev: &d}`, stopped the compiler ("assignment to
+// entry in nil map"): the frame temporary a body's literal binds to needs the body's
+// tables, which a package variable has none of -- and had it been made, its backing
+// array would have died with the frame the header points into.
+func (e *emitter) pkgLitVar(typeAST []int32, lit Node) (string, bool) {
+	if e.locals == nil {
+		e.locals = map[string]string{}
+	}
+	name := fmt.Sprintf("ogo_plit_%d", e.makeN)
+	e.makeN++
+	if e.staticLitElementsOK(lit) {
+		// Constant elements: the declarations are static initializers as they are.
+		decls := e.captureC(func() { e.emitArrayLitVar(name, typeAST, lit, true) })
+		if decls == "" {
+			return "", false
+		}
+		e.pkgLitObjects = append(e.pkgLitObjects, strings.TrimSuffix(decls, "\n"))
+		// Named by the step through the body's tables, which is what every read of
+		// a temporary's name goes through; registered as a global too, the object
+		// being one.
+		e.locals[name] = e.globals[name]
+		e.sliceVars[name] = e.globalSliceVars[name]
+		return name, true
+	}
+	values, length, ok := e.litPositions(lit)
+	if !ok {
+		return "", false
+	}
+	elem, isSlice := e.litSliceType(typeAST)
+	if !isSlice {
+		return "", false
+	}
+	// An element that is itself an array cannot go in a local initializer either, C
+	// copying no array there: left to the refusal, with the shape that works.
+	if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) || e.isSliceCType(elem) {
+		return "", false
+	}
+	e.needSlice(elem)
+	cname := sliceCName(elem)
+	if nm, isNamed := e.namedSliceLitType(typeAST); isNamed {
+		cname = nm
+	}
+	e.globalSliceVars[name], e.globals[name] = elem, cname
+	e.sliceVars[name], e.locals[name] = elem, cname
+	if length == 0 {
+		e.pkgLitObjects = append(e.pkgLitObjects, "static "+cname+" "+name+" = {0};")
+		return name, true
+	}
+	// The header is a static initializer over the backing array's address, and the
+	// elements go into the backing from a temporary of the step -- the one form of a
+	// literal every element shape has -- copied in whole, as a package variable of
+	// array type is filled (emitPkgArrayVar).
+	n := strconv.Itoa(length)
+	backing := e.newBacking()
+	e.pkgLitObjects = append(e.pkgLitObjects,
+		"static "+elem+" "+backing+"["+n+"];",
+		"static "+cname+" "+name+" = {"+backing+", "+n+", "+n+"};")
+	text := e.captureC(func() { e.emitPositionalValues(values, elem) })
+	tmp := e.newTmp()
+	e.includes["string.h"] = true
+	e.prologue = append(e.prologue,
+		elem+" "+tmp+"["+n+"] = "+text+";\n",
+		"memcpy("+backing+", "+tmp+", sizeof("+backing+"));\n")
 	return name, true
 }
 
