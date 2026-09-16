@@ -134,6 +134,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A value list evaluates its values in the order written.** `a, b := f(1),
+  mkA(2)[0]` and `var a, b = f(1), mkA(2)[1]` called `mkA` first, an array a
+  call returns being bound ahead of the statement.
+
 - **A composite literal evaluates its values in the order written.** A value
   that needs a statement ahead of the literal -- a slice literal, a struct or an
   array a call returns, a field read through a pointer a call returns -- ran

@@ -19979,6 +19979,67 @@ func main() {
 		want: "1234 123 1234 123 123 123 1234 12 1234\n1 3 8 3 4 4 4\n9 3 3 9 3 4 3 3\n",
 	},
 	{
+		// A value list binds each value to a temporary in order, as statements, but a
+		// value needing a statement ahead of the whole statement -- an array a call
+		// returns -- had it placed before every value before it: `a, b := f(1),
+		// mkA(2)[0]` ran mkA first, on a P2-EDGE too. Each line is the order the
+		// calls of one statement ran in.
+		name: "a value list evaluates its values in order",
+		src: `type P struct{ a, b int }
+
+var trace int
+
+func f(n int) int {
+	trace = trace*10 + n
+	return n
+}
+
+func mkA(n int) [2]int {
+	trace = trace*10 + n
+	return [2]int{n, n + 1}
+}
+
+func mkP(n int) P {
+	trace = trace*10 + n
+	return P{n, n * 2}
+}
+
+var backing = [4]int{1, 2, 3, 4}
+
+func mkS(n int) []int {
+	trace = trace*10 + n
+	return backing[:n]
+}
+
+var arr [4]int
+
+func show() int {
+	t := trace
+	trace = 0
+	return t
+}
+
+func main() {
+	a, b := f(1), mkA(2)[0]
+	o1 := show()
+	c, d, e := f(1), mkP(2).a, mkS(3)[0]
+	o2 := show()
+	var x int
+	x, arr[f(1)] = mkA(2)[0], f(3)
+	o3 := show()
+	var g, h = f(1), mkA(2)[1]
+	o4 := show()
+	var i, j int = mkA(1)[0], f(2)
+	o5 := show()
+	a, b = mkA(1)[1], f(2)
+	o6 := show()
+	println(o1, o2, o3, o4, o5, o6)
+	println(a, b, c, d, e, x, arr[1], g, h, i, j)
+}
+`,
+		want: "12 123 123 12 12 12\n2 2 1 2 1 2 3 1 3 1 2\n",
+	},
+	{
 		// `ps[i].x` read `ps[i]->x` unchecked; each of these read address zero.
 		name: "a field read through a nil pointer element panics",
 		src: `type T struct{ x int }

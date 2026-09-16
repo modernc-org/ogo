@@ -13850,6 +13850,14 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 			return
 		}
 	}
+	// Each name's initializer is a statement of its own, in order -- but one needing
+	// a statement ahead of the whole declaration, an array a call returns, ran before
+	// the initializers before it (see emitValueList). Bound in order first.
+	values := make([]Node, len(inits))
+	for i, init := range inits {
+		values[i] = Node{sym: Expression, ast: init}
+	}
+	defer e.bindEffectOperands(values)()
 	for i, nm := range names {
 		if nm == "_" {
 			e.emitDiscard(inits[i]) // declares nothing; the value's effects still run
@@ -26556,6 +26564,11 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		}
 		defer e.bindOperandsInOrder(idx, true)()
 	}
+	// The values are bound below one by one, in order -- but a value needing a
+	// statement ahead of the whole statement, an array a call returns, ran before
+	// the values before it: `a, b := f(1), mkA(2)[0]` ran mkA first. Every value
+	// that does something but the last is bound ahead of the statement too.
+	defer e.bindEffectOperands(rhs)()
 	tmps := make([]string, len(rhs))
 	types := make([]string, len(rhs))
 	dims := make([]arrDim, len(rhs))
@@ -26586,6 +26599,12 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 			return
 		}
 		types[i] = ct
+		// A value bound ahead of the statement for its order IS its temporary.
+		if b, bound := e.boundOperands[&r.ast[0]]; bound {
+			b.used = true
+			tmps[i] = b.name
+			continue
+		}
 		tmps[i] = e.newTmp()
 		e.ind()
 		e.emit(ct + " " + tmps[i] + " = ")
