@@ -134,6 +134,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A read through a nil pointer that is not a variable panics.** Only a
+  pointer *variable*'s dereference was checked. A field read through a pointer
+  element, a pointer field or a call's result (`ps[i].x`, `gt.q.x`, `get().x`),
+  a written-out `*get()`, a value-receiver method called through a nil pointer
+  (`p.Val()`, a variable too), an array reached through a pointer field, and
+  every store through one of these wrote or read hub address zero on the board,
+  where Go panics. `ptrs[i][j]` over an array of pointers to arrays did not
+  compile at all.
+
 - **A keyed struct literal evaluates its values in the order written.** It was
   emitted in field order, so `Hdr{kind: rd(), size: rd()}` over a struct that
   declares `size` first read the two bytes the wrong way round, on the board as

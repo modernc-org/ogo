@@ -19741,6 +19741,220 @@ func main() {
 		want: "129 1 5 3 4\n20 6 115\n3 9 2 2 2 12\n",
 	},
 	{
+		// Every read through a pointer that is NOT a variable -- a field of a
+		// pointer element, of a pointer field, of a call's result; a written-out
+		// dereference of one; a value receiver reached through one; an array through
+		// a pointer field, indexed, copied, ranged, and as a pointer element indexed
+		// again -- and every store through one. None was checked for nil: only a
+		// pointer VARIABLE's dereference took the check, at its chain's base, and the
+		// rest read address zero on the board where Go panics (the cases below).
+		// This one reads and writes through them all with the pointers set, each call
+		// counted once -- `rows[idx()].p[i]`, whose check is a statement of its own,
+		// binds the pointer first rather than running idx twice.
+		name: "reads and stores through pointers that are not variables",
+		src: `type U struct{ a [3]int }
+
+type Buf [4]byte
+
+func (b Buf) Sum() int {
+	s := 0
+	for _, v := range b {
+		s += int(v)
+	}
+	return s
+}
+
+type T struct {
+	x  int
+	s  []int
+	q  *T
+	u  *U
+	pb *Buf
+}
+
+func (t T) Val() int { return t.x }
+
+func (t *T) Ptr() int { return t.x + 100 }
+
+var inner = T{x: 2}
+
+var uu = U{a: [3]int{4, 5, 6}}
+
+var bb = Buf{1, 2, 3, 4}
+
+var backing = [2]int{7, 8}
+
+var gt = T{x: 1, q: &inner, u: &uu, pb: &bb}
+
+var ps = [2]*T{&gt, &inner}
+
+var sl = []*T{&inner, &gt}
+
+var calls int
+
+func getT() *T {
+	calls++
+	return &gt
+}
+
+func idx() int {
+	calls += 10
+	return 1
+}
+
+type box struct{ t *T }
+
+var bx = box{t: &inner}
+
+var raw = [6]byte{0, 1, 2, 3, 4, 5}
+
+var ptrs = [2]*[6]byte{nil, &raw}
+
+type row struct{ p *[4]int }
+
+var quad = [4]int{9, 8, 7, 6}
+
+var rows = [2]row{{nil}, {&quad}}
+
+func main() {
+	gt.s = backing[:]
+	p := &gt
+	println(p.Val(), ps[1].x, sl[1].x, gt.q.x, bx.t.x, getT().x, calls)
+	v := *getT()
+	w := *gt.q
+	z := *ps[1]
+	println(v.x, w.x, z.x, ps[0].Val(), ps[0].Ptr(), gt.q.Val(), calls)
+	println(gt.q.q == nil, len(gt.s), len(getT().s), gt.u.a[1], calls)
+	x := gt.u.a
+	println(x[2], ptrs[1][3], rows[idx()].p[0], rows[idx()].p[idx()], gt.pb.Sum(), calls)
+	gt.q.x = 5
+	ps[1].x++
+	gt.u.a[1] = 50
+	getT().x += 10
+	rows[idx()].p[2] = 70
+	s := 0
+	for _, e := range gt.u.a {
+		s += e
+	}
+	println(inner.x, uu.a[1], gt.x, quad[2], s, calls)
+}
+`,
+		want: "1 2 1 2 2 1 1\n1 2 2 1 101 2 2\ntrue 2 2 5 3\n6 3 9 8 10 33\n6 50 11 70 60 44\n",
+	},
+	{
+		// `ps[i].x` read `ps[i]->x` unchecked; each of these read address zero.
+		name: "a field read through a nil pointer element panics",
+		src: `type T struct{ x int }
+
+var ps [2]*T
+
+func main() {
+	println("before")
+	println(ps[0].x)
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a field read through a nil pointer field panics",
+		src: `type T struct {
+	x int
+	q *T
+}
+
+var gt T
+
+func main() {
+	println(gt.q.x)
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a field read through a nil pointer a call returns panics",
+		src: `type T struct{ x int }
+
+func get() *T { return nil }
+
+func main() {
+	println(get().x)
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a written-out dereference of a nil pointer a call returns panics",
+		src: `type T struct{ x int }
+
+func get() *T { return nil }
+
+func main() {
+	v := *get()
+	println("after", v.x)
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		// `p.Val()` for a value receiver reads what p points at, `T_Val(*p)`, and the
+		// read was unchecked -- for a pointer variable too.
+		name: "a value method called through a nil pointer panics",
+		src: `type T struct{ x int }
+
+func (t T) Val() int { return t.x }
+
+func (t *T) Ptr() int { return 7 }
+
+func main() {
+	var p *T
+	println(p.Ptr())
+	println(p.Val())
+	println("after")
+}
+`,
+		want:   "7\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		// `ptrs[i][j]` asked for the pointer's check as a statement with no operand,
+		// `ogo_nil_..._ptr();`, and did not compile.
+		name: "an index through a nil pointer to an array in an element panics",
+		src: `var ptrs [2]*[6]byte
+
+func main() {
+	println(len(ptrs[1]))
+	println(ptrs[1][3])
+	println("after")
+}
+`,
+		want:   "6\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a store into a field of a nil pointer field panics",
+		src: `type T struct {
+	x int
+	q *T
+}
+
+var gt T
+
+func main() {
+	gt.q.x = 5
+	println("after")
+}
+`,
+		want:   "panic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A 64-bit unary minus is emitted as a subtraction from zero. With its
 		// small-function inliner on, the target's C compiler miscompiles a 64-bit
 		// negation whose result meets an addition or subtraction in the same

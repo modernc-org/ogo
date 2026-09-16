@@ -16185,12 +16185,10 @@ func (e *emitter) accessBaseText(base string) string {
 	if text, _, ok := e.arrayBase(base); ok {
 		return text
 	}
-	// A chain that starts at a POINTER dereferences it -- every step through one is
-	// a "->" or an index -- so the base takes the nil check here, once, rather than
-	// at each step. arrayBase above has already applied it to a pointer to an array.
-	if ct, ok := e.varType(base); ok && e.isPointer(ct) {
-		return e.nilCheckedC(e.varRef(base), ct)
-	}
+	// A chain that starts at any other POINTER dereferences it at its first step,
+	// a selector, which is where the nil check is applied (selectThroughC), as it
+	// is for a pointer the chain reaches later. arrayBase above has applied a
+	// pointer to an array's, as a statement (arrayPtrDeref).
 	return e.varRef(base)
 }
 
@@ -16368,9 +16366,8 @@ func (e *emitter) plainOrSlice(elem string) accessCur {
 // reaches chains none of them can express -- `s[i].v[j]`, where an index, a
 // selector and another index alternate.
 //
-// The prefix is accumulated as C text until an index is emitted; after that,
-// selectors are emitted directly, since the text is no longer a string that can be
-// concatenated or used to build a ".len".
+// The prefix is accumulated as C text and written once the chain ends (see
+// emitAccessChainAt).
 func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
 	cur, ok := e.accessBase(base)
 	if !ok {
@@ -16409,6 +16406,17 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 		return e.emitAccessChainAt(e.hoist(ctype, func() { e.emit(text) }), at, steps[k:], true)
 	}
 	sliced := claimed
+	// The chain is rendered as text and written at the end, so a step can wrap what
+	// came before it: a pointer reached by an index or a field takes its nil check
+	// around the text so far (selectThroughC, accessDeref). It used to be streamed
+	// from the first index on, which left nothing to wrap -- `ps[i].x` read through
+	// a nil element unchecked, and the check a pointer to an array asks for as a
+	// statement was written with no operand at all, `ogo_nil_..._ptr();`, for
+	// `ptrs[i][j]`. Two things the emptiness of the prefix used to say are said by
+	// name instead: whether an index has consumed the base (indexed), and whether
+	// what the text evaluates does something (effect), so the statement form of the
+	// check binds it to a temporary rather than evaluating it twice.
+	indexed, effect := false, false
 	for i, n := range steps {
 		last := i == len(steps)-1
 		switch n.sym {
@@ -16418,25 +16426,21 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 			if !ok {
 				return accessCur{}, false
 			}
-			sel, okSel := e.selectC(cur.ctype, f)
+			text, okSel := e.selectThroughC(prefix, cur.ctype, f, true)
 			if !okSel {
 				return accessCur{}, false
 			}
-			if prefix != "" {
-				prefix += sel
-			} else {
-				e.emit(sel)
-			}
+			prefix = text
 			cur = next
 		case Index:
 			low, high, max, isSlice := e.sliceParts(n.ast)
 			if isSlice {
-				if last && !sliced && prefix != "" {
+				if last && !sliced && !indexed {
 					// A chain that is only a slice of something the fixed shapes already
 					// reach is left to them: they write the header straight into place,
-					// where this would bind a temporary nothing goes on to use. Reaching
-					// it is what the prefix says -- once an index has consumed that, they
-					// cannot express the chain and this is the only way to emit it.
+					// where this would bind a temporary nothing goes on to use. Once an
+					// index has consumed the base they cannot express the chain, and
+					// this is the only way to emit it.
 					return accessCur{}, false
 				}
 				next, prefixNext, ok := e.emitChainSlice(cur, prefix, low, high, max, last)
@@ -16460,18 +16464,24 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 			case cur.ctype == cString:
 				open, pre, closing = ".str[", e.byteReadOpen(), "])"
 			}
-			e.emit(pre + e.accessDeref(cur, prefix) + open)
-			e.emitIndex(low, lenExpr)
-			e.emit(closing)
-			prefix = ""
+			base := prefix
+			if _, isArrPtr := e.arrayPtrCType(cur.ctype); isArrPtr && effect {
+				// The check is a statement of its own, reading the pointer again:
+				// bound first, so an index with a call in it runs once.
+				base = e.hoist(cur.ctype, func() { e.emit(prefix) })
+				effect = false
+			}
+			prefix = pre + e.accessDeref(cur, base) + open + e.indexCText(low, lenExpr) + closing
+			indexed = true
+			if e.exprHasEffect(low) {
+				effect = true
+			}
 			cur = next
 		default:
 			return accessCur{}, false
 		}
 	}
-	if prefix != "" {
-		e.emit(prefix)
-	}
+	e.emit(prefix)
 	return cur, true
 }
 
@@ -21686,7 +21696,7 @@ func (e *emitter) emitMethodReceiver(recv, recvCType string, wantPtr bool) {
 	case wantPtr && !havePtr:
 		e.emit("&" + recv)
 	case !wantPtr && havePtr:
-		e.emit("*" + recv)
+		e.emit("*" + e.derefGuardC(recv, recvCType)) // a read through the pointer: see chainReceiver
 	default:
 		e.emit(recv)
 	}
@@ -21744,10 +21754,26 @@ func (e *emitter) chainReceiver(text, ctype string, addr, wantPtr bool) (string,
 		}
 		return "&" + text, true
 	case !wantPtr && havePtr:
-		return "*" + text, true
+		// A value receiver read through the pointer: Go panics on a nil one, and
+		// the read went unchecked -- `p.Val()` for a nil p read address zero.
+		return "*" + e.derefGuardC(text, ctype), true
 	default:
 		return text, true
 	}
+}
+
+// derefGuardC is the nil check a read of what a pointer points at takes, for the
+// pointer's C text and type: inline around the text for every pointer but one to an
+// array, whose check is a statement ahead of the one being emitted, the target's C
+// compiler dropping a struct-valued element read or written through the guard's
+// call (see arrayPtrDeref). The text is evaluated by that statement as well as by
+// the read, so a caller hands this a name when the text does something.
+func (e *emitter) derefGuardC(text, ctype string) string {
+	if _, isArrPtr := e.arrayPtrCType(ctype); isArrPtr {
+		e.nilCheckLine(text, ctype)
+		return text
+	}
+	return e.nilCheckedC(text, ctype)
 }
 
 // stepsHaveEffect reports whether evaluating a chain's steps does something: a call,
@@ -21779,6 +21805,7 @@ func stepsHaveEffect(e *emitter, steps []Node) bool {
 func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, addr, ok bool) {
 	var cur accessCur
 	pendingFn := false
+	effect := false // an index consumed so far does something when evaluated
 	// The C name a pending leading function is called by: this package's mangling
 	// of base, or an imported package's of the member a qualifier selects.
 	callee := e.funcCallC(base)
@@ -22042,6 +22069,14 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if len(rts) > 1 && i+1 != len(steps)-1 {
 					return "", "", false, false
 				}
+				// A VALUE receiver read through a pointer the chain has not bound --
+				// a call's result, `get().Val()` -- is bound first: the read takes the
+				// nil check, whose statement form for a pointer to an array reads the
+				// pointer again.
+				if !addr && !e.methodPtr[cname] && e.isPointer(cur.ctype) {
+					inner := text
+					text, addr = e.hoist(cur.ctype, func() { e.emit(inner) }), true
+				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
 				if !okr {
 					return "", "", false, false
@@ -22103,11 +22138,10 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				inner := text
 				text, addr = e.hoist(cur.ctype, func() { e.emit(inner) }), true
 			}
-			sel, okSel := e.selectC(cur.ctype, field)
-			if !okSel {
+			text, ok = e.selectThroughC(text, cur.ctype, field, true)
+			if !ok {
 				return "", "", false, false
 			}
-			text += sel
 			cur = next
 		case Index:
 			if !addr {
@@ -22161,7 +22195,17 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// struct, which the C compiler refused outright.
 				open, pre, closing = ".str[", e.byteReadOpen(), "])"
 			}
+			if _, isArrPtr := e.arrayPtrCType(cur.ctype); isArrPtr && effect {
+				// The pointer's nil check is a statement reading it again (see
+				// emitAccessChainAt): bound first, so an index with a call in it
+				// runs once.
+				inner := text
+				text, effect = e.hoist(cur.ctype, func() { e.emit(inner) }), false
+			}
 			text = pre + e.accessDeref(cur, text) + open + e.indexCText(low, lenExpr) + closing
+			if e.exprHasEffect(low) {
+				effect = true
+			}
 			cur, addr = next, true
 		default:
 			return "", "", false, false
@@ -25504,23 +25548,19 @@ func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenEx
 }
 
 // emitIndexSelect emits `<container>[i].f...` -- an indexed element followed by a
-// field chain. The trailing selectors are emitted after the index rather than
-// concatenated into the prefix, because once the index expression has been written
-// the accumulated C text is no longer available as a string.
+// field chain.
 func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string, post []string) {
-	e.emit(expr + "[")
-	e.emitIndex(low, lenExpr)
-	e.emit("]")
+	text := expr + "[" + e.indexCText(low, lenExpr) + "]"
 	ct := elem
 	for _, f := range post {
-		sel, ok := e.selectC(ct, f)
-		if !ok {
+		var ok bool
+		if text, ok = e.selectThroughC(text, ct, f, true); !ok {
 			e.fail("no field %q on %s", f, ct)
 			return
 		}
-		e.emit(sel)
 		ct, _ = e.structFieldType(ct, f) // validated by the caller via chainFieldType
 	}
+	e.emit(text)
 }
 
 // assignTail classifies the PostfixOp closing an assignment statement: `++`, `--`,
@@ -27584,13 +27624,12 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 		return "", "", false
 	}
 	text, ctype = gn, ct
-	// A further field chain selects into the global's struct value (or pointer).
+	// A further field chain selects into the global's struct value (or pointer),
+	// a pointer taking its nil check as any field read through one does.
 	for _, f := range fields[1:] {
-		sel, okSel := e.selectC(ctype, f)
-		if !okSel {
+		if text, ok = e.selectThroughC(text, ctype, f, true); !ok {
 			return "", "", false
 		}
-		text += sel
 		if ctype, ok = e.structFieldType(ctype, f); !ok {
 			return "", "", false
 		}
@@ -27766,18 +27805,35 @@ func (e *emitter) embeddedPathC(ctype string, path []string) string {
 // selectC renders the C member access for a selected field: one member for a field
 // the type declares, and the embedded members in front of it for a promoted one.
 func (e *emitter) selectC(ctype, field string) (string, bool) {
+	text, ok := e.selectThroughC("", ctype, field, false)
+	return text, ok
+}
+
+// selectThroughC is selectC applied to the C text reaching the value: the text with
+// the member path appended, and, when guard is set, a read through a POINTER --
+// `->`, at the start or at an embedded pointer along the path -- wrapped in the nil
+// check (nilCheckedC) every dereference takes. It is the one place a `->` is
+// written, so a value reached any way -- a variable, an element, a field, a call's
+// result bound to a temporary -- is checked the same way: `ps[i].x` and `gt.q.x`
+// read address zero on the board where Go panics, only a pointer VARIABLE's field
+// having been guarded, at its chain's base.
+func (e *emitter) selectThroughC(prefix, ctype, field string, guard bool) (string, bool) {
 	path, ok := e.fieldPath(ctype, field)
 	if !ok {
 		return "", false
 	}
-	text := ""
-	for _, step := range path {
-		sep := "."
+	text := prefix
+	for i, step := range path {
 		if e.isPointer(ctype) {
-			sep = "->"
+			if guard {
+				text = e.nilCheckedC(text, ctype)
+			}
+			text += "->"
+		} else {
+			text += "."
 		}
-		text += sep + e.fieldIdent(step)
-		if ctype, ok = e.structFieldDirect(ctype, step); !ok && step != path[len(path)-1] {
+		text += e.fieldIdent(step)
+		if ctype, ok = e.structFieldDirect(ctype, step); !ok && i != len(path)-1 {
 			return "", false
 		}
 	}
@@ -27894,19 +27950,17 @@ func (e *emitter) localIdent(name string) string { return e.fieldIdent(name) }
 // each pointer step (an auto-dereferenced Go field access) and "." otherwise.
 func (e *emitter) fieldAccessC(base string, fields []string) string {
 	ctype, _ := e.varType(base)
-	// A field reached THROUGH a pointer is a dereference, so the base takes the nil
-	// check: "p.f" is "p->f", which on this target reads or writes address zero
-	// happily when p is nil.
+	// A field reached THROUGH a pointer is a dereference, so every pointer along the
+	// chain takes the nil check, the base and a pointer field alike: "p.f" is
+	// "p->f", which on this target reads or writes address zero happily when p is
+	// nil, and so did `gt.q.f` for a nil q.
 	s := e.varRef(base) // a global base is mangled, a Unicode local base escaped
-	if len(fields) != 0 && e.isPointer(ctype) {
-		s = e.nilCheckedC(s, ctype)
-	}
 	for _, f := range fields {
-		sel, ok := e.selectC(ctype, f)
+		text, ok := e.selectThroughC(s, ctype, f, true)
 		if !ok {
-			sel = "." + e.fieldIdent(f) // let the C compiler name what is missing
+			text = s + "." + e.fieldIdent(f) // let the C compiler name what is missing
 		}
-		s += sel
+		s = text
 		ctype, _ = e.structFieldType(ctype, f)
 	}
 	return s
@@ -30498,6 +30552,14 @@ func (e *emitter) emitExprNode(n Node) {
 				// was evaluated there, but never checked for nil.
 				if text, _, ok := e.arrayPtrKidsDeref(kids); ok {
 					e.emit(text)
+					return
+				}
+				// `*get()`, `*ps[i]`, `*h.q`: any other pointer that is not a variable,
+				// read through with the check a variable's read takes. Written out as
+				// the star and the operand it read address zero for a nil one.
+				if ct, okT := e.inferNode(kids[1]); okT && e.isPointer(ct) && !e.isIfaceCType(ct) {
+					text := e.captureC(func() { e.emitExprNode(kids[1]) })
+					e.emit("(*" + e.nilCheckedC(text, ct) + ")")
 					return
 				}
 			}
