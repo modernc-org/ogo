@@ -74,3 +74,38 @@ func conditionalFor(c bool) {
 	}
 	_ = 0
 }
+
+// A "switch" with a default clause whose every clause terminates is itself
+// terminating, so a trailing return behind one is unreachable -- as "go vet"
+// reports it, where Go's compiler says nothing.
+func afterSwitchDefault(x int) int {
+	switch x {
+	case 1:
+		return 1
+	default:
+		return 0
+	}
+	// ERROR "unreachable code"
+	return 2
+}
+
+// Reachable: "if true { return }" is an "if" without "else", which Go's rule does
+// not make terminating -- the spelling that keeps code past an early return while
+// debugging, here as in Go.
+func ifTrue() int {
+	if true {
+		return 1
+	}
+	return 2
+}
+
+// Reachable: a call is a call, whatever it does; only the builtin "panic"
+// terminates.
+func afterCall() {
+	stop()
+	_ = 0
+}
+
+func stop() {
+	panic("stop")
+}

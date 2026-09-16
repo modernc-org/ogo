@@ -124,6 +124,15 @@
 //     the lifetime rule above. A type assertion "x.(*T)" and a type switch both
 //     recover the concrete pointer. See internal/octogo/octogo.go.
 //
+// One refusal is not rooted in the hardware but in the toolchain: unreachable
+// code -- a statement after a "return", a "panic", a "for" with no condition and
+// no "break", or a "switch" or "if" whose every branch ends that way -- is a
+// compile error here, exactly where "go vet" reports it. Go's compiler accepts
+// it and leaves the report to vet; there is no vet here, and the compiler is the
+// one gate a program passes. What makes code reachable is Go's own rule, so the
+// spelling that keeps code past an early return while debugging is the same in
+// both: "if true { return }" is not a terminating statement.
+//
 // # Parentheses where the parser needs them
 //
 // The compiler's parser is LL(1), generated from the grammar below. A few Go
