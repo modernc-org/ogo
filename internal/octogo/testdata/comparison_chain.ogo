@@ -1,0 +1,21 @@
+// The comparison operators bind alike and to the left, as in Go: `a < b == c` is
+// `(a < b) == c`, whose left side is a bool. Pairing each operator with the operand
+// written beside it checked `b == c` instead, and refused `f(1) < f(2) == (f(3) <
+// f(4))`, which Go compiles, as "mismatched types int and bool".
+
+func f(n int) int { return n }
+
+func main() {
+	a, b, c := 1, 2, true
+	println(a < b == c, f(1) < f(2) == (f(3) < f(4)), a == b != c, a < b == (b > a), a < b == c == true)
+	// ERROR mismatched types untyped bool and untyped int
+	println(a < b < 3)
+	// ERROR mismatched types untyped bool and int
+	println(a < b == a)
+	// ERROR mismatched types untyped bool and untyped int
+	println(a == b != 3)
+	// ERROR invalid operation: operator >= not defined on bool
+	println(a == b >= c)
+	// ERROR invalid operation: operator < not defined on untyped bool
+	println(a < b < (c == c))
+}

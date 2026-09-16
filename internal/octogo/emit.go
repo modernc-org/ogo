@@ -29930,38 +29930,65 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 	// inheriting a verdict that is not about it.
 	ct, ctOK := e.inferNodes(kids)
 	unsignedLevel := ctOK && isUnsignedCType(ct)
+	// A chain of comparisons folds to the left, as in Go: `a < b == c` is `(a < b)
+	// == c`. C parses it the same way and its compiler warns about it all the same
+	// (-Wparentheses, an error for the host build), so the fold is written out: one
+	// parenthesis opened per comparison past the first, each closed before the
+	// operator it belongs to.
+	folds := 0
+	for _, c := range kids {
+		if c.sym == RelOp && !e.isLogicalOp(c) {
+			folds++
+		}
+	}
+	if folds > 1 {
+		e.emit(strings.Repeat("(", folds-1))
+	}
+	seen := 0
 	for i := 0; i < len(kids); {
 		if !e.checkCompareAt(kids, i) {
 			return
 		}
+		if kids[i].sym == RelOp && !e.isLogicalOp(kids[i]) {
+			if seen > 0 {
+				e.emit(")")
+			}
+			seen++
+		}
 		if op, sn, ok := e.sliceNilCompareAt(kids, i); ok {
 			e.emitSliceNilTriple(sn, op)
 			i += 3
+			seen++
 			continue
 		}
 		if op, a, ok := e.arrayCompareAt(kids, i); ok {
 			e.emitArrayCompareTriple(kids[i], kids[i+2], op, a)
 			i += 3
+			seen++
 			continue
 		}
 		if op, l, r, ok := e.ifaceCompareAt(kids, i); ok {
 			e.emitIfaceCompareTriple(op, l, r)
 			i += 3
+			seen++
 			continue
 		}
 		if op, ct, ok := e.structCompareAt(kids, i); ok {
 			e.emitStructCompareTriple(kids[i], kids[i+2], op, ct)
 			i += 3
+			seen++
 			continue
 		}
 		if op, ok := e.stringCompareAt(kids, i); ok {
 			e.emitStringCompareTriple(kids[i], kids[i+2], op)
 			i += 3
+			seen++
 			continue
 		}
 		if text, ok := e.constCompareC(kids, i); ok {
 			e.emit(text)
 			i += 3
+			seen++
 			continue
 		}
 		if lit, ok := e.float32CompareLitC(kids, i); ok {

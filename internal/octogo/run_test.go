@@ -25079,6 +25079,51 @@ func main() {
 }
 `,
 		want: "6 1 2 2 5 ccc\n2 2 8 2 7\n1 9 3\n",
+	},
+	{
+		// The comparison operators bind alike and to the left, as in Go: `a < b ==
+		// c` is `(a < b) == c`. The checker paired each comparison with the operand
+		// written beside it and refused the first line ("mismatched types int and
+		// bool"); the fold is written out in C, `(a < b) == c`, which the host's C
+		// compiler otherwise reports (-Wparentheses). Chains over strings, structs
+		// and arrays (each a helper call), with && and ||, as a loop condition, and
+		// negated; the calls count in Go's order.
+		name: "a chain of comparisons binds to the left",
+		src: `type P struct{ x, y int }
+
+var calls int
+
+func f(n int) int {
+	calls++
+	return n
+}
+
+func s(n int) string {
+	calls += 10
+	if n == 0 {
+		return "a"
+	}
+	return "b"
+}
+
+func main() {
+	a, b, c := 1, 2, true
+	println(f(1) < f(2) == (f(3) < f(4)), calls)
+	println(f(2) < f(1) != (f(3) < f(4)), calls)
+	println(f(1) == f(1) == true, a < b == c == true, calls)
+	println(s(0) == "a" != c, s(1) < s(0) == false, calls)
+	println(a < b == c && f(5) == 5, a > b == c || f(6) > 0, calls)
+	println(P{1, 2} == P{1, 2} == c, [2]int{1, 2} != [2]int{1, 3} == true, calls)
+	println(1 < 2 == true, 3 == 4 != (a < b), calls)
+	for i := 0; i < 3 == true; i++ {
+		calls += 100
+	}
+	println(calls)
+	ok := a < b == c
+	println(ok, !(a < b == c) == false)
+}
+`,
+		want: "true 4\ntrue 8\ntrue true 10\nfalse true 40\ntrue true 42\ntrue true 42\ntrue true 42\n342\ntrue true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

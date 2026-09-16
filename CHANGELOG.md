@@ -49,6 +49,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A chain of comparisons binds to the left, as in Go.** `f(1) < f(2) == (f(3) <
+  f(4))` -- `(f(1) < f(2)) == (...)`, a bool beside a bool -- was refused
+  ("mismatched types int and bool"): the checker paired each comparison with the
+  operand written beside it rather than with the result of the comparison before
+  it. What Go refuses is refused in Go's words (`a < b < 3` "mismatched types
+  untyped bool and untyped int", `a == b >= c` "operator >= not defined on bool"),
+  and the emitted C writes the fold out, `(a < b) == c`, which the host's C
+  compiler otherwise reports as an error under -Werror.
 - **A package variable may read a slice declared below it.** `var n = len(xs)`,
   `var first = xs[0]`, `var tail = xs[1:]` and `var m = len(names[1])` above `var
   xs = []int{1, 2, 3}` were refused ("len is only supported for ...", "cannot infer

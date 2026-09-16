@@ -9265,10 +9265,52 @@ func (f *File) checkComparison(s *Scope, n Node) {
 			groupStart, groupHasCmp = i+1, false
 			continue
 		}
+		if groupHasCmp {
+			// A second comparison in the group: the comparison operators bind alike
+			// and to the left, so its LEFT operand is the RESULT of the one before
+			// it, a bool -- `a < b == c` is `(a < b) == c` -- and not the operand
+			// written beside it. Pairing the two operands written around it checked
+			// `b == c` instead, and refused `f(1) < f(2) == (f(3) < f(4))`, which Go
+			// compiles, as "mismatched types int and bool".
+			f.checkRelOpBoolLeft(s, op, operands[i+1])
+			continue
+		}
 		f.checkRelOp(s, op, operands[i], operands[i+1])
 		groupHasCmp = true
 	}
 	requireBoolGroup()
+}
+
+// checkRelOpBoolLeft is checkRelOp for a comparison whose left operand is the bool
+// result of the comparison before it in the chain: equality is all that is defined
+// on a bool, and the right operand has to be one, as Go says of `a < b < c` and
+// `a < b == 3`.
+func (f *File) checkRelOpBoolLeft(s *Scope, opNode, rNode Node) {
+	pos := f.tok(opNode.Pos()).Position()
+	rk, ok := f.exprType(s, rNode)
+	// The types are matched before the operator is asked about, as Go orders it:
+	// `a < b < 3` is "mismatched types untyped bool and untyped int".
+	if ok && kindCategory(rk) != catUnknown && kindCategory(rk) != catBool {
+		name := f.operandTypeName(s, rNode, rk)
+		if isUntypedKind(rk) {
+			name = "untyped " + name // as Go names a constant beside an untyped bool
+		}
+		f.err(pos, "mismatched types untyped bool and %s", name)
+		return
+	}
+	switch Symbol(f.tok(opNode.Pos()).Ch) {
+	case EQL, NEQ:
+		// equality is defined on bool
+	default:
+		// Named as Go names it: the operands' type once the untyped side has taken
+		// the typed one's, `bool` beside a bool variable, `untyped bool` beside
+		// another comparison.
+		name := "untyped bool"
+		if ok && rk == PredeclaredBool {
+			name = "bool"
+		}
+		f.err(pos, "invalid operation: operator %s not defined on %s", f.tok(opNode.Pos()).Src(), name)
+	}
 }
 
 // checkRelOp reports an incompatible pair of operands of a comparison operator.
