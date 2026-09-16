@@ -24856,11 +24856,13 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"1649267441664 2199023255552 1099511627776 35184372088832 true\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
-	"[2]greet.Row [2]greet.Reader greet.Row\n"
+	"[2]greet.Row [2]greet.Reader greet.Row\n" +
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\ntrue true\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
 import "greet"
+import "lib"
 
 // A private helper of main's, same name as one in greet: with per-package name
 // mangling the two do not collide in the single translation unit.
@@ -24998,6 +25000,7 @@ initOrder()
 untypedShifts()
 crossFileConsts()
 qualifiedArrays()
+libShapes()
 }
 
 // Another package's defined ARRAY type where a type is written: a variable, a
@@ -25275,6 +25278,46 @@ func initOrder() {
 	println(greet.Ordered, greet.Adjust, tally)
 	println(greet.Lo, greet.Hi)
 	println(greet.Weights[0], greet.Weights[1], greet.Weights[2])
+}
+// The fixes of 2026-09-15/16 with the code in a SECOND package, in two files:
+// the nil guards through qualified names, a package literal holding a slice
+// literal and a pointer to one, and the evaluation order of literals, value
+// lists and expressions across the boundary. Every probe of them had been one
+// package, which is where mangling and the per-file token tables have broken
+// before.
+func libShapes() {
+	println(lib.Order, lib.Cfg.Name, lib.Cfg.Pins[2], lib.Cfg.Dev.Id, lib.Cfg.Dev.Next.Id, lib.Cfg.Rate)
+	println(lib.Ptrs[0].Id, lib.Sl[0].Next.Id, lib.Get().Id, lib.Get().Next.Val(), lib.Ptrs[1].Ptr(), lib.Cfg.Dev.Val())
+	v := *lib.Get()
+	w := *lib.Sl[1]
+	println(v.Id, w.Id, lib.D2.Next.Regs[3], lib.Pa[1][2], len(lib.Pa[1]), cap(lib.Pick()), len(lib.Grid[lib.Idx()]), lib.Calls)
+	lib.Calls = 0
+	lib.Get().Id = 20
+	lib.Ptrs[0].Id = 10
+	lib.Cfg.Dev.Next.Id = 21
+	lib.D2.Next.Regs[0] = 100
+	lib.Pa[1][1] = 200
+	lib.Cfg.Pins[0] = 7
+	println(lib.D2.Id, lib.D1.Id, lib.D2.Next.Regs[0], lib.Pa[1][1], lib.Cfg.Pins[0], lib.Calls)
+	c := lib.Make(1, 2)
+	o1 := lib.Calls
+	lib.Calls = 0
+	a, b := lib.F(1), lib.MkA(2)[0]
+	o2 := lib.Calls
+	lib.Calls = 0
+	x := lib.F(1) + lib.MkA(2)[lib.F(3)%2]
+	o3 := lib.Calls
+	lib.Calls = 0
+	cfg := lib.Config{Rate: lib.F(1), Pins: []int{lib.F(2), lib.F(3)}, Dev: lib.Get()}
+	o4 := lib.Calls
+	lib.Calls = 0
+	p, q := lib.Two(lib.F(1))
+	o5 := lib.Calls
+	println(c.Rate, c.Pins[0], a, b, x, cfg.Rate, cfg.Pins[1], cfg.Dev.Id, p, q, o1, o2, o3, o4, o5)
+	if lib.P != nil && lib.P.Id == 1 || lib.None() != nil && lib.None().Id == 2 {
+		println("no")
+	}
+	println(lib.P == nil, lib.None() == nil)
 }
 `,
 	"chain/chain.ogo": `import "greet"
@@ -25643,6 +25686,80 @@ if len(s) > 0 {
 	return "LOUD"
 }
 return s
+}
+`,
+	"lib/lib.ogo": `type Dev struct {
+	Id   int
+	Next *Dev
+	Regs *[4]int
+}
+
+func (d Dev) Val() int { return d.Id }
+
+func (d *Dev) Ptr() int { return d.Id + 100 }
+
+type Config struct {
+	Name string
+	Pins []int
+	Dev  *Dev
+	Rate int
+}
+
+var Calls int
+
+func F(n int) int {
+	Calls = Calls*10 + n
+	return n
+}
+
+var regs = [4]int{1, 2, 3, 4}
+
+var D1 = Dev{Id: 1, Regs: &regs}
+
+var D2 = Dev{Id: 2, Next: &D1}
+
+var P *Dev
+
+var Ptrs = [2]*Dev{&D1, &D2}
+
+var Sl = []*Dev{&D2, &D1}
+
+var Cfg = Config{Name: "p2", Pins: []int{F(1), F(2), 9}, Dev: &Dev{Id: 3, Next: &D2}, Rate: F(3)}
+
+var Order = Calls
+
+func Get() *Dev { return &D2 }
+
+func None() *Dev { return nil }
+`,
+	"lib/more.ogo": `var Grid [3][5]int
+
+var Pa = [2]*[4]int{nil, &regs}
+
+func Idx() int {
+	Calls++
+	return 1
+}
+
+func Pick() *[4]int {
+	Calls += 10
+	return &regs
+}
+
+func MkA(n int) [2]int {
+	Calls = Calls*10 + n
+	return [2]int{n, n + 1}
+}
+
+var back = [4]int{5, 6, 7, 8}
+
+func Make(a, b int) Config {
+	return Config{Rate: F(a), Pins: back[:F(b)]}
+}
+
+func Two(n int) (int, int) {
+	Calls = Calls*10 + n
+	return n, n + 1
 }
 `,
 }

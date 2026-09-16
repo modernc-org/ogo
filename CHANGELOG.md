@@ -16,6 +16,20 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Verified
+
+- The fixes of 2026-09-15/16 -- the nil checks through pointers that are not
+  variables, a package literal holding a slice literal, the evaluation order of
+  literals, value lists and expressions -- with the code in a second package of
+  two files: `lib.P.Id`, `lib.Get().Id`, `*lib.None()`, `lib.Pa[0][1]`,
+  `lib.Cfg.Dev.Next.Val()` and their stores panic through a nil pointer as Go
+  does, `lib.Cfg` with its `[]int` and `&Dev{}` elements reads as Go reads it,
+  and `lib.Make(1, 2)`, `lib.F(1) + lib.MkA(2)[lib.F(3)%2]` and a value list of
+  `lib` calls run left to right, on the host and a P2-EDGE. Pinned in the
+  multi-package program every layer runs.
+
 ## v0.40.0
 
 ### Toolchain
