@@ -49,6 +49,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package variable may read a slice declared below it.** `var n = len(xs)`,
+  `var first = xs[0]`, `var tail = xs[1:]` and `var m = len(names[1])` above `var
+  xs = []int{1, 2, 3}` were refused ("len is only supported for ...", "cannot infer
+  a type for the package variable") -- Go's package block has no order -- where the
+  same reads above a slice of an array, `var xs = back[:2]`, or a `make`, were fine.
+  A slice LITERAL was the one initializer shape the pre-pass that settles package
+  variable types did not register.
 - **`len`, `cap` and `copy` return an int the checker sees.** `len(xs) + b` for a
   byte `b`, `cap(xs) * b`, `len(xs) == b` and `len(xs) + i64` compiled where Go
   says "mismatched types int and byte"; the results of the three builtins had no

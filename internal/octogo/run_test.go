@@ -25038,6 +25038,47 @@ func main() {
 `,
 		want:   "before 4\npanic: nil pointer dereference",
 		panics: true,
+	},
+	{
+		// Go's package block has no order. Every read of a package slice written
+		// ABOVE the slice's declaration, for each shape the declaration takes: a
+		// slice literal (the one the pre-pass dropped -- "len is only supported for
+		// ...", "cannot infer a type for the package variable"), a slice of strings
+		// with an element measured, a written type with a make, and a slice of an
+		// array. The last line pins that the reads are views of the slice, not copies.
+		name: "a package variable reads a slice declared below it",
+		src: `var n = len(xs) + cap(xs)
+
+var first = xs[0]
+
+var tail = xs[1:]
+
+var m = len(names) + len(names[1])
+
+var last = names[len(names)-1]
+
+var xs = []int{1, 2, 3}
+
+var names = []string{"a", "bb", "ccc"}
+
+var w int = len(ws)
+
+var ws []int = make([]int, 2, 8)
+
+var vs = back[:2]
+
+var back = [4]int{4, 5, 6, 7}
+
+var v = len(vs) + vs[1]
+
+func main() {
+	println(n, first, len(tail), tail[0], m, last)
+	println(w, len(ws), cap(ws), len(vs), v)
+	xs[0] = 9
+	println(first, xs[0], tail[1])
+}
+`,
+		want: "6 1 2 2 5 ccc\n2 2 8 2 7\n1 9 3\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

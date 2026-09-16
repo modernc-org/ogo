@@ -7130,6 +7130,11 @@ func (e *emitter) collectVarDeclTypes(ast []int32) {
 			for _, nm := range names {
 				if nm != "_" {
 					e.globals[e.globalC(nm)] = ct
+					// A slice is read through its element registry as well as its
+					// type: `len(xs)`, `xs[0]`, `xs[1:]` above `var xs []int` ask it.
+					if e.isSliceCType(ct) {
+						e.globalSliceVars[e.globalC(nm)] = sliceElemFromCName(ct)
+					}
 				}
 			}
 		case len(names) == 1 && names[0] != "_" && len(initExprs) == 1 && e.isArrayLitInit(initExprs[0]):
@@ -7138,6 +7143,18 @@ func (e *emitter) collectVarDeclTypes(ast []int32) {
 			if litType, _, isLit := e.soleArrayLit(initExprs[0]); isLit {
 				if a, isArr := e.arrayDim(litType); isArr {
 					e.globalArrays[e.globalC(names[0])] = a
+					continue
+				}
+				// `var xs = []int{...}`: a SLICE literal, whose type is likewise the
+				// literal's own. This shape was neither registered here nor left to
+				// inference, so `var n = len(xs)` above it was refused ("len is only
+				// supported for ...") and `var first = xs[0]` "cannot infer a type" --
+				// where a slice of an array, `var xs = back[:2]`, above its array was
+				// fine.
+				if elem, isSlice := e.litSliceType(litType); isSlice {
+					gn := e.globalC(names[0])
+					e.globals[gn] = sliceCName(elem)
+					e.globalSliceVars[gn] = elem
 				}
 			}
 		case len(names) == 1 && len(initExprs) == 1 && names[0] != "_":
