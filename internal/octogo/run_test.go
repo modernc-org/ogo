@@ -25544,6 +25544,95 @@ func map0(xs []int) int {
 		want: "skip 1\n2 5 long 434\n2 25 3 8 434\n1 true 1 734\n128 true 734\n42 1 5 4 1034\n28 1134\ndeferred 0\n",
 	},
 	{
+		// Two cog workers over the accessor shapes: each takes a register block from
+		// an accessor call as a `go` argument (evaluated at the go statement), copies
+		// its array, and sends scalars through a channel main polls with a default
+		// arm; a deferred call with an array argument read through the accessor, a
+		// comparison chain over two accessor reads, and a copy beside the live array.
+		// The busy-wait counts no calls: how often it spins is the schedule's.
+		// Measured against Go (whose twin makes the channel) with the calls counted.
+		name: "cog workers over accessor shapes",
+		src: `type Sample struct {
+	ch  int
+	sum int
+}
+
+type Regs struct {
+	raw  [3]int16
+	seq  int
+	done bool
+}
+
+type Board struct {
+	regs [3]Regs
+}
+
+var out chan Sample
+
+var board Board
+
+var calls int
+
+func (b *Board) reg(i int) *Regs {
+	calls++
+	return &b.regs[i]
+}
+
+func worker(r *Regs, ch int, out chan Sample, n int) {
+	for i := 0; i < n; i++ {
+		r.seq++
+		v := r.raw
+		v[0] += int16(i)
+		out <- Sample{ch, sum(v)}
+	}
+	r.done = true
+}
+
+func sum(v [3]int16) int {
+	t := 0
+	for _, x := range v {
+		t += int(x)
+	}
+	return t
+}
+
+func show(tag string, v [3]int16) { println(tag, v[0], v[1], v[2]) }
+
+func main() {
+	board.regs[0].raw = [3]int16{1, 2, 3}
+	board.regs[1].raw = [3]int16{10, 20, 30}
+	board.regs[2].raw = [3]int16{5, 6, 7}
+	go worker(board.reg(0), 0, out, 2)
+	go worker(board.reg(1), 1, out, 3)
+	println(calls)
+	defer show("deferred", board.reg(2).raw)
+	board.regs[2].raw[2] = 99
+	total := 0
+	got := 0
+	for got < 5 {
+		select {
+		case s := <-out:
+			total += s.sum * (s.ch + 1)
+			got++
+		default:
+		}
+	}
+	println(got, total, calls)
+	for i := 0; i < 2; i++ {
+		for !board.regs[i].done {
+		}
+	}
+	println(board.reg(0).seq, board.reg(1).seq, board.reg(0).done && board.reg(1).done == true, calls)
+	v := board.reg(2).raw
+	v[0] = 8
+	show("copy", v)
+	show("live", board.reg(2).raw)
+	println(calls)
+}
+`,
+		want: "2\n5 379 3\n2 3 true 7\ncopy 8 6 99\nlive 5 6 99\n9\ndeferred 5 6 7\n",
+	},
+	{
 		// A device driver over accessors, the domain probe that found the three fixes
 		// before it: registers behind a channel through an embedded pointer, a ring
 		// buffer in a promoted array, accessors returning pointers to both, a
