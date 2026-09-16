@@ -32,6 +32,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A deferred promoted method captures its receiver at the `defer`.** `defer
+  bv.Show()` for a value receiver promoted from an embedded field read the field
+  at the return -- 31 where Go, which copies the receiver at the `defer`, shows
+  3 -- and on a local variable the deferred call did not compile ("unknown
+  package lv").
+
 - **A promoted method called through a pointer to the outer checks it for
   nil.** `p.Get()` for a `p *Outer` embedding `Inner` took `&p->Inner` without
   reading through `p`, so a nil p reached the method with a wild receiver where

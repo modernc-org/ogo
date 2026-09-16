@@ -20719,7 +20719,28 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 	}
 	cname := methodCName(methodBaseType(ctype), method)
 	if _, isMethod := e.funcRet[cname]; !isMethod {
-		return "", true
+		// A PROMOTED method: the receiver is the embedded member the path reaches,
+		// captured here as a declared method's receiver is (promotedRecvC). Without
+		// this the capture was skipped and the member read at the RETURN -- `defer
+		// bv.Show()` for a value receiver showed what bv held then, where Go shows
+		// what it held at the defer -- and on a local the replay found no such name
+		// at all ("unknown package bv").
+		cn, path, rt, okp := e.promotedMethod(ctype, method)
+		if !okp || len(path) == 0 {
+			return "", true
+		}
+		wantPtr := e.methodPtr[cn]
+		recv, ok := e.promotedRecvC(text, ctype, path, wantPtr, true)
+		if !ok {
+			e.fail("cannot take the address of %s for a pointer-receiver method", text)
+			return "", false
+		}
+		d.cname = cn
+		d.recvCType = rt
+		if wantPtr {
+			d.recvCType += "*"
+		}
+		return recv, true
 	}
 	wantPtr := e.methodPtr[cname]
 	recv, ok := e.chainReceiver(text, ctype, true, wantPtr)

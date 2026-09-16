@@ -20167,6 +20167,74 @@ func main() {
 		panics: true,
 	},
 	{
+		// Go evaluates a deferred call's receiver where the defer stands: a value
+		// receiver is a copy taken then, a pointer receiver the address. A PROMOTED
+		// method's receiver was not captured at all -- the member was read at the
+		// return, so `defer bv.Show()` showed what bv held then (31 for Go's 3), and
+		// on a local the replay found no such name ("unknown package lv"). By value
+		// and by pointer, on package and local variables, through a pointer to the
+		// outer.
+		name: "a deferred promoted method captures its receiver at the defer",
+		src: `type Inner struct{ v int }
+
+func (i Inner) Show() { println("show", i.v) }
+
+func (i *Inner) Bump() { i.v++ }
+
+func (i *Inner) Ptr() int { return i.v + 100 }
+
+type ByVal struct {
+	Inner
+	m int
+}
+
+type ByPtr struct {
+	*Inner
+	m int
+}
+
+var bv = ByVal{Inner{v: 3}, 4}
+
+var in = Inner{v: 7}
+
+var bp = ByPtr{&in, 4}
+
+func f() {
+	defer bv.Show()
+	defer bp.Show()
+	defer bv.Bump()
+	defer bp.Bump()
+	bv.v = 30
+	in.v = 70
+}
+
+func g() {
+	lv := ByVal{Inner{v: 5}, 1}
+	li := Inner{v: 8}
+	lp := ByPtr{&li, 2}
+	pv := &lv
+	defer lv.Show()
+	defer lp.Show()
+	defer pv.Show()
+	defer lv.Bump()
+	defer lp.Bump()
+	defer pv.Bump()
+	lv.v = 50
+	li.v = 80
+	defer end(lv.v, li.v)
+}
+
+func end(a, b int) { println("end", a, b) }
+
+func main() {
+	f()
+	println(bv.v, in.v)
+	g()
+}
+`,
+		want: "show 7\nshow 3\n31 71\nend 50 80\nshow 5\nshow 8\nshow 5\n",
+	},
+	{
 		// `ps[i].x` read `ps[i]->x` unchecked; each of these read address zero.
 		name: "a field read through a nil pointer element panics",
 		src: `type T struct{ x int }
