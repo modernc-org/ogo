@@ -1473,6 +1473,14 @@ func (e *emitter) emitGo(nodes []Node) {
 				return
 			}
 			cname := methodCName(methodBaseType(rct), name)
+			// A method PROMOTED from an embedded member is the owning type's, called
+			// on that member (promotedRecvC). Resolved by the reached type's own name,
+			// the launch called a <T>_<m> nothing declares.
+			cn, path, rt, promoted := e.promotedMethod(rct, name)
+			promoted = promoted && len(path) != 0
+			if promoted {
+				cname = cn
+			}
 			wantPtr := e.methodPtr[cname]
 			if r, bad := e.receiverFrameRef(base, wantPtr); bad {
 				crossed(r.what, r.advice(), head)
@@ -1483,12 +1491,18 @@ func (e *emitter) emitGo(nodes []Node) {
 				e.ind()
 				e.emit(line)
 			}
-			recv, ok := e.chainReceiver(text, rct, true, wantPtr)
+			var recv string
+			if promoted {
+				recv, ok = e.promotedRecvC(text, rct, path, wantPtr, true)
+				recvCType = rt
+			} else {
+				recv, ok = e.chainReceiver(text, rct, true, wantPtr)
+				recvCType = methodBaseType(rct)
+			}
 			if !ok {
 				e.fail("cannot take the address of %s for a pointer-receiver method", text)
 				return
 			}
-			recvCType = methodBaseType(rct)
 			if wantPtr {
 				recvCType += "*"
 			}
@@ -1528,6 +1542,29 @@ func (e *emitter) emitGo(nodes []Node) {
 			break
 		}
 		cname := methodCName(methodBaseType(rct), name)
+		// A method PROMOTED from an embedded member, `go port.run(ch)` for the run of
+		// the *Regs that port embeds: the C name is the owning type's and the receiver
+		// is the member, as a direct call resolves it (promotedRecvC). Resolved by the
+		// variable's own type, the launch called a Port_run nothing declares.
+		if cn, path, rt, okp := e.promotedMethod(rct, name); okp && len(path) != 0 {
+			wantPtr := e.methodPtr[cn]
+			if r, bad := e.receiverFrameRef(base, wantPtr); bad {
+				crossed(r.what, r.advice(), head)
+				return
+			}
+			recv, ok := e.promotedRecvC(e.varRef(base), rct, path, wantPtr, true)
+			if !ok {
+				e.fail("cannot take the address of %s for a pointer-receiver method", base)
+				return
+			}
+			recvCType = rt
+			if wantPtr {
+				recvCType += "*"
+			}
+			recvText = recv
+			site = goSite{callee: cn, args: []string{recvCType}, id: len(e.goSites)}
+			break
+		}
 		wantPtr := e.methodPtr[cname]
 		// A pointer receiver hands the goroutine the address of the receiver, which
 		// is a reference leaving this frame's control exactly as `go f(&x)` is. A
@@ -1547,6 +1584,62 @@ func (e *emitter) emitGo(nodes []Node) {
 			recvText = e.captureC(func() { e.emitMethodReceiver(e.varRef(base), rct, wantPtr) })
 		}
 		site = goSite{callee: cname, args: []string{recvCType}, id: len(e.goSites)}
+	case base != "" && len(suffix) >= 3 && suffix[len(suffix)-1].sym == CallSuffix &&
+		suffix[len(suffix)-2].sym == Selector && containsSym(suffix[:len(suffix)-2], CallSuffix):
+		// A receiver reached through a CALL, `go bus.reg(i).run(ch)`, `go
+		// getPort().run(ch)`: evaluated here, at the go statement, as Go evaluates
+		// it, by the call-chain walk; what the walk binds ahead of the statement is
+		// written here. It was "only `go f(args)` ... is supported yet".
+		callSuffix = suffix[len(suffix)-1]
+		steps := suffix[:len(suffix)-1]
+		name := e.soleIdent(steps[len(steps)-1].ast)
+		chain := steps[:len(steps)-1]
+		// The arguments of the calls in the chain are judged as the goroutine's own
+		// are: a reference to this frame handed to an accessor may come back out of
+		// it, `go hold(&local).run(ch)`.
+		for _, st := range chain {
+			if st.sym == CallSuffix {
+				if x, r, bad := e.frameRefIn(e.callArgExprs(st.ast)); bad {
+					crossed(r.what, r.advice(), x)
+					return
+				}
+			}
+		}
+		var text, rct string
+		addr, okc := false, false
+		_, pro := e.capturePrologue(func() { text, rct, addr, okc = e.chainCText(base, chain) })
+		if !okc || rct == "" {
+			e.fail("unsupported receiver in a go statement")
+			return
+		}
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+		cn, path, rt, okp := e.promotedMethod(rct, name)
+		if !okp {
+			e.fail("type %s has no method %s", e.goTypeName(methodBaseType(rct)), name)
+			return
+		}
+		wantPtr := e.methodPtr[cn]
+		var recv string
+		var ok bool
+		if len(path) != 0 {
+			recv, ok = e.promotedRecvC(text, rct, path, wantPtr, addr)
+			recvCType = rt
+		} else {
+			recv, ok = e.chainReceiver(text, rct, addr, wantPtr)
+			recvCType = methodBaseType(rct)
+		}
+		if !ok {
+			e.fail("cannot take the address of %s for a pointer-receiver method", text)
+			return
+		}
+		if wantPtr {
+			recvCType += "*"
+		}
+		recvText = recv
+		site = goSite{callee: cn, args: []string{recvCType}, id: len(e.goSites)}
 	default:
 		e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
 		return
@@ -32205,8 +32298,16 @@ func (e *emitter) convToIfaceType(recv string, suffix []Node) bool {
 // the receiver itself; a value receiver is copied, and carries a reference only if
 // the value holds one.
 func (e *emitter) receiverFrameRef(recv string, wantPtr bool) (frameRef, bool) {
+	// A pointer receiver takes the ADDRESS of a value variable, which is a reference
+	// to this frame -- but a variable that IS a pointer hands over what it holds,
+	// `r := bus.reg(1); go r.run(ch)` being the same launch as `go bus.regs[1].run(ch)`,
+	// and what it holds is judged as a holder below, exactly as `go f(r)` judges the
+	// same pointer as an argument. Refused as "the address of local variable r", it
+	// sent the reader to declare r at package scope, for a pointer to package storage.
 	if wantPtr && e.isFrameVar(recv) {
-		return addrRef(recv), true
+		if ct, ok := e.varType(recv); !ok || !e.isPointer(ct) {
+			return addrRef(recv), true
+		}
 	}
 	if origin := e.frameHolder[recv]; origin != "" {
 		return holderRef(recv, origin), true

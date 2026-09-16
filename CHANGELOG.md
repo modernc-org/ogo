@@ -49,6 +49,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A goroutine's receiver may be a call's result, a promoted method, or a local
+  pointer.** `go bus.reg(i).run(ch)` was "only `go f(args)` on a package function
+  or `go x.M(args)` on a method is supported yet"; written as the refusal suggests,
+  `r := bus.reg(i); go r.run(ch)`, it was refused again as "the address of local
+  variable r", for a pointer that holds package storage (`go f(r)` had always
+  accepted it); and `go port.run(ch)` for a method promoted through the `*Regs`
+  that `port` embeds emitted a call to `Port_run`, which nothing declares. A
+  reference into the frame still cannot leave through any of them: `go
+  hold(&local).run(ch)` and `r := &local; go r.run(ch)` are refused as before.
 - **A deferred method call evaluates a receiver that is a call's result at the
   `defer`.** `defer getPort().Reset()` ran `getPort()` at the return, where Go runs
   it at the defer statement -- a silent difference for an accessor with an effect,
@@ -101,6 +110,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Verified
 
+- Three domain programs over the accessor shapes, each measured against Go with
+  the calls counted and run on the board: a device driver over accessors (which
+  found the promoted-array and multi-result fixes above), a frame parser over an
+  embedded reader (which found the deferred receiver), and two cog workers taking
+  register blocks from accessor calls (which found nothing).
 - The fixes of 2026-09-15/16 -- the nil checks through pointers that are not
   variables, a package literal holding a slice literal, the evaluation order of
   literals, value lists and expressions -- with the code in a second package of

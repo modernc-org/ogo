@@ -25633,6 +25633,97 @@ func main() {
 		want: "2\n5 379 3\n2 3 true 7\ncopy 8 6 99\nlive 5 6 99\n9\ndeferred 5 6 7\n",
 	},
 	{
+		// A goroutine's receiver in every shape a program writes it: a call's result
+		// (with an argument changed after the launch, as Go evaluates it at the go
+		// statement), a method promoted through an embedded pointer on a call's
+		// result and on a package variable (which emitted a call to a Port_run nothing
+		// declares), a local pointer and a pointer parameter (refused as "the address
+		// of local variable r"), a value receiver on a call's result, and an array
+		// argument read through an accessor. Launched in two batches of at most
+		// seven, the cogs a program has beside main.
+		name: "a goroutine launched on a call's result, a promoted method or a local pointer",
+		src: `type Regs struct {
+	id  int
+	raw [3]int
+}
+
+type Pos struct{ x, y int }
+
+func (p Pos) show(out chan int) { out <- p.x*10 + p.y }
+
+type Port struct {
+	*Regs
+	tag int
+}
+
+func (r *Regs) run(out chan int) {
+	out <- r.id
+}
+
+func (r *Regs) twice(out chan int) {
+	out <- r.id * 2
+}
+
+var regs = [2]Regs{{1, [3]int{1, 2, 3}}, {2, [3]int{4, 5, 6}}}
+
+var port = Port{&regs[1], 7}
+
+var pos = Pos{3, 4}
+
+var out chan int
+
+var calls int
+
+func pick(i int) *Regs {
+	calls += 10
+	return &regs[i]
+}
+
+func getPort() *Port {
+	calls += 100
+	return &port
+}
+
+func getPos() *Pos {
+	calls += 1000
+	return &pos
+}
+
+func total(a [3]int) int { return a[0] + a[1] + a[2] }
+
+func send(out chan int, n int) { out <- n }
+
+func launch(r *Regs) { go r.run(out) }
+
+func main() {
+	i := 0
+	go pick(i).run(out)
+	i = 1
+	go pick(i).twice(out)
+	go getPort().run(out)
+	go port.run(out)
+	println(calls)
+	sum := 0
+	for k := 0; k < 4; k++ {
+		sum += <-out
+	}
+	println(sum, calls)
+	go send(out, total(pick(1).raw))
+	r := &regs[0]
+	go r.twice(out)
+	launch(&regs[1])
+	go getPos().show(out)
+	pos.x = 9
+	go pos.show(out)
+	for k := 0; k < 5; k++ {
+		sum += <-out
+	}
+	println(sum, calls)
+}
+`,
+		want: "120\n9 120\n156 1130\n",
+	},
+	{
 		// A device driver over accessors, the domain probe that found the three fixes
 		// before it: registers behind a channel through an embedded pointer, a ring
 		// buffer in a promoted array, accessors returning pointers to both, a
