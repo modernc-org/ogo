@@ -49,6 +49,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`len`, `cap` and `copy` return an int the checker sees.** `len(xs) + b` for a
+  byte `b`, `cap(xs) * b`, `len(xs) == b` and `len(xs) + i64` compiled where Go
+  says "mismatched types int and byte"; the results of the three builtins had no
+  type, so nothing they met was checked -- and `n := len(xs)` gave `n` no type
+  either, so everything `n` met afterwards went unexamined too. The emitted C
+  computed what C computes for those; Go has no answer for them.
 - **A deferred promoted method captures its receiver at the `defer`.** `defer
   bv.Show()` for a value receiver promoted from an embedded field read the field
   at the return -- 31 where Go, which copies the receiver at the `defer`, shows

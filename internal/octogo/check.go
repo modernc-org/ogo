@@ -11634,6 +11634,19 @@ func (f *File) callResultKind(s *Scope, callee Token, hasCallee bool, suffix Nod
 	if pt, ok := s.find(callee.Src()).(*PredeclaredType); ok {
 		return pt.Kind(), true
 	}
+	// The builtins whose result is an int: len, cap and copy. Builtin signatures
+	// are not modelled (checkCall), and with no type here their results went
+	// unchecked: `len(xs) + b` for a byte b was accepted, and `n := len(xs)` gave n
+	// no type, so nothing n met afterwards was checked either. A constant len is
+	// folded to a typed int constant ahead of this (constLenCap); the rest is int
+	// the same way.
+	if _, builtin := s.find(callee.Src()).(*PredeclaredFunc); builtin {
+		switch callee.Src() {
+		case "len", "cap", "copy":
+			return PredeclaredInt, true
+		}
+		return 0, false
+	}
 	return f.funcSingleResultKind(s, callee)
 }
 

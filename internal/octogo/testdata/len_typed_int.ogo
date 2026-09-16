@@ -1,0 +1,27 @@
+// len, cap and copy return an int, and what they return meets every other operand
+// as an int does -- a byte or an int64 beside it is mismatched, as Go says. Their
+// results had no type here, so nothing they met was checked, and a variable
+// initialised from one, `n := len(xs)`, went unchecked from then on.
+
+var xs = []int{1, 2}
+
+func main() {
+	var b byte = 3
+	var i64 int64 = 5
+	var dst [2]int
+	// ERROR mismatched types int and uint8
+	println(len(xs) + b)
+	// ERROR mismatched types int and uint8
+	println(cap(xs) * b)
+	// ERROR mismatched types int and int64
+	println(len(xs) + i64)
+	n := len(xs)
+	// ERROR mismatched types int and uint8
+	println(n + b)
+	c := copy(dst[:], xs)
+	// ERROR mismatched types int and int64
+	println(c + i64)
+	// ERROR mismatched types int and uint8
+	println(len(xs) == b)
+	println(len(xs)+1, n*2, c < 3, uint8(len(xs))+b, int64(cap(xs))+i64)
+}
