@@ -49,6 +49,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A guarded compound assignment through a call's result.** `reg().u8 <<= s`,
+  `reg().i32 >>= s` and `reg().u8 /= d` -- the operators whose C and Go answers
+  differ, written through a helper that names the target twice -- were refused
+  ("needs a target that can be named twice; this one is evaluated") although the
+  call's result is bound to a temporary first and the rest of the target repeats
+  nothing. An index holding a call still refuses.
 - **A narrow shift chain wraps at every step, as Go computes it.** `var v int16 = 1
   << s << 7 >> 2` for an `s` of 9 printed 16384 where Go says 0, and the same
   chains into `uint8`, `int8` and `uint16` were wrong the same way: a level whose

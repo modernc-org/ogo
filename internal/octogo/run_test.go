@@ -25767,6 +25767,63 @@ func main() {
 		want: "0 0 -64 0\n44 2057 32 800 7509 0\n0 0 true false 44\n11264 0\n24928\n",
 	},
 	{
+		// A compound assignment through a call's result in the forms that take a
+		// guard -- a shift by a variable count, a division by a variable -- which
+		// write the target twice: refused ("needs a target that can be named twice;
+		// this one is evaluated") although the call is bound first and the rest of
+		// the target repeats nothing. A field, an array element by a constant index
+		// (an index holding a call still refuses), and the unguarded forms beside
+		// them; each call runs once.
+		name: "a guarded compound assignment through a call's result",
+		src: `type Regs struct {
+	u8  uint8
+	i32 int32
+	arr [3]int32
+	row [2]uint8
+}
+
+var regs = Regs{u8: 200, i32: -7, arr: [3]int32{-9, 40, 7}}
+
+var calls int
+
+func reg() *Regs {
+	calls++
+	return &regs
+}
+
+func idx() int {
+	calls += 10
+	return 1
+}
+
+func main() {
+	var s uint = 3
+	var d uint8 = 3
+	var e int32 = -1
+	reg().u8 <<= s
+	reg().i32 >>= s
+	println(regs.u8, regs.i32, calls)
+	reg().u8 /= d
+	reg().i32 /= e
+	reg().arr[1] %= 7
+	reg().row[1] = 9
+	reg().row[1] <<= s
+	reg().row[0] = 250
+	reg().row[0] >>= s
+	println(regs.u8, regs.i32, regs.arr[1], regs.row[0], regs.row[1], calls)
+	reg().u8 += 1 << s
+	reg().u8 *= 3
+	reg().i32 -= 100
+	reg().arr[2] += 5
+	reg().i32 <<= 2
+	reg().u8 >>= 1
+	reg().arr[0] /= e
+	println(regs.u8, regs.i32, regs.arr[0], regs.arr[2], calls, s, d)
+}
+`,
+		want: "64 -1 2\n21 1 5 31 72 9\n43 -396 9 12 16 3 3\n",
+	},
+	{
 		// A device driver over accessors, the domain probe that found the three fixes
 		// before it: registers behind a channel through an embedded pointer, a ring
 		// buffer in a promoted array, accessors returning pointers to both, a

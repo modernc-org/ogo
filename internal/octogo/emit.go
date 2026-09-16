@@ -25498,6 +25498,12 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			if len(cur.dims) != 0 {
 				t.targetArray = curArrDim(cur)
 			}
+			// A guarded compound assignment, `reg().u8 <<= s`, writes the target
+			// twice (guardedAssignC), which is sound once the call is bound: what is
+			// left is a field path or an index, repeating no evaluation unless the
+			// index holds one. Unsaid, it was "needs a target that can be named
+			// twice; this one is evaluated" -- of a target that no longer is.
+			t.targetRepeatable = !slices.ContainsFunc(rest, e.nodeHasEffect)
 			e.emitAssignTailOrCopy(func() { e.emitAccessChain(name, rest) }, t)
 			return
 		}
