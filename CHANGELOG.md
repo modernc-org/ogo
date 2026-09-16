@@ -49,6 +49,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A narrow shift chain wraps at every step, as Go computes it.** `var v int16 = 1
+  << s << 7 >> 2` for an `s` of 9 printed 16384 where Go says 0, and the same
+  chains into `uint8`, `int8` and `uint16` were wrong the same way: a level whose
+  shift by a variable count takes the guarded helper wrapped only its total, so a
+  constant-count shift after the helper ran in C's `int` and a right shift read
+  the bits Go had already dropped. The arithmetic levels wrapped every step; the
+  guarded-shift chain did not. Silent, and hidden whenever the chain ended in a
+  left shift, which wraps the same either way.
 - **A goroutine's receiver may be a call's result, a promoted method, or a local
   pointer.** `go bus.reg(i).run(ch)` was "only `go f(args)` on a package function
   or `go x.M(args)` on a method is supported yet"; written as the refusal suggests,

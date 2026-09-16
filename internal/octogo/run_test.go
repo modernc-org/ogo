@@ -25724,6 +25724,49 @@ func main() {
 		want: "120\n9 120\n156 1130\n",
 	},
 	{
+		// A level of a NARROW type wraps at every operation, as Go computes it. A
+		// chain with a guarded shift (a variable count) wrapped only its total, so a
+		// constant-count shift after the helper ran in C's int and a right shift read
+		// the bits Go had dropped: `1 << s << 7 >> 2` on an int16 was 16384 for Go's
+		// 0. Silent, and hidden whenever the chain ended in a left shift. int8,
+		// uint8, int16 and uint16; shifts, products, divisions and remainders after
+		// a guarded shift; declarations, stores through a field and an accessor, a
+		// comparison, and a sum of two such levels.
+		name: "a narrow shift chain wraps at every step",
+		src: `type Regs struct {
+	i16 int16
+	u8  uint8
+}
+
+var regs Regs
+
+func reg() *Regs { return &regs }
+
+func main() {
+	var s uint = 9
+	var t uint = 4
+	var v int16 = 1 << s << 7 >> 2
+	var w uint8 = 1 << t << 4 >> 1
+	var x int8 = 1 << t << 3 >> 1
+	var y uint16 = 1 << s << 7 >> 3
+	println(v, w, x, y)
+	var a int16 = 300
+	var b uint16 = 300
+	var c uint8 = 200
+	println(a<<s>>s, b<<t*3/7, c<<t>>2, a<<t%1000, b<<s/3, c<<s>>s)
+	reg().i16 = 1 << s << 7 >> 2
+	regs.u8 = 1 << t << 4 >> 1
+	println(reg().i16, regs.u8, 1<<s<<7>>2 == v, a<<s>>s < 0, int(a<<s>>s))
+	d := a << s >> 1
+	e := c << t << 1 >> 1
+	println(d, e)
+	f := a<<s + a<<t>>1
+	println(f)
+}
+`,
+		want: "0 0 -64 0\n44 2057 32 800 7509 0\n0 0 true false 44\n11264 0\n24928\n",
+	},
+	{
 		// A device driver over accessors, the domain probe that found the three fixes
 		// before it: registers behind a channel through an embedded pointer, a ring
 		// buffer in a promoted array, accessors returning pointers to both, a

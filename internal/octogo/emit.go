@@ -22061,6 +22061,19 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 	if !needed {
 		return "", false
 	}
+	// A NARROW level wraps at EVERY operation, as Go computes it (narrowCType): a
+	// helper answers in the level's type, but C's own operation between two of them
+	// is computed in int and keeps the extra bits, and a right shift, a division or
+	// a remainder then reads them. `1 << s << 7 >> 2` on an int16 came out 16384
+	// for Go's 0: the guarded first shift gave 512, the second made 65536 in int,
+	// and the cast around the whole chain came too late. The arithmetic level wraps
+	// each step through narrowLevelPrefix; this path, taken as soon as one step
+	// needs a guard, cast the total only. A chain of left shifts alone was right by
+	// chance, wrapping commuting with a shift left.
+	narrow := ""
+	if haveType {
+		narrow = narrowOf(e.underlyingCType(ctype), ctype)
+	}
 	text := e.captureC(func() { e.emitExprNode(kids[0]) })
 	// An untyped constant SHIFTED is spelled as the integer it is, at the width it is
 	// shifted in: `1.0 << s` must not reach the helper as a double, and the constant
@@ -22105,6 +22118,9 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 			// the value type of a shift, a quotient and a remainder alike is the
 			// left operand's.
 			text = "(" + text + " " + e.opText(op.ast) + " " + rhsText + ")"
+		}
+		if narrow != "" {
+			text = "(" + narrow + ")" + text
 		}
 	}
 	return text, true
@@ -30592,9 +30608,7 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		narrow := e.narrowCType(n.ast) // see narrowCType
 		if text, ok := e.shiftChainC(kids); ok {
-			if narrow != "" {
-				e.emit("(" + narrow + ")")
-			}
+			// The chain narrows every step itself, the last one included.
 			e.emit(text)
 			return
 		}
