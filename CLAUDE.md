@@ -519,22 +519,38 @@ per kind, and twelve of twenty-four such shapes were wrong until a declaration
 learned to forget the other kinds (`shadow`) and to read its value first
 (`declareCopy`).
 
-Known open items, all loud refusals or design walls (2026-09-17): slicing a slice
-literal, `[]int{1, 2, 3}[1:]`; an array-returning call as a package literal element;
+Known open items, all loud refusals or design walls (2026-09-17): an
+array-returning call as a package literal element;
 a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); a named ARRAY result returned by name, `func f() (r
-[2]int) { ...; return r }`; a `switch` guard that declares an array, `switch a :=
-[2]int{1, 2}; len(a) {` (the `if` form works); a send statement whose head is
-parenthesised, `(&bus.ports[1]).ch <- 5`; a function literal with SEVERAL results
+[2]int) { ...; return r }`; a `switch` or `for` init that declares an array, `switch a :=
+[2]int{1, 2}; len(a) {` (the `if` form works); a function literal with SEVERAL results
 called where it stands, `v, ok := func() (int, bool) { ... }()` (bound to a variable
-first it works); and one grammar gap needing an egg regeneration, `range
-[]int{...}[1:]` in a for header.
+first it works); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
+operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
+`(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
+`(p).x = 5` and `(&p).x = 3`, and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`,
+`(&v).m()` and `(a - b).m()` work); a chain after a NAMED string constant's slice,
+`hexdigits[1:][0]` (the literal's works). No grammar gap is
+known: the ones recorded before all closed that day, and two nobody had recorded --
+HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
+literal took none at all, `"0123456789abcdef"[n&15]`. **Check Factor and HeaderFactor
+against each other when either changes**; they are meant to differ by one production.
 Two LATENT ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not
 run ahead of an index or nil panic in the target, `arr[bad()] = side()`, where Go
 runs `side()` and then panics -- the comment in emitIndexAssign says otherwise and
 describes one C compiler's choice. Only a program about to panic can tell.
+
+**The lifetime rules are asked of SHAPES, and a shape nobody asked about is a hole**
+(2026-09-17, found while closing a grammar gap). `TestEmitCFrameRefForms` crosses
+every form that binds a value with every kind of reference to the frame, each cell
+beside a control over package storage; it found that parentheses hid a value from
+every rule (`return (a[:])` compiled), that `var s []int = a[:]` recorded nothing,
+and that no list form, destructured call, swap or `for` clause asked the rules at
+all. **A new binding form, or a new way to write a value, is a new row or column
+there** -- the same discipline `generatedConstructs` gives the fuzzer.
 
 ## Notes
 
