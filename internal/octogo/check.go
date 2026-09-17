@@ -5552,6 +5552,29 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	return true
 }
 
+// litCallArgs returns the arguments a function literal is called with where it
+// stands, given what follows it among its siblings: a CallSuffix, the statement's
+// own, or a FactorSuffix that begins with one, an expression's -- which inExpr says.
+func (f *File) litCallArgs(after []Node) (args []Node, inExpr, called bool) {
+	if len(after) == 0 {
+		return nil, false, false
+	}
+	switch next := after[0]; next.sym {
+	case CallSuffix:
+		args, called = f.callSuffixArgs(Node{ast: encodeNode(CallSuffix, next.ast)})
+		return args, false, called
+	case FactorSuffix:
+		for c := range it(next.ast) {
+			if c.sym == CallSuffix {
+				args, called = f.callSuffixArgs(Node{ast: encodeNode(CallSuffix, c.ast)})
+				return args, true, called
+			}
+			break // only a call that comes FIRST calls the literal itself
+		}
+	}
+	return nil, false, false
+}
+
 // checkFuncLiterals checks every function literal in an expression: its body, in a
 // scope of its own, and the one rule this language adds to it -- a literal captures
 // nothing.
@@ -5561,7 +5584,8 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 // surrounding function is therefore refused where it is written, rather than left
 // to surface as a C compiler's "unknown symbol".
 func (f *File) checkFuncLiterals(s *Scope, n Node) {
-	for c := range it(n.ast) {
+	kids := slices.Collect(it(n.ast))
+	for i, c := range kids {
 		if c.sym == 0 {
 			continue
 		}
@@ -5586,6 +5610,24 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		f.declareParamList(ls, sig.Params, roleParam)
 		f.declareParamList(ls, sig.Results, roleResult)
 		f.reportCaptures(s, ls, body)
+		// A literal CALLED where it stands -- `func(n int) { ... }(5)` as a statement,
+		// behind a go or a defer, or in an expression -- is a call like any other, and
+		// its arguments were checked by nothing: a string for an int reached the C
+		// compiler, and a missing argument reached the target's as a WARNING, which
+		// builds. The arguments are read where the call stands and the parameters in
+		// the literal's own scope.
+		if args, inExpr, called := f.litCallArgs(kids[i+1:]); called {
+			if inExpr {
+				// A statement's call resolves its arguments' names itself
+				// (checkCallStmt, checkLitCallStmt); an expression's walk does not
+				// reach into a literal's suffix, so `func(n int) int { ... }(missing)`
+				// named an undefined variable and nothing said so.
+				for _, a := range args {
+					f.checkNames(s, a)
+				}
+			}
+			f.checkArgsIn(s, ls, f.tok(c.Pos()), sig, args)
+		}
 		// A literal is a function of its own, and a label's scope is a function: its
 		// labels neither collide with the enclosing function's nor satisfy them.
 		savedLabels, savedDecls, savedUsed := f.labels, f.labelDecls, f.labelUsed

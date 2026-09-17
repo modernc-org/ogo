@@ -62,6 +62,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function literal's call is checked.** `func(n int) { ... }("five")` and
+  `func(n int) { ... }()` -- a literal called where it stands, behind a `go` or a
+  `defer` or in an expression -- had their arguments checked by nothing: the wrong
+  type reached the C compiler, and the wrong COUNT reached the target's as a
+  warning, which builds a binary that reads garbage. They are checked against the
+  literal's signature as any call's are, and an undefined name among the arguments
+  of one called in an expression is reported, which it was not.
 - **A bare `return` in a function literal written in `main`.** It was emitted as
   `return 0;`, main's own form, in a void C function -- the flag that says "this
   is main" was not cleared while the literal was lifted out of it. The host's C

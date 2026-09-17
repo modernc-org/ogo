@@ -1,0 +1,34 @@
+// A function literal CALLED where it stands is a call like any other: its arguments
+// are checked against its signature, count first and then each type. Nothing asked
+// until now, in any position a literal is called in -- behind a "defer" or a "go", or
+// in an expression -- so a string for an int reached the C compiler, and a missing
+// argument reached the target's as a warning, which builds.
+
+func deferred() {
+	// ERROR "cannot use .five. of type string as type int in argument to func"
+	defer func(n int) { println(n) }("five")
+	// ERROR "not enough arguments in call to func"
+	defer func(n int) { println(n) }()
+	defer func(n int) { println(n) }(5)
+}
+
+func spawned() {
+	// ERROR "cannot use .five. of type string as type int in argument to func"
+	go func(n int) { println(n) }("five")
+	// ERROR "too many arguments in call to func"
+	go func(n int) { println(n) }(1, 2)
+	go func(n int) { println(n) }(5)
+}
+
+func valued() int {
+	// ERROR "cannot use .five. of type string as type int in argument to func"
+	x := func(n int) int { return n }("five")
+	// ERROR "not enough arguments in call to func"
+	y := func(n int) int { return n }()
+	z := func(n int) int { return n }(5)
+	// ERROR "undefined: missing"
+	w := func(n int) int { return n }(missing)
+	// A literal that is not called takes no arguments to check.
+	f := func(n int) int { return n }
+	return x + y + z + w + f(1)
+}
