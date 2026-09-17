@@ -2139,8 +2139,8 @@ func (e *emitter) emitSelect(ast []int32) {
 				// assign one, and the clause's variable is a value of its own, as it
 				// is for every other element type.
 				if c.declare {
-					e.locals[c.target.name] = c.elem
 					e.emitArrayCopy(c.target.name, tmp, a)
+					e.locals[c.target.name] = c.elem // after the copy, which takes the name
 				} else {
 					e.includes["string.h"] = true
 					e.ind()
@@ -8432,6 +8432,70 @@ func (e *emitter) shadowedByLocal(name string) bool {
 	return isLocal || e.curParams[name]
 }
 
+// localName reports whether a declaration of the function being emitted -- a
+// variable, a parameter, a block constant, a local array or slice -- has taken name.
+// Arrays and slices live in environments of their own, so all three are asked (see
+// isFrameVar). Package variables are emitted with no function around them, and with
+// whatever the last one left in these maps, so there the answer is no.
+func (e *emitter) localName(name string) bool {
+	if e.pkgScope {
+		return false
+	}
+	if _, ok := e.locals[name]; ok {
+		return true
+	}
+	if _, ok := e.arrays[name]; ok {
+		return true
+	}
+	if _, ok := e.sliceVars[name]; ok {
+		return true
+	}
+	return e.curParams[name]
+}
+
+// shadow forgets what the emitter knows about name, for a declaration that is about
+// to take it. The environments are keyed by SOURCE name and restored when a block
+// ends (enterScope), so an inner declaration has only to say what it is -- and until
+// 2026-09-17 it said only that, leaving whatever the OUTER name was in the
+// environments it did not write. A slice shadowing an array of its name, `buf :=
+// buf[2:5]`, was still an array to len, cap, range and the bounds check: len(buf)
+// was the array's, silently, and `if buf := buf[2:]; len(buf) == 2` skipped its
+// body. An array shadowing a slice emitted C that did not compile, and a loop
+// variable named as a block constant, `for k := 0; k < 2; k++` under `const k = 3`,
+// was folded to the constant and the loop never ran.
+//
+// Called at the point of registration and no earlier: the declaration's own value
+// is read in the OUTER view (see declareCopy).
+func (e *emitter) shadow(name string) {
+	if name == "" || name == "_" {
+		return
+	}
+	delete(e.frameBacked, name)
+	delete(e.frameHolder, name)
+	e.shadowKinds(name)
+}
+
+// shadowKinds is shadow without the frame marks, for a registration that comes
+// AFTER its declaration has been marked: a range value's array copy, above all,
+// whose mark noteRangeValueHolder sets before the copy is emitted.
+func (e *emitter) shadowKinds(name string) {
+	if name == "" || name == "_" {
+		return
+	}
+	delete(e.locals, name)
+	delete(e.arrays, name)
+	delete(e.sliceVars, name)
+	delete(e.funcValueOf, name)
+	if e.localConsts[name] {
+		// A block constant's folds go with it; a PACKAGE constant's are keyed by its
+		// mangled name and hidden by shadowedByLocal instead.
+		delete(e.localConsts, name)
+		delete(e.constInt, name)
+		delete(e.constStr, name)
+		delete(e.constUntyped, name)
+	}
+}
+
 // foldedQualifiedInt folds a reference to an imported package's integer constant,
 // `geo.MaxPoints`, to its literal value. The fold maps are keyed by the mangled
 // name, which is what that package emitted the constant under.
@@ -11679,273 +11743,320 @@ func (e *emitter) emitVarDecl(ast []int32) {
 				e.fail("unsupported var-spec element %v", s.sym)
 			}
 		}
-		// A value list gives every name its own initializer, so the spec is that
-		// many independent single-name declarations. One value (or none) keeps the
-		// single-spec paths below, which is where destructuring a call lives.
-		if len(names) > 1 && len(initExprs) == len(names) {
-			e.emitVarList(names, typeAST, initExprs)
-			continue
-		}
-		var initExpr []int32
-		if len(initExprs) != 0 {
-			initExpr = initExprs[0]
-		}
-		if typeAST == nil {
-			// Type-inferred `var x = expr` (the var form of `x := expr`) or
-			// `var a, b = f()` (destructuring). The grammar guarantees an initializer
-			// when the type is omitted.
-			if initExpr == nil {
-				e.fail("var declaration needs a type or an initializer")
+		e.emitVarSpec(names, typeAST, initExprs)
+	}
+}
+
+// emitVarSpec emits one spec of a var declaration, `a, b T = x, y`, already taken
+// apart.
+//
+// A value that reads a name its own spec declares reads the OUTER one: `var s int =
+// len(s)`, `var buf []uint8 = buf[2:5]`, `var a, b = b, a`. The paths below record
+// what a name is before its value is rendered, and rendered the values of a list
+// one after another, each seeing the names before it -- so those were refused
+// ("len is only supported for ..."), emitted C that did not compile, or were
+// silently wrong: `var a, b = b, a` gave both the old b. Each value is therefore
+// bound to a temporary first, through this same spec's paths and in the outer
+// view, and the names are then declared as copies (declareCopy).
+func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int32) {
+	if len(initExprs) == len(names) && e.specReadsItsNames(names, initExprs) {
+		tmps := make([]string, len(names))
+		for i := range names {
+			tmps[i] = e.newTmp()
+			e.emitVarSpec([]string{tmps[i]}, typeAST, [][]int32{initExprs[i]})
+			if e.err != nil {
 				return
 			}
-			if len(names) != 1 {
-				e.emitDestructure(plainTargets(names), allTrue(len(names)), initExpr)
-				continue
-			}
-			if names[0] == "_" {
-				e.emitDiscard(initExpr)
-				continue
-			}
-			e.emitInferredLocal(names[0], initExpr)
-			continue
 		}
-		// A fixed array `var a [N]T` -> `T a[N] = {0};`. Its name maps to the
-		// element type for `x := a[i]` typing. An initializer copies another array of
-		// the same type by value (`var b [N]T = a`); C cannot assign arrays, so the
-		// array is declared uninitialized and filled with memcpy.
-		if a, ok := e.arrayDim(typeAST); ok {
-			elem := a.elem
-			if len(names) != 1 && initExpr != nil {
-				e.fail("multi-name var with initializer is not supported yet")
-				return
+		for i, nm := range names {
+			if nm != "_" {
+				e.declareCopy(nm, tmps[i])
 			}
-			for _, nm := range names {
-				if nm == "_" {
-					if initExpr != nil {
-						e.emitDiscard(initExpr)
-					}
-					continue
-				}
-				e.arrays[nm] = a
-				if initExpr == nil {
-					e.ind()
-					// A zero-length array has nothing to zero, and "{0}" names an
-					// element it does not have -- valid to the target's C compiler,
-					// which says nothing, and a warning from the host's. `[0]T` is a
-					// legal Go type, so it is declared without an initializer instead.
-					if a.bound == "0" {
-						e.emit(elem + " " + nm + a.declSuffix() + ";\n")
-						continue
-					}
-					e.emit(elem + " " + nm + a.declSuffix() + " = {0};\n")
-					// An array whose ELEMENT is a channel owns a cell per element,
-					// on the rule a local channel already obeys: the declaration
-					// owns the cell, and the cell is static so it outlives every
-					// frame. Without this every element stayed a null pointer, and
-					// -- since the checker accepts `<-qs[0]` -- the program built
-					// and read rubbish off address zero rather than saying anything.
-					e.emitLocalChanElemCells(nm, a)
-					continue
-				}
-				// A literal initializer is aggregate initialization, not a copy.
-				if litType, lit, ok := e.soleArrayLit(initExpr); ok {
-					if !e.sameArrayType(a, litType) {
-						return
-					}
-					e.emitArrayLitVar(nm, litType, lit, false)
-					continue
-				}
-				// `var c [3]int = mk()`: the declaration is the storage the callee
-				// fills, so there is nothing to copy afterwards.
-				if cname, ra, isArrCall := e.arrayResultCall(initExpr); isArrCall {
-					if ra.elem != a.elem || ra.declSuffix() != a.declSuffix() {
-						e.fail("cannot use %s as %s in variable declaration", e.goArrayTypeName(ra), e.goArrayTypeName(a))
-						return
-					}
-					e.ind()
-					e.emit(elem + " " + nm + a.declSuffix() + ";\n")
-					e.emitArrayResultCall(nm, cname, initExpr)
-					continue
-				}
-				if !e.checkArrayShape(a, initExpr, "variable declaration") {
-					return
-				}
-				e.includes["string.h"] = true
-				// A self-referential shadowing copy (`var a [N]T = a` with an outer a)
-				// means the outer array; capture it before the new one shadows it, or
-				// the memcpy reads the uninitialized destination (see emitVarDeclInit).
-				if e.initRefsName(initExpr, nm) {
-					tmp := e.newTmp()
-					e.ind()
-					e.emit(elem + " " + tmp + a.declSuffix() + ";\n")
-					e.ind()
-					e.emit("memcpy(" + tmp + ", ")
-					e.emitExpr(initExpr)
-					e.emit(", sizeof(" + tmp + "));\n")
-					e.ind()
-					e.emit(elem + " " + nm + a.declSuffix() + ";\n")
-					e.ind()
-					e.emit("memcpy(" + nm + ", " + tmp + ", sizeof(" + nm + "));\n")
-					continue
-				}
-				e.ind()
-				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
-				e.ind()
-				e.emit("memcpy(" + nm + ", ")
-				e.emitExpr(initExpr)
-				e.emit(", sizeof(" + nm + "));\n")
-			}
-			continue
 		}
-		// A slice `var xs []T` -> `ogo_slice_T xs = {0};` (a { pointer, length }
-		// header, zero value {NULL, 0}); its name maps to the element type for `xs[i]`
-		// and len(xs). An initializer is a plain slice-header value copy.
-		if elem, ok := e.sliceType(typeAST); ok {
-			if len(names) != 1 && initExpr != nil {
-				e.fail("multi-name var with initializer is not supported yet")
-				return
-			}
-			cname := sliceCName(elem)
-			e.needSlice(elem)
-			// A make([]T, ...) or a literal initializer synthesises a backing array
-			// + header, rather than copying an existing header.
-			if initExpr != nil && len(names) == 1 && names[0] != "_" {
-				if litType, lit, ok := e.soleArrayLit(initExpr); ok {
-					if me, isSlice := e.sliceType(litType); !isSlice || me != elem {
-						e.fail("a %s literal cannot initialize a variable declared []%s", e.litTypeName(litType), elem)
-						return
-					}
-					e.emitArrayLitVar(names[0], litType, lit, false)
-					continue
-				}
-				if me, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
-					if me != elem {
-						e.fail("make element type %q does not match the declared slice element type %q", me, elem)
-						return
-					}
-					e.sliceVars[names[0]] = elem
-					e.locals[names[0]] = cname
-					e.emitMakeSliceVar(names[0], cname, elem, lenAST, capAST, false)
-					continue
-				}
-			}
-			for _, nm := range names {
-				if nm == "_" {
-					if initExpr != nil {
-						e.emitDiscard(initExpr)
-					}
-					continue
-				}
-				e.sliceVars[nm] = elem
-				e.locals[nm] = cname
-				// A self-referential shadowing copy (`var xs []T = xs` with an outer
-				// xs) means the outer header; capture it before the new one shadows it
-				// (see emitVarDeclInit).
-				if initExpr != nil && e.initRefsName(initExpr, nm) {
-					tmp := e.newTmp()
-					e.ind()
-					e.emit(cname + " " + tmp + " = ")
-					e.emitExpr(initExpr)
-					e.emit(";\n")
-					e.ind()
-					e.emit(cname + " " + nm + " = " + tmp + ";\n")
-					continue
-				}
-				e.ind()
-				e.emit(cname + " " + nm + " = ")
-				// An explicit `= nil`, like no initializer at all, is the zero header
-				// {0} -- nil's integer form 0 is not a slice value.
-				if initExpr != nil && !e.isNilExpr(initExpr) {
-					e.emitExpr(initExpr)
-				} else {
-					e.emit("{0}")
-				}
-				e.emit(";\n")
-			}
-			continue
-		}
-		ctype := e.cType(typeAST)
-		if ctype == "" {
+		return
+	}
+	// A value list gives every name its own initializer, so the spec is that
+	// many independent single-name declarations. One value (or none) keeps the
+	// single-spec paths below, which is where destructuring a call lives.
+	if len(names) > 1 && len(initExprs) == len(names) {
+		e.emitVarList(names, typeAST, initExprs)
+		return
+	}
+	var initExpr []int32
+	if len(initExprs) != 0 {
+		initExpr = initExprs[0]
+	}
+	if typeAST == nil {
+		// Type-inferred `var x = expr` (the var form of `x := expr`) or
+		// `var a, b = f()` (destructuring). The grammar guarantees an initializer
+		// when the type is omitted.
+		if initExpr == nil {
+			e.fail("var declaration needs a type or an initializer")
 			return
 		}
-		if len(names) != 1 && initExpr != nil {
-			// A multi-name initializer destructures a multi-result call, declaring
-			// each name -- the var form of `a, b := f()`.
+		if len(names) != 1 {
 			e.emitDestructure(plainTargets(names), allTrue(len(names)), initExpr)
-			continue
+			return
+		}
+		if names[0] == "_" {
+			e.emitDiscard(initExpr)
+			return
+		}
+		e.emitInferredLocal(names[0], initExpr)
+		return
+	}
+	// A fixed array `var a [N]T` -> `T a[N] = {0};`. Its name maps to the
+	// element type for `x := a[i]` typing. An initializer copies another array of
+	// the same type by value (`var b [N]T = a`); C cannot assign arrays, so the
+	// array is declared uninitialized and filled with memcpy.
+	if a, ok := e.arrayDim(typeAST); ok {
+		elem := a.elem
+		if len(names) != 1 && initExpr != nil {
+			e.fail("multi-name var with initializer is not supported yet")
+			return
 		}
 		for _, nm := range names {
 			if nm == "_" {
-				// A blank var declares nothing. With an initializer, its side
-				// effects still run and the value is discarded; without one, it
-				// emits nothing at all.
 				if initExpr != nil {
 					e.emitDiscard(initExpr)
 				}
 				continue
 			}
-			e.locals[nm] = ctype
-			// `var d List = make(List, n, c)` over `type List []int`. The branch
-			// above takes the "[]T" spelling; a DEFINED slice type arrives here
-			// instead, because its declared type is a name. It keeps that name as
-			// its C type -- resolving it to the header's own would cost the variable
-			// its methods, which is what litSliceType's comment warns about -- while
-			// the backing array and the { ptr, len, cap } it points at are built
-			// exactly as for the unnamed spelling.
-			if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok && e.isSliceCType(e.underlyingCType(ctype)) {
-				e.needSlice(elem)
-				e.sliceVars[nm] = elem
-				e.emitMakeSliceVar(nm, ctype, elem, lenAST, capAST, false)
+			e.shadow(nm)
+			e.arrays[nm] = a
+			if initExpr == nil {
+				e.ind()
+				// A zero-length array has nothing to zero, and "{0}" names an
+				// element it does not have -- valid to the target's C compiler,
+				// which says nothing, and a warning from the host's. `[0]T` is a
+				// legal Go type, so it is declared without an initializer instead.
+				if a.bound == "0" {
+					e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+					continue
+				}
+				e.emit(elem + " " + nm + a.declSuffix() + " = {0};\n")
+				// An array whose ELEMENT is a channel owns a cell per element,
+				// on the rule a local channel already obeys: the declaration
+				// owns the cell, and the cell is static so it outlives every
+				// frame. Without this every element stayed a null pointer, and
+				// -- since the checker accepts `<-qs[0]` -- the program built
+				// and read rubbish off address zero rather than saying anything.
+				e.emitLocalChanElemCells(nm, a)
 				continue
 			}
-			// A DEFINED slice type declared from an existing header views the same
-			// storage, so it inherits where that storage lives -- the entry the short
-			// form records for itself. Without it `var s L = a[:]` over a local a was
-			// a frame-backed slice no sink could see, and storing s in a package
-			// variable was accepted where the "[]int" spelling of the same two lines
-			// was refused.
-			if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
-				e.sliceVars[nm] = sliceElemFromCName(u)
-				if e.initViewsFrame(initExpr) {
-					e.frameBacked[nm] = true
+			// A literal initializer is aggregate initialization, not a copy.
+			if litType, lit, ok := e.soleArrayLit(initExpr); ok {
+				if !e.sameArrayType(a, litType) {
+					return
 				}
+				e.emitArrayLitVar(nm, litType, lit, false)
+				continue
 			}
-			if initExpr != nil {
-				// The provenance the SHORT form records for itself. Without these
-				// `var b B = B{a[:]}` marked nothing where `b := B{a[:]}` marked b,
-				// so storing that struct, or reading the field back out of it, was
-				// accepted -- the same declaration one spelling apart.
-				e.noteDeclFrameHolder(ctype, nm, initExpr)
-				e.bindLitFuncFields(nm, initExpr)
-				e.emitVarDeclInit(ctype, nm, initExpr)
+			// `var c [3]int = mk()`: the declaration is the storage the callee
+			// fills, so there is nothing to copy afterwards.
+			if cname, ra, isArrCall := e.arrayResultCall(initExpr); isArrCall {
+				if ra.elem != a.elem || ra.declSuffix() != a.declSuffix() {
+					e.fail("cannot use %s as %s in variable declaration", e.goArrayTypeName(ra), e.goArrayTypeName(a))
+					return
+				}
+				e.ind()
+				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+				e.emitArrayResultCall(nm, cname, initExpr)
+				continue
+			}
+			if !e.checkArrayShape(a, initExpr, "variable declaration") {
+				return
+			}
+			e.includes["string.h"] = true
+			// A self-referential shadowing copy (`var a [N]T = a` with an outer a)
+			// means the outer array; capture it before the new one shadows it, or
+			// the memcpy reads the uninitialized destination (see emitVarDeclInit).
+			if e.initRefsName(initExpr, nm) {
+				tmp := e.newTmp()
+				e.ind()
+				e.emit(elem + " " + tmp + a.declSuffix() + ";\n")
+				e.ind()
+				e.emit("memcpy(" + tmp + ", ")
+				e.emitExpr(initExpr)
+				e.emit(", sizeof(" + tmp + "));\n")
+				e.ind()
+				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+				e.ind()
+				e.emit("memcpy(" + nm + ", " + tmp + ", sizeof(" + nm + "));\n")
+				continue
+			}
+			e.ind()
+			e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+			e.ind()
+			e.emit("memcpy(" + nm + ", ")
+			e.emitExpr(initExpr)
+			e.emit(", sizeof(" + nm + "));\n")
+		}
+		return
+	}
+	// A slice `var xs []T` -> `ogo_slice_T xs = {0};` (a { pointer, length }
+	// header, zero value {NULL, 0}); its name maps to the element type for `xs[i]`
+	// and len(xs). An initializer is a plain slice-header value copy.
+	if elem, ok := e.sliceType(typeAST); ok {
+		if len(names) != 1 && initExpr != nil {
+			e.fail("multi-name var with initializer is not supported yet")
+			return
+		}
+		cname := sliceCName(elem)
+		e.needSlice(elem)
+		// A make([]T, ...) or a literal initializer synthesises a backing array
+		// + header, rather than copying an existing header.
+		if initExpr != nil && len(names) == 1 && names[0] != "_" {
+			if litType, lit, ok := e.soleArrayLit(initExpr); ok {
+				if me, isSlice := e.sliceType(litType); !isSlice || me != elem {
+					e.fail("a %s literal cannot initialize a variable declared []%s", e.litTypeName(litType), elem)
+					return
+				}
+				e.emitArrayLitVar(names[0], litType, lit, false)
+				return
+			}
+			if me, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
+				if me != elem {
+					e.fail("make element type %q does not match the declared slice element type %q", me, elem)
+					return
+				}
+				e.sliceVars[names[0]] = elem
+				e.locals[names[0]] = cname
+				e.emitMakeSliceVar(names[0], cname, elem, lenAST, capAST, false)
+				return
+			}
+		}
+		for _, nm := range names {
+			if nm == "_" {
+				if initExpr != nil {
+					e.emitDiscard(initExpr)
+				}
+				continue
+			}
+			e.shadow(nm)
+			e.sliceVars[nm] = elem
+			e.locals[nm] = cname
+			// A self-referential shadowing copy (`var xs []T = xs` with an outer
+			// xs) means the outer header; capture it before the new one shadows it
+			// (see emitVarDeclInit).
+			if initExpr != nil && e.initRefsName(initExpr, nm) {
+				tmp := e.newTmp()
+				e.ind()
+				e.emit(cname + " " + tmp + " = ")
+				e.emitExpr(initExpr)
+				e.emit(";\n")
+				e.ind()
+				e.emit(cname + " " + nm + " = " + tmp + ";\n")
+				continue
+			}
+			e.ind()
+			e.emit(cname + " " + nm + " = ")
+			// An explicit `= nil`, like no initializer at all, is the zero header
+			// {0} -- nil's integer form 0 is not a slice value.
+			if initExpr != nil && !e.isNilExpr(initExpr) {
+				e.emitExpr(initExpr)
 			} else {
-				e.ind()
-				e.emit(ctype + " " + e.localIdent(nm) + " = " + e.zeroInitC(ctype) + ";\n")
+				e.emit("{0}")
 			}
-			// A channel is storage, not a handle: the checker rejects make() for one
-			// ("dynamic allocation not supported"), so the declaration is what
-			// creates it. Acquiring the hardware lock here is what makes the cell
-			// usable, and ties the lock's lifetime to the variable's.
-			//
-			// Only a declaration with NO initializer creates one. `var c chan int = ch`
-			// names the channel ch already is -- which is Go's reading too, a channel
-			// value being copied so that the two then refer to one channel -- and the
-			// cell was minted for it anyway, overwriting the alias one line after it
-			// was written with a private cell nobody ever sends to. The first receive
-			// then blocked for ever. `c := ch` and `c = ch` always aliased, so this
-			// was the one spelling of three that did not.
-			if initExpr == nil && e.isChanCType(ctype) {
-				// The declaration owns the cell; the variable is a reference to it.
-				e.ind()
-				e.emit(nm + " = &" + e.localChanCell(e.chanElemOfCType(ctype)) + ";\n")
+			e.emit(";\n")
+		}
+		return
+	}
+	ctype := e.cType(typeAST)
+	if ctype == "" {
+		return
+	}
+	if len(names) != 1 && initExpr != nil {
+		// A multi-name initializer destructures a multi-result call, declaring
+		// each name -- the var form of `a, b := f()`.
+		e.emitDestructure(plainTargets(names), allTrue(len(names)), initExpr)
+		return
+	}
+	for _, nm := range names {
+		if nm == "_" {
+			// A blank var declares nothing. With an initializer, its side
+			// effects still run and the value is discarded; without one, it
+			// emits nothing at all.
+			if initExpr != nil {
+				e.emitDiscard(initExpr)
 			}
-			// A local struct owns a cell per channel field, on the same rule as a
-			// local channel: the declaration owns it. Without this the field would be
-			// a null pointer that builds and then faults at the first send, which is
-			// the worst way for a feature to be missing.
-			e.emitLocalChanFieldCells(nm, ctype, e.declLitNode(initExpr))
+			continue
+		}
+		e.shadow(nm)
+		e.locals[nm] = ctype
+		// `var d List = make(List, n, c)` over `type List []int`. The branch
+		// above takes the "[]T" spelling; a DEFINED slice type arrives here
+		// instead, because its declared type is a name. It keeps that name as
+		// its C type -- resolving it to the header's own would cost the variable
+		// its methods, which is what litSliceType's comment warns about -- while
+		// the backing array and the { ptr, len, cap } it points at are built
+		// exactly as for the unnamed spelling.
+		if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok && e.isSliceCType(e.underlyingCType(ctype)) {
+			e.needSlice(elem)
+			e.sliceVars[nm] = elem
+			e.emitMakeSliceVar(nm, ctype, elem, lenAST, capAST, false)
+			continue
+		}
+		// A DEFINED slice type declared from an existing header views the same
+		// storage, so it inherits where that storage lives -- the entry the short
+		// form records for itself. Without it `var s L = a[:]` over a local a was
+		// a frame-backed slice no sink could see, and storing s in a package
+		// variable was accepted where the "[]int" spelling of the same two lines
+		// was refused.
+		if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
+			e.sliceVars[nm] = sliceElemFromCName(u)
+			if e.initViewsFrame(initExpr) {
+				e.frameBacked[nm] = true
+			}
+		}
+		if initExpr != nil {
+			// The provenance the SHORT form records for itself. Without these
+			// `var b B = B{a[:]}` marked nothing where `b := B{a[:]}` marked b,
+			// so storing that struct, or reading the field back out of it, was
+			// accepted -- the same declaration one spelling apart.
+			e.noteDeclFrameHolder(ctype, nm, initExpr)
+			e.bindLitFuncFields(nm, initExpr)
+			e.emitVarDeclInit(ctype, nm, initExpr)
+		} else {
+			e.ind()
+			e.emit(ctype + " " + e.localIdent(nm) + " = " + e.zeroInitC(ctype) + ";\n")
+		}
+		// A channel is storage, not a handle: the checker rejects make() for one
+		// ("dynamic allocation not supported"), so the declaration is what
+		// creates it. Acquiring the hardware lock here is what makes the cell
+		// usable, and ties the lock's lifetime to the variable's.
+		//
+		// Only a declaration with NO initializer creates one. `var c chan int = ch`
+		// names the channel ch already is -- which is Go's reading too, a channel
+		// value being copied so that the two then refer to one channel -- and the
+		// cell was minted for it anyway, overwriting the alias one line after it
+		// was written with a private cell nobody ever sends to. The first receive
+		// then blocked for ever. `c := ch` and `c = ch` always aliased, so this
+		// was the one spelling of three that did not.
+		if initExpr == nil && e.isChanCType(ctype) {
+			// The declaration owns the cell; the variable is a reference to it.
+			e.ind()
+			e.emit(nm + " = &" + e.localChanCell(e.chanElemOfCType(ctype)) + ";\n")
+		}
+		// A local struct owns a cell per channel field, on the same rule as a
+		// local channel: the declaration owns it. Without this the field would be
+		// a null pointer that builds and then faults at the first send, which is
+		// the worst way for a feature to be missing.
+		e.emitLocalChanFieldCells(nm, ctype, e.declLitNode(initExpr))
+	}
+}
+
+// specReadsItsNames reports whether a value of a var spec reads a name the spec
+// declares.
+func (e *emitter) specReadsItsNames(names []string, initExprs [][]int32) bool {
+	for _, x := range initExprs {
+		for _, nm := range names {
+			if nm != "_" && e.initRefsName(x, nm) {
+				return true
+			}
 		}
 	}
+	return false
 }
 
 // factorCompositeLit matches a Factor of the shape "T{...}": an identifier naming
@@ -12729,6 +12840,7 @@ func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
 }
 
 func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
+	e.shadowKinds(dst)
 	e.arrays[dst] = a
 	e.includes["string.h"] = true
 	e.ind()
@@ -12854,6 +12966,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		if static {
 			e.globalArrays[name] = a
 		} else {
+			e.shadow(name)
 			e.arrays[name] = a
 		}
 		// A zero-length array has nothing to initialize, and "{0}" names an element
@@ -12906,6 +13019,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		e.globalSliceVars[name] = elem
 		e.globals[name] = cname
 	} else {
+		e.shadow(name)
 		e.sliceVars[name] = elem
 		e.locals[name] = cname
 		e.frameBacked[name] = true // the backing array is a local of this frame
@@ -14002,6 +14116,7 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 		if ctype == "" {
 			return
 		}
+		e.shadow(nm)
 		if elem, ok := e.sliceType(typeAST); ok {
 			e.sliceVars[nm] = elem
 		}
@@ -17531,6 +17646,13 @@ func (e *emitter) varType(name string) (string, bool) {
 	if ct, ok := e.locals[name]; ok {
 		return e.unaliased(ct), true
 	}
+	// A local ARRAY may be in arrays and nowhere else, an array having no C value
+	// type to be in locals by; it still hides the package variable of its name.
+	// Falling through gave `gxs := [2]int{7, 8}` the type of a package slice gxs,
+	// and gxs[1] was indexed through a header the array does not have.
+	if e.localName(name) {
+		return "", false
+	}
 	if ct, ok := e.globals[e.globalC(name)]; ok {
 		return e.unaliased(ct), true
 	}
@@ -18754,6 +18876,7 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 		}
 	}
 	for i, name := range names {
+		e.shadow(name)
 		e.locals[name] = cts[i]
 		e.ind()
 		// localIdent: a loop variable named after a type is ordinary Go and the
@@ -18846,7 +18969,7 @@ func (e *emitter) emitFor(nodes []Node) {
 	// A multi-name init is declared in a block around the loop; blockInit says one
 	// was opened, so it is closed after the body.
 	blockInit := false
-	initName, initCType := "", ""
+	initName, initCType, initVal := "", "", ""
 	if h.hasClause && h.initLHS != nil && h.initOp == DEFINE {
 		// The SOURCE name, which is what locals is keyed by everywhere else --
 		// exprC renders a name for EMISSION, and a name renamed there (a variable
@@ -18861,6 +18984,16 @@ func (e *emitter) emitFor(nodes []Node) {
 			e.fail("cannot infer the type of a for-loop init variable")
 			return
 		}
+		// The value is rendered HERE, while the name still means what it means
+		// outside the loop: `for xs := xs[1:]; len(xs) > 0; xs = xs[1:]` over an
+		// array xs slices the ARRAY. One that reads the name is captured ahead of
+		// the loop as well, since C's `int c = c + 1` reads the c it is declaring.
+		initVal = e.exprC(h.initRHS)
+		if e.initRefsName(h.initRHS, initName) {
+			text := initVal
+			initVal = e.hoist(initCType, func() { e.emit(text) })
+		}
+		e.shadow(initName)
 		e.locals[initName] = initCType
 	}
 	var condText string
@@ -18924,15 +19057,7 @@ func (e *emitter) emitFor(nodes []Node) {
 			lhs := e.exprC(h.initLHS)
 			switch h.initOp {
 			case DEFINE:
-				val := e.exprC(h.initRHS)
-				if e.initRefsName(h.initRHS, initName) {
-					// `for c := c + 1; ...` reads the OUTER c, and C's `int c = c + 1`
-					// reads the one it is declaring. Captured ahead of the loop, as
-					// emitVarDeclInit does for the declaration statement.
-					text := val
-					val = e.hoist(initCType, func() { e.emit(text) })
-				}
-				initText = initCType + " " + e.localIdent(initName) + " = " + val
+				initText = initCType + " " + e.localIdent(initName) + " = " + initVal
 			case ASSIGN:
 				// The statement's own lowering, as the post clause takes (see
 				// emitPostAssign): `for total = 1 << n; ...` for a uint64 shifted an
@@ -19257,6 +19382,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			slot, declare = e.newTmp(), true
 		}
 		if declare {
+			e.shadow(slot)
 			e.locals[slot] = elem
 		}
 		// An ASSIGNING clause, `for last = range ch`, writes the program's OWN
@@ -19322,6 +19448,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		hdr := e.newTmp()
 		e.ind()
 		e.emit("ogo_string " + hdr + " = " + e.exprC(h.rangeExpr) + ";\n")
+		e.shadow(key)
 		e.locals[key] = "int"
 		e.usesRuneDecode = true
 		width := e.newTmp()
@@ -19334,6 +19461,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			val = e.exprC(h.valVar)
 		}
 		if h.rangeDef && val != "_" {
+			e.shadow(val)
 			e.locals[val] = "int" // a rune is int32, i.e. int on the P2
 		}
 		inject := func() {
@@ -19374,6 +19502,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		n := e.newTmp()
 		e.ind()
 		e.emit("int " + n + " = " + e.exprC(h.rangeExpr) + ";\n")
+		e.shadow(key)
 		e.locals[key] = "int"
 		e.ind()
 		e.emit("for (int " + key + " = 0; " + key + " < " + n + "; " + key + "++) {\n")
@@ -19407,6 +19536,9 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 	}
 	if h.valVar != nil {
 		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
+			if h.rangeDef {
+				e.shadow(val)
+			}
 			e.noteRangeValueHolder(h.rangeExpr, val, elem)
 			// An ARRAY element is COPIED, as Go copies it, and C cannot assign one:
 			// `T v = xs.ptr[i]` is not an initializer it accepts. A ":=" clause
@@ -19416,8 +19548,8 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 			if a, isArr := e.namedArrays[elem]; isArr {
 				lines = append(lines, func() {
 					if h.rangeDef {
-						e.locals[val] = elem
 						e.emitArrayCopy(val, access, a)
+						e.locals[val] = elem // after the copy, which takes the name
 						return
 					}
 					if dst, isArr := e.arrayVar(val); isArr &&
@@ -19457,6 +19589,7 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 // emitRangeSlice emits the counting loop over a slice named by hdr, whose header
 // has already been given a name.
 func (e *emitter) emitRangeSlice(h *forHeader, body []int32, key, ct, hdr string) {
+	e.shadow(key)
 	e.locals[key] = "int"
 	e.ind()
 	e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
@@ -19466,6 +19599,7 @@ func (e *emitter) emitRangeSlice(h *forHeader, body []int32, key, ct, hdr string
 // emitRangeArray emits the counting loop over an array named by base, bounded by
 // its compile-time extent.
 func (e *emitter) emitRangeArray(h *forHeader, body []int32, key string, a arrDim, base string) {
+	e.shadow(key)
 	e.locals[key] = "int"
 	e.ind()
 	e.emit("for (int " + key + " = 0; " + key + " < " + a.bound + "; " + key + "++) {\n")
@@ -20069,6 +20203,11 @@ func (e *emitter) qualifiedFactor(ast []int32) (qual, member string, ok bool) {
 // which is Go's rule, and the reason a clause cannot share one declaration with the
 // statement.
 func (e *emitter) emitTypeSwitch(ts typeSwitch, cases []Node) {
+	// The name a type switch binds may shadow one of another kind, `switch v :=
+	// sh.(type)` under an array v, and takes it as any declaration does (shadow);
+	// the scope is what gives the outer v back, the restore below knowing only
+	// about types. Without it v.s in a clause was "v has no field s" -- of an array.
+	defer e.enterScope()()
 	label := fmt.Sprintf("ogo_break_%d", e.switchBreakSeq)
 	e.switchBreakSeq++
 	savedBreak := e.switchBreak
@@ -20196,6 +20335,7 @@ func (e *emitter) bindTypeSwitchIface(ts typeSwitch, caseIface string, types []s
 	if ts.name == "" || ts.name == "_" {
 		return
 	}
+	e.shadow(ts.name)
 	e.locals[ts.name] = caseIface
 	e.ind()
 	e.emit(caseIface + " " + e.varRef(ts.name) + " = {0};\n")
@@ -20328,6 +20468,7 @@ func (e *emitter) bindTypeSwitchName(ts typeSwitch, concrete string, single bool
 	if single && concrete != "" {
 		ct, init = concrete+"*", e.assertValueC(ts.operand, concrete)
 	}
+	e.shadow(ts.name)
 	e.locals[ts.name] = ct
 	e.ind()
 	e.emit(ct + " " + e.varRef(ts.name) + " = " + init + ";\n")
@@ -22333,7 +22474,7 @@ func (e *emitter) methodRecvCType(recv string) (string, bool) {
 	if a, ok := e.arrays[recv]; ok && a.name != "" {
 		return a.name, true
 	}
-	if a, ok := e.globalArrays[e.globalC(recv)]; ok && a.name != "" {
+	if a, ok := e.globalArrays[e.globalC(recv)]; ok && a.name != "" && !e.localName(recv) {
 		return a.name, true
 	}
 	return "", false
@@ -23718,6 +23859,12 @@ func (e *emitter) emitTryAppend(targets []assignTarget, declare []bool, callSuff
 func (e *emitter) arrayVar(name string) (arrDim, bool) {
 	if a, ok := e.arrays[name]; ok {
 		return a, true
+	}
+	// A local of any other kind has taken the name, so the package's array of that
+	// name is not what it means here: `gbuf := gbuf[2:5]` for a package array gbuf
+	// is a slice, and len(gbuf) was the array's 8 where Go says 3.
+	if e.localName(name) {
+		return arrDim{}, false
 	}
 	if a, ok := e.globalArrays[e.globalC(name)]; ok {
 		return a, true
@@ -25908,6 +26055,21 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 // slice-typed result records its element type so later indexing / len / cap /
 // append on name resolve.
 func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
+	// A value that reads the name being declared reads the OUTER one, `buf :=
+	// buf[2:5]`, `s := len(s)`, `p := *p`, `x := x + 1`. Every path below records
+	// what the new name is, some of them before the value is rendered, and the value
+	// was then read as the NEW kind: refused where the kinds differ ("len is only
+	// supported for ...", "v has no field n", "cannot indirect p"), or sliced from
+	// itself. So the value is bound to a temporary first, through this same path and
+	// in the outer view, and the name declared as a copy of it (declareCopy).
+	if name != "_" && e.initRefsName(initExpr, name) {
+		tmp := e.newTmp()
+		e.emitInferredLocal(tmp, initExpr)
+		if e.err == nil {
+			e.declareCopy(name, tmp)
+		}
+		return
+	}
 	e.bindFuncValue(name, initExpr)
 	// `r := row(a)` for `type row [3]int`: the conversion changes nothing about the
 	// value -- a defined type is a typedef of what it stands for -- so what is
@@ -25935,6 +26097,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	// parameter, and the declaration IS the storage it writes into. Asked before the
 	// array-result call below, which it mirrors.
 	if elem, base, a, ok := e.arrayRecvInit(initExpr); ok {
+		e.shadow(name)
 		e.arrays[name] = a
 		e.locals[name] = elem
 		e.chanRecvElems[elem] = true
@@ -25947,6 +26110,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	// `a := mk()` where mk returns an array: the caller owns the storage and the
 	// callee fills it, so the declaration IS the storage and the call is a statement.
 	if cname, a, ok := e.arrayResultCall(initExpr); ok {
+		e.shadow(name)
 		e.arrays[name] = a
 		e.ind()
 		e.emit(a.elem + " " + userIdent(name) + a.declSuffix() + ";\n")
@@ -25962,7 +26126,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 			e.emitArrayCopy(name, rhs, a)
 			return
 		}
-		if a, isGlobal := e.globalArrays[e.globalC(rhs)]; isGlobal {
+		if a, isGlobal := e.globalArrays[e.globalC(rhs)]; isGlobal && !e.localName(rhs) {
 			e.emitArrayCopy(name, e.globalC(rhs), a)
 			return
 		}
@@ -25995,6 +26159,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
 		cname := sliceCName(elem)
 		e.needSlice(elem)
+		e.shadow(name)
 		e.sliceVars[name] = elem
 		e.locals[name] = cname
 		e.emitMakeSliceVar(name, cname, elem, lenAST, capAST, false)
@@ -26029,6 +26194,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	if nm, _, isLit := e.soleCompositeLit(initExpr); isLit && nm != ct && e.underlyingCType(nm) == ct {
 		ct = nm
 	}
+	e.shadow(name)
 	e.locals[name] = ct
 	// Through the underlying type, so a defined slice type is still a slice here:
 	// what makes `d[i]` and len(d) work is this entry, and the name above is what
@@ -26044,6 +26210,62 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	e.noteDeclFrameHolder(ct, name, initExpr)
 	e.bindLitFuncFields(name, initExpr)
 	e.emitVarDeclInit(ct, name, initExpr)
+}
+
+// declareCopy declares name as a copy of tmp, a temporary that already holds the
+// declaration's value and that the emitter knows everything about: its shape if it
+// is an array, its type, whether it is a slice, a function value or a reference to
+// this frame. name takes all of it. It is the second half of a declaration whose
+// value read the name it shadows, and the only point at which name changes meaning.
+func (e *emitter) declareCopy(name, tmp string) {
+	if a, isArr := e.arrays[tmp]; isArr {
+		elem, hasElem := e.locals[tmp]
+		e.emitArrayCopy(name, tmp, a)
+		if hasElem {
+			e.locals[name] = elem
+		}
+		return
+	}
+	ct, ok := e.locals[tmp]
+	if !ok {
+		e.fail("internal error: the temporary of a shadowing declaration of %q has no type", name)
+		return
+	}
+	elem, isSlice := e.sliceVars[tmp]
+	backed, holder, fn := e.frameBacked[tmp], e.frameHolder[tmp], e.funcValueOf[tmp]
+	fields := map[string]string{}
+	for k, v := range e.funcValueOf {
+		if strings.HasPrefix(k, tmp+".") {
+			fields[name+strings.TrimPrefix(k, tmp)] = v
+		}
+	}
+	e.shadow(name)
+	e.locals[name] = ct
+	if isSlice {
+		e.sliceVars[name] = elem
+	}
+	if backed {
+		e.frameBacked[name] = true
+	}
+	if holder != "" {
+		e.frameHolder[name] = holder
+	}
+	if fn != "" {
+		e.funcValueOf[name] = fn
+	}
+	for k, v := range fields {
+		e.funcValueOf[k] = v
+	}
+	cn := e.localIdent(name)
+	e.ind()
+	if e.hasArrayField(ct) {
+		e.includes["string.h"] = true
+		e.emit(ct + " " + cn + ";\n")
+		e.ind()
+		e.emit("memcpy(&" + cn + ", &" + tmp + ", sizeof(" + ct + "));\n")
+		return
+	}
+	e.emit(ct + " " + cn + " = " + tmp + ";\n")
 }
 
 // noteDeclFrameHolder marks a declared variable that its initializer gives a
@@ -26095,6 +26317,8 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	e.typeUntypedShifts(initExpr, ctype) // the variable's type is the context's
 	// `var v [3]int = <-ch` / `v := <-ch` for a channel of arrays: the receive writes
 	// through an out parameter, and this declaration IS the storage it writes into.
+	// (No shadow here or below: every caller has taken the name already, and has
+	// since said things about it -- a frame mark above all -- that must stand.)
 	if elem, base, a, ok := e.arrayRecvInit(initExpr); ok {
 		e.arrays[name] = a
 		e.locals[name] = elem
@@ -26979,6 +27203,7 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 	if t.plain() {
 		e.ind()
 		if declare {
+			e.shadow(t.name)
 			e.locals[t.name] = ctype
 			e.emit(ctype + " " + userIdent(t.name) + " = " + val + ";\n")
 		} else {
@@ -28306,11 +28531,15 @@ func (e *emitter) sliceElem(name string) (string, bool) {
 	if el, ok := e.sliceVars[name]; ok {
 		return el, true
 	}
-	if el, ok := e.globalSliceVars[e.globalC(name)]; ok {
-		return el, true
-	}
-	if el, ok := e.globalSliceVars[name]; ok {
-		return el, true // an imported package's slice; see varType
+	// A local of another kind hides the package's slice of that name, as it hides
+	// its array (arrayVar); what the local IS is still asked below.
+	if !e.localName(name) {
+		if el, ok := e.globalSliceVars[e.globalC(name)]; ok {
+			return el, true
+		}
+		if el, ok := e.globalSliceVars[name]; ok {
+			return el, true // an imported package's slice; see varType
+		}
 	}
 	// A named type over a slice is a slice, `type List []int`: it is not in the two
 	// registries above, which are filled where a slice type is written out, but its

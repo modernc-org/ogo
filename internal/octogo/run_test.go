@@ -26470,6 +26470,215 @@ func main() {
 }
 `,
 		want: "1099511627776 1099511627776 2199023255552\nswap 2 1\nfib 20 30\n4398046511104\nshadow 1 5\nself 6\nself 7\n5 5\n",
+	},
+	{
+		// A declaration that gives a name another KIND. The emitter keeps what it knows
+		// of a name in maps keyed by the source name, one each for types, arrays and
+		// slices, restored when a block ends; and a declaration wrote the map of its
+		// own kind and left the OUTER name's entry in the others. So a slice shadowing
+		// the array it views, `buf := buf[2:5]` -- the everyday way to take a window --
+		// was still an array to len, cap, range and the bounds check: len(buf) was the
+		// array's, silently, and `if buf := buf[2:]; len(buf) == 2` skipped its body.
+		// The same held for a package array under a local slice, since a lookup that
+		// missed the local maps fell through to the package's, and for a parameter.
+		// An array shadowing a slice emitted C that did not compile, and a loop
+		// variable named as a block constant was folded away and the loop never ran.
+		//
+		// And a value that reads the name it shadows was read as the NEW kind, the
+		// name being recorded before the value was rendered: `s := len(s)`, `p := *p`
+		// and `v := v.n + 1` were refused, `var a, b = b, a` gave both the old b, and
+		// `var count [3]int = [3]int{count, 2, 3}` was refused by gcc and BUILT by
+		// flexcc. The value is now bound first, in the outer view.
+		name: "a declaration that gives a name another kind",
+		src: `type V struct {
+	n     int
+	items [3]int
+}
+
+var gbuf [8]uint8
+var gxs []int
+var gback [6]int
+var count int = 4
+
+func sum(xs []int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+// A parameter array shadowed by a slice of itself in a nested block.
+func tail(data [4]int) int {
+	out := 0
+	if data[0] > 0 {
+		data := data[1:]
+		out = len(data)*100 + sum(data)
+	}
+	return out + len(data)
+}
+
+// A parameter of one kind named as a package variable of another.
+func byParam(gbuf []uint8, count [3]int) int {
+	return len(gbuf)*100 + len(count)*10 + int(gbuf[0]) + count[2]
+}
+
+func main() {
+	for i := range gbuf {
+		gbuf[i] = uint8(i + 1)
+	}
+	for i := range gback {
+		gback[i] = (i + 1) * 10
+	}
+	gxs = gback[:4]
+	arr := [4]int{10, 20, 30, 40}
+	xs := arr[:3]
+	v := V{n: 2, items: [3]int{1, 2, 3}}
+	p := &v
+	s := "hello"
+
+	// A slice shadowing the array it views: len, cap, range and an index are the
+	// slice's.
+	{
+		arr := arr[1:3]
+		t := 0
+		for _, a := range arr {
+			t += a
+		}
+		println(len(arr), cap(arr), t, arr[1], sum(arr))
+	}
+	if arr := arr[2:]; len(arr) == 2 {
+		println("if", arr[0])
+	}
+	switch arr := arr[1:]; len(arr) {
+	case 3:
+		println("switch", arr[0])
+	}
+	// The same over a package array, and a loop that consumes its shadow.
+	{
+		gbuf := gbuf[2:5]
+		println(len(gbuf), gbuf[0])
+	}
+	total := 0
+	for gbuf := gbuf[:]; len(gbuf) > 0; gbuf = gbuf[2:] {
+		total += int(gbuf[0])
+	}
+	println(total, len(gbuf), tail(arr), byParam(gbuf[2:5], [3]int{1, 2, 3}))
+	// An array shadowing a slice, local and package.
+	{
+		xs := [2]int{5, 6}
+		gxs := [2]int{7, 8}
+		println(len(xs), xs[1], len(gxs), gxs[1])
+	}
+	println(len(xs), len(gxs))
+
+	// A value that reads the name it shadows, of another kind.
+	{
+		s := len(s)
+		p := *p
+		v := v.n + 1
+		p.n = 9
+		println(s*2, p.n, v)
+	}
+	println(s, p.n, v.n)
+	// The same through var, where a list of values reads the names beside it.
+	{
+		a, b := 5, 7
+		{
+			var a, b = b, a
+			var s int = len(s)
+			var gbuf []uint8 = gbuf[2:5]
+			var count [3]int = [3]int{count, 2, 3}
+			println(a, b, s, len(gbuf), len(count), count[0])
+		}
+		println(a, b)
+	}
+	// A loop variable named as a block constant is a variable.
+	const k = 3
+	n := 0
+	for k := 0; k < 2; k++ {
+		n += k + 1
+	}
+	println(n, k, count)
+}
+`,
+		want: "2 3 50 30 50\nif 30\nswitch 20\n3 3\n16 8 394 336\n2 6 2 8\n3 4\n10 9 3\nhello 2 2\n7 5 5 3 3 4\n5 7\n3 3 4\n",
+	},
+	{
+		// The bounds check of a slice that shadows its array is the slice's: arr[2] of
+		// a two-element window panics. It was checked against the array's four, and
+		// read the element past the window's end in silence.
+		name: "an index past a slice that shadows its array panics",
+		src: `func main() {
+	arr := [4]int{10, 20, 30, 40}
+	i := 2
+	{
+		arr := arr[1:3]
+		println(len(arr), arr[1])
+		println(arr[i])
+	}
+	println("not reached")
+}
+`,
+		want:   "2 30\npanic: index out of range",
+		panics: true,
+	},
+	{
+		// The name a type switch binds, and the one an assertion declares, may shadow a
+		// name of another kind as any declaration may: `switch v := sh.(type)` under an
+		// array v was "v has no field s", the array's entry outliving the binding. The
+		// type switch has a scope of its own now, which is also what gives the outer v
+		// back after it; its hand-written restore knew only about types.
+		name: "a type switch binding that shadows an array",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int {
+	return q.s * q.s
+}
+
+type Rect struct {
+	w, h int
+}
+
+func (r *Rect) Area() int {
+	return r.w * r.h
+}
+
+var sq = Sq{3}
+var rc = Rect{2, 5}
+
+func show(sh Shape) {
+	v := [3]int{1, 2, 3}
+	xs := v[:2]
+	switch v := sh.(type) {
+	case *Sq:
+		println("sq", v.Area(), v.s)
+	case *Rect:
+		println("rect", v.Area(), v.w)
+	}
+	switch xs := sh.(type) {
+	case *Sq, *Rect:
+		println("either", xs.Area())
+	}
+	println(len(v), v[2], len(xs))
+	if xs, ok := sh.(*Rect); ok {
+		println("assert", xs.h)
+	}
+	println(len(xs))
+}
+
+func main() {
+	show(&sq)
+	show(&rc)
+}
+`,
+		want: "sq 9 3\neither 9\n3 3 2\n2\nrect 10 2\neither 10\n3 3 2\nassert 5\n2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

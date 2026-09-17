@@ -49,6 +49,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A declaration that gives a name another kind.** `buf := buf[2:5]` in a nested
+  block -- a slice shadowing the array it views, the everyday way to take a window
+  -- was still an array to `len`, `cap`, `range` and the bounds check: `len(buf)`
+  was the array's, an index past the window read on in silence, and `if buf :=
+  buf[2:]; len(buf) == 2` skipped its body. The same held for a package array under
+  a local slice and for a parameter; an array shadowing a slice emitted C that did
+  not compile; and a loop variable named as a block constant, `for k := 0; k < 2;
+  k++` under `const k = 3`, was folded to the constant and the loop never ran. The
+  emitter records what a name is in maps keyed by source name, one per kind, and a
+  declaration wrote its own and left the outer name's entry in the others. All
+  silent but the one C error.
+- **A declaration whose value reads the name it shadows, as another kind.** `s :=
+  len(s)`, `p := *p` and `v := v.n + 1` were refused ("len is only supported for
+  ...", "cannot indirect p", "v has no field n"), the new name being recorded before
+  its value was rendered; `var a, b = b, a` in a nested block gave both the old
+  `b`, silently; and `var count [3]int = [3]int{count, 2, 3}` was refused by the
+  host's C compiler and BUILT by the target's. The value is now bound to a
+  temporary first, read as the outer name, through `:=` and every form of `var`.
+  The name a type switch binds takes its name the same way: `switch v :=
+  sh.(type)` under an array `v` was "v has no field s".
 - **A multiple assignment of a constant wider than an `int` stored the wrong
   value.** `lo, hi = 0, 1<<40` left 0 in an int64 `hi`, `a, b = -9000000000000, 5`
   left -2043514880, a uint64 lost `1<<63` and a float64 lost `1<<40` -- in a

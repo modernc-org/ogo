@@ -511,12 +511,23 @@ after another, and a declared init name shadowing what its neighbour read. A swe
 accessors record ORDER, `calls = calls*10 + k`, not a count: a count matched Go for
 operands C leaves unsequenced. And a wide constant belongs in every sweep of a store:
 `a, b = 1<<40, 5` lost it on the board in silence, where the host's compiler refused.
+A sweep of DECLARATIONS changes the KIND of the name it shadows -- a slice over an
+array, an array over a slice, a scalar over a struct, a variable over a constant, a
+local over a package variable, in a block, a clause and a parameter list -- and has
+the value read the shadowed name: the emitter's maps are keyed by source name, one
+per kind, and twelve of twenty-four such shapes were wrong until a declaration
+learned to forget the other kinds (`shadow`) and to read its value first
+(`declareCopy`).
 
 Known open items, all loud refusals or design walls (2026-09-17): slicing a slice
 literal, `[]int{1, 2, 3}[1:]`; an array-returning call as a package literal element;
 a method value on a local or a call's result (design: a method value binds its
-receiver at compile time); and two grammar gaps needing an egg regeneration --
-`case port(0).ch <- 5:` in a select, and `range []int{...}[1:]` in a for header.
+receiver at compile time); a named ARRAY result returned by name, `func f() (r
+[2]int) { ...; return r }`; a `switch` guard that declares an array, `switch a :=
+[2]int{1, 2}; len(a) {` (the `if` form works); and four grammar gaps needing an egg
+regeneration -- `case port(0).ch <- 5:` in a select, `range []int{...}[1:]` in a for
+header, several VALUES in an if or switch init, `if a, b := 1, 2; a < b {`, and a
+function literal called as a statement, `func() { ... }()`.
 Two LATENT ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not
