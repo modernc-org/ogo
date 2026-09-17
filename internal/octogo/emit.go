@@ -20567,7 +20567,20 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 			block = true
 		}
 	}
-	if g.hasName && len(g.items) != 0 {
+	if g.hasName && len(g.values) > 1 {
+		// `switch a, b := x, y; a + b`: a value for each name, the statement `a, b
+		// := x, y` inside the block that scopes the names to the switch.
+		names, ok := e.guardNames(g)
+		if !ok {
+			return "", false, false
+		}
+		if len(names) != len(g.values) || !g.semi {
+			e.fail("a switch init statement assigns %d values to %d names", len(g.values), len(names))
+			return "", false, false
+		}
+		openBlock()
+		e.emitValueList(plainTargets(names), allTrue(len(names)), g.values)
+	} else if g.hasName && len(g.items) != 0 {
 		// `switch v, ok := f(); ok`: the same destructuring the statement form uses,
 		// inside the block that scopes the names to this statement.
 		names, ok := e.guardNames(g)
@@ -20818,7 +20831,7 @@ func (e *emitter) emitIf(ast []int32) {
 	// A name an "if" header declares belongs to the statement, not to the block
 	// around it (see enterScope).
 	defer e.enterScope()()
-	names, initExpr, cond, ok := e.ifInitParts(ast)
+	names, inits, cond, ok := e.ifInitParts(ast)
 	if !ok {
 		e.ind()
 		e.emitIfBody(ast)
@@ -20827,12 +20840,17 @@ func (e *emitter) emitIf(ast []int32) {
 	e.ind()
 	e.emit("{\n")
 	e.indent++
-	if len(names) > 1 {
+	switch {
+	case len(inits) > 1:
+		// `if a, b := x, y; a < b`: a value for each name, which is the statement
+		// `a, b := x, y` -- every value read before any name is declared.
+		e.emitValueList(plainTargets(names), allTrue(len(names)), inits)
+	case len(names) > 1:
 		// `if v, ok := f(); ok`: the same destructuring the statement form uses,
 		// inside the brace block that scopes the names to this statement.
-		e.emitDestructure(plainTargets(names), allTrue(len(names)), initExpr)
-	} else {
-		e.emitInferredLocal(names[0], initExpr)
+		e.emitDestructure(plainTargets(names), allTrue(len(names)), inits[0].ast)
+	default:
+		e.emitInferredLocal(names[0], inits[0].ast)
 	}
 	e.emitIfBodyAt(ast, cond, ifAfterInit) // ends its own line
 	e.indent--
@@ -20860,9 +20878,10 @@ const (
 )
 
 // ifInitParts decomposes an `if` that carries an init statement, returning the
-// declared name, its initializer and the condition. ok is false for a plain `if`,
-// whose sole expression is the condition itself.
-func (e *emitter) ifInitParts(ast []int32) (names []string, initExpr, cond []int32, ok bool) {
+// declared names, their initializers -- one, or one for each name -- and the
+// condition. ok is false for a plain `if`, whose sole expression is the condition
+// itself.
+func (e *emitter) ifInitParts(ast []int32) (names []string, inits []Node, cond []int32, ok bool) {
 	var lhs, init []int32
 	for n := range it(ast) {
 		switch n.sym {
@@ -20877,17 +20896,17 @@ func (e *emitter) ifInitParts(ast []int32) (names []string, initExpr, cond []int
 	if init == nil {
 		return nil, nil, nil, false
 	}
-	var exprs [][]int32
+	var exprs []Node
 	var items []Node
 	for n := range it(init) {
 		switch n.sym {
 		case Expression:
-			exprs = append(exprs, n.ast)
+			exprs = append(exprs, n)
 		case LhsItem:
 			items = append(items, n)
 		}
 	}
-	if len(exprs) != 2 || lhs == nil {
+	if len(exprs) < 2 || lhs == nil {
 		e.fail("malformed if init statement")
 		return nil, nil, nil, false
 	}
@@ -20905,7 +20924,12 @@ func (e *emitter) ifInitParts(ast []int32) (names []string, initExpr, cond []int
 		}
 		names = append(names, t.name)
 	}
-	return names, exprs[0], exprs[1], true
+	inits = exprs[:len(exprs)-1]
+	if len(inits) > 1 && len(inits) != len(names) {
+		e.fail("an if init statement assigns %d values to %d names", len(inits), len(names))
+		return nil, nil, nil, false
+	}
+	return names, inits, exprs[len(exprs)-1].ast, true
 }
 
 // ifHasInit reports an if that carries an init statement.

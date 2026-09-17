@@ -2187,18 +2187,26 @@ func (f *File) checkIf(s *Scope, results []retResult, n Node) {
 				items = append(items, c)
 			}
 		}
-		if len(exprs) != 2 {
+		if len(exprs) < 2 {
 			f.err(f.tok(n.Pos()).Position(), "malformed if init statement")
 			return
 		}
+		// The last expression is the condition and the ones before it the values: one
+		// for a call destructured into several names, `if v, ok := f(); ok`, or one
+		// for each name, `if a, b := x, y; a < b`.
+		values := exprs[:len(exprs)-1]
 		s = s.child()
-		f.checkNames(s, exprs[0])
-		if len(items) != 0 {
+		switch {
+		case len(values) > 1:
+			f.declareHeaderValues(s, s, lhs, items, values)
+		case len(items) != 0:
+			f.checkNames(s, values[0])
 			f.declareHeaderVars(s, lhs, items)
-		} else {
-			f.declareForInitVar(s, lhs, exprs[0], true)
+		default:
+			f.checkNames(s, values[0])
+			f.declareForInitVar(s, lhs, values[0], true)
 		}
-		cond = exprs[1]
+		cond = exprs[len(exprs)-1]
 	} else if hasCond {
 		cond = lhs
 	}
@@ -2920,6 +2928,55 @@ func (f *File) declareHeaderVars(s *Scope, head Node, items []Node) {
 		newCount++
 	}
 	if newCount == 0 && len(ids) != 0 {
+		f.errNoNewVars(ids[0])
+	}
+}
+
+// declareHeaderValues is declareHeaderVars for a header whose ":=" carries a value
+// for EVERY name, `if a, b := x, y; a < b` and `switch a, b := x, y; a + b`. The
+// values are read in s and the names go into ds -- the two differ for a switch,
+// whose init is read outside the scope it declares into -- and every value is read
+// before any name is declared, so one that names an outer variable of the same
+// name still means the outer one, as it does in a for header's init and in Go.
+func (f *File) declareHeaderValues(s, ds *Scope, head Node, items []Node, values []Node) {
+	ids := make([]Token, 0, len(items)+1)
+	if id, ok := f.exprSoleIdent(head); ok {
+		ids = append(ids, id)
+	} else if tok := f.tok(head.Pos()); tok.IsValid() {
+		f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
+		return
+	}
+	for _, item := range items {
+		for c := range it(item.ast) {
+			if c.sym != AssignHead {
+				continue
+			}
+			if id, ok := f.assignHeadIdent(c); ok {
+				ids = append(ids, id)
+			} else if tok := f.tok(c.Pos()); tok.IsValid() {
+				f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
+				return
+			}
+		}
+	}
+	for _, v := range values {
+		f.checkNames(s, v)
+	}
+	if len(ids) != len(values) {
+		f.err(ids[0].Position(), "assignment mismatch: %s but %s",
+			countUnits(len(ids), "variable"), countUnits(len(values), "value"))
+		return
+	}
+	newCount := 0
+	for i, id := range ids {
+		if id.Src() == "_" {
+			continue
+		}
+		kind, hasKind := f.inferredKind(s, values[i])
+		f.declareLocal(ds, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
+		newCount++
+	}
+	if newCount == 0 {
 		f.errNoNewVars(ids[0])
 	}
 }
@@ -3890,7 +3947,16 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration")
 		return 0, false
 	}
-	if g.hasName && len(g.items) != 0 {
+	if g.hasName && len(g.values) > 1 {
+		// `switch a, b := x, y; a + b`: a value for each name. Without the ";" it
+		// would be OctoGo's guard form, which switches on THE name it declares, and
+		// there is no one name here to switch on.
+		if !g.semi {
+			f.err(f.tok(n.Pos()).Position(), "a switch init statement with several values needs a \";\" and the expression to switch on")
+			return 0, false
+		}
+		f.declareHeaderValues(s, ss, g.name, g.items, g.values)
+	} else if g.hasName && len(g.items) != 0 {
 		// `switch v, ok := f(); ok`: several names, none of which carries a kind of
 		// its own -- the same as the statement form.
 		f.checkNames(s, g.value)
@@ -3936,10 +4002,11 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 // second is OctoGo's own -- Go has no ":=" guard without an init statement -- and
 // switching on the name it declares is what makes it mean the same as the third.
 type switchGuard struct {
-	name  Node   // the name a ":=" declares
-	items []Node // the further names of `switch v, ok := f(); ok`, as LhsItems
-	value Node   // that name's initializer
-	tag   Node   // the expression switched on
+	name   Node   // the name a ":=" declares
+	items  []Node // the further names of `switch v, ok := f(); ok`, as LhsItems
+	value  Node   // that name's initializer
+	values []Node // every initializer written: one, or one for each name
+	tag    Node   // the expression switched on
 
 	hasName bool
 	hasTag  bool
@@ -3975,7 +4042,7 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 	switch {
 	case hasDefine && len(exprs) >= 2:
 		g.name, g.hasName = exprs[0], true
-		g.value = exprs[1]
+		g.value, g.values = exprs[1], exprs[1:]
 		if !g.semi {
 			g.tag, g.hasTag = exprs[0], true
 		}

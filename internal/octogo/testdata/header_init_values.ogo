@@ -1,0 +1,72 @@
+// The init statement of an "if" and of a "switch" may give every name a value of its
+// own, "if a, b := x, y; a < b", as Go's may. The grammar took one value there --
+// the destructuring of a call, "if v, ok := f(); ok" -- so a second was a syntax
+// error. The values are read before any name is declared, as a for header's init
+// reads them, so one that names an outer variable of the same name means the outer
+// one; the counts must agree; and a name that is unused is reported as any is.
+
+func pair() (int, bool) { return 7, true }
+
+func ifs(x, y int) int {
+	if a, b := x+1, y<<2; a < b {
+		return a + b
+	} else if c, d := a*2, "two"; c > 0 && d != "" {
+		return c
+	}
+	// Each value is read outside the scope the names go into.
+	if x, y := y, x; x > y {
+		return x - y
+	}
+	if v, ok := pair(); ok {
+		return v
+	}
+	return 0
+}
+
+func switches(x, y int) int {
+	switch a, b := x+1, y; a + b {
+	case 3:
+		return a
+	default:
+		return b
+	}
+}
+
+func tagless(x, y int) int {
+	switch p, q := x*2, y; {
+	case p > q:
+		return p
+	}
+	return 0
+}
+
+func refused(x, y int) {
+	// ERROR "assignment mismatch: 2 variables but 3 values"
+	if a, b := x, y, 3; a < b {
+	}
+	// ERROR "assignment mismatch: 3 variables but 2 values"
+	if a, b, c := x, y; a < b && c {
+	}
+	// ERROR "assignment mismatch: 2 variables but 3 values"
+	switch a, b := x, y, 1; a + b {
+	}
+	// ERROR "a switch init statement with several values needs"
+	switch a, b := x, y {
+	}
+	// ERROR "no new variables on left side of :="
+	if _, _ := x, y; x < y {
+	}
+	// ERROR "undefined: missing"
+	if a, b := x, missing; a < b {
+	}
+}
+
+// A name the init declares and nothing reads is reported, as any unused name is.
+func unused(x, y int) {
+	// ERROR "declared and not used: b"
+	if a, b := x, y; a > 0 {
+	}
+	// ERROR "declared and not used: q"
+	switch p, q := x, y; p {
+	}
+}

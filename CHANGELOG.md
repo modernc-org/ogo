@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An `if` or `switch` init with a value for each name.** `if a, b := x, y; a < b {`
+  and `switch a, b := x, y; a + b {` were syntax errors: the init took one value,
+  the destructuring of a call. It is the statement `a, b := x, y` in the block that
+  scopes the names -- every value read before any name is declared, so a swap
+  swaps -- with the statement's checks: the counts must agree, a name nothing
+  reads is reported. `ogo fmt` writes the values as gofmt does, operators tight.
 - **A select's send clause takes any channel expression.** `case bus.port(i).ch <-
   v:` was a syntax error -- the clause's grammar took selectors and indexes and no
   call -- and `case qs[i] <- v:` was refused ("a select send clause takes a channel

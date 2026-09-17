@@ -1708,7 +1708,9 @@ func (f *formatter) computeTightOps(ast []int32, depth int) {
 				d++
 			}
 			f.computeTightOps(n.ast, d)
-		case Statement, IfInit, SwitchGuard, CommOp:
+		case IfInit, SwitchGuard:
+			f.headerInitTightOps(n, depth)
+		case Statement, CommOp:
 			// An assignment of several names FROM several values raises the depth
 			// for both sides -- go/printer's assignStmt rule. A return list, a var
 			// spec's values and a single-value assignment do not.
@@ -1936,6 +1938,57 @@ func multiAssign(ast []int32) bool {
 	}
 	count(ast)
 	return lhs > 1 && rhs > 1
+}
+
+// headerInitTightOps is computeTightOps for the init of an if and the guard of a
+// switch. When the ":=" gives several names a value EACH, `if a, b := x+1, y<<2; a <
+// b`, go/printer raises the depth for those values, as it does for the statement
+// and for a for header's init -- and for nothing else in the header: the condition
+// after the ";" and a switch's tag keep theirs. A call destructured into several
+// names, `if v, ok := f(a + 1); ok`, is one value and raises nothing.
+//
+// An if's first name is the if's own expression and stands outside the IfInit; a
+// switch's is the guard's first child.
+func (f *formatter) headerInitTightOps(n Node, depth int) {
+	kids := slices.Collect(it(n.ast))
+	isExpr := func(k Node) bool { return k.sym == Expression || k.sym == HeaderExpression }
+	ch := func(k Node) Symbol { return Symbol(f.p.Token(k.tok).Ch) }
+	names, values, defined, ended := 0, 0, false, false
+	if n.sym == IfInit {
+		names = 1
+	}
+	for _, k := range kids {
+		switch {
+		case k.sym == LhsItem:
+			names++
+		case k.sym == 0 && ch(k) == DEFINE:
+			defined = true
+		case k.sym == 0 && ch(k) == SEMICOLON:
+			ended = true
+		case isExpr(k) && !defined:
+			names++
+		case isExpr(k) && !ended:
+			values++
+		}
+	}
+	multi := names > 1 && values > 1
+	defined, ended = false, false
+	for _, k := range kids {
+		switch {
+		case k.sym == 0 && ch(k) == DEFINE:
+			defined = true
+		case k.sym == 0 && ch(k) == SEMICOLON:
+			ended = true
+		case isExpr(k):
+			d := depth
+			if multi && defined && !ended {
+				d++
+			}
+			f.tightExpr(k, d)
+		case k.sym != 0:
+			f.computeTightOps(k.ast, depth)
+		}
+	}
 }
 
 // forHeaderTightOps is computeTightOps for a for header whose INIT clause assigns

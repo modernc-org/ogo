@@ -26925,6 +26925,55 @@ func main() {
 }
 `,
 		want: "f 1\nf 2\nsecond 1 2\nf 9\nfirst 9\nf 4\nshadow 8\nthird 0 false 7\nbody 1\nbody 3\ndeferred second 6\nbody 9\ndeferred first 9\n",
+	},
+	{
+		// An if's and a switch's init statement with a value for EACH name, `if a, b :=
+		// x, y; a < b`, which the grammar did not admit: it took one value, the
+		// destructuring of a call, and a second was a syntax error. It is the
+		// statement `a, b := x, y` inside the block that scopes the names: every value
+		// is read before any name is declared, so a swap swaps and an outer name is
+		// still the outer one in its own initializer; the digits record that the
+		// values run in source order.
+		name: "an if or switch init with a value for each name",
+		src: `var calls int
+
+func f(v int) int {
+	calls = calls*10 + v
+	return v
+}
+
+func pair() (int, bool) {
+	return 7, true
+}
+
+func main() {
+	if a, b := f(1), f(2); a < b {
+		println("if", a, b)
+	}
+	if a, b, c := 1<<3, "two", 3.5; a == 9 {
+		println(a, b, c)
+	} else if d, e := a+1, b; d == 9 {
+		println(d, e, c)
+	}
+	x, y := 5, 7
+	if x, y := y, x; x > y {
+		println("swapped", x, y)
+	}
+	switch a, b := f(3), f(4); a + b {
+	case 7:
+		println("switch", a, b)
+	}
+	switch p, q := x*2, y; {
+	case p > q:
+		println("tagless", p, q)
+	}
+	if v, ok := pair(); ok {
+		println("pair", v)
+	}
+	println(x, y, calls)
+}
+`,
+		want: "if 1 2\n9 two 3.5\nswapped 7 5\nswitch 3 4\ntagless 10 7\npair 7\n5 7 1234\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

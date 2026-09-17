@@ -7682,7 +7682,7 @@ state1:
 
 // IfInit grammar:
 //
-//	IfInit = { "," LhsItem } ":=" HeaderExpression ";" HeaderExpression .
+//	IfInit = { "," LhsItem } ":=" HeaderExpression { "," HeaderExpression } ";" HeaderExpression .
 //
 //	State 0
 //		on  ":="
@@ -7693,6 +7693,8 @@ state1:
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
 //	State 2
+//		on  ','
+//			shift and goto state 1
 //		on  ';'
 //			shift and goto state 3
 //	State 3
@@ -7733,8 +7735,11 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 107
+	accept, errorSet = false, 99
 	switch Symbol(p.tok.Ch) {
+	case TOK_002c:
+		r = append(r, p.shift())
+		goto state1
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state3
@@ -9582,7 +9587,7 @@ state4:
 
 // SwitchGuard grammar:
 //
-//	SwitchGuard = HeaderExpression [ { "," LhsItem } ":=" HeaderExpression ] [ SwitchTag ] .
+//	SwitchGuard = HeaderExpression [ { "," LhsItem } ":=" HeaderExpression { "," HeaderExpression } ] [ SwitchTag ] .
 //
 //	State 0
 //		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
@@ -9600,6 +9605,8 @@ state4:
 //			call HeaderExpression and goto state 3
 //	State 3
 //		Accept
+//		on  ','
+//			shift and goto state 2
 //		on  ';'
 //			call SwitchTag and goto state 4
 //	State 4
@@ -9648,8 +9655,11 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = true, 107
+	accept, errorSet = true, 99
 	switch Symbol(p.tok.Ch) {
+	case TOK_002c:
+		r = append(r, p.shift())
+		goto state2
 	case TOK_003b:
 		r = p.add(r, p.SwitchTag())
 		goto state4
