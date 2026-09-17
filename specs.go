@@ -1321,7 +1321,7 @@
 //	Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
 //		| int_lit
 //		| float_lit
-//		| string_lit
+//		| string_lit [ FactorSuffix ]
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
@@ -1469,7 +1469,7 @@
 //	HeaderFactor     = identifier [ FactorSuffix ]
 //		| int_lit
 //		| float_lit
-//		| string_lit
+//		| string_lit [ FactorSuffix ]
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
@@ -1517,6 +1517,12 @@
 // "a[1:6][1:4]", the index being checked against the length of the expression it
 // applies to rather than the operand's. The same holds for a slice reached through
 // an index, "s[i].v[j]", read or written.
+//
+// A string CONSTANT is indexed and sliced as a string variable is, and so is a
+// string LITERAL where it stands -- "0123456789abcdef"[n&15] is how a digit is
+// looked up. Its length is known, so a constant bound outside it is refused where
+// it is written. What either yields is a byte or a string and NOT a constant, as in
+// Go: "const c = digits[1]" is refused, while "len(digits)" is a constant still.
 //
 // The one operand that cannot be sliced this way is a row of a multi-dimensional
 // array reached through an index, "m[0][:][1]": what the slice would view has to be

@@ -331,7 +331,10 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		}
 		return isOperandEnd(prevPrev)
 	case curr == LBRACK:
-		return c.inType || (prev != IDENT && prev != RBRACK && prev != RPAREN && prev != RBRACE)
+		// An index binds to the operand before it: a name, a closing bracket of any
+		// kind, and -- since a string literal takes a suffix -- the literal,
+		// `"0123456789abcdef"[n&15]`.
+		return c.inType || (prev != IDENT && prev != RBRACK && prev != RPAREN && prev != RBRACE && prev != STRING)
 	// A slice ":" takes spaces when the slice writes more than one bound and one of
 	// them is a binary expression ("xs[i+1 : j-1]", "a[i+1 : j : k]"), matching
 	// gofmt; otherwise it binds tight (the cases just below). The decision is

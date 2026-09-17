@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A string literal indexed and sliced.** `"0123456789abcdef"[n&15]` -- how a digit
+  is looked up -- `"hello"[1:3]`, `for i, r := range "héllo"[1:]` and `switch
+  "abc"[1] {` were syntax errors: the grammar gave a string literal no suffix, in a
+  statement or a header, though a named constant has always indexed. The literal
+  is emitted as a constant is, standing where a variable's bytes and length would,
+  with Go's refusal of a constant bound outside it -- `"abc"[5]`, `"abc"[2:1]`.
+  `ogo fmt` binds the index to the literal as gofmt does.
 - **A slice literal sliced.** `for i, v := range []int{5, 6, 7}[1:] {`, `s :=
   []int{1, 2, 3}[1:]`, `len([]string{"a", "b"}[1:])` and a literal handed on in
   part, `sum([]int{1, 2, 3, 4}[2:])`, were refused ("a []int literal cannot be read

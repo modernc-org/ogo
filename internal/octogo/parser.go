@@ -6388,7 +6388,7 @@ state1:
 //	Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
 //		| int_lit
 //		| float_lit
-//		| string_lit
+//		| string_lit [ FactorSuffix ]
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
@@ -6400,10 +6400,12 @@ state1:
 //			shift and goto state 10
 //		on  "chan"
 //			shift and goto state 1
-//		on  float_lit, int_lit, rune_lit, string_lit
+//		on  float_lit, int_lit, rune_lit
 //			shift and goto state 2
 //		on  '('
 //			shift and goto state 3
+//		on  string_lit
+//			shift and goto state 5
 //		on  '['
 //			shift and goto state 6
 //		on  "func"
@@ -6464,12 +6466,15 @@ func (p *Parser) Factor() (r []int32) {
 	case TOK_chan:
 		r = append(r, p.shift())
 		goto state1
-	case float_lit, int_lit, rune_lit, string_lit:
+	case float_lit, int_lit, rune_lit:
 		r = append(r, p.shift())
 		goto state2
 	case TOK_0028:
 		r = append(r, p.shift())
 		goto state3
+	case string_lit:
+		r = append(r, p.shift())
+		goto state5
 	case TOK_005b:
 		r = append(r, p.shift())
 		goto state6
@@ -7375,7 +7380,7 @@ state1:
 //	HeaderFactor     = identifier [ FactorSuffix ]
 //		| int_lit
 //		| float_lit
-//		| string_lit
+//		| string_lit [ FactorSuffix ]
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
@@ -7385,11 +7390,11 @@ state1:
 //	State 0
 //		on  "chan"
 //			shift and goto state 1
-//		on  float_lit, int_lit, rune_lit, string_lit
+//		on  float_lit, int_lit, rune_lit
 //			shift and goto state 2
 //		on  '('
 //			shift and goto state 3
-//		on  identifier
+//		on  identifier, string_lit
 //			shift and goto state 5
 //		on  '['
 //			shift and goto state 6
@@ -7438,13 +7443,13 @@ func (p *Parser) HeaderFactor() (r []int32) {
 	case TOK_chan:
 		r = append(r, p.shift())
 		goto state1
-	case float_lit, int_lit, rune_lit, string_lit:
+	case float_lit, int_lit, rune_lit:
 		r = append(r, p.shift())
 		goto state2
 	case TOK_0028:
 		r = append(r, p.shift())
 		goto state3
-	case identifier:
+	case identifier, string_lit:
 		r = append(r, p.shift())
 		goto state5
 	case TOK_005b:

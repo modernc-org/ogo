@@ -27280,6 +27280,62 @@ func main() {
 }
 `,
 		want: "40\n3 4 2 4\n1 2 2\n3 2 3\nde 6\n2 3 4\n5 12313\n2 3 1 9\ntwo\nsix\n",
+	}, {
+		// A string LITERAL indexed and sliced where it stands, `"0123456789abcdef"[n&15]`,
+		// which is how a digit is looked up. The grammar gave a string literal no suffix,
+		// so every one of these was a syntax error; a named constant has always indexed.
+		// The first step is emitted as a string constant's is, the literal standing where
+		// a variable's bytes and length would, and what follows a slice is walked from its
+		// header.
+		name: "a string literal indexed and sliced",
+		src: `var g = "hello"[1:3]
+var gb = "abc"[1]
+var tab = [2]byte{"xy"[0], "xy"[1]}
+var buf [8]byte
+var calls int
+
+func bump(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func hex(n int) {
+	for i := 7; i >= 0; i-- {
+		buf[i] = "0123456789abcdef"[n&15]
+		n >>= 4
+	}
+}
+
+func show(s string) int {
+	println(s)
+	return len(s)
+}
+
+func main() {
+	println(g, gb, tab[0], tab[1])
+	hex(0xbeef)
+	for _, b := range buf {
+		print(b, " ")
+	}
+	println()
+	n := show("hello"[bump(1):bump(3)]) + show("hello"[1:][1:])
+	n += int("hello"[1:][0]) + int("abc"[bump(2)]) + len("hello"[2:])
+	if "abc"[0] == 'a' {
+		n++
+	}
+	switch "abc"[1] {
+	case 'b':
+		n += 10
+	}
+	for i, r := range "héllo"[1:] {
+		n += i + int(r)
+	}
+	var a [4]int
+	a["abc"[1]-'a'] = 7
+	println(n, calls, a[1], "yz"[1:] == "z", "abc"[1:] < "bd", ` + "`" + `raw\n` + "`" + `[3])
+}
+`,
+		want: "el 98 120 121\n48 48 48 48 98 101 101 102 \nel\nllo\n788 132 7 true true 92\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

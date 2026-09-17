@@ -9858,6 +9858,37 @@ func TestEmitCUnclaimedSuffixNotTyped(t *testing.T) {
 	}
 }
 
+// TestEmitCStrLitSuffixRefused: a string literal read through a suffix is bounded at
+// compile time where its bounds are constants, as a named string constant is, and in
+// Go's words; and it has bytes and nothing else to be read.
+func TestEmitCStrLitSuffixRefused(t *testing.T) {
+	for _, test := range []struct {
+		expr string
+		want string
+	}{
+		{`int("abc"[5])`, "invalid argument: index 5 out of bounds [0:3]"},
+		{`len("abc"[2:1])`, "invalid slice indices: 1 < 2"},
+		{`len("abc"[1:5])`, "invalid argument: index 5 out of bounds [0:4]"},
+		{`"abc".x`, "a string literal has no fields or methods"},
+		{`int("abc"[1][0])`, "a byte has no elements or fields"},
+	} {
+		t.Run(test.expr, func(t *testing.T) {
+			src := "func main() {\n\tprintln(" + test.expr + ")\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case err == nil:
+				t.Errorf("accepted %s; want %q", test.expr, test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCLitSliceUnaddressable pins Go's refusal to slice an array that is not
 // addressable, which a literal and everything in it is unless a slice or a pointer
 // stands between. The emitter binds a literal to a temporary, which C will slice

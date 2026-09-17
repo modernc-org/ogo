@@ -13723,6 +13723,59 @@ func (e *emitter) pkgLitVar(typeAST []int32, lit Node) (string, bool) {
 	return name, true
 }
 
+// factorStrLit recognises a STRING literal read through a suffix, and answers with
+// the literal's value and the steps.
+func (e *emitter) factorStrLit(kids []Node) (string, []Node, bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != STRING || kids[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	v, err := strconv.Unquote(e.src(kids[0].tok))
+	if err != nil {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) == 0 {
+		return "", nil, false
+	}
+	return v, steps, true
+}
+
+// emitStrLitChain emits a string literal read through a suffix. The first step is
+// emitted as a string CONSTANT's is (see stringConstParts), the literal standing
+// where a variable's bytes and length would: an index reads a byte out of it, and a
+// slice builds a header over it, each with Go's compile-time refusal of a constant
+// bound outside the literal -- `"abc"[5]`, `"abc"[2:1]`. Whatever follows a slice
+// step is walked from that header, bound to a temporary.
+func (e *emitter) emitStrLitChain(n Node, v string, steps []Node) {
+	if steps[0].sym != Index {
+		e.fail("cannot read %s: a string literal has no fields or methods", e.f.exprSource(n))
+		return
+	}
+	length := strconv.Itoa(len(v))
+	low, high, max, isSlice := e.sliceParts(steps[0].ast)
+	if !isSlice {
+		if len(steps) != 1 {
+			e.fail("cannot read %s: a byte has no elements or fields", e.f.exprSource(n))
+			return
+		}
+		e.emit(e.byteReadOpen() + cQuote(v) + "[")
+		e.emitIndex(low, length)
+		e.emit("])")
+		return
+	}
+	e.usesString = true
+	src := sliceSource{cString, cQuote(v), length, ""}
+	if len(steps) == 1 {
+		e.emitSliceExpr(src, low, high, max)
+		return
+	}
+	tmp := e.hoist(cString, func() { e.emitSliceExpr(src, low, high, max) })
+	e.locals[tmp] = cString
+	if _, ok := e.emitAccessChainAt(tmp, accessCur{ctype: cString}, steps[1:], true); !ok {
+		e.fail("cannot read %s: this form is not supported yet", e.f.exprSource(n))
+	}
+}
+
 // factorLitIndexed recognises a literal of a BRACKETED type with an index or
 // selector run after it -- `[]int{1, 2, 3}[0]`, `[2]P{{1, 2}, {3, 4}}[1].x`. The
 // literal is bound to a temporary and the steps read that, which is the only way an
@@ -29909,6 +29962,14 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				return "", false // an array has no C value type to name here
 			}
+			// `"abc"[i]` is a byte and `"abc"[1:]` a string, walked from a string.
+			if _, steps, ok := e.factorStrLit(kids); ok {
+				cur, okc := e.accessChainTypeAt(accessCur{ctype: cString}, steps, true)
+				if !okc || cur.slice || len(cur.dims) != 0 {
+					return "", false
+				}
+				return cur.ctype, true
+			}
 			// `[]int{1, 2, 3}[0]` types as the literal's ELEMENT. Typed from the
 			// literal rather than by walking a hoisted temporary, since inferring a
 			// type must emit nothing; a longer chain than one index falls through to
@@ -31678,6 +31739,12 @@ func (e *emitter) emitExprNode(n Node) {
 					return
 				}
 				e.fail("a conversion to %s cannot be read through this suffix", e.litTypeName(typeAST))
+				return
+			}
+			// `"0123456789abcdef"[n&15]`, `"hello"[1:3]` -- a STRING literal read
+			// through a suffix, which the grammar had no place for.
+			if v, steps, ok := e.factorStrLit(kids); ok {
+				e.emitStrLitChain(n, v, steps)
 				return
 			}
 			// `[]int{1, 2, 3}[0]` -- a bracketed literal read through a suffix. The

@@ -72,7 +72,7 @@ UnaryExpr  = { UnaryOp } Factor .
 Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
 	| int_lit
 	| float_lit
-	| string_lit
+	| string_lit [ FactorSuffix ]
 	| rune_lit
 	| "(" Expression ")" [ FactorSuffix ]
 	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
@@ -89,7 +89,7 @@ HeaderUnaryExpr  = { UnaryOp } HeaderFactor .
 HeaderFactor     = identifier [ FactorSuffix ]
 	| int_lit
 	| float_lit
-	| string_lit
+	| string_lit [ FactorSuffix ]
 	| rune_lit
 	| "(" Expression ")" [ FactorSuffix ]
 	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
