@@ -62,6 +62,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A bare `return` in a function literal written in `main`.** It was emitted as
+  `return 0;`, main's own form, in a void C function -- the flag that says "this
+  is main" was not cleared while the literal was lifted out of it. The host's C
+  compiler refuses that.
 - **An `else if` that carries an init statement.** `} else if b := f(); b > 0 {` was
   read as a plain else-if: the init was dropped and the declared NAME stood as the
   condition, `else if (b)`. That is C which does not compile where `b` is new, and

@@ -10176,6 +10176,12 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameHolder = map[string]string{}
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
 	e.curFunc = cname
+	// A literal written in main is not main: its bare `return` returns nothing. Left
+	// set, the flag made it `return 0;` in a void function, which the host's C
+	// compiler refuses.
+	savedMainRet := e.mainRet
+	e.mainRet = false
+	defer func() { e.mainRet = savedMainRet }()
 
 	var def bytes.Buffer
 	e.w = &def

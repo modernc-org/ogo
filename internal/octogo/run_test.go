@@ -26974,6 +26974,31 @@ func main() {
 }
 `,
 		want: "if 1 2\n9 two 3.5\nswapped 7 5\nswitch 3 4\ntagless 10 7\npair 7\n5 7 1234\n",
+	},
+	{
+		// A bare return inside a function literal that is WRITTEN in main. The flag
+		// that makes main's own bare return `return 0;` was neither saved nor cleared
+		// when a literal was lifted out of main, so the literal's was `return 0;` too
+		// -- in a void C function, which the host's compiler refuses.
+		name: "a bare return in a function literal written in main",
+		src: `func main() {
+	defer func(k int) {
+		if k == 1 {
+			return
+		}
+		println("deferred", k)
+	}(2)
+	f := func(k int) {
+		if k == 1 {
+			return
+		}
+		println("value", k)
+	}
+	f(1)
+	f(3)
+}
+`,
+		want: "value 3\ndeferred 2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
