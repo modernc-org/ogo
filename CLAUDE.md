@@ -129,13 +129,13 @@ Three generated artifacts are checked in. Regenerate only when changing their
 inputs, and never hand-edit the outputs.
 
 1. **Grammar → parser.** `internal/octogo/parser.go` (marked `DO NOT EDIT`) is
-   produced by [`modernc.org/egg`](https://gitlab.com/cznic/egg) from
+   produced by [`modernc.org/egg/v2`](https://gitlab.com/cznic/egg) from
    `internal/octogo/octogo.ebnf`, which is in turn *extracted from the package
    doc comment of `specs.go`* (root). The grammar is authored as `//\t`-prefixed,
    ` .`-terminated EBNF lines inside that doc comment. **To change the language
    syntax, edit `specs.go`'s doc comment**, then:
    ```sh
-   go install modernc.org/egg@latest
+   go install modernc.org/egg/v2@latest   # v2.0.1 and v1.4.1 emit the same parser; v1.2.3 does not
    make -C internal/octogo parser.go   # extract_grammar.go -> octogo.ebnf -> egg -> parser.go (+ sed cleanup)
    ```
    Note: the grammar is intentionally looser than the language — it accepts more

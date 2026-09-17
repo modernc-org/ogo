@@ -29,7 +29,7 @@ generate:
 
 # Prerequisites:
 #
-# $ go install modernc.org/egg@latest
+# $ go install modernc.org/egg/v2@latest
 parser.go: ../../specs.go
 	go run extract_grammar.go -- ../../specs.go > octogo.ebnf
 	egg -o parser.go -start SourceFile -package octogo octogo.ebnf
