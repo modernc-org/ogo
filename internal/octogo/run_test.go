@@ -26167,6 +26167,56 @@ func main() {
 }
 `,
 		want: "75 1\n810 4\n3027 3\n",
+	},
+	{
+		// A multiple assignment binds every value to a temporary before any target is
+		// written, and typed the temporary from the VALUE -- which for an untyped
+		// constant is `int`, the default the typing gives it, where Go gives it the
+		// target's type. So `lo, hi = 0, 1<<40` stored 0 in an int64, `a, b =
+		// -9000000000000, 5` stored -2043514880, a uint64 lost `1<<63`: in a variable,
+		// a field, an element and through a pointer, in the statement and in a loop's
+		// clauses. Silent on the target; the host's C compiler refused the ones it
+		// could see, which is how it was found. A constant's temporary now takes its
+		// target's type.
+		name: "a multiple assignment of a constant wider than an int",
+		src: `type R struct {
+	a, b int64
+	u    uint64
+	t    [2]int64
+}
+
+var r R
+var ga, gb int64
+var gu uint64
+
+func main() {
+	p := &r
+	var la, lb int64
+	ga, gb = -9000000000000, 5
+	la, lb = 1<<40, 7
+	gu, gb = 1<<63, gb+1
+	println(ga, gb, gu, la, lb)
+	r.a, r.b = 1<<40, -(1 << 41)
+	p.u, p.t[1] = 0xF000000000000000, 1<<41
+	r.t[0], la = la+1, 1<<42
+	println(r.a, r.b, r.u, r.t[0], r.t[1], la)
+
+	// A float target takes the constant as a float, and an untyped shift by a
+	// variable is computed in its target's type.
+	var f float32
+	var n uint = 40
+	f, lb = 1<<24, 1<<n
+	println(f, lb)
+
+	// The loop clauses' form of the same statement.
+	var lo, hi int64
+	for lo, hi = 0, 1<<40; lo < 2; lo, hi = lo+1, 1<<41 {
+		println(lo, hi)
+	}
+	println(lo, hi)
+}
+`,
+		want: "-9000000000000 6 9223372036854775808 1099511627776 7\n1099511627776 -2199023255552 17293822569102704640 1099511627777 2199023255552 4398046511104\n1.6777216e+07 1099511627776\n0 1099511627776\n1 2199023255552\n2 2199023255552\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

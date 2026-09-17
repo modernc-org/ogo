@@ -18725,9 +18725,16 @@ func (e *emitter) parseForPost(n Node, h *forHeader) bool {
 func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
 	tmps := make([]string, len(rhss))
 	for i, rhs := range rhss {
+		tt, typedTarget := e.inferCType(lhss[i])
+		if typedTarget {
+			e.typeUntypedShifts(rhs, tt) // the target's type is the value's context
+		}
 		ct, ok := e.inferCType(rhs)
 		if !ok {
 			ct = "int"
+		}
+		if typedTarget {
+			ct = e.constTmpCType(ct, tt, rhs)
 		}
 		tmps[i] = e.newTmp()
 		e.ind()
@@ -27045,13 +27052,17 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 			e.emitArrayCopy(tmps[i], src, a)
 			continue
 		}
-		if tt, ok := e.assignTargetCType(targets[i], declare[i]); ok {
+		tt, typedTarget := e.assignTargetCType(targets[i], declare[i])
+		if typedTarget {
 			e.typeUntypedShifts(r.ast, tt) // the target's type is the value's context
 		}
 		ct, ok := e.inferCType(r.ast)
 		if !ok {
 			e.fail("cannot infer the type of a value in a multiple assignment")
 			return
+		}
+		if typedTarget {
+			ct = e.constTmpCType(ct, tt, r.ast)
 		}
 		types[i] = ct
 		// A value bound ahead of the statement for its order IS its temporary.
@@ -27073,6 +27084,27 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		}
 		e.emitStore(tgt, declare[i], types[i], tmps[i])
 	}
+}
+
+// constTmpCType is the C type of the temporary a multiple assignment binds one value
+// to: the value's own, ct, unless the value is a CONSTANT and its target a number,
+// when it is the target's. An untyped constant has no type of its own -- it takes
+// the target's, and until 2026-09-17 its temporary took `int` instead, the default
+// the typing gives it: `lo, hi = 0, 1<<40` stored 0 in an int64 hi, `a, b =
+// -9000000000000, 5` stored -2043514880, a uint64 lost `1<<63` and a float64 lost
+// `1<<40`, in a variable, a field, an element and through a pointer alike. Silent on
+// the target; the host's compiler said "overflow in conversion" of the ones it
+// could see. A TYPED constant already has the target's type, Go allowing no other
+// there, so answering with the target's changes nothing for one.
+func (e *emitter) constTmpCType(ct, target string, rhs []int32) string {
+	u := e.underlyingCType(target)
+	if cIntWidths[u] == 0 && u != "float" && u != "double" {
+		return ct
+	}
+	if _, isConst := e.foldConstVal(rhs); !isConst {
+		return ct
+	}
+	return target
 }
 
 // emitStoreArray writes an ARRAY -- already bound to the temporary val -- to one

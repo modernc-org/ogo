@@ -49,6 +49,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A multiple assignment of a constant wider than an `int` stored the wrong
+  value.** `lo, hi = 0, 1<<40` left 0 in an int64 `hi`, `a, b = -9000000000000, 5`
+  left -2043514880, a uint64 lost `1<<63` and a float64 lost `1<<40` -- in a
+  variable, a field, an element and through a pointer, in the statement and in a
+  loop's clauses. Every value is bound to a temporary before any target is written,
+  and the temporary took its type from the value, which for an untyped constant is
+  `int`; Go gives such a constant its target's type. Silent on the P2; the host's C
+  compiler refused the ones it could see ("overflow in conversion"). A constant's
+  temporary now takes the target's type.
 - **A post statement at the end of the loop body read the body's variables, and a
   `continue` after an inner loop skipped it.** A multiple-assignment post, `i, j =
   i+1, j-1`, cannot be C's third clause and stands at the end of the body. There it
