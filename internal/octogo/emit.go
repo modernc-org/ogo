@@ -6520,7 +6520,9 @@ func (e *emitter) typeAssertion(ast []int32) (operand, iface, target string, tar
 	if len(nodes) != 1 || nodes[0].sym != Factor {
 		return "", "", "", false, false
 	}
-	return e.typeAssertionKids(slices.Collect(it(nodes[0].ast)))
+	// `p, ok := (v).(*P)`: the expression position peels the operand's parentheses
+	// before it asks (see inferNode), and the statement's two-value form did not.
+	return e.typeAssertionKids(e.unparenKids(slices.Collect(it(nodes[0].ast))))
 }
 
 // typeAssertionKids is typeAssertion given a Factor's children, which is what the
@@ -6653,7 +6655,7 @@ func (e *emitter) bindAssertionOperand(ast []int32) (operand, iface, target stri
 	if len(nodes) != 1 || nodes[0].sym != Factor {
 		return "", "", "", false, false
 	}
-	kids := slices.Collect(it(nodes[0].ast))
+	kids := e.unparenKids(slices.Collect(it(nodes[0].ast)))
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return "", "", "", false, false
 	}
@@ -20188,7 +20190,9 @@ func (e *emitter) typeSwitchOperand(ast []int32) (base string, prefix []Node, ok
 	if len(nodes) != 1 || nodes[0].sym != Factor {
 		return "", nil, false
 	}
-	kids := slices.Collect(it(nodes[0].ast))
+	// `switch (v).(type)`: the parentheses name nothing, and with them the guard read
+	// as an ordinary switch on a field of v that does not exist.
+	kids := e.unparenKids(slices.Collect(it(nodes[0].ast)))
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return "", nil, false
 	}

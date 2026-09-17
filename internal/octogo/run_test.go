@@ -27117,6 +27117,93 @@ func main() {
 }
 `,
 		want: "6\n9\n7 7\n10\n10\n2 5 5\n0 1\n1 2\nnine\n",
+	}, {
+		// HeaderFactor had dropped the suffix from three of Factor's alternatives, so in
+		// the header of an if, a for or a switch nothing could follow a parenthesised
+		// expression, a literal of a bracketed type or a function literal: `if
+		// (&p).M() == 7 {`, `switch (v).(type) {`, `for i := range (arr)[1:] {` and `if
+		// func() bool { ... }() {` were each a syntax error, as was the `range
+		// []int{...}[1:]` recorded among the open items. With the grammar's two
+		// productions in step, the type switch and the two-value assertion look through
+		// the parentheses of their operand, which the expression form already did.
+		name: "a suffix after a parenthesis, a literal or a function literal in a header",
+		src: `type P struct {
+	x int
+	a [3]int
+}
+
+type I interface {
+	M() int
+}
+
+func (p *P) M() int {
+	return p.x
+}
+
+var arr [4]int
+var p P
+var calls int
+
+func bump(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func main() {
+	arr[1], arr[2], arr[3] = 5, 6, 7
+	p.x = 7
+	var iv I = &p
+	n := 0
+	if (arr)[1] == 5 {
+		n++
+	}
+	if (&p).M() == 7 {
+		n++
+	}
+	if func() bool { return bump(1) == 1 }() {
+		n++
+	}
+	if [3]int{1, 2, 3}[bump(2)-1] == 2 {
+		n++
+	}
+	if v := []int{4, 5, 6}[1]; v == 5 {
+		n++
+	}
+	for i := range (arr)[1:] {
+		n += i
+	}
+	for _, v := range (arr)[2:] {
+		n += v
+	}
+	for i := func() int { return bump(3) }(); i < 5; i++ {
+		n++
+	}
+	for i := 0; i < (arr)[1]; i += (arr)[1] - 3 {
+		n++
+	}
+	switch (iv).(type) {
+	case *P:
+		n += 100
+	}
+	switch x := (iv).(type) {
+	case *P:
+		n += x.x
+	}
+	switch (arr)[1] {
+	case 5:
+		n += 1000
+	}
+	switch func() int { return bump(4) }() {
+	case 4:
+		n += 10000
+	}
+	if v, ok := (iv).(*P); ok {
+		n += v.a[0] + 1
+	}
+	println(n, calls)
+}
+`,
+		want: "11134 1234\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

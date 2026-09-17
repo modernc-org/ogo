@@ -1462,10 +1462,10 @@
 //		| float_lit
 //		| string_lit
 //		| rune_lit
-//		| "(" Expression ")"
-//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit ]
+//		| "(" Expression ")" [ FactorSuffix ]
+//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 //		| "chan" Type
-//		| FuncLiteral .
+//		| FuncLiteral [ FactorSuffix ] .
 //
 // A slice or array type may appear as a Factor so that the type argument such as
 // the "[]int" in "make([]int, 0, cap)" parses. A bare type used as a value is

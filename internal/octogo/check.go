@@ -6125,11 +6125,14 @@ func (f *File) isTypeAssertion(n Node) bool {
 	if !isFac {
 		return false
 	}
+	// Whatever the operand is -- a name, `(v)`, a literal's element -- the assertion
+	// is the last step of the suffix that ends the factor. Only a name was looked
+	// under, so `p, ok := (v).(*P)` was "2 variables but 1 value".
 	kids := slices.Collect(it(fac.ast))
-	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
 		return false
 	}
-	steps := slices.Collect(it(kids[1].ast))
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
 	last := len(steps) - 1
 	if last < 0 || steps[last].sym != Selector {
 		return false

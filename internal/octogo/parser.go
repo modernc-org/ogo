@@ -7377,10 +7377,10 @@ state1:
 //		| float_lit
 //		| string_lit
 //		| rune_lit
-//		| "(" Expression ")"
-//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit ]
+//		| "(" Expression ")" [ FactorSuffix ]
+//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 //		| "chan" Type
-//		| FuncLiteral .
+//		| FuncLiteral [ FactorSuffix ] .
 //
 //	State 0
 //		on  "chan"
@@ -7389,12 +7389,12 @@ state1:
 //			shift and goto state 2
 //		on  '('
 //			shift and goto state 3
-//		on  '['
-//			shift and goto state 5
 //		on  identifier
-//			shift and goto state 9
+//			shift and goto state 5
+//		on  '['
+//			shift and goto state 6
 //		on  "func"
-//			call FuncLiteral and goto state 2
+//			call FuncLiteral and goto state 5
 //	State 1
 //		on  "chan", "func", "interface", "struct", '*', '[', identifier
 //			call Type and goto state 2
@@ -7405,28 +7405,28 @@ state1:
 //			call Expression and goto state 4
 //	State 4
 //		on  ')'
-//			shift and goto state 2
+//			shift and goto state 5
 //	State 5
-//		on  "..."
-//			shift and goto state 6
-//		on  ']'
-//			shift and goto state 7
-//		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
-//			call Expression and goto state 6
-//	State 6
-//		on  ']'
-//			shift and goto state 7
-//	State 7
-//		on  "chan", "func", "interface", "struct", '*', '[', identifier
-//			call Type and goto state 8
-//	State 8
-//		Accept
-//		on  '{'
-//			call CompositeLit and goto state 2
-//	State 9
 //		Accept
 //		on  '(', '.', '['
 //			call FactorSuffix and goto state 2
+//	State 6
+//		on  "..."
+//			shift and goto state 7
+//		on  ']'
+//			shift and goto state 8
+//		on  "<-", "chan", "func", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//			call Expression and goto state 7
+//	State 7
+//		on  ']'
+//			shift and goto state 8
+//	State 8
+//		on  "chan", "func", "interface", "struct", '*', '[', identifier
+//			call Type and goto state 9
+//	State 9
+//		Accept
+//		on  '{'
+//			call CompositeLit and goto state 5
 //
 // HeaderFactor is used internally from Parse.
 func (p *Parser) HeaderFactor() (r []int32) {
@@ -7444,15 +7444,15 @@ func (p *Parser) HeaderFactor() (r []int32) {
 	case TOK_0028:
 		r = append(r, p.shift())
 		goto state3
-	case TOK_005b:
-		r = append(r, p.shift())
-		goto state5
 	case identifier:
 		r = append(r, p.shift())
-		goto state9
+		goto state5
+	case TOK_005b:
+		r = append(r, p.shift())
+		goto state6
 	case TOK_func:
 		r = p.add(r, p.FuncLiteral())
-		goto state2
+		goto state5
 	}
 	return p.stop(r, accept, errorSet)
 state1:
@@ -7479,53 +7479,53 @@ state4:
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
-		goto state2
+		goto state5
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 2
-	switch Symbol(p.tok.Ch) {
-	case TOK_002e002e002e:
-		r = append(r, p.shift())
-		goto state6
-	case TOK_005d:
-		r = append(r, p.shift())
-		goto state7
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
-		r = p.add(r, p.Expression())
-		goto state6
-	}
-	return p.stop(r, accept, errorSet)
-state6:
-	accept, errorSet = false, 110
-	switch Symbol(p.tok.Ch) {
-	case TOK_005d:
-		r = append(r, p.shift())
-		goto state7
-	}
-	return p.stop(r, accept, errorSet)
-state7:
-	accept, errorSet = false, 61
-	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
-		r = p.add(r, p.Type())
-		goto state8
-	}
-	return p.stop(r, accept, errorSet)
-state8:
-	accept, errorSet = true, 111
-	switch Symbol(p.tok.Ch) {
-	case TOK_007b:
-		r = p.add(r, p.CompositeLit())
-		goto state2
-	}
-	return p.stop(r, accept, errorSet)
-state9:
 	accept, errorSet = true, 83
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028, TOK_002e, TOK_005b:
 		r = p.add(r, p.FactorSuffix())
 		goto state2
+	}
+	return p.stop(r, accept, errorSet)
+state6:
+	accept, errorSet = false, 2
+	switch Symbol(p.tok.Ch) {
+	case TOK_002e002e002e:
+		r = append(r, p.shift())
+		goto state7
+	case TOK_005d:
+		r = append(r, p.shift())
+		goto state8
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+		r = p.add(r, p.Expression())
+		goto state7
+	}
+	return p.stop(r, accept, errorSet)
+state7:
+	accept, errorSet = false, 110
+	switch Symbol(p.tok.Ch) {
+	case TOK_005d:
+		r = append(r, p.shift())
+		goto state8
+	}
+	return p.stop(r, accept, errorSet)
+state8:
+	accept, errorSet = false, 61
+	switch Symbol(p.tok.Ch) {
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
+		r = p.add(r, p.Type())
+		goto state9
+	}
+	return p.stop(r, accept, errorSet)
+state9:
+	accept, errorSet = true, 111
+	switch Symbol(p.tok.Ch) {
+	case TOK_007b:
+		r = p.add(r, p.CompositeLit())
+		goto state5
 	}
 	return p.stop(r, accept, errorSet)
 }

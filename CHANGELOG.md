@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A suffix after a parenthesis, a literal or a function literal in a header.**
+  In the header of an `if`, a `for` or a `switch` nothing could follow a
+  parenthesised expression, a literal of a bracketed type or a function literal:
+  `if (&p).M() == 7 {`, `switch (v).(type) {`, `for i := range (arr)[1:] {`, `if
+  [3]int{1, 2, 3}[i] == 2 {` and `if func() bool { ... }() {` were each a syntax
+  error. The header's grammar had fallen behind the expression's, which it is
+  meant to be minus one production. A type switch and a two-value assertion now
+  look through the parentheses of their operand as well, `p, ok := (v).(*P)`.
 - **A function literal called as a statement.** `func(n int) { total += n }(5)` was
   a syntax error: no statement could begin with `func`, though the same literal
   could follow a `go` or a `defer`. It is lifted and called by name as those are.
