@@ -66,6 +66,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A name declared in a statement header keeps its type.** `if p := &x; *p > 0 {`
+  was "cannot indirect p (variable of type int)", and the loop that walks a list by
+  pointer, `for n := &nodes[0]; n != nil; n = n.next {`, lost the pointer the same
+  way: the header of an `if`, a `for` and a `switch` each recorded the KIND of the
+  value a name was declared from, and the kind of `&x` is x's. A struct, a function
+  value or a channel declared there carried no type at all, so a call through it
+  with the wrong arguments, a method it does not have and a constant too wide for
+  it -- `for i := 1 << 40; ...` -- all passed the checker. The headers now ask what
+  a statement's `x := e` asks.
 - **A function literal's call is checked.** `func(n int) { ... }("five")` and
   `func(n int) { ... }()` -- a literal called where it stands, behind a `go` or a
   `defer` or in an expression -- had their arguments checked by nothing: the wrong

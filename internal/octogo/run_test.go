@@ -27041,6 +27041,82 @@ func main() {
 }
 `,
 		want: "called\nadded 5\nloop 0\n18\n",
+	}, {
+		// A name declared in the header of an if, a for or a switch was typed by its
+		// value's KIND alone, and the kind of `&x` is x's: `if p := &gx; *p > 4` was
+		// "cannot indirect p (variable of type int)", and the loop that walks a list by
+		// pointer, `for n := &nodes[0]; n != nil; n = n.next`, lost the pointer the same
+		// way. A struct, a function value or a method's receiver declared there carried
+		// no type at all, so nothing read off it was checked. The headers now ask what
+		// a statement's `x := e` asks (inferHeaderVar).
+		name: "a name declared in a statement header keeps its type",
+		src: `type Node struct {
+	v    int
+	next *Node
+}
+
+type Acc struct {
+	sum int
+}
+
+func (a *Acc) add(n int) int {
+	a.sum += n
+	return a.sum
+}
+
+var nodes [3]Node
+var acc Acc
+var gx int
+
+func dbl(n int) int {
+	return n * 2
+}
+
+func pick() func(int) int {
+	return dbl
+}
+
+func main() {
+	nodes[0] = Node{1, &nodes[1]}
+	nodes[1] = Node{2, &nodes[2]}
+	nodes[2] = Node{3, nil}
+	gx = 5
+	total := 0
+	for n := &nodes[0]; n != nil; n = n.next {
+		total += n.v
+	}
+	println(total)
+	if p := &gx; *p > 4 {
+		*p = 9
+	}
+	println(gx)
+	if a := &acc; a.add(3) > 2 {
+		println(a.add(4), acc.sum)
+	}
+	switch p := &gx; {
+	case *p == 9:
+		*p++
+	}
+	println(gx)
+	if f := pick(); f(4) == 8 {
+		println(f(5))
+	}
+	if n, q := nodes[1], &nodes[2]; n.v < q.v {
+		q.v += n.v
+		println(n.v, q.v, nodes[2].v)
+	}
+	for p, i := &nodes[0], 0; i < 2; p, i = p.next, i+1 {
+		println(i, p.v)
+	}
+	switch a, k := &acc, 2; a.add(k) {
+	case 9:
+		println("nine")
+	default:
+		println("other", acc.sum)
+	}
+}
+`,
+		want: "6\n9\n7 7\n10\n10\n2 5 5\n0 1\n1 2\nnine\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

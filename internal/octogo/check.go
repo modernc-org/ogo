@@ -2914,8 +2914,36 @@ func (f *File) declareForInitVar(s *Scope, lhs, rhs Node, define bool) {
 		f.errNoNewVars(id)
 		return
 	}
-	kind, hasKind := f.inferredKind(s, rhs)
-	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
+	vd := &VarDeclaration{declaration: declaration{token: id}}
+	f.inferHeaderVar(s, vd, rhs)
+	f.declareLocal(s, vd)
+}
+
+// inferHeaderVar types a name a statement HEADER declares from its value, exactly as
+// a statement's "x := e" is typed (inferVarFrom). ds is the header's own scope, the
+// one the name goes into.
+//
+// Every header form recorded the value's KIND and nothing else, and the kind of `&x`
+// is x's: `if p := &x; *p > 0` was "cannot indirect p (variable of type int)", `for
+// n := &nodes[0]; n != nil; n = n.next` lost the pointer the same way, and a name
+// declared from a struct, a channel or a function value carried no type, so nothing
+// read off it was checked. The statement form has asked the shared inference since
+// it was written; the headers were each written beside it.
+//
+// The value is read in the scope AROUND the header, which is where Go reads it: the
+// name is not in scope until the init statement is over, so `for xs := xs[1:]; ...`
+// and the second value of `for c, d := 1, c; ...` mean the outer names. The
+// inference keeps the scope for the questions it answers later, by which time the
+// header's own scope holds the new names.
+func (f *File) inferHeaderVar(ds *Scope, vd *VarDeclaration, init Node) {
+	vs := ds
+	if ds.Parent != nil {
+		vs = ds.Parent
+	}
+	f.inferVarFrom(vs, vd, init)
+	// The header writes no type, so the value's own type is what bounds a constant,
+	// as for the statement form.
+	f.checkInferredOverflow(vs, init)
 }
 
 // declareHeaderVars introduces the names of a header's multi-value short
@@ -2992,13 +3020,22 @@ func (f *File) declareHeaderValues(s, ds *Scope, head Node, items []Node, values
 			countUnits(len(ids), "variable"), countUnits(len(values), "value"))
 		return
 	}
-	newCount := 0
+	// Every value is typed before any name is declared, for the reason it is read
+	// before: a name declared here is not what a later value of the list means.
+	vds := make([]*VarDeclaration, len(ids))
 	for i, id := range ids {
 		if id.Src() == "_" {
 			continue
 		}
-		kind, hasKind := f.inferredKind(s, values[i])
-		f.declareLocal(ds, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind})
+		vds[i] = &VarDeclaration{declaration: declaration{token: id}}
+		f.inferHeaderVar(ds, vds[i], values[i])
+	}
+	newCount := 0
+	for _, vd := range vds {
+		if vd == nil {
+			continue
+		}
+		f.declareLocal(ds, vd)
 		newCount++
 	}
 	if newCount == 0 {
@@ -3988,11 +4025,11 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 		f.declareHeaderVars(ss, g.name, g.items)
 	} else if g.hasName {
 		f.checkNames(s, g.value)
-		kind, hasKind := f.inferredKind(s, g.value)
 		if id, ok := f.exprIdent(g.name); ok && id.Src() == "_" {
 			f.errNoNewVars(id) // "switch _ := f(); ..." introduces nothing
 		} else if ok {
-			vd := &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind}
+			vd := &VarDeclaration{declaration: declaration{token: id}}
+			f.inferHeaderVar(ss, vd, g.value)
 			// Only an init statement's name is subject to the unused rule. In the
 			// ":=" guard without one, the name declared is also what the switch
 			// switches on, so its declaration is its use.

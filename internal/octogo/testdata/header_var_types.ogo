@@ -1,0 +1,88 @@
+// A name declared in the header of an "if", a "for" or a "switch" is typed from its
+// value exactly as a statement's "x := e" is. Each header form used to record the
+// value's KIND and nothing else -- and the kind of "&x" is x's -- so "if p := &x; *p
+// > 0" was "cannot indirect p (variable of type int)", a loop walking a list by
+// pointer lost the pointer the same way, and a name holding a struct, a function or
+// a channel carried no type at all: a call through it with the wrong arguments, a
+// method it does not have and a constant too wide for it all reached the C compiler.
+
+type Node struct {
+	v    int
+	next *Node
+}
+
+func (n *Node) value() int { return n.v }
+
+var nodes [3]Node
+
+var gx int
+
+func dbl(n int) int { return n * 2 }
+
+func pick() func(int) int { return dbl }
+
+func pointers() int {
+	total := 0
+	for n := &nodes[0]; n != nil; n = n.next {
+		total += n.value()
+	}
+	if p := &gx; *p > 4 {
+		*p = 9
+	}
+	switch p := &gx; {
+	case *p == 9:
+		*p++
+	}
+	if n, q := nodes[1], &nodes[2]; n.v < q.v {
+		q.v += n.v
+	}
+	for p, i := &nodes[0], 0; i < 2; p, i = p.next, i+1 {
+		total += p.v
+	}
+	if f := pick(); f(4) == 8 {
+		total += f(5)
+	}
+	return total
+}
+
+// The value is read outside the header's own scope: the second c is the outer one.
+func outer(c string) int {
+	for c, d := 1, c; c < 3; c++ {
+		if d != "" {
+			return c
+		}
+	}
+	return 0
+}
+
+func refused() {
+	// ERROR "type Node has no field w"
+	if n := &nodes[0]; n.w > 0 {
+	}
+	// ERROR "type Node has no method nope"
+	if n := nodes[0]; n.nope() > 0 {
+	}
+	// ERROR "too many arguments in call to value"
+	for n := &nodes[0]; n.value(1) > 0; n = n.next {
+	}
+	// ERROR "cannot use .x. of type string as type int in argument to f"
+	if f := pick(); f("x") > 0 {
+	}
+	// ERROR "cannot use .x. of type string as type int in argument to f"
+	switch f := pick(); f("x") {
+	}
+	// ERROR "type Node has no field w"
+	if n, k := &nodes[0], 1; n.w > k {
+	}
+	// ERROR "constant 1099511627776 overflows int"
+	for i := 1 << 40; i > 0; i-- {
+	}
+	// ERROR "constant 1099511627776 overflows int"
+	if i := 1 << 40; i > 0 {
+	}
+}
+
+func main() {
+	println(pointers(), outer("c"))
+	refused()
+}
