@@ -1,0 +1,28 @@
+// An index or a slice of a constant string is a byte or a string and NO constant, in
+// Go and here. The fold answered "unknown" for any operand carrying a suffix and
+// left the saying to whoever had reported the operand -- which for an operand that
+// IS a constant was nobody, so both declarations below were accepted.
+
+const hexdigits = "0123456789abcdef"
+
+// ERROR "hexdigits.1. is not constant"
+const c = hexdigits[1]
+
+// ERROR "hexdigits.1:. is not constant"
+const t = hexdigits[1:]
+
+// The length of one is a constant, and a variable takes either.
+const n = len(hexdigits) + 1
+
+var b = hexdigits[1]
+
+var bs [len(hexdigits)]byte
+
+func main() {
+	x := hexdigits[2:4]
+	bs[0] = hexdigits[n-2]
+	switch b {
+	case hexdigits[1]:
+		println(x, n, bs[0])
+	}
+}

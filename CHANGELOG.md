@@ -312,6 +312,13 @@ program handed out a reference to storage that was gone by the time it was read.
   of reference -- a slice, an address, a struct, an array and an interface holding
   one -- each beside a control over package storage that must still compile.
 
+- **An index or a slice of a constant string is not a constant.** `const c =
+  hexdigits[1]` and `const t = hexdigits[1:]` were accepted, where Go says "is not
+  constant": the fold answered "unknown" for any operand carrying a suffix and left
+  the saying to whoever had reported the operand, which for an operand that IS a
+  constant was nobody. The values were right, so nothing computed differently; the
+  program was one Go refuses. `len(hexdigits)` is a constant still.
+
 ### Verified
 
 - Three domain programs over the accessor shapes, each measured against Go with

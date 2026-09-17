@@ -16918,6 +16918,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 		return constVal{cv: constant.MakeUnknown()}
 	}
 	//TODO 	var ident *FactorNodeIdent
+	fac := n
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Expression:
@@ -16929,6 +16930,15 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 			// not a compile-time constant. A problematic operand identifier has
 			// already been reported above; in an array bound the "non-constant
 			// array bound" diagnostic is emitted by arrayBound.
+			//
+			// An operand that IS a constant was reported by nobody: `const c =
+			// hexdigits[1]` and `const t = "abc"[1:]` were accepted, the value
+			// simply unknown, where Go says an index or a slice of a constant
+			// string is a byte or a string and no constant.
+			if cv, isConst := r.(constVal); isConst && cv.cv != nil && cv.cv.Kind() == constant.String &&
+				!f.inArrayBound && !f.inCaseExpr && f.firstStepIsIndex(n) {
+				f.err(f.tok(fac.Pos()).Position(), "%s is not constant", f.exprSource(fac))
+			}
 			r = constVal{cv: constant.MakeUnknown()}
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
@@ -16991,6 +17001,14 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 		}
 	}
 	return r
+}
+
+// firstStepIsIndex reports whether a FactorSuffix begins with an index or a slice.
+func (f *File) firstStepIsIndex(suffix Node) bool {
+	for c := range it(suffix.ast) {
+		return c.sym == Index
+	}
+	return false
 }
 
 // FactorSuffixNode describes the FactorSuffix production.
