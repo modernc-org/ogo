@@ -9627,6 +9627,10 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 			return
 		}
 		f.checkImplements(s, iface, other, "comparison")
+	} else if f.checkPointerRelOp(s, opNode, lNode, rNode) {
+		// Not where one side is an interface: a pointer is what an interface HOLDS,
+		// and comparing the two is the comparison above.
+		return
 	}
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)
@@ -9652,6 +9656,64 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 			f.err(pos, "invalid operation: operator %s not defined on %s", f.tok(opNode.Pos()).Src(), kindName(lk))
 		}
 	}
+}
+
+// checkPointerRelOp checks a comparison one of whose operands is a POINTER, and
+// reports whether it said anything. A pointer has no Kind, so the scalar check below
+// it returned before looking: `p > 0` and `p == 3` compiled -- C compares an address
+// with an integer happily, and the target's compiler says nothing -- where Go has
+// "mismatched types *int and untyped int", and `p < q` where Go has no ordering on
+// pointers at all. Equality with another pointer or with nil is what there is.
+//
+// It speaks only when it knows what BOTH operands are, and never about nil.
+func (f *File) checkPointerRelOp(s *Scope, opNode, lNode, rNode Node) bool {
+	if f.isNilOperand(lNode) || f.isNilOperand(rNode) {
+		return false
+	}
+	lp, lknown := f.exprPointerness(s, lNode)
+	rp, rknown := f.exprPointerness(s, rNode)
+	if !lknown || !rknown || !lp && !rp {
+		return false
+	}
+	pos := f.tok(opNode.Pos()).Position()
+	if lp != rp {
+		// Only a SCALAR beside the pointer is a mismatch this can name. "Not a
+		// pointer" is also what an interface is, and an interface holds one: `err ==
+		// &ErrOff` compares, whether or not the comparison above knew err for an
+		// interface -- one declared from a call's second result it does not.
+		other := lNode
+		if lp {
+			other = rNode
+		}
+		if k, ok := f.exprType(s, other); !ok || kindCategory(k) == catUnknown {
+			return false
+		}
+		f.err(pos, "mismatched types %s and %s", f.pointerOperandName(s, lNode, lp), f.pointerOperandName(s, rNode, rp))
+		return true
+	}
+	switch Symbol(f.tok(opNode.Pos()).Ch) {
+	case EQL, NEQ:
+		return false
+	}
+	f.err(pos, "invalid operation: operator %s not defined on pointer", f.tok(opNode.Pos()).Src())
+	return true
+}
+
+// isNilOperand reports an operand that is the predeclared nil.
+func (f *File) isNilOperand(n Node) bool {
+	id, ok := f.exprIdent(n)
+	return ok && id.Src() == "nil"
+}
+
+// pointerOperandName names an operand of checkPointerRelOp's for its diagnostic: a
+// pointer as "pointer", there being no type name the checker holds for every one,
+// and anything else by its Kind.
+func (f *File) pointerOperandName(s *Scope, n Node, isPtr bool) string {
+	if isPtr {
+		return "pointer"
+	}
+	k, _ := f.exprType(s, n) // a scalar: checkPointerRelOp has asked
+	return f.operandTypeName(s, n, k)
 }
 
 // checkBinary recurses into a SimpleExpr's or Term's operands and checks each

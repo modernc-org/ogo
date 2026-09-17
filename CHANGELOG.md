@@ -319,6 +319,12 @@ program handed out a reference to storage that was gone by the time it was read.
   of reference -- a slice, an address, a struct, an array and an interface holding
   one -- each beside a control over package storage that must still compile.
 
+- **A pointer compares for equality and nothing else.** `p > 0`, `p == 3`, `0 != p`
+  and `p == x` for an int x -- a pointer beside an integer -- and an ordering of two
+  pointers, `p < q`, all compiled: a pointer has no kind for the comparison's check
+  to read, C compares an address with anything, and the target's C compiler says
+  nothing about it. Go has "mismatched types" for the first four and no ordering on
+  pointers at all. Equality with another pointer, an address or nil is unchanged.
 - **An index or a slice of a constant string is not a constant.** `const c =
   hexdigits[1]` and `const t = hexdigits[1:]` were accepted, where Go says "is not
   constant": the fold answered "unknown" for any operand carrying a suffix and left

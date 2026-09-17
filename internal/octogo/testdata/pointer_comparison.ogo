@@ -1,0 +1,83 @@
+// A pointer compares for equality, with another pointer or with nil, and for nothing
+// else. It has no Kind, so the check of a comparison's operands returned before it
+// looked: a pointer beside an integer, and an ordering of two pointers, both
+// compiled -- C compares an address with anything, and the target's C compiler
+// says nothing about it -- where Go refuses each.
+
+type Node struct {
+	v    int
+	next *Node
+}
+
+type Shape interface {
+	area() int
+}
+
+func (n *Node) area() int { return n.v }
+
+var gx, gy int
+
+var nodes [2]Node
+
+var ptrs [2]*int
+
+func get() *int { return &gx }
+
+func accepted() int {
+	p, q := &gx, &gy
+	n := &nodes[0]
+	ptrs[0] = p
+	c := 0
+	if p == nil || nil != q || p == q || p != &gx || &gy == q {
+		c++
+	}
+	if n.next == nil || n.next != n || ptrs[0] == p || ptrs[1] == nil || get() == p {
+		c++
+	}
+	if *p > 0 || n.v > 0 {
+		c++
+	}
+	for m := n; m != nil; m = m.next {
+		c++
+	}
+	// A pointer is what an interface holds, so the two compare -- an interface the
+	// checker knows for one, and one it does not, declared from a call's result.
+	var sh Shape = n
+	if sh == n || n == sh || sh != &nodes[1] {
+		c++
+	}
+	if got, ok := pick(); ok && got == &nodes[0] {
+		c++
+	}
+	return c
+}
+
+func pick() (Shape, bool) { return &nodes[0], true }
+
+func refused() {
+	p, q := &gx, &gy
+	n := &nodes[0]
+	// ERROR "mismatched types pointer and int"
+	if p > 0 {
+	}
+	// ERROR "mismatched types pointer and int"
+	if p == 3 {
+	}
+	// ERROR "mismatched types int and pointer"
+	if 0 != p {
+	}
+	// ERROR "mismatched types pointer and int"
+	if p == gx {
+	}
+	// ERROR "operator < not defined on pointer"
+	if p < q {
+	}
+	// ERROR "operator >= not defined on pointer"
+	if n >= n.next {
+	}
+}
+
+func main() {
+	println(accepted())
+	refused()
+}
