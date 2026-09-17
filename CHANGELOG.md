@@ -56,6 +56,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An `else if` that carries an init statement.** `} else if b := f(); b > 0 {` was
+  read as a plain else-if: the init was dropped and the declared NAME stood as the
+  condition, `else if (b)`. That is C which does not compile where `b` is new, and
+  was silently wrong where the name already meant something -- `else if a := a *
+  2; a == 8` tested the outer `a`. Such an else-if is a whole `if` statement
+  standing in the `else`, and is emitted as one.
 - **A send to a channel in a field of an element, and the order of a send's two
   sides.** `bus.ports[i].ch <- v` -- a bus and its bank of ports -- was "cannot
   send to non-channel": the check flattened the chain to a run of fields, and an

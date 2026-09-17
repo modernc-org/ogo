@@ -26861,6 +26861,70 @@ func main() {
 }
 `,
 		want: "call\n5 24\nindex\n6 34\nmethod\n7 314\nchain\n8 34\nsend\n9 224\nderef\n10\nparen\n11\n12 34\n",
+	},
+	{
+		// An else-if that carries an init statement, `} else if b := f(); b > 0 {`. It
+		// was read as a plain else-if: the init was dropped and the declared NAME stood
+		// as the condition, `else if (b)` -- C that does not compile where b is new,
+		// and silently wrong where the name already meant something, `else if a := a *
+		// 2; a == 8`, which tested the outer a. Such an else-if is a whole if statement
+		// standing in the else, and is emitted as one: its init runs only when the
+		// tests before it failed, its name reaches the rest of the chain, a call
+		// destructured there works, and a defer in its branch is the branch's.
+		name: "an else-if that carries an init statement",
+		src: `func f(v int) int {
+	println("f", v)
+	return v
+}
+
+func pair(v int) (int, bool) {
+	return v * 3, v > 1
+}
+
+func withDefer(n int) {
+	if a := n; a > 5 {
+		defer println("deferred first", a)
+	} else if b := a * 2; b > 5 {
+		defer println("deferred second", b)
+	}
+	println("body", n)
+}
+
+func main() {
+	// The init of an else-if is evaluated only when the tests before it failed, and
+	// its name is in scope for the rest of the chain.
+	if a := f(1); a > 5 {
+		println("first", a)
+	} else if b := f(a + 1); b == 2 {
+		println("second", a, b)
+	} else {
+		println("else", a, b)
+	}
+	if a := f(9); a > 5 {
+		println("first", a)
+	} else if b := f(a + 1); b == 2 {
+		println("second", a, b)
+	}
+	// A name the else-if declares may shadow the one before it, and read it.
+	if a := f(4); a > 5 {
+		println("x")
+	} else if a := a * 2; a == 8 {
+		println("shadow", a)
+	}
+	// A call destructured in an else-if, and a third link.
+	if a := 0; a > 5 {
+		println("x")
+	} else if v, ok := pair(a); ok {
+		println("pair", v)
+	} else if w := v + 7; w == 7 {
+		println("third", v, ok, w)
+	}
+	withDefer(1)
+	withDefer(3)
+	withDefer(9)
+}
+`,
+		want: "f 1\nf 2\nsecond 1 2\nf 9\nfirst 9\nf 4\nshadow 8\nthird 0 false 7\nbody 1\nbody 3\ndeferred second 6\nbody 9\ndeferred first 9\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

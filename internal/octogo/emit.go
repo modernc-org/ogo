@@ -20908,6 +20908,16 @@ func (e *emitter) ifInitParts(ast []int32) (names []string, initExpr, cond []int
 	return names, exprs[0], exprs[1], true
 }
 
+// ifHasInit reports an if that carries an init statement.
+func ifHasInit(ast []int32) bool {
+	for n := range it(ast) {
+		if n.sym == IfInit {
+			return true
+		}
+	}
+	return false
+}
+
 // emitIfBody emits `if (cond) { ... }` and its optional else branch, assuming the
 // cursor is already positioned for a statement's own if. It recurses on an `else
 // if` continuation so the C reads `} else if (c) {` on one line.
@@ -20985,6 +20995,20 @@ func (e *emitter) emitIfBodyAt(ast []int32, condOverride []int32, place ifPlace)
 	e.ind()
 	e.emit("}")
 	switch {
+	case elseIf != nil && ifHasInit(elseIf):
+		// `} else if b := f(); b > 0 {`: the init belongs to the else-if, which is
+		// a whole if statement of its own standing in the else. Read as a plain
+		// else-if it lost the init and took the declared NAME for its condition --
+		// `else if (b)`, of a b nothing declared -- and where the name already
+		// meant something, `else if a := a * 2; a == 8`, that was silent.
+		e.emit(" else {\n")
+		e.indent++
+		e.deferBlockDepth++
+		e.emitIf(elseIf)
+		e.deferBlockDepth--
+		e.indent--
+		e.ind()
+		e.emit("}\n")
 	case elseIf != nil:
 		e.emitIfBodyAt(elseIf, nil, ifElse)
 	case elseBody != nil:
