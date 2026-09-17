@@ -111,6 +111,18 @@ fallback so the encoding cannot drift from the compiler that consumes it.
 flexcc program sets its own as it starts, and the same binary measures 160061416 Hz
 with `-f 200000000` or with no `-f`. `-f` is for the loader's own timing.
 
+**`Could not find a P2 on port` can mean the board, not the loader** (2026-09-17, first
+session on the second dev machine). This P2-EDGE's flash holds TAQOZ Reloaded, which
+boots ~218 ms after any reset that no loader handshake follows and talks at 921600 baud,
+so garbage at other bauds after a reset is TAQOZ, not noise. The ROM answers the loader's
+`Prop_Chk` for ~130 ms after a reset and the loader's first try lands at ~24 ms, so a
+healthy board is found on the first try; the reset is the DTR deassert edge, at any pulse
+width from 1 ms. When every load fails while `ogo loadp2 -xTERM -b 921600 -p /dev/ttyUSB0`
+plus Ctrl-C still prints the TAQOZ banner, the chip is alive and the DTR-to-RESn path is
+dead: it degraded over hours and only a board power cycle restored it (24/24 loads and a
+green `make board` afterwards). The transpiled loader measured identical to a native
+loadp2 and to a hand-written replica throughout -- do not start there.
+
 ## Code generation
 
 Three generated artifacts are checked in. Regenerate only when changing their
