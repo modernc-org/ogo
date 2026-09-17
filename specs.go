@@ -1390,6 +1390,15 @@
 // in a package variable, handing one to another cog or sending one on a channel is
 // refused, exactly as it is for a slice of a local array.
 //
+// It may be SLICED where it stands as it may be indexed, "[]int{1, 2, 3}[1:]" -- in
+// a declaration, as a "range" operand, as an argument -- and a row of it may,
+// "[][2]int{{1, 2}, {3, 4}}[1][:]". The result views the literal's backing array
+// and has its lifetime. An ARRAY literal may be indexed and not sliced, in Go as
+// here: a slice expression needs an operand that is addressable, which a literal is
+// not, and "[3]int{1, 2, 3}[1:]" is refused as "cannot slice unaddressable value".
+// What a literal's element HOLDS is another matter -- a slice or a pointer among
+// the elements is sliced wherever it points.
+//
 // An ARRAY literal stands in every one of those positions as well: as an
 // initializer, as an element of another literal, as a "range" operand, as an
 // argument, as a result, as the operand of an index, and -- since 2026-08-16 -- in

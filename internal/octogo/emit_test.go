@@ -9858,6 +9858,53 @@ func TestEmitCUnclaimedSuffixNotTyped(t *testing.T) {
 	}
 }
 
+// TestEmitCLitSliceUnaddressable pins Go's refusal to slice an array that is not
+// addressable, which a literal and everything in it is unless a slice or a pointer
+// stands between. The emitter binds a literal to a temporary, which C will slice
+// happily, so without the refusal a program Go rejects would compile.
+func TestEmitCLitSliceUnaddressable(t *testing.T) {
+	for _, test := range []struct {
+		expr string
+		want string // "" means the program must be accepted
+	}{
+		{"[3]int{1, 2, 3}[1:]", "cannot slice unaddressable value [3]int{1, 2, 3}[1:]"},
+		{"[2][2]int{{1, 2}, {3, 4}}[1][:]", "cannot slice unaddressable value"},
+		{"[1]Row{{a: [2]int{1, 2}}}[0].a[:]", "cannot slice unaddressable value"},
+		// A slice literal's elements are a backing array's, and addressable.
+		{"[]int{1, 2, 3}[1:]", ""},
+		{"[][2]int{{1, 2}, {3, 4}}[1][:]", ""},
+		{"[]Row{{a: [2]int{1, 2}}}[0].a[:]", ""},
+		// Through a pointer or a slice an element holds, and a string anywhere.
+		{"[1]*[2]int{&back}[0][:]", ""},
+		{"[1][]int{back[:]}[0][1:]", ""},
+		{"len([2]string{\"ab\", \"cd\"}[1][1:])", ""},
+	} {
+		t.Run(test.expr, func(t *testing.T) {
+			stmt := "\ts := " + test.expr + "\n\tprintln(len(s))\n"
+			if strings.HasPrefix(test.expr, "len(") {
+				stmt = "\tprintln(" + test.expr + ")\n"
+			}
+			src := "type Row struct {\n\ta [2]int\n}\n\nvar back [2]int\n\nfunc main() {\n\tback[0] = 1\n" + stmt + "}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			err = EmitC(pkg, io.Discard, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCListStoreEscape is the STORE side of TestEmitCFrameRefForms: a list form
 // or a loop clause writing a reference to this frame where it outlives the frame, or
 // the block. A plain assignment has been refused for all of these since the lifetime
@@ -12910,6 +12957,64 @@ func main() {
 }
 `,
 			want: "which holds a pointer into local x",
+		},
+		// A slice literal SLICED views the literal's backing array, a local of this
+		// frame as the unsliced literal's is, and so does a row of it.
+		{
+			name: "a sliced literal, returned",
+			src: `func mk() []int {
+	return []int{1, 2, 3}[1:]
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice literal",
+		},
+		{
+			name: "a sliced literal, declared and returned",
+			src: `func mk() []int {
+	s := []int{1, 2, 3}[1:][1:]
+	return s
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local s",
+		},
+		{
+			name: "a row of a literal sliced, stored",
+			src: `var g []int
+
+func leak() {
+	g = [][2]int{{1, 2}, {3, 4}}[1][:]
+}
+
+func main() {
+	leak()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice literal",
+		},
+		// What an ELEMENT holds is sliced wherever that element's storage is, which is
+		// the elements' to say and not the literal's.
+		{
+			name: "a package slice held in a literal, sliced and returned",
+			src: `var back [4]int
+
+var gsl []int
+
+var gp *[4]int
+
+func first() []int { return [][]int{gsl}[0][1:] }
+
+func second() []int { return []*[4]int{gp}[0][1:] }
+
+func main() {
+	gsl, gp = back[:], &back
+	println(len(first()), len(second()))
+}
+`,
 		},
 		{
 			name: "a parenthesized package array, returned",

@@ -13745,6 +13745,49 @@ func (e *emitter) factorLitIndexed(fac Node) (typeAST []int32, lit Node, steps [
 	return fac.ast, kids[len(kids)-2], steps, true
 }
 
+// litSliceUnaddressable reports a chain after a bracketed literal that SLICES AN
+// ARRAY which is not addressable: the array literal itself, `[3]int{1, 2, 3}[1:]`,
+// or an array inside it reached through no slice and no pointer, `[1]T{{...}}[0].arr[:]`.
+// Go refuses both, "cannot slice unaddressable value". A SLICE literal's elements are
+// addressable, being a backing array's, so everything past its first index is fine,
+// and so is whatever a pointer or a slice held in an element leads to. A string is
+// sliced as a value, anywhere.
+func (e *emitter) litSliceUnaddressable(typeAST []int32, steps []Node) bool {
+	a, isArray := e.arrayDim(typeAST)
+	if _, isSlice := e.litSliceType(typeAST); isSlice || !isArray {
+		return false
+	}
+	cur := curArray(a)
+	for _, st := range steps {
+		switch st.sym {
+		case Selector:
+			if cur.slice || len(cur.dims) != 0 || e.isPointer(cur.ctype) {
+				return false // through a pointer; or not a struct, which the walk refuses
+			}
+			next, ok := e.accessSelect(cur, e.soleIdent(st.ast))
+			if !ok {
+				return false
+			}
+			cur = next
+		case Index:
+			if _, _, _, isSlice := e.sliceParts(st.ast); isSlice {
+				return len(cur.dims) != 0
+			}
+			if len(cur.dims) == 0 {
+				return false // an element of a slice, or what a pointer reaches: addressable
+			}
+			next, _, ok := e.accessIndex(cur, "?")
+			if !ok {
+				return false
+			}
+			cur = next
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // factorBracketConv recognises a conversion whose target is an UNNAMED composite
 // type, `([]int)(xs)` / `([3]int)(q)`, reached here through unparenKids -- the
 // parentheses are what let an LL(1) grammar spell it (see "Parentheses where the
@@ -29874,8 +29917,30 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				if len(steps) == 0 || steps[0].sym != Index {
 					return "", false
 				}
-				if _, _, _, isSlice := e.sliceParts(steps[0].ast); isSlice {
+				// Slicing an array that is not addressable is wrong wherever it
+				// stands, so it is said by whoever meets it first -- which is this,
+				// for a declaration or a range, and their own words for a value they
+				// cannot type would name the wrong thing.
+				if e.litSliceUnaddressable(typeAST, steps) {
+					e.fail("cannot slice unaddressable value %s", e.f.exprSource(n))
 					return "", false
+				}
+				if _, _, _, isSlice := e.sliceParts(steps[0].ast); isSlice {
+					// `[]int{1, 2, 3}[1:]` is a slice of the literal's type, and what
+					// follows is walked from that.
+					el, isSliceLit := e.litSliceType(typeAST)
+					if !isSliceLit {
+						return "", false
+					}
+					cur, okc := e.accessChainTypeAt(accessCur{elem: el, slice: true}, steps, true)
+					if !okc || len(cur.dims) != 0 {
+						return "", false
+					}
+					if cur.slice {
+						e.needSlice(cur.elem)
+						return sliceCName(cur.elem), true
+					}
+					return cur.ctype, true
 				}
 				// The first index reaches the literal's element; anything after it
 				// is walked from there, so `[2]P{{1, 2}, {3, 4}}[1].y` is typed by
@@ -29893,7 +29958,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				if len(steps) == 1 {
 					return elem, true
 				}
-				cur, okc := e.accessChainTypeAt(e.plainOrSlice(elem), steps[1:], false)
+				// Claimed, as the emitting walk is: a slice step ending the chain,
+				// `[]string{"ab", "cd"}[1][1:]`, is typed here or nowhere.
+				cur, okc := e.accessChainTypeAt(e.plainOrSlice(elem), steps[1:], true)
 				if !okc || len(cur.dims) != 0 {
 					return "", false
 				}
@@ -31617,9 +31684,28 @@ func (e *emitter) emitExprNode(n Node) {
 			// literal becomes a temporary and the steps apply to that, which is what
 			// gives an array literal something indexable to be.
 			if typeAST, lit, steps, ok := e.factorLitIndexed(n); ok {
+				// `[3]int{1, 2, 3}[1:]`: Go slices only what is addressable, and an
+				// array literal is not. The temporary below IS, in C, so it has to be
+				// said here or a program Go refuses would compile.
+				if e.litSliceUnaddressable(typeAST, steps) {
+					e.fail("cannot slice unaddressable value %s", e.f.exprSource(n))
+					return
+				}
 				if name, ok := e.hoistLitVar(typeAST, lit); ok {
-					if _, ok := e.emitAccessChain(name, steps); ok {
+					// The chain is CLAIMED: no fixed shape reads a literal, so a slice
+					// step that ends it is this walk's to emit, `[]int{1, 2, 3}[1:]`.
+					// Left to them it was refused, and in a for header -- where the
+					// grammar had no suffix after a literal at all -- it did not parse.
+					// A ROW sliced, `[][2]int{{1, 2}, {3, 4}}[1][:]`, is the one slice
+					// step the walk does not emit, for a literal as for a variable.
+					if src, low, high, max, ok := e.sliceableChainRow(name, steps); ok {
+						e.emitSliceExpr(src, low, high, max)
 						return
+					}
+					if cur, ok := e.accessBase(name); ok {
+						if _, ok := e.emitAccessChainAt(e.accessBaseText(name), cur, steps, true); ok {
+							return
+						}
 					}
 				}
 				e.fail("a %s literal cannot be read through this suffix", e.litTypeName(typeAST))
@@ -33110,14 +33196,61 @@ func (e *emitter) litChainFrameRef(ast []int32) (frameRef, bool) {
 	if !ok {
 		return frameRef{}, false
 	}
-	_, lit, _, ok := e.factorLitIndexed(fac)
+	typeAST, lit, steps, ok := e.factorLitIndexed(fac)
 	if !ok {
 		return frameRef{}, false
 	}
 	if ct, typed := e.inferNode(fac); typed && !e.carriesReference(ct) {
 		return frameRef{}, false
 	}
+	// `[]int{1, 2, 3}[1:]` is a VIEW of the literal's own backing array, which is a
+	// local of this frame exactly as the unsliced literal's is.
+	if e.litChainViewsLit(typeAST, steps) {
+		return litRef(), true
+	}
 	return e.frameRefInLitNode(lit)
+}
+
+// litChainViewsLit reports a chain after a bracketed literal whose value is a slice
+// over the literal's OWN storage: it ends in a slice step, and no step before that
+// went through a reference an ELEMENT holds -- a slice or a pointer among the
+// elements leads to whatever it refers to, which is the elements' to decide. The
+// literal's own header is no such reference, and neither is a view an earlier slice
+// step made of it: `[]int{1, 2, 3}[1:][1:]` is the literal's backing twice over. A
+// chain this cannot type is taken to view the literal, a refusal being the loud
+// mistake of the two.
+func (e *emitter) litChainViewsLit(typeAST []int32, steps []Node) bool {
+	if !e.endsInSliceStep(steps) {
+		return false
+	}
+	var cur accessCur
+	if el, isSlice := e.litSliceType(typeAST); isSlice {
+		cur = accessCur{elem: el, slice: true}
+	} else if a, isArray := e.arrayDim(typeAST); isArray {
+		cur = curArray(a)
+	} else {
+		return true
+	}
+	held := false // cur is a reference an element holds, not the literal's storage
+	for _, st := range steps {
+		isRef := cur.slice || e.isPointer(cur.ctype)
+		if isRef && held {
+			return false
+		}
+		next, ok := e.accessChainTypeAt(cur, []Node{st}, true)
+		if !ok {
+			return true
+		}
+		cur = next
+		// What an index or a selector reaches is an element's, or a field's of one; a
+		// slice step yields a view computed here, of storage still the literal's.
+		sliced := false
+		if st.sym == Index {
+			_, _, _, sliced = e.sliceParts(st.ast)
+		}
+		held = !sliced
+	}
+	return true
 }
 
 // frameRefIn finds the first of several expressions that reaches this frame's storage.

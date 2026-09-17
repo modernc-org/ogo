@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A slice literal sliced.** `for i, v := range []int{5, 6, 7}[1:] {`, `s :=
+  []int{1, 2, 3}[1:]`, `len([]string{"a", "b"}[1:])` and a literal handed on in
+  part, `sum([]int{1, 2, 3, 4}[2:])`, were refused ("a []int literal cannot be read
+  through this suffix", "cannot infer a type"). The literal is bound to its
+  temporary as an indexed one is and sliced there -- a row of it too,
+  `[][2]int{{1, 2}, {3, 4}}[1][:]` -- with the elements evaluated before the
+  bounds. It has the literal's lifetime: returned, stored, sent or launched it is
+  refused as the unsliced literal is. Slicing an ARRAY literal is refused in Go's
+  words, "cannot slice unaddressable value", since C would have sliced the
+  temporary happily.
 - **A suffix after a parenthesis, a literal or a function literal in a header.**
   In the header of an `if`, a `for` or a `switch` nothing could follow a
   parenthesised expression, a literal of a bracketed type or a function literal:

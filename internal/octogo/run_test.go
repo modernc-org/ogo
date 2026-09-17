@@ -27204,6 +27204,82 @@ func main() {
 }
 `,
 		want: "11134 1234\n",
+	}, {
+		// `[]int{1, 2, 3}[1:]` was refused -- "a []int literal cannot be read through
+		// this suffix", or "cannot infer a type" where it was declared from -- since the
+		// walk that reads a literal through its suffix leaves a slice step that ENDS a
+		// chain to the fixed shapes, none of which reads a literal. It is claimed now;
+		// a row of the literal slices as a variable's does; and the value is typed from
+		// the literal, so a declaration, a range, len and cap all take it. The elements
+		// run before the bounds, in order. Slicing an ARRAY literal stays refused, in
+		// Go's words: it is not addressable.
+		name: "a slice literal sliced",
+		src: `type P struct {
+	x, y int
+}
+
+var calls int
+
+func f(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func sum(xs []int) int {
+	t := 0
+	for _, v := range xs {
+		t += v
+	}
+	return t
+}
+
+func ranged() int {
+	n := 0
+	for i, v := range []int{5, 6, 7}[1:] {
+		n += i*10 + v
+	}
+	for i := range []int{5, 6, 7}[:2] {
+		n += i + 1
+	}
+	for _, q := range []P{{1, 2}, {3, 4}, {5, 6}}[1:] {
+		n += q.x
+	}
+	for k := 0; k < 3; k++ {
+		v := []int{k, k + 1, k + 2}[1:]
+		n += v[0]
+	}
+	return n
+}
+
+func declared() {
+	s := []int{1, 2, 3, 4, 5}[1:4]
+	println(len(s), cap(s), s[0], s[2])
+	t := []int{1, 2, 3, 4}[1:2:3]
+	println(len(t), cap(t), t[0])
+	u := []int{1, 2, 3, 4, 5}[1:][1:][0]
+	println(u, len([]string{"a", "b", "c"}[1:]), cap([]int{1, 2, 3, 4}[1:2]))
+	w := []string{"ab", "cde"}[1][1:]
+	println(w, []P{{1, 2}, {3, 4}, {5, 6}}[1:][1].y)
+	r := [][2]int{{1, 2}, {3, 4}}[1][:]
+	println(len(r), r[0], r[1])
+}
+
+func main() {
+	println(ranged())
+	declared()
+	println(sum([]int{f(1), f(2), f(3)}[f(1):f(3)]), calls)
+	a := append([]int{1, 2, 3}[:1], 9)
+	println(len(a), cap(a), a[0], a[1])
+	if len([]int{1, 2, 3}[1:]) == 2 {
+		println("two")
+	}
+	switch []int{4, 5, 6}[1:][1] {
+	case 6:
+		println("six")
+	}
+}
+`,
+		want: "40\n3 4 2 4\n1 2 2\n3 2 3\nde 6\n2 3 4\n5 12313\n2 3 1 9\ntwo\nsix\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
