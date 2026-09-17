@@ -9830,6 +9830,34 @@ func main() {
 	}
 }
 
+// TestEmitCUnclaimedSuffixNotTyped: a factor whose suffix no shape claims has no type.
+// The typing used to fall through to the operands it could find, and the suffix is
+// not one, so `(&arr)[1:]` was typed as `&arr` is -- a pointer to the array -- and
+// len, which answers an array's length from the type alone and renders nothing, said
+// 4 where Go says 3. Silently: every other use of the expression renders it and was
+// refused by the renderer. These shapes are not supported yet, and the day one is, its
+// line here becomes a run case with Go's answer.
+func TestEmitCUnclaimedSuffixNotTyped(t *testing.T) {
+	for _, expr := range []string{
+		"len((&arr)[1:])",
+		"cap((&arr)[1:3])",
+		"len((&h.a)[1:])",
+	} {
+		t.Run(expr, func(t *testing.T) {
+			src := "type H struct {\n\ta [4]int\n}\n\nvar arr [4]int\n\nvar h H\n\nfunc main() {\n\tarr[0], h.a[0] = 1, 2\n\tprintln(" + expr + ")\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf, Checked()); err == nil {
+				t.Errorf("EmitC: accepted %s; if the shape is supported now, make this a run case:\n%s", expr, buf.String())
+			}
+		})
+	}
+}
+
 // TestEmitCListStoreEscape is the STORE side of TestEmitCFrameRefForms: a list form
 // or a loop clause writing a reference to this frame where it outlives the frame, or
 // the block. A plain assignment has been refused for all of these since the lifetime

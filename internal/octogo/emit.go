@@ -30039,6 +30039,15 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				return "", false
 			}
+			// A SUFFIX that nothing above claimed. The level below types a factor by
+			// the operands it finds, and the suffix is not one: `(&arr)[1:]` was typed
+			// as `&arr` is, a pointer to the array, and `len((&arr)[1:])` -- which
+			// answers from the type alone and renders nothing -- was the array's 4
+			// where Go says 3, silently. What cannot be typed is refused by whoever
+			// asked, which is what every other unclaimed shape already gets.
+			if containsSym(kids, FactorSuffix) {
+				return "", false
+			}
 		}
 		return e.inferNodes(kids)
 	case 0:

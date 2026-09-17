@@ -75,6 +75,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   with the wrong arguments, a method it does not have and a constant too wide for
   it -- `for i := 1 << 40; ...` -- all passed the checker. The headers now ask what
   a statement's `x := e` asks.
+- **The length of an expression nothing could type.** `len((&arr)[1:])` was 4 for a
+  [4]int where Go says 3. The typing of a factor fell through to the operands it
+  could find, and a suffix is not one, so `(&arr)[1:]` was typed as `&arr` is; len
+  answers an array's length from the type alone, and said the array's. Every other
+  use of the expression renders it and was refused, as this is now.
 - **A function literal's call is checked.** `func(n int) { ... }("five")` and
   `func(n int) { ... }()` -- a literal called where it stands, behind a `go` or a
   `defer` or in an expression -- had their arguments checked by nothing: the wrong
