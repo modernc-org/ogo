@@ -18718,9 +18718,53 @@ func (e *emitter) parseForPost(n Node, h *forHeader) bool {
 	return true
 }
 
+// emitForInitDefine declares the names of `for i, j := 0, n-1; ...` inside the block
+// emitFor opens around such a loop. Every value is rendered before any name is
+// registered, the values belonging to the scope outside the loop; and when one of
+// them reads a name this clause declares -- `for c, d := 1, c; ...`, d taking the
+// OUTER c -- the values are bound to temporaries first, since C's `int c = 1; int d
+// = c;` reads the c just declared. Until 2026-09-17 it did, silently.
+func (e *emitter) emitForInitDefine(h forHeader) {
+	names := make([]string, len(h.initLHSs))
+	cts := make([]string, len(h.initLHSs))
+	vals := make([]string, len(h.initLHSs))
+	for i, lhs := range h.initLHSs {
+		ct, ok := e.inferCType(h.initRHSs[i])
+		if !ok {
+			ct = "int"
+		}
+		cts[i], vals[i] = ct, e.exprC(h.initRHSs[i])
+		names[i] = e.exprC(lhs)
+		if src, isName := e.exprIdent(lhs); isName {
+			names[i] = src // the source name; see the single-init path
+		}
+	}
+	shadows := false
+	for _, rhs := range h.initRHSs {
+		for _, name := range names {
+			shadows = shadows || e.initRefsName(rhs, name)
+		}
+	}
+	if shadows {
+		for i := range vals {
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(cts[i] + " " + tmp + " = " + vals[i] + ";\n")
+			vals[i] = tmp
+		}
+	}
+	for i, name := range names {
+		e.locals[name] = cts[i]
+		e.ind()
+		// localIdent: a loop variable named after a type is ordinary Go and the
+		// backend cannot parse the declarator (see localIdent).
+		e.emit(cts[i] + " " + e.localIdent(name) + " = " + vals[i] + ";\n")
+	}
+}
+
 // emitSimultaneous emits `a, b = x, y` as Go means it: every value is read into a
 // temporary before any target is written, so `a, b = b, a` swaps rather than
-// duplicating. It is the loop post's form of what emitMultiAssign does for a
+// duplicating. It is the loop clauses' form of what emitMultiAssign does for a
 // statement.
 func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
 	tmps := make([]string, len(rhss))
@@ -18862,44 +18906,59 @@ func (e *emitter) emitFor(nodes []Node) {
 			// which is where Go scopes them too.
 			e.emit("{\n")
 			e.indent++
-			for i, lhs := range h.initLHSs {
-				ct, ok := e.inferCType(h.initRHSs[i])
-				if !ok {
-					ct = "int"
-				}
-				name := e.exprC(lhs)
-				if h.initOp == DEFINE {
-					if src, isName := e.exprIdent(lhs); isName {
-						name = src // the source name; see the single-init path
-					}
-					e.locals[name] = ct
-					e.ind()
-					// localIdent: a loop variable named after a type is ordinary Go
-					// and the backend cannot parse the declarator (see localIdent).
-					e.emit(ct + " " + e.localIdent(name) + " = " + e.exprC(h.initRHSs[i]) + ";\n")
-					continue
-				}
-				e.ind()
-				e.emit(name + " = " + e.exprC(h.initRHSs[i]) + ";\n")
+			if h.initOp == DEFINE {
+				e.emitForInitDefine(h)
+			} else {
+				// `for a, b = b, a; ...` assigns as the statement does, every value
+				// read before any target is written. The names were stored one after
+				// another until 2026-09-17, so that swap was `a = b; b = a`.
+				e.emitSimultaneous(h.initLHSs, h.initRHSs)
 			}
 			e.ind()
 			// The declarations are made; the loop's own init clause is empty.
 			h.initLHS = nil
 			blockInit = true
 		}
-		e.emit("for (")
+		initText := ""
 		if h.initLHS != nil {
 			lhs := e.exprC(h.initLHS)
 			switch h.initOp {
 			case DEFINE:
-				e.emit(initCType + " " + e.localIdent(initName) + " = " + e.exprC(h.initRHS))
+				val := e.exprC(h.initRHS)
+				if e.initRefsName(h.initRHS, initName) {
+					// `for c := c + 1; ...` reads the OUTER c, and C's `int c = c + 1`
+					// reads the one it is declaring. Captured ahead of the loop, as
+					// emitVarDeclInit does for the declaration statement.
+					text := val
+					val = e.hoist(initCType, func() { e.emit(text) })
+				}
+				initText = initCType + " " + e.localIdent(initName) + " = " + val
 			case ASSIGN:
-				e.emit(lhs + " = " + e.exprC(h.initRHS))
+				// The statement's own lowering, as the post clause takes (see
+				// emitPostAssign): `for total = 1 << n; ...` for a uint64 shifted an
+				// int here too. The clause runs once, so a lowering that is more
+				// than an expression simply stands ahead of the loop.
+				initText = e.captureC(func() { e.emitPostAssign(h.initLHS, lhs, "=", h.initRHS, false) })
+				if strings.ContainsAny(initText, ";\n") {
+					lines := strings.Split(initText, "\n")
+					for i, line := range lines {
+						if i != 0 {
+							e.ind()
+						}
+						e.emit(line)
+						if i == len(lines)-1 {
+							e.emit(";")
+						}
+						e.emit("\n")
+					}
+					e.ind()
+					initText = ""
+				}
 			default:
-				e.emit(lhs)
+				initText = lhs
 			}
 		}
-		e.emit("; ")
+		e.emit("for (" + initText + "; ")
 		if inject == nil {
 			e.emit(condText)
 		}
@@ -18926,8 +18985,8 @@ func (e *emitter) emitFor(nodes []Node) {
 		}
 		if h.postLHS != nil {
 			// The post statement runs after every iteration and on every continue, so
-			// C's third clause is the only place it fits -- and that clause takes an
-			// expression, with nowhere to declare the temporary a value might need.
+			// C's third clause is where it fits -- and that clause takes an expression,
+			// with nowhere to declare the temporary a value might need.
 			post, postPro := e.capturePrologue(func() {
 				lhs := e.exprC(h.postLHS)
 				switch h.postOp {
@@ -18936,20 +18995,43 @@ func (e *emitter) emitFor(nodes []Node) {
 				case DEC:
 					e.emit(lhs + "--")
 				case ASSIGN, DEFINE:
-					e.emit(lhs + " = " + e.exprC(h.postRHS))
+					e.emitPostAssign(h.postLHS, lhs, "=", h.postRHS, false)
 				default:
 					if c, ok := cAssignOps[h.postOp]; ok {
-						e.emitPostCompound(lhs, c, h.postRHS, h.postOp == ANDNOT_ASSIGN)
+						e.emitPostAssign(h.postLHS, lhs, c, h.postRHS, h.postOp == ANDNOT_ASSIGN)
 						return
 					}
 					e.emit(lhs)
 				}
 			})
-			if len(postPro) != 0 {
-				e.fail("a for-loop post statement may not need a temporary; compute the value in the loop body instead")
-				return
+			if len(postPro) == 0 && !strings.ContainsAny(post, ";\n") {
+				e.emit(post)
+			} else {
+				// The lowering needs a statement of its own -- the address of a guarded
+				// target, a struct a call returned, an operand the backend wants bound
+				// first. So the post goes where a multiple assignment's does: to the
+				// END OF THE BODY, behind the label a `continue` jumps to, the clause
+				// left empty. Refused until 2026-09-17 ("a for-loop post statement may
+				// not need a temporary; compute the value in the loop body instead"),
+				// which asked the program to do by hand exactly this.
+				e.labelSeq++
+				e.postContLabel = fmt.Sprintf("ogo_post_%d", e.labelSeq)
+				e.pendingPost = func() {
+					for _, line := range postPro {
+						e.ind()
+						e.emit(line)
+					}
+					lines := strings.Split(post, "\n")
+					for i, line := range lines {
+						e.ind()
+						e.emit(line)
+						if i == len(lines)-1 {
+							e.emit(";")
+						}
+						e.emit("\n")
+					}
+				}
 			}
-			e.emit(post)
 		}
 		e.emit(") {\n")
 	}
@@ -18961,20 +19043,35 @@ func (e *emitter) emitFor(nodes []Node) {
 	}
 }
 
-// emitPostCompound emits a compound post statement, `i += 2`, as the compound
-// assignment statement's own lowering -- the one that guards a shift or a division
-// and complements the operand of "&^=" -- minus the statement's terminator, C's
-// third clause taking an expression. A lowering that needs more than one
-// statement has no place there and is refused, as a temporary is.
-func (e *emitter) emitPostCompound(lhs, op string, rhs []int32, complement bool) {
-	t := assignTail{op: op, rhs: rhs, complement: complement, targetRepeatable: true}
-	text := strings.TrimSpace(e.captureC(func() { e.emitAssignTailOrCopy(func() { e.emit(lhs) }, t) }))
-	text = strings.TrimSuffix(text, ";")
-	if strings.ContainsAny(text, ";\n") {
-		e.fail("a for-loop post statement may not need a temporary; compute the value in the loop body instead")
-		return
+// emitPostAssign emits an assignment in a for loop's post clause, `i += 2` or `p =
+// p.next` -- and in its init clause, `for total = 1 << n; ...` -- as the assignment
+// STATEMENT's own lowering: the one that types an untyped shift by its target,
+// guards a shift or a division, wraps a value for an interface and complements the
+// operand of "&^=", minus the statement's terminator, C's clauses taking an
+// expression. A lowering that needs more than one statement, or a temporary, has
+// no place there; the caller sees that in the text and moves a post to the end of
+// the body and an init ahead of the loop.
+//
+// lhsAST is the target as the program wrote it and lhs its C text. The AST is here
+// for what the text cannot say: the target's TYPE, and whether evaluating it does
+// anything. Until 2026-09-17 neither was said. guardedAssignC then read the type
+// off the target's leading name -- right for `v /= base` and, for `s.v /= base`,
+// `bits[i] <<= n` or `p.mask >>= n`, the type of a struct, of an array, or none --
+// so those went out as C's own `/=` and `<<=`: a division that does not panic on
+// zero, a shift that takes its count modulo the width. A plain `=` did not come
+// this way at all, and `l = 1 << n` for a uint64 l shifted an int. All of it
+// silent, and only in the loop's clauses; a run case pins each.
+//
+// A target whose evaluation has an effect cannot be written twice, so a guarded
+// form of it has its address hoisted (guardedAssignC), which is a temporary and so
+// the end of the body. It used to be written twice.
+func (e *emitter) emitPostAssign(lhsAST []int32, lhs, op string, rhs []int32, complement bool) {
+	t := assignTail{op: op, rhs: rhs, complement: complement, clause: true, targetRepeatable: !e.exprHasEffect(lhsAST)}
+	if ct, ok := e.inferCType(lhsAST); ok {
+		t.targetCType = ct
 	}
-	e.emit(text)
+	text := strings.TrimSpace(e.captureC(func() { e.emitAssignTailOrCopy(func() { e.emit(lhs) }, t) }))
+	e.emit(strings.TrimSuffix(text, ";"))
 }
 
 // capturePrologue renders through emit and returns the text along with any prologue
@@ -26263,6 +26360,10 @@ type assignTail struct {
 	// evaluating it twice repeats no side effect. A shift assignment needs that,
 	// since it becomes "t = f(t, n)".
 	targetRepeatable bool
+	// clause says the statement is a for loop's init or post clause, which C takes
+	// as an EXPRESSION: nothing may be declared in it. hoistCompoundTarget reads it
+	// and stands aside, as it always did there, the clauses having said no type.
+	clause bool
 	// targetArray is the shape of the ARRAY the target names, when it is one -- an
 	// element of an array of arrays, an array-typed field of an element, anything a
 	// chain reaches through an index. C has no array assignment, so writing one is a
@@ -26436,7 +26537,7 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 // A ++ or -- (rhs == nil) is left alone: the backend gets those right, and they
 // have no operand to go wrong.
 func (e *emitter) hoistCompoundTarget(target func(), t assignTail) (string, bool) {
-	if t.rhs == nil || t.op == "=" || t.targetCType == "" {
+	if t.rhs == nil || t.op == "=" || t.targetCType == "" || t.clause {
 		return "", false
 	}
 

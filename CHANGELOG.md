@@ -58,6 +58,24 @@ shipped section tells a reader on that version that they have behaviour they do 
   `int`; Go gives such a constant its target's type. Silent on the P2; the host's C
   compiler refused the ones it could see ("overflow in conversion"). A constant's
   temporary now takes the target's type.
+- **A `for` loop's init clause was not lowered as the statement is either.** `for
+  total = 1 << n; ...` for a uint64 shifted an `int` and stored 0. Several names
+  were stored one after another, so `for a, b = b, a; ...` left both holding `b`
+  and `for x, y = y, x+y; ...` added the new `x`. And a declared name shadowed what
+  its neighbour read: `for c, d := 1, c; ...` gave `d` the new `c`, and `for e := e
+  + 1; ...` read the `e` it was declaring. All silent. The clause now takes the
+  statement's lowering, assigns its names at once, and captures a value before the
+  name that would shadow it.
+- **A `for` loop's post statement was not lowered as the statement is.** Three
+  silent differences, all only in that clause. `reg.mask <<= n`, `table[i] <<= n`,
+  `p.acc /= d` and `p.acc %= d` lost their guard -- the clause passed no target
+  type, so the guard was decided from the type of the target's leading name, a
+  struct's or an array's -- and went out as C's own operators: a shift past the
+  width took the count modulo it (`1 << 40` was 256), a division by zero did not
+  panic, the most negative value over -1 trapped. A plain variable was right, which
+  is why `v /= base` never showed it. A plain `=` did not reach the statement's
+  lowering at all, so `total = 1 << n` for a uint64 shifted an `int` and stored 0.
+  The clause now builds the statement's own lowering.
 - **A post statement at the end of the loop body read the body's variables, and a
   `continue` after an inner loop skipped it.** A multiple-assignment post, `i, j =
   i+1, j-1`, cannot be C's third clause and stands at the end of the body. There it
@@ -67,6 +85,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   `continue` jumps to without putting it back, so a `continue` AFTER an inner loop
   was a plain C `continue`, which skipped the post: the loop never ended. Both
   silent, both as old as the placement.
+- **A post statement that needs a temporary.** `for ...; i = mk(i).y`, `for ...;
+  sum -= w.ring[k]` through a pointer, `for ...; win().mask <<= s` were refused ("a
+  for-loop post statement may not need a temporary; compute the value in the loop
+  body instead"). Such a post now goes where a multiple assignment's does, the end
+  of the body behind the label a `continue` jumps to, which is what the refusal
+  asked the program to do by hand.
 - **`ogo fmt` moved a comment that stands ahead of a label to column 0, and spaced
   a shift in a `for` header's init list.** gofmt steps a label out and leaves the
   comment above it with the statements; `ogo fmt` gave the comment the label's

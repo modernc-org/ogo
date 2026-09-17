@@ -6984,9 +6984,11 @@ func main() {
 // condition slot empty; a loop whose condition hoists nothing is untouched, which
 // the third loop here pins.
 //
-// The post statement has no such place to move to -- it runs after the body and on
-// every continue, so C's third clause, which takes an expression and can declare
-// nothing, is the only place it fits -- and is refused instead.
+// The post statement runs after the body and on every continue, and C's third
+// clause, which takes an expression, can declare nothing. One that needs a temporary
+// moves to the end of the body instead, behind the label a continue jumps to and
+// after the block the body's own declarations end with -- where a multiple
+// assignment's post already went. It was refused until 2026-09-17.
 func TestEmitCLoopCondTemporary(t *testing.T) {
 	src := `type P struct {
 	x int
@@ -7055,11 +7057,27 @@ func main() {
 	if pkg, err = Build(-1, []string{"main.ogo"}, fsys); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
+	// A post statement needing a temporary has no place in C's third clause, an
+	// expression. It was refused for that ("a for-loop post statement may not need a
+	// temporary"); it now stands at the end of the body, where a multiple
+	// assignment's post already did, the body in a block of its own so that the post
+	// does not read the body's variables.
 	var pbuf bytes.Buffer
-	if err := EmitC(pkg, &pbuf); err == nil {
-		t.Fatalf("EmitC accepted a post statement needing a temporary:\n%s", pbuf.String())
-	} else if !strings.Contains(err.Error(), "post statement may not need a temporary") {
-		t.Errorf("EmitC error %q is not the post-statement refusal", err)
+	if err := EmitC(pkg, &pbuf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	wantPost := "int main(void) {\n" +
+		"\tfor (int i = 0; i < 3; ) {\n" +
+		"\t\t{\n" +
+		"\t\t\tprintf(\"%d\\n\", i);\n" +
+		"\t\t}\n" +
+		"\t\tP _ogo_t0 = mk();\n" +
+		"\t\ti = _ogo_t0.y;\n" +
+		"\t}\n" +
+		"\treturn 0;\n" +
+		"}\n"
+	if !bytes.Contains(pbuf.Bytes(), []byte(wantPost)) {
+		t.Errorf("post statement lowering:\n got %q\nwant it to contain %q", pbuf.String(), wantPost)
 	}
 }
 

@@ -26104,6 +26104,201 @@ func main() {
 		want: "31 4398046511104 2305843009213693952\n24 -13 2 25 48 56\n24 40 72 0 -2147483648\n24 23\n4 124\n0 1223\n64 1223\n-2 224\n",
 	},
 	{
+		// A for loop's post statement had a lowering of its own, thinner than the
+		// statement's, and silent where it differed. It passed no target type, so the
+		// guard of `<<=`, `>>=`, `/=` and `%=` was decided from the type of the
+		// target's leading NAME -- a struct's for `reg.mask <<= n`, an array's for
+		// `table[2] <<= n`, none for `p.acc /= d` -- and the operator went out as C's
+		// own: a shift past the width took the count modulo it (1 << 40 was 256), the
+		// most negative value over -1 trapped. A plain `=` did not reach the statement
+		// lowering at all, so `total = 1 << n` for a uint64 shifted an int and gave 0.
+		// The post clause now builds the statement's own assignment tail.
+		name: "a for post statement is lowered as the statement is",
+		src: `type Reg struct {
+	mask uint32
+	acc  int32
+	wide uint64
+	bits [4]uint32
+}
+
+var reg Reg
+var table [4]uint32
+var total uint64
+
+func main() {
+	p := &reg
+	var big uint = 40
+	var n uint = 40
+	var m1 int32 = -1
+	var local uint32 = 1
+	reg.mask, reg.acc, reg.bits[2], table[2] = 1, -2147483648, 1, 1
+
+	// A shift past the operand's width is 0 in Go and the count modulo the width in
+	// C: through a field, a pointer, an element and an element of a field.
+	for i := 0; i < 1; reg.mask <<= big {
+		i++
+	}
+	for i := 0; i < 1; p.bits[2] <<= big {
+		i++
+	}
+	for i := 0; i < 1; table[2] <<= big {
+		i++
+	}
+	for i := 0; i < 1; local <<= big {
+		i++
+	}
+	println(reg.mask, reg.bits[2], table[2], local)
+
+	// The most negative value over -1 wraps in Go and traps in C.
+	for i := 0; i < 1; p.acc /= m1 {
+		i++
+	}
+	println(reg.acc)
+
+	// An untyped constant shift takes its type from the target, here 64 bits.
+	for i := 0; i < 1; total = 1 << n {
+		i++
+	}
+	for i := 0; i < 1; reg.wide = 1 << n {
+		i++
+	}
+	for i := 0; i < 1; p.wide |= 1 << (n + 1) {
+		i++
+	}
+	println(total, reg.wide)
+}
+`,
+		want: "0 0 0 0\n-2147483648\n1099511627776 3298534883328\n",
+	},
+	{
+		// The same in the form that panics: a remainder by a zero divisor in a post
+		// statement was C's own `%=`, which does not panic on the target and is a
+		// SIGFPE on the host.
+		name: "a for post statement's division by zero panics",
+		src: `type Reg struct {
+	acc int32
+}
+
+var reg Reg
+
+func main() {
+	p := &reg
+	var zero int32
+	reg.acc = 7
+	for i := 0; i < 1; p.acc %= zero {
+		i++
+		println("body", i)
+	}
+	println("not reached")
+}
+`,
+		want:   "body 1\npanic: integer divide by zero",
+		panics: true,
+	},
+	{
+		// A post statement whose lowering needs a statement of its own -- a field of a
+		// struct a call returned, an operand the backend wants bound first, the hoisted
+		// address of a guarded target with a call in it -- has no place in C's third
+		// clause, an expression, and was refused: "a for-loop post statement may not
+		// need a temporary; compute the value in the loop body instead". It goes to the
+		// end of the body, where a multiple assignment's already did: a continue and a
+		// labelled continue still run it, it reads the loop's variables and not the
+		// body's, and its calls run once per iteration. Every loop that a skipped post
+		// would spin counts its iterations, so a regression prints rather than hangs.
+		name: "a for post statement that needs a temporary",
+		src: `type P struct {
+	x int
+	y int
+}
+
+type W struct {
+	ring [4]int32
+	sum  int32
+	mask uint32
+}
+
+var w W
+var calls int
+
+func mk(n int) P {
+	calls++
+	return P{n, n + 1}
+}
+
+func win() *W {
+	calls += 10
+	return &w
+}
+
+func slot() int {
+	calls += 100
+	return 1
+}
+
+func main() {
+	spins := 0
+	// A value that needs a temporary, a field of a struct a call returned; the
+	// continue must still reach it.
+	for i := 0; i < 5; i = mk(i).y {
+		spins++
+		if spins > 40 {
+			println("the post was skipped")
+			break
+		}
+		if i%2 == 1 {
+			continue
+		}
+		println("even", i)
+	}
+	// A labelled continue from an inner loop.
+outer:
+	for i := 0; i < 3; i = mk(i).y {
+		spins++
+		if spins > 80 {
+			println("the post was skipped")
+			break
+		}
+		for j := 0; j < 3; j++ {
+			if j == 1 {
+				continue outer
+			}
+			println("ij", i, j)
+		}
+	}
+	// A body variable named as one the post reads: the post reads the loop's.
+	step := 1
+	for i := 0; i < 3; i = mk(i).x + step {
+		step := 40
+		println("step", i, step)
+	}
+	// The accumulator of a ring buffer through a pointer, whose operand the
+	// backend wants bound first, and a guarded target with calls in it.
+	w.ring = [4]int32{5, 6, 7, 8}
+	w.sum, w.mask = 100, 1
+	p := &w
+	var s uint = 3
+	for k := 0; k < 4; p.sum -= p.ring[k-1] {
+		k++
+	}
+	println(w.sum, calls)
+	calls = 0
+	for k := 0; k < 2; win().ring[slot()] <<= s {
+		k++
+	}
+	println(w.ring[1], calls)
+	calls = 0
+	for k := 0; k < 2; win().mask <<= s {
+		k++
+		if k == 1 {
+			continue
+		}
+	}
+	println(w.mask, calls)
+}
+`,
+		want: "even 0\neven 2\neven 4\nij 0 0\nij 1 0\nij 2 0\nstep 0 40\nstep 1 40\nstep 2 40\n74 11\n384 220\n64 20\n",
+	},
+	{
 		// Two faults of a post that stands at the end of the body, both silent and both
 		// as old as the placement. The post read the BODY's variables there -- `for i, j
 		// := 0, 0; i < 6; i, j = i+s, j+1 { s := 10 ... }` stepped by ten -- where Go's
@@ -26217,6 +26412,64 @@ func main() {
 }
 `,
 		want: "-9000000000000 6 9223372036854775808 1099511627776 7\n1099511627776 -2199023255552 17293822569102704640 1099511627777 2199023255552 4398046511104\n1.6777216e+07 1099511627776\n0 1099511627776\n1 2199023255552\n2 2199023255552\n",
+	},
+	{
+		// A for loop's INIT clause, the post clause's neighbour and as thin. A plain
+		// `=` there was `lhs = rhs` as C reads it, so `for total = 1 << n; ...` for a
+		// uint64 shifted an int and stored 0. Several names were stored one after
+		// another, so `for a, b = b, a; ...` left both holding b. And a declared name
+		// shadowed what its neighbour read -- `for c, d := 1, c; ...` gave d the new
+		// c, C's `int c = 1; int d = c;` -- as `for e := e + 1; ...` read the e it
+		// was declaring. All silent. The clause now takes the statement's lowering,
+		// assigns at once, and captures a value before the name that shadows it.
+		name: "a for init clause is lowered as the statement is",
+		src: `type R struct {
+	wide uint64
+}
+
+var r R
+var total uint64
+
+func main() {
+	p := &r
+	var n uint = 40
+	var l uint64
+	k := 0
+	// An untyped shift takes its type from the target, as in the statement.
+	for total = 1 << n; k < 1; k++ {
+	}
+	for l = 1 << n; k < 2; k++ {
+	}
+	for p.wide = 1 << (n + 1); k < 3; k++ {
+	}
+	println(total, l, r.wide)
+
+	// Several names are assigned at once.
+	a, b := 1, 2
+	for a, b = b, a; k < 4; k++ {
+		println("swap", a, b)
+	}
+	x, y := 10, 20
+	for x, y = y, x+y; k < 5; k++ {
+		println("fib", x, y)
+	}
+	for l, k = 1<<(n+2), 5; k < 6; k++ {
+	}
+	println(l)
+
+	// A declared name does not shadow what its neighbour, or its own value, reads.
+	c := 5
+	for c, d := 1, c; k < 7; k++ {
+		println("shadow", c, d)
+	}
+	e := 5
+	for e := e + 1; e < 8; e++ {
+		println("self", e)
+	}
+	println(c, e)
+}
+`,
+		want: "1099511627776 1099511627776 2199023255552\nswap 2 1\nfib 20 30\n4398046511104\nshadow 1 5\nself 6\nself 7\n5 5\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
