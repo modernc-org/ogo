@@ -501,13 +501,28 @@ Process rules learned the hard way (2026-09-16): gate a commit on the suite log'
 `TestTargetBuildExamples` build `ogo` from the working tree as they go; a new
 goroutine run case is run with `-count=5` before it is committed; and the receiver
 that is a CALL's result (`bus.reg(i).M()`) has been the hole in six sweeps in a row
--- every receiver-shape sweep includes it, in a `defer` and a `go` too.
+-- every receiver-shape sweep includes it, in a `defer` and a `go` too. A statement
+sweep includes the statement as a `for` INIT and POST clause as well (2026-09-17):
+the clauses had thinner lowerings of their own, and seven silent faults lived in them
+and in the end-of-body placement behind the post -- a lost guard, an untyped shift
+typed `int` in either clause, the body's variables read by the post, a `continue`
+after an inner loop that skipped the post and never ended, init names stored one
+after another, and a declared init name shadowing what its neighbour read. A sweep's
+accessors record ORDER, `calls = calls*10 + k`, not a count: a count matched Go for
+operands C leaves unsequenced. And a wide constant belongs in every sweep of a store:
+`a, b = 1<<40, 5` lost it on the board in silence, where the host's compiler refused.
 
 Known open items, all loud refusals or design walls (2026-09-17): slicing a slice
 literal, `[]int{1, 2, 3}[1:]`; an array-returning call as a package literal element;
 a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); and two grammar gaps needing an egg regeneration --
 `case port(0).ch <- 5:` in a select, and `range []int{...}[1:]` in a for header.
+Two LATENT ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
+= v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
+to right (only the bare `name[i] = v` path binds them); and a value's call does not
+run ahead of an index or nil panic in the target, `arr[bad()] = side()`, where Go
+runs `side()` and then panics -- the comment in emitIndexAssign says otherwise and
+describes one C compiler's choice. Only a program about to panic can tell.
 
 ## Notes
 
