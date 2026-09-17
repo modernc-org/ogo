@@ -6090,6 +6090,29 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 		}
 		return // a defined non-variable is left to its own check, as in checkDerefAssign
 	}
+	// An index BETWEEN two fields, `bus.ports[i].ch <- v` -- a bank of ports, each
+	// with its channel -- is a shape the flattening below cannot say: it knows a run
+	// of fields and whether an index stood before or after it. Such a target is
+	// walked step by step instead, and was "cannot send to non-channel" until
+	// 2026-09-17, of a channel. A walk that cannot resolve a step leaves the send to
+	// the emitter, as a call's result above is left.
+	if f.sendNeedsWalk(postfix) {
+		tn := f.sendTargetTypeNode(s, d, postfix)
+		if tn == nil {
+			return
+		}
+		elem, hasElem, isChan := f.chanElem(s, tn)
+		if !isChan {
+			at := chTok
+			if len(fields) != 0 {
+				at = fields[len(fields)-1]
+			}
+			f.err(at.Position(), "invalid operation: cannot send to non-channel")
+			return
+		}
+		f.checkSentValue(s, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
+		return
+	}
 	// The channel may be a FIELD of the target rather than the target: `ports.tx <-
 	// v`. A channel is a pointer to its cell, so a field holding one is a channel as
 	// much as a variable is.
@@ -6126,6 +6149,94 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 		return
 	}
 	f.checkSentValue(s, elem, hasElem, elemName, valNode)
+}
+
+// sendNeedsWalk reports a send target whose chain postfixFields cannot flatten: an
+// index with a field on BOTH sides of it, or more than one index on one side.
+func (f *File) sendNeedsWalk(postfix Node) bool {
+	fieldsBefore, indexesHere, mid := 0, 0, false
+	for c := range it(postfix.ast) {
+		switch c.sym {
+		case Selector:
+			if indexesHere != 0 && fieldsBefore != 0 {
+				mid = true // a field after an index that itself followed a field
+			}
+			fieldsBefore, indexesHere = fieldsBefore+1, 0
+		case Index:
+			indexesHere++
+			if indexesHere > 1 {
+				mid = true // `grid[i][j] <- v`: an element of an element
+			}
+		}
+	}
+	return mid
+}
+
+// sendTargetTypeNode walks a send's target from its head variable's WRITTEN type, a
+// step at a time: a selector takes a field of the struct the type names, an index
+// the element of an array or a slice, each through a pointer as Go's own do. It
+// answers nil for a step it cannot resolve -- a call, a promoted field, a variable
+// whose type is inferred from its initializer, another package's type.
+func (f *File) sendTargetTypeNode(s *Scope, d *VarDeclaration, postfix Node) TypeNode {
+	tn := d.declType
+	for c := range it(postfix.ast) {
+		if tn == nil {
+			return nil
+		}
+		if p, isPtr := tn.(*TypeNodePointer); isPtr && (c.sym == Selector || c.sym == Index) {
+			tn = p.TypeNode
+		}
+		switch c.sym {
+		case Selector:
+			var field Token
+			for k := range it(c.ast) {
+				if k.sym == 0 && f.ch(k.tok) == IDENT {
+					field = f.tok(k.tok)
+				}
+			}
+			if !field.IsValid() {
+				return nil // a type assertion, not a field
+			}
+			switch owner := tn.(type) {
+			case *TypeNodeStruct:
+				tn = nil
+				for _, fld := range owner.Fields {
+					for _, nm := range fld.Names {
+						if nm.Src() == field.Src() {
+							tn = fld.TypeNode
+						}
+					}
+				}
+			default:
+				tn = f.structFieldTypeNode(s, tn, field)
+			}
+		case Index:
+			tn = f.indexedTypeNode(s, tn)
+		case CallSuffix:
+			return nil
+		}
+	}
+	return tn
+}
+
+// indexedTypeNode is the element type of an array or a slice, written out or named:
+// `[4]Port`, `[]Port`, and `Bank` for a `type Bank [4]Port`.
+func (f *File) indexedTypeNode(s *Scope, tn TypeNode) TypeNode {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		if elem := f.arrayElemTypeNode(tn); elem != nil {
+			return elem
+		}
+		id, isIdent := tn.(*TypeNodeIdent)
+		if !isIdent || id.Qualifier.IsValid() {
+			return nil
+		}
+		td, ok := s.find(id.Name.Src()).(*TypeDeclaration)
+		if !ok || td.TypeSpec == nil {
+			return nil
+		}
+		tn = td.TypeSpec.TypeNode
+	}
+	return nil
 }
 
 // checkSentValue checks the value a send hands over against the channel's element
@@ -11010,6 +11121,11 @@ func (f *File) postfixFields(postfix []Node) (flds []Token, headIndexed, tailInd
 // definitions to the struct it names. It is what carries fieldTypeNodeOf past the
 // first step, where the owner is a field's own type rather than a variable's.
 func (f *File) structFieldTypeNode(s *Scope, owner TypeNode, field Token) TypeNode {
+	// Through a pointer, as the selector itself goes: `w.peer.cmd <- v` for a `peer
+	// *Port` was "cannot send to non-channel", the walk stopping at the pointer.
+	if p, isPtr := owner.(*TypeNodePointer); isPtr {
+		owner = p.TypeNode
+	}
 	id, isIdent := owner.(*TypeNodeIdent)
 	if !isIdent || id.Qualifier.IsValid() {
 		return nil

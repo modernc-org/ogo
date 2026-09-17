@@ -1,0 +1,52 @@
+// A send's channel is an expression a chain spells: a field, an element, and any run
+// of them. An index BETWEEN two fields, "bus.ports[i].ch <- v", was "cannot send to
+// non-channel" in a statement and a select clause alike: the check flattened the
+// chain to a run of fields and two flags, which cannot say where such an index
+// stands. It is walked a step at a time now, from the head's written type, and what
+// is sent is checked against the element the walk arrives at. A channel behind a
+// pointer-typed field, "p.peer.ch <- v", stopped the older walk at the pointer.
+
+type Port struct {
+	ch   chan int
+	name string
+	chs  [2]chan int
+}
+
+type Bus struct {
+	ports [2]Port
+	peer  *Port
+}
+
+var bus Bus
+var grid [2][2]chan int
+
+func port(i int) *Port { return &bus.ports[i] }
+
+func (b *Bus) port(i int) *Port { return &b.ports[i] }
+
+func sends() {
+	p := &bus
+	bus.ports[1].ch <- 5
+	p.ports[0].ch <- 6
+	bus.ports[1].chs[0] <- 7
+	grid[1][0] <- 8
+	select {
+	case bus.ports[1].ch <- 3:
+	case p.peer.ch <- 4:
+	case grid[0][1] <- 5:
+	default:
+	}
+}
+
+func refused() {
+	// ERROR "cannot send to non-channel"
+	bus.ports[1].name <- 5
+	// ERROR "cannot use .five. of type string as type int in send"
+	bus.ports[1].ch <- "five"
+	select {
+	// ERROR "cannot send to non-channel"
+	case bus.ports[0].name <- 1:
+	// ERROR "cannot use .two. of type string as type int in send"
+	case grid[0][1] <- "two":
+	}
+}

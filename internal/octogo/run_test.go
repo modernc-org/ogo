@@ -26679,6 +26679,71 @@ func main() {
 }
 `,
 		want: "sq 9 3\neither 9\n3 3 2\n2\nrect 10 2\neither 10\n3 3 2\nassert 5\n2\n",
+	},
+	{
+		// A send to a channel a chain reaches. An index BETWEEN two fields,
+		// `bus.ports[i].ch <- v`, was "cannot send to non-channel": the check flattened
+		// the chain to a run of fields and two flags. A channel behind a pointer-typed
+		// field was refused the same way. Once accepted, the first parked its cog for
+		// ever: the channels of an array of structs held in a struct FIELD were never
+		// allocated. And the channel and the value are two arguments of one C call,
+		// whose order is the C compiler's -- the host called val before pick, where Go
+		// evaluates the channel first; the digits record the order.
+		//
+		// Every line prints what real Go prints, given the channels it must make.
+		name: "a send to a channel in a field of an element",
+		src: `type Port struct {
+	ch chan int
+}
+
+type Bus struct {
+	ports [2]Port
+	peer  *Port
+}
+
+var bus Bus
+var spare Port
+var qs [2]chan int
+var done chan int
+var calls int
+
+func pick(i int) int {
+	calls = calls*10 + 3
+	return i
+}
+
+func val(v int) int {
+	calls = calls*10 + 4
+	return v
+}
+
+func drain(ch chan int) {
+	v := <-ch
+	done <- v
+}
+
+func main() {
+	bus.peer = &spare
+	// The channel is evaluated before the value, as Go evaluates them.
+	go drain(qs[1])
+	qs[pick(1)] <- val(6)
+	println(<-done, calls)
+	// An index between two fields, over channels that a struct's array field holds.
+	calls = 0
+	go drain(bus.ports[1].ch)
+	bus.ports[pick(1)].ch <- val(7)
+	println(<-done, calls)
+	p := &bus
+	go drain(bus.ports[0].ch)
+	p.ports[0].ch <- 8
+	println(<-done)
+	// A channel behind a pointer-typed field.
+	go drain(spare.ch)
+	bus.peer.ch <- 9
+	println(<-done)
+}
+`,
+		want: "6 34\n7 34\n8\n9\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

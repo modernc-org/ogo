@@ -7638,9 +7638,24 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 func (e *emitter) emitChanFieldCells(gn, ctype string) {
 	for _, fld := range e.structs[ctype] {
 		if !e.isChanCType(fld.ctype) {
-			if _, nested := e.structs[fld.ctype]; nested && fld.dim.bound == "" {
+			_, nested := e.structs[fld.ctype]
+			switch {
+			case nested && fld.dim.bound == "":
 				// A struct field holding a struct with channel fields of its own.
 				e.emitChanFieldCells(gn+"."+e.fieldIdent(fld.name), fld.ctype)
+			case nested && e.hasChanField(fld.ctype):
+				// A field that is an ARRAY of such structs, `ports [2]Port`: a bus and
+				// its bank of ports, each with a channel. The declaration owns these
+				// cells as it owns every other, and until 2026-09-17 it minted none:
+				// the channels stayed nil, and a send on one parked its cog for ever,
+				// as a nil channel's does, with nothing said.
+				subs, ok := e.arrayIndexSuffixes(fld.dim)
+				if !ok {
+					return
+				}
+				for _, sub := range subs {
+					e.emitChanFieldCells(gn+"."+e.fieldIdent(fld.name)+sub, fld.ctype)
+				}
 			}
 			continue
 		}
@@ -7899,6 +7914,16 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 		return
 	}
 	e.typeUntypedShifts(op[1].ast, elem) // the element's type is the value's context
+	// Go evaluates the channel and then the value. Here they are two arguments of
+	// one helper call, whose order is the C compiler's: `qs[pick(1)] <- val(6)` ran
+	// val first on the host, which takes arguments right to left, and pick first on
+	// the target, which does not -- right there by that compiler's choice alone. So
+	// a channel that is more than a name is bound first whenever the value does
+	// something too.
+	if !plainTargetText(ch) && e.exprHasEffect(op[1].ast) {
+		text := ch
+		ch = e.hoist(chanCName(elem), func() { e.emit(text) })
+	}
 	// `ch <- mk(3)`: the send helper takes the element by value, so a struct-
 	// returning call handed to it is the same shape hoistStructCallArg binds for an
 	// ordinary call -- and the send does not go through emitCallArgs, so it is bound

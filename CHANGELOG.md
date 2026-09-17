@@ -49,6 +49,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A send to a channel in a field of an element, and the order of a send's two
+  sides.** `bus.ports[i].ch <- v` -- a bus and its bank of ports -- was "cannot
+  send to non-channel": the check flattened the chain to a run of fields, and an
+  index between two of them has no place in that. A channel behind a pointer-typed
+  field, `w.peer.cmd <- v`, was refused the same way. Once accepted the send
+  parked its cog for ever, silently: the channels of an array of structs held in a
+  struct FIELD were never allocated, where a variable's, a field's and an array's
+  all were. And `qs[pick(i)] <- val(v)` called `val` before `pick` on the host: the
+  channel and the value were two arguments of one C call, whose order is the C
+  compiler's, right on the target by that compiler's choice alone. A channel that
+  is more than a name is now bound first when the value does something too.
 - **A declaration that gives a name another kind.** `buf := buf[2:5]` in a nested
   block -- a slice shadowing the array it views, the everyday way to take a window
   -- was still an array to `len`, `cap`, `range` and the bounds check: `len(buf)`
