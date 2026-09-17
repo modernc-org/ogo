@@ -26,7 +26,7 @@ head=${2:?}
 tail=${3:?}
 mkdir -p "$dir"
 dumpc=$(mktemp -d)/dumpc
-(cd "$root" && go build -o "$dumpc" ./build/dumpc) || exit 1
+(cd "$root" && go build -o "$dumpc" ./scripts/dumpc) || exit 1
 n=0
 while IFS= read -r stmt; do
 	n=$((n+1)); d=$dir/p$n; rm -rf "$d"; mkdir -p "$d/twin"

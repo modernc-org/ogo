@@ -477,7 +477,10 @@ The method that finds most bugs is not the test suite but a PROBE: a program a
 user would write, compared against real Go, with every accessor bumping a package
 counter that is printed beside the values so a double or a late evaluation shows as
 a number. The scripts are portable (paths from the repo root, tools built from the
-tree being probed) and read from the top of each file:
+tree being probed) and read from the top of each file. The one Go tool they build is
+`scripts/dumpc` (DIR in, the checked C of TestEmitCRun out, a refusal on stderr). It
+was first committed as `./build/dumpc`, and `/build/` is git-ignored, so the harness
+reached the second machine without it; it lives under `scripts/` for that reason:
 
 - `scripts/probe.sh DIR [SED]` -- one program vs its Go twin (GOARCH=386, so int is
   32 bits) on the host, with TestEmitCRun's exact gcc flags. Verdicts MATCH, DIFFER,

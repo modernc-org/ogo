@@ -42,7 +42,7 @@ name=$(basename "$d")
 mkdir -p "$d/twin"
 { echo 'package main'; echo; cat "$d/main.ogo"; } | sed -e "${expr:-s/^\$/&/}" > "$d/twin/main.go"
 (cd "$d/twin" && timeout 30 env GOARCH=386 go run main.go > ../go.out 2>&1; echo "exit=$?" >> ../go.out)
-(cd "$root" && go run ./build/dumpc "$d" > "$d/host.c" 2> "$d/dump.err")
+(cd "$root" && go run ./scripts/dumpc "$d" > "$d/host.c" 2> "$d/dump.err")
 if [ ! -s "$d/host.c" ] || [ -s "$d/dump.err" ]; then
 	echo "== $name: REFUSED: $(head -1 "$d/dump.err")"
 	exit 0

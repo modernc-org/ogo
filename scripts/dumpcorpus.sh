@@ -24,7 +24,7 @@ seeds=${2:-400}
 out=$(mkdir -p "$out" && cd "$out" && pwd)
 rm -rf "$out"/*
 tmp=$(mktemp -d)
-(cd "$root" && go build -o "$tmp/dumpc" ./build/dumpc && go build -o "$tmp/ogo" .) || exit 1
+(cd "$root" && go build -o "$tmp/dumpc" ./scripts/dumpc && go build -o "$tmp/ogo" .) || exit 1
 cd "$root/internal/octogo" && cat > zz_dumpcorpus_test.go <<'EOT'
 package octogo
 
