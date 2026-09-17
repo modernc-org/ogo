@@ -278,6 +278,16 @@ program handed out a reference to storage that was gone by the time it was read.
   such a literal, `v := [1]Box{{a[:]}}`, held the reference unmarked, so `gs = v`
   and `g = v[0]` carried it out. All are refused at every sink: a return, a store,
   a send, a `go`, an argument the callee keeps.
+- **Every form that binds a value obeys the lifetime rules.** They were written form
+  by form, and the forms nobody had met recorded nothing: `var s []int = a[:]` --
+  the plainest spelling there is -- then `return s`; a typed list, `var p, q *T =
+  &x, &y`; every multiple assignment, `s, u := a[:], b[:]` declaring and `g, n =
+  a[:], 1` storing straight into a package variable; a destructured call whose
+  result derives from its argument; a swap; both clauses of a `for` header, `for s
+  := a[:]; ...` and `for ...; ...; g = a[:]`; an array copied from a marked array or
+  read out of one by row. A table test now crosses every such form with every kind
+  of reference -- a slice, an address, a struct, an array and an interface holding
+  one -- each beside a control over package storage that must still compile.
 
 ### Verified
 

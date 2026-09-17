@@ -6,6 +6,7 @@ package octogo
 
 import (
 	"bytes"
+	"io"
 	"strconv"
 	"strings"
 	"testing"
@@ -9828,6 +9829,220 @@ func main() {
 		})
 	}
 }
+
+// TestEmitCListStoreEscape is the STORE side of TestEmitCFrameRefForms: a list form
+// or a loop clause writing a reference to this frame where it outlives the frame, or
+// the block. A plain assignment has been refused for all of these since the lifetime
+// rules were written; the list forms and the clauses are lowered on their own paths,
+// which asked nothing, so `g, n = a[:], 1` was the way around every one of them.
+func TestEmitCListStoreEscape(t *testing.T) {
+	const head = `type Box struct {
+	d []int
+}
+
+var g []int
+
+var gb Box
+
+var gp *int
+
+var back [4]int
+
+var gn int
+
+func two(xs []int) (int, []int) { return 1, xs }
+
+func leak() {
+	var a [4]int
+	n := 0
+	a[0] = n
+`
+	const tail = `	gn += n
+}
+
+func main() {
+	leak()
+	println(len(g), len(gb.d), gp == nil, gn, back[0])
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		{"g, n = a[:], 1", "cannot store a slice backed by local a in package variable g"},
+		{"gb.d, n = a[:], 1", "cannot store a slice backed by local a in package variable gb"},
+		{"gb, n = Box{a[:]}, 1", "cannot store a slice backed by local a in package variable gb"},
+		{"n, g = two(a[:])", "cannot store a slice backed by local a in package variable g"},
+		{"gp, n = &n, 2", "cannot store the address of local variable n in package variable gp"},
+		{"for g = a[:]; n < 1; n++ {\n\t}", "cannot store a slice backed by local a in package variable g"},
+		{"for i := 0; i < 1; i, g = i+1, a[:] {\n\t\tn++\n\t}", "cannot store a slice backed by local a in package variable g"},
+		{"for i := 0; i < 1; g = a[:] {\n\t\ti++\n\t}", "cannot store a slice backed by local a in package variable g"},
+		{"for i := 0; i < 1; gp = &i {\n\t\ti++\n\t}", "cannot store the address of local variable i in package variable gp"},
+		{"var s []int\n\t{\n\t\tvar b [2]int\n\t\ts, n = b[:], 1\n\t}\n\tn += len(s)", "local b does not outlive the block it is declared in"},
+		{"var s []int\n\tfor i := 0; i < 1; i++ {\n\t\tvar b [2]int\n\t\ts, n = b[1:], 1\n\t}\n\tn += len(s)", "local b does not outlive the block it is declared in"},
+		// Storage that outlives the frame is stored freely, and a local target dies
+		// with what it is given.
+		{"g, n = back[:], 1", ""},
+		{"n, g = two(back[:])", ""},
+		{"for g = back[1:]; n < 1; n++ {\n\t}", ""},
+		{"var s []int\n\ts, n = a[:], 1\n\tn += len(s)", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			err = EmitC(pkg, io.Discard, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a store of a frame reference; want %q\n%s", test.want, src)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCFrameRefForms crosses every FORM a value can be bound by with every KIND
+// of reference to this frame, and asks that the bound name cannot be returned. The
+// lifetime rules were written form by form -- the short declaration first, each of
+// the others as it was met -- and a form nobody had met carried the reference out:
+// `var s []int = a[:]` did until 2026-09-17, and so did every list form, every
+// destructured call, a swap, and both clauses of a for header. A table of one row
+// per form is what finds the next one; a form added to the language is added here.
+//
+// Each cell has a CONTROL, the same program over package storage, which must be
+// accepted: it is what keeps a refusal from being mistaken for the right one. A form
+// a kind cannot take yet -- a list of arrays, a composite literal where a header
+// wants parentheses -- fails its control and is skipped, and the number skipped is
+// pinned so the table cannot quietly stop testing.
+func TestEmitCFrameRefForms(t *testing.T) {
+	const decls = `type Box struct {
+	d []int
+}
+
+type Any interface{}
+
+var back, back2 [4]int
+
+var gx, gy int
+
+`
+	kinds := []struct {
+		name, typ    string
+		v, w         string // two values reaching this frame
+		okV, okW     string // the same over package storage
+		parenthesize bool   // a header needs the value in parentheses, as in Go
+	}{
+		{"slice", "[]int", "a[:]", "a2[1:]", "back[:]", "back2[1:]", false},
+		{"address", "*int", "&x", "&y", "&gx", "&gy", false},
+		{"struct", "Box", "Box{a[:]}", "Box{a2[:]}", "Box{back[:]}", "Box{back2[:]}", true},
+		{"array", "[1]Box", "[1]Box{{a[:]}}", "[1]Box{{a2[:]}}", "[1]Box{{back[:]}}", "[1]Box{{back2[:]}}", false},
+		{"interface", "Any", "Any(&x)", "Any(&y)", "Any(&gx)", "Any(&gy)", false},
+	}
+	forms := []struct {
+		name, body string
+		header     bool
+	}{
+		{"short declaration", "\ts := {V}\n\treturn s\n", false},
+		{"var, inferred", "\tvar s = {V}\n\treturn s\n", false},
+		{"var, typed", "\tvar s {T} = {V}\n\treturn s\n", false},
+		{"var list, typed, first", "\tvar s, u {T} = {V}, {W}\n\t_ = u\n\treturn s\n", false},
+		{"var list, typed, second", "\tvar s, u {T} = {V}, {W}\n\t_ = s\n\treturn u\n", false},
+		{"var list, inferred, first", "\tvar s, u = {V}, {W}\n\t_ = u\n\treturn s\n", false},
+		{"var list, inferred, second", "\tvar s, u = {V}, {W}\n\t_ = s\n\treturn u\n", false},
+		{"short list, first", "\ts, u := {V}, {W}\n\t_ = u\n\treturn s\n", false},
+		{"short list, second", "\ts, u := {V}, {W}\n\t_ = s\n\treturn u\n", false},
+		{"assignment", "\tvar s {T}\n\ts = {V}\n\treturn s\n", false},
+		{"assignment list, first", "\tvar s, u {T}\n\ts, u = {V}, {W}\n\t_ = u\n\treturn s\n", false},
+		{"assignment list, second", "\tvar s, u {T}\n\ts, u = {V}, {W}\n\t_ = s\n\treturn u\n", false},
+		{"swap", "\tvar s, u {T}\n\tu = {V}\n\ts, u = u, s\n\t_ = u\n\treturn s\n", false},
+		{"destructured, declared", "\ts, n := two({V})\n\t_ = n\n\treturn s\n", false},
+		{"destructured, var", "\tvar s, n = two({V})\n\t_ = n\n\treturn s\n", false},
+		{"destructured, assigned", "\tvar s {T}\n\tvar n int\n\ts, n = two({V})\n\t_ = n\n\treturn s\n", false},
+		{"copy of a copy", "\ts := {V}\n\tt := s\n\tvar w {T} = t\n\treturn w\n", false},
+		{"a call's result, declared", "\ts := one({V})\n\treturn s\n", false},
+		{"a call's result, assigned", "\tvar s {T}\n\ts = one({V})\n\treturn s\n", false},
+		{"if init", "\tif s := {V}; x > 0 {\n\t\treturn s\n\t}\n\tvar z {T}\n\treturn z\n", true},
+		{"if init list", "\tif s, u := {V}, {W}; x > 0 {\n\t\t_ = s\n\t\treturn u\n\t}\n\tvar z {T}\n\treturn z\n", true},
+		{"switch init", "\tswitch s := {V}; {\n\tcase x > 0:\n\t\treturn s\n\t}\n\tvar z {T}\n\treturn z\n", true},
+		{"switch init list", "\tswitch s, u := {V}, {W}; {\n\tcase x > 0:\n\t\t_ = s\n\t\treturn u\n\t}\n\tvar z {T}\n\treturn z\n", true},
+		{"for init", "\tfor s := {V}; x > 0; {\n\t\treturn s\n\t}\n\tvar z {T}\n\treturn z\n", true},
+		{"for init list", "\tfor s, u := {V}, {W}; x > 0; {\n\t\t_ = s\n\t\treturn u\n\t}\n\tvar z {T}\n\treturn z\n", true},
+		{"for init, assigned", "\tvar s {T}\n\tfor s = {V}; x > 0; {\n\t\treturn s\n\t}\n\treturn s\n", true},
+		{"for post", "\tvar s {T}\n\tfor i := 0; i < 2; s = {V} {\n\t\ti++\n\t}\n\treturn s\n", true},
+		{"for post list", "\tvar s {T}\n\tfor i := 0; i < 2; i, s = i+1, {V} {\n\t}\n\treturn s\n", true},
+	}
+	emit := func(src string) error {
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			return err
+		}
+		return EmitC(pkg, io.Discard, Checked())
+	}
+	skipped := 0
+	for _, k := range kinds {
+		for _, form := range forms {
+			// Every cell twice, the second time with its values in parentheses, which
+			// change nothing about a value and used to hide all of it: `return
+			// (a[:])` passed every rule here until 2026-09-17.
+			for _, parens := range []bool{false, true} {
+				program := func(v, w string) string {
+					if parens || form.header && k.parenthesize {
+						v, w = "("+v+")", "("+w+")"
+					}
+					body := strings.NewReplacer("{V}", v, "{W}", w, "{T}", k.typ).Replace(form.body)
+					two := ""
+					if strings.Contains(form.body, "two(") {
+						two = "func two(v " + k.typ + ") (" + k.typ + ", int) {\n\treturn v, 1\n}\n\n"
+					}
+					if strings.Contains(form.body, "one(") {
+						two = "func one(v " + k.typ + ") " + k.typ + " {\n\treturn v\n}\n\n"
+					}
+					return decls + two +
+						"func bind() " + k.typ + " {\n\tvar a, a2 [4]int\n\tx, y := 1, 2\n\ta[0], a2[0] = x, y\n" + body + "}\n\n" +
+						"func main() {\n\tr := bind()\n\t_ = r\n}\n"
+				}
+				name := k.name + "/" + form.name
+				if parens {
+					name += ", parenthesized"
+				}
+				t.Run(name, func(t *testing.T) {
+					if err := emit(program(k.okV, k.okW)); err != nil {
+						skipped++
+						t.Skipf("the form is not supported for this kind yet: %v", err)
+					}
+					err := emit(program(k.v, k.w))
+					switch {
+					case err == nil:
+						t.Errorf("a reference to this frame was bound and returned:\n%s", program(k.v, k.w))
+					case !strings.Contains(err.Error(), "does not outlive the function"):
+						t.Errorf("refused, but not for its lifetime: %v", err)
+					}
+				})
+			}
+		}
+	}
+	if want := frameRefFormsSkipped; skipped != want {
+		t.Errorf("%d cells were skipped as unsupported, want %d: a form that starts working is tested from then on, "+
+			"so lower the count; one that stops working is a regression", skipped, want)
+	}
+}
+
+// frameRefFormsSkipped is the number of cells TestEmitCFrameRefForms cannot test
+// yet, each a form one kind does not take for a reason of its own. All sixteen are
+// the ARRAY kind's, eight forms in both variants: a typed var list ("a multi-name
+// array var with an initializer is not supported yet"), the three destructured
+// forms ("cannot return an array beside another result"), and the switch and for
+// init declarations, whose array the emitter cannot type yet.
+const frameRefFormsSkipped = 16
 
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {

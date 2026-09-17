@@ -1775,6 +1775,14 @@
 //	b.data = a[:]
 //	go work(b)                          // refused: b holds a pointer into local a
 //
+// The rule follows the value, not the way it is written. Parentheses around it
+// change nothing, "return (a[:])"; neither does the form that binds it -- a short
+// declaration, a "var" with its type written or inferred, a list of either, a
+// multiple assignment, a swap, a call's several results, the init statement of an
+// "if", a "switch" or a "for", a loop's post statement -- nor the literal it stands
+// in, with its element's type written or elided, "[1]Box{{a[:]}}", whole or read
+// back out of it, "[1]Box{{a[:]}}[0]".
+//
 // The mark is on the variable, not on the field, and it is never cleared. That is
 // what makes it safe without tracking each field separately -- a struct with one
 // field holding a frame reference and one not must stay marked -- and it is the one

@@ -5212,6 +5212,7 @@ type emitter struct {
 	usesU2f            bool                    // ogo_u2f is called: an integer converts to a float (needs ogo_fprec)
 	usesI2f            bool                    // ogo_i2f is called: a signed integer converts to a float (needs ogo_u2f)
 	shiftHelpers       map[string][2]string    // guarded shift helper name -> {operator, value C type}
+	storeCarries       *carriedRef             // what the value emitStore is about to write carries of this frame, for the list forms (see carryInto)
 	shiftCTypes        map[*int32]string       // a shift operator, by its place in the AST -> the C type its untyped constant operand takes, where the emitter typed the context (see typeUntypedShifts)
 	shiftWalked        map[shiftWalkKey]bool   // the nodes typeUntypedShiftsNode has walked, each for a context
 	shiftIn            map[*int32]bool         // whether a shift operator occurs under a node, by its place in the AST (see hasShift)
@@ -11912,8 +11913,18 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 				}
 				continue
 			}
+			// What the value carries of this frame, the array holds (see
+			// emitInferredLocal); asked before the name is taken.
+			var ref frameRef
+			carries := false
+			if initExpr != nil {
+				ref, carries = e.frameRefOf(initExpr)
+			}
 			e.shadow(nm)
 			e.arrays[nm] = a
+			if carries {
+				e.noteHolderRef(nm, ref)
+			}
 			if initExpr == nil {
 				e.ind()
 				// A zero-length array has nothing to zero, and "{0}" names an
@@ -12023,9 +12034,19 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 				}
 				continue
 			}
+			// A slice declared from another views the same storage and inherits where
+			// it lives, as the short form does and as a DEFINED slice type's
+			// declaration below does. This spelling alone recorded nothing: `var s
+			// []int = a[:]` over a local a, then `return s`, handed out a view of a
+			// dead frame -- the plainest way there is to write it. Asked before the
+			// name is taken, since the value may read the name it shadows.
+			views := initExpr != nil && e.initViewsFrame(initExpr)
 			e.shadow(nm)
 			e.sliceVars[nm] = elem
 			e.locals[nm] = cname
+			if views {
+				e.frameBacked[nm] = true
+			}
 			// A self-referential shadowing copy (`var xs []T = xs` with an outer
 			// xs) means the outer header; capture it before the new one shadows it
 			// (see emitVarDeclInit).
@@ -12932,6 +12953,12 @@ func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
 func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 	e.shadowKinds(dst)
 	e.arrays[dst] = a
+	// A copy of an array that holds a reference to this frame holds it too. src is C
+	// text, and a local's -- a temporary's above all, which is how a shadowing
+	// declaration and a multiple assignment bind an array -- is its name.
+	if origin := e.frameHolder[src]; origin != "" {
+		e.frameHolder[dst] = origin
+	}
 	e.includes["string.h"] = true
 	e.ind()
 	e.emit(a.elem + " " + dst + a.declSuffix() + ";\n")
@@ -14214,11 +14241,23 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 		if ctype == "" {
 			return
 		}
+		// What the single-name declaration records of its value, each name records
+		// of its own: a slice inherits where its storage lives, and a struct or a
+		// pointer what it was handed. The list recorded neither, so `var s, u []int
+		// = a[:], b[:]` and `var p, q *T = &x, &y` each carried a reference to this
+		// frame that no sink could see.
+		views := e.initViewsFrame(inits[i])
 		e.shadow(nm)
 		if elem, ok := e.sliceType(typeAST); ok {
 			e.sliceVars[nm] = elem
+		} else if u := e.underlyingCType(ctype); e.isSliceCType(u) {
+			e.sliceVars[nm] = sliceElemFromCName(u)
 		}
 		e.locals[nm] = ctype
+		if _, isSlice := e.sliceVars[nm]; isSlice && views {
+			e.frameBacked[nm] = true
+		}
+		e.noteDeclFrameHolder(ctype, nm, inits[i])
 		e.emitVarDeclInit(ctype, nm, inits[i])
 	}
 }
@@ -18973,9 +19012,19 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 			vals[i] = tmp
 		}
 	}
+	// What each value carries of this frame, asked while the names still mean what
+	// they mean outside the loop (see emitFor's single-name form).
+	refs := make([]frameRef, len(names))
+	carries := make([]bool, len(names))
+	for i, rhs := range h.initRHSs {
+		refs[i], carries[i] = e.frameRefOf(rhs)
+	}
 	for i, name := range names {
 		e.shadow(name)
 		e.locals[name] = cts[i]
+		if carries[i] {
+			e.noteHolderRef(name, refs[i])
+		}
 		e.ind()
 		// localIdent: a loop variable named after a type is ordinary Go and the
 		// backend cannot parse the declarator (see localIdent).
@@ -18983,11 +19032,41 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 	}
 }
 
+// carryIntoClause applies the lifetime rules to `lhs = rhs` written in a loop's init
+// or post clause, which a statement's assignment applies before it writes
+// (checkStoreBacking, checkBlockOutlives, noteFrameHolder): `for g = a[:]; ...` for
+// a package g, and `for ...; ...; p = &x`.
+func (e *emitter) carryIntoClause(lhs, rhs []int32) {
+	ref, ok := e.frameRefOf(rhs)
+	if !ok {
+		return
+	}
+	base, steps, isChain := e.factorAccessChain(e.factorKids(lhs))
+	if !isChain {
+		if name, isName := e.exprIdent(lhs); isName {
+			base, isChain = name, true
+		}
+	}
+	if !isChain {
+		return
+	}
+	if mn, _, isQualified := e.qualifiedChainBase(base, steps); isQualified {
+		base = mn
+	}
+	at := Node{sym: Expression, ast: rhs}
+	e.refuseStoreBacking(base, at, ref)
+	e.refuseBlockOutlives(base, at, ref)
+	e.noteHolderRef(base, ref)
+}
+
 // emitSimultaneous emits `a, b = x, y` as Go means it: every value is read into a
 // temporary before any target is written, so `a, b = b, a` swaps rather than
 // duplicating. It is the loop clauses' form of what emitMultiAssign does for a
 // statement.
 func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
+	for i, rhs := range rhss {
+		e.carryIntoClause(lhss[i], rhs)
+	}
 	tmps := make([]string, len(rhss))
 	for i, rhs := range rhss {
 		tt, typedTarget := e.inferCType(lhss[i])
@@ -19091,8 +19170,15 @@ func (e *emitter) emitFor(nodes []Node) {
 			text := initVal
 			initVal = e.hoist(initCType, func() { e.emit(text) })
 		}
+		// What the value carries of this frame the variable holds, as a statement's
+		// declaration records (emitInferredLocal). A loop's clauses are lowered on
+		// their own and recorded nothing: `for s := a[:]; ...; { return s }`.
+		ref, carries := e.frameRefOf(h.initRHS)
 		e.shadow(initName)
 		e.locals[initName] = initCType
+		if carries {
+			e.noteHolderRef(initName, ref)
+		}
 	}
 	var condText string
 	var condPro []string
@@ -19289,6 +19375,9 @@ func (e *emitter) emitFor(nodes []Node) {
 // form of it has its address hoisted (guardedAssignC), which is a temporary and so
 // the end of the body. It used to be written twice.
 func (e *emitter) emitPostAssign(lhsAST []int32, lhs, op string, rhs []int32, complement bool) {
+	if op == "=" {
+		e.carryIntoClause(lhsAST, rhs)
+	}
 	t := assignTail{op: op, rhs: rhs, complement: complement, clause: true, targetRepeatable: !e.exprHasEffect(lhsAST)}
 	if ct, ok := e.inferCType(lhsAST); ok {
 		t.targetCType = ct
@@ -26217,6 +26306,19 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		return
 	}
 	e.bindFuncValue(name, initExpr)
+	// An ARRAY declared from a value that carries a reference to this frame holds it,
+	// by whichever of the paths below it is copied: a literal, another array, a row,
+	// a field, a call's result. Each path records the array's shape and none recorded
+	// this, so `s := v` for a marked array v, and `s := ([1]Box{{a[:]}})`, which the
+	// parentheses send down the copying path, were returned freely. Asked here, of
+	// the value as written, and recorded once the name is the array's.
+	if ref, carries := e.frameRefOf(initExpr); carries {
+		defer func() {
+			if _, isArr := e.arrays[name]; isArr {
+				e.noteHolderRef(name, ref)
+			}
+		}()
+	}
 	// `r := row(a)` for `type row [3]int`: the conversion changes nothing about the
 	// value -- a defined type is a typedef of what it stands for -- so what is
 	// declared is a copy of the operand, which is the branch below. Unwrapped here
@@ -27346,6 +27448,11 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 	if t.name == "_" {
 		return
 	}
+	// The lifetime rules, which a plain assignment applies to its one value and the
+	// list forms applied to none: `g, n = a[:], 1` stored a slice of a local array in
+	// a package variable, and `s, u := a[:], b[:]` declared two slices no sink knew
+	// to be this frame's. Every store of a list form comes through here.
+	defer e.carryInto(t, declare, ctype, e.storeCarries)()
 	if t.plain() {
 		e.ind()
 		if declare {
@@ -27503,6 +27610,16 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 	// the values before it: `a, b := f(1), mkA(2)[0]` ran mkA first. Every value
 	// that does something but the last is bound ahead of the statement too.
 	defer e.bindEffectOperands(rhs)()
+	// What each value carries of this frame, asked before anything is written: the
+	// values are read in the view BEFORE the statement, a swap's above all, and a
+	// name the statement declares is not yet the name a value reads.
+	carried := make([]*carriedRef, len(rhs))
+	for i, r := range rhs {
+		if ref, ok := e.frameRefOf(r.ast); ok {
+			carried[i] = &carriedRef{r: ref, at: r}
+		}
+	}
+	defer func(saved *carriedRef) { e.storeCarries = saved }(e.storeCarries)
 	tmps := make([]string, len(rhs))
 	types := make([]string, len(rhs))
 	dims := make([]arrDim, len(rhs))
@@ -27550,6 +27667,7 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		e.emit(";\n")
 	}
 	for i, tgt := range targets {
+		e.storeCarries = carried[i]
 		if dims[i].bound != "" {
 			e.emitStoreArray(tgt, declare[i], dims[i], tmps[i])
 			continue
@@ -27591,6 +27709,7 @@ func (e *emitter) emitStoreArray(t assignTarget, declare bool, a arrDim, val str
 	if t.name == "_" {
 		return
 	}
+	defer e.carryInto(t, declare, "", e.storeCarries)() // as emitStore; an array is asked no type
 	if declare {
 		if !t.plain() {
 			e.fail("non-name %s on the left side of :=", t.name)
@@ -27639,6 +27758,13 @@ func (e *emitter) emitStoreArray(t assignTarget, declare bool, a arrDim, val str
 // assigned target is assigned, and a blank target is skipped. rhs is the call
 // expression; define selects declaration (`:=` / `var`) over plain assignment.
 func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []int32) {
+	// A call whose results derive from an argument hands that argument's provenance
+	// back out, through every result that can hold a reference (see emitStore).
+	defer func(saved *carriedRef) { e.storeCarries = saved }(e.storeCarries)
+	e.storeCarries = nil
+	if ref, ok := e.frameRefOf(rhs); ok {
+		e.storeCarries = &carriedRef{r: ref, at: Node{sym: Expression, ast: rhs}, typed: true}
+	}
 	// "v, ok := x.(T)": no call, and the two values are a cast and a comparison.
 	// The order matters -- v is the zero value when the assertion does not hold, as
 	// in Go -- so ok is computed first and v reads it.
@@ -32804,6 +32930,11 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 					if ct, valued := e.chainValueCType(cur); valued && e.carriesReference(ct) {
 						return readHolderRef(e.f.exprSource(fac), origin), true
 					}
+					// An ARRAY read out of it, `rows[1]` of a [2][1]Box, has no C type
+					// to be asked through and carries what its elements can.
+					if len(cur.dims) != 0 && e.carriesReference(cur.elem) {
+						return readHolderRef(e.f.exprSource(fac), origin), true
+					}
 				}
 			}
 		}
@@ -33007,19 +33138,26 @@ func (e *emitter) noteFrameHolder(base string, op []Node) {
 		if n.sym != Expression {
 			continue
 		}
-		r, ok := e.frameRefOf(n.ast)
-		if !ok {
-			continue
-		}
-		if _, isSlice := e.sliceVars[base]; isSlice && r.view {
-			// A slice variable assigned a view of this frame is the shape frameBacked
-			// already models, and the one its wording fits.
-			e.frameBacked[base] = true
+		if r, ok := e.frameRefOf(n.ast); ok {
+			e.noteHolderRef(base, r)
 			return
 		}
-		e.frameHolder[base] = r.origin
+	}
+}
+
+// noteHolderRef is noteFrameHolder for a reference already found: the local base,
+// or something reached from it, was given r.
+func (e *emitter) noteHolderRef(base string, r frameRef) {
+	if !e.isFrameVar(base) {
 		return
 	}
+	if _, isSlice := e.sliceVars[base]; isSlice && r.view {
+		// A slice variable assigned a view of this frame is the shape frameBacked
+		// already models, and the one its wording fits.
+		e.frameBacked[base] = true
+		return
+	}
+	e.frameHolder[base] = r.origin
 }
 
 // checkReturnBacking refuses returning a value that reaches storage of this frame.
@@ -33058,9 +33196,18 @@ func (e *emitter) checkStoreBacking(base string, op []Node) {
 		}
 	}
 	if n, r, ok := e.frameRefIn(vals); ok {
-		e.fail("%v: cannot store %s in package variable %s: its storage does not outlive the function",
-			e.f.tok(n.Pos()).Position(), r.what, e.displayName(base))
+		e.refuseStoreBacking(base, n, r)
 	}
+}
+
+// refuseStoreBacking is checkStoreBacking for a reference already found: the value n,
+// which carries r, is being stored in something rooted at base.
+func (e *emitter) refuseStoreBacking(base string, n Node, r frameRef) {
+	if !e.isPackageVar(base) {
+		return // a local target dies with the frame, like the backing
+	}
+	e.fail("%v: cannot store %s in package variable %s: its storage does not outlive the function",
+		e.f.tok(n.Pos()).Position(), r.what, e.displayName(base))
 }
 
 // checkBlockOutlives refuses storing a reference to an inner-block variable where
@@ -33092,20 +33239,71 @@ func (e *emitter) checkBlockOutlives(base string, op []Node) {
 	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
 		return // only a plain "=" stores such a value
 	}
-	target := e.blockDepthOf(base)
 	for n := range it(op[1].ast) {
 		if n.sym != Expression {
 			continue
 		}
-		r, ok := e.frameRefOf(n.ast)
-		if !ok || e.blockDepthOf(r.name) <= target {
-			continue
+		if r, ok := e.frameRefOf(n.ast); ok && e.refuseBlockOutlives(base, n, r) {
+			return
 		}
-		e.fail("%v: cannot store %s in %s: %s does not outlive the block it is declared in, "+
-			"and %s does; declare it where %s is",
-			e.f.tok(n.Pos()).Position(), r.what, base, r.origin, base, base)
-		return
 	}
+}
+
+// refuseBlockOutlives is checkBlockOutlives for a reference already found, and says
+// whether it refused.
+func (e *emitter) refuseBlockOutlives(base string, n Node, r frameRef) bool {
+	if !e.isFrameVar(base) || e.blockDepthOf(r.name) <= e.blockDepthOf(base) {
+		return false
+	}
+	e.fail("%v: cannot store %s in %s: %s does not outlive the block it is declared in, "+
+		"and %s does; declare it where %s is",
+		e.f.tok(n.Pos()).Position(), r.what, base, r.origin, base, base)
+	return true
+}
+
+// carriedRef is what the value a list form is about to store carries of this frame
+// (see emitStore). typed says the reference was found for a whole CALL whose results
+// are being distributed, so that only a result whose type can hold one takes it.
+type carriedRef struct {
+	r     frameRef
+	at    Node
+	typed bool
+}
+
+// storeRoot names the variable a target of a list form is rooted at: the target's
+// own name, or -- behind an import qualifier, `geo.Buf, n = a[:], 1` -- the package
+// variable the qualifier selects.
+func (e *emitter) storeRoot(t assignTarget) string {
+	if mn, _, ok := e.qualifiedChainBase(t.name, t.chain); ok {
+		return mn
+	}
+	if len(t.chain) != 0 && t.chain[0].sym == Selector {
+		if prefix, isImport := e.importQualifiers[t.name]; isImport && t.name != "p2" {
+			if member := e.soleIdent(t.chain[0].ast); member != "" {
+				return mangle(prefix, member)
+			}
+		}
+	}
+	return t.name
+}
+
+// carryInto applies the lifetime rules to one store of a list form, the value
+// carrying c: the two refusals a plain assignment makes before it writes, and -- as
+// the function it returns, to be run once the target has taken its name -- the mark a
+// local target keeps. ctype is the C type stored.
+func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carriedRef) func() {
+	if c == nil || t.name == "_" {
+		return func() {}
+	}
+	if c.typed && !e.carriesReference(ctype) && !e.interfaceTypes[ctype] {
+		return func() {}
+	}
+	base := e.storeRoot(t)
+	if !declare {
+		e.refuseStoreBacking(base, c.at, c.r)
+		e.refuseBlockOutlives(base, c.at, c.r)
+	}
+	return func() { e.noteHolderRef(base, c.r) }
 }
 
 // crossBackedByFrame finds, among values about to cross to another cog, one that is
