@@ -57,12 +57,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   assignment of several values to several names, which the formatter knew for the
   statement and for the post clause and not for the init clause. Both were found by
   the corpus check against gofmt, in run cases written for other fixes.
+- **A guarded compound assignment through a pointer, an element or an index in a
+  chain.** `f.sum /= f.n` in a method on `*Filter`, `p.mask >>= n`, `r.arr[i] <<=
+  s`, `rs[i].u8 <<= s`, `hist[bucket(v)] /= total` -- a shift by a variable count
+  or a signed division by a variable, through anything but a plain variable or a
+  field path of one -- were refused in the default, checked build ("needs a target
+  that can be named twice; this one is evaluated"): the guarded form, `t =
+  ogo_shl_T(t, n)`, names its target twice, and neither a pointer's nil check nor
+  an index that calls something can be written twice. `--unchecked` compiled the
+  pointer forms, which is how a program could build one way and not the other. The
+  target's address is now named once and the helper reads and writes through it;
+  each call in the target runs once, before the value's.
 - **A guarded compound assignment through a call's result.** `reg().u8 <<= s`,
   `reg().i32 >>= s` and `reg().u8 /= d` -- the operators whose C and Go answers
   differ, written through a helper that names the target twice -- were refused
   ("needs a target that can be named twice; this one is evaluated") although the
   call's result is bound to a temporary first and the rest of the target repeats
-  nothing. An index holding a call still refuses.
+  nothing.
 - **A narrow shift chain wraps at every step, as Go computes it.** `var v int16 = 1
   << s << 7 >> 2` for an `s` of 9 printed 16384 where Go says 0, and the same
   chains into `uint8`, `int8` and `uint16` were wrong the same way: a level whose

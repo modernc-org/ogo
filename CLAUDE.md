@@ -503,11 +503,10 @@ goroutine run case is run with `-count=5` before it is committed; and the receiv
 that is a CALL's result (`bus.reg(i).M()`) has been the hole in six sweeps in a row
 -- every receiver-shape sweep includes it, in a `defer` and a `go` too.
 
-Known open items, all loud refusals or design walls (2026-09-16): slicing a slice
+Known open items, all loud refusals or design walls (2026-09-17): slicing a slice
 literal, `[]int{1, 2, 3}[1:]`; an array-returning call as a package literal element;
 a method value on a local or a call's result (design: a method value binds its
-receiver at compile time); an index holding a call in a guarded compound target,
-`reg().arr[idx()] <<= s`; and two grammar gaps needing an egg regeneration --
+receiver at compile time); and two grammar gaps needing an egg regeneration --
 `case port(0).ch <- 5:` in a select, and `range []int{...}[1:]` in a for header.
 
 ## Notes

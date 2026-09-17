@@ -25974,6 +25974,134 @@ func main() {
 }
 `,
 		want: "full at 7\nfull at 8\nfull at 9\n7 0 7 8 32\n63 0 6 44\nch 2 false 64\nch 0 true 84\nch 1 false 104\n-112 104\n200 true 0 135\n99 0 3 3 175\ntap 2 10\n3 3 6 true true 209\ntrue false true 232\n",
+	},
+	{
+		// A guarded compound assignment -- a shift by a variable count, a signed
+		// division by a variable, the operators whose C and Go answers differ -- names
+		// its target twice, "t = ogo_shl_T(t, n)", and was therefore refused for every
+		// target that is not a name or a field path through one: "needs a target that
+		// can be named twice; this one is evaluated". In a checked build, the default,
+		// that was every field through a POINTER, whose C text carries the nil check
+		// -- `f.sum /= f.n` in a method on *Filter -- besides any element of a field,
+		// any field of an element, and an index that calls something. The target's
+		// address is named once instead. Each call runs once, the target's before the
+		// value's; a shift past the width and the most negative value over -1 take
+		// Go's answers through the address as they do through a name.
+		name: "a guarded compound assignment through any target",
+		src: `type Filter struct {
+	sum   int32
+	n     int32
+	shift uint
+	wide  int64
+	mask  uint64
+}
+
+func (f *Filter) Avg() {
+	f.sum /= f.n
+}
+
+func (f *Filter) Scale() {
+	f.sum >>= f.shift
+	f.wide <<= f.shift
+	f.mask >>= f.shift
+}
+
+type Inner struct {
+	u8  uint8
+	arr [4]uint8
+}
+
+type Regs struct {
+	u8  uint8
+	i32 [4]int32
+	xs  []uint8
+	m   [2][4]int32
+	pp  *Inner
+	ins [2]Inner
+}
+
+var regs Regs
+var bank [3]Regs
+var ptrs [2]*Regs
+var other Regs
+var inner Inner
+var arr [4]uint8
+var back [4]uint8
+var calls int
+
+func reg() *Regs {
+	calls = calls*10 + 1
+	return &regs
+}
+
+func idx() int {
+	calls = calls*10 + 2
+	return 2
+}
+
+func cnt() uint {
+	calls = calls*10 + 3
+	return 3
+}
+
+func div() int32 {
+	calls = calls*10 + 4
+	return -3
+}
+
+func main() {
+	// The everyday shape: a method on a pointer, whose every field is behind the
+	// nil check of a checked build.
+	f := Filter{sum: 1000, n: 8, shift: 2, wide: 1 << 40, mask: 1 << 63}
+	f.Avg()
+	f.Scale()
+	println(f.sum, f.wide, f.mask)
+
+	// A field and an element through a pointer, a chain and an element's field.
+	regs.u8, regs.pp, regs.xs = 3, &inner, back[:]
+	regs.i32[2], regs.m[1][2], regs.xs[2] = -40, 41, 200
+	regs.ins[1].u8, regs.ins[1].arr[2], inner.u8, inner.arr[2] = 3, 5, 6, 7
+	bank[1].u8, other.u8, other.i32[2], arr[2] = 9, 10, -2147483648, 3
+	ptrs[1] = &other
+	p := &regs
+	var s uint = 3
+	var d int32 = 3
+	var m1 int32 = -1
+	var big uint = 40
+	i := 2
+	p.u8 <<= s
+	p.i32[i] /= d
+	p.m[i-1][i] %= d
+	p.xs[i] >>= s
+	p.pp.u8 <<= s
+	p.pp.arr[i] <<= s
+	p.ins[i-1].u8 <<= s
+	regs.ins[i-1].arr[i] <<= s
+	bank[i-1].u8 <<= s
+	ptrs[i-1].u8 <<= big
+	ptrs[i-1].i32[i] /= m1
+	println(regs.u8, regs.i32[2], regs.m[1][2], regs.xs[2], inner.u8, inner.arr[2])
+	println(regs.ins[1].u8, regs.ins[1].arr[2], bank[1].u8, other.u8, other.i32[2])
+
+	// An index that calls something runs once, the target's calls before the
+	// value's, left to right.
+	arr[idx()] <<= cnt()
+	println(arr[2], calls)
+	calls = 0
+	reg().i32[idx()] /= div()
+	println(regs.i32[2], calls)
+	calls = 0
+	reg().m[idx()-1][idx()] >>= cnt()
+	println(regs.m[1][2], calls)
+	calls = 0
+	reg().ins[idx()-1].arr[idx()] <<= cnt()
+	println(regs.ins[1].arr[2], calls)
+	calls = 0
+	ptrs[idx()-1].i32[idx()] %= div()
+	println(other.i32[2], calls)
+}
+`,
+		want: "31 4398046511104 2305843009213693952\n24 -13 2 25 48 56\n24 40 72 0 -2147483648\n24 23\n4 124\n0 1223\n64 1223\n-2 224\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -26493,11 +26493,12 @@ func subtreeHasSym(ast []int32, want Symbol) bool {
 // "x <<= n", "x /= n" -- into the guarded form "x = ogo_shl_<T>(x, n)". It reports
 // false for any other assignment, which the ordinary path then emits unchanged.
 //
-// The target is written twice, so only one that is a plain name or a field path
-// through one qualifies, or one the caller says repeats no evaluation. A target that
-// is itself evaluated is refused rather than emitted wrong: repeating it would
-// repeat its index expression, and leaving the operator unguarded would give C's
-// answer instead of Go's, which is what this whole path exists to stop.
+// The target is written twice. One that is a plain name or a field path through
+// one is written as it stands, and so is one the caller says repeats no evaluation.
+// Any other is reached through its ADDRESS, named once ahead of the statement:
+// writing it twice would repeat its index expression, and leaving the operator
+// unguarded would give C's answer instead of Go's, which is what this whole path
+// exists to stop.
 func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 	op := strings.TrimSuffix(t.op, "=")
 	isShift := op == "<<" || op == ">>"
@@ -26523,8 +26524,22 @@ func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 		return "", false
 	}
 	if !t.targetRepeatable && !plainTargetText(text) {
-		e.fail("a %s= assignment whose operands C and Go disagree on needs a target that can be named twice; this one is evaluated", op)
-		return "", false
+		// This target cannot be written twice: it would repeat an index that calls
+		// something, or -- far more often -- only the nil check a checked build
+		// puts around every pointer, `f.sum /= f.n` in a method on *Filter being
+		// `ogo_nil_Filter_ptr(f)->sum`. It was refused until 2026-09-17 ("needs a
+		// target that can be named twice; this one is evaluated"), which in the
+		// default build was every guarded compound assignment through a pointer,
+		// to a field of an element, or past an index in a chain. So the ADDRESS
+		// is named once, ahead of the statement, and the helper reads and writes
+		// through it: the target's operands run once, and before the value's,
+		// which are rendered after this line is requested.
+		//
+		// Where Go and this differ is a program about to panic: the target's index
+		// and nil checks run here, ahead of the value, where Go evaluates the value
+		// and then panics. hoistCompoundTarget has the same order for the same
+		// reason, and nothing that does not panic can tell the two apart.
+		text = "*" + e.hoist(ctype+"*", func() { e.emit("&" + text) })
 	}
 	if isShift {
 		e.needShift(op, e.underlyingCType(ctype))
@@ -26767,9 +26782,10 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		return
 	}
 	t.targetCType, t.targetArray = elem, row
-	// The index is evaluated twice by a guarded shift assignment (see shiftAssignC),
-	// which is only sound when evaluating it has no effect. It usually has none: an
-	// index is a name or a literal far more often than it is a call.
+	// The index is evaluated twice by a guarded shift assignment (see
+	// guardedAssignC), which is only sound when evaluating it has no effect. It
+	// usually has none: an index is a name or a literal far more often than it is a
+	// call. One that has is reached through the element's address instead.
 	t.targetRepeatable = !e.exprHasEffect(idx)
 	// Go evaluates the index before the value and checks it after: `arr[bad()] =
 	// side()` calls both and then panics. Written as one C assignment the order of
