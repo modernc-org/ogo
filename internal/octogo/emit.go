@@ -18745,7 +18745,12 @@ func (e *emitter) emitFor(nodes []Node) {
 	defer e.enterScope()()
 	// This loop's post placement, replacing whatever an enclosing loop set: a
 	// `continue` names the nearest loop, so the nearest loop's answer is the one
-	// that must be in force while its body is emitted.
+	// that must be in force while its body is emitted -- and the enclosing loop's
+	// again once this one is done. It was not put back until 2026-09-17: a
+	// `continue` AFTER an inner loop was then a plain C continue, which skipped the
+	// enclosing loop's post statements at the end of its body, and `for i, j := 0,
+	// 0; i < 4; i, j = i+1, j+1 { for ... {}; if i == 1 { continue } }` never ended.
+	defer func(label string) { e.postContLabel = label }(e.postContLabel)
 	e.pendingPost, e.postContLabel = nil, ""
 	var body []int32
 	var h forHeader
@@ -19004,10 +19009,25 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	e.pendingPost = nil
 	savedBreak := e.switchBreak
 	e.switchBreak = ""
+	// Post statements at the end of the body would read the BODY's variables
+	// there: `for i, j := 0, 0; i < 6; i, j = i+s, j+1 { s := 10 ... }` stepped by
+	// ten, the body's s, where Go's post clause belongs to the loop's scope and
+	// never sees it. So the body takes a block of its own, which its declarations
+	// end with; a continue's goto leaves it for the label that follows.
+	if post != nil {
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+	}
 	if inject != nil {
 		inject()
 	}
 	e.emitBlockStmts(body)
+	if post != nil {
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	}
 	if cont != "" && e.labelUsed[cont] {
 		e.ind()
 		e.emit(cont + ":;\n")

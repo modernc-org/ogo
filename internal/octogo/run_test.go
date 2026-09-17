@@ -26102,6 +26102,71 @@ func main() {
 }
 `,
 		want: "31 4398046511104 2305843009213693952\n24 -13 2 25 48 56\n24 40 72 0 -2147483648\n24 23\n4 124\n0 1223\n64 1223\n-2 224\n",
+	},
+	{
+		// Two faults of a post that stands at the end of the body, both silent and both
+		// as old as the placement. The post read the BODY's variables there -- `for i, j
+		// := 0, 0; i < 6; i, j = i+s, j+1 { s := 10 ... }` stepped by ten -- where Go's
+		// post clause belongs to the loop's scope; the body now has a block of its own.
+		// And an inner loop cleared the label a continue jumps to without putting it
+		// back, so a continue AFTER an inner loop was a plain C continue, skipped the
+		// post, and the loop never ended. The iterations are counted for that reason.
+		name: "a post at the end of the body keeps the loop's scope and its continue",
+		src: `func main() {
+	// The post reads the loop's s, not the body's.
+	s := 1
+	n := 0
+	for i, j := 0, 0; i < 6; i, j = i+s, j+1 {
+		s := 10
+		n += s + j
+	}
+	println(n, s)
+
+	// A continue after an inner loop still runs the post.
+	spins, m := 0, 0
+	for i, j := 0, 0; i < 4; i, j = i+1, j+2 {
+		spins++
+		if spins > 40 {
+			println("the post was skipped")
+			break
+		}
+		for k := 0; k < 2; k++ {
+			m += 100
+		}
+		if i == 1 {
+			continue
+		}
+		m += j
+	}
+	println(m, spins)
+
+	// And one after an inner range loop and an inner loop with a post of its own.
+	xs := [3]int{1, 2, 3}
+	spins, m = 0, 0
+	for i, j := 0, 10; i < 3; i, j = i+1, j-1 {
+		spins++
+		if spins > 40 {
+			println("the post was skipped")
+			break
+		}
+		for _, x := range xs {
+			m += x
+		}
+		for a, b := 0, 0; a < 2; a, b = a+1, b+1 {
+			if b == 0 {
+				continue
+			}
+			m += 1000
+		}
+		if i != 1 {
+			continue
+		}
+		m += j
+	}
+	println(m, spins)
+}
+`,
+		want: "75 1\n810 4\n3027 3\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

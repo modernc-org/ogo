@@ -49,6 +49,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A post statement at the end of the loop body read the body's variables, and a
+  `continue` after an inner loop skipped it.** A multiple-assignment post, `i, j =
+  i+1, j-1`, cannot be C's third clause and stands at the end of the body. There it
+  resolved names in the BODY's scope: `for i, j := 0, 0; i < 6; i, j = i+s, j+1 { s
+  := 10 ... }` stepped by ten, where Go's post clause never sees the body's `s`.
+  The body now has a block of its own. And an inner loop cleared the label a
+  `continue` jumps to without putting it back, so a `continue` AFTER an inner loop
+  was a plain C `continue`, which skipped the post: the loop never ended. Both
+  silent, both as old as the placement.
 - **`ogo fmt` moved a comment that stands ahead of a label to column 0, and spaced
   a shift in a `for` header's init list.** gofmt steps a label out and leaves the
   comment above it with the statements; `ogo fmt` gave the comment the label's
