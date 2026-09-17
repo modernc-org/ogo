@@ -2299,7 +2299,7 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 			// `case v, ok := <-ch:` -- the comma-ok receive's second target, which
 			// the grammar keeps inside PostfixComm, after the comma.
 			c.okTgt, c.hasOk = assignTarget{name: e.soleIdent(q.ast), stars: e.derefStars(q.ast)}, true
-		case q.sym == Selector, q.sym == Index:
+		case q.sym == Selector, q.sym == Index, q.sym == CallSuffix:
 			chain = append(chain, q)
 		case q.sym == 0 && e.f.ch(q.tok) == DEFINE:
 			assigns, c.declare = true, true
@@ -2318,12 +2318,54 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 		return e.selectChan(value, c)
 	}
 	c.send, c.val = true, value
-	if len(chain) != 0 {
-		// `case ports.tx <- v:` -- the channel is a FIELD of the head. A channel is a
-		// pointer to its cell, so the field access is what names it.
-		return e.selectChanField(head, chain, c)
+	if len(chain) != 0 || e.derefStars(head.ast) != "" {
+		// `case ports.tx <- v:`, `case qs[i] <- v:`, `case bus.port(i).ch <- v:` --
+		// the channel is what the head and its chain SPELL, an expression the
+		// clause's own grammar keeps in two pieces. Put back together it is the
+		// operand a receive clause has, and is resolved as one: a field, an element,
+		// a call's result, evaluated once where the select stands (emitSelect).
+		return e.selectChan(e.commChanExpr(head, chain), c)
 	}
 	return e.selectChan(head, c)
+}
+
+// encodeNode is the flat encoding of a non-terminal: its symbol, the length of its
+// children and the children, which is what it(ast) reads back.
+func encodeNode(sym Symbol, children ...[]int32) []int32 {
+	var body []int32
+	for _, c := range children {
+		body = append(body, c...)
+	}
+	return append([]int32{-int32(sym), int32(len(body))}, body...)
+}
+
+// commChanExpr rebuilds the channel of a select SEND clause as an expression. The
+// clause's grammar is the statement's -- an AssignHead and a chain of selectors,
+// indexes and calls, so that it stays LL(1) beside `case v := <-ch:` -- and every
+// question asked of a channel operand is asked of an expression: `{ "*" } (
+// identifier | "(" Expression ")" )` and the chain are exactly a UnaryExpr over a
+// Factor and its FactorSuffix, so that is what is built, tokens and all.
+func (e *emitter) commChanExpr(head Node, chain []Node) Node {
+	var stars, factor []int32
+	for k := range it(head.ast) {
+		switch {
+		case k.sym == 0 && e.f.ch(k.tok) == MUL:
+			stars = append(stars, encodeNode(UnaryOp, []int32{k.tok})...)
+		case k.sym == 0:
+			factor = append(factor, k.tok)
+		default:
+			factor = append(factor, encodeNode(k.sym, k.ast)...)
+		}
+	}
+	if len(chain) != 0 {
+		var suffix []int32
+		for _, step := range chain {
+			suffix = append(suffix, encodeNode(step.sym, step.ast)...)
+		}
+		factor = append(factor, encodeNode(FactorSuffix, suffix)...)
+	}
+	unary := encodeNode(UnaryExpr, stars, encodeNode(Factor, factor))
+	return Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, unary))}
 }
 
 // selectChan resolves the channel a clause polls: a variable, or a field of one --
@@ -2335,33 +2377,6 @@ func (e *emitter) selectChan(n Node, c *selectCase) bool {
 		return false
 	}
 	c.ch, c.elem = text, elem
-	return true
-}
-
-// selectChanField resolves the channel of a SEND clause written on a field,
-// `case ports.tx <- v:`. The head and the selectors arrive separately there, since
-// the clause's own grammar keeps them apart, so they are rejoined here.
-func (e *emitter) selectChanField(head Node, chain []Node, c *selectCase) bool {
-	base := e.soleIdent(head.ast)
-	var fields []string
-	for _, step := range chain {
-		if step.sym != Selector {
-			e.fail("a select send clause takes a channel variable or a field of one")
-			return false
-		}
-		fld := e.soleIdent(step.ast)
-		if fld == "" {
-			e.fail("a select send clause takes a channel variable or a field of one")
-			return false
-		}
-		fields = append(fields, fld)
-	}
-	ct, ok := e.fieldType(base, fields)
-	if base == "" || !ok || !e.isChanCType(ct) {
-		e.fail("a select send clause takes a channel variable or a field of one")
-		return false
-	}
-	c.ch, c.elem = e.fieldAccessC(base, fields), e.chanElemOfCType(ct)
 	return true
 }
 

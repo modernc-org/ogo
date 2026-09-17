@@ -26744,6 +26744,123 @@ func main() {
 }
 `,
 		want: "6 34\n7 34\n8\n9\n",
+	},
+	{
+		// A select's SEND clause took a channel variable or a field of one, and its
+		// grammar took no call: `case bus.port(i).ch <- v` was a syntax error, and an
+		// element, `case qs[i] <- v`, was refused by the emitter. The clause's channel
+		// is now put back together as the expression it spells and resolved as a
+		// receive clause's operand is, so every shape of one works -- a call's result,
+		// a method's, an element, an element's field, a dereference, a parenthesised
+		// head -- and each operand is evaluated once, in source order, where the
+		// select stands: the digits record that.
+		//
+		// The plain send at the end is the statement the clause is written as, over the
+		// same bank of ports (see the case above for the three faults it met).
+		//
+		// Every line prints what real Go prints for the same program, given the
+		// channels it must make.
+		name: "a select send clause on any channel expression",
+		src: `type Port struct {
+	ch chan int
+}
+
+type Bus struct {
+	ports [2]Port
+}
+
+var bus Bus
+var qs [2]chan int
+var direct chan int
+var done chan int
+var calls int
+
+func (b *Bus) port(i int) *Port {
+	calls = calls*10 + 1
+	return &b.ports[i]
+}
+
+func port(i int) *Port {
+	calls = calls*10 + 2
+	return &bus.ports[i]
+}
+
+func pick(i int) int {
+	calls = calls*10 + 3
+	return i
+}
+
+func val(v int) int {
+	calls = calls*10 + 4
+	return v
+}
+
+func drain(ch chan int) {
+	v := <-ch
+	done <- v
+}
+
+func main() {
+	go drain(bus.ports[0].ch)
+	select {
+	case port(0).ch <- val(5):
+		println("call")
+	}
+	println(<-done, calls)
+	calls = 0
+	go drain(qs[1])
+	select {
+	case qs[pick(1)] <- val(6):
+		println("index")
+	}
+	println(<-done, calls)
+	calls = 0
+	go drain(bus.ports[1].ch)
+	select {
+	case bus.port(pick(1)).ch <- val(7):
+		println("method")
+	}
+	println(<-done, calls)
+	calls = 0
+	go drain(bus.ports[1].ch)
+	select {
+	case bus.ports[pick(1)].ch <- val(8):
+		println("chain")
+	}
+	println(<-done, calls)
+	// Every operand is evaluated once, in source order, where the select stands.
+	calls = 0
+	go drain(bus.ports[0].ch)
+	select {
+	case v := <-port(1).ch:
+		println("recv", v)
+	case port(0).ch <- val(9):
+		println("send")
+	}
+	println(<-done, calls)
+	pch := &direct
+	go drain(direct)
+	select {
+	case *pch <- 10:
+		println("deref")
+	}
+	println(<-done)
+	p := &bus.ports[0]
+	go drain(p.ch)
+	select {
+	case (p).ch <- 11:
+		println("paren")
+	}
+	println(<-done)
+	// A plain send through an element's field: the index stands between two fields,
+	// and the channel is one of a bank that its struct's declaration allocates.
+	calls = 0
+	go drain(bus.ports[1].ch)
+	bus.ports[pick(1)].ch <- val(12)
+	println(<-done, calls)
+}
+`,
+		want: "call\n5 24\nindex\n6 34\nmethod\n7 314\nchain\n8 34\nsend\n9 224\nderef\n10\nparen\n11\n12 34\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

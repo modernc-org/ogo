@@ -2228,7 +2228,7 @@
 //	CommHead    = "case" CommOp | "default" .
 //	CommOp      = "<-" Expression
 //		| AssignHead PostfixComm .
-//	PostfixComm = { Selector | Index } ( [ "," AssignHead ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
+//	PostfixComm = { Selector | Index | CallSuffix } ( [ "," AssignHead ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 //
 // (OctoGo Specific): A select polls its clauses in order, retrying the
 // non-blocking form of each communication. A default clause makes the select
@@ -2408,9 +2408,11 @@
 //     stands, as Go evaluates it -- including every clause of a select, whose
 //     operands are evaluated in source order upon entering it.
 //
-//     One position does not admit a call: a select's SEND clause, whose grammar
-//     (PostfixComm) takes selectors and indexes only. "case ws[i].cmd <- v" is a
-//     clause and "case qof(i) <- v" is a syntax error.
+//     A select's SEND clause is written as the send statement is, a head and a
+//     chain of selectors, indexes and calls (PostfixComm), so that the clause stays
+//     LL(1) beside "case v := <-ch"; what the chain spells is the same expression.
+//     "case ws[i].cmd <- v", "case qof(i) <- v" and "case bus.port(i).ch <- v" are
+//     all clauses.
 //
 // # Synchronization via Hardware Locks
 //

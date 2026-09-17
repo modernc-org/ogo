@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A select's send clause takes any channel expression.** `case bus.port(i).ch <-
+  v:` was a syntax error -- the clause's grammar took selectors and indexes and no
+  call -- and `case qs[i] <- v:` was refused ("a select send clause takes a channel
+  variable or a field of one"). The clause's channel is resolved as a receive
+  clause's operand is: a call's result, a method's, an element, an element's field,
+  a dereferenced pointer. Each operand is still evaluated once, in source order,
+  where the select stands.
 - **An array reached through a call's pointer result.** `len(dev().rx)`, `x :=
   dev().rx`, `buf = dev().rx`, `for _, b := range dev().rx`, `take(dev().rx)`,
   `dev().rx == other`, `len(dev().grid[1])` and `b := hold().b` for a defined

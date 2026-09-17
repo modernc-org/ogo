@@ -1,10 +1,12 @@
-// A send's channel is an expression a chain spells: a field, an element, and any run
-// of them. An index BETWEEN two fields, "bus.ports[i].ch <- v", was "cannot send to
-// non-channel" in a statement and a select clause alike: the check flattened the
-// chain to a run of fields and two flags, which cannot say where such an index
-// stands. It is walked a step at a time now, from the head's written type, and what
-// is sent is checked against the element the walk arrives at. A channel behind a
-// pointer-typed field, "p.peer.ch <- v", stopped the older walk at the pointer.
+// A send's channel is an expression a chain spells: a field, an element, a call's
+// result, and any run of them. Two positions fell short of that. A select's SEND
+// clause took selectors and indexes and no call -- "case bus.port(i).ch <- v" was a
+// syntax error, its grammar (PostfixComm) having no CallSuffix. And an index
+// BETWEEN two fields, "bus.ports[i].ch <- v", was "cannot send to non-channel" in a
+// statement and a clause alike: the check flattened the chain to a run of fields
+// and two flags, which cannot say where such an index stands. It is walked a step at
+// a time now, from the head's written type, and what is sent is checked against the
+// element the walk arrives at.
 
 type Port struct {
 	ch   chan int
@@ -31,6 +33,8 @@ func sends() {
 	bus.ports[1].chs[0] <- 7
 	grid[1][0] <- 8
 	select {
+	case port(0).ch <- 1:
+	case bus.port(1).ch <- 2:
 	case bus.ports[1].ch <- 3:
 	case p.peer.ch <- 4:
 	case grid[0][1] <- 5:

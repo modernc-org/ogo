@@ -189,8 +189,8 @@ var errorSets = [...][]Symbol{
 	{InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_002e002e002e},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_002e002e002e},
 	{TOK_002c, TOK_002e002e002e},
-	{Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_003c002d, TOK_003a003d},
-	{TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_003c002d, TOK_003a003d},
+	{CallSuffix, Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
+	{TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
 	{TOK_003d, TOK_003b, TOK_002c, TOK_003a003d},
 	{TOK_003b, TOK_002c, TOK_003a003d},
 	{TOK_003d, TOK_002c, TOK_003a003d},
@@ -5931,7 +5931,7 @@ state2:
 //	State 2
 //		Accept
 //	State 3
-//		on  ":=", "<-", ',', '.', '=', '['
+//		on  ":=", "<-", '(', ',', '.', '=', '['
 //			call PostfixComm and goto state 2
 //
 // CommOp is used internally from Parse.
@@ -5963,7 +5963,7 @@ state2:
 state3:
 	accept, errorSet = false, 8
 	switch Symbol(p.tok.Ch) {
-	case TOK_003a003d, TOK_003c002d, TOK_002c, TOK_002e, TOK_003d, TOK_005b:
+	case TOK_003a003d, TOK_003c002d, TOK_0028, TOK_002c, TOK_002e, TOK_003d, TOK_005b:
 		r = p.add(r, p.PostfixComm())
 		goto state2
 	}
@@ -8554,7 +8554,7 @@ state2:
 
 // PostfixComm grammar:
 //
-//	PostfixComm = { Selector | Index } ( [ "," AssignHead ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
+//	PostfixComm = { Selector | Index | CallSuffix } ( [ "," AssignHead ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 //
 //	State 0
 //		on  ":=", '='
@@ -8567,6 +8567,8 @@ state2:
 //			call Selector and goto state 6
 //		on  '['
 //			call Index and goto state 6
+//		on  '('
+//			call CallSuffix and goto state 6
 //	State 1
 //		on  "<-"
 //			shift and goto state 2
@@ -8592,6 +8594,8 @@ state2:
 //			call Selector and goto state 6
 //		on  '['
 //			call Index and goto state 6
+//		on  '('
+//			call CallSuffix and goto state 6
 //
 // PostfixComm is used internally from Parse.
 func (p *Parser) PostfixComm() (r []int32) {
@@ -8614,6 +8618,9 @@ func (p *Parser) PostfixComm() (r []int32) {
 		goto state6
 	case TOK_005b:
 		r = p.add(r, p.Index())
+		goto state6
+	case TOK_0028:
+		r = p.add(r, p.CallSuffix())
 		goto state6
 	}
 	return p.stop(r, accept, errorSet)
@@ -8669,6 +8676,9 @@ state6:
 		goto state6
 	case TOK_005b:
 		r = p.add(r, p.Index())
+		goto state6
+	case TOK_0028:
+		r = p.add(r, p.CallSuffix())
 		goto state6
 	}
 	return p.stop(r, accept, errorSet)

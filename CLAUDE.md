@@ -524,10 +524,11 @@ literal, `[]int{1, 2, 3}[1:]`; an array-returning call as a package literal elem
 a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); a named ARRAY result returned by name, `func f() (r
 [2]int) { ...; return r }`; a `switch` guard that declares an array, `switch a :=
-[2]int{1, 2}; len(a) {` (the `if` form works); and four grammar gaps needing an egg
-regeneration -- `case port(0).ch <- 5:` in a select, `range []int{...}[1:]` in a for
-header, several VALUES in an if or switch init, `if a, b := 1, 2; a < b {`, and a
-function literal called as a statement, `func() { ... }()`.
+[2]int{1, 2}; len(a) {` (the `if` form works); a send statement whose head is
+parenthesised, `(&bus.ports[1]).ch <- 5`; and three grammar gaps needing an egg
+regeneration -- `range []int{...}[1:]` in a for header, several VALUES in an if or
+switch init, `if a, b := 1, 2; a < b {`, and a function literal called as a
+statement, `func() { ... }()`.
 Two LATENT ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not
