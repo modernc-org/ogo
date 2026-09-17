@@ -26999,6 +26999,48 @@ func main() {
 }
 `,
 		want: "value 3\ndeferred 2\n",
+	},
+	{
+		// A function literal called where it stands, as a statement of its own, which
+		// the grammar had no production for: a statement could not begin with "func".
+		// It is lifted as a literal is anywhere and called by name; arguments are how a
+		// value reaches it, a result is thrown away as a call statement's is, and a
+		// return inside it leaves the literal and not the loop around the statement.
+		name: "a function literal called as a statement",
+		src: `type P struct {
+	x, y int
+}
+
+var total int
+
+func main() {
+	func() {
+		println("called")
+	}()
+	func(n int, s string) {
+		total += n
+		println(s, total)
+	}(5, "added")
+	func(a, b int) int {
+		total += a * b
+		return total
+	}(3, 4)
+	func() P {
+		total++
+		return P{total, 2}
+	}()
+	for i := 0; i < 2; i++ {
+		func(k int) {
+			if k == 1 {
+				return
+			}
+			println("loop", k)
+		}(i)
+	}
+	println(total)
+}
+`,
+		want: "called\nadded 5\nloop 0\n18\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

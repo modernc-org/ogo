@@ -122,6 +122,7 @@ Statement = VarDecl
 	| "<-" Expression
 	| AssignHead Postfix
 	| "defer" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
+	| FuncLiteral { Selector | Index | CallSuffix }
 	| Block
 	| EmptyStatement .
 EmptyStatement = .

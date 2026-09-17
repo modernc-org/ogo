@@ -1,0 +1,37 @@
+// A function literal called where it stands may be a statement of its own, "func(n
+// int) { total += n }(5)", as it may follow a "go" or a "defer": the grammar had no
+// statement that begins with "func". It is checked as a literal is anywhere -- its
+// body in a scope of its own, which captures nothing -- and as a call is: its
+// arguments against its signature.
+
+var total int
+
+func statements() {
+	func() {
+		total++
+	}()
+	func(n int, s string) {
+		total += n + len(s)
+	}(5, "added")
+	func(a, b int) int {
+		return a * b
+	}(3, 4)
+}
+
+func refused() {
+	x := 1
+	func() {
+		// ERROR "a function literal may not capture x from the surrounding function"
+		println(x)
+	}()
+	// ERROR "func literal evaluated but not used"
+	func() {}
+	// ERROR "cannot use .five. of type string as type int in argument to func"
+	func(n int) { println(n) }("five")
+	// ERROR "not enough arguments in call to func"
+	func(n int) { println(n) }()
+	// ERROR "too many arguments in call to func"
+	func(n int) { println(n) }(1, 2)
+	// ERROR "undefined: missing"
+	func(n int) { println(n) }(missing)
+}

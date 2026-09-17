@@ -20,6 +20,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A function literal called as a statement.** `func(n int) { total += n }(5)` was
+  a syntax error: no statement could begin with `func`, though the same literal
+  could follow a `go` or a `defer`. It is lifted and called by name as those are.
+  One with several results is refused for now; bound to a variable it works.
 - **An `if` or `switch` init with a value for each name.** `if a, b := x, y; a < b {`
   and `switch a, b := x, y; a + b {` were syntax errors: the init took one value,
   the destructuring of a call. It is the statement `a, b := x, y` in the block that

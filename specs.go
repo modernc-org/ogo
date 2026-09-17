@@ -1617,6 +1617,14 @@
 // nothing of the scope around it. A cog usually wants few: what it shares, it
 // shares through a channel.
 //
+// A literal called where it stands may also be a statement of its own, its result
+// thrown away as a call statement's is:
+//
+//	func(n int) { total += n }(5)
+//
+// Wherever a literal is called, its arguments are checked against its signature as
+// any call's are.
+//
 // # Operators
 //
 // Operators combine operands into expressions. OctoGo enforces a strict LL(1)
@@ -1969,6 +1977,7 @@
 //		| "<-" Expression
 //		| AssignHead Postfix
 //		| "defer" ( AssignHead | FuncLiteral ) { Selector | Index | CallSuffix }
+//		| FuncLiteral { Selector | Index | CallSuffix }
 //		| Block
 //		| EmptyStatement .
 //

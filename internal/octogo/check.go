@@ -1865,6 +1865,9 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	isFor := false   // a "for" statement, so its body block is checked one loop level deeper
 	isLabel := false // a labeled statement "L: Stmt", handled in the Postfix case
 	sawPostfix := false
+	// A function literal that is the statement's own child, and where it stands.
+	var litTok Token
+	hasLit := false
 	// A "break"/"continue" and its optional label operand, validated after the loop
 	// once both the keyword and any label token have been seen.
 	var breakContinueTok, labelTok Token
@@ -1937,10 +1940,11 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 			f.checkSelect(s, results, c)
 		case FuncLiteral:
 			// A literal standing as a statement's own child is the callee of a "go"
-			// or a "defer". It is checked exactly as one in an expression is, which
-			// is what makes reading a local of the surrounding function the capture
-			// it is here too.
+			// or a "defer", or of the statement itself, `func() { ... }()`. It is
+			// checked exactly as one in an expression is, which is what makes
+			// reading a local of the surrounding function the capture it is here too.
 			f.checkFuncLiterals(s, stmt)
+			litTok, hasLit = f.tok(c.Pos()), true
 		case Expression:
 			// A statement's bare Expression child is either an "if"/"for" guard
 			// (a boolean condition) or the operand of a "<-ch" receive statement,
@@ -2010,6 +2014,9 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	if isGo {
 		f.checkGoStmt(s, head, stmt, kwTok, kwIdx)
 	}
+	if hasLit && !isGo && !isDefer {
+		f.checkLitCallStmt(s, stmt, litTok)
+	}
 	if isDefer {
 		f.checkDeferStmt(s, head, stmt, kwTok, kwIdx)
 	}
@@ -2036,6 +2043,24 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 	if head.sym == AssignHead && !sawPostfix && !isGo && !isDefer && !isReturn && !isRecv && !isLabel && condKw == "" {
 		f.err(f.tok(head.Pos()).Position(), "%s evaluated but not used", f.sourceSpan(head.Pos(), head.End()))
 	}
+}
+
+// checkLitCallStmt checks a statement that is a function literal called where it
+// stands, `func(n int) { ... }(5)`. The literal and its arguments' types are
+// checkFuncLiterals' to judge; what is left is what a call statement asks of its
+// call -- that it IS one, a literal alone being a value nothing uses, and that the
+// names its arguments read resolve.
+func (f *File) checkLitCallStmt(s *Scope, stmt Node, at Token) {
+	if !endsInCall(stmt) {
+		f.err(at.Position(), "func literal evaluated but not used")
+		return
+	}
+	argList, later, _, isCall := f.callInfoAll(stmt)
+	if !isCall {
+		return
+	}
+	f.resolveArgNames(s, later)
+	f.checkCall(s, Token{}, false, argList)
 }
 
 // checkGoStmt checks a "go" statement's launched call. A go statement is

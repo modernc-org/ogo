@@ -10406,6 +10406,40 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	return cname, true
 }
 
+// emitFuncLitStmt emits a function literal called where it stands, as a statement:
+// `func(n int) { total += n }(5)`. The literal is lifted to a function of its own,
+// as one standing in an expression or behind a go or a defer is, and the statement
+// is the call of it by name; what it returns is thrown away, as a call statement's
+// results are. A literal captures nothing of the scope around it -- there is no
+// heap to keep that scope alive in -- so its arguments are how a value reaches it.
+func (e *emitter) emitFuncLitStmt(nodes []Node) {
+	suffix := nodes[1:]
+	if len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		e.fail("a function literal standing as a statement must be called, func() { ... }(), and nothing more")
+		return
+	}
+	// A literal with SEVERAL results is lifted with the result struct a declared
+	// function's pre-pass registers, which a literal called where it stands never
+	// went through: its prototype came out with no return type at all. Bound to a
+	// variable first it takes the function-value lowering, which has one.
+	for n := range it(nodes[0].ast) {
+		if n.sym == Signature {
+			if _, res := e.cSig(n.ast); len(res) > 1 {
+				e.fail("a function literal with several results cannot be called as a statement yet; bind it to a variable and call that")
+				return
+			}
+		}
+	}
+	cname, ok := e.liftFuncLit(nodes[0])
+	if !ok {
+		return
+	}
+	e.ind()
+	e.emit(cname + "(")
+	e.emitCallArgs(cname, suffix[0].ast)
+	e.emit(");\n")
+}
+
 // factorFuncLit returns the FuncLiteral a Factor begins with, and the suffix that
 // follows it -- which is a call, "func() int { ... }()", and nothing else the
 // grammar admits there.
@@ -11675,6 +11709,8 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 		e.emitConstDecl(first.ast, false)
 	case first.sym == 0 && e.f.ch(first.tok) == FOR:
 		e.emitFor(nodes)
+	case first.sym == FuncLiteral:
+		e.emitFuncLitStmt(nodes)
 	case first.sym == IfStmt:
 		e.emitIf(first.ast)
 	case first.sym == SwitchStmt:

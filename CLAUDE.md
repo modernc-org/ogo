@@ -525,9 +525,10 @@ a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); a named ARRAY result returned by name, `func f() (r
 [2]int) { ...; return r }`; a `switch` guard that declares an array, `switch a :=
 [2]int{1, 2}; len(a) {` (the `if` form works); a send statement whose head is
-parenthesised, `(&bus.ports[1]).ch <- 5`; and two grammar gaps needing an egg
-regeneration -- `range []int{...}[1:]` in a for header, and a function literal
-called as a statement, `func() { ... }()`.
+parenthesised, `(&bus.ports[1]).ch <- 5`; a function literal with SEVERAL results
+called where it stands, `v, ok := func() (int, bool) { ... }()` (bound to a variable
+first it works); and one grammar gap needing an egg regeneration, `range
+[]int{...}[1:]` in a for header.
 Two LATENT ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not
