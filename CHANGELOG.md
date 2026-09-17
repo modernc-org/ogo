@@ -49,6 +49,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo fmt` moved a comment that stands ahead of a label to column 0, and spaced
+  a shift in a `for` header's init list.** gofmt steps a label out and leaves the
+  comment above it with the statements; `ogo fmt` gave the comment the label's
+  indent, as it rightly does for a comment above a `case`. And `for i, j := 0,
+  n<<1; ...` was written `n << 1`: gofmt prints a binary operator tight inside an
+  assignment of several values to several names, which the formatter knew for the
+  statement and for the post clause and not for the init clause. Both were found by
+  the corpus check against gofmt, in run cases written for other fixes.
 - **A guarded compound assignment through a call's result.** `reg().u8 <<= s`,
   `reg().i32 >>= s` and `reg().u8 /= d` -- the operators whose C and Go answers
   differ, written through a helper that names the target twice -- were refused

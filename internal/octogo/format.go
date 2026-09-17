@@ -1264,6 +1264,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				sep := tok.SepBytes()
 				src := normalizedNumber(Symbol(tok.Ch), tok.SrcBytes())
 				var indentDelta int32
+				isLabel := false
 				if n == c.undentDeclOpen || n == c.undentDeclClose {
 					indentDelta = -1 // a grouped declaration's keyword and closing ")"
 				}
@@ -1315,6 +1316,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					if Symbol(f.p.Token(tokIdx+1).Ch) == COLON && !c.inLiteralBraces &&
 						(f.prevTok == SEMICOLON || f.prevTok == LBRACE || f.prevTok == COLON) {
 						indentDelta = -1
+						isLabel = true
 					}
 				}
 
@@ -1336,6 +1338,13 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				// one level out from what surrounds them -- was indented with the body
 				// instead, which is not where gofmt puts it.
 				sepIndent := c.indentLevel + indentDelta
+				if isLabel {
+					// A LABEL is the exception: gofmt steps the label out and leaves a
+					// comment ahead of it with the statements, where a comment ahead of
+					// a "case" steps out with it. Taking the delta here wrote
+					// "// the outer loop" in column 0 above "outer:" one level in.
+					sepIndent = c.indentLevel
+				}
 				if n == c.indentSepForIndex {
 					sepIndent++
 				}
@@ -1691,6 +1700,8 @@ func (f *formatter) computeTightOps(ast []int32, depth int) {
 				d++
 			}
 			f.computeTightOps(n.ast, d)
+		case ForHeader:
+			f.forHeaderTightOps(n, depth)
 		case ForPost:
 			d := depth
 			if f.forPostMultiAssign(n.ast) {
@@ -1925,6 +1936,81 @@ func multiAssign(ast []int32) bool {
 	}
 	count(ast)
 	return lhs > 1 && rhs > 1
+}
+
+// forHeaderTightOps is computeTightOps for a for header whose INIT clause assigns
+// several values to several names, `for i, j := 0, n<<1; i < j; ...`. go/printer
+// raises the depth for that assignment's two sides, as it does for the statement
+// (multiAssign) and the post (forPostMultiAssign), and for nothing else in the
+// header; unsaid, the init's `n << 1` was spaced where gofmt writes it tight.
+//
+// The clause's first name is the header's own child and everything after it -- the
+// other names, the values, the condition and the post -- is the ForRest beside it,
+// flat, so the init's extent is read off the tokens: it ends at the first ";". Any
+// other header takes the ordinary walk.
+func (f *formatter) forHeaderTightOps(h Node, depth int) {
+	kids := slices.Collect(it(h.ast))
+	var rest Node
+	for _, k := range kids {
+		if k.sym == ForRest {
+			rest = k
+		}
+	}
+	lhs, rhs, seenOp := 1, 0, false
+	if rest.sym == ForRest {
+	count:
+		for c := range it(rest.ast) {
+			switch {
+			case c.sym == HeaderExpression || c.sym == Expression:
+				if seenOp {
+					rhs++
+				} else {
+					lhs++
+				}
+			case c.sym == 0:
+				switch Symbol(f.p.Token(c.tok).Ch) {
+				case ASSIGN, DEFINE:
+					seenOp = true
+				case SEMICOLON:
+					break count
+				}
+			}
+		}
+	}
+	if lhs < 2 || rhs < 2 {
+		f.computeTightOps(h.ast, depth)
+		return
+	}
+	for _, k := range kids {
+		switch k.sym {
+		case HeaderExpression, Expression:
+			f.tightExpr(k, depth+1) // the first name
+		case ForRest:
+			init := true
+			for c := range it(k.ast) {
+				switch {
+				case c.sym == 0:
+					if Symbol(f.p.Token(c.tok).Ch) == SEMICOLON {
+						init = false
+					}
+				case c.sym == HeaderExpression || c.sym == Expression:
+					d := depth
+					if init {
+						d++
+					}
+					f.tightExpr(c, d)
+				case c.sym == ForPost:
+					d := depth
+					if f.forPostMultiAssign(c.ast) {
+						d++
+					}
+					f.computeTightOps(c.ast, d)
+				default:
+					f.computeTightOps(c.ast, depth)
+				}
+			}
+		}
+	}
 }
 
 // forPostMultiAssign is multiAssign for the ForPost production, where both sides
