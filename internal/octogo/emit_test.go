@@ -9440,6 +9440,8 @@ var g Box
 
 var gout Out
 
+var gs [1]Box
+
 var back [4]int
 
 `
@@ -9503,7 +9505,255 @@ func main() {
 `,
 			want: "cannot store a slice backed by local a",
 		},
+		// A TYPE-ELIDED element is a literal with no expression around it, and the
+		// walk asked only expressions: every one of these was accepted, at every sink,
+		// where the same value with the element's type written out was refused.
+		{
+			name: "an elided element, stored",
+			src: `func leak() {
+	var a [4]int
+	gs = [1]Box{{a[:]}}
+}
+
+func main() {
+	leak()
+	println(len(gs[0].d))
+}
+`,
+			want: "cannot store a slice backed by local a",
+		},
+		{
+			name: "an elided keyed element holding a slice literal, stored",
+			src: `func leak() {
+	gs = [1]Box{0: {d: []int{5, 6}}}
+}
+
+func main() {
+	leak()
+	println(len(gs[0].d))
+}
+`,
+			want: "cannot store a slice literal",
+		},
+		{
+			name: "an elided element, returned",
+			src: `func leak() [1]Box {
+	var a [4]int
+	return [1]Box{{a[:]}}
+}
+
+func main() {
+	gs = leak()
+	println(len(gs[0].d))
+}
+`,
+			want: "cannot return a slice backed by local a",
+		},
+		{
+			name: "an elided element, passed to a function that keeps it",
+			src: `func keep(bs [1]Box) { gs = bs }
+
+func leak() {
+	var a [4]int
+	keep([1]Box{{d: a[:]}})
+}
+
+func main() {
+	leak()
+	println(len(gs[0].d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "an elided element two literals deep",
+			src: `var gouts [1]Out
+
+func leak() {
+	var a [4]int
+	gouts = [1]Out{{in: Box{a[:]}}}
+}
+
+func main() {
+	leak()
+	println(len(gouts[0].in.d))
+}
+`,
+			want: "cannot store a slice backed by local a",
+		},
+		{
+			name: "an elided element, ranged over and stored",
+			src: `func leak() {
+	var a [4]int
+	for _, b := range [1]Box{{d: a[:]}} {
+		g = b
+	}
+}
+
+func main() {
+	leak()
+	println(len(g.d))
+}
+`,
+			want: "cannot store local b, which holds a pointer into local a",
+		},
+		// The literal READ THROUGH A CHAIN hands out an element, or a part of one.
+		{
+			name: "an element read out of the literal, stored",
+			src: `func leak() {
+	var a [4]int
+	g = [1]Box{{a[:]}}[0]
+}
+
+func main() {
+	leak()
+	println(len(g.d))
+}
+`,
+			want: "cannot store a slice backed by local a",
+		},
+		{
+			name: "a field of an element read out of a slice literal, returned",
+			src: `func leak(i int) []int {
+	var a [4]int
+	return []Box{Box{a[:]}, Box{a[1:]}}[i].d
+}
+
+func main() {
+	g.d = leak(1)
+	println(len(g.d))
+}
+`,
+			want: "cannot return a slice backed by local a",
+		},
+		{
+			name: "an element read out of the literal, sent",
+			src: `var ch chan Box
+
+func leak() {
+	var a [4]int
+	ch <- [1]Box{{d: a[:]}}[0]
+}
+
+func main() {
+	go leak()
+	g = <-ch
+	println(len(g.d))
+}
+`,
+			want: "cannot send a slice backed by local a",
+		},
+		{
+			name: "an element read out of the literal, launched",
+			src: `var done chan int
+
+func work(b Box) { done <- len(b.d) }
+
+func leak() {
+	var a [4]int
+	go work([1]Box{{d: a[:]}}[0])
+}
+
+func main() {
+	leak()
+	println(<-done)
+}
+`,
+			want: "cannot pass a slice backed by local a to a goroutine",
+		},
+		// An ARRAY declared from such a literal holds what its elements hold. Assigning
+		// the literal marked the variable; declaring it from one did not.
+		{
+			name: "an array declared from the literal, stored",
+			src: `func leak() {
+	var a [4]int
+	v := [1]Box{Box{a[:]}}
+	gs = v
+}
+
+func main() {
+	leak()
+	println(len(gs[0].d))
+}
+`,
+			want: "cannot store local v, which holds a pointer into local a",
+		},
+		{
+			name: "an array declared with var from the literal, an element returned",
+			src: `func leak() Box {
+	var a [4]int
+	var v = [1]Box{{a[:]}}
+	return v[0]
+}
+
+func main() {
+	g = leak()
+	println(len(g.d))
+}
+`,
+			want: "cannot return v[0], which holds a pointer into local a",
+		},
+		{
+			name: "an array of slices declared from the literal, an element stored",
+			src: `func leak() {
+	var a [4]int
+	v := [1][]int{a[:]}
+	g.d = v[0]
+}
+
+func main() {
+	leak()
+	println(len(g.d))
+}
+`,
+			want: "cannot store v[0], which holds a pointer into local a",
+		},
 		// Storage that outlives the frame carries freely, in a literal as anywhere.
+		{
+			name: "package backing in an elided element",
+			src: `func fill() [1]Box { return [1]Box{{back[:]}} }
+
+func main() {
+	gs = [1]Box{{d: back[1:]}}
+	g = [1]Box{{back[:]}}[0]
+	v := [1]Box{{back[:]}}
+	gs = v
+	bs := fill()
+	println(len(gs[0].d), len(g.d), len(bs[0].d))
+}
+`,
+		},
+		// What is read out of the literal decides, not what the literal holds: a
+		// scalar carries nothing, whatever stood beside it.
+		{
+			name: "a scalar read out of a literal holding a reference",
+			src: `type Rec struct {
+	d []int
+	n int
+}
+
+var gn int
+
+func count() int {
+	var a [4]int
+	gn = [1]Rec{{d: a[:], n: 3}}[0].n
+	return len([1]Rec{{d: a[:], n: 3}}[0].d)
+}
+
+func main() { println(count(), gn) }
+`,
+		},
+		{
+			name: "an array holding a reference, used where it stands",
+			src: `func use(bs [1]Box) int { return len(bs[0].d) }
+
+func main() {
+	var a [4]int
+	v := [1]Box{{a[:]}}
+	println(len(v[0].d), use(v), use([1]Box{{d: a[:]}}))
+}
+`,
+		},
 		{
 			name: "package backing",
 			src: `func fill() Box { return Box{back[:]} }

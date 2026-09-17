@@ -13058,6 +13058,14 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		} else {
 			e.shadow(name)
 			e.arrays[name] = a
+			// What the elements refer to, the variable holds: `v := [1]H{{xs: a[:]}}`
+			// is a holder of a's storage exactly as `v[0].xs = a[:]` makes it one. An
+			// ASSIGNMENT marked it (noteFrameHolder) and the declaration did not, so
+			// declaring the array and then storing it, or an element of it, in a
+			// package variable carried the slice out of the frame.
+			if r, isRef := e.frameRefInLitNode(lit); isRef {
+				e.frameHolder[name] = r.origin
+			}
 		}
 		// A zero-length array has nothing to initialize, and "{0}" names an element
 		// it does not have: the target's C compiler warns "Extra initializers for
@@ -32744,6 +32752,16 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	if r, ok := e.frameRefInLit(ast); ok {
 		return r, true
 	}
+	// The same literal READ THROUGH A CHAIN, `[1]H{{xs: a[:]}}[0]` or `[]H{...}[i].xs`:
+	// what comes out is an element or a part of one, and carries what the elements
+	// carry. Nothing looked, so `g = [1]H{{xs: a[:]}}[0]` stored what `g = H{xs:
+	// a[:]}` is refused for. The value's TYPE separates a read that can carry a
+	// reference from one that cannot, as it does for a field read out of a marked
+	// holder below; a value with no C type to ask -- a row of the literal -- is taken
+	// to carry one.
+	if r, ok := e.litChainFrameRef(ast); ok {
+		return r, true
+	}
 	// Reading a field OUT of a marked holder hands on the reference the holder
 	// carries. `b.d = a[:]` marks b, and handing b on is refused -- but `g = b.d` is
 	// the same header by another spelling, and it was accepted at every sink: a
@@ -32916,12 +32934,46 @@ func (e *emitter) frameRefInLit(ast []int32) (frameRef, bool) {
 	if !ok {
 		return frameRef{}, false
 	}
+	return e.frameRefInLitNode(lit)
+}
+
+// frameRefInLitNode is frameRefInLit for the literal's own node, which is all a
+// TYPE-ELIDED element has: `{xs: a[:]}` standing in `[1]H{{xs: a[:]}}` is a
+// CompositeLit and no expression, so asking frameRefOf about it asked about nothing
+// and every elided element was passed over. `gh = [1]H{{xs: a[:]}}` stored a slice of
+// a local array in a package variable where `gh = [1]H{H{xs: a[:]}}`, the same value
+// with the type written out, was refused -- and the elided spelling is the one a
+// program uses.
+func (e *emitter) frameRefInLitNode(lit Node) (frameRef, bool) {
 	for _, el := range compositeLitElements(lit) {
+		if el.value.sym == CompositeLit {
+			if r, isRef := e.frameRefInLitNode(el.value); isRef {
+				return r, true
+			}
+			continue
+		}
 		if r, isRef := e.frameRefOf(el.value.ast); isRef {
 			return r, true
 		}
 	}
 	return frameRef{}, false
+}
+
+// litChainFrameRef is frameRefOf for a bracketed literal read through a chain of
+// indexes and selectors (see factorLitIndexed), which is decided by the elements.
+func (e *emitter) litChainFrameRef(ast []int32) (frameRef, bool) {
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return frameRef{}, false
+	}
+	_, lit, _, ok := e.factorLitIndexed(fac)
+	if !ok {
+		return frameRef{}, false
+	}
+	if ct, typed := e.inferNode(fac); typed && !e.carriesReference(ct) {
+		return frameRef{}, false
+	}
+	return e.frameRefInLitNode(lit)
 }
 
 // frameRefIn finds the first of several expressions that reaches this frame's storage.

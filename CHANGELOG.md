@@ -260,6 +260,15 @@ program handed out a reference to storage that was gone by the time it was read.
   none of the shapes asked about. The rules look through them now, as they look
   through `&(x)`; and so does the checker, for which `return (&x)` was "cannot use
   (&x) (a value) as *int value" -- a refusal, but of the wrong thing.
+- **A reference inside a literal's elided element, or read out of a literal.** `gs =
+  [1]Box{{a[:]}}` stored a slice of a local array in a package variable, where the
+  same value with the element's type written out, `[1]Box{Box{a[:]}}`, was refused:
+  a type-elided element is a literal with no expression around it, and only
+  expressions were asked. A literal read through a suffix, `g = [1]Box{{a[:]}}[0]`
+  or `return []Box{...}[i].d`, was asked nothing at all; and an array DECLARED from
+  such a literal, `v := [1]Box{{a[:]}}`, held the reference unmarked, so `gs = v`
+  and `g = v[0]` carried it out. All are refused at every sink: a return, a store,
+  a send, a `go`, an argument the callee keeps.
 
 ### Verified
 
