@@ -10447,6 +10447,15 @@ func (f *File) soleUnaryExpr(n Node) (Node, bool) {
 		}
 		n = next
 	}
+	// Parentheses around the whole of it change nothing: `(&x)` is `&x`. Left
+	// standing they hid the address from everything that asks for one -- `return
+	// (&x)` was "cannot use (&x) (a value) as *int value", and the escape check that
+	// refuses the address of a local never saw it.
+	if kids := slices.Collect(it(n.ast)); len(kids) == 1 && kids[0].sym == Factor {
+		if in := slices.Collect(it(kids[0].ast)); len(in) == 3 && in[0].sym == 0 && f.ch(in[0].tok) == LPAREN && in[1].sym == Expression {
+			return f.soleUnaryExpr(in[1])
+		}
+	}
 	return n, true
 }
 

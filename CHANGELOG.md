@@ -248,6 +248,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   reading through `p`, so a nil p reached the method with a wild receiver where
   Go panics at the selector.
 
+### Behaviour changes
+
+Each of these is the compiler refusing a program it used to accept, and each such
+program handed out a reference to storage that was gone by the time it was read.
+
+- **Parentheses hide nothing from the lifetime rules.** `return (a[:])` for a local
+  array was accepted, and so were `g = (a[:])`, `keep((a[:]))`, `ch <- (a[:])`, `go
+  work((a[:]))`, `return ([]int{1, 2, 3})`, `return (s)[1:]` and a declaration from
+  any of them: every rule asks about the SHAPE of a value, and parentheses gave it
+  none of the shapes asked about. The rules look through them now, as they look
+  through `&(x)`; and so does the checker, for which `return (&x)` was "cannot use
+  (&x) (a value) as *int value" -- a refusal, but of the wrong thing.
+
 ### Verified
 
 - Three domain programs over the accessor shapes, each measured against Go with

@@ -12286,11 +12286,158 @@ func main() {
 }
 `,
 		},
+		// PARENTHESES change nothing about a value and hid all of it: every question
+		// here is asked of a shape, and `(a[:])` has none of the shapes asked about.
+		// Each of these was accepted until 2026-09-17, at every sink there is.
+		{
+			name: "parenthesized, returned",
+			src: `func mk() []int {
+	var a [4]int
+	return (a[:])
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local a",
+		},
+		{
+			name: "parenthesized twice, stored",
+			src: `var g []int
+
+func leak() {
+	var a [4]int
+	g = ((a[:]))
+}
+
+func main() {
+	leak()
+	println(len(g))
+}
+`,
+			want: "cannot store a slice backed by local a in package variable g",
+		},
+		{
+			name: "a parenthesized base, sliced and returned",
+			src: `func mk() []int {
+	var a [4]int
+	s := a[:]
+	return (s)[1:]
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice backed by local s",
+		},
+		{
+			name: "a parenthesized literal, returned",
+			src: `func mk() []int {
+	return ([]int{1, 2, 3})
+}
+
+func main() { println(len(mk())) }
+`,
+			want: "cannot return a slice literal",
+		},
+		{
+			name: "parenthesized, passed to a function that keeps it",
+			src: `var g []int
+
+func keep(xs []int) { g = xs }
+
+func leak() {
+	var a [4]int
+	keep((a[:]))
+}
+
+func main() {
+	leak()
+	println(len(g))
+}
+`,
+			want: "cannot pass a slice backed by local a to keep",
+		},
+		{
+			name: "parenthesized, sent",
+			src: `var ch chan []int
+
+func leak() {
+	var a [4]int
+	ch <- (a[:])
+}
+
+func main() {
+	go leak()
+	println(len(<-ch))
+}
+`,
+			want: "cannot send a slice backed by local a",
+		},
+		{
+			name: "parenthesized, launched",
+			src: `var done chan int
+
+func work(xs []int) { done <- len(xs) }
+
+func leak() {
+	var a [4]int
+	go work((a[:]))
+}
+
+func main() {
+	leak()
+	println(<-done)
+}
+`,
+			want: "cannot pass a slice backed by local a to a goroutine",
+		},
+		{
+			name: "a parenthesized address, returned",
+			src: `func mk() *int {
+	x := 1
+	return (&x)
+}
+
+func main() { println(*mk()) }
+`,
+			want: "cannot return the address of local variable x",
+		},
+		{
+			name: "the address of a parenthesized local, stored",
+			src: `var gp *int
+
+func leak() {
+	x := 1
+	p := &(x)
+	gp = p
+}
+
+func main() {
+	leak()
+	println(*gp)
+}
+`,
+			want: "which holds a pointer into local x",
+		},
+		{
+			name: "a parenthesized package array, returned",
+			src: `var back [4]int
+
+func mk() []int {
+	return (back[1:])
+}
+
+func main() { println(len(mk())) }
+`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err != nil {
+				// The checker refuses some of these first, in the same words.
+				if test.want != "" && strings.Contains(err.Error(), test.want) {
+					return
+				}
 				t.Fatalf("Build: %v", err)
 			}
 			var buf bytes.Buffer

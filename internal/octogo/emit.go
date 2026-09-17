@@ -9665,6 +9665,14 @@ func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
 	// The operand is a Factor: its base identifier is the variable whose storage the
 	// address reaches, whatever field or index suffix follows.
 	fac := kids[len(kids)-1]
+	// `&(x)` and `&(b.f)` are `&x` and `&b.f`.
+	for {
+		inner, isFac := e.soleFactorNode(e.unparenExpr(fac.ast))
+		if !isFac || len(inner.ast) == len(fac.ast) {
+			break
+		}
+		fac = inner
+	}
 	suffixed := containsSym(slices.Collect(it(fac.ast)), FactorSuffix)
 	for n := range it(fac.ast) {
 		if n.sym == 0 && e.f.ch(n.tok) == IDENT {
@@ -32416,6 +32424,10 @@ func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
 // a package variable, a parameter, a call's result -- is left alone, so a shape
 // this does not model is accepted rather than wrongly refused.
 func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
+	// Parentheses change nothing about a value, and every question below is asked
+	// of a SHAPE, which they hide: `return (a[:])` was returned, stored, sent and
+	// launched where `return a[:]` was refused.
+	ast = e.unparenExpr(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		return name, e.frameBacked[name]
 	}
@@ -32438,7 +32450,8 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	kids := slices.Collect(it(fac.ast))
+	// `(a)[1:]` and `(s)[1:]` are `a[1:]` and `s[1:]`.
+	kids := e.unparenKids(slices.Collect(it(fac.ast)))
 	// `(*p)[:]`, the written-out form: what it reaches is what p points at, which is
 	// the holder mark's business rather than the pointer's own storage.
 	if name, steps, isDeref := e.factorDerefChain(kids); isDeref && e.endsInSliceStep(steps) {
@@ -32684,6 +32697,9 @@ func (r frameRef) returnAdvice() string {
 // on without being one, and following it per field would mean tracking provenance
 // per field, so the variable carries the mark instead.
 func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
+	// Through any parentheses, which name nothing and hid everything: see
+	// sliceBackingIsFrame. Every sink and every mark asks through here.
+	ast = e.unparenExpr(ast)
 	if name, frame := e.sliceBackingIsFrame(ast); frame {
 		return sliceRef(name), true
 	}
@@ -32749,7 +32765,7 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// structs. What is counted here is not the type but the PROVENANCE: a string that
 	// came out of a marked holder, which an ordinary one never does.
 	if fac, isFac := e.soleFactorNode(ast); isFac {
-		kids := slices.Collect(it(fac.ast))
+		kids := e.unparenKids(slices.Collect(it(fac.ast)))
 		if base, steps, isCall := e.factorCall(kids); isCall && len(steps) == 2 &&
 			steps[0].sym == Selector && steps[1].sym == CallSuffix {
 			if origin := e.frameHolder[base]; origin != "" {
@@ -32761,7 +32777,7 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		}
 	}
 	if fac, isFac := e.soleFactorNode(ast); isFac {
-		if base, steps, isChain := e.factorAccessChain(slices.Collect(it(fac.ast))); isChain {
+		if base, steps, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain {
 			if origin := e.frameHolder[base]; origin != "" {
 				// The whole chain, not a field path: an ARRAY of slices or of structs
 				// is marked on the array, and `xs[0]` and `bs[1].d` reach out of it
