@@ -762,6 +762,13 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 		vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
 		vd.elemTypeName = f.elemTypeName(s, tn)
 		vd.elemTypeNode = f.arrayElemTypeNode(tn)
+		// A receiver of a defined FUNCTION type is a function, called in the body as
+		// any parameter of that type is: `func (o Op) Twice(x int) int { return
+		// o(o(x)) }`, the http.HandlerFunc pattern. Recorded with no signature it was
+		// "cannot call non-function o" until 2026-09-19.
+		vd.funcSig = f.funcSig(s, tn)
+		vd.isFunc = vd.funcSig != nil
+		vd.declType = tn
 	}
 	if err := s.add(vd); err != nil {
 		f.err(tok.Position(), "%v", err)

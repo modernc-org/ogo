@@ -523,7 +523,8 @@ learned to forget the other kinds (`shadow`) and to read its value first
 (`declareCopy`).
 
 Known open items, all loud refusals or design walls (2026-09-17): an
-array-returning call as a package literal element;
+array-returning call as a package literal element; a METHOD EXPRESSION, `T.M` or
+`(*T).M` as a value or called ("cannot use type T as a value", 2026-09-19);
 a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); a named ARRAY result returned by name, `func f() (r
 [2]int) { ...; return r }`; a `switch` or `for` init that declares an array, `switch a :=

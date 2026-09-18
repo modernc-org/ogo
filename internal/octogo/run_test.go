@@ -30410,6 +30410,122 @@ func main() {
 `,
 		want: "2\n",
 	}, {
+		// Function semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-19): variadic calls with none, several and a spread slice, which
+		// the callee writes through; a two-result call forwarded as the arguments of
+		// another; named results returned bare and swapped; a deferred call changing
+		// a named result through its address after the return set it; recursion and
+		// mutual recursion; a method on a defined function type calling its own
+		// receiver -- "cannot call non-function o" until then -- through a literal, a
+		// package variable and a converted function.
+		name: "function semantics: variadics, named results, a deferred result change, recursion and methods on a function type",
+		src: `type Op func(int) int
+
+func (o Op) Twice(x int) int {
+	return o(o(x))
+}
+
+type Counter struct {
+	n int
+}
+
+func (c *Counter) Inc() {
+	c.n++
+}
+
+func (c Counter) Get() int {
+	return c.n
+}
+
+func sum(xs ...int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func zeroFirst(xs ...int) {
+	if len(xs) > 0 {
+		xs[0] = 0
+	}
+}
+
+func pair() (int, int) {
+	return 3, 4
+}
+
+func add(a, b int) int {
+	return a + b
+}
+
+func named() (x, y int) {
+	x = 1
+	y = 2
+	return
+}
+
+func swapped() (x, y int) {
+	x, y = 1, 2
+	return y, x
+}
+
+func inc(p *int) {
+	*p = *p + 1
+}
+
+func deferred() (r int) {
+	defer inc(&r)
+	r = 5
+	return r * 2
+}
+
+func fact(n int) int {
+	if n <= 1 {
+		return 1
+	}
+	return n * fact(n-1)
+}
+
+func even(n int) bool {
+	if n == 0 {
+		return true
+	}
+	return odd(n - 1)
+}
+
+func odd(n int) bool {
+	if n == 0 {
+		return false
+	}
+	return even(n - 1)
+}
+
+var step Op = func(x int) int { return x + 3 }
+
+func main() {
+	s := []int{1, 2, 3}
+	println("F1", sum(), sum(1), sum(1, 2, 3), sum(s...), sum(s[1:]...))
+	zeroFirst(s...)
+	zeroFirst()
+	zeroFirst(7, 8)
+	println("F2", s[0], s[1], add(pair()))
+	a, b := named()
+	c, d := swapped()
+	println("F3", a, b, c, d, deferred())
+	println("F4", fact(10), even(10), odd(7), even(7))
+	double := Op(func(x int) int { return x * 2 })
+	println("F5", double.Twice(3), step.Twice(1), Op(fact).Twice(3))
+	step = double
+	println("F6", step(21), step.Twice(1))
+	var ctr Counter
+	ctr.Inc()
+	ctr.Inc()
+	println("F7", ctr.Get(), ctr.n)
+}
+`,
+		want: "F1 0 1 6 6 5\nF2 0 2 7\nF3 1 2 2 1 11\nF4 3628800 true true false\nF5 12 7 720\nF6 42 4\nF7 2 2\n",
+	}, {
 		// Interface semantics measured against Go on the host and a P2-EDGE
 		// (2026-09-19): an interface embedding two others, a value assigned from
 		// one to another, comma-ok assertions to an interface and to a concrete

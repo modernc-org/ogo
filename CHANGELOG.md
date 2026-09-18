@@ -135,6 +135,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method on a function type could not call its receiver.** `func (o Op)
+  Twice(x int) int { return o(o(x)) }` for a `type Op func(int) int` -- the
+  http.HandlerFunc pattern -- was "cannot call non-function o": the checker
+  recorded every property of the receiver's type but its signature.
 - **`_, ok := x.(Reader)` built the value it discards.** A comma-ok assertion to an
   interface type declared the asserted value and filled it even when its target was
   the blank identifier -- a variable set and never read, which the host's compiler
@@ -522,6 +526,12 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Function semantics against Go on the host and a P2-EDGE: variadic calls with
+  none, several and a spread slice the callee writes through, a two-result call
+  forwarded as another's arguments, named results returned bare and swapped, a
+  deferred call changing a named result through its address after the return set
+  it, recursion and mutual recursion. One fault, above; the program is a run case.
+  Method expressions, `T.M` and `(*T).M`, are refused, and recorded as open.
 - Interface semantics against Go on the host and a P2-EDGE: interfaces embedding
   interfaces, assignment between interface types, comma-ok assertions to interface
   and concrete types, type switches with interface cases and nil, methods promoted

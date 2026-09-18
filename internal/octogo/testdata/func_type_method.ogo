@@ -1,0 +1,22 @@
+// COMPILE
+
+// A method on a defined function type calls its receiver, as a parameter of that
+// type is called -- the http.HandlerFunc pattern.
+
+type Handler func(int) int
+
+func (h Handler) Serve(x int) int {
+	return h(x) + h(x+1)
+}
+
+type Pred func(int) bool
+
+func (p *Pred) Not(x int) bool {
+	return !(*p)(x)
+}
+
+func main() {
+	var h Handler = func(x int) int { return x * 2 }
+	var even Pred = func(x int) bool { return x%2 == 0 }
+	println(h.Serve(3), even.Not(3))
+}
