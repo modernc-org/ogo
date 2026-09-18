@@ -9936,6 +9936,126 @@ func TestEmitCLitSliceUnaddressable(t *testing.T) {
 	}
 }
 
+// TestEmitCFrameRefSinks is TestEmitCFrameRefForms turned around: one form, the
+// short declaration, and every SINK a bound reference can leave the frame by -- a
+// store, a send, a `go`, a callee that keeps it, the same deferred, a field and an
+// element of a package variable, and a callee that stores what a helper hands back
+// of it, `g = id(v)`. The last is what found the summaries following no helper:
+// the call site of `g = id(a[:])` had always followed it. Each cell has a control
+// over package storage that must compile.
+func TestEmitCFrameRefSinks(t *testing.T) {
+	const decls = `type Box struct {
+	d []int
+}
+
+type Any interface{}
+
+type W struct {
+	fslice  []int
+	faddr   *int
+	fstruct Box
+	farray  [1]Box
+	fiface  Any
+}
+
+var back [4]int
+
+var gx int
+
+var gw W
+
+var done chan int
+
+var gslice []int
+var gaddr *int
+var gstruct Box
+var garray [1]Box
+var giface Any
+
+var chslice chan []int
+var chaddr chan *int
+var chstruct chan Box
+var charray chan [1]Box
+var chiface chan Any
+
+var gaslice [1][]int
+var gaaddr [1]*int
+var gastruct [1]Box
+var gaarray [1][1]Box
+var gaiface [1]Any
+
+func workslice(v []int) { done <- len(v) }
+func workaddr(v *int) { done <- *v }
+func workstruct(v Box) { done <- len(v.d) }
+func workarray(v [1]Box) { done <- len(v[0].d) }
+func workiface(v Any) { done <- 1 }
+
+func keepslice(v []int) { gslice = v }
+func keepaddr(v *int) { gaddr = v }
+func keepstruct(v Box) { gstruct = v }
+func keeparray(v [1]Box) { garray = v }
+func keepiface(v Any) { giface = v }
+
+func retslice(v []int) { gslice = idslice(v) }
+func retaddr(v *int) { gaddr = idaddr(v) }
+func retstruct(v Box) { gstruct = idstruct(v) }
+func retarray(v [1]Box) { garray = idarray(v) }
+func retiface(v Any) { giface = idiface(v) }
+
+func idslice(v []int) []int { return v }
+func idaddr(v *int) *int { return v }
+func idstruct(v Box) Box { return v }
+func idarray(v [1]Box) [1]Box { return v }
+func idiface(v Any) Any { return v }
+
+`
+	kinds := []struct{ name, v, okV string }{
+		{"slice", "a[:]", "back[:]"},
+		{"addr", "&x", "&gx"},
+		{"struct", "Box{a[:]}", "Box{back[:]}"},
+		{"array", "[1]Box{{a[:]}}", "[1]Box{{back[:]}}"},
+		{"iface", "Any(&x)", "Any(&gx)"},
+	}
+	sinks := []struct{ name, stmt string }{
+		{"store", "g{K} = s"},
+		{"send", "ch{K} <- s"},
+		{"go", "go work{K}(s)"},
+		{"keep", "keep{K}(s)"},
+		{"defer", "defer keep{K}(s)"},
+		{"field", "gw.f{K} = s"},
+		{"element", "ga{K}[0] = s"},
+		{"returned by a helper", "ret{K}(s)"},
+	}
+	emit := func(src string) error {
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			return err
+		}
+		return EmitC(pkg, io.Discard, Checked())
+	}
+	for _, k := range kinds {
+		for _, sink := range sinks {
+			program := func(v string) string {
+				return decls + "func bind() {\n\tvar a [4]int\n\tx := 1\n\ta[0] = x\n\ts := " + v + "\n\t" +
+					strings.ReplaceAll(sink.stmt, "{K}", k.name) + "\n}\n\nfunc main() {\n\tbind()\n}\n"
+			}
+			t.Run(k.name+"/"+sink.name, func(t *testing.T) {
+				if err := emit(program(k.okV)); err != nil {
+					t.Fatalf("the control over package storage is refused: %v", err)
+				}
+				err := emit(program(k.v))
+				switch {
+				case err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", program(k.v))
+				case !strings.Contains(err.Error(), "outlive"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				}
+			})
+		}
+	}
+}
+
 // TestEmitCCalleeKeepsEscape: a reference to this frame handed to a callee that
 // keeps it, by every route that asked nothing until 2026-09-18. A deferred call,
 // which is checked at the replay, after the body's scope has been left and the local

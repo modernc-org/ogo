@@ -5257,6 +5257,7 @@ type emitter struct {
 	funcValueOf        map[string]string       // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
 	crossEdges         []crossEdge             // call sites passing a parameter straight on, the graph closeCrossParams walks
 	retEdges           []crossEdge             // returns of a call taking a parameter, the graph the result summary is closed over
+	derivedEdges       []derivedEdge           // a call's result, derived from a parameter, stored or crossed (see derivedEdge)
 	crossNames         map[string]string       // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder        map[string]string       // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
 	chanCells          []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
@@ -8922,6 +8923,20 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		e.retParams[cname] = make([]bool, len(params))
 	}
 	e.crossNames[cname] = srcName
+	// derived records what a sink does with a CALL's result, for every parameter
+	// the call was passed (derivedEdge); the callee's return summary says later
+	// whether the result was that parameter.
+	derived := func(v []int32, sink leak, slot int) {
+		callee, args, isCall := e.valueCall(v)
+		if !isCall {
+			return
+		}
+		for j, a := range args {
+			if i := at(e.crossRoot(a.ast)); i >= 0 {
+				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: sink, slot: slot})
+			}
+		}
+	}
 	e.eachStmt(body, func(nodes []Node) {
 		switch {
 		case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
@@ -8929,12 +8944,14 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if i := at(e.crossRoot(a.ast)); i >= 0 {
 					e.crossParams[cname][i] |= leakCog
 				}
+				derived(a.ast, leakCog, -1)
 			}
 		default:
 			if v, ok := e.sendValue(nodes); ok {
 				if i := at(e.crossRoot(v)); i >= 0 {
 					e.crossParams[cname][i] |= leakCog
 				}
+				derived(v, leakCog, -1)
 			}
 			// A store into a package variable, `g = p` or `g.f = p`: whatever
 			// the caller chose the storage for, it now outlives every frame.
@@ -8942,6 +8959,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if i := at(e.leakRoot(v)); i >= 0 {
 					e.crossParams[cname][i] |= leakGlobal
 				}
+				derived(v, leakGlobal, -1)
 			}
 			// A store into the RECEIVER, `t.d = p` -- the setter every struct
 			// with a buffer has. How long that lives is not knowable here: the
@@ -8952,6 +8970,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if i := at(e.leakRoot(v)); i >= 0 {
 					e.crossParams[cname][i] |= leakRecv
 				}
+				derived(v, leakRecv, -1)
 			}
 			// A store through a POINTER PARAMETER, `h.d = p` -- the same
 			// setter, written as a plain function rather than a method. WHICH
@@ -8963,6 +8982,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					if i := at(e.leakRoot(v)); i >= 0 {
 						e.crossInto[cname][i] |= 1 << slot
 					}
+					derived(v, 0, slot)
 				}
 			}
 		}
@@ -9009,6 +9029,22 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 	})
+}
+
+// derivedEdge records that a function stores, sends or launches the RESULT of a call
+// it passed one of its parameters to: `g = id(v)`, `ch <- wrap(v)`, `go work(id(v))`.
+// Whether that is a leak of the parameter depends on whether the callee hands its
+// argument back (retParams), which the fixed point settles: then the caller does
+// with its parameter what the sink does. The call site of `g = id(a[:])` followed
+// the helper from the start (frameRefOf); a function doing the same with its
+// parameter was summarised as leaking nothing, so `retslice(a[:])` compiled.
+type derivedEdge struct {
+	caller string
+	from   int
+	callee string
+	to     int
+	sink   leak // what the caller does with the result, or 0 for a store through a parameter
+	slot   int  // the parameter stored through, for crossInto; -1 otherwise
 }
 
 // closeCrossParams propagates the crossing summary along the recorded call edges
@@ -9078,7 +9114,39 @@ func (e *emitter) closeCrossParams() {
 			caller[g.from] = true
 			changed = true
 		}
+		// A result the callee derived from its parameter, stored or crossed by the
+		// caller: the caller's parameter goes where the result went.
+		for _, g := range e.derivedEdges {
+			returned := e.retParams[g.callee]
+			if g.to >= len(returned) || !returned[g.to] {
+				continue
+			}
+			if g.slot >= 0 {
+				if into := e.crossInto[g.caller]; g.slot < intoBits && g.from < len(into) && into[g.from]&(1<<g.slot) == 0 {
+					into[g.from] |= 1 << g.slot
+					changed = true
+				}
+				continue
+			}
+			if caller := e.crossParams[g.caller]; g.from < len(caller) && caller[g.from]&g.sink != g.sink {
+				caller[g.from] |= g.sink
+				changed = true
+			}
+		}
 	}
+}
+
+// valueCall recognises a value that is a call of a declared function, `id(v)`, and
+// answers with the callee's C name and the arguments.
+func (e *emitter) valueCall(v []int32) (string, []Node, bool) {
+	recv, suffix, ok := e.directCall(v)
+	if !ok || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return "", nil, false
+	}
+	if _, isFunc := e.userFunc(recv); !isFunc {
+		return "", nil, false
+	}
+	return e.funcCallC(recv), e.callArgExprs(suffix[0].ast), true
 }
 
 // returnedExprs returns the operands of a return statement.

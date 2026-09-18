@@ -337,6 +337,13 @@ program handed out a reference to storage that was gone by the time it was read.
   through a chain, `bus.dev.Keep(a[:])`, `devs[i].Keep(a[:])`; and a function
   field bound by a list assignment, `bus.fn, n = keep, 1`, which the list did not
   bind. Each is refused now, called or deferred, in the words the direct call has.
+- **A function that stores what a helper hands back of its parameter leaks it.**
+  `func stash(v []int) { g = id(v) }`, for an id that returns its argument, was
+  summarised as leaking nothing, so `stash(a[:])` for a local array compiled. The
+  call site of `g = id(a[:])` has followed such a helper from the start; the
+  summaries did not. A stored, sent or launched call result now carries whatever
+  the callee returns of the parameters it was passed, through the same fixed
+  point, for every kind of reference and every sink.
 - **A pointer compares for equality and nothing else.** `p > 0`, `p == 3`, `0 != p`
   and `p == x` for an int x -- a pointer beside an integer -- and an ordering of two
   pointers, `p < q`, all compiled: a pointer has no kind for the comparison's check
