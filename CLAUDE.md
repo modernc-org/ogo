@@ -550,7 +550,12 @@ beside a control over package storage; it found that parentheses hid a value fro
 every rule (`return (a[:])` compiled), that `var s []int = a[:]` recorded nothing,
 and that no list form, destructured call, swap or `for` clause asked the rules at
 all. **A new binding form, or a new way to write a value, is a new row or column
-there** -- the same discipline `generatedConstructs` gives the fuzzer.
+there** -- the same discipline `generatedConstructs` gives the fuzzer. The SINKS
+have the same property (`TestEmitCCalleeKeepsEscape`, 2026-09-18): a deferred call
+was checked at its replay, when the local was already forgotten; a function literal
+had no escape summary; a callee storing into a local receiver left the local
+unmarked; and a local pointer was taken for the storage it points at. A new way to
+CALL something is a new row there.
 
 ## Notes
 

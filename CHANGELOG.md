@@ -319,6 +319,24 @@ program handed out a reference to storage that was gone by the time it was read.
   of reference -- a slice, an address, a struct, an array and an interface holding
   one -- each beside a control over package storage that must still compile.
 
+- **A callee that keeps a reference is refused it by every route.** Four routes
+  handed one over unasked, each silently. A DEFERRED call, `defer keep(a[:])`, in
+  every spelling -- a function, a method, a function value, a literal: it was
+  checked at the replay, after the body's scope was gone and the local forgotten.
+  A function LITERAL had no escape summary at all, so `func(xs []int) { g =
+  xs }(a[:])`, the same through a variable and the same deferred, all compiled. A
+  callee storing into a LOCAL receiver, `lb.set(a[:])`, or through a pointer to
+  one, `fill(&lb, a[:])`, is safe -- the two die together -- but the local was not
+  marked as holding the reference, so `gb = lb` carried it out. And a local POINTER
+  as the receiver or the pointer argument was read as the storage itself: `p :=
+  &gb; p.set(a[:])` stored into the package variable behind it, and `p := &lb;
+  p.set(a[:]); gb = lb` marked the pointer and lost the local. What is read
+  through such a pointer, `gb = *p` and `gp = &p.d[0]`, follows it too. Three
+  more routes asked nothing: a METHOD VALUE, `f := gb.set; f(a[:])`, whose lifted
+  wrapper carried none of the method's summary; an interface method reached
+  through a chain, `bus.dev.Keep(a[:])`, `devs[i].Keep(a[:])`; and a function
+  field bound by a list assignment, `bus.fn, n = keep, 1`, which the list did not
+  bind. Each is refused now, called or deferred, in the words the direct call has.
 - **A pointer compares for equality and nothing else.** `p > 0`, `p == 3`, `0 != p`
   and `p == x` for an int x -- a pointer beside an integer -- and an ordering of two
   pointers, `p < q`, all compiled: a pointer has no kind for the comparison's check

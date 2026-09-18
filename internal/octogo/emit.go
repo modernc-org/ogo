@@ -8804,149 +8804,210 @@ const (
 // converges because a parameter only ever goes from not-crossing to crossing.
 func (e *emitter) collectCrossParams(ast []int32) {
 	e.eachFuncDeclAST(ast, func(d []int32) {
-		fi, ok := e.funcParamNames(d)
-		if !ok {
-			return
+		if fi, ok := e.funcParamNames(d); ok {
+			e.collectFuncCross(fi)
 		}
-		cname, srcName, params, body, recvName := fi.cname, fi.srcName, fi.params, fi.body, fi.recvName
-		// A type switch BINDS a new name to the value it switched on, so a store of
-		// that name is a store of whatever the operand was. Without following it, a
-		// parameter reached a package variable through `switch x := p.(type)` with
-		// no summary recorded -- and interface widening then made that the way to
-		// launder a reference into a global.
-		//
-		// Collected for the whole body rather than per clause: the name is scoped to
-		// its switch anyway, and merging two switches' bindings can only refuse more.
-		alias := e.typeSwitchAliases(body)
-		at := func(name string) int {
-			for range 16 { // bounded; an alias chain cannot outlive the body
-				if i := slices.Index(params, name); i >= 0 {
-					return i
-				}
-				next, ok := alias[name]
-				if !ok {
-					return -1
-				}
-				name = next
-			}
-			return -1
+	})
+	// A function LITERAL is a function, and was summarised as nothing: called where
+	// it stands, through a variable or by a defer, `func(xs []int) { g = xs }(a[:])`
+	// stored a slice of a local array in a package variable and no rule saw it. Its
+	// C name is minted when it is lifted, during emission, so the summary is keyed
+	// by where it stands (litKey) and copied to the C name then (liftFuncLit).
+	e.eachFuncLit(ast, func(lit Node) {
+		if fi, ok := e.litParamNames(lit); ok {
+			e.collectFuncCross(fi)
 		}
-		// owners says what this call passed at each position, in the terms the
-		// CALLER's summary is written in: its own parameters by index, or a package
-		// variable, or something not to be followed. A callee's "stored through my
-		// parameter j" means nothing until it is read through this.
-		owners := func(args []Node) []int {
-			out := make([]int, len(args))
-			for j, a := range args {
-				root := e.crossRoot(a.ast)
-				switch i := at(root); {
-				case i >= 0:
-					out[j] = i
-				case root != "" && e.isPackageVar(root):
-					out[j] = argOutlives
-				default:
-					out[j] = argLocal
-				}
-			}
-			return out
+	})
+}
+
+// eachFuncLit calls fn for every function literal in ast, at any depth.
+func (e *emitter) eachFuncLit(ast []int32, fn func(lit Node)) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			continue
 		}
-		if _, seen := e.crossParams[cname]; !seen {
-			e.crossParams[cname] = make([]leak, len(params))
+		if n.sym == FuncLiteral {
+			fn(n)
 		}
-		if _, seen := e.crossInto[cname]; !seen {
-			e.crossInto[cname] = make([]uint32, len(params))
+		e.eachFuncLit(n.ast, fn)
+	}
+}
+
+// litKey names a function literal for the summaries until it is lifted: its place in
+// the source, which both the collecting pass and the lift can read.
+func (e *emitter) litKey(lit Node) string {
+	return "lit@" + e.f.tok(lit.Pos()).Position().String()
+}
+
+// litParamNames is funcParamNames for a function literal.
+func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
+	var sig, body []int32
+	for n := range it(lit.ast) {
+		switch n.sym {
+		case Signature:
+			sig = n.ast
+		case Block:
+			body = n.ast
 		}
-		if _, seen := e.retParams[cname]; !seen {
-			e.retParams[cname] = make([]bool, len(params))
+	}
+	if sig == nil || body == nil {
+		return funcInfo{}, false
+	}
+	fi := funcInfo{cname: e.litKey(lit), srcName: "func", body: body, locals: e.localTypeNames(body)}
+	for n := range it(sig) {
+		if n.sym != ParameterList {
+			continue
 		}
-		e.crossNames[cname] = srcName
-		e.eachStmt(body, func(nodes []Node) {
-			switch {
-			case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
-				for _, a := range e.goStmtArgs(nodes) {
-					if i := at(e.crossRoot(a.ast)); i >= 0 {
-						e.crossParams[cname][i] |= leakCog
-					}
-				}
-			default:
-				if v, ok := e.sendValue(nodes); ok {
-					if i := at(e.crossRoot(v)); i >= 0 {
-						e.crossParams[cname][i] |= leakCog
-					}
-				}
-				// A store into a package variable, `g = p` or `g.f = p`: whatever
-				// the caller chose the storage for, it now outlives every frame.
-				for _, v := range e.storedInPackageVar(nodes) {
-					if i := at(e.leakRoot(v)); i >= 0 {
-						e.crossParams[cname][i] |= leakGlobal
-					}
-				}
-				// A store into the RECEIVER, `t.d = p` -- the setter every struct
-				// with a buffer has. How long that lives is not knowable here: the
-				// receiver belongs to whoever called, so the flag travels to the
-				// call site, which knows whether it picked storage that outlives
-				// its own frame.
-				for _, v := range e.storedInReceiver(recvName, nodes) {
-					if i := at(e.leakRoot(v)); i >= 0 {
-						e.crossParams[cname][i] |= leakRecv
-					}
-				}
-				// A store through a POINTER PARAMETER, `h.d = p` -- the same
-				// setter, written as a plain function rather than a method. WHICH
-				// parameter it reaches is what has to be carried: the call site
-				// decides by the lifetime of the argument at that position, and
-				// `fill(&g, a[:])` and `fill(&local, a[:])` differ in nothing else.
-				if vs, slot := e.storedInPointerParam(fi, nodes); slot >= 0 {
-					for _, v := range vs {
-						if i := at(e.leakRoot(v)); i >= 0 {
-							e.crossInto[cname][i] |= 1 << slot
-						}
-					}
-				}
-			}
-			// A return hands the value back to the caller: which parameter it came
-			// from is what lets the caller follow it to the storage it chose.
-			if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN {
-				for _, v := range e.returnedExprs(nodes) {
-					if i := at(e.leakRoot(v)); i >= 0 {
-						e.retParams[cname][i] = true
-					}
-				}
-				// `return g(p)`: whatever g hands back of its own parameter, this
-				// function hands back of the parameter it passed there.
-				for _, c := range e.stmtCalls(nodes) {
-					for j, a := range c.args {
-						if i := at(e.leakRoot(a.ast)); i >= 0 {
-							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
-						}
-					}
-				}
-			}
-			// Any call in the statement, go statement and send included: an
-			// argument that is one of this function's parameters ties the two
-			// together.
-			for _, c := range e.stmtCalls(nodes) {
-				owner := owners(c.args)
-				for j, a := range c.args {
-					if i := at(e.crossRoot(a.ast)); i >= 0 {
-						e.crossEdges = append(e.crossEdges,
-							crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner})
-					}
-				}
-			}
-			// The same for a METHOD call, which stmtCalls cannot name. The edge
-			// carries whose receiver it is, because that is what says whether the
-			// callee's leakRecv is a leak here too or the end of the matter.
-			for _, c := range e.stmtMethodCalls(nodes, fi) {
-				owner := owners(c.args)
-				for j, a := range c.args {
-					if i := at(e.crossRoot(a.ast)); i >= 0 {
-						e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
-							callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner})
-					}
-				}
-			}
+		e.forEachParam(n.ast, func(nm string, ta []int32, _ bool) {
+			fi.params = append(fi.params, nm)
+			fi.ptrParam = append(fi.ptrParam, e.isPtrParam(ta))
+			fi.ptrBase = append(fi.ptrBase, e.ptrParamBase(ta))
 		})
+	}
+	return fi, true
+}
+
+// collectFuncCross seeds one function's summary and records its call edges; see
+// collectCrossParams.
+func (e *emitter) collectFuncCross(fi funcInfo) {
+	cname, srcName, params, body, recvName := fi.cname, fi.srcName, fi.params, fi.body, fi.recvName
+	// A type switch BINDS a new name to the value it switched on, so a store of
+	// that name is a store of whatever the operand was. Without following it, a
+	// parameter reached a package variable through `switch x := p.(type)` with
+	// no summary recorded -- and interface widening then made that the way to
+	// launder a reference into a global.
+	//
+	// Collected for the whole body rather than per clause: the name is scoped to
+	// its switch anyway, and merging two switches' bindings can only refuse more.
+	alias := e.typeSwitchAliases(body)
+	at := func(name string) int {
+		for range 16 { // bounded; an alias chain cannot outlive the body
+			if i := slices.Index(params, name); i >= 0 {
+				return i
+			}
+			next, ok := alias[name]
+			if !ok {
+				return -1
+			}
+			name = next
+		}
+		return -1
+	}
+	// owners says what this call passed at each position, in the terms the
+	// CALLER's summary is written in: its own parameters by index, or a package
+	// variable, or something not to be followed. A callee's "stored through my
+	// parameter j" means nothing until it is read through this.
+	owners := func(args []Node) []int {
+		out := make([]int, len(args))
+		for j, a := range args {
+			root := e.crossRoot(a.ast)
+			switch i := at(root); {
+			case i >= 0:
+				out[j] = i
+			case root != "" && e.isPackageVar(root):
+				out[j] = argOutlives
+			default:
+				out[j] = argLocal
+			}
+		}
+		return out
+	}
+	if _, seen := e.crossParams[cname]; !seen {
+		e.crossParams[cname] = make([]leak, len(params))
+	}
+	if _, seen := e.crossInto[cname]; !seen {
+		e.crossInto[cname] = make([]uint32, len(params))
+	}
+	if _, seen := e.retParams[cname]; !seen {
+		e.retParams[cname] = make([]bool, len(params))
+	}
+	e.crossNames[cname] = srcName
+	e.eachStmt(body, func(nodes []Node) {
+		switch {
+		case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
+			for _, a := range e.goStmtArgs(nodes) {
+				if i := at(e.crossRoot(a.ast)); i >= 0 {
+					e.crossParams[cname][i] |= leakCog
+				}
+			}
+		default:
+			if v, ok := e.sendValue(nodes); ok {
+				if i := at(e.crossRoot(v)); i >= 0 {
+					e.crossParams[cname][i] |= leakCog
+				}
+			}
+			// A store into a package variable, `g = p` or `g.f = p`: whatever
+			// the caller chose the storage for, it now outlives every frame.
+			for _, v := range e.storedInPackageVar(nodes) {
+				if i := at(e.leakRoot(v)); i >= 0 {
+					e.crossParams[cname][i] |= leakGlobal
+				}
+			}
+			// A store into the RECEIVER, `t.d = p` -- the setter every struct
+			// with a buffer has. How long that lives is not knowable here: the
+			// receiver belongs to whoever called, so the flag travels to the
+			// call site, which knows whether it picked storage that outlives
+			// its own frame.
+			for _, v := range e.storedInReceiver(recvName, nodes) {
+				if i := at(e.leakRoot(v)); i >= 0 {
+					e.crossParams[cname][i] |= leakRecv
+				}
+			}
+			// A store through a POINTER PARAMETER, `h.d = p` -- the same
+			// setter, written as a plain function rather than a method. WHICH
+			// parameter it reaches is what has to be carried: the call site
+			// decides by the lifetime of the argument at that position, and
+			// `fill(&g, a[:])` and `fill(&local, a[:])` differ in nothing else.
+			if vs, slot := e.storedInPointerParam(fi, nodes); slot >= 0 {
+				for _, v := range vs {
+					if i := at(e.leakRoot(v)); i >= 0 {
+						e.crossInto[cname][i] |= 1 << slot
+					}
+				}
+			}
+		}
+		// A return hands the value back to the caller: which parameter it came
+		// from is what lets the caller follow it to the storage it chose.
+		if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN {
+			for _, v := range e.returnedExprs(nodes) {
+				if i := at(e.leakRoot(v)); i >= 0 {
+					e.retParams[cname][i] = true
+				}
+			}
+			// `return g(p)`: whatever g hands back of its own parameter, this
+			// function hands back of the parameter it passed there.
+			for _, c := range e.stmtCalls(nodes) {
+				for j, a := range c.args {
+					if i := at(e.leakRoot(a.ast)); i >= 0 {
+						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
+					}
+				}
+			}
+		}
+		// Any call in the statement, go statement and send included: an
+		// argument that is one of this function's parameters ties the two
+		// together.
+		for _, c := range e.stmtCalls(nodes) {
+			owner := owners(c.args)
+			for j, a := range c.args {
+				if i := at(e.crossRoot(a.ast)); i >= 0 {
+					e.crossEdges = append(e.crossEdges,
+						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner})
+				}
+			}
+		}
+		// The same for a METHOD call, which stmtCalls cannot name. The edge
+		// carries whose receiver it is, because that is what says whether the
+		// callee's leakRecv is a leak here too or the end of the matter.
+		for _, c := range e.stmtMethodCalls(nodes, fi) {
+			owner := owners(c.args)
+			for j, a := range c.args {
+				if i := at(e.crossRoot(a.ast)); i >= 0 {
+					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
+						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner})
+				}
+			}
+		}
 	})
 }
 
@@ -9696,6 +9757,40 @@ func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
 	return "", false
 }
 
+// addrThroughPointer is addrOfRoot for the address it declines: `&p.f` and `&p[i]`
+// for a POINTER variable p, answering with p. What the address reaches is what p
+// points at, which is frameRefOf's question.
+func (e *emitter) addrThroughPointer(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) < 2 || kids[0].sym != UnaryOp {
+		return "", false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != AND {
+		return "", false
+	}
+	fac := kids[len(kids)-1]
+	if !containsSym(slices.Collect(it(fac.ast)), FactorSuffix) {
+		return "", false
+	}
+	for n := range it(fac.ast) {
+		if n.sym == 0 && e.f.ch(n.tok) == IDENT {
+			name := e.src(n.tok)
+			if ct, ok := e.varType(name); ok && e.isPointer(ct) {
+				return name, true
+			}
+			return "", false
+		}
+	}
+	return "", false
+}
+
 // paramSliceTypes returns one entry per declared parameter: the C slice type when
 // that parameter is a slice, "" otherwise. It answers the single question a call
 // site asks of a parameter -- whether a bare `nil` argument there is a slice
@@ -10136,6 +10231,13 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	// function taking it produced a binary the loader would not accept.
 	cname := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_lit%d", e.liftSeq))
 	e.liftSeq++
+	// The escape summary collected under the literal's place (see collectCrossParams)
+	// is the lifted function's: a call by the C name, which is what a statement's
+	// literal and a deferred one make, is judged by it.
+	if key := e.litKey(lit); e.crossNames[key] != "" || e.crossParams[key] != nil {
+		e.crossParams[cname], e.crossInto[cname], e.retParams[cname] = e.crossParams[key], e.crossInto[key], e.retParams[key]
+		e.crossNames[cname] = e.crossNames[key]
+	}
 
 	// Recorded before the body is walked, so a literal that calls itself through a
 	// variable, or another literal lifted after it, resolves.
@@ -10414,6 +10516,20 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	e.funcRet[cname] = fv.res
 	e.funcParams[cname] = fv.params
 	e.methodValueOf[key] = cname
+	// The method's escape summary is the value's, with its receiver bound: a store
+	// into the receiver is a store into what the value was bound to, which is a
+	// package variable or a parameter's pointee -- a local's receiver cannot be
+	// taken as a value -- and outlives every frame either way. Nothing was carried
+	// over, so `f := gb.set; f(a[:])` stored a slice of a local array in gb where
+	// `gb.set(a[:])` is refused.
+	crosses := slices.Clone(e.crossParams[mcname])
+	for i, f := range crosses {
+		if f&leakRecv != 0 {
+			crosses[i] = f&^leakRecv | leakGlobal
+		}
+	}
+	e.crossParams[cname], e.crossInto[cname], e.retParams[cname] = crosses, e.crossInto[mcname], e.retParams[mcname]
+	e.crossNames[cname] = method
 	return cname, true
 }
 
@@ -21389,6 +21505,7 @@ func (e *emitter) emitDefer(nodes []Node) {
 			}
 			d.args = append(d.args, deferArg{ctype: params[i], expr: a.ast})
 		}
+		e.checkDeferLeaks(&d, head, suffix, args)
 		e.emitDeferCaptures(&d)
 		if d.cond {
 			e.ind()
@@ -21478,12 +21595,79 @@ func (e *emitter) emitDefer(nodes []Node) {
 		}
 		d.args = append(d.args, deferArg{ctype: ct, expr: a.ast})
 	}
+	e.checkDeferLeaks(&d, head, suffix, e.callArgExprs(call.ast))
 	e.emitDeferCaptures(&d)
 	if d.cond {
 		e.ind()
 		e.emit(deferFlagName(d.slot) + " = 1;\n")
 	}
 	e.defers = append(e.defers, d)
+}
+
+// checkDeferLeaks asks of a deferred call's arguments what a direct call's are asked
+// (checkCrossArgs, checkIntoArgs, checkRecvLeak, checkIfaceArgs), at the defer
+// statement, where the arguments are in scope. The replay asks too and gets no
+// answer: it is emitted after the body's scope has been left, when the local an
+// argument views is no longer known as one. So `defer keep(a[:])` for a keep that
+// stores its parameter in a package variable was accepted in every spelling -- a
+// function, a method, a function value, a literal -- and the variable read a dead
+// frame once the function had returned, its deferred call having run just before.
+func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, args []Node) {
+	if d.litName != "" {
+		e.checkCrossArgs(d.litName, args, false)
+		e.checkIntoArgs(d.litName, args)
+		return
+	}
+	base := e.soleIdent(head.ast)
+	if base == "" {
+		var isAddr bool
+		if base, isAddr = e.addrHead(head); !isAddr {
+			return
+		}
+	}
+	steps := suffix[:len(suffix)-1]
+	spread := e.spreadCall(suffix[len(suffix)-1].ast)
+	if len(steps) == 0 {
+		// `defer f(args)`: a declared function, or a variable bound to one.
+		if cname := e.calleeSummaryName(base); cname != "" {
+			e.checkCrossArgs(cname, args, spread)
+			e.checkIntoArgs(cname, args)
+		}
+		return
+	}
+	// `defer iv.M(args)`, `defer bus.dev.M(args)`, `defer devs[i].M(args)`: the
+	// union over the implementations, as a call makes it.
+	if ct, m, isIface := e.ifaceChainMethod(base, suffix); isIface {
+		e.checkIfaceArgs(ct, m.name, args)
+		return
+	}
+	if len(steps) == 1 && steps[0].sym == Selector {
+		method := e.soleIdent(steps[0].ast)
+		// `defer h.fn(args)` for a field holding a function value: what the field was
+		// last bound to.
+		if ft, ok := e.fieldType(base, []string{method}); ok && e.isFuncCType(ft) {
+			if cname := e.funcValueOf[funcFieldKey(base, method)]; cname != "" {
+				e.checkCrossArgs(cname, args, spread)
+				e.checkIntoArgs(cname, args)
+			}
+			return
+		}
+		if d.cname != "" {
+			// `defer v.m(args)`: the receiver's lifetime is the call site's question.
+			e.checkRecvLeak(d.cname, base, args)
+		}
+	}
+	cname := d.cname
+	if cname == "" {
+		// `defer pkg.F(args)`, `defer p.ws[i].M(args)`: the resolution a call makes.
+		if n, _, ok := e.callResultInfo(base, suffix); ok {
+			cname = n
+		}
+	}
+	if cname != "" {
+		e.checkCrossArgs(cname, args, spread)
+		e.checkIntoArgs(cname, args)
+	}
 }
 
 // emitDeferCaptures writes the capture of a deferred call's arguments into their
@@ -23113,6 +23297,12 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if slot < 0 {
 					return "", "", false, false
 				}
+				// The escape rules a call on an interface VARIABLE obeys, asked of
+				// the union over the implementations. Through a chain --
+				// `bus.dev.Keep(a[:])`, `devs[i].Keep(a[:])` -- nothing asked, and
+				// the slice of a local array was stored where the implementation
+				// stores it.
+				e.checkIfaceArgs(cur.ctype, field, e.callArgExprs(steps[i+1].ast))
 				call := text + ".vt->" + vtMember(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
@@ -27773,6 +27963,29 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 			continue
 		}
 		e.emitStore(tgt, declare[i], types[i], tmps[i])
+		e.bindStoredFuncValue(tgt, rhs[i].ast)
+	}
+}
+
+// bindStoredFuncValue binds what a list form's target holds when it is a function
+// value, as the single forms do (bindFuncValue): the variable, or a field reached by
+// one selector. The list bound nothing, so `bus.fn, n = keep, 1` left a call through
+// the field consulting no summaries.
+func (e *emitter) bindStoredFuncValue(t assignTarget, value []int32) {
+	if t.name == "_" || t.stars != "" {
+		return
+	}
+	switch {
+	case len(t.chain) == 0:
+		if ct, ok := e.varType(t.name); ok && e.isFuncCType(ct) {
+			e.bindFuncValue(t.name, value)
+		}
+	case len(t.chain) == 1 && t.chain[0].sym == Selector:
+		if fld := e.soleIdent(t.chain[0].ast); fld != "" {
+			if ft, ok := e.fieldType(t.name, []string{fld}); ok && e.isFuncCType(ft) {
+				e.bindFuncValue(funcFieldKey(t.name, fld), value)
+			}
+		}
 	}
 }
 
@@ -33030,6 +33243,28 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			return holderRef(name, origin), true
 		}
 	}
+	// THROUGH a local pointer that holds a local's address, `p := &lb`. The value
+	// `*p` is lb's, and carries what lb carries -- `gb = *p` and `keepBox(*p)` copied
+	// out what `gb = lb` is refused for. And `&p.d[0]` points into lb's storage, or
+	// into what lb's fields view, as `&lb.d[0]` does; the address walk stops at a
+	// pointer because what one points at is usually the caller's, and this one is
+	// known not to be.
+	if ptr, ok := e.derefOperand(ast); ok {
+		if x, isLocal := strings.CutPrefix(e.frameHolder[ptr], "local "); isLocal && e.isFrameVar(x) {
+			if origin := e.frameHolder[x]; origin != "" {
+				return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
+			}
+			if e.frameBacked[x] {
+				return sliceRef(x), true
+			}
+		}
+	}
+	if ptr, ok := e.addrThroughPointer(ast); ok {
+		if x, isLocal := strings.CutPrefix(e.frameHolder[ptr], "local "); isLocal && e.isFrameVar(x) {
+			return frameRef{origin: "local " + x, name: x,
+				what: e.f.exprSource(Node{sym: Expression, ast: ast}) + ", which points into local " + x}, true
+		}
+	}
 	// A COMPOSITE LITERAL carries its elements into the value it makes: `Box{a[:]}`
 	// is a struct holding a slice of this frame, so handing the struct on hands the
 	// slice on. Every door had this hole and only the DECLARATION compensated for it,
@@ -33560,7 +33795,9 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 	if recv == "" {
 		return
 	}
-	local := e.isFrameVar(recv) && !e.curParams[recv]
+	// The storage the receiver IS: the variable, or -- for a local pointer -- what
+	// it points at, which is what the callee stores into.
+	storage, local := e.storageBehind(recv)
 	crosses := e.crossParams[cname]
 	for i, a := range args {
 		if i >= len(crosses) || crosses[i]&leakRecv == 0 {
@@ -33575,15 +33812,45 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 		// reference points into still outlives it.
 		outlives := "this function"
 		if local {
-			if e.blockDepthOf(r.name) <= e.blockDepthOf(recv) {
+			if e.blockDepthOf(r.name) <= e.blockDepthOf(storage) {
+				// The two die together -- but the receiver now HOLDS the reference,
+				// and a copy of it carried it out: `var lb Box; lb.set(a[:]); gb = lb`
+				// stored a slice of the local array in a package variable, where the
+				// same store through `lb.d = a[:]` was refused. Marked as that store
+				// marks it.
+				e.noteHolderRef(storage, r)
 				continue
 			}
 			outlives = "the block " + r.origin + " is declared in"
+		} else if storage != recv {
+			outlives = "this function, or may"
 		}
 		e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives %s; %s",
 			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), recv, outlives, r.advice())
 		return
 	}
+}
+
+// storageBehind names the storage a callee reaches through a variable it is handed
+// as a receiver or a pointer argument, and whether that storage is a local of this
+// frame. A parameter's is the caller's. A local POINTER's is what it points at: a
+// local, when the pointer was marked as holding that local's address (`p := &lb`),
+// and otherwise something this cannot see -- a package variable, `p := &gb`, or a
+// parameter's pointee copied into it -- which is taken to outlive the frame. The
+// pointer itself was read as the storage until 2026-09-18, so `p := &gb;
+// p.set(a[:])` stored a slice of a local array in a package variable, and `p :=
+// &lb; p.set(a[:]); gb = lb` marked p and carried lb out.
+func (e *emitter) storageBehind(name string) (storage string, local bool) {
+	if !e.isFrameVar(name) || e.curParams[name] {
+		return name, false
+	}
+	if ct, ok := e.varType(name); !ok || !e.isPointer(ct) {
+		return name, true
+	}
+	if pointee, isLocal := strings.CutPrefix(e.frameHolder[name], "local "); isLocal && e.isFrameVar(pointee) {
+		return pointee, true
+	}
+	return name, false
 }
 
 // checkIntoArgs refuses an argument backed by this frame where the callee stores
@@ -33699,11 +33966,16 @@ func (e *emitter) checkIntoArgsIn(intos []uint32, who string, args []Node) {
 			// a pointer to an OUTER-block local keeps the reference past the block
 			// it belongs to without the function ever returning.
 			outlives := "this function"
+			storage, local := e.storageBehind(tgt)
 			switch {
-			case e.isPackageVar(tgt) || e.curParams[tgt]:
-			case e.blockDepthOf(r.name) > e.blockDepthOf(tgt):
+			case e.isPackageVar(tgt) || !local:
+			case e.blockDepthOf(r.name) > e.blockDepthOf(storage):
 				outlives = "the block " + r.origin + " is declared in"
 			default:
+				// A local the callee stores into dies with the frame, and holds the
+				// reference from here on: `fill(&lb, a[:])` then `gb = lb` carried it
+				// out, as a store into the receiver did (checkRecvLeak).
+				e.noteHolderRef(storage, r)
 				continue
 			}
 			e.fail("%v: cannot pass %s to %s: it is stored through %s, which outlives %s; %s",
@@ -33804,6 +34076,23 @@ func (e *emitter) bindFuncValue(name string, initExpr []int32) {
 		if _, isFunc := e.userFunc(fn); isFunc {
 			e.funcValueOf[name] = e.funcCallC(fn)
 			return
+		}
+	}
+	// `f := func(xs []int) { g = xs }`: the literal's own summary, under the key
+	// the collecting pass gave it -- it is not lifted yet, so it has no C name.
+	if kids, isFac := e.soleFactor(initExpr); isFac {
+		if lit, suffix, isLit := e.factorFuncLit(kids); isLit && len(suffix) == 0 {
+			e.funcValueOf[name] = e.litKey(lit)
+			return
+		}
+		// `f := gb.set`: the lifted method value, which carries the method's
+		// summary (liftMethodValue). Lifting is memoised, so asking here lifts
+		// nothing twice.
+		if base, method, isMethod := e.factorMethodValue(kids); isMethod {
+			if cn, ok := e.liftMethodValue(base, method); ok {
+				e.funcValueOf[name] = cn
+				return
+			}
 		}
 	}
 	delete(e.funcValueOf, name)

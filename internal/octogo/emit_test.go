@@ -9936,6 +9936,147 @@ func TestEmitCLitSliceUnaddressable(t *testing.T) {
 	}
 }
 
+// TestEmitCCalleeKeepsEscape: a reference to this frame handed to a callee that
+// keeps it, by every route that asked nothing until 2026-09-18. A deferred call,
+// which is checked at the replay, after the body's scope has been left and the local
+// forgotten; a function LITERAL, which had no escape summary at all, called where it
+// stands, through a variable or by a defer; a METHOD VALUE, whose lifted wrapper
+// carried none of the method's; an interface method reached through a CHAIN, and a
+// function field bound by a LIST assignment; a callee storing into a LOCAL receiver
+// or through a pointer to one, which is safe until the local is copied out; and a
+// local POINTER as the receiver or the target, whose pointee -- a package variable,
+// or a local it was given the address of -- is the storage that matters. Each cell
+// has a neighbour that must still compile.
+func TestEmitCCalleeKeepsEscape(t *testing.T) {
+	const head = `type Box struct {
+	d []int
+}
+
+type Keeper interface {
+	Keep(xs []int)
+}
+
+func (b *Box) Keep(xs []int) { b.d = xs }
+
+type Bus struct {
+	dev  Keeper
+	devs [2]Keeper
+	fn   func([]int)
+}
+
+var g []int
+
+var gb Box
+
+var gp *int
+
+var back [4]int
+
+var done chan int
+
+var bus Bus
+
+func keep(xs []int) { g = xs }
+
+func keepBox(b Box) { gb = b }
+
+func keepPtr(p *int) { gp = p }
+
+func show(xs []int) { done <- len(xs) }
+
+func (b *Box) set(xs []int) { b.d = xs }
+
+func fill(b *Box, xs []int) { b.d = xs }
+
+func leak() {
+	var a [4]int
+	x := 1
+	a[0] = x
+	bus.dev, bus.devs[0], bus.fn = &gb, &gb, keep
+`
+	const tail = `}
+
+func main() {
+	leak()
+	println(len(g), len(gb.d), gp == nil, len(back))
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		// A deferred call, in every spelling.
+		{"defer keep(a[:])", "cannot pass a slice backed by local a to keep"},
+		{"defer keepPtr(&x)", "cannot pass the address of local variable x to keepPtr"},
+		{"defer keepBox(Box{a[:]})", "cannot pass a slice backed by local a to keepBox"},
+		{"defer gb.set(a[:])", "it is stored in the receiver gb, which outlives this function"},
+		{"defer func(xs []int) { g = xs }(a[:])", "cannot pass a slice backed by local a to func"},
+		{"s := a[:]\n\tdefer keep(s)", "cannot pass a slice backed by local s to keep"},
+		{"b := Box{a[:]}\n\tdefer keepBox(b)", "cannot pass local b, which holds a pointer into local a to keepBox"},
+		{"f := keep\n\tdefer f(a[:])", "cannot pass a slice backed by local a to keep"},
+		// A function literal that keeps its parameter.
+		{"func(xs []int) { g = xs }(a[:])", "cannot pass a slice backed by local a to func"},
+		{"f := func(xs []int) { g = xs }\n\tf(a[:])", "cannot pass a slice backed by local a to func"},
+		{"f := func(xs []int) { gb.d = xs }\n\tf(a[:])", "cannot pass a slice backed by local a to func"},
+		// A method value, an interface reached through a chain, a function field
+		// bound by a list assignment -- called and deferred.
+		{"f := gb.set\n\tf(a[:])", "cannot pass a slice backed by local a to set"},
+		{"f := gb.set\n\tdefer f(a[:])", "cannot pass a slice backed by local a to set"},
+		{"bus.dev.Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
+		{"bus.devs[0].Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
+		{"defer bus.dev.Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
+		{"bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
+		{"defer bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
+		{"id := func(xs []int) []int { return xs }\n\tg = id(a[:])", "cannot store a slice backed by local a in package variable g"},
+		// A local the callee stores into, copied out afterwards.
+		{"var lb Box\n\tlb.set(a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
+		{"var lb Box\n\tlb.set(a[:])\n\tkeepBox(lb)", "cannot pass local lb, which holds a pointer into local a to keepBox"},
+		{"var lb Box\n\tfill(&lb, a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
+		{"var lb Box\n\tp := &lb\n\tp.set(a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
+		{"var lb Box\n\tp := &lb\n\tfill(p, a[:])\n\tgb = *p", "cannot store *p, which holds a pointer into local a"},
+		// A local pointer to a package variable is that variable.
+		{"p := &gb\n\tp.set(a[:])", "it is stored in the receiver p, which outlives this function"},
+		{"p := &gb\n\tfill(p, a[:])", "it is stored through p, which outlives this function"},
+		// What is read through a pointer to a marked local.
+		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tgb = *p", "cannot store *p, which holds a pointer into local a"},
+		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tkeepBox(*p)", "cannot pass *p, which holds a pointer into local a to keepBox"},
+		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tq := p\n\tgb = *q", "cannot store *q, which holds a pointer into local a"},
+		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tgp = &p.d[0]", "cannot store &p.d[0], which points into local lb"},
+		// The neighbours: package storage handed on, a callee that keeps nothing, a
+		// local used where it stands, a pointee that holds nothing.
+		{"defer keep(back[:])", ""},
+		{"defer show(a[:])\n\tgo func() { <-done }()", ""},
+		{"func(xs []int) { back[0] = len(xs) }(a[:])", ""},
+		{"f := func(xs []int) { back[0] = len(xs) }\n\tf(a[:])", ""},
+		{"var lb Box\n\tp := &lb\n\tp.set(a[:])\n\tback[0] = len(lb.d) + len(p.d)", ""},
+		{"var lb Box\n\tfill(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
+		{"p := &gb\n\tp.set(back[:])\n\tfill(p, back[1:])", ""},
+		{"p := &gb\n\tgp = &p.d[0]\n\tq := *p\n\tgb = q", ""},
+		{"bus.dev.Keep(back[:])\n\tdefer bus.fn(back[1:])\n\tf := gb.set\n\tf(back[2:])", ""},
+		{"id := func(xs []int) []int { return xs }\n\tback[0] = len(id(a[:]))", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			err = EmitC(pkg, io.Discard, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a callee keeping a frame reference; want %q\n%s", test.want, src)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCListStoreEscape is the STORE side of TestEmitCFrameRefForms: a list form
 // or a loop clause writing a reference to this frame where it outlives the frame, or
 // the block. A plain assignment has been refused for all of these since the lifetime
