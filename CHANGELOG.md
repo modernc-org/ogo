@@ -438,6 +438,11 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Initialization order across packages against Go on the host and a P2-EDGE,
+  traced digit by digit: in each package the variables in dependency order
+  whatever order they are declared in, then its init functions in the order
+  written, a package whole before its importer, main last. It matched; the trace
+  is part of the multi-package program now.
 - Composite literal semantics against Go on the host and a P2-EDGE: `[...]T`
   lengths, keyed and positional literals with the rest zeroed, nested literals
   with the inner types elided, a call as an element, pointers as elements, an

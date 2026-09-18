@@ -29806,11 +29806,14 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
-	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\ntrue true\n"
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\ntrue true\n" +
+	"1234567891 1 3 8 14 30 39\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
 import "greet"
+import "initord/ideps"
+import "initord/itrace"
 import "lib"
 
 // A private helper of main's, same name as one in greet: with per-package name
@@ -29950,6 +29953,20 @@ untypedShifts()
 crossFileConsts()
 qualifiedArrays()
 libShapes()
+initTrace()
+}
+
+// The whole initialization order, traced (measured against Go 2026-09-18): in
+// each package the variables in dependency order whatever order they are
+// declared in, then its init functions in the order written; a package whole
+// before any package importing it; main last. Every step appends its digit.
+var ordM2 = itrace.Mark(9) + ordM1
+var ordM1 = itrace.Mark(8) + ideps.Sum()
+
+func init() { itrace.Trace = itrace.Trace*10 + 1 }
+
+func initTrace() {
+	println(itrace.Trace, itrace.A1, itrace.A2, ideps.B1, ideps.B2, ordM1, ordM2)
 }
 
 // Another package's defined ARRAY type where a type is written: a variable, a
@@ -30267,6 +30284,38 @@ func libShapes() {
 		println("no")
 	}
 	println(lib.P == nil, lib.None() == nil)
+}
+`,
+	"initord/itrace/itrace.ogo": `var Trace int
+
+func Mark(k int) int {
+	Trace = Trace*10 + k
+	return k
+}
+
+var A1 = Mark(1)
+var A2 = A1 + Mark(2)
+
+func init() {
+	Mark(3)
+}
+
+func init() {
+	Mark(4)
+}
+`,
+	"initord/ideps/ideps.ogo": `import "initord/itrace"
+
+var B2 = itrace.Mark(6) + B1
+
+var B1 = itrace.Mark(5) + itrace.A2
+
+func init() {
+	itrace.Mark(7)
+}
+
+func Sum() int {
+	return B1 + B2
 }
 `,
 	"chain/chain.ogo": `import "greet"
