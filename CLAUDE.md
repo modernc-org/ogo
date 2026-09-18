@@ -555,7 +555,9 @@ have the same property (`TestEmitCCalleeKeepsEscape`, 2026-09-18): a deferred ca
 was checked at its replay, when the local was already forgotten; a function literal
 had no escape summary; a callee storing into a local receiver left the local
 unmarked; and a local pointer was taken for the storage it points at. A new way to
-CALL something is a new row there.
+CALL something is a new row there. `TestEmitCFrameRefSinks` is the forms matrix turned
+around, five kinds through eight sinks with controls; it found the summaries following
+no helper that returns its argument, `g = id(v)`. A new SINK is a new row there.
 
 ## Notes
 
