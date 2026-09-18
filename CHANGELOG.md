@@ -129,6 +129,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A composite literal in a switch case crashed the compiler.** `switch p { case
+  P{1, 2}: }` and `const c = P{1, 2}` panicked the checker ("factor-range1 TODO
+  ... CompositeLit"): the constant folder, which a case is put through to find
+  duplicates, had no answer for a literal. A literal is a value compared at run
+  time in a case, and "P{1, 2} is not constant" where a constant is required.
 - **strings.TrimSpace panicked on a string ending in an invalid byte.** It found
   the end of the text from each rune's width, and an invalid byte ranges as U+FFFD,
   which is three bytes when valid: `TrimSpace("\xffa\xff")` sliced five bytes of a

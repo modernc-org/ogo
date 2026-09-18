@@ -1,0 +1,15 @@
+// A composite literal is never a constant.
+
+type P struct {
+	x, y int
+}
+
+// ERROR P.1, 2. is not constant
+const c = P{1, 2}
+
+// ERROR .2.int.1, 2. is not constant
+const d = [2]int{1, 2}
+
+func main() {
+	println(c.x, d[0])
+}

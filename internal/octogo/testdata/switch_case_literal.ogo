@@ -1,0 +1,21 @@
+// COMPILE
+
+// A composite literal is a value a switch compares its tag with at run time. The
+// checker's constant folder, asked about each case for duplicates, panicked on one.
+
+type P struct {
+	x, y int
+}
+
+func main() {
+	p := P{1, 2}
+	switch p {
+	case P{}, P{1, 2}:
+		println("p")
+	}
+	a := [2]int{1, 2}
+	switch a {
+	case [2]int{1, 2}:
+		println("a")
+	}
+}

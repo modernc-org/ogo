@@ -17031,6 +17031,19 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 		}
 		return constVal{cv: constant.MakeUnknown()}
 	}
+	// A composite literal, `P{1, 2}` or `[2]int{1, 2}`, a function literal and a
+	// bracketed type are values or types and never constants. A switch case compares
+	// to one at run time, which is legal; wherever a constant is required it is not
+	// one. They reached the walk below and panicked the checker ("TODO ...
+	// CompositeLit") until 2026-09-18 -- `case Pkt{}:` crashed the compiler.
+	for c := range it(n.ast) {
+		if c.sym == CompositeLit || c.sym == FuncLiteral || c.sym == Type || c.sym == 0 && f.ch(c.tok) == LBRACK {
+			if !f.inArrayBound && !f.inCaseExpr {
+				f.err(f.tok(n.Pos()).Position(), "%s is not constant", f.exprSource(n))
+			}
+			return constVal{cv: constant.MakeUnknown()}
+		}
+	}
 	//TODO 	var ident *FactorNodeIdent
 	fac := n
 	for n := range it(n.ast) {
