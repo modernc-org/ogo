@@ -2628,10 +2628,17 @@ func (e *emitter) deferPkgInit(stmt string) {
 // for emitStatement to put it before, and without this the temporary is referenced
 // and never declared -- which is what `var g = mk().y` did.
 func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
-	if ct, ok := e.globals[target]; ok {
+	ct, typed := e.globals[target]
+	if typed {
 		e.typeUntypedShifts(initExpr, ct) // the variable's type is the value's context
 	}
-	text, pro := e.pkgInitRender(func() { e.emitExpr(initExpr) })
+	text, pro := e.pkgInitRender(func() {
+		if lit, ok := e.hugeFloatConstC(initExpr, ct); ok && typed {
+			e.emit(lit)
+			return
+		}
+		e.emitExpr(initExpr)
+	})
 	step := pkgInitStep{
 		target:  target,
 		deps:    e.initRefs(initExpr),
@@ -4438,7 +4445,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5152,6 +5159,7 @@ type emitter struct {
 	constVal          map[string]constant.Value // exact value of a numeric constant, for foldConstVal; a typed one rounded to its type
 	constStr          map[string]string         // string-constant name -> its decoded value, for folding string concatenation
 	constUntyped      map[string]bool           // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
+	constHuge         map[string]bool           // constant name -> an integer beyond 64 bits, with no C symbol (see hugeConstVal)
 	arrays            map[string]arrDim         // local array name -> element type and bound (reset per function)
 	globalArrays      map[string]arrDim         // package-level array name -> element type and bound (persists across functions)
 	sliceVars         map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
@@ -8272,11 +8280,22 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			}
 			// An untyped constant whose value does not fit an int takes the width it
 			// needs: Go's default type for it is int, which is 64-bit there, and
-			// "static const int" would store 1 << 40 as 0.
+			// "static const int" would store 1 << 40 as 0. One only a uint64 holds,
+			// `1<<64 - 1`, is a uint64: Go's default type would overflow, so it is
+			// used at that type or folded into a constant expression, and this is
+			// what spells it (wideConstRef).
 			e.iota = curIota
-			if v, ok := e.foldConstInt(initExpr); ok && ct == "int" && !fitsCInt(v) {
-				ct = "int64_t"
-				e.includes["stdint.h"] = true
+			if ct == "int" {
+				switch v, ok := e.constIntValue(initExpr); {
+				case ok && !fitsCInt(v):
+					ct = "int64_t"
+					e.includes["stdint.h"] = true
+				case !ok:
+					if _, unsignedFits := e.constIntValueIn(initExpr, "uint64_t"); unsignedFits {
+						ct = "uint64_t"
+						e.includes["stdint.h"] = true
+					}
+				}
 			}
 			e.iota = -1
 			ctype = ct
@@ -8314,7 +8333,7 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		// rejects a `static const` there); record its value. iota is visible to the
 		// fold as this spec's index for the duration.
 		e.iota = curIota
-		if v, ok := e.constIntValue(initExpr); ok {
+		if v, ok := e.constIntValueIn(initExpr, ctype); ok {
 			e.constInt[cname] = intCLit(v)
 		}
 		e.iota = -1
@@ -8332,6 +8351,20 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 				return
 			}
 		}
+		// An integer constant beyond 64 bits, `const huge = 1 << 100`, declares
+		// nothing either: no C type holds it. Every expression reading it folds
+		// exactly (constIntValue) to a value that fits, or is refused where it is
+		// read (emitOperandToken) -- until 2026-09-18 the declaration was emitted
+		// with its expression as the initializer, a run-time shift of an int64 by
+		// 100 in a `static const int`, which the host's compiler refused and the
+		// target's computed.
+		e.iota = curIota
+		if _, huge := e.hugeConstVal(initExpr); huge {
+			e.constHuge[cname] = true
+			e.iota = -1
+			return
+		}
+		e.iota = -1
 		// A float constant is inlined at each use as well (foldedFloat) and declares
 		// nothing: an expression reading one is folded exactly (emitFloatPrefixFold),
 		// which would leave a `static const` nothing names, and in a static
@@ -8498,6 +8531,15 @@ func (e *emitter) foldedInt(name string) (string, bool) {
 	}
 	v, ok := e.constInt[e.globalC(name)]
 	return v, ok
+}
+
+// isHugeConstName reports whether name is an integer constant beyond 64 bits here
+// (see hugeConstVal), which has no C symbol to read.
+func (e *emitter) isHugeConstName(name string) bool {
+	if e.shadowedByLocal(name) {
+		return false
+	}
+	return e.constHuge[name] || e.constHuge[e.globalC(name)]
 }
 
 // isUntypedConstName reports whether name is an untyped constant here: a block
@@ -15469,6 +15511,12 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 func (e *emitter) emitConversion(ct string, arg Node) {
 	e.typeUntypedShifts(arg.ast, ct) // the conversion's type is its untyped operand's
 	if isScalarCType(e.underlyingCType(ct)) {
+		// A constant no integer type holds converted to a float, `float32(huge)`,
+		// is the float Go converts it to: there is no integer to cast.
+		if lit, ok := e.hugeFloatConstC(arg.ast, ct); ok {
+			e.emit(lit)
+			return
+		}
 		// A CONSTANT converted to a 64-bit type is that constant, spelled at that
 		// width: `int64(-4294967295)` as a cast of a literal reached the target's C
 		// compiler as a 64-bit constant expression, which it mis-folds -- see
@@ -16257,23 +16305,55 @@ func (e *emitter) constIntValue(ast []int32) (int64, bool) {
 	e.foldConv = true
 	defer func() { e.foldConv = prev }()
 	v, ok := e.foldConstInt(ast)
-	if !ok {
-		return 0, false
-	}
-	// That fold wraps at 64 bits, and a constant expression does not: `var q int64 =
-	// 3 << 62 >> 61` is 6 by way of a value past 64 bits, and the wrapped fold spelled
-	// -2. Only an UNTYPED expression can pass through one -- a typed intermediate out
-	// of its range is an error Go reports -- so where the exact value is representable,
-	// it is the one.
-	if xv, ok := e.foldConstVal(ast); ok && xv.Kind() == constant.Int {
+	// That fold wraps at 64 bits and stops at a shift of 64 or more, and a constant
+	// expression does neither: `var q int64 = 3 << 62 >> 61` is 6 by way of a value
+	// past 64 bits, and the wrapped fold spelled -2; `1 << 100 >> 98` is 4, `(1 <<
+	// 64) / 4` is 1 << 62 and `1<<64 - 1` is what a uint64 holds, and the stopped
+	// fold left each to be computed at run time by a shift of an int64, in a `static
+	// const` initializer. Only an UNTYPED expression can pass through such a value
+	// -- a typed intermediate out of its range is an error Go reports -- so where
+	// the exact value is representable, it is the one; and where it is not, the
+	// wrapped fold is no value of the expression either.
+	if xv, xok := e.foldConstVal(ast); xok && xv.Kind() == constant.Int {
 		if x, exact := constant.Int64Val(xv); exact {
 			return x, true
 		}
-		if x, exact := constant.Uint64Val(xv); exact && e.foldUnsigned {
+		// A value only a uint64 holds is answered as its bit pattern, which is
+		// what a uint64 context spells (constSpelling) and what the wrapped fold
+		// gave for it where that fold got as far -- `1 << 63` for a uint64 -- and
+		// a signed context never sees: the checker refuses the overflow.
+		if x, exact := constant.Uint64Val(xv); exact {
 			return int64(x), true
 		}
+		return 0, false
 	}
-	return v, true
+	return v, ok
+}
+
+// hugeConstVal answers the exact value of an integer constant expression that no
+// 64-bit type represents, `1 << 100`. Such a constant has no C symbol: it exists
+// only to be folded into expressions whose values fit.
+func (e *emitter) hugeConstVal(ast []int32) (constant.Value, bool) {
+	xv, ok := e.foldConstVal(ast)
+	if !ok || xv.Kind() != constant.Int {
+		return nil, false
+	}
+	if _, exact := constant.Int64Val(xv); exact {
+		return nil, false
+	}
+	if _, exact := constant.Uint64Val(xv); exact {
+		return nil, false
+	}
+	return xv, true
+}
+
+// constIntValueIn is constIntValue for a value of the type ctype: a uint64's
+// division, remainder and right shift, and its range, are the unsigned ones.
+func (e *emitter) constIntValueIn(ast []int32, ctype string) (int64, bool) {
+	prev := e.foldUnsigned
+	e.foldUnsigned = e.underlyingCType(ctype) == "uint64_t"
+	defer func() { e.foldUnsigned = prev }()
+	return e.constIntValue(ast)
 }
 
 // convFold folds `T(x)` to x's value when T is an integer type, for the value-only
@@ -16360,23 +16440,25 @@ func (e *emitter) constLevelWrapsInC(ast []int32, ut string) (int64, bool) {
 	fits := func(v constant.Value, r int) bool {
 		return !constant.Compare(v, token.LSS, lo[r]) && !constant.Compare(v, token.GTR, hi[r])
 	}
-	rankOf := func(v constant.Value) (int, bool) {
+	wraps := false
+	rankOf := func(v constant.Value) int {
 		for r := rInt; r <= rLL; r++ {
 			if fits(v, r) {
-				return r, true
+				return r
 			}
 		}
-		return 0, false
+		// Beyond every C type: `huge >> 98` for a `const huge = 1 << 100`, which C
+		// cannot compute as written at all. The level is folded to its value where
+		// that fits; until 2026-09-18 such an operand ended the fold, and the name
+		// stood in the C.
+		wraps = true
+		return rLL
 	}
 	acc, ok := e.foldValNode(kids[0])
 	if !ok || acc.Kind() != constant.Int {
 		return 0, false
 	}
-	rank, ok := rankOf(acc)
-	if !ok {
-		return 0, false
-	}
-	wraps := false
+	rank := rankOf(acc)
 	for i := 1; i+1 < len(kids); i += 2 {
 		op := kids[i]
 		if op.sym != AddOp && op.sym != MulOp {
@@ -16386,10 +16468,7 @@ func (e *emitter) constLevelWrapsInC(ast []int32, ut string) (int64, bool) {
 		if !ok || rhs.Kind() != constant.Int {
 			return 0, false
 		}
-		r2, ok := rankOf(rhs)
-		if !ok {
-			return 0, false
-		}
+		r2 := rankOf(rhs)
 		switch text := e.opText(op.ast); text {
 		case "<<", ">>":
 			width := int64(32)
@@ -16542,6 +16621,9 @@ func (e *emitter) foldValToken(tok int32) (constant.Value, bool) {
 		var ok bool
 		if e.shadowedByLocal(s) {
 			return nil, false
+		}
+		if e.foldWideConstsOnly && !e.wideConstName(s) && !e.wideConstName(e.globalC(s)) {
+			return nil, false // a 32-bit constant keeps its name; see levelConstLit
 		}
 		if v, ok = e.constVal[s]; !ok {
 			if v, ok = e.constVal[e.globalC(s)]; !ok {
@@ -16750,6 +16832,17 @@ func (e *emitter) floatConstC(ast []int32, ctype string) (string, bool) {
 		return "", false
 	}
 	return e.parenNegative(lit), true
+}
+
+// hugeFloatConstC is floatConstC for the positions that convert an integer
+// themselves -- a local declaration, an assignment, a return -- and so want the
+// float spelling only for a constant no integer type holds: `var f float32 = 1 <<
+// 100`, which as written was a run-time shift of an int64 by 100, and 0.
+func (e *emitter) hugeFloatConstC(ast []int32, ctype string) (string, bool) {
+	if _, huge := e.hugeConstVal(ast); !huge {
+		return "", false
+	}
+	return e.floatConstC(ast, ctype)
 }
 
 // foldIntegral is foldConstInt for the positions that want an integer and take any
@@ -22782,6 +22875,10 @@ func (e *emitter) emitReturnValue(i int, ex Node) {
 		}
 	}
 	if i < len(e.curResultTypes) {
+		if lit, ok := e.hugeFloatConstC(ex.ast, e.curResultTypes[i]); ok {
+			e.emit(lit)
+			return
+		}
 		// A nil slice is the all-zero header. The interface case is not here: it
 		// belongs to ifaceValueC below, which every position wanting an interface
 		// VALUE goes through, so nil is answered once rather than per position.
@@ -27084,6 +27181,11 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			e.emitMakeSliceAssign(lhs, sliceCName(elem), elem, lenAST, capAST)
 			return
 		}
+		if lit, ok := e.hugeFloatConstC(rhsAst, lhsCType); ok {
+			e.ind()
+			e.emit(lhs + " = " + lit + ";\n")
+			return
+		}
 		// Shared with the indexed and access-chain targets, so a struct holding an
 		// array becomes a memcpy here too (see emitAssignTailOrCopy).
 		e.typeUntypedShifts(rhsAst, lhsCType)
@@ -27451,6 +27553,11 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 			e.emit(ctype + " " + cn + " = " + e.constSpelling(v, ut) + ";\n")
 			return
 		}
+	}
+	if lit, ok := e.hugeFloatConstC(initExpr, ctype); ok {
+		e.ind()
+		e.emit(ctype + " " + cn + " = " + lit + ";\n")
+		return
 	}
 	// An element of a struct literal that C cannot put in an initializer -- an
 	// ARRAY field filled from a value -- is zeroed there and copied in here, the
@@ -28068,7 +28175,10 @@ func (e *emitter) emitAssignTail(t assignTail) {
 		}
 	}
 	e.emit(" " + t.op + " ")
-	if t.complement {
+	switch lit, huge := e.hugeFloatConstC(t.rhs, t.targetCType); {
+	case huge:
+		e.emit(lit)
+	case t.complement:
 		// The target's type when it is known: the complement happens in the type
 		// being written, not in the operand's (see emitComplement).
 		ct := t.targetCType
@@ -28076,7 +28186,7 @@ func (e *emitter) emitAssignTail(t assignTail) {
 			ct, _ = e.inferCType(t.rhs)
 		}
 		e.emitComplement(t.rhs, ct, func() { e.emitExpr(t.rhs) })
-	} else {
+	default:
 		e.emitExpr(t.rhs)
 	}
 	e.emit(";\n")
@@ -33176,6 +33286,12 @@ func (e *emitter) emitOperandToken(tok int32) {
 			// And a float constant, for the same reasons (see emitConstSpecName).
 			if lit, ok := e.foldedFloat(s); ok {
 				e.emit(lit)
+				return
+			}
+			// A constant beyond 64 bits read where nothing folded it away has no
+			// value C can hold (see emitConstSpecName).
+			if e.isHugeConstName(s) {
+				e.fail("constant %s overflows every integer type: it is only usable in a constant expression whose value fits", s)
 				return
 			}
 			// And so is any integer constant inside a static or aggregate

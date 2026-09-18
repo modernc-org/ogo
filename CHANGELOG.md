@@ -97,6 +97,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A constant beyond 64 bits was computed at run time, as 0.** `const huge = 1 <<
+  100` was declared as a `static const int` initialized by a run-time shift of an
+  int64 by 100, and `huge >> 98`, `(1 << 64) / 4`, `1 << 62 * 4 / 8` and `1<<64 -
+  1` were shifts and divisions of that; the host's compiler refused the
+  initializer and the target's computed 0. Go computes a constant expression in
+  arbitrary precision and converts the result, as the spec here has always said.
+  The emitter's exact fold now decides every integer constant: a value beyond 64
+  bits declares no C symbol and is folded into the expressions reading it, a
+  value only a uint64 holds is a uint64, and an intermediate past 64 bits is
+  exact. Where a float is wanted -- a declaration, an assignment, a conversion, a
+  field, a literal element, a package variable, a result, an argument -- such a
+  constant is spelled as the float Go converts it to. A read nothing folded is
+  refused with the constant's name rather than emitted. The literal `1<<64 - 1`
+  and a hex literal above the signed range are spelled in decimal now, which is
+  the one change in the corpus.
 - **A multiple assignment stored at the place a target had AFTER an earlier store
   of the same statement.** Go assigns in two phases: every index operand and
   pointer indirection on the left is fixed before the first store. `i, arr[i] =
@@ -404,6 +419,14 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Constant, method and defer semantics against Go on the host and a P2-EDGE:
+  constant division and truncation, iota idioms, typed and untyped constants
+  (`x / 3.0` for an int x is 3), rune constants, wrapping of a sized variable,
+  constant bounds and indexes; value and pointer receivers through a pointer, an
+  element, a field and an embedded field, method values, interface dispatch,
+  type switches and assertions; defer order, arguments and receivers evaluated at
+  the defer, an early return. One fault (the constant beyond 64 bits above); all
+  four programs are run cases.
 - Value semantics against Go on the host and a P2-EDGE: an array, a struct and a
   struct holding both copy on assignment, through a pointer, into a parameter,
   out of a result, into and out of an element and a field, and to a range's value;

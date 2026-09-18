@@ -28394,6 +28394,408 @@ func main() {
 }
 `,
 		want: "field 7 true\nelement 0 0 0 false false false\nthrough 0 false\nfield 0 false\nelement 0 0 0 false false false\nthrough 0 false\nfield 0 false\nelement 0 0 0 false false false\nthrough 0 false\ndone 1\n",
+	}, {
+		// Constant expressions computed in arbitrary precision, measured against Go
+		// (2026-09-18): a constant beyond 64 bits (`1 << 100`) folded into values
+		// that fit, one only a uint64 holds (`1<<64 - 1`), intermediates past 64
+		// bits (`1 << 63 >> 62`, `(1 << 64) / 4`, `1 << 62 * 4 / 8`), and each of
+		// them where a float is wanted: a declaration, an assignment, a conversion,
+		// a field, a literal element, a package variable, a result, an argument and
+		// a comparison. Until then `1 << 100` was a run-time shift of an int64 by
+		// 100 in a `static const int`, which the host's compiler refused and the
+		// target's computed as 0.
+		name: "constants beyond 64 bits fold into what fits, and into floats",
+		src: `const (
+	huge = 1 << 100
+	m    = 1 << 63 >> 62
+	d    = (1 << 64) / 4
+	w    = 1 << 62 * 4 / 8
+	maxU = 1<<64 - 1
+	big  = 9223372036854775807 + 1 - 1
+	prod = 4294967296 * 4294967296 / 4294967296
+	half = huge / 2 >> 99
+	neg  = -1 << 100 >> 99
+	c    = 1 << 200 >> 199
+	rem  = (1<<70 + 5) % 1000
+	mask = maxU >> 60
+	sub  = 1<<64 - 1<<63
+)
+
+type S struct {
+	f float32
+}
+
+var pf float32 = huge
+
+func avog() float32 {
+	return 602214076000000000000000
+}
+
+func take(f float32) float32 {
+	return f / 2
+}
+
+func floats() {
+	var f float32 = 1 << 100
+	var g float32 = 1 << 40
+	var h float64 = 3 << 62 >> 61
+	var k float32 = huge
+	k = huge / 2
+	m := float32(huge)
+	n := float64(huge >> 90)
+	var s S
+	s.f = huge
+	arr := [2]float32{huge, 1 << 70}
+	println("F1", f, g, h, k, m, n)
+	println("F2", pf, avog(), take(huge), arr[0], arr[1], s.f, huge > 1<<99, k < huge)
+}
+
+func main() {
+	floats()
+	x := huge >> 98
+	var u uint64 = maxU
+	var b int64 = big
+	var p int64 = prod
+	var f float32 = 1 << 100
+	var g float32 = huge
+	var arr [1 << 40 >> 38]int
+	var dd, ww int64 = d, w
+	println("W1", x, m, dd, ww, u, b, p)
+	arr[1] = 3
+	println("W2", half, neg, c, rem, mask, len(arr), huge/(1<<98), arr[1])
+	println("W3", f, g, f == g, uint64(sub))
+	println("W4", huge > 1<<99, huge == 1<<100, maxU > 1<<63)
+}
+`,
+		want: "F1 1.2676506e+30 1.0995116e+12 6 6.338253e+29 1.2676506e+30 1024\nF2 1.2676506e+30 6.0221406e+23 6.338253e+29 1.2676506e+30 1.1805916e+21 1.2676506e+30 true true\nW1 4 2 4611686018427387904 2305843009213693952 18446744073709551615 9223372036854775807 4294967296\nW2 1 -2 2 429 15 4 4 3\nW3 1.2676506e+30 1.2676506e+30 true 9223372036854775808\nW4 true true true\n",
+	}, {
+		// Constant semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): integer and float division of constants, truncation toward
+		// zero, concatenation, comparison, rune constants, iota in its idioms, a
+		// typed constant's method, an untyped constant taking the other operand's
+		// type (`x / 3.0` for an int x is 3), wrapping of a sized variable holding a
+		// constant, constant shifts and masks in a variable's context, and a
+		// constant as an array bound and an index. All matched.
+		name: "constant semantics: division, iota, typed and untyped constants, runes and bounds",
+		src: `const (
+	big  = 1 << 40
+	huge = 1 << 100
+	q    = 7 / 2
+	f    = 7 / 2.0
+	r    = 7.0 / 2
+	neg  = -7 / 2
+	rem  = -7 % 2
+	z    = 1<<62>>60 + (1+2)*(3+4)%5
+	s    = "a" + "b" + "héllo"
+	t    = 3 > 2 && !false
+	c    = 'x'
+	big64 int64 = 1 << 40
+	u32   uint32 = 1<<32 - 1
+	max   = 1<<31 - 1
+	ratio = 2.5
+	n     = len("abc") + len(s)
+)
+
+const (
+	a0 = iota * 10
+	a1
+	a2
+)
+
+const (
+	_  = iota
+	KB = 1 << (10 * iota)
+	MB
+	GB
+)
+
+type Weekday int
+
+const (
+	Sunday Weekday = iota
+	Monday
+	Tuesday
+)
+
+func (d Weekday) Next() Weekday {
+	return (d + 1) % 3
+}
+
+func part1() {
+	x := big >> 30
+	y := huge >> 98
+	println("A1", x, y, q, neg, rem, z)
+	println("A2", f, r, f == r, f*2)
+	println("A3", s, len(s), s[1], t, c, c+1, n)
+	var b byte = c
+	var r32 rune = c + 1
+	println("A4", b, r32, string(r32), string(rune(c)))
+	v := u32
+	w := max
+	println("A5", big64>>39, u32, v+1, max, w+1 < 0)
+	println("A6", a0, a1, a2, KB, MB, GB)
+	println("A7", Sunday, Monday.Next(), Tuesday.Next(), Tuesday.Next() == Sunday)
+}
+
+func part2() {
+	// untyped constants take the type of the other operand
+	x := 10
+	y := x / 3.0
+	var f32 float32 = 10
+	g := f32 * ratio
+	h := ratio * 2
+	var i8 int8 = 100
+	j := i8 + 27
+	var k uint8 = 255
+	k++
+	var l int32 = max
+	l++
+	println("B1", y, g, h, j, k, l)
+	// constant shifts and masks in variable context
+	m := x << 3 & 0xf0 | 1
+	o := uint16(1)<<15 | 3
+	var p uint64 = 1<<63 | 1
+	println("B2", m, o, p, p>>60, -x>>1, uint32(-x)>>28)
+	// a rune is an int32
+	ch := 'a'
+	ch += 2
+	str := string(ch)
+	println("B3", ch, string(ch), str, len(str), 'z'-'a', 'é')
+	// a constant expression as an array bound and an index
+	var arr [q * 2]int
+	arr[q] = 5
+	arr[len(arr)-1] = 6
+	println("B4", len(arr), arr[3], arr[5], cap(arr[:q]))
+}
+
+func main() {
+	part1()
+	part2()
+}
+`,
+		want: "A1 1024 4 3 -3 -1 5\nA2 3.5 3.5 true 7\nA3 abhéllo 8 98 true 120 121 11\nA4 120 121 y x\nA5 2 4294967295 0 2147483647 true\nA6 0 10 20 1024 1048576 1073741824\nA7 0 2 0 true\nB1 3 25 5 127 0 -2147483648\nB2 81 32771 9223372036854775809 8 -5 15\nB3 99 c c 1 25 233\nB4 6 5 6 6\n",
+	}, {
+		// Method and interface semantics measured against Go on the host and a
+		// P2-EDGE (2026-09-18): a value receiver works on a copy and a pointer
+		// receiver on the variable, through a pointer, an element, a field and an
+		// embedded field; a method value binds a pointer receiver's address; a
+		// method called through an interface sees the pointee's later changes; a
+		// type switch, a comma-ok assertion writing through its pointer, interface
+		// equality and nil. All matched.
+		name: "method semantics: value and pointer receivers, promotion, method values and interfaces",
+		src: `type Counter struct {
+	n int
+}
+
+func (c Counter) Get() int {
+	return c.n
+}
+
+func (c Counter) Bump() int {
+	c.n++
+	return c.n
+}
+
+func (c *Counter) Inc() {
+	c.n++
+}
+
+func (c *Counter) Ptr() *Counter {
+	return c
+}
+
+type Pair struct {
+	Counter
+	m int
+}
+
+type Wrap struct {
+	c *Counter
+}
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int {
+	return q.s * q.s
+}
+
+type Rect struct {
+	w, h int
+}
+
+func (r *Rect) Area() int {
+	return r.w * r.h
+}
+
+var gc Counter
+
+func part1() {
+	// a value receiver works on a copy; a pointer receiver on the variable
+	c := Counter{1}
+	println("A1", c.Bump(), c.Bump(), c.n)
+	c.Inc()
+	c.Inc()
+	println("A2", c.n, c.Get())
+	p := &c
+	println("A3", p.Bump(), p.Get(), c.n)
+	p.Inc()
+	println("A4", c.n, p.Ptr().n)
+	// through an element and a field
+	arr := [2]Counter{{5}, {6}}
+	arr[0].Inc()
+	println("A5", arr[0].n, arr[0].Bump(), arr[0].n, arr[1].Get())
+	var w Wrap
+	w.c = &c
+	w.c.Inc()
+	println("A6", c.n, w.c.Get())
+	// promoted through embedding
+	var pr Pair
+	pr.n = 10
+	pr.Inc()
+	println("A7", pr.n, pr.Get(), pr.Bump(), pr.n, pr.Counter.n)
+	pp := &pr
+	pp.Inc()
+	println("A8", pr.n, pp.Get())
+}
+
+func part2() {
+	// a method value on a package variable: a value receiver is copied when the
+	// value is made, a pointer receiver's address is taken then
+	gc.n = 1
+	inc := gc.Inc
+	gc.n = 5
+	println("B1", gc.n)
+	inc()
+	println("B2", gc.n, gc.Get())
+	// a method expression-like call through the interface
+	var s Shape
+	q := Sq{3}
+	s = &q
+	println("B3", s.Area())
+	q.s = 4
+	println("B4", s.Area())
+	r := Rect{2, 3}
+	s = &r
+	println("B5", s.Area())
+	// a type switch and assertion
+	shapes := [2]Shape{&q, &r}
+	total := 0
+	for i := 0; i < 2; i++ {
+		switch v := shapes[i].(type) {
+		case *Sq:
+			total += v.s
+		case *Rect:
+			total += v.w
+		}
+	}
+	println("B6", total)
+	if rr, ok := shapes[1].(*Rect); ok {
+		rr.h = 10
+	}
+	println("B7", r.h, shapes[1].Area())
+	_, isSq := shapes[1].(*Sq)
+	println("B8", isSq, shapes[0] == Shape(&q), shapes[0] == shapes[1])
+	var none Shape
+	println("B9", none == nil, s != nil)
+}
+
+func main() {
+	part1()
+	part2()
+}
+`,
+		want: "A1 2 2 1\nA2 3 3\nA3 4 3 3\nA4 4 4\nA5 6 7 6 6\nA6 5 5\nA7 11 11 12 11 11\nA8 12 12\nB1 5\nB2 6 6\nB3 9\nB4 16\nB5 6\nB6 6\nB7 10 20\nB8 false true false\nB9 true true\n",
+	}, {
+		// Defer semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): deferred calls run last in, first out, after the body and
+		// after an early return; their arguments and a value receiver are evaluated
+		// where the defer is written, a pointer receiver's pointee is read when the
+		// call runs; a defer in a block of the function runs at its return. All
+		// matched.
+		name: "defer semantics: order, the arguments at the defer, the receivers and an early return",
+		src: `type Counter struct {
+	n int
+}
+
+func (c Counter) Show(tag string) {
+	println(tag, c.n)
+}
+
+func (c *Counter) ShowP(tag string) {
+	println(tag, c.n)
+}
+
+var calls int
+
+func mark(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func show(tag string, v int) {
+	println(tag, v)
+}
+
+func order() {
+	defer show("first deferred", 1)
+	defer show("second deferred", 2)
+	if calls == 0 {
+		defer show("in a block", 3)
+	}
+	println("order body")
+}
+
+func args() {
+	x := 1
+	defer show("x at defer", x)
+	x = 2
+	calls = 0
+	defer show("marks", mark(1)+mark(2))
+	mark(3)
+	println("args body", x, calls)
+}
+
+func receivers() {
+	c := Counter{1}
+	defer c.Show("value receiver at defer")
+	defer c.ShowP("pointer receiver at return")
+	p := &c
+	defer p.Show("value through pointer at defer")
+	defer p.ShowP("pointer at return")
+	c.n = 9
+	println("receivers body", c.n)
+}
+
+func results() (r int) {
+	defer show("deferred in results", 7)
+	r = 5
+	return r * 2
+}
+
+func early(n int) int {
+	defer show("early", n)
+	if n > 2 {
+		return n
+	}
+	println("early body", n)
+	return -n
+}
+
+func main() {
+	order()
+	args()
+	receivers()
+	println("results", results())
+	println("early", early(1), early(3))
+}
+`,
+		want: "order body\nin a block 3\nsecond deferred 2\nfirst deferred 1\nargs body 2 123\nmarks 3\nx at defer 1\nreceivers body 9\npointer at return 9\nvalue through pointer at defer 1\npointer receiver at return 9\nvalue receiver at defer 1\ndeferred in results 7\nresults 10\nearly body 1\nearly 1\nearly 3\nearly -1 3\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
