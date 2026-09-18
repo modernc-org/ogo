@@ -15463,6 +15463,10 @@ func main() {
 		// A send clause beside a DEFAULT: the gated non-blocking send offers only
 		// when a receiver has announced itself on the cell, so the default is
 		// answerable -- refused before, since the standing offer could not know.
+		// The first select runs before the consumer exists, so the default is
+		// certainly taken once: whether the loop's selects ever find no receiver
+		// parked is up to which thread runs first, and `idle > 0` printed false
+		// about one host run in a hundred until 2026-09-19.
 		name: "a non-blocking send reaches a parked receiver",
 		src: `var ch chan int32
 
@@ -15477,9 +15481,18 @@ func consumer() {
 var done chan int32
 
 func main() {
+	idle := 0
+	// Before the consumer is started no receiver can be parked, so the default
+	// is the only arm that can run -- which makes the default's coverage
+	// deterministic rather than a matter of which thread runs first.
+	select {
+	case ch <- int32(99):
+		println("unreachable")
+	default:
+		idle++
+	}
 	go consumer()
 	sent := 0
-	idle := 0
 	for sent < 3 {
 		select {
 		case ch <- int32(sent + 1):
