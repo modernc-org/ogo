@@ -30009,6 +30009,141 @@ func main() {
 }
 `,
 		want: "V0 [  -42][-42  ][  -42][-0042][-42  ][-42][    -042][-42][ -42][-42   ]\nV1 [4000000000][4000000000][4000000000][4000000000][4000000000][4000000000][4000000000][4000000000][ 4000000000][4000000000]\nV2 [ 3.25][3.25 ][ 3.25][03.25][3.25 ][3.2][    3.25][3][ 3.25][3.25  ]\nV3 [héllo][héllo][héllo][héllo][héllo][hé][     hél][h][héllo][héllo ]\nV4 [ true][true ][ true][0true][true ][true][    true][true][true][true  ]\nV5 [  233][233  ][  233][00233][233  ][233][     233][233][ 233][233   ]\nV6 [[    1    -2]][[1     -2   ]][[    1    -2]][[00001 -0002]][[1     -2   ]][[01 -02]][[     001     -002]][[1 -2]][[   1   -2]][[1      -2    ]]\nV7 [[  0.5 -1.25]][[0.5   -1.25]][[  0.5 -1.25]][[000.5 -1.25]][[0.5   -1.25]][[0.5 -1.2]][[     0.5    -1.25]][[0.5 -1]][[ 0.5 -1.25]][[0.5    -1.25 ]]\nV8 [[    a    bc]][[a     bc   ]][[    a    bc]][[0000a 000bc]][[a     bc   ]][[a bc]][[       a       bc]][[a b]][[   a   bc]][[a      bc    ]]\nV9 [[    7    -8]][[7     -8   ]][[    7    -8]][[00007 -0008]][[7     -8   ]][[07 -08]][[     007     -008]][[7 -8]][[   7   -8]][[7      -8    ]]\nV10 [[    1   255]][[1     255  ]][[    1   255]][[00001 00255]][[1     255  ]][[01 255]][[     001      255]][[1 255]][[   1  255]][[1      255   ]]\nV11 [-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012]\n",
+	}, {
+		// Goroutine semantics measured against Go on the host and a P2-EDGE, three
+		// runs (2026-09-18): three workers ranging over a job channel a fourth cog
+		// feeds and closes, results gathered by id; a `go` statement's arguments
+		// evaluated where it is written, a later store to one unseen; ping-pong
+		// between two cogs; a range over a channel its producer closes and the
+		// comma-ok receive after; a select polling with a default until a value
+		// comes. All matched.
+		name: "goroutine semantics: fan-out and fan-in, the go statement's arguments, ping-pong, close and polling",
+		src: `type Job struct {
+	id, n int
+}
+
+type Result struct {
+	id, sum int
+}
+
+var results chan Result
+var jobs chan Job
+var ping chan int
+var pong chan int
+var nums chan int
+var done chan int
+var one chan int
+
+var calls int
+
+func arg(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func worker() {
+	for j := range jobs {
+		s := 0
+		for i := 1; i <= j.n; i++ {
+			s += i
+		}
+		results <- Result{j.id, s}
+	}
+	done <- 1
+}
+
+func echo(k int, tag int) {
+	for i := 0; i < k; i++ {
+		v := <-ping
+		pong <- v*10 + tag
+	}
+}
+
+func produce(from, to int) {
+	for i := from; i <= to; i++ {
+		nums <- i * i
+	}
+	close(nums)
+}
+
+func feed(n int) {
+	for i := 1; i <= n; i++ {
+		jobs <- Job{i, i * 10}
+	}
+	close(jobs)
+}
+
+func late(v int) {
+	for i := 0; i < 1000; i++ {
+		calls = calls
+	}
+	one <- v
+}
+
+func fanOut() {
+	for w := 0; w < 3; w++ {
+		go worker()
+	}
+	go feed(6)
+	var byID [7]int
+	for i := 0; i < 6; i++ {
+		r := <-results
+		byID[r.id] = r.sum
+	}
+	for w := 0; w < 3; w++ {
+		<-done
+	}
+	println("G1", byID[1], byID[2], byID[3], byID[4], byID[5], byID[6])
+}
+
+func pingPong() {
+	calls = 0
+	x := 5
+	go echo(arg(3), x)
+	x = 9
+	total := 0
+	for i := 1; i <= 3; i++ {
+		ping <- i
+		total = total*100 + <-pong
+	}
+	println("G2", total, calls, x)
+}
+
+func drain() {
+	go produce(arg(1), arg(4))
+	sum, count := 0, 0
+	for v := range nums {
+		sum += v
+		count++
+	}
+	v, ok := <-nums
+	println("G3", sum, count, v, ok)
+}
+
+func poll() {
+	go late(7)
+	polls := 0
+	got := 0
+	for got == 0 {
+		select {
+		case v := <-one:
+			got = v
+		default:
+			polls++
+		}
+	}
+	println("G4", got, polls >= 0)
+}
+
+func main() {
+	fanOut()
+	pingPong()
+	drain()
+	poll()
+	println("G5", calls)
+}
+`,
+		want: "G1 55 210 465 820 1275 1830\nG2 152535 3 9\nG3 30 4 0 false\nG4 7 true\nG5 314\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

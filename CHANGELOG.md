@@ -495,6 +495,11 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Goroutine semantics against Go on the host and a P2-EDGE, three runs: workers
+  ranging over a job channel another cog feeds and closes, results gathered by id;
+  a `go` statement's arguments evaluated where it is written; ping-pong between two
+  cogs; a range over a closed channel and the comma-ok receive after; a polling
+  select with a default. All matched; the program is a run case.
 - The strings package against Go's on the host and a P2-EDGE: every function it
   has, over empty strings, multi-byte and invalid UTF-8, overlapping counts and
   Unicode's spaces. One fault (TrimSpace, above); both programs are run cases.
