@@ -1,0 +1,39 @@
+// COMPILE
+
+// What a slice or a pointer may be assigned, passed and returned as: its own type,
+// and a defined type over the same one in either direction.
+
+type List []int
+
+type P struct {
+	n int
+}
+
+type Ptr *P
+
+var back [4]int
+
+func sum(xs []int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func mk() []int { return back[:] }
+
+func asList(xs []int) List { return xs }
+
+func main() {
+	var l List = back[:2]
+	var d []int = l
+	var m List = d
+	p := &P{1}
+	var q *P = p
+	var r Ptr = q
+	var s *P = r
+	println(sum(l), sum(m), sum(mk()), len(asList(d)), q.n, s.n)
+	rows := [][]int{d, l, back[1:]}
+	println(len(rows))
+}

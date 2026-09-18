@@ -175,6 +175,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A slice or a pointer of the wrong type is refused where it is written.** `var
+  d []int = s` for a `[]string` s, `take(s)`, a field, a literal's element, a
+  return: none had their types compared, a slice and a pointer having no Kind for
+  the checks to ask about, and the C each became was left to decide -- refused as
+  C, about types the program never wrote, or for a pointer built: `var p *int = q`
+  for a `*string` q took only the target compiler's warning, and read a string's
+  header as an int. They are compared as Go compares them now.
 - **`[]string{s1, s2}` and `[][]int{a, b}` build for the target.** A string or a
   slice value standing as an element of a slice or an array literal -- a variable,
   a call's result, an inner slice literal -- is a struct to C, and the target's

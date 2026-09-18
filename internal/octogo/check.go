@@ -2329,6 +2329,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	// would return before ever asking.
 	wantPtr := f.isPointerType(s, rt.typeNode)
 	f.checkChanAssign(s, s, rt.typeNode, e, "return statement")
+	f.checkRefAssign(s, s, rt.typeNode, e, "return statement")
 	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	f.checkImplements(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	f.checkDefinedType(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
@@ -4746,6 +4747,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkFuncAssign(s, funcSig, e, "variable declaration")
 			if len(names) == len(initExprs) {
 				f.checkChanAssign(s, s, declType, e, "variable declaration")
+				f.checkRefAssign(s, s, declType, e, "variable declaration")
 				f.checkPointerValue(s, isPtr, f.typeNodeString(declType, false), e, "variable declaration")
 				f.checkImplements(s, f.typeNodeString(declType, false), e, "variable declaration")
 				f.checkDefinedType(s, f.typeNodeString(declType, false), e, "variable declaration")
@@ -7690,6 +7692,7 @@ func (f *File) checkStructLit(s *Scope, t litType, st *TypeNodeStruct, at Token,
 // same name, or to nothing.
 func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what string) {
 	f.checkChanAssign(s, s, tn, value, what)
+	f.checkRefAssign(s, s, tn, value, what)
 	if t.qual.IsValid() {
 		return
 	}
@@ -10369,6 +10372,9 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 		f.checkFuncAssign(s, d.funcSig, rhsNode, "assignment")
 		if plainTarget {
 			f.checkChanAssign(s, s, d.chanTypeNode(), rhsNode, "assignment")
+			if t, ok := f.varTypeAt(d); ok {
+				f.checkRefAssign(s, t.s, t.tn, rhsNode, "assignment")
+			}
 		}
 		if plainTarget && d.typeName.IsValid() {
 			// The type as WRITTEN, qualifier included: an imported interface read as
@@ -10436,6 +10442,7 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 // the struct-field analogue of checkAssignType.
 func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	f.checkChanAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
+	f.checkRefAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	f.checkDefinedType(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	lk, lok := f.fieldKind(s, head, field)
@@ -11577,6 +11584,176 @@ func (f *File) checkChanAssign(s, wantScope *Scope, want TypeNode, value Node, w
 		mode = "variable"
 	}
 	f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s", f.exprSource(value), mode, have, wantS, what)
+}
+
+// checkRefAssign reports a SLICE or a POINTER value used where one of another type
+// is wanted. Neither has a Kind, so none of the checks built on one ever asked, and
+// the C each became was left to decide: `var d []int = s` for a []string s, or
+// `take(s)` for a []int parameter, was refused as C, about types the program never
+// wrote -- and `var p *int = q` for a *string q compiled, the target's compiler only
+// warning about the pointer, into a program reading a string's header as an int.
+// Go admits the same type, or the same underlying type where one of the two is not a
+// defined type; two defined types are checkDefinedType's to compare.
+//
+// Conservative as its neighbours: a type this cannot resolve, or one whose identity
+// it cannot spell -- an array's, a struct literal's, a local type's -- is not guessed
+// at, and only a slice against a slice or a pointer against a pointer is compared.
+func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, what string) {
+	if want == nil {
+		return
+	}
+	wu, wantNamed := f.refTypeUnder(wantScope, want)
+	switch wu.(type) {
+	case *TypeNodeSlice, *TypeNodePointer:
+	default:
+		return
+	}
+	have, variable, ok := f.operandTypeAt(s, value)
+	if !ok || have.tn == nil || have.f == nil {
+		return
+	}
+	hu, haveNamed := have.f.refTypeUnder(have.s, have.tn)
+	if hu == nil || wantNamed && haveNamed {
+		return
+	}
+	_, wSlice := wu.(*TypeNodeSlice)
+	_, hSlice := hu.(*TypeNodeSlice)
+	_, hPtr := hu.(*TypeNodePointer)
+	if wSlice != hSlice || !hSlice && !hPtr {
+		return
+	}
+	wi, hi := f.typeNodeIdentity(wu), have.f.typeNodeIdentity(hu)
+	if wi == "" || hi == "" || wi == hi {
+		return
+	}
+	haveS, wantS := have.f.typeNodeString(have.tn, false), f.typeNodeString(want, false)
+	if haveS == "" || wantS == "" {
+		return
+	}
+	if wantScope != s {
+		wantS = f.qualifiedTypeName(wantScope, wantS)
+	}
+	mode := "value"
+	if variable {
+		mode = "variable"
+	}
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s", f.exprSource(value), mode, haveS, wantS, what)
+}
+
+// refTypeUnder follows a type node through the definitions of named types to what it
+// is, as chanTypeUnder does for a channel, each name resolved in the file that wrote
+// it; named says a defined type was among them. A predeclared type and one this
+// cannot resolve answer nil.
+func (f *File) refTypeUnder(s *Scope, tn TypeNode) (under TypeNode, named bool) {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		x, isIdent := tn.(*TypeNodeIdent)
+		if !isIdent {
+			return tn, named
+		}
+		written := x.Name.Src()
+		if x.Qualifier.IsValid() {
+			written = x.Qualifier.Src() + "." + written
+		}
+		wf, ws := f.fileOfToken(x.Name), s
+		if wf != f {
+			ws = wf.Scope
+		}
+		td, home, ok := wf.typeDeclNamed(ws, written)
+		if !ok || td.TypeSpec == nil {
+			return nil, named
+		}
+		if !td.TypeSpec.Alias {
+			named = true
+		}
+		tn, s = td.TypeSpec.TypeNode, home
+	}
+	return nil, named
+}
+
+// operandTypeAt is the type an operand has, as far as checkRefAssign needs it:
+// lenOperandType's -- a variable, a field, an element, a dereference, a literal, a
+// conversion -- and the address of any of those, and a call's single result.
+// variable says the operand is storage, which is what Go's words call a variable.
+func (f *File) operandTypeAt(s *Scope, n Node) (t typeAt, variable, ok bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return typeAt{}, false, false
+		}
+		n = kids[0]
+	}
+	if n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 2 && kids[0].sym == UnaryOp && kids[1].sym == Factor && f.unaryOp(s, kids[0]) == AND {
+			inner, _, ok := f.operandTypeAt(s, kids[1])
+			if !ok || inner.tn == nil {
+				return typeAt{}, false, false
+			}
+			return typeAt{&TypeNodePointer{TypeNode: inner.tn}, inner.s, inner.f}, false, true
+		}
+		if len(kids) != 1 {
+			t, ok := f.lenOperandType(s, n)
+			return t, true, ok // `*p`: storage
+		}
+		n = kids[0]
+	}
+	if n.sym != Factor {
+		return typeAt{}, false, false
+	}
+	// A call's result, `mk()` or `v.m()`, when it is exactly one.
+	var results []retResult
+	resolved := false
+	if callee, isCall := f.exprCallee(n); isCall {
+		results, resolved = f.callResults(s, callee, Token{})
+	} else if recv, member, isMethod := f.exprMethodCall(n); isMethod {
+		results, resolved = f.callResults(s, recv, member)
+	}
+	if resolved {
+		if len(results) != 1 || results[0].typeNode == nil {
+			return typeAt{}, false, false
+		}
+		tn := results[0].typeNode
+		wf := f.fileOfToken(tokOfTypeNode(tn))
+		return typeAt{tn, wf.Scope, wf}, false, true
+	}
+	if t, ok := f.litOrConvType(s, n); ok {
+		return t, false, true
+	}
+	// A slice literal, `[]string{"a"}`, whose type litOrConvType leaves alone, a
+	// slice's length being nothing it could fold.
+	if kids := slices.Collect(it(n.ast)); len(kids) == 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LBRACK &&
+		kids[1].sym == 0 && f.ch(kids[1].tok) == RBRACK && kids[2].sym == Type && kids[3].sym == CompositeLit {
+		// The literal's own check resolves the same Type and reports what is wrong
+		// with it, so what resolving it here reports is that report again.
+		n0 := len(f.errList)
+		elem := f.typ(s, kids[2])
+		f.errList = f.errList[:n0]
+		return typeAt{&TypeNodeSlice{TypeNode: elem}, s, f}, false, true
+	}
+	t, ok = f.lenOperandType(s, n)
+	return t, true, ok
+}
+
+// tokOfTypeNode is a token a type node was written with, for the file that wrote it;
+// the zero token when it has none of its own to say.
+func tokOfTypeNode(tn TypeNode) Token {
+	for range 16 {
+		switch x := tn.(type) {
+		case *TypeNodeIdent:
+			return x.Name
+		case *TypeNodePointer:
+			tn = x.TypeNode
+		case *TypeNodeSlice:
+			tn = x.TypeNode
+		case *TypeNodeArray:
+			tn = x.TypeNode
+		case *TypeNodeChan:
+			tn = x.TypeNode
+		default:
+			return Token{}
+		}
+	}
+	return Token{}
 }
 
 // callChanTypeNode reads an expression that is exactly a CALL. tn is the channel
@@ -13442,6 +13619,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 				// skipping it left the whole class to the C compiler.
 				f.checkFuncAssign(s, f.funcSig(paramScope, sl.TypeNode), arg, "argument to "+name.Src())
 				f.checkChanAssign(s, paramScope, sl.TypeNode, arg, "argument to "+name.Src())
+				f.checkRefAssign(s, paramScope, sl.TypeNode, arg, "argument to "+name.Src())
 				f.checkPointerArg(s, paramScope, elem, arg, name)
 				if !elem.known {
 					continue
@@ -13471,6 +13649,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			// ahead of the known-kind guard below.
 			f.checkFuncAssign(s, f.funcSig(paramScope, p.typeNode), arg, "argument to "+name.Src())
 			f.checkChanAssign(s, paramScope, p.typeNode, arg, "argument to "+name.Src())
+			f.checkRefAssign(s, paramScope, p.typeNode, arg, "argument to "+name.Src())
 			f.checkPointerArg(s, paramScope, p, arg, name)
 			if !p.known {
 				continue
@@ -15249,6 +15428,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 				if len(names) == len(exprs) {
 					f.checkChanAssign(s, s, typ, e, "variable declaration")
+					f.checkRefAssign(s, s, typ, e, "variable declaration")
 					f.checkPointerValue(s, typIsPtr, f.typeNodeString(typ, false), e, "variable declaration")
 					f.checkDeclType(s, kind, hasKind, typeName, e)
 				}

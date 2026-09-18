@@ -1,0 +1,42 @@
+// A slice or a pointer goes only where its type does: the same type, or the same
+// underlying type where one of the two is not a defined type. Neither has a Kind,
+// and until these were compared the mismatch reached the C compiler -- which only
+// warned about a pointer to the wrong type.
+
+type Box struct {
+	d []int
+}
+
+type Celsius int
+
+func take(xs []int) {}
+
+func ret(xs []string) []int {
+	// ERROR cannot use xs \(variable of type \[\]string\) as \[\]int value in return statement
+	return xs
+}
+
+func main() {
+	var s []string
+	// ERROR cannot use s \(variable of type \[\]string\) as \[\]int value in variable declaration
+	var d []int = s
+	// ERROR cannot use s \(variable of type \[\]string\) as \[\]int value in argument to take
+	take(s)
+	var b Box
+	// ERROR cannot use s \(variable of type \[\]string\) as \[\]int value in assignment
+	b.d = s
+	// ERROR cannot use \[\]string\{"a"\} \(value of type \[\]string\) as \[\]int value in struct literal
+	b2 := Box{d: []string{"a"}}
+	// ERROR cannot use s \(variable of type \[\]string\) as \[\]int value in array or slice literal
+	rows := [][]int{s}
+	var q *string
+	// ERROR cannot use q \(variable of type \*string\) as \*int value in variable declaration
+	var p *int = q
+	var cs []Celsius
+	// ERROR cannot use cs \(variable of type \[\]Celsius\) as \[\]int value in variable declaration
+	var ints []int = cs
+	var e []int
+	// ERROR cannot use s \(variable of type \[\]string\) as \[\]int value in assignment
+	e = s
+	_, _, _, _, _, _, _ = d, b2, rows, p, ints, e, b
+}
