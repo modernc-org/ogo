@@ -4461,7 +4461,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5017,6 +5017,18 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.Write(protos.Bytes())
 		out.WriteByte('\n')
 	}
+	// The %v printers of struct types, after the prototypes: a field's Error() or
+	// String() is a function of the program. Every printer is declared before any is
+	// defined, a struct's calling its fields'.
+	if len(e.printStructs) != 0 {
+		for _, ct := range slices.Sorted(maps.Keys(e.printStructs)) {
+			fmt.Fprintf(&out, "static void %s(%s* v, int plus);\n", structPrintName(ct), ct)
+		}
+		for _, ct := range slices.Sorted(maps.Keys(e.printStructs)) {
+			out.WriteString(e.printStructs[ct])
+		}
+		out.WriteByte('\n')
+	}
 	// The package-level integer constants a body names, ahead of the globals (a
 	// variable's initializer at file scope reads none of them by name, being
 	// spelled from the fold, but a function body may -- the package initializer
@@ -5304,6 +5316,7 @@ type emitter struct {
 	minElems           map[string]bool     // C types needing the ogo_min_<T> helper for the min builtin
 	maxElems           map[string]bool     // C types needing the ogo_max_<T> helper for the max builtin
 	printSliceElems    map[string]bool     // element C types printed without a newline, needing the ogo_print_slice_<T> helper
+	printStructs       map[string]string   // struct C types printed by %v -> the definition of their ogo_printv_<T> helper
 	printlnElems       map[string]bool     // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers             []deferredCall      // the current function's top-level defers, in source order, replayed LIFO before each return
 	switchBreak        string              // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
@@ -25909,6 +25922,240 @@ func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) 
 	return true
 }
 
+// structPrintName names the helper printing a value of struct C type ct as fmt's %v
+// and %+v print one.
+func structPrintName(ct string) string { return "ogo_printv_" + sanitizeElem(ct) }
+
+// needStructPrint mints the helper printing a value of struct C type ct as fmt does,
+// "{1 x}", or with plus "{a:1 b:x}", and the helpers of the struct types its fields
+// reach. why names the first field of a kind this cannot print yet, "" when there is
+// none.
+//
+// The helper takes the value by pointer: the target's compiler passes no struct
+// holding an array by value, and one form then serves every struct.
+func (e *emitter) needStructPrint(ct string) (why string) {
+	if _, ok := e.printStructs[ct]; ok {
+		return ""
+	}
+	e.printStructs[ct] = "" // being made: a field reaching it again finds it here
+	var b strings.Builder
+	fmt.Fprintf(&b, "static void %s(%s* v, int plus) {\n\tprintf(\"{\");\n", structPrintName(ct), ct)
+	for i, fld := range e.structs[ct] {
+		if i > 0 {
+			b.WriteString("\tprintf(\" \");\n")
+		}
+		// An embedded field is named by its type, as fmt names it.
+		fmt.Fprintf(&b, "\tif (plus) { printf(%s); }\n", cQuote(fld.name+":"))
+		expr := "v->" + e.fieldIdent(fld.name)
+		// fmt asks a field's value for Error() and String() only when the field is
+		// exported: reflect hands out no Interface() of the rest.
+		methods := token.IsExported(fld.name)
+		var code string
+		if fld.dim.bound != "" {
+			code, why = e.printArrayC(expr, fld.dim, methods, "plus")
+		} else {
+			code, why = e.printValueC(expr, fld.ctype, methods, "plus")
+		}
+		if why != "" {
+			delete(e.printStructs, ct)
+			return "field " + fld.name + " is " + why
+		}
+		b.WriteString("\t" + code + "\n")
+	}
+	if len(e.structs[ct]) == 0 {
+		b.WriteString("\t(void)v;\n\t(void)plus;\n") // an empty struct reads neither
+	}
+	b.WriteString("\tprintf(\"}\");\n}\n")
+	e.printStructs[ct] = b.String()
+	return ""
+}
+
+// printValueC renders the C statements printing expr, a value of C type ct, as fmt
+// prints one inside a struct, a slice or an array -- at depth, where a pointer is its
+// address, <nil> when it is nil. methods says the value may be asked for Error() or
+// String() (see needStructPrint), and plus is the C expression saying %+v. why names
+// what this cannot print yet, with no code.
+func (e *emitter) printValueC(expr, ct string, methods bool, plus string) (code, why string) {
+	if methods {
+		if text, isIface, ptrRecv, ok := e.stringerMethodC(ct, "("+expr+")"); ok {
+			e.usesStringPrint = true
+			call := "ogo_print_str(" + text + ");"
+			switch {
+			case isIface:
+				return "if ((" + expr + ").vt) { " + call + " } else { printf(\"<nil>\"); }", ""
+			case e.isPointer(ct) && !ptrRecv:
+				// A value method through a nil pointer panics copying its receiver out,
+				// and fmt prints the panic as <nil>. A pointer method is called as Go
+				// calls it, nil or not.
+				return "if (" + expr + ") { " + call + " } else { printf(\"<nil>\"); }", ""
+			}
+			return call, ""
+		}
+	}
+	u := e.underlyingCType(ct)
+	switch {
+	case u == cString:
+		e.usesStringPrint = true
+		return "ogo_print_str(" + expr + ");", ""
+	case u == cBool:
+		return "printf(\"%s\", (" + expr + ") ? \"true\" : \"false\");", ""
+	case isIntCType(u):
+		return "printf(\"" + scalarPrintVerb(u) + "\", " + expr + ");", ""
+	case isFloatCType(u):
+		e.usesFloatFmt = true
+		e.includes["string.h"] = true
+		return "ogo_print_float(0, 0, 0, 0, 0, 'g', -1, " + expr + ");", ""
+	case e.isIfaceCType(u):
+		if methods {
+			// fmt asks the dynamic value for Error() and String() whether or not the
+			// interface declares them, which its table cannot answer.
+			return "", "an exported interface declaring neither Error() nor String()"
+		}
+		e.includes["stdint.h"] = true
+		return "if ((" + expr + ").vt) { printf(\"0x%x\", (unsigned)(uintptr_t)(" + expr + ").data); } else { printf(\"<nil>\"); }", ""
+	case e.isPrintStruct(u):
+		if why := e.needStructPrint(u); why != "" {
+			return "", why
+		}
+		return structPrintName(u) + "(&(" + expr + "), " + plus + ");", ""
+	case strings.HasSuffix(u, "*"), strings.HasPrefix(u, funcTypePrefix), e.isChanCType(u):
+		e.includes["stdint.h"] = true
+		return "if (" + expr + ") { printf(\"0x%x\", (unsigned)(uintptr_t)(" + expr + ")); } else { printf(\"<nil>\"); }", ""
+	case e.isSliceCType(u):
+		i := e.newTmp()
+		inner, why := e.printValueC("("+expr+").ptr["+i+"]", sliceElemFromCName(u), methods, plus)
+		if why != "" {
+			return "", why
+		}
+		return "printf(\"[\"); for (int " + i + " = 0; " + i + " < (" + expr + ").len; " + i + "++) { if (" + i +
+			") { printf(\" \"); } " + inner + " } printf(\"]\");", ""
+	}
+	if a, isArr := e.namedArrays[u]; isArr {
+		return e.printArrayC(expr, a, methods, plus)
+	}
+	return "", "of type " + e.goTypeName(ct)
+}
+
+// printArrayC is printValueC for an array of the extents a, element by element.
+func (e *emitter) printArrayC(expr string, a arrDim, methods bool, plus string) (code, why string) {
+	i := e.newTmp()
+	el := "(" + expr + ")[" + i + "]"
+	var inner string
+	if len(a.inner) != 0 {
+		inner, why = e.printArrayC(el, arrDim{elem: a.elem, bound: a.inner[0], inner: a.inner[1:]}, methods, plus)
+	} else {
+		inner, why = e.printValueC(el, a.elem, methods, plus)
+	}
+	if why != "" {
+		return "", why
+	}
+	return "printf(\"[\"); for (int " + i + " = 0; " + i + " < " + a.bound + "; " + i + "++) { if (" + i +
+		") { printf(\" \"); } " + inner + " } printf(\"]\");", ""
+}
+
+// isPrintStruct reports whether a value of C type ct is a struct to the printer.
+func (e *emitter) isPrintStruct(ct string) bool {
+	u := e.underlyingCType(ct)
+	_, isStruct := e.structs[u] // an empty struct's fields are nil
+	return isStruct && !e.isIfaceCType(u)
+}
+
+// emitStructPrintVerb prints an argument of %v, or of %+v with plus, that is a
+// struct as fmt prints one -- "{1 x}", its fields' names before them under %+v --
+// a pointer to one as "&{1 x}" or <nil>, and a slice or a one-dimensional array of
+// them element by element. A value whose type has Error() or String() never gets
+// here, fmt calling that instead. handled is false, with nothing emitted, for an
+// argument that is none of these.
+func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()) (handled, ok bool) {
+	ct, _ := e.printArgCType(idx, arg) // "" for an array, which is asked about below
+	p := strconv.Itoa(boolToInt(plus))
+	refuse := func(why string) (bool, bool) {
+		e.failAt(arg.ast, "printf: %%v of %s is not supported yet: %s", e.goTypeName(ct), why)
+		return true, false
+	}
+	switch base := strings.TrimSuffix(ct, "*"); {
+	case ct == "":
+	case e.isPrintStruct(ct):
+		u := e.underlyingCType(ct)
+		if why := e.needStructPrint(u); why != "" {
+			return refuse(why)
+		}
+		e.ind()
+		if e.hasArrayField(u) {
+			// Such a struct is copied by no initializer the target's compiler lowers,
+			// so it is printed where it lies.
+			if !e.printAddressable(arg) {
+				return refuse("a struct holding an array is printed from a variable; bind it to one first")
+			}
+			e.emit(structPrintName(u) + "(&(")
+			value()
+			e.emit("), " + p + ");\n")
+			return true, true
+		}
+		tmp := e.newTmp()
+		e.emit("{ " + u + " " + tmp + " = ")
+		value()
+		e.emit("; " + structPrintName(u) + "(&" + tmp + ", " + p + "); }\n")
+		return true, true
+	case base != ct && e.isPrintStruct(base):
+		u := e.underlyingCType(base)
+		if why := e.needStructPrint(u); why != "" {
+			return refuse(why)
+		}
+		tmp := e.newTmp()
+		e.ind()
+		e.emit("{ " + ct + " " + tmp + " = ")
+		value()
+		e.emit("; if (" + tmp + ") { printf(\"&\"); " + structPrintName(u) + "(" + tmp + ", " + p +
+			"); } else { printf(\"<nil>\"); } }\n")
+		return true, true
+	}
+	elem, bound := "", ""
+	if e.isSliceCType(ct) {
+		elem = sliceElemFromCName(ct)
+	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+		elem, bound = a.elem, a.bound
+	}
+	if elem == "" || !e.isPrintStruct(elem) && !e.isPrintStruct(strings.TrimSuffix(elem, "*")) {
+		return false, false
+	}
+	s, i := e.newTmp(), e.newTmp()
+	code, why := e.printValueC(s+".ptr["+i+"]", elem, true, p)
+	if why != "" {
+		return refuse(why)
+	}
+	// An array of no elements prints as nothing between the brackets, and C has no
+	// value of such an array to take a header over.
+	if bound == "0" && !e.exprHasEffect(arg.ast) {
+		e.ind()
+		e.emit("printf(\"[]\");\n")
+		return true, true
+	}
+	e.needSlice(elem)
+	e.ind()
+	e.emit("{ " + sliceCName(elem) + " " + s + " = ")
+	if bound != "" {
+		e.emit("(" + sliceCName(elem) + "){")
+		value()
+		e.emit(", " + bound + ", " + bound + "}")
+	} else {
+		value()
+	}
+	e.emit("; printf(\"[\"); for (int " + i + " = 0; " + i + " < " + s + ".len; " + i + "++) { if (" + i +
+		") { printf(\" \"); } " + code + " } printf(\"]\"); }\n")
+	return true, true
+}
+
+// printAddressable reports whether a printf argument is storage whose address can
+// be taken where it stands: a variable, or a run of fields and indexes from one.
+func (e *emitter) printAddressable(arg Node) bool {
+	if _, ok := e.exprIdent(arg.ast); ok {
+		return true
+	}
+	_, _, ok := e.factorAccessChain(e.factorKids(arg.ast))
+	return ok
+}
+
 // emitPrintfVerb emits one verb's argument, checking the verb against the type it
 // was given. A verb that does not suit its argument is refused here: the format is
 // constant and the type is known, so there is nothing left to find out at run time.
@@ -26100,6 +26347,13 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	if stringerVerb(verb) && spec == "" {
 		if e.emitStringerElems(idx, arg, verb, value) {
 			return true
+		}
+	}
+	// A struct, a pointer to one and a slice or an array of them, which fmt prints
+	// field by field under %v and %+v.
+	if verb == 'v' && (spec == "" || spec == "+") {
+		if handled, ok := e.emitStructPrintVerb(idx, arg, spec == "+", value); handled {
+			return ok
 		}
 	}
 	if verb == 'v' {

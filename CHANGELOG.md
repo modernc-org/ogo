@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf prints a struct.** `%v` of a struct was refused, named or not; it
+  prints field by field now, `{1 x}`, with the fields' names under `%+v`, `{a:1
+  b:x}`, a pointer to one as `&{1 x}` and a slice or an array of them element by
+  element. Inside one, fmt's own rules hold: a field's `Error()` or `String()` is
+  called only when the field is exported, a pointer, a func value or a channel
+  prints as its address or `<nil>`, and an unexported interface as its value's
+  address. A struct holding an exported interface whose type declares neither
+  method is refused, fmt asking the value behind it at run time.
 - **A struct type may be written out in its literal.** `struct{ x, y int }{1, 2}`,
   `struct{}{}` -- the value a signal channel sends -- and `&struct{ v int }{9}` were
   syntax errors: the grammar took a struct type in a declaration and as a literal's

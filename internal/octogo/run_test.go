@@ -30077,6 +30077,149 @@ func main() {
 `,
 		want: "<nil>|<nil>|pointer method|<nil>|<nil>|<nil>\n[<nil> value method] [<nil> value method]\nvalue method 76616c7565206d6574686f64\n",
 	}, {
+		// %v and %+v of a struct, as fmt prints one: field by field, the names
+		// before them under %+v, an embedded field named by its type; a pointer to
+		// one as &{...}, a nil one as <nil>; slices and arrays of them element by
+		// element. Inside, fmt asks a field for Error() or String() only when the
+		// field is exported -- Temp prints C! where temp prints 22.5 -- and prints
+		// a nil pointer or interface field as <nil>.
+		name: "printf prints a struct field by field",
+		src: `type Celsius float32
+
+func (c Celsius) String() string { return "C!" }
+
+type Code int
+
+func (c Code) Error() string { return "code" }
+
+type Point struct {
+	X, Y int
+}
+
+type Named struct {
+	Name  string
+	Pos   Point
+	tags  []string
+	ok    bool
+	Temp  Celsius
+	temp  Celsius
+	Err   error
+	err   error
+	Ptr   *Point
+	Grid  [2][2]int8
+	Code  Code
+	big   int64
+	u     uint32
+}
+
+type Inner struct {
+	A int
+}
+
+type Outer struct {
+	Inner
+	B string
+}
+
+func mk() Point { return Point{7, 8} }
+
+func main() {
+	p := Point{1, 2}
+	printf("%v %+v\n", p, p)
+	printf("%v %+v\n", &p, &p)
+	var np *Point
+	printf("%v %+v\n", np, mk())
+	var n Named
+	n.Name, n.Pos, n.tags, n.ok = "n", Point{3, 4}, []string{"a", "b"}, true
+	n.Temp, n.temp, n.Code, n.big, n.u = 21.5, 22.5, 3, -1<<40, 4000000000
+	n.Grid[1][0] = -5
+	c9 := Code(9)
+	n.Err = &c9
+	printf("%v\n", n)
+	printf("%+v\n", n)
+	o := Outer{Inner{5}, "b"}
+	printf("%v %+v\n", o, o)
+	ps := []Point{{1, 2}, {3, 4}}
+	printf("%v %+v\n", ps, ps)
+	arr := [2]Point{{5, 6}, {7, 8}}
+	printf("%v\n", arr)
+	pps := []*Point{&p, nil}
+	printf("%v\n", pps[1:])
+	printf("%v|%+v\n", struct{}{}, struct{ a, b int }{1, 2})
+}
+`,
+		want: "{1 2} {X:1 Y:2}\n&{1 2} &{X:1 Y:2}\n<nil> {X:7 Y:8}\n{n {3 4} [a b] true C! 22.5 code <nil> <nil> [[0 0] [-5 0]] code -1099511627776 4000000000}\n{Name:n Pos:{X:3 Y:4} tags:[a b] ok:true Temp:C! temp:22.5 Err:code err:<nil> Ptr:<nil> Grid:[[0 0] [-5 0]] Code:code big:-1099511627776 u:4000000000}\n{{5} b} {Inner:{A:5} B:b}\n[{1 2} {3 4}] [{X:1 Y:2} {X:3 Y:4}]\n[{5 6} {7 8}]\n[<nil>]\n{}|{a:1 b:2}\n",
+	}, {
+		// The shapes a struct's fields take: slices of slices of structs, an
+		// anonymous struct, a nil func, pointers with a pointer-receiver String()
+		// -- called nil or not, as Go calls it -- arrays of structs, runes and
+		// bytes as numbers, a string with a tab. A struct printed by a deferred
+		// printf, and one returned by a method call.
+		name: "printf prints the fields of a struct as fmt does",
+		src: `type Temp struct {
+	c float32
+}
+
+func (t *Temp) String() string { return "temp" }
+
+type Pt struct {
+	x, y int
+}
+
+func (p Pt) Scaled(k int) Pt { return Pt{p.x * k, p.y * k} }
+
+type Rec struct {
+	Name  string
+	Rows  [][]Pt
+	Anon  struct{ a, b int }
+	F     float32
+	Fn    func(int) int
+	T     *Temp
+	Ts    [2]Temp
+	R     rune
+	B     byte
+	Bytes []byte
+	Q     string
+}
+
+var global = Rec{Name: "g", F: 0.1}
+
+var row0 = [1]Pt{{1, 2}}
+
+var row1 = [2]Pt{{3, 4}, {5, 6}}
+
+var rowsBack [2][]Pt
+
+func show(r *Rec) {
+	defer printf("deferred %v\n", r.Anon)
+	printf("%+v\n", r)
+}
+
+func main() {
+	p := Pt{1, 2}
+	printf("%v %+v\n", p.Scaled(3), p.Scaled(-1))
+	var r Rec
+	r.Name = "rec"
+	rowsBack[0], rowsBack[1] = row0[:], row1[:]
+	r.Rows = rowsBack[:]
+	r.Anon.a, r.Anon.b = 7, 8
+	r.F = 1.5
+	r.R, r.B = 'x', 'y'
+	r.Bytes = []byte{104, 105}
+	r.Q = "a b\tc"
+	show(&r)
+	printf("%v\n", global)
+	rs := []Rec{global}
+	printf("%v\n", len(rs))
+	var t Temp
+	r.T = &t
+	printf("%v\n", r.T)
+	var tp *Temp
+	printf("%v %+v\n", tp, struct{ P *Temp }{nil})
+}
+`,
+		want: "{3 6} {x:-1 y:-2}\n&{Name:rec Rows:[[{x:1 y:2}] [{x:3 y:4} {x:5 y:6}]] Anon:{a:7 b:8} F:1.5 Fn:<nil> T:temp Ts:[{c:0} {c:0}] R:120 B:121 Bytes:[104 105] Q:a b\tc}\ndeferred {7 8}\n{g [] {0 0} 0.1 <nil> temp [{0} {0}] 0 0 [] }\n1\ntemp\ntemp {P:temp}\n",
+	}, {
 		// The embedded strings package measured against Go's on the host and a
 		// P2-EDGE (2026-09-18): Contains, ContainsAny, ContainsRune, Count
 		// (overlapping, empty, multi-byte), Index, LastIndex, IndexAny, IndexByte,

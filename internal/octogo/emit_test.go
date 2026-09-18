@@ -5768,17 +5768,38 @@ func main() {
 		{
 			// A struct has no %v form here and no address form either -- Go refuses to
 			// print one at all -- so the message offers only %T.
-			name: "%v of a struct",
+			// fmt asks the value behind an exported interface field for Error() and
+			// String() at run time, which a table of this interface's methods cannot
+			// answer, so such a struct is refused rather than printed as an address
+			// where Go might print text.
+			name: "%v of a struct holding an exported interface",
+			src: `type Shape interface {
+	Area() int
+}
+
+type P struct {
+	S Shape
+}
+
+func main() {
+	var p P
+	printf("%v\n", p)
+}
+`,
+			want: "printf: %v of P is not supported yet: field S is an exported interface declaring neither Error() nor String()",
+		},
+		{
+			name: "%v of a struct under a width",
 			src: `type P struct {
 	n int
 }
 
 func main() {
 	p := P{1}
-	printf("%v\n", p)
+	printf("%5v\n", p)
 }
 `,
-			want: "printf: %v of P is not supported yet; %T prints its type",
+			want: "printf: %5v does not take a width or precision yet",
 		},
 		{
 			// fmt prints "<nil>" for a nil pointer where the builtin println prints

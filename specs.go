@@ -1945,15 +1945,17 @@
 //	            and %v print a float in
 //	%c          the character an integer names, encoded as UTF-8
 //	%v          the value in its default form — what println would print, down to
-//	            "[1 2 3]" for a slice. Not a pointer, a func value, an interface
-//	            or a struct: fmt renders those differently from the built-in
+//	            "[1 2 3]" for a slice; a struct field by field, "{1 x}", and under
+//	            %+v with its fields' names, "{a:1 b:x}"; a pointer to a struct as
+//	            "&{1 x}", or "<nil>". Not a pointer to anything else, a func value
+//	            or an interface: fmt renders those differently from the built-in
 //	            println, and this does not render them yet. Except, as in fmt, a
-//	            value whose type has a String() string method, which prints what
-//	            that returns, and an error, which prints its Error(); %s, %x, %X
-//	            and %q do the same for both, formatting that text as they format a
-//	            string -- `%x` of a Celsius whose String() is "warm" is 7761726d --
-//	            and a slice or an array of such values prints each element so,
-//	            "[warm cold]", where println prints the values themselves
+//	            value whose type has an Error() string or a String() string method,
+//	            which prints what that returns, Error() first; %s, %x, %X and %q do
+//	            the same, formatting that text as they format a string -- `%x` of a
+//	            Celsius whose String() is "warm" is 7761726d -- and a slice or an
+//	            array of such values prints each element so, "[warm cold]", where
+//	            println prints the values themselves
 //	%T          the value's type, spelled as Go spells it: "main.Celsius" for a
 //	            type this package declares, "lib.Temp" for an imported one
 //	%%          a literal percent
@@ -1995,6 +1997,16 @@
 // so `%-8v` of "ab" is "ab      "; and '+' is no sign under it, fmt reading it as
 // the struct-field form. A slice of values with a String() method takes none yet,
 // and says so where it is written.
+//
+// Inside a struct, a slice or an array, %v follows fmt's rules for a value it
+// reaches rather than one it was given. A field's Error() or String() is called
+// only when the field is EXPORTED -- fmt reads the rest through reflection, which
+// hands out no method of an unexported field -- so a `Temp Celsius` field prints
+// "warm" where a `temp Celsius` one prints 21. A pointer, a func value and a
+// channel print as an address, or "<nil>"; an unexported interface as its value's
+// address; and a struct holding an exported interface whose type declares neither
+// Error() nor String() is refused, fmt asking the value behind it for either at run
+// time.
 //
 // A nil pointer whose type has Error() or String() on a VALUE receiver prints
 // "<nil>", which is what fmt prints for the panic calling the method would raise; a
