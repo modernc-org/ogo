@@ -5712,6 +5712,23 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			want: "printf: the '#' flag is not supported on %#q yet",
 		},
 		{
+			// fmt pads each element's String() under a width; this does not yet, and
+			// printing the values instead would be the silent kind of wrong.
+			name: "a width on %v of a slice of Stringers",
+			src: `type C int
+
+func (c C) String() string {
+	return "c"
+}
+
+func main() {
+	cs := []C{1, 2}
+	printf("%5v\n", cs)
+}
+`,
+			want: "printf: %5v does not take a width or precision yet (%v of this type is printed without a width here)",
+		},
+		{
 			name: "a width on %q",
 			src:  "func main() {\n\tprintf(\"%8q\\n\", \"ab\")\n}\n",
 			want: "printf: %8q does not take a width or precision yet",

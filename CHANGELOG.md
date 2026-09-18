@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's %v takes a flag, a width and a precision.** `%-10v %5v` -- the way a
+  table's columns are aligned -- was refused: %v under a spec is now the type's
+  default verb under it, as fmt lays it out, %d, %g, %s or %t, element by element
+  for a slice or an array; '+' is no sign under %v, fmt reading it as the
+  struct-field form. A slice of values with a String() method takes no width yet.
 - **math.Inf, NaN, IsNaN, IsInf and Signbit, and Go's limit constants.** The
   functions are written in OctoGo, the target's floats being IEEE 754 in everything
   they answer (measured on a P2-EDGE); Signbit of a NaN is false, its sign not being

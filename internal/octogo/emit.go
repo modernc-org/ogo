@@ -25919,7 +25919,22 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	}
 	if verb == 'v' {
 		if spec != "" {
-			return noSpec("%v prints what println prints, which does its own padding")
+			// %v with a flag, a width or a precision is the type's DEFAULT verb with
+			// them, as fmt lays it out: %d of an integer, %g of a float, %s of a string,
+			// %t of a bool, and of a slice's or an array's element, element by element
+			// -- `%-8v` of "ab" is "ab      ", `%5v` of []int{1, 2} "[    1     2]".
+			// Refused until 2026-09-18. A Stringer's text under a width was already
+			// padded above; a slice of Stringers, whose every text fmt would pad, is not
+			// yet.
+			//
+			// '+' is not a sign under %v: fmt takes it for the struct-field form
+			// ("%+v"), and `%+v` of 5 is "5".
+			if dv, ok := e.defaultVerb(idx, arg, ct, known); ok {
+				flags := item.flags()
+				item.verb, item.spec = dv, strings.ReplaceAll(flags, "+", "")+item.spec[len(flags):]
+				return e.emitPrintfVerb(item, idx, arg)
+			}
+			return noSpec("%v of this type is printed without a width here")
 		}
 		// %v prints what println prints, by calling it -- "[1 2 3]" for a slice, the
 		// word for a bool, the shortest form for a float. Restating that would be two
@@ -25955,6 +25970,39 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		return false
 	}
 	return e.emitScalarVerb(item, ct, value, wrong, noSpec)
+}
+
+// defaultVerb answers the verb fmt formats a printf argument under %v with: %d for
+// an integer, %g for a float, %s for a string and %t for a bool -- of the value, or
+// of the element of a slice or a one-dimensional array, which fmt formats element by
+// element. It answers false for anything else, and for a value or an element with a
+// String() method, whose text %v prints.
+func (e *emitter) defaultVerb(idx int, arg Node, ct string, known bool) (byte, bool) {
+	elem := ct
+	switch {
+	case known && e.isSliceCType(e.underlyingCType(ct)):
+		elem = sliceElemFromCName(e.underlyingCType(ct))
+	case !known:
+		a, isArr := e.arrayShapeOf(arg.ast)
+		if !isArr || len(a.inner) != 0 {
+			return 0, false
+		}
+		elem = a.elem
+	}
+	if _, _, isStringer := e.stringerCallC(elem, "_"); isStringer {
+		return 0, false
+	}
+	switch u := e.underlyingCType(elem); {
+	case isIntCType(u):
+		return 'd', true
+	case isFloatCType(u):
+		return 'g', true
+	case u == cString:
+		return 's', true
+	case u == cBool:
+		return 't', true
+	}
+	return 0, false
 }
 
 // intsToPrint reports a printf argument of C type ct that is an integer, or a slice

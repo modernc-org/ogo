@@ -29928,6 +29928,87 @@ func main() {
 }
 `,
 		want: "L1 127 -128 32767 -32768 2147483647 -2147483648\nL2 9223372036854775807 -9223372036854775808 18446744073709551615 4294967295 255 65535 2147483647 -2147483648\nL3 4294967295 true 127 65535 true true\nF1 true false false true false true false\nF2 true false true false true\nF3 true true true true true true\nF4 +Inf -Inf NaN 3.4028235e+38 1e-45\n",
+	}, {
+		// %v under a flag, a width and a precision is the type's default verb under
+		// them -- %d, %g, %s, %t, element by element for a slice or an array -- with
+		// '+' dropped, fmt reading it as the struct-field form. Refused until
+		// 2026-09-18; measured against fmt on the host and a P2-EDGE.
+		name: "printf %v under flags, widths and precisions",
+		src: `var u uint32 = 4000000000
+var f float32 = 3.25
+var s = "h\u00e9llo"
+var r rune = 0xe9
+var xs = []int{1, -2}
+var fs = []float32{0.5, -1.25}
+var ss = []string{"a", "bc"}
+var arr = [2]int8{7, -8}
+var bs = []byte{1, 255}
+var big int64 = -123456789012
+
+func v0() {
+	printf("V0 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", -42, -42, -42, -42, -42, -42, -42, -42, -42, -42)
+}
+
+func v1() {
+	printf("V1 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", u, u, u, u, u, u, u, u, u, u)
+}
+
+func v2() {
+	printf("V2 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", f, f, f, f, f, f, f, f, f, f)
+}
+
+func v3() {
+	printf("V3 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", s, s, s, s, s, s, s, s, s, s)
+}
+
+func v4() {
+	printf("V4 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", true, true, true, true, true, true, true, true, true, true)
+}
+
+func v5() {
+	printf("V5 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", r, r, r, r, r, r, r, r, r, r)
+}
+
+func v6() {
+	printf("V6 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", xs, xs, xs, xs, xs, xs, xs, xs, xs, xs)
+}
+
+func v7() {
+	printf("V7 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", fs, fs, fs, fs, fs, fs, fs, fs, fs, fs)
+}
+
+func v8() {
+	printf("V8 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", ss, ss, ss, ss, ss, ss, ss, ss, ss, ss)
+}
+
+func v9() {
+	printf("V9 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", arr, arr, arr, arr, arr, arr, arr, arr, arr, arr)
+}
+
+func v10() {
+	printf("V10 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", bs, bs, bs, bs, bs, bs, bs, bs, bs, bs)
+}
+
+func v11() {
+	printf("V11 [%5v][%-5v][%+5v][%05v][%-05v][%+.2v][%8.3v][%.1v][% 4v][%-+6v]\n", big, big, big, big, big, big, big, big, big, big)
+}
+
+func main() {
+	v0()
+	v1()
+	v2()
+	v3()
+	v4()
+	v5()
+	v6()
+	v7()
+	v8()
+	v9()
+	v10()
+	v11()
+}
+`,
+		want: "V0 [  -42][-42  ][  -42][-0042][-42  ][-42][    -042][-42][ -42][-42   ]\nV1 [4000000000][4000000000][4000000000][4000000000][4000000000][4000000000][4000000000][4000000000][ 4000000000][4000000000]\nV2 [ 3.25][3.25 ][ 3.25][03.25][3.25 ][3.2][    3.25][3][ 3.25][3.25  ]\nV3 [héllo][héllo][héllo][héllo][héllo][hé][     hél][h][héllo][héllo ]\nV4 [ true][true ][ true][0true][true ][true][    true][true][true][true  ]\nV5 [  233][233  ][  233][00233][233  ][233][     233][233][ 233][233   ]\nV6 [[    1    -2]][[1     -2   ]][[    1    -2]][[00001 -0002]][[1     -2   ]][[01 -02]][[     001     -002]][[1 -2]][[   1   -2]][[1      -2    ]]\nV7 [[  0.5 -1.25]][[0.5   -1.25]][[  0.5 -1.25]][[000.5 -1.25]][[0.5   -1.25]][[0.5 -1.2]][[     0.5    -1.25]][[0.5 -1]][[ 0.5 -1.25]][[0.5    -1.25 ]]\nV8 [[    a    bc]][[a     bc   ]][[    a    bc]][[0000a 000bc]][[a     bc   ]][[a bc]][[       a       bc]][[a b]][[   a   bc]][[a      bc    ]]\nV9 [[    7    -8]][[7     -8   ]][[    7    -8]][[00007 -0008]][[7     -8   ]][[07 -08]][[     007     -008]][[7 -8]][[   7   -8]][[7      -8    ]]\nV10 [[    1   255]][[1     255  ]][[    1   255]][[00001 00255]][[1     255  ]][[01 255]][[     001      255]][[1 255]][[   1  255]][[1      255   ]]\nV11 [-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012][-123456789012]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

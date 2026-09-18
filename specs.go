@@ -1970,8 +1970,11 @@
 // a program that compiles here is meant to mean what it means in Go rather than
 // approximately that.
 //
-// One verb does not take a width yet, and says so where it is written: %v, whose
-// rendering is the built-in println's and does its own spacing.
+// %v takes a flag, a width and a precision as fmt does, laid out as the type's
+// default verb -- %d, %g, %s or %t, element by element for a slice or an array --
+// so `%-8v` of "ab" is "ab      "; and '+' is no sign under it, fmt reading it as
+// the struct-field form. A slice of values with a String() method takes none yet,
+// and says so where it is written.
 //
 // A verb that does not suit its argument, an unknown verb, and a count of verbs
 // that does not match the count of arguments are each refused where the call is
