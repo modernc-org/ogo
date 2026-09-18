@@ -527,7 +527,11 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a METHOD EXPRESSION, `T.M` or
 `(*T).M` as a value or called ("cannot use type T as a value", 2026-09-19);
 a method value on a local or a call's result (design: a method value binds its
-receiver at compile time); a named ARRAY result returned by name, `func f() (r
+receiver at compile time); a value of a named struct type where an identically
+shaped UNNAMED struct type is wanted, or the other way round, which Go admits and
+whose two C types the target's compiler refuses to mix; printf's `%v` of an
+interface value (fmt prints what it holds, `&{1 2}` for a struct pointer) and of a
+struct under a width; a named ARRAY result returned by name, `func f() (r
 [2]int) { ...; return r }`; a `switch` or `for` init that declares an array, `switch a :=
 [2]int{1, 2}; len(a) {` (the `if` form works); a function literal with SEVERAL results
 called where it stands, `v, ok := func() (int, bool) { ... }()` (bound to a variable
