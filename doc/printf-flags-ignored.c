@@ -29,6 +29,22 @@
 // -- and lays a float out from the exact decimal expansion itself (floatFmtHelper
 // in internal/octogo/emit.go), padding included; so `%08.3f` works, as a side effect.
 //
+// "Everything else is right" was not so, measured again on a P2-EDGE 2026-09-18
+// with the spin2cpp 3840014f backend, one conversion per call as before:
+//
+//	                 gcc (the reference)   flexcc on a P2-EDGE
+//	printf("%-05d", 7)      "7    "              00007     <- '-' dropped, '0' kept
+//	printf("%-05x", 255u)   "ff   "              000ff     <- the same
+//	printf("%.0d", 0)       ""                   0         <- a zero under precision 0
+//	printf("%5.0d", 0)      "     "              "    0"
+//	printf("%+.0d", 0)      +                    +0
+//
+// C writes no digits for a zero under a precision of zero, and ignores '0' beside
+// '-'. None of it reaches a program since that day: an integer verb carrying any
+// flag, width or precision is laid out by the emitter (intPrintHelper, fmt's own
+// algorithm) and not by this printf -- which also gives fmt's '+' and ' ' on every
+// integer verb and on unsigned values, `%+x` being "+ff" in Go and "ff" in C.
+//
 // To check whether this is still so, compile it and read the columns.
 
 #include <stdio.h>
@@ -45,5 +61,13 @@ int main(void) {
 	printf("C[");
 	printf("%05d", 42);
 	printf("] want 00042, and this one is RIGHT\n");
+
+	printf("D[");
+	printf("%-05d", 7);
+	printf("] want 7    \n");
+
+	printf("E[");
+	printf("%.0d", 0);
+	printf("] want nothing between the brackets\n");
 	return 0;
 }

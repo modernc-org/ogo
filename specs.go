@@ -1948,23 +1948,24 @@
 // forms, which take the width from an argument of their own, are not accepted: the
 // verb count is what pairs each verb with an argument to check it against.
 //
-// One flag is refused because the C backend ignores it, and a program that
-// compiles here is meant to mean what it means in Go rather than approximately
-// that: "#", which would write a base prefix. "0" is honoured on every verb that
-// takes it, "%05d" and "%08.3f" alike: the field is written by the compiler rather
-// than by the backend's printf, which pads the DIGITS of a negative number and adds
-// the sign on top of the width, and ignores the flag on a float altogether.
+// The flags are fmt's, and fmt's rules for them are not C's, so a field is laid out
+// by the compiler rather than by the backend's printf. "+" and " " put a sign in
+// front of EVERY integer verb and of an unsigned value, "%+x" of 255 being "+ff".
+// "0" pads every field fmt pads on the left, a string's, a bool's and a
+// character's included -- "%05s" of "ab" is "000ab" -- except beside "-", and on
+// an integer carrying a precision, whose field is padded with spaces: "%06.3d" of 7
+// is "   007". A zero under a precision of zero is no digits at all, "%5.0d" of 0
+// being five spaces. A precision on %t is ignored, as fmt ignores it.
 //
-// A third is refused in one place only: "+" on a %d of a uint64. The flag is
-// carried by printing the value through a signed conversion, which holds every
-// other unsigned type and not that one.
+// "#" writes fmt's prefix on the integer verbs, "0x", "0X", "0b" and the leading
+// zero of an octal number, after any zeros "0" pads with, as fmt places it:
+// "%#08x" of 255 is "0x000000ff". It is refused on the other verbs, whose
+// alternate forms are not written yet -- the backend's printf ignores the flag, and
+// a program that compiles here is meant to mean what it means in Go rather than
+// approximately that.
 //
-// Three verbs do not take a width yet, and say so where they are written: %v,
-// whose rendering is the built-in println's and does its own spacing; %x and %o of
-// a SIGNED integer, which print as a sign and a magnitude here — Go puts the fill
-// on different sides of that sign depending on the flag, and getting it subtly
-// wrong would be worse than declining; and %b, which a helper prints. %x and %o
-// of an unsigned integer take a width.
+// One verb does not take a width yet, and says so where it is written: %v, whose
+// rendering is the built-in println's and does its own spacing.
 //
 // A verb that does not suit its argument, an unknown verb, and a count of verbs
 // that does not match the count of arguments are each refused where the call is
@@ -1979,10 +1980,9 @@
 // A float64 is a float32 on the target, so the digits are the float32's.
 //
 // %T is answered at compile time for everything but an interface, whose dynamic
-// type is read from the value at run time and costs one pointer. A type prints
-// unqualified — "Celsius", where Go would print "main.Celsius" — there being no
-// package clause here to qualify it with. An interface holding nothing prints
-// "<nil>".
+// type is read from the value at run time and costs one pointer. A type prints as
+// Go spells it, "main.Celsius" for one the main package declares and "lib.Temp"
+// for one it imports. An interface holding nothing prints "<nil>".
 //
 // Five Go built-ins are recognized and refused, wherever they are written and
 // whether the call stands as a statement or as a value: complex, delete, imag,

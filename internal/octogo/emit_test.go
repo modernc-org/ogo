@@ -5698,22 +5698,18 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			want: "printf: %d wants an integer, not string",
 		},
 		{
-			// The two flags the target's printf drops on the floor. Refused rather
-			// than passed through, because the HOST C compiler honours both: a
-			// program green on the host would print something narrower on the board.
-			// doc/printf-flags-ignored.c has the measurements.
-			name: "the # flag",
-			src:  "func main() {\n\tprintf(\"%#x\\n\", uint32(255))\n}\n",
-			want: "printf: the '#' flag is not supported by the C backend",
+			// The flag the target's printf drops on the floor, refused where no
+			// layout of the emitter's own writes it: everywhere but the integer
+			// verbs, which intPrintHelper lays out. doc/printf-flags-ignored.c has
+			// the measurements.
+			name: "the # flag on a float",
+			src:  "func main() {\n\tprintf(\"%#g\\n\", float32(1))\n}\n",
+			want: "printf: the '#' flag is not supported on %#g yet",
 		},
 		{
-			// C's '+' applies to its SIGNED conversions, so an unsigned value is
-			// printed through the signed one to carry the flag. A uint64 has no
-			// signed type wide enough, so it is refused rather than printed without
-			// the sign fmt would write.
-			name: "the + flag on a uint64",
-			src:  "func main() {\n\tprintf(\"%+d\\n\", uint64(1))\n}\n",
-			want: "printf: the '+' flag on %+d of a uint64 is not supported",
+			name: "the # flag on a string",
+			src:  "func main() {\n\tprintf(\"%#q\\n\", \"ab\")\n}\n",
+			want: "printf: the '#' flag is not supported on %#q yet",
 		},
 		{
 			name: "a width on %q",

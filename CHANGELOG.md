@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's '#' flag on the integer verbs, and every width on them.** `%#x` is
+  "0xff", `%#X` "0XFF", `%#o` "010" and `%#b` "0b101", placed as fmt places them;
+  refused until now because the target's printf ignores the flag, it is refused
+  still on the other verbs. `%+d` of a uint64, and a width or a precision on %b and
+  on %x and %o of a signed value, were refused too and are fmt's layout now.
 - **A slice or an array of floats or of a defined type printed.** println, print
   and printf's %v refused both, "printing a slice or array of "Celsius" is not
   supported yet": a float slice prints in Go's shortest form, "[1 0.5 1e-07]", and
@@ -108,6 +113,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **printf laid out a field by C's rules, and the target's, not by fmt's.** fmt
+  puts '+' and ' ' in front of every integer verb and of an unsigned value, `%+x`
+  of 255 being "+ff" and `% d` of a uint32 " 4000000000", where C applies them to
+  signed decimal only; a precision turns an integer's '0' fill off, so `%06.3d` of
+  7 is "   007" and printed "000007", and `%03.5d` lost its precision, "007"; '0'
+  fills a string's, a bool's and a rune's field with zeros too, `%05s` of "ab"
+  being "000ab" where it printed "   ab"; a precision on %t is ignored, and `%.2t`
+  printed "tr"; and the space flag puts a space in +Inf's sign, " Inf". On the
+  board alone the target's printf also filled `%-05d` of 7 with zeros on the left,
+  "00007", and printed `%.0d` of 0 as "0" where C and fmt print nothing. All
+  silent. An integer carrying any flag, width or precision is laid out by fmt's
+  own algorithm now, ported (intPrintHelper), and the fills are fmt's. Two sweeps
+  of every flag, width and precision over every integer and float verb, computed
+  against fmt at test time, are run cases.
 - **printf's %x, %X and %q of a value with a String() method printed the value.**
   fmt formats what String() -- or an error's Error() -- returns under %x, %X and
   %q, as under %v and %s: `%x` of a Celsius whose String() is "warm" is 7761726d
@@ -455,6 +474,16 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- printf against fmt.Printf on the host and a P2-EDGE: every integer width and
+  sign under every integer verb, strings with rune-counted widths and precisions
+  and Go's escapes, bools, a Stringer, %T of a defined type ("main.Celsius", as
+  Go spells it -- the spec said otherwise and was stale), float32 values under
+  every float verb with ties rounding to even. The faults it found are above; the
+  battery is a run case. And one of the BACKEND, recorded in
+  doc/conditional-64bit-arm.c: a 64-bit conditional expression whose arm does
+  arithmetic, `v < 0 ? -v : v`, gets a garbage high word at every optimization
+  level. Go has no conditional operator and the emitter writes no such one around
+  a user's expression; it was met in the emitter's own first draft of the layout.
 - Initialization order across packages against Go on the host and a P2-EDGE,
   traced digit by digit: in each package the variables in dependency order
   whatever order they are declared in, then its init functions in the order

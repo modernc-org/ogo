@@ -29492,6 +29492,80 @@ func main() {
 `,
 		want: "M1 1 2 5 0 false true\nM2 b 3 4\nM3 3 3 9 true true\nM4 d 3 12 1234\nM5 14 16 9 3 2 2\nM6 ok\nM7 5 true true\n",
 	}, {
+		// printf measured against Go's fmt.Printf on the host and a P2-EDGE
+		// (2026-09-18): every integer width and sign under %d %x %X %o %b %c %U %q
+		// %v with widths, '-', '+', ' ' and '0' and a precision; strings under %s
+		// with widths and rune-counted precisions, %q with Go's escapes, %x of a
+		// string and a byte slice, %v of slices; bools, %%, a String() method under
+		// %v, %s and %d, and %T of a defined type, "main.Celsius"; float32 values
+		// under %f %e %E %g %G with widths, flags and precisions, ties rounding to
+		// even. All matched.
+		name: "printf against fmt: integers, strings and floats under every verb, flag, width and precision",
+		src: `type Celsius int
+
+func (c Celsius) String() string {
+	return "C!"
+}
+
+type Plain int
+
+func ints() {
+	var i8 int8 = -128
+	var u8 uint8 = 255
+	var i16 int16 = -32768
+	var u16 uint16 = 65535
+	var i32 int32 = -2147483648
+	var u32 uint32 = 4294967295
+	var i64 int64 = -9223372036854775808
+	var u64 uint64 = 18446744073709551615
+	n := -42
+	m := 42
+	printf("A1 %d %d %d %d %d %d %d %d\n", i8, u8, i16, u16, i32, u32, i64, u64)
+	printf("A2 [%5d] [%-5d] [%05d] [%+d] [%+d] [% d] [% d]\n", n, n, n, m, n, m, n)
+	printf("A3 [%x] [%X] [%o] [%b] [%x] [%o]\n", m, m, m, m, n, n)
+	printf("A4 [%8x] [%-8X] [%08x] [%x] [%X] [%o]\n", u32, u32, u16, u64, u8, u16)
+	printf("A5 [%c] [%c] [%c] [%U] [%U] [%q] [%q]\n", 65, 0x4e16, 0x1f600, 0x41, 0x1f600, 65, 0x4e16)
+	printf("A6 [%v] [%v] [%v] [%d] [%3c]\n", n, u64, i8, Plain(7), 'z')
+	printf("A7 [%.3d] [%6.3d] [%-6.3d] [%+.3d] [%.0d]\n", 7, 7, -7, 7, 0)
+}
+
+func strs() {
+	s := "héllo"
+	ba := [3]byte{'h', 'i', '!'}
+	b := ba[:]
+	printf("B1 [%s] [%10s] [%-10s] [%.2s] [%8.3s] [%-8.1s]\n", s, s, s, s, s, s)
+	printf("B2 [%q] [%q] [%q] [%q]\n", "a\"b\\c\n\t", "", "\x01\x7f", "é")
+	printf("B3 [%x] [%X] [%x] [%s] [%q]\n", "hi", "hi", b, b, b)
+	printf("B4 [%v] [%v] [%v]\n", s, b, []string{"a", "b"})
+	printf("B5 [%t] [%t] [%v] [%5t] [%-6t]\n", true, false, true, true, false)
+	printf("B6 [%%] [%d%%] [%s]\n", 50, "%d")
+	var c Celsius = 3
+	printf("B7 [%v] [%s] [%d] [%T] [%T] [%T] [%T]\n", c, c, c, c, 1, "s", 2.5)
+}
+
+func floats() {
+	var f float32 = 3.14159265
+	var g float32 = -0.000123456
+	var h float32 = 1e20
+	var z float32 = 0
+	var t float32 = 2.5
+	var u float32 = 3.5
+	printf("C1 [%f] [%.2f] [%8.3f] [%-8.3f] [%08.3f] [%+.1f] [% .1f]\n", f, f, f, f, f, f, f)
+	printf("C2 [%e] [%E] [%.3e] [%g] [%G] [%.3g] [%g]\n", f, f, g, g, h, f, h)
+	printf("C3 [%v] [%v] [%v] [%v] [%g] [%.0f] [%.0f]\n", f, g, z, h, z, t, u)
+	printf("C4 [%10.4f] [%-10.2e] [%010.2f] [%.1f] [%.1f]\n", g, f, -f, float32(0.25), float32(0.35))
+	var arr [3]float32 = [3]float32{1, 0.5, 1e-7}
+	printf("C5 [%v] [%v] [%.1f]\n", arr[0], arr[2], arr[1])
+}
+
+func main() {
+	ints()
+	strs()
+	floats()
+}
+`,
+		want: "A1 -128 255 -32768 65535 -2147483648 4294967295 -9223372036854775808 18446744073709551615\nA2 [  -42] [-42  ] [-0042] [+42] [-42] [ 42] [-42]\nA3 [2a] [2A] [52] [101010] [-2a] [-52]\nA4 [ffffffff] [FFFFFFFF] [0000ffff] [ffffffffffffffff] [FF] [177777]\nA5 [A] [世] [😀] [U+0041] [U+1F600] ['A'] ['世']\nA6 [-42] [18446744073709551615] [-128] [7] [  z]\nA7 [007] [   007] [-007  ] [+007] []\nB1 [héllo] [     héllo] [héllo     ] [hé] [     hél] [h       ]\nB2 [\"a\\\"b\\\\c\\n\\t\"] [\"\"] [\"\\x01\\x7f\"] [\"é\"]\nB3 [6869] [6869] [686921] [hi!] [\"hi!\"]\nB4 [héllo] [[104 105 33]] [[a b]]\nB5 [true] [false] [true] [ true] [false ]\nB6 [%] [50%] [%d]\nB7 [C!] [C!] [3] [main.Celsius] [int] [string] [float64]\nC1 [3.141593] [3.14] [   3.142] [3.142   ] [0003.142] [+3.1] [ 3.1]\nC2 [3.141593e+00] [3.141593E+00] [-1.235e-04] [-0.000123456] [1E+20] [3.14] [1e+20]\nC3 [3.1415927] [-0.000123456] [0] [1e+20] [0] [2] [4]\nC4 [   -0.0001] [3.14e+00  ] [-000003.14] [0.2] [0.3]\nC5 [1] [1e-07] [0.5]\n",
+	}, {
 		// %v of a slice or an array whose element type is DEFINED printed nothing:
 		// "printing a slice or array of "Celsius" is not supported yet", and a
 		// Stringer element is printed through its String() as fmt prints it,

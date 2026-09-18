@@ -741,14 +741,50 @@ const runePrintHelper = "static void ogo_print_rune(int32_t r) {\n" +
 	"\t}\n" +
 	"\tputchar((int)(0x80 | (c & 0x3F)));\n}\n"
 
-// hexPrintHelper prints a SIGNED integer in hex as Go prints it -- a sign and the
-// magnitude, "-ff" -- where C's %x prints the two's complement of the same value,
-// "ffffff01". The magnitude is negated as UNSIGNED, which is defined for the most
-// negative value where negating the signed one is not.
-const hexPrintHelper = "static void ogo_print_hex(long long v, int upper) {\n" +
-	"\tunsigned long long u = (unsigned long long)v;\n" +
-	"\tif (v < 0) { putchar('-'); u = -u; }\n" +
-	"\tif (upper) printf(\"%llX\", u); else printf(\"%llx\", u);\n}\n"
+// intPrintHelper lays out an integer under %d, %x, %X, %o or %b as fmt does, by
+// fmt's own algorithm (fmtInteger, ported): the magnitude in the base, zeros to the
+// precision -- or, under '0' with a width and no precision and no '-', to the width
+// less the sign -- the sign, '+' or ' ' in front, and spaces to the width on the
+// side '-' says. u is the magnitude and neg its sign; the flag bits are 1 '-', 2
+// '+', 4 ' ', 8 '0', 16 for a precision given at all, and 32 '#': "0x", "0X" and
+// "0b" in front of the digits, and for octal a leading zero unless one is there --
+// placed, as fmt places them, after the zeros a '0' flag pads the width with, so
+// `%#08x` of 255 is "0x000000ff", two wider than asked. v is the value as a long
+// long; sgn says it is of a signed type, when a negative v is a negative number and
+// not the upper half of a uint64. The magnitude is negated here, as a STATEMENT:
+// handed in as `v < 0 ? 0ULL - (unsigned long long)v : (unsigned long long)v` it
+// came out of the target's compiler with a garbage high word, and -7 printed as a
+// twenty-digit number (doc/conditional-64bit-arm.c).
+//
+// It replaced three helpers and the C library's printf for every integer carrying a
+// flag, a width or a precision (2026-09-18). fmt applies '+' and ' ' to EVERY
+// integer verb and to unsigned values, `%+x` of 255 being "+ff" and `% d` of a
+// uint32 " 4000000000", where C applies them to signed decimal only; a precision
+// turns the zero padding off in both, and the target's printf kept it; and the
+// target's printf pads `%-05d` with zeros on the left and prints "0" for `%.0d` of
+// zero, where C and fmt print only the field's padding. Laid out here, the text is
+// fmt's on the host and on the board alike.
+const intPrintHelper = "static void ogo_print_int(long long v, int sgn, int base, int upper, int wid, int prec, int fl) {\n" +
+	"\tunsigned long long u = (unsigned long long)v; int neg = 0;\n" +
+	"\tif (sgn && v < 0) { neg = 1; u = -u; }\n" +
+	"\tconst char* dg = upper ? \"0123456789ABCDEF\" : \"0123456789abcdef\";\n" +
+	"\tif ((fl & 16) && prec == 0 && u == 0) { for (int i = 0; i < wid; i++) putchar(' '); return; }\n" +
+	"\tchar sign = neg ? '-' : (fl & 2) ? '+' : (fl & 4) ? ' ' : 0;\n" +
+	"\tint p = 0;\n" +
+	"\tif (fl & 16) p = prec; else if ((fl & 8) && !(fl & 1) && wid > 0) p = wid - (sign ? 1 : 0);\n" +
+	"\tchar d[64]; int n = 0;\n" +
+	"\tdo { d[n++] = dg[u % (unsigned)base]; u /= (unsigned)base; } while (u);\n" +
+	"\tint z = p > n ? p - n : 0;\n" +
+	"\tchar x0 = 0, x1 = 0;\n" +
+	"\tif (fl & 32) { if (base == 16) { x0 = '0'; x1 = upper ? 'X' : 'x'; } else if (base == 2) { x0 = '0'; x1 = 'b'; } else if (base == 8 && z == 0 && d[n - 1] != '0') x0 = '0'; }\n" +
+	"\tint len = n + z + (sign ? 1 : 0) + (x0 ? 1 : 0) + (x1 ? 1 : 0), pad = wid > len ? wid - len : 0;\n" +
+	"\tif (!(fl & 1)) for (int i = 0; i < pad; i++) putchar(' ');\n" +
+	"\tif (sign) putchar(sign);\n" +
+	"\tif (x0) putchar(x0);\n" +
+	"\tif (x1) putchar(x1);\n" +
+	"\tfor (int i = 0; i < z; i++) putchar('0');\n" +
+	"\twhile (n) putchar(d[--n]);\n" +
+	"\tif (fl & 1) for (int i = 0; i < pad; i++) putchar(' ');\n}\n"
 
 // bytesPrintHelpers are the verbs a protocol logger reaches for over raw bytes: the
 // hex dump %x and %X write of a string or a byte slice, and the quoted form %q
@@ -823,18 +859,6 @@ const runeQuoteHelper = `static void ogo_print_qrune(long long v) {
 	putchar('\'');
 }
 `
-
-// basePrintHelper prints an integer in octal or binary as Go prints it: a sign and
-// the magnitude for a negative signed value ("-101" for %b of -5), where C's %o
-// would print the two's complement and C has no %b at all. The magnitude is
-// negated as UNSIGNED, for the same reason ogo_print_hex negates it so.
-const basePrintHelper = "static void ogo_print_base(long long v, int base, int sgn) {\n" +
-	"\tunsigned long long u = (unsigned long long)v;\n" +
-	"\tif (sgn && v < 0) { putchar('-'); u = -u; }\n" +
-	"\tif (base == 8) { printf(\"%llo\", u); return; }\n" +
-	"\tchar b[65]; int i = 64; b[i] = 0;\n" +
-	"\tdo { b[--i] = (char)('0' + (int)(u & 1)); u >>= 1; } while (u);\n" +
-	"\tprintf(\"%s\", b + i);\n}\n"
 
 // floatFmtHelper prints a float as Go prints one -- print, println, %v, %g, %e
 // and %f alike -- from the EXACT decimal expansion of the float32, not from the C
@@ -982,7 +1006,8 @@ static void ogo_print_float(int width, int left, int plus, int space, int zero, 
 	char b[256], t[258]; const char* s = b; int n, pad, i, special;
 	ogo_fmt_float(b, (float)v, verb, prec);
 	special = b[0] == 'N' || b[1] == 'I';
-	if (b[0] != '-' && b[0] != '+' && (plus || space)) { t[0] = plus ? '+' : ' '; strcpy(t + 1, b); s = t; }
+	if (b[0] == '+' && space && !plus) { b[0] = ' '; }
+	if (b[0] != '-' && b[0] != '+' && b[0] != ' ' && (plus || space)) { t[0] = plus ? '+' : ' '; strcpy(t + 1, b); s = t; }
 	n = (int)strlen(s); pad = width - n;
 	if (pad <= 0) { printf("%s", s); return; }
 	if (left) { printf("%s", s); for (i = 0; i < pad; i++) { putchar(' '); } return; }
@@ -991,25 +1016,6 @@ static void ogo_print_float(int width, int left, int plus, int space, int zero, 
 	printf("%s", s);
 }
 `
-
-// decPadHelper prints a signed integer zero-padded to a width, as fmt does: the
-// sign first, then the zeros, then the digits, the whole field `width` wide.
-//
-// It exists for a backend defect measured on a P2-EDGE. flexcc's printf applies a
-// zero-padded width to the DIGITS of a negative number and adds the sign on top, so
-// "%08d" of -128 printed "-00000128", nine characters, where Go and the host C
-// compiler both print "-0000128". The host being right is what kept it hidden.
-//
-// plus forces a sign on a non-negative value, which is fmt's '+' flag. The magnitude
-// is negated as UNSIGNED, defined for the most negative value where negating the
-// signed one is not -- the same care ogo_print_hex takes.
-const decPadHelper = "static void ogo_print_dec_pad(long long v, int width, int plus) {\n" +
-	"\tunsigned long long m = (unsigned long long)v; char sign = 0;\n" +
-	"\tif (v < 0) { sign = '-'; m = -m; } else if (plus) sign = '+';\n" +
-	"\tint digits = 1; for (unsigned long long t = m / 10; t != 0; t /= 10) digits++;\n" +
-	"\tif (sign) putchar(sign);\n" +
-	"\tfor (int i = digits + (sign ? 1 : 0); i < width; i++) putchar('0');\n" +
-	"\tprintf(\"%llu\", m);\n}\n"
 
 // stringHelpers print a string header's exact bytes. A string is not
 // null-terminated, so %s is wrong; and the target's printf TRUNCATES "%.*s" at 62
@@ -1025,7 +1031,7 @@ const stringHelpers = "static inline void ogo_print_str(ogo_string s) { for (int
 // nothing would be the easy way to get it wrong. Precision truncates, and truncates
 // on a rune boundary. The pass over the bytes recognises a rune by its lead byte:
 // every continuation byte is 10xxxxxx, so anything else starts one.
-const stringPadHelper = "static inline void ogo_print_str_pad(ogo_string s, int w, int prec, int left) {\n" +
+const stringPadHelper = "static inline void ogo_print_str_pad(ogo_string s, int w, int prec, int left, int zero) {\n" +
 	"\tint _b = s.len, _n = 0;\n" +
 	"\tfor (int _i = 0; _i < s.len; _i++) {\n" +
 	"\t\tif ((s.str[_i] & 0xC0) != 0x80) {\n" +
@@ -1034,16 +1040,21 @@ const stringPadHelper = "static inline void ogo_print_str_pad(ogo_string s, int 
 	"\t\t}\n" +
 	"\t}\n" +
 	"\tint _p = w > _n ? w - _n : 0;\n" +
-	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
+	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(zero ? '0' : ' ');\n" +
 	"\tfor (int _i = 0; _i < _b; _i++) putchar(s.str[_i]);\n" +
 	"\tif (left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
 	"}\n"
 
 // runePadHelper prints a rune to a field width. A rune is one character however many
 // bytes it takes, so the padding is around a count of one.
-const runePadHelper = "static inline void ogo_print_rune_pad(int32_t r, int w, int left) {\n" +
+//
+// Both pad helpers fill on the left with zeros under the '0' flag, as fmt pads every
+// field it pads on the left -- a string's, a bool's and a rune's too: `%05s` of "ab"
+// is "000ab". They filled with spaces until 2026-09-18. On the right, beside '-',
+// fmt fills with spaces whatever the flags say.
+const runePadHelper = "static inline void ogo_print_rune_pad(int32_t r, int w, int left, int zero) {\n" +
 	"\tint _p = w > 1 ? w - 1 : 0;\n" +
-	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
+	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(zero ? '0' : ' ');\n" +
 	"\togo_print_rune(r);\n" +
 	"\tif (left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
 	"}\n"
@@ -4691,20 +4702,12 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.WriteString(floatFmtHelper)
 		out.WriteByte('\n')
 	}
-	if e.usesBasePrint {
-		out.WriteString(basePrintHelper)
-		out.WriteByte('\n')
-	}
-	if e.usesDecPad {
-		out.WriteString(decPadHelper)
+	if e.usesIntPrint {
+		out.WriteString(intPrintHelper)
 		out.WriteByte('\n')
 	}
 	if e.usesRuneQuote {
 		out.WriteString(runeQuoteHelper)
-	}
-	if e.usesHexPrint {
-		out.WriteString(hexPrintHelper)
-		out.WriteByte('\n')
 	}
 	if e.usesStringCmp {
 		out.WriteString(stringCmpHelper)
@@ -5323,7 +5326,6 @@ type emitter struct {
 	usesFloatFmt       bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
 	usesBytesPrint     bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
 	usesRuneQuote      bool                    // ogo_print_qrune is called: %q of an integer
-	usesBasePrint      bool                    // ogo_print_base is called: %o of a negative value, or any %b (see basePrintHelper)
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesIfaceNil       bool                    // ogo_iface_vt (nil-interface call guard) is called
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
@@ -5361,8 +5363,7 @@ type emitter struct {
 	usesStringPad      bool                    // printf %s with a width: emit stringPadHelper
 	usesRunePrint      bool                    // printf %c is used: emit runePrintHelper
 	usesRunePad        bool                    // printf %c with a width: emit runePadHelper
-	usesHexPrint       bool                    // printf %x of a signed type: emit hexPrintHelper
-	usesDecPad         bool                    // printf %0Nd of a signed value: emit decPadHelper
+	usesIntPrint       bool                    // ogo_print_int is called: an integer verb with a flag, width or precision, a signed %x or %o, or any %b (see intPrintHelper)
 	goStack            int                     // longs of stack per goroutine slot, 0 for the default (see goStackLongs)
 	usesStringEq       bool                    // a string == / != appears: emit ogo_string_eq
 	eqStructs          map[string]bool         // struct C types compared with == / !=: emit an ogo_eq_<T> helper
@@ -25801,15 +25802,16 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			spec, verb, why)
 		return false
 	}
-	// Two flags the TARGET's printf ignores, so they are refused here rather than
-	// silently dropped there. Both work under the host C compiler, which is exactly
-	// what makes them worth refusing: a host-green run would have proved nothing and
-	// the board would quietly have printed something narrower. Measured on a P2-EDGE
-	// and reduced in doc/printf-flags-ignored.c.
-	if item.hasFlag('#') {
-		e.failAt(arg.ast, "printf: the '#' flag is not supported by the C backend, "+
-			"which prints %%%s%c without the base prefix; write the prefix in the format",
-			spec, verb)
+	// A flag the TARGET's printf ignores, so it is refused here rather than silently
+	// dropped there. It works under the host C compiler, which is exactly what makes
+	// it worth refusing: a host-green run would have proved nothing and the board
+	// would quietly have printed something narrower. Measured on a P2-EDGE and
+	// reduced in doc/printf-flags-ignored.c. An INTEGER under %d, %x, %X, %o and %b
+	// is laid out by the emitter since 2026-09-18 (intPrintHelper), which writes the
+	// prefix as fmt does, so there the flag is taken.
+	if item.hasFlag('#') && !(strings.IndexByte("dxXob", verb) >= 0 && isIntCType(ct)) {
+		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
+			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
 	}
 	if verb == 'T' {
@@ -25879,7 +25881,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 					pr = -1
 				}
 				e.usesStringPad = true
-				print = fmt.Sprintf("ogo_print_str_pad(%s, %d, %d, %d)", text, w, pr, boolToInt(item.leftAlign()))
+				print = fmt.Sprintf("ogo_print_str_pad(%s, %d, %d, %d, %d)", text, w, pr, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0')))
 			}
 			e.ind()
 			e.emit("{ " + dct + " " + tmp + " = ")
@@ -26030,7 +26032,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			e.ind()
 			e.emit("ogo_print_str_pad(")
 			value()
-			e.emit(fmt.Sprintf(", %d, %d, %d);\n", w, p, boolToInt(item.leftAlign())))
+			e.emit(fmt.Sprintf(", %d, %d, %d, %d);\n", w, p, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0'))))
 			return true
 		}
 		e.usesStringPrint = true
@@ -26042,8 +26044,23 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		if ct != cBool {
 			return wrong("a bool")
 		}
+		// A width pads the word as fmt pads a string, zeros included under '0', and a
+		// precision is IGNORED, as fmt ignores one on a bool: C's "%.2s" printed "tr"
+		// of "true" where Go prints "true" (until 2026-09-18).
+		if spec != "" {
+			w, _ := item.width()
+			tmp := e.newTmp()
+			e.usesStringPrint = true
+			e.usesStringPad = true
+			e.ind()
+			e.emit("{ " + cBool + " " + tmp + " = ")
+			value()
+			e.emit(fmt.Sprintf("; ogo_print_str_pad((ogo_string){%s ? \"true\" : \"false\", %s ? 4 : 5}, %d, -1, %d, %d); }\n",
+				tmp, tmp, w, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0'))))
+			return true
+		}
 		e.ind()
-		e.emit("printf(\"%" + spec + "s\", (")
+		e.emit("printf(\"%s\", (")
 		value()
 		e.emit(") ? \"true\" : \"false\");\n")
 	case 'f', 'e', 'E', 'g', 'G':
@@ -26069,7 +26086,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			e.ind()
 			e.emit("ogo_print_rune_pad((int32_t)(")
 			value()
-			e.emit(fmt.Sprintf("), %d, %d);\n", w, boolToInt(item.leftAlign())))
+			e.emit(fmt.Sprintf("), %d, %d, %d);\n", w, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0'))))
 			return true
 		}
 		e.usesRunePrint = true
@@ -26094,91 +26111,58 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		if !isIntCType(ct) {
 			return wrong("an integer")
 		}
-		if verb == 'b' {
-			// C has no %b: the helper prints the digits, and a negative signed value
-			// as a sign and its magnitude, as %x below. A width would have to be
-			// filled around that sign by hand, so there is none yet.
-			if spec != "" {
-				return noSpec("%b is printed by a helper here")
-			}
-			e.usesBasePrint = true
-			e.ind()
-			e.emit("ogo_print_base((long long)(")
-			value()
-			e.emit("), 2, " + strconv.Itoa(boolToInt(isSignedIntCType(ct))) + ");\n")
-			return true
-		}
-		if verb != 'd' && isSignedIntCType(ct) {
-			// A negative value prints as a sign and its magnitude, as in Go. C's %x
-			// would print the two's complement instead, which is a different number.
-			if spec != "" {
-				// Padding around a sign the helper prints itself: Go puts %8x of -255
-				// as "    -ff" and %08x as "-00000ff", so the fill goes on different
-				// sides of the sign depending on the flag. Getting that subtly wrong
-				// is worse than saying so.
-				return noSpec("a negative %x prints as sign and magnitude here")
-			}
-			if verb == 'o' {
-				e.usesBasePrint = true
-				e.ind()
-				e.emit("ogo_print_base((long long)(")
-				value()
-				e.emit("), 8, 1);\n")
-				return true
-			}
-			e.usesHexPrint = true
-			e.ind()
-			e.emit("ogo_print_hex((long long)(")
-			value()
-			upper := "0"
-			if verb == 'X' {
-				upper = "1"
-			}
-			e.emit("), " + upper + ");\n")
-			return true
-		}
-		// `%0Nd` right-aligned. The target's printf pads the DIGITS of a negative
-		// number to the width and adds the sign on top -- "%08d" of -128 gives nine
-		// characters there and eight everywhere else -- so the field is written
-		// here instead. Left-aligned needs none of this: '0' is ignored beside '-'
-		// in C as in fmt, and there is no fill to misplace.
-		if verb == 'd' && item.hasFlag('0') && !item.leftAlign() && isIntCType(ct) {
-			if w, ok := item.width(); ok && w > 0 && ct != "uint64_t" {
-				e.usesDecPad = true
-				e.ind()
-				e.emit("ogo_print_dec_pad((long long)(")
-				value()
-				e.emit(fmt.Sprintf("), %d, %d);\n", w, boolToInt(item.hasFlag('+'))))
-				return true
-			}
-		}
-		// `%+d` of an UNSIGNED value. C's "+" flag applies to the SIGNED
-		// conversions only, so `%+u` drops the sign that fmt writes: Go prints
-		// "+255" and this printed "255". An unsigned value is never negative, so
-		// the signed conversion prints exactly the same digits AND honours the
-		// flag -- for every width and alignment, which is what makes this better
-		// than prepending the character and adjusting the width by hand.
-		if verb == 'd' && item.hasFlag('+') && !isSignedIntCType(ct) && isIntCType(ct) {
-			if ct == "uint64_t" {
-				// No signed type holds it. Refused rather than printed without the
-				// sign, in the same spirit as the two flags above: a program that
-				// compiles here is meant to mean what it means in Go.
-				e.failAt(arg.ast, "printf: the '+' flag on %%%s%c of a uint64 is not "+
-					"supported, no signed type being wide enough to carry the value; "+
-					"drop the flag or convert to int64", spec, verb)
-				return false
-			}
-			e.ind()
-			e.emit("printf(\"%" + spec + "lld\", (long long)(")
-			value()
-			e.emit("));\n")
-			return true
-		}
+		return e.emitIntVerb(item, ct, value)
+	}
+	return true
+}
+
+// emitIntVerb emits an integer under %d, %x, %X, %o or %b once emitPrintfVerb has
+// settled the verb suits it: value writes the value and ct is its C type.
+//
+// Only the plain forms go to the C library's printf -- no flag, no width, no
+// precision, and a value C writes as fmt does: %d of any integer, %x, %X and %o of
+// an unsigned one. Everything else is laid out by fmt's own algorithm (see
+// intPrintHelper): a negative value under %x or %o, which C would print as its two's
+// complement; %b, which C has not got; and every flag, width and precision, whose
+// rules differ between fmt and C and between C and the target's printf.
+func (e *emitter) emitIntVerb(item printfItem, ct string, value func()) bool {
+	verb, spec := item.verb, item.spec
+	signed := isSignedIntCType(ct)
+	if spec == "" && verb != 'b' && (verb == 'd' || !signed) {
 		e.ind()
-		e.emit("printf(\"" + intPrintfVerb(verb, ct, spec) + "\", ")
+		e.emit("printf(\"" + intPrintfVerb(verb, ct, "") + "\", ")
 		value()
 		e.emit(");\n")
+		return true
 	}
+	base := map[byte]int{'d': 10, 'x': 16, 'X': 16, 'o': 8, 'b': 2}[verb]
+	w, _ := item.width()
+	p, hasP := item.precision()
+	fl := 0
+	for bit, f := range map[int]byte{1: '-', 2: '+', 4: ' ', 8: '0', 32: '#'} {
+		if item.hasFlag(f) {
+			fl |= bit
+		}
+	}
+	if hasP {
+		fl |= 16
+	}
+	e.usesIntPrint = true
+	e.ind()
+	// A 64-bit value is handed over as it is, the parameter's type converting it: a
+	// cast to a 64-bit type of a 64-bit EXPRESSION is one the target's compiler gets
+	// wrong (see emitConversion), and `(long long)((-123456789012LL))` arrived with a
+	// garbage high word. A narrower value is widened, which it gets right.
+	if cIntWidths[e.underlyingCType(ct)] == 64 {
+		e.emit("ogo_print_int(")
+		value()
+		e.emit(", ")
+	} else {
+		e.emit("ogo_print_int((long long)(")
+		value()
+		e.emit("), ")
+	}
+	e.emit(fmt.Sprintf("%d, %d, %d, %d, %d, %d);\n", boolToInt(signed), base, boolToInt(verb == 'X'), w, p, fl))
 	return true
 }
 
