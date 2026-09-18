@@ -27708,6 +27708,47 @@ func main() {
 }
 `,
 		want: "1 2 3 | 99 99\n01 12 23 | 7\n1 2 3 | 11 4\n1 50 51 | 50 51\n27 9 77 9\n1 9 3 1 2 3 | 152 54\n1 2 | 40 40\n5 5 2\n",
+	}, {
+		// One Go level of binary operators associates to the left as one, and C binds
+		// some of them at different strengths: | below ^ below + and - in the additive
+		// level, & below the shifts below * / % in the multiplicative one. Written out in a
+		// row, `a | b ^ c` was C's `a | (b ^ c)`, 7 for Go's 5, and `a & b << 2` was
+		// `a & (b << 2)`, 4 for 8 -- twelve of thirty-one such expressions swept were
+		// wrong, silently. A level that mixes them is written left-nested now
+		// (cPrecMixed). And `a &^ b << d` was not C at all: the shift chain wrote the
+		// Go operator verbatim.
+		name: "operators of one Go level that C binds differently",
+		src: `// One Go level of operators associates to the left as one; C binds | below ^ below
+// + and -, and & below the shifts below * / %. Every operand comes out of a table,
+// so nothing folds.
+var vals = [6]int{6, 3, 2, 1, 12, 5}
+var uvals = [3]uint32{0xF0F0, 0x0FF0, 3}
+
+func main() {
+	for i := 0; i < 1; i++ {
+		a, b, c, d, e := vals[i], vals[i+1], vals[i+2], vals[i+3], vals[i+4]
+		println("mul", a&b<<2, a<<2&b, a&b<<1>>1, a*b&e, a&e*b, a/b&e, a&e/b, a%b&e, a&e%b, e>>1&b, e&b>>1, a&b*c<<1)
+		println("add", a|b^c, a^b|c, a|b+c, a+b|c, a^b+c, a+b^c, a|b-c, a-b|c, a^b-c, a-b^c, a|b^c|a, a^b|c^a, a+b|c^e-a)
+		println("andnot", a&^b+c, a+b&^c, a&^b|c, a|b&^c, a&^b<<d, a<<d&^b, a&^b&c, a&b&^c, a^b&^c, a&^b<<c>>d, e>>d&^b<<c)
+		println("shift", a+b<<c, a<<b+c, a-b>>d, a*b<<c, a<<c*b, a>>d+d, a<<b>>d, -a<<c, a<<c-b, a<<c&e, a&e<<c)
+		println("cmp", a&c == c, a|b == a, a^b == 5, a&c != 0, b<<c == a*2, a|b^c == 5, a&b<<1 == 4)
+		println("unary", ^a&b, ^(a & b), -a&b, -(a & b), ^a+b, ^(a + b), -a<<c, ^a<<c, ^(a << c), ^a|b^c)
+		x, y, z := uvals[i], uvals[i+1], uvals[i+2]
+		println("uns", x&y|z, x|y&z, x^y&z, x&^y|z, x>>z+z, x+y>>z, x<<z-y, x-y<<z, x&y<<z, x<<z&y, ^x>>z, x>>z<<z, x|y^z, x^y|z, x|3^1, x&3<<1)
+		println("cmp2", x&y == y, x|y > x, x^y != x, x>>z == x/8, x<<z == x*8, x|y^z == 0xFFF0)
+		g := a
+		g += b << c
+		g &= a + b
+		g |= c << d
+		g ^= a & b
+		g <<= d + d
+		g &^= b | c
+		g %= a + b
+		println("compound", g)
+	}
+}
+`,
+		want: "mul 8 0 2 0 12 0 1 0 1 2 0 8\nadd 5 7 9 11 7 11 5 3 3 1 7 1 1\nandnot 6 7 6 7 8 12 0 0 7 8 16\nshift 18 50 5 72 72 4 24 -24 21 8 16\ncmp true false true true true true true\nunary 1 -3 2 -2 -4 -10 -24 -28 -25 -7\nuns 243 61680 61680 61443 7713 62190 489360 29040 1920 1920 536863201 61680 65523 65283 61682 0\ncmp2 false true true true true false\ncompound 6\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

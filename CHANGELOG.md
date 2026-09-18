@@ -91,6 +91,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`a | b ^ c` and `a & b << 2` associated as C does, not as Go does.** One Go
+  level of binary operators associates to the left as one; C binds `|` below `^`
+  below `+` and `-`, and `&` below the shifts below `*`, `/` and `%`. Written out
+  in a row, `a | b ^ c` computed `a | (b ^ c)` -- 7 where Go says 5 -- and
+  `a & b << 2` computed `a & (b << 2)`, 4 for 8; twelve of thirty-one such
+  expressions swept were wrong, silently. A level that mixes such operators is
+  written left-nested now. And `a &^ b << d` did not compile at all: the guarded
+  shift chain wrote Go's `&^` verbatim.
 - **A range over an array iterates a copy.** Go evaluates a range expression once,
   and an array's value is a copy, so the loop hands out the elements the array
   held when it began. The loop read the live array: `for i, v := range arr {

@@ -23344,6 +23344,12 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		case haveType && e.isDivOp(op) && e.divNeedsGuard1(ctype, rhs.ast):
 			fn := e.needDiv(e.opText(op.ast), e.underlyingCType(ctype))
 			text = fn + "(" + text + ", " + rhsText + ")"
+		case e.opText(op.ast) == "&^":
+			// C has no "&^": an AND with the complement, as the streaming path
+			// writes it. Written verbatim here, `a &^ b << d` was "expected
+			// expression before '^'" from both compilers.
+			ct, _ := e.inferNode(rhs)
+			text = "(" + text + " & " + e.captureC(func() { e.emitComplement(rhs.ast, ct, func() { e.emit(rhsText) }) }) + ")"
 		default:
 			// A step the chain does not guard leaves the result's type as it was:
 			// the value type of a shift, a quotient and a remainder alike is the
@@ -23355,6 +23361,58 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		}
 	}
 	return text, true
+}
+
+// cPrecMixed reports whether one Go level of binary operators -- which Go
+// associates to the left as one -- mixes operators C binds at different strengths,
+// so that written out in a row C would associate them otherwise. Go's additive
+// level holds + - | ^, and C binds | below ^ below + -: `a | b ^ c` is `(a | b) ^
+// c` in Go and `a | (b ^ c)` in C. Go's multiplicative level holds * / % << >> &
+// &^, and C binds & below the shifts below * / %: `a & b << 1` is `(a & b) << 1`
+// in Go and `a & (b << 1)` in C. A level that mixes them is written left-nested,
+// `((a | b) ^ c)`, which is also what keeps the host's -Wparentheses quiet.
+func (e *emitter) cPrecMixed(kids []Node) bool {
+	class := func(op string) int {
+		switch op {
+		case "+", "-", "*", "/", "%":
+			return 1
+		case "<<", ">>":
+			return 2
+		case "&", "&^":
+			return 3
+		case "^":
+			return 4
+		case "|":
+			return 5
+		}
+		return 0
+	}
+	seen := 0
+	for _, c := range kids {
+		if c.sym != AddOp && c.sym != MulOp {
+			continue
+		}
+		if k := class(e.opText(c.ast)); k != 0 {
+			if seen != 0 && seen != k {
+				return true
+			}
+			seen = k
+		}
+	}
+	return false
+}
+
+// leftNested joins the pieces of a level -- operand, operator, operand, ... -- as
+// the left-associated C expression `((a op b) op c)`.
+func leftNested(pieces []string) string {
+	if len(pieces) < 3 {
+		return strings.Join(pieces, "")
+	}
+	text := pieces[0]
+	for i := 1; i+1 < len(pieces); i += 2 {
+		text = "(" + text + pieces[i] + pieces[i+1] + ")"
+	}
+	return text
 }
 
 // isShiftOp and isDivOp name the operators whose C and Go answers can differ.
@@ -32063,6 +32121,23 @@ func (e *emitter) emitExprNode(n Node) {
 			}
 			e.emit("(" + nc + ")")
 		}
+		// `a | b ^ c`, `a ^ b + c`: one Go level, three C strengths (cPrecMixed).
+		if n.sym == SimpleExpr && e.cPrecMixed(kids) {
+			ct, ctOK := e.inferNodes(kids)
+			unsignedLevel := ctOK && isUnsignedCType(ct)
+			var pieces []string
+			for _, c := range kids {
+				pieces = append(pieces, e.captureC(func() {
+					if lit, ok := e.unsignedLitC(c); unsignedLevel && ok {
+						e.emit(lit) // see unsignedLitC
+					} else {
+						e.emitExprNode(c)
+					}
+				}))
+			}
+			e.emit("(" + leftNested(pieces) + ")")
+			return
+		}
 		e.emit("(")
 		e.emitLogicalKids(kids)
 		e.emit(")")
@@ -32103,115 +32178,124 @@ func (e *emitter) emitExprNode(n Node) {
 				kids = []Node{narrowLevelPrefix(n, len(kids)-2), kids[len(kids)-2], kids[len(kids)-1]}
 			}
 		}
-		e.emit("(")
 		unsignedTerm := e.unsignedLevel(n.ast)
 		guardNext, complementNext, shiftNext, zeroNext := false, false, false, false
+		// Each operand and operator is rendered to a piece, and the pieces are
+		// joined in a row, or left-nested where C would associate them otherwise
+		// (cPrecMixed).
+		var pieces []string
 		for i, c := range kids {
-			switch {
-			case c.sym == MulOp:
-				op := e.opText(c.ast)
-				guardNext, complementNext = false, false
-				// `x % 1` and `x % -1` are ZERO in Go, whatever x is -- a remainder
-				// is smaller than its divisor. The target's C compiler answers x
-				// instead, for every type up to 32 bits (the 64-bit path goes
-				// through a runtime call and is right); see
-				// doc/modulo-by-one-returns-the-dividend.c. So the operation is
-				// written as the multiplication by zero it is: the same value, the
-				// operand evaluated exactly once as Go evaluates it, and nothing
-				// left for a compiler to fold wrongly.
-				if op == "%" && i+1 < len(kids) {
-					if v, ok := e.foldConstInt(kids[i+1].ast); ok && (v == 1 || v == -1) {
-						e.emit(" * ")
-						zeroNext = true
-						continue
+			pieces = append(pieces, e.captureC(func() {
+				switch {
+				case c.sym == MulOp:
+					op := e.opText(c.ast)
+					guardNext, complementNext = false, false
+					// `x % 1` and `x % -1` are ZERO in Go, whatever x is -- a remainder
+					// is smaller than its divisor. The target's C compiler answers x
+					// instead, for every type up to 32 bits (the 64-bit path goes
+					// through a runtime call and is right); see
+					// doc/modulo-by-one-returns-the-dividend.c. So the operation is
+					// written as the multiplication by zero it is: the same value, the
+					// operand evaluated exactly once as Go evaluates it, and nothing
+					// left for a compiler to fold wrongly.
+					if op == "%" && i+1 < len(kids) {
+						if v, ok := e.foldConstInt(kids[i+1].ast); ok && (v == 1 || v == -1) {
+							e.emit(" * ")
+							zeroNext = true
+							return
+						}
 					}
-				}
-				if op == "&^" {
-					// C has no "&^". Go defines "a &^ b" as "a AND NOT b", so it
-					// lowers to an AND with the complement of b -- the same rewrite
-					// "&^=" uses. The operand is parenthesised because it may be an
-					// expression and the complement binds tighter than anything
-					// inside one. See complementC for why the complement is not "~".
-					e.emit(" & ")
-					complementNext = true
-					continue
-				}
-				e.emit(" " + op + " ")
-				guardNext = e.checks && (op == "/" || op == "%")
-				shiftNext = op == "<<" || op == ">>"
-			case complementNext:
-				complementNext = false
-				ct, _ := e.inferNode(c)
-				e.emitComplement(c.ast, ct, func() { e.emitExprNode(c) })
-			case guardNext && !e.isIntLiteral(c):
-				guardNext = false
-				// A divisor that folds to a nonzero constant needs no guard, however
-				// it is spelled -- a named constant, `(N * 2)`, `(1 << 32)`. Only a
-				// bare literal was recognised: `n % N` paid for a check on every
-				// pass of a loop, and a constant too wide for the guard's int was
-				// truncated to its low word by the call. That word is zero for
-				// 2^32, so `x / (1 << 32)` on an int64 level panicked "integer
-				// divide by zero", and it is 2^31 for 2^31, which the int read as
-				// its own most negative value and divided by. A zero constant is
-				// refused by the checker; the guard stays for what does not fold.
-				if v, ok := e.foldConstInt(c.ast); ok && v != 0 {
+					if op == "&^" {
+						// C has no "&^". Go defines "a &^ b" as "a AND NOT b", so it
+						// lowers to an AND with the complement of b -- the same rewrite
+						// "&^=" uses. The operand is parenthesised because it may be an
+						// expression and the complement binds tighter than anything
+						// inside one. See complementC for why the complement is not "~".
+						e.emit(" & ")
+						complementNext = true
+						return
+					}
+					e.emit(" " + op + " ")
+					guardNext = e.checks && (op == "/" || op == "%")
+					shiftNext = op == "<<" || op == ">>"
+				case complementNext:
+					complementNext = false
+					ct, _ := e.inferNode(c)
+					e.emitComplement(c.ast, ct, func() { e.emitExprNode(c) })
+				case guardNext && !e.isIntLiteral(c):
+					guardNext = false
+					// A divisor that folds to a nonzero constant needs no guard, however
+					// it is spelled -- a named constant, `(N * 2)`, `(1 << 32)`. Only a
+					// bare literal was recognised: `n % N` paid for a check on every
+					// pass of a loop, and a constant too wide for the guard's int was
+					// truncated to its low word by the call. That word is zero for
+					// 2^32, so `x / (1 << 32)` on an int64 level panicked "integer
+					// divide by zero", and it is 2^31 for 2^31, which the int read as
+					// its own most negative value and divided by. A zero constant is
+					// refused by the checker; the guard stays for what does not fold.
+					if v, ok := e.foldConstInt(c.ast); ok && v != 0 {
+						e.emitExprNode(c)
+						return
+					}
+					// The guard is chosen by the LEVEL's type, resolved past its
+					// definition. The operands of an arithmetic operator are of one type,
+					// so the level's is the divisor's -- and the divisor's own answer
+					// is the name it was declared with, which for a `type U uint64` is
+					// "U", not "uint64_t": that took the 32-bit guard, and `a / b` over
+					// two of them panicked for a b whose low word is zero and divided
+					// by that word for any other. A `type F float64` was guarded the
+					// same way and had its divisor truncated to an int.
+					ct, ok := e.inferNodes(kids)
+					if !ok {
+						ct, _ = e.inferCType(c.ast)
+					}
+					ct = e.underlyingCType(ct)
+					// A float divisor is never guarded: Go's float division by zero is
+					// ±Inf/NaN, not a panic, and ogo_nonzero(int) would truncate the
+					// divisor (2.5 -> 2), miscompiling the division.
+					if ct == "double" || ct == "float" {
+						e.emitExprNode(c)
+						return
+					}
+					e.needPanic()
+					// A 64-bit divisor needs the 64-bit guard, or ogo_nonzero(int) would
+					// truncate it (mis-detecting a large nonzero divisor as zero and
+					// dividing by a wrong value).
+					fn := "ogo_nonzero"
+					if ct == "int64_t" || ct == "uint64_t" {
+						fn, e.usesNonzero64 = "ogo_nonzero64", true
+					} else {
+						e.usesNonzero = true
+					}
+					e.emit(fn + "(")
 					e.emitExprNode(c)
-					continue
-				}
-				// The guard is chosen by the LEVEL's type, resolved past its
-				// definition. The operands of an arithmetic operator are of one type,
-				// so the level's is the divisor's -- and the divisor's own answer
-				// is the name it was declared with, which for a `type U uint64` is
-				// "U", not "uint64_t": that took the 32-bit guard, and `a / b` over
-				// two of them panicked for a b whose low word is zero and divided
-				// by that word for any other. A `type F float64` was guarded the
-				// same way and had its divisor truncated to an int.
-				ct, ok := e.inferNodes(kids)
-				if !ok {
-					ct, _ = e.inferCType(c.ast)
-				}
-				ct = e.underlyingCType(ct)
-				// A float divisor is never guarded: Go's float division by zero is
-				// ±Inf/NaN, not a panic, and ogo_nonzero(int) would truncate the
-				// divisor (2.5 -> 2), miscompiling the division.
-				if ct == "double" || ct == "float" {
+					e.emit(")")
+				case zeroNext:
+					zeroNext = false
+					e.emit("0") // see the "%" case above
+				case shiftNext:
+					shiftNext = false
+					// A constant count as the integer it is; see foldIntegral.
+					if v, ok := e.foldIntegral(c.ast); ok {
+						e.emit(intCLit(v))
+						return
+					}
 					e.emitExprNode(c)
-					continue
+				default:
+					if lit, ok := e.unsignedLitC(c); unsignedTerm && ok {
+						e.emit(lit) // see unsignedLitC
+					} else {
+						e.emitExprNode(c)
+					}
+					guardNext = false
 				}
-				e.needPanic()
-				// A 64-bit divisor needs the 64-bit guard, or ogo_nonzero(int) would
-				// truncate it (mis-detecting a large nonzero divisor as zero and
-				// dividing by a wrong value).
-				fn := "ogo_nonzero"
-				if ct == "int64_t" || ct == "uint64_t" {
-					fn, e.usesNonzero64 = "ogo_nonzero64", true
-				} else {
-					e.usesNonzero = true
-				}
-				e.emit(fn + "(")
-				e.emitExprNode(c)
-				e.emit(")")
-			case zeroNext:
-				zeroNext = false
-				e.emit("0") // see the "%" case above
-			case shiftNext:
-				shiftNext = false
-				// A constant count as the integer it is; see foldIntegral.
-				if v, ok := e.foldIntegral(c.ast); ok {
-					e.emit(intCLit(v))
-					continue
-				}
-				e.emitExprNode(c)
-			default:
-				if lit, ok := e.unsignedLitC(c); unsignedTerm && ok {
-					e.emit(lit) // see unsignedLitC
-				} else {
-					e.emitExprNode(c)
-				}
-				guardNext = false
-			}
+			}))
 		}
-		e.emit(")")
+		if e.cPrecMixed(kids) {
+			e.emit("(" + leftNested(pieces) + ")")
+		} else {
+			e.emit("(" + strings.Join(pieces, "") + ")")
+		}
 	case UnaryExpr, Factor:
 		kids := slices.Collect(it(n.ast))
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
