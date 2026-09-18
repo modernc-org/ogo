@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf applies every verb to a slice or an array element by element.** `%d` of
+  []int{1, 2} is "[1 2]", `%#x` of an array "[0xa 0xff]", `%8.2f` pads each float
+  and `%3c` each rune, as in fmt; every verb but %v and %q refused a slice or an
+  array ("%d wants an integer, not []int"). The byte forms print a []byte and now a
+  byte array whole, "6869" under %x, as fmt does.
 - **printf's '#' flag on the integer verbs, and every width on them.** `%#x` is
   "0xff", `%#X` "0XFF", `%#o` "010" and `%#b` "0b101", placed as fmt places them;
   refused until now because the target's printf ignores the flag, it is refused

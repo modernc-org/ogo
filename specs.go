@@ -1938,6 +1938,12 @@
 //	            type this package declares, "lib.Temp" for an imported one
 //	%%          a literal percent
 //
+// Every verb applies to a slice or an array ELEMENT by element, as in fmt, the
+// flags, width and precision to each: `%d` of []int{1, 2} is "[1 2]", `%#x` of
+// [2]int{10, 255} is "[0xa 0xff]", `%5.1f` pads every float. The byte forms are the
+// exception fmt makes: %s, %x, %X and %q of a []byte or a byte array print its bytes
+// as one text, "hi", "6869", "\"hi\"" -- and %d of one is its numbers, "[104 105]".
+//
 // The byte forms of %s, %x, %X and %q, and %U, take no width or precision yet, and
 // say so where they are written: the helper that writes them measures the text as
 // it goes, so a field around it would have to be counted twice.

@@ -29828,6 +29828,66 @@ func main() {
 }
 `,
 		want: "T1 [][][a][é]\nT2 [x][x​][!]\nT3 a béc true 1 2\nT4 3 3 1 -1\nT5 true true true 1\nT6 1 -1 -1 true\nT8 [a\xff][\xff][\xff][�][\xc3]\nT7 abc true abc true 0 false  0\n",
+	}, {
+		// fmt applies every verb to a slice or an array element by element, flags,
+		// width and precision included: `%d` of []int{1, 2} is "[1 2]", `%#x` of
+		// an array "[0xa 0xff -0x10]", `%8.2f` pads each float, `%3c` each rune.
+		// Every verb but %v and %q refused a slice until 2026-09-18. The byte forms
+		// print a []byte and a byte array whole, and a Stringer element prints its
+		// value under %d. Measured against fmt on the host and a P2-EDGE.
+		name: "printf applies every verb to a slice or an array element by element",
+		src: `type Celsius int
+
+func (c Celsius) String() string {
+	return "warm"
+}
+
+type Level uint8
+
+func ints() {
+	xs := []int{1, -2, 300}
+	arr := [3]int{10, 255, -16}
+	i8 := []int8{-128, 127}
+	u64 := []uint64{0, 18446744073709551615}
+	printf("I1 %d %v %5d %-4d| %+d %05d\n", xs, xs, xs, arr, xs, arr)
+	printf("I2 %x %X %o %b %#x\n", arr, arr[:2], xs, i8, arr)
+	printf("I3 %d %x %d %d\n", i8, u64, u64, []int{})
+	var none []int
+	levels := []Level{1, 200}
+	cs := []Celsius{1, 2}
+	printf("I4 %d %d %d %v\n", none, levels, cs, cs)
+}
+
+func runes() {
+	rs := []rune{'a', 0x4e16, 0x1f600}
+	printf("R1 %c %U %q %3c %d\n", rs, rs, rs, rs[:2], rs)
+}
+
+func strs() {
+	ss := []string{"a", "b\"c", ""}
+	bs := []byte{'h', 'i', 1}
+	ba := [3]byte{'o', 'k', 255}
+	printf("S1 %s %q %5s %-3s|\n", ss, ss, ss[:2], ss)
+	printf("S2 %s %x %X %q %d %v\n", bs, bs, bs, bs, bs, bs)
+	printf("S3 %s %x %X %q %d %v\n", ba, ba, ba, ba, ba, ba)
+	flags := []bool{true, false}
+	printf("S4 %t %6t %v\n", flags, flags, flags)
+}
+
+func floats() {
+	fs := []float32{1.5, -0.25, 1e+20}
+	fa := [2]float32{3.25, 0}
+	printf("F1 %f %.1f %8.2f %e %g %G %v\n", fs, fs, fa, fs, fs, fa, fa)
+}
+
+func main() {
+	ints()
+	runes()
+	strs()
+	floats()
+}
+`,
+		want: "I1 [1 -2 300] [1 -2 300] [    1    -2   300] [10   255  -16 ]| [+1 -2 +300] [00010 00255 -0016]\nI2 [a ff -10] [A FF] [1 -2 454] [-10000000 1111111] [0xa 0xff -0x10]\nI3 [-128 127] [0 ffffffffffffffff] [0 18446744073709551615] []\nI4 [] [1 200] [1 2] [warm warm]\nR1 [a 世 😀] [U+0061 U+4E16 U+1F600] ['a' '世' '😀'] [  a   世] [97 19990 128512]\nS1 [a b\"c ] [\"a\" \"b\\\"c\" \"\"] [    a   b\"c] [a   b\"c    ]|\nS2 hi\x01 686901 686901 \"hi\\x01\" [104 105 1] [104 105 1]\nS3 ok\xff 6f6bff 6F6BFF \"ok\\xff\" [111 107 255] [111 107 255]\nS4 [true false] [  true  false] [true false]\nF1 [1.500000 -0.250000 100000002004087734272.000000] [1.5 -0.2 100000002004087734272.0] [    3.25     0.00] [1.500000e+00 -2.500000e-01 1.000000e+20] [1.5 -0.25 1e+20] [3.25 0] [3.25 0]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

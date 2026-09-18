@@ -25743,18 +25743,26 @@ func (e *emitter) isByteSliceCType(ct string) bool {
 // emitBytesVerb calls one of the byte helpers on a string or a byte slice: the
 // value is bound to a temporary first, since the helper takes the pointer and the
 // length separately and the argument may be a call.
+//
+// The value is bound in a block where the verb is printed, not hoisted ahead of the
+// statement: the prologue runs before the arguments printed ahead of this one, and
+// under emitElementwiseVerb the value is an element that exists only inside the
+// loop printing it.
 func (e *emitter) emitBytesVerb(ct, helper, extra string, value func()) {
 	e.usesBytesPrint = true
 	e.usesString = true
 	e.usesRuneDecode = true // ogo_print_qbytes decodes, and one helper text carries all three
-	arg := e.hoist(ct, value)
+	tmp := e.newTmp()
+	arg := tmp
 	if ct != cString {
 		// A byte slice is handed over as the string its bytes are: same pointer,
 		// same length, and the helpers then read one shape.
-		arg = "(ogo_string){(const char*)" + arg + ".ptr, " + arg + ".len}"
+		arg = "(ogo_string){(const char*)" + tmp + ".ptr, " + tmp + ".len}"
 	}
 	e.ind()
-	e.emit(helper + "(" + arg + extra + ");\n")
+	e.emit("{ " + ct + " " + tmp + " = ")
+	value()
+	e.emit("; " + helper + "(" + arg + extra + "); }\n")
 }
 
 // emitFloatVerb prints a float through one of %e, %E, %f, %g or %G: the helper
@@ -25809,7 +25817,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// reduced in doc/printf-flags-ignored.c. An INTEGER under %d, %x, %X, %o and %b
 	// is laid out by the emitter since 2026-09-18 (intPrintHelper), which writes the
 	// prefix as fmt does, so there the flag is taken.
-	if item.hasFlag('#') && !(strings.IndexByte("dxXob", verb) >= 0 && isIntCType(ct)) {
+	if item.hasFlag('#') && !(strings.IndexByte("dxXob", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
 			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
@@ -25936,10 +25944,124 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		e.emitPrintOne(false, idx, arg)
 		return true
 	}
+	// fmt applies every verb to a slice or an array ELEMENT by element: `%d` of
+	// []int{1, 2} is "[1 2]", `%5.1f` pads each float. Asked before the type is
+	// required to be known, since an array has no C value type to be known by.
+	if handled, ok := e.emitElementwiseVerb(item, idx, arg, value, wrong, noSpec); handled {
+		return ok
+	}
 	if !known {
 		e.failAt(arg.ast, "printf: cannot tell the type of this argument")
 		return false
 	}
+	return e.emitScalarVerb(item, ct, value, wrong, noSpec)
+}
+
+// intsToPrint reports a printf argument of C type ct that is an integer, or a slice
+// or a one-dimensional array of them, which fmt formats element by element.
+func (e *emitter) intsToPrint(idx int, arg Node, ct string) bool {
+	if isIntCType(ct) {
+		return true
+	}
+	if pct, ok := e.printfArgType(idx, arg); ok && e.isSliceCType(e.underlyingCType(pct)) {
+		return isIntCType(e.underlyingCType(sliceElemFromCName(e.underlyingCType(pct))))
+	}
+	if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+		return isIntCType(e.underlyingCType(a.elem))
+	}
+	return false
+}
+
+// emitElementwiseVerb prints a slice or a one-dimensional array under a verb element
+// by element, as fmt does: "[", each element under the verb and its flags, width
+// and precision, separated by spaces, "]" -- `%d` of []int{1, 2} is "[1 2]" and
+// `%5.1f` pads every float. Until 2026-09-18 every verb but %v and %q refused one,
+// "%d wants an integer, not []int". It answers handled false, emitting nothing, for
+// an argument that is neither, and for the BYTE forms, which print a []byte whole:
+// %s, %x, %X and %q of one print its bytes as one text, and so here -- through a
+// header over it -- of a byte array, as fmt prints both.
+func (e *emitter) emitElementwiseVerb(item printfItem, idx int, arg Node, value func(), wrong func(string) bool, noSpec func(string) bool) (handled, ok bool) {
+	verb := item.verb
+	elem, bound := "", ""
+	if ct, known := e.printfArgType(idx, arg); known && e.isSliceCType(e.underlyingCType(ct)) {
+		elem = sliceElemFromCName(e.underlyingCType(ct))
+	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+		elem, bound = a.elem, a.bound
+	} else {
+		return false, false
+	}
+	u := e.underlyingCType(elem)
+	if u == "uint8_t" && strings.IndexByte("sxXq", verb) >= 0 {
+		if elem != "uint8_t" {
+			// fmt takes any element of byte KIND as a byte here; the byte forms read a
+			// []byte, and a defined element's slice is another type to them.
+			e.failAt(arg.ast, "printf: %%%s%c of a slice or an array of %s is not supported yet",
+				item.spec, verb, e.goTypeName(elem))
+			return true, false
+		}
+		if bound == "" {
+			return false, false // the scalar path's byte forms take the []byte
+		}
+		e.needSlice(elem)
+		header := func() {
+			e.emit("(" + sliceCName(elem) + "){")
+			value()
+			e.emit(", " + bound + ", " + bound + "}")
+		}
+		return true, e.emitScalarVerb(item, sliceCName(elem), header, wrong, noSpec)
+	}
+	// An element fmt would ask for its String() under this verb was printed by
+	// emitStringerElems when the verb carries no width; with one, each text would be
+	// padded, which that path does not do yet. Printing the values instead would be
+	// the silent kind of wrong.
+	if stringerVerb(verb) {
+		if _, _, isStringer := e.stringerCallC(elem, "_"); isStringer {
+			return true, noSpec("a slice of values with a String() method is printed element by element here")
+		}
+	}
+	if bound == "0" && !e.exprHasEffect(arg.ast) {
+		e.ind()
+		e.emit("printf(\"[]\");\n")
+		return true, true
+	}
+	e.needSlice(elem)
+	s, i := e.newTmp(), e.newTmp()
+	e.ind()
+	e.emit("{ " + sliceCName(elem) + " " + s + " = ")
+	if bound != "" {
+		e.emit("(" + sliceCName(elem) + "){")
+		value()
+		e.emit(", " + bound + ", " + bound + "}")
+	} else {
+		value()
+	}
+	e.emit(";\n")
+	e.indent++
+	e.ind()
+	e.emit("putchar('[');\n")
+	e.ind()
+	e.emit("for (int " + i + " = 0; " + i + " < " + s + ".len; " + i + "++) {\n")
+	e.indent++
+	e.ind()
+	e.emit("if (" + i + ") { putchar(' '); }\n")
+	ok = e.emitScalarVerb(item, u, func() { e.emit(s + ".ptr[" + i + "]") }, wrong, noSpec)
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	e.ind()
+	e.emit("putchar(']');\n")
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	return true, ok
+}
+
+// emitScalarVerb emits a value of C type ct under one verb, value writing it: the
+// verbs' own forms once emitPrintfVerb has dealt with %T, a Stringer and %v, and
+// the form an element takes under emitElementwiseVerb. wrong and noSpec are the
+// caller's refusals.
+func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong func(string) bool, noSpec func(string) bool) bool {
+	verb, spec := item.verb, item.spec
 	switch verb {
 	case 'q':
 		// The quoted forms a protocol logger prints: a string or a byte slice in
@@ -25959,37 +26081,6 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			e.emit("ogo_print_qrune((long long)(")
 			value()
 			e.emit("));\n")
-		case e.isSliceCType(ct) && (isIntCType(e.underlyingCType(sliceElemFromCName(ct))) || sliceElemFromCName(ct) == cString):
-			// fmt applies the verb ELEMENT-WISE to a slice: ['h' 'i' '!'] for
-			// integer elements, ["hi" "yo"] for strings, [] when empty. The value
-			// is bound first -- the argument may be a call -- and each element goes
-			// through the same helper the scalar form uses.
-			elem := sliceElemFromCName(ct)
-			e.usesRuneQuote = true
-			e.usesRunePrint = true
-			e.usesBytesPrint = true
-			e.usesString = true
-			e.usesRuneDecode = true
-			tmp := e.hoist(ct, value)
-			i := e.newTmp()
-			e.ind()
-			e.emit("putchar('[');\n")
-			e.ind()
-			e.emit("for (int " + i + " = 0; " + i + " < " + tmp + ".len; " + i + "++) {\n")
-			e.indent++
-			e.ind()
-			e.emit("if (" + i + ") { putchar(' '); }\n")
-			e.ind()
-			if elem == cString {
-				e.emit("ogo_print_qbytes(" + tmp + ".ptr[" + i + "]);\n")
-			} else {
-				e.emit("ogo_print_qrune((long long)" + tmp + ".ptr[" + i + "]);\n")
-			}
-			e.indent--
-			e.ind()
-			e.emit("}\n")
-			e.ind()
-			e.emit("putchar(']');\n")
 		default:
 			return wrong("a string, a byte slice or an integer, or a slice of either")
 		}
