@@ -18503,6 +18503,34 @@ func (e *emitter) factorDerefChain(kids []Node) (string, []Node, bool) {
 	return name, steps, true
 }
 
+// derefFuncCall reports `(*p)(args)`: a chain through a dereference whose first
+// step CALLS what p points at, p being a pointer to a function type, whose C type
+// it answers.
+func (e *emitter) derefFuncCall(name string, steps []Node) (string, bool) {
+	if len(steps) == 0 || steps[0].sym != CallSuffix {
+		return "", false
+	}
+	ct, ok := e.varType(name)
+	if !ok || !e.isPointer(ct) {
+		return "", false
+	}
+	fct := e.elemType(ct)
+	if !e.isFuncCType(fct) {
+		return "", false
+	}
+	return fct, true
+}
+
+// bindDerefFunc binds the function value the pointer name points at -- nil-checked,
+// as every dereference is -- to a temporary of its type, fct, registered as a local
+// so that calling it is the call of a function-typed variable.
+func (e *emitter) bindDerefFunc(name, fct string) string {
+	ct, _ := e.varType(name)
+	tmp := e.hoist(fct, func() { e.emit("(*" + e.nilCheckedC(e.varRef(name), ct) + ")") })
+	e.locals[tmp] = fct
+	return tmp
+}
+
 // derefCallSteps reports a chain through a dereference that CALLS something,
 // `(*p).m()`. Go defines `p.m()` as the same call -- a selector on a pointer to a
 // struct dereferences it, for a method as for a field -- so it is emitted as the
@@ -22478,6 +22506,18 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 // value-receiver method captures a copy, so it does not.
 func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (string, bool) {
 	base := e.soleIdent(head.ast)
+	// `defer (*p)(args)`: the function p points at is evaluated where the defer
+	// stands, as Go evaluates a deferred function value, and captured like the value
+	// of a function variable below. Left to the replay, the dereference was a name
+	// the replay's scope had never declared.
+	if name, isDeref := e.derefHead(head); base == "" && isDeref && len(suffix) == 1 {
+		if fct, isCall := e.derefFuncCall(name, suffix); isCall {
+			ct, _ := e.varType(name)
+			d.recvCType = fct
+			d.callsValue = true
+			return "(*" + e.nilCheckedC(e.varRef(name), ct) + ")", true
+		}
+	}
 	if base == "" {
 		// `defer (&v).m(args)`. The head is parenthesised, so it carries no sole
 		// identifier and the capture below would be skipped silently -- and a skipped
@@ -23143,6 +23183,15 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		// receiver is the pointer and the shorthand is what is emitted -- the same
 		// equivalence the expression form uses (see derefCallSteps).
 		if name, ok := e.derefHead(head); ok {
+			// `(*p)(x)` as a statement: the function p points at, called (see
+			// derefFuncCall) -- not `p(x)`.
+			if fct, isCall := e.derefFuncCall(name, postfix); isCall {
+				fn := e.bindDerefFunc(name, fct)
+				e.ind()
+				e.emitCallStmtExpr(fn, postfix)
+				e.emit(";\n")
+				return
+			}
 			e.ind()
 			e.emitCallStmtExpr(name, postfix)
 			e.emit(";\n")
@@ -29395,6 +29444,15 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		callee, suffix, ok = e.chainCallOf(rhs)
 	}
 	if !ok {
+		// `q, r := (*p)(x)`: the function value p points at, bound and called as a
+		// variable of its type (see derefFuncCall).
+		if name, steps, isDeref := e.factorDerefChain(e.factorKids(rhs)); isDeref && len(steps) == 1 {
+			if fct, isCall := e.derefFuncCall(name, steps); isCall {
+				callee, suffix, ok = e.bindDerefFunc(name, fct), steps, true
+			}
+		}
+	}
+	if !ok {
 		e.fail("multiple assignment requires a single function call on the right-hand side")
 		return
 	}
@@ -31613,6 +31671,12 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// CLAIMED: a trailing slice step has no fixed shape to be handed back to
 			// here, the fixed shapes all starting from a variable's name.
 			if name, steps, ok := e.factorDerefChain(kids); ok {
+				if fct, isCall := e.derefFuncCall(name, steps); isCall {
+					if rts := e.funcTypeRet[e.underlyingCType(fct)]; len(rts) == 1 && len(steps) == 1 {
+						return rts[0], true
+					}
+					return "", false
+				}
 				if derefCallSteps(steps) {
 					return e.callResultCType(name, steps)
 				}
@@ -33524,6 +33588,14 @@ func (e *emitter) emitExprNode(n Node) {
 			// `(*p).x` / `(*p)[i]` -- a written-out dereference carrying a suffix.
 			// The chain starts from what p points at, named by the dereference.
 			if name, steps, ok := e.factorDerefChain(kids); ok {
+				// `(*p)(x)`: the function value p points at, called. It went down the
+				// method-call path below as `p(x)`, a call of the pointer itself, which
+				// neither C compiler takes. The value is bound first and called as a
+				// variable of its type is, as a function-typed element is.
+				if fct, isCall := e.derefFuncCall(name, steps); isCall {
+					e.emitCallExpr(e.bindDerefFunc(name, fct), steps)
+					return
+				}
 				if derefCallSteps(steps) {
 					e.emitCallExpr(name, steps)
 					return

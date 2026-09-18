@@ -30526,6 +30526,101 @@ func main() {
 `,
 		want: "F1 0 1 6 6 5\nF2 0 2 7\nF3 1 2 2 1 11\nF4 3628800 true true false\nF5 12 7 720\nF6 42 4\nF7 2 2\n",
 	}, {
+		// `(*p)(x)` was emitted as `p(x)`, a call of the pointer itself, which
+		// neither C compiler takes (2026-09-19). The pointee is bound and called as a
+		// variable of its type is: in an expression, nested, as a statement, with
+		// two results destructured, from another cog, and deferred -- where Go
+		// evaluates the function value at the defer, so a later store through the
+		// pointer is not what runs.
+		name: "a call through a pointer to a function value",
+		src: `type Op func(int) int
+
+type Two func(int) (int, int)
+
+type Act func(int)
+
+var total int
+
+func record(x int) {
+	total = total*10 + x
+}
+
+func record2(x int) {
+	total = total*10 + x + 5
+}
+
+
+func split(x int) (int, int) {
+	return x / 10, x % 10
+}
+
+func twice(x int) int {
+	return x * 2
+}
+
+var done chan int
+
+var a Act = record
+
+func worker(p *Act) {
+	(*p)(9)
+	done <- 1
+}
+
+func run(p *Act) {
+	defer (*p)(3)
+	(*p)(1)
+	*p = record2
+	(*p)(2)
+	*p = record
+}
+
+func main() {
+	ap := &a
+	(*ap)(4)
+	run(ap)
+	var t Two = split
+	tp := &t
+	q, r := (*tp)(57)
+	var o Op = twice
+	op := &o
+	s := (*op)((*op)(3)) + (*op)(1)
+	go worker(ap)
+	<-done
+
+	println(total, q, r, s)
+}
+`,
+		want: "41739 5 7 14\n",
+	}, {
+		// A method on a defined function type calls its receiver, and one on a
+		// pointer to it calls through it (2026-09-19).
+		name: "a method on a function type, by value and by pointer",
+		src: `// COMPILE
+
+// A method on a defined function type calls its receiver, as a parameter of that
+// type is called -- the http.HandlerFunc pattern.
+
+type Handler func(int) int
+
+func (h Handler) Serve(x int) int {
+	return h(x) + h(x+1)
+}
+
+type Pred func(int) bool
+
+func (p *Pred) Not(x int) bool {
+	return !(*p)(x)
+}
+
+func main() {
+	var h Handler = func(x int) int { return x * 2 }
+	var even Pred = func(x int) bool { return x%2 == 0 }
+	println(h.Serve(3), even.Not(3))
+}
+`,
+		want: "14 true\n",
+	}, {
 		// Interface semantics measured against Go on the host and a P2-EDGE
 		// (2026-09-19): an interface embedding two others, a value assigned from
 		// one to another, comma-ok assertions to an interface and to a concrete

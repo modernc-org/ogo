@@ -135,6 +135,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call through a pointer to a function value called the pointer.** `(*p)(x)`
+  was emitted as `p(x)`, which neither C compiler takes: in an expression, as a
+  statement, with two results destructured and deferred. The function value p
+  points at is bound and called as a variable of its type is; a deferred one is
+  captured where the defer stands, as Go evaluates it there.
 - **A method on a function type could not call its receiver.** `func (o Op)
   Twice(x int) int { return o(o(x)) }` for a `type Op func(int) int` -- the
   http.HandlerFunc pattern -- was "cannot call non-function o": the checker
