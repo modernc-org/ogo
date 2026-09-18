@@ -29888,6 +29888,46 @@ func main() {
 }
 `,
 		want: "I1 [1 -2 300] [1 -2 300] [    1    -2   300] [10   255  -16 ]| [+1 -2 +300] [00010 00255 -0016]\nI2 [a ff -10] [A FF] [1 -2 454] [-10000000 1111111] [0xa 0xff -0x10]\nI3 [-128 127] [0 ffffffffffffffff] [0 18446744073709551615] []\nI4 [] [1 200] [1 2] [warm warm]\nR1 [a 世 😀] [U+0061 U+4E16 U+1F600] ['a' '世' '😀'] [  a   世] [97 19990 128512]\nS1 [a b\"c ] [\"a\" \"b\\\"c\" \"\"] [    a   b\"c] [a   b\"c    ]|\nS2 hi\x01 686901 686901 \"hi\\x01\" [104 105 1] [104 105 1]\nS3 ok\xff 6f6bff 6F6BFF \"ok\\xff\" [111 107 255] [111 107 255]\nS4 [true false] [  true  false] [true false]\nF1 [1.500000 -0.250000 100000002004087734272.000000] [1.5 -0.2 100000002004087734272.0] [    3.25     0.00] [1.500000e+00 -2.500000e-01 1.000000e+20] [1.5 -0.25 1e+20] [3.25 0] [3.25 0]\n",
+	}, {
+		// The math package's limits and its IEEE questions, measured against Go on
+		// the host and a P2-EDGE (2026-09-18): Go's integer limit constants, int and
+		// uint 32 bits wide; MaxFloat32 and the subnormal SmallestNonzeroFloat32;
+		// Inf, NaN, IsNaN, IsInf of each sign, Signbit of -0 and of the infinities.
+		// None of them existed before.
+		name: "math: the limits of the integer types and of float32, Inf, NaN, IsNaN, IsInf and Signbit",
+		src: `import "math"
+
+func limits() {
+	println("L1", math.MaxInt8, math.MinInt8, math.MaxInt16, math.MinInt16, math.MaxInt32, math.MinInt32)
+	var i64 int64 = math.MaxInt64
+	var m64 int64 = math.MinInt64
+	var u64 uint64 = math.MaxUint64
+	var u32 uint32 = math.MaxUint32
+	println("L2", i64, m64, u64, u32, math.MaxUint8, math.MaxUint16, math.MaxInt, math.MinInt)
+	var u uint = math.MaxUint
+	x := 40000
+	println("L3", u, x > math.MaxInt16, int8(math.MaxInt8), uint16(math.MaxUint16), int64(math.MinInt64) < 0, math.MaxUint32 == 1<<32-1)
+}
+
+func floats() {
+	inf := math.Inf(1)
+	ninf := math.Inf(-1)
+	nan := math.NaN()
+	one := 1.0
+	println("F1", math.IsNaN(nan), math.IsNaN(one), math.IsNaN(inf), math.IsInf(inf, 1), math.IsInf(inf, -1), math.IsInf(ninf, 0), math.IsInf(nan, 0))
+	println("F2", math.Signbit(-one), math.Signbit(one), math.Signbit(math.Copysign(0, -1)), math.Signbit(0), math.Signbit(ninf))
+	var mf float32 = math.MaxFloat32
+	var sf float32 = math.SmallestNonzeroFloat32
+	println("F3", mf > 3.4e38, mf*2 > mf, sf > 0, sf/2 == 0, math.IsInf(float64(mf*2), 1), inf > float64(mf))
+	printf("F4 %v %v %v %v %v\n", inf, ninf, nan, mf, sf)
+}
+
+func main() {
+	limits()
+	floats()
+}
+`,
+		want: "L1 127 -128 32767 -32768 2147483647 -2147483648\nL2 9223372036854775807 -9223372036854775808 18446744073709551615 4294967295 255 65535 2147483647 -2147483648\nL3 4294967295 true 127 65535 true true\nF1 true false false true false true false\nF2 true false true false true\nF3 true true true true true true\nF4 +Inf -Inf NaN 3.4028235e+38 1e-45\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -53,9 +53,11 @@ const mathSrc = `// Package math is the allocation-free part of Go's math: the e
 // language spec -- and it is why a program that compares a result against a literal
 // should compare to the precision it has.
 //
-// What is missing is what needs more than a call: Inf, NaN, IsNaN, IsInf and
-// Signbit, which answer questions about a bit pattern rather than computing a value,
-// and the Max/Min float constants, which name values a 32-bit float cannot hold.
+// Inf, NaN, IsNaN, IsInf and Signbit are written here, in OctoGo: the target's
+// floats are IEEE 754 in everything they answer -- a NaN is unequal to itself, a
+// division by zero is an infinity of the right sign, 1/-0 is -Inf -- measured on a
+// P2-EDGE. What is missing is MaxFloat64 and SmallestNonzeroFloat64, which name values
+// a 32-bit float cannot hold.
 
 // Mathematical constants, as Go declares them. Each is exact until it is used: the
 // compiler evaluates constant expressions exactly, so Pi/2 is right to the last bit
@@ -74,6 +76,35 @@ const (
 	Log2E  = 1 / Ln2
 	Ln10   = 2.30258509299404568401799145468436420760110148862877297603332790
 	Log10E = 1 / Ln10
+)
+
+// The limits of float32, as Go declares them: the largest finite value and the
+// smallest positive, subnormal, one.
+const (
+	MaxFloat32             = 3.40282346638528859811704183484516925440e+38
+	SmallestNonzeroFloat32 = 1.401298464324817070923729583289916131280e-45
+)
+
+// The limits of the integer types, as Go declares them, int and uint being 32 bits
+// here.
+const (
+	intSize = 32
+
+	MaxInt    = 1<<(intSize-1) - 1
+	MinInt    = -1 << (intSize - 1)
+	MaxInt8   = 1<<7 - 1
+	MinInt8   = -1 << 7
+	MaxInt16  = 1<<15 - 1
+	MinInt16  = -1 << 15
+	MaxInt32  = 1<<31 - 1
+	MinInt32  = -1 << 31
+	MaxInt64  = 1<<63 - 1
+	MinInt64  = -1 << 63
+	MaxUint   = 1<<intSize - 1
+	MaxUint8  = 1<<8 - 1
+	MaxUint16 = 1<<16 - 1
+	MaxUint32 = 1<<32 - 1
+	MaxUint64 = 1<<64 - 1
 )
 
 // Abs returns the absolute value of x.
@@ -136,6 +167,41 @@ func Trunc(x float64) float64 {
 		return Ceil(x)
 	}
 	return Floor(x)
+}
+
+// zero is a variable, so that dividing by it is done at run time: the infinities
+// and the NaN are what the target's division makes of it.
+var zero float64
+
+// Inf returns positive infinity if sign >= 0, negative infinity if sign < 0.
+func Inf(sign int) float64 {
+	if sign >= 0 {
+		return 1 / zero
+	}
+	return -1 / zero
+}
+
+// NaN returns an IEEE 754 "not-a-number" value.
+func NaN() float64 {
+	return zero / zero
+}
+
+// IsNaN reports whether f is an IEEE 754 "not-a-number" value.
+func IsNaN(f float64) bool {
+	return f != f
+}
+
+// IsInf reports whether f is an infinity, according to sign: positive infinity if
+// sign > 0, negative infinity if sign < 0, either if sign == 0. A float64 being 32
+// bits, anything past MaxFloat32 is one.
+func IsInf(f float64, sign int) bool {
+	return sign >= 0 && f > MaxFloat32 || sign <= 0 && f < -MaxFloat32
+}
+
+// Signbit reports whether x is negative or negative zero. The sign of a NaN is not
+// read: Signbit of one is false here, where Go reads the bit.
+func Signbit(x float64) bool {
+	return x < 0 || x == 0 && 1/x < 0
 }
 
 // Round returns the nearest integer, rounding half away from zero.

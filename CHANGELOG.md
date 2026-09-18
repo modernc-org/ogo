@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **math.Inf, NaN, IsNaN, IsInf and Signbit, and Go's limit constants.** The
+  functions are written in OctoGo, the target's floats being IEEE 754 in everything
+  they answer (measured on a P2-EDGE); Signbit of a NaN is false, its sign not being
+  read. MaxInt8 through MaxUint64, MaxInt, MinInt and MaxUint -- int and uint 32 bits
+  wide -- MaxFloat32 and SmallestNonzeroFloat32 are declared as Go declares them.
+  MaxFloat64 and SmallestNonzeroFloat64 stay out: a float64 is 32 bits here.
 - **printf applies every verb to a slice or an array element by element.** `%d` of
   []int{1, 2} is "[1 2]", `%#x` of an array "[0xa 0xff]", `%8.2f` pads each float
   and `%3c` each rune, as in fmt; every verb but %v and %q refused a slice or an

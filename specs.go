@@ -2686,10 +2686,13 @@
 // nothing more; naming one as a VALUE emits a definition for it, there being nothing
 // for a function pointer to point at otherwise. Trunc and Round are written in
 // OctoGo over the others: the target has no trunc at all, and its round is a builtin
-// that yields an INTEGER, which would have clamped Round(1e30) to 2147483647. What
-// math leaves out is what needs more than a call -- Inf, NaN, IsNaN, IsInf and
-// Signbit, which read a bit pattern -- and the MaxFloat constants, which name values
-// a 32-bit float cannot hold.
+// that yields an INTEGER, which would have clamped Round(1e30) to 2147483647. Inf,
+// NaN, IsNaN, IsInf and Signbit are written in OctoGo too, the target's floats being
+// IEEE 754 in everything they answer, and the package declares Go's limits of the
+// integer types -- MaxInt32, MinInt64, MaxUint64 and the rest, int and uint being 32
+// bits -- and of float32. What it leaves out is MaxFloat64 and
+// SmallestNonzeroFloat64, which name values a 32-bit float cannot hold; and Signbit
+// of a NaN is false, the sign of a NaN not being read.
 //
 // The main package must declare a function main that takes no arguments and
 // returns no value:

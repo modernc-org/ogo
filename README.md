@@ -320,10 +320,11 @@ broken.
   substring of one, each meaning exactly what Go's of the same name means, checked
   by running the same program under Go. `math` is the elementary functions on the
   same terms — `Abs`, `Ceil`, `Floor`, `Trunc`, `Round`, `Sqrt`, `Pow`, `Exp`, the
-  three logarithms, the six trigonometric functions, `Atan2`, `Mod`, `Copysign` and
-  Go's mathematical constants — and what it leaves out is what needs more than a
-  call: `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, and the `MaxFloat` constants,
-  which name values a 32-bit float cannot hold. `p2` wraps twenty-eight intrinsics
+  three logarithms, the six trigonometric functions, `Atan2`, `Mod`, `Copysign`,
+  `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, Go's mathematical constants and the
+  limits of the integer types and of `float32` — and what it leaves out is
+  `MaxFloat64` and `SmallestNonzeroFloat64`, which name values a 32-bit float
+  cannot hold. `p2` wraps twenty-eight intrinsics
   (pin control, smart pins including the ADC, timing, the serial line in both
   directions, the hardware locks), and `testing` carries the state
   a test reports through. That is the whole of it. Your own packages do import and
