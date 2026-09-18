@@ -19684,35 +19684,49 @@ func (e *emitter) carryIntoClause(lhs, rhs []int32) {
 	e.noteHolderRef(base, ref)
 }
 
-// emitSimultaneous emits `a, b = x, y` as Go means it: every value is read into a
-// temporary before any target is written, so `a, b = b, a` swaps rather than
-// duplicating. It is the loop clauses' form of what emitMultiAssign does for a
-// statement.
+// emitSimultaneous emits `a, b = x, y` written in a loop's init or post clause as
+// Go means it: every value is read into a temporary before any target is written,
+// so `a, b = b, a` swaps rather than duplicating. It is the statement's own
+// lowering (emitValueList) over the clause's targets. Until 2026-09-18 it was a
+// lowering of its own, rendering each target as an expression: it fixed no target's
+// place ahead of the stores, so `for i, a[i] = 0, 5; ...; i, a[i] = i+1, 6` stored
+// at the NEW i in both clauses, where the statement stores at the old one.
 func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
-	for i, rhs := range rhss {
-		e.carryIntoClause(lhss[i], rhs)
-	}
-	tmps := make([]string, len(rhss))
-	for i, rhs := range rhss {
-		tt, typedTarget := e.inferCType(lhss[i])
-		if typedTarget {
-			e.typeUntypedShifts(rhs, tt) // the target's type is the value's context
-		}
-		ct, ok := e.inferCType(rhs)
-		if !ok {
-			ct = "int"
-		}
-		if typedTarget {
-			ct = e.constTmpCType(ct, tt, rhs)
-		}
-		tmps[i] = e.newTmp()
-		e.ind()
-		e.emit(ct + " " + tmps[i] + " = " + e.exprC(rhs) + ";\n")
-	}
+	targets := make([]assignTarget, len(lhss))
 	for i, lhs := range lhss {
-		e.ind()
-		e.emit(e.exprC(lhs) + " = " + tmps[i] + ";\n")
+		t, ok := e.clauseTarget(lhs)
+		if !ok {
+			e.fail("unsupported target in a for clause's assignment")
+			return
+		}
+		targets[i] = t
 	}
+	rhs := make([]Node, len(rhss))
+	for i, r := range rhss {
+		rhs[i] = Node{sym: Expression, ast: r}
+	}
+	e.emitValueList(targets, make([]bool, len(targets)), rhs)
+}
+
+// clauseTarget reads a clause's target, an expression, as the target the
+// statement's lowering takes: a name, a dereferenced pointer, or a name and the
+// access chain after it.
+func (e *emitter) clauseTarget(ast []int32) (assignTarget, bool) {
+	if name, ok := e.exprIdent(ast); ok {
+		return assignTarget{name: name, tok: -1}, true
+	}
+	if name, ok := e.derefOperand(ast); ok {
+		return assignTarget{name: name, stars: "*", tok: -1}, true
+	}
+	kids, ok := e.soleFactor(ast)
+	if !ok {
+		return assignTarget{}, false
+	}
+	base, steps, isChain := e.factorAccessChain(kids)
+	if !isChain || len(steps) == 0 {
+		return assignTarget{}, false
+	}
+	return assignTarget{name: base, chain: steps, tok: -1}, true
 }
 
 func (e *emitter) emitFor(nodes []Node) {
@@ -28204,6 +28218,9 @@ type assignTarget struct {
 	stars string
 	chain []Node
 	tok   int32
+	// addr is a pointer temporary holding the target's PLACE, fixed ahead of the
+	// stores of the statement (fixTargetAddrs); "" for a place computed at the store.
+	addr string
 }
 
 // assignTargetCType is the C type a multiple assignment's target stores, where it
@@ -28261,6 +28278,11 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 	}
 	if declare {
 		e.fail("non-name %s on the left side of :=", t.name)
+		return
+	}
+	if t.addr != "" {
+		e.ind()
+		e.emit("(*" + t.addr + ") = " + val + ";\n")
 		return
 	}
 	if t.stars != "" && len(t.chain) != 0 {
@@ -28399,6 +28421,11 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 			}
 		}
 		defer e.bindOperandsInOrder(idx, true)()
+	}
+	// The places of the targets are fixed next, before any value is computed: the
+	// left side's operands come first in Go's order.
+	if !e.fixTargetAddrs(targets, declare) {
+		return
 	}
 	// The values are bound below one by one, in order -- but a value needing a
 	// statement ahead of the whole statement, an array a call returns, ran before
@@ -28564,9 +28591,158 @@ func (e *emitter) emitStoreArray(t assignTarget, declare bool, a arrDim, val str
 		e.fail("cannot use %s as %s in assignment", e.goArrayTypeName(a), e.goArrayTypeName(dst))
 		return
 	}
+	if t.addr != "" {
+		text = "(*" + t.addr + ")"
+	}
 	e.includes["string.h"] = true
 	e.ind()
 	e.emit("memcpy(" + text + ", " + val + ", sizeof(" + text + "));\n")
+}
+
+// fixTargetAddrs settles, ahead of the stores of a multiple assignment, WHERE a
+// target is when a store before it in the same statement changes what its place is
+// computed from. Go fixes every index operand and every pointer indirection on the
+// left before the first store, so `i, arr[i] = 2, 6` stores 6 at the OLD i and `p,
+// p.x = &q, 5` writes the OLD pointee; C, storing left to right through the lvalues
+// as written, used the new ones -- silently, at an index, through a pointer, a
+// pointer field and a slice header alike. Such a target is bound to its address
+// here, in a pointer temporary its store then writes through, and only such a one:
+// the place is fixed when a store before it can move it (targetMovedBy). The swap
+// `a[i], a[j] = a[j], a[i]` binds nothing, since the store to a[i] moves nothing
+// a[j] is found by. Answers false when it has failed.
+func (e *emitter) fixTargetAddrs(targets []assignTarget, declare []bool) bool {
+	for k := 1; k < len(targets); k++ {
+		t := targets[k]
+		if t.name == "_" || declare[k] || t.plain() {
+			continue
+		}
+		moved := false
+		for j := 0; j < k && !moved; j++ {
+			moved = targets[j].name != "_" && e.targetMovedBy(t, targets[j])
+		}
+		if !moved {
+			continue
+		}
+		tmp := e.newTmp()
+		switch {
+		case len(t.chain) == 0:
+			// The pointer's value is the place: `p, *p = &q, 1` writes where p
+			// pointed. A pointer to a pointer is not fixed, and says so.
+			ct, ok := e.varType(t.name)
+			if t.stars != "*" || !ok {
+				e.fail("a dereferenced target after a store to what it dereferences is not supported yet")
+				return false
+			}
+			e.ind()
+			e.emit(ct + " " + tmp + " = " + e.nilCheckedPtrVar(t.name) + ";\n")
+		default:
+			if t.stars != "" {
+				e.fail("a dereferenced target with a field or index is not supported yet")
+				return false
+			}
+			cur, ok := e.accessChainType(t.name, t.chain)
+			if !ok {
+				e.fail("unsupported target in a multiple assignment")
+				return false
+			}
+			text := e.captureC(func() { e.emitAccessChain(t.name, t.chain) })
+			e.ind()
+			if len(cur.dims) != 0 {
+				a := curArrDim(cur)
+				e.emit(a.elem + " (*" + tmp + ")" + a.declSuffix() + " = &" + text + ";\n")
+				break
+			}
+			ct, ok := e.chainValueCType(cur)
+			if !ok {
+				e.fail("unsupported target in a multiple assignment")
+				return false
+			}
+			e.emit(ct + "* " + tmp + " = &" + text + ";\n")
+		}
+		targets[k].addr = tmp
+	}
+	return true
+}
+
+// targetMovedBy reports whether a store to the target w, made before the target t
+// in the same statement, can change where t is: an index operand of t reads w's
+// variable; or t is found through a value w writes -- the variable's own, when w is
+// that variable and t's chain goes through it as a pointer or a slice header (`p,
+// p.x`, `s, s[i]`, `p, *p`); or one its storage holds, when w is a field or element
+// at or above a pointer or slice header t's chain goes on through (`q.p, q.p.x`,
+// `u, u.s[i]`, `*p, p.q.x`). A chain that stays inside one variable's storage reads
+// nothing to find its place, and a store elsewhere in it moves nothing: the swap
+// `a[i], a[j]` over an array or a slice, and `h.a[p], h.a[m]` over a slice field,
+// bind nothing.
+func (e *emitter) targetMovedBy(t, w assignTarget) bool {
+	for _, st := range t.chain {
+		if st.sym == Index && e.initRefsName(st.ast, w.name) {
+			return true
+		}
+	}
+	if t.name != w.name {
+		return false
+	}
+	if w.plain() {
+		return t.stars != "" || e.chainIndirects(t.name, t.chain)
+	}
+	// w writes what its chain reaches, and `*p` the whole pointee, which every chain
+	// through p reads from: a chain of no steps.
+	for i := 1; i < len(t.chain); i++ {
+		cur, ok := e.accessChainType(t.name, t.chain[:i])
+		if !ok || (!cur.slice && !e.isPointer(cur.ctype)) {
+			continue
+		}
+		if len(w.chain) <= i && e.stepsMayOverlap(w.chain, t.chain[:len(w.chain)]) {
+			return true
+		}
+	}
+	return false
+}
+
+// stepsMayOverlap reports whether two access chains of one length may reach one
+// place: the same fields, and indexes that are not two different constants.
+func (e *emitter) stepsMayOverlap(a, b []Node) bool {
+	for i := range a {
+		if a[i].sym != b[i].sym {
+			return false
+		}
+		switch a[i].sym {
+		case Selector:
+			if e.soleIdent(a[i].ast) != e.soleIdent(b[i].ast) {
+				return false
+			}
+		case Index:
+			x, xConst := e.foldConstInt(a[i].ast)
+			y, yConst := e.foldConstInt(b[i].ast)
+			if xConst && yConst && x != y {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// chainIndirects reports whether a chain from the variable base passes through a
+// pointer or a slice header: the base itself, or a value reached before the last
+// step -- `q.p.x` through the pointer field p, `q.s[i]` through the slice field s.
+func (e *emitter) chainIndirects(base string, chain []Node) bool {
+	if _, isPtr := e.arrayPtrVar(base); isPtr {
+		return true
+	}
+	if _, isSlice := e.sliceElem(base); isSlice {
+		return true
+	}
+	if ct, ok := e.varType(base); ok && e.isPointer(ct) {
+		return true
+	}
+	for i := 1; i < len(chain); i++ {
+		cur, ok := e.accessChainType(base, chain[:i])
+		if ok && (cur.slice || e.isPointer(cur.ctype)) {
+			return true
+		}
+	}
+	return false
 }
 
 // emitDestructure lowers a multi-result call bound to several targets, shared by
@@ -28582,6 +28758,9 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	e.storeCarries = nil
 	if ref, ok := e.frameRefOf(rhs); ok {
 		e.storeCarries = &carriedRef{r: ref, at: Node{sym: Expression, ast: rhs}, typed: true}
+	}
+	if !e.fixTargetAddrs(targets, declare) {
+		return
 	}
 	// "v, ok := x.(T)": no call, and the two values are a cast and a comparison.
 	// The order matters -- v is the zero value when the assertion does not hold, as
@@ -28673,10 +28852,6 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		}
 		return
 	}
-	// A call through a function VALUE of several results writes them through a
-	// leading out parameter, the value pointing at a wrapper rather than at the
-	// function itself (see funcSigCParts). The temporary is declared first and its
-	// address handed over, as for an interface's slot above.
 	// A call through a function VALUE of several results writes them through a
 	// leading out parameter, the value pointing at a wrapper rather than at the
 	// function itself (see funcSigCParts). The temporary is declared first and its

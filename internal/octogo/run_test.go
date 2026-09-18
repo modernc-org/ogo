@@ -28045,6 +28045,310 @@ func main() {
 }
 `,
 		want: "range 30 0 false 0\nmsg 0 0 m\nmsg 1 10 m\nclosed 0 0 0 false\nstrs héllo 6 true 0 true 0 false\npolls 13 1\n",
+	}, {
+		// Value semantics measured against Go on the host and on a P2-EDGE
+		// (2026-09-18): an array, a struct and a struct holding both copy on
+		// assignment, through a pointer, into a parameter, out of a result, into and
+		// out of an element and a field, and to a range's value; a slice aliases;
+		// the swaps; the two-phase multiple assignment, whose index operands are
+		// fixed before any store (C5, C6 -- the second was the fault, see
+		// fixTargetAddrs); and equality of arrays, of arrays of arrays and of structs.
+		name: "value semantics: copies, aliases, swaps, the two phases of a multiple assignment and equality",
+		src: `type P struct {
+	x, y int
+}
+
+type Q struct {
+	p P
+	a [3]int
+}
+
+type M [2][2]int
+
+var calls int
+
+func idx(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func val(k int) int {
+	calls = calls*10 + k
+	return k * 100
+}
+
+func setP(p P) int {
+	p.x = 99
+	return p.x
+}
+
+func setA(a [3]int) int {
+	a[0] = 99
+	return a[0]
+}
+
+func setQ(q *Q) {
+	q.p.x = 7
+	q.a[2] = 7
+}
+
+func mkP(k int) P {
+	return P{k, k + 1}
+}
+
+func mkA(k int) [3]int {
+	return [3]int{k, k + 1, k + 2}
+}
+
+func part1() {
+	// array and struct assignment copies
+	a := [3]int{1, 2, 3}
+	b := a
+	b[0] = 9
+	println("A1", a[0], b[0])
+	p := P{1, 2}
+	q := p
+	q.x = 9
+	println("A2", p.x, q.x)
+	// nested struct holding an array copies the array
+	var u Q
+	u.a = a
+	u.p = p
+	w := u
+	w.a[1] = 9
+	w.p.y = 9
+	a[2] = 8
+	println("A3", u.a[0], u.a[1], u.a[2], u.p.y, w.a[1], w.p.y)
+	// array of arrays
+	m := M{{1, 2}, {3, 4}}
+	n := m
+	n[0][0] = 9
+	row := m[1]
+	row[1] = 9
+	println("A4", m[0][0], n[0][0], m[1][1], row[1])
+	// through pointers
+	pp := &p
+	r := *pp
+	r.y = 9
+	println("A5", p.y, r.y)
+	pa := &a
+	c := *pa
+	c[1] = 9
+	println("A6", a[1], c[1])
+	*pp = q
+	println("A7", p.x, p.y)
+	*pa = b
+	println("A8", a[0], a[1], a[2])
+}
+
+func part2() {
+	// a slice aliases, a copy does not
+	a := [3]int{1, 2, 3}
+	s := a[:]
+	b := a
+	s[0] = 9
+	a = [3]int{7, 8, 9}
+	println("B1", a[0], b[0], s[0], s[2])
+	// callee copies
+	p := P{1, 2}
+	println("B2", setP(p), p.x)
+	println("B3", setA(a), a[0])
+	var u Q
+	u.a = a
+	setQ(&u)
+	println("B4", u.p.x, u.a[2], a[2])
+	// results are fresh values
+	q := mkP(5)
+	q.x = 1
+	r := mkP(5)
+	println("B5", q.x, r.x, mkP(3).y)
+	c := mkA(1)
+	c[0] = 9
+	d := mkA(1)
+	println("B6", c[0], d[0], mkA(4)[2])
+	// elements and fields are copies
+	arr := [2]P{{1, 1}, {2, 2}}
+	e := arr[0]
+	e.x = 9
+	arr[1] = e
+	e.y = 8
+	println("B7", arr[0].x, arr[1].x, arr[1].y, e.y)
+	// range value is a copy
+	sum := 0
+	for _, v := range arr {
+		v.x = 0
+		sum += v.x + v.y
+	}
+	println("B8", arr[0].x, arr[1].x, sum)
+	for i := range arr {
+		arr[i].x = 0
+	}
+	println("B9", arr[0].x, arr[1].x)
+}
+
+func part3() {
+	// swaps
+	a, b := [2]int{1, 2}, [2]int{3, 4}
+	a, b = b, a
+	println("C1", a[0], b[0])
+	p, q := P{1, 2}, P{3, 4}
+	p, q = q, p
+	println("C2", p.x, q.x)
+	a[0], a[1] = a[1], a[0]
+	println("C3", a[0], a[1])
+	p.x, p.y = p.y, p.x
+	println("C4", p.x, p.y)
+	// index operands are evaluated before any assignment, left to right
+	arr := [4]int{0, 0, 0, 0}
+	i := 0
+	arr[i], i = 5, 1
+	println("C5", arr[0], arr[1], i)
+	i, arr[i] = 2, 6
+	println("C6", arr[1], arr[2], i)
+	calls = 0
+	arr[idx(1)], arr[idx(2)] = val(3), val(4)
+	println("C7", arr[1], arr[2], calls)
+	calls = 0
+	arr[idx(3)] += val(1)
+	println("C8", arr[3], calls)
+	// equality of arrays and structs
+	c := [2]int{1, 2}
+	d := c
+	println("C9", a == b, c == d, c != d, p == q, p == P{4, 3})
+	m := M{{1, 2}, {3, 4}}
+	n := m
+	n[1][1] = 0
+	println("C10", m == n, m == M{{1, 2}, {3, 4}})
+}
+
+func main() {
+	part1()
+	part2()
+	part3()
+}
+`,
+		want: "A1 1 9\nA2 1 9\nA3 1 2 3 2 9 9\nA4 1 9 4 9\nA5 2 9\nA6 2 9\nA7 9 2\nA8 9 2 3\nB1 7 1 7 9\nB2 99 1\nB3 99 7\nB4 7 7 9\nB5 1 5 4\nB6 9 1 6\nB7 1 9 1 8\nB8 1 9 2\nB9 0 0\nC1 3 1\nC2 3 1\nC3 4 3\nC4 4 3\nC5 5 0 1\nC6 6 0 2\nC7 300 400 1234\nC8 100 31\nC9 false true false false true\nC10 false true\n",
+	}, {
+		// Every place a multiple assignment fixes ahead of its stores, measured
+		// against Go (2026-09-18): a pointer and a field through it, a pointer and
+		// its pointee, a slice and its element, a pointer to an array and its
+		// element, a struct and a field through its pointer field, that field and
+		// what it reaches, a struct and its slice field's element, the slice field
+		// and its element, a struct and its array field's element (no fix: the
+		// element lies inside the struct); three targets; a nested index; the
+		// destructured call and the comma-ok receive; an array element's whole row;
+		// the for clauses, init and post. Then the shapes that bind nothing: the
+		// swaps over an array, a slice and a slice field, a struct and then its
+		// field, a pointee and then a field through the pointer.
+		name: "a multiple assignment fixes each target's place before it stores",
+		src: `type P struct {
+	x, y int
+}
+
+type Q struct {
+	p *P
+	s []int
+	a [2]int
+}
+
+func two() (int, int) {
+	return 2, 8
+}
+
+func part1() {
+	q, r := P{1, 2}, P{3, 4}
+	p := &q
+	p, p.x = &r, 5
+	println("D1", q.x, r.x, p.x)
+	p = &q
+	p, *p = &r, P{9, 9}
+	println("D2", q.x, r.x)
+	a, b := [3]int{1, 2, 3}, [3]int{4, 5, 6}
+	s, t := a[:], b[:]
+	s, s[0] = t, 9
+	println("D3", a[0], b[0], s[0])
+	pa := &a
+	pa, pa[1] = &b, 8
+	println("D4", a[1], b[1], pa[1])
+	var u, w Q
+	u.p, w.p = &q, &r
+	u, u.p.x = w, 7
+	println("D5", q.x, r.x, u.p.x)
+	u.p = &q
+	u.p, u.p.x = &r, 6
+	println("D6", q.x, r.x)
+	u.s, w.s = a[:], b[:]
+	u, u.s[2] = w, 5
+	println("D7", a[2], b[2])
+	u.s = a[:]
+	u.s, u.s[2] = b[:], 4
+	println("D8", a[2], b[2])
+	u.a = [2]int{1, 2}
+	w.a = [2]int{3, 4}
+	u, u.a[0] = w, 9
+	println("D9", u.a[0], u.a[1])
+}
+
+func part2() {
+	arr := [4]int{0, 0, 0, 0}
+	m := [2][2]int{{0, 0}, {0, 0}}
+	i := 1
+	arr[i], i, arr[i] = 1, 2, 3
+	println("E1", arr[1], arr[2], i)
+	i = 0
+	i, m[i][i] = 1, 9
+	println("E2", m[0][0], m[0][1], m[1][1], i)
+	i = 0
+	i, arr[i] = two()
+	println("E3", arr[0], arr[2], i)
+	rows := [2][2]int{{1, 2}, {3, 4}}
+	j := 0
+	j, rows[j] = 1, [2]int{7, 7}
+	println("E4", rows[0][0], rows[1][0], j)
+	var ch chan int
+	close(ch)
+	ok := [3]bool{true, true, true}
+	k := 1
+	k, ok[k] = <-ch
+	println("E5", ok[0], ok[1], ok[2], k)
+	// for clauses
+	n := 0
+	for i, arr[i] = 0, 5; i < 2; i, arr[i] = i+1, 6 {
+		n++
+	}
+	println("E8", arr[0], arr[1], arr[2], i, n)
+}
+
+func part3() {
+	// the swaps that bind nothing: a store beside a target moves it not
+	a := [3]int{1, 2, 3}
+	a[0], a[2] = a[2], a[0]
+	s := a[:]
+	s[0], s[1] = s[1], s[0]
+	var u Q
+	u.s = s
+	u.s[1], u.s[2] = u.s[2], u.s[1]
+	println("F1", a[0], a[1], a[2])
+	// a struct target and its field, in order: no place to fix
+	q, r := P{1, 2}, P{3, 4}
+	q, q.x = r, 5
+	println("F2", q.x, q.y)
+	p := &q
+	*p, p.x = r, 9
+	println("F3", q.x, q.y)
+	ok := [3]bool{true, true, true}
+	k := 2
+	k, ok[k] = 0, false
+	println("F4", ok[0], ok[1], ok[2], k)
+}
+
+func main() {
+	part1()
+	part2()
+	part3()
+}
+`,
+		want: "D1 5 3 3\nD2 9 3\nD3 9 4 4\nD4 8 5 5\nD5 7 3 3\nD6 6 3\nD7 5 6\nD8 4 6\nD9 9 4\nE1 3 0 2\nE2 9 0 0 1\nE3 8 0 2\nE4 7 3 1\nE5 true false true 0\nE8 6 6 5 2 2\nF1 2 1 3\nF2 5 4\nF3 9 4\nF4 true true false 0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

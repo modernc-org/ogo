@@ -2135,10 +2135,14 @@
 // unlike Go's, are statements only -- never expressions.
 //
 // An assignment may have several targets and several values: "a, b = c, d"
-// assigns each value to the corresponding target. The values are all evaluated,
-// in the usual order, before any assignment happens, so "a, b = b, a" swaps.
-// As a special case, the right-hand side may be a single call returning as many
-// values as there are targets, which distributes its results: "a, b = f()".
+// assigns each value to the corresponding target. It proceeds in Go's two phases:
+// first the index operands and the pointer indirections of the targets and the
+// values are all evaluated, in the usual order; then the assignments are made,
+// left to right. So "a, b = b, a" swaps, and "i, xs[i] = 2, 6" stores 6 at the
+// index i held before the statement, as "p, p.x = &q, 5" writes the field of what
+// p pointed at before it. As a special case, the right-hand side may be a single
+// call returning as many values as there are targets, which distributes its
+// results: "a, b = f()".
 //
 // A target may be anything a single assignment can write to -- a variable, a
 // struct field, an element, a dereferenced pointer -- so "xs[i], xs[j] = xs[j],

@@ -91,6 +91,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A multiple assignment stored at the place a target had AFTER an earlier store
+  of the same statement.** Go assigns in two phases: every index operand and
+  pointer indirection on the left is fixed before the first store. `i, arr[i] =
+  2, 6` therefore stores 6 at the old i, `p, p.x = &q, 5` writes the field of
+  what p pointed at, `s, s[0] = t, 9` the element of the old slice, `u.p, u.p.x =
+  &r, 6` the old pointee's field; the C stored left to right through the lvalues
+  as written and used the new ones, silently, in the statement, in a
+  destructuring call, in the comma-ok receive and in a `for` loop's init and
+  post clauses, which had a lowering of their own. A later target whose place a
+  store before it can move is now bound to its address ahead of the stores;
+  `a[i], a[j] = a[j], a[i]` and its slice and slice-field forms bind nothing, and
+  no program of the run corpus or of the first four hundred fuzzer seeds changed.
+  The loop clauses take the statement's lowering now.
 - **`a | b ^ c` and `a & b << 2` associated as C does, not as Go does.** One Go
   level of binary operators associates to the left as one; C binds `|` below `^`
   below `+` and `-`, and `&` below the shifts below `*`, `/` and `%`. Written out
@@ -385,6 +398,13 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Value semantics against Go on the host and a P2-EDGE: an array, a struct and a
+  struct holding both copy on assignment, through a pointer, into a parameter,
+  out of a result, into and out of an element and a field, and to a range's value;
+  a slice aliases; swaps of arrays, structs, elements and fields; equality of
+  arrays, arrays of arrays and structs. One fault (the multiple assignment above);
+  both programs are run cases. What Go leaves unspecified was left alone: whether
+  `arr[g] = bump()` reads g before or after the call that changes it.
 - Channel semantics against Go on a P2-EDGE, three runs: a range over a channel
   ends when the producer closes it; a receive from a closed channel yields the
   zero value at once with ok false, for an int, a struct and a string; a select
