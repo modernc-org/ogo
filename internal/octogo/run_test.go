@@ -14512,6 +14512,75 @@ func main() {
 		want: "100\ntrue true\nresult 7\n",
 	},
 	{
+		// A channel received from a channel of channels is a channel, however it is
+		// received -- a range, a comma-ok, a select clause, a plain ":=" -- and so is
+		// a conversion to a defined channel type. A request carrying its reply
+		// channel is how a server is asked for an answer. Each was "cannot send to
+		// non-channel".
+		name: "a channel of reply channels, and a conversion to a channel type",
+		src: `type Pipe chan int
+
+var reqs chan chan<- int
+var stop chan chan<- int
+var reply chan int
+var sig chan int
+
+func server(q <-chan chan<- int) {
+	n := 100
+	for r := range q {
+		n++
+		r <- n
+	}
+}
+
+func once(q <-chan chan<- int) {
+	r, ok := <-q
+	if ok {
+		r <- -1
+	}
+}
+
+func selectOne(q <-chan chan<- int) {
+	select {
+	case r := <-q:
+		r <- -2
+	}
+}
+
+func plain(q <-chan chan<- int) {
+	r := <-q
+	r <- -3
+}
+
+func echo(in <-chan int, out chan<- int) {
+	out <- <-in + 1
+}
+
+func main() {
+	go server(reqs)
+	for i := 0; i < 3; i++ {
+		reqs <- reply
+		println("reply", <-reply)
+	}
+	close(reqs)
+	go once(stop)
+	stop <- reply
+	println(<-reply)
+	go selectOne(stop)
+	stop <- reply
+	println(<-reply)
+	go plain(stop)
+	stop <- reply
+	println(<-reply)
+	p := Pipe(sig)
+	go echo(sig, reply)
+	p <- 9
+	println(<-reply)
+}
+`,
+		want: "reply 101\nreply 102\nreply 103\n-1\n-2\n-3\n10\n",
+	},
+	{
 		// A CLOSED channel is always ready, and a select has to know it: the poll's
 		// non-blocking receive reported "nothing yet" for one, so a select with no
 		// default polled for ever and a select WITH one took the default -- a silent

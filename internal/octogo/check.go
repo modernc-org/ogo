@@ -2731,6 +2731,13 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		// variable is an index, and a channel has none. So the one variable a range
 		// over a channel may declare takes the element's type, not int.
 		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem, elemName, elemQual)
+		if tn := f.recvChanType(s, fi.rangeExpr); declared && tn != nil {
+			if id, ok := f.exprSoleIdent(fi.keyVar); ok {
+				if vd, ok := s.find(id.Src()).(*VarDeclaration); ok {
+					f.setChanOf(s, vd, tn) // `for r := range reqs`
+				}
+			}
+		}
 	case fi.hasKey && fi.rangeDefine:
 		// The key is an INDEX, so no element type travels with it.
 		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{})
@@ -3480,7 +3487,11 @@ func (f *File) inferChanFrom(s *Scope, vd *VarDeclaration, init Node) bool {
 	}
 	// `c := qof(i)`: the name comes off the result's written type, there being no
 	// declaration of the channel to read it from.
-	if tn, _ := f.callChanTypeNode(s, init); tn != nil {
+	tn, _ := f.callChanTypeNode(s, init)
+	if tn == nil {
+		tn = f.convChanTypeNode(s, init) // `c := Pipe(bi)`: the conversion's
+	}
+	if tn != nil {
 		vd.chanElemName = f.chanElemTypeName(s, tn)
 		vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
 	}
@@ -4262,6 +4273,9 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 						if hasK {
 							vd.kind, vd.hasKind = k, true
 						}
+					}
+					if tn := f.recvChanType(s, ce); tn != nil {
+						f.setChanOf(s, vd, tn)
 					}
 				}
 				f.declareLocal(cs, vd)
@@ -5258,8 +5272,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// channel's element type and ok is a bool.
 	recvName, recvQual := Token{}, Token{}
 	recvPtr, recvKind, recvHasKind, recvOK := false, Kind(0), false, false
+	var recvChan TypeNode
 	if len(rhs) == 1 && len(lhs) == 2 && !assertOK {
 		recvName, recvQual, recvPtr, recvKind, recvHasKind, recvOK = f.recvElemInfo(s, rhs[0])
+		if fac, isRecv := f.receiveFactor(s, rhs[0]); isRecv {
+			recvChan = f.recvChanType(s, fac)
+		}
 	}
 	newCount := 0
 	for i, id := range lhs {
@@ -5295,6 +5313,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				vd.typeName, vd.typeQual, vd.isPtr = recvName, recvQual, recvPtr
 				if recvHasKind {
 					vd.kind, vd.hasKind = recvKind, true
+				}
+				if recvChan != nil {
+					f.setChanOf(s, vd, recvChan)
 				}
 			case 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
@@ -5335,6 +5356,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 // inferVarFrom. A receive over a channel the walk cannot resolve answers false and
 // leaves the variable as it was.
 func (f *File) inferRecvFrom(s *Scope, vd *VarDeclaration, init Node) bool {
+	if fac, isRecv := f.receiveFactor(s, init); isRecv {
+		if tn := f.recvChanType(s, fac); tn != nil {
+			f.setChanOf(s, vd, tn) // `r := <-reqs`: a channel received is a channel
+			return true
+		}
+	}
 	name, qual, isPtr, kind, hasKind, ok := f.recvElemInfo(s, init)
 	if !ok {
 		return false
@@ -5344,6 +5371,34 @@ func (f *File) inferRecvFrom(s *Scope, vd *VarDeclaration, init Node) bool {
 		vd.kind, vd.hasKind = kind, true
 	}
 	return true
+}
+
+// recvChanType is the type a receive from the channel expression ch yields when
+// that is a channel too: `<-reqs` for a `chan chan<- int` is a `chan<- int`. A
+// channel of reply channels is how a request carries where to answer it. nil
+// for any other element.
+func (f *File) recvChanType(s *Scope, ch Node) TypeNode {
+	tn, _ := f.exprChanTypeNode(s, ch)
+	outer, _ := f.chanTypeUnder(s, tn)
+	if outer == nil {
+		return nil
+	}
+	if inner, _ := f.chanTypeUnder(s, outer.TypeNode); inner == nil {
+		return nil
+	}
+	return outer.TypeNode
+}
+
+// setChanOf makes vd a channel of type tn, recording what a variable declared with
+// that type records.
+func (f *File) setChanOf(s *Scope, vd *VarDeclaration, tn TypeNode) {
+	elem, hasElem, isChan := f.chanElem(s, tn)
+	if !isChan {
+		return
+	}
+	vd.isChan, vd.chanElemKind, vd.hasChanElemKind, vd.chanType = true, elem, hasElem, tn
+	vd.chanElemName = f.chanElemTypeName(s, tn)
+	vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
 }
 
 // isNewBuilderCall reports whether an initializer is a call of the predeclared
@@ -11335,7 +11390,24 @@ func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 	if tn, _ := f.callChanTypeNode(s, n); tn != nil {
 		return f.chanElem(s, tn)
 	}
+	// `c := Pipe(bi)`: a conversion to a channel type is a channel of that type.
+	if tn := f.convChanTypeNode(s, n); tn != nil {
+		return f.chanElem(s, tn)
+	}
 	return 0, false, false
+}
+
+// convChanTypeNode is the channel type a conversion converts to, `Pipe(bi)` for a
+// `type Pipe chan int`, and nil for anything else.
+func (f *File) convChanTypeNode(s *Scope, n Node) TypeNode {
+	t, ok := f.litOrConvType(s, n)
+	if !ok {
+		return nil
+	}
+	if ch, _ := f.chanTypeUnder(t.s, t.tn); ch == nil {
+		return nil
+	}
+	return t.tn
 }
 
 // chanDirOf answers the direction of a channel type node, followed through the
@@ -11404,8 +11476,10 @@ func (f *File) exprChanTypeNode(s *Scope, n Node) (tn TypeNode, variable bool) {
 		}
 		return nil, false
 	}
-	tn, _ = f.callChanTypeNode(s, n)
-	return tn, false
+	if tn, _ = f.callChanTypeNode(s, n); tn != nil {
+		return tn, false
+	}
+	return f.convChanTypeNode(s, n), false
 }
 
 // exprChanDir is exprChan for the channel's direction: the shapes a channel operand

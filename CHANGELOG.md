@@ -148,6 +148,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A channel received from a channel of channels is a channel.** `r := <-reqs`,
+  `for r := range reqs`, `case r := <-reqs:` and `r, ok := <-reqs` each bound r
+  as something that was not one, so the reply sent on it -- the way a request
+  carries where to answer it -- was "cannot send to non-channel". So was a
+  conversion to a defined channel type, `p := Pipe(bi)`.
 - **A call through a pointer to a function value called the pointer.** `(*p)(x)`
   was emitted as `p(x)`, which neither C compiler takes: in an expression, as a
   statement, with two results destructured and deferred. The function value p
