@@ -30872,7 +30872,35 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 			return "", false
 		}
-		// Address-of `&x` adds a pointer level; deref `*p` removes one.
+		// Address-of `&x` adds a pointer level; deref `*p` removes one. A run of
+		// them, `**pp` or `&*p`, applies each in turn, innermost first: until
+		// 2026-09-18 only the first was applied to the operand's type, so `**pp`
+		// was a pointer and `**pp == q` compared two structs as scalars.
+		if n.sym == UnaryExpr && len(kids) > 2 && kids[0].sym == UnaryOp && kids[1].sym == UnaryOp {
+			ct, ok := e.inferNode(kids[len(kids)-1])
+			for i := len(kids) - 2; ok && i >= 0; i-- {
+				tok, isOp := e.unaryOpTok(kids[i].ast)
+				if !isOp {
+					return "", false
+				}
+				switch e.f.ch(tok) {
+				case AND:
+					ct += "*"
+				case MUL:
+					if !e.isPointer(ct) {
+						return "", false
+					}
+					ct = e.elemType(ct)
+				case ADD, SUB, XOR:
+					// the operand's type
+				case NOT:
+					ct = cBool
+				default:
+					return "", false
+				}
+			}
+			return ct, ok
+		}
 		if n.sym == UnaryExpr && len(kids) >= 2 && kids[0].sym == UnaryOp {
 			if tok, ok := e.unaryOpTok(kids[0].ast); ok {
 				switch e.f.ch(tok) {

@@ -29238,6 +29238,144 @@ outer:
 }
 `,
 		want: "G1 neg zero small big\nG2 1 1 0 2 26\nG3 mid 4 24\nG4 121\nG5 111\nG6 quad 4\nG6 quad 6\nG6 other 10\nG6 nil\nG7 0\nG8 5\n",
+	}, {
+		// Pointer semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): pointers to elements, fields and through a pointer to a
+		// pointer, equality of pointers, a pointer to a literal, pointers handed
+		// through calls, a copy of a pointee, a chain walked to nil and written
+		// through, a package pointer at package storage, a nil pointer through a
+		// pointer to it. All matched. Storing a local's address in package storage
+		// and the address of a loop variable outside its loop are refused, as
+		// designed.
+		name: "pointer semantics: elements, fields, pointees, chains, calls and nil",
+		src: `type P struct {
+	x, y int
+}
+
+type Node struct {
+	val  int
+	next *Node
+}
+
+var gp *P
+var gs P
+
+func setX(p *P, v int) {
+	p.x = v
+}
+
+func ptrOf(p *P) *P {
+	return p
+}
+
+func main() {
+	// pointers to elements, fields and pointees
+	arr := [3]P{{1, 1}, {2, 2}, {3, 3}}
+	p := &arr[1]
+	q := &p.y
+	*q = 20
+	p.x = 10
+	println("H1", arr[1].x, arr[1].y, *q, p == &arr[1], q == &arr[1].y, p == &arr[0])
+	pp := &p
+	(*pp).x = 11
+	(*pp).y = 21
+	println("H2", arr[1].x, arr[1].y, *pp == p, **pp == arr[1])
+	*pp = &arr[2]
+	println("H3", p.x, p == &arr[2])
+	// a pointer to a composite literal, and pointers through calls
+	lp := &P{7, 8}
+	setX(lp, 70)
+	setX(ptrOf(lp), 71)
+	println("H4", lp.x, lp.y, ptrOf(lp) == lp, ptrOf(lp).y)
+	gs = *lp
+	gp = &gs
+	gp.y = 80
+	println("H5", lp.y, gs.y, gp == &gs, gp == lp)
+	// a copy of the pointee is independent
+	cp := *lp
+	cp.x = 0
+	println("H6", lp.x, cp.x)
+	// pointer chains
+	n3 := Node{3, nil}
+	n2 := Node{2, &n3}
+	n1 := Node{1, &n2}
+	sum := 0
+	for n := &n1; n != nil; n = n.next {
+		sum = sum*10 + n.val
+	}
+	n1.next.next.val = 9
+	println("H7", sum, n3.val, n1.next.next == &n3, n2.next.next == nil)
+	// nil pointers compare, and a pointer to a nil pointer
+	var np *P
+	npp := &np
+	println("H10", np == nil, *npp == nil, npp != nil)
+	*npp = lp
+	println("H11", np == lp, np.x)
+}
+`,
+		want: "H1 10 20 20 true true false\nH2 11 21 true true\nH3 3 true\nH4 71 8 true 8\nH5 8 80 true false\nH6 71 0\nH7 123 9 true true\nH10 true true true\nH11 true 71\n",
+	}, {
+		// `**pp == arr[1]` compared two structs as C scalars and `println(!*bp)`
+		// printed a pointer: the type of a unary expression applied only the FIRST
+		// operator to the operand's type, so `**pp` was a pointer and `!*bp` its
+		// operand's pointer type. Each operator of a run is applied now, innermost
+		// first (2026-09-18). Measured against Go, on the host and a P2-EDGE.
+		name: "a run of unary operators is typed operator by operator",
+		src: `type P struct {
+	x, y int
+}
+
+func main() {
+	arr := [2]P{{1, 2}, {3, 4}}
+	p := &arr[1]
+	pp := &p
+	ppp := &pp
+	v := **pp
+	v.x = 9
+	w := ***ppp
+	println("D1", v.x, w.x, arr[1].x, **pp == arr[1], ***ppp == v, ***ppp != v)
+	**pp = P{5, 6}
+	w2 := ***ppp
+	println("D2", arr[1].x, w2.y, (*pp).x, (*p).y)
+	n := 7
+	np := &n
+	npp := &np
+	m := **npp + 1
+	**npp = -**npp
+	k := -*np + ^*np
+	println("D3", m, n, k, *&n, -*&n, **npp == *np, &*np == np, *&*np)
+	b := true
+	bp := &b
+	println("D4", !*bp, !!*bp, *bp && !*bp)
+	q := &*p
+	q.x = 8
+	println("D5", arr[1].x, q == p, q.y, *&arr[0] == arr[0])
+	more()
+}
+
+func neg(b *bool) bool {
+	return !*b
+}
+
+func flip(p **int) int {
+	**p = -**p
+	return **p
+}
+
+func more() {
+	x := 3
+	xp := &x
+	xpp := &xp
+	f := !(*xp > 2)
+	g := -*xp * 2
+	h := ^*xp & 0xf
+	var arr [2]bool
+	arr[0] = !*&arr[1]
+	c := !*&arr[0] == false
+	println("D6", f, g, h, arr[0], c, neg(&arr[1]), flip(xpp), x, -**xpp, !!!*&arr[0])
+}
+`,
+		want: "D1 9 3 3 true false true\nD2 5 6 5 6\nD3 8 -7 13 -7 7 true true -7\nD4 false true false\nD5 8 true 6 true\nD6 false -6 12 true true true -3 -3 3 false\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

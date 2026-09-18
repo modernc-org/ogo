@@ -97,6 +97,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A run of unary operators was typed by its first operator alone.** `**pp ==
+  arr[1]` compared two structs as C scalars, which the host's compiler and the
+  target's both refused, and `println(!*bp)` printed a pointer, `0x1`: the type
+  of a unary expression applied only the first operator to the operand's type,
+  so `**pp` was a pointer and `!*bp` its operand's pointer type. Each operator of
+  a run is applied now, innermost first.
 - **An empty slice was nil.** `[]int{} == nil` and `make([]int, 0) == nil` were
   true, where Go's empty slice is not nil -- it points at a zero-size object --
   and `make([]int, 0)` declared a zero-length C backing array, which the host's
@@ -425,6 +431,14 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Pointer semantics against Go on the host and a P2-EDGE: pointers to elements,
+  fields and pointees, through a pointer to a pointer, equality, a pointer to a
+  literal, pointers through calls, a copy of a pointee, a chain walked to nil and
+  written through, a package pointer, a nil pointer through a pointer to it. One
+  fault (the unary run above); both programs are run cases. Storing a local's
+  address in package storage and a loop variable's address outside its loop are
+  refused, as designed, and a parenthesised `(**pp).y` is the recorded loud
+  refusal.
 - Embedding, function value and switch semantics against Go on the host and a
   P2-EDGE: shadowed and promoted fields at every depth, methods promoted through
   an embedded value and an embedded pointer, interfaces satisfied by promotion;
