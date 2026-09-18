@@ -345,6 +345,47 @@ func (e *emitter) needMathWrapper(pkg, name string) {
 		"double "+cname+"("+strings.Join(params, ", ")+") { return "+c+"("+strings.Join(args, ", ")+"); }\n")
 }
 
+// emitMathArgs emits the arguments of a math intrinsic's call, each CONVERTED to
+// its declared parameter's type, `sqrt((double)(2))`. A C prototype would convert
+// them, and the host's libm has one; the target's math.h defines these as macros
+// over compiler builtins, and a builtin handed an int computes on the int: `sqrt(2)`
+// was 1 on a P2-EDGE, the integer square root, where `sqrt(x)` for a float x was
+// right (doc/sqrt-of-an-int.c). The conversion is what Go does at the call.
+//
+// A deferred call replays from temporaries captured at the defer, already of the
+// parameters' types, and is emitted as any call's arguments are.
+func (e *emitter) emitMathArgs(cname string, callSuffix []int32) {
+	if e.deferReplay >= 0 {
+		e.emitCallArgs(cname, callSuffix)
+		return
+	}
+	args := e.callArgExprs(callSuffix)
+	params := e.funcParams[cname]
+	// Left to right, as emitCallArgs orders arguments that do something.
+	var names []string
+	if len(args) > 1 && slices.ContainsFunc(args, func(a Node) bool { return e.exprHasEffect(a.ast) }) {
+		names, _ = e.hoistArgs(cname, args)
+	}
+	for i, a := range args {
+		if i != 0 {
+			e.emit(", ")
+		}
+		ct := "double"
+		if i < len(params) {
+			ct = params[i]
+		}
+		e.emit("(" + ct + ")(")
+		switch {
+		case names != nil:
+			e.emit(names[i])
+		default:
+			e.typeUntypedShifts(a.ast, ct)
+			e.emitExpr(a.ast)
+		}
+		e.emit(")")
+	}
+}
+
 // mathIntrinsic answers with the C library call a math function is, and whether the
 // name is one at all. pkg is the package a call was written on -- "math" for a
 // qualified call from outside, and the empty string for an unqualified one, which is
@@ -22492,7 +22533,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	if len(suffix) == 1 && suffix[0].sym == CallSuffix {
 		if c, isIntr := e.mathIntrinsic("", recv); isIntr {
 			e.emit(c + "(")
-			e.emitCallArgs("", suffix[0].ast)
+			e.emitMathArgs(mangle("math", recv), suffix[0].ast)
 			e.emit(")")
 			return true
 		}
@@ -22800,7 +22841,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// and Trunc are.
 		if c, isIntr := e.mathIntrinsic(recv, method); isIntr {
 			e.emit(c + "(")
-			e.emitCallArgs("", suffix[1].ast)
+			e.emitMathArgs(mangle("math", method), suffix[1].ast)
 			e.emit(")")
 			return true
 		}

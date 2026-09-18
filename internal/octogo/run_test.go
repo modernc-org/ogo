@@ -27453,6 +27453,95 @@ func main() {
 }
 `,
 		want: "wrap32 -2147483648 2147483647 -2 -2147483648 -2147483648 -2 0\ncmp32 false false false true false\ndiv32 -2147483648 0 0 -1 -1073741824 0 -3 -1\ninc32 -2147483648 2147483647 -2147483648 0\nsub32 true 2147483647 -2147483648 true\nmul32 1 0 -2147483648 true -1\nwrap64 -9223372036854775808 9223372036854775807 -2 -9223372036854775808 -9223372036854775808\ncmp64 false false true false\ndiv64 -9223372036854775808 0 0 -1 -4611686018427387904\nmul64 1 0 -9223372036854775808 true\nu32 0 4294967295 1 0 0 4294967295 1\nucmp false true true -2147483648 -1 -2147483648\nu64 0 18446744073709551615 1 18446744073709551615 -1 4294967295 65535 255\nshl 0 1 2147483647 -2147483648 4294967295 1 4294967295\nshr 0 2147483647 -2147483648 4294967295 -2147483648 4294967295 -7\nshl 1 2 -2 0 4294967294 2 8589934590\nshr 1 1073741823 -1073741824 2147483647 -1073741824 2147483647 -4\nshl 31 -2147483648 -2147483648 0 2147483648 2147483648 9223372034707292160\nshr 31 0 -1 1 -1 1 -1\nshl 32 0 0 0 0 4294967296 18446744069414584320\nshr 32 0 -1 0 -1 0 -1\nshl 33 0 0 0 0 8589934592 18446744065119617024\nshr 33 0 -1 0 -1 0 -1\nshl 63 0 0 0 0 -9223372036854775808 9223372036854775808\nshr 63 0 -1 0 -1 0 -1\nshl 64 0 0 0 0 0 0\nshr 64 0 -1 0 -1 0 -1\nshl8 -2 -128 0 254 0 63 127 -1\ni8 -128 127 1 -128 -128 -1 -2 -128 127 -128 0\ni8cmp true true true false\ni8inc -128 127 -128\nu8 0 255 1 255 254 255 255 0\n16 -32768 0 -1020 65025\nconv -1 0 -1 0 255 4294967295 18446744073709551615 -1\nconv2 -1 -2147483648 4294967295 65535 -1 4294967295 0\nconv3 4294967295 9223372036854775808 0 -1 4294967295\n",
+	}, {
+		// The floating point edges in float32, which every float is on this target:
+		// rounding per operation, the special values and their comparisons, conversions
+		// each way and how each prints, measured against Go on a P2-EDGE on 2026-09-18.
+		// One line was wrong there: `float32(math.Sqrt(2))` printed 1, the integer square
+		// root -- the untyped constant went to the target's sqrt builtin as an int, which
+		// the host's libm converts and the builtin computes on (doc/sqrt-of-an-int.c).
+		// Every argument of a math intrinsic is converted to its parameter's type now.
+		name: "float edges: rounding, the special values, conversions and printing",
+		src: `import "math"
+
+// Floating point edges in float32, which is what every float is on this target:
+// rounding per operation, the special values, conversions each way and how they
+// print. Every operand comes out of a table through a loop index, so nothing is a
+// constant to the C compiler.
+var f32 = [8]float32{0.1, 0.2, 0.3, 1e38, 1e-45, 3, -2.5, 0}
+var ints = [6]int{16777217, -16777217, 2147483647, -2147483648, 7, -7}
+var ints64 = [3]int64{9007199254740993, -9007199254740993, 1 << 62}
+
+func rounding() {
+	for i := 0; i < 1; i++ {
+		a, b, c := f32[i], f32[i+1], f32[i+2]
+		println("r32", a+b, a+b == c, a*b, a/b, a-b, (a+b)*c, a+b+c, c-a-b, a*b*c/a)
+		var acc float32
+		for k := 0; k < 10; k++ {
+			acc += a
+		}
+		println("acc", acc, acc == 1, acc-1, acc*10, acc/3)
+		d := c
+		d++
+		d *= a
+		d -= b
+		d /= c
+		println("compound", d, -d, d > 0, d == d)
+	}
+}
+
+func specials() {
+	for i := 0; i < 1; i++ {
+		big, tiny, three, neg, zero := f32[i+3], f32[i+4], f32[i+5], f32[i+6], f32[i+7]
+		inf := big * big
+		nan := zero / zero
+		println("inf", inf, -inf, big*10, tiny/big, tiny/2, -zero, zero/three, three/zero, neg/zero, big+big, -big-big)
+		println("nan", nan, nan == nan, nan != nan, nan < three, nan > three, nan >= nan, three == three, inf == inf, inf > big, -inf < -big)
+		println("ord", zero == -zero, zero < -zero, -zero < zero, neg < zero, big < inf, inf-inf, inf*zero, inf+inf, inf/inf, inf*neg)
+		println("cmp", three > neg, neg < three, three >= three, neg <= neg, three != neg, big*2 > big, tiny > zero, tiny/4 > zero)
+		m := three
+		if nan < m {
+			m = nan
+		}
+		println("minmax", m, math.Abs(float64(neg)), math.Abs(float64(-inf)), float32(math.Abs(float64(nan))) != nan)
+	}
+}
+
+func conversions() {
+	for i := 0; i < 1; i++ {
+		a, b, c, d, e, f := ints[i], ints[i+1], ints[i+2], ints[i+3], ints[i+4], ints[i+5]
+		println("i2f", float32(a), float32(b), float32(c), float32(d), float32(e), float32(f), float32(a)-float32(a-1), float32(c)+1 == float32(c))
+		println("i2f2", float32(e)/2, float32(f)/2, float32(e)/float32(f), float32(e)*float32(f), float32(e)/3)
+		g, h, k := ints64[i], ints64[i+1], ints64[i+2]
+		println("i64f", float32(g), float32(h), float32(k), int64(float32(k)) == k, int64(float32(g)) == g, float32(k)/float32(g))
+		neg, three, tiny := f32[i+6], f32[i+5], f32[i+4]
+		println("f2i", int(neg), int(three), int32(neg*2), int64(neg*3), int(three/2), int(-three/2), uint32(three), uint8(three), int8(neg), int(tiny), int(neg*1e6))
+		println("f2i2", int64(three*1e9), int32(three*1e6), int(neg/3), int(-three/3), uint32(three*1e9), uint64(three*1e18), int64(float32(1e18)))
+		x := float64(neg)
+		println("trunc", math.Trunc(x), math.Floor(x), math.Ceil(x), math.Round(x), math.Trunc(-x/2), math.Floor(-x/2), math.Ceil(-x/2), math.Round(-x/2), math.Round(x/5), math.Round(-x/5))
+	}
+}
+
+func printing() {
+	for i := 0; i < 1; i++ {
+		println("p32", f32[i], f32[i+1], f32[i+2], f32[i+3], f32[i+4], f32[i+5], f32[i+6], f32[i+7])
+		var one, two, half, hund, small, large float32 = 1, 2.5, -0.5, 100, 1e-7, 123456789
+		println("pmix", one, two, -half*0, hund, small, large, one/3, one/7, two*two*two*two, hund*hund*hund*hund*hund)
+		println("pmath", float32(math.Sqrt(2)), float32(math.Pi), float32(math.Pow(2, 10)), float32(math.Mod(-7, 3)), float32(math.Sqrt(float64(f32[i+5]))), float32(math.Pow(float64(f32[i+5]), 0.5)))
+		var v float32 = 1.5
+		v = v * 1e10
+		println("big", v, v*1e10, v*1e10*1e10, v*1e10*1e10*1e10, v/1e30, v/1e30/1e30)
+	}
+}
+
+func main() {
+	rounding()
+	specials()
+	conversions()
+	printing()
+}
+`,
+		want: "r32 0.3 true 0.020000001 0.5 -0.1 0.09 0.6 1.4901161e-08 0.060000006\nacc 1.0000001 false 1.1920929e-07 10.000001 0.33333337\ncompound -0.23333335 0.23333335 false true\ninf +Inf -Inf +Inf 0 0 -0 0 +Inf -Inf 2e+38 -2e+38\nnan NaN false true false false false true true true true\nord true false false true true NaN NaN +Inf NaN -Inf\ncmp true true true true true true true false\nminmax 3 2.5 +Inf true\ni2f 1.6777216e+07 -1.6777216e+07 2.1474836e+09 -2.1474836e+09 7 -7 0 true\ni2f2 3.5 -3.5 -1 -49 2.3333333\ni64f 9.007199e+15 -9.007199e+15 4.611686e+18 true false 512\nf2i -2 3 -5 -7 1 -1 3 3 -2 0 -2500000\nf2i2 3000000000 3000000 0 -1 3000000000 2999999884200771584 999999984306749440\ntrunc -2 -3 -2 -3 1 1 2 1 -1 1\np32 0.1 0.2 0.3 1e+38 1e-45 3 -2.5 0\npmix 1 2.5 0 100 1e-07 1.2345679e+08 0.33333334 0.14285715 39.0625 1e+10\npmath 1.4142135 3.1415927 1024 -1 1.7320508 1.7320508\nbig 1.5e+10 1.5e+20 1.5000001e+30 +Inf 1.5e-20 0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

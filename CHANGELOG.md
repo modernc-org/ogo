@@ -91,6 +91,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`math.Sqrt(2)` was 1 on the board.** An untyped constant argument to a math
+  function went to C as the integer it defaults to, `sqrt(2)`; the host's libm
+  converts it, and the target's `sqrt` is a macro over a compiler builtin that
+  computes on the int -- the integer square root. Every argument of a math
+  intrinsic is now converted to its declared parameter's type, `sqrt((double)(2))`,
+  as Go converts it at the call. `doc/sqrt-of-an-int.c` measures the builtin, and
+  `scripts/cboard.sh` is how such a reproducer is run on the board.
 - **A name declared in a statement header keeps its type.** `if p := &x; *p > 0 {`
   was "cannot indirect p (variable of type int)", and the loop that walks a list by
   pointer, `for n := &nodes[0]; n != nil; n = n.next {`, lost the pointer the same
@@ -359,6 +366,10 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- The floating point edges, in float32 -- which every float is on this target --
+  against Go on a P2-EDGE: rounding per operation, the special values and every
+  comparison of them, conversions each way and the printing of each. One line was
+  wrong, the `math.Sqrt` above; the rest matched, and the program is a run case.
 - The integer edges Go defines and C leaves undefined, against Go on a P2-EDGE:
   signed overflow of every width in `+`, `-`, `*`, negation, `++` and `--`, and
   the comparisons that depend on it; the most negative value divided by `-1`, in

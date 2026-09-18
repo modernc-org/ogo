@@ -494,6 +494,9 @@ reached the second machine without it; it lives under `scripts/` for that reason
   shape's programs.
 - `scripts/board.sh DIR OUT` -- build with the tree's compiler, load, capture the
   serial output. A board match is the verdict; a host match is a candidate.
+- `scripts/cboard.sh FILE.c` -- compile one C file with the in-process flexcc and run
+  it on the board: how a reproducer in `doc/` is measured, and re-measured after a
+  backend regeneration.
 
 Process rules learned the hard way (2026-09-16): gate a commit on the suite log's
 `exit=0` line and the absence of `FAIL`, never on `cat log &&`; make no edits to
