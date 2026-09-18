@@ -1929,8 +1929,11 @@
 //	            or a struct: fmt renders those differently from the built-in
 //	            println, and this does not render them yet. Except, as in fmt, a
 //	            value whose type has a String() string method, which prints what
-//	            that returns, and an error, which prints its Error(); %s does
-//	            the same for both
+//	            that returns, and an error, which prints its Error(); %s, %x, %X
+//	            and %q do the same for both, formatting that text as they format a
+//	            string -- `%x` of a Celsius whose String() is "warm" is 7761726d --
+//	            and a slice or an array of such values prints each element so,
+//	            "[warm cold]", where println prints the values themselves
 //	%T          the value's type, spelled as Go spells it: "main.Celsius" for a
 //	            type this package declares, "lib.Temp" for an imported one
 //	%%          a literal percent

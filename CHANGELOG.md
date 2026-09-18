@@ -20,6 +20,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A slice or an array of floats or of a defined type printed.** println, print
+  and printf's %v refused both, "printing a slice or array of "Celsius" is not
+  supported yet": a float slice prints in Go's shortest form, "[1 0.5 1e-07]", and
+  a defined element as its underlying type does.
 - **A struct literal read through a suffix.** `P{1, 2}.x`, `Q{}.tags[i]`,
   `Line{}.a == P{}`, `P{1, 2}.Sum()`, `P{1, 2}.Scaled(3).x`, `len(Q{}.tags)` and
   the parenthesised `(P{1, 2}).Sum()` an `if` header takes were syntax errors:
@@ -104,6 +108,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **printf's %x, %X and %q of a value with a String() method printed the value.**
+  fmt formats what String() -- or an error's Error() -- returns under %x, %X and
+  %q, as under %v and %s: `%x` of a Celsius whose String() is "warm" is 7761726d
+  and `%q` is "warm", where these printed 41 and 'A' for a Celsius of 65,
+  silently, and refused an error. A nil error prints fmt's complaint for each
+  verb, "%!x(<nil>)". And a slice or an array of such values prints each element
+  through its String() under all five, "[warm cold]", as fmt does -- a nil
+  interface element as "<nil>" -- where println prints the values themselves.
+- **A program printing a rune through %c used int32_t undeclared.** The rune
+  printers name a fixed-width type and did not ask for <stdint.h>, so `printf("%c",
+  c)` of a `type Celsius int`, with nothing else of 32 bits in the program, failed
+  on the host ("unknown type name"); the target's compiler has the types built in.
+  The finished C now asks for the header whenever it names one of its types.
 - **A run of unary operators was typed by its first operator alone.** `**pp ==
   arr[1]` compared two structs as C scalars, which the host's compiler and the
   target's both refused, and `println(!*bp)` printed a pointer, `0x1`: the type

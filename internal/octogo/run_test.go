@@ -29491,6 +29491,165 @@ func main() {
 }
 `,
 		want: "M1 1 2 5 0 false true\nM2 b 3 4\nM3 3 3 9 true true\nM4 d 3 12 1234\nM5 14 16 9 3 2 2\nM6 ok\nM7 5 true true\n",
+	}, {
+		// %v of a slice or an array whose element type is DEFINED printed nothing:
+		// "printing a slice or array of "Celsius" is not supported yet", and a
+		// Stringer element is printed through its String() as fmt prints it,
+		// "[C! C!]", where println prints the values (2026-09-18).
+		name: "printf %v of slices and arrays of defined element types, a Stringer among them",
+		src: `type Celsius int
+
+func (c Celsius) String() string {
+	return "C!"
+}
+
+type Plain int
+
+type Name string
+
+type Flag bool
+
+func main() {
+	cs := [2]Celsius{1, 2}
+	ps := [2]Plain{3, 4}
+	ns := [2]Name{"a", "b"}
+	fs := [2]Flag{true, false}
+	printf("V1 %v %v\n", cs[:], cs)
+	printf("V2 %v %v\n", ps[:], ps)
+	printf("V3 %v %v %s\n", ns[:], ns, ns[0])
+	printf("V4 %v %v\n", fs[:], fs)
+	var bs [3]byte = [3]byte{1, 2, 3}
+	printf("V6 %v %x %X %s\n", bs, bs[:], bs[:], "x")
+}
+`,
+		want: "V1 [C! C!] [C! C!]\nV2 [3 4] [3 4]\nV3 [a b] [a b] a\nV4 [true false] [true false]\nV6 [1 2 3] 010203 010203 x\n",
+	}, {
+		// A slice or an array of floats printed by println, print and %v -- refused
+		// until 2026-09-18 -- in Go's shortest form, "[1 0.5 1e-07]"; elements with
+		// String() through a value, a pointer and an interface, a nil interface
+		// element "<nil>" under %s too, empty slices and a zero-length array.
+		// Measured against fmt.Println, fmt.Print and fmt.Printf.
+		name: "println and printf of float slices, and Stringer and interface elements",
+		src: `type Celsius int
+
+func (c Celsius) String() string {
+	if c < 0 {
+		return "cold"
+	}
+	return "warm"
+}
+
+type Temp float32
+
+type Shape interface {
+	Area() int
+	String() string
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int {
+	return q.s * q.s
+}
+
+func (q *Sq) String() string {
+	return "sq"
+}
+
+type Box struct {
+	w int
+}
+
+func (b Box) String() string {
+	return "box"
+}
+
+var calls int
+
+func mk() [2]Celsius {
+	calls++
+	return [2]Celsius{-1, 1}
+}
+
+func main() {
+	fs := [3]float32{1, 0.5, 1e-7}
+	ts := []Temp{1.5, -2}
+	println(fs[:], len(fs))
+	println(ts)
+	printf("F1 %v %v %v\n", fs, fs[1:], ts)
+	var sq Sq
+	shapes := [3]Shape{&sq, nil, &sq}
+	printf("F2 %v %s\n", shapes, shapes[:2])
+	boxes := []Box{{1}, {2}}
+	mm := mk()
+	printf("F3 %v %s %v\n", boxes, boxes, mm)
+	ps := []*Sq{&sq}
+	printf("F4 %v %d\n", ps, calls)
+	var empty []Celsius
+	printf("F5 %v %v %s\n", empty, []Celsius{}, [0]Celsius{})
+	print(fs[:2], "\n")
+}
+`,
+		want: "[1 0.5 1e-07] 3\n[1.5 -2]\nF1 [1 0.5 1e-07] [0.5 1e-07] [1.5 -2]\nF2 [sq <nil> sq] [sq <nil>]\nF3 [box box] [box box] [cold warm]\nF4 [sq] 1\nF5 [] [] []\n[1 0.5]\n",
+	}, {
+		// fmt formats what String() or Error() returns under %x, %X and %q as well
+		// as %v and %s. Until 2026-09-18 %x, %X and %q of a Stringer printed the
+		// integer it holds -- 41 and 'A' where Go prints 7761726d and "warm" --
+		// silently, and refused an error; a nil error prints fmt's complaint for
+		// each verb, and a slice of either prints element by element.
+		name: "printf formats a Stringer and an error under %x, %X and %q as fmt does",
+		src: `type Celsius int
+
+func (c Celsius) String() string {
+	return "warm"
+}
+
+type Err struct {
+	code int
+}
+
+func (e *Err) Error() string {
+	return "boom"
+}
+
+func main() {
+	var c Celsius = 65
+	printf("S1 [%x] [%X] [%q] [%d] [%c] [%v] [%s]\n", c, c, c, c, c, c, c)
+	var err error = &Err{1}
+	printf("S2 [%v] [%s] [%q] [%x] [%X]\n", err, err, err, err, err)
+	var none error
+	printf("S3 [%v] [%s] [%q] [%x]\n", none, none, none, none)
+	elems()
+}
+
+type Shape interface {
+	Area() int
+	String() string
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int {
+	return q.s * q.s
+}
+
+func (q *Sq) String() string {
+	return "sq"
+}
+
+func elems() {
+	cs := [2]Celsius{1, 2}
+	var sq Sq
+	shapes := []Shape{&sq, nil}
+	printf("E1 [%x] [%X] [%q] [%v] [%s]\n", cs, cs[:], cs, shapes, shapes)
+	printf("E2 [%x] [%q]\n", shapes, shapes)
+}
+`,
+		want: "S1 [7761726d] [7761726D] [\"warm\"] [65] [A] [warm] [warm]\nS2 [boom] [boom] [\"boom\"] [626f6f6d] [626F6F6D]\nS3 [<nil>] [%!s(<nil>)] [%!q(<nil>)] [%!x(<nil>)]\nE1 [[7761726d 7761726d]] [[7761726D 7761726D]] [[\"warm\" \"warm\"]] [[sq <nil>]] [[sq <nil>]]\nE2 [[7371 <nil>]] [[\"sq\" <nil>]]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

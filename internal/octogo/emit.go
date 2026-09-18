@@ -4990,7 +4990,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 			"\t}\n"+
 			"\tprintf(\"]\");\n}\n",
 			printSliceCName(el), sliceCName(el),
-			sliceElemPrintf(el))
+			sliceElemPrintf(e.underlyingCType(el)))
 		if e.printlnElems[el] {
 			fmt.Fprintf(&helperDefs, "static void %s(%s s) { %s(s); printf(\"\\n\"); }\n",
 				printlnSliceCName(el), sliceCName(el), printSliceCName(el))
@@ -5091,8 +5091,78 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		return e.err
 	}
 	out.Write(body.Bytes())
-	_, err := w.Write(out.Bytes())
+	_, err := w.Write(ensureStdint(out.Bytes()))
 	return err
+}
+
+// ensureStdint adds <stdint.h> to an assembled translation unit that names a
+// fixed-width integer type without having asked for the header. The request is made
+// where a type is spelled, and a runtime helper spelling one of its own had to ask
+// on its own: the rune printers did not, so `printf("%c", c)` of a `type Celsius
+// int` -- a program with nothing else of 32 bits named -- used int32_t undeclared.
+// The host's compiler refused it ("unknown type name"); the target's has the types
+// built in and compiled it. So the finished text decides, and the line goes where
+// the sorted includes put it.
+func ensureStdint(src []byte) []byte {
+	const inc = "#include <stdint.h>\n"
+	if bytes.Contains(src, []byte(inc)) || !namesFixedWidthInt(src) {
+		return src
+	}
+	// The includes are the header's run of "#include <...>" lines, sorted; the new
+	// one goes before the first that sorts after it, or after the last.
+	at, last := -1, -1
+	for off := 0; off < len(src); {
+		end := bytes.IndexByte(src[off:], '\n')
+		if end < 0 {
+			break
+		}
+		line := src[off : off+end+1]
+		if bytes.HasPrefix(line, []byte("#include <")) {
+			if at < 0 && string(line) > inc {
+				at = off
+			}
+			last = off + len(line)
+		} else if last >= 0 {
+			break // past the run
+		}
+		off += len(line)
+	}
+	switch {
+	case at < 0 && last >= 0:
+		at = last
+	case at < 0:
+		// No include at all: after the generated-code banner and its blank line.
+		banner := bytes.Index(src, []byte("\n\n"))
+		if banner < 0 {
+			return src
+		}
+		at = banner + 2
+		return slices.Concat(src[:at:at], []byte(inc+"\n"), src[at:])
+	}
+	return slices.Concat(src[:at:at], []byte(inc), src[at:])
+}
+
+// namesFixedWidthInt reports whether C text uses one of <stdint.h>'s types as a
+// whole word.
+func namesFixedWidthInt(src []byte) bool {
+	for _, name := range []string{"int8_t", "int16_t", "int32_t", "int64_t", "intptr_t"} {
+		for _, n := range []string{name, "u" + name} {
+			for off := 0; ; {
+				i := bytes.Index(src[off:], []byte(n))
+				if i < 0 {
+					break
+				}
+				start, end := off+i, off+i+len(n)
+				before := start == 0 || !isCIdentByte(src[start-1])
+				after := end == len(src) || !isCIdentByte(src[end])
+				if before && after {
+					return true
+				}
+				off = end
+			}
+		}
+	}
+	return false
 }
 
 type emitter struct {
@@ -25588,6 +25658,78 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 	return cname + "(" + recv + ")", false, true
 }
 
+// stringerVerb reports the verbs fmt formats a Stringer's String() -- or an error's
+// Error() -- under, rather than the value itself: %v, %s, %x, %X and %q.
+func stringerVerb(verb byte) bool {
+	switch verb {
+	case 'v', 's', 'x', 'X', 'q':
+		return true
+	}
+	return false
+}
+
+// emitStringerElems prints an argument of one of the stringerVerb verbs that is a
+// slice or a one-dimensional array whose ELEMENT is a Stringer to fmt
+// (stringerCallC), as fmt prints one: "[" each element's String() -- or an
+// interface element's Error() or String(), "<nil>" for one holding nothing --
+// under the verb, separated by spaces "]". It answers false, emitting nothing, for
+// any other argument.
+func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) bool {
+	elem, bound := "", ""
+	if ct, ok := e.printfArgType(idx, arg); ok && e.isSliceCType(ct) {
+		elem = sliceElemFromCName(ct)
+	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+		elem, bound = a.elem, a.bound
+	} else {
+		return false
+	}
+	el := e.newTmp()
+	text, isIface, ok := e.stringerCallC(elem, el)
+	if !ok {
+		return false
+	}
+	// An array of no elements prints as nothing between the brackets, and C has no
+	// value of such an array to take a header over.
+	if bound == "0" && !e.exprHasEffect(arg.ast) {
+		e.ind()
+		e.emit("printf(\"[]\");\n")
+		return true
+	}
+	e.needSlice(elem)
+	e.usesStringPrint = true
+	s, i := e.newTmp(), e.newTmp()
+	e.ind()
+	e.emit("{ " + sliceCName(elem) + " " + s + " = ")
+	if bound != "" {
+		e.emit("(" + sliceCName(elem) + "){")
+		value()
+		e.emit(", " + bound + ", " + bound + "}")
+	} else {
+		value()
+	}
+	e.emit("; printf(\"[\"); for (int " + i + " = 0; " + i + " < " + s + ".len; " + i + "++) { " +
+		elem + " " + el + " = " + s + ".ptr[" + i + "]; if (" + i + ") { printf(\" \"); } ")
+	print := "ogo_print_str(" + text + ");"
+	switch verb {
+	case 'x', 'X', 'q':
+		e.usesBytesPrint = true
+		e.usesString = true
+		e.usesRuneDecode = true
+		print = "ogo_print_qbytes(" + text + ");"
+		if verb != 'q' {
+			print = "ogo_print_hex_bytes(" + text + ", " + strconv.Itoa(boolToInt(verb == 'X')) + ");"
+		}
+	}
+	if isIface {
+		// "<nil>" under every verb: fmt's complaint, "%!s(<nil>)", is for a nil
+		// interface standing as the argument, and an element of one is printed by
+		// its value instead.
+		print = "if (" + el + ".vt) { " + print + " } else { printf(\"<nil>\"); }"
+	}
+	e.emit(print + " } printf(\"]\"); }\n")
+	return true
+}
+
 // emitPrintfVerb emits one verb's argument, checking the verb against the type it
 // was given. A verb that does not suit its argument is refused here: the format is
 // constant and the type is known, so there is nothing left to find out at run time.
@@ -25702,7 +25844,13 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// that returns. See stringerCallC for exactly which.
 	// Asked of the DECLARED type, as %T is: a constant of `type Color int` is an
 	// int in its representation and a Color to fmt, which is what has the method.
-	if dct, declared := e.printfArgType(idx, arg); (verb == 'v' || verb == 's') && declared {
+	//
+	// fmt asks it for %x, %X and %q as well, formatting what String() returns as it
+	// formats a string: `%x` of a Celsius whose String() is "warm" is 7761726d, the
+	// hex of the text, and `%q` is "warm" quoted. Until 2026-09-18 those three
+	// printed the integer the value holds, 41 and 'A' for a Celsius of 65 --
+	// silently -- and refused an error outright.
+	if dct, declared := e.printfArgType(idx, arg); stringerVerb(verb) && declared {
 		tmp := e.newTmp()
 		if text, isIface, ok := e.stringerCallC(dct, tmp); ok {
 			// Bound in a block first: the value may be a call, whose field a chain
@@ -25711,6 +25859,19 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			// would not.
 			e.usesStringPrint = true
 			print := "ogo_print_str(" + text + ")"
+			switch verb {
+			case 'x', 'X', 'q':
+				if spec != "" {
+					return noSpec("%" + string(verb) + " of a string is printed by a helper here")
+				}
+				e.usesBytesPrint = true
+				e.usesString = true
+				e.usesRuneDecode = true
+				print = "ogo_print_qbytes(" + text + ")"
+				if verb != 'q' {
+					print = "ogo_print_hex_bytes(" + text + ", " + strconv.Itoa(boolToInt(verb == 'X')) + ")"
+				}
+			}
 			if spec != "" {
 				w, _ := item.width()
 				pr, hasP := item.precision()
@@ -25725,15 +25886,24 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			value()
 			if isIface {
 				// An interface carrying no table carries no dynamic type, which fmt
-				// prints as <nil> for %v and as its complaint for %s.
+				// prints as <nil> for %v and as its complaint for the other verbs.
 				none := "<nil>"
-				if verb == 's' {
-					none = "%!s(<nil>)"
+				if verb != 'v' {
+					none = "%!" + string(verb) + "(<nil>)"
 				}
 				e.emit("; if (" + tmp + ".vt) { " + print + "; } else { printf(\"" + strings.ReplaceAll(none, "%", "%%") + "\"); } }\n")
 				return true
 			}
 			e.emit("; " + print + "; }\n")
+			return true
+		}
+	}
+	// fmt applies %v and %s to a slice or an array ELEMENT by element, so an element
+	// type with a String() prints what that returns: "[C! C!]". println has no such
+	// rule -- the built-in prints the value -- which is why this precedes the %v that
+	// defers to it.
+	if stringerVerb(verb) && spec == "" {
+		if e.emitStringerElems(idx, arg, verb, value) {
 			return true
 		}
 	}
@@ -26181,8 +26351,12 @@ func (e *emitter) emitPrintAddress(newline bool, ct string, idx int, arg Node) {
 // not leave an unused ogo_println_slice_<T> behind.
 func (e *emitter) emitPrintSlice(newline bool, elem string, emitArg func()) {
 	if !e.canPrintElem(elem) {
-		e.fail("printing a slice or array of %q is not supported yet", elem)
+		e.fail("printing a slice or array of %s is not supported yet", e.goTypeName(elem))
 		return
+	}
+	if isFloatCType(e.underlyingCType(elem)) {
+		e.usesFloatFmt = true
+		e.includes["string.h"] = true
 	}
 	e.needSlice(elem)
 	e.ind()
@@ -26388,6 +26562,10 @@ func sliceElemPrintf(el string) string {
 		// emitted ahead of the string helpers. Not "%.*s" -- the target's printf
 		// truncates that at 62 characters.
 		return `for (int _j = 0; _j < s.ptr[_i].len; _j++) { putchar(s.ptr[_i].str[_j]); }`
+	case "float", "double":
+		// In Go's shortest form, as println prints a float (see floatFmtHelper, which
+		// the output places ahead of these printers).
+		return `ogo_print_float(0, 0, 0, 0, 0, 'g', -1, s.ptr[_i]);`
 	}
 	return fmt.Sprintf(`printf("%s", s.ptr[_i]);`, scalarPrintVerb(el))
 }
@@ -26451,7 +26629,8 @@ func (e *emitter) addressPrintC(ct string) string {
 // each rendered by sliceElemPrintf. A slice of structs, pointers, or a named type
 // still fails honestly until its own print form is wired up.
 func (e *emitter) canPrintElem(elem string) bool {
-	return elem == cBool || elem == cString || isIntCType(elem)
+	u := e.underlyingCType(elem)
+	return u == cBool || u == cString || isIntCType(u) || isFloatCType(u)
 }
 
 // derefStars returns the leading pointer-indirection prefix of an AssignHead
