@@ -1,0 +1,16 @@
+// The names a suffix after a literal reads are checked.
+
+type Q struct {
+	tags [2]string
+}
+
+func (q Q) Get(i int) string {
+	return q.tags[i]
+}
+
+func main() {
+	// ERROR undefined: k
+	println(Q{}.tags[k])
+	// ERROR undefined: j
+	println(Q{}.Get(j))
+}

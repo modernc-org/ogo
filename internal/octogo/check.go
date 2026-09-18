@@ -11676,14 +11676,20 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		}
 	}
 	var id, lbrack Token
-	var suffix, lit Node
-	hasID, hasSuffix, hasLit, ellipsis := false, false, false, false
+	var suffix, lit, litSuffix Node
+	hasID, hasSuffix, hasLit, hasLitSuffix, ellipsis := false, false, false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
 		case Expression:
 			f.checkNames(s, c)
 		case FactorSuffix:
-			suffix, hasSuffix = c, true
+			// A suffix AFTER a named literal, `P{1, 2}.x` or `T{}.m()`, is a
+			// chain on the literal's value; the one before it qualifies its type.
+			if hasLit {
+				litSuffix, hasLitSuffix = c, true
+			} else {
+				suffix, hasSuffix = c, true
+			}
 		case CompositeLit:
 			lit, hasLit = c, true
 		case 0:
@@ -11735,6 +11741,15 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			t = litType{name: sel, qual: id}
 		}
 		f.checkCompositeLit(s, t, hasID, n, lit)
+	}
+	if hasLitSuffix {
+		// The names the chain on the literal reads: its indexes and the arguments
+		// of a method called on it. Which fields and methods the literal's type has
+		// is the emitter's to say, as it is for a chain on a parenthesised value.
+		f.checkIndexExprs(s, litSuffix)
+		if argList, later, _, isCall := f.callInfoAll(litSuffix); isCall {
+			f.resolveArgNames(s, append([]Node{argList}, later...))
+		}
 	}
 	// Reading the blank identifier -- as an operand, argument, initializer,
 	// condition or return value, whether bare or with a call, selector or index

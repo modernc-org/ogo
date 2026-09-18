@@ -1320,7 +1320,7 @@
 // variable, or function, or a parenthesized expression.
 //
 //	UnaryExpr  = { UnaryOp } Factor .
-//	Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
+//	Factor     = identifier [ FactorSuffix ] [ CompositeLit [ FactorSuffix ] ]
 //		| int_lit
 //		| float_lit
 //		| string_lit [ FactorSuffix ]
@@ -1400,6 +1400,15 @@
 // not, and "[3]int{1, 2, 3}[1:]" is refused as "cannot slice unaddressable value".
 // What a literal's element HOLDS is another matter -- a slice or a pointer among
 // the elements is sliced wherever it points.
+//
+// A STRUCT literal may be read through a suffix as well, "P{1, 2}.x", "Q{}.tags[i]",
+// "Line{}.a == P{}", and a method with a value receiver may be called on one,
+// "P{1, 2}.Sum()": the literal is bound to a temporary of its type and the suffix
+// applies to that. A pointer method is refused, as Go refuses it, the literal not
+// being addressable ("cannot call pointer method Inc on P"), and so is a slice of
+// an array field, "Q{}.tags[:]" ("cannot slice unaddressable value"). In an "if",
+// "for" or "switch" header the literal is written in parentheses, "(P{1, 2}).x",
+// as Go requires; a bare one there is a syntax error in both.
 //
 // An ARRAY literal stands in every one of those positions as well: as an
 // initializer, as an element of another literal, as a "range" operand, as an

@@ -69,7 +69,7 @@ Expression     = SimpleExpr { RelOp SimpleExpr } .
 SimpleExpr     = Term { AddOp Term } .
 Term           = UnaryExpr { MulOp UnaryExpr } .
 UnaryExpr  = { UnaryOp } Factor .
-Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
+Factor     = identifier [ FactorSuffix ] [ CompositeLit [ FactorSuffix ] ]
 	| int_lit
 	| float_lit
 	| string_lit [ FactorSuffix ]

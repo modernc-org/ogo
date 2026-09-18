@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A struct literal read through a suffix.** `P{1, 2}.x`, `Q{}.tags[i]`,
+  `Line{}.a == P{}`, `P{1, 2}.Sum()`, `P{1, 2}.Scaled(3).x`, `len(Q{}.tags)` and
+  the parenthesised `(P{1, 2}).Sum()` an `if` header takes were syntax errors:
+  the grammar gave a named literal no suffix, where a bracketed one has carried
+  one since August. The literal is bound to a temporary of its type and the
+  suffix applies to that. A pointer method on one and a slice of its array field
+  are refused in Go's words, the literal not being addressable.
 - **A select's comma-ok flag stored anywhere an assignment writes.** `case r.val,
   r.ok = <-ch:`, `case vals[i], flags[i] = <-ch:` and `case p.val, p.ok = <-ch:`
   were syntax errors: the grammar took a bare name for the flag's target where
@@ -431,6 +438,12 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Composite literal semantics against Go on the host and a P2-EDGE: `[...]T`
+  lengths, keyed and positional literals with the rest zeroed, nested literals
+  with the inner types elided, a call as an element, pointers as elements, an
+  indexed literal in a field, sparse indexes, zero literals compared, variables
+  as elements. All matched; the program is a run case, as is the suffix battery
+  above. An elided `&P{}` element of a `[]*P` literal is a loud refusal.
 - Pointer semantics against Go on the host and a P2-EDGE: pointers to elements,
   fields and pointees, through a pointer to a pointer, equality, a pointer to a
   literal, pointers through calls, a copy of a pointee, a chain walked to nil and

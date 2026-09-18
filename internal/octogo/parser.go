@@ -6385,7 +6385,7 @@ state1:
 
 // Factor grammar:
 //
-//	Factor     = identifier [ FactorSuffix ] [ CompositeLit ]
+//	Factor     = identifier [ FactorSuffix ] [ CompositeLit [ FactorSuffix ] ]
 //		| int_lit
 //		| float_lit
 //		| string_lit [ FactorSuffix ]
@@ -6445,13 +6445,9 @@ state1:
 //	State 10
 //		Accept
 //		on  '{'
-//			call CompositeLit and goto state 2
+//			call CompositeLit and goto state 5
 //		on  '(', '.', '['
-//			call FactorSuffix and goto state 11
-//	State 11
-//		Accept
-//		on  '{'
-//			call CompositeLit and goto state 2
+//			call FactorSuffix and goto state 9
 //
 // Factor is used internally from Parse.
 func (p *Parser) Factor() (r []int32) {
@@ -6561,18 +6557,10 @@ state10:
 	switch Symbol(p.tok.Ch) {
 	case TOK_007b:
 		r = p.add(r, p.CompositeLit())
-		goto state2
+		goto state5
 	case TOK_0028, TOK_002e, TOK_005b:
 		r = p.add(r, p.FactorSuffix())
-		goto state11
-	}
-	return p.stop(r, accept, errorSet)
-state11:
-	accept, errorSet = true, 111
-	switch Symbol(p.tok.Ch) {
-	case TOK_007b:
-		r = p.add(r, p.CompositeLit())
-		goto state2
+		goto state9
 	}
 	return p.stop(r, accept, errorSet)
 }

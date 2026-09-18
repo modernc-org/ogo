@@ -12778,6 +12778,70 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 	return mangle(prefix, fields[0]), kids[2], true
 }
 
+// factorStructLitChain recognises a STRUCT literal read through a suffix, `P{1,
+// 2}.x`, `Q{}.tags[1]`, `P{1, 2}.Sum()`, `geo.Point{1, 2}.X`: the literal's C type,
+// the literal, and the steps after it. A literal of an array or slice type is
+// factorLitIndexed's; the grammar had no suffix after a named literal at all until
+// 2026-09-18.
+func (e *emitter) factorStructLitChain(kids []Node) (ctype string, lit Node, steps []Node, ok bool) {
+	if len(kids) < 3 || kids[len(kids)-1].sym != FactorSuffix || kids[len(kids)-2].sym != CompositeLit {
+		return "", Node{}, nil, false
+	}
+	ctype, lit, ok = e.factorCompositeLit(kids[:len(kids)-1])
+	if !ok || e.structs[ctype] == nil || e.isIfaceCType(ctype) {
+		return "", Node{}, nil, false
+	}
+	steps = slices.Collect(it(kids[len(kids)-1].ast))
+	if len(steps) == 0 {
+		return "", Node{}, nil, false
+	}
+	return ctype, lit, steps, true
+}
+
+// emitStructLitChain emits a struct literal read through a suffix: the literal is
+// bound to a temporary of its type, declared ahead of the statement, and the steps
+// -- fields, indexes, a method call -- apply to that. The temporary is this frame's,
+// so what a step reaches is refused where the literal itself would be: a slice of
+// an array field, `Q{}.tags[:]`, which Go refuses too, the literal not being
+// addressable ("cannot slice unaddressable value").
+func (e *emitter) emitStructLitChain(n Node, ctype string, lit Node, steps []Node) {
+	for _, st := range steps {
+		if st.sym == Index {
+			if _, _, _, isSlice := e.sliceParts(st.ast); isSlice {
+				e.fail("cannot slice unaddressable value %s", e.f.exprSource(n))
+				return
+			}
+		}
+	}
+	// The first step names a field or a method of the literal's type, or nothing:
+	// Go's words for the last, and for a pointer method, which a literal cannot
+	// take the address for ("cannot call pointer method Inc on P").
+	if steps[0].sym == Selector {
+		member := e.soleIdent(steps[0].ast)
+		isField := slices.ContainsFunc(e.structs[ctype], func(f structField) bool { return f.name == member })
+		_, isMethod := e.funcRet[methodCName(ctype, member)]
+		switch {
+		case !isField && !isMethod:
+			e.fail("%s undefined (type %s has no field or method %s)", e.f.exprSource(n), e.goTypeName(ctype), member)
+			return
+		case isMethod && e.methodPtr[methodCName(ctype, member)]:
+			e.fail("cannot call pointer method %s on %s", member, e.goTypeName(ctype))
+			return
+		}
+	}
+	tmp := e.hoist(ctype, func() { e.emitCompositeLit(ctype, lit, true) })
+	e.locals[tmp] = ctype
+	if slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
+		if !e.emitCallExpr(tmp, steps) {
+			e.fail("cannot read %s: this form is not supported yet", e.f.exprSource(n))
+		}
+		return
+	}
+	if _, ok := e.emitAccessChainAt(tmp, accessCur{ctype: ctype}, steps, true); !ok {
+		e.fail("cannot read %s: this form is not supported yet", e.f.exprSource(n))
+	}
+}
+
 // soleCompositeLit reports whether an expression is nothing but a composite
 // literal -- no operator, no unary prefix, no call or index around it -- and
 // returns the type name and the literal. This is the shape that may be spelled as
@@ -16115,9 +16179,13 @@ func (e *emitter) unparenKidsOnce(kids []Node) ([]Node, bool) {
 	if len(inner) == 0 {
 		return kids, false
 	}
-	// The inner factor must carry no suffix of its own.
-	for _, k := range inner {
-		if k.sym == FactorSuffix || k.sym == CompositeLit {
+	// The inner factor must carry no suffix of its own. A LITERAL inside the
+	// parentheses is peeled, `(P{1, 2}).x` becoming the `P{1, 2}.x` the literal
+	// chain reads -- which is how Go has a literal read in an `if` header, where
+	// the bare form is a syntax error -- and so is a qualified one, `(geo.P{1,
+	// 2}).x`, whose selector qualifies the type rather than suffixing the value.
+	for i, k := range inner {
+		if k.sym == FactorSuffix && i == len(inner)-1 {
 			return kids, false
 		}
 	}
@@ -24326,6 +24394,15 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 // header field, which is where its length lives.
 func (e *emitter) arrayChainBound(arg []int32) (string, bool) {
 	kids := e.factorKids(arg)
+	// `len(Q{}.tags)`: an array field of a struct literal, whose extent its type
+	// says; the literal is not evaluated, as Go does not evaluate it.
+	if ctype, _, steps, isLit := e.factorStructLitChain(kids); isLit && isAccessChain(steps) {
+		cur, ok := e.accessChainTypeAt(accessCur{ctype: ctype}, steps, false)
+		if !ok || len(cur.dims) == 0 {
+			return "", false
+		}
+		return cur.dims[0], true
+	}
 	base, steps, ok := e.factorAccessChain(kids)
 	if !ok {
 		if base, steps, ok = e.callReadBase(kids); !ok {
@@ -31027,6 +31104,30 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				return cur.ctype, true
 			}
+			// `P{1, 2}.x` types as what the chain reaches from the literal's type,
+			// and `P{1, 2}.Sum()` as the method's result. Typed from the literal's
+			// type, since inferring a type must emit nothing.
+			if ctype, _, steps, ok := e.factorStructLitChain(kids); ok {
+				for _, st := range steps {
+					if _, _, _, isSlice := e.sliceParts(st.ast); st.sym == Index && isSlice {
+						e.fail("cannot slice unaddressable value %s", e.f.exprSource(n))
+						return "", false
+					}
+				}
+				if steps[len(steps)-1].sym == CallSuffix {
+					if sels, okSel := e.selectorFields(steps[:len(steps)-1]); okSel && len(sels) == 1 {
+						if rts, has := e.funcRet[methodCName(ctype, sels[0])]; has && len(rts) == 1 {
+							return rts[0], true
+						}
+					}
+					return "", false
+				}
+				cur, okc := e.accessChainTypeAt(accessCur{ctype: ctype}, steps, false)
+				if !okc {
+					return "", false
+				}
+				return e.chainValueCType(cur)
+			}
 			// `[]int{1, 2, 3}[0]` types as the literal's ELEMENT. Typed from the
 			// literal rather than by walking a hoisted temporary, since inferring a
 			// type must emit nothing; a longer chain than one index falls through to
@@ -32874,6 +32975,11 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(name)
 					return
 				}
+			}
+			// `P{1, 2}.x` -- a struct literal read through a suffix.
+			if ctype, lit, steps, ok := e.factorStructLitChain(kids); ok {
+				e.emitStructLitChain(n, ctype, lit, steps)
+				return
 			}
 			if name, lit, ok := e.factorCompositeLit(kids); ok {
 				e.emitCompositeLit(name, lit, e.declInit)

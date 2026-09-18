@@ -1,0 +1,26 @@
+// COMPILE
+
+// A named composite literal may be read through a suffix: a field, an element, a
+// method call, and each of them on a parenthesised literal, which is how an if
+// header takes one.
+
+type P struct {
+	x, y int
+}
+
+func (p P) Sum() int {
+	return p.x + p.y
+}
+
+type Q struct {
+	p    P
+	tags [2]string
+}
+
+func main() {
+	i := 1
+	println(P{1, 2}.x, Q{}.tags[i], Q{p: P{3, 4}}.p.y, P{1, 2}.Sum(), (P{1, 2}).x)
+	if (P{1, 2}).Sum() == 3 {
+		println(len(Q{}.tags))
+	}
+}

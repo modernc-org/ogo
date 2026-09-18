@@ -29376,6 +29376,121 @@ func more() {
 }
 `,
 		want: "D1 9 3 3 true false true\nD2 5 6 5 6\nD3 8 -7 13 -7 7 true true -7\nD4 false true false\nD5 8 true 6 true\nD6 false -6 12 true true true -3 -3 3 false\n",
+	}, {
+		// Composite literal semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): `[...]T` lengths, keyed and positional struct literals with
+		// the rest zeroed, nested literals with the inner types elided in an array,
+		// a slice and a two-dimensional array, a call as an element, pointers as
+		// elements, an indexed array literal in a field, sparse indexed literals,
+		// zero literals compared, variables as elements. All matched.
+		name: "composite literal semantics: nesting, elision, keys, sparse indexes, ... and zero values",
+		src: `type P struct {
+	x, y int
+}
+
+type Q struct {
+	p    P
+	tags [2]string
+	ok   bool
+}
+
+type Line struct {
+	a, b P
+}
+
+var pk = [...]int{1, 2, 3, 4}
+var gl = Line{a: P{1, 2}, b: P{y: 5}}
+var gq = []Q{{P{1, 1}, [2]string{"a", "b"}, true}, {ok: false}}
+
+func mk(k int) P {
+	return P{k, k * 2}
+}
+
+func main() {
+	println("L1", len(pk), pk[3], gl.a.y, gl.b.x, gl.b.y, len(gq), gq[0].tags[1], gq[1].ok, gq[1].p.x)
+	lines := [2]Line{{P{1, 2}, P{3, 4}}, {a: P{5, 6}}}
+	println("L2", lines[0].b.x, lines[1].a.y, lines[1].b.x)
+	rows := [][2]int{{1, 2}, {3, 4}, {5, 6}}
+	println("L3", len(rows), rows[2][1], rows[1][0])
+	ps := []P{{1, 2}, {3, 4}, mk(5)}
+	println("L4", len(ps), ps[2].y, ps[1].x)
+	p7 := P{7, 8}
+	pps := []*P{&p7, &ps[1]}
+	pps[0].x = 70
+	println("L5", len(pps), pps[0].x, pps[1].y, p7.x)
+	q := Q{p: P{y: 3}, tags: [2]string{1: "z"}}
+	println("L6", q.p.x, q.p.y, q.tags[0] == "", q.tags[1], q.ok)
+	nested := [2][2]P{{{1, 1}, {2, 2}}, {{3, 3}, {4, 4}}}
+	println("L7", nested[1][0].x, nested[0][1].y)
+	sparse := [6]int{1: 10, 4: 40}
+	println("L8", sparse[0], sparse[1], sparse[4], sparse[5], len(sparse))
+	autos := [...]string{"x", "y", "z"}
+	println("L9", len(autos), autos[2])
+	empty := P{}
+	println("L10", empty.x, empty == P{0, 0}, Q{}.ok, Line{}.a == P{})
+	k := 3
+	dyn := [3]int{k, k * 2, mk(k).y}
+	println("L11", dyn[0], dyn[1], dyn[2])
+}
+`,
+		want: "L1 4 4 2 0 5 2 b false 0\nL2 3 6 0\nL3 3 6 3\nL4 3 10 3\nL5 2 70 4 70\nL6 0 3 true z false\nL7 3 2\nL8 0 10 40 0 6\nL9 3 z\nL10 0 true false true\nL11 3 6 6\n",
+	}, {
+		// `P{1, 2}.x`, `Q{}.tags[i]`, `Line{}.a == P{}`, `P{1, 2}.Sum()`,
+		// `P{1, 2}.Scaled(3).x`, `len(Q{}.tags)` and the parenthesised `(P{1,
+		// 2}).Sum()` an if header takes: the grammar gave a named literal no suffix
+		// until 2026-09-18. The literal's elements and a method's arguments are
+		// evaluated in order, once. Measured against Go on the host and a P2-EDGE.
+		name: "a struct literal read through a suffix",
+		src: `type P struct {
+	x, y int
+}
+
+func (p P) Sum() int {
+	return p.x + p.y
+}
+
+func (p P) Scaled(k int) P {
+	return P{p.x * k, p.y * k}
+}
+
+type Q struct {
+	p    P
+	tags [2]string
+	rows [2][2]int
+	ok   bool
+}
+
+type Line struct {
+	a, b P
+}
+
+var calls int
+
+func f(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func main() {
+	println("M1", P{1, 2}.x, P{1, 2}.y, P{y: 5}.y, P{}.x, Q{}.ok, Q{ok: true}.ok)
+	println("M2", Q{tags: [2]string{"a", "b"}}.tags[1], Q{rows: [2][2]int{{1, 2}, {3, 4}}}.rows[1][0], Line{b: P{3, 4}}.b.y)
+	println("M3", P{1, 2}.Sum(), P{1, 2}.Scaled(3).x, P{1, 2}.Scaled(3).Sum(), Line{}.a == P{}, Line{a: P{1, 1}}.a != P{})
+	calls = 0
+	i := 1
+	println("M4", Q{tags: [2]string{"c", "d"}}.tags[i], P{f(1), f(2)}.Sum(), P{f(3), 0}.Scaled(f(4)).x, calls)
+	s := P{7, 8}.Scaled(2)
+	t := Q{p: P{9, 9}}.p
+	u := Line{P{1, 2}, P{3, 4}}.b.x + Line{}.a.y
+	println("M5", s.x, s.y, t.x, u, len(Q{}.tags), len(Q{}.rows[0]))
+	if (P{1, 2}).Sum() == 3 && (Q{ok: true}).ok {
+		println("M6 ok")
+	}
+	var arr [3]int
+	arr[P{1, 1}.Sum()] = 5
+	println("M7", arr[2], P{1, 2} == P{1, 2}, P{1, 2}.Scaled(1) == P{1, 2})
+}
+`,
+		want: "M1 1 2 5 0 false true\nM2 b 3 4\nM3 3 3 9 true true\nM4 d 3 12 1234\nM5 14 16 9 3 2 2\nM6 ok\nM7 5 true true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

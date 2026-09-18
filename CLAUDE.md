@@ -538,8 +538,13 @@ operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `rows[0][1:][1]` ("this combination of indexes and fields is not supported yet"). No grammar gap is
 known: the ones recorded before all closed that day, and two nobody had recorded --
 HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
-literal took none at all, `"0123456789abcdef"[n&15]`. **Check Factor and HeaderFactor
-against each other when either changes**; they are meant to differ by one production.
+literal took none at all, `"0123456789abcdef"[n&15]`. Two more surfaced the next day
+from semantic batteries, not from the grammar: a select's comma-ok flag took a bare
+name only, `case v, r.ok = <-ch:`, and a NAMED composite literal took no suffix, `P{1,
+2}.x` (the bracketed one had). A battery that writes what Go programs write finds
+these; reading the grammar did not. **Check Factor and HeaderFactor
+against each other when either changes**; they are meant to differ by one production
+(HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
 Two LATENT ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not
