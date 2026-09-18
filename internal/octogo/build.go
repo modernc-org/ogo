@@ -611,11 +611,19 @@ func TrimSpace(s string) string {
 	if start == len(s) {
 		return ""
 	}
-	end := start
+	// end is just past the last rune that is not a space: the index the range hands
+	// the rune after it, or the length. A rune's own width cannot say where it ends
+	// -- an invalid byte ranges as U+FFFD, which is three bytes when it is valid --
+	// and "a\xff" was cut to s[0:4] of a string of two bytes, a panic.
+	end, last := start, false
 	for i, c := range s {
-		if i >= start && !isSpace(c) {
-			end = i + runeLen(c)
+		if last {
+			end = i
 		}
+		last = i >= start && !isSpace(c)
+	}
+	if last {
+		end = len(s)
 	}
 	return s[start:end]
 }
@@ -634,25 +642,6 @@ func isSpace(r rune) bool {
 		return true
 	}
 	return r == 0x2028 || r == 0x2029 || r == 0x202F || r == 0x205F || r == 0x3000
-}
-
-// runeLen is how many bytes r takes in UTF-8, which is what turns a rune's start
-// index into the index just past it. An invalid rune is one byte, matching what
-// ranging a string yields for one.
-func runeLen(r rune) int {
-	if r < 0x80 {
-		return 1
-	}
-	if r < 0x800 {
-		return 2
-	}
-	if r > 0x10FFFF || (r >= 0xD800 && r <= 0xDFFF) {
-		return 1
-	}
-	if r < 0x10000 {
-		return 3
-	}
-	return 4
 }
 `
 

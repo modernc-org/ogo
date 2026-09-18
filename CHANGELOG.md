@@ -113,6 +113,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **strings.TrimSpace panicked on a string ending in an invalid byte.** It found
+  the end of the text from each rune's width, and an invalid byte ranges as U+FFFD,
+  which is three bytes when valid: `TrimSpace("\xffa\xff")` sliced five bytes of a
+  three-byte string, "slice bounds out of range", and so did "a\xff ". The end is
+  the index the range hands the next rune now.
 - **printf laid out a field by C's rules, and the target's, not by fmt's.** fmt
   puts '+' and ' ' in front of every integer verb and of an unsigned value, `%+x`
   of 255 being "+ff" and `% d` of a uint32 " 4000000000", where C applies them to
@@ -474,6 +479,9 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- The strings package against Go's on the host and a P2-EDGE: every function it
+  has, over empty strings, multi-byte and invalid UTF-8, overlapping counts and
+  Unicode's spaces. One fault (TrimSpace, above); both programs are run cases.
 - printf against fmt.Printf on the host and a P2-EDGE: every integer width and
   sign under every integer verb, strings with rune-counted widths and precisions
   and Go's escapes, bools, a Stringer, %T of a defined type ("main.Celsius", as

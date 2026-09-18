@@ -29724,6 +29724,110 @@ func elems() {
 }
 `,
 		want: "S1 [7761726d] [7761726D] [\"warm\"] [65] [A] [warm] [warm]\nS2 [boom] [boom] [\"boom\"] [626f6f6d] [626F6F6D]\nS3 [<nil>] [%!s(<nil>)] [%!q(<nil>)] [%!x(<nil>)]\nE1 [[7761726d 7761726d]] [[7761726D 7761726D]] [[\"warm\" \"warm\"]] [[sq <nil>]] [[sq <nil>]]\nE2 [[7371 <nil>]] [[\"sq\" <nil>]]\n",
+	}, {
+		// The embedded strings package measured against Go's on the host and a
+		// P2-EDGE (2026-09-18): Contains, ContainsAny, ContainsRune, Count
+		// (overlapping, empty, multi-byte), Index, LastIndex, IndexAny, IndexByte,
+		// LastIndexByte, IndexRune (U+FFFD for an invalid byte, a negative rune),
+		// HasPrefix, HasSuffix, Compare, Cut, CutPrefix, CutSuffix, TrimPrefix,
+		// TrimSuffix and TrimSpace over Unicode's spaces. One fault, below.
+		name: "the strings package against Go: searching, counting, cutting and trimming",
+		src: `import "strings"
+
+var s = "h\u00e9llo, w\u00f6rld"
+
+func search1() {
+	println("S1", strings.Contains(s, "w\u00f6"), strings.Contains(s, ""), strings.Contains("", ""), strings.Contains("", "a"))
+	println("S2", strings.ContainsAny(s, "xyz\u00f6"), strings.ContainsAny(s, ""), strings.ContainsAny("", ""), strings.ContainsRune(s, '\u00f6'), strings.ContainsRune(s, 'q'))
+	println("S3", strings.Count("aaaa", "aa"), strings.Count("h\u00e9llo", ""), strings.Count("", ""), strings.Count("abc", "d"), strings.Count("\u00e9\u00e9\u00e9", "\u00e9"))
+	println("S4", strings.Index(s, "l"), strings.Index(s, ""), strings.Index(s, "w\u00f6rld"), strings.Index("", "a"), strings.Index("abc", "abcd"))
+	println("S5", strings.LastIndex(s, "l"), strings.LastIndex(s, ""), strings.LastIndex("aaa", "aa"), strings.LastIndex("", ""), strings.LastIndex("abc", "x"))
+}
+
+func search2() {
+	println("S6", strings.IndexAny(s, "w\u00f6"), strings.IndexAny(s, ""), strings.IndexAny("", "a"), strings.IndexAny("\xffa", "a"))
+	println("S7", strings.IndexByte(s, 'w'), strings.IndexByte(s, 0xc3), strings.LastIndexByte(s, 'l'), strings.LastIndexByte(s, 'z'))
+	println("S8", strings.IndexRune(s, '\u00f6'), strings.IndexRune(s, 'l'), strings.IndexRune("a\xffb", 0xfffd), strings.IndexRune("a\ufffdb", 0xfffd), strings.IndexRune(s, -1))
+	println("S9", strings.HasPrefix(s, "h\u00e9"), strings.HasPrefix(s, ""), strings.HasPrefix("", "a"), strings.HasSuffix(s, "rld"), strings.HasSuffix(s, "xh\u00e9llo"))
+	println("S10", strings.Compare("a", "b"), strings.Compare("b", "a"), strings.Compare("", ""), strings.Compare("ab", "a"), strings.Compare("\u00e9", "z"))
+}
+
+func cutting1() {
+	before, after, found := strings.Cut("key=value=x", "=")
+	println("C1", before, after, found)
+	before, after, found = strings.Cut("novalue", "=")
+	println("C2", before, len(after), found)
+	before, after, found = strings.Cut("abc", "")
+	println("C3", len(before), after, found)
+}
+
+func cutting2() {
+	rest, ok := strings.CutPrefix("prefix-body", "prefix-")
+	println("C4", rest, ok)
+	rest, ok = strings.CutPrefix("body", "prefix-")
+	println("C5", rest, ok)
+	rest, ok = strings.CutSuffix("name.ogo", ".ogo")
+	println("C6", rest, ok)
+	rest, ok = strings.CutSuffix("name.go", ".ogo")
+	println("C7", rest, ok)
+}
+
+func cutting3() {
+	println("C8", strings.TrimPrefix("aaab", "a"), strings.TrimPrefix("b", "a"), strings.TrimSuffix("baaa", "a"), strings.TrimSuffix("", ""))
+	print("C9 [", strings.TrimSpace("  \t hi there \n\r "), "]\n")
+	print("C10 [", strings.TrimSpace("\u00a0\u2003x\u3000\u0085"), "]\n")
+	print("C11 [", strings.TrimSpace(""), "][", strings.TrimSpace(" \t "), "][", strings.TrimSpace("\xffa\xff"), "]\n")
+}
+
+func main() {
+	search1()
+	search2()
+	cutting1()
+	cutting2()
+	cutting3()
+}
+`,
+		want: "S1 true true true false\nS2 true false false true false\nS3 2 6 1 0 3\nS4 3 0 8 -1 -1\nS5 12 14 1 0 -1\nS6 8 -1 -1 1\nS7 8 1 12 -1\nS8 9 3 1 1 -1\nS9 true true false true false\nS10 -1 1 0 1 1\nC1 key value=x true\nC2 novalue 0 false\nC3 0 abc true\nC4 body true\nC5 body false\nC6 name true\nC7 name.go false\nC8 aab b baa \nC9 [hi there]\nC10 [x]\nC11 [][][\xffa\xff]\n",
+	}, {
+		// TrimSpace found the end of the text from each rune's width, and an
+		// invalid byte ranges as U+FFFD, three bytes when valid: "\xffa\xff" was
+		// cut to s[0:5] of three bytes, "slice bounds out of range" (2026-09-18).
+		// With the other edges of the package, measured against Go.
+		name: "strings.TrimSpace of a string ending in an invalid byte",
+		src: `import "strings"
+
+func part1() {
+	print("T1 [", strings.TrimSpace(""), "][", strings.TrimSpace(" \t "), "][", strings.TrimSpace("a"), "][", strings.TrimSpace(" \u00e9 "), "]\n")
+	print("T2 [", strings.TrimSpace("\u2028x\u2029"), "][", strings.TrimSpace("x\u200b"), "][", strings.TrimSpace("\u1680\u205f!"), "]\n")
+}
+
+func part2() {
+	before, after, found := strings.Cut("a\u00e9b\u00e9c", "\u00e9")
+	println("T3", before, after, found, strings.Count("\u00e9\u00e9", "\u00e9\u00e9"), strings.Count("abab", "ab"))
+	println("T4", strings.Index("a\u00e9\u00e9b", "\u00e9b"), strings.LastIndex("\u00e9a\u00e9", "\u00e9"), strings.LastIndexByte("\u00e9", 0xa9), strings.IndexByte("", 'a'))
+}
+
+func part3() {
+	println("T5", strings.ContainsRune("a\xff", 0xfffd), strings.ContainsRune("a\ufffd", 0xfffd), strings.ContainsAny("\xff", "\ufffd"), strings.IndexAny("ab\u00e9", "\u00e9b"))
+	println("T6", strings.Compare("a\xff", "a\u00e9"), strings.Compare("abc", "abd"), strings.Compare("abc", "abcd"), strings.HasPrefix("\u00e9", "\xc3"))
+}
+
+func part4() {
+	r1, ok1 := strings.CutPrefix("abc", "")
+	r2, ok2 := strings.CutSuffix("abc", "")
+	r3, ok3 := strings.CutSuffix("", "a")
+	print("T8 [", strings.TrimSpace("a\xff "), "][", strings.TrimSpace("\xff"), "][", strings.TrimSpace(" \xff"), "][", strings.TrimSpace("\xef\xbf\xbd "), "][", strings.TrimSpace(" \xc3"), "]\n")
+	println("T7", r1, ok1, r2, ok2, len(r3), ok3, strings.TrimPrefix("abc", "abc"), len(strings.TrimSuffix("abc", "abc")))
+}
+
+func main() {
+	part1()
+	part2()
+	part3()
+	part4()
+}
+`,
+		want: "T1 [][][a][é]\nT2 [x][x​][!]\nT3 a béc true 1 2\nT4 3 3 1 -1\nT5 true true true 1\nT6 1 -1 -1 true\nT8 [a\xff][\xff][\xff][�][\xc3]\nT7 abc true abc true 0 false  0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
