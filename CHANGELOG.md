@@ -154,6 +154,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **printf asks a value for Error() before String().** `%v` of a `type Code int`
+  with an `Error()` method printed the number it holds, silently, where fmt prints
+  what `Error()` returns; a type with both methods printed its `String()`, and
+  element by element so did a slice of either; `%s` of the first was refused. fmt
+  asks for an error first, and a concrete type is now asked as an interface was.
 - **A channel received from a channel of channels is a channel.** `r := <-reqs`,
   `for r := range reqs`, `case r := <-reqs:` and `r, ok := <-reqs` each bound r
   as something that was not one, so the reply sent on it -- the way a request

@@ -25737,11 +25737,15 @@ func (e *emitter) typeNameForT(ct string) string {
 // stringerCallC renders, for a value of C type ct bound to tmp, the call fmt makes
 // for %v and %s when the value has one to make: an interface's Error() or, failing
 // that, its String(), through its table (isIface reports that form, whose table
-// may be null); a String() declared on the value's own type or promoted from a
-// type it embeds, with a value receiver; and on a POINTER, a String() with either
-// receiver, which is the method set Go gives *T. A value whose type declares
-// String() on a pointer receiver is not a Stringer to fmt, which holds a copy, and
-// is not one here.
+// may be null); an Error() or, failing that, a String() declared on the value's
+// own type or promoted from a type it embeds, with a value receiver; and on a
+// POINTER, either with either receiver, which is the method set Go gives *T. A
+// value whose type declares the method on a pointer receiver is not an error or a
+// Stringer to fmt, which holds a copy, and is not one here.
+//
+// Error() first for a concrete type as for an interface: fmt asks for an error
+// before a Stringer. Asking for String() alone printed a `type Code int` with an
+// Error() method as the number it holds, and a type with both as its String().
 func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) {
 	if e.isIfaceCType(ct) {
 		for _, want := range []string{"Error", "String"} {
@@ -25761,19 +25765,22 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 	if !e.isMethodBase(methodBaseType(base)) {
 		return "", false, false
 	}
-	cname, path, _, found := e.promotedMethod(base, "String")
-	if !found || len(e.funcRet[cname]) != 1 || e.funcRet[cname][0] != cString || len(e.funcParams[cname]) != 0 {
-		return "", false, false
+	for _, want := range []string{"Error", "String"} {
+		cname, path, _, found := e.promotedMethod(base, want)
+		if !found || len(e.funcRet[cname]) != 1 || e.funcRet[cname][0] != cString || len(e.funcParams[cname]) != 0 {
+			continue
+		}
+		ptrRecv := e.methodPtr[cname]
+		if ptrRecv && !isPtr {
+			continue
+		}
+		recv, okr := e.promotedRecvC(tmp, ct, path, ptrRecv, true)
+		if !okr {
+			continue
+		}
+		return cname + "(" + recv + ")", false, true
 	}
-	ptrRecv := e.methodPtr[cname]
-	if ptrRecv && !isPtr {
-		return "", false, false
-	}
-	recv, okr := e.promotedRecvC(tmp, ct, path, ptrRecv, true)
-	if !okr {
-		return "", false, false
-	}
-	return cname + "(" + recv + ")", false, true
+	return "", false, false
 }
 
 // stringerVerb reports the verbs fmt formats a Stringer's String() -- or an error's

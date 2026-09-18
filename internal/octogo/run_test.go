@@ -29954,6 +29954,55 @@ func elems() {
 `,
 		want: "S1 [7761726d] [7761726D] [\"warm\"] [65] [A] [warm] [warm]\nS2 [boom] [boom] [\"boom\"] [626f6f6d] [626F6F6D]\nS3 [<nil>] [%!s(<nil>)] [%!q(<nil>)] [%!x(<nil>)]\nE1 [[7761726d 7761726d]] [[7761726D 7761726D]] [[\"warm\" \"warm\"]] [[sq <nil>]] [[sq <nil>]]\nE2 [[7371 <nil>]] [[\"sq\" <nil>]]\n",
 	}, {
+		// fmt asks a value for Error() before String(), and a concrete type is asked
+		// as an interface is. Until 2026-09-18 a concrete type was asked for String()
+		// alone: %v of a `type Code int` with an Error() method printed the number it
+		// holds, silently, a type with both printed its String(), and %s of the
+		// first was refused. A promoted Error() and a pointer receiver's count too.
+		name: "printf asks a concrete type for Error() before String()",
+		src: `type Code int
+
+func (c Code) Error() string { return "code error" }
+
+type Both int
+
+func (b Both) Error() string  { return "the error" }
+func (b Both) String() string { return "the string" }
+
+type Fail struct {
+	why string
+}
+
+func (f Fail) Error() string { return f.why }
+
+type PtrErr struct {
+	n int
+}
+
+func (p *PtrErr) Error() string { return "ptr error" }
+
+type Wrap struct {
+	Fail
+	extra int
+}
+
+func main() {
+	printf("%v|%s|%q|%x\n", Code(3), Code(4), Code(5), Code(6))
+	printf("%v %s|\n", Both(1), Both(2))
+	printf("%v|%s\n", Fail{"disk"}, Fail{"net"})
+	pe := &PtrErr{1}
+	printf("%v|%s\n", pe, pe)
+	printf("%v\n", []Code{1, 2})
+	printf("%v\n", [2]Both{1, 2})
+	printf("%v\n", Wrap{Fail{"inner"}, 3})
+	c7 := Code(7)
+	var err error = &c7
+	printf("%v\n", err)
+	println(Code(5))
+}
+`,
+		want: "code error|code error|\"code error\"|636f6465206572726f72\nthe error the error|\ndisk|net\nptr error|ptr error\n[code error code error]\n[the error the error]\ninner\ncode error\n5\n",
+	}, {
 		// The embedded strings package measured against Go's on the host and a
 		// P2-EDGE (2026-09-18): Contains, ContainsAny, ContainsRune, Count
 		// (overlapping, empty, multi-byte), Index, LastIndex, IndexAny, IndexByte,
