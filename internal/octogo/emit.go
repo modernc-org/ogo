@@ -5322,6 +5322,7 @@ type emitter struct {
 	deferReplay        int                     // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
 	iota               int                     // the current iota value while emitting a const spec's expression, or -1 outside one
 	deferReplayArgs    []deferArg              // that slot's arguments, so emitCallArgs knows which were captured
+	deferReplayOff     int                     // where a print's own argument 0 is among them: 1 for printf, past its format
 	usesPanic          bool                    // ogo_panic is called: emit its definition and pull in its includes
 	testEntry          string                  // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
@@ -22377,8 +22378,11 @@ func (e *emitter) emitDefer(nodes []Node) {
 			paramDims, paramTypes = e.funcArrayParams[e.funcCallC(base)], e.funcParams[e.funcCallC(base)]
 		}
 	}
+	// printf's format is a constant the replay reads from the source again, so a
+	// temporary captured for it would be set and never read.
+	isPrintf := len(suffix) == 1 && e.soleIdent(head.ast) == "printf"
 	for i, a := range e.callArgExprs(call.ast) {
-		if e.isIntLiteral(a) {
+		if e.isIntLiteral(a) || i == 0 && isPrintf {
 			d.args = append(d.args, deferArg{expr: a.ast, inline: true})
 			continue
 		}
@@ -25342,6 +25346,13 @@ type printArg struct {
 // temporary needs one: an argument this cannot type leaves the whole print as it was
 // rather than hoisting some of them.
 func (e *emitter) hoistPrintArgs(args []Node) bool {
+	// A deferred print's arguments were evaluated where the defer stands, into the
+	// temporaries its replay reads. Hoisted again here they were evaluated again,
+	// ahead of every return the replay is written at: `defer println(f(), x)` called
+	// f once at the defer and once more per return.
+	if e.deferReplay >= 0 {
+		return false
+	}
 	effect := false
 	for _, a := range args {
 		if e.exprHasEffect(a.ast) {
@@ -25379,15 +25390,28 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 // its header's first word, a bool as 1. That is the whole reason a deferred print
 // used to be refused instead of fixed.
 func (e *emitter) printArgCType(idx int, arg Node) (string, bool) {
-	if e.deferReplay >= 0 && idx < len(e.deferReplayArgs) {
-		if ct := e.deferReplayArgs[idx].ctype; ct != "" {
-			return e.underlyingCType(ct), true
-		}
+	if ct, ok := e.replayArgCType(idx); ok {
+		return e.underlyingCType(ct), true
 	}
 	if idx < len(e.printArgs) {
 		return e.underlyingCType(e.printArgs[idx].ctype), true
 	}
 	return e.exprReprCType(arg.ast)
+}
+
+// replayArgCType is the type of a print's argument idx during a defer REPLAY, from
+// the temporary captured at the defer statement; false outside one. The replay's
+// arguments are the call's, so a printf's own argument 0 is the one after its
+// format (deferReplayOff): read from where the verb counts, a deferred
+// `printf("%v|", s)` printed its format for s, and `printf("%d", n)` was "wants an
+// integer, not string".
+func (e *emitter) replayArgCType(idx int) (string, bool) {
+	if i := idx + e.deferReplayOff; e.deferReplay >= 0 && i < len(e.deferReplayArgs) {
+		if ct := e.deferReplayArgs[i].ctype; ct != "" {
+			return ct, true
+		}
+	}
+	return "", false
 }
 
 // emitReplayArg emits an argument's VALUE: during a defer REPLAY the temporary
@@ -25396,11 +25420,11 @@ func (e *emitter) printArgCType(idx int, arg Node) (string, bool) {
 // emitted after the block scope they were written in has been left, so the
 // expression would not even resolve there.
 func (e *emitter) emitReplayArg(idx int, arg Node) {
-	if e.deferReplay >= 0 && idx < len(e.deferReplayArgs) {
-		if a := e.deferReplayArgs[idx]; a.inline {
+	if i := idx + e.deferReplayOff; e.deferReplay >= 0 && i < len(e.deferReplayArgs) {
+		if a := e.deferReplayArgs[i]; a.inline {
 			e.emitExpr(a.expr)
 		} else {
-			e.emit(deferArgName(e.deferReplay, idx))
+			e.emit(deferArgName(e.deferReplay, i))
 		}
 		return
 	}
@@ -25590,6 +25614,12 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 		return
 	}
 	e.includes["stdio.h"] = true
+	if e.deferReplay >= 0 {
+		// The captured arguments are the call's, the format first.
+		saved := e.deferReplayOff
+		e.deferReplayOff = 1
+		defer func() { e.deferReplayOff = saved }()
+	}
 	// As in emitPrint: every argument is evaluated before anything is written. The
 	// format itself is a constant, so only the arguments after it are hoisted, and
 	// they are indexed from zero exactly as the verbs read them.
@@ -25645,6 +25675,12 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 // tick())` never called tick, where Go evaluates every argument. An argument the
 // print already bound to a temporary, or one a deferred print captured, has run.
 func (e *emitter) evalTypeOnlyArg(idx int, arg Node) {
+	if i := idx + e.deferReplayOff; e.deferReplay >= 0 && i < len(e.deferReplayArgs) && !e.deferReplayArgs[i].inline {
+		// Captured at the defer, and read by nothing but this.
+		e.ind()
+		e.emit("(void)" + deferArgName(e.deferReplay, i) + ";\n")
+		return
+	}
 	if idx < len(e.printArgs) || e.deferReplay >= 0 || !e.exprHasEffect(arg.ast) {
 		return
 	}
@@ -25661,6 +25697,11 @@ func (e *emitter) evalTypeOnlyArg(idx int, arg Node) {
 // int` prints as an int and IS a Celsius, and %T is the one verb that wants the
 // name rather than the bytes.
 func (e *emitter) printfArgType(idx int, arg Node) (string, bool) {
+	// During a replay the expression was written in a scope that has been left, and
+	// what the capture recorded is its type.
+	if ct, ok := e.replayArgCType(idx); ok {
+		return ct, true
+	}
 	if ct, ok := e.inferCType(arg.ast); ok {
 		return ct, true
 	}

@@ -30003,6 +30003,51 @@ func main() {
 `,
 		want: "code error|code error|\"code error\"|636f6465206572726f72\nthe error the error|\ndisk|net\nptr error|ptr error\n[code error code error]\n[the error the error]\ninner\ncode error\n5\n",
 	}, {
+		// A deferred printf's arguments are captured at the defer, the format among
+		// them, and the replay read argument i from slot i: `defer printf("alone
+		// %v|\n", s)` built without a word and printed its own format where s
+		// belonged, and a verb whose argument differed in type from its neighbour's
+		// was refused. And a deferred print's call argument was evaluated again at
+		// every return, the replay hoisting it anew beside what the defer captured.
+		name: "a deferred printf reads its own arguments",
+		src: `type Celsius int
+
+func (c Celsius) String() string { return "C!" }
+
+var calls int
+
+func f() int {
+	calls++
+	return calls * 10
+}
+
+func run(x int, s string, c Celsius) {
+	defer printf("deferred %v %d %s %q %T %x|\n", x, x, s, s, c, x)
+	defer printf("more %v %v|\n", c, f())
+	defer printf("width [%5d] [%-4s] [%6.2f]\n", x, s, 1.5)
+	defer printf("alone %v|\n", s)
+	x = 99
+	s = "changed"
+	printf("body %d\n", calls)
+}
+
+func early(x int) int {
+	defer printf("early %d %d|\n", x, f())
+	defer println("early", f(), x)
+	if x > 0 {
+		return x + 1
+	}
+	return 0
+}
+
+func main() {
+	run(1, "orig", 5)
+	printf("after %d\n", calls)
+	printf("early returned %d, calls %d\n", early(1), calls)
+}
+`,
+		want: "body 1\nalone orig|\nwidth [    1] [orig] [  1.50]\nmore C! 10|\ndeferred 1 1 orig \"orig\" main.Celsius 1|\nafter 1\nearly 30 1\nearly 1 20|\nearly returned 2, calls 3\n",
+	}, {
 		// The embedded strings package measured against Go's on the host and a
 		// P2-EDGE (2026-09-18): Contains, ContainsAny, ContainsRune, Count
 		// (overlapping, empty, multi-byte), Index, LastIndex, IndexAny, IndexByte,

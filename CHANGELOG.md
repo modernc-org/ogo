@@ -154,6 +154,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A deferred printf read its arguments one place off.** The arguments a `defer
+  printf(...)` captures include the format, and the replay read argument i from
+  slot i: `defer printf("alone %v|\n", s)` built without a word and printed its own
+  format where s belonged, and a verb whose argument's type differed from its
+  neighbour's was refused ("%d wants an integer, not string"). The replay counts
+  past the format now. And a deferred print's call argument, `defer println(f(),
+  x)`, was evaluated again at every return, silently, the replay hoisting it anew
+  beside what the defer had captured.
 - **printf asks a value for Error() before String().** `%v` of a `type Code int`
   with an `Error()` method printed the number it holds, silently, where fmt prints
   what `Error()` returns; a type with both methods printed its `String()`, and
