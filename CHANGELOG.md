@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A struct type may be written out in its literal.** `struct{ x, y int }{1, 2}`,
+  `struct{}{}` -- the value a signal channel sends -- and `&struct{ v int }{9}` were
+  syntax errors: the grammar took a struct type in a declaration and as a literal's
+  element type, but not in front of a literal of its own. Its values are checked
+  as a named struct's are, and every mention of one shape is one type, so the
+  literal, the variable it initializes and a parameter written the same way agree.
 - **Directional channel types.** `chan<- T` and `<-chan T` are in the language and
   mean what they mean in Go: a send on a receive-only channel, a receive, range or
   select from a send-only one and a close of a receive-only one are refused in Go's

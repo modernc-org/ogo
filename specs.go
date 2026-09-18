@@ -1336,6 +1336,7 @@
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 //		| "chan" Type
+//		| StructType CompositeLit [ FactorSuffix ]
 //		| FuncLiteral [ FactorSuffix ] .
 //	CompositeLit = "{" [ ElementList ] "}" .
 //	ElementList  = Element { "," Element } [ "," ] .
@@ -1374,6 +1375,12 @@
 // field value. OctoGo takes it there too, for a struct-typed field and an
 // array-typed one alike. The written form is what both languages accept, so a
 // program that spells the type out is portable.
+//
+// A struct type may be written out in front of its literal instead of named, as in
+// Go: "struct{ x, y int }{1, 2}", and "struct{}{}", the value a signal channel
+// carries. Its values are checked as a named struct's are, and it is identical to
+// every struct type with the same fields in the same order, wherever that one is
+// written -- a variable's type, a parameter's, another literal's.
 //
 // A bracketed type may carry one too, giving an array literal "[N]T{a, b}" or a
 // slice literal "[]T{a, b}". Elements may be positional, indexed ("[5]int{0: 1,
@@ -1493,6 +1500,7 @@
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 //		| "chan" Type
+//		| StructType CompositeLit [ FactorSuffix ]
 //		| FuncLiteral [ FactorSuffix ] .
 //
 // A slice or array type may appear as a Factor so that the type argument such as

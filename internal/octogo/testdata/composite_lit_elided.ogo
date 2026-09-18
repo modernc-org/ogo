@@ -2,9 +2,10 @@
 
 // A composite-literal element value may elide its type when position implies it:
 // the element type of an array or slice literal, or a field's type in a struct
-// literal. `[]P{{1}, {2}}` means `[]P{P{1}, P{2}}` and `Outer{{5}}` means
-// `Outer{Inner{5}}`, as in Go. Positional and keyed inner forms, and an empty `{}`
-// that zeroes the element, are all admitted; the explicit form still works too.
+// literal. `[]P{{1}, {2}}` means `[]P{P{1}, P{2}}`, as in Go, and `Outer{{5}}` means
+// `Outer{Inner{5}}`, which Go refuses and OctoGo takes (see specs.go). Positional
+// and keyed inner forms, and an empty `{}` that zeroes the element, are all
+// admitted; the explicit form still works too.
 
 type inner struct {
 	a int

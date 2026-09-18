@@ -7583,6 +7583,48 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 		f.err(id.Position(), "invalid composite literal type: %s is not a struct type", t)
 		return
 	}
+	f.checkStructLit(s, t, st, id, elements)
+}
+
+// checkAnonStructLit checks a literal of a struct type written out in place,
+// `struct{ x, y int }{1, 2}`: the type itself -- its field types resolve, its field
+// names are distinct -- and then the values, as a named struct's literal checks them.
+func (f *File) checkAnonStructLit(s *Scope, typ, lit Node) {
+	st := f.structType(s, typ)
+	elements := compositeLitElements(lit)
+	for _, el := range elements {
+		f.checkNames(s, el.value)
+	}
+	f.checkStructLit(s, litType{spelled: f.structSpelling(st)}, st, f.tok(typ.Pos()), elements)
+}
+
+// structSpelling renders a struct type as Go prints one, `struct{x int; y int}`,
+// for a diagnostic to name it by. A field whose type does not render leaves the
+// fields out, `struct{...}`.
+func (f *File) structSpelling(st *TypeNodeStruct) string {
+	var parts []string
+	for _, fld := range st.Fields {
+		ts := f.typeNodeString(fld.TypeNode, false)
+		if fld.TypeNode == nil { // embedded: the name is the type
+			ts = ""
+		} else if ts == "" {
+			return "struct{...}"
+		}
+		for _, nm := range fld.Names {
+			if ts == "" {
+				parts = append(parts, nm.Src())
+				continue
+			}
+			parts = append(parts, nm.Src()+" "+ts)
+		}
+	}
+	return "struct{" + strings.Join(parts, "; ") + "}"
+}
+
+// checkStructLit checks the values of a literal of the struct type st against its
+// fields: named t, or written out in place, and at is where a wrong count is
+// reported.
+func (f *File) checkStructLit(s *Scope, t litType, st *TypeNodeStruct, at Token, elements []litElement) {
 	if len(elements) == 0 {
 		return // "T{}" zeroes every field
 	}
@@ -7618,11 +7660,11 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 			if token.IsExported(nm.Src()) {
 				continue
 			}
-			at := id
+			pos := at
 			if i < len(elements) {
-				at = f.tok(elements[i].value.Pos())
+				pos = f.tok(elements[i].value.Pos())
 			}
-			f.err(at.Position(), "implicit assignment to unexported field %s in struct literal of type %s", nm.Src(), t)
+			f.err(pos.Position(), "implicit assignment to unexported field %s in struct literal of type %s", nm.Src(), t)
 			return
 		}
 	}
@@ -7631,7 +7673,7 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 		if len(elements) > len(names) {
 			what = "too many"
 		}
-		f.err(id.Position(), "%s values in %s{...}: %s but %s", what, t, countUnits(len(elements), "value"), countUnits(len(names), "field"))
+		f.err(at.Position(), "%s values in %s{...}: %s but %s", what, t, countUnits(len(elements), "value"), countUnits(len(names), "field"))
 	}
 }
 
@@ -7733,9 +7775,16 @@ func (f *File) checkKeyedLit(s *Scope, t litType, names []Token, types []TypeNod
 type litType struct {
 	name Token
 	qual Token // invalid for a type of this package
+
+	// spelled is a struct type written out in the literal, `struct{x int}`, which
+	// has no name to be told by.
+	spelled string
 }
 
 func (t litType) String() string {
+	if t.spelled != "" {
+		return t.spelled
+	}
 	if t.qual.IsValid() {
 		return t.qual.Src() + "." + t.name.Src()
 	}
@@ -11987,10 +12036,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		}
 	}
 	var id, lbrack Token
-	var suffix, lit, litSuffix Node
+	var suffix, lit, litSuffix, anon Node
 	hasID, hasSuffix, hasLit, hasLitSuffix, ellipsis := false, false, false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
+		case StructType:
+			anon = c // `struct{ x int }{1}`: the literal's type, written out
 		case Expression:
 			f.checkNames(s, c)
 		case FactorSuffix:
@@ -12030,7 +12081,9 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			id, hasID = tok, true
 		}
 	}
-	if hasLit {
+	if hasLit && anon.sym != 0 {
+		f.checkAnonStructLit(s, anon, lit)
+	} else if hasLit {
 		// "pkg.T{...}": the leading identifier is the import qualifier and the type is
 		// the single selector after it. Anything else in front of a literal -- an
 		// index, a call, a longer selector run -- names no type at all.

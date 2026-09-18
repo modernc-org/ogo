@@ -9970,6 +9970,7 @@ type W struct {
 	fstruct Box
 	farray  [1]Box
 	fiface  Any
+	fanon   struct{ d []int }
 }
 
 var back [4]int
@@ -9985,42 +9986,49 @@ var gaddr *int
 var gstruct Box
 var garray [1]Box
 var giface Any
+var ganon struct{ d []int }
 
 var chslice chan []int
 var chaddr chan *int
 var chstruct chan Box
 var charray chan [1]Box
 var chiface chan Any
+var chanon chan struct{ d []int }
 
 var gaslice [1][]int
 var gaaddr [1]*int
 var gastruct [1]Box
 var gaarray [1][1]Box
 var gaiface [1]Any
+var gaanon [1]struct{ d []int }
 
 func workslice(v []int) { done <- len(v) }
 func workaddr(v *int) { done <- *v }
 func workstruct(v Box) { done <- len(v.d) }
 func workarray(v [1]Box) { done <- len(v[0].d) }
 func workiface(v Any) { done <- 1 }
+func workanon(v struct{ d []int }) { done <- len(v.d) }
 
 func keepslice(v []int) { gslice = v }
 func keepaddr(v *int) { gaddr = v }
 func keepstruct(v Box) { gstruct = v }
 func keeparray(v [1]Box) { garray = v }
 func keepiface(v Any) { giface = v }
+func keepanon(v struct{ d []int }) { ganon = v }
 
 func retslice(v []int) { gslice = idslice(v) }
 func retaddr(v *int) { gaddr = idaddr(v) }
 func retstruct(v Box) { gstruct = idstruct(v) }
 func retarray(v [1]Box) { garray = idarray(v) }
 func retiface(v Any) { giface = idiface(v) }
+func retanon(v struct{ d []int }) { ganon = idanon(v) }
 
 func idslice(v []int) []int { return v }
 func idaddr(v *int) *int { return v }
 func idstruct(v Box) Box { return v }
 func idarray(v [1]Box) [1]Box { return v }
 func idiface(v Any) Any { return v }
+func idanon(v struct{ d []int }) struct{ d []int } { return v }
 
 `
 	kinds := []struct{ name, v, okV string }{
@@ -10029,6 +10037,7 @@ func idiface(v Any) Any { return v }
 		{"struct", "Box{a[:]}", "Box{back[:]}"},
 		{"array", "[1]Box{{a[:]}}", "[1]Box{{back[:]}}"},
 		{"iface", "Any(&x)", "Any(&gx)"},
+		{"anon", "struct{ d []int }{a[:]}", "struct{ d []int }{back[:]}"},
 	}
 	sinks := []struct{ name, stmt string }{
 		{"store", "g{K} = s"},
@@ -10324,6 +10333,8 @@ var gx, gy int
 		{"slice", "[]int", "a[:]", "a2[1:]", "back[:]", "back2[1:]", false},
 		{"address", "*int", "&x", "&y", "&gx", "&gy", false},
 		{"struct", "Box", "Box{a[:]}", "Box{a2[:]}", "Box{back[:]}", "Box{back2[:]}", true},
+		{"anonymous struct", "struct{ d []int }", "struct{ d []int }{a[:]}", "struct{ d []int }{a2[:]}",
+			"struct{ d []int }{back[:]}", "struct{ d []int }{back2[:]}", false},
 		{"array", "[1]Box", "[1]Box{{a[:]}}", "[1]Box{{a2[:]}}", "[1]Box{{back[:]}}", "[1]Box{{back2[:]}}", false},
 		{"interface", "Any", "Any(&x)", "Any(&y)", "Any(&gx)", "Any(&gy)", false},
 	}

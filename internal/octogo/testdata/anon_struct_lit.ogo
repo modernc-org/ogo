@@ -1,0 +1,35 @@
+// COMPILE
+
+// A composite literal may write its struct type out in place, as in Go: positional
+// and keyed, empty, as an element, an operand, a result, behind an address and read
+// through a suffix. Two struct types with the same fields are one type.
+
+var cfg = struct {
+	baud, pin int
+	name      string
+}{115200, 62, "uart"}
+
+var sig chan struct{}
+
+func pair() struct{ a, b int } {
+	return struct{ a, b int }{3, 4}
+}
+
+func area(r struct{ w, h int }) int { return r.w * r.h }
+
+func main() {
+	sig <- struct{}{}
+	q := struct{ x, y int }{y: 5}
+	if q != (struct{ x, y int }{1, 1}) {
+		println(q.x)
+	}
+	if q == struct{ x, y int }{0, 5} {
+		println(q.y)
+	}
+	pp := &struct{ v int }{9}
+	pp.v++
+	println(pp.v, struct{ n int }{7}.n, pair().a, area(struct{ w, h int }{2, 3}), cfg.name)
+	xs := []struct{ k int }{{1}, struct{ k int }{2}}
+	var r struct{ a, b int } = pair()
+	println(len(xs), r.b)
+}

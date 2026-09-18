@@ -4728,6 +4728,86 @@ func main() {
 		want: "1 2 3 4\n5 0 8\n9 0 10\n11 12\n13 14\n",
 	},
 	{
+		// A struct type written out in its literal, as Go allows: a package
+		// variable's initializer and element, a signal value, a channel element, a
+		// result, an argument, an operand of == and of a switch, an element beside
+		// its elided form, behind an address and asserted back out of an interface.
+		// One typedef per shape, so every mention of a shape is the same C type.
+		name: "anonymous struct literals",
+		src: `var cfg = struct {
+	baud, pin int
+	name      string
+}{115200, 62, "uart"}
+
+var table = [2]struct{ k, v int }{{1, 10}, {2, 20}}
+
+var nums [4]int
+
+var sig chan struct{}
+
+var events chan struct{ id, code int }
+
+func pair() struct{ a, b int } {
+	return struct{ a, b int }{3, 4}
+}
+
+func area(r struct{ w, h int }) int { return r.w * r.h }
+
+func signal() {
+	sig <- struct{}{}
+}
+
+func report() {
+	events <- struct{ id, code int }{7, 42}
+}
+
+func main() {
+	println(cfg.baud, cfg.pin, cfg.name, table[1].k, table[1].v)
+	p := struct {
+		x, y int
+		name string
+	}{1, 2, "pt"}
+	q := struct{ x, y int }{y: 5}
+	println(p.x, p.y, p.name, q.x, q.y)
+	go signal()
+	<-sig
+	go report()
+	ev := <-events
+	println(ev.id, ev.code)
+	println(pair().a, struct{ n int }{7}.n, area(struct{ w, h int }{3, 5}))
+	var r struct{ a, b int } = pair()
+	if r == (struct{ a, b int }{3, 4}) {
+		println("equal")
+	}
+	if r != struct{ a, b int }{1, 1} {
+		println("differ")
+	}
+	pts := []struct{ x, y int }{{1, 2}, struct{ x, y int }{3, 4}}
+	println(len(pts), pts[1].x)
+	pp := &struct{ v int }{9}
+	pp.v++
+	println(pp.v)
+	nums[1], nums[2] = 5, 6
+	n := struct {
+		a [2]int
+		s []int
+	}{[2]int{1, 2}, nums[1:3]}
+	println(n.a[1], len(n.s), n.s[1])
+	switch q {
+	case struct{ x, y int }{0, 4}:
+		println("four")
+	case struct{ x, y int }{0, 5}:
+		println("five")
+	}
+	var any interface{} = &struct{ n int }{5}
+	if a, ok := any.(*struct{ n int }); ok {
+		println("asserted", a.n)
+	}
+}
+`,
+		want: "115200 62 uart 2 20\n1 2 pt 0 5\n7 42\n3 7 15\nequal\ndiffer\n2 3\n10\n2 2 6\nfive\nasserted 5\n",
+	},
+	{
 		// A labeled break or continue names an enclosing loop or switch: "break L"
 		// leaves the labeled "for"/"switch" from any depth, and "continue L" begins
 		// the labeled "for"'s next iteration. Each lowers to a goto -- to a label

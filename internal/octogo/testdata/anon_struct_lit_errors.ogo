@@ -1,0 +1,22 @@
+// A struct type written out in a literal is checked as a named one is: the values
+// against its fields, and the type itself.
+
+func main() {
+	// ERROR too many values in struct\{x int\}\{...\}: 2 values but 1 field
+	a := struct{ x int }{1, 2}
+	// ERROR not enough values in struct\{x int; y int\}\{...\}: 1 value but 2 fields
+	b := struct{ x, y int }{1}
+	// ERROR unknown field y in struct literal of type struct\{x int\}
+	c := struct{ x int }{y: 1}
+	// ERROR cannot use "a" of type string as type int in struct literal
+	d := struct{ x int }{"a"}
+	// ERROR duplicate field name x in struct literal
+	e := struct{ x int }{x: 1, x: 2}
+	// ERROR mixture of field:value and value elements in struct literal
+	f := struct{ x, y int }{x: 1, 2}
+	// ERROR undefined: Nope
+	g := struct{ x Nope }{}
+	// ERROR field x redeclared
+	h := struct{ x, x int }{}
+	_, _, _, _, _, _, _, _ = a, b, c, d, e, f, g, h
+}

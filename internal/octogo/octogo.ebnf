@@ -85,6 +85,7 @@ Factor     = identifier [ FactorSuffix ] [ CompositeLit [ FactorSuffix ] ]
 	| "(" Expression ")" [ FactorSuffix ]
 	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 	| "chan" Type
+	| StructType CompositeLit [ FactorSuffix ]
 	| FuncLiteral [ FactorSuffix ] .
 CompositeLit = "{" [ ElementList ] "}" .
 ElementList  = Element { "," Element } [ "," ] .
@@ -102,6 +103,7 @@ HeaderFactor     = identifier [ FactorSuffix ]
 	| "(" Expression ")" [ FactorSuffix ]
 	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
 	| "chan" Type
+	| StructType CompositeLit [ FactorSuffix ]
 	| FuncLiteral [ FactorSuffix ] .
 FactorSuffix = { Selector | Index | CallSuffix } .
 Selector     = "." ( identifier | "(" ( "type" | Type ) ")" ) .

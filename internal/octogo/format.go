@@ -1177,7 +1177,16 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					var current alignmentBlock
 					isFirst := true
 
+					// Only a body written across lines has columns to align. The
+					// targets below are absolute, measured from the indentation, which is
+					// where a multi-line body's fields begin; a one-line body's begin
+					// after whatever precedes the type on its line, and a line standing
+					// one level out -- `case struct{ x, y int }{0, 4}:` -- padded its
+					// field's type to a column meant for the lines below it.
 					childAst := ast[2:next]
+					if !c.structBraceMultiline {
+						childAst = nil
+					}
 					for len(childAst) > 0 {
 						cn := childAst[0]
 						if cn < 0 {

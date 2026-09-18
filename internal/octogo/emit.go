@@ -12837,6 +12837,12 @@ func (e *emitter) specReadsItsNames(names []string, initExprs [][]int32) bool {
 // the type, followed by the literal. Nothing else may follow, so a suffixed factor
 // (a call, selector or index) is not one.
 func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok bool) {
+	// A struct type written out, `struct{ x, y int }{1, 2}`: the typedef its shape
+	// mints, which every struct type with the same fields shares, as Go's identity
+	// for them has it.
+	if len(kids) == 2 && kids[0].sym == StructType && kids[1].sym == CompositeLit {
+		return e.anonStructType(kids[0].ast), kids[1], true
+	}
 	if len(kids) < 2 || len(kids) > 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT ||
 		kids[len(kids)-1].sym != CompositeLit {
 		return "", Node{}, false
