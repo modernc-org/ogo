@@ -13592,6 +13592,25 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 			e.declInit = saved
 			continue
 		}
+		// A string or a slice header VALUE -- a variable, a call's result, a slice
+		// literal's header -- is a struct, and the target's compiler refuses a struct
+		// value inside an array initializer, reading it as the first member of the
+		// first element (doc/array-init-struct-value.c): `[]string{s1, s2}` and
+		// `[][]int{a, b}` did not build for the target at all. It is braced out
+		// member by member, as emitLitElement braces a user struct's; a constant
+		// string and nil need nothing.
+		if u := e.underlyingCType(elemCType); (u == cString || e.isSliceCType(u)) && !e.isNilExpr(v.ast) {
+			if _, isConst := e.foldConstString(v.ast); !isConst {
+				base, isName := e.exprIdent(v.ast)
+				if isName {
+					base = e.varRef(base)
+				} else {
+					base = e.hoist(elemCType, func() { e.emitExpr(v.ast) })
+				}
+				e.emit(e.structBraceC(base, elemCType))
+				continue
+			}
+		}
 		e.emitLitElement(*v, fld, true)
 	}
 	e.litPath = litPath

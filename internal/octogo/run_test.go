@@ -4728,6 +4728,52 @@ func main() {
 		want: "1 2 3 4\n5 0 8\n9 0 10\n11 12\n13 14\n",
 	},
 	{
+		// The elements of a slice or an array literal are an array initializer, and
+		// the target's compiler refuses a struct VALUE there -- a string and a slice
+		// header are structs -- reading it as the first member of the first element
+		// (doc/array-init-struct-value.c). `[]string{s1, s2}` and `[][]int{a, b}` did
+		// not build for the target at all; each such value is braced out member by
+		// member now, as a user struct's long was.
+		name: "string and slice values as the elements of a literal",
+		src: `type Pt struct {
+	x, y int
+}
+
+var ga, gb = "pkg", "vars"
+
+var gnames = []string{ga, gb}
+
+func word(i int) string {
+	if i > 0 {
+		return "yes"
+	}
+	return "no"
+}
+
+func main() {
+	s1, s2 := "a", "bc"
+	names := []string{s1, s2, "lit", word(1)}
+	println(len(names), names[0], names[1], names[2], names[3])
+	var fixed [2]string = [2]string{word(0), s2}
+	println(fixed[0], fixed[1])
+	a, b := []int{1}, []int{2, 3}
+	rows := [][]int{a, b}
+	println(len(rows), rows[1][1], len(rows[0]))
+	rows[0][0] = 9
+	println(a[0])
+	grid := [2][]int{b, a}
+	println(grid[0][1], grid[1][0])
+	pa, pb := []Pt{{1, 2}}, []Pt{{3, 4}, {5, 6}}
+	pts := [][]Pt{pa, pb}
+	println(pts[1][1].y)
+	nested := [][]Pt{[]Pt{{7, 8}}, pb}
+	println(nested[0][0].x, nested[1][0].y)
+	println(gnames[0], gnames[1])
+}
+`,
+		want: "4 a bc lit yes\nno bc\n2 3 1\n9\n3 9\n6\n7 4\npkg vars\n",
+	},
+	{
 		// A struct type written out in its literal, as Go allows: a package
 		// variable's initializer and element, a signal value, a channel element, a
 		// result, an argument, an operand of == and of a switch, an element beside

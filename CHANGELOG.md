@@ -162,6 +162,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`[]string{s1, s2}` and `[][]int{a, b}` build for the target.** A string or a
+  slice value standing as an element of a slice or an array literal -- a variable,
+  a call's result, an inner slice literal -- is a struct to C, and the target's
+  compiler refuses a struct value in an array initializer, reading it as the first
+  member of the first element (`doc/array-init-struct-value.c`). Such programs ran
+  on the host and did not build for the board at all. The value is braced out
+  member by member now, as a user struct's already was.
 - **A nil pointer whose type has String() or Error() on a value receiver prints
   <nil>.** Calling such a method through a nil pointer panics in Go too, copying
   the receiver out, and fmt prints that panic as `<nil>`; here `%v` of one panicked
