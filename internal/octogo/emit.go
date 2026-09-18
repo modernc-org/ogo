@@ -21546,6 +21546,13 @@ func (e *emitter) emitIfaceAssertOk(targets []assignTarget, declare []bool, oper
 	okTmp := e.newTmp()
 	e.ind()
 	e.emit("int " + okTmp + " = " + cond + ";\n")
+	// `_, ok := x.(Reader)` asks only whether: the value would be a variable set and
+	// never read, which the host's compiler refuses under -Werror and the target
+	// builds for nothing.
+	if targets[0].name == "_" {
+		e.emitStore(targets[1], declare[1], cBool, okTmp)
+		return
+	}
 	val := e.newTmp()
 	e.ind()
 	e.emit(target + " " + val + " = {0};\n")

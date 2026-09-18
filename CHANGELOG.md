@@ -135,6 +135,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`_, ok := x.(Reader)` built the value it discards.** A comma-ok assertion to an
+  interface type declared the asserted value and filled it even when its target was
+  the blank identifier -- a variable set and never read, which the host's compiler
+  refuses under the run tests' flags. Only ok is computed now.
 - **A switch on an array compared where the arrays are.** `switch a { case [2]int{1,
   2}: }` compared the tag with each case by C's `==`, which for two arrays asks
   whether they are the same storage: never, so the default ran, silently, on the
@@ -518,6 +522,12 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Interface semantics against Go on the host and a P2-EDGE: interfaces embedding
+  interfaces, assignment between interface types, comma-ok assertions to interface
+  and concrete types, type switches with interface cases and nil, methods promoted
+  through embedded pointers and values, equality across dynamic types, the empty
+  interface; and every comma-ok form with its value discarded. One fault, above;
+  both programs are run cases.
 - Goroutine semantics against Go on the host and a P2-EDGE, three runs: workers
   ranging over a job channel another cog feeds and closes, results gathered by id;
   a `go` statement's arguments evaluated where it is written; ping-pong between two

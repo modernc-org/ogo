@@ -30410,6 +30410,178 @@ func main() {
 `,
 		want: "2\n",
 	}, {
+		// Interface semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-19): an interface embedding two others, a value assigned from
+		// one to another, comma-ok assertions to an interface and to a concrete
+		// type, type switches with interface cases and nil, methods promoted
+		// through an embedded pointer and an embedded value, interface equality
+		// across dynamic types, and the empty interface. One fault: `_, ok :=
+		// x.(Reader)` built the value it discards, a variable the host's compiler
+		// refused as set and unused.
+		name: "interface semantics: embedding, assertions to an interface, type switches and method sets",
+		src: `type Reader interface {
+	Read() int
+}
+
+type Writer interface {
+	Write(v int) int
+}
+
+type ReadWriter interface {
+	Reader
+	Writer
+}
+
+type Namer interface {
+	Name() string
+}
+
+type Dev struct {
+	val int
+	id  string
+}
+
+func (d *Dev) Read() int {
+	return d.val
+}
+
+func (d *Dev) Write(v int) int {
+	d.val = v
+	return v * 2
+}
+
+func (d *Dev) Name() string {
+	return d.id
+}
+
+type ROnly struct {
+	n int
+}
+
+func (r *ROnly) Read() int {
+	return r.n
+}
+
+type Wrapped struct {
+	*Dev
+	extra int
+}
+
+type Plain struct {
+	Dev
+}
+
+func use(rw ReadWriter) int {
+	return rw.Write(rw.Read() + 1)
+}
+
+func describe(r Reader) string {
+	switch v := r.(type) {
+	case ReadWriter:
+		return "rw"
+	case Namer:
+		return v.Name()
+	case nil:
+		return "nil"
+	}
+	return "r"
+}
+
+func main() {
+	d := Dev{5, "dev"}
+	var rw ReadWriter = &d
+	println("I1", use(rw), d.val, rw.Read())
+	var r Reader = rw
+	w, ok := r.(Writer)
+	println("I2", ok, w.Write(9), d.val)
+	ro := ROnly{3}
+	r = &ro
+	_, ok = r.(Writer)
+	n, isNamer := r.(Namer)
+	println("I3", ok, isNamer, n == nil, describe(r), describe(&d), describe(nil))
+	wr := Wrapped{&d, 1}
+	var rw2 ReadWriter = &wr
+	println("I4", rw2.Read(), use(rw2), d.val, wr.Name())
+	var pl Plain
+	pl.id = "plain"
+	var nm Namer = &pl
+	println("I5", nm.Name(), describe(&pl))
+	var r2 Reader = &d
+	var r3 Reader = &d
+	var r4 Reader = &ro
+	println("I6", r2 == r3, r2 == r4, r2 != nil, Reader(rw) == r2)
+	rw3, ok3 := r2.(ReadWriter)
+	println("I7", ok3, rw3.Read(), rw3 == rw)
+	var e interface{} = &d
+	_, isR := e.(Reader)
+	_, isRO := e.(*ROnly)
+	dd, isD := e.(*Dev)
+	println("I8", isR, isRO, isD, dd.id)
+}
+`,
+		want: "I1 12 6 6\nI2 true 18 9\nI3 false false true r rw nil\nI4 9 20 10 dev\nI5 plain rw\nI6 true false true true\nI7 true 10 true\nI8 true false true dev\n",
+	}, {
+		// Every comma-ok form with its value discarded: assertions to a concrete
+		// type and to an interface, declared and assigned, receives from open and
+		// closed channels of scalars and structs, in a select too (2026-09-19).
+		name: "comma-ok forms with a blank value",
+		src: `type Reader interface {
+	Read() int
+}
+
+type Dev struct {
+	v int
+}
+
+func (d *Dev) Read() int {
+	return d.v
+}
+
+type Pair struct {
+	a, b int
+}
+
+var ch chan int
+var pch chan Pair
+var done chan int
+
+func feed() {
+	ch <- 4
+	close(ch)
+	pch <- Pair{1, 2}
+	close(pch)
+	done <- 1
+}
+
+func main() {
+	d := Dev{3}
+	var r Reader = &d
+	var e interface{} = &d
+	_, ok1 := r.(*Dev)
+	_, ok2 := e.(Reader)
+	_, ok3 := e.(*Dev)
+	var ok4 bool
+	_, ok4 = e.(Reader)
+	println("B1", ok1, ok2, ok3, ok4)
+	go feed()
+	_, ok5 := <-ch
+	_, ok6 := <-ch
+	var ok7 bool
+	select {
+	case _, ok7 = <-pch:
+	}
+	_, ok8 := <-pch
+	println("B2", ok5, ok6, ok7, ok8, <-done)
+	switch v := e.(type) {
+	case Reader:
+		println("B3 reader")
+	case *Dev:
+		println("B3 dev", v.v)
+	}
+}
+`,
+		want: "B1 true true true true\nB2 true false true false 1\nB3 reader\n",
+	}, {
 		// The same in every position an interface VALUE fills an array element:
 		// a package array and slice of interface variables, a local slice with
 		// nil among them, calls, and a struct field beside them. The target's
