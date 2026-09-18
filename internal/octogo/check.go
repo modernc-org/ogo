@@ -11610,6 +11610,16 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 	}
 	have, variable, ok := f.operandTypeAt(s, value)
 	if !ok || have.tn == nil || have.f == nil {
+		// `&x` for an x whose type its initializer gave it, `x := 2.5`: no type
+		// written anywhere to read, and a Kind to name it by.
+		if _, isPtr := wu.(*TypeNodePointer); isPtr {
+			if hi, ok := f.inferredScalarAddr(s, value); ok {
+				if wi := f.typeNodeIdentity(wu); wi != "" && wi != hi {
+					f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s",
+						f.exprSource(value), hi, f.typeNodeString(want, false), what)
+				}
+			}
+		}
 		return
 	}
 	hu, haveNamed := have.f.refTypeUnder(have.s, have.tn)
@@ -11638,6 +11648,44 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 		mode = "variable"
 	}
 	f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s", f.exprSource(value), mode, haveS, wantS, what)
+}
+
+// inferredScalarAddr names the type of `&x` for a variable x of a predeclared scalar
+// type its initializer gave it -- `x := 2.5` is a float64, the constant's default
+// type -- which no written type node says. The target's compiler only warns about
+// such a pointer stored as a pointer to another type, so `var p *int = &x` built
+// and read a float's bits as an int.
+func (f *File) inferredScalarAddr(s *Scope, n Node) (identity string, ok bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return "", false
+		}
+		n = kids[0]
+	}
+	if n.sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor || f.unaryOp(s, kids[0]) != AND {
+		return "", false
+	}
+	id, isName := f.exprIdent(kids[1])
+	if !isName {
+		return "", false
+	}
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar || d.declType != nil || !d.hasKind || d.typeName.IsValid() || d.isPtr || d.isChan || d.isFunc {
+		return "", false
+	}
+	k := d.kind
+	if isUntypedKind(k) {
+		k = defaultKind(k)
+	}
+	if kindCategory(k) == catUnknown {
+		return "", false
+	}
+	return "*" + kindName(k), true
 }
 
 // refTypeUnder follows a type node through the definitions of named types to what it

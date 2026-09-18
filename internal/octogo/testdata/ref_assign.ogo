@@ -35,5 +35,9 @@ func main() {
 	var s *P = r
 	println(sum(l), sum(m), sum(mk()), len(asList(d)), q.n, s.n)
 	rows := [][]int{d, l, back[1:]}
-	println(len(rows))
+	n := 7
+	var pn *int = &n
+	f := 1.5
+	var pf *float64 = &f
+	println(len(rows), *pn, *pf)
 }

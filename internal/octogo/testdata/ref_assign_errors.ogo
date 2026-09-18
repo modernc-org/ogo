@@ -38,5 +38,11 @@ func main() {
 	var e []int
 	// ERROR cannot use s \(variable of type \[\]string\) as \[\]int value in assignment
 	e = s
-	_, _, _, _, _, _, _ = d, b2, rows, p, ints, e, b
+	x := 2.5
+	// ERROR cannot use &x \(value of type \*float64\) as \*int value in variable declaration
+	var px *int = &x
+	n := 7
+	// ERROR cannot use &n \(value of type \*int\) as \*uint8 value in variable declaration
+	var pn *uint8 = &n
+	_, _, _, _, _, _, _, _, _ = d, b2, rows, p, ints, e, b, px, pn
 }
