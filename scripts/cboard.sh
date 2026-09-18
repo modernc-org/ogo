@@ -56,5 +56,5 @@ if [ $status -ne 0 ] || [ ! -s "$tmp/prog.binary" ]; then
 fi
 grep -v '^ok\|^PASS' "$tmp/build.log"
 (sleep "$secs"; printf '\x1d') | timeout 90 "$tmp/ogo" loadp2 -t -NOEOF -p "$port" -b 230400 "$tmp/prog.binary" 2>&1 |
-	tr -d '\r' | grep -v 'Entering terminal mode' | grep -v '^( '
+	tr -d '\r' | grep -a -v 'Entering terminal mode' | grep -a -v '^( '
 rm -rf "$tmp"

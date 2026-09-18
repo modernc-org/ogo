@@ -16,6 +16,11 @@
 #   holding the port is reported rather than fought: `fuser -v PORT`, then kill
 #   it -- a killed board test orphans its `ogo loadp2`, which then holds the port
 #   so every later run reads nothing.
+#
+# The serial stream is filtered as TEXT (grep -a): a program printing a byte that
+# is not UTF-8 -- half a rune, a byte over 127 -- is one whose line GNU grep would
+# otherwise drop under a UTF-8 locale, silently, and the board looked wrong where
+# it was byte-identical to Go.
 set -u
 unset CDPATH # a set CDPATH makes cd echo the directory, doubling every $(cd ... && pwd)
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -39,6 +44,6 @@ if ! (cd "$d" && "$tmp/ogo" build -o "$d/prog.binary" . > "$d/build.log" 2>&1); 
 fi
 [ -s "$d/build.log" ] && { echo "BACKEND SAID:"; cat "$d/build.log"; }
 (sleep "$secs"; printf '\x1d') | timeout 90 "$tmp/ogo" loadp2 -t -NOEOF -p "$port" -b 230400 "$d/prog.binary" 2>&1 |
-	tr -d '\r' | grep -v 'Entering terminal mode' | grep -v '^( ' > "$out"
+	tr -d '\r' | grep -a -v 'Entering terminal mode' | grep -a -v '^( ' > "$out"
 rm -rf "$tmp"
 wc -l "$out"

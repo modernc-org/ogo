@@ -27896,6 +27896,83 @@ func pick(k int) int {
 }
 `,
 		want: "1223\n13\n191277\n3\n36\n11220 5\n414\n30231\ntrue true true true\n",
+	}, {
+		// String semantics measured against Go on a P2-EDGE on 2026-09-18: length and
+		// indexing in bytes, comparison by content, slicing across a rune, a range over
+		// a multibyte string and over one holding bytes that are not UTF-8 -- U+FFFD,
+		// one byte at a time -- the conversions of a rune, a byte and out-of-range
+		// values to a string, and the copies a string variable makes. All matched. The
+		// program prints bytes that are not UTF-8, which is what found the board scripts
+		// dropping such lines: GNU grep suppresses them under a UTF-8 locale.
+		name: "string semantics: bytes, runes, comparison, slicing and conversions",
+		src: `var strs = [6]string{"héllo", "abc", "abd", "", "ab", "\xff\xfeA"}
+var runes = [6]rune{'a', 'é', 0x10FFFF, 0x110000, -1, 0xD800}
+var bytes = [3]byte{65, 200, 255}
+
+func lengths() {
+	for i := 0; i < 1; i++ {
+		h, abc, abd, empty, ab, bad := strs[i], strs[i+1], strs[i+2], strs[i+3], strs[i+4], strs[i+5]
+		println("len", len(h), len(abc), len(empty), len(bad), h[1], h[2], bad[0], bad[2])
+		println("cmp", abc < abd, abc == abd, abc > empty, ab < abc, abc <= abc, abd >= abc, ab != abc, empty == "", h > abc)
+		println("slice", h[1:3], h[:2], h[3:], abc[1:2], abc[3:], empty[:], h[1:3] == "\xc3\xa9", len(h[1:]))
+	}
+}
+
+func ranges() {
+	for i := 0; i < 1; i++ {
+		h, abc, bad := strs[i], strs[i+1], strs[i+5]
+		for i, r := range h {
+			print(i, ":", r, " ")
+		}
+		println()
+		for i, r := range bad {
+			print(i, ":", r, " ")
+		}
+		println()
+		for i := range abc {
+			print(i, ":", abc[i], " ")
+		}
+		println()
+		n := 0
+		for range h {
+			n++
+		}
+		println("count", n, len(h))
+	}
+}
+
+func conversions() {
+	for i := 0; i < 1; i++ {
+		a, e, max, over, neg, sur := runes[i], runes[i+1], runes[i+2], runes[i+3], runes[i+4], runes[i+5]
+		println("rune", string(a), string(e), len(string(e)), len(string(max)), string(over), string(neg), string(sur), len(string(over)))
+		b1, b2, b3 := bytes[i], bytes[i+1], bytes[i+2]
+		println("byte", string(b1), len(string(b2)), string(rune(b2)), len(string(rune(b3))), string(b1) == "A")
+		h, abc := strs[i], strs[i+1]
+		println("conv", string(rune(a)+1), string(rune(65+i)), rune(abc[1]), int(h[1]), uint8(h[1]), string(abc[1]), string(rune(abc[1])))
+	}
+}
+
+func values() {
+	for i := 0; i < 1; i++ {
+		h, abc, abd := strs[i], strs[i+1], strs[i+2]
+		println("concat", "x"+"y"+"z", "a"+"" == "a", ""+"" == "", len("x"+"héllo"))
+		println("idx", abc[0], abc[len(abc)-1], h[len(h)-1], "z"[0], abc[1] == 'b', h[0] < h[1])
+		s := abc
+		s = s[1:]
+		t := s
+		s = abd
+		println("assign", s, t, len(s), len(t), s == abd, t == "bc")
+	}
+}
+
+func main() {
+	lengths()
+	ranges()
+	conversions()
+	values()
+}
+`,
+		want: "len 6 3 0 3 195 169 255 65\ncmp true false true true true true true true true\nslice é h\xc3 llo b   true 5\n0:104 1:233 3:108 4:108 5:111 \n0:65533 1:65533 2:65 \n0:97 1:98 2:99 \ncount 5 6\nrune a é 2 4 � � � 3\nbyte A 2 È 2 true\nconv b A 98 195 195 b b\nconcat xyz true true 7\nidx 97 99 111 122 true true\nassign abd bc 3 2 true true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -385,6 +385,15 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- String semantics against Go on a P2-EDGE: length and indexing in bytes,
+  comparison by content, slicing across a rune, a range over a multibyte string
+  and over bytes that are not UTF-8, the conversions of a rune, a byte and an
+  out-of-range value to a string, the copies a variable makes. All matched, and
+  the program is a run case. What it found was in the harness: `scripts/board.sh`
+  and `scripts/cboard.sh` filtered the serial stream through `grep`, which under a
+  UTF-8 locale drops a line holding a byte that is not UTF-8, so a program
+  printing half a rune looked wrong on the board where it was byte-identical to
+  Go. They filter as text now.
 - The control-flow statements whose C lowering is easy to get wrong, against Go on
   a P2-EDGE: `break` and `continue` inside a `switch` or a `select` inside a loop,
   `fallthrough`, labeled `break` and `continue` across a switch and an inner
